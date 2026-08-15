@@ -10,8 +10,8 @@ import {
 const baselineKeys = [
   'valuation_document',
   'signed_mandate',
-  'signed_defect_form',
-  'signed_fica_form',
+  'signed_disclosure_form',
+  'signed_fica_declaration',
 ]
 
 const persistedOwnershipDrivenRequirement = {

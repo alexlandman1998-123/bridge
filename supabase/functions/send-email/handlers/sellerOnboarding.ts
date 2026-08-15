@@ -29,19 +29,13 @@ const SELLER_ONBOARDING_RESEND_TIMEOUT_MS = 45_000;
 const SELLER_PORTAL_INVITE_BLOCKED_BEFORE_MANDATE_SIGNED_EVENT =
   "seller_portal_invite_blocked_before_mandate_signed";
 const SELLER_PORTAL_INVITE_READY_AFTER_MANDATE_SIGNED_STATUS_KEYS = new Set([
-  "active",
   "completed",
   "finalised",
   "finalized",
   "fully_signed",
-  "live",
   "mandate_signed",
-  "published",
   "signed",
   "signed_uploaded",
-  "sold",
-  "transaction_created",
-  "under_offer",
   "uploaded_signed",
 ]);
 const SELLER_PORTAL_INVITE_SIGNED_MANDATE_PACKET_STATUS_KEYS = new Set([
@@ -75,8 +69,6 @@ function listingHasSignedMandateSignal(
   if (!listing) return false;
   return [
     listing.mandate_status,
-    listing.listing_status,
-    listing.status,
   ].some((value) =>
     SELLER_PORTAL_INVITE_READY_AFTER_MANDATE_SIGNED_STATUS_KEYS.has(
       normalizeStatusKey(value),
@@ -265,12 +257,17 @@ async function verifySellerPortalInviteAfterSignedMandate(
   if (!hasSignedMandateSignal) {
     const code = "seller_portal_invite_requires_signed_mandate";
     const error =
-      "Seller portal password setup links are sent only after the seller mandate is signed.";
+      "Upload the signed mandate before sending the Seller Portal invitation.";
     await appendSellerPortalInviteGuardBlockedEvent(supabase, {
       listing,
       listingId,
       code,
       message: error,
+    });
+    console.warn("[client-access-policy] seller portal invite blocked", {
+      code,
+      listingId,
+      listingFound: Boolean(listing),
     });
     return {
       ok: false,

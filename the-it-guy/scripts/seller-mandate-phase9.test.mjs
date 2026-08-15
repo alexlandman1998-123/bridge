@@ -21,6 +21,7 @@ const sellerOnboardingEmailHandler = readFileSync(resolve(appRoot, '../supabase/
 const sellerMandateContinuityService = readFileSync(resolve(appRoot, 'src/services/sellerMandateContinuityService.js'), 'utf8')
 const agentListingDetail = readFileSync(resolve(appRoot, 'src/pages/AgentListingDetail.jsx'), 'utf8')
 const agentLeadsPage = readFileSync(resolve(appRoot, 'src/pages/AgentLeadsPage.jsx'), 'utf8')
+const agencyPipelinePage = readFileSync(resolve(appRoot, 'src/pages/agency/AgencyPipelinePage.jsx'), 'utf8')
 
 async function test(name, fn) {
   try {
@@ -265,8 +266,9 @@ await test('seller portal invite phase 5 suppresses legacy early send paths', ()
   assert.match(sellerOnboardingSubmittedHandler, /seller_portal_link_deferred_until_mandate_signed/)
   assert.match(sellerOnboardingEmailHandler, /verifySellerPortalInviteAfterSignedMandate/)
   assert.match(sellerOnboardingEmailHandler, /seller_portal_invite_requires_signed_mandate/)
-  assert.match(agentListingDetail, /Sign the seller mandate before resending the seller portal password setup link/)
-  assert.match(agentLeadsPage, /Sign the seller mandate before resending the seller portal password setup link/)
+  assert.match(agentListingDetail, /Upload the signed mandate before activating the Seller Portal/)
+  assert.match(agentLeadsPage, /AgencyPipelinePage initialViewMode="leads"/)
+  assert.match(agencyPipelinePage, /getClientAccessPolicyMessage\(mandateSigningDecision\.reason\)/)
   assert.match(sourceOfTruthContract, /Phase 5 suppresses legacy early seller portal invite paths/)
 })
 

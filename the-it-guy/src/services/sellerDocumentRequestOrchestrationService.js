@@ -122,6 +122,27 @@ function resolveRequirementPortalRequest(requirement = {}) {
   )
 }
 
+function explicitBoolean(value) {
+  if (value === true || value === false) return value
+  if (typeof value !== 'string') return null
+  const normalized = normalizeKey(value)
+  if (normalized === 'true' || normalized === 'yes') return true
+  if (normalized === 'false' || normalized === 'no') return false
+  return null
+}
+
+function portalRequestAllowsSellerDocumentRequest(portalRequest = {}) {
+  if (!Object.keys(toRecord(portalRequest)).length) return true
+  const requestedFromRole = normalizeKey(portalRequest.requestedFromRole || portalRequest.requested_from_role)
+  const agentManaged = explicitBoolean(portalRequest.agentManaged ?? portalRequest.agent_managed)
+  const sellerUploadAllowed = explicitBoolean(portalRequest.sellerUploadAllowed ?? portalRequest.seller_upload_allowed)
+
+  if (agentManaged === true) return false
+  if (sellerUploadAllowed === false) return false
+  if (requestedFromRole && requestedFromRole !== 'seller') return false
+  return true
+}
+
 export function addSellerRequestBusinessDays(dateInput, businessDays = 5) {
   const date = dateInput instanceof Date ? new Date(dateInput.getTime()) : new Date(dateInput)
   if (Number.isNaN(date.getTime())) return null
@@ -195,6 +216,10 @@ export function buildSellerDocumentRequestPlan({
     }
 
     const portalRequest = resolveRequirementPortalRequest(requirement)
+    if (!portalRequestAllowsSellerDocumentRequest(portalRequest)) {
+      suppressed.push({ requirement, key, reason: 'agent_managed_portal_request', portalRequest })
+      continue
+    }
     const portalDeliveryChannels = toArray(
       portalRequest.requestDeliveryChannels ||
         portalRequest.request_delivery_channels ||

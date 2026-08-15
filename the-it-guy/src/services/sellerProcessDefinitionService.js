@@ -4,6 +4,10 @@ import {
   resolveSellerProcessProfile,
   resolveSellerProcessProfileForOrganisation,
 } from './sellerProcessProfileService.js'
+import {
+  SELLER_BASE_PACK_COMPLETION_ROUTES,
+  SELLER_BASE_PACK_KEYS,
+} from '../lib/sellerBasePackContract.js'
 
 const DEFAULT_SELLER_STAGE_KEYS = Object.freeze([
   'new_lead',
@@ -117,27 +121,33 @@ const KINGSTONS_PROCESS_DEFINITION = Object.freeze({
       evidenceKey: 'valuation_document_uploaded',
     }),
     Object.freeze({
-      key: 'signed_mandate',
+      key: SELLER_BASE_PACK_KEYS.SIGNED_MANDATE,
       label: 'Signed Mandate',
-      documentType: 'signed_mandate',
+      documentType: SELLER_BASE_PACK_KEYS.SIGNED_MANDATE,
       requiredBeforeStage: 'seller_pack_signed',
-      acceptedEvidenceModes: Object.freeze(['digital_signature', 'manual_upload']),
+      acceptedEvidenceModes: Object.freeze([SELLER_BASE_PACK_COMPLETION_ROUTES.PHYSICAL_UPLOAD]),
       evidenceKey: 'mandate_signed',
     }),
     Object.freeze({
-      key: 'signed_defect_form',
-      label: 'Signed Defect Form',
-      documentType: 'signed_defect_form',
+      key: SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM,
+      label: 'Signed Mandatory Disclosure / Defects Form',
+      documentType: SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM,
       requiredBeforeStage: 'seller_pack_signed',
-      acceptedEvidenceModes: Object.freeze(['digital_signature', 'manual_upload']),
+      acceptedEvidenceModes: Object.freeze([
+        SELLER_BASE_PACK_COMPLETION_ROUTES.DISCLOSURE_LINK,
+        SELLER_BASE_PACK_COMPLETION_ROUTES.PHYSICAL_UPLOAD,
+      ]),
       evidenceKey: 'defects_form_signed',
     }),
     Object.freeze({
-      key: 'signed_fica_form',
-      label: 'Signed FICA Form',
-      documentType: 'signed_fica_form',
+      key: SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION,
+      label: 'Signed FICA Declaration',
+      documentType: SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION,
       requiredBeforeStage: 'seller_pack_signed',
-      acceptedEvidenceModes: Object.freeze(['digital_signature', 'manual_upload']),
+      acceptedEvidenceModes: Object.freeze([
+        SELLER_BASE_PACK_COMPLETION_ROUTES.SELLER_ONBOARDING_LINK,
+        SELLER_BASE_PACK_COMPLETION_ROUTES.PHYSICAL_UPLOAD_WITH_CONTEXT,
+      ]),
       evidenceKey: 'fica_pack_signed',
     }),
     Object.freeze({
@@ -189,21 +199,34 @@ const KINGSTONS_PROCESS_DEFINITION = Object.freeze({
       key: 'mandate_signed',
       source: 'document',
       requiredForStage: 'seller_pack_signed',
-      documentTypes: Object.freeze(['seller_mandate', 'signed_mandate', 'mandate_signature', 'manual_mandate_evidence']),
+      documentTypes: Object.freeze(['seller_mandate', SELLER_BASE_PACK_KEYS.SIGNED_MANDATE, 'mandate_signature', 'manual_mandate_evidence']),
       acceptedStatuses: Object.freeze(['signed', 'uploaded', 'approved', 'completed']),
     }),
     Object.freeze({
       key: 'defects_form_signed',
       source: 'document',
       requiredForStage: 'seller_pack_signed',
-      documentTypes: Object.freeze(['signed_defect_form', 'defects_disclosure_form', 'defects_form', 'property_defects_disclosure']),
+      documentTypes: Object.freeze([
+        SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM,
+        'signed_defect_form',
+        'property_condition_disclosure',
+        'defects_disclosure_form',
+        'defects_form',
+        'property_defects_disclosure',
+      ]),
       acceptedStatuses: Object.freeze(['signed', 'uploaded', 'approved', 'completed']),
     }),
     Object.freeze({
       key: 'fica_pack_signed',
       source: 'document',
       requiredForStage: 'seller_pack_signed',
-      documentTypes: Object.freeze(['signed_fica_form', 'seller_fica_pack', 'fica_pack', 'seller_fica']),
+      documentTypes: Object.freeze([
+        SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION,
+        'signed_fica_form',
+        'seller_fica_pack',
+        'fica_pack',
+        'seller_fica',
+      ]),
       acceptedStatuses: Object.freeze(['signed', 'uploaded', 'approved', 'completed']),
     }),
     Object.freeze({

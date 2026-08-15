@@ -151,8 +151,21 @@ function assertPartnerProjectionHidesInternalKeys(projection) {
     documents: [
       { documentType: 'valuation_document', status: 'uploaded', fileUrl: 'valuation.pdf' },
       { key: 'signed_mandate', documentType: 'signed_mandate', source: 'kingstons_seller_pack', status: 'uploaded', file_path: 'mandate.pdf', sellerType: 'natural' },
-      { key: 'signed_defect_form', documentType: 'defects_disclosure_form', source: 'kingstons_seller_pack', status: 'signed', file_path: 'defects.pdf', sellerType: 'natural' },
-      { key: 'signed_fica_form', documentType: 'seller_fica_pack', source: 'kingstons_seller_pack', status: 'uploaded', file_path: 'fica.pdf', sellerType: 'natural' },
+      { key: 'signed_disclosure_form', documentType: 'signed_disclosure_form', source: 'kingstons_seller_pack', status: 'signed', file_path: 'defects.pdf', sellerType: 'natural' },
+      {
+        key: 'signed_fica_declaration',
+        documentType: 'signed_fica_declaration',
+        source: 'kingstons_seller_pack',
+        status: 'uploaded',
+        file_path: 'fica.pdf',
+        sellerType: 'natural',
+        completionRoute: 'physical_upload_with_context',
+        physicalUploadContextRequired: true,
+        ficaDeclarationContext: {
+          sellerType: 'natural',
+          contextCapturedAt: '2026-08-15T08:00:00.000Z',
+        },
+      },
     ],
     mandatePacketStatus: {
       packet: { id: 'packet-kingstons', status: 'completed' },
@@ -163,8 +176,8 @@ function assertPartnerProjectionHidesInternalKeys(projection) {
   assert.equal(bundle.surface.mode, 'shadow')
   assert.equal(bundle.surface.percent, 100)
   assert.equal(bundle.surface.canReplaceJourney, false)
-  assert.equal(bundle.partners.attorney_firm.ready, true)
-  assert.equal(bundle.partners.bond_originator.ready, true)
+  assert.equal(bundle.partners.attorney_firm.ready, false)
+  assert.equal(bundle.partners.bond_originator.ready, false)
   assertPartnerProjectionHidesInternalKeys(bundle.partners.attorney_firm)
   assertPartnerProjectionHidesInternalKeys(bundle.partners.bond_originator)
 }

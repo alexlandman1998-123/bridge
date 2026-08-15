@@ -1,5 +1,14 @@
 import { generateSellerDocumentRequirements } from '../lib/privateListingRequirementEngine.js'
 import { buildPropertyDisclosureDocumentMarkup } from '../lib/propertyDisclosure.js'
+import {
+  getSellerBasePackAliases,
+  isSellerBasePackKey,
+  normalizeSellerBasePackKey,
+  sellerBasePackKeysOverlap,
+  SELLER_BASE_PACK_COMPLETION_ROUTES,
+  SELLER_BASE_PACK_KEYS,
+  SELLER_BASE_PACK_REQUIRED_KEYS,
+} from '../lib/sellerBasePackContract.js'
 import { resolveSellerProcessProfileForOrganisation } from './sellerProcessProfileService.js'
 
 function normalizeText(value) {
@@ -188,7 +197,7 @@ export function getSellerOnboardingFormData(listing = {}) {
 }
 
 function requirementIdentity(requirement = {}) {
-  return normalizeKey(
+  const rawKey =
     requirement?.key ||
       requirement?.requirement_key ||
       requirement?.document_key ||
@@ -196,8 +205,8 @@ function requirementIdentity(requirement = {}) {
       requirement?.canonical_requirement_instance_id ||
       requirement?.label ||
       requirement?.requirement_name ||
-      requirement?.name,
-  )
+      requirement?.name
+  return normalizeSellerBasePackKey(rawKey) || normalizeKey(rawKey)
 }
 
 function requirementIsActive(requirement = {}) {
@@ -246,8 +255,8 @@ const KINGSTONS_BASELINE_SELLER_DOCUMENT_REQUIREMENTS = Object.freeze([
     document_requirement_section: 'property_documents',
   }),
   Object.freeze({
-    key: 'signed_mandate',
-    requirement_key: 'signed_mandate',
+    key: SELLER_BASE_PACK_KEYS.SIGNED_MANDATE,
+    requirement_key: SELLER_BASE_PACK_KEYS.SIGNED_MANDATE,
     name: 'Signed Mandate',
     requirement_name: 'Signed Mandate',
     description: 'The signed seller mandate.',
@@ -262,11 +271,11 @@ const KINGSTONS_BASELINE_SELLER_DOCUMENT_REQUIREMENTS = Object.freeze([
     document_requirement_section: 'legal_documents',
   }),
   Object.freeze({
-    key: 'signed_defect_form',
-    requirement_key: 'signed_defect_form',
-    name: 'Signed Defect Form',
-    requirement_name: 'Signed Defect Form',
-    description: 'The signed seller defects disclosure form.',
+    key: SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM,
+    requirement_key: SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM,
+    name: 'Signed Mandatory Disclosure / Defects Form',
+    requirement_name: 'Signed Mandatory Disclosure / Defects Form',
+    description: 'The completed and signed mandatory property disclosure form.',
     group: 'legal',
     category: 'legal',
     visibility: 'seller_visible',
@@ -278,11 +287,11 @@ const KINGSTONS_BASELINE_SELLER_DOCUMENT_REQUIREMENTS = Object.freeze([
     document_requirement_section: 'legal_documents',
   }),
   Object.freeze({
-    key: 'signed_fica_form',
-    requirement_key: 'signed_fica_form',
-    name: 'Signed FICA Form',
-    requirement_name: 'Signed FICA Form',
-    description: 'The signed FICA form for the confirmed seller type.',
+    key: SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION,
+    requirement_key: SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION,
+    name: 'Signed FICA Declaration',
+    requirement_name: 'Signed FICA Declaration',
+    description: 'The signed FICA declaration pack for the confirmed seller type.',
     group: 'legal',
     category: 'legal',
     visibility: 'seller_visible',
@@ -296,7 +305,10 @@ const KINGSTONS_BASELINE_SELLER_DOCUMENT_REQUIREMENTS = Object.freeze([
 ])
 
 const KINGSTONS_BASELINE_SELLER_DOCUMENT_KEYS = new Set(
-  KINGSTONS_BASELINE_SELLER_DOCUMENT_REQUIREMENTS.map((requirement) => requirementIdentity(requirement)),
+  KINGSTONS_BASELINE_SELLER_DOCUMENT_REQUIREMENTS.flatMap((requirement) => [
+    requirementIdentity(requirement),
+    normalizeSellerBasePackKey(requirementIdentity(requirement)),
+  ]).filter(Boolean),
 )
 
 const KINGSTONS_SELLER_OWNERSHIP_CAPTURE_VERSION = 'kingstons_seller_ownership_capture_phase3_v1'
@@ -406,7 +418,8 @@ function isKingstonsSellerDocumentContext(listing = {}) {
 function filterKingstonsPersistedBaselineRequirements(requirements = []) {
   return (Array.isArray(requirements) ? requirements : []).filter((requirement) => {
     const key = requirementIdentity(requirement)
-    return KINGSTONS_BASELINE_SELLER_DOCUMENT_KEYS.has(key)
+    return KINGSTONS_BASELINE_SELLER_DOCUMENT_KEYS.has(key) ||
+      KINGSTONS_BASELINE_SELLER_DOCUMENT_KEYS.has(normalizeSellerBasePackKey(key))
   })
 }
 
@@ -1562,16 +1575,18 @@ function normalizeDocumentMatchKey(value = '') {
 }
 
 const SELLER_DOCUMENT_MATCH_ALIASES = {
-  signed_mandate: ['mandate', 'mandate_signature', 'signed_mandate'],
+  signed_mandate: getSellerBasePackAliases(SELLER_BASE_PACK_KEYS.SIGNED_MANDATE),
+  signed_disclosure_form: getSellerBasePackAliases(SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM),
+  signed_fica_declaration: getSellerBasePackAliases(SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION),
   id_document: ['id_document', 'identity', 'identity_document', 'identity_documents', 'passport', 'seller_id'],
   proof_of_address: ['proof_of_address', 'residential_address', 'residence', 'address'],
   title_deed_reference: ['title_deed_reference', 'title_deed_copy', 'title_deed', 'deed'],
   title_deed_copy: ['title_deed_reference', 'title_deed_copy', 'title_deed', 'deed'],
   rates_account: ['rates_account', 'rates'],
   valuation_document: ['valuation_document', 'formal_valuation', 'formal_valuation_document', 'valuation'],
-  signed_defect_form: ['signed_defect_form', 'defects_disclosure', 'defects_disclosure_form', 'defect_form', 'property_condition_disclosure', 'condition_disclosure', 'disclosure', 'defects'],
-  signed_fica_form: ['signed_fica_form', 'seller_fica_pack', 'fica_form', 'fica_pack', 'fica'],
-  property_condition_disclosure: ['property_condition_disclosure', 'condition_disclosure', 'disclosure', 'defects'],
+  signed_defect_form: getSellerBasePackAliases(SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM),
+  signed_fica_form: getSellerBasePackAliases(SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION),
+  property_condition_disclosure: getSellerBasePackAliases(SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM),
   gas_compliance_certificate: ['gas_compliance_certificate', 'gas_compliance', 'gas_certificate', 'gas_coc', 'gas'],
   solar_compliance_documents: ['solar_compliance_documents', 'solar_compliance', 'solar'],
 }
@@ -1590,6 +1605,7 @@ const PROPERTY_COMPLIANCE_DOCUMENT_KEYS = new Set([
 ])
 
 const SALES_DOCUMENT_KEYS = new Set([
+  ...SELLER_BASE_PACK_REQUIRED_KEYS,
   'property_condition_disclosure',
   'signed_defect_form',
   'signed_fica_form',
@@ -1599,18 +1615,30 @@ const SALES_DOCUMENT_KEYS = new Set([
 function getSellerDocumentMatchAliases(key = '') {
   const normalized = normalizeDocumentMatchKey(key)
   if (!normalized) return []
+  const basePackCanonicalKey = normalizeSellerBasePackKey(normalized)
+  if (basePackCanonicalKey) return getSellerBasePackAliases(basePackCanonicalKey)
   return SELLER_DOCUMENT_MATCH_ALIASES[normalized] || [normalized]
 }
 
+function normalizedDocumentKeyContainsAlias(value = '', alias = '') {
+  const normalizedValue = normalizeDocumentMatchKey(value)
+  const normalizedAlias = normalizeDocumentMatchKey(alias)
+  if (!normalizedValue || !normalizedAlias) return false
+  if (normalizedValue === normalizedAlias) return true
+  return normalizedValue.startsWith(`${normalizedAlias}_`) ||
+    normalizedValue.endsWith(`_${normalizedAlias}`) ||
+    normalizedValue.includes(`_${normalizedAlias}_`)
+}
+
 function sellerDocumentKeysOverlap(left = '', right = '') {
+  if (sellerBasePackKeysOverlap(left, right)) return true
   const leftAliases = getSellerDocumentMatchAliases(left)
   const rightAliases = getSellerDocumentMatchAliases(right)
   if (!leftAliases.length || !rightAliases.length) return false
   return leftAliases.some((leftAlias) =>
     rightAliases.some((rightAlias) =>
-      leftAlias === rightAlias ||
-      leftAlias.includes(rightAlias) ||
-      rightAlias.includes(leftAlias),
+      normalizedDocumentKeyContainsAlias(leftAlias, rightAlias) ||
+      normalizedDocumentKeyContainsAlias(rightAlias, leftAlias),
     ),
   )
 }
@@ -1647,7 +1675,8 @@ export function documentMatchesSellerRequirement(document = {}, requirement = {}
 
   if (isSignedMandateRequirement(requirement) && isSignedMandateDocument(document)) return true
 
-  const requirementKey = normalizeDocumentMatchKey(requirement?.key || requirement?.requirement_key)
+  const requirementKeyRaw = requirement?.key || requirement?.requirement_key
+  const requirementKey = normalizeSellerBasePackKey(requirementKeyRaw) || normalizeDocumentMatchKey(requirementKeyRaw)
   const documentRequirementKey = normalizeDocumentMatchKey(document?.requirementKey || document?.requirement_key)
   const documentType = normalizeDocumentMatchKey(document?.document_type || document?.documentType)
   const documentCategory = normalizeDocumentMatchKey(document?.category || document?.document_category)
@@ -1655,7 +1684,9 @@ export function documentMatchesSellerRequirement(document = {}, requirement = {}
   return Boolean(
     requirementKey &&
       [documentRequirementKey, documentType, documentCategory, documentName].some((candidate) =>
-        candidate === requirementKey || sellerDocumentKeysOverlap(candidate, requirementKey),
+        (isSellerBasePackKey(requirementKey) && normalizeSellerBasePackKey(candidate) === requirementKey) ||
+          candidate === requirementKey ||
+          sellerDocumentKeysOverlap(candidate, requirementKey),
       ),
   )
 }
@@ -1951,6 +1982,7 @@ export const SELLER_DOCUMENT_SOURCE_OF_TRUTH = Object.freeze({
   requirementsTable: 'private_listing_document_requirements',
   documentsTable: 'private_listing_documents',
   signedMandateSource: 'document_packets.final_signed_artifact',
+  sellerOnboardingFicaDeclarationSource: 'seller_onboarding.fica_declaration',
   owner: 'listing',
 })
 
@@ -2115,6 +2147,94 @@ function buildSellerPropertyDisclosureDocumentFromFormData(formData = {}, listin
   }
 }
 
+function isSellerOnboardingCompleted(listing = {}, formData = {}) {
+  const onboarding = isPlainObject(listing?.sellerOnboarding)
+    ? listing.sellerOnboarding
+    : isPlainObject(listing?.seller_onboarding)
+      ? listing.seller_onboarding
+      : {}
+  const status = normalizeKey(
+    onboarding?.status ||
+      listing?.sellerOnboardingStatus ||
+      listing?.seller_onboarding_status ||
+      formData?.sellerOnboardingStatus ||
+      formData?.seller_onboarding_status,
+  )
+  return ['completed', 'complete', 'submitted', 'seller_onboarding_completed', 'onboarding_completed'].includes(status) ||
+    Boolean(
+      firstPresent(
+        onboarding?.submittedAt,
+        onboarding?.submitted_at,
+        onboarding?.completedAt,
+        onboarding?.completed_at,
+        formData?.submittedAt,
+        formData?.submitted_at,
+        formData?.completedAt,
+        formData?.completed_at,
+      ),
+    )
+}
+
+function buildSellerFicaDeclarationDocumentFromOnboarding(formData = {}, listing = {}) {
+  if (!isSellerOnboardingCompleted(listing, formData)) return null
+
+  const onboarding = isPlainObject(listing?.sellerOnboarding)
+    ? listing.sellerOnboarding
+    : isPlainObject(listing?.seller_onboarding)
+      ? listing.seller_onboarding
+      : {}
+  const completedAt = normalizeText(firstPresent(
+    onboarding?.completedAt,
+    onboarding?.completed_at,
+    onboarding?.submittedAt,
+    onboarding?.submitted_at,
+    formData?.completedAt,
+    formData?.completed_at,
+    formData?.submittedAt,
+    formData?.submitted_at,
+  ))
+  const sellerType = normalizeKey(
+    formData?.sellerType ||
+      formData?.seller_type ||
+      formData?.ownerEntityType ||
+      formData?.owner_entity_type ||
+      formData?.ownershipType ||
+      formData?.ownership_type ||
+      listing?.sellerType ||
+      listing?.seller_type,
+  )
+
+  return {
+    id: `seller-fica-declaration-${normalizeText(listing?.id || listing?.private_listing_id || onboarding?.token || 'onboarding')}`,
+    requirementKey: SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION,
+    requirement_key: SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION,
+    document_type: SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION,
+    documentType: SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION,
+    category: 'fica_declaration',
+    document_category: 'fica_declaration',
+    document_name: 'Signed FICA Declaration',
+    name: 'Signed FICA Declaration',
+    status: 'completed',
+    visibility: 'seller_visible',
+    source: 'seller_onboarding.fica_declaration',
+    completionRoute: SELLER_BASE_PACK_COMPLETION_ROUTES.SELLER_ONBOARDING_LINK,
+    completion_route: SELLER_BASE_PACK_COMPLETION_ROUTES.SELLER_ONBOARDING_LINK,
+    supportingFicaDocumentsDynamic: true,
+    supporting_fica_documents_dynamic: true,
+    sellerType,
+    seller_type: sellerType,
+    created_at: completedAt || null,
+    uploadedAt: completedAt || null,
+    uploaded_at: completedAt || null,
+    metadata: {
+      source: 'seller_onboarding',
+      completionRoute: SELLER_BASE_PACK_COMPLETION_ROUTES.SELLER_ONBOARDING_LINK,
+      supportingFicaDocumentsDynamic: true,
+      sellerType,
+    },
+  }
+}
+
 function getDocumentIdentity(document = {}, fallback = '') {
   return normalizeText(
     document?.id ||
@@ -2160,6 +2280,13 @@ function getSellerDocumentSourceType(row = {}) {
     return {
       requirement: hasPersistedRequirement ? SELLER_DOCUMENT_SOURCE_OF_TRUTH.requirementsTable : 'generated_seller_requirement',
       document: SELLER_DOCUMENT_SOURCE_OF_TRUTH.signedMandateSource,
+    }
+  }
+
+  if (documentSource === SELLER_DOCUMENT_SOURCE_OF_TRUTH.sellerOnboardingFicaDeclarationSource) {
+    return {
+      requirement: hasPersistedRequirement ? SELLER_DOCUMENT_SOURCE_OF_TRUTH.requirementsTable : 'generated_seller_requirement',
+      document: SELLER_DOCUMENT_SOURCE_OF_TRUTH.sellerOnboardingFicaDeclarationSource,
     }
   }
 
@@ -2239,6 +2366,10 @@ function buildSellerDocumentContractRow(row = {}, index = 0, listing = {}) {
           uploadedAt: row?.uploadedAt || normalizeDateValue(document?.uploadedAt, document?.uploaded_at, document?.createdAt, document?.created_at),
           uploadedBy: row?.uploadedBy || normalizeUploadedBy(document),
           source: source.document,
+          completionRoute: normalizeText(document?.completionRoute || document?.completion_route),
+          completion_route: normalizeText(document?.completion_route || document?.completionRoute),
+          supportingFicaDocumentsDynamic: document?.supportingFicaDocumentsDynamic === true || document?.supporting_fica_documents_dynamic === true,
+          supporting_fica_documents_dynamic: document?.supporting_fica_documents_dynamic === true || document?.supportingFicaDocumentsDynamic === true,
         }
       : null,
     original: row?.original || { requirement: null, document: null },
@@ -2302,11 +2433,13 @@ export function buildSellerDocumentSourceOfTruth({
     mandatePacket || listing?.mandatePacket || listing?.mandate_packet || null,
   )
   const propertyDisclosureDocument = buildSellerPropertyDisclosureDocumentFromFormData(resolvedFormData, listing)
+  const sellerFicaDeclarationDocument = buildSellerFicaDeclarationDocumentFromOnboarding(resolvedFormData, listing)
   const mergedDocuments = dedupeSellerDocuments([
     ...baseDocuments,
     ...kingstonsSellerPackDocuments,
     ...(signedMandateDocument ? [signedMandateDocument] : []),
     ...(propertyDisclosureDocument ? [propertyDisclosureDocument] : []),
+    ...(sellerFicaDeclarationDocument ? [sellerFicaDeclarationDocument] : []),
   ])
   const sourceListing = {
     ...listing,

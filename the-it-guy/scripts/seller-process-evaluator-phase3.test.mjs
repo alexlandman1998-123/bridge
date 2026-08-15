@@ -82,7 +82,7 @@ function assertLiveSourceDoesNotImportEvaluator(source, label) {
   assert.equal(evaluation.profile, KINGSTONS_SELLER_PROCESS_PROFILE)
   assert.equal(evaluation.runtimeEnabled, false)
   assert.equal(evaluation.canApplyToRuntime, false)
-  assert.equal(evaluation.currentStage.key, 'seller_pack_signed')
+  assert.equal(evaluation.currentStage.key, 'valuation_presented')
   assert.deepEqual(evaluation.completedStageKeys, [
     'first_contact',
     'valuation_appointment_scheduled',
@@ -190,8 +190,21 @@ function assertLiveSourceDoesNotImportEvaluator(source, label) {
     documents: [
       { documentType: 'valuation_document', status: 'uploaded', fileUrl: 'https://example.test/valuation.pdf' },
       { key: 'signed_mandate', documentType: 'signed_mandate', source: 'kingstons_seller_pack', status: 'uploaded', file_path: 'seller/mandate.pdf', sellerType: 'natural' },
-      { key: 'signed_defect_form', documentType: 'defects_disclosure_form', source: 'kingstons_seller_pack', status: 'signed', file_path: 'seller/defects.pdf', sellerType: 'natural' },
-      { key: 'signed_fica_form', documentType: 'seller_fica_pack', source: 'kingstons_seller_pack', status: 'uploaded', file_path: 'seller/fica.pdf', sellerType: 'natural' },
+      { key: 'signed_disclosure_form', documentType: 'signed_disclosure_form', source: 'kingstons_seller_pack', status: 'signed', file_path: 'seller/defects.pdf', sellerType: 'natural' },
+      {
+        key: 'signed_fica_declaration',
+        documentType: 'signed_fica_declaration',
+        source: 'kingstons_seller_pack',
+        status: 'uploaded',
+        file_path: 'seller/fica.pdf',
+        sellerType: 'natural',
+        completionRoute: 'physical_upload_with_context',
+        physicalUploadContextRequired: true,
+        ficaDeclarationContext: {
+          sellerType: 'natural',
+          contextCapturedAt: '2026-08-15T08:00:00.000Z',
+        },
+      },
     ],
     mandatePacketStatus: {
       packet: { id: 'packet-kingstons', status: 'completed' },
@@ -210,8 +223,8 @@ function assertLiveSourceDoesNotImportEvaluator(source, label) {
     'valuation_appointment_scheduled',
     'formal_valuation_completed',
     'valuation_presentation_scheduled',
+    'valuation_presented',
     'seller_pack_signed',
-    'listing_terms_confirmed',
     'listing_ready',
   ])
   assert.equal(evaluation.blockers.length, 0)
@@ -239,8 +252,21 @@ function assertLiveSourceDoesNotImportEvaluator(source, label) {
     documents: [
       { type: 'valuation_document', status: 'completed' },
       { key: 'signed_mandate', type: 'manual_mandate_evidence', source: 'kingstons_seller_pack', status: 'uploaded', storage_path: 'manual/mandate.pdf', sellerType: 'natural' },
-      { key: 'signed_defect_form', type: 'defects_form', source: 'kingstons_seller_pack', status: 'uploaded', storage_path: 'manual/defects.pdf', sellerType: 'natural' },
-      { key: 'signed_fica_form', type: 'fica_pack', source: 'kingstons_seller_pack', status: 'uploaded', storage_path: 'manual/fica.pdf', sellerType: 'natural' },
+      { key: 'signed_disclosure_form', type: 'signed_disclosure_form', source: 'kingstons_seller_pack', status: 'uploaded', storage_path: 'manual/defects.pdf', sellerType: 'natural' },
+      {
+        key: 'signed_fica_declaration',
+        type: 'signed_fica_declaration',
+        source: 'kingstons_seller_pack',
+        status: 'uploaded',
+        storage_path: 'manual/fica.pdf',
+        sellerType: 'natural',
+        completionRoute: 'physical_upload_with_context',
+        physicalUploadContextRequired: true,
+        ficaDeclarationContext: {
+          sellerType: 'natural',
+          contextCapturedAt: '2026-08-15T08:00:00.000Z',
+        },
+      },
     ],
     listing: {
       listingId: 'listing-manual-evidence',

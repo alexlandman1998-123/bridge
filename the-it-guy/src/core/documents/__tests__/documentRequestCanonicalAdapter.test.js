@@ -23,6 +23,10 @@ test('adapter maps legacy buyer, seller and attorney keys to canonical request k
   assert.equal(resolveCanonicalDocumentRequestKey('company_resolution', 'buyer'), 'buyer_company_resolution')
   assert.equal(resolveCanonicalDocumentRequestKey('company_resolution_to_sell', 'seller'), 'seller_company_resolution')
   assert.equal(resolveCanonicalDocumentRequestKey('seller_beneficial_ownership', 'attorney'), 'seller_company_beneficial_ownership')
+  assert.equal(resolveCanonicalDocumentRequestKey('signed_mandate', 'seller'), 'signed_mandate')
+  assert.equal(resolveCanonicalDocumentRequestKey('signed_disclosure_form', 'seller'), 'property_condition_disclosure')
+  assert.equal(resolveCanonicalDocumentRequestKey('signed_fica_declaration', 'seller'), 'seller_fica_pack')
+  assert.notEqual(resolveCanonicalDocumentRequestKey('signed_mandate', 'seller'), 'seller_fica_pack')
   assert.equal(getCanonicalDocumentRequestMetadata('unknown_document', { context: 'buyer' }).canonicalDocumentRequestKnown, false)
 })
 

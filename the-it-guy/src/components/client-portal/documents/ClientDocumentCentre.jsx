@@ -2,6 +2,11 @@
 import { useState } from 'react'
 import { normalizeDocumentStatus } from '../../../lib/clientPortalDocumentStatus'
 import { buildSellerDocumentExperienceModel } from '../../../lib/sellerDocumentExperienceModel'
+import {
+  SELLER_BASE_PACK_COMPLETION_ROUTES,
+  getSellerBasePackAliases,
+  SELLER_BASE_PACK_KEYS,
+} from '../../../lib/sellerBasePackContract'
 import { getEducationalContentForRequirement } from '../../../content/clientPortalEducation'
 import SellerDocumentWorkspace from './SellerDocumentWorkspace'
 
@@ -55,21 +60,31 @@ function normalizeDocumentMatchKey(value = '') {
     .replace(/^_+|_+$/g, '')
 }
 
+function normalizedDocumentKeyContainsAlias(value = '', alias = '') {
+  const normalizedValue = normalizeDocumentMatchKey(value)
+  const normalizedAlias = normalizeDocumentMatchKey(alias)
+  if (!normalizedValue || !normalizedAlias) return false
+  if (normalizedValue === normalizedAlias) return true
+  return normalizedValue.startsWith(`${normalizedAlias}_`) ||
+    normalizedValue.endsWith(`_${normalizedAlias}`) ||
+    normalizedValue.includes(`_${normalizedAlias}_`)
+}
+
 const KINGSTONS_SELLER_PORTAL_PACK_REQUIREMENTS = Object.freeze([
   {
-    key: 'signed_mandate',
+    key: SELLER_BASE_PACK_KEYS.SIGNED_MANDATE,
     title: 'Signed Mandate',
-    aliases: ['signed_mandate', 'mandate_signature'],
+    aliases: getSellerBasePackAliases(SELLER_BASE_PACK_KEYS.SIGNED_MANDATE),
   },
   {
-    key: 'property_condition_disclosure',
-    title: 'Signed Defect Form',
-    aliases: ['property_condition_disclosure', 'signed_defect_form', 'defect_form', 'defects'],
+    key: SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM,
+    title: 'Signed Mandatory Disclosure / Defects Form',
+    aliases: getSellerBasePackAliases(SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM),
   },
   {
-    key: 'signed_fica_form',
-    title: 'Signed FICA Form',
-    aliases: ['signed_fica_form', 'fica_form', 'fica'],
+    key: SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION,
+    title: 'Signed FICA Declaration',
+    aliases: getSellerBasePackAliases(SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION),
   },
 ])
 
@@ -98,7 +113,7 @@ function getKingstonsSellerPortalPackRequirement(item = {}) {
   return KINGSTONS_SELLER_PORTAL_PACK_REQUIREMENTS.find((requirement) => {
     const aliases = [requirement.key, ...requirement.aliases].map(normalizeDocumentMatchKey)
     return aliases.some((alias) =>
-      signals.some((signal) => signal === alias || signal.includes(alias)),
+      signals.some((signal) => normalizedDocumentKeyContainsAlias(signal, alias)),
     )
   }) || null
 }
@@ -107,8 +122,64 @@ function isKingstonsSellerPortalPackRequirement(item = {}) {
   return Boolean(getKingstonsSellerPortalPackRequirement(item))
 }
 
+function getSellerPackCompletionRouteLabel(route = '') {
+  if (route === SELLER_BASE_PACK_COMPLETION_ROUTES.SELLER_ONBOARDING_LINK) return 'Seller onboarding'
+  if (route === SELLER_BASE_PACK_COMPLETION_ROUTES.DISCLOSURE_LINK) return 'Disclosure link'
+  if (route === SELLER_BASE_PACK_COMPLETION_ROUTES.PHYSICAL_UPLOAD_WITH_CONTEXT) return 'Physical upload with context'
+  if (route === SELLER_BASE_PACK_COMPLETION_ROUTES.PHYSICAL_UPLOAD) return 'Physical upload'
+  return ''
+}
+
+function resolveSellerPackUploadContext(document = {}) {
+  const metadata = document?.metadata && typeof document.metadata === 'object' ? document.metadata : {}
+  return (
+    document?.ficaDeclarationContext ||
+    document?.fica_declaration_context ||
+    document?.uploadContext ||
+    document?.upload_context ||
+    metadata.ficaDeclarationContext ||
+    metadata.fica_declaration_context ||
+    metadata.uploadContext ||
+    metadata.upload_context ||
+    {}
+  )
+}
+
+function sellerPackFicaContextCaptured(document = {}) {
+  const context = resolveSellerPackUploadContext(document)
+  return Boolean(
+    context &&
+      typeof context === 'object' &&
+      (
+        context.sellerType ||
+        context.seller_type ||
+        context.legalPathType ||
+        context.legal_path_type ||
+        context.contextCapturedAt ||
+        context.context_captured_at ||
+        context.capturedAt ||
+        context.captured_at
+      ),
+  )
+}
+
 function decorateKingstonsSellerPortalPackItem(item = {}) {
   const requirement = getKingstonsSellerPortalPackRequirement(item)
+  const linkedDocument = item?.linkedDocument || {}
+  const completionRoute = linkedDocument?.completionRoute || linkedDocument?.completion_route || ''
+  const completionRouteLabel = getSellerPackCompletionRouteLabel(completionRoute)
+  const completedFromSellerOnboarding = completionRoute === SELLER_BASE_PACK_COMPLETION_ROUTES.SELLER_ONBOARDING_LINK
+  const isFicaDeclaration = requirement?.key === SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION
+  const physicalFicaDeclaration = isFicaDeclaration && [
+    SELLER_BASE_PACK_COMPLETION_ROUTES.PHYSICAL_UPLOAD,
+    SELLER_BASE_PACK_COMPLETION_ROUTES.PHYSICAL_UPLOAD_WITH_CONTEXT,
+  ].includes(completionRoute)
+  const ficaContextCaptured = physicalFicaDeclaration && sellerPackFicaContextCaptured(linkedDocument)
+  const physicalFicaContextMissing = physicalFicaDeclaration && !ficaContextCaptured
+  const supportingFicaDocumentsDynamic = linkedDocument?.supportingFicaDocumentsDynamic === true ||
+    linkedDocument?.supporting_fica_documents_dynamic === true ||
+    linkedDocument?.metadata?.supportingFicaDocumentsDynamic === true ||
+    linkedDocument?.metadata?.supporting_fica_documents_dynamic === true
   return {
     ...item,
     title: requirement?.title || item.title,
@@ -117,10 +188,27 @@ function decorateKingstonsSellerPortalPackItem(item = {}) {
     uploadSpec: null,
     lockedByTeam: true,
     isCoreRequirement: false,
-    message: item?.hasUploadedDocument
+    completionRoute,
+    completionRouteLabel,
+    ficaDeclarationContextStatus: physicalFicaDeclaration
+      ? ficaContextCaptured
+        ? 'captured'
+        : 'missing'
+      : '',
+    supportingFicaDocumentsDynamic,
+    message: physicalFicaContextMissing
+      ? 'Your agent still needs to confirm the seller context for this physical FICA declaration.'
+      : completedFromSellerOnboarding
+      ? 'Your seller onboarding has completed this declaration.'
+      : item?.hasUploadedDocument
       ? 'Your agent has uploaded this signed Seller Pack document.'
       : 'Your agent manages this signed Seller Pack document outside the seller portal.',
-    education: 'This signed form is part of the Kingston Seller Pack and is uploaded by the agency team after the physical signing process.',
+    metaLine: completionRouteLabel || item?.metaLine || item?.meta_line || '',
+    education: physicalFicaContextMissing
+      ? 'This physical FICA declaration needs seller-type context before attorney handoff. Supporting FICA documents remain separate and dynamic.'
+      : completedFromSellerOnboarding
+      ? 'This signed declaration is completed through seller onboarding. Supporting FICA documents may still be requested separately.'
+      : 'This signed form is part of the Kingston Seller Pack and is uploaded by the agency team after the physical signing process.',
   }
 }
 
@@ -609,7 +697,7 @@ function ClientDocumentCentre({
       ? [{
           key: 'seller_pack',
           title: 'Signed Seller Pack',
-          subtitle: 'Signed mandate, defect form, and FICA form managed by your agent.',
+          subtitle: 'Signed mandate, disclosure form, and FICA declaration managed by your agent.',
           items: uniqueById(kingstonsSellerPortalPackItems),
           emptyState: 'Your agent will upload signed Seller Pack documents.',
         }]

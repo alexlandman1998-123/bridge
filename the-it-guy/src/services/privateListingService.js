@@ -25,7 +25,14 @@ import {
   getMissingSellerDocuments as getMissingSellerDocumentsFromEngine,
   syncSellerDocumentRequirements as syncSellerDocumentRequirementsFromEngine,
 } from '../lib/privateListingRequirementEngine'
+import {
+  getSellerBasePackAliases,
+  normalizeSellerBasePackKey,
+  sellerBasePackKeysOverlap,
+  SELLER_BASE_PACK_KEYS,
+} from '../lib/sellerBasePackContract'
 import { createScopedSupabaseClient, DOCUMENTS_BUCKET_CANDIDATES, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import { hasSignedMandateEvidence } from '../core/clientAccess/clientAccessPolicy'
 import { resolveSellerPortalFinalSignedArtifactAccess } from '../core/documents/finalSignedArtifactAccess'
 import {
   appendDocumentPacketEvent,
@@ -101,21 +108,6 @@ let sellerPortalPayloadRpcUnavailable = false
 let sellerPortalCorePayloadRpcUnavailable = false
 const sellerOnboardingProgressQueues = new Map()
 const sellerOnboardingProjectionQueues = new Map()
-const SELLER_PORTAL_INVITE_READY_AFTER_MANDATE_SIGNED_STATUS_KEYS = new Set([
-  'active',
-  'finalised',
-  'finalized',
-  'fully_signed',
-  'live',
-  'mandate_signed',
-  'published',
-  'signed',
-  'signed_uploaded',
-  'sold',
-  'transaction_created',
-  'under_offer',
-  'uploaded_signed',
-])
 const SELLER_PROFILE_CANONICAL_PROTECTED_FORM_DATA_KEYS = new Set([
   'canonical_facts',
   'canonical_seller_facts',
@@ -701,51 +693,12 @@ export async function precreateSellerMandateDraftFromOnboarding({ listing = {}, 
 }
 
 export function isSellerPortalInviteReadyAfterSignedMandate(listing = {}, context = {}) {
-  if (context?.mandateSigned || context?.signed || context?.signedAt || context?.mandateSignedAt) return true
-  const mandate = listing?.mandate && typeof listing.mandate === 'object' ? listing.mandate : {}
-  const mandatePacket = listing?.mandatePacket && typeof listing.mandatePacket === 'object'
-    ? listing.mandatePacket
-    : listing?.mandate_packet && typeof listing.mandate_packet === 'object'
-      ? listing.mandate_packet
-      : {}
-  const version = mandatePacket?.version && typeof mandatePacket.version === 'object' ? mandatePacket.version : {}
-  const statusValues = [
-    listing?.mandateStatus,
-    listing?.mandate_status,
-    listing?.listingStatus,
-    listing?.listing_status,
-    listing?.status,
-    mandate?.status,
-    mandate?.mandateStatus,
-    mandate?.mandate_status,
-    mandatePacket?.status,
-    mandatePacket?.packetStatus,
-    mandatePacket?.packet_status,
-    version?.status,
-  ]
-  if (statusValues.some((value) => SELLER_PORTAL_INVITE_READY_AFTER_MANDATE_SIGNED_STATUS_KEYS.has(normalizeStatusKey(value)))) {
-    return true
-  }
-  return Boolean(
-    listing?.mandateSignedAt ||
-      listing?.mandate_signed_at ||
-      listing?.mandateSignedDate ||
-      listing?.mandate_signed_date ||
-      mandate?.signedAt ||
-      mandate?.signed_at ||
-      mandate?.finalisedAt ||
-      mandate?.finalised_at ||
-      mandate?.finalizedAt ||
-      mandate?.finalized_at ||
-      mandate?.finalSignedFilePath ||
-      mandate?.final_signed_file_path ||
-      mandatePacket?.finalSignedFilePath ||
-      mandatePacket?.final_signed_file_path ||
-      mandatePacket?.finalSignedFileUrl ||
-      mandatePacket?.final_signed_file_url ||
-      version?.final_signed_file_path ||
-      version?.final_signed_file_url,
-  )
+  return hasSignedMandateEvidence({
+    ...listing,
+    ...context,
+    signedMandateUploaded: context?.mandateSigned || context?.signed || false,
+    mandateSignedAt: context?.signedAt || context?.mandateSignedAt || listing?.mandateSignedAt || listing?.mandate_signed_at,
+  })
 }
 
 function isCanonicalOnboardingResolverEnabled(options = {}) {
@@ -1736,7 +1689,7 @@ const PRIVATE_LISTING_REQUIREMENT_SELECT_FIELDS_LEGACY =
 const PRIVATE_LISTING_REQUIREMENT_SELECT_FIELDS_MIN =
   'id, private_listing_id, requirement_key, status, is_required, created_at, updated_at'
 const PRIVATE_LISTING_REQUIREMENT_MUTATION_SELECT_FIELDS =
-  'id, private_listing_id, requirement_key, requirement_name, requirement_description, requirement_group, document_visibility, status, is_required, generated_from, canonical_requirement_instance_id, created_at, updated_at'
+  'id, private_listing_id, requirement_key, requirement_name, requirement_description, requirement_group, document_visibility, status, is_required, generated_from, canonical_requirement_instance_id, requested_from_role, request_stage, request_priority, request_due_date, request_delivery_channels, request_dedupe_key, request_source, requested_at, request_revision, last_request_reason, request_metadata, created_at, updated_at'
 const PRIVATE_LISTING_REQUIREMENT_MUTATION_SELECT_FIELDS_BASE =
   'id, private_listing_id, requirement_key, requirement_name, requirement_description, requirement_group, document_visibility, status, is_required, generated_from, created_at, updated_at'
 const PRIVATE_LISTING_DOCUMENT_SELECT_FIELDS =
@@ -1804,6 +1757,17 @@ const PRIVATE_LISTING_REQUIREMENT_MUTATION_VARIANTS = [
       'is_required',
       'generated_from',
       'canonical_requirement_instance_id',
+      'requested_from_role',
+      'request_stage',
+      'request_priority',
+      'request_due_date',
+      'request_delivery_channels',
+      'request_dedupe_key',
+      'request_source',
+      'requested_at',
+      'request_revision',
+      'last_request_reason',
+      'request_metadata',
     ],
   },
   {
@@ -1841,6 +1805,11 @@ function buildPrivateListingRequirementMutationPayload(row = {}, columns = []) {
   }
 
   const requirementKey = normalizeStatusKey(row?.requirement_key || row?.key || '')
+  const requestDeliveryChannels = Array.isArray(row?.request_delivery_channels)
+    ? row.request_delivery_channels.filter(Boolean)
+    : Array.isArray(row?.requestDeliveryChannels)
+      ? row.requestDeliveryChannels.filter(Boolean)
+      : []
   const payload = {
     id: normalizeUuid(row?.id),
     private_listing_id: normalizeUuid(row?.private_listing_id || row?.privateListingId),
@@ -1857,6 +1826,21 @@ function buildPrivateListingRequirementMutationPayload(row = {}, columns = []) {
     is_required: row?.is_required !== false,
     generated_from: generatedFrom,
     canonical_requirement_instance_id: normalizeUuid(row?.canonical_requirement_instance_id),
+    requested_from_role: normalizeText(row?.requested_from_role || row?.requestedFromRole || ''),
+    request_stage: normalizeText(row?.request_stage || row?.requestStage || ''),
+    request_priority: normalizeText(row?.request_priority || row?.requestPriority || ''),
+    request_due_date: normalizeText(row?.request_due_date || row?.requestDueDate || ''),
+    request_delivery_channels: requestDeliveryChannels,
+    request_dedupe_key: normalizeText(row?.request_dedupe_key || row?.requestDedupeKey || ''),
+    request_source: normalizeText(row?.request_source || row?.requestSource || ''),
+    requested_at: normalizeText(row?.requested_at || row?.requestedAt || ''),
+    request_revision: Number(row?.request_revision || row?.requestRevision || 0),
+    last_request_reason: normalizeText(row?.last_request_reason || row?.lastRequestReason || ''),
+    request_metadata: isPlainObject(row?.request_metadata)
+      ? row.request_metadata
+      : isPlainObject(row?.requestMetadata)
+        ? row.requestMetadata
+        : {},
   }
 
   if (!payload.private_listing_id || !payload.requirement_key || !payload.requirement_name) return null
@@ -2193,25 +2177,30 @@ function isMandateDocumentRow(row = {}) {
 }
 
 const PRIVATE_LISTING_DOCUMENT_MATCH_ALIASES = {
-  signed_mandate: ['mandate', 'mandate_signature', 'signed_mandate'],
-  signed_defect_form: ['signed_defect_form', 'defect_form', 'defects', 'property_condition_disclosure'],
-  signed_fica_form: ['signed_fica_form', 'fica_form', 'fica'],
+  signed_mandate: getSellerBasePackAliases(SELLER_BASE_PACK_KEYS.SIGNED_MANDATE),
+  signed_disclosure_form: getSellerBasePackAliases(SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM),
+  signed_fica_declaration: getSellerBasePackAliases(SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION),
+  signed_defect_form: getSellerBasePackAliases(SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM),
+  signed_fica_form: getSellerBasePackAliases(SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION),
   id_document: ['id_document', 'identity', 'identity_document', 'identity_documents', 'passport', 'seller_id'],
   proof_of_address: ['proof_of_address', 'residential_address', 'residence', 'address'],
   title_deed_reference: ['title_deed_reference', 'title_deed_copy', 'title_deed', 'deed'],
   title_deed_copy: ['title_deed_reference', 'title_deed_copy', 'title_deed', 'deed'],
   rates_account: ['rates_account', 'rates'],
-  property_condition_disclosure: ['property_condition_disclosure', 'condition_disclosure', 'disclosure', 'defects'],
+  property_condition_disclosure: getSellerBasePackAliases(SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM),
   solar_compliance_documents: ['solar_compliance_documents', 'solar_compliance', 'solar'],
 }
 
 function getPrivateListingDocumentMatchAliases(key = '') {
   const normalized = normalizeCompatibilityKey(key)
   if (!normalized) return []
+  const basePackCanonicalKey = normalizeSellerBasePackKey(normalized)
+  if (basePackCanonicalKey) return getSellerBasePackAliases(basePackCanonicalKey)
   return PRIVATE_LISTING_DOCUMENT_MATCH_ALIASES[normalized] || [normalized]
 }
 
 function privateListingDocumentKeysOverlap(left = '', right = '') {
+  if (sellerBasePackKeysOverlap(left, right)) return true
   const leftAliases = getPrivateListingDocumentMatchAliases(left)
   const rightAliases = getPrivateListingDocumentMatchAliases(right)
   if (!leftAliases.length || !rightAliases.length) return false
@@ -6584,6 +6573,32 @@ export async function ensurePrivateListingDocumentRequirements(listingId, requir
         ...(row?.generatedFrom && typeof row.generatedFrom === 'object' ? row.generatedFrom : {}),
         ...(row?.generated_from && typeof row.generated_from === 'object' ? row.generated_from : {}),
       }
+      const portalRequest = isPlainObject(row?.portalRequest)
+        ? row.portalRequest
+        : isPlainObject(row?.portal_request)
+          ? row.portal_request
+          : isPlainObject(generatedFrom.portalRequest)
+            ? generatedFrom.portalRequest
+            : isPlainObject(generatedFrom.portal_request)
+              ? generatedFrom.portal_request
+              : {}
+      const requestDeliveryChannels = Array.isArray(row?.requestDeliveryChannels)
+        ? row.requestDeliveryChannels.filter(Boolean)
+        : Array.isArray(row?.request_delivery_channels)
+          ? row.request_delivery_channels.filter(Boolean)
+          : Array.isArray(portalRequest.requestDeliveryChannels)
+            ? portalRequest.requestDeliveryChannels.filter(Boolean)
+            : Array.isArray(portalRequest.request_delivery_channels)
+              ? portalRequest.request_delivery_channels.filter(Boolean)
+              : Array.isArray(existing?.request_delivery_channels)
+                ? existing.request_delivery_channels.filter(Boolean)
+                : []
+      const requestMetadata = {
+        ...(isPlainObject(existing?.request_metadata) ? existing.request_metadata : {}),
+        ...(isPlainObject(row?.requestMetadata) ? row.requestMetadata : {}),
+        ...(isPlainObject(row?.request_metadata) ? row.request_metadata : {}),
+        ...(Object.keys(portalRequest).length ? { portalRequest } : {}),
+      }
       return {
         ...(existing?.id ? { id: existing.id } : {}),
         private_listing_id: normalizedListingId,
@@ -6594,9 +6609,21 @@ export async function ensurePrivateListingDocumentRequirements(listingId, requir
         document_visibility: normalizeText(row?.documentVisibility || row?.document_visibility || row?.visibility || 'seller_visible'),
         status: existing?.status || normalizeText(row?.status || 'required'),
         is_required: existing ? existing.is_required !== false : row?.isRequired !== false && row?.is_required !== false,
+        requested_from_role: normalizeText(row?.requestedFromRole || row?.requested_from_role || portalRequest.requestedFromRole || portalRequest.requested_from_role || existing?.requested_from_role),
+        request_stage: normalizeText(row?.requestStage || row?.request_stage || portalRequest.requestStage || portalRequest.request_stage || existing?.request_stage),
+        request_priority: normalizeText(row?.requestPriority || row?.request_priority || portalRequest.requestPriority || portalRequest.request_priority || existing?.request_priority),
+        request_due_date: normalizeText(row?.requestDueDate || row?.request_due_date || portalRequest.requestDueDate || portalRequest.request_due_date || existing?.request_due_date),
+        request_delivery_channels: requestDeliveryChannels,
+        request_dedupe_key: normalizeText(row?.requestDedupeKey || row?.request_dedupe_key || portalRequest.requestDedupeKey || portalRequest.request_dedupe_key || existing?.request_dedupe_key),
+        request_source: normalizeText(row?.requestSource || row?.request_source || portalRequest.requestSource || portalRequest.request_source || existing?.request_source),
+        requested_at: normalizeText(row?.requestedAt || row?.requested_at || existing?.requested_at),
+        request_revision: Number(row?.requestRevision || row?.request_revision || existing?.request_revision || 0),
+        last_request_reason: normalizeText(row?.lastRequestReason || row?.last_request_reason || existing?.last_request_reason),
+        request_metadata: requestMetadata,
         generated_from: {
           source: generatedFrom.source || 'manual_seller_pack',
           ...generatedFrom,
+          ...(Object.keys(portalRequest).length ? { portalRequest } : {}),
           reason,
         },
       }

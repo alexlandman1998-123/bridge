@@ -63,9 +63,10 @@ assert.equal(source.context.sellerLeadId, 'seller-lead-1')
 
 assert.deepEqual(keys, [
   'signed_mandate',
+  'signed_disclosure_form',
+  'signed_fica_declaration',
   'title_deed_copy',
   'rates_account',
-  'property_condition_disclosure',
   'id_document',
   'proof_of_address',
   'gas_compliance_certificate',
@@ -104,7 +105,7 @@ assert.equal(strippedFinalArtifactMandate.packetId, 'packet-1')
 assert.equal(strippedFinalArtifactMandate.packetVersionId, 'version-1')
 assert.equal(strippedFinalArtifactMandate.upload.filePath, '')
 
-const propertyDisclosure = source.rows.find((row) => row.key === 'property_condition_disclosure')
+const propertyDisclosure = source.rows.find((row) => row.key === 'signed_disclosure_form')
 assert.equal(propertyDisclosure.complete, true)
 assert.equal(propertyDisclosure.category, 'sales')
 assert.equal(propertyDisclosure.status, 'completed')
@@ -115,6 +116,18 @@ assert.match(propertyDisclosure.upload.generatedHtml, /Produktive Real Estate/)
 assert.match(propertyDisclosure.upload.generatedHtml, /produktive-logo\.png/)
 assert.doesNotMatch(propertyDisclosure.upload.generatedHtml, />Agency Workspace</)
 assert.equal(propertyDisclosure.upload.generatedFileName, 'property-condition-disclosure.pdf')
+
+const ficaDeclaration = source.rows.find((row) => row.key === 'signed_fica_declaration')
+assert.equal(ficaDeclaration.complete, true)
+assert.equal(ficaDeclaration.category, 'sales')
+assert.equal(ficaDeclaration.status, 'completed')
+assert.equal(ficaDeclaration.statusBucket, 'approved')
+assert.equal(ficaDeclaration.hasUpload, true)
+assert.equal(ficaDeclaration.source.requirement, 'generated_seller_requirement')
+assert.equal(ficaDeclaration.source.document, SELLER_DOCUMENT_SOURCE_OF_TRUTH.sellerOnboardingFicaDeclarationSource)
+assert.equal(ficaDeclaration.upload.source, SELLER_DOCUMENT_SOURCE_OF_TRUTH.sellerOnboardingFicaDeclarationSource)
+assert.equal(ficaDeclaration.upload.completionRoute, 'seller_onboarding_link_completed')
+assert.equal(ficaDeclaration.upload.supportingFicaDocumentsDynamic, true)
 
 const titleDeed = source.rows.find((row) => row.key === 'title_deed_copy')
 assert.equal(titleDeed.category, 'property')
@@ -130,18 +143,18 @@ assert.equal(solarDocuments.category, 'property')
 assert.equal(solarDocuments.blocking, true)
 
 assert.deepEqual(source.summary, {
-  total: 8,
-  totalRequired: 8,
-  complete: 2,
-  completeRequired: 2,
+  total: 9,
+  totalRequired: 9,
+  complete: 3,
+  completeRequired: 3,
   blocking: 6,
-  uploaded: 2,
+  uploaded: 3,
   outstanding: 6,
   underReview: 0,
-  approved: 2,
+  approved: 3,
   rejected: 0,
   byCategory: {
-    sales: 2,
+    sales: 3,
     property: 4,
     fica: 2,
   },
@@ -152,9 +165,9 @@ assert.match(listingDetailSource, /buildSellerDocumentSourceOfTruth/)
 assert.match(listingDetailSource, /mapSellerDocumentSourceRowForListing/)
 assert.doesNotMatch(listingDetailSource, /const suggested = \[/)
 
-const agentLeadsSource = readFileSync(new URL('../src/pages/AgentLeadsPage.jsx', import.meta.url), 'utf8')
-assert.match(agentLeadsSource, /buildSellerDocumentSourceOfTruth/)
-assert.match(agentLeadsSource, /buildSellerDocumentRowsFromSource/)
-assert.match(agentLeadsSource, /mandatePacketStatus=\{mandatePacketStatus\}/)
+const agencyPipelineSource = readFileSync(new URL('../src/pages/agency/AgencyPipelinePage.jsx', import.meta.url), 'utf8')
+assert.match(agencyPipelineSource, /buildSellerDocumentSourceOfTruth/)
+assert.match(agencyPipelineSource, /buildSellerLeadDocumentRowsFromSource/)
+assert.match(agencyPipelineSource, /mandatePacketStatus/)
 
 console.log('seller document source-of-truth tests passed')

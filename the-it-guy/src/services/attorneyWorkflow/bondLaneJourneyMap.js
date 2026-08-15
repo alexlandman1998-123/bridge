@@ -26,6 +26,8 @@ export const BOND_LANE_PHASE4_GUARANTEE_COORDINATION_VERSION = 'bond-lane-phase4
 export const BOND_LANE_PHASE5_LODGEMENT_COORDINATION_VERSION = 'bond-lane-phase5-lodgement-coordination-v1'
 export const BOND_LANE_PHASE6_ORIGINATOR_EVIDENCE_VERSION = 'bond-lane-phase6-originator-evidence-links-v1'
 export const BOND_LANE_PHASE7_SCENARIO_COVERAGE_VERSION = 'bond-lane-phase7-scenario-coverage-v1'
+export const BOND_LANE_PHASE8_ROLLOUT_READINESS_VERSION = 'bond-lane-phase8-rollout-readiness-v1'
+export const BOND_LANE_PHASE9_UAT_RELEASE_GATE_VERSION = 'bond-lane-phase9-uat-release-gate-v1'
 
 export const BOND_ORIGINATOR_JOURNEY_LANES = Object.freeze([
   Object.freeze({
@@ -513,6 +515,72 @@ export const BOND_PHASE7_SCENARIO_MATRIX = Object.freeze([
       attention: true,
       buyerRequirementKeys: ['buyer_company_registration', 'buyer_company_resolution', 'buyer_director_ids'],
     },
+  }),
+])
+
+export const BOND_PHASE9_UAT_CHECKLIST = Object.freeze([
+  Object.freeze({
+    id: 'bond_uat_01',
+    label: 'Confirm finance route lane activation',
+    expectedOutcome: 'Cash matters suppress bond originator and bond attorney work; bond, hybrid, and developer matters activate both lanes.',
+    proofKey: 'finance_route_lane_activation',
+    required: true,
+  }),
+  Object.freeze({
+    id: 'bond_uat_02',
+    label: 'Open bond originator evidence from the attorney workspace',
+    expectedOutcome: 'The attorney can inspect originator evidence through read-only panels and deep links without mutating the bond file.',
+    proofKey: 'read_only_originator_evidence',
+    required: true,
+  }),
+  Object.freeze({
+    id: 'bond_uat_03',
+    label: 'Open and action the bank instruction stages',
+    expectedOutcome: 'Instruction received, bank reference, and approval letter actions land on command-backed surfaces.',
+    proofKey: 'bank_instruction_commands',
+    required: true,
+  }),
+  Object.freeze({
+    id: 'bond_uat_04',
+    label: 'Resolve bank conditions out of sequence',
+    expectedOutcome: 'Bank condition work can be marked outstanding or resolved without forcing unrelated prior stages complete.',
+    proofKey: 'bank_conditions_non_linear_work',
+    required: true,
+  }),
+  Object.freeze({
+    id: 'bond_uat_05',
+    label: 'Prepare, sign, and submit bond documents',
+    expectedOutcome: 'Document preparation, buyer signing, signed document receipt, bank submission, and approval-to-lodge stages are all actionable.',
+    proofKey: 'bond_document_commands',
+    required: true,
+  }),
+  Object.freeze({
+    id: 'bond_uat_06',
+    label: 'Coordinate guarantees with transfer',
+    expectedOutcome: 'Guarantees can be issued and wording acceptance can be requested or confirmed from the correct lane.',
+    proofKey: 'guarantee_coordination',
+    required: true,
+  }),
+  Object.freeze({
+    id: 'bond_uat_07',
+    label: 'Coordinate simultaneous lodgement readiness',
+    expectedOutcome: 'Bond and transfer lodgement readiness can be requested from either lane before marking simultaneous lodgement complete.',
+    proofKey: 'lodgement_coordination',
+    required: true,
+  }),
+  Object.freeze({
+    id: 'bond_uat_08',
+    label: 'Register and close out the bond file',
+    expectedOutcome: 'Bond lodged, registered, and close-out stages remain action-backed after coordination is complete.',
+    proofKey: 'registration_close_out_commands',
+    required: true,
+  }),
+  Object.freeze({
+    id: 'bond_uat_09',
+    label: 'Run legal structure and cancellation scenarios',
+    expectedOutcome: 'Married, multiple-buyer, company, trust, seller-bond, and unknown-finance scenarios produce the expected evidence and lane-routing outcomes.',
+    proofKey: 'scenario_matrix_regression',
+    required: true,
   }),
 ])
 
@@ -1057,6 +1125,393 @@ export function buildBondLanePhase7ScenarioCoveragePlan() {
       'Unknown finance remains an attention state until finance is confirmed.',
       'Concurrent work remains allowed across scenario variants.',
     ],
+    structuralBlockers,
+  }
+}
+
+export function buildBondLanePhase8RolloutReadinessReport() {
+  const journeyMap = buildBondLaneJourneyMap()
+  const phase2 = buildBondLanePhase2ActionAudit()
+  const phase3 = buildBondLanePhase3CommandPlan()
+  const phase4 = buildBondLanePhase4GuaranteeCoordinationPlan()
+  const phase5 = buildBondLanePhase5LodgementCoordinationPlan()
+  const phase6 = buildBondLanePhase6OriginatorEvidencePlan()
+  const phase7 = buildBondLanePhase7ScenarioCoveragePlan()
+
+  const originatorActionsCovered = phase2.originator.requiredActions
+    .every((action) => action.covered && action.sourceAction)
+  const attorneyActionsCovered = phase2.attorney.requiredActions
+    .every((action) => action.covered)
+  const handoffsCovered = phase2.handoffActionCoverage
+    .every((handoff) => handoff.covered && handoff.actionIds.length)
+  const stageCommandsCovered = phase3.stageSpecificCommands
+    .every((command) => command.hasPreset && command.commandType && command.checklist.length)
+  const guaranteeCoordinationCovered = phase4.pairs
+    .every((pair) => pair.commandPresetCovered && pair.handoffCovered && pair.bondStageCovered)
+  const lodgementCoordinationCovered = phase5.pairs
+    .every((pair) => pair.commandPresetCovered && pair.handoffCovered && pair.bondStageCovered)
+  const originatorEvidenceCovered = phase6.links
+    .every((link) => link.coveredByOriginatorAction && link.targetWorkspaceTab && link.targetAction)
+  const scenariosCovered = phase7.scenarios
+    .every((scenario) => scenario.status === 'covered' && scenario.profile.lanePolicy.concurrentWorkAllowed)
+  const readOnlyBoundariesEnforced =
+    phase2.originator.mutationSurface === 'bond_file' &&
+    phase2.originator.attorneyWorkspacePolicy === 'read_only_observable' &&
+    phase2.attorney.mutationSurface === 'attorney_workflow' &&
+    phase6.rolloutRules.some((rule) => rule.includes('read-only'))
+  const concurrentWorkAllowed =
+    phase2.attorney.nonLinearWorkflowPolicy === 'any_stage_can_be_updated_without_forcing_previous_stage_completion' &&
+    phase3.rolloutRules.some((rule) => rule.includes('independently')) &&
+    phase5.rolloutRules.some((rule) => rule.includes('independently actionable')) &&
+    scenariosCovered
+
+  const readinessChecks = [
+    {
+      key: 'phase1_journey_map',
+      label: 'Bond originator and bond attorney journey map is complete',
+      status:
+        journeyMap.originator.missingJourneyStageKeys.length === 0 &&
+        journeyMap.originator.missingFinanceStageKeys.length === 0 &&
+        journeyMap.attorney.missingStageKeys.length === 0 &&
+        journeyMap.attorney.unknownStageKeys.length === 0 &&
+        journeyMap.attorney.duplicateStageKeys.length === 0 &&
+        journeyMap.handoffs.length === 3
+          ? 'pass'
+          : 'fail',
+      evidence: {
+        originatorLaneCount: journeyMap.originator.lanes.length,
+        attorneyLaneCount: journeyMap.attorney.lanes.length,
+        attorneyStageCount: journeyMap.attorney.stageKeys.length,
+        handoffCount: journeyMap.handoffs.length,
+      },
+    },
+    {
+      key: 'phase2_action_buttons',
+      label: 'Originator and bond attorney action buttons have no dead ends',
+      status: originatorActionsCovered && attorneyActionsCovered && handoffsCovered ? 'pass' : 'fail',
+      evidence: {
+        originatorActionCount: phase2.originator.requiredActions.length,
+        attorneyActionCount: phase2.attorney.requiredActions.length,
+        coveredHandoffCount: phase2.handoffActionCoverage.filter((handoff) => handoff.covered).length,
+      },
+    },
+    {
+      key: 'phase3_stage_commands',
+      label: 'Every bond attorney stage has an executable command preset',
+      status: stageCommandsCovered ? 'pass' : 'fail',
+      evidence: {
+        stageCommandCount: phase3.stageSpecificCommands.length,
+        noteOnlyStageKeys: phase3.noteOnlyStageKeys,
+      },
+    },
+    {
+      key: 'phase4_guarantee_coordination',
+      label: 'Guarantee issue and wording acceptance coordination is covered',
+      status: guaranteeCoordinationCovered ? 'pass' : 'fail',
+      evidence: {
+        pairCount: phase4.pairs.length,
+        handoffKey: phase4.handoff?.key || null,
+      },
+    },
+    {
+      key: 'phase5_lodgement_coordination',
+      label: 'Simultaneous lodgement coordination is covered',
+      status: lodgementCoordinationCovered ? 'pass' : 'fail',
+      evidence: {
+        pairCount: phase5.pairs.length,
+        handoffKey: phase5.handoff?.key || null,
+      },
+    },
+    {
+      key: 'phase6_originator_evidence_links',
+      label: 'Attorney-side originator evidence panels deep-link to working originator actions',
+      status: originatorEvidenceCovered ? 'pass' : 'fail',
+      evidence: {
+        evidenceLinkCount: phase6.links.length,
+        attorneySurfaces: phase6.attorneySurfaces,
+      },
+    },
+    {
+      key: 'phase7_scenario_coverage',
+      label: 'Finance route and legal structure scenario coverage is complete',
+      status: scenariosCovered ? 'pass' : 'fail',
+      evidence: phase7.coverageSummary,
+    },
+    {
+      key: 'read_only_mutation_boundaries',
+      label: 'Originator evidence remains read-only from the attorney workspace',
+      status: readOnlyBoundariesEnforced ? 'pass' : 'fail',
+      evidence: {
+        originatorMutationSurface: phase2.originator.mutationSurface,
+        attorneyWorkspacePolicy: phase2.originator.attorneyWorkspacePolicy,
+        attorneyMutationSurface: phase2.attorney.mutationSurface,
+      },
+    },
+    {
+      key: 'concurrent_work_policy',
+      label: 'Bond attorney work can proceed non-linearly across concurrent stages',
+      status: concurrentWorkAllowed ? 'pass' : 'fail',
+      evidence: {
+        attorneyPolicy: phase2.attorney.nonLinearWorkflowPolicy,
+        scenarioCount: phase7.scenarioCount,
+      },
+    },
+  ]
+
+  const failedChecks = readinessChecks.filter((check) => check.status !== 'pass')
+  const structuralBlockers = unique([
+    ...phase2.structuralBlockers,
+    ...phase3.structuralBlockers,
+    ...phase4.structuralBlockers,
+    ...phase5.structuralBlockers,
+    ...phase6.structuralBlockers,
+    ...phase7.structuralBlockers,
+    ...failedChecks.map((check) => `Rollout readiness check failed: ${check.key}`),
+  ])
+
+  return {
+    version: BOND_LANE_PHASE8_ROLLOUT_READINESS_VERSION,
+    phase7Version: phase7.version,
+    status: structuralBlockers.length ? 'blocked' : 'ready_for_phase9',
+    rolloutReadiness: {
+      decision: structuralBlockers.length ? 'hold' : 'go',
+      nextPhase: 'phase9_uat_release_gate',
+      metrics: {
+        originatorLaneCount: journeyMap.originator.lanes.length,
+        bondAttorneyLaneCount: journeyMap.attorney.lanes.length,
+        bondAttorneyStageCount: journeyMap.attorney.stageKeys.length,
+        originatorActionCount: phase2.originator.requiredActions.length,
+        bondAttorneyActionCount: phase2.attorney.requiredActions.length,
+        stageCommandCount: phase3.stageSpecificCommands.length,
+        coordinationPairCount: phase4.pairs.length + phase5.pairs.length,
+        evidenceLinkCount: phase6.links.length,
+        scenarioCount: phase7.scenarioCount,
+      },
+      actionButtonProof: {
+        originatorActionsCovered,
+        attorneyActionsCovered,
+        handoffsCovered,
+        noDeadEndButtons: originatorActionsCovered && attorneyActionsCovered && handoffsCovered && stageCommandsCovered,
+      },
+      workflowProof: {
+        readOnlyBoundariesEnforced,
+        concurrentWorkAllowed,
+        guaranteeCoordinationCovered,
+        lodgementCoordinationCovered,
+        originatorEvidenceCovered,
+        scenariosCovered,
+      },
+    },
+    readinessChecks,
+    uatFocus: [
+      'Cash route: confirm the bond originator and bond attorney lanes remain hidden or inactive.',
+      'Bond route: open each bond attorney action button and verify it lands on a working command surface.',
+      'Company and trust buyers: confirm authority evidence is visible to the bond attorney without originator mutation.',
+      'Guarantees: issue guarantees from bond and accept wording from transfer without forcing unrelated stage completion.',
+      'Lodgement: request and confirm simultaneous lodgement readiness from either lane.',
+      'Cancellation trigger: confirm seller existing bond activates cancellation coordination independently.',
+    ],
+    releaseGateInputs: [
+      'Use readinessChecks as the Phase 9 release gate checklist.',
+      'Use rolloutReadiness.actionButtonProof to verify no attorney-facing button is decorative only.',
+      'Use rolloutReadiness.workflowProof.concurrentWorkAllowed to protect non-linear attorney workflows during UAT.',
+      'Use Phase 7 scenario coverage as the minimum regression matrix for finance route and legal structure variants.',
+    ],
+    structuralBlockers,
+  }
+}
+
+function buildBondLanePhase9ScenarioGate({ key = 'ad_hoc', label = 'Ad hoc bond lane scenario', facts = {}, expected = null } = {}, phase8 = null) {
+  const profile = buildBondLaneScenarioProfile(facts)
+  const actionButtonProof = phase8?.rolloutReadiness?.actionButtonProof || {}
+  const workflowProof = phase8?.rolloutReadiness?.workflowProof || {}
+  const metrics = phase8?.rolloutReadiness?.metrics || {}
+  const unknownFinance = profile.lanePolicy.unknownFinanceRequiresConfirmation
+  const expectedMismatches = expected
+    ? [
+        profile.requiresBondOriginator !== expected.requiresBondOriginator
+          ? `requiresBondOriginator expected ${expected.requiresBondOriginator} got ${profile.requiresBondOriginator}`
+          : '',
+        profile.requiresBondAttorney !== expected.requiresBondAttorney
+          ? `requiresBondAttorney expected ${expected.requiresBondAttorney} got ${profile.requiresBondAttorney}`
+          : '',
+        profile.requiresCancellationAttorney !== expected.requiresCancellationAttorney
+          ? `requiresCancellationAttorney expected ${expected.requiresCancellationAttorney} got ${profile.requiresCancellationAttorney}`
+          : '',
+        ...(expected.buyerRequirementKeys || [])
+          .filter((requirementKey) => !profile.buyerRequirementKeys.includes(requirementKey))
+          .map((requirementKey) => `missing buyer requirement ${requirementKey}`),
+      ].filter(Boolean)
+    : []
+
+  const checks = [
+    {
+      key: 'finance_route',
+      label: 'Finance Route',
+      status: unknownFinance ? 'review' : 'ready',
+      value: profile.financeType,
+      detail: unknownFinance ? 'Finance must be confirmed before bond lanes activate.' : 'Finance route is resolved for lane routing.',
+    },
+    {
+      key: 'lane_activation',
+      label: 'Lane Activation',
+      status:
+        unknownFinance ||
+        profile.lanePolicy.bondAttorneyLaneActive ||
+        profile.lanePolicy.cashRouteSuppressesBondLanes
+          ? unknownFinance
+            ? 'review'
+            : 'ready'
+          : 'blocked',
+      value: profile.lanePolicy.bondAttorneyLaneActive ? 'bond_lane_active' : 'bond_lane_inactive',
+      detail: profile.lanePolicy.cashRouteSuppressesBondLanes
+        ? 'Cash route correctly suppresses bond originator and bond attorney lanes.'
+        : profile.lanePolicy.bondAttorneyLaneActive
+          ? 'Bond originator and bond attorney lanes are active.'
+          : 'Lane activation needs review.',
+    },
+    {
+      key: 'originator_evidence',
+      label: 'Originator Evidence',
+      status: profile.requiresBondOriginator
+        ? workflowProof.originatorEvidenceCovered
+          ? 'ready'
+          : 'blocked'
+        : 'ready',
+      value: profile.requiresBondOriginator ? `${metrics.evidenceLinkCount || 0} evidence links` : 'not_required',
+      detail: profile.requiresBondOriginator
+        ? 'Attorney-side originator evidence is available as read-only proof.'
+        : 'Originator evidence is not required for this finance route.',
+    },
+    {
+      key: 'attorney_actions',
+      label: 'Bond Attorney Actions',
+      status: profile.requiresBondAttorney
+        ? actionButtonProof.noDeadEndButtons
+          ? 'ready'
+          : 'blocked'
+        : 'ready',
+      value: profile.requiresBondAttorney ? `${metrics.bondAttorneyActionCount || 0} attorney actions` : 'not_required',
+      detail: profile.requiresBondAttorney
+        ? 'Bond attorney actions are command-backed.'
+        : 'Bond attorney actions are suppressed for this finance route.',
+    },
+    {
+      key: 'coordination',
+      label: 'Guarantee and Lodgement Coordination',
+      status: profile.requiresBondAttorney
+        ? workflowProof.guaranteeCoordinationCovered && workflowProof.lodgementCoordinationCovered
+          ? 'ready'
+          : 'blocked'
+        : 'ready',
+      value: profile.requiresBondAttorney ? `${metrics.coordinationPairCount || 0} coordination pairs` : 'not_required',
+      detail: profile.requiresBondAttorney
+        ? 'Guarantee and lodgement coordination are both covered.'
+        : 'Coordination is not required unless bond attorney work is active.',
+    },
+    {
+      key: 'capacity_evidence',
+      label: 'Buyer Capacity Evidence',
+      status: profile.buyerRequirementKeys.length ? 'ready' : 'blocked',
+      value: `${profile.buyerRequirementKeys.length} requirement(s)`,
+      detail: profile.buyerRequirementKeys.join(', '),
+    },
+    {
+      key: 'cancellation_routing',
+      label: 'Cancellation Routing',
+      status: 'ready',
+      value: profile.requiresCancellationAttorney ? 'cancellation_lane_active' : 'cancellation_lane_inactive',
+      detail: profile.requiresCancellationAttorney
+        ? 'Seller existing bond activates cancellation coordination independently.'
+        : 'No seller cancellation lane is required.',
+    },
+  ]
+
+  const blockedChecks = checks.filter((check) => check.status === 'blocked')
+  const reviewChecks = checks.filter((check) => check.status === 'review')
+  const releaseGateStatus = blockedChecks.length ? 'blocked' : reviewChecks.length ? 'review' : 'go'
+
+  return {
+    key,
+    label,
+    profile,
+    releaseGateStatus,
+    status: releaseGateStatus === 'go' ? 'ready' : releaseGateStatus,
+    checks,
+    signoffGaps: [
+      ...expectedMismatches.map((message) => `${label}: ${message}`),
+      ...blockedChecks.map((check) => `${label}: ${check.label} is blocked`),
+      ...reviewChecks.map((check) => `${label}: ${check.label} needs review`),
+    ],
+  }
+}
+
+export function buildBondLanePhase9UatReleaseGateReport({ facts = null, scenarioLabel = 'Selected bond lane matter' } = {}) {
+  const phase8 = buildBondLanePhase8RolloutReadinessReport()
+  const scenarioGates = BOND_PHASE7_SCENARIO_MATRIX.map((scenario) => buildBondLanePhase9ScenarioGate(scenario, phase8))
+  const selectedScenarioGate = facts
+    ? buildBondLanePhase9ScenarioGate({ key: 'selected_matter', label: scenarioLabel, facts }, phase8)
+    : null
+  const blockedScenarioGates = scenarioGates.filter((scenario) => scenario.releaseGateStatus === 'blocked')
+  const phase8Blocked = phase8.status !== 'ready_for_phase9' || phase8.rolloutReadiness.decision !== 'go'
+  const selectedGateBlocks = selectedScenarioGate?.releaseGateStatus === 'blocked'
+  const selectedGateNeedsReview = selectedScenarioGate?.releaseGateStatus === 'review'
+  const structuralBlockers = unique([
+    ...phase8.structuralBlockers,
+    ...blockedScenarioGates.flatMap((scenario) => scenario.signoffGaps),
+    ...(selectedGateBlocks ? selectedScenarioGate.signoffGaps : []),
+  ])
+  const expectedReviewItems = unique([
+    ...scenarioGates
+      .filter((scenario) => scenario.releaseGateStatus === 'review')
+      .flatMap((scenario) => scenario.signoffGaps),
+  ])
+  const reviewItems = unique([
+    ...(selectedGateNeedsReview ? selectedScenarioGate.signoffGaps : []),
+  ])
+  const releaseGateStatus = structuralBlockers.length || phase8Blocked
+    ? 'blocked'
+    : selectedGateNeedsReview
+      ? 'review'
+      : 'go'
+  const status = releaseGateStatus === 'go'
+    ? 'ready_for_controlled_rollout'
+    : releaseGateStatus === 'review'
+      ? 'review_required'
+      : 'blocked'
+
+  return {
+    version: BOND_LANE_PHASE9_UAT_RELEASE_GATE_VERSION,
+    phase8Version: phase8.version,
+    status,
+    releaseGateStatus,
+    decision: releaseGateStatus,
+    readiness: phase8.rolloutReadiness,
+    uatChecklist: BOND_PHASE9_UAT_CHECKLIST,
+    scenarioGates,
+    selectedScenarioGate,
+    signoff: {
+      requiredChecklistCount: BOND_PHASE9_UAT_CHECKLIST.filter((item) => item.required).length,
+      scenarioCount: scenarioGates.length,
+      goScenarioCount: scenarioGates.filter((scenario) => scenario.releaseGateStatus === 'go').length,
+      reviewScenarioCount: scenarioGates.filter((scenario) => scenario.releaseGateStatus === 'review').length,
+      blockedScenarioCount: blockedScenarioGates.length,
+      blockerCount: structuralBlockers.length,
+      reviewCount: reviewItems.length,
+      expectedReviewCount: expectedReviewItems.length,
+      requiredSignoffRoles: ['bond_attorney', 'transfer_attorney', 'bond_originator', 'operations_owner'],
+    },
+    controlledRolloutRules: [
+      'Use Phase 8 readiness as the first go/hold condition before UAT signoff.',
+      'Run every Phase 9 checklist item on at least one active bond matter before production rollout.',
+      'Treat unknown finance as review, not automatic bond lane activation.',
+      'Keep cash finance suppressing bond originator and bond attorney lanes.',
+      'Verify company, trust, married, and multiple-buyer structures against buyer evidence requirements.',
+      'Verify seller existing bond activates cancellation coordination independently from buyer bond work.',
+      'Do not require strict stage order during UAT; concurrent attorney work must remain possible.',
+    ],
+    expectedReviewItems,
+    reviewItems,
     structuralBlockers,
   }
 }

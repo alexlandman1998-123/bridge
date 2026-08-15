@@ -23,6 +23,14 @@ const PRIVILEGED_PACKET_ROLES = new Set([
   "agency_admin",
   "agent_admin",
 ]);
+const RETIRED_SELLER_MANDATE_SIGNING_EMAIL_TYPES = new Set([
+  "seller_mandate_sent",
+  "seller_mandate",
+]);
+const SUPPORTED_PACKET_SIGNING_EMAIL_TYPES = new Set([
+  ...RETIRED_SELLER_MANDATE_SIGNING_EMAIL_TYPES,
+  "otp_signing",
+]);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function normalizeText(value: unknown) {
@@ -186,7 +194,19 @@ Deno.serve(async (req: Request) => {
 
     const payload = asRecord(await req.json().catch(() => ({})));
     const type = normalizeText(payload.type).toLowerCase().replaceAll("-", "_");
-    if (!["seller_mandate_sent", "seller_mandate", "otp_signing"].includes(type)) {
+    if (RETIRED_SELLER_MANDATE_SIGNING_EMAIL_TYPES.has(type)) {
+      console.warn("[client-access-policy] retired seller mandate signing request blocked", {
+        functionName: "send-mandate-signing-email",
+        type,
+      });
+      return jsonResponse(410, {
+        success: false,
+        error: "Seller mandate signing links are retired. Upload the signed mandate manually before activating the Seller Portal.",
+        errorCode: "SELLER_MANDATE_SIGNING_LINKS_RETIRED",
+        code: "seller_mandate_signing_links_retired",
+      });
+    }
+    if (!SUPPORTED_PACKET_SIGNING_EMAIL_TYPES.has(type)) {
       return jsonResponse(400, {
         success: false,
         error: "Unsupported packet signing email type.",

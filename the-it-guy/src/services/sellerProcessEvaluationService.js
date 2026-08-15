@@ -1,9 +1,15 @@
+import {
+  SELLER_BASE_PACK_COMPLETION_ROUTES,
+  SELLER_BASE_PACK_KEYS,
+  normalizeSellerBasePackKey,
+  SELLER_BASE_PACK_REQUIRED_KEYS,
+} from '../lib/sellerBasePackContract.js'
 import { DEFAULT_SELLER_PROCESS_PROFILE } from './sellerProcessProfileService.js'
 import { getSellerProcessDefinition } from './sellerProcessDefinitionService.js'
 
 const DOCUMENT_COMPLETE_STATUSES = new Set(['uploaded', 'under_review', 'approved', 'verified', 'accepted', 'complete', 'completed', 'signed'])
 const BLOCKED_APPOINTMENT_STATUSES = new Set(['cancelled', 'canceled', 'declined', 'draft', 'internal_draft'])
-const KINGSTONS_BASELINE_SELLER_PACK_KEYS = new Set(['signed_mandate', 'signed_defect_form', 'signed_fica_form'])
+const KINGSTONS_BASELINE_SELLER_PACK_KEYS = new Set(SELLER_BASE_PACK_REQUIRED_KEYS)
 const KINGSTONS_SELLER_PACK_GENERATED_SECTION_KEYS = new Set(['seller_identity_fica', 'authority_documents'])
 
 function normalizeText(value) {
@@ -147,15 +153,122 @@ function rowKeys(row = {}) {
   ].map(normalizeKey).filter(Boolean)
 }
 
+function resolveDocumentMetadata(row = {}) {
+  const document = asRecord(row?.document)
+  const upload = asRecord(row?.upload)
+  return asRecord(
+    row?.metadata ||
+      row?.meta ||
+      row?.documentMetadata ||
+      row?.document_metadata ||
+      upload.metadata ||
+      upload.meta ||
+      upload.documentMetadata ||
+      upload.document_metadata ||
+      document.metadata ||
+      document.meta ||
+      document.documentMetadata ||
+      document.document_metadata,
+  )
+}
+
+function resolveDocumentCompletionRoute(row = {}) {
+  const document = asRecord(row?.document)
+  const upload = asRecord(row?.upload)
+  const metadata = resolveDocumentMetadata(row)
+  return normalizeKey(
+    row?.completionRoute ||
+      row?.completion_route ||
+      upload.completionRoute ||
+      upload.completion_route ||
+      document.completionRoute ||
+      document.completion_route ||
+      metadata.completionRoute ||
+      metadata.completion_route,
+  )
+}
+
+function isKingstonsSellerPackFicaDeclarationRow(row = {}) {
+  return rowKeys(row).some((key) =>
+    normalizeSellerBasePackKey(key) === SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION
+  )
+}
+
+function resolveFicaDeclarationUploadContext(row = {}) {
+  const document = asRecord(row?.document)
+  const upload = asRecord(row?.upload)
+  const metadata = resolveDocumentMetadata(row)
+  return asRecord(
+    row?.ficaDeclarationContext ||
+      row?.fica_declaration_context ||
+      row?.uploadContext ||
+      row?.upload_context ||
+      upload.ficaDeclarationContext ||
+      upload.fica_declaration_context ||
+      upload.uploadContext ||
+      upload.upload_context ||
+      document.ficaDeclarationContext ||
+      document.fica_declaration_context ||
+      document.uploadContext ||
+      document.upload_context ||
+      metadata.ficaDeclarationContext ||
+      metadata.fica_declaration_context ||
+      metadata.uploadContext ||
+      metadata.upload_context,
+  )
+}
+
+function sellerPackFicaDeclarationContextCaptured(row = {}) {
+  const context = resolveFicaDeclarationUploadContext(row)
+  return Boolean(
+    Object.keys(context).length &&
+      (
+        firstPresent(
+          context.sellerType,
+          context.seller_type,
+          context.legalPathType,
+          context.legal_path_type,
+          context.contextCapturedAt,
+          context.context_captured_at,
+          context.capturedAt,
+          context.captured_at,
+        )
+      )
+  )
+}
+
+function sellerPackFicaDeclarationRequiresPhysicalContext(row = {}) {
+  if (!isKingstonsSellerPackFicaDeclarationRow(row)) return false
+  const document = asRecord(row?.document)
+  const upload = asRecord(row?.upload)
+  const metadata = resolveDocumentMetadata(row)
+  const completionRoute = resolveDocumentCompletionRoute(row)
+  if (completionRoute === SELLER_BASE_PACK_COMPLETION_ROUTES.SELLER_ONBOARDING_LINK) return false
+  return Boolean(
+    completionRoute === SELLER_BASE_PACK_COMPLETION_ROUTES.PHYSICAL_UPLOAD ||
+      completionRoute === SELLER_BASE_PACK_COMPLETION_ROUTES.PHYSICAL_UPLOAD_WITH_CONTEXT ||
+      row?.physicalUploadContextRequired === true ||
+      row?.physical_upload_context_required === true ||
+      upload.physicalUploadContextRequired === true ||
+      upload.physical_upload_context_required === true ||
+      document.physicalUploadContextRequired === true ||
+      document.physical_upload_context_required === true ||
+      metadata.physicalUploadContextRequired === true ||
+      metadata.physical_upload_context_required === true ||
+      !completionRoute,
+  )
+}
+
 function isKingstonsSellerPackReadinessDocument(row = {}) {
   const keys = rowKeys(row)
+  const basePackKeys = keys.map(normalizeSellerBasePackKey).filter(Boolean)
   const source = normalizeKey(row?.source || row?.sourceSystem || row?.source_system)
   const lane = normalizeKey(row?.requirementLane || row?.requirement_lane || row?.documentRequirementLane || row?.document_requirement_lane)
   const section = normalizeKey(row?.documentRequirementSection || row?.document_requirement_section || row?.section)
   if (source.includes('kingstons_seller_pack')) return true
   if (lane === 'ownership_driven') return true
   if (KINGSTONS_SELLER_PACK_GENERATED_SECTION_KEYS.has(section)) return true
-  return keys.some((key) =>
+  return [...keys, ...basePackKeys].some((key) =>
     KINGSTONS_BASELINE_SELLER_PACK_KEYS.has(key) ||
       key.includes('owner_fica') ||
       key.includes('director_fica') ||
@@ -186,15 +299,34 @@ function statusAccepted(status = '', acceptedStatuses = []) {
 
 function documentSatisfiesGate(document = {}, gate = {}) {
   if (!typeMatches(document, gate.documentTypes || [])) return false
+  if (
+    gate.key === 'fica_pack_signed' &&
+    sellerPackFicaDeclarationRequiresPhysicalContext(document) &&
+    !sellerPackFicaDeclarationContextCaptured(document)
+  ) {
+    return false
+  }
   const status = normalizeKey(document?.status || document?.documentStatus || document?.document_status || document?.reviewStatus || document?.review_status)
   return Boolean(statusAccepted(status, gate.acceptedStatuses || []) || DOCUMENT_COMPLETE_STATUSES.has(status) || hasFileEvidence(document))
 }
 
 function documentSatisfiesSellerPackReadiness(document = {}) {
   if (document?.required === false || document?.applicable === false) return true
+  const isFicaDeclaration = isKingstonsSellerPackFicaDeclarationRow(document)
+  if (
+    isFicaDeclaration &&
+    sellerPackFicaDeclarationRequiresPhysicalContext(document) &&
+    !sellerPackFicaDeclarationContextCaptured(document)
+  ) {
+    return false
+  }
   const status = normalizeKey(document?.status || document?.documentStatus || document?.document_status || document?.reviewStatus || document?.review_status)
   if (status === 'not_applicable') return true
-  return Boolean(DOCUMENT_COMPLETE_STATUSES.has(status) || hasFileEvidence(document))
+  return Boolean(
+    DOCUMENT_COMPLETE_STATUSES.has(status) ||
+      hasFileEvidence(document) ||
+      (isFicaDeclaration && resolveDocumentCompletionRoute(document) === SELLER_BASE_PACK_COMPLETION_ROUTES.SELLER_ONBOARDING_LINK)
+  )
 }
 
 function evaluateSellerPackReadinessGate(context = {}, gate = {}) {
@@ -202,7 +334,11 @@ function evaluateSellerPackReadinessGate(context = {}, gate = {}) {
     .filter(isKingstonsSellerPackReadinessDocument)
     .filter((document) => document?.required !== false && document?.applicable !== false)
   const completedRows = readinessRows.filter(documentSatisfiesSellerPackReadiness)
-  const presentKeys = new Set(readinessRows.flatMap(rowKeys))
+  const ficaContextMissingRows = readinessRows.filter((document) =>
+    sellerPackFicaDeclarationRequiresPhysicalContext(document) &&
+      !sellerPackFicaDeclarationContextCaptured(document)
+  )
+  const presentKeys = new Set(readinessRows.flatMap((row) => rowKeys(row).map((key) => normalizeSellerBasePackKey(key) || key)))
   const baselinePresent = [...KINGSTONS_BASELINE_SELLER_PACK_KEYS].every((key) => presentKeys.has(key))
   const sellerTypeCaptured = hasKingstonsSellerPackLegalPathCapture(context) ||
     readinessRows.some((document) => isValidKingstonsSellerType(document?.sellerType || document?.seller_type || document?.ficaSellerType || document?.fica_seller_type))
@@ -220,6 +356,11 @@ function evaluateSellerPackReadinessGate(context = {}, gate = {}) {
     evidenceCount: completedRows.length,
     requiredCount: readinessRows.length,
     missingCount: Math.max(readinessRows.length - completedRows.length, 0) + (sellerTypeCaptured ? 0 : 1),
+    contextMissingCount: ficaContextMissingRows.length,
+    blockedReasons: [
+      ...(ficaContextMissingRows.length ? ['Physical FICA declaration upload is missing seller-context metadata.'] : []),
+      ...(sellerTypeCaptured ? [] : ['FICA seller type has not been captured.']),
+    ],
   }
 }
 

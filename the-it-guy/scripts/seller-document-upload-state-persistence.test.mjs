@@ -19,10 +19,10 @@ assert.equal(
 
 const requirement = {
   id: 'requirement-1',
-  key: 'signed_fica_form',
-  requirement_key: 'signed_fica_form',
-  label: 'Signed FICA Form',
-  requirement_name: 'Signed FICA Form',
+  key: 'signed_fica_declaration',
+  requirement_key: 'signed_fica_declaration',
+  label: 'Signed FICA Declaration',
+  requirement_name: 'Signed FICA Declaration',
   requirement_group: 'legal',
   status: 'required',
   is_required: true,
@@ -54,7 +54,7 @@ const rows = buildSellerDocumentRequirementRows({
   },
 })
 
-const row = rows.find((candidate) => candidate.key === 'signed_fica_form')
+const row = rows.find((candidate) => candidate.key === 'signed_fica_declaration')
 assert.equal(row?.status, 'uploaded')
 assert.equal(row?.statusLabel, 'Uploaded')
 assert.equal(row?.uploadedFileName, 'signed-fica.pdf')

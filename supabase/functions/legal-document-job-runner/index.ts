@@ -15,6 +15,14 @@ const SUPPORTED_JOB_TYPES = new Set([
   "send_for_signature",
   "generate_and_send_for_signature",
 ]);
+const RETIRED_SELLER_MANDATE_SIGNING_EMAIL_TYPES = new Set([
+  "seller_mandate_sent",
+  "seller_mandate",
+]);
+const SUPPORTED_PACKET_SIGNING_EMAIL_TYPES = new Set([
+  ...RETIRED_SELLER_MANDATE_SIGNING_EMAIL_TYPES,
+  "otp_signing",
+]);
 const SEND_EMAIL_TIMEOUT_MS = 18_000;
 const GENERATE_MANDATE_TIMEOUT_MS = 120_000;
 const WATCHDOG_DEFAULT_BATCH_LIMIT = 5;
@@ -2112,7 +2120,40 @@ async function runSendForSignatureJob({
       };
     }
   }
-  if (!["seller_mandate_sent", "seller_mandate", "otp_signing"].includes(emailType) || !extractSigningToken(portalLink)) {
+  if (RETIRED_SELLER_MANDATE_SIGNING_EMAIL_TYPES.has(emailType)) {
+    console.warn("[client-access-policy] retired seller mandate signing job blocked", {
+      functionName: "legal-document-job-runner",
+      emailType,
+      requestId,
+      jobId,
+    });
+    await updateJobStatus({
+      client,
+      jobId,
+      status: "failed",
+      error: {
+        errorCode: "SELLER_MANDATE_SIGNING_LINKS_RETIRED",
+        code: "seller_mandate_signing_links_retired",
+        phase3SellerMandateSigningRetired: true,
+      },
+      packetVersionId: normalizeText(version.id),
+      dispatchId: normalizeText(emailPayload.dispatchId || emailPayload.dispatch_id) || null,
+      metadata: { phase3RequestId: requestId },
+    });
+    return {
+      ok: false,
+      status: 410,
+      body: {
+        success: false,
+        error: "Seller mandate signing links are retired. Upload the signed mandate manually before activating the Seller Portal.",
+        errorCode: "SELLER_MANDATE_SIGNING_LINKS_RETIRED",
+        code: "seller_mandate_signing_links_retired",
+        requestId,
+        jobId,
+      },
+    };
+  }
+  if (!SUPPORTED_PACKET_SIGNING_EMAIL_TYPES.has(emailType) || !extractSigningToken(portalLink)) {
     await updateJobStatus({
       client,
       jobId,
@@ -2491,7 +2532,26 @@ async function createSendReadyJobAndRun({
   const prepareSigningLink = booleanFlag(payload.prepareSigningLink || payload.prepare_signing_link);
   const jobMetadata = asRecord(payload.jobMetadata || payload.job_metadata);
   const jobDisplayType = normalizeText(payload.jobDisplayType || payload.job_display_type) || "send_mandate_for_signature";
-  if (!["seller_mandate_sent", "seller_mandate", "otp_signing"].includes(emailType) || (!extractSigningToken(portalLink) && !prepareSigningLink)) {
+  if (RETIRED_SELLER_MANDATE_SIGNING_EMAIL_TYPES.has(emailType)) {
+    console.warn("[client-access-policy] retired seller mandate signing job blocked", {
+      functionName: "legal-document-job-runner",
+      emailType,
+      requestId,
+      dispatchId: dispatchId || null,
+    });
+    return {
+      ok: false,
+      status: 410,
+      body: {
+        success: false,
+        error: "Seller mandate signing links are retired. Upload the signed mandate manually before activating the Seller Portal.",
+        errorCode: "SELLER_MANDATE_SIGNING_LINKS_RETIRED",
+        code: "seller_mandate_signing_links_retired",
+        requestId,
+      },
+    };
+  }
+  if (!SUPPORTED_PACKET_SIGNING_EMAIL_TYPES.has(emailType) || (!extractSigningToken(portalLink) && !prepareSigningLink)) {
     return {
       ok: false,
       status: 400,

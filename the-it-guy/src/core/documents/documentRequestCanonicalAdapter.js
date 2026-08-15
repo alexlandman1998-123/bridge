@@ -62,9 +62,16 @@ const BUYER_KEY_ALIASES = Object.freeze({
 })
 
 const SELLER_KEY_ALIASES = Object.freeze({
-  signed_mandate: 'seller_fica_pack',
+  signed_mandate: 'signed_mandate',
+  signed_disclosure_form: 'property_condition_disclosure',
+  signed_mandatory_disclosure: 'property_condition_disclosure',
+  signed_mandatory_disclosure_form: 'property_condition_disclosure',
+  signed_defect_form: 'property_condition_disclosure',
+  signed_defects_form: 'property_condition_disclosure',
+  signed_fica_declaration: 'seller_fica_pack',
+  signed_fica_declaration_pack: 'seller_fica_pack',
+  signed_fica_form: 'seller_fica_pack',
   seller_onboarding_submission: 'seller_fica_pack',
-  seller_contact_confirmation: 'seller_fica_pack',
   id_document: 'seller_id_document',
   proof_of_address: 'seller_proof_of_address',
   marriage_certificate: 'seller_marriage_certificate',
@@ -255,4 +262,3 @@ export function withCanonicalDocumentRequestMetadata(requirement = {}, options =
     ...getCanonicalDocumentRequestMetadata(requirement, options),
   }
 }
-

@@ -44,6 +44,11 @@ import {
   resolvePortalSellerName,
 } from './portalCanonicalFieldFallbacks.js'
 import {
+  SELLER_BASE_PACK_COMPLETION_ROUTES,
+  SELLER_BASE_PACK_KEYS,
+  normalizeSellerBasePackKey,
+} from '../lib/sellerBasePackContract.js'
+import {
   buildCanonicalDocumentRequestAudiencePlan,
 } from '../core/documents/documentRequestCanonicalPlanner.js'
 import {
@@ -1624,7 +1629,10 @@ function isPropertyDisclosureRequirement(requirement = {}) {
     requirement?.requirement_name,
     requirement?.name,
     requirement?.title,
+    requirement?.canonicalDocumentRequestKey,
+    requirement?.canonical_document_request_key,
   ].filter(Boolean).join(' '))
+  if (source.includes(SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM) || normalizeSellerBasePackKey(source) === SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM) return true
   return source.includes('property_condition_disclosure') ||
     source.includes('property_disclosure') ||
     source.includes('condition_disclosure') ||
@@ -1643,7 +1651,10 @@ function isPropertyDisclosureDocument(document = {}) {
     document?.document_name,
     document?.title,
     document?.type,
+    document?.canonicalDocumentRequestKey,
+    document?.canonical_document_request_key,
   ].filter(Boolean).join(' '))
+  if (source.includes(SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM) || normalizeSellerBasePackKey(source) === SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM) return true
   return source.includes('property_condition_disclosure') ||
     source.includes('property_disclosure') ||
     source.includes('condition_disclosure') ||
@@ -2197,6 +2208,117 @@ function buildPropertyDisclosureDocumentFromFormData(portalData = {}, workspaceM
   }
 }
 
+function isSellerPortalOnboardingCompleted(portalData = {}, formData = {}) {
+  const listing = isPlainObject(portalData?.listing) ? portalData.listing : {}
+  const onboarding = isPlainObject(portalData?.onboarding)
+    ? portalData.onboarding
+    : isPlainObject(portalData?.sellerOnboarding)
+      ? portalData.sellerOnboarding
+      : isPlainObject(listing?.sellerOnboarding)
+        ? listing.sellerOnboarding
+        : isPlainObject(listing?.seller_onboarding)
+          ? listing.seller_onboarding
+          : {}
+  const status = normalizeDocumentMatchKey(
+    onboarding?.status ||
+      listing?.sellerOnboardingStatus ||
+      listing?.seller_onboarding_status ||
+      portalData?.sellerOnboardingStatus ||
+      portalData?.seller_onboarding_status ||
+      formData?.sellerOnboardingStatus ||
+      formData?.seller_onboarding_status,
+  )
+  return ['completed', 'complete', 'submitted', 'seller_onboarding_completed', 'onboarding_completed'].includes(status) ||
+    Boolean(
+      toDisplayText(
+        onboarding?.completedAt ||
+          onboarding?.completed_at ||
+          onboarding?.submittedAt ||
+          onboarding?.submitted_at ||
+          portalData?.completedAt ||
+          portalData?.completed_at ||
+          portalData?.submittedAt ||
+          portalData?.submitted_at ||
+          formData?.completedAt ||
+          formData?.completed_at ||
+          formData?.submittedAt ||
+          formData?.submitted_at,
+      ),
+    )
+}
+
+function buildSellerFicaDeclarationDocumentFromOnboarding(portalData = {}, workspaceMode = 'buying') {
+  if (workspaceMode !== 'selling') return null
+  const formData = resolveSellerPortalFormData(portalData)
+  if (!isSellerPortalOnboardingCompleted(portalData, formData)) return null
+
+  const listing = isPlainObject(portalData?.listing) ? portalData.listing : {}
+  const onboarding = isPlainObject(portalData?.onboarding)
+    ? portalData.onboarding
+    : isPlainObject(portalData?.sellerOnboarding)
+      ? portalData.sellerOnboarding
+      : isPlainObject(listing?.sellerOnboarding)
+        ? listing.sellerOnboarding
+        : isPlainObject(listing?.seller_onboarding)
+          ? listing.seller_onboarding
+          : {}
+  const completedAt = toDisplayText(
+    onboarding?.completedAt ||
+      onboarding?.completed_at ||
+      onboarding?.submittedAt ||
+      onboarding?.submitted_at ||
+      portalData?.completedAt ||
+      portalData?.completed_at ||
+      portalData?.submittedAt ||
+      portalData?.submitted_at ||
+      formData?.completedAt ||
+      formData?.completed_at ||
+      formData?.submittedAt ||
+      formData?.submitted_at,
+  )
+  const sellerType = normalizeDocumentMatchKey(
+    formData?.sellerType ||
+      formData?.seller_type ||
+      formData?.ownerEntityType ||
+      formData?.owner_entity_type ||
+      formData?.ownershipType ||
+      formData?.ownership_type ||
+      listing?.sellerType ||
+      listing?.seller_type,
+  )
+  const listingId = toDisplayText(listing?.id || listing?.private_listing_id || portalData?.listingId || portalData?.listing_id || onboarding?.token, 'onboarding')
+
+  return {
+    id: `seller-fica-declaration-${listingId}`,
+    requirementKey: SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION,
+    requirement_key: SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION,
+    document_type: SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION,
+    documentType: SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION,
+    category: 'fica_declaration',
+    document_category: 'fica_declaration',
+    document_name: 'Signed FICA Declaration',
+    name: 'Signed FICA Declaration',
+    status: 'completed',
+    visibility: 'seller_visible',
+    source: 'seller_onboarding.fica_declaration',
+    completionRoute: SELLER_BASE_PACK_COMPLETION_ROUTES.SELLER_ONBOARDING_LINK,
+    completion_route: SELLER_BASE_PACK_COMPLETION_ROUTES.SELLER_ONBOARDING_LINK,
+    supportingFicaDocumentsDynamic: true,
+    supporting_fica_documents_dynamic: true,
+    sellerType,
+    seller_type: sellerType,
+    created_at: completedAt || null,
+    uploadedAt: completedAt || null,
+    uploaded_at: completedAt || null,
+    metadata: {
+      source: 'seller_onboarding',
+      completionRoute: SELLER_BASE_PACK_COMPLETION_ROUTES.SELLER_ONBOARDING_LINK,
+      supportingFicaDocumentsDynamic: true,
+      sellerType,
+    },
+  }
+}
+
 function buildSellerSaleDocumentCenterItem(document = {}, { id = '', title = '', description = '' } = {}) {
   if (!document || typeof document !== 'object') return null
   const documentId = toDisplayText(id || document.id || document.file_path || document.url || document.generatedFileName, 'sale-document')
@@ -2240,6 +2362,7 @@ function buildSellerDownloadableDocumentLookup(portalData = {}, workspaceMode = 
     buildSignedMandateDocumentFromPacket(portalData, workspaceMode),
     buildGeneratedMandateDocumentFromPacket(portalData, workspaceMode),
     buildPropertyDisclosureDocumentFromFormData(portalData, workspaceMode),
+    buildSellerFicaDeclarationDocumentFromOnboarding(portalData, workspaceMode),
   ].filter(Boolean)
   const lookup = new Map()
   documents.forEach((document) => {
@@ -2269,7 +2392,7 @@ function findDownloadableDocumentForRequirement(downloadableDocumentsByKey = new
   for (const key of keys) {
     if (downloadableDocumentsByKey.has(key)) return downloadableDocumentsByKey.get(key)
     if (key.includes('mandate') && downloadableDocumentsByKey.has('mandate')) return downloadableDocumentsByKey.get('mandate')
-    if ((key.includes('property_condition_disclosure') || key.includes('defects') || key.includes('disclosure')) && downloadableDocumentsByKey.has('property_condition_disclosure')) {
+    if ((normalizeSellerBasePackKey(key) === SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM || key.includes('property_condition_disclosure') || key.includes('defects') || key.includes('disclosure')) && downloadableDocumentsByKey.has('property_condition_disclosure')) {
       return downloadableDocumentsByKey.get('property_condition_disclosure')
     }
   }
@@ -2300,10 +2423,12 @@ function generatedDownloadableDocumentSatisfiesRequirement(document = null, requ
   ].filter(Boolean).join(' '))
   if (!documentKey || !requirementKey) return false
   const isDisclosureDocument = documentKey.includes('property_condition_disclosure') ||
+    normalizeSellerBasePackKey(documentKey) === SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM ||
     documentKey.includes('condition_disclosure') ||
     documentKey.includes('disclosure') ||
     documentKey.includes('defects')
   const isDisclosureRequirement = requirementKey.includes('property_condition_disclosure') ||
+    normalizeSellerBasePackKey(requirementKey) === SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM ||
     requirementKey.includes('condition_disclosure') ||
     requirementKey.includes('disclosure') ||
     requirementKey.includes('defects')
@@ -2951,10 +3076,12 @@ export function buildDocumentCenter(portalData, workspaceMode = 'buying') {
     (Array.isArray(portalData?.requiredDocuments) ? portalData.requiredDocuments : [])
   const signedMandateDocument = buildSignedMandateDocumentFromPacket(portalData, workspaceMode)
   const propertyDisclosureDocument = buildPropertyDisclosureDocumentFromFormData(portalData, workspaceMode)
+  const sellerFicaDeclarationDocument = buildSellerFicaDeclarationDocumentFromOnboarding(portalData, workspaceMode)
   const saleDocuments = buildSellerPortalSaleDocuments(portalData, workspaceMode)
   const uploadedDocuments = [
     ...(signedMandateDocument ? [signedMandateDocument] : []),
     ...(propertyDisclosureDocument ? [propertyDisclosureDocument] : []),
+    ...(sellerFicaDeclarationDocument ? [sellerFicaDeclarationDocument] : []),
     ...(Array.isArray(portalData?.documents) ? portalData.documents : []),
   ]
   const uploadedDocumentsById = buildUploadedDocumentsLookup(uploadedDocuments)
@@ -3009,6 +3136,9 @@ export function buildDocumentCenter(portalData, workspaceMode = 'buying') {
               : {}),
             downloadableDocument,
             linkedDocument: item.linkedDocument || downloadableDocument,
+            openLabel: item.openLabel ||
+              getLinkedDocumentOpenLabel(requirement, downloadableDocument) ||
+              (downloadableDocumentSatisfiesRequirement ? 'Download Property Disclosure' : ''),
           }
         : item
     },

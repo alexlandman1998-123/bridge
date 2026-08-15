@@ -13,6 +13,12 @@ import Button from '../../components/ui/Button'
 import Field from '../../components/ui/Field'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { isUnsafeFallbackAllowed } from '../../lib/envValidation'
+import {
+  SELLER_BASE_PACK_COMPLETION_ROUTES,
+  SELLER_BASE_PACK_KEYS,
+  getSellerBasePackDefinition,
+  normalizeSellerBasePackKey,
+} from '../../lib/sellerBasePackContract'
 import { inferLeadCategoryFromRecord, leadCategoryLabel, normalizeLeadCategory } from '../../lib/leadCategory'
 import { CANVASSING_UPDATED_EVENT, listCanvassingWorkspace } from '../../lib/canvassingRepository'
 import {
@@ -102,6 +108,10 @@ import {
   getBuyerProcessDefinition,
   normalizeBuyerProcessStageKey,
 } from '../../services/buyerProcessDefinitionService'
+import {
+  getClientAccessPolicyMessage,
+  resolveSellerAccessPolicy,
+} from '../../core/clientAccess/clientAccessPolicy'
 import { generatePacketVersion, generateSigningLinks, prepareSigningFields, resetSigningFields, resolveActiveTemplate } from '../../core/documents/packetService'
 import { assessSigningFieldLayout } from '../../core/documents/signingFieldLayout'
 import { findLatestSignableGeneratedVersion } from '../../core/documents/pilotDocumentFallback'
@@ -546,8 +556,8 @@ const KINGSTONS_PIPELINE_ACTION_COPY = Object.freeze({
   upload_valuation_document: 'Upload the completed formal valuation document before presenting the valuation to the seller.',
   schedule_valuation_presentation: 'Book the valuation presentation appointment with the seller.',
   complete_valuation_presentation: 'Mark the valuation presentation as completed before moving the seller into the Seller Pack step.',
-  complete_seller_pack: 'Capture the seller type and legal-path details, then upload the signed mandate, defect form, and FICA form.',
-  seller_pack_signed: 'Capture the seller type and legal-path details, then upload the signed mandate, defect form, and FICA form.',
+  complete_seller_pack: 'Capture the seller type and legal-path details, then complete the signed mandate, disclosure / defects form, and FICA declaration.',
+  seller_pack_signed: 'Capture the seller type and legal-path details, then complete the signed mandate, disclosure / defects form, and FICA declaration.',
   mark_seller_lead_lost: 'Capture why the seller did not convert after the valuation presentation and move the lead to Lost.',
   prepare_listing: 'Create the listing once the Kingston Seller Pack is complete.',
 })
@@ -609,25 +619,25 @@ function writeLeadWorkspaceSessionSnapshot(organisationId = '', leadId = '', sna
 
 const KINGSTONS_SELLER_PACK_DOCUMENTS = Object.freeze([
   {
-    key: 'signed_mandate',
+    key: SELLER_BASE_PACK_KEYS.SIGNED_MANDATE,
     label: 'Signed Mandate',
     category: 'legal',
     description: 'The physical mandate signed by the seller.',
     fileName: 'Signed Mandate',
   },
   {
-    key: 'signed_defect_form',
-    label: 'Signed Defect Form',
+    key: SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM,
+    label: 'Signed Mandatory Disclosure / Defects Form',
     category: 'legal',
-    description: 'The seller disclosure or defect form signed by the seller.',
-    fileName: 'Signed Defect Form',
+    description: 'The mandatory disclosure / defects form signed by the seller.',
+    fileName: 'Signed Mandatory Disclosure Defects Form',
   },
   {
-    key: 'signed_fica_form',
-    label: 'Signed FICA Form',
+    key: SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION,
+    label: 'Signed FICA Declaration',
     category: 'legal',
-    description: 'The FICA form signed by the correct seller type.',
-    fileName: 'Signed FICA Form',
+    description: 'The FICA declaration pack signed by the correct seller type.',
+    fileName: 'Signed FICA Declaration',
     requiresSellerType: true,
   },
 ])
@@ -645,9 +655,9 @@ const KINGSTONS_SELLER_PACK_LISTING_HANDOFF_SOURCE = 'kingstons_seller_pack_phas
 const KINGSTONS_SELLER_PACK_TRANSACTION_HANDOFF_SOURCE = 'kingstons_seller_pack_phase5_transaction_handoff'
 const KINGSTONS_SELLER_PACK_PORTAL_REQUEST_SYNC_SOURCE = 'kingstons_seller_pack_phase9_portal_request_sync'
 const KINGSTONS_SELLER_PACK_TRANSACTION_REQUIREMENT_KEYS = Object.freeze([
-  'signed_mandate',
-  'property_condition_disclosure',
-  'signed_fica_form',
+  SELLER_BASE_PACK_KEYS.SIGNED_MANDATE,
+  SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM,
+  SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION,
 ])
 const KINGSTONS_FICA_SELLER_TYPE_OPTIONS = Object.freeze([
   { value: 'natural', label: 'Natural person' },
@@ -688,17 +698,17 @@ const KINGSTONS_FICA_JURISTIC_ENTITY_OPTIONS = Object.freeze([
 ])
 
 const KINGSTONS_SELLER_PACK_DISPLAY_COPY = Object.freeze({
-  signed_mandate: {
+  [SELLER_BASE_PACK_KEYS.SIGNED_MANDATE]: {
     title: 'Signed Mandate',
     description: 'Signed mandate from the seller.',
   },
-  signed_defect_form: {
-    title: 'Defects Disclosure',
-    description: 'Signed property defects disclosure.',
+  [SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM]: {
+    title: 'Disclosure / Defects Form',
+    description: 'Signed mandatory disclosure / defects form.',
   },
-  signed_fica_form: {
-    title: 'FICA Form',
-    description: 'Signed FICA form from the seller.',
+  [SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION]: {
+    title: 'FICA Declaration',
+    description: 'Signed FICA declaration pack from the seller.',
   },
 })
 
@@ -1151,6 +1161,89 @@ function getKingstonsSellerPackCaptureSummaryLabel(pack = {}) {
     return 'Juristic person'
   }
   return 'Capture seller details'
+}
+
+function resolveKingstonsFicaDeclarationPhysicalUploadContext(pack = {}, {
+  agent = {},
+} = {}) {
+  const legalPath = asRecord(
+    pack.legalPath ||
+      pack.legal_path ||
+      pack.sellerProfile ||
+      pack.seller_profile ||
+      pack.sellerPackProfile ||
+      pack.seller_pack_profile,
+  )
+  const sellerType = normalizeKey(pack.sellerType || pack.ficaSellerType || legalPath.sellerType || legalPath.seller_type)
+  const detailsCapturedAt = firstWorkspaceText(
+    pack.sellerPackDetailsCapturedAt,
+    pack.seller_pack_details_captured_at,
+    pack.detailsCapturedAt,
+    pack.details_captured_at,
+    legalPath.capturedAt,
+    legalPath.captured_at,
+  )
+  const detailsComplete = isValidKingstonsFicaSellerType(sellerType) && hasKingstonsSellerPackDetailsCompletionSignal(pack)
+  if (!detailsComplete) {
+    return {
+      complete: false,
+      reason: sellerType
+        ? 'Capture and save the seller-pack details before uploading the physical FICA declaration.'
+        : 'Choose the seller type and save the seller-pack details before uploading the physical FICA declaration.',
+      context: null,
+    }
+  }
+
+  const juristic = asRecord(legalPath.juristic)
+  const entityType = normalizeKey(pack.juristicEntityType || pack.entityType || legalPath.juristicEntityType || juristic.entityType)
+  const owners = asArray(pack.owners || legalPath.owners || legalPath.natural?.owners)
+  const directors = asArray(pack.companyDirectors || legalPath.company?.directors || juristic.company?.directors)
+  const trustees = asArray(pack.trustees || legalPath.trust?.trustees || juristic.trust?.trustees)
+  const members = asArray(pack.closeCorporationMembers || legalPath.closeCorporation?.members || juristic.closeCorporation?.members)
+  const contextCapturedAt = new Date().toISOString()
+  const contextCapturedBy = normalizeText(agent.email || agent.fullName || agent.id)
+  const legalPathType = normalizeKey(legalPath.legalPathType || legalPath.legal_path_type || legalPath.sellerType || sellerType)
+  const sellerTypeLabel = getKingstonsFicaSellerTypeLabel(sellerType)
+  const summaryLabel = getKingstonsSellerPackCaptureSummaryLabel({ ...pack, legalPath })
+
+  return {
+    complete: true,
+    reason: '',
+    context: {
+      version: 'kingstons_fica_declaration_physical_upload_context_phase3_v1',
+      source: 'kingstons_seller_pack_details',
+      completionRoute: SELLER_BASE_PACK_COMPLETION_ROUTES.PHYSICAL_UPLOAD_WITH_CONTEXT,
+      completion_route: SELLER_BASE_PACK_COMPLETION_ROUTES.PHYSICAL_UPLOAD_WITH_CONTEXT,
+      sellerType,
+      seller_type: sellerType,
+      sellerTypeLabel,
+      seller_type_label: sellerTypeLabel,
+      legalPathType,
+      legal_path_type: legalPathType,
+      juristicEntityType: entityType,
+      juristic_entity_type: entityType,
+      summaryLabel,
+      summary_label: summaryLabel,
+      detailsCapturedAt,
+      details_captured_at: detailsCapturedAt,
+      contextCapturedAt,
+      context_captured_at: contextCapturedAt,
+      contextCapturedBy,
+      context_captured_by: contextCapturedBy,
+      ownerCount: owners.length,
+      owner_count: owners.length,
+      directorCount: directors.length,
+      director_count: directors.length,
+      trusteeCount: trustees.length,
+      trustee_count: trustees.length,
+      memberCount: members.length,
+      member_count: members.length,
+      supportingFicaDocumentsDynamic: true,
+      supporting_fica_documents_dynamic: true,
+      supportingFicaDocumentsUnlocked: true,
+      supporting_fica_documents_unlocked: true,
+    },
+  }
 }
 
 const KINGSTONS_FICA_SELLER_TYPE_LABELS = Object.freeze(
@@ -2376,7 +2469,10 @@ function summarizeKingstonsSellerPack(documentRows = []) {
   const total = rows.length
   const missingRows = rows.filter((row) => !isKingstonsSellerPackDocumentUploaded(row))
   const completed = total - missingRows.length
-  const ficaRow = rows.find((row) => row.requiresSellerType || row.key === 'signed_fica_form') || {}
+  const ficaRow = rows.find((row) =>
+    row.requiresSellerType ||
+    normalizeSellerBasePackKey(row.key) === SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION
+  ) || {}
   const sellerType = normalizeKey(ficaRow.sellerType)
   const sellerTypeCaptured = isValidKingstonsFicaSellerType(sellerType)
   const missingLabels = [
@@ -2423,6 +2519,16 @@ function buildKingstonsSellerPackListingHandoffPayload({
       uploadedFileName: normalizeText(documentRow.uploadedFileName || documentRow.uploaded_file_name || documentRow.fileName || documentRow.file_name),
       storagePath: normalizeText(documentRow.storagePath || documentRow.storage_path),
       fileUrl: normalizeText(documentRow.url || documentRow.fileUrl || documentRow.file_url || documentRow.downloadUrl || documentRow.download_url),
+      completionRoute: normalizeText(documentRow.completionRoute || documentRow.completion_route),
+      completion_route: normalizeText(documentRow.completion_route || documentRow.completionRoute),
+      physicalUploadContextRequired: documentRow.physicalUploadContextRequired === true || documentRow.physical_upload_context_required === true,
+      physical_upload_context_required: documentRow.physical_upload_context_required === true || documentRow.physicalUploadContextRequired === true,
+      uploadContext: documentRow.uploadContext || documentRow.upload_context || null,
+      upload_context: documentRow.upload_context || documentRow.uploadContext || null,
+      ficaDeclarationContext: documentRow.ficaDeclarationContext || documentRow.fica_declaration_context || null,
+      fica_declaration_context: documentRow.fica_declaration_context || documentRow.ficaDeclarationContext || null,
+      supportingFicaDocumentsDynamic: documentRow.supportingFicaDocumentsDynamic === true || documentRow.supporting_fica_documents_dynamic === true,
+      supporting_fica_documents_dynamic: documentRow.supporting_fica_documents_dynamic === true || documentRow.supportingFicaDocumentsDynamic === true,
     }
   })
   const portalRequests = buildKingstonsSellerPackPortalRequestRows(rows)
@@ -2455,9 +2561,11 @@ function buildKingstonsSellerPackListingHandoffPayload({
     ...asRecord(existingReadiness),
     sellerType: packSummary.sellerTypeCaptured === true,
     ficaSellerType: packSummary.sellerTypeCaptured === true,
-    signedMandate: documents.some((document) => document.key === 'signed_mandate' && document.status === 'uploaded'),
-    signedDefectForm: documents.some((document) => document.key === 'signed_defect_form' && document.status === 'uploaded'),
-    signedFicaForm: documents.some((document) => document.key === 'signed_fica_form' && document.status === 'uploaded'),
+    signedMandate: documents.some((document) => normalizeSellerBasePackKey(document.key) === SELLER_BASE_PACK_KEYS.SIGNED_MANDATE && document.status === 'uploaded'),
+    signedDisclosureForm: documents.some((document) => normalizeSellerBasePackKey(document.key) === SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM && document.status === 'uploaded'),
+    signedDefectForm: documents.some((document) => normalizeSellerBasePackKey(document.key) === SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM && document.status === 'uploaded'),
+    signedFicaDeclaration: documents.some((document) => normalizeSellerBasePackKey(document.key) === SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION && document.status === 'uploaded'),
+    signedFicaForm: documents.some((document) => normalizeSellerBasePackKey(document.key) === SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION && document.status === 'uploaded'),
     kingstonsSellerPack: packSummary.complete === true,
     listingHandoff: packSummary.complete === true,
   }
@@ -2483,26 +2591,27 @@ function buildKingstonsSellerPackListingHandoffPayload({
 
 function getKingstonsSellerPackListingRequirementMeta(documentKey = '', documentRow = {}) {
   const key = normalizeKey(documentKey || documentRow.key || documentRow.requirementKey || documentRow.requirement_key)
+  const basePackKey = normalizeSellerBasePackKey(key)
   const label = normalizeText(documentRow.label || documentRow.title)
   const section = normalizeKey(documentRow.documentRequirementSection || documentRow.document_requirement_section)
   const group = normalizeKey(documentRow.group || documentRow.requirement_group)
-  if (key === 'signed_defect_form') {
+  if (basePackKey === SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM) {
     return {
-      requirementKey: 'property_condition_disclosure',
-      requirementName: 'Signed Defect Form',
-      requirementDescription: 'Signed seller defect disclosure required before listing.',
+      requirementKey: SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM,
+      requirementName: 'Signed Mandatory Disclosure / Defects Form',
+      requirementDescription: 'Signed mandatory disclosure / defects form required before listing.',
       requirementGroup: 'property',
-      documentType: 'property_condition_disclosure',
+      documentType: SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM,
       documentCategory: 'property_condition_disclosure',
     }
   }
-  if (key === 'signed_fica_form') {
+  if (basePackKey === SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION) {
     return {
-      requirementKey: 'signed_fica_form',
-      requirementName: 'Signed FICA Form',
-      requirementDescription: 'Signed FICA form for the selected seller type.',
+      requirementKey: SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION,
+      requirementName: 'Signed FICA Declaration',
+      requirementDescription: 'Signed FICA declaration pack for the selected seller type.',
       requirementGroup: 'fica',
-      documentType: 'signed_fica_form',
+      documentType: SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION,
       documentCategory: 'fica',
     }
   }
@@ -2538,37 +2647,79 @@ function getKingstonsSellerPackListingRequirementMeta(documentKey = '', document
 
 function getKingstonsSellerPackPortalRequestMeta(documentRow = {}) {
   const key = normalizeKey(documentRow.key || documentRow.requirementKey || documentRow.requirement_key)
+  const basePackKey = normalizeSellerBasePackKey(key)
+  const basePackDefinition = basePackKey ? getSellerBasePackDefinition(basePackKey) : null
+  const allowedCompletionRoutes = Array.isArray(basePackDefinition?.allowedCompletionRoutes)
+    ? [...basePackDefinition.allowedCompletionRoutes]
+    : []
   const section = normalizeKey(documentRow.documentRequirementSection || documentRow.document_requirement_section)
   const group = normalizeKey(documentRow.group || documentRow.requirement_group)
   const label = normalizeText(documentRow.label || documentRow.title || documentRow.name) || key.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
   const isGenerated = isKingstonsGeneratedSellerPackRequirementRow(documentRow)
+  const isBasePack = Boolean(basePackKey)
+  const isMandate = basePackKey === SELLER_BASE_PACK_KEYS.SIGNED_MANDATE
+  const isDisclosure = basePackKey === SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM
+  const isFicaDeclaration = basePackKey === SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION
   const isAuthority = section === 'authority_documents' || group === 'authority_documents'
-  const isFica = section === 'seller_identity_fica' || key.includes('fica')
+  const isSupportingFica = !isFicaDeclaration && (section === 'seller_identity_fica' || key.includes('fica'))
   const partyName = normalizeText(documentRow.partyName || documentRow.party_name)
   const partyRole = normalizeKey(documentRow.partyRole || documentRow.party_role)
+  const requestDeliveryChannels = isGenerated
+    ? ['seller_portal']
+    : isDisclosure
+      ? ['disclosure_link', 'agency_workspace']
+      : isFicaDeclaration
+        ? ['seller_onboarding_link', 'agency_workspace']
+        : ['agency_workspace']
+  const requestDescription = normalizeText(documentRow.description) || (
+    isMandate
+      ? 'Agent uploads the physically signed mandate.'
+      : isDisclosure
+        ? 'Complete through the disclosure link or agent upload of the physically signed disclosure form.'
+        : isFicaDeclaration
+          ? 'Complete through seller onboarding or agent upload of the signed FICA declaration with seller context.'
+          : isAuthority
+            ? 'Upload the authority document required for this seller legal path.'
+            : isSupportingFica
+              ? `Upload supporting FICA documents${partyName ? ` for ${partyName}` : ''}.`
+              : 'Upload this Seller Pack document.'
+  )
+  const portalInstruction = isMandate
+    ? 'This is physically signed and uploaded by the agency team.'
+    : isDisclosure
+      ? 'This can be completed through the disclosure link or uploaded by the agency team after signing.'
+      : isFicaDeclaration
+        ? 'This declaration is completed through seller onboarding or uploaded by the agency team with seller context.'
+        : isAuthority
+          ? 'Authority documents help confirm who can sign and approve the sale.'
+          : isSupportingFica
+            ? 'Supporting FICA documents remain dynamic and depend on the captured seller entities.'
+            : 'This document is required before the property can be listed.'
   return {
     key,
     label,
     requestTitle: label,
-    requestDescription: normalizeText(documentRow.description) || (
-      isAuthority
-        ? 'Upload the authority document required for this seller legal path.'
-        : isFica
-          ? `Upload FICA documents${partyName ? ` for ${partyName}` : ''}.`
-          : 'Upload this signed Seller Pack document.'
-    ),
-    requestedFromRole: 'seller',
+    requestDescription,
+    requestedFromRole: isGenerated ? 'seller' : 'agent',
     requestStage: 'seller_pack',
     requestPriority: isGenerated ? 'standard' : 'high',
-    requestDeliveryChannels: ['seller_portal'],
+    requestDeliveryChannels,
     requestSource: KINGSTONS_SELLER_PACK_PORTAL_REQUEST_SYNC_SOURCE,
     requestDedupeKey: `kingstons_seller_pack:${key}`,
-    portalSection: isAuthority ? 'Authority Documents' : isFica ? 'Seller FICA' : 'Legal Documents',
-    portalInstruction: isAuthority
-      ? 'Authority documents help confirm who can sign and approve the sale.'
-      : isFica
-        ? 'FICA documents are required before listing can proceed.'
-        : 'This signed document is required before the property can be listed.',
+    requestAction: isMandate
+      ? 'agent_physical_upload'
+      : isDisclosure
+        ? 'disclosure_link_or_agent_physical_upload'
+        : isFicaDeclaration
+          ? 'seller_onboarding_or_agent_physical_upload_with_context'
+          : 'seller_portal_upload',
+    portalSection: isBasePack ? 'Signed Seller Pack' : isAuthority ? 'Authority Documents' : isSupportingFica ? 'Seller FICA' : 'Legal Documents',
+    portalInstruction,
+    agentManaged: isBasePack,
+    sellerUploadAllowed: isGenerated,
+    allowedCompletionRoutes,
+    physicalUploadContextRequired: isFicaDeclaration,
+    supportingFicaDocumentsDynamic: isFicaDeclaration || isSupportingFica,
     partyRole,
     partyName,
   }
@@ -2592,6 +2743,14 @@ function buildKingstonsSellerPackPortalRequestRows(documentRows = []) {
         requirementGroup: meta.requirementGroup,
         status: isKingstonsSellerPackDocumentUploaded(documentRow) ? 'uploaded' : 'requested',
         uploaded: isKingstonsSellerPackDocumentUploaded(documentRow),
+        requestedFromRole: portalRequest.requestedFromRole,
+        requestDeliveryChannels: portalRequest.requestDeliveryChannels,
+        requestAction: portalRequest.requestAction,
+        agentManaged: portalRequest.agentManaged,
+        sellerUploadAllowed: portalRequest.sellerUploadAllowed,
+        allowedCompletionRoutes: portalRequest.allowedCompletionRoutes,
+        physicalUploadContextRequired: portalRequest.physicalUploadContextRequired,
+        supportingFicaDocumentsDynamic: portalRequest.supportingFicaDocumentsDynamic,
         portalRequest,
       }
     })
@@ -2612,6 +2771,12 @@ function buildKingstonsSellerPackListingRequirementRows(documentRows = KINGSTONS
       requestDeliveryChannels: portalRequest.requestDeliveryChannels,
       requestDedupeKey: portalRequest.requestDedupeKey,
       requestSource: portalRequest.requestSource,
+      requestAction: portalRequest.requestAction,
+      agentManaged: portalRequest.agentManaged,
+      sellerUploadAllowed: portalRequest.sellerUploadAllowed,
+      allowedCompletionRoutes: portalRequest.allowedCompletionRoutes,
+      physicalUploadContextRequired: portalRequest.physicalUploadContextRequired,
+      supportingFicaDocumentsDynamic: portalRequest.supportingFicaDocumentsDynamic,
       generatedFrom: {
         source: KINGSTONS_SELLER_PACK_PORTAL_REQUEST_SYNC_SOURCE,
         previousSource: 'kingstons_seller_lead_pack_phase7_readiness_gate',
@@ -3438,9 +3603,10 @@ function getSellerLeadDocumentStatusMeta(documentRow = {}) {
 
 function getSellerLeadDocumentCanonicalLabel(row = {}) {
   const key = normalizeKey(row?.key || row?.requirementKey || row?.requirement_key)
-  if (key === 'signed_mandate') return 'Signed Mandate'
-  if (key === 'signed_defect_form') return 'Signed Defect Form'
-  if (key === 'signed_fica_form') return 'Signed FICA Form'
+  const basePackKey = normalizeSellerBasePackKey(key)
+  if (basePackKey === SELLER_BASE_PACK_KEYS.SIGNED_MANDATE) return 'Signed Mandate'
+  if (basePackKey === SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM) return 'Signed Mandatory Disclosure / Defects Form'
+  if (basePackKey === SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION) return 'Signed FICA Declaration'
   if (key === 'property_condition_disclosure') return 'Seller Declaration / Disclosure'
   return row?.label || row?.title || row?.document_name || row?.name || 'Seller document'
 }
@@ -3459,9 +3625,11 @@ function getSellerLeadDocumentCanonicalKey(row = {}) {
     row?.document_name,
     row?.name,
   ].filter(Boolean).join(' '))
+  const basePackKey = normalizeSellerBasePackKey(source)
+  if (basePackKey) return basePackKey
   if (source.includes('signed_mandate') || source.includes('mandate_signature') || (source.includes('signed') && source.includes('mandate'))) return 'signed_mandate'
-  if (source.includes('signed_defect_form') || source.includes('defect_form') || (source.includes('signed') && source.includes('defect'))) return 'signed_defect_form'
-  if (source.includes('signed_fica_form') || source.includes('fica_form') || (source.includes('signed') && source.includes('fica'))) return 'signed_fica_form'
+  if (source.includes('signed_defect_form') || source.includes('defect_form') || (source.includes('signed') && source.includes('defect'))) return SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM
+  if (source.includes('signed_fica_form') || source.includes('fica_form') || (source.includes('signed') && source.includes('fica'))) return SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION
   if (
     source.includes('valuation_document') ||
     source.includes('formal_valuation') ||
@@ -3474,7 +3642,7 @@ function getSellerLeadDocumentCanonicalKey(row = {}) {
     source.includes('seller_declaration') ||
     source.includes('seller_disclosure') ||
     (source.includes('disclosure') && (source.includes('property') || source.includes('seller')))
-  ) return 'property_condition_disclosure'
+  ) return SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM
   return normalizeKey(row?.key || row?.requirementKey || row?.requirement_key || row?.label || row?.title || row?.id)
 }
 
@@ -3557,13 +3725,11 @@ function mergeSellerLeadDocumentRows(existing = {}, incoming = {}) {
   const canonicalKey = getSellerLeadDocumentCanonicalKey(base) || getSellerLeadDocumentCanonicalKey(overlay)
   const canonicalLabel = canonicalKey === 'signed_mandate'
     ? 'Signed Mandate'
-    : canonicalKey === 'signed_defect_form'
-      ? 'Signed Defect Form'
-      : canonicalKey === 'signed_fica_form'
-        ? 'Signed FICA Form'
-    : canonicalKey === 'property_condition_disclosure'
-      ? 'Seller Declaration / Disclosure'
-      : base.label || base.title || overlay.label || overlay.title
+    : canonicalKey === SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM
+      ? 'Signed Mandatory Disclosure / Defects Form'
+      : canonicalKey === SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION
+        ? 'Signed FICA Declaration'
+        : base.label || base.title || overlay.label || overlay.title
 
   return {
     ...overlay,
@@ -21976,6 +22142,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             sellerPackDocumentKey: documentRow.key,
             sellerPackRequirementKey: meta.requirementKey,
             sellerType: normalizeText(handoffPayload?.sellerType || getKingstonsSellerPackState(lead).sellerType),
+            completionRoute: normalizeText(documentRow.completionRoute || documentRow.completion_route),
+            physicalUploadContextRequired: documentRow.physicalUploadContextRequired === true || documentRow.physical_upload_context_required === true,
+            uploadContext: documentRow.uploadContext || documentRow.upload_context || null,
+            ficaDeclarationContext: documentRow.ficaDeclarationContext || documentRow.fica_declaration_context || null,
+            supportingFicaDocumentsDynamic: documentRow.supportingFicaDocumentsDynamic === true || documentRow.supporting_fica_documents_dynamic === true,
           },
         })
         results.push({
@@ -23002,6 +23173,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     if (!selectedLeadIsSeller) {
       return { ok: false, errorMessage: 'Mandates can only be sent from a seller lead.' }
     }
+    const mandateSigningDecision = resolveSellerAccessPolicy({
+      listingId: selectedLeadLinkedListing?.id || selectedLead?.listingId || selectedLead?.listing_id || selectedLead?.leadId,
+    }).actions.sendMandateSigningLink
+    if (!mandateSigningDecision.enabled) {
+      const errorMessage = getClientAccessPolicyMessage(mandateSigningDecision.reason)
+      setError(errorMessage)
+      return { ok: false, errorMessage, reason: mandateSigningDecision.reason }
+    }
     const options = sendOptions && typeof sendOptions === 'object' ? sendOptions : {}
     let dispatchId = normalizeText(options.dispatchId)
     const statusPacket =
@@ -23957,10 +24136,19 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     if (event?.target) event.target.value = ''
     const leadIdForUpload = normalizeText(selectedLead?.leadId || selectedLead?.lead_id || selectedLeadRecordId || routeLeadId)
     if (!key || !definition || !file || !leadIdForUpload) return
+    const currentPack = getKingstonsSellerPackState(selectedLead || routeLeadSnapshotLead || { leadId: leadIdForUpload })
+    const isFicaDeclarationUpload = normalizeSellerBasePackKey(key) === SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION
     const isOwnershipDrivenDocument = normalizeKey(definition.requirementLane || definition.requirement_lane) === 'ownership_driven' ||
       normalizeKey(definition.documentRequirementSection || definition.document_requirement_section) === 'seller_identity_fica'
-    if ((key === 'signed_fica_form' || isOwnershipDrivenDocument) && !isValidKingstonsFicaSellerType(selectedKingstonsSellerPack.sellerType)) {
+    const ficaDeclarationUploadContext = isFicaDeclarationUpload
+      ? resolveKingstonsFicaDeclarationPhysicalUploadContext(currentPack, { agent: currentAgent })
+      : null
+    if ((isFicaDeclarationUpload || isOwnershipDrivenDocument) && !isValidKingstonsFicaSellerType(currentPack.sellerType || selectedKingstonsSellerPack.sellerType)) {
       setError('Capture the seller details before uploading FICA or authority documents.')
+      return
+    }
+    if (isFicaDeclarationUpload && !ficaDeclarationUploadContext?.complete) {
+      setError(ficaDeclarationUploadContext?.reason || 'Capture and save the seller-pack details before uploading the physical FICA declaration.')
       return
     }
     const uploadStartedAt = getPipelineTelemetryNow()
@@ -23984,7 +24172,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         'Document upload is taking too long. Please check your connection and try again.',
         30000,
       )
-      const currentPack = getKingstonsSellerPackState(selectedLead || routeLeadSnapshotLead || { leadId: leadIdForUpload })
       const requirementMeta = getKingstonsSellerPackListingRequirementMeta(key, {
         ...definition,
         ...sourceDocument,
@@ -24015,6 +24202,18 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         party_email: definition.party_email || definition.partyEmail,
         generatedBy: definition.generatedBy || definition.generated_by,
         generated_by: definition.generated_by || definition.generatedBy,
+        completionRoute: isFicaDeclarationUpload
+          ? SELLER_BASE_PACK_COMPLETION_ROUTES.PHYSICAL_UPLOAD_WITH_CONTEXT
+          : SELLER_BASE_PACK_COMPLETION_ROUTES.PHYSICAL_UPLOAD,
+        completion_route: isFicaDeclarationUpload
+          ? SELLER_BASE_PACK_COMPLETION_ROUTES.PHYSICAL_UPLOAD_WITH_CONTEXT
+          : SELLER_BASE_PACK_COMPLETION_ROUTES.PHYSICAL_UPLOAD,
+        physicalUploadContextRequired: isFicaDeclarationUpload,
+        physical_upload_context_required: isFicaDeclarationUpload,
+        uploadContext: ficaDeclarationUploadContext?.context || null,
+        upload_context: ficaDeclarationUploadContext?.context || null,
+        ficaDeclarationContext: ficaDeclarationUploadContext?.context || null,
+        fica_declaration_context: ficaDeclarationUploadContext?.context || null,
         status: 'uploaded',
         statusLabel: 'Uploaded',
         uploadedAt: new Date().toISOString(),
@@ -24085,6 +24284,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 leadId: leadIdForUpload,
                 sellerPackDocumentKey: key,
                 sellerPackRequirementKey: canonicalRequirementKey,
+                completionRoute: uploadedDocument.completionRoute,
+                physicalUploadContextRequired: uploadedDocument.physicalUploadContextRequired,
+                uploadContext: uploadedDocument.uploadContext,
+                ficaDeclarationContext: uploadedDocument.ficaDeclarationContext,
               },
             }),
             'Seller pack listing document link is taking too long.',
@@ -24405,7 +24608,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setKingstonsSellerPackWizardError(validationMessage)
       return
     }
-    if (!selectedLead || !KINGSTONS_SELLER_PACK_KEY_SET.has('signed_fica_form')) return
+    if (!selectedLead || !KINGSTONS_SELLER_PACK_KEY_SET.has(SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION)) return
     const currentPack = getKingstonsSellerPackState(selectedLead)
     const profilePayload = buildKingstonsSellerPackProfilePayload(draft)
     try {
@@ -29885,8 +30088,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             const StatusIcon = statusMeta.Icon
                             const isUploading = sellerPackUploadingKey === documentRow.key
                             const displayCopy = getKingstonsSellerPackDisplayCopy(documentRow)
-                            const isFicaRow = documentRow.key === 'signed_fica_form'
-                            const canUploadFica = !isFicaRow || selectedKingstonsSellerPackSummary.sellerTypeCaptured
+                            const isFicaRow = normalizeSellerBasePackKey(documentRow.key) === SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION
+                            const sellerPackDetailsCaptured = hasKingstonsSellerPackDetailsCompletionSignal(selectedKingstonsSellerPack)
+                            const canUploadFica = !isFicaRow || sellerPackDetailsCaptured
 	                            return (
 	                              <article key={documentRow.key} className="flex min-h-[178px] flex-col rounded-[18px] border border-[#dce7f2] bg-[#fbfdff] p-4 shadow-[0_10px_24px_rgba(31,54,78,0.035)]">
 	                                <div className="flex items-start justify-between gap-3">
@@ -29907,8 +30111,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                                  </p>
 	                                  {isFicaRow ? (
 	                                    <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-[#6d839b]">
-	                                      <span>{selectedKingstonsSellerPackSummary.sellerTypeCaptured ? getKingstonsSellerPackCaptureSummaryLabel(selectedKingstonsSellerPack) : 'Seller details required before upload'}</span>
-	                                      {selectedKingstonsSellerPackSummary.sellerTypeCaptured ? (
+	                                      <span>{sellerPackDetailsCaptured ? getKingstonsSellerPackCaptureSummaryLabel(selectedKingstonsSellerPack) : 'Seller-pack details required before upload'}</span>
+	                                      {sellerPackDetailsCaptured ? (
 	                                        <button
 	                                          type="button"
 	                                          className="font-semibold text-[#13784f] hover:text-[#0f6845]"
@@ -29924,7 +30128,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                                  <button
 	                                    type="button"
 	                                    className="mt-auto inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-[12px] bg-[#13784f] px-3 text-sm font-semibold text-white shadow-[0_10px_20px_rgba(19,120,79,0.16)] transition hover:bg-[#0f6845]"
-	                                    onClick={() => openKingstonsSellerPackWizard('type')}
+	                                    onClick={() => openKingstonsSellerPackWizard(selectedKingstonsSellerPackSummary.sellerTypeCaptured ? 'details' : 'type')}
 	                                  >
 	                                    <UserRound className="h-4 w-4" />
 	                                    Capture details
@@ -34562,18 +34766,25 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                                        const documentKey = normalizeKey(documentRow.key || documentRow.requirementKey || documentRow.requirement_key)
 	                                        const canOpenCanonicalFinalArtifact = Boolean(documentRow.canonicalFinalArtifact && documentRow.packetId && documentRow.packetVersionId)
 	                                        const openingCanonicalArtifact = openingSellerLeadDocumentId === normalizeText(documentRow.id || documentRow.key)
-	                                        const documentActionLabel = ['signed_mandate', 'property_condition_disclosure', 'valuation_document'].includes(documentKey) ? 'Download' : 'Open'
+	                                        const documentActionLabel = [
+	                                          SELLER_BASE_PACK_KEYS.SIGNED_MANDATE,
+	                                          SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM,
+	                                          'property_condition_disclosure',
+	                                          'valuation_document',
+	                                        ].includes(documentKey) ? 'Download' : 'Open'
 	                                        const shouldDownloadDocument = documentActionLabel === 'Download'
 	                                        const isKingstonsFormalValuationDocument = selectedLeadHasKingstonsPipelineSignal && documentKey === 'valuation_document'
 	                                        const documentRequirementLane = normalizeKey(documentRow.requirementLane || documentRow.requirement_lane)
 	                                        const documentRequirementSection = normalizeKey(documentRow.documentRequirementSection || documentRow.document_requirement_section)
-	                                        const isKingstonsSellerPackDocument = selectedLeadHasKingstonsPipelineSignal && KINGSTONS_SELLER_PACK_KEY_SET.has(documentKey)
+	                                        const basePackDocumentKey = normalizeSellerBasePackKey(documentKey)
+	                                        const isKingstonsSellerPackDocument = selectedLeadHasKingstonsPipelineSignal && KINGSTONS_SELLER_PACK_KEY_SET.has(basePackDocumentKey || documentKey)
 	                                        const isKingstonsOwnershipDrivenDocument = selectedLeadHasKingstonsPipelineSignal && (
 	                                          documentRequirementLane === 'ownership_driven' ||
 	                                          documentRequirementSection === 'seller_identity_fica'
 	                                        )
-	                                        const isKingstonsFicaDocument = documentKey === 'signed_fica_form' || isKingstonsOwnershipDrivenDocument
-	                                        const canUploadKingstonsSellerPackDocument = !isKingstonsFicaDocument || selectedKingstonsSellerPackSummary.sellerTypeCaptured
+	                                        const isKingstonsFicaDocument = basePackDocumentKey === SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION || isKingstonsOwnershipDrivenDocument
+	                                        const sellerPackDetailsCaptured = hasKingstonsSellerPackDetailsCompletionSignal(selectedKingstonsSellerPack)
+	                                        const canUploadKingstonsSellerPackDocument = !isKingstonsFicaDocument || sellerPackDetailsCaptured
 	                                        const canUploadKingstonsDocument = isKingstonsFormalValuationDocument ||
 	                                          ((isKingstonsSellerPackDocument || isKingstonsOwnershipDrivenDocument) && canUploadKingstonsSellerPackDocument)
 	                                        const isUploadingKingstonsDocument = isKingstonsFormalValuationDocument ? formalValuationUploading : sellerPackUploadingKey === documentKey
@@ -34637,10 +34848,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                                                  {openingCanonicalArtifact ? 'Downloading...' : documentActionLabel} <ExternalLink className="h-3.5 w-3.5" />
 	                                                </button>
 	                                              ) : null}
-	                                              {isKingstonsFicaDocument && !selectedKingstonsSellerPackSummary.sellerTypeCaptured ? (
+	                                              {isKingstonsFicaDocument && !sellerPackDetailsCaptured ? (
 	                                                <button
 	                                                  type="button"
-	                                                  onClick={() => openKingstonsSellerPackWizard('type')}
+	                                                  onClick={() => openKingstonsSellerPackWizard(selectedKingstonsSellerPackSummary.sellerTypeCaptured ? 'details' : 'type')}
 	                                                  className="inline-flex min-h-9 items-center gap-1.5 rounded-[12px] bg-[#13784f] px-3 text-xs font-semibold text-white shadow-[0_8px_16px_rgba(19,120,79,0.16)] hover:bg-[#0f6845]"
 	                                                >
 	                                                  <UserRound className="h-3.5 w-3.5" />

@@ -24,12 +24,37 @@ import {
 } from "../services/emailBranding.ts";
 import { sendViaResendApi } from "../services/resend.ts";
 import type { SendOnboardingSubmittedPayload } from "../types.ts";
-import { isMissingSchemaError, isMissingTableError } from "../utils/db.ts";
+import {
+  isMissingColumnError,
+  isMissingSchemaError,
+  isMissingTableError,
+} from "../utils/db.ts";
 import { jsonResponse } from "../utils/http.ts";
 import { normalizeText } from "../utils/text.ts";
 import { resolveAppBaseUrl } from "../utils/url.ts";
 
 const AUTH_MODEL = "canonical_client_invite_with_token_portal_fallback";
+const TRANSACTION_BASE_SELECT =
+  "id, buyer_id, development_id, unit_id, transaction_reference, organisation_id";
+const TRANSACTION_PORTAL_READINESS_SELECT =
+  `${TRANSACTION_BASE_SELECT}, onboarding_status, onboarding_completed_at, external_onboarding_submitted_at`;
+const BUYER_PORTAL_ONBOARDING_READY_STATUS_KEYS = new Set([
+  "approved",
+  "awaiting_signed_otp",
+  "client_onboarding_complete",
+  "complete",
+  "completed",
+  "onboarding_complete",
+  "onboarding_completed",
+  "reviewed",
+  "submitted",
+]);
+const BUYER_PORTAL_SIGNED_OTP_READY_STATUS_KEYS = new Set([
+  "otp_uploaded",
+  "signed_otp",
+  "signed_otp_received",
+  "signed_otp_uploaded",
+]);
 
 function normalizeUuidText(value: unknown) {
   const normalized = normalizeText(value).toLowerCase();
@@ -37,6 +62,47 @@ function normalizeUuidText(value: unknown) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(normalized)
     ? normalized
     : "";
+}
+
+function normalizeStatusKey(value: unknown) {
+  return normalizeText(value).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(
+    /^_+|_+$/g,
+    "",
+  );
+}
+
+function transactionHasBuyerOnboardingSignal(transaction: Record<string, unknown>) {
+  return Boolean(
+    transaction.onboarding_completed_at ||
+      transaction.external_onboarding_submitted_at ||
+      BUYER_PORTAL_ONBOARDING_READY_STATUS_KEYS.has(
+        normalizeStatusKey(transaction.onboarding_status),
+      ),
+  );
+}
+
+function transactionHasSignedOtpSignal(transaction: Record<string, unknown>) {
+  return BUYER_PORTAL_SIGNED_OTP_READY_STATUS_KEYS.has(
+    normalizeStatusKey(transaction.onboarding_status),
+  );
+}
+
+function developmentRequiresSignedOtpBeforeBuyerPortal(developmentName: unknown) {
+  return normalizeStatusKey(developmentName).includes("kingstons");
+}
+
+function transactionBuyerPortalReady({
+  transaction,
+  developmentName,
+}: {
+  transaction: Record<string, unknown>;
+  developmentName: unknown;
+}) {
+  if (developmentRequiresSignedOtpBeforeBuyerPortal(developmentName)) {
+    return transactionHasSignedOtpSignal(transaction);
+  }
+  return transactionHasBuyerOnboardingSignal(transaction) ||
+    transactionHasSignedOtpSignal(transaction);
 }
 
 export async function handleOnboardingSubmittedEmail(
@@ -84,13 +150,26 @@ export async function handleOnboardingSubmittedEmail(
 
   const nowIso = new Date().toISOString();
 
-  const transactionQuery = await supabase
+  let transactionQuery = await supabase
     .from("transactions")
-    .select(
-      "id, buyer_id, development_id, unit_id, transaction_reference, organisation_id",
-    )
+    .select(TRANSACTION_PORTAL_READINESS_SELECT)
     .eq("id", transactionId)
     .maybeSingle();
+  if (
+    transactionQuery.error &&
+    (isMissingColumnError(transactionQuery.error, "onboarding_status") ||
+      isMissingColumnError(transactionQuery.error, "onboarding_completed_at") ||
+      isMissingColumnError(
+        transactionQuery.error,
+        "external_onboarding_submitted_at",
+      ))
+  ) {
+    transactionQuery = await supabase
+      .from("transactions")
+      .select(TRANSACTION_BASE_SELECT)
+      .eq("id", transactionId)
+      .maybeSingle();
+  }
 
   if (transactionQuery.error) {
     return jsonResponse(500, {
@@ -236,6 +315,38 @@ export async function handleOnboardingSubmittedEmail(
       recipientEmail: buyerEmail,
       error:
         "Client portal link is missing for this transaction. Create an active client portal link before sending onboarding submitted email.",
+    });
+  }
+
+  if (
+    isClientPortalLinkEmail &&
+    !transactionBuyerPortalReady({
+      transaction: transaction as Record<string, unknown>,
+      developmentName,
+    })
+  ) {
+    await notifyOwnerIfPossible();
+    const kingstonsRequiresOtp = developmentRequiresSignedOtpBeforeBuyerPortal(
+      developmentName,
+    );
+    const reason = kingstonsRequiresOtp
+      ? "buyer_portal_waiting_for_signed_otp"
+      : "buyer_portal_waiting_for_onboarding_or_otp";
+    console.warn("[client-access-policy] buyer portal send blocked", {
+      reason,
+      transactionId: transaction.id,
+      developmentName: developmentName || null,
+    });
+    return jsonResponse(409, {
+      ok: false,
+      type: "client_portal_link",
+      sent: false,
+      reason,
+      transactionId: transaction.id,
+      recipientEmail: buyerEmail,
+      error: kingstonsRequiresOtp
+        ? "Upload the signed OTP before sending the buyer portal link for Kingstons."
+        : "Complete buyer onboarding or upload the signed OTP before sending the buyer portal link.",
     });
   }
 

@@ -249,7 +249,10 @@ assertContainsAll(f2Section, [
 // The controlled sender explicitly accepts OTP signing, requires the current
 // packet version plus a role-targeted E4 dispatch, and records provider proof
 // through the service-only Phase 2 RPC.
-assert.match(sender, /\["seller_mandate_sent", "seller_mandate", "otp_signing"\]/)
+assert.match(sender, /RETIRED_SELLER_MANDATE_SIGNING_EMAIL_TYPES/)
+assert.match(sender, /RETIRED_SELLER_MANDATE_SIGNING_EMAIL_TYPES\.has\(type\)/)
+assert.match(sender, /seller_mandate_signing_links_retired/)
+assert.match(sender, /"otp_signing"/)
 assert.match(sender, /const isOtpSigning = type === "otp_signing"/)
 assert.match(sender, /if \(isOtpSigning && \(!requestedPacketVersionId \|\| !dispatchId\)\)/)
 assert.match(sender, /const expectedPacketType = isOtpSigning \? "otp" : "mandate"/)
@@ -319,8 +322,8 @@ assertContainsAll(workspacePage, [
 assert.match(workspacePage, /const signingDeliveryEnabled = packetType !== 'otp' \|\| otpSigningReadiness\.ready/)
 assert.match(workspacePage, /const emailPayload = \{[\s\S]{0,500}type: 'otp_signing'[\s\S]{0,500}packetType: 'otp'/)
 assert.match(workspacePage, /invokeEdgeFunction\(useServerSendReady \? 'legal-document-job-runner' : 'send-mandate-signing-email'/)
-assert.match(workspacePage, /action: 'send_ready_packet'[\s\S]{0,160}\.\.\.emailPayload/)
-assert.match(workspacePage, /body: useServerSendReady[\s\S]{0,260}: emailPayload/)
+assert.match(workspacePage, /action: 'send_ready_packet'[\s\S]{0,500}\.\.\.emailPayload/)
+assert.match(workspacePage, /body: useServerSendReady[\s\S]*: emailPayload/)
 assert.doesNotMatch(workspacePage, /['"`]generate-otp['"`]/)
 
 // An initial OTP invite is staged one signer at a time.  Targeted dispatch

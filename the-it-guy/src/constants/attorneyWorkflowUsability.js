@@ -139,6 +139,137 @@ export const BOND_ATTORNEY_STAGE_COMMAND_PRESETS = Object.freeze({
   }),
 })
 
+export const CANCELLATION_ATTORNEY_STAGE_COMMAND_PRESETS = Object.freeze({
+  cancellation_existing_bond_confirmed: Object.freeze({
+    label: 'Confirm Existing Bond',
+    description: 'Confirm the seller bond exists and cancellation is required for this matter.',
+    note: 'Seller existing bond confirmed. Cancellation lane activation, bank, and account follow-up checked.',
+    checklist: ['Confirm seller bond status.', 'Check whether cancellation is explicitly required.', 'Keep buyer finance out of cancellation activation logic.'],
+  }),
+  cancellation_bank_captured: Object.freeze({
+    label: 'Capture Cancellation Bank',
+    description: 'Record the bank holding the seller bond that must be cancelled.',
+    note: 'Cancellation bank captured and checked against the seller bond confirmation.',
+    checklist: ['Capture the cancellation bank.', 'Check bank name against seller supplied evidence.', 'Flag missing branch or contact details if needed.'],
+  }),
+  cancellation_bond_account_captured: Object.freeze({
+    label: 'Capture Bond Account',
+    description: 'Record the seller bond account or reference number for cancellation figures.',
+    note: 'Seller bond account/reference captured for cancellation figures and bank follow-up.',
+    checklist: ['Capture the bond account or reference number.', 'Check the reference against bank or seller evidence.', 'Record any uncertainty as a follow-up.'],
+  }),
+  cancellation_instruction_received: Object.freeze({
+    label: 'Confirm Instruction',
+    description: 'Confirm the cancellation instruction has been received and logged.',
+    note: 'Cancellation instruction received and logged. Matter reference, bank, and source checked.',
+    checklist: ['Confirm the instruction source.', 'Save the instruction or mandate evidence.', 'Check the cancellation attorney can proceed independently.'],
+  }),
+  notice_period_captured: Object.freeze({
+    commandType: 'add_note',
+    label: 'Capture Notice Period',
+    description: 'Record the bank notice period and timing implications without blocking other cancellation work.',
+    note: 'Cancellation notice period captured. Timing and follow-up implications recorded.',
+    checklist: ['Capture the notice period.', 'Record the notice start or target date if known.', 'Flag timing risk before lodgement readiness.'],
+  }),
+  cancellation_figures_requested: Object.freeze({
+    label: 'Request Figures',
+    description: 'Confirm cancellation figures have been requested from the bank.',
+    note: 'Cancellation figures requested from the bank. Request date, channel, and expected response captured.',
+    checklist: ['Request cancellation figures from the bank.', 'Capture request channel and date.', 'Record expected turnaround or follow-up date.'],
+  }),
+  cancellation_figures_received: Object.freeze({
+    commandType: 'request_document',
+    requestedFrom: 'bank',
+    visibility: 'professional_shared',
+    label: 'Capture Figures',
+    description: 'Capture received cancellation figures and keep the source document visible for transfer alignment.',
+    note: 'Cancellation figures received and saved for transfer guarantee alignment.',
+    checklist: ['Save the cancellation figures document.', 'Check settlement amount and expiry.', 'Share figures visibility with transfer coordination.'],
+  }),
+  figures_expiry_captured: Object.freeze({
+    label: 'Capture Figures Expiry',
+    description: 'Record the cancellation figures expiry date so lodgement timing can be checked.',
+    note: 'Cancellation figures expiry captured and checked against target lodgement timing.',
+    checklist: ['Capture the figures expiry date.', 'Compare expiry to target lodgement date.', 'Flag refresh required if the expiry is too close or already passed.'],
+  }),
+  notice_penalty_risk_captured: Object.freeze({
+    commandType: 'add_note',
+    priority: 'urgent',
+    label: 'Capture Penalty Risk',
+    description: 'Record notice, penalty, or stale-figures risk without forcing unrelated stages complete.',
+    note: 'Cancellation notice or penalty risk captured. Owner and next action recorded.',
+    checklist: ['Describe the penalty or notice risk.', 'Capture the owner and follow-up date.', 'Keep the risk visible before lodgement readiness.'],
+  }),
+  cancellation_guarantees_requested: Object.freeze({
+    label: 'Request Guarantees',
+    description: 'Confirm guarantees have been requested for cancellation settlement.',
+    note: 'Cancellation guarantees requested. Amount, wording, and transfer coordination requirements checked.',
+    checklist: ['Request guarantees for the cancellation amount.', 'Check guarantee wording requirements.', 'Link request to transfer guarantee alignment.'],
+  }),
+  cancellation_guarantees_received: Object.freeze({
+    commandType: 'request_document',
+    requestedFrom: 'attorney',
+    visibility: 'professional_shared',
+    label: 'Capture Guarantees',
+    description: 'Capture received guarantees and make them available for cancellation bank acceptance.',
+    note: 'Cancellation guarantees received. Value, wording, expiry, and source checked.',
+    checklist: ['Save guarantee evidence.', 'Check value against cancellation figures.', 'Check expiry and wording before acceptance.'],
+  }),
+  cancellation_guarantees_accepted: Object.freeze({
+    label: 'Accept Guarantees',
+    description: 'Confirm cancellation guarantees are accepted by the bank or cancellation attorney.',
+    note: 'Cancellation guarantees accepted. Acceptance evidence and remaining settlement risk checked.',
+    checklist: ['Confirm guarantee acceptance.', 'Save acceptance evidence.', 'Record any settlement shortfall or expiry risk.'],
+  }),
+  cancellation_documents_prepared: Object.freeze({
+    label: 'Prepare Documents',
+    description: 'Confirm the cancellation document pack is prepared for seller signing or bank processing.',
+    note: 'Cancellation document pack prepared. Seller, property, bank, and authority requirements checked.',
+    checklist: ['Prepare cancellation documents.', 'Check seller capacity and authority evidence.', 'Confirm bank and property details are correct.'],
+  }),
+  seller_cancellation_documents_signed: Object.freeze({
+    commandType: 'request_document',
+    requestedFrom: 'seller',
+    visibility: 'client_visible',
+    label: 'Capture Signed Docs',
+    description: 'Capture seller signed cancellation documents and supporting signing evidence.',
+    note: 'Seller cancellation documents signed and saved. Signature and authority requirements checked.',
+    checklist: ['Save signed cancellation documents.', 'Check signatures and witnessing.', 'Check seller authority evidence for company or trust sellers.'],
+  }),
+  cancellation_lodgement_ready: Object.freeze({
+    label: 'Mark Cancellation Ready',
+    description: 'Confirm cancellation is ready for simultaneous lodgement.',
+    note: 'Cancellation lodgement readiness confirmed. Valid figures, accepted guarantees, documents, and blockers checked.',
+    checklist: ['Confirm figures are still valid.', 'Confirm guarantees are accepted.', 'Confirm cancellation pack and seller signing are complete.'],
+  }),
+  cancellation_lodged: Object.freeze({
+    label: 'Mark Cancellation Lodged',
+    description: 'Confirm cancellation was lodged simultaneously with transfer.',
+    note: 'Cancellation lodged simultaneously with transfer. Lodgement date and reference captured.',
+    checklist: ['Capture lodgement date.', 'Capture deeds office or lodgement reference.', 'Confirm simultaneous lodgement with transfer.'],
+  }),
+  cancellation_registered: Object.freeze({
+    label: 'Confirm Registration',
+    description: 'Confirm bond cancellation registration.',
+    note: 'Cancellation registration confirmed. Registration date and bank notification status captured.',
+    checklist: ['Capture registration date.', 'Confirm deeds office registration.', 'Queue bank close-out confirmation.'],
+  }),
+  settlement_proof_captured: Object.freeze({
+    commandType: 'add_note',
+    visibility: 'professional_shared',
+    label: 'Capture Settlement Proof',
+    description: 'Record settlement payment proof or bank settlement reference.',
+    note: 'Cancellation settlement proof captured. Payment reference and bank confirmation follow-up recorded.',
+    checklist: ['Capture settlement payment reference.', 'Save proof or confirmation source.', 'Record any shortfall or bank close-out follow-up.'],
+  }),
+  cancellation_close_out_complete: Object.freeze({
+    label: 'Close Cancellation',
+    description: 'Confirm final bank close-out and archive readiness for the cancellation matter.',
+    note: 'Cancellation close-out complete. Final bank confirmation, settlement proof, and archive readiness checked.',
+    checklist: ['Confirm bank close-out.', 'Check all cancellation evidence is filed.', 'Complete matter close-out and archive readiness.'],
+  }),
+})
+
 export const ATTORNEY_WORKFLOW_COORDINATION_COMMAND_PRESETS = Object.freeze({
   bond_bond_guarantees_issued: Object.freeze({
     label: 'Request Bond Guarantees',
@@ -162,6 +293,28 @@ export const ATTORNEY_WORKFLOW_COORDINATION_COMMAND_PRESETS = Object.freeze({
       'Update bond guarantee wording accepted once transfer acceptance is saved.',
     ],
   }),
+  cancellation_cancellation_guarantees_accepted: Object.freeze({
+    label: 'Request Cancellation Acceptance',
+    subject: 'Cancellation guarantees accepted',
+    messagePrefix: 'Guarantee coordination request for Cancellation Attorney.',
+    description: 'Ask the cancellation attorney to confirm cancellation figures, guarantee value, expiry, and bank acceptance.',
+    checklist: [
+      'Confirm cancellation figures and expiry are current.',
+      'Ask cancellation attorney to confirm guarantee amount and bank acceptance.',
+      'Record any settlement shortfall, expiry risk, or wording correction before transfer lodgement.',
+    ],
+  }),
+  transfer_transfer_cancellation_alignment: Object.freeze({
+    label: 'Request Transfer Alignment',
+    subject: 'Transfer guarantee alignment',
+    messagePrefix: 'Cancellation guarantee alignment request for Transfer Attorney.',
+    description: 'Ask the transfer attorney to align guarantee values, wording, and lodgement timing with cancellation figures.',
+    checklist: [
+      'Confirm transfer guarantee wording and value match cancellation settlement requirements.',
+      'Confirm cancellation figures expiry against the target lodgement date.',
+      'Record amendments or timing risk before marking cancellation guarantees accepted.',
+    ],
+  }),
   bond_bond_lodgement_ready: Object.freeze({
     label: 'Request Bond Readiness',
     subject: 'Bond lodgement readiness',
@@ -171,6 +324,17 @@ export const ATTORNEY_WORKFLOW_COORDINATION_COMMAND_PRESETS = Object.freeze({
       'Confirm bank approval to lodge has been received.',
       'Confirm the bond lodgement pack is ready.',
       'Record any condition that affects simultaneous lodgement timing.',
+    ],
+  }),
+  cancellation_cancellation_lodgement_ready: Object.freeze({
+    label: 'Request Cancellation Readiness',
+    subject: 'Cancellation lodgement readiness',
+    messagePrefix: 'Simultaneous lodgement request for Cancellation Attorney.',
+    description: 'Ask the cancellation attorney to confirm valid figures, guarantee acceptance, cancellation pack readiness, and lodgement constraints.',
+    checklist: [
+      'Confirm cancellation figures are valid for the target lodgement date.',
+      'Confirm guarantees are accepted and the cancellation pack is ready.',
+      'Record any figures expiry, bank consent, or signing blocker affecting simultaneous lodgement.',
     ],
   }),
   transfer_transfer_lodgement_ready: Object.freeze({
@@ -499,6 +663,10 @@ function getBondAttorneyStageCommandPreset(stageKey = '') {
   return BOND_ATTORNEY_STAGE_COMMAND_PRESETS[stageKey] || null
 }
 
+function getCancellationAttorneyStageCommandPreset(stageKey = '') {
+  return CANCELLATION_ATTORNEY_STAGE_COMMAND_PRESETS[stageKey] || null
+}
+
 function buildBondAttorneyStageSpecificCommand({
   action = {},
   laneKey = 'transfer',
@@ -586,6 +754,105 @@ function buildBondAttorneyStageSpecificCommand({
   })
 }
 
+function buildCancellationAttorneyStageSpecificCommand({
+  action = {},
+  laneKey = 'transfer',
+  stageKey = '',
+  actionType = '',
+  actionLabel = '',
+  actionDescription = '',
+  now = null,
+} = {}) {
+  if (laneKey !== 'cancellation') return null
+  const preset = getCancellationAttorneyStageCommandPreset(stageKey)
+  if (!preset) return null
+  if (!['complete_stage_evidence', 'resolve_blocker', 'update_matter_data', 'manage_signing', 'review_workflow', 'request_document', 'request_corrected_document'].includes(actionType)) return null
+
+  const blocked = actionType === 'resolve_blocker'
+  const corrected = actionType === 'request_corrected_document'
+  const commandType = blocked ? 'add_note' : preset.commandType || 'complete_step'
+  const priority = preset.priority || (blocked ? 'urgent' : commandPriorityForAction(action))
+  const label = blocked
+    ? 'Add Cancellation Blocker Note'
+    : corrected
+      ? 'Request Cancellation Correction'
+      : preset.label || 'Update Cancellation Stage'
+  const visibility = preset.visibility || 'internal'
+  const requestedFrom = preset.requestedFrom || action.target || 'cancellation_attorney'
+  const description = preset.description || actionDescription || 'Capture the cancellation attorney workflow update.'
+  const workPacket = buildWorkPacket({
+    action,
+    laneKey,
+    stageKey,
+    subject: preset.label || actionLabel,
+    commandType,
+    requestedFrom,
+    priority,
+    visibility,
+    checklist: preset.checklist || [],
+    now,
+  })
+
+  if (commandType === 'request_document') {
+    return buildCommand({
+      action,
+      laneKey,
+      stageKey,
+      commandType,
+      label,
+      description,
+      workPacket,
+      draft: {
+        laneKey,
+        title: preset.label || actionLabel,
+        requestedFrom: normalizeRequestedFrom(requestedFrom),
+        priority: workPacket.priority,
+        visibility: workPacket.visibility,
+        dueDate: workPacket.dueDate,
+        workPacket,
+        description: sentence(
+          corrected ? `Please provide a corrected ${preset.label || actionLabel}.` : preset.note,
+          actionDescription,
+        ),
+      },
+    })
+  }
+
+  if (commandType === 'add_note') {
+    return buildCommand({
+      action,
+      laneKey,
+      stageKey,
+      commandType,
+      label,
+      description,
+      workPacket,
+      draft: buildNoteDraft({
+        laneKey,
+        visibility,
+        message: sentence(blocked ? `Blocker update for ${preset.label}.` : preset.note, blocked ? actionDescription : ''),
+        workPacket,
+      }),
+    })
+  }
+
+  return buildCommand({
+    action,
+    laneKey,
+    stageKey,
+    commandType: 'complete_step',
+    label,
+    description,
+    workPacket,
+    draft: {
+      laneKey,
+      status: 'completed',
+      note: sentence(preset.note, actionDescription),
+      workPacket,
+    },
+  })
+}
+
 export function buildAttorneyWorkflowActionCommand(action = {}, context = {}) {
   const laneKey = normalizeLaneKey(action.laneKey || context.laneKey)
   const stageKey = normalizeAttorneyStageKey(action.stageKey || context.stageKey || '', laneKey)
@@ -604,6 +871,17 @@ export function buildAttorneyWorkflowActionCommand(action = {}, context = {}) {
     now,
   })
   if (bondStageCommand) return bondStageCommand
+
+  const cancellationStageCommand = buildCancellationAttorneyStageSpecificCommand({
+    action,
+    laneKey,
+    stageKey,
+    actionType,
+    actionLabel,
+    actionDescription,
+    now,
+  })
+  if (cancellationStageCommand) return cancellationStageCommand
 
   if (actionType === 'assign_attorney') {
     const workPacket = buildWorkPacket({

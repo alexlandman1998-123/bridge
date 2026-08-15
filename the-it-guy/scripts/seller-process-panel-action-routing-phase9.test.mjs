@@ -3,7 +3,8 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 const appRoot = resolve(import.meta.dirname, '..')
-const pageSource = readFileSync(resolve(appRoot, 'src/pages/AgentLeadsPage.jsx'), 'utf8')
+const agentLeadsPageSource = readFileSync(resolve(appRoot, 'src/pages/AgentLeadsPage.jsx'), 'utf8')
+const pageSource = readFileSync(resolve(appRoot, 'src/pages/agency/AgencyPipelinePage.jsx'), 'utf8')
 const phase9Doc = readFileSync(resolve(appRoot, 'docs/seller-process-phase9-panel-action-routing.md'), 'utf8')
 const packageJson = JSON.parse(readFileSync(resolve(appRoot, 'package.json'), 'utf8'))
 
@@ -26,55 +27,37 @@ function sliceFunction(source, functionName, nextFunctionName) {
 }
 
 {
-  assert.match(pageSource, /const SELLER_APPOINTMENT_TYPES = \[/)
-  assert.match(pageSource, /\{ value: 'seller_valuation', label: 'Valuation Appointment' \}/)
-  assert.match(pageSource, /\{ value: 'valuation_presentation', label: 'Valuation Presentation' \}/)
-  assert.match(pageSource, /if \(appointmentType === 'seller_valuation'\) return `Valuation Appointment - \$\{personName\}`/)
-  assert.match(pageSource, /if \(appointmentType === 'valuation_presentation'\) return `Valuation Presentation - \$\{personName\}`/)
+  assert.match(agentLeadsPageSource, /<AgencyPipelinePage initialViewMode="leads" \/>/)
+  assert.match(pageSource, /function buildDefaultAppointmentFormForType/)
+  assert.match(pageSource, /const title = id === 'schedule_valuation_presentation' \? 'Valuation Presentation' : 'Valuation Appointment'/)
+  assert.match(pageSource, /appointmentType,\n\s+title,/)
+  assert.match(pageSource, /appointmentThemeTypeKey === 'valuation_presentation'/)
 }
 
 {
-  const formSource = sliceFunction(pageSource, 'SellerAppointmentForm', 'SellerAppointmentsTab')
-  assert.match(formSource, /initialAppointmentType = 'seller_consultation'/)
-  assert.match(formSource, /normalizedInitialAppointmentType/)
-  assert.match(formSource, /appointmentType: normalizedInitialAppointmentType/)
-  assert.match(formSource, /setDraft\(\(previous\) => \{/)
-  assert.match(formSource, /getSellerAppointmentDefaultTitle\(normalizedInitialAppointmentType/)
+  assert.match(pageSource, /const selectedSellerProcessPanelModel = useMemo/)
+  assert.match(pageSource, /buildSellerProcessWorkspacePanelModel/)
+  assert.match(pageSource, /const selectedLeadHasKingstonsSellerProcess = selectedSellerProcessPanelModel\?\.visible === true/)
+  assert.match(pageSource, /const selectedKingstonsProcessAction = useMemo/)
+  assert.match(pageSource, /getKingstonsPipelineActionMeta\(selectedSellerProcessPanelModel \|\| \{\}\)/)
+  assert.match(pageSource, /onClick=\{\(\) => handleSellerJourneyAction\(selectedLeadHasKingstonsSellerProcess \? selectedKingstonsProcessAction\.actionId/)
 }
 
 {
-  const appointmentsTabSource = sliceFunction(pageSource, 'SellerAppointmentsTab', 'getDealOfferNumber')
-  assert.match(appointmentsTabSource, /composerAppointmentType = 'seller_consultation'/)
-  assert.match(appointmentsTabSource, /initialAppointmentType=\{composerAppointmentType\}/)
-}
-
-{
-  const panelSource = sliceFunction(pageSource, 'SellerProcessShadowPanel', 'SellerAcquisitionActionRow')
-  assert.match(panelSource, /onClick=\{\(\) => onAction\?\.\(card\.key\)\}/)
-  assert.match(panelSource, /disabled=\{!onAction \|\| card\.disabled === true\}/)
-  assert.match(panelSource, /getSellerProcessPanelActionHint\(card\.key\)/)
-  assert.doesNotMatch(panelSource, /createAppointmentAsync/)
-  assert.doesNotMatch(panelSource, /uploadPrivateListingDocument/)
-  assert.doesNotMatch(panelSource, /updatePrivateListing/)
-  assert.doesNotMatch(panelSource, /sendSellerOnboarding/)
-}
-
-{
-  const layoutSource = sliceFunction(pageSource, 'SellerLeadWorkspaceLayout', 'OwnershipCard')
-  assert.match(layoutSource, /const \[appointmentComposerType, setAppointmentComposerType\] = useState\('seller_consultation'\)/)
-  assert.match(layoutSource, /openAppointmentComposer = useCallback\(\(appointmentType = 'seller_consultation'\)/)
-  assert.match(layoutSource, /setAppointmentComposerType\(nextType\)/)
-  assert.match(layoutSource, /key === 'schedule_valuation_appointment'\) openAppointmentComposer\('seller_valuation'\)/)
-  assert.match(layoutSource, /key === 'schedule_valuation_presentation'\) openAppointmentComposer\('valuation_presentation'\)/)
-  assert.match(layoutSource, /key === 'upload_valuation_document'\) setActiveWorkspaceTab\('documents'\)/)
-  assert.match(layoutSource, /key === 'complete_seller_pack'\) openSellerMandateWorkflow\(\)/)
-  assert.match(layoutSource, /key === 'prepare_listing'\) onOpenListing\?\.\(\)/)
-  assert.match(layoutSource, /hasKingstonsSellerProcess \?/)
-  assert.match(layoutSource, /<KingstonsNextBestActionCard model=\{sellerProcessPanelModel\} onAction=\{handleAcquisitionAction\} \/>/)
-  assert.match(layoutSource, /<SellerProcessShadowPanel model=\{sellerProcessPanelModel\} onAction=\{handleAcquisitionAction\} \/>/)
-  assert.match(layoutSource, /<SellerAcquisitionActionRow/)
-  assert.match(layoutSource, /<SellerJourneyRail journey=\{sellerJourney\} row=\{row\} listing=\{linkedSellerListing\} \/>/)
-  assert.match(layoutSource, /appointmentComposerType=\{appointmentComposerType\}/)
+  const actionSource = sliceFunction(pageSource, 'handleSellerJourneyAction', 'handleCalendarShift')
+  assert.match(actionSource, /id === 'schedule_valuation_appointment' \|\| id === 'schedule_valuation_presentation'/)
+  assert.match(actionSource, /appointmentType = id === 'schedule_valuation_presentation' \? 'valuation_presentation' : 'seller_valuation'/)
+  assert.match(actionSource, /setAppointmentForm\(buildDefaultAppointmentFormForType\(appointmentType/)
+  assert.match(actionSource, /setAppointmentModalOpen\(true\)/)
+  assert.match(actionSource, /id === 'upload_valuation_document'/)
+  assert.match(actionSource, /formalValuationUploadInputRef\.current\?\.click\?\.\(\)/)
+  assert.match(actionSource, /id === 'complete_seller_pack' \|\| id === 'seller_pack_signed'/)
+  assert.match(actionSource, /openKingstonsSellerPackWizard\(selectedKingstonsSellerPackSummary\.sellerTypeCaptured \? 'details' : 'type'\)/)
+  assert.match(actionSource, /id === 'prepare_listing'/)
+  assert.match(actionSource, /handleCreateListingFromSellerLead/)
+  assert.doesNotMatch(actionSource, /createAppointmentAsync/)
+  assert.doesNotMatch(actionSource, /updatePrivateListing/)
+  assert.doesNotMatch(actionSource, /sendSellerOnboarding/)
 }
 
 {
@@ -97,6 +80,7 @@ function sliceFunction(source, functionName, nextFunctionName) {
   assert.match(phase9Doc, /Phase 9 lets the Kingston seller process panel route agents/)
   assert.match(phase9Doc, /does not create appointments, upload documents, generate mandates/)
   assert.match(phase9Doc, /valuation appointment saves still go through the existing/)
+  assert.match(phase9Doc, /complete_seller_pack` opens the existing Seller Pack wizard/)
   assert.equal(
     packageJson.scripts?.['test:seller-process-panel-action-routing-phase9'],
     'node scripts/seller-process-panel-action-routing-phase9.test.mjs',

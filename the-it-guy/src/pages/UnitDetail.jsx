@@ -127,6 +127,10 @@ import {
   buildKingstonsBuyerOtpReadiness,
   buildKingstonsBuyerPortalDecision,
 } from '../core/transactions/kingstonsBuyerOtpReadiness'
+import {
+  getClientAccessPolicyMessage,
+  resolveBuyerAccessPolicy,
+} from '../core/clientAccess/clientAccessPolicy'
 import { buildWorkspaceHeaderConfigForRole } from '../core/transactions/workspaceHeaderConfig'
 import {
   buildTransactionWorkspaceMenuItems,
@@ -4590,7 +4594,7 @@ function UnitDetail() {
 
   async function ensureOnboardingToken() {
     if (kingstonsBuyerOnboardingLinksDisabled) {
-      throw new Error(kingstonsBuyerPortalDecisionReason)
+      throw new Error(buyerOnboardingAccessDecisionReason)
     }
 
     if (!detail?.transaction?.id) {
@@ -4614,7 +4618,7 @@ function UnitDetail() {
     try {
       setError('')
       if (kingstonsBuyerOnboardingLinksDisabled) {
-        throw new Error(kingstonsBuyerPortalDecisionReason)
+        throw new Error(buyerOnboardingAccessDecisionReason)
       }
       const record = detail?.onboarding?.token ? detail.onboarding : await ensureOnboardingToken()
       const url = `${window.location.origin}/client/onboarding/${record.token}`
@@ -4628,7 +4632,7 @@ function UnitDetail() {
 
   async function ensureClientPortalLink() {
     if (kingstonsBuyerPortalLinksDisabled) {
-      throw new Error(kingstonsBuyerPortalDecisionReason)
+      throw new Error(buyerPortalAccessDecisionReason)
     }
 
     if (clientPortalLink?.token) {
@@ -4746,7 +4750,7 @@ function UnitDetail() {
   async function handleOpenOnboardingLink() {
     try {
       if (kingstonsBuyerOnboardingLinksDisabled) {
-        throw new Error(kingstonsBuyerPortalDecisionReason)
+        throw new Error(buyerOnboardingAccessDecisionReason)
       }
       const record = detail?.onboarding?.token ? detail.onboarding : await ensureOnboardingToken()
       window.open(`/client/onboarding/${record.token}`, '_blank', 'noopener,noreferrer')
@@ -4762,7 +4766,7 @@ function UnitDetail() {
     }
 
     if (kingstonsBuyerOnboardingLinksDisabled) {
-      setError(kingstonsBuyerPortalDecisionReason)
+      setError(buyerOnboardingAccessDecisionReason)
       return
     }
 
@@ -4818,7 +4822,7 @@ function UnitDetail() {
     }
 
     if (kingstonsBuyerPortalLinksDisabled) {
-      setError(kingstonsBuyerPortalDecisionReason)
+      setError(buyerPortalAccessDecisionReason)
       return
     }
 
@@ -5694,7 +5698,7 @@ function UnitDetail() {
 
   function handleOpenClientPortalLink() {
     if (kingstonsBuyerPortalLinksDisabled) {
-      setError(kingstonsBuyerPortalDecisionReason)
+      setError(buyerPortalAccessDecisionReason)
       return
     }
 
@@ -6061,9 +6065,25 @@ function UnitDetail() {
     isKingstons: kingstonsBuyerOtpSalesWorkflowEnabled,
     requestedAction: 'transaction_otp_generation_and_signing',
   })
-  const kingstonsBuyerPortalLinksDisabled = kingstonsBuyerPortalDecision?.buyerPortalEnabled === false
-  const kingstonsBuyerOnboardingLinksDisabled = kingstonsBuyerPortalDecision?.onboardingLinkEnabled === false
-  const kingstonsBuyerPortalDecisionReason = kingstonsBuyerPortalDecision?.reason || ''
+  const buyerClientAccessPolicy = resolveBuyerAccessPolicy({
+    transactionId: transaction?.id,
+    buyerEmail: buyer?.email,
+    isKingstons: kingstonsBuyerOtpSalesWorkflowEnabled,
+    agencySlug: sellerProcessProfileResolution.isKingstons ? 'kingstons' : '',
+    intakeMode: onboardingIntakePreference,
+    onboardingComplete,
+    onboardingStatus,
+    clientOnboardingStatus: onboardingStatus,
+    documents: documents || [],
+    requiredDocuments: requiredDocumentChecklist || [],
+    signedOtpUploaded: kingstonsBuyerOtpSalesWorkflowReadiness?.ready === true,
+  })
+  const buyerPortalAccessDecision = buyerClientAccessPolicy.actions.sendPortalLink
+  const buyerOnboardingAccessDecision = buyerClientAccessPolicy.actions.sendOnboarding
+  const kingstonsBuyerPortalLinksDisabled = !buyerPortalAccessDecision.enabled
+  const kingstonsBuyerOnboardingLinksDisabled = !buyerOnboardingAccessDecision.enabled
+  const buyerPortalAccessDecisionReason = getClientAccessPolicyMessage(buyerPortalAccessDecision.reason, kingstonsBuyerPortalDecision?.reason || '')
+  const buyerOnboardingAccessDecisionReason = getClientAccessPolicyMessage(buyerOnboardingAccessDecision.reason, kingstonsBuyerPortalDecision?.reason || '')
   const salesWorkflowSnapshot = resolveSalesWorkflowSnapshot({
     onboardingStatus,
     onboardingCompletedAt: transaction?.onboarding_completed_at || null,
@@ -7197,7 +7217,7 @@ function UnitDetail() {
       icon: MessageSquare,
       onClick: handleOpenClientPortalLink,
       disabled: kingstonsBuyerPortalLinksDisabled || !clientPortalLink?.token,
-      reason: kingstonsBuyerPortalLinksDisabled ? kingstonsBuyerPortalDecisionReason : '',
+      reason: kingstonsBuyerPortalLinksDisabled ? buyerPortalAccessDecisionReason : '',
     },
   ]
   const developerUpcomingActionItems = Array.isArray(developerReadinessProfile?.actionQueue)
@@ -7573,7 +7593,7 @@ function UnitDetail() {
       icon: 'portal',
       onClick: handleOpenClientPortalLink,
       disabled: kingstonsBuyerPortalLinksDisabled || !clientPortalLink?.token,
-      reason: kingstonsBuyerPortalLinksDisabled ? kingstonsBuyerPortalDecisionReason : '',
+      reason: kingstonsBuyerPortalLinksDisabled ? buyerPortalAccessDecisionReason : '',
     },
     {
       id: 'copy-client-portal-link',
@@ -7581,7 +7601,7 @@ function UnitDetail() {
       icon: 'portal',
       onClick: handleCopyClientPortalLink,
       disabled: kingstonsBuyerPortalLinksDisabled || !transaction?.id || !canEditSalesWorkflow,
-      reason: kingstonsBuyerPortalLinksDisabled ? kingstonsBuyerPortalDecisionReason : '',
+      reason: kingstonsBuyerPortalLinksDisabled ? buyerPortalAccessDecisionReason : '',
       hidden: !canEditSalesWorkflow,
     },
     {
@@ -7603,7 +7623,7 @@ function UnitDetail() {
       variant: 'primary',
       onClick: () => void handleSendOnboardingEmail({ resend: false }),
       disabled: kingstonsBuyerOnboardingLinksDisabled || !canEditSalesWorkflow || sendingOnboardingEmail || !transaction?.id || (!onboardingRequiresManualHandoff && !buyer?.email),
-      reason: kingstonsBuyerOnboardingLinksDisabled ? kingstonsBuyerPortalDecisionReason : '',
+      reason: kingstonsBuyerOnboardingLinksDisabled ? buyerOnboardingAccessDecisionReason : '',
       hidden: !canEditSalesWorkflow,
     })
   } else if (onboardingEmailSent && !onboardingComplete) {
@@ -7614,7 +7634,7 @@ function UnitDetail() {
       variant: 'secondary',
       onClick: () => void handleSendOnboardingEmail({ resend: true }),
       disabled: kingstonsBuyerOnboardingLinksDisabled || !canEditSalesWorkflow || sendingOnboardingEmail || !transaction?.id || (!onboardingRequiresManualHandoff && !buyer?.email),
-      reason: kingstonsBuyerOnboardingLinksDisabled ? kingstonsBuyerPortalDecisionReason : '',
+      reason: kingstonsBuyerOnboardingLinksDisabled ? buyerOnboardingAccessDecisionReason : '',
       hidden: !canEditSalesWorkflow,
     })
   }
@@ -7627,7 +7647,7 @@ function UnitDetail() {
       variant: 'primary',
       onClick: () => void handleSendClientPortalLinkEmail(),
       disabled: kingstonsBuyerPortalLinksDisabled || !canEditSalesWorkflow || sendingClientPortalLink || !transaction?.id || !buyer?.email,
-      reason: kingstonsBuyerPortalLinksDisabled ? kingstonsBuyerPortalDecisionReason : '',
+      reason: kingstonsBuyerPortalLinksDisabled ? buyerPortalAccessDecisionReason : '',
       hidden: !canEditSalesWorkflow,
     })
   } else if (onboardingEmailSent) {
@@ -7638,7 +7658,7 @@ function UnitDetail() {
       variant: 'ghost',
       onClick: handleCopyOnboardingLink,
       disabled: kingstonsBuyerOnboardingLinksDisabled || !transaction?.id || !canEditSalesWorkflow,
-      reason: kingstonsBuyerOnboardingLinksDisabled ? kingstonsBuyerPortalDecisionReason : '',
+      reason: kingstonsBuyerOnboardingLinksDisabled ? buyerOnboardingAccessDecisionReason : '',
       hidden: !canEditSalesWorkflow,
     })
   }
@@ -7894,6 +7914,7 @@ function UnitDetail() {
             : 'Move to Transfer',
         variant: 'secondary',
         disabled: isBusy || sellerPackAttorneyHandoffBlocked,
+        reason: sellerPackAttorneyHandoffBlocked ? sellerPackAttorneyHandoffReason : '',
         onClick: () => void handleMoveToReadyForTransfer(),
       })
     }
@@ -10134,6 +10155,27 @@ function UnitDetail() {
                         <span className="font-semibold text-[#425970]">Listing source:</span>{' '}
                         {row.sourceDocumentId ? 'Preserved' : 'Not available'}
                       </p>
+                      {row.completionRouteLabel ? (
+                        <p>
+                          <span className="font-semibold text-[#425970]">Completion route:</span>{' '}
+                          {row.completionRouteLabel}
+                        </p>
+                      ) : null}
+                      {row.requiresFicaDeclarationPhysicalUploadContext ? (
+                        <p>
+                          <span className="font-semibold text-[#425970]">FICA context:</span>{' '}
+                          {row.hasFicaDeclarationPhysicalUploadContext ? 'Captured' : 'Missing'}
+                        </p>
+                      ) : null}
+                      {row.supportingFicaDocumentsDynamic ? (
+                        <p>
+                          <span className="font-semibold text-[#425970]">Supporting FICA:</span>{' '}
+                          Dynamic by captured entity
+                        </p>
+                      ) : null}
+                      {row.attentionReason ? (
+                        <p className="font-semibold text-[#b5472d]">{row.attentionReason}</p>
+                      ) : null}
                       {row.uploadedAt ? (
                         <p>
                           <span className="font-semibold text-[#425970]">Updated:</span>{' '}

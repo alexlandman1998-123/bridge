@@ -11,6 +11,7 @@ import {
   formatPropertyAddress,
   normalizePropertyAddress,
 } from './sellerPropertyAddress.js'
+import { SELLER_BASE_PACK_KEYS } from './sellerBasePackContract.js'
 import { withCanonicalDocumentRequestMetadata } from '../core/documents/documentRequestCanonicalAdapter.js'
 
 // Phase 9 canonical document consolidation:
@@ -1017,10 +1018,26 @@ export function getRequiredSellerDocuments(requirementProfile = {}) {
 
   const docs = [
     buildRequirement({
-      key: 'signed_mandate',
+      key: SELLER_BASE_PACK_KEYS.SIGNED_MANDATE,
       name: 'Signed Mandate',
       description: 'Signed mandate is required before listing activation.',
       group: 'mandate',
+      visibility: 'seller_visible',
+      generatedFrom,
+    }),
+    buildRequirement({
+      key: SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM,
+      name: 'Signed Mandatory Disclosure / Defects Form',
+      description: 'Completed and signed mandatory property disclosure form.',
+      group: 'property_compliance',
+      visibility: 'seller_visible',
+      generatedFrom,
+    }),
+    buildRequirement({
+      key: SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION,
+      name: 'Signed FICA Declaration',
+      description: 'Signed FICA declaration pack, separate from supporting FICA evidence documents.',
+      group: 'fica',
       visibility: 'seller_visible',
       generatedFrom,
     }),
@@ -1037,14 +1054,6 @@ export function getRequiredSellerDocuments(requirementProfile = {}) {
       name: 'Rates Account',
       description: 'Latest municipal rates account.',
       group: 'property',
-      visibility: 'seller_visible',
-      generatedFrom,
-    }),
-    buildRequirement({
-      key: 'property_condition_disclosure',
-      name: 'Property Condition Disclosure',
-      description: 'Property condition disclosure and known defects.',
-      group: 'property_compliance',
       visibility: 'seller_visible',
       generatedFrom,
     }),

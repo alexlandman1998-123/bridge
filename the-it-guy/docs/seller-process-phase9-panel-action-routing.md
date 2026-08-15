@@ -18,7 +18,7 @@ The panel action cards route as follows:
 - `schedule_valuation_presentation` opens the existing seller appointment
   composer with `valuation_presentation` selected
 - `upload_valuation_document` opens the existing seller document center
-- `complete_seller_pack` opens the existing mandate workspace
+- `complete_seller_pack` opens the existing Seller Pack wizard
 - `prepare_listing` opens the existing listing workspace
 
 ## Non-Spillover Contract

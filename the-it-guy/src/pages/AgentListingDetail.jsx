@@ -177,6 +177,10 @@ import { buildListingWorkspaceAnalyticsSummary } from '../services/leadAnalytics
 import { buildSellerMandateContinuityModel } from '../services/sellerMandateContinuityService'
 import { buildSellerDocumentSourceOfTruth } from '../services/sellerDocumentRequirementsService'
 import { reviewSellerDocument, sendSellerDocumentManualReminder } from '../services/sellerDocumentReviewWorkflowService'
+import {
+  getSellerBasePackAliases,
+  SELLER_BASE_PACK_KEYS,
+} from '../lib/sellerBasePackContract'
 import { buildSellerDocumentExperienceModel } from '../lib/sellerDocumentExperienceModel'
 import { buildSellerDocumentReviewSlaReport } from '../lib/sellerDocumentReviewSla'
 import {
@@ -411,20 +415,20 @@ const PORTAL_STATUS_OPTIONS = ['not_published', 'draft', 'published', 'paused', 
 const ARCH9_PUBLIC_SITE_ORIGIN = 'https://www.arch9.co.za'
 const ARCH9_PUBLIC_LISTINGS_API_PATH = '/api/public/listings'
 const SELLER_PACK_TRANSACTION_REQUIREMENT_KEYS = [
-  'signed_mandate',
-  'property_condition_disclosure',
-  'signed_fica_form',
+  SELLER_BASE_PACK_KEYS.SIGNED_MANDATE,
+  SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM,
+  SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION,
 ]
 const KINGSTONS_SELLER_PACK_TRANSACTION_HANDOFF_SOURCE = 'kingstons_seller_pack_phase5_transaction_handoff'
 const SELLER_PACK_TRANSACTION_REQUIREMENT_LABELS = Object.freeze({
-  signed_mandate: 'Signed Mandate',
-  property_condition_disclosure: 'Signed Defect Form',
-  signed_fica_form: 'Signed FICA Form',
+  [SELLER_BASE_PACK_KEYS.SIGNED_MANDATE]: 'Signed Mandate',
+  [SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM]: 'Signed Mandatory Disclosure / Defects Form',
+  [SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION]: 'Signed FICA Declaration',
 })
 const SELLER_PACK_TRANSACTION_REQUIREMENT_ALIASES = Object.freeze({
-  signed_mandate: ['signed_mandate', 'mandate', 'mandate_signature'],
-  property_condition_disclosure: ['property_condition_disclosure', 'signed_defect_form', 'defect_form', 'defects', 'disclosure'],
-  signed_fica_form: ['signed_fica_form', 'fica_form', 'fica'],
+  [SELLER_BASE_PACK_KEYS.SIGNED_MANDATE]: getSellerBasePackAliases(SELLER_BASE_PACK_KEYS.SIGNED_MANDATE),
+  [SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM]: getSellerBasePackAliases(SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM),
+  [SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION]: getSellerBasePackAliases(SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION),
 })
 
 function hasKingstonsListingSignal({ listingRecord = {}, listingOrganisationId = '', profile = {} } = {}) {
@@ -2803,7 +2807,7 @@ function AgentListingDetail() {
   const [sellerPortalSecurityDiagnostics, setSellerPortalSecurityDiagnostics] = useState(null)
   const [, setSellerPortalSecurityDiagnosticsLoading] = useState(false)
   const [sellerPortalActivationOpen, setSellerPortalActivationOpen] = useState(false)
-  const [sellerPortalActivationDraft, setSellerPortalActivationDraft] = useState({ firstName: '', lastName: '', email: '', phone: '', physicalDocumentsHeld: false })
+  const [sellerPortalActivationDraft, setSellerPortalActivationDraft] = useState({ firstName: '', lastName: '', email: '', phone: '' })
   const [sellerPortalActivationSending, setSellerPortalActivationSending] = useState(false)
   const [sellerContactEditorOpen, setSellerContactEditorOpen] = useState(false)
   const [sellerContactSaving, setSellerContactSaving] = useState(false)
@@ -6676,7 +6680,6 @@ function AgentListingDetail() {
       lastName: toCleanText(canonicalFacts.lastName || sellerFormData?.sellerSurname || sellerFormData?.lastName || nameParts.slice(1).join(' ')),
       email: resolveSellerEmailFromListing(listingRecord),
       phone: resolveSellerPhoneFromListing(listingRecord),
-      physicalDocumentsHeld: sellerPortalMandateEvidenceReady || sellerPortalPhysicalDocsReportedHeld,
     })
     setSellerPortalActivationOpen(true)
     setDetailError('')
@@ -6694,7 +6697,6 @@ function AgentListingDetail() {
     const lastName = toCleanText(sellerPortalActivationDraft.lastName)
     const email = toCleanText(sellerPortalActivationDraft.email).toLowerCase()
     const phone = toCleanText(sellerPortalActivationDraft.phone)
-    const physicalDocumentsHeld = Boolean(sellerPortalActivationDraft.physicalDocumentsHeld)
     if (!isValidEmail(email)) {
       setDetailError('Add a valid seller email before sending the Seller Portal invitation.')
       return
@@ -6703,8 +6705,8 @@ function AgentListingDetail() {
       setDetailError('Seller Portal activation requires a Supabase-backed listing.')
       return
     }
-    if (!sellerPortalMandateEvidenceReady && !physicalDocumentsHeld) {
-      setDetailError('Confirm that the signed physical seller documents are already held before activating the Seller Portal for this existing listing.')
+    if (!sellerPortalMandateEvidenceReady) {
+      setDetailError('Upload the signed mandate before activating the Seller Portal.')
       return
     }
 
@@ -6728,7 +6730,6 @@ function AgentListingDetail() {
           source: SELLER_PORTAL_ACTIVATION_SOURCES.existingListing,
           existingListingShortcut: true,
           mandateEvidenceRecorded: sellerPortalMandateEvidenceReady,
-          physicalDocumentsHeld,
           directListingDeclarationMandateHeld: sellerPortalPhysicalDocsReportedHeld,
           capturedAt: new Date().toISOString(),
           capturedBy: profile?.id || profile?.email || '',
@@ -12183,7 +12184,7 @@ function AgentListingDetail() {
                   <StatusPill status={sellerPackTransactionSummary.status} label={sellerPackTransactionSummary.label} />
                 </div>
                 <p className="mt-1 max-w-3xl text-sm leading-6 text-[#607387]">
-                  Tracks whether the signed mandate, signed defect form, and signed FICA form are uploaded on the listing and ready for the transaction document stream.
+                  Tracks whether the signed mandate, signed disclosure / defects form, and signed FICA declaration are complete on the listing and ready for the transaction document stream.
                 </p>
               </div>
               <Button
@@ -12354,7 +12355,7 @@ function AgentListingDetail() {
             <Button type="button" variant="secondary" onClick={() => setSellerPortalActivationOpen(false)} disabled={sellerPortalActivationSending}>
               Cancel
             </Button>
-            <Button type="submit" form="seller-portal-activation-form" disabled={sellerPortalActivationSending || (!sellerPortalMandateEvidenceReady && !sellerPortalActivationDraft.physicalDocumentsHeld)}>
+            <Button type="submit" form="seller-portal-activation-form" disabled={sellerPortalActivationSending || !sellerPortalMandateEvidenceReady}>
               {sellerPortalActivationSending ? 'Sending...' : 'Send Invitation'}
             </Button>
           </div>
@@ -12387,22 +12388,14 @@ function AgentListingDetail() {
               <CompactSnapshotRow label="Agency" value={profile?.organisationName || profile?.companyName || profile?.agencyName || 'Arch9'} />
               <CompactSnapshotRow label="Assigned agent" value={listingActor.name || 'Agent pending'} />
               <CompactSnapshotRow label="Listing status" value={formatStatusLabel(listingRecord?.listingStatus || listingRecord?.status || 'unknown')} />
-              <CompactSnapshotRow label="Mandate evidence" value={sellerPortalMandateEvidenceReady ? 'Recorded in Arch9' : sellerPortalPhysicalDocsReportedHeld ? 'Reported held' : 'Not recorded'} />
+              <CompactSnapshotRow label="Mandate evidence" value={sellerPortalMandateEvidenceReady ? 'Signed mandate uploaded' : 'Upload required'} />
             </div>
           </section>
 
           {!sellerPortalMandateEvidenceReady ? (
-            <label className="flex items-start gap-3 rounded-[18px] border border-[#f2dfbd] bg-[#fff9ec] p-4 text-sm font-semibold leading-6 text-[#7a5a17]">
-              <input
-                type="checkbox"
-                className="mt-1 h-4 w-4 rounded border-[#d8c08e] text-[#1f7d44] focus:ring-[#1f7d44]"
-                checked={sellerPortalActivationDraft.physicalDocumentsHeld}
-                onChange={(event) => updateSellerPortalActivationDraft('physicalDocumentsHeld', event.target.checked)}
-              />
-              <span>
-                Signed physical seller documents are already held for this listing.
-              </span>
-            </label>
+            <div className="rounded-[18px] border border-[#f2dfbd] bg-[#fff9ec] p-4 text-sm font-semibold leading-6 text-[#7a5a17]">
+              Upload the signed mandate to this listing before sending the Seller Portal invitation.
+            </div>
           ) : null}
 
           <section className="rounded-[18px] border border-[#dbe6f2] bg-white p-4">

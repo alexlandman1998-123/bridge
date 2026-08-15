@@ -26,8 +26,8 @@ const kingstonsSellerLeadListing = {
 const expectedBaselineKeys = [
   'valuation_document',
   'signed_mandate',
-  'signed_defect_form',
-  'signed_fica_form',
+  'signed_disclosure_form',
+  'signed_fica_declaration',
 ]
 
 function keysFor(rows = []) {
@@ -62,7 +62,7 @@ assert.deepEqual(keysFor(requirementPack.ownershipDrivenDocuments), [])
 const byKey = new Map(sourceOfTruth.rows.map((row) => [row.key, row]))
 assert.equal(byKey.get('valuation_document')?.label, 'Formal Valuation Document')
 assert.equal(byKey.get('signed_mandate')?.label, 'Signed Mandate')
-assert.equal(byKey.get('signed_defect_form')?.label, 'Signed Defect Form')
-assert.equal(byKey.get('signed_fica_form')?.label, 'Signed FICA Form')
+assert.equal(byKey.get('signed_disclosure_form')?.label, 'Signed Mandatory Disclosure / Defects Form')
+assert.equal(byKey.get('signed_fica_declaration')?.label, 'Signed FICA Declaration')
 
 console.log('Kingstons seller documents Phase 1 baseline checks passed.')

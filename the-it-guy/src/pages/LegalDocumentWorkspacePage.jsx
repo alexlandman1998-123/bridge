@@ -11,6 +11,10 @@ import {
   DOCUMENT_START_ENTRY_POINTS,
   DOCUMENT_START_SOURCE_MODES,
 } from '../core/documents/documentStartRules'
+import {
+  getClientAccessPolicyMessage,
+  resolveSellerAccessPolicy,
+} from '../core/clientAccess/clientAccessPolicy'
 import { readDocumentStartLegalScenarioParams } from '../core/documents/documentStartLegalScenario'
 import {
   normalizeLegalPropertyTitleType,
@@ -4958,6 +4962,19 @@ export default function LegalDocumentWorkspacePage() {
       }
     }
     if (packetType === 'mandate' && leadContext.lead?.leadId) {
+      const mandateSigningDecision = resolveSellerAccessPolicy({
+        listingId:
+          leadContext?.lead?.listingId ||
+          leadContext?.lead?.listing_id ||
+          leadContext?.lead?.privateListingId ||
+          leadContext?.lead?.private_listing_id ||
+          leadContext.lead.leadId,
+      }).actions.sendMandateSigningLink
+      if (!mandateSigningDecision.enabled) {
+        const error = new Error(getClientAccessPolicyMessage(mandateSigningDecision.reason))
+        error.code = mandateSigningDecision.reason
+        throw error
+      }
       const sellerName =
         normalizeText(leadContext?.contact?.name) ||
         [leadContext?.contact?.firstName, leadContext?.contact?.lastName].map(normalizeText).filter(Boolean).join(' ') ||

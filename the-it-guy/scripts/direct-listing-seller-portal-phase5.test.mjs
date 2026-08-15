@@ -16,7 +16,7 @@ function test(name, fn) {
   }
 }
 
-test('Quick Add direct listing can request a seller portal link without upload requirements', () => {
+test('Quick Add direct listing records the seller portal request for post-upload delivery', () => {
   const payload = buildDirectListingIntakePayload({
     sellerType: 'individual',
     sellerName: 'Sarah',
@@ -42,15 +42,11 @@ test('Phase 5 uses the existing manual listing seller portal activation flow', (
   assert.match(agentListingsSource, /sendQuickAddSellerPortalInvite/)
 })
 
-test('existing listing activation can use held physical seller documents without full seller onboarding', () => {
+test('existing listing activation requires uploaded signed mandate evidence without full seller onboarding', () => {
   assert.match(agentListingDetailSource, /sellerPortalMandateEvidenceReady/)
   assert.match(agentListingDetailSource, /sellerPortalPhysicalDocsReportedHeld/)
-  assert.match(agentListingDetailSource, /physicalDocumentsHeld/)
-  assert.match(agentListingDetailSource, /Confirm that the signed physical seller documents are already held/)
-  assert.doesNotMatch(
-    agentListingDetailSource,
-    /Sign or upload the seller mandate before activating the Seller Portal for an existing listing\./,
-  )
+  assert.doesNotMatch(agentListingDetailSource, /physicalDocumentsHeld/)
+  assert.match(agentListingDetailSource, /Upload the signed mandate before activating the Seller Portal\./)
   assert.doesNotMatch(
     agentListingDetailSource,
     /Sign the seller mandate before resending the seller portal password setup link\./,

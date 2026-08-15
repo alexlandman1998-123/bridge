@@ -1626,6 +1626,38 @@ async function maybeSendSellerMandateInvite({
   agentSigner: Record<string, unknown>;
   nowIso: string;
 }) {
+  // Seller mandate signing links are retired. Preserve signer completion and
+  // leave any legacy signer rows untouched, but never prepare or send a new
+  // seller mandate signing invitation from the public signer completion path.
+  try {
+    await appendPacketEvent({
+      supabase,
+      packetId,
+      organisationId,
+      versionId: packetVersionId,
+      eventType: "seller_mandate_signing_link_retired",
+      payload: {
+        signerRole: "seller",
+        reason: "seller_mandate_signing_links_retired",
+        message:
+          "Seller mandate signing links are retired. Upload the signed mandate manually before activating the Seller Portal.",
+        blockedAt: nowIso,
+      },
+    });
+  } catch (error) {
+    console.warn("[mandate-signing] retired seller invite audit failed", error);
+  }
+  console.warn("[client-access-policy] public seller mandate signing invite blocked", {
+    packetId,
+    packetVersionId,
+    organisationId,
+    reason: "seller_mandate_signing_links_retired",
+  });
+  return {
+    allSigners,
+    sellerInviteSent: false,
+  };
+
   let workingSigners = allSigners;
   let sellerSigner = workingSigners.find((item) => isMandateSeller(item.signer_role));
   if (!sellerSigner?.id) {

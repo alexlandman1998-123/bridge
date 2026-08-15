@@ -35,9 +35,13 @@ const activeComplianceKeys = [
 
 const kingstonsOnlyDocumentKeys = [
   'valuation_document',
-  'signed_defect_form',
-  'signed_fica_form',
   'seller_pack_readiness_complete',
+]
+
+const standardBasePackKeys = [
+  'signed_mandate',
+  'signed_disclosure_form',
+  'signed_fica_declaration',
 ]
 
 const baseListing = {
@@ -108,6 +112,12 @@ function assertRowsAreProperty(rows = [], keys = []) {
     },
   })
   const keys = keysOf(requirements)
+  assert.deepEqual(
+    standardBasePackKeys.filter((key) => keys.includes(key)).sort(),
+    [...standardBasePackKeys].sort(),
+    'global requirements should include the standard seller base pack',
+  )
+  assertNoKeys(keys, ['property_condition_disclosure', 'signed_defect_form', 'signed_fica_form'], 'global base-pack requirements')
   assertNoKeys(keys, conditionalComplianceKeys, 'global requirements without selected compliance facts')
   assertNoKeys(keys, kingstonsOnlyDocumentKeys, 'global requirements')
 }
@@ -134,6 +144,12 @@ function assertRowsAreProperty(rows = [], keys = []) {
     },
   })
   const keys = source.rows.map((row) => row.key)
+  assert.deepEqual(
+    standardBasePackKeys.filter((key) => keys.includes(key)).sort(),
+    [...standardBasePackKeys].sort(),
+    'global source-of-truth rows should include the standard seller base pack',
+  )
+  assertNoKeys(keys, ['property_condition_disclosure', 'signed_defect_form', 'signed_fica_form'], 'global source-of-truth base-pack rows')
   assert.deepEqual(
     activeComplianceKeys.filter((key) => keys.includes(key)).sort(),
     [...activeComplianceKeys].sort(),

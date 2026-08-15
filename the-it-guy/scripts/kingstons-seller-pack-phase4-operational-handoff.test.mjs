@@ -22,10 +22,10 @@ assertIncludes(
   'SELLER_PACK_TRANSACTION_REQUIREMENT_KEYS',
   'Phase 4 must use the explicit three-document Seller Pack key set.',
 )
-for (const requirementKey of ['signed_mandate', 'property_condition_disclosure', 'signed_fica_form']) {
+for (const requirementKey of ['SIGNED_MANDATE', 'SIGNED_DISCLOSURE_FORM', 'SIGNED_FICA_DECLARATION']) {
   assertIncludes(
     listingDetail,
-    `'${requirementKey}'`,
+    `SELLER_BASE_PACK_KEYS.${requirementKey}`,
     `Phase 4 handoff panel must track ${requirementKey}.`,
   )
 }

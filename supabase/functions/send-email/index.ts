@@ -368,9 +368,21 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    if (
-      ["seller_mandate_sent", "seller_mandate", "otp_signing"].includes(type)
-    ) {
+    if (["seller_mandate_sent", "seller_mandate"].includes(type)) {
+      console.warn("[client-access-policy] retired seller mandate signing request blocked", {
+        functionName: "send-email",
+        type,
+      });
+      return jsonResponse(410, {
+        success: false,
+        error:
+          "Seller mandate signing links are retired. Upload the signed mandate manually before activating the Seller Portal.",
+        errorCode: "SELLER_MANDATE_SIGNING_LINKS_RETIRED",
+        code: "seller_mandate_signing_links_retired",
+      });
+    }
+
+    if (type === "otp_signing") {
       // Signing invitations must be authorised against the packet, its exact
       // generated PDF, and its active signer token. The generic email router
       // has none of that context, so retaining this route would let callers
@@ -379,9 +391,7 @@ Deno.serve(async (req: Request) => {
         success: false,
         error:
           "Signing invitations must be sent through the packet-bound delivery endpoint.",
-        errorCode: type === "otp_signing"
-          ? "OTP_SIGNING_DELIVERY_ROUTE_RETIRED"
-          : "MANDATE_SIGNING_DELIVERY_ROUTE_RETIRED",
+        errorCode: "OTP_SIGNING_DELIVERY_ROUTE_RETIRED",
       });
     }
 

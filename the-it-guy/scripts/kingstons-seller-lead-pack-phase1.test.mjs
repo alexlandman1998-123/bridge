@@ -14,12 +14,12 @@ function assertIncludes(snippet, message) {
   assert.ok(source.includes(snippet), message)
 }
 
-for (const [key, label] of [
-  ['signed_mandate', 'Signed Mandate'],
-  ['signed_defect_form', 'Signed Defect Form'],
-  ['signed_fica_form', 'Signed FICA Form'],
+for (const [keySnippet, label] of [
+  ['key: SELLER_BASE_PACK_KEYS.SIGNED_MANDATE', 'Signed Mandate'],
+  ['key: SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM', 'Signed Mandatory Disclosure / Defects Form'],
+  ['key: SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION', 'Signed FICA Declaration'],
 ]) {
-  assertIncludes(`key: '${key}'`, `Kingstons Seller Pack must define ${key}.`)
+  assertIncludes(keySnippet, `Kingstons Seller Pack must define ${label}.`)
   assertIncludes(`label: '${label}'`, `Kingstons Seller Pack must label ${label}.`)
 }
 
@@ -44,9 +44,9 @@ assert.equal(source.includes(removedSellerPackAction), false, 'Kingstons seller 
 
 assert.ok(
     listingDetailSource.includes('listingHasKingstonsSellerProcess') &&
-    listingDetailSource.includes('Upload signed Seller Pack') &&
     listingDetailSource.includes('open={mandateStartOpen && !listingHasKingstonsSellerProcess}') &&
-    listingDetailSource.includes("openSellerWorkspaceSection('documents')"),
+    listingDetailSource.includes("openSellerWorkspaceSection('documents')") &&
+    listingDetailSource.includes('{!listingHasKingstonsSellerProcess ? ('),
   'Kingstons listing detail must hide digital onboarding/mandate starts and route agents to manual Seller Pack upload.',
 )
 assert.equal(listingDetailSource.includes(removedPauseLabel), false, 'Kingstons listing detail must not show the removed digital signing warning.')

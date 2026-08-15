@@ -172,8 +172,21 @@ function assertPartnerPayloadHidesInternalKeys(payload) {
     documents: [
       { documentType: 'valuation_document', status: 'uploaded', fileUrl: 'valuation.pdf' },
       { key: 'signed_mandate', documentType: 'signed_mandate', source: 'kingstons_seller_pack', status: 'uploaded', file_path: 'mandate.pdf', sellerType: 'natural' },
-      { key: 'signed_defect_form', documentType: 'defects_disclosure_form', source: 'kingstons_seller_pack', status: 'signed', file_path: 'defects.pdf', sellerType: 'natural' },
-      { key: 'signed_fica_form', documentType: 'seller_fica_pack', source: 'kingstons_seller_pack', status: 'uploaded', file_path: 'fica.pdf', sellerType: 'natural' },
+      { key: 'signed_disclosure_form', documentType: 'signed_disclosure_form', source: 'kingstons_seller_pack', status: 'signed', file_path: 'defects.pdf', sellerType: 'natural' },
+      {
+        key: 'signed_fica_declaration',
+        documentType: 'signed_fica_declaration',
+        source: 'kingstons_seller_pack',
+        status: 'uploaded',
+        file_path: 'fica.pdf',
+        sellerType: 'natural',
+        completionRoute: 'physical_upload_with_context',
+        physicalUploadContextRequired: true,
+        ficaDeclarationContext: {
+          sellerType: 'natural',
+          contextCapturedAt: '2026-08-15T08:00:00.000Z',
+        },
+      },
     ],
     mandatePacketStatus: {
       packet: { id: 'packet-kingstons', status: 'completed' },
@@ -184,8 +197,8 @@ function assertPartnerPayloadHidesInternalKeys(payload) {
 
   assert.equal(integration.sellerLeadWorkspace.percent, 100)
   assert.equal(integration.reportingDashboard.percent, 100)
-  assert.equal(integration.partners.attorneyFirm.ready, true)
-  assert.equal(integration.partners.bondOriginator.ready, true)
+  assert.equal(integration.partners.attorneyFirm.ready, false)
+  assert.equal(integration.partners.bondOriginator.ready, false)
   assertPartnerPayloadHidesInternalKeys(integration.partners)
   assert.equal(integration.notifications.notificationPatch, null)
   assert.deepEqual(integration.notifications.notificationDrafts, [])

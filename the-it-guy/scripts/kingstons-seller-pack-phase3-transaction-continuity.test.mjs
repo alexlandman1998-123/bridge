@@ -6,9 +6,11 @@ const repoRoot = process.cwd()
 const agencyPagePath = path.join(repoRoot, 'src/pages/agency/AgencyPipelinePage.jsx')
 const listingDetailPath = path.join(repoRoot, 'src/pages/AgentListingDetail.jsx')
 const privateListingServicePath = path.join(repoRoot, 'src/services/privateListingService.js')
+const sellerBasePackContractPath = path.join(repoRoot, 'src/lib/sellerBasePackContract.js')
 const agencyPage = fs.readFileSync(agencyPagePath, 'utf8')
 const listingDetail = fs.readFileSync(listingDetailPath, 'utf8')
 const privateListingService = fs.readFileSync(privateListingServicePath, 'utf8')
+const sellerBasePackContract = fs.readFileSync(sellerBasePackContractPath, 'utf8')
 
 function assertIncludes(source, snippet, message) {
   assert.ok(source.includes(snippet), message)
@@ -30,14 +32,19 @@ assertIncludes(
   'Queued Seller Pack documents must use the pending transaction promotion status.',
 )
 assertIncludes(
-  privateListingService,
-  "signed_fica_form: ['signed_fica_form', 'fica_form', 'fica']",
-  'Signed FICA Form must be matchable as a listing document requirement.',
+  sellerBasePackContract,
+  "'signed_fica_form'",
+  'Signed FICA Form must be a Seller Base Pack alias for the FICA declaration slot.',
+)
+assertIncludes(
+  sellerBasePackContract,
+  "'signed_defect_form'",
+  'Signed Defect Form must be a Seller Base Pack alias for the mandatory disclosure slot.',
 )
 assertIncludes(
   privateListingService,
-  "signed_defect_form: ['signed_defect_form', 'defect_form', 'defects', 'property_condition_disclosure']",
-  'Signed Defect Form must overlap with the canonical property disclosure requirement.',
+  'sellerBasePackKeysOverlap',
+  'Private listing requirement matching must use the Seller Base Pack alias contract.',
 )
 
 assertIncludes(
@@ -71,10 +78,10 @@ assertIncludes(
   'SELLER_PACK_TRANSACTION_REQUIREMENT_KEYS',
   'Accepted-offer conversion must use an explicit Seller Pack requirement key set.',
 )
-for (const requirementKey of ['signed_mandate', 'property_condition_disclosure', 'signed_fica_form']) {
+for (const requirementKey of ['SIGNED_MANDATE', 'SIGNED_DISCLOSURE_FORM', 'SIGNED_FICA_DECLARATION']) {
   assertIncludes(
     listingDetail,
-    `'${requirementKey}'`,
+    `SELLER_BASE_PACK_KEYS.${requirementKey}`,
     `Accepted-offer conversion must include ${requirementKey} in the Seller Pack transaction key set.`,
   )
 }

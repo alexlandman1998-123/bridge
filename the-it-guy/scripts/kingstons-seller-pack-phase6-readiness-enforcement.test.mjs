@@ -4,9 +4,11 @@ import assert from 'node:assert/strict'
 import {
   KINGSTONS_SELLER_PACK_TRANSACTION_ENFORCEMENT_VERSION,
   applyKingstonsSellerPackReadinessToProgress,
+  buildKingstonsSellerPackProgressBlockerDetails,
   buildKingstonsSellerPackProgressBlockers,
   buildKingstonsSellerPackTransactionReadiness,
 } from '../src/core/transactions/kingstonsSellerPackTransactionReadiness.js'
+import { SELLER_BASE_PACK_COMPLETION_ROUTES } from '../src/lib/sellerBasePackContract.js'
 
 const repoRoot = process.cwd()
 const unitDetailPath = path.join(repoRoot, 'src/pages/UnitDetail.jsx')
@@ -27,18 +29,23 @@ const signedMandate = {
 const signedDefectForm = {
   id: 'doc-2',
   name: 'Defect disclosure.pdf',
-  document_type: 'property_condition_disclosure',
+  document_type: 'signed_disclosure_form',
   source: 'seller_portal',
   source_document_id: 'listing-doc-2',
   status: 'uploaded',
 }
 const signedFicaForm = {
   id: 'doc-3',
-  name: 'Signed FICA form.pdf',
-  document_type: 'signed_fica_form',
+  name: 'Signed FICA declaration.pdf',
+  document_type: 'signed_fica_declaration',
   source: 'seller_portal',
   source_document_id: 'listing-doc-3',
   status: 'verified',
+  completionRoute: SELLER_BASE_PACK_COMPLETION_ROUTES.PHYSICAL_UPLOAD_WITH_CONTEXT,
+  uploadContext: {
+    sellerType: 'natural',
+    contextCapturedAt: '2026-07-20T08:00:00.000Z',
+  },
 }
 
 const missingFicaReadiness = buildKingstonsSellerPackTransactionReadiness({
@@ -48,7 +55,7 @@ const sellerPackBlockers = buildKingstonsSellerPackProgressBlockers(missingFicaR
 
 assert.equal(missingFicaReadiness.gate.attorneyHandoffReady, false)
 assert.equal(sellerPackBlockers.length, 1)
-assert.equal(sellerPackBlockers[0], 'Signed FICA Form is missing from transaction documents.')
+assert.equal(sellerPackBlockers[0], 'Signed FICA Declaration is missing from transaction documents.')
 
 const baseProgressModel = {
   mainStage: 'FIN',
@@ -88,15 +95,24 @@ const enforcedProgressModel = applyKingstonsSellerPackReadinessToProgress(
 assert.equal(enforcedProgressModel.sellerPackTransactionGate.version, KINGSTONS_SELLER_PACK_TRANSACTION_ENFORCEMENT_VERSION)
 assert.equal(enforcedProgressModel.sellerPackTransactionGate.status, 'blocked')
 assert.equal(enforcedProgressModel.isAtRisk, true)
-assert.ok(enforcedProgressModel.currentStageBlockers.includes('Signed FICA Form is missing from transaction documents.'))
+assert.deepEqual(enforcedProgressModel.sellerPackTransactionGate.gateStageKeys, ['ATTY', 'XFER', 'REG'])
+assert.deepEqual(enforcedProgressModel.sellerPackTransactionGate.blockerDetails, [
+  {
+    key: 'kingstons_seller_pack:signed_fica_declaration',
+    documentKey: 'signed_fica_declaration',
+    label: 'Signed FICA Declaration',
+    reason: 'Signed FICA Declaration is missing from transaction documents.',
+  },
+])
+assert.ok(enforcedProgressModel.currentStageBlockers.includes('Signed FICA Declaration is missing from transaction documents.'))
 assert.equal(enforcedProgressModel.canMoveTo('ATTY'), false)
 assert.deepEqual(enforcedProgressModel.getTransitionBlockers('ATTY'), [
   'Bond approval is still outstanding.',
-  'Signed FICA Form is missing from transaction documents.',
+  'Signed FICA Declaration is missing from transaction documents.',
 ])
-assert.ok(enforcedProgressModel.transitionBlockersByStage.ATTY.includes('Signed FICA Form is missing from transaction documents.'))
-assert.ok(enforcedProgressModel.stepBlockersByStage.ATTY.includes('Signed FICA Form is missing from transaction documents.'))
-assert.ok(enforcedProgressModel.stageSummaryByKey.ATTY.blockers.includes('Signed FICA Form is missing from transaction documents.'))
+assert.ok(enforcedProgressModel.transitionBlockersByStage.ATTY.includes('Signed FICA Declaration is missing from transaction documents.'))
+assert.ok(enforcedProgressModel.stepBlockersByStage.ATTY.includes('Signed FICA Declaration is missing from transaction documents.'))
+assert.ok(enforcedProgressModel.stageSummaryByKey.ATTY.blockers.includes('Signed FICA Declaration is missing from transaction documents.'))
 
 const readyReadiness = buildKingstonsSellerPackTransactionReadiness({
   documents: [signedMandate, signedDefectForm, signedFicaForm],
@@ -110,6 +126,46 @@ const readyProgressModel = applyKingstonsSellerPackReadinessToProgress(
 assert.equal(readyProgressModel.sellerPackTransactionGate, undefined)
 assert.equal(readyProgressModel.canMoveTo('ATTY'), true)
 assert.deepEqual(readyProgressModel.currentStageBlockers, ['Bond approval is still outstanding.'])
+
+const physicalFicaWithoutContextReadiness = buildKingstonsSellerPackTransactionReadiness({
+  documents: [
+    signedMandate,
+    signedDefectForm,
+    {
+      id: 'doc-physical-fica-no-context',
+      name: 'Signed FICA declaration.pdf',
+      document_type: 'signed_fica_declaration',
+      source: 'seller_portal',
+      source_document_id: 'listing-doc-physical-fica-no-context',
+      status: 'uploaded',
+      completionRoute: SELLER_BASE_PACK_COMPLETION_ROUTES.PHYSICAL_UPLOAD_WITH_CONTEXT,
+    },
+  ],
+})
+const contextBlockerDetails = buildKingstonsSellerPackProgressBlockerDetails(physicalFicaWithoutContextReadiness)
+const contextBlockers = buildKingstonsSellerPackProgressBlockers(physicalFicaWithoutContextReadiness)
+const contextBlockedProgressModel = applyKingstonsSellerPackReadinessToProgress(
+  baseProgressModel,
+  physicalFicaWithoutContextReadiness,
+  { enabled: true },
+)
+
+assert.equal(physicalFicaWithoutContextReadiness.gate.attorneyHandoffReady, false)
+assert.equal(contextBlockers[0], 'Physical FICA declaration upload is missing seller-context metadata.')
+assert.deepEqual(contextBlockerDetails, [
+  {
+    key: 'kingstons_seller_pack:signed_fica_declaration',
+    documentKey: 'signed_fica_declaration',
+    label: 'Signed FICA Declaration',
+    reason: 'Physical FICA declaration upload is missing seller-context metadata.',
+  },
+])
+assert.equal(contextBlockedProgressModel.canMoveTo('ATTY'), false)
+assert.deepEqual(contextBlockedProgressModel.getTransitionBlockers('ATTY'), [
+  'Bond approval is still outstanding.',
+  'Physical FICA declaration upload is missing seller-context metadata.',
+])
+assert.deepEqual(contextBlockedProgressModel.sellerPackTransactionGate.blockerDetails, contextBlockerDetails)
 
 const disabledProgressModel = applyKingstonsSellerPackReadinessToProgress(
   baseProgressModel,
@@ -168,8 +224,18 @@ assertIncludes(
 )
 assertIncludes(
   unitDetail,
+  "reason: sellerPackAttorneyHandoffBlocked ? sellerPackAttorneyHandoffReason : ''",
+  'Move-to-transfer action must expose the Seller Pack blocker reason while disabled.',
+)
+assertIncludes(
+  unitDetail,
   'data-testid="kingstons-attorney-handoff-gate"',
   'Documents tab must render a visible Kingston attorney handoff gate message.',
+)
+assertIncludes(
+  unitDetail,
+  'sellerPackAttorneyHandoffReason',
+  'Move-to-transfer enforcement must reuse the resolved Seller Pack blocker reason.',
 )
 
 console.log('Kingstons seller pack phase 6 readiness enforcement guard passed.')

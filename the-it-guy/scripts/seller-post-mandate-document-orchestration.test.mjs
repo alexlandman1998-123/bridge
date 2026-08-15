@@ -75,7 +75,7 @@ assert.equal(plan.requestPlan.issued.some((item) => item.requirementKey === 'sig
 assert.equal(plan.emailPayload.portalLink, 'https://app.example.test/client/stable-seller-token/selling')
 assert.deepEqual(
   plan.emailPayload.requiredDocuments.map((item) => item.key),
-  ['id_document', 'proof_of_address', 'property_condition_disclosure', 'title_deed_copy'],
+  ['id_document', 'proof_of_address', 'signed_fica_declaration', 'signed_disclosure_form', 'title_deed_copy'],
 )
 assert.equal(plan.notificationPayload.dedupeKey, plan.workflowRunDedupeKey)
 
@@ -125,7 +125,7 @@ const completed = await orchestrateSellerPostMandateDocumentRequest({
     calls.push('issueRequests')
     assert.deepEqual(
       runPlan.requestRequirements.map((item) => item.requirement_key || item.requirementKey).sort(),
-      ['id_document', 'proof_of_address', 'property_condition_disclosure', 'title_deed_copy'].sort(),
+      ['id_document', 'proof_of_address', 'signed_fica_declaration', 'signed_disclosure_form', 'title_deed_copy'].sort(),
     )
     return { counts: { issued: 1, existing: 0, suppressed: 0, applied: 1, failed: 0 }, applied: [{ requirementKey: 'id_document' }] }
   },
@@ -137,8 +137,8 @@ const completed = await orchestrateSellerPostMandateDocumentRequest({
   sendEmail: async ({ emailPayload }) => {
     calls.push('sendEmail')
     assert.equal(emailPayload.to, 'seller@example.com')
-    assert.equal(emailPayload.portalLink, 'https://app.example.test/client/invite-token-1/selling')
-    assert.equal(emailPayload.outstandingDocumentCount, 4)
+    assert.equal(emailPayload.portalLink, 'https://app.example.test/client/stable-seller-token/selling')
+    assert.equal(emailPayload.outstandingDocumentCount, 5)
     return { ok: true, deliveryId: 'delivery-1' }
   },
   createNotification: async ({ notificationPayload }) => {

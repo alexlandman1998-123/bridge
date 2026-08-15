@@ -1,4 +1,8 @@
 import { buildSellerClientPortalLink } from '../lib/agentListingStorage'
+import {
+  getClientAccessPolicyMessage,
+  resolveSellerAccessPolicy,
+} from '../core/clientAccess/clientAccessPolicy'
 import { invokeEdgeFunction } from '../lib/supabaseClient'
 import {
   createPrivateListingActivity,
@@ -151,8 +155,36 @@ export async function activateSellerPortalForListing({
   ttlHours = 72,
 } = {}) {
   const source = normalizeKey(activationSource) || SELLER_PORTAL_ACTIVATION_SOURCES.existingListing
-  const listing = await getPrivateListing(listingId, { includeRequirementsAndDocuments: false })
+  const listing = await getPrivateListing(listingId, { includeRequirementsAndDocuments: true })
   if (!listing?.id) throw new Error('Private listing not found.')
+
+  if (source !== SELLER_PORTAL_ACTIVATION_SOURCES.sellerLead) {
+    const preflightSellerEmail = normalizeText(
+      sellerContactEmail ||
+        listing?.seller?.email ||
+        listing?.sellerEmail ||
+        listing?.seller_email,
+    ).toLowerCase()
+    assertSellerPortalActivationContact({ sellerEmail: preflightSellerEmail })
+    const sellerAccessPolicy = resolveSellerAccessPolicy({
+      ...listing,
+      listingId: listing.id,
+      sellerEmail: preflightSellerEmail,
+      documents: listing.documents || [],
+      documentLibraryRows: listing.documents || [],
+      mandateStatus: listing.mandateStatus || listing.mandate_status,
+      mandate: listing.mandate,
+      mandatePacket: listing.mandatePacket || listing.mandate_packet,
+    })
+    const activationDecision = sellerAccessPolicy.actions.activatePortal
+    if (!activationDecision.enabled) {
+      const error = new Error(getClientAccessPolicyMessage(activationDecision.reason, 'Upload the signed mandate before activating the Seller Portal.'))
+      error.code = activationDecision.reason
+      error.policyVersion = sellerAccessPolicy.version
+      error.policyDecision = activationDecision
+      throw error
+    }
+  }
 
   const onboarding = source === SELLER_PORTAL_ACTIVATION_SOURCES.sellerLead
     ? await sendSellerOnboarding(listing.id, {

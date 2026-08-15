@@ -179,6 +179,22 @@ function buildPrimaryAction(item = {}, normalizedStatus = '', canUpload = false,
   return null
 }
 
+function documentHasOpenableArtifact(document = null) {
+  return Boolean(
+    document &&
+      (
+        document.file_path ||
+        document.storage_path ||
+        document.url ||
+        document.file_url ||
+        document.generatedHtml ||
+        document.generated_html ||
+        document.generatedFileName ||
+        document.generated_file_name
+      ),
+  )
+}
+
 function SellerDocumentRow({
   item = {},
   uploadingDocumentKey = '',
@@ -188,7 +204,7 @@ function SellerDocumentRow({
 }) {
   const uploadKey = String(item?.uploadKey || item?.id || '').trim()
   const canUpload = Boolean(uploadKey && item?.uploadSpec && typeof onUpload === 'function')
-  const canOpen = Boolean(item?.linkedDocument)
+  const canOpen = Boolean(documentHasOpenableArtifact(item?.linkedDocument) && typeof onOpenDocument === 'function')
   const normalizedStatus = normalizeDocumentStatus(item?.status || '')
   const status = getStatusPresentation(normalizedStatus)
   const category = getCategoryPresentation(item?.sellerCategoryKey || '')
@@ -235,6 +251,26 @@ function SellerDocumentRow({
               {item?.lockedByTeam ? (
                 <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-2.5 py-1 text-[0.69rem] font-semibold text-[#52657b]">
                   Agent managed
+                </span>
+              ) : null}
+              {item?.completionRouteLabel ? (
+                <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-2.5 py-1 text-[0.69rem] font-semibold text-[#52657b]">
+                  {item.completionRouteLabel}
+                </span>
+              ) : null}
+              {item?.ficaDeclarationContextStatus === 'captured' ? (
+                <span className="inline-flex items-center rounded-full border border-[#d7eadf] bg-[#f3fbf6] px-2.5 py-1 text-[0.69rem] font-semibold text-[#256c49]">
+                  FICA context captured
+                </span>
+              ) : null}
+              {item?.ficaDeclarationContextStatus === 'missing' ? (
+                <span className="inline-flex items-center rounded-full border border-[#f1d5a5] bg-[#fff7e8] px-2.5 py-1 text-[0.69rem] font-semibold text-[#b66a11]">
+                  FICA context needed
+                </span>
+              ) : null}
+              {item?.supportingFicaDocumentsDynamic ? (
+                <span className="inline-flex items-center rounded-full border border-[#d7e2f1] bg-[#f6f9fd] px-2.5 py-1 text-[0.69rem] font-semibold text-[#38536f]">
+                  Dynamic FICA docs
                 </span>
               ) : null}
               {item?.stageLabel ? (

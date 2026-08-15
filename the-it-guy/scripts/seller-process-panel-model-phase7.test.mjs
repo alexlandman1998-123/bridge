@@ -98,7 +98,7 @@ function assertPartnerReadinessHidesInternalKeys(model) {
   assert.equal(model.actionCards.every((card) => card.disabled === false && card.readOnly === false), true)
   assert.equal(model.actionCards.some((card) => card.key === 'complete_valuation_presentation' && card.pending === true), true)
   assert.equal(model.actionCards.some((card) => card.key === 'mark_seller_lead_lost'), true)
-  assert.equal(model.actionCards.some((card) => card.key === 'confirm_listing_terms'), true)
+  assert.equal(model.actionCards.some((card) => card.key === 'prepare_listing'), true)
   assertPartnerReadinessHidesInternalKeys(model)
 }
 
@@ -209,8 +209,21 @@ function assertPartnerReadinessHidesInternalKeys(model) {
     documents: [
       { documentType: 'valuation_document', status: 'uploaded', fileUrl: 'valuation.pdf' },
       { key: 'signed_mandate', documentType: 'signed_mandate', source: 'kingstons_seller_pack', status: 'uploaded', file_path: 'mandate.pdf', sellerType: 'natural' },
-      { key: 'signed_defect_form', documentType: 'defects_disclosure_form', source: 'kingstons_seller_pack', status: 'signed', file_path: 'defects.pdf', sellerType: 'natural' },
-      { key: 'signed_fica_form', documentType: 'seller_fica_pack', source: 'kingstons_seller_pack', status: 'uploaded', file_path: 'fica.pdf', sellerType: 'natural' },
+      { key: 'signed_disclosure_form', documentType: 'signed_disclosure_form', source: 'kingstons_seller_pack', status: 'signed', file_path: 'defects.pdf', sellerType: 'natural' },
+      {
+        key: 'signed_fica_declaration',
+        documentType: 'signed_fica_declaration',
+        source: 'kingstons_seller_pack',
+        status: 'uploaded',
+        file_path: 'fica.pdf',
+        sellerType: 'natural',
+        completionRoute: 'physical_upload_with_context',
+        physicalUploadContextRequired: true,
+        ficaDeclarationContext: {
+          sellerType: 'natural',
+          contextCapturedAt: '2026-08-15T08:00:00.000Z',
+        },
+      },
     ],
     mandatePacketStatus: {
       packet: { id: 'packet-kingstons', status: 'completed' },
@@ -221,7 +234,7 @@ function assertPartnerReadinessHidesInternalKeys(model) {
   const model = buildSellerProcessWorkspacePanelModel(payload)
   assert.equal(model.visible, true)
   assert.equal(model.percent, 100)
-  assert.equal(model.partnerReadiness.every((partner) => partner.ready === true), true)
+  assert.equal(model.partnerReadiness.every((partner) => partner.ready === false), true)
   assertPartnerReadinessHidesInternalKeys(model)
 }
 

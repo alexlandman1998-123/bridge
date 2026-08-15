@@ -267,7 +267,7 @@ function buildQuickListingMandatePack(form = {}, mandateStatusValue = '') {
     dateState: dateState.key,
     dateStateLabel: dateState.label,
     daysRemaining: dateState.daysRemaining,
-    signed: mandateReportedHeld || manualMandateFileSelected,
+    signed: manualMandateFileSelected,
     reportedHeld: mandateReportedHeld,
     uploadStatus: manualMandateFileSelected
       ? 'evidence_selected'
@@ -1980,7 +1980,6 @@ function isQuickListingManualMandateReportedStatus(value) {
 
 function canQuickListingActivateWithMandateStatus(mandateStatus = '', form = {}) {
   return (
-    form?.hasSignedMandate === true ||
     ['signed_uploaded', 'uploaded_signed'].includes(normalizeKey(mandateStatus)) ||
     (isQuickListingManualMandateReportedStatus(mandateStatus) && Boolean(normalizeText(form?.manualMandateFileName)))
   )
@@ -2168,7 +2167,7 @@ function validateQuickListingActiveRules({ form, assignedAgentKey }) {
   const errors = validateQuickListingMinimumFields({ form, assignedAgentKey, requireAssignedAgent: true })
   const mandateStatus = getQuickListingMandateStatus(form)
   if (!canQuickListingActivateWithMandateStatus(mandateStatus, form)) {
-    errors.push('Confirm whether a signed mandate already exists before marking the listing Active.')
+    errors.push('Upload the signed hard-copy mandate before marking the listing Active.')
   }
   return [...new Set(errors)]
 }
@@ -5172,7 +5171,7 @@ function AgentListings({ initialTab = null } = {}) {
                     </p>
                   </QuickAddSection>
 
-                  <QuickAddSection number="7" title="Send Seller Portal" copy="Invite the seller to complete what's missing.">
+                  <QuickAddSection number="7" title="Send Seller Portal" copy="Available after the signed mandate upload is saved.">
                     <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-center">
                       <div className="flex items-start gap-4">
                         <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#e6f7ec] text-[#1f8a4c]">
@@ -5184,7 +5183,7 @@ function AgentListings({ initialTab = null } = {}) {
                             <li>Complete seller details</li>
                             <li>Upload outstanding documents</li>
                             <li>Complete FICA</li>
-                            <li>Complete/sign mandate where applicable</li>
+                            <li>Track the uploaded mandate status</li>
                             <li>Complete disclosure information</li>
                             <li>Track outstanding requirements</li>
                           </ul>

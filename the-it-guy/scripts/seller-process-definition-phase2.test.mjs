@@ -41,15 +41,14 @@ const kingstonsStageKeys = [
   'valuation_presentation_scheduled',
   'valuation_presented',
   'seller_pack_signed',
-  'listing_terms_confirmed',
   'listing_ready',
 ]
 
 const kingstonsDocumentKeys = [
   'valuation_document',
   'signed_mandate',
-  'signed_defect_form',
-  'signed_fica_form',
+  'signed_disclosure_form',
+  'signed_fica_declaration',
   'seller_pack_readiness_complete',
 ]
 
@@ -63,8 +62,6 @@ const kingstonsEvidenceKeys = [
   'defects_form_signed',
   'fica_pack_signed',
   'seller_pack_readiness_complete',
-  'commission_terms_confirmed',
-  'transfer_attorney_nominated',
   'listing_ready',
 ]
 
@@ -144,17 +141,13 @@ function assertSourceDoesNotConsumeDefinition(source, label) {
 {
   const definition = getSellerProcessDefinitionByProfile(KINGSTONS_SELLER_PROCESS_PROFILE)
   const mandate = definition.documentRequirements.find((requirement) => requirement.key === 'signed_mandate')
-  const defects = definition.documentRequirements.find((requirement) => requirement.key === 'signed_defect_form')
-  const fica = definition.documentRequirements.find((requirement) => requirement.key === 'signed_fica_form')
-  assert.deepEqual(mandate.acceptedEvidenceModes, ['digital_signature', 'manual_upload'])
-  assert.deepEqual(defects.acceptedEvidenceModes, ['digital_signature', 'manual_upload'])
-  assert.deepEqual(fica.acceptedEvidenceModes, ['digital_signature', 'manual_upload'])
+  const defects = definition.documentRequirements.find((requirement) => requirement.key === 'signed_disclosure_form')
+  const fica = definition.documentRequirements.find((requirement) => requirement.key === 'signed_fica_declaration')
+  assert.deepEqual(mandate.acceptedEvidenceModes, ['physical_upload'])
+  assert.deepEqual(defects.acceptedEvidenceModes, ['disclosure_link_completed', 'physical_upload'])
+  assert.deepEqual(fica.acceptedEvidenceModes, ['seller_onboarding_link_completed', 'physical_upload_with_context'])
   assert.equal(definition.partnerHandoffs.every((handoff) => handoff.exposesInternalKingstonsStages === false), true)
-  assert.equal(definition.partnerHandoffs.every((handoff) => handoff.readyAfterStage === 'listing_terms_confirmed'), true)
-  assert.deepEqual(definition.partnerHandoffs.map((handoff) => handoff.partnerType), [
-    'attorney_firm',
-    'bond_originator',
-  ])
+  assert.deepEqual(definition.partnerHandoffs.map((handoff) => handoff.partnerType), [])
 }
 
 {
