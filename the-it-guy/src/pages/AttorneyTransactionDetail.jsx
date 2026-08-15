@@ -4784,6 +4784,7 @@ function buildBuyerProcessHandoffModel({
   assignedBondOriginator = null,
   onboardingCompleted = false,
 } = {}) {
+  transaction = asDetailRecord(transaction)
   const leadPayload = asDetailRecord(
     buyerProcessLeadHandoff?.rawEnquiryPayload ||
       buyerProcessLeadHandoff?.raw_enquiry_payload ||
