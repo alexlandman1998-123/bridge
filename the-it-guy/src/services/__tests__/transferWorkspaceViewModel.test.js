@@ -184,6 +184,15 @@ assert.ok(
 )
 assert.ok(viewModel.rolloutReadiness.actionAudit.statusUpdateActions.includes('mark_complete'))
 assert.ok(viewModel.rolloutReadiness.uatChecklist.length >= 6)
+assert.equal(viewModel.rolloutStatusSummary.key, 'transfer_rollout')
+assert.equal(viewModel.rolloutStatusSummary.releaseGateStatus, 'review')
+assert.ok(viewModel.rolloutStatusSummary.checks.some((check) => check.key === 'action_buttons' && check.status === 'ready'))
+assert.ok(viewModel.rolloutStatusSummary.checks.some((check) => check.key === 'concurrent_work' && check.status === 'ready'))
+assert.equal(viewModel.uatReport.title, 'Transfer Attorney UAT Pack')
+assert.equal(viewModel.uatReport.laneKey, 'transfer')
+assert.equal(viewModel.uatReport.releaseGateStatus, viewModel.rolloutStatusSummary.releaseGateStatus)
+assert.ok(viewModel.uatReport.checklist.length >= 7)
+assert.ok(viewModel.uatReport.checklist.every((item) => item.expectedOutcome && item.proofKey && item.required))
 
 viewModel.tasks.forEach((task) => {
   const taskActions = buildTransferTaskWorkActions(task, workflow.lane.permissions)

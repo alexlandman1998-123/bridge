@@ -125,7 +125,13 @@ function firstScenarioValue(sources = [], paths = []) {
   for (const path of paths) {
     for (const source of sources) {
       const value = readPath(source, path)
-      if (value !== null && value !== undefined && text(value) !== '') return value
+      if (
+        value !== null &&
+        value !== undefined &&
+        (typeof value === 'boolean' || typeof value === 'number' || text(value) !== '')
+      ) {
+        return value
+      }
     }
   }
   return ''
@@ -1870,6 +1876,103 @@ function buildTransferRolloutReadiness({ tasks = [], workActionsByTaskKey = {}, 
   }
 }
 
+function buildTransferRolloutStatusSummary(rolloutReadiness = null) {
+  const status = rolloutReadiness?.status || 'blocked'
+  const blockers = Array.isArray(rolloutReadiness?.blockers) ? rolloutReadiness.blockers : []
+  const warnings = Array.isArray(rolloutReadiness?.warnings) ? rolloutReadiness.warnings : []
+  const workflowProof = rolloutReadiness?.workflowProof || {}
+  const actionAudit = rolloutReadiness?.actionAudit || {}
+  const scenarioProof = rolloutReadiness?.scenarioProof || {}
+  const releaseGateStatus = status === 'ready' ? 'go' : status === 'attention' ? 'review' : 'blocked'
+  const label = status === 'ready' ? 'Ready' : status === 'attention' ? 'Review' : 'Blocked'
+  const message = status === 'ready'
+    ? 'Transfer lane is ready for attorney UAT and controlled rollout.'
+    : status === 'attention'
+      ? 'Transfer lane can be tested, but rollout needs scenario or command-queue review.'
+      : 'Transfer lane rollout is blocked until required actions and workflow guardrails are restored.'
+
+  return {
+    key: 'transfer_rollout',
+    status,
+    releaseGateStatus,
+    label,
+    message,
+    blockerCount: blockers.length,
+    warningCount: warnings.length,
+    checks: [
+      {
+        key: 'action_buttons',
+        label: 'Action Buttons',
+        status: actionAudit.missingWorkActions?.length || actionAudit.missingStatusActions?.length ? 'blocked' : 'ready',
+        value: `${actionAudit.presentWorkActions?.length || 0} work actions, ${actionAudit.presentStatusActions?.length || 0} status actions`,
+      },
+      {
+        key: 'concurrent_work',
+        label: 'Concurrent Work',
+        status: workflowProof.concurrentWorkAllowed ? 'ready' : 'blocked',
+        value: workflowProof.concurrentWorkAllowed ? 'Allowed' : `${workflowProof.sequenceLockCount || 0} sequence locks`,
+      },
+      {
+        key: 'completion_evidence',
+        label: 'Completion Evidence',
+        status: workflowProof.evidenceControlledTaskCount ? 'ready' : 'blocked',
+        value: `${workflowProof.completionBlockedTaskCount || 0} tasks protected by evidence checks`,
+      },
+      {
+        key: 'scenario_coverage',
+        label: 'Scenario Coverage',
+        status: scenarioProof.coverageItemCount >= 4 ? 'ready' : 'blocked',
+        value: `${scenarioProof.coverageItemCount || 0} coverage lanes`,
+      },
+    ],
+  }
+}
+
+function buildTransferUatReport({ rolloutReadiness = null, scenario = null, rolloutStatusSummary = null } = {}) {
+  const checklist = Array.isArray(rolloutReadiness?.uatChecklist) ? rolloutReadiness.uatChecklist : []
+  const expectedOutcomes = [
+    'Buyer and seller capacity requirements match the matter structure.',
+    'The queue opens a command-backed document request with a work packet.',
+    'Evidence actions route to the document workspace or upload flow.',
+    'The selected task can move to waiting or blocked without locking other open tasks.',
+    'Mark Complete remains disabled until required evidence is ready.',
+    'Signing follow-up produces a command-backed signing work packet.',
+    'Finance and cancellation coverage match the captured transaction facts.',
+  ]
+
+  return {
+    title: 'Transfer Attorney UAT Pack',
+    laneKey: 'transfer',
+    status: rolloutStatusSummary?.status || rolloutReadiness?.status || 'blocked',
+    releaseGateStatus: rolloutStatusSummary?.releaseGateStatus || 'blocked',
+    scenario: {
+      buyer: scenario?.buyer?.coverageLabel || 'Buyer capacity to confirm',
+      seller: scenario?.seller?.coverageLabel || 'Seller capacity to confirm',
+      finance: scenario?.finance?.label || 'Finance route to confirm',
+      cancellation: scenario?.cancellation?.label || 'Cancellation route to confirm',
+    },
+    checklist: checklist.map((label, index) => ({
+      id: `transfer_uat_${String(index + 1).padStart(2, '0')}`,
+      label,
+      expectedOutcome: expectedOutcomes[index] || 'Attorney can complete the step and capture an auditable result.',
+      proofKey: [
+        'scenario_capacity',
+        'document_command',
+        'document_workspace',
+        'concurrent_status_update',
+        'completion_evidence_gate',
+        'signing_command',
+        'routing_coverage',
+      ][index] || `uat_step_${index + 1}`,
+      required: true,
+    })),
+    signoffGaps: [
+      ...(rolloutReadiness?.blockers || []),
+      ...(rolloutReadiness?.warnings || []),
+    ],
+  }
+}
+
 export function buildTransferWorkspaceViewModel({
   workflow = null,
   workflowKey = 'transfer',
@@ -1959,6 +2062,8 @@ export function buildTransferWorkspaceViewModel({
     commandQueue,
     scenario,
   })
+  const rolloutStatusSummary = buildTransferRolloutStatusSummary(rolloutReadiness)
+  const uatReport = buildTransferUatReport({ rolloutReadiness, scenario, rolloutStatusSummary })
 
   return {
     workflowKey,
@@ -2002,6 +2107,8 @@ export function buildTransferWorkspaceViewModel({
     workActionsByTaskKey,
     commandQueue,
     rolloutReadiness,
+    rolloutStatusSummary,
+    uatReport,
     unsupportedCapabilities: {
       delayedStatus: true,
       notApplicableStatus: true,
