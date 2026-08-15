@@ -73,6 +73,14 @@ export {
 } from './prefill/bondApplicationPrefillSourceMatrix.js'
 export { getBondApplicationOtpUnlockState } from './prefill/bondApplicationOtpUnlockGate.js'
 export {
+  BOND_APPLICATION_CURRENT_UX_SURFACES,
+  BOND_APPLICATION_PHASE_10_REDESIGN_CHECKLIST,
+  BOND_APPLICATION_TARGET_UX_PRINCIPLES,
+  BOND_APPLICATION_UX_AUDIT_VERSION,
+  BOND_APPLICATION_UX_FRICTION_POINTS,
+  buildBondApplicationUxAudit,
+} from './ux/bondApplicationUxAudit.js'
+export {
   getPhase2GuidedBondApplicationEligibility,
   isPermanentEmploymentValue,
   isPhase3SupportedEmploymentValue,

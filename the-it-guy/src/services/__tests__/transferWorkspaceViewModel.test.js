@@ -414,4 +414,73 @@ const correctionQueueItem = persistedFollowUpModel.commandQueue.items.find((item
 assert.equal(correctionQueueItem.command.label, 'Request Correction')
 assert.equal(correctionQueueItem.workPacket.sourceFollowUpRelatedId, 'buyer-fica')
 
+const cashIndividualScenarioModel = buildTransferWorkspaceViewModel({
+  workflow: {
+    ...workflow,
+    facts: {
+      financeType: 'cash',
+      isCashDeal: true,
+      buyerEntityType: 'individual',
+      buyerMaritalStatus: 'married_in_community',
+      sellerEntityType: 'individual',
+      sellerMaritalStatus: 'single',
+      sellerHasExistingBond: false,
+    },
+  },
+  selectedTaskKey: 'entity_authority_checked',
+})
+
+assert.equal(cashIndividualScenarioModel.scenario.finance.type, 'cash')
+assert.equal(cashIndividualScenarioModel.scenario.finance.requiresGuarantees, false)
+assert.equal(cashIndividualScenarioModel.scenario.buyer.spouseConsentRequired, true)
+assert.equal(cashIndividualScenarioModel.scenario.seller.maritalRegime, 'single')
+assert.ok(cashIndividualScenarioModel.scenario.coverageItems.some((item) => item.key === 'buyer_capacity' && item.status === 'covered'))
+assert.ok(!cashIndividualScenarioModel.tasks.some((task) => task.key === 'guarantees_requested'))
+assert.ok(!cashIndividualScenarioModel.tasks.some((task) => task.key === 'guarantees_received'))
+assert.ok(!cashIndividualScenarioModel.tasks.some((task) => task.key === 'transfer_guarantees_accepted'))
+const cashAuthorityTask = cashIndividualScenarioModel.tasks.find((task) => task.key === 'entity_authority_checked')
+assert.ok(cashAuthorityTask.requiredDocumentKeys.includes('buyer_marital_status_documents'))
+assert.ok(cashAuthorityTask.requiredDocumentKeys.includes('buyer_spouse_consent'))
+assert.ok(!cashAuthorityTask.requiredDocumentKeys.includes('buyer_company_resolution'))
+assert.ok(!cashAuthorityTask.requiredDocumentKeys.includes('seller_company_resolution'))
+assert.ok(!cashAuthorityTask.requiredDocumentKeys.includes('seller_spouse_consent'))
+const cashBuyerFicaTask = cashIndividualScenarioModel.tasks.find((task) => task.key === 'buyer_fica_received')
+assert.ok(cashBuyerFicaTask.requiredDocumentKeys.includes('buyer_id_document'))
+assert.ok(cashBuyerFicaTask.requiredDocumentKeys.includes('buyer_proof_of_address'))
+assert.ok(!cashBuyerFicaTask.requiredDocumentKeys.includes('buyer_company_registration_documents'))
+assert.ok(!cashBuyerFicaTask.requiredDocumentKeys.includes('buyer_trust_deed'))
+
+const companyTrustScenarioModel = buildTransferWorkspaceViewModel({
+  workflow: {
+    ...workflow,
+    facts: {
+      financeType: 'bond',
+      buyerEntityType: 'company',
+      sellerEntityType: 'trust',
+      sellerHasExistingBond: true,
+      cancellationRequired: true,
+    },
+  },
+  selectedTaskKey: 'entity_authority_checked',
+})
+
+assert.equal(companyTrustScenarioModel.scenario.finance.requiresGuarantees, true)
+assert.equal(companyTrustScenarioModel.scenario.cancellation.required, true)
+assert.equal(companyTrustScenarioModel.scenario.buyer.isCompany, true)
+assert.equal(companyTrustScenarioModel.scenario.seller.isTrust, true)
+assert.ok(companyTrustScenarioModel.tasks.some((task) => task.key === 'guarantees_requested'))
+assert.ok(companyTrustScenarioModel.tasks.some((task) => task.key === 'guarantees_received'))
+assert.ok(companyTrustScenarioModel.tasks.some((task) => task.key === 'transfer_guarantees_accepted'))
+const companyTrustAuthorityTask = companyTrustScenarioModel.tasks.find((task) => task.key === 'entity_authority_checked')
+assert.ok(companyTrustAuthorityTask.requiredDocumentKeys.includes('buyer_company_registration_documents'))
+assert.ok(companyTrustAuthorityTask.requiredDocumentKeys.includes('buyer_company_resolution'))
+assert.ok(companyTrustAuthorityTask.requiredDocumentKeys.includes('buyer_director_ids'))
+assert.ok(companyTrustAuthorityTask.requiredDocumentKeys.includes('seller_trust_deed'))
+assert.ok(companyTrustAuthorityTask.requiredDocumentKeys.includes('seller_letters_of_authority'))
+assert.ok(companyTrustAuthorityTask.requiredDocumentKeys.includes('seller_trustee_ids'))
+assert.ok(companyTrustAuthorityTask.requiredDocumentKeys.includes('seller_trustee_resolution'))
+assert.ok(!companyTrustAuthorityTask.requiredDocumentKeys.includes('buyer_marital_status_documents'))
+assert.ok(!companyTrustAuthorityTask.requiredDocumentKeys.includes('seller_company_resolution'))
+assert.ok(companyTrustScenarioModel.scenario.coverageItems.some((item) => item.key === 'cancellation_route' && item.value === 'Cancellation lane required'))
+
 console.log('transferWorkspaceViewModel tests passed')

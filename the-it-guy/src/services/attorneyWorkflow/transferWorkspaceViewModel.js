@@ -561,7 +561,7 @@ function buildTransferScenarioProfile({ workflow = null, lane = null, facts = {}
       detail: requiresGuarantees ? 'Guarantee and bond coordination tasks apply.' : 'Cash route; bond guarantee tasks are not required.',
     },
     cancellation: {
-      sellerHasExistingBond,
+      sellerHasExistingBond: sellerExistingBond,
       required: requiresCancellation,
       status: sellerExistingBond === null && explicitCancellationRequired === null ? 'attention' : 'covered',
       label: cancellationLabel,
@@ -724,7 +724,7 @@ function isTaskOverdue(task = {}, now = new Date()) {
   return Number.isFinite(dueTime) && dueTime < new Date(now).getTime()
 }
 
-function buildWorkflowTasks({ workflowKey = 'transfer', lane = null, facts = {}, workflow = null, documents = [], scenario = null } = {}) {
+function buildWorkflowTasks({ workflowKey = 'transfer', lane = null, workflow = null, documents = [], scenario = null } = {}) {
   const definitions = getAttorneyStageDefinitionsForLane(workflowKey)
     .filter((definition) => scenario?.finance?.requiresGuarantees === false ? !GUARANTEE_STAGE_KEYS.has(definition.key) : true)
     .map((definition) => applyTransferScenarioToTask(definition, scenario))
@@ -1753,7 +1753,7 @@ export function buildTransferWorkspaceViewModel({
   const lane = workflow?.lane || null
   const permissions = lane?.permissions || {}
   const scenario = buildTransferScenarioProfile({ workflow, lane, facts: workflow?.facts || {} })
-  const tasks = buildWorkflowTasks({ workflowKey, lane, facts: workflow?.facts || {}, workflow, documents, scenario }).map((task) => {
+  const tasks = buildWorkflowTasks({ workflowKey, lane, workflow, documents, scenario }).map((task) => {
     const relatedDocuments = task.derivedCompletion?.relatedDocuments?.length
       ? task.derivedCompletion.relatedDocuments
       : buildRelatedDocuments(task, lane, documents)

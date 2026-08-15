@@ -7199,6 +7199,7 @@ function ArchlineTransferWorkspace({
   const taskWorkActions = viewModel.selectedTaskContext.workActions || []
   const outcomeSummary = viewModel.selectedTaskContext.outcomeSummary || null
   const commandQueue = viewModel.commandQueue || { counts: {}, items: [] }
+  const transferScenario = viewModel.scenario || { coverageItems: [] }
   const taskTabs = useMemo(() => {
     const rawTaskTabs = viewModel.selectedTaskContext.tabs || []
     return [
@@ -7482,6 +7483,30 @@ function ArchlineTransferWorkspace({
     }
   }
 
+  function getTransferCoverageIcon(keyValue = '') {
+    if (keyValue.includes('buyer') || keyValue.includes('seller')) return UsersRound
+    if (keyValue.includes('finance')) return CircleDollarSign
+    if (keyValue.includes('cancellation')) return FileText
+    return Workflow
+  }
+
+  function getTransferCoverageTone(status = '') {
+    if (status === 'attention') {
+      return {
+        card: 'border-amber-200 bg-amber-50',
+        icon: 'text-amber-700',
+        badge: 'bg-amber-100 text-amber-800',
+        label: 'Check',
+      }
+    }
+    return {
+      card: 'border-emerald-100 bg-emerald-50',
+      icon: 'text-emerald-700',
+      badge: 'bg-white text-emerald-700',
+      label: 'Covered',
+    }
+  }
+
   async function submitStatusDraft(event) {
     event.preventDefault()
     if (!statusDraft.task) return
@@ -7704,6 +7729,44 @@ function ArchlineTransferWorkspace({
                     </div>
                   ))}
                 </div>
+
+                {transferScenario.coverageItems?.length ? (
+                  <section className="mt-4 rounded-lg border border-slate-200 bg-white px-4 py-3">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                      <div className="min-w-0">
+                        <h3 className="text-sm font-semibold text-slate-950">Transfer Coverage</h3>
+                        <p className="mt-1 text-xs leading-5 text-slate-500">
+                          Party capacity, finance route, and cancellation routing for this matter.
+                        </p>
+                      </div>
+                      <div className="grid w-full gap-2 lg:max-w-3xl sm:grid-cols-2 xl:grid-cols-4">
+                        {transferScenario.coverageItems.map((item) => {
+                          const Icon = getTransferCoverageIcon(item.key)
+                          const tone = getTransferCoverageTone(item.status)
+                          return (
+                            <article key={item.key} className={`rounded-lg border px-3 py-3 ${tone.card}`}>
+                              <div className="flex items-start gap-2">
+                                <span className={`mt-0.5 inline-flex size-7 shrink-0 items-center justify-center rounded-lg bg-white ${tone.icon}`}>
+                                  <Icon size={15} />
+                                </span>
+                                <div className="min-w-0">
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    <strong className="text-xs font-semibold text-slate-500">{item.label}</strong>
+                                    <span className={`rounded-full px-2 py-0.5 text-[0.62rem] font-semibold ${tone.badge}`}>
+                                      {tone.label}
+                                    </span>
+                                  </div>
+                                  <p className="mt-1 truncate text-sm font-semibold text-slate-950">{item.value}</p>
+                                  <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500">{item.detail}</p>
+                                </div>
+                              </div>
+                            </article>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  </section>
+                ) : null}
 
                 {commandQueue.items?.length ? (
                   <section className="mt-4 rounded-lg border border-slate-200 bg-white px-4 py-3">
