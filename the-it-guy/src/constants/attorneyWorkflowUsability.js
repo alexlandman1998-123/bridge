@@ -139,6 +139,31 @@ export const BOND_ATTORNEY_STAGE_COMMAND_PRESETS = Object.freeze({
   }),
 })
 
+export const ATTORNEY_WORKFLOW_COORDINATION_COMMAND_PRESETS = Object.freeze({
+  bond_bond_guarantees_issued: Object.freeze({
+    label: 'Request Bond Guarantees',
+    subject: 'Bond guarantees issued',
+    messagePrefix: 'Guarantee coordination request for Bond Attorney.',
+    description: 'Ask the bond attorney to issue guarantees with the transfer wording, values, expiry, and delivery evidence.',
+    checklist: [
+      'Confirm guarantee wording and amounts required by transfer.',
+      'Ask bond attorney for issued guarantee letter and expiry.',
+      'Record delivery evidence before marking transfer guarantees accepted.',
+    ],
+  }),
+  transfer_transfer_guarantee_acceptance: Object.freeze({
+    label: 'Request Wording Acceptance',
+    subject: 'Transfer guarantee acceptance',
+    messagePrefix: 'Guarantee wording request for Transfer Attorney.',
+    description: 'Ask the transfer attorney to accept or correct the bond guarantee wording and values.',
+    checklist: [
+      'Ask transfer attorney to confirm wording and amount acceptance.',
+      'Record amendments required before bond lodgement readiness.',
+      'Update bond guarantee wording accepted once transfer acceptance is saved.',
+    ],
+  }),
+})
+
 function normalizeLaneKey(value = '') {
   const normalized = String(value || '').trim().toLowerCase().replace(/_attorney$/, '')
   if (normalized === 'bond') return 'bond'
@@ -1445,6 +1470,10 @@ function buildCoordinationEscalationCommand(item = {}, context = {}) {
   })
 }
 
+function getCoordinationCommandPreset(item = {}) {
+  return ATTORNEY_WORKFLOW_COORDINATION_COMMAND_PRESETS[item?.id] || null
+}
+
 export function buildAttorneyWorkflowCoordinationSummary({
   laneKey = 'transfer',
   lanes = [],
@@ -1514,6 +1543,7 @@ export function buildAttorneyWorkflowCoordinationCommand(item = {}, context = {}
   const stageKey = normalizeAttorneyStageKey(context.stageKey || '', laneKey)
   const title = compactText(item.title || 'Coordination handoff')
   const dependencyLabel = compactText(item.laneLabel || LANE_LABELS[dependencyLaneKey] || 'Attorney')
+  const preset = getCoordinationCommandPreset(item)
 
   if (item.actioned && item.escalationNeeded && item.status !== 'ready') {
     return buildCoordinationEscalationCommand(item, context)
@@ -1563,12 +1593,12 @@ export function buildAttorneyWorkflowCoordinationCommand(item = {}, context = {}
       action,
       laneKey,
       stageKey,
-      subject: title,
+      subject: preset?.subject || title,
       commandType: 'add_note',
       requestedFrom: 'attorney',
       priority: item.status === 'waiting' ? 'required' : 'optional',
       visibility: 'professional_shared',
-      checklist: [
+      checklist: preset?.checklist || [
         'Confirm the owner and expected date.',
         'Record what remains outstanding.',
         'Update the dependency once resolved.',
@@ -1584,10 +1614,10 @@ export function buildAttorneyWorkflowCoordinationCommand(item = {}, context = {}
     laneKey,
     visibility: 'professional_shared',
     message: sentence(
-      `Coordination request for ${dependencyLabel}: ${title}.`,
+      preset?.messagePrefix || `Coordination request for ${dependencyLabel}: ${title}.`,
       item.targetStageLabel ? `Needed: ${item.targetStageLabel}.` : '',
       item.currentStageLabel ? `Current: ${item.currentStageLabel}.` : '',
-      item.description,
+      preset?.description || item.description,
     ),
     workPacket,
   })
@@ -1597,8 +1627,8 @@ export function buildAttorneyWorkflowCoordinationCommand(item = {}, context = {}
     laneKey,
     stageKey,
     commandType: 'add_note',
-    label: item.status === 'ready' ? 'Add Coordination Note' : 'Request Handoff',
-    description: 'Prepare a professional coordination update for the linked legal workflow.',
+    label: preset?.label || (item.status === 'ready' ? 'Add Coordination Note' : 'Request Handoff'),
+    description: preset?.description || 'Prepare a professional coordination update for the linked legal workflow.',
     workPacket,
     draft,
   })
