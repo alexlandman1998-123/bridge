@@ -46,6 +46,10 @@ function findRequirementRow(requirement, existingRequiredDocuments = []) {
   ) || null
 }
 
+function requirementAllowsMultipleFiles(requirement = {}) {
+  return Boolean(requirement.allowMultipleFiles || requirement.allowMultiple || Number(requirement.minimumFileCount || 1) > 1)
+}
+
 export function matchBondApplicationDocumentsToRequirement({
   requirement,
   existingRequiredDocuments = [],
@@ -53,10 +57,12 @@ export function matchBondApplicationDocumentsToRequirement({
 } = {}) {
   const requirementRow = findRequirementRow(requirement, existingRequiredDocuments)
   const documents = (existingDocuments || []).filter((document) => matchesRequirement(requirement, document, requirementRow))
+  const allowsMultipleFiles = requirementAllowsMultipleFiles(requirement)
   return {
     requirementRow,
     documents,
-    ambiguous: documents.length > Math.max(Number(requirement.minimumFileCount || 1), 1) &&
+    ambiguous: !allowsMultipleFiles &&
+      documents.length > Math.max(Number(requirement.minimumFileCount || 1), 1) &&
       !getLinkedDocumentIds(requirementRow || {}).length,
   }
 }

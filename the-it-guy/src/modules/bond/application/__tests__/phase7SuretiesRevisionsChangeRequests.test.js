@@ -9,6 +9,7 @@ import {
   BOND_APPLICATION_CHANGE_REQUEST_ITEM_STATUSES,
   BOND_APPLICATION_CHANGE_REQUEST_STATUSES,
   BOND_APPLICATION_DECLARATIONS,
+  BOND_APPLICATION_JOURNEY_STAGE_KEYS,
   BOND_APPLICATION_NORMALIZED_SCHEMA_VERSION,
   BOND_APPLICATION_PARTICIPANT_ROLES,
   BOND_APPLICATION_PARTICIPANT_STATUSES,
@@ -17,6 +18,7 @@ import {
   BOND_APPLICATION_SURETY_DECLARATIONS_APPROVED,
   BOND_APPLICATION_STATUSES,
   buildJointBondApplicationSubmissionSnapshot,
+  buildBondApplicationJourneyModel,
   buildJointSignerManifest,
   buildNormalizedBondApplicationFromState,
   createBondApplicationChangeRequest,
@@ -216,6 +218,49 @@ function runSuretyFlowDocumentDeclarationTests() {
   assert.equal(documents.requiredRequirements[0].key, 'surety:1:bond_application_surety_identity')
   assert.equal(documents.requiredRequirements[0].participantRole, 'surety')
 
+  const defaultDocuments = resolveBondApplicationDocumentRequirements({
+    applicationState: state,
+    participantContext: {
+      participantRole: 'surety',
+      participantKey: 'surety:1',
+      participantPath: 'participants.sureties.0',
+      canEditShared: false,
+    },
+  })
+  const defaultKeys = new Set(defaultDocuments.requiredRequirements.map((requirement) => requirement.key))
+  assert.ok(defaultKeys.has('surety:1:bond_application_surety_identity'))
+  assert.ok(defaultKeys.has('surety:1:bond_application_surety_address'))
+  assert.ok(defaultKeys.has('surety:1:bond_application_surety_bank_statements'))
+  assert.ok(defaultKeys.has('surety:1:bond_application_surety_salary_income_evidence'))
+  assert.ok(defaultKeys.has('surety:1:bond_application_surety_assets_liabilities_statement'))
+  assert.ok(defaultKeys.has('surety:1:bond_application_surety_undertaking'))
+  assert.equal(defaultDocuments.requiredRequirements.some((requirement) => requirement.key === 'bond_application_offer_to_purchase'), false)
+  const suretyBankStatements = defaultDocuments.requiredRequirements.find((requirement) => requirement.key === 'surety:1:bond_application_surety_bank_statements')
+  assert.equal(suretyBankStatements.title, 'Surety 1: Latest 3 months bank statements')
+  assert.equal(suretyBankStatements.evidencePeriodMonths, 3)
+  assert.equal(suretyBankStatements.allowMultipleFiles, true)
+
+  const selfEmployedSuretyState = baseStateWithSurety()
+  selfEmployedSuretyState.participants.sureties[0].employment.occupation_status = 'self_employed'
+  const selfEmployedDocuments = resolveBondApplicationDocumentRequirements({
+    applicationState: selfEmployedSuretyState,
+    participantContext: {
+      participantRole: 'surety',
+      participantKey: 'surety:1',
+      participantPath: 'participants.sureties.0',
+      canEditShared: false,
+    },
+  })
+  const selfEmployedKeys = new Set(selfEmployedDocuments.requiredRequirements.map((requirement) => requirement.key))
+  assert.equal(selfEmployedKeys.has('surety:1:bond_application_surety_bank_statements'), false)
+  assert.ok(selfEmployedKeys.has('surety:1:bond_application_surety_self_employed_personal_bank_statements'))
+  assert.ok(selfEmployedKeys.has('surety:1:bond_application_surety_self_employed_business_bank_statements'))
+  assert.ok(selfEmployedKeys.has('surety:1:bond_application_surety_self_employed_accountant_letter'))
+  assert.ok(selfEmployedKeys.has('surety:1:bond_application_surety_self_employed_financials'))
+  const selfEmployedStatementRequirements = selfEmployedDocuments.requiredRequirements.filter((requirement) => requirement.key.includes('bank_statements'))
+  assert.ok(selfEmployedStatementRequirements.every((requirement) => requirement.evidencePeriodMonths === 6))
+  assert.ok(selfEmployedStatementRequirements.every((requirement) => requirement.allowMultipleFiles === true))
+
   assert.equal(BOND_APPLICATION_SURETY_DECLARATIONS_APPROVED, false)
   const suretyDeclarations = validateBondApplicationDeclarationAcceptance({
     declarations: BOND_APPLICATION_DECLARATIONS.filter((declaration) => (declaration.participantRoles || []).includes('surety')),
@@ -224,6 +269,35 @@ function runSuretyFlowDocumentDeclarationTests() {
   })
   assert.equal(suretyDeclarations.valid, false)
   assert.equal(suretyDeclarations.issues[0].code, BOND_APPLICATION_SURETY_DECLARATION_BLOCKER.code)
+}
+
+function runSuretyJourneyReadinessTests() {
+  const normalized = normalizedWithSurety()
+  const blocked = buildBondApplicationJourneyModel({
+    applicationViewModel: { application: { createdAtDisplay: '19 Jul 2026', selectedBankIds: ['bank-a'] } },
+    documentHealthSummary: { submissionReady: true, missingCount: 0, totalRequired: 8, completedRequired: 8 },
+    selectedBankIds: ['bank-a'],
+    normalizedApplication: normalized,
+  })
+  assert.equal(blocked.currentStage.key, BOND_APPLICATION_JOURNEY_STAGE_KEYS.documents)
+  assert.equal(blocked.currentStage.title, 'Participants outstanding')
+  assert.equal(blocked.nextActions[0].key, 'complete_participant_applications')
+
+  const ready = buildBondApplicationJourneyModel({
+    applicationViewModel: { application: { createdAtDisplay: '19 Jul 2026', selectedBankIds: ['bank-a'] } },
+    documentHealthSummary: { submissionReady: true, missingCount: 0, totalRequired: 8, completedRequired: 8 },
+    selectedBankIds: ['bank-a'],
+    normalizedApplication: {
+      ...normalized,
+      participants: normalized.participants.map((participant) => ({
+        ...participant,
+        status: BOND_APPLICATION_PARTICIPANT_STATUSES.readyForSubmission,
+        readyAt: '2026-08-15T08:00:00.000Z',
+      })),
+    },
+  })
+  assert.equal(ready.currentStage.key, BOND_APPLICATION_JOURNEY_STAGE_KEYS.banks)
+  assert.equal(ready.nextActions[0].key, 'submit_to_banks')
 }
 
 function runChangeRequestRevisionTests() {
@@ -385,6 +459,7 @@ async function main() {
   runFlagTests()
   runSuretyDomainPrivacyTests()
   runSuretyFlowDocumentDeclarationTests()
+  runSuretyJourneyReadinessTests()
   runChangeRequestRevisionTests()
   runSnapshotSigningLineageTests()
   runMigrationBoundaryTests()

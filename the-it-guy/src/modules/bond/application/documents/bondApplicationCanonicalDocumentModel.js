@@ -9,19 +9,48 @@ export const BOND_APPLICATION_CHILD_CONTAINER_POLICY_VERSION = 'bond_application
 export const BOND_APPLICATION_CANONICAL_PARENT_KEYS = Object.freeze({
   identity: 'buyer_id_document',
   address: 'buyer_proof_of_address',
+  legal: 'bond_application_legal_documents',
   proofOfFunds: 'income_affordability_documents',
   affordability: 'income_affordability_documents',
 })
 
+const LEGAL_CHILD_TYPES = new Set([
+  'offer_to_purchase',
+  'marriage_certificate',
+  'antenuptial_contract',
+  'buyer_company_registration',
+  'buyer_company_resolution',
+  'buyer_director_identity_documents',
+  'buyer_company_beneficial_ownership',
+  'buyer_trust_deed',
+  'buyer_letters_of_authority',
+  'buyer_trustee_identity_documents',
+  'buyer_trust_resolution',
+  'buyer_trust_beneficial_ownership',
+  'surety_undertaking',
+])
+
 const FINANCE_CHILD_TYPES = new Set([
   'bank_statements',
+  'personal_bank_statements',
+  'business_bank_statements',
   'proof_of_funds',
   'payslips',
   'employment_contract',
-  'buyer_company_registration',
+  'buyer_company_financial_statements',
+  'buyer_company_tax_documents',
   'financial_statements',
+  'management_accounts',
+  'accountant_letter',
+  'tax_documents',
+  'assets_liabilities_statement',
   'commission_income_evidence',
+  'contract_income_history',
   'pension_income_evidence',
+  'rental_income_evidence',
+  'maintenance_income_evidence',
+  'investment_income_evidence',
+  'trust_income_evidence',
   'proof_of_income',
   'property_finance_existing_bond',
   'debt_settlement_letter',
@@ -31,6 +60,7 @@ const FINANCE_CHILD_TYPES = new Set([
 const BOND_ORIGINATOR_VISIBLE_PARENT_KEYS = new Set([
   'bond_approval',
   'grant_signed',
+  'bond_application_legal_documents',
   'income_affordability_documents',
 ])
 
@@ -61,6 +91,8 @@ export function resolveBondApplicationCanonicalParentKey(requirement = {}) {
   const requirementKey = normalizeKey(requirement.key || requirement.baseRequirementKey)
   if (canonicalType === 'buyer_id_document') return BOND_APPLICATION_CANONICAL_PARENT_KEYS.identity
   if (canonicalType === 'buyer_proof_of_address') return BOND_APPLICATION_CANONICAL_PARENT_KEYS.address
+  if (requirementKey === 'bond_application_business_registration') return BOND_APPLICATION_CANONICAL_PARENT_KEYS.affordability
+  if (LEGAL_CHILD_TYPES.has(canonicalType)) return BOND_APPLICATION_CANONICAL_PARENT_KEYS.legal
   if (FINANCE_CHILD_TYPES.has(canonicalType)) return BOND_APPLICATION_CANONICAL_PARENT_KEYS.affordability
   if (requirementKey.includes('income') || requirementKey.includes('bank_statement') || requirementKey.includes('credit')) {
     return BOND_APPLICATION_CANONICAL_PARENT_KEYS.affordability
@@ -71,6 +103,7 @@ export function resolveBondApplicationCanonicalParentKey(requirement = {}) {
 function canonicalParentLabel(parentKey = '') {
   if (parentKey === 'buyer_id_document') return 'Buyer ID / Passport'
   if (parentKey === 'buyer_proof_of_address') return 'Buyer Proof of Address'
+  if (parentKey === 'bond_application_legal_documents') return 'Application Legal Documents'
   if (parentKey === 'income_affordability_documents') return 'Income and Affordability Documents'
   return parentKey.replaceAll('_', ' ').replace(/\b\w/g, (match) => match.toUpperCase())
 }
@@ -91,6 +124,9 @@ function childRequirementToCanonicalChild(requirement = {}) {
     requiredBefore: requirement.requiredBefore,
     satisfactionMode: requirement.satisfactionMode,
     minimumFileCount: Math.max(Number(requirement.minimumFileCount || 1), 1),
+    allowMultipleFiles: Boolean(requirement.allowMultipleFiles),
+    evidencePeriodMonths: requirement.evidencePeriodMonths || null,
+    evidencePeriodYears: requirement.evidencePeriodYears || null,
     originatorVisible: BOND_ORIGINATOR_VISIBLE_PARENT_KEYS.has(canonicalParentKey),
     blocksSignature: requirement.required !== false &&
       requirement.requiredBefore === BOND_APPLICATION_DOCUMENT_TIMING.requiredBeforeSignature,
@@ -158,8 +194,8 @@ function buildUploadRows(parentRows = [], childRows = []) {
 
 function buildCanonicalScenarioFromBondApplication(applicationState = {}) {
   return Object.freeze({
-    buyerEntityType: 'individual',
-    financeType: 'bond',
+    buyerEntityType: applicationState?.application?.buyerEntity?.entityType || 'individual',
+    financeType: applicationState?.application?.finance?.financeType || 'bond',
     __includeBuyerCanonicalRequests: true,
   })
 }

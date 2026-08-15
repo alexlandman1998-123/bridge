@@ -27,6 +27,11 @@ export function validateGuidedBondApplicationScreen(applicationState = {}, scree
   if (screenKey === 'application_confirmation') {
     addRequired('application.finance.purchasePrice', 'Enter the purchase price.')
     addRequired('application.finance.requestedBondAmount', 'Enter the bond amount required.')
+    addRequired('application.buyerEntity.entityType', 'Choose who is buying the property.')
+    if (['company', 'trust'].includes(get(applicationState, 'application.buyerEntity.entityType'))) {
+      addRequired('application.buyerEntity.name', 'Enter the entity name.')
+      addRequired('application.buyerEntity.registrationNumber', 'Enter the registration or trust number.')
+    }
   }
 
   if (screenKey === 'applicant_structure') {

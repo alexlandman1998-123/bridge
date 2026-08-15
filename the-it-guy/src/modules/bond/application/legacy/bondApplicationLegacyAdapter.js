@@ -3,6 +3,7 @@ import {
   createEmptyBondApplicationState,
   isPlainObject,
 } from '../bondApplicationState.js'
+import { getPurchaserEntityType, normalizePurchaserType } from '../../../../lib/purchaserPersonas.js'
 import { buildLegacyBondApplicationDraft } from './buildLegacyBondApplicationDraft.js'
 
 const KNOWN_LEGACY_TOP_LEVEL_PATHS = new Set([
@@ -32,6 +33,14 @@ const KNOWN_LEGACY_TOP_LEVEL_PATHS = new Set([
 
 function diagnostic(type, path, message) {
   return { type, path, message }
+}
+
+function firstPresentValue(...values) {
+  return values.find((value) => value !== null && value !== undefined && String(value).trim().length > 0)
+}
+
+function normalizeBuyerEntityType(value) {
+  return getPurchaserEntityType(normalizePurchaserType(value || 'individual'))
 }
 
 function getApplicant(legacy, key) {
@@ -274,6 +283,33 @@ export function fromLegacyBondApplication(legacyApplication = {}, options = {}) 
     requestedBondAmount: legacy.loan_details?.amount_to_be_registered ?? null,
     financeType: legacy.summary?.finance_type ?? null,
   }
+  state.application.buyerEntity = {
+    entityType: normalizeBuyerEntityType(firstPresentValue(
+      legacy.summary?.buyer_entity_type,
+      legacy.summary?.purchaser_type,
+      options.portal?.onboardingFormData?.formData?.buyer_entity_type,
+      options.portal?.onboardingFormData?.formData?.purchaser_entity_type,
+      options.portal?.onboardingFormData?.formData?.purchaser_type,
+      options.portal?.transaction?.buyer_entity_type,
+      options.portal?.transaction?.purchaser_type,
+      options.portal?.purchaserType,
+    )),
+    name: firstPresentValue(
+      legacy.summary?.buyer_entity_name,
+      options.portal?.onboardingFormData?.formData?.buyer_entity_name,
+      options.portal?.onboardingFormData?.formData?.purchaser_entity_name,
+      options.portal?.onboardingFormData?.formData?.company_name,
+      options.portal?.onboardingFormData?.formData?.trust_name,
+    ) || null,
+    registrationNumber: firstPresentValue(
+      legacy.summary?.buyer_entity_registration_number,
+      options.portal?.onboardingFormData?.formData?.buyer_entity_registration_number,
+      options.portal?.onboardingFormData?.formData?.purchaser_entity_registration_number,
+      options.portal?.onboardingFormData?.formData?.company_registration_number,
+      options.portal?.onboardingFormData?.formData?.trust_registration_number,
+      options.portal?.onboardingFormData?.formData?.registration_number,
+    ) || null,
+  }
   state.application.selectedBankIds = Array.isArray(legacy.selected_banks)
     ? cloneBondApplicationValue(legacy.selected_banks)
     : Array.isArray(legacy.selectedBanks)
@@ -429,6 +465,12 @@ function applyGuidedRepeatablesToLegacy(legacy, state) {
 }
 
 function applyKnownMappedState(legacy, state) {
+  const buyerEntity = state?.application?.buyerEntity || {}
+  const buyerEntityType = normalizeBuyerEntityType(buyerEntity.entityType)
+  const shouldWriteBuyerEntity =
+    Boolean(legacy.summary?.buyer_entity_type || legacy.summary?.purchaser_type || legacy.summary?.buyer_entity_name || legacy.summary?.buyer_entity_registration_number) ||
+    buyerEntityType !== 'individual' ||
+    Boolean(buyerEntity.name || buyerEntity.registrationNumber)
   legacy.status = state?.legacySubmission?.status ?? state?.meta?.status ?? legacy.status
   legacy.submitted_at = state?.legacySubmission?.submittedAt ?? state?.meta?.submittedAt ?? legacy.submitted_at
   legacy.selected_banks = cloneBondApplicationValue(state?.application?.selectedBankIds || [])
@@ -440,6 +482,12 @@ function applyKnownMappedState(legacy, state) {
     purchase_price: state?.application?.finance?.purchasePrice ?? legacy.summary?.purchase_price,
     deposit_contribution: state?.application?.finance?.depositAmount ?? legacy.summary?.deposit_contribution,
     finance_type: state?.application?.finance?.financeType ?? legacy.summary?.finance_type,
+    ...(shouldWriteBuyerEntity ? {
+      purchaser_type: buyerEntityType,
+      buyer_entity_type: buyerEntityType,
+      buyer_entity_name: buyerEntity.name ?? legacy.summary?.buyer_entity_name ?? '',
+      buyer_entity_registration_number: buyerEntity.registrationNumber ?? legacy.summary?.buyer_entity_registration_number ?? '',
+    } : {}),
     has_co_applicant: state?.application?.applicantStructure === 'joint'
       ? 'yes'
       : state?.application?.applicantStructure === 'sole'

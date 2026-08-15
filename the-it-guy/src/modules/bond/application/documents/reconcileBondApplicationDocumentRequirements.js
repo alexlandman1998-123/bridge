@@ -30,7 +30,7 @@ export function buildBondApplicationDocumentReconciliationPlan({
       description: requirement.description || '',
       required_from_role: 'client',
       visibility_scope: 'client',
-      allow_multiple: Number(requirement.minimumFileCount || 1) > 1,
+      allow_multiple: Boolean(requirement.allowMultipleFiles || requirement.allowMultiple || Number(requirement.minimumFileCount || 1) > 1),
       uploaded_document_id: existing.uploaded_document_id || existing.uploadedDocumentId || null,
       uploaded_at: existing.uploaded_at || existing.uploadedAt || null,
       verified_at: existing.verified_at || existing.verifiedAt || null,

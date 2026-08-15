@@ -23,6 +23,22 @@ function compareNumber(value, expected, comparator) {
   return comparator(actualNumber, expectedNumber)
 }
 
+function getNestedValue(source, path) {
+  if (!path) return source
+  return String(path).split('.').filter(Boolean).reduce((current, key) => current?.[key], source)
+}
+
+function collectionItemMatches(item, matcher = {}) {
+  if (!isPlainObject(matcher)) return false
+  const value = getNestedValue(item, matcher.field || matcher.path)
+  if (Object.prototype.hasOwnProperty.call(matcher, 'equals')) return value === matcher.equals
+  if (Object.prototype.hasOwnProperty.call(matcher, 'notEquals')) return value !== matcher.notEquals
+  if (Object.prototype.hasOwnProperty.call(matcher, 'in')) return Array.isArray(matcher.in) && matcher.in.includes(value)
+  if (Object.prototype.hasOwnProperty.call(matcher, 'notIn')) return Array.isArray(matcher.notIn) && !matcher.notIn.includes(value)
+  if (Object.prototype.hasOwnProperty.call(matcher, 'exists')) return isBondApplicationValuePresent(value) === Boolean(matcher.exists)
+  return false
+}
+
 export function evaluateBondApplicationRule(rule, state = {}) {
   if (rule === undefined || rule === null) return true
   if (typeof rule === 'boolean') return rule
@@ -55,6 +71,7 @@ export function evaluateBondApplicationRule(rule, state = {}) {
   if (Object.prototype.hasOwnProperty.call(rule, 'collectionNotEmpty')) return asArray(value).length > 0 === Boolean(rule.collectionNotEmpty)
   if (Object.prototype.hasOwnProperty.call(rule, 'collectionEmpty')) return asArray(value).length === 0 === Boolean(rule.collectionEmpty)
   if (Object.prototype.hasOwnProperty.call(rule, 'collectionCountAtLeast')) return asArray(value).length >= Number(rule.collectionCountAtLeast || 0)
+  if (Object.prototype.hasOwnProperty.call(rule, 'collectionContains')) return asArray(value).some((item) => collectionItemMatches(item, rule.collectionContains))
 
   return false
 }

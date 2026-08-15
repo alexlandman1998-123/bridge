@@ -161,6 +161,12 @@ export {
   validateBondApplicationSubmissionReadiness,
 } from './submission/index.js'
 export {
+  BOND_APPLICATION_JOURNEY_STAGE_DEFINITIONS,
+  BOND_APPLICATION_JOURNEY_STAGE_KEYS,
+  BOND_APPLICATION_JOURNEY_VERSION,
+  buildBondApplicationJourneyModel,
+} from './journey/index.js'
+export {
   BOND_APPLICATION_INVITE_STATUSES,
   BOND_APPLICATION_CHANGE_REQUEST_EFFECTS,
   BOND_APPLICATION_CHANGE_REQUEST_ITEM_STATUSES,

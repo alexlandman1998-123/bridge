@@ -1,4 +1,5 @@
 import { normalizeFinanceType } from '../../../../core/transactions/financeType.js'
+import { getPurchaserEntityType, normalizePurchaserType } from '../../../../lib/purchaserPersonas.js'
 
 export const LEGACY_BOND_APPLICATION_STATUS_OPTIONS = [
   'Not Started',
@@ -126,6 +127,32 @@ export function buildLegacyBondApplicationDraft(portal) {
     formData.purchase_finance_type || portal?.transaction?.finance_type || 'bond',
     { allowUnknown: true },
   )
+  const buyerEntityType = getPurchaserEntityType(normalizePurchaserType(
+    existing?.summary?.buyer_entity_type ||
+    existing?.summary?.purchaser_type ||
+    formData.buyer_entity_type ||
+    formData.purchaser_entity_type ||
+    formData.purchaser_type ||
+    portal?.transaction?.buyer_entity_type ||
+    portal?.transaction?.purchaser_type ||
+    portal?.purchaserType ||
+    'individual',
+  ))
+  const buyerEntityName =
+    existing?.summary?.buyer_entity_name ||
+    formData.buyer_entity_name ||
+    formData.purchaser_entity_name ||
+    formData.company_name ||
+    formData.trust_name ||
+    ''
+  const buyerEntityRegistrationNumber =
+    existing?.summary?.buyer_entity_registration_number ||
+    formData.buyer_entity_registration_number ||
+    formData.purchaser_entity_registration_number ||
+    formData.company_registration_number ||
+    formData.trust_registration_number ||
+    formData.registration_number ||
+    ''
 
   const existingApplicants = Array.isArray(existing.applicants) ? existing.applicants : []
   const primaryApplicant = existingApplicants.find((item) => String(item?.key || '').toLowerCase() === 'primary') || {}
@@ -146,6 +173,10 @@ export function buildLegacyBondApplicationDraft(portal) {
         ? String(portal.transaction.deposit_amount)
         : ''),
     finance_type: financeType,
+    purchaser_type: buyerEntityType,
+    buyer_entity_type: buyerEntityType,
+    buyer_entity_name: buyerEntityName,
+    buyer_entity_registration_number: buyerEntityRegistrationNumber,
     marital_status: formData.marital_status || '',
     main_residence: formData.primary_residence || '',
     first_time_home_buyer: formData.first_time_buyer || '',

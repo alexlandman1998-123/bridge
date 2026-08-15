@@ -22,6 +22,7 @@ export const BOND_APPLICATION_PARTICIPANT_ROLES = {
 export const BOND_APPLICATION_SHARED_SECTION_KEYS = [
   'application_finance',
   'applicant_structure',
+  'buyer_entity',
   'selected_banks',
   'shared_property_summary',
 ]
@@ -455,6 +456,11 @@ export function buildNormalizedBondApplicationFromState({
         applicantStructure: applicationState.application?.applicantStructure || (participants.length > 1 ? 'joint' : 'sole'),
         requiresSurety: applicationState.application?.requiresSurety || 'no',
       },
+      buyer_entity: cloneBondApplicationValue(applicationState.application?.buyerEntity || {
+        entityType: 'individual',
+        name: null,
+        registrationNumber: null,
+      }),
       selected_banks: cloneBondApplicationValue(applicationState.application?.selectedBankIds || []),
       shared_property_summary: cloneBondApplicationValue(applicationState.application?.property || {}),
     },
@@ -553,6 +559,11 @@ export function buildApplicationStateFromNormalizedApplication(normalizedApplica
   state.application.applicantStructure = normalizedApplication.sharedSections?.applicant_structure?.applicantStructure ||
     ((normalizedApplication.participants || []).some((participant) => participant.role === BOND_APPLICATION_PARTICIPANT_ROLES.coApplicant && !participant.removedAt) ? 'joint' : 'sole')
   state.application.requiresSurety = normalizedApplication.sharedSections?.applicant_structure?.requiresSurety || 'no'
+  state.application.buyerEntity = cloneBondApplicationValue(normalizedApplication.sharedSections?.buyer_entity || {
+    entityType: 'individual',
+    name: null,
+    registrationNumber: null,
+  })
   state.application.selectedBankIds = cloneBondApplicationValue(normalizedApplication.sharedSections?.selected_banks || [])
   state.application.property = cloneBondApplicationValue(normalizedApplication.sharedSections?.shared_property_summary || {})
 

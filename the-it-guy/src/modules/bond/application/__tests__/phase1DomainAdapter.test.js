@@ -114,6 +114,11 @@ function runCleanToLegacyMappingAndPassthrough() {
   const updated = cloneBondApplicationValue(state)
 
   updated.application.finance.purchasePrice = '1999000'
+  updated.application.buyerEntity = {
+    entityType: 'company',
+    name: 'Updated Holdings (Pty) Ltd',
+    registrationNumber: '2026/123456/07',
+  }
   updated.application.selectedBankIds = ['FNB']
   updated.participants.primaryApplicant.personal.first_name = 'Updated'
   updated.participants.primaryApplicant.bankAccounts[0].bankName = 'Nedbank'
@@ -121,6 +126,9 @@ function runCleanToLegacyMappingAndPassthrough() {
 
   const roundTripped = toLegacyBondApplication(updated)
   assert.equal(roundTripped.summary.purchase_price, '1999000')
+  assert.equal(roundTripped.summary.buyer_entity_type, 'company')
+  assert.equal(roundTripped.summary.buyer_entity_name, 'Updated Holdings (Pty) Ltd')
+  assert.equal(roundTripped.summary.buyer_entity_registration_number, '2026/123456/07')
   assert.deepEqual(roundTripped.selected_banks, ['FNB'])
   assert.equal(roundTripped.applicants.find((applicant) => applicant.key === 'primary')?.first_name, 'Updated')
   assert.equal(roundTripped.banking_liabilities.primary_bank_name, 'Nedbank')

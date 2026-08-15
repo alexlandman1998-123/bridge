@@ -8,8 +8,11 @@ import {
   BOND_APPLICATION_DECLARATIONS,
   BOND_APPLICATION_SUBMISSION_FLOW_VERSION,
   BOND_APPLICATION_SUBMISSION_STATUSES,
+  BOND_APPLICATION_JOURNEY_STAGE_KEYS,
+  BOND_APPLICATION_JOURNEY_VERSION,
   buildBondApplicationDeclarationEvidence,
   buildBondApplicationDocumentChecklist,
+  buildBondApplicationJourneyModel,
   buildBondApplicationReviewSections,
   buildBondApplicationSubmissionSnapshot,
   canonicalizeBondApplicationSnapshot,
@@ -198,10 +201,82 @@ function runReviewAndBoundaryTests() {
   assert.equal(guidedSource.includes('handleBondApplicationSubmit'), false)
 }
 
+function runJourneyStageGateTests() {
+  const state = completeState()
+  const missingChecklist = buildBondApplicationDocumentChecklist({
+    activeRequirements: resolveBondApplicationDocumentRequirements({ applicationState: state }).activeRequirements,
+    existingRequiredDocuments: [],
+    existingDocuments: [],
+  })
+  const missingProgress = calculateBondApplicationDocumentProgress(missingChecklist)
+  const blocked = buildBondApplicationJourneyModel({
+    applicationViewModel: { application: { createdAtDisplay: '19 Jul 2026' } },
+    documentProgress: missingProgress,
+    missingDocuments: missingChecklist.items.filter((item) => item.status !== 'satisfied').map((item) => ({ title: item.requirement.title })),
+    selectedBankIds: ['FNB'],
+  })
+  assert.equal(blocked.version, BOND_APPLICATION_JOURNEY_VERSION)
+  assert.equal(blocked.currentStage.key, BOND_APPLICATION_JOURNEY_STAGE_KEYS.documents)
+  assert.equal(blocked.nextActions[0].key, 'request_outstanding_documents')
+  assert.ok(blocked.stages.find((stage) => stage.key === 'documents').requirements.some((requirement) => requirement.key === 'required_documents_received' && requirement.complete === false))
+
+  const checklist = completeChecklist(state)
+  const documentProgress = calculateBondApplicationDocumentProgress(checklist)
+  const readyToSubmit = buildBondApplicationJourneyModel({
+    applicationViewModel: { application: { createdAtDisplay: '19 Jul 2026' } },
+    documentProgress,
+    selectedBankIds: ['FNB', 'Standard Bank'],
+  })
+  assert.equal(readyToSubmit.currentStage.key, BOND_APPLICATION_JOURNEY_STAGE_KEYS.banks)
+  assert.equal(readyToSubmit.nextActions[0].key, 'submit_to_banks')
+  assert.ok(readyToSubmit.stages.find((stage) => stage.key === 'documents').done)
+
+  const awaitingQuotes = buildBondApplicationJourneyModel({
+    applicationViewModel: { application: { createdAtDisplay: '19 Jul 2026' } },
+    documentProgress,
+    submissionRows: [{ bankName: 'FNB', submittedAt: '2026-07-20T10:00:00.000Z', status: 'submitted' }],
+  })
+  assert.equal(awaitingQuotes.currentStage.key, BOND_APPLICATION_JOURNEY_STAGE_KEYS.quotes)
+  assert.equal(awaitingQuotes.nextActions[0].key, 'follow_up_bank_responses')
+
+  const quote = { id: 'quote-1', bankName: 'FNB', interestRate: 10.75 }
+  const needsGrantAcceptance = buildBondApplicationJourneyModel({
+    applicationViewModel: { application: { createdAtDisplay: '19 Jul 2026' } },
+    documentProgress,
+    submissionRows: [{ bankName: 'FNB', submittedAt: '2026-07-20T10:00:00.000Z', status: 'submitted' }],
+    quoteRows: [quote],
+  })
+  assert.equal(needsGrantAcceptance.currentStage.key, BOND_APPLICATION_JOURNEY_STAGE_KEYS.grant)
+  assert.equal(needsGrantAcceptance.nextActions[0].key, 'compare_and_accept_offer')
+
+  const needsInstruction = buildBondApplicationJourneyModel({
+    applicationViewModel: { application: { createdAtDisplay: '19 Jul 2026' } },
+    documentProgress,
+    submissionRows: [{ bankName: 'FNB', submittedAt: '2026-07-20T10:00:00.000Z', status: 'submitted' }],
+    quoteRows: [quote],
+    acceptedQuote: quote,
+  })
+  assert.equal(needsInstruction.currentStage.key, BOND_APPLICATION_JOURNEY_STAGE_KEYS.instruction)
+  assert.equal(needsInstruction.nextActions[0].key, 'issue_attorney_instruction')
+
+  const complete = buildBondApplicationJourneyModel({
+    applicationViewModel: { application: { createdAtDisplay: '19 Jul 2026' } },
+    documentProgress,
+    submissionRows: [{ bankName: 'FNB', submittedAt: '2026-07-20T10:00:00.000Z', status: 'submitted' }],
+    quoteRows: [quote],
+    acceptedQuote: quote,
+    action: { stage: 'registered' },
+  })
+  assert.equal(complete.currentStage.key, BOND_APPLICATION_JOURNEY_STAGE_KEYS.complete)
+  assert.equal(complete.currentStage.title, 'Complete')
+  assert.ok(complete.stages.every((stage) => stage.done))
+}
+
 await runDeclarationTests()
 runReadinessTests()
 await runSnapshotTests()
 runReviewAndBoundaryTests()
+runJourneyStageGateTests()
 
 assert.equal(BOND_APPLICATION_SUBMISSION_STATUSES.awaitingSignature, 'awaiting_signature')
 

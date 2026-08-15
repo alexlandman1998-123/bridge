@@ -27,6 +27,12 @@ export const EMPLOYMENT_TYPE_VALUES = {
   other: ['other', 'other_income'],
 }
 
+export const BUYER_ENTITY_TYPE_OPTIONS = [
+  { value: 'individual', label: 'Individual', description: 'The property is bought by a natural person.' },
+  { value: 'company', label: 'Company', description: 'A company or close corporation is buying.' },
+  { value: 'trust', label: 'Trust', description: 'A trust is buying through trustees.' },
+]
+
 const mainIncomeOptions = [
   { value: 'permanent_employee', label: 'Permanent employee' },
   { value: 'contract_employee', label: 'Contract employee' },
@@ -72,6 +78,7 @@ export const BOND_APPLICATION_REPEATABLE_GROUPS = {
       q({ key: 'income_source_type', path: 'type', label: 'Income type', type: 'select', requiredWhen: true, options: [
         { value: 'rental_income', label: 'Rental income' },
         { value: 'investment_income', label: 'Investment income' },
+        { value: 'trust_income', label: 'Trust income' },
         { value: 'maintenance_received', label: 'Maintenance received' },
         { value: 'part_time_income', label: 'Part-time income' },
         { value: 'pension', label: 'Pension' },
@@ -180,6 +187,9 @@ export const BOND_APPLICATION_QUESTIONS = [
   q({ key: 'deposit_amount', path: 'application.finance.depositAmount', label: 'Deposit', type: 'currency', requiredWhen: false }),
   q({ key: 'requested_bond_amount', path: 'application.finance.requestedBondAmount', label: 'Bond required', type: 'currency', requiredWhen: true }),
   q({ key: 'finance_type', path: 'application.finance.financeType', label: 'Finance type', requiredWhen: false }),
+  q({ key: 'buyer_entity_type', path: 'application.buyerEntity.entityType', label: 'Purchaser type', type: 'single_select', requiredWhen: true, options: BUYER_ENTITY_TYPE_OPTIONS }),
+  q({ key: 'buyer_entity_name', path: 'application.buyerEntity.name', label: 'Entity name', requiredWhen: { field: 'application.buyerEntity.entityType', in: ['company', 'trust'] }, visibleWhen: { field: 'application.buyerEntity.entityType', in: ['company', 'trust'] } }),
+  q({ key: 'buyer_entity_registration_number', path: 'application.buyerEntity.registrationNumber', label: 'Registration or trust number', requiredWhen: { field: 'application.buyerEntity.entityType', in: ['company', 'trust'] }, visibleWhen: { field: 'application.buyerEntity.entityType', in: ['company', 'trust'] } }),
   q({ key: 'applicant_structure', path: 'application.applicantStructure', label: 'How are you applying?', type: 'single_select', requiredWhen: true, options: [
     { value: 'sole', label: 'I am applying alone', description: 'Continue in the guided application.' },
     { value: 'joint', label: 'I am applying with another person', description: 'We will save your progress and continue in the full application.' },
@@ -209,6 +219,7 @@ export const BOND_APPLICATION_QUESTIONS = [
   q({ key: 'business_registration_number', path: 'participants.primaryApplicant.employment.company_registration_number', label: 'Company registration number', requiredWhen: false, visibleWhen: isEmploymentType('selfEmployed') }),
   q({ key: 'business_income', path: 'participants.primaryApplicant.expenses.gross_salary', label: 'Average monthly income', type: 'currency', requiredWhen: true, visibleWhen: isEmploymentType('selfEmployed') }),
   q({ key: 'ownership_percentage', path: 'participants.primaryApplicant.employment.ownership_percentage', label: 'Ownership percentage', type: 'percentage', requiredWhen: false, visibleWhen: isEmploymentType('selfEmployed'), validation: { min: 0, max: 100 } }),
+  q({ key: 'financials_older_than_6_months', path: 'participants.primaryApplicant.employment.financials_older_than_6_months', label: 'Are your latest annual financial statements older than 6 months?', type: 'yes_no', requiredWhen: true, visibleWhen: isEmploymentType('selfEmployed'), options: yesNoOptions }),
   q({ key: 'base_salary', path: 'participants.primaryApplicant.expenses.basic_salary', label: 'Base salary', type: 'currency', requiredWhen: false, visibleWhen: isEmploymentType('commission') }),
   q({ key: 'average_commission', path: 'participants.primaryApplicant.expenses.average_commission', label: 'Average monthly commission', type: 'currency', requiredWhen: true, visibleWhen: isEmploymentType('commission') }),
   q({ key: 'retirement_income_sources', path: 'participants.primaryApplicant.incomeSources', label: 'Retirement income sources', type: 'repeatable_group', groupKey: 'income_sources', requiredWhen: true, visibleWhen: isEmploymentType('retired') }),
@@ -242,7 +253,7 @@ export const BOND_APPLICATION_QUESTIONS = [
 ]
 
 export const BOND_APPLICATION_SCREENS = [
-  { key: 'application_confirmation', stepKey: 'your_application', title: 'Your purchase', questionKeys: ['purchase_price', 'deposit_amount', 'requested_bond_amount', 'finance_type'], custom: true },
+  { key: 'application_confirmation', stepKey: 'your_application', title: 'Your purchase', questionKeys: ['purchase_price', 'deposit_amount', 'requested_bond_amount', 'finance_type', 'buyer_entity_type', 'buyer_entity_name', 'buyer_entity_registration_number'], custom: true },
   { key: 'applicant_structure', stepKey: 'applicants', title: 'How are you applying?', questionKeys: ['applicant_structure'], custom: true },
   { key: 'about_you_confirmation', stepKey: 'about_you', title: 'Confirm your details', questionKeys: ['first_name', 'surname', 'identity_number', 'email', 'phone', 'residential_street', 'residential_city', 'marital_status'], custom: true },
   { key: 'about_you_edit', stepKey: 'about_you', title: 'Update your details', questionKeys: ['first_name', 'surname', 'identity_number', 'email', 'phone', 'residential_street', 'residential_city', 'marital_status', 'marital_regime'], custom: true, editOnly: true },
@@ -250,7 +261,7 @@ export const BOND_APPLICATION_SCREENS = [
   { key: 'employment_details', stepKey: 'employment_income', title: 'Employment details', questionKeys: ['employer_name', 'occupation', 'gross_salary', 'net_salary'], visibleWhen: { any: [isEmploymentType('permanent'), isEmploymentType('contract'), isEmploymentType('commission')] } },
   { key: 'employment_additional_details', stepKey: 'employment_income', title: 'Employment duration', questionKeys: ['employment_years', 'employment_months', 'works_in_south_africa'], visibleWhen: { any: [isEmploymentType('permanent'), isEmploymentType('commission')] } },
   { key: 'contract_details', stepKey: 'employment_income', title: 'Contract details', questionKeys: ['contract_start_date', 'contract_end_date', 'works_in_south_africa'], visibleWhen: isEmploymentType('contract') },
-  { key: 'self_employed_details', stepKey: 'employment_income', title: 'Business details', questionKeys: ['business_name', 'business_type', 'business_registration_number', 'ownership_percentage', 'business_income'], visibleWhen: isEmploymentType('selfEmployed') },
+  { key: 'self_employed_details', stepKey: 'employment_income', title: 'Business details', questionKeys: ['business_name', 'business_type', 'business_registration_number', 'ownership_percentage', 'business_income', 'financials_older_than_6_months'], visibleWhen: isEmploymentType('selfEmployed') },
   { key: 'retirement_income', stepKey: 'employment_income', title: 'Retirement income', questionKeys: ['retirement_income_sources'], visibleWhen: isEmploymentType('retired') },
   { key: 'other_income', stepKey: 'employment_income', title: 'Other income', questionKeys: ['other_income_sources'], visibleWhen: isEmploymentType('other') },
   { key: 'additional_income_gate', stepKey: 'employment_income', title: 'Additional income', questionKeys: ['has_additional_income'] },

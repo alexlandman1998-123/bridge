@@ -31,6 +31,14 @@ function replaceRuleParticipantPath(rule, participantPath) {
   }, {})
 }
 
+function getParticipantDocumentTitlePrefix(participantRole, participantKey = '') {
+  if (!participantKey) return ''
+  const ordinal = Number(String(participantKey).match(/:(\d+)$/)?.[1] || 1)
+  if (participantRole === 'surety') return `Surety ${Math.max(ordinal, 1)}: `
+  if (participantRole === 'co_applicant') return `Applicant ${Math.max(ordinal + 1, 2)}: `
+  return `Applicant ${Math.max(ordinal, 1)}: `
+}
+
 function adaptRequirementForParticipant(definition, participantRole, participantKey = '', participantPathOverride = '') {
   if (definition.scope !== 'participant') return definition
   const participantPath = participantPathOverride || PARTICIPANT_PATHS[participantRole] || PARTICIPANT_PATHS.primary_applicant
@@ -44,6 +52,7 @@ function adaptRequirementForParticipant(definition, participantRole, participant
     ...definition,
     key: participantKey ? `${participantKey}:${baseKey}` : baseKey,
     baseRequirementKey: definition.key,
+    title: `${getParticipantDocumentTitlePrefix(participantRole, participantKey)}${definition.title}`,
     participantRole,
     participantKey: participantKey || null,
     visibleWhen: replaceRuleParticipantPath(definition.visibleWhen, participantPath),
@@ -65,6 +74,7 @@ function normalizeRequirement(definition, applicationState) {
     requiredBefore: definition.requiredBefore || BOND_APPLICATION_DOCUMENT_TIMING.requiredBeforeSignature,
     satisfactionMode: definition.satisfactionMode || BOND_APPLICATION_DOCUMENT_SATISFACTION_MODES.uploaded,
     minimumFileCount: Math.max(Number(definition.minimumFileCount || 1), 1),
+    allowMultipleFiles: Boolean(definition.allowMultipleFiles),
     matching: {
       canonicalTypes: [
         definition.canonicalDocumentType,
@@ -110,9 +120,12 @@ export function resolveBondApplicationDocumentRequirements({
   const role = participantContext?.participantRole || participantRole || 'primary_applicant'
   const participantKey = participantContext?.participantKey || null
   const participantPath = participantContext?.participantPath || null
+  const hideSharedApplicationRequirements = Boolean(participantContext) &&
+    role === 'surety' &&
+    participantContext.canEditShared === false
   const resolved = documentRuleContract
     .filter((definition) => {
-      if (definition.scope === 'application') return true
+      if (definition.scope === 'application') return !hideSharedApplicationRequirements
       return !definition.participantRole || definition.participantRole === role || (role !== 'surety' && definition.participantRole === 'primary_applicant')
     })
     .map((definition) => adaptRequirementForParticipant(definition, role, participantKey, participantPath))
@@ -139,6 +152,9 @@ export function buildBondApplicationDocumentRequirementFingerprint(requirements 
       requirement.requiredBefore || '',
       requirement.satisfactionMode || '',
       requirement.minimumFileCount || 1,
+      requirement.allowMultipleFiles ? 'multiple_files' : 'single_file',
+      requirement.evidencePeriodMonths || '',
+      requirement.evidencePeriodYears || '',
       requirement.required ? 'required' : 'optional',
     ].join(':'))
     .sort()

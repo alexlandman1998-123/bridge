@@ -98,6 +98,7 @@ function completeEmploymentState(type) {
     state = setPath(state, 'participants.primaryApplicant.employment.business_type', 'Private company')
     state = setPath(state, 'participants.primaryApplicant.expenses.gross_salary', '85000')
     state = setPath(state, 'participants.primaryApplicant.employment.ownership_percentage', '100')
+    state = setPath(state, 'participants.primaryApplicant.employment.financials_older_than_6_months', 'no')
     state = setPath(state, 'participants.primaryApplicant.employment.has_additional_income', 'no')
   }
   if (type === 'commission_based') {
@@ -128,6 +129,7 @@ function runRuleEvaluatorTests() {
       count: 0,
       name: '',
       items: [{ id: 1 }],
+      incomeSources: [{ type: 'rental_income' }],
       income: '1200',
       status: null,
     },
@@ -139,6 +141,8 @@ function runRuleEvaluatorTests() {
   assert.equal(evaluateBondApplicationRule({ field: 'person.status', notExists: true }, state), true)
   assert.equal(evaluateBondApplicationRule({ field: 'person.income', greaterThan: 1000 }, state), true)
   assert.equal(evaluateBondApplicationRule({ field: 'person.items', collectionCountAtLeast: 1 }, state), true)
+  assert.equal(evaluateBondApplicationRule({ field: 'person.incomeSources', collectionContains: { field: 'type', equals: 'rental_income' } }, state), true)
+  assert.equal(evaluateBondApplicationRule({ field: 'person.incomeSources', collectionContains: { field: 'type', in: ['trust_income'] } }, state), false)
   assert.equal(evaluateBondApplicationRule({ all: [{ field: 'person.count', equals: 0 }, { not: { field: 'person.active', equals: true } }] }, state), true)
   assert.equal(evaluateBondApplicationRule({ any: [{ field: 'missing', exists: true }, { field: 'person.active', falsy: true }] }, state), true)
 }

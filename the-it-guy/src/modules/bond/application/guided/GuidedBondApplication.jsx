@@ -6,7 +6,7 @@ import {
 import { useGuidedBondApplication } from './hooks/useGuidedBondApplication.js'
 import { useBondApplicationDocuments } from './hooks/useBondApplicationDocuments.js'
 import { useBondApplicationSubmission } from './hooks/useBondApplicationSubmission.js'
-import { getBondApplicationRepeatableGroup } from '../flow/bondApplicationFlowContract.js'
+import { BUYER_ENTITY_TYPE_OPTIONS, getBondApplicationRepeatableGroup } from '../flow/bondApplicationFlowContract.js'
 import {
   BOND_APPLICATION_DOCUMENT_RULE_SET_VERSION,
 } from '../documents/index.js'
@@ -416,6 +416,7 @@ function Stepper({ currentStepKey, steps = GUIDED_BOND_APPLICATION_PHASE2_STEPS 
 function SummaryRail({ state, documentProgress = null }) {
   const property = state.application.property || {}
   const finance = state.application.finance || {}
+  const buyerEntity = state.application.buyerEntity || {}
   const applicantStructure = state.application.applicantStructure
   const monthlyTotal = calculateMonthlyCommitmentTotal(state)
   const incomeTotal = calculateAdditionalIncomeTotal(state)
@@ -433,6 +434,7 @@ function SummaryRail({ state, documentProgress = null }) {
         <dl className="mt-3 space-y-2 text-sm text-[#5f7288]">
           <div><dt className="text-xs uppercase tracking-[0.1em] text-[#8191a5]">Property</dt><dd className="font-semibold text-[#17283a]">{property.developmentName || property.propertyReference || 'Property pending'}</dd></div>
           <div><dt className="text-xs uppercase tracking-[0.1em] text-[#8191a5]">Unit</dt><dd className="font-semibold text-[#17283a]">{property.unitReference || 'Unit pending'}</dd></div>
+          <div><dt className="text-xs uppercase tracking-[0.1em] text-[#8191a5]">Purchaser</dt><dd className="font-semibold text-[#17283a]">{BUYER_ENTITY_TYPE_OPTIONS.find((option) => option.value === (buyerEntity.entityType || 'individual'))?.label || 'Individual'}</dd></div>
           <div><dt className="text-xs uppercase tracking-[0.1em] text-[#8191a5]">Bond required</dt><dd className="font-semibold text-[#17283a]">{formatCurrency(finance.requestedBondAmount) || 'Not provided'}</dd></div>
         </dl>
       </article>
@@ -456,6 +458,9 @@ function SummaryRail({ state, documentProgress = null }) {
 function ApplicationConfirmationScreen({ state, updateField, issues }) {
   const property = state.application.property || {}
   const finance = state.application.finance || {}
+  const buyerEntity = state.application.buyerEntity || {}
+  const entityType = buyerEntity.entityType || 'individual'
+  const showEntityFields = ['company', 'trust'].includes(entityType)
   return (
     <div className="space-y-5">
       <div>
@@ -473,6 +478,31 @@ function ApplicationConfirmationScreen({ state, updateField, issues }) {
         <TextInput id="guided-deposit" label="Deposit" value={finance.depositAmount} inputMode="decimal" onChange={(value) => updateField('application.finance.depositAmount', value)} />
         <TextInput id="guided-bond-required" label="Bond required" value={finance.requestedBondAmount} inputMode="decimal" onChange={(value) => updateField('application.finance.requestedBondAmount', value)} error={getFieldError(issues, 'application.finance.requestedBondAmount')} />
       </div>
+      <OptionCardGroup
+        legend="Purchaser type"
+        value={entityType}
+        options={BUYER_ENTITY_TYPE_OPTIONS}
+        onChange={(value) => updateField('application.buyerEntity.entityType', value)}
+        error={getFieldError(issues, 'application.buyerEntity.entityType')}
+      />
+      {showEntityFields ? (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <TextInput
+            id="guided-buyer-entity-name"
+            label={entityType === 'trust' ? 'Trust name' : 'Company name'}
+            value={buyerEntity.name || ''}
+            onChange={(value) => updateField('application.buyerEntity.name', value)}
+            error={getFieldError(issues, 'application.buyerEntity.name')}
+          />
+          <TextInput
+            id="guided-buyer-entity-registration"
+            label={entityType === 'trust' ? 'Trust number' : 'Registration number'}
+            value={buyerEntity.registrationNumber || ''}
+            onChange={(value) => updateField('application.buyerEntity.registrationNumber', value)}
+            error={getFieldError(issues, 'application.buyerEntity.registrationNumber')}
+          />
+        </div>
+      ) : null}
     </div>
   )
 }

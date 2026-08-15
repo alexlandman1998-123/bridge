@@ -9,8 +9,10 @@ import {
   BOND_APPLICATION_PARTICIPANT_STATUSES,
   BOND_APPLICATION_STATUSES,
   BOND_APPLICATION_DECLARATIONS,
+  BOND_APPLICATION_JOURNEY_STAGE_KEYS,
   GUIDED_BOND_APPLICATION_PARTICIPANTS_FLAG,
   buildApplicationStateFromNormalizedApplication,
+  buildBondApplicationJourneyModel,
   buildJointBondApplicationSubmissionSnapshot,
   buildJointSignerManifest,
   buildNormalizedBondApplicationFromState,
@@ -83,6 +85,7 @@ function jointState() {
   state.participants.coApplicant.contact.email = 'co@example.test'
   state.participants.coApplicant.employment.occupation_status = 'self_employed'
   state.participants.coApplicant.employment.business_name = 'Co Trading'
+  state.participants.coApplicant.employment.financials_older_than_6_months = 'no'
   state.participants.coApplicant.expenses.gross_salary = '45000'
   state.participants.coApplicant.bankAccounts = [{ id: 'co-account', bankName: 'Bank B' }]
   state.participants.coApplicant.credit.has_debts = 'no'
@@ -119,8 +122,13 @@ async function runFlagAndModeTests() {
 }
 
 async function runNormalizedDomainTests() {
+  const companyState = setPath(jointState(), 'application.buyerEntity', {
+    entityType: 'company',
+    name: 'Phase Six Holdings (Pty) Ltd',
+    registrationNumber: '2026/654321/07',
+  })
   const normalized = buildNormalizedBondApplicationFromState({
-    applicationState: jointState(),
+    applicationState: companyState,
     transactionId: 'transaction-phase6',
     onboardingFormDataId: 'onboarding-phase6',
     includeCoApplicant: true,
@@ -131,9 +139,13 @@ async function runNormalizedDomainTests() {
   assert.ok(normalized.participants.some((participant) => participant.role === BOND_APPLICATION_PARTICIPANT_ROLES.primaryApplicant))
   assert.ok(normalized.participants.some((participant) => participant.role === BOND_APPLICATION_PARTICIPANT_ROLES.coApplicant))
   assert.ok(normalized.sharedSections.application_finance)
+  assert.equal(normalized.sharedSections.buyer_entity.entityType, 'company')
+  assert.equal(normalized.sharedSections.buyer_entity.name, 'Phase Six Holdings (Pty) Ltd')
   assert.ok(normalized.participantSections['co_applicant:1']?.employment_income)
 
   const rebuilt = buildApplicationStateFromNormalizedApplication(normalized)
+  assert.equal(rebuilt.application.buyerEntity.entityType, 'company')
+  assert.equal(rebuilt.application.buyerEntity.registrationNumber, '2026/654321/07')
   assert.equal(rebuilt.participants.primaryApplicant.personal.first_name, 'Primary')
   assert.equal(rebuilt.participants.coApplicant.personal.first_name, 'Co')
 
@@ -175,8 +187,13 @@ async function runNormalizedDomainTests() {
 }
 
 async function runHashReadinessAndProjectionTests() {
+  const companyState = setPath(jointState(), 'application.buyerEntity', {
+    entityType: 'company',
+    name: 'Projection Holdings (Pty) Ltd',
+    registrationNumber: '2026/111222/07',
+  })
   const normalized = buildNormalizedBondApplicationFromState({
-    applicationState: jointState(),
+    applicationState: companyState,
     transactionId: 'transaction-phase6',
     onboardingFormDataId: 'onboarding-phase6',
     includeCoApplicant: true,
@@ -210,8 +227,44 @@ async function runHashReadinessAndProjectionTests() {
 
   const projection = projectNormalizedBondApplicationToLegacy({ normalizedApplication: normalized })
   assert.equal(projection._meta.normalized_bond_application.storage_mode, BOND_APPLICATION_NORMALIZED_STORAGE_MODE)
+  assert.equal(projection.summary.buyer_entity_type, 'company')
+  assert.equal(projection.summary.buyer_entity_name, 'Projection Holdings (Pty) Ltd')
+  assert.equal(projection.summary.buyer_entity_registration_number, '2026/111222/07')
   assert.equal(projection.applicant_structure || projection.application?.applicantStructure || projection.summary?.applicant_structure, projection.applicant_structure || projection.application?.applicantStructure || projection.summary?.applicant_structure)
   assert.equal(JSON.stringify(projection).includes('token'), false)
+}
+
+async function runParticipantJourneyGateTests() {
+  const normalized = buildNormalizedBondApplicationFromState({
+    applicationState: jointState(),
+    transactionId: 'transaction-phase6',
+    onboardingFormDataId: 'onboarding-phase6',
+    includeCoApplicant: true,
+  })
+  const blocked = buildBondApplicationJourneyModel({
+    applicationViewModel: { application: { createdAtDisplay: '19 Jul 2026' } },
+    documentHealthSummary: { submissionReady: true, missingCount: 0, totalRequired: 6, completedRequired: 6 },
+    selectedBankIds: ['bank-a'],
+    normalizedApplication: normalized,
+  })
+  assert.equal(blocked.currentStage.key, BOND_APPLICATION_JOURNEY_STAGE_KEYS.documents)
+  assert.equal(blocked.currentStage.title, 'Participants outstanding')
+  assert.equal(blocked.nextActions[0].key, 'complete_participant_applications')
+  assert.ok(blocked.stages.find((stage) => stage.key === 'documents').requirements.some((requirement) => requirement.key === 'participant_applications_ready' && requirement.complete === false))
+
+  const readyParticipants = normalized.participants.map((participant) => ({
+    ...participant,
+    status: BOND_APPLICATION_PARTICIPANT_STATUSES.readyForSubmission,
+    readyAt: '2026-07-28T12:00:00.000Z',
+  }))
+  const ready = buildBondApplicationJourneyModel({
+    applicationViewModel: { application: { createdAtDisplay: '19 Jul 2026' } },
+    documentHealthSummary: { submissionReady: true, missingCount: 0, totalRequired: 6, completedRequired: 6 },
+    selectedBankIds: ['bank-a'],
+    normalizedApplication: { ...normalized, participants: readyParticipants },
+  })
+  assert.equal(ready.currentStage.key, BOND_APPLICATION_JOURNEY_STAGE_KEYS.banks)
+  assert.equal(ready.nextActions[0].key, 'submit_to_banks')
 }
 
 async function runDocumentDeclarationAndSnapshotTests() {
@@ -227,6 +280,26 @@ async function runDocumentDeclarationAndSnapshotTests() {
   assert.ok(primaryRequirements.some((requirement) => requirement.key.startsWith('primary_applicant:1:')))
   assert.ok(coRequirements.some((requirement) => requirement.key.startsWith('co_applicant:1:')))
   assert.ok(!coRequirements.some((requirement) => requirement.key.startsWith('primary_applicant:1:')))
+  assert.ok(primaryRequirements.some((requirement) => requirement.key === 'bond_application_offer_to_purchase'))
+  const primaryBankStatementRequirement = primaryRequirements.find((requirement) =>
+    requirement.key === 'primary_applicant:1:bond_application_primary_applicant_bank_statements'
+  )
+  assert.equal(primaryBankStatementRequirement?.title, 'Applicant 1: Latest 3 months bank statements')
+  const coPersonalBankStatementRequirement = coRequirements.find((requirement) =>
+    requirement.key === 'co_applicant:1:bond_application_co_applicant_self_employed_personal_bank_statements'
+  )
+  const coBusinessBankStatementRequirement = coRequirements.find((requirement) =>
+    requirement.key === 'co_applicant:1:bond_application_co_applicant_self_employed_business_bank_statements'
+  )
+  assert.equal(coPersonalBankStatementRequirement?.title, 'Applicant 2: Latest 6 months personal bank statements')
+  assert.equal(coPersonalBankStatementRequirement?.evidencePeriodMonths, 6)
+  assert.equal(coPersonalBankStatementRequirement?.allowMultipleFiles, true)
+  assert.equal(coBusinessBankStatementRequirement?.title, 'Applicant 2: Latest 6 months business bank statements')
+  assert.equal(coBusinessBankStatementRequirement?.evidencePeriodMonths, 6)
+  assert.equal(coBusinessBankStatementRequirement?.allowMultipleFiles, true)
+  assert.ok(coRequirements.some((requirement) => requirement.key === 'co_applicant:1:bond_application_self_employed_accountant_letter'))
+  assert.ok(coRequirements.some((requirement) => requirement.key === 'co_applicant:1:bond_application_self_employed_tax_documents'))
+  assert.ok(coRequirements.some((requirement) => requirement.key === 'co_applicant:1:bond_application_self_employed_assets_liabilities_statement'))
 
   const declarationValidation = validateBondApplicationDeclarationContract(BOND_APPLICATION_DECLARATIONS)
   assert.equal(declarationValidation.valid, true)
@@ -294,6 +367,7 @@ async function run() {
   await runFlagAndModeTests()
   await runNormalizedDomainTests()
   await runHashReadinessAndProjectionTests()
+  await runParticipantJourneyGateTests()
   await runDocumentDeclarationAndSnapshotTests()
   runMigrationAndSourceTests()
   console.log('Phase 6 participant/co-applicant tests passed')

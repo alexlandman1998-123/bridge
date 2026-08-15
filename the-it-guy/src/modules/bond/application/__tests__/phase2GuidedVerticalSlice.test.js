@@ -158,6 +158,17 @@ function runValidationAndProgressTests() {
     ['application.finance.requestedBondAmount'],
   )
 
+  const companyBuyer = cloneBondApplicationValue(state)
+  companyBuyer.application.buyerEntity = {
+    entityType: 'company',
+    name: '',
+    registrationNumber: '',
+  }
+  assert.deepEqual(
+    validateGuidedBondApplicationScreen(companyBuyer, 'application_confirmation').issues.map((issue) => issue.path),
+    ['application.buyerEntity.name', 'application.buyerEntity.registrationNumber'],
+  )
+
   const missingEmployment = cloneBondApplicationValue(state)
   missingEmployment.participants.primaryApplicant.employment.employer_name = ''
   missingEmployment.participants.primaryApplicant.expenses.gross_salary = ''

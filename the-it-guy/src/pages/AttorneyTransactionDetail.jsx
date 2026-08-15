@@ -50,6 +50,7 @@ import BondOriginatorAgentProgressView from '../components/bond/BondOriginatorAg
 import BondOriginatorAttorneyHandoffView from '../components/bond/BondOriginatorAttorneyHandoffView'
 import TransactionFinanceCommandCenter from '../components/transaction/TransactionFinanceCommandCenter'
 import TransactionNotificationDeliveryPanel from '../components/transaction/TransactionNotificationDeliveryPanel'
+import { buildBondApplicationJourneyModel } from '../modules/bond/application'
 import TransactionLifecycleProgress from '../components/TransactionLifecycleProgress'
 import FinanceProgressBar from '../components/finance/FinanceProgressBar'
 import FinanceReadinessDashboard from '../components/finance/FinanceReadinessDashboard'
@@ -6206,7 +6207,10 @@ function MatterWorkspaceTabs({ tabs = [], activeTab = '', onChange, premium = fa
   if (minimal) {
     return (
       <nav className="no-print w-full overflow-x-auto border-b border-borderSoft bg-white/95 px-4 sm:px-6" aria-label="Transaction workspace tabs">
-        <div className="flex min-w-max items-center gap-8">
+        <div
+          className="grid min-w-full items-center gap-2"
+          style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(150px, 1fr))` }}
+        >
           {tabs.map((tab) => {
             const active = activeTab === tab.id
             const Icon = iconByTab[tab.id] || FileText
@@ -6214,7 +6218,7 @@ function MatterWorkspaceTabs({ tabs = [], activeTab = '', onChange, premium = fa
               <button
                 key={tab.id}
                 type="button"
-                className={`inline-flex h-14 items-center gap-2 border-b-2 text-sm font-semibold transition ${
+                className={`inline-flex h-14 min-w-0 items-center justify-center gap-2 border-b-2 px-3 text-sm font-semibold transition ${
                   active
                     ? 'border-primary text-primary'
                     : 'border-transparent text-textMuted hover:border-borderStrong hover:text-textStrong'
@@ -6222,7 +6226,7 @@ function MatterWorkspaceTabs({ tabs = [], activeTab = '', onChange, premium = fa
                 onClick={() => onChange?.(tab.id)}
               >
                 <Icon size={16} className="shrink-0" />
-                <span className="whitespace-nowrap">{tab.label}</span>
+                <span className="min-w-0 truncate">{tab.label}</span>
               </button>
             )
           })}
@@ -9359,98 +9363,40 @@ function ApplicationDetailField({ label, value, required = false, emphasis = fal
   )
 }
 
-function buildBondOverviewJourney({ action = {}, applicationViewModel = null, documentHealthSummary = {}, submissionRows = [], quoteRows = [], acceptedQuote = null } = {}) {
-  const submittedBanks = submissionRows.filter((row) => row.submittedAt).length
-  const quoteCount = quoteRows.length
-  const attorneyInstructionSent = ['instruction_sent', 'registered', 'complete', 'completed'].includes(String(action.stage || '').toLowerCase())
-  const registered = ['registered', 'complete', 'completed'].includes(String(action.stage || '').toLowerCase())
-  const stages = [
-    { key: 'received', label: 'Application Received', icon: CheckCircle2, done: true, date: applicationViewModel?.application?.createdAtDisplay || '' },
-    { key: 'documents', label: 'Documents Received', icon: FileText, done: Boolean(documentHealthSummary.submissionReady) },
-    { key: 'banks', label: 'Submitted to Banks', icon: Landmark, done: submittedBanks > 0 },
-    { key: 'quotes', label: 'Quotes Received', icon: FileCheck2, done: quoteCount > 0 },
-    { key: 'grant', label: 'Grant Accepted', icon: CircleDollarSign, done: Boolean(acceptedQuote) },
-    { key: 'instruction', label: 'Attorney Instruction', icon: UsersRound, done: attorneyInstructionSent },
-    { key: 'complete', label: 'Complete', icon: CheckCircle2, done: registered },
-  ]
-  const firstOpenIndex = stages.findIndex((stage) => !stage.done)
-  return stages.map((stage, index) => ({
+const BOND_JOURNEY_ICON_BY_KEY = {
+  received: CheckCircle2,
+  documents: FileText,
+  banks: Landmark,
+  quotes: FileCheck2,
+  grant: CircleDollarSign,
+  instruction: UsersRound,
+  complete: CheckCircle2,
+}
+
+const BOND_JOURNEY_SUMMARY_ICON_BY_KEY = {
+  check: CheckCircle2,
+  documents: FileText,
+  bank: Landmark,
+  quote: FileCheck2,
+  grant: CircleDollarSign,
+  instruction: UsersRound,
+  clock: Clock3,
+  send: Send,
+}
+
+function buildBondOverviewJourney(args = {}) {
+  const model = buildBondApplicationJourneyModel(args)
+  return model.stages.map((stage) => ({
     ...stage,
-    state: stage.done ? 'completed' : index === firstOpenIndex ? 'current' : 'pending',
-    statusLabel: stage.done ? (stage.date || 'Completed') : index === firstOpenIndex ? 'In progress' : 'Pending',
+    icon: BOND_JOURNEY_ICON_BY_KEY[stage.key] || FileText,
   }))
 }
 
-function buildBondCurrentStage({ action = {}, documentHealthSummary = {}, submissionRows = [], quoteRows = [], acceptedQuote = null, missingDocuments = [] } = {}) {
-  const missingDocs = Number(documentHealthSummary.missingCount || missingDocuments.length || 0)
-  const submittedBanks = submissionRows.filter((row) => row.submittedAt).length
-  const selectedBanks = submissionRows.length
-  const quoteCount = quoteRows.length
-  const acceptedBank = acceptedQuote ? getQuoteBankName(acceptedQuote) : ''
-  const targetAction = action.targetAction || action.key || ''
-  if (missingDocs > 0 || targetAction === 'request-docs') {
-    return {
-      eyebrow: 'Current stage',
-      title: 'Documents outstanding',
-      description: `${missingDocs || 'Some'} document${missingDocs === 1 ? '' : 's'} ${missingDocs === 1 ? 'is' : 'are'} still required before this application can be submitted to the banks.`,
-      ctaLabel: 'View outstanding documents',
-      onOpen: 'documents',
-      documents: missingDocuments.slice(0, 4),
-      icon: FileText,
-    }
-  }
-  if (!submittedBanks) {
-    return {
-      eyebrow: 'Current stage',
-      title: 'Ready to submit',
-      description: `The application and supporting documents are complete. ${selectedBanks || 0} bank${selectedBanks === 1 ? '' : 's'} selected.`,
-      ctaLabel: 'Submit to banks',
-      onOpen: 'quotes',
-      documents: [],
-      icon: Landmark,
-    }
-  }
-  if (!quoteCount) {
-    return {
-      eyebrow: 'Current stage',
-      title: 'Awaiting bank responses',
-      description: `${submittedBanks} bank submission${submittedBanks === 1 ? '' : 's'} sent. Track responses and capture quote outcomes as they arrive.`,
-      ctaLabel: 'View submissions',
-      onOpen: 'quotes',
-      documents: [],
-      icon: Clock3,
-    }
-  }
-  if (!acceptedQuote) {
-    return {
-      eyebrow: 'Current stage',
-      title: 'Quotes available',
-      description: `${quoteCount} quote${quoteCount === 1 ? '' : 's'} received. Compare offers and record the buyer decision.`,
-      ctaLabel: 'Review quotes',
-      onOpen: 'quotes',
-      documents: [],
-      icon: CircleDollarSign,
-    }
-  }
-  if (!['instruction_sent', 'registered', 'complete', 'completed'].includes(String(action.stage || '').toLowerCase())) {
-    return {
-      eyebrow: 'Current stage',
-      title: 'Attorney instruction pending',
-      description: `${acceptedBank || 'The selected bank'} has an accepted grant. Prepare and send the attorney instruction.`,
-      ctaLabel: 'Issue instruction',
-      onOpen: 'quotes',
-      documents: [],
-      icon: Send,
-    }
-  }
+function buildBondCurrentStage(args = {}) {
+  const model = buildBondApplicationJourneyModel(args)
   return {
-    eyebrow: 'Current stage',
-    title: 'Grant accepted',
-    description: `${acceptedBank || 'The selected grant'} has been accepted and the handoff can be monitored through completion.`,
-    ctaLabel: 'View quotes and grant',
-    onOpen: 'quotes',
-    documents: [],
-    icon: CheckCircle2,
+    ...model.currentStage,
+    icon: BOND_JOURNEY_SUMMARY_ICON_BY_KEY[model.currentStage.iconKey] || FileText,
   }
 }
 

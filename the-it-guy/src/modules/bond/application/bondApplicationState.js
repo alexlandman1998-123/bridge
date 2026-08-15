@@ -2,7 +2,7 @@
  * @typedef {Object} BondApplicationState
  * @property {2} schemaVersion
  * @property {{ sourceSchema: string, sourceSchemaVersion: number, status: string | null, submittedAt: string | null }} meta
- * @property {{ transactionId: string | null, applicantStructure: string | null, requiresSurety: string | null, property: Object, finance: Object, selectedBankIds: Array }} application
+ * @property {{ transactionId: string | null, applicantStructure: string | null, requiresSurety: string | null, buyerEntity: Object, property: Object, finance: Object, selectedBankIds: Array }} application
  * @property {{ primaryApplicant: Object, coApplicant: Object | null, sureties: Array }} participants
  * @property {{ status: string | null, submittedAt: string | null, typedSignatureName: string | null, typedSignatureDate: string | null, consents: Object }} legacySubmission
  * @property {{ legacyBase: Object, unmappedPaths: Array, warnings: Array, diagnostics: Array }} compatibility
@@ -44,6 +44,11 @@ export function createEmptyBondApplicationState() {
       transactionId: null,
       applicantStructure: null,
       requiresSurety: null,
+      buyerEntity: {
+        entityType: 'individual',
+        name: null,
+        registrationNumber: null,
+      },
       property: {
         developmentId: null,
         developmentName: null,
