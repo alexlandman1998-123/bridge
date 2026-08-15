@@ -90,6 +90,11 @@ export {
   buildBondApplicationUxWorkspaceModel,
 } from './ux/bondApplicationUxWorkspace.js'
 export {
+  BOND_APPLICATION_BROWSER_E2E_SCENARIOS,
+  BOND_APPLICATION_BROWSER_E2E_VERSION,
+  buildBondApplicationBrowserE2EContract,
+} from './ux/bondApplicationBrowserE2EContract.js'
+export {
   getPhase2GuidedBondApplicationEligibility,
   isPermanentEmploymentValue,
   isPhase3SupportedEmploymentValue,
