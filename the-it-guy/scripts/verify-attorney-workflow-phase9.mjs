@@ -117,6 +117,7 @@ function verifyPhase9Wiring() {
   const serviceSource = readFileSync(new URL('../src/services/attorneyWorkflow/attorneyWorkflowLaneService.js', import.meta.url), 'utf8')
   const transferWorkspaceSource = readFileSync(new URL('../src/services/attorneyWorkflow/transferWorkspaceViewModel.js', import.meta.url), 'utf8')
   const pageSource = readFileSync(new URL('../src/pages/AttorneyTransactionDetail.jsx', import.meta.url), 'utf8')
+  const uatDocSource = readFileSync(new URL('../docs/attorney-transfer-phase9-uat-release-gate.md', import.meta.url), 'utf8')
 
   assert.match(usabilitySource, /export function buildAttorneyWorkflowCoordinationSummary/)
   assert.match(usabilitySource, /COORDINATION_RULES/)
@@ -131,6 +132,9 @@ function verifyPhase9Wiring() {
   assert.match(transferWorkspaceSource, /uatReport/)
   assert.match(pageSource, /Transfer Coverage/)
   assert.match(pageSource, /transferScenario\.coverageItems/)
+  assert.match(uatDocSource, /Transfer Attorney Phase 9 UAT And Release Gate/)
+  assert.match(uatDocSource, /buildTransferWorkspaceViewModel\(\.\.\.\)\.rolloutStatusSummary/)
+  assert.match(uatDocSource, /node scripts\/verify-attorney-workflow-phase9\.mjs/)
 }
 
 function buildTransferWorkflowFixture({ facts = {}, lane = {}, transaction = {}, onboardingFormData = null } = {}) {
