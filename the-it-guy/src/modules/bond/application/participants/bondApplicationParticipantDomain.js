@@ -1,4 +1,8 @@
-import { cloneBondApplicationValue, createEmptyBondApplicationState } from '../bondApplicationState.js'
+import {
+  cloneBondApplicationValue,
+  convertPreApprovalToBondApplication,
+  createEmptyBondApplicationState,
+} from '../bondApplicationState.js'
 import { fromLegacyBondApplication, toLegacyBondApplication } from '../legacy/bondApplicationLegacyAdapter.js'
 import { hashCanonicalBondApplicationPayload } from '../submission/bondApplicationSnapshotHash.js'
 
@@ -20,8 +24,10 @@ export const BOND_APPLICATION_PARTICIPANT_ROLES = {
 }
 
 export const BOND_APPLICATION_SHARED_SECTION_KEYS = [
+  'application_intent',
   'application_finance',
   'applicant_structure',
+  'pre_approval',
   'buyer_entity',
   'selected_banks',
   'shared_property_summary',
@@ -451,7 +457,11 @@ export function buildNormalizedBondApplicationFromState({
     legacyUpdatedAt,
     participants,
     sharedSections: {
+      application_intent: {
+        intent: applicationState.application?.intent || 'bond_application',
+      },
       application_finance: cloneBondApplicationValue(applicationState.application?.finance || {}),
+      pre_approval: cloneBondApplicationValue(applicationState.application?.preApproval || {}),
       applicant_structure: {
         applicantStructure: applicationState.application?.applicantStructure || (participants.length > 1 ? 'joint' : 'sole'),
         requiresSurety: applicationState.application?.requiresSurety || 'no',
@@ -472,6 +482,42 @@ export function buildNormalizedBondApplicationFromState({
       return accumulator
     }, {}),
   })
+}
+
+export function convertNormalizedPreApprovalToBondApplication({
+  normalizedApplication = {},
+  now = new Date().toISOString(),
+  preserveSelectedBankIds = false,
+  preApproval = {},
+} = {}) {
+  const applicationState = buildApplicationStateFromNormalizedApplication(normalizedApplication)
+  const convertedState = convertPreApprovalToBondApplication(applicationState, {
+    now,
+    preserveSelectedBankIds,
+    preApproval,
+  })
+  const next = cloneBondApplicationValue(normalizedApplication) || {}
+  next.revision = Math.max(Number(next.revision) || 1, 1) + 1
+  next.status = BOND_APPLICATION_STATUSES.draft
+  next.activeSubmissionId = null
+  next.lockedAt = null
+  next.submittedAt = null
+  next.sharedSections = {
+    ...(next.sharedSections || {}),
+    application_intent: {
+      intent: convertedState.application.intent,
+    },
+    pre_approval: cloneBondApplicationValue(convertedState.application.preApproval || {}),
+    selected_banks: cloneBondApplicationValue(convertedState.application.selectedBankIds || []),
+  }
+  next.metadata = {
+    ...(next.metadata || {}),
+    preApprovalConversion: cloneBondApplicationValue(convertedState.compatibility?.preApprovalConversion || {}),
+  }
+  return {
+    applicationState: convertedState,
+    normalizedApplication: next,
+  }
 }
 
 export function splitParticipantIntoSections(participant = {}) {
@@ -555,7 +601,12 @@ export function mergeParticipantSectionsToParticipant(sections = {}, base = {}) 
 export function buildApplicationStateFromNormalizedApplication(normalizedApplication = {}) {
   const state = createEmptyBondApplicationState()
   state.application.transactionId = normalizedApplication.transactionId || null
+  state.application.intent = normalizedApplication.sharedSections?.application_intent?.intent || state.application.intent
   state.application.finance = cloneBondApplicationValue(normalizedApplication.sharedSections?.application_finance || {})
+  state.application.preApproval = {
+    ...state.application.preApproval,
+    ...(cloneBondApplicationValue(normalizedApplication.sharedSections?.pre_approval || {})),
+  }
   state.application.applicantStructure = normalizedApplication.sharedSections?.applicant_structure?.applicantStructure ||
     ((normalizedApplication.participants || []).some((participant) => participant.role === BOND_APPLICATION_PARTICIPANT_ROLES.coApplicant && !participant.removedAt) ? 'joint' : 'sole')
   state.application.requiresSurety = normalizedApplication.sharedSections?.applicant_structure?.requiresSurety || 'no'

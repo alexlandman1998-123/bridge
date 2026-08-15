@@ -1,40 +1,11 @@
 import {
+  getAttorneyJourneyPhaseForStage,
+  getAttorneyJourneyPhasesForLane,
   getAttorneyStageDefinitionsForLane,
   normalizeAttorneyStageKey,
 } from '../../constants/attorneyWorkflowStages.js'
 
-export const TRANSFER_WORKSPACE_PHASES = Object.freeze([
-  {
-    key: 'instruction',
-    label: 'Instruction & File Opening',
-    match: ['instruction', 'matter_opened', 'otp', 'source', 'title_deed', 'ownership', 'existing_bond'],
-  },
-  {
-    key: 'fica_authority',
-    label: 'FICA & Authority',
-    match: ['buyer_fica', 'seller_fica', 'entity_authority'],
-  },
-  {
-    key: 'financial_preparation',
-    label: 'Financial Preparation',
-    match: ['transfer_duty', 'rates_', 'levy_', 'clearance', 'compliance'],
-  },
-  {
-    key: 'documents_guarantees',
-    label: 'Documents & Guarantees',
-    match: ['transfer_documents', 'signing', 'signed', 'guarantee'],
-  },
-  {
-    key: 'lodgement_registration',
-    label: 'Lodgement & Registration',
-    match: ['lodgement', 'lodged', 'deeds', 'prep', 'registered'],
-  },
-  {
-    key: 'post_registration',
-    label: 'Post-Registration & Closure',
-    match: ['final_accounts', 'registration_letter', 'matter_closed', 'close'],
-  },
-])
+export const TRANSFER_WORKSPACE_PHASES = Object.freeze(getAttorneyJourneyPhasesForLane('transfer'))
 
 export const TRANSFER_WORKSPACE_PERSISTED_STEP_STATUSES = Object.freeze([
   'not_started',
@@ -109,11 +80,7 @@ function getCurrentStepKey(lane = {}, workflowKey = 'transfer') {
 }
 
 function findPhaseForTask(taskKey = '') {
-  const normalized = key(taskKey)
-  return (
-    TRANSFER_WORKSPACE_PHASES.find((phase) => phase.match.some((pattern) => normalized.includes(pattern))) ||
-    TRANSFER_WORKSPACE_PHASES[TRANSFER_WORKSPACE_PHASES.length - 1]
-  )
+  return getAttorneyJourneyPhaseForStage(taskKey, 'transfer') || TRANSFER_WORKSPACE_PHASES[TRANSFER_WORKSPACE_PHASES.length - 1]
 }
 
 function buildTaskSearchText(task = {}) {
@@ -708,6 +675,108 @@ function buildAvailableActions(task = null, permissions = {}) {
   }
 }
 
+export function buildTransferTaskWorkActions(task = null, permissions = {}) {
+  if (!task) return []
+  const canRequestDocuments = Boolean(permissions.canRequestDocuments ?? permissions.canUpdateStage ?? permissions.canUpdate ?? true)
+  const canUploadDocuments = Boolean(permissions.canUploadDocuments ?? permissions.canUpdateStage ?? permissions.canUpdate ?? true)
+  const canAddNote = Boolean(
+    permissions.canAddInternalNote ??
+      permissions.canAddSharedUpdate ??
+      permissions.canPublishClientVisibleUpdate ??
+      permissions.canAddNotes ??
+      permissions.canUpdateStage ??
+      true,
+  )
+  const hasDocumentRequirements = (task.requiredDocumentKeys || []).length > 0 || task.missingDocumentCount > 0
+  const phaseKey = key(task.phaseKey)
+  const taskKey = key(task.key)
+  const actions = []
+
+  if (hasDocumentRequirements) {
+    actions.push({
+      id: 'request_document',
+      label: 'Request Document',
+      description: 'Ask the responsible party for evidence linked to this task.',
+      target: 'document_request',
+      disabled: !canRequestDocuments,
+      reason: canRequestDocuments ? '' : 'You do not have permission to request documents on this lane.',
+      primary: task.missingDocumentCount > 0,
+    })
+    actions.push({
+      id: 'upload_document',
+      label: 'Upload Evidence',
+      description: 'Upload a file against this transfer task or requirement.',
+      target: 'document_upload',
+      disabled: !canUploadDocuments,
+      reason: canUploadDocuments ? '' : 'You do not have permission to upload documents on this lane.',
+    })
+    actions.push({
+      id: 'open_documents',
+      label: 'Open Documents',
+      description: 'Review the full document register for this matter.',
+      target: 'documents',
+      disabled: false,
+      reason: '',
+    })
+  }
+
+  if (
+    phaseKey === 'instruction' ||
+    phaseKey === 'fica_authority' ||
+    /buyer|seller|entity|authority|title|ownership|existing_bond|matter_opened/.test(taskKey)
+  ) {
+    actions.push({
+      id: 'open_parties',
+      label: 'Open Roleplayers',
+      description: 'Check parties, representatives, and legal roleplayers for this task.',
+      target: 'parties',
+      disabled: false,
+      reason: '',
+    })
+  }
+
+  if (
+    phaseKey === 'financial_preparation' ||
+    /transfer_duty|rates|levy|clearance|compliance|guarantee/.test(taskKey)
+  ) {
+    actions.push({
+      id: 'open_finance',
+      label: 'Open Financials',
+      description: 'Review transfer duty, clearances, guarantees, and finance dependencies.',
+      target: 'finance',
+      disabled: false,
+      reason: '',
+    })
+  }
+
+  if (/signing|signed/.test(taskKey)) {
+    actions.push({
+      id: 'open_documents',
+      label: 'Open Signing Docs',
+      description: 'Review or upload the signed transfer document pack.',
+      target: 'documents',
+      disabled: false,
+      reason: '',
+    })
+  }
+
+  actions.push({
+    id: 'add_note',
+    label: 'Add Note',
+    description: 'Record context or a professional update for this task.',
+    target: 'notes',
+    disabled: !canAddNote,
+    reason: canAddNote ? '' : 'You do not have permission to add updates on this lane.',
+  })
+
+  const seen = new Set()
+  return actions.filter((action) => {
+    if (!action.id || seen.has(action.id)) return false
+    seen.add(action.id)
+    return true
+  })
+}
+
 export function buildTransferWorkspaceViewModel({
   workflow = null,
   workflowKey = 'transfer',
@@ -766,6 +835,10 @@ export function buildTransferWorkspaceViewModel({
   const selectedKeyDates = normalizeKeyDateRows(keyDates)
   const selectedParties = normalizePartyRows({ parties, workflow, selectedTask })
   const selectedDocumentSummary = buildDocumentSummary(selectedRelatedDocuments)
+  const workActionsByTaskKey = Object.fromEntries(
+    tasks.map((task) => [task.key, buildTransferTaskWorkActions(task, permissions)]),
+  )
+  const selectedWorkActions = selectedTask ? workActionsByTaskKey[selectedTask.key] || [] : []
   const selectedTabs = buildTaskTabs({
     checklistItems: selectedChecklistItems,
     relatedDocuments: selectedRelatedDocuments,
@@ -810,9 +883,11 @@ export function buildTransferWorkspaceViewModel({
       notes: selectedNotes,
       activityFeed: selectedActivityFeed,
       tabs: selectedTabs,
+      workActions: selectedWorkActions,
     },
     permissions,
     availableActions: buildAvailableActions(selectedTask, permissions),
+    workActionsByTaskKey,
     unsupportedCapabilities: {
       delayedStatus: true,
       notApplicableStatus: true,

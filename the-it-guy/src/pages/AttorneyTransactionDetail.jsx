@@ -50,7 +50,7 @@ import BondOriginatorAgentProgressView from '../components/bond/BondOriginatorAg
 import BondOriginatorAttorneyHandoffView from '../components/bond/BondOriginatorAttorneyHandoffView'
 import TransactionFinanceCommandCenter from '../components/transaction/TransactionFinanceCommandCenter'
 import TransactionNotificationDeliveryPanel from '../components/transaction/TransactionNotificationDeliveryPanel'
-import { buildBondApplicationJourneyModel } from '../modules/bond/application'
+import { BOND_APPLICATION_INTENTS, buildBondApplicationJourneyModel } from '../modules/bond/application'
 import TransactionLifecycleProgress from '../components/TransactionLifecycleProgress'
 import FinanceProgressBar from '../components/finance/FinanceProgressBar'
 import FinanceReadinessDashboard from '../components/finance/FinanceReadinessDashboard'
@@ -101,6 +101,7 @@ import {
   approveBondQuote,
   archiveTransactionLifecycle,
   cancelTransactionLifecycle,
+  convertTransactionPreApprovalToBondApplication,
   createTransactionDocumentRequests,
   declineBondQuote,
   fetchTransactionCoreById,
@@ -114,6 +115,7 @@ import {
   getRegistrationBlockers,
   markTransactionCompleted,
   markTransactionRegistered,
+  recordTransactionPreApprovalOutcome,
   recordBuyerOnboardingSent,
   reassignDeclinedTransferAttorneyInstruction,
   reviewCanonicalDocumentRequirement,
@@ -7140,9 +7142,11 @@ function ArchlineTransferWorkspace({
   saving = false,
   onUpdateStep,
   onUploadDocument,
+  onRequestDocument,
   onAddNote,
   onOpenDocuments,
   onOpenParties,
+  onOpenFinance,
 }) {
   const [selectedTaskKey, setSelectedTaskKey] = useState('')
   const [search, setSearch] = useState('')
@@ -7190,11 +7194,14 @@ function ArchlineTransferWorkspace({
   const selectedDocuments = viewModel.selectedTaskContext.relatedDocuments || []
   const documentSummary = viewModel.selectedTaskContext.documentSummary || { required: 0, received: 0, missing: 0, label: 'No required documents' }
   const checklistItems = viewModel.selectedTaskContext.checklistItems || []
-  const rawTaskTabs = viewModel.selectedTaskContext.tabs || []
-  const taskTabs = [
-    { key: 'checklist', label: 'Checklist', count: checklistItems.length, readOnly: true },
-    ...rawTaskTabs.filter((tab) => ['documents', 'notes', 'activity'].includes(tab.key)),
-  ]
+  const taskWorkActions = viewModel.selectedTaskContext.workActions || []
+  const taskTabs = useMemo(() => {
+    const rawTaskTabs = viewModel.selectedTaskContext.tabs || []
+    return [
+      { key: 'checklist', label: 'Checklist', count: checklistItems.length, readOnly: true },
+      ...rawTaskTabs.filter((tab) => ['documents', 'notes', 'activity'].includes(tab.key)),
+    ]
+  }, [checklistItems.length, viewModel.selectedTaskContext.tabs])
   const taskNotes = viewModel.selectedTaskContext.notes || []
   const taskActivity = viewModel.selectedTaskContext.activityFeed || []
   const statusMeta = WORKFLOW_STATUS_META[selectedTask?.displayStatus] || WORKFLOW_STATUS_META.not_started
@@ -7333,6 +7340,62 @@ function ArchlineTransferWorkspace({
       statusDraft.followUpDate ? `Follow-up date: ${statusDraft.followUpDate}` : '',
       linkedDocument ? `Linked document: ${linkedDocument.displayName || linkedDocument.label || linkedDocument.name || linkedDocument.sourceRequirementKey}` : '',
     ].filter(Boolean).join('\n')
+  }
+
+  function canRunTaskWorkAction(action = {}) {
+    if (action.disabled) return false
+    if (action.id === 'request_document') return typeof onRequestDocument === 'function'
+    if (action.id === 'upload_document') return typeof onUploadDocument === 'function'
+    if (action.id === 'open_documents') return typeof onOpenDocuments === 'function'
+    if (action.id === 'open_parties') return typeof onOpenParties === 'function'
+    if (action.id === 'open_finance') return typeof onOpenFinance === 'function'
+    if (action.id === 'add_note') return typeof onAddNote === 'function'
+    return false
+  }
+
+  function getTaskWorkActionDisabledReason(action = {}) {
+    if (action.reason) return action.reason
+    if (canRunTaskWorkAction(action)) return ''
+    return 'This action is not available in the current workspace.'
+  }
+
+  function handleTaskWorkAction(action = {}) {
+    if (!selectedTask || !canRunTaskWorkAction(action)) return
+    if (action.id === 'request_document') {
+      onRequestDocument?.(selectedTask, selectedDocuments)
+      return
+    }
+    if (action.id === 'upload_document') {
+      onUploadDocument?.(selectedTask, selectedDocuments)
+      return
+    }
+    if (action.id === 'open_documents') {
+      onOpenDocuments?.(selectedTask, selectedDocuments)
+      return
+    }
+    if (action.id === 'open_parties') {
+      onOpenParties?.(selectedTask)
+      return
+    }
+    if (action.id === 'open_finance') {
+      onOpenFinance?.(selectedTask)
+      return
+    }
+    if (action.id === 'add_note') {
+      onAddNote?.(selectedTask)
+    }
+  }
+
+  function getTaskWorkActionIcon(actionId = '') {
+    const icons = {
+      request_document: FileText,
+      upload_document: Upload,
+      open_documents: FileText,
+      open_parties: UsersRound,
+      open_finance: CircleDollarSign,
+      add_note: MessageSquarePlus,
+    }
+    return icons[actionId] || MoreHorizontal
   }
 
   async function submitStatusDraft(event) {
@@ -7574,6 +7637,37 @@ function ArchlineTransferWorkspace({
                     </div>
                   </div>
                 ) : null}
+
+                {taskWorkActions.length ? (
+                  <section className="mt-4 rounded-lg border border-slate-200 bg-white px-4 py-3">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                      <div>
+                        <h3 className="text-sm font-semibold text-slate-950">Task Actions</h3>
+                        <p className="mt-1 text-xs text-slate-500">Work on this task without forcing the rest of the lane to wait.</p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {taskWorkActions.map((action) => {
+                          const Icon = getTaskWorkActionIcon(action.id)
+                          const disabled = saving || !canRunTaskWorkAction(action)
+                          return (
+                            <Button
+                              key={action.id}
+                              type="button"
+                              variant={action.primary ? 'accent' : 'secondary'}
+                              size="sm"
+                              disabled={disabled}
+                              title={disabled ? getTaskWorkActionDisabledReason(action) : action.description || ''}
+                              onClick={() => handleTaskWorkAction(action)}
+                            >
+                              <Icon size={14} />
+                              {action.label}
+                            </Button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  </section>
+                ) : null}
               </div>
 
               <div className="flex min-h-0 flex-1 flex-col border-t border-slate-200">
@@ -7710,7 +7804,7 @@ function ArchlineTransferWorkspace({
                           <h3 className="text-sm font-semibold text-slate-950">Task Documents</h3>
                           <p className="mt-1 text-sm text-slate-500">{documentSummary.label}</p>
                         </div>
-                        <Button type="button" variant="secondary" size="sm" onClick={onUploadDocument}>
+                        <Button type="button" variant="secondary" size="sm" onClick={() => onUploadDocument?.(selectedTask, selectedDocuments)}>
                           <Upload size={14} />
                           Upload
                         </Button>
@@ -8725,6 +8819,7 @@ function buildConfiguredBankRows({ workflowData = null, bankPanel = [] } = {}) {
     const application = applications.find((item) => String(item.bankName || '').trim().toLowerCase() === String(bank.bankName || '').trim().toLowerCase()) || null
     const status = application?.status || 'pending'
     return {
+      id: application?.id || null,
       bankName: bank.bankName,
       status,
       statusLabel: getBankSubmissionStatusLabel(status),
@@ -9331,6 +9426,30 @@ function getOverviewBankStatus(row = {}, quoteRows = [], acceptedQuote = null) {
   return { label: 'Selected', tone: 'border-borderSoft bg-surfaceAlt text-textMuted' }
 }
 
+function getBondApplicationWorkspaceIntent(applicationViewModel = {}) {
+  return normalizeDetailKey(firstPresent(
+    applicationViewModel?.canonical?.intent,
+    applicationViewModel?.application?.intent,
+    applicationViewModel?.applicationIntent,
+    applicationViewModel?.raw?.application_intent,
+    BOND_APPLICATION_INTENTS.bondApplication,
+  ))
+}
+
+function isBondPreApprovalOnlyWorkspace(applicationViewModel = {}) {
+  return getBondApplicationWorkspaceIntent(applicationViewModel) === BOND_APPLICATION_INTENTS.preApproval
+}
+
+function getPreApprovalDisplayStatus(applicationViewModel = {}) {
+  const status = normalizeDetailKey(firstPresent(
+    applicationViewModel?.canonical?.preApproval?.status,
+    applicationViewModel?.application?.preApproval?.status,
+    applicationViewModel?.preApproval?.status,
+  ))
+  if (!status || status === 'none') return 'Not started'
+  return toTitle(status)
+}
+
 function parseCurrencyNumber(value) {
   if (Number.isFinite(Number(value))) return Number(value)
   const cleaned = String(value || '').replace(/[^0-9.-]/g, '')
@@ -9419,23 +9538,39 @@ function BondConsultantOverviewWorkspace({
 }) {
   const action = consultantAction || {}
   const journeyStages = buildBondOverviewJourney({ action, applicationViewModel, documentHealthSummary, submissionRows, quoteRows, acceptedQuote })
-  const currentStage = buildBondCurrentStage({ action, documentHealthSummary, submissionRows, quoteRows, acceptedQuote, missingDocuments })
+  const currentStage = buildBondCurrentStage({ action, applicationViewModel, documentHealthSummary, submissionRows, quoteRows, acceptedQuote, missingDocuments })
   const CurrentIcon = currentStage.icon || FileText
+  const isPreApprovalOnly = isBondPreApprovalOnlyWorkspace(applicationViewModel)
+  const preApproval = applicationViewModel?.canonical?.preApproval || applicationViewModel?.application?.preApproval || {}
+  const preApprovalStatus = getPreApprovalDisplayStatus(applicationViewModel)
+  const assessmentProvider = firstPresent(preApproval?.provider, submissionRows[0]?.bankName, submissionRows[0]?.bank_name, 'Not selected')
   const purchasePrice = applicationViewModel?.financials?.purchasePrice?.display || 'Not captured'
   const loanRequired = applicationViewModel?.financials?.bondAmountRequired?.display || 'Not captured'
   const deposit = applicationViewModel?.financials?.deposit?.display || 'Not captured'
+  const preApprovalAmount = preApproval?.approvedAmount || preApproval?.approved_amount
+  const preApprovalAmountDisplay = preApprovalAmount ? formatCurrencyValue(preApprovalAmount, loanRequired) : loanRequired
   const purchaseRaw = Number(applicationViewModel?.financials?.purchasePrice?.raw || parseCurrencyNumber(purchasePrice))
   const loanRaw = Number(applicationViewModel?.financials?.bondAmountRequired?.raw || parseCurrencyNumber(loanRequired))
   const ltvLabel = purchaseRaw && loanRaw ? `${Math.round((loanRaw / purchaseRaw) * 100)}%` : 'Not captured'
-  const snapshotRows = [
-    ['Purchase price', purchasePrice],
-    ['Loan required', loanRequired],
-    ['Deposit', deposit],
-    ['Loan to value (LTV)', ltvLabel],
-    ['Application type', applicationType],
-    ['Employment', applicationViewModel?.applicant?.employmentStatus || 'Not captured'],
-    ['Dependants', firstPresent(applicationViewModel?.applicant?.dependants, applicationViewModel?.applicant?.numberOfDependants)],
-  ].filter(([, value]) => value !== undefined && value !== null && String(value).trim() !== '')
+  const snapshotRows = (isPreApprovalOnly
+    ? [
+        ['Target purchase price', purchasePrice],
+        ['Requested amount', preApprovalAmountDisplay],
+        ['Pre-approval status', preApprovalStatus],
+        ['Assessment provider', assessmentProvider],
+        ['Application type', 'Pre-approval'],
+        ['Employment', applicationViewModel?.applicant?.employmentStatus || 'Not captured'],
+        ['Dependants', firstPresent(applicationViewModel?.applicant?.dependants, applicationViewModel?.applicant?.numberOfDependants)],
+      ]
+    : [
+        ['Purchase price', purchasePrice],
+        ['Loan required', loanRequired],
+        ['Deposit', deposit],
+        ['Loan to value (LTV)', ltvLabel],
+        ['Application type', applicationType],
+        ['Employment', applicationViewModel?.applicant?.employmentStatus || 'Not captured'],
+        ['Dependants', firstPresent(applicationViewModel?.applicant?.dependants, applicationViewModel?.applicant?.numberOfDependants)],
+      ]).filter(([, value]) => value !== undefined && value !== null && String(value).trim() !== '')
   const bankRows = submissionRows.slice(0, 4)
   const recentActivity = activityFeed.slice(0, 8)
   const openCurrentStage = () => {
@@ -9449,8 +9584,8 @@ function BondConsultantOverviewWorkspace({
   return (
     <section className="space-y-5">
       <section className="rounded-[18px] border border-borderDefault bg-white px-5 py-5 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
-        <h2 className="text-base font-semibold text-textStrong">Application journey</h2>
-        <ol className="mt-5 grid gap-4 lg:grid-cols-7">
+        <h2 className="text-base font-semibold text-textStrong">{isPreApprovalOnly ? 'Pre-approval journey' : 'Application journey'}</h2>
+        <ol className={`mt-5 grid gap-4 ${isPreApprovalOnly ? 'lg:grid-cols-5' : 'lg:grid-cols-7'}`}>
           {journeyStages.map((stage, index) => {
             const Icon = stage.icon || FileText
             const completed = stage.state === 'completed'
@@ -9532,7 +9667,7 @@ function BondConsultantOverviewWorkspace({
             <span className="inline-flex size-9 items-center justify-center rounded-[11px] bg-primarySoft text-primary">
               <Landmark size={17} />
             </span>
-            <h3 className="text-base font-semibold text-textStrong">Bank submissions</h3>
+            <h3 className="text-base font-semibold text-textStrong">{isPreApprovalOnly ? 'Assessment submissions' : 'Bank submissions'}</h3>
           </div>
           <div className="mt-4 space-y-3">
             {bankRows.length ? bankRows.map((row) => {
@@ -9551,17 +9686,21 @@ function BondConsultantOverviewWorkspace({
                       </span>
                     </span>
                   </div>
-                  <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${status.tone}`}>{status.label}</span>
+                      <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${status.tone}`}>
+                        {isPreApprovalOnly && status.label === 'Quote received' ? 'Outcome captured' : status.label}
+                      </span>
                 </article>
               )
             }) : (
               <p className="rounded-[14px] border border-dashed border-borderDefault bg-surfaceAlt px-4 py-6 text-sm text-textMuted">
-                No banks have been selected yet. Selected banks will appear here before submission.
+                {isPreApprovalOnly
+                  ? 'No assessment providers have been selected yet. Selected providers will appear here before submission.'
+                  : 'No banks have been selected yet. Selected banks will appear here before submission.'}
               </p>
             )}
           </div>
           <button type="button" className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-[10px] border border-borderSoft px-3 py-2 text-sm font-semibold text-primary transition hover:border-primary/40 hover:bg-primarySoft" onClick={onOpenQuotesGrant}>
-            View all quotes
+            {isPreApprovalOnly ? 'View assessment outcome' : 'View all quotes'}
             <ChevronRight size={14} />
           </button>
         </article>
@@ -10311,6 +10450,8 @@ function BondQuotesGrantWorkspace({
   onDeclineAll,
   onOpenDocuments,
   onOpenActivity,
+  onCapturePreApprovalOutcome,
+  onConvertPreApproval,
   onMarkGrantMilestone,
 }) {
   const [filter, setFilter] = useState('all')
@@ -10319,6 +10460,22 @@ function BondQuotesGrantWorkspace({
   const [addBankOpen, setAddBankOpen] = useState(false)
   const [selectedBank, setSelectedBank] = useState('')
   const [submittedAt, setSubmittedAt] = useState(() => new Date().toISOString().slice(0, 10))
+  const [outcomeOpen, setOutcomeOpen] = useState(false)
+  const [outcomeDraft, setOutcomeDraft] = useState({
+    applicationId: '',
+    providerName: '',
+    outcome: 'approved',
+    approvedAmount: '',
+    interestRate: '',
+    issuedAt: new Date().toISOString().slice(0, 10),
+    expiresAt: '',
+    referenceNumber: '',
+    conditions: '',
+    notes: '',
+  })
+  const isPreApprovalOnly = isBondPreApprovalOnlyWorkspace(applicationViewModel)
+  const preApprovalStatus = getPreApprovalDisplayStatus(applicationViewModel)
+  const preApprovalStatusKey = normalizeDetailKey(preApprovalStatus)
   const journeyStages = buildBondOverviewJourney({ action: consultantAction, applicationViewModel, documentHealthSummary, submissionRows, quoteRows, acceptedQuote })
   const summary = getBondQuotesSummary(submissionRows)
   const grantInfo = getBondGrantInfo(workflowData, acceptedQuote)
@@ -10339,52 +10496,151 @@ function BondQuotesGrantWorkspace({
   const awaitingPercent = Math.round((summary.awaitingResponse / ringTotal) * 100)
   const declinedPercent = Math.round((summary.declined / ringTotal) * 100)
   const quoteRing = `conic-gradient(#16a34a 0 ${quotePercent}%, #3b82f6 ${quotePercent}% ${quotePercent + awaitingPercent}%, #f59e0b ${quotePercent + awaitingPercent}% ${quotePercent + awaitingPercent + declinedPercent}%, #e2e8f0 ${quotePercent + awaitingPercent + declinedPercent}% 100%)`
+  const submittedForAssessment = submissionRows.some((row) => row.submittedAt) || ['submitted', 'approved', 'declined', 'expired'].includes(preApprovalStatusKey)
+  const preApprovalOutcomeCaptured = summary.quotesReceived > 0 || ['approved', 'declined', 'expired'].includes(preApprovalStatusKey)
 
   function submitSelectedBank(event) {
     event.preventDefault()
     if (!activeBankName) return
-    onSubmitBank?.({ bankName: activeBankName, status: 'submitted', submittedAt, notes: 'Submitted from Quotes & Grant workspace.' })
+    if (isPreApprovalOnly) {
+      onCapturePreApprovalOutcome?.({
+        providerName: activeBankName,
+        outcome: 'submitted',
+        submittedAt,
+        notes: 'Submitted from Pre-approval Assessment workspace.',
+      })
+      setAddBankOpen(false)
+      return
+    }
+    onSubmitBank?.({
+      bankName: activeBankName,
+      status: 'submitted',
+      submittedAt,
+      notes: isPreApprovalOnly ? 'Submitted from Pre-approval Assessment workspace.' : 'Submitted from Quotes & Grant workspace.',
+    })
     setAddBankOpen(false)
+  }
+
+  function openPreApprovalOutcome(row = {}) {
+    const quote = row.quote || {}
+    setOutcomeDraft({
+      applicationId: row.id || row.applicationId || row.application_id || quote.bondApplicationId || quote.bond_application_id || '',
+      providerName: row.bankName || getQuoteBankName(quote) || '',
+      outcome: 'approved',
+      approvedAmount: getQuoteApprovalAmount(quote) || '',
+      interestRate: getQuoteRate(quote) || '',
+      issuedAt: new Date().toISOString().slice(0, 10),
+      expiresAt: quote.quoteExpiryAt || quote.quote_expiry_at || quote.validUntil || quote.valid_until || '',
+      referenceNumber: row.referenceNumber || row.reference_number || quote.referenceNumber || quote.reference_number || '',
+      conditions: getQuoteConditions(quote).join('\n'),
+      notes: quote.notes || row.notes || '',
+    })
+    setOutcomeOpen(true)
+  }
+
+  function submitPreApprovalOutcome(event) {
+    event.preventDefault()
+    if (!outcomeDraft.providerName) return
+    onCapturePreApprovalOutcome?.({
+      applicationId: outcomeDraft.applicationId || null,
+      providerName: outcomeDraft.providerName,
+      outcome: outcomeDraft.outcome,
+      approvedAmount: outcomeDraft.approvedAmount,
+      interestRate: outcomeDraft.interestRate,
+      issuedAt: outcomeDraft.issuedAt,
+      expiresAt: outcomeDraft.expiresAt,
+      referenceNumber: outcomeDraft.referenceNumber,
+      conditions: outcomeDraft.conditions,
+      notes: outcomeDraft.notes,
+    })
+    setOutcomeOpen(false)
   }
 
   function selectOffer(quote) {
     if (!quote?.id) return
     const bankName = getQuoteBankName(quote) || 'this bank'
+    if (isPreApprovalOnly) {
+      if (typeof window !== 'undefined' && !window.confirm(`Mark ${bankName} as the approved pre-approval outcome?`)) return
+      onCapturePreApprovalOutcome?.({
+        providerName: bankName,
+        bondApplicationId: quote.bondApplicationId || quote.bond_application_id || null,
+        outcome: 'approved',
+        approvedAmount: getQuoteApprovalAmount(quote),
+        interestRate: getQuoteRate(quote),
+        issuedAt: quote.quoteReceivedAt || quote.quote_received_at || new Date().toISOString().slice(0, 10),
+        expiresAt: quote.quoteExpiryAt || quote.quote_expiry_at || quote.validUntil || quote.valid_until || '',
+        referenceNumber: quote.referenceNumber || quote.reference_number || '',
+        conditions: getQuoteConditions(quote),
+        notes: quote.notes || '',
+      })
+      return
+    }
     if (typeof window !== 'undefined' && !window.confirm(`Select ${bankName} as the preferred offer?`)) return
     onSelectOffer?.(quote)
   }
 
-  const nextSteps = [
-    {
-      label: 'Review and compare bank quotes',
-      helper: `${summary.quotesReceived} quote${summary.quotesReceived === 1 ? '' : 's'} received, ${summary.awaitingResponse} pending`,
-      state: summary.quotesReceived ? 'complete' : submissionRows.some((row) => row.submittedAt) ? 'current' : 'locked',
-    },
-    {
-      label: 'Select preferred offer',
-      helper: acceptedQuote ? `${getQuoteBankName(acceptedQuote)} selected` : 'Choose the preferred option for the applicant',
-      state: acceptedQuote ? 'complete' : summary.quotesReceived ? 'current' : 'locked',
-    },
-    {
-      label: grantInfo.state === 'awaiting_selection' ? 'Submit grant application' : grantInfo.label,
-      helper: grantInfo.state === 'grant_accepted' ? 'Next: attorney instruction' : 'Available after offer acceptance',
-      state: grantInfo.state === 'grant_accepted' ? 'complete' : acceptedQuote ? 'current' : 'locked',
-    },
-  ]
-  const grantMilestones = [
-    ['not_submitted', 'Not Submitted'],
-    ['submitted', 'Submitted to Bank'],
-    ['issued', 'Grant Issued'],
-    ['accepted', 'Grant Accepted'],
-  ]
-  const activeGrantIndex = grantInfo.state === 'grant_accepted' ? 3 : grantInfo.state === 'grant_issued' ? 2 : acceptedQuote ? 1 : 0
+  const nextSteps = isPreApprovalOnly
+    ? [
+        {
+          label: 'Submit pre-approval pack',
+          helper: submittedForAssessment ? 'Pre-approval pack submitted for assessment' : 'Send the completed pack to the selected provider',
+          state: submittedForAssessment ? 'complete' : documentHealthSummary.submissionReady ? 'current' : 'locked',
+        },
+        {
+          label: 'Capture assessment outcome',
+          helper: preApprovalOutcomeCaptured ? `Outcome captured: ${preApprovalStatus}` : 'Record approved, declined or expired once received',
+          state: preApprovalOutcomeCaptured ? 'complete' : submittedForAssessment ? 'current' : 'locked',
+        },
+        {
+          label: 'Convert to full bond application',
+          helper: preApprovalStatusKey === 'approved' ? 'Ready when property and OTP details are confirmed' : 'Available after an approved pre-approval',
+          state: preApprovalStatusKey === 'approved' ? 'current' : 'locked',
+        },
+      ]
+    : [
+        {
+          label: 'Review and compare bank quotes',
+          helper: `${summary.quotesReceived} quote${summary.quotesReceived === 1 ? '' : 's'} received, ${summary.awaitingResponse} pending`,
+          state: summary.quotesReceived ? 'complete' : submissionRows.some((row) => row.submittedAt) ? 'current' : 'locked',
+        },
+        {
+          label: 'Select preferred offer',
+          helper: acceptedQuote ? `${getQuoteBankName(acceptedQuote)} selected` : 'Choose the preferred option for the applicant',
+          state: acceptedQuote ? 'complete' : summary.quotesReceived ? 'current' : 'locked',
+        },
+        {
+          label: grantInfo.state === 'awaiting_selection' ? 'Submit grant application' : grantInfo.label,
+          helper: grantInfo.state === 'grant_accepted' ? 'Next: attorney instruction' : 'Available after offer acceptance',
+          state: grantInfo.state === 'grant_accepted' ? 'complete' : acceptedQuote ? 'current' : 'locked',
+        },
+      ]
+  const grantMilestones = isPreApprovalOnly
+    ? [
+        ['not_submitted', 'Not Submitted'],
+        ['submitted', 'Submitted'],
+        ['outcome', 'Outcome'],
+        ['complete', 'Complete'],
+      ]
+    : [
+        ['not_submitted', 'Not Submitted'],
+        ['submitted', 'Submitted to Bank'],
+        ['issued', 'Grant Issued'],
+        ['accepted', 'Grant Accepted'],
+      ]
+  const activeGrantIndex = isPreApprovalOnly
+    ? preApprovalOutcomeCaptured
+      ? 3
+      : submittedForAssessment
+        ? 1
+        : 0
+    : grantInfo.state === 'grant_accepted' ? 3 : grantInfo.state === 'grant_issued' ? 2 : acceptedQuote ? 1 : 0
 
   return (
     <section className="space-y-5">
       <section className="rounded-[18px] border border-borderDefault bg-white px-5 py-4 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
-        <h2 className="text-base font-semibold text-textStrong">Application Journey</h2>
-        <ol className="mt-5 grid gap-4 lg:grid-cols-6">
-          {journeyStages.slice(0, 6).map((stage, index) => {
+        <h2 className="text-base font-semibold text-textStrong">{isPreApprovalOnly ? 'Pre-approval Journey' : 'Application Journey'}</h2>
+        <ol className={`mt-5 grid gap-4 ${isPreApprovalOnly ? 'lg:grid-cols-5' : 'lg:grid-cols-6'}`}>
+          {journeyStages.slice(0, isPreApprovalOnly ? 5 : 6).map((stage, index) => {
             const Icon = stage.icon || FileText
             const completed = stage.state === 'completed'
             const current = stage.state === 'current'
@@ -10414,13 +10670,23 @@ function BondQuotesGrantWorkspace({
         <article className="min-w-0 overflow-hidden rounded-[18px] border border-borderDefault bg-white shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
           <div className="flex flex-col gap-4 border-b border-borderSoft px-5 py-5 lg:flex-row lg:items-start lg:justify-between">
             <div>
-              <h2 className="text-lg font-semibold text-textStrong">Bank Submissions & Quotes</h2>
-              <p className="mt-1 text-sm leading-6 text-textMuted">Track bank responses, compare quotes and manage offers.</p>
+              <h2 className="text-lg font-semibold text-textStrong">{isPreApprovalOnly ? 'Pre-approval Assessment & Outcome' : 'Bank Submissions & Quotes'}</h2>
+              <p className="mt-1 text-sm leading-6 text-textMuted">
+                {isPreApprovalOnly
+                  ? 'Track assessment submissions, capture the pre-approval outcome and manage next steps.'
+                  : 'Track bank responses, compare quotes and manage offers.'}
+              </p>
             </div>
             <div className="flex flex-wrap gap-2">
+              {isPreApprovalOnly ? (
+                <Button type="button" size="sm" disabled={!submissionRows.length || Boolean(loadingAction)} onClick={() => openPreApprovalOutcome(submissionRows.find((row) => getBankSubmissionState(row) !== 'not_submitted') || submissionRows[0] || {})}>
+                  <CheckCircle2 size={14} />
+                  Capture Outcome
+                </Button>
+              ) : null}
               <Button type="button" variant="secondary" size="sm" disabled={!quoteRows.length} onClick={() => { setCompareOpen(true); onCompareQuotes?.() }}>
                 <ListChecks size={14} />
-                Compare Quotes
+                {isPreApprovalOnly ? 'Compare Outcomes' : 'Compare Quotes'}
               </Button>
               <details className="relative">
                 <summary className="inline-flex h-9 cursor-pointer list-none items-center gap-2 rounded-[10px] border border-borderSoft bg-white px-3 text-sm font-semibold text-textStrong transition hover:border-primary/40 hover:bg-primarySoft">
@@ -10429,10 +10695,10 @@ function BondQuotesGrantWorkspace({
                 </summary>
                 <div className="absolute right-0 z-20 mt-2 w-52 overflow-hidden rounded-[12px] border border-borderSoft bg-white py-1 shadow-[0_18px_38px_rgba(15,23,42,0.14)]">
                   {[
-                    ['all', 'All Banks'],
-                    ['quote_received', 'Quote Received'],
+                    ['all', isPreApprovalOnly ? 'All Providers' : 'All Banks'],
+                    ['quote_received', isPreApprovalOnly ? 'Outcome Captured' : 'Quote Received'],
                     ['awaiting_response', 'Awaiting Response'],
-                    ['approved', 'Approved / Selected'],
+                    ['approved', isPreApprovalOnly ? 'Approved' : 'Approved / Selected'],
                     ['declined', 'Declined'],
                   ].map(([key, label]) => (
                     <button key={key} type="button" className={`block w-full px-3 py-2 text-left text-sm hover:bg-surfaceAlt ${filter === key ? 'font-semibold text-primary' : 'text-textBody'}`} onClick={() => setFilter(key)}>
@@ -10472,10 +10738,10 @@ function BondQuotesGrantWorkspace({
                     <div className="min-w-0 rounded-[14px] border border-borderSoft bg-white">
                       <div className="grid gap-0 divide-y divide-borderSoft px-4 py-4 sm:grid-cols-2 sm:divide-x sm:divide-y-0 lg:grid-cols-5">
                         {[
-                          ['Loan Amount', approvalAmount ? formatCurrencyValue(approvalAmount, '-') : requestedLoan, ''],
-                          ['Interest Rate', getQuoteRateDisplay(quote || {}), getQuoteRateSubtitle(quote || {})],
-                          ['Monthly Repayment', formatCurrencyValue(getQuoteRepayment(quote || {}), '-'), ''],
-                          ['Max Term', getQuoteTermLabel(quote || {}), ''],
+                          [isPreApprovalOnly ? 'Requested Amount' : 'Loan Amount', approvalAmount ? formatCurrencyValue(approvalAmount, '-') : requestedLoan, ''],
+                          [isPreApprovalOnly ? 'Rate / Basis' : 'Interest Rate', getQuoteRateDisplay(quote || {}), getQuoteRateSubtitle(quote || {})],
+                          [isPreApprovalOnly ? 'Assessment' : 'Monthly Repayment', isPreApprovalOnly ? (quote ? getQuoteStatusLabel(quote) : stateMeta.label) : formatCurrencyValue(getQuoteRepayment(quote || {}), '-'), ''],
+                          [isPreApprovalOnly ? 'Validity / Term' : 'Max Term', getQuoteTermLabel(quote || {}), ''],
                           ['Status', quote ? getQuoteStatusLabel(quote) : stateMeta.label, ''],
                         ].map(([label, value, helper]) => (
                           <div key={label} className="min-w-0 px-0 py-2 first:pt-0 last:pb-0 sm:px-4 sm:py-0 sm:first:pl-0 sm:last:pr-0">
@@ -10488,13 +10754,13 @@ function BondQuotesGrantWorkspace({
                       <div className="grid divide-y divide-borderSoft border-t border-borderSoft text-sm sm:grid-cols-4 sm:divide-x sm:divide-y-0">
                         {quote ? (
                           <button type="button" className="inline-flex h-11 items-center justify-center gap-2 font-semibold text-textStrong transition hover:bg-surfaceAlt" onClick={() => onViewQuote?.(quote)} disabled={!quoteUrl}>
-                            View Quote
+                            {isPreApprovalOnly ? 'View Outcome' : 'View Quote'}
                             <ExternalLink size={14} />
                           </button>
                         ) : (
-                          <button type="button" className="inline-flex h-11 items-center justify-center gap-2 font-semibold text-textStrong transition hover:bg-surfaceAlt" onClick={() => null}>
-                            View Details
-                            <ExternalLink size={14} />
+                          <button type="button" className="inline-flex h-11 items-center justify-center gap-2 font-semibold text-textStrong transition hover:bg-surfaceAlt" onClick={() => isPreApprovalOnly ? openPreApprovalOutcome(row) : null}>
+                            {isPreApprovalOnly ? 'Capture Outcome' : 'View Details'}
+                            {isPreApprovalOnly ? <CheckCircle2 size={14} /> : <ExternalLink size={14} />}
                           </button>
                         )}
                         {conditions.length ? (
@@ -10505,12 +10771,12 @@ function BondQuotesGrantWorkspace({
                         ) : null}
                         <button type="button" className="inline-flex h-11 items-center justify-center gap-2 font-semibold text-textStrong transition hover:bg-surfaceAlt" onClick={() => { onRequestRevision?.(quote || { bankName: row.bankName }); onOpenActivity?.() }}>
                           <Send size={14} />
-                          Message Bank
+                          {isPreApprovalOnly ? 'Message Provider' : 'Message Bank'}
                         </button>
                         {quote && !selected ? (
                           <button type="button" className="inline-flex h-11 items-center justify-center gap-2 font-semibold text-primary transition hover:bg-primarySoft" onClick={() => selectOffer(quote)} disabled={Boolean(loadingAction || acceptedQuote)}>
                             <CheckCircle2 size={14} />
-                            Select Offer
+                            {isPreApprovalOnly ? 'Accept Outcome' : 'Select Offer'}
                           </button>
                         ) : (
                           <span className="inline-flex h-11 items-center justify-center text-textMuted">
@@ -10529,14 +10795,22 @@ function BondQuotesGrantWorkspace({
           ) : (
             <div className="px-5 py-10">
               <div className="rounded-[16px] border border-dashed border-borderDefault bg-surfaceAlt px-5 py-8 text-center">
-                <strong className="text-base font-semibold text-textStrong">{documentHealthSummary.submissionReady ? 'Application ready for submission' : 'Application not yet submitted'}</strong>
+                <strong className="text-base font-semibold text-textStrong">
+                  {documentHealthSummary.submissionReady
+                    ? isPreApprovalOnly ? 'Pre-approval ready for assessment' : 'Application ready for submission'
+                    : isPreApprovalOnly ? 'Pre-approval not yet ready' : 'Application not yet submitted'}
+                </strong>
                 <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-textMuted">
                   {documentHealthSummary.submissionReady
-                    ? 'Select configured banks and submit the application to start collecting responses.'
-                    : 'Complete all application and document requirements before submitting to banks.'}
+                    ? isPreApprovalOnly
+                      ? 'Select a provider and submit the pack to start the pre-approval assessment.'
+                      : 'Select configured banks and submit the application to start collecting responses.'
+                    : isPreApprovalOnly
+                      ? 'Complete all applicant and document requirements before submitting for pre-approval.'
+                      : 'Complete all application and document requirements before submitting to banks.'}
                 </p>
                 {documentHealthSummary.submissionReady ? (
-                  <Button type="button" className="mt-4" onClick={() => setAddBankOpen(true)}>Select Banks</Button>
+                  <Button type="button" className="mt-4" onClick={() => setAddBankOpen(true)}>{isPreApprovalOnly ? 'Select Provider' : 'Select Banks'}</Button>
                 ) : (
                   <Button type="button" variant="secondary" className="mt-4" onClick={onOpenDocuments}>Review Requirements</Button>
                 )}
@@ -10554,13 +10828,13 @@ function BondQuotesGrantWorkspace({
                   <Field type="date" value={submittedAt} onChange={(event) => setSubmittedAt(event.target.value)} />
                   <Button type="submit" disabled={Boolean(loadingAction)}>
                     <Send size={14} />
-                    Submit
+                    {isPreApprovalOnly ? 'Submit Assessment' : 'Submit'}
                   </Button>
                 </form>
               ) : (
                 <button type="button" className="flex min-h-12 w-full items-center justify-center gap-2 rounded-[12px] border border-dashed border-borderDefault text-sm font-semibold text-primary transition hover:border-primary/40 hover:bg-primarySoft" onClick={() => setAddBankOpen(true)}>
                   +
-                  Add Another Bank
+                  {isPreApprovalOnly ? 'Add Another Provider' : 'Add Another Bank'}
                 </button>
               )}
             </div>
@@ -10569,17 +10843,17 @@ function BondQuotesGrantWorkspace({
 
         <aside className="space-y-4">
           <article className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">
-            <h3 className="text-sm font-semibold text-textStrong">Quote Summary</h3>
+            <h3 className="text-sm font-semibold text-textStrong">{isPreApprovalOnly ? 'Outcome Summary' : 'Quote Summary'}</h3>
             <div className="mt-4 flex items-center gap-4">
               <div className="relative flex size-24 shrink-0 items-center justify-center rounded-full" style={{ background: quoteRing }}>
                 <div className="flex size-16 flex-col items-center justify-center rounded-full bg-white shadow-inner">
                   <strong className="text-xl font-semibold text-textStrong">{summary.banks}</strong>
-                  <span className="text-[0.68rem] font-semibold uppercase text-textMuted">Banks</span>
+                  <span className="text-[0.68rem] font-semibold uppercase text-textMuted">{isPreApprovalOnly ? 'Providers' : 'Banks'}</span>
                 </div>
               </div>
               <dl className="grid flex-1 gap-2 text-sm">
                 {[
-                  ['Quotes Received', summary.quotesReceived, 'bg-emerald-500'],
+                  [isPreApprovalOnly ? 'Outcomes Captured' : 'Quotes Received', summary.quotesReceived, 'bg-emerald-500'],
                   ['Awaiting Response', summary.awaitingResponse, 'bg-blue-500'],
                   ['Declined', summary.declined, 'bg-orange-500'],
                   ['No Response', summary.noResponse, 'bg-slate-300'],
@@ -10593,19 +10867,27 @@ function BondQuotesGrantWorkspace({
               </dl>
             </div>
             <Button type="button" variant="secondary" size="sm" className="mt-4 w-full" disabled={!quoteRows.length} onClick={() => setCompareOpen(true)}>
-              Compare All Quotes
+              {isPreApprovalOnly ? 'Compare All Outcomes' : 'Compare All Quotes'}
               <ChevronRight size={14} />
             </Button>
           </article>
 
           <article className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">
-            <h3 className="text-sm font-semibold text-textStrong">Grant Status</h3>
-            <div className={`mt-4 rounded-[13px] border px-3 py-3 ${grantInfo.state === 'grant_accepted' ? 'border-success/20 bg-successSoft text-success' : 'border-orange-100 bg-orange-50 text-orange-700'}`}>
+            <h3 className="text-sm font-semibold text-textStrong">{isPreApprovalOnly ? 'Pre-approval Status' : 'Grant Status'}</h3>
+            <div className={`mt-4 rounded-[13px] border px-3 py-3 ${(isPreApprovalOnly ? preApprovalOutcomeCaptured : grantInfo.state === 'grant_accepted') ? 'border-success/20 bg-successSoft text-success' : 'border-orange-100 bg-orange-50 text-orange-700'}`}>
               <div className="flex items-start gap-3">
-                {grantInfo.state === 'grant_accepted' ? <CheckCircle2 size={18} className="mt-0.5 shrink-0" /> : <Clock3 size={18} className="mt-0.5 shrink-0" />}
+                {(isPreApprovalOnly ? preApprovalOutcomeCaptured : grantInfo.state === 'grant_accepted') ? <CheckCircle2 size={18} className="mt-0.5 shrink-0" /> : <Clock3 size={18} className="mt-0.5 shrink-0" />}
                 <div>
-                  <strong className="block text-sm">{grantInfo.label}</strong>
-                  <p className="mt-1 text-xs leading-5">{acceptedQuote ? 'Grant application can progress from the selected offer.' : 'Select a preferred offer before progressing the grant.'}</p>
+                  <strong className="block text-sm">{isPreApprovalOnly ? preApprovalStatus : grantInfo.label}</strong>
+                  <p className="mt-1 text-xs leading-5">
+                    {isPreApprovalOnly
+                      ? preApprovalOutcomeCaptured
+                        ? 'Use the outcome to decide whether to convert this file into a full bond application.'
+                        : submittedForAssessment
+                          ? 'Assessment has been submitted. Capture the outcome when received.'
+                          : 'Submit the pack to a provider to start the pre-approval assessment.'
+                      : acceptedQuote ? 'Grant application can progress from the selected offer.' : 'Select a preferred offer before progressing the grant.'}
+                  </p>
                 </div>
               </div>
             </div>
@@ -10619,14 +10901,21 @@ function BondQuotesGrantWorkspace({
             </div>
             {acceptedQuote ? (
               <dl className="mt-4 divide-y divide-borderSoft text-sm">
-                {[
-                  ['Bank', getQuoteBankName(acceptedQuote)],
-                  ['Granted Amount', formatCurrencyValue(getQuoteApprovalAmount(acceptedQuote), '-')],
-                  ['Interest Rate', getQuoteRateDisplay(acceptedQuote)],
-                  ['Term', getQuoteTermLabel(acceptedQuote)],
-                  ['Grant Date', formatDate(grantInfo.grantIssuedAt, '-')],
-                  ['Accepted', formatDate(grantInfo.grantAcceptedAt, '-')],
-                ].map(([label, value]) => (
+                {(isPreApprovalOnly
+                  ? [
+                      ['Provider', getQuoteBankName(acceptedQuote)],
+                      ['Approved Amount', formatCurrencyValue(getQuoteApprovalAmount(acceptedQuote), '-')],
+                      ['Outcome', getQuoteStatusLabel(acceptedQuote)],
+                      ['Valid Until', formatDate(acceptedQuote.expiresAt || acceptedQuote.expires_at || acceptedQuote.validUntil || acceptedQuote.valid_until, '-')],
+                    ]
+                  : [
+                      ['Bank', getQuoteBankName(acceptedQuote)],
+                      ['Granted Amount', formatCurrencyValue(getQuoteApprovalAmount(acceptedQuote), '-')],
+                      ['Interest Rate', getQuoteRateDisplay(acceptedQuote)],
+                      ['Term', getQuoteTermLabel(acceptedQuote)],
+                      ['Grant Date', formatDate(grantInfo.grantIssuedAt, '-')],
+                      ['Accepted', formatDate(grantInfo.grantAcceptedAt, '-')],
+                    ]).map(([label, value]) => (
                   <div key={label} className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 py-2">
                     <dt className="text-textMuted">{label}</dt>
                     <dd className="max-w-[140px] truncate text-right font-semibold text-textStrong">{value}</dd>
@@ -10634,12 +10923,12 @@ function BondQuotesGrantWorkspace({
                 ))}
               </dl>
             ) : null}
-            {acceptedQuote && grantInfo.state === 'awaiting_grant' ? (
+            {!isPreApprovalOnly && acceptedQuote && grantInfo.state === 'awaiting_grant' ? (
               <Button type="button" size="sm" className="mt-4 w-full" disabled={Boolean(loadingAction)} onClick={() => onMarkGrantMilestone?.({ stage: 'grant_received', milestone: 'grant_received' })}>
                 Record Grant Issued
               </Button>
             ) : null}
-            {grantInfo.state === 'grant_issued' ? (
+            {!isPreApprovalOnly && grantInfo.state === 'grant_issued' ? (
               <Button type="button" size="sm" className="mt-4 w-full" disabled={Boolean(loadingAction)} onClick={() => onMarkGrantMilestone?.({ stage: 'grant_signed', milestone: 'grant_signed' })}>
                 Mark Grant Accepted
               </Button>
@@ -10669,21 +10958,33 @@ function BondQuotesGrantWorkspace({
               View Full Timeline
               <ChevronRight size={14} />
             </Button>
+            {isPreApprovalOnly && preApprovalStatusKey === 'approved' ? (
+              <Button type="button" size="sm" className="mt-2 w-full" disabled={Boolean(loadingAction)} onClick={onConvertPreApproval}>
+                {loadingAction === 'convert_pre_approval' ? 'Converting...' : 'Convert to full bond application'}
+                <ChevronRight size={14} />
+              </Button>
+            ) : null}
           </article>
         </aside>
       </section>
 
-      <Modal open={compareOpen} onClose={() => setCompareOpen(false)} title="Compare Quotes" subtitle="Compare offers returned by the submitted banks." className="max-w-5xl">
+      <Modal
+        open={compareOpen}
+        onClose={() => setCompareOpen(false)}
+        title={isPreApprovalOnly ? 'Compare Outcomes' : 'Compare Quotes'}
+        subtitle={isPreApprovalOnly ? 'Compare pre-approval outcomes returned by assessment providers.' : 'Compare offers returned by the submitted banks.'}
+        className="max-w-5xl"
+      >
         {quoteRows.length ? (
           <>
             <div className="overflow-x-auto">
               <table className="min-w-[860px] w-full border-collapse text-sm">
                 <thead>
                   <tr className="border-b border-borderSoft text-left text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">
-                    <th className="py-3 pr-4">Bank</th>
-                    <th className="px-4 py-3">Loan Amount</th>
-                    <th className="px-4 py-3">Interest Rate</th>
-                    <th className="px-4 py-3">Monthly Repayment</th>
+                    <th className="py-3 pr-4">{isPreApprovalOnly ? 'Provider' : 'Bank'}</th>
+                    <th className="px-4 py-3">{isPreApprovalOnly ? 'Approved Amount' : 'Loan Amount'}</th>
+                    <th className="px-4 py-3">{isPreApprovalOnly ? 'Rate / Basis' : 'Interest Rate'}</th>
+                    <th className="px-4 py-3">{isPreApprovalOnly ? 'Outcome' : 'Monthly Repayment'}</th>
                     <th className="px-4 py-3">Term</th>
                     <th className="px-4 py-3">Fees</th>
                     <th className="py-3 pl-4">Status</th>
@@ -10703,7 +11004,7 @@ function BondQuotesGrantWorkspace({
                           <strong className="block text-textStrong">{getQuoteRateDisplay(quote)}</strong>
                           {getQuoteRateSubtitle(quote) ? <span className="text-xs text-textMuted">{getQuoteRateSubtitle(quote)}</span> : null}
                         </td>
-                        <td className="px-4 py-4 font-semibold text-textStrong">{formatCurrencyValue(getQuoteRepayment(quote), '-')}</td>
+                        <td className="px-4 py-4 font-semibold text-textStrong">{isPreApprovalOnly ? getQuoteStatusLabel(quote) : formatCurrencyValue(getQuoteRepayment(quote), '-')}</td>
                         <td className="px-4 py-4 font-semibold text-textStrong">{getQuoteTermLabel(quote)}</td>
                         <td className="px-4 py-4 font-semibold text-textStrong">{formatCurrencyValue(getQuoteFees(quote), 'R0')}</td>
                         <td className="py-4 pl-4">
@@ -10720,13 +11021,76 @@ function BondQuotesGrantWorkspace({
             <div className="mt-5 flex flex-wrap justify-end gap-2">
               <Button type="button" variant="secondary" disabled={Boolean(loadingAction)} onClick={onDeclineAll}>
                 <X size={14} />
-                Decline All Quotes
+                {isPreApprovalOnly ? 'Decline Outcomes' : 'Decline All Quotes'}
               </Button>
             </div>
           </>
         ) : (
-          <p className="rounded-[14px] border border-dashed border-borderDefault bg-surfaceAlt px-4 py-8 text-sm text-textMuted">No bank quotes have been received yet.</p>
+          <p className="rounded-[14px] border border-dashed border-borderDefault bg-surfaceAlt px-4 py-8 text-sm text-textMuted">
+            {isPreApprovalOnly ? 'No pre-approval outcomes have been captured yet.' : 'No bank quotes have been received yet.'}
+          </p>
         )}
+      </Modal>
+
+      <Modal
+        open={outcomeOpen}
+        onClose={() => setOutcomeOpen(false)}
+        title="Capture Pre-approval Outcome"
+        subtitle="Record the assessment outcome returned by the selected provider."
+        className="max-w-2xl"
+      >
+        <form onSubmit={submitPreApprovalOutcome} className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="block text-sm font-semibold text-textStrong">
+              Provider
+              <Field className="mt-1" value={outcomeDraft.providerName} onChange={(event) => setOutcomeDraft((draft) => ({ ...draft, providerName: event.target.value }))} required />
+            </label>
+            <label className="block text-sm font-semibold text-textStrong">
+              Outcome
+              <Field as="select" className="mt-1" value={outcomeDraft.outcome} onChange={(event) => setOutcomeDraft((draft) => ({ ...draft, outcome: event.target.value }))}>
+                <option value="approved">Approved</option>
+                <option value="declined">Declined</option>
+                <option value="expired">Expired</option>
+              </Field>
+            </label>
+            <label className="block text-sm font-semibold text-textStrong">
+              Approved amount
+              <Field className="mt-1" type="number" min="0" step="1000" value={outcomeDraft.approvedAmount} onChange={(event) => setOutcomeDraft((draft) => ({ ...draft, approvedAmount: event.target.value }))} disabled={outcomeDraft.outcome !== 'approved'} />
+            </label>
+            <label className="block text-sm font-semibold text-textStrong">
+              Rate
+              <Field className="mt-1" type="number" min="0" step="0.01" value={outcomeDraft.interestRate} onChange={(event) => setOutcomeDraft((draft) => ({ ...draft, interestRate: event.target.value }))} disabled={outcomeDraft.outcome !== 'approved'} />
+            </label>
+            <label className="block text-sm font-semibold text-textStrong">
+              Issued on
+              <Field className="mt-1" type="date" value={outcomeDraft.issuedAt} onChange={(event) => setOutcomeDraft((draft) => ({ ...draft, issuedAt: event.target.value }))} />
+            </label>
+            <label className="block text-sm font-semibold text-textStrong">
+              Valid until
+              <Field className="mt-1" type="date" value={outcomeDraft.expiresAt} onChange={(event) => setOutcomeDraft((draft) => ({ ...draft, expiresAt: event.target.value }))} disabled={outcomeDraft.outcome !== 'approved'} />
+            </label>
+          </div>
+          <label className="block text-sm font-semibold text-textStrong">
+            Reference
+            <Field className="mt-1" value={outcomeDraft.referenceNumber} onChange={(event) => setOutcomeDraft((draft) => ({ ...draft, referenceNumber: event.target.value }))} />
+          </label>
+          <label className="block text-sm font-semibold text-textStrong">
+            Conditions
+            <Field as="textarea" className="mt-1 min-h-24" value={outcomeDraft.conditions} onChange={(event) => setOutcomeDraft((draft) => ({ ...draft, conditions: event.target.value }))} disabled={outcomeDraft.outcome !== 'approved'} />
+          </label>
+          <label className="block text-sm font-semibold text-textStrong">
+            Notes
+            <Field as="textarea" className="mt-1 min-h-20" value={outcomeDraft.notes} onChange={(event) => setOutcomeDraft((draft) => ({ ...draft, notes: event.target.value }))} />
+          </label>
+          <div className="flex flex-wrap justify-end gap-2 border-t border-borderSoft pt-4">
+            <Button type="button" variant="secondary" onClick={() => setOutcomeOpen(false)} disabled={Boolean(loadingAction)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={Boolean(loadingAction)}>
+              {loadingAction === 'capture_pre_approval_outcome' ? 'Saving...' : 'Save outcome'}
+            </Button>
+          </div>
+        </form>
       </Modal>
 
       <Modal open={Boolean(conditionsRow)} onClose={() => setConditionsRow(null)} title={`${conditionsRow?.bankName || 'Bank'} Conditions`} className="max-w-xl">
@@ -14863,6 +15227,20 @@ function AttorneyTransactionDetail() {
       }),
     [data?.onboardingFormData, documents, requiredDocumentChecklist, transaction, workspaceReference],
   )
+  const bondWorkspaceIntent = normalizeDetailKey(firstPresent(
+    data?.bondApplication?.application?.intent,
+    data?.bondApplication?.sharedSections?.application_intent?.intent,
+    data?.bondApplication?.sharedSections?.application_intent,
+    data?.bondApplication?.shared_sections?.application_intent?.intent,
+    data?.bondApplication?.shared_sections?.application_intent,
+    data?.onboardingFormData?.bond_application?.application_intent,
+    data?.onboardingFormData?.bond_application?.summary?.application_intent,
+    data?.onboardingFormData?.application_intent,
+    transaction?.application_intent,
+    transaction?.bond_application_intent,
+    BOND_APPLICATION_INTENTS.bondApplication,
+  ))
+  const bondWorkspaceIsPreApprovalOnly = bondWorkspaceIntent === BOND_APPLICATION_INTENTS.preApproval
   const workspaceMenuTabs = availableWorkspaceTabs.map((tab) => {
     if (tab.id === 'parties') {
       return { ...tab, meta: `${transactionParticipants.length} parties` }
@@ -14874,7 +15252,13 @@ function AttorneyTransactionDetail() {
       return { ...tab, meta: onboardingCompleted ? 'Onboarding complete' : 'Review' }
     }
     if (tab.id === 'quotes_grant') {
-      return { ...tab, meta: `${transactionFinanceWorkflow?.applications?.length || 0} banks` }
+      return {
+        ...tab,
+        label: bondWorkspaceIsPreApprovalOnly ? 'Assessment & Outcome' : tab.label,
+        meta: bondWorkspaceIsPreApprovalOnly
+          ? `${transactionFinanceWorkflow?.applications?.length || 0} providers`
+          : `${transactionFinanceWorkflow?.applications?.length || 0} banks`,
+      }
     }
     if (tab.id === 'reconciliation') {
       return { ...tab, meta: 'Referral' }
@@ -15816,6 +16200,27 @@ function AttorneyTransactionDetail() {
     }
   }
 
+  async function handleCapturePreApprovalOutcome(payload = {}) {
+    if (!transaction?.id) {
+      setError('Transaction data is not available for pre-approval outcomes.')
+      return
+    }
+
+    try {
+      setBondHybridFinanceActionLoading('capture_pre_approval_outcome')
+      setError('')
+      const nextDetail = await recordTransactionPreApprovalOutcome(transaction.id, payload, {
+        actorRole: workspaceRole,
+      })
+      if (nextDetail) setData(nextDetail)
+      await loadData({ background: true })
+    } catch (outcomeError) {
+      setError(outcomeError?.message || 'Unable to capture the pre-approval outcome.')
+    } finally {
+      setBondHybridFinanceActionLoading('')
+    }
+  }
+
   async function handleApproveBondHybridQuote(quoteId) {
     try {
       setBondHybridFinanceActionLoading(quoteId)
@@ -15848,6 +16253,34 @@ function AttorneyTransactionDetail() {
       await loadData({ background: true })
     } catch (workflowActionError) {
       setError(workflowActionError?.message || 'Unable to decline finance quotes.')
+    } finally {
+      setBondHybridFinanceActionLoading('')
+    }
+  }
+
+  async function handleConvertPreApprovalToBondApplication() {
+    if (!transaction?.id) {
+      setError('Transaction data is not available for pre-approval conversion.')
+      return
+    }
+    if (
+      typeof window !== 'undefined' &&
+      !window.confirm('Convert this approved pre-approval into a full bond application?')
+    ) {
+      return
+    }
+
+    try {
+      setBondHybridFinanceActionLoading('convert_pre_approval')
+      setError('')
+      const nextDetail = await convertTransactionPreApprovalToBondApplication(transaction.id, {
+        actorRole: workspaceRole,
+      })
+      if (nextDetail) setData(nextDetail)
+      setWorkspaceMenu('application')
+      await loadData({ background: true })
+    } catch (conversionError) {
+      setError(conversionError?.message || 'Unable to convert the pre-approval to a full bond application.')
     } finally {
       setBondHybridFinanceActionLoading('')
     }
@@ -16574,6 +17007,27 @@ function AttorneyTransactionDetail() {
   const bondApplicationDetailModel = useMemo(() => {
     return bondApplicationViewModel.primaryApplicantDetail || {}
   }, [bondApplicationViewModel])
+  const bondApplicationFieldAlignment = bondApplicationViewModel.originatorFieldAlignment || bondApplicationViewModel.fieldAlignment || {}
+  const bondApplicationFieldAlignmentSections = useMemo(
+    () => Object.entries(bondApplicationFieldAlignment.sections || {})
+      .map(([label, summary]) => ({
+        label,
+        total: Number(summary?.total || 0),
+        captured: Number(summary?.captured || 0),
+        missing: Number(summary?.missing || 0),
+      }))
+      .filter((section) => section.total > 0),
+    [bondApplicationFieldAlignment.sections],
+  )
+  const bondApplicationFieldAlignmentMissingFields = useMemo(
+    () => (Array.isArray(bondApplicationFieldAlignment.fields) ? bondApplicationFieldAlignment.fields : [])
+      .filter((field) => !field?.captured)
+      .slice(0, 6),
+    [bondApplicationFieldAlignment.fields],
+  )
+  const bondApplicationFieldAlignmentPercent = bondApplicationFieldAlignment.totalCount
+    ? Math.round((Number(bondApplicationFieldAlignment.capturedCount || 0) / Number(bondApplicationFieldAlignment.totalCount || 1)) * 100)
+    : 0
   const bondConsultantWorkspaceAction = useMemo(
     () =>
       resolveBondConsultantAction({
@@ -17415,9 +17869,11 @@ function AttorneyTransactionDetail() {
       visible: requiresCancellationAttorneyCard,
     },
   ].filter((item) => item.visible !== false)
-  const bondApplicationTypeLabel = financeTypeLabel && financeTypeLabel !== 'Not captured'
-    ? `${financeTypeLabel} Application`
-    : 'Bond Application'
+  const bondApplicationTypeLabel = bondWorkspaceIsPreApprovalOnly
+    ? 'Pre-approval'
+    : financeTypeLabel && financeTypeLabel !== 'Not captured'
+      ? `${financeTypeLabel} Application`
+      : 'Bond Application'
   const bondHeaderReferringAgency = {
     id: firstPresent(
       assignedAgent?.organisationId,
@@ -19206,10 +19662,32 @@ function AttorneyTransactionDetail() {
               activityFeed={overviewConversationEntries}
               saving={workflowSaving}
               onUpdateStep={(step, status, note) => handleArchlineLegalWorkflowStepUpdate(archlineTransferWorkflow, step, status, note)}
-              onUploadDocument={() => openDocumentUploadModal({ category: 'transfer' })}
+              onUploadDocument={(task, documents = []) => {
+                const targetDocument = (documents || []).find((document) => !document?.missing && (document?.requirement || document?.requiredDocument || document?.id)) || null
+                if (targetDocument?.requirement || targetDocument?.requiredDocument) {
+                  openDocumentUploadModal({ requirement: targetDocument.requirement || targetDocument.requiredDocument })
+                } else {
+                  openDocumentUploadModal({ category: 'transfer' })
+                }
+              }}
+              onRequestDocument={(task, documents = []) => {
+                const missingDocument = (documents || []).find((document) => document?.missing || document?.ready === false) || null
+                openConveyancingDocumentRequest({
+                  ...(missingDocument || {}),
+                  label: missingDocument?.displayName || missingDocument?.label || missingDocument?.name || task?.label || '',
+                  displayName: missingDocument?.displayName || missingDocument?.label || missingDocument?.name || task?.label || '',
+                  requestedFrom: missingDocument?.requiredFrom || missingDocument?.required_from || missingDocument?.requiredParty || '',
+                  visibility: missingDocument?.visibilityDefault || task?.defaultVisibility || 'client_visible',
+                  notes: missingDocument
+                    ? `Please provide ${missingDocument.displayName || missingDocument.label || missingDocument.name || 'the requested document'} for ${task?.label || 'this transfer task'}.`
+                    : `Please provide the documents or information required for ${task?.label || 'this transfer task'}.`,
+                  blocksStage: task?.completionReadiness?.canComplete === false,
+                })
+              }}
               onAddNote={handleQuickAddWorkflowNote}
               onOpenDocuments={() => openWorkspaceMenu('documents')}
               onOpenParties={() => openWorkspaceMenu('stakeholders')}
+              onOpenFinance={() => openWorkspaceMenu('finance')}
             />
           )
         ) : null}
@@ -20711,6 +21189,60 @@ function AttorneyTransactionDetail() {
 
               <aside className="space-y-5">
                 <article className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-surface">
+                  <div className="flex items-start justify-between gap-4">
+                    <span className="flex min-w-0 items-start gap-3">
+                      <span className="grid size-9 shrink-0 place-items-center rounded-[10px] bg-primarySoft text-primary">
+                        <ListChecks size={17} />
+                      </span>
+                      <span className="min-w-0">
+                        <h3 className="text-base font-semibold text-textStrong">Buyer Portal Field Alignment</h3>
+                        <span className="mt-1 block text-xs text-textMuted">
+                          {Number(bondApplicationFieldAlignment.capturedCount || 0)} of {Number(bondApplicationFieldAlignment.totalCount || 0)} originator fields matched
+                        </span>
+                      </span>
+                    </span>
+                    <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${bondApplicationFieldAlignmentPercent >= 90 ? 'bg-successSoft text-success' : bondApplicationFieldAlignmentPercent >= 70 ? 'bg-[#fff4e6] text-warning' : 'bg-red-50 text-red-600'}`}>
+                      {bondApplicationFieldAlignmentPercent}%
+                    </span>
+                  </div>
+                  <div className="mt-4 h-2 overflow-hidden rounded-full bg-surfaceAlt">
+                    <div
+                      className={`h-full rounded-full ${bondApplicationFieldAlignmentPercent >= 90 ? 'bg-success' : bondApplicationFieldAlignmentPercent >= 70 ? 'bg-warning' : 'bg-red-500'}`}
+                      style={{ width: `${Math.min(100, Math.max(0, bondApplicationFieldAlignmentPercent))}%` }}
+                    />
+                  </div>
+                  <div className="mt-4 max-h-52 space-y-2 overflow-y-auto pr-1">
+                    {bondApplicationFieldAlignmentSections.map((section) => {
+                      const sectionPercent = section.total ? Math.round((section.captured / section.total) * 100) : 0
+                      return (
+                        <div key={section.label} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 text-sm">
+                          <span className="min-w-0 truncate text-textBody">{section.label}</span>
+                          <span className={`shrink-0 rounded-full px-2 py-0.5 text-[0.68rem] font-semibold ${section.missing ? 'bg-[#fff4e6] text-warning' : 'bg-successSoft text-success'}`}>
+                            {section.captured}/{section.total} · {sectionPercent}%
+                          </span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                  {bondApplicationFieldAlignmentMissingFields.length ? (
+                    <div className="mt-4 border-t border-borderSoft pt-3">
+                      <span className="text-xs font-semibold text-textStrong">Missing Fields</span>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {bondApplicationFieldAlignmentMissingFields.map((field) => (
+                          <span key={field.key} className="max-w-full truncate rounded-full bg-[#fff4e6] px-2 py-1 text-[0.68rem] font-semibold text-warning">
+                            {field.label}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="mt-4 rounded-[10px] bg-successSoft px-3 py-2 text-sm font-semibold text-success">
+                      All tracked buyer portal fields are available to the originator view.
+                    </p>
+                  )}
+                </article>
+
+                <article className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-surface">
                   <h3 className="text-base font-semibold text-textStrong">Submission Readiness</h3>
                   <div className="mt-4 grid gap-4 sm:grid-cols-[112px_minmax(0,1fr)] xl:grid-cols-1">
                     <div className="flex items-center gap-4">
@@ -20822,6 +21354,8 @@ function AttorneyTransactionDetail() {
             onDeclineAll={() => void handleDeclineAllBondHybridQuotes()}
             onOpenDocuments={() => openWorkspaceMenu('documents')}
             onOpenActivity={() => openWorkspaceMenu('activity')}
+            onCapturePreApprovalOutcome={(payload) => void handleCapturePreApprovalOutcome(payload)}
+            onConvertPreApproval={() => void handleConvertPreApprovalToBondApplication()}
             onMarkGrantMilestone={(payload) => void handleMarkBondHybridGrantMilestone(payload)}
           />
         ) : null}

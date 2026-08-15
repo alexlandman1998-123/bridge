@@ -47,9 +47,9 @@ export async function handleBondOriginatorBuyerIntroEmail(
   const developmentName = normalizeText(metadata.developmentName as string);
   const portalLink = normalizeText(metadata.applicationLink as string);
   const subject = normalizeText(payload.subject) ||
-    `Meet Your Bond Originator - ${organisationName}`;
+    "Complete your bond application";
   const title = normalizeText(payload.title) ||
-    "Your bond application has been assigned";
+    "Complete your bond application";
   const branding = await resolveEmailBranding({
     payload: payload as Record<string, unknown>,
     organisationId: normalizeText(
@@ -78,26 +78,26 @@ export async function handleBondOriginatorBuyerIntroEmail(
   ].filter((field) => field.value);
 
   const intro = normalizeText(payload.message) ||
-    `${consultantName} and the ${organisationName} team will assist you through the bond application process and keep you updated along the way.`;
+    `${consultantName} and the ${organisationName} team are ready to process your bond application. Complete the online application so your information can be reviewed and prepared for submission.`;
 
   const html = renderBridgeEmailLayout({
-    preheader: "Your bond application has been assigned to a bond originator.",
+    preheader: "Complete your online bond application in the buyer portal.",
     title,
     greeting: `Hi ${firstName(buyerName)},`,
     contentHtml: [
       renderBridgeIntroParagraphs([
-        "Thank you for completing your onboarding.",
-        "Your bond application has been assigned to:",
+        "Your online bond application is ready in the buyer portal.",
+        "Your bond team:",
       ]),
-      renderBridgeSummaryCard(fields, "Bond Originator Details"),
-      renderBridgeIntroParagraphs([intro, "What happens next:"]),
+      renderBridgeSummaryCard(fields, "Your Bond Team"),
+      renderBridgeIntroParagraphs([intro, "What to do next:"]),
       renderBridgeBullets([
-        "Your application will be reviewed.",
-        "Supporting documents may be requested.",
-        "Your application will be submitted to the banks.",
-        "You will receive updates as progress is made.",
+        "Open the buyer portal and complete the online bond application.",
+        "Upload any supporting documents requested by the bond team.",
+        "Your bond originator will review the application and prepare it for bank submission.",
+        "You will receive updates in the portal as progress is made.",
       ]),
-      renderBridgeCta("View Application", portalLink),
+      renderBridgeCta("Complete Bond Application", portalLink),
     ].join(""),
     securityBody:
       "Your bond application information is available only to authorised parties involved in your transaction.",
@@ -112,9 +112,9 @@ export async function handleBondOriginatorBuyerIntroEmail(
   const text = [
     `Hi ${firstName(buyerName)},`,
     "",
-    "Thank you for completing your onboarding.",
+    "Your online bond application is ready in the buyer portal.",
     "",
-    "Your bond application has been assigned to:",
+    "Your bond team:",
     consultantName,
     organisationName,
     "",
@@ -123,15 +123,15 @@ export async function handleBondOriginatorBuyerIntroEmail(
     propertyLabel ? `Transaction: ${propertyLabel}` : "",
     developmentName ? `Development: ${developmentName}` : "",
     "",
-    "What happens next:",
-    "- Your application will be reviewed.",
-    "- Supporting documents may be requested.",
-    "- Your application will be submitted to the banks.",
-    "- You will receive updates as progress is made.",
+    "What to do next:",
+    "- Open the buyer portal and complete the online bond application.",
+    "- Upload any supporting documents requested by the bond team.",
+    "- Your bond originator will review the application and prepare it for bank submission.",
+    "- You will receive updates in the portal as progress is made.",
     "",
     consultantPhone ? `Phone: ${consultantPhone}` : "",
     consultantEmail ? `Email: ${consultantEmail}` : "",
-    portalLink ? `View your application: ${portalLink}` : "",
+    portalLink ? `Complete your bond application: ${portalLink}` : "",
   ].filter(Boolean).join("\n");
 
   const sendResult = await sendViaResendApi({

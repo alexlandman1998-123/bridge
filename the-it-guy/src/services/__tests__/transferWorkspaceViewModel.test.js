@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 
 import {
+  buildTransferTaskWorkActions,
   buildTransferWorkspaceViewModel,
   TRANSFER_WORKSPACE_PERSISTED_STEP_STATUSES,
 } from '../attorneyWorkflow/transferWorkspaceViewModel.js'
@@ -137,6 +138,33 @@ assert.ok(viewModel.selectedTaskContext.tabs.some((tab) => tab.key === 'activity
 assert.ok(viewModel.selectedTaskContext.checklistItems.some((item) => item.type === 'document'))
 assert.equal(viewModel.selectedTaskContext.notes.length, 1)
 assert.equal(viewModel.selectedTaskContext.notes[0].visibilityLabel, 'Internal')
+assert.ok(viewModel.selectedTaskContext.workActions.some((action) => action.id === 'request_document'))
+assert.ok(viewModel.selectedTaskContext.workActions.some((action) => action.id === 'upload_document'))
+assert.ok(viewModel.selectedTaskContext.workActions.some((action) => action.id === 'open_parties'))
+assert.ok(viewModel.workActionsByTaskKey.entity_authority_checked.length > 0)
+
+viewModel.tasks.forEach((task) => {
+  const taskActions = buildTransferTaskWorkActions(task, workflow.lane.permissions)
+  assert.ok(taskActions.length > 0, `${task.key} exposes at least one work action`)
+  assert.ok(taskActions.some((action) => action.id === 'add_note'), `${task.key} can capture a task note/update`)
+})
+
+assert.ok(
+  viewModel.workActionsByTaskKey.transfer_duty_assessment_prepared.some((action) => action.id === 'open_finance'),
+  'financial preparation tasks expose the finance action',
+)
+assert.ok(
+  viewModel.workActionsByTaskKey.rates_clearance_received.some((action) => action.id === 'open_finance'),
+  'clearance tasks expose the finance action',
+)
+assert.ok(
+  viewModel.workActionsByTaskKey.buyer_signed_transfer_documents.some((action) => action.id === 'open_documents'),
+  'signing tasks expose document actions',
+)
+assert.ok(
+  viewModel.workActionsByTaskKey.buyer_fica_requested.some((action) => action.id === 'open_parties'),
+  'FICA tasks expose roleplayer actions',
+)
 
 const blockedModel = buildTransferWorkspaceViewModel({
   workflow: {

@@ -42,7 +42,6 @@ import { normalizePortalWorkspaceCategory, resolvePortalDocumentMetadata } from 
 import { normalizeFinanceManagedBy, normalizeFinanceType } from '../core/transactions/financeType'
 import {
   buildBondApplicationState,
-  buildLegacyBondApplicationDraft,
   buildLegacyBondApplicationPersistencePayload,
   calculateLegacyBondApplicationCompletion,
   getBondApplicationApplicantDefault,
@@ -52,6 +51,12 @@ import {
   shouldUseGuidedBondApplicationV2,
   validateLegacyBondApplicationSubmission,
 } from '../modules/bond/application'
+import { buildBondApplicationPrefillDraft } from '../modules/bond/application/prefill/bondApplicationPrefillBuilder'
+import { getBondApplicationOtpUnlockState } from '../modules/bond/application/prefill/bondApplicationOtpUnlockGate'
+import {
+  buildBondApplicationPrefillReviewModel,
+  getBondApplicationPrefillFieldReview,
+} from '../modules/bond/application/prefill/bondApplicationPrefillReviewModel'
 import { buildBondOriginatorBuyerOfferGrantViewModel } from '../modules/bond/integrations'
 import GuidedBondApplication from '../modules/bond/application/guided/GuidedBondApplication'
 import { LatestUpdatesCard } from '../components/client-portal/ClientJourneySection'
@@ -8514,7 +8519,7 @@ function ClientPortal() {
     setMyDetailsDraft(cloneMyDetailsFormData(portal?.onboardingFormData?.formData || {}))
     setMyDetailsEditingSection('')
     setMyDetailsSavingSection('')
-    setBondApplicationDraft(buildLegacyBondApplicationDraft(portal))
+    setBondApplicationDraft(buildBondApplicationPrefillDraft(portal).application)
     setBondApplicationDirty(false)
     setActiveBondApplicantKey('primary')
   }, [portal])
@@ -10003,6 +10008,14 @@ function ClientPortal() {
       if (normalizedKey) portalDocumentsById.set(normalizedKey, document)
     })
   })
+  const bondApplicationOtpUnlockState = getBondApplicationOtpUnlockState({
+    portal,
+    financeType: financeTypeForPortal,
+    financeManagedBy: financeManagedByForPortal,
+    mainStage,
+    requiredDocuments: portalRequiredDocuments,
+    documents: portalDocumentLookupRows,
+  })
   const documentPurchaserType = resolvePurchaserTypeForDocuments(portal)
   const documentTransactionType = resolveTransactionTypeForDocuments(portal)
   const documentMaritalRegime = resolveClientMaritalRegime(portal?.onboardingFormData?.formData || {})
@@ -10207,7 +10220,7 @@ function ClientPortal() {
         : reservationProofUploadFeedback.tone === 'loading'
           ? 'border-[#d8e4ef] bg-[#f4f8fc] text-[#35546c]'
           : ''
-  const bondApplicationData = bondApplicationDraft || buildLegacyBondApplicationDraft(portal)
+  const bondApplicationData = bondApplicationDraft || buildBondApplicationPrefillDraft(portal).application
   const guidedBondApplicationState = buildBondApplicationState(portal)
   const guidedBondApplicationEligibility = shouldUseGuidedBondApplicationV2({
     featureFlags: FEATURE_FLAGS,
@@ -10533,6 +10546,21 @@ function ClientPortal() {
   const buyerPortalAccessMethod = 'Secure link'
   const buyerPortalAccessDescription =
     'This purchase workspace opens from your private transaction link. You do not need to create a password for this purchase workspace.'
+  const buyerPortalBondApplicationStatusValue = bondApplicationOtpUnlockState.unlocked
+    ? bondApplicationStatus
+    : bondApplicationOtpUnlockState.label
+  const buyerPortalBondApplicationStatusDetail = (() => {
+    if (!isOriginatorManagedPortalFinance) return 'Finance is not managed by the bond originator workflow'
+    if (!bondApplicationOtpUnlockState.unlocked) return bondApplicationOtpUnlockState.description
+    if (bondApplicationStatus === 'Submitted') return 'Submitted to the transaction workspace'
+    if (bondApplicationStatus === 'Not Started') return 'Ready to complete from your secure link'
+    return 'Progress saved in the portal'
+  })()
+  const buyerPortalBondApplicationStatusTone = ['Submitted', 'Approved'].includes(bondApplicationStatus)
+    ? 'complete'
+    : bondApplicationOtpUnlockState.blocked
+      ? 'action'
+      : 'info'
   const buyerPortalStatusItems = [
     {
       key: 'access',
@@ -10559,14 +10587,9 @@ function ClientPortal() {
       ? {
           key: 'bond',
           label: 'Bond application',
-          value: bondApplicationStatus,
-          detail:
-            bondApplicationStatus === 'Submitted'
-              ? 'Submitted to the transaction workspace'
-              : bondApplicationStatus === 'Not Started'
-                ? 'Available when ready'
-                : 'Progress saved in the portal',
-          tone: ['Submitted', 'Approved'].includes(bondApplicationStatus) ? 'complete' : 'info',
+          value: buyerPortalBondApplicationStatusValue,
+          detail: buyerPortalBondApplicationStatusDetail,
+          tone: buyerPortalBondApplicationStatusTone,
         }
       : {
           key: 'bond',
@@ -11776,6 +11799,12 @@ function ClientPortal() {
     activeBondApplicationSectionIndex < BOND_APPLICATION_SECTION_TABS.length - 1
       ? BOND_APPLICATION_SECTION_TABS[activeBondApplicationSectionIndex + 1]
       : null
+  const bondApplicationPrefillMetadata = bondApplicationData?.prefill_metadata || {}
+  const bondApplicationPrefillReview = buildBondApplicationPrefillReviewModel(bondApplicationPrefillMetadata, {
+    activeSection: activeBondApplicationSectionTab,
+  })
+  const activeBondApplicationPrefillSummary = bondApplicationPrefillReview.activeSectionSummary
+  const visibleBondApplicationPrefillSources = bondApplicationPrefillReview.sourceCounts.slice(0, 4)
 
   const readBondField = (path, fallback = '') => {
     const value = getNestedPortalValue(bondApplicationData, path.split('.'))
@@ -11783,6 +11812,27 @@ function ClientPortal() {
   }
   const updateBondField = (path, value) => {
     updateBondApplicationField(path.split('.'), value)
+  }
+
+  const getBondPrefillBadgeClasses = (status) => {
+    if (status === 'saved') return 'border-[#cfe4d8] bg-[#eef9f2] text-[#2f7a51]'
+    if (status === 'missing') return 'border-[#f1ddd0] bg-[#fff6f0] text-[#a15b31]'
+    if (status === 'confirmed') return 'border-[#d8e4ef] bg-[#f4f8fc] text-[#35546c]'
+    return 'border-[#d7e8f3] bg-[#eef8fb] text-[#286172]'
+  }
+
+  const renderBondPrefillBadge = (review) => {
+    if (!review) return null
+    return (
+      <span
+        className={`mt-1.5 inline-flex max-w-full items-center gap-1.5 rounded-full border px-2 py-0.5 text-[0.64rem] font-semibold ${getBondPrefillBadgeClasses(review.status)}`}
+        title={review.sourcePath ? `${review.detail}: ${review.sourcePath}` : review.detail}
+      >
+        <Tag size={11} />
+        <span className="truncate">{review.label}</span>
+        <span className="max-w-[150px] truncate font-medium opacity-80">{review.detail}</span>
+      </span>
+    )
   }
 
   const renderBondInputField = ({
@@ -11801,12 +11851,19 @@ function ClientPortal() {
     if (hidden) return null
     const fieldId = `bond-${path.replaceAll('.', '-')}`
     const value = readBondField(path, type === 'checkbox' ? false : '')
+    const prefillReview = getBondApplicationPrefillFieldReview(bondApplicationPrefillMetadata, path, {
+      required,
+      label,
+      section: activeBondApplicationSectionTab,
+      currentValue: value,
+    })
 
     return (
       <label key={path} htmlFor={fieldId} className="rounded-[14px] border border-[#e3ebf4] bg-white px-3 py-2.5">
         <span className="block text-[0.7rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">
           {label}{required ? ' *' : ''}
         </span>
+        {renderBondPrefillBadge(prefillReview)}
         {helperText ? <span className="mt-1 block text-xs leading-5 text-[#7b8ca2]">{helperText}</span> : null}
         {type === 'select' ? (
           <select
@@ -11868,34 +11925,47 @@ function ClientPortal() {
     const isMarried = normalizePortalStatus(applicant?.marital_status).startsWith('married')
     const isMarriedAnc = normalizePortalStatus(applicant?.marital_status) === 'married_anc'
 
-    const applicantField = ({ key, label, type = 'text', options = null, required = false, helper = '', hidden = false }) => (
-      <label key={`${applicantKey}-${key}`} className="rounded-[14px] border border-[#e3ebf4] bg-white px-3 py-2.5">
-        <span className="block text-[0.7rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">
-          {label}{required ? ' *' : ''}
-        </span>
-        {helper ? <span className="mt-1 block text-xs leading-5 text-[#7b8ca2]">{helper}</span> : null}
-        {hidden ? null : type === 'select' ? (
-          <select
-            value={String(applicant?.[key] || '')}
-            onChange={(event) => updateBondApplicationApplicantField(applicantKey, key, event.target.value)}
-            className="mt-2 w-full rounded-[10px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm text-[#162334] outline-none transition focus:border-[#35546c]/45 focus:ring-2 focus:ring-[#35546c]/12"
-          >
-            {(options || []).map((option) => (
-              <option key={`${applicantKey}-${key}-${option.value || 'empty'}`} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        ) : (
-          <input
-            type={type}
-            value={String(applicant?.[key] || '')}
-            onChange={(event) => updateBondApplicationApplicantField(applicantKey, key, event.target.value)}
-            className="mt-2 w-full rounded-[10px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm text-[#162334] outline-none transition placeholder:text-[#8ca0b8] focus:border-[#35546c]/45 focus:ring-2 focus:ring-[#35546c]/12"
-          />
-        )}
-      </label>
-    )
+    const applicantField = ({ key, label, type = 'text', options = null, required = false, helper = '', hidden = false }) => {
+      const path = `applicants.${applicantKey}.${key}`
+      const prefillReview = hidden
+        ? null
+        : getBondApplicationPrefillFieldReview(bondApplicationPrefillMetadata, path, {
+            required,
+            label,
+            section: 'personal_details',
+            currentValue: applicant?.[key],
+          })
+
+      return (
+        <label key={`${applicantKey}-${key}`} className="rounded-[14px] border border-[#e3ebf4] bg-white px-3 py-2.5">
+          <span className="block text-[0.7rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">
+            {label}{required ? ' *' : ''}
+          </span>
+          {renderBondPrefillBadge(prefillReview)}
+          {helper ? <span className="mt-1 block text-xs leading-5 text-[#7b8ca2]">{helper}</span> : null}
+          {hidden ? null : type === 'select' ? (
+            <select
+              value={String(applicant?.[key] || '')}
+              onChange={(event) => updateBondApplicationApplicantField(applicantKey, key, event.target.value)}
+              className="mt-2 w-full rounded-[10px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm text-[#162334] outline-none transition focus:border-[#35546c]/45 focus:ring-2 focus:ring-[#35546c]/12"
+            >
+              {(options || []).map((option) => (
+                <option key={`${applicantKey}-${key}-${option.value || 'empty'}`} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <input
+              type={type}
+              value={String(applicant?.[key] || '')}
+              onChange={(event) => updateBondApplicationApplicantField(applicantKey, key, event.target.value)}
+              className="mt-2 w-full rounded-[10px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm text-[#162334] outline-none transition placeholder:text-[#8ca0b8] focus:border-[#35546c]/45 focus:ring-2 focus:ring-[#35546c]/12"
+            />
+          )}
+        </label>
+      )
+    }
 
     return (
       <article className="space-y-4 rounded-[16px] border border-[#e3ebf4] bg-[#fbfdff] p-4">
@@ -13105,12 +13175,18 @@ function ClientPortal() {
             ) : null}
 
             {isBondApplication ? (
-              <section className="space-y-5 rounded-[28px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
+              <section
+                className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#142132]/55 px-3 py-4 backdrop-blur-sm sm:px-6 lg:px-8"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="buyer-bond-application-title"
+              >
+                <div className="w-full max-w-7xl space-y-5 rounded-[24px] border border-[#dbe5ef] bg-white p-4 shadow-[0_24px_70px_rgba(15,23,42,0.28)] sm:p-6">
                 <header className="rounded-[22px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
                   <div className="flex flex-wrap items-start justify-between gap-4">
                     <div>
                       <span className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7b8ca2]">Bond Application</span>
-                      <h3 className="mt-2 text-[1.26rem] font-semibold tracking-[-0.03em] text-[#142132]">{bondApplicationApplicantHeader}</h3>
+                      <h3 id="buyer-bond-application-title" className="mt-2 text-[1.26rem] font-semibold tracking-[-0.03em] text-[#142132]">{bondApplicationApplicantHeader}</h3>
                       <p className="mt-1 text-sm text-[#6b7d93]">
                         {unitLabel} • {developmentName}
                       </p>
@@ -13118,9 +13194,18 @@ function ClientPortal() {
                         Purchase price <strong className="text-[#142132]">{purchasePriceLabel}</strong>
                       </p>
                     </div>
-                    <span className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] ${bondApplicationStatusClasses}`}>
-                      {bondApplicationStatus}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] ${bondApplicationStatusClasses}`}>
+                        {bondApplicationStatus}
+                      </span>
+                      <Link
+                        to={getClientPortalPath(token, 'overview')}
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#d1deeb] bg-white text-[#425a72] transition hover:border-[#b9cbde] hover:bg-[#f8fbff] hover:text-[#142132]"
+                        aria-label="Close bond application"
+                      >
+                        <X size={16} />
+                      </Link>
+                    </div>
                   </div>
                   <div className="mt-4">
                     <div className="mb-2 flex items-center justify-between gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">
@@ -13159,8 +13244,90 @@ function ClientPortal() {
                   </div>
                 </header>
 
-                <div className="overflow-x-auto">
-                  <nav className="inline-flex min-w-full gap-2 rounded-[18px] border border-[#e2eaf3] bg-[#f8fbff] p-2">
+	                {!bondApplicationOtpUnlockState.unlocked ? (
+	                  <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+	                    <article className="rounded-[22px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+	                      <div className="flex flex-wrap items-start justify-between gap-4">
+	                        <div className="flex items-start gap-3">
+	                          <span className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] border ${
+	                            bondApplicationOtpUnlockState.status === 'preparing'
+	                              ? 'border-[#f0d8ae] bg-[#fff6e7] text-[#9a5b0f]'
+	                              : 'border-[#d8e4ef] bg-white text-[#35546c]'
+	                          }`}>
+	                            {bondApplicationOtpUnlockState.status === 'preparing' ? <Clock3 size={20} /> : <ShieldCheck size={20} />}
+	                          </span>
+	                          <div>
+	                            <span className="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">
+	                              {bondApplicationOtpUnlockState.label}
+	                            </span>
+	                            <h4 className="mt-1 text-[1.2rem] font-semibold tracking-[-0.03em] text-[#142132]">
+	                              {bondApplicationOtpUnlockState.title}
+	                            </h4>
+	                            <p className="mt-2 max-w-3xl text-sm leading-6 text-[#5f7288]">
+	                              {bondApplicationOtpUnlockState.description}
+	                            </p>
+	                          </div>
+	                        </div>
+	                        <span className="inline-flex items-center rounded-full border border-[#d8e4ef] bg-white px-3 py-1.5 text-xs font-semibold text-[#35546c]">
+	                          OTP: {otpStatusLabel}
+	                        </span>
+		                      </div>
+
+		                      <div className="mt-5 grid gap-3 md:grid-cols-3">
+	                        {[
+	                          {
+	                            label: 'OTP status',
+	                            value: otpStatusLabel,
+	                            detail: bondApplicationOtpUnlockState.status === 'preparing' ? 'Signature handoff in progress' : 'Awaiting signed OTP handoff',
+	                          },
+	                          {
+	                            label: 'Application data',
+	                            value: 'Prefill ready',
+	                            detail: 'Onboarding, buyer, property, and finance details are mapped.',
+	                          },
+	                          {
+	                            label: 'Finance owner',
+	                            value: isOriginatorManagedPortalFinance ? 'Bond originator' : 'External finance',
+	                            detail: isOriginatorManagedPortalFinance ? 'Application will route to the originator workspace.' : 'This finance route is not originator-managed.',
+	                          },
+	                        ].map((item) => (
+	                          <article key={item.label} className="rounded-[16px] border border-[#e3ebf4] bg-white px-4 py-3">
+	                            <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">{item.label}</span>
+	                            <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{item.value}</strong>
+	                            <p className="mt-1 text-xs leading-5 text-[#6b7d93]">{item.detail}</p>
+	                          </article>
+	                        ))}
+	                      </div>
+		                    </article>
+
+		                    <aside className="rounded-[22px] border border-[#dbe5ef] bg-white px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+	                      <span className="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Next</span>
+	                      <h4 className="mt-1 text-[1.05rem] font-semibold tracking-[-0.02em] text-[#142132]">Complete the OTP step</h4>
+	                      <p className="mt-2 text-sm leading-6 text-[#5f7288]">
+	                        Once the signed OTP is received, this link will open the application directly.
+	                      </p>
+	                      <div className="mt-4 space-y-2">
+	                        <Link
+	                          to={getClientPortalPath(token, 'documents')}
+	                          className="inline-flex w-full min-h-[40px] items-center justify-center gap-2 rounded-[12px] border border-[#d1deeb] bg-[#f8fbff] px-3 py-2 text-sm font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-white"
+	                        >
+	                          <FileText size={15} />
+	                          Documents
+	                        </Link>
+	                        <Link
+	                          to={getClientPortalPath(token, 'team')}
+	                          className="inline-flex w-full min-h-[40px] items-center justify-center gap-2 rounded-[12px] bg-[#2f5478] px-3 py-2 text-sm font-semibold text-white transition hover:bg-[#254664]"
+	                        >
+	                          <Users size={15} />
+	                          Team Contacts
+	                        </Link>
+	                      </div>
+	                    </aside>
+	                  </section>
+	                ) : (
+	                  <>
+	                <div className="overflow-x-auto">
+	                  <nav className="inline-flex min-w-full gap-2 rounded-[18px] border border-[#e2eaf3] bg-[#f8fbff] p-2">
                     {BOND_APPLICATION_TABS.map((tab) => {
                       const isActive = activeBondApplicationTab === tab.key
                       return (
@@ -13260,6 +13427,47 @@ function ClientPortal() {
                         <div className="border-b border-[#e6edf5] pb-3">
                           <h5 className="text-[1.05rem] font-semibold text-[#142132]">{activeBondApplicationSectionMeta?.label}</h5>
                         </div>
+
+                        {bondApplicationPrefillReview.hasMetadata && activeBondApplicationSectionTab !== 'documents' ? (
+                          <section className="rounded-[16px] bg-[#f4f8fc] px-4 py-3" data-bond-prefill-review-panel="true">
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                              <div>
+                                <span className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#6f8297]">Already filled</span>
+                                <p className="mt-1 text-sm font-semibold text-[#142132]">
+                                  {bondApplicationPrefillReview.sourcedFieldCount} of {bondApplicationPrefillReview.totalAuditedFields} checked fields have existing data.
+                                </p>
+                              </div>
+                              <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
+                                <span className="rounded-full bg-white px-3 py-1 text-[#2f7a51]">
+                                  {bondApplicationPrefillReview.appliedFieldCount} filled
+                                </span>
+                                <span className="rounded-full bg-white px-3 py-1 text-[#35546c]">
+                                  {bondApplicationPrefillReview.preservedFieldCount} kept
+                                </span>
+                                <span className={`rounded-full bg-white px-3 py-1 ${
+                                  bondApplicationPrefillReview.missingRequiredFieldCount ? 'text-[#a15b31]' : 'text-[#2f7a51]'
+                                }`}>
+                                  {bondApplicationPrefillReview.missingRequiredFieldCount} still needed
+                                </span>
+                              </div>
+                            </div>
+                            <div className="mt-3 flex flex-wrap items-center gap-2">
+                              {visibleBondApplicationPrefillSources.map((source) => (
+                                <span key={source.key} className="inline-flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 text-[0.68rem] font-semibold text-[#53677d]">
+                                  <Tag size={11} />
+                                  {source.label}: {source.count}
+                                </span>
+                              ))}
+                              {activeBondApplicationPrefillSummary ? (
+                                <span className={`inline-flex items-center rounded-full bg-white px-2.5 py-1 text-[0.68rem] font-semibold ${
+                                  activeBondApplicationPrefillSummary.missingRequiredFields ? 'text-[#a15b31]' : 'text-[#2f7a51]'
+                                }`}>
+                                  This section: {activeBondApplicationPrefillSummary.sourcedFields}/{activeBondApplicationPrefillSummary.totalFields} filled
+                                </span>
+                              ) : null}
+                            </div>
+                          </section>
+                        ) : null}
 
                         {activeBondApplicationSectionTab === 'summary' ? (
                           <div className="space-y-4">
@@ -14046,10 +14254,13 @@ function ClientPortal() {
                       <article className="rounded-[16px] border border-dashed border-[#d8e2ee] bg-white px-4 py-5 text-sm text-[#6b7d93]">
                         Grant documents are not uploaded yet.
                       </article>
-                    )}
-                  </section>
-                ) : null}
-              </section>
+	                    )}
+	                  </section>
+	                ) : null}
+	                </>
+	                )}
+	                </div>
+	              </section>
             ) : null}
 
             {isAccount ? (

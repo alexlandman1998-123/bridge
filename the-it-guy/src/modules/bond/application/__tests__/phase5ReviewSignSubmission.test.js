@@ -6,10 +6,14 @@ import { fileURLToPath } from 'node:url'
 import {
   BOND_APPLICATION_DECLARATION_CONTRACT_VERSION,
   BOND_APPLICATION_DECLARATIONS,
+  BOND_APPLICATION_INTENTS,
+  BOND_APPLICATION_PRE_APPROVAL_STATUSES,
   BOND_APPLICATION_SUBMISSION_FLOW_VERSION,
   BOND_APPLICATION_SUBMISSION_STATUSES,
   BOND_APPLICATION_JOURNEY_STAGE_KEYS,
   BOND_APPLICATION_JOURNEY_VERSION,
+  BOND_APPLICATION_PRE_APPROVAL_JOURNEY_STAGE_DEFINITIONS,
+  BOND_APPLICATION_STATUSES,
   buildBondApplicationDeclarationEvidence,
   buildBondApplicationDocumentChecklist,
   buildBondApplicationJourneyModel,
@@ -18,6 +22,11 @@ import {
   canonicalizeBondApplicationSnapshot,
   calculateBondApplicationDocumentProgress,
   cloneBondApplicationValue,
+  canConvertPreApprovalToBondApplication,
+  buildNormalizedBondApplicationFromState,
+  buildPreApprovalConversionPersistencePayload,
+  convertNormalizedPreApprovalToBondApplication,
+  convertPreApprovalToBondApplication,
   createEmptyBondApplicationState,
   hashBondApplicationSnapshot,
   resolveBondApplicationDeclarations,
@@ -148,6 +157,21 @@ function runReadinessTests() {
   const docReadiness = validateBondApplicationSubmissionReadiness({ applicationState: state, documentChecklist: missingDocChecklist, declarations, declarationValues, latestSaveStatus: 'saved' })
   assert.equal(docReadiness.ready, false)
   assert.ok(docReadiness.issues.some((item) => item.code === 'blocking_document_missing'))
+
+  const preApprovalState = setPath(state, 'application.intent', BOND_APPLICATION_INTENTS.preApproval)
+  preApprovalState.application.selectedBankIds = []
+  const preApprovalChecklist = completeChecklist(preApprovalState)
+  const preApprovalDeclarations = resolveBondApplicationDeclarations({ applicationState: preApprovalState })
+  const preApprovalDeclarationValues = Object.fromEntries(preApprovalDeclarations.map((item) => [item.key, item.required]))
+  const preApprovalReadiness = validateBondApplicationSubmissionReadiness({
+    applicationState: preApprovalState,
+    documentChecklist: preApprovalChecklist,
+    declarations: preApprovalDeclarations,
+    declarationValues: preApprovalDeclarationValues,
+    latestSaveStatus: 'saved',
+  })
+  assert.equal(preApprovalReadiness.ready, true)
+  assert.equal(preApprovalReadiness.issues.some((item) => item.code === 'selected_bank_required'), false)
 }
 
 async function runSnapshotTests() {
@@ -199,6 +223,35 @@ function runReviewAndBoundaryTests() {
   assert.ok(guidedSource.includes('Review your application'))
   assert.ok(guidedSource.includes('Sign application'))
   assert.equal(guidedSource.includes('handleBondApplicationSubmit'), false)
+
+  const workspaceSource = readFile('src/pages/AttorneyTransactionDetail.jsx')
+  assert.ok(workspaceSource.includes('Assessment & Outcome'))
+  assert.ok(workspaceSource.includes('Pre-approval Assessment & Outcome'))
+  assert.ok(workspaceSource.includes('isBondPreApprovalOnlyWorkspace'))
+  assert.ok(workspaceSource.includes('Capture Pre-approval Outcome'))
+  assert.ok(workspaceSource.includes('handleCapturePreApprovalOutcome'))
+  assert.ok(workspaceSource.includes('onCapturePreApprovalOutcome={(payload) => void handleCapturePreApprovalOutcome(payload)}'))
+  assert.ok(workspaceSource.includes('Convert to full bond application'))
+  assert.ok(workspaceSource.includes('handleConvertPreApprovalToBondApplication'))
+
+  const apiSource = readFile('src/lib/api.js')
+  assert.ok(apiSource.includes('recordTransactionPreApprovalOutcome'))
+  assert.ok(apiSource.includes('persistTransactionPreApprovalState'))
+  assert.ok(apiSource.includes('pre_approval_outcome_captured'))
+  assert.ok(apiSource.includes('convertTransactionPreApprovalToBondApplication'))
+  assert.ok(apiSource.includes('pre_approval_converted'))
+  assert.ok(apiSource.includes('persistNormalizedApplicationSharedSection'))
+
+  const workflowSource = readFile('src/core/transactions/bondHybridFinanceWorkflow.js')
+  assert.ok(workflowSource.includes('pre_approval_outcome_captured'))
+  assert.ok(workflowSource.includes('pre_approval_converted'))
+
+  const preApprovalEventsMigration = readFile('../supabase/migrations/202608150001_pre_approval_finance_workflow_events.sql')
+  assert.ok(preApprovalEventsMigration.includes('pre_approval_outcome_captured'))
+  assert.ok(preApprovalEventsMigration.includes('pre_approval_converted'))
+
+  const viewModelSource = readFile('src/modules/bond/utils/bondApplicationViewModel.js')
+  assert.ok(viewModelSource.includes('Pre-approval Summary'))
 }
 
 function runJourneyStageGateTests() {
@@ -270,6 +323,115 @@ function runJourneyStageGateTests() {
   assert.equal(complete.currentStage.key, BOND_APPLICATION_JOURNEY_STAGE_KEYS.complete)
   assert.equal(complete.currentStage.title, 'Complete')
   assert.ok(complete.stages.every((stage) => stage.done))
+
+  const preApprovalState = setPath(state, 'application.intent', BOND_APPLICATION_INTENTS.preApproval)
+  preApprovalState.application.selectedBankIds = []
+  const preApprovalChecklist = completeChecklist(preApprovalState)
+  const preApprovalProgress = calculateBondApplicationDocumentProgress(preApprovalChecklist)
+  const preApprovalNeedsProvider = buildBondApplicationJourneyModel({
+    applicationState: preApprovalState,
+    applicationViewModel: {
+      canonical: { intent: BOND_APPLICATION_INTENTS.preApproval },
+      application: { createdAtDisplay: '19 Jul 2026', intent: BOND_APPLICATION_INTENTS.preApproval },
+    },
+    documentProgress: preApprovalProgress,
+  })
+  assert.equal(BOND_APPLICATION_PRE_APPROVAL_JOURNEY_STAGE_DEFINITIONS.length, 5)
+  assert.deepEqual(
+    preApprovalNeedsProvider.stages.map((stage) => stage.key),
+    [
+      BOND_APPLICATION_JOURNEY_STAGE_KEYS.received,
+      BOND_APPLICATION_JOURNEY_STAGE_KEYS.documents,
+      BOND_APPLICATION_JOURNEY_STAGE_KEYS.banks,
+      BOND_APPLICATION_JOURNEY_STAGE_KEYS.quotes,
+      BOND_APPLICATION_JOURNEY_STAGE_KEYS.complete,
+    ],
+  )
+  assert.equal(preApprovalNeedsProvider.currentStage.key, BOND_APPLICATION_JOURNEY_STAGE_KEYS.banks)
+  assert.equal(preApprovalNeedsProvider.currentStage.title, 'Provider not selected')
+  assert.equal(preApprovalNeedsProvider.nextActions[0].key, 'select_pre_approval_provider')
+  assert.equal(preApprovalNeedsProvider.stages.some((stage) => stage.key === BOND_APPLICATION_JOURNEY_STAGE_KEYS.grant), false)
+  assert.equal(preApprovalNeedsProvider.stages.some((stage) => stage.key === BOND_APPLICATION_JOURNEY_STAGE_KEYS.instruction), false)
+
+  const preApprovalReadyToSubmit = buildBondApplicationJourneyModel({
+    applicationState: preApprovalState,
+    documentProgress: preApprovalProgress,
+    selectedBankIds: ['FNB'],
+  })
+  assert.equal(preApprovalReadyToSubmit.currentStage.key, BOND_APPLICATION_JOURNEY_STAGE_KEYS.banks)
+  assert.equal(preApprovalReadyToSubmit.currentStage.title, 'Ready for assessment')
+  assert.equal(preApprovalReadyToSubmit.nextActions[0].key, 'submit_pre_approval')
+
+  const preApprovalSubmitted = buildBondApplicationJourneyModel({
+    applicationState: setPath(preApprovalState, 'application.preApproval.status', BOND_APPLICATION_PRE_APPROVAL_STATUSES.submitted),
+    documentProgress: preApprovalProgress,
+  })
+  assert.equal(preApprovalSubmitted.currentStage.key, BOND_APPLICATION_JOURNEY_STAGE_KEYS.quotes)
+  assert.equal(preApprovalSubmitted.nextActions[0].key, 'capture_pre_approval_outcome')
+
+  const preApprovalApproved = buildBondApplicationJourneyModel({
+    applicationState: setPath(preApprovalState, 'application.preApproval.status', BOND_APPLICATION_PRE_APPROVAL_STATUSES.approved),
+    documentProgress: preApprovalProgress,
+  })
+  assert.equal(preApprovalApproved.currentStage.key, BOND_APPLICATION_JOURNEY_STAGE_KEYS.complete)
+  assert.equal(preApprovalApproved.currentStage.title, 'Complete')
+  assert.ok(preApprovalApproved.stages.every((stage) => stage.done))
+
+  const approvedPreApprovalState = setPath(preApprovalState, 'application.preApproval.status', BOND_APPLICATION_PRE_APPROVAL_STATUSES.approved)
+  approvedPreApprovalState.application.preApproval.provider = 'FNB'
+  approvedPreApprovalState.application.preApproval.approvedAmount = '1800000'
+  approvedPreApprovalState.application.preApproval.referenceNumber = 'PRE-123'
+  approvedPreApprovalState.application.preApproval.certificateDocumentId = 'doc-pre-approval'
+  approvedPreApprovalState.application.selectedBankIds = ['FNB']
+  const approvedPreApprovalSnapshot = cloneBondApplicationValue(approvedPreApprovalState)
+  assert.equal(canConvertPreApprovalToBondApplication(approvedPreApprovalState), true)
+  const converted = convertPreApprovalToBondApplication(approvedPreApprovalState, { now: '2026-08-15T08:00:00.000Z' })
+  assert.deepEqual(approvedPreApprovalState, approvedPreApprovalSnapshot)
+  assert.equal(converted.application.intent, BOND_APPLICATION_INTENTS.bondApplicationWithPreApproval)
+  assert.equal(converted.application.preApproval.provider, 'FNB')
+  assert.equal(converted.application.preApproval.approvedAmount, '1800000')
+  assert.equal(converted.application.preApproval.certificateDocumentId, 'doc-pre-approval')
+  assert.deepEqual(converted.application.selectedBankIds, [])
+  assert.equal(converted.compatibility.preApprovalConversion.convertedAt, '2026-08-15T08:00:00.000Z')
+  const convertedRequirements = resolveBondApplicationDocumentRequirements({ applicationState: converted }).activeRequirements
+  assert.ok(convertedRequirements.some((item) => item.key === 'bond_application_offer_to_purchase'))
+  assert.ok(convertedRequirements.some((item) => item.key === 'bond_application_existing_pre_approval_certificate'))
+  assert.equal(convertedRequirements.some((item) => item.key === 'bond_application_pre_approval_credit_check_consent'), false)
+
+  const conversionPayload = buildPreApprovalConversionPersistencePayload({
+    applicationState: approvedPreApprovalState,
+    existingFormData: { keep_me: 'yes' },
+    now: '2026-08-15T08:00:00.000Z',
+  })
+  assert.equal(conversionPayload.formData.keep_me, 'yes')
+  assert.equal(conversionPayload.formData.bond_application.summary.application_intent, BOND_APPLICATION_INTENTS.bondApplicationWithPreApproval)
+  assert.equal(conversionPayload.formData.bond_application.pre_approval.provider, 'FNB')
+  assert.equal(conversionPayload.formData.bond_application.pre_approval.status, BOND_APPLICATION_PRE_APPROVAL_STATUSES.approved)
+
+  const normalizedPreApproval = buildNormalizedBondApplicationFromState({
+    applicationState: approvedPreApprovalState,
+    transactionId: 'transaction-pre-approval',
+    onboardingFormDataId: 'onboarding-pre-approval',
+  })
+  const normalizedConverted = convertNormalizedPreApprovalToBondApplication({
+    normalizedApplication: {
+      ...normalizedPreApproval,
+      id: 'normalized-pre-approval',
+    },
+    now: '2026-08-15T08:00:00.000Z',
+  })
+  assert.equal(normalizedConverted.normalizedApplication.status, BOND_APPLICATION_STATUSES.draft)
+  assert.equal(normalizedConverted.normalizedApplication.revision, normalizedPreApproval.revision + 1)
+  assert.equal(normalizedConverted.normalizedApplication.sharedSections.application_intent.intent, BOND_APPLICATION_INTENTS.bondApplicationWithPreApproval)
+  assert.deepEqual(normalizedConverted.normalizedApplication.sharedSections.selected_banks, [])
+  assert.equal(normalizedConverted.normalizedApplication.participants[0].participantKey, normalizedPreApproval.participants[0].participantKey)
+
+  const declinedPreApprovalState = setPath(preApprovalState, 'application.preApproval.status', BOND_APPLICATION_PRE_APPROVAL_STATUSES.declined)
+  assert.equal(canConvertPreApprovalToBondApplication(declinedPreApprovalState), false)
+  assert.throws(
+    () => convertPreApprovalToBondApplication(declinedPreApprovalState),
+    /Only approved pre-approvals can be converted/,
+  )
 }
 
 await runDeclarationTests()

@@ -113,6 +113,7 @@ test('adds buyer-only bond application updates for bond transactions', () => {
   assert.equal(Boolean(bondEvent), true)
   assert.equal(bondEvent.topic, 'finance')
   assert.equal(bondEvent.requiresAttention, true)
+  assert.equal(bondEvent.metadata.actionLabel, 'Complete Bond Application')
   assert.equal(bondEvent.metadata.actionRoute, 'bond_application')
 
   const sellerFeed = getClientPortalActivityFeed({

@@ -1,6 +1,7 @@
 import { buildFinanceReadinessHandoffPacket } from '../core/finance/financeReadinessSelectors'
 import { getBondApplicationProgress, getBondIntakeSummary } from '../core/transactions/bondIntakeSelectors'
 import { deriveFinanceManagedBy, isBondFinanceType } from '../core/transactions/financeType'
+import { buildBuyerBondApplicationLink } from '../lib/buyerBondApplicationLink.js'
 import { invokeEdgeFunction, supabase } from '../lib/supabaseClient'
 import {
   resolvePortalBuyerName,
@@ -826,10 +827,12 @@ function buildEventCopy(eventType, { transaction = {}, recipients = {}, metadata
       activity: `Bond application declined${reason ? `: ${reason}` : '.'}`,
     },
     [BOND_NOTIFICATION_EVENTS.BUYER_BOND_ORIGINATOR_INTRO]: {
-      title: 'Bond originator introduced',
-      subject: organisationName ? `Meet Your Bond Originator - ${organisationName}` : 'Meet Your Bond Originator',
-      message: `${consultantName} has been introduced to ${buyer} as the bond originator for ${property}.`,
-      activity: `Introduction email sent to buyer. ${consultantName} introduced as Bond Originator.`,
+      title: 'Complete your bond application',
+      subject: 'Complete your bond application',
+      buyerSubject: 'Complete your bond application',
+      message: `${buyer} has been asked to complete the online bond application for ${property}. ${consultantName} remains the assigned bond contact.`,
+      buyerMessage: `${consultantName} and the ${organisationName} team are ready to process your bond application. Complete the online application so your information can be reviewed and prepared for submission.`,
+      activity: `Bond application completion email sent to buyer. ${consultantName} introduced as Bond Originator.`,
     },
   }
   return copy[eventType] || copy[BOND_NOTIFICATION_EVENTS.BOND_INTAKE_STARTED]
@@ -1104,6 +1107,7 @@ function buildApplicationLink(transactionId = '', metadata = {}) {
   const explicit = normalizeText(metadata.applicationLink || metadata.applicationUrl)
   if (explicit) return explicit
   const path = normalizeText(metadata.applicationPath) || `/bond/applications/${transactionId}`
+  if (/^https?:\/\//i.test(path)) return path
   if (typeof window !== 'undefined' && window.location?.origin) {
     return `${window.location.origin}${path.startsWith('/') ? path : `/${path}`}`
   }
@@ -1420,7 +1424,20 @@ export async function notifyBondIntakeStartedForOnboarding({ transaction, formDa
       financeManagedBy: financeContext.financeManagedBy,
       formDataSource: 'client_onboarding_submitted',
       onboardingFormData: formData,
-      applicationPath: metadata.applicationPath || metadata.portalPath || transaction?.buyerPortalPath || transaction?.buyer_portal_path || '/client-access',
+      applicationLink: buildBuyerBondApplicationLink({
+        applicationLink: metadata.applicationLink,
+        applicationUrl: metadata.applicationUrl,
+        applicationPath: metadata.applicationPath,
+        portalPath: metadata.portalPath,
+        clientPortalPath: metadata.clientPortalPath || metadata.client_portal_path || transaction?.clientPortalPath || transaction?.client_portal_path,
+        buyerPortalPath: metadata.buyerPortalPath || metadata.buyer_portal_path || transaction?.buyerPortalPath || transaction?.buyer_portal_path,
+        portalToken: metadata.portalToken || metadata.portal_token,
+        clientPortalToken: metadata.clientPortalToken || metadata.client_portal_token || transaction?.clientPortalToken || transaction?.client_portal_token,
+        buyerPortalToken: metadata.buyerPortalToken || metadata.buyer_portal_token || transaction?.buyerPortalToken || transaction?.buyer_portal_token,
+        token: metadata.token,
+        baseUrl: metadata.baseUrl || metadata.appBaseUrl || metadata.origin,
+        absolute: metadata.absoluteApplicationLink === true,
+      }),
     },
     client,
     emailEnabled,

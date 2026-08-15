@@ -128,10 +128,13 @@ import {
   BOND_APPLICATION_SUBMISSION_STATUSES,
   BOND_APPLICATION_NORMALIZED_SCHEMA_VERSION,
   BOND_APPLICATION_NORMALIZED_STORAGE_MODE,
+  BOND_APPLICATION_PRE_APPROVAL_STATUSES,
   BOND_APPLICATION_PARTICIPANT_ROLES,
   BOND_APPLICATION_PARTICIPANT_STATUSES,
   BOND_APPLICATION_STATUSES,
   buildApplicationStateFromNormalizedApplication,
+  buildLegacyBondApplicationPersistencePayload,
+  buildPreApprovalConversionPersistencePayload,
   buildBondApplicationDeclarationEvidence,
   buildBondApplicationDocumentChecklist,
   buildJointBondApplicationSubmissionSnapshot,
@@ -140,6 +143,8 @@ import {
   buildBondApplicationSubmissionSnapshot,
   calculateBondApplicationReviewContextHash,
   canonicalizeBondApplicationSnapshot,
+  cloneBondApplicationValue,
+  convertNormalizedPreApprovalToBondApplication,
   createSuretyParticipant,
   hashLegacyBondApplicationSource,
   hashBondApplicationSnapshot,
@@ -38197,6 +38202,58 @@ async function getBuyerOnboardingPortalAccess(client) {
   return normalizeBuyerOnboardingPortalAccess(data)
 }
 
+function buildClientPortalAccessMetadata(link = null) {
+  const token = normalizeNullableText(link?.token)
+  if (!token) {
+    return {
+      clientPortalPath: '',
+      clientPortalToken: '',
+      buyerPortalPath: '',
+      buyerPortalToken: '',
+    }
+  }
+
+  const path = `/client/${token}`
+  return {
+    clientPortalPath: path,
+    clientPortalToken: token,
+    buyerPortalPath: path,
+    buyerPortalToken: token,
+  }
+}
+
+async function resolveBuyerBondApplicationPortalMetadata(client, { transaction = {}, buyer = {}, unit = {} } = {}) {
+  const transactionId = normalizeNullableUuid(transaction?.id || transaction?.transaction_id)
+  const developmentId = normalizeNullableUuid(
+    unit?.development_id ||
+      unit?.development?.id ||
+      transaction?.development_id ||
+      transaction?.developmentId,
+  )
+  const unitId = normalizeNullableUuid(unit?.id || transaction?.unit_id || transaction?.unitId)
+  const buyerId = normalizeNullableUuid(buyer?.id || transaction?.buyer_id || transaction?.buyerId)
+
+  if (!transactionId || !developmentId || !unitId) {
+    return {
+      ...buildClientPortalAccessMetadata(null),
+      portalLinkSource: 'missing_context',
+    }
+  }
+
+  const link = await getOrCreateClientPortalLinkRecord(client, {
+    developmentId,
+    unitId,
+    transactionId,
+    buyerId,
+    requireDevelopmentSettings: false,
+  })
+
+  return {
+    ...buildClientPortalAccessMetadata(link),
+    portalLinkSource: link?.token ? 'client_portal_links' : 'unavailable',
+  }
+}
+
 export async function revokeClientPortalLink(linkId) {
   const client = requireClient()
   const { error } = await client.from('client_portal_links').update({ is_active: false }).eq('id', linkId)
@@ -45626,6 +45683,20 @@ async function triggerPostSigningWorkflowIfNeeded(
       createdByRole: actorRole,
     })
     if (activation?.activated) {
+      let buyerBondApplicationPortalMetadata = {}
+      try {
+        buyerBondApplicationPortalMetadata = await resolveBuyerBondApplicationPortalMetadata(client, {
+          transaction,
+          buyer,
+          unit,
+        })
+      } catch (portalLinkError) {
+        buyerBondApplicationPortalMetadata = { portalLinkSource: 'resolution_failed' }
+        console.warn('Buyer bond application portal link resolution failed', {
+          transactionId: normalizedTransactionId,
+          error: portalLinkError,
+        })
+      }
       await notifyBondIntakeStartedForOnboarding({
         transaction: {
           ...transaction,
@@ -45654,6 +45725,7 @@ async function triggerPostSigningWorkflowIfNeeded(
         emailEnabled: true,
         metadata: {
           source: 'signed_otp_received',
+          ...buyerBondApplicationPortalMetadata,
         },
       })
       const notifiedAt = new Date().toISOString()
@@ -49851,6 +49923,477 @@ async function persistNormalizedCompatibilityProjection(client, normalizedApplic
     })
     .eq('id', normalizedApplication.id)
   return { legacy, projectionHash, formData }
+}
+
+function normalizePreApprovalCaptureStatus(value = '', fallback = BOND_APPLICATION_PRE_APPROVAL_STATUSES.submitted) {
+  const normalized = String(value || '').trim().toLowerCase().replace(/-/g, '_')
+  if (['pre_approved', 'accepted', 'approved_by_buyer', 'buyer_approved'].includes(normalized)) {
+    return BOND_APPLICATION_PRE_APPROVAL_STATUSES.approved
+  }
+  if (normalized === 'not_approved' || normalized === 'rejected') return BOND_APPLICATION_PRE_APPROVAL_STATUSES.declined
+  if (Object.values(BOND_APPLICATION_PRE_APPROVAL_STATUSES).includes(normalized)) return normalized
+  return fallback
+}
+
+function mapPreApprovalCaptureStatusToApplicationStatus(status = '') {
+  const normalized = normalizePreApprovalCaptureStatus(status, BOND_APPLICATION_PRE_APPROVAL_STATUSES.submitted)
+  if (normalized === BOND_APPLICATION_PRE_APPROVAL_STATUSES.approved) return 'approved'
+  if (normalized === BOND_APPLICATION_PRE_APPROVAL_STATUSES.declined) return 'declined'
+  if (normalized === BOND_APPLICATION_PRE_APPROVAL_STATUSES.expired) return 'expired'
+  return 'submitted'
+}
+
+function normalizePreApprovalCaptureConditions(value = []) {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => typeof item === 'string' ? item : item?.label || item?.title || item?.description || '')
+      .map((item) => String(item || '').trim())
+      .filter(Boolean)
+  }
+  return String(value || '')
+    .split(/\n|;/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function buildPreApprovalCaptureRecord(currentPreApproval = {}, payload = {}, now = new Date().toISOString()) {
+  const status = normalizePreApprovalCaptureStatus(payload.outcome || payload.status)
+  return {
+    ...(currentPreApproval || {}),
+    status,
+    provider: normalizeNullableText(
+      payload.providerName ||
+        payload.provider ||
+        payload.bankName ||
+        payload.bank_name ||
+        currentPreApproval?.provider,
+    ),
+    approvedAmount:
+      payload.approvedAmount ??
+      payload.approved_amount ??
+      payload.quotedAmount ??
+      payload.quoted_amount ??
+      currentPreApproval?.approvedAmount ??
+      null,
+    issuedAt:
+      normalizeBondWorkflowPayloadDate(payload.issuedAt || payload.issued_at || payload.outcomeAt || payload.outcome_at) ||
+      (status === BOND_APPLICATION_PRE_APPROVAL_STATUSES.approved ? now : currentPreApproval?.issuedAt || null),
+    expiresAt:
+      normalizeBondWorkflowPayloadDate(payload.expiresAt || payload.expires_at || payload.validUntil || payload.valid_until) ||
+      currentPreApproval?.expiresAt ||
+      null,
+    referenceNumber: normalizeNullableText(
+      payload.referenceNumber ||
+        payload.reference_number ||
+        payload.applicationReference ||
+        payload.application_reference ||
+        currentPreApproval?.referenceNumber,
+    ),
+    conditions: normalizePreApprovalCaptureConditions(payload.conditions ?? currentPreApproval?.conditions),
+    certificateDocumentId:
+      normalizeNullableUuid(payload.certificateDocumentId || payload.certificate_document_id) ||
+      currentPreApproval?.certificateDocumentId ||
+      null,
+  }
+}
+
+async function persistTransactionPreApprovalState(client, {
+  transaction = {},
+  onboarding = {},
+  preApproval = {},
+  now = new Date().toISOString(),
+} = {}) {
+  const transactionId = normalizeNullableUuid(transaction?.id || transaction?.transaction_id)
+  const existingFormData = onboarding?.form_data && typeof onboarding.form_data === 'object' ? onboarding.form_data : {}
+  const normalizedApplication = transactionId ? await fetchNormalizedBondApplicationBundle(client, transactionId) : null
+
+  if (normalizedApplication?.id) {
+    const nextNormalized = cloneBondApplicationValue(normalizedApplication)
+    nextNormalized.revision = Math.max(Number(nextNormalized.revision) || 1, 1) + 1
+    nextNormalized.sharedSections = {
+      ...(nextNormalized.sharedSections || {}),
+      pre_approval: cloneBondApplicationValue(preApproval || {}),
+    }
+    nextNormalized.metadata = {
+      ...(nextNormalized.metadata || {}),
+      preApprovalOutcome: {
+        status: preApproval.status,
+        provider: preApproval.provider,
+        capturedAt: now,
+      },
+    }
+    const appUpdate = await client
+      .from('bond_applications')
+      .update({
+        revision: nextNormalized.revision,
+        metadata: nextNormalized.metadata || {},
+        updated_at: now,
+      })
+      .eq('id', normalizedApplication.id)
+    if (appUpdate.error && !isPermissionDeniedError(appUpdate.error) && !isMissingSchemaError(appUpdate.error)) {
+      throw appUpdate.error
+    }
+    await persistNormalizedApplicationSharedSection(client, normalizedApplication.id, 'pre_approval', nextNormalized.sharedSections.pre_approval)
+    return persistNormalizedCompatibilityProjection(client, nextNormalized, existingFormData)
+  }
+
+  const applicationState = buildBondApplicationState({
+    transaction,
+    onboardingFormData: {
+      id: onboarding?.id || null,
+      formData: existingFormData,
+    },
+  })
+  applicationState.application.preApproval = {
+    ...(applicationState.application.preApproval || {}),
+    ...(preApproval || {}),
+  }
+  const legacy = toLegacyBondApplication(applicationState)
+  const payload = buildLegacyBondApplicationPersistencePayload({
+    existingFormData,
+    legacyBondApplication: legacy,
+    submitted: false,
+    timestamp: now,
+  })
+  if (onboarding?.id) {
+    const update = await client
+      .from('onboarding_form_data')
+      .update({ form_data: payload.formData, updated_at: now })
+      .eq('id', onboarding.id)
+    if (update.error && !isPermissionDeniedError(update.error) && !isMissingSchemaError(update.error)) throw update.error
+  }
+  return { legacy: payload.draftToPersist, formData: payload.formData }
+}
+
+async function persistNormalizedApplicationSharedSection(client, normalizedApplicationId, sectionKey, answers = {}) {
+  if (!normalizedApplicationId || !sectionKey) return null
+  const now = new Date().toISOString()
+  const update = await client
+    .from('bond_application_sections')
+    .update({
+      answers_json: answers || {},
+      status: 'in_progress',
+      updated_at: now,
+    })
+    .eq('bond_application_id', normalizedApplicationId)
+    .eq('section_key', sectionKey)
+    .is('participant_id', null)
+    .select('id')
+    .maybeSingle()
+
+  if (update.error && !isMissingSchemaError(update.error) && !isPermissionDeniedError(update.error)) throw update.error
+  if (update.data?.id) return update.data
+
+  const insert = await client
+    .from('bond_application_sections')
+    .insert({
+      bond_application_id: normalizedApplicationId,
+      scope: 'application',
+      section_key: sectionKey,
+      answers_json: answers || {},
+      status: 'in_progress',
+    })
+    .select('id')
+    .single()
+  if (insert.error) {
+    if (insert.error.code === '23505') return null
+    if (isMissingSchemaError(insert.error) || isPermissionDeniedError(insert.error)) return null
+    throw insert.error
+  }
+  return insert.data || null
+}
+
+async function fetchBondProviderApplicationRow(client, { workflowId = '', applicationId = '', providerName = '' } = {}) {
+  const normalizedApplicationId = normalizeNullableUuid(applicationId)
+  if (normalizedApplicationId) {
+    const query = await client
+      .from('transaction_bond_applications')
+      .select('id, transaction_id, workflow_id, application_type, bank_name, status')
+      .eq('id', normalizedApplicationId)
+      .maybeSingle()
+    if (query.error) throw query.error
+    if (query.data?.id) return query.data
+  }
+  const bankName = normalizeNullableText(providerName)
+  if (!workflowId || !bankName) return null
+  const query = await client
+    .from('transaction_bond_applications')
+    .select('id, transaction_id, workflow_id, application_type, bank_name, status')
+    .eq('workflow_id', workflowId)
+    .eq('bank_name', bankName)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (query.error) throw query.error
+  return query.data || null
+}
+
+export async function recordTransactionPreApprovalOutcome(transactionId, payload = {}, options = {}) {
+  const client = options.client || requireClient()
+  const actorRole = options.actorRole || null
+  const activeProfile = await resolveActiveProfileContext(client)
+  const normalizedTransactionId = normalizeNullableUuid(transactionId)
+  if (!normalizedTransactionId) throw new Error('Transaction is required.')
+
+  const transactionQuery = await client
+    .from('transactions')
+    .select('id, purchaser_type, finance_type')
+    .eq('id', normalizedTransactionId)
+    .maybeSingle()
+  if (transactionQuery.error) throw transactionQuery.error
+  if (!transactionQuery.data?.id) throw new Error('Transaction was not found.')
+
+  const onboarding = await getOrCreateTransactionOnboardingRecord(client, {
+    transactionId: normalizedTransactionId,
+    purchaserType: transactionQuery.data.purchaser_type || 'individual',
+  })
+  if (!onboarding?.id) throw new Error('Transaction onboarding is not set up yet.')
+
+  const now = new Date().toISOString()
+  const outcomeStatus = normalizePreApprovalCaptureStatus(payload.outcome || payload.status)
+  const providerName = normalizeNullableText(payload.providerName || payload.provider || payload.bankName || payload.bank_name)
+  if (!providerName) throw new Error('Assessment provider is required.')
+
+  const workflow = await fetchRawBondHybridWorkflow(client, normalizedTransactionId, { createIfMissing: true })
+  if (!workflow?.id) throw new Error('Bond / Hybrid finance workflow is not available.')
+  assertBondHybridWorkflowEditable(workflow, activeProfile, actorRole)
+
+  const applicationStatus = mapPreApprovalCaptureStatusToApplicationStatus(outcomeStatus)
+  const outcomeAt =
+    normalizeBondWorkflowPayloadDate(payload.outcomeAt || payload.outcome_at || payload.issuedAt || payload.issued_at) ||
+    now
+  let applicationRow = await fetchBondProviderApplicationRow(client, {
+    workflowId: workflow.id,
+    applicationId: payload.applicationId || payload.application_id || payload.bondApplicationId || payload.bond_application_id,
+    providerName,
+  })
+
+  if (applicationRow?.id) {
+    await updateBondApplication(applicationRow.id, {
+      status: applicationStatus,
+      feedbackReceivedAt: outcomeStatus === BOND_APPLICATION_PRE_APPROVAL_STATUSES.submitted ? null : outcomeAt,
+      referenceNumber: payload.referenceNumber || payload.reference_number || payload.applicationReference || payload.application_reference,
+      notes: payload.notes,
+      bankOutcome: {
+        outcome: applicationStatus,
+        outcomeAt,
+        approvedAmount: payload.approvedAmount || payload.approved_amount || payload.quotedAmount || payload.quoted_amount,
+        conditions: normalizePreApprovalCaptureConditions(payload.conditions).join('\n'),
+        declineReason: payload.declineReason || payload.decline_reason,
+        notes: payload.notes,
+      },
+    }, { client, actorRole })
+  } else {
+    await addBondApplication(normalizedTransactionId, {
+      bankName: providerName,
+      status: applicationStatus,
+      submittedAt: payload.submittedAt || payload.submitted_at || outcomeAt,
+      feedbackReceivedAt: outcomeStatus === BOND_APPLICATION_PRE_APPROVAL_STATUSES.submitted ? null : outcomeAt,
+      referenceNumber: payload.referenceNumber || payload.reference_number || payload.applicationReference || payload.application_reference,
+      notes: payload.notes,
+    }, { client, actorRole })
+    applicationRow = await fetchBondProviderApplicationRow(client, {
+      workflowId: workflow.id,
+      providerName,
+    })
+  }
+
+  if (outcomeStatus === BOND_APPLICATION_PRE_APPROVAL_STATUSES.approved) {
+    const existingQuote = await client
+      .from('transaction_bond_quotes')
+      .select('id')
+      .eq('workflow_id', workflow.id)
+      .eq('bank_name', providerName)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (existingQuote.error && !isMissingTableError(existingQuote.error, 'transaction_bond_quotes') && !isMissingSchemaError(existingQuote.error)) {
+      throw existingQuote.error
+    }
+    if (!existingQuote.data?.id) {
+      await addBondQuote(normalizedTransactionId, {
+        bankName: providerName,
+        bondApplicationId: applicationRow?.id || payload.bondApplicationId || payload.bond_application_id,
+        quotedAmount: payload.approvedAmount || payload.approved_amount || payload.quotedAmount || payload.quoted_amount,
+        interestRate: payload.interestRate || payload.interest_rate,
+        interestRateDisplay: payload.interestRateDisplay || payload.interest_rate_display,
+        termMonths: payload.termMonths || payload.term_months,
+        quoteStatus: 'received',
+        quoteReceivedAt: outcomeAt,
+        quoteExpiryAt: payload.expiresAt || payload.expires_at || payload.validUntil || payload.valid_until,
+        validUntil: payload.validUntil || payload.valid_until || payload.expiresAt || payload.expires_at,
+        notes: payload.notes,
+      }, { client, actorRole })
+    }
+  }
+
+  const existingState = buildBondApplicationState({
+    transaction: transactionQuery.data,
+    onboardingFormData: {
+      id: onboarding.id,
+      formData: onboarding.form_data || {},
+    },
+  })
+  const preApproval = buildPreApprovalCaptureRecord(existingState.application.preApproval || {}, {
+    ...payload,
+    providerName,
+    outcome: outcomeStatus,
+    outcomeAt,
+  }, now)
+  await persistTransactionPreApprovalState(client, {
+    transaction: transactionQuery.data,
+    onboarding,
+    preApproval,
+    now,
+  })
+
+  await insertBondHybridWorkflowEvent(client, {
+    workflow,
+    fromStage: workflow.current_stage,
+    toStage: workflow.current_stage,
+    eventType: 'pre_approval_outcome_captured',
+    notes: `${providerName}: pre-approval ${outcomeStatus}.`,
+    createdBy: activeProfile.userId || null,
+  })
+  await logBondHybridWorkflowActivity(client, {
+    transactionId: normalizedTransactionId,
+    actorRole,
+    message: `${providerName} pre-approval outcome captured: ${outcomeStatus}.`,
+    eventType: 'BondApplicationPreApprovalOutcomeCaptured',
+    eventData: {
+      source: 'bond_application_pre_approval_outcome',
+      providerName,
+      outcome: outcomeStatus,
+      applicationId: applicationRow?.id || null,
+    },
+  })
+
+  return fetchTransactionById(normalizedTransactionId)
+}
+
+export async function convertTransactionPreApprovalToBondApplication(transactionId, options = {}) {
+  const client = options.client || requireClient()
+  const actorRole = options.actorRole || null
+  const activeProfile = await resolveActiveProfileContext(client)
+  const normalizedTransactionId = normalizeNullableUuid(transactionId)
+  if (!normalizedTransactionId) throw new Error('Transaction is required.')
+
+  const transactionQuery = await client
+    .from('transactions')
+    .select('id, purchaser_type, finance_type')
+    .eq('id', normalizedTransactionId)
+    .maybeSingle()
+  if (transactionQuery.error) throw transactionQuery.error
+  if (!transactionQuery.data?.id) throw new Error('Transaction was not found.')
+
+  const onboarding = await getOrCreateTransactionOnboardingRecord(client, {
+    transactionId: normalizedTransactionId,
+    purchaserType: transactionQuery.data.purchaser_type || 'individual',
+  })
+  if (!onboarding?.id) throw new Error('Transaction onboarding is not set up yet.')
+
+  const existingFormData = onboarding.form_data && typeof onboarding.form_data === 'object' ? onboarding.form_data : {}
+  const now = new Date().toISOString()
+  const workflow = await fetchRawBondHybridWorkflow(client, normalizedTransactionId, { createIfMissing: true })
+  if (workflow?.id) {
+    assertBondHybridWorkflowEditable(workflow, activeProfile, actorRole)
+  }
+  const normalizedApplication = await fetchNormalizedBondApplicationBundle(client, normalizedTransactionId)
+  let convertedState = null
+
+  if (normalizedApplication?.id) {
+    const converted = convertNormalizedPreApprovalToBondApplication({
+      normalizedApplication,
+      now,
+      preserveSelectedBankIds: options.preserveSelectedBankIds === true,
+      preApproval: options.preApproval || {},
+    })
+    convertedState = converted.applicationState
+    const appUpdate = await client
+      .from('bond_applications')
+      .update({
+        status: converted.normalizedApplication.status,
+        revision: converted.normalizedApplication.revision,
+        active_submission_id: null,
+        locked_at: null,
+        submitted_at: null,
+        metadata: converted.normalizedApplication.metadata || {},
+        updated_at: now,
+      })
+      .eq('id', normalizedApplication.id)
+    if (appUpdate.error && !isPermissionDeniedError(appUpdate.error) && !isMissingSchemaError(appUpdate.error)) throw appUpdate.error
+
+    for (const sectionKey of ['application_intent', 'pre_approval', 'selected_banks']) {
+      await persistNormalizedApplicationSharedSection(
+        client,
+        normalizedApplication.id,
+        sectionKey,
+        converted.normalizedApplication.sharedSections?.[sectionKey] || {},
+      )
+    }
+    await persistNormalizedCompatibilityProjection(client, converted.normalizedApplication, existingFormData)
+  } else {
+    const applicationState = buildBondApplicationState({
+      transaction: transactionQuery.data,
+      onboardingFormData: {
+        id: onboarding.id,
+        formData: existingFormData,
+      },
+    })
+    const converted = buildPreApprovalConversionPersistencePayload({
+      applicationState,
+      existingFormData,
+      now,
+      preserveSelectedBankIds: options.preserveSelectedBankIds === true,
+      preApproval: options.preApproval || {},
+    })
+    convertedState = converted.applicationState
+    const update = await client
+      .from('onboarding_form_data')
+      .update({ form_data: converted.formData, updated_at: now })
+      .eq('id', onboarding.id)
+    if (update.error && !isPermissionDeniedError(update.error) && !isMissingSchemaError(update.error)) throw update.error
+  }
+
+  const transactionIntentUpdate = await client
+    .from('transactions')
+    .update({
+      bond_application_intent: convertedState?.application?.intent || 'bond_application_with_pre_approval',
+      updated_at: now,
+    })
+    .eq('id', normalizedTransactionId)
+  if (
+    transactionIntentUpdate.error &&
+    !isMissingColumnError(transactionIntentUpdate.error, 'bond_application_intent') &&
+    !isMissingSchemaError(transactionIntentUpdate.error) &&
+    !isPermissionDeniedError(transactionIntentUpdate.error)
+  ) {
+    throw transactionIntentUpdate.error
+  }
+
+  if (workflow?.id) {
+    await insertBondHybridWorkflowEvent(client, {
+      workflow,
+      fromStage: workflow.current_stage,
+      toStage: workflow.current_stage,
+      eventType: 'pre_approval_converted',
+      notes: 'Pre-approval converted to a full bond application.',
+      createdBy: activeProfile.userId || null,
+    })
+  }
+  await logBondHybridWorkflowActivity(client, {
+    transactionId: normalizedTransactionId,
+    actorRole,
+    message: 'Pre-approval converted to a full bond application.',
+    eventType: 'BondApplicationPreApprovalConverted',
+    eventData: {
+      source: 'bond_application_pre_approval_conversion',
+      intent: convertedState?.application?.intent || 'bond_application_with_pre_approval',
+      convertedAt: now,
+    },
+  })
+
+  return fetchTransactionById(normalizedTransactionId)
 }
 
 async function insertNormalizedBondApplicationBundle(client, normalizedApplication) {

@@ -1,4 +1,8 @@
 import { EMPLOYMENT_TYPE_VALUES } from '../flow/bondApplicationFlowContract.js'
+import {
+  BOND_APPLICATION_INTENTS,
+  BOND_APPLICATION_PRE_APPROVAL_STATUSES,
+} from '../bondApplicationState.js'
 
 export const BOND_APPLICATION_DOCUMENT_RULE_SET_VERSION = 'phase-4-v1'
 
@@ -58,6 +62,9 @@ export const BOND_APPLICATION_DOCUMENT_CANONICAL_TYPES = new Set([
   'property_finance_existing_bond',
   'debt_settlement_letter',
   'credit_history_supporting_documents',
+  'credit_check_consent',
+  'affordability_assessment',
+  'pre_approval_certificate',
   'surety_undertaking',
 ])
 
@@ -91,6 +98,34 @@ function buyerEntityTypeRule(types = []) {
   return { field: 'application.buyerEntity.entityType', in: types }
 }
 
+function applicationIntentRule(intents = []) {
+  return { field: 'application.intent', in: intents }
+}
+
+function notPreApprovalOnlyRule() {
+  return { not: applicationIntentRule([BOND_APPLICATION_INTENTS.preApproval]) }
+}
+
+function fullApplicationBuyerEntityTypeRule(types = []) {
+  return { all: [notPreApprovalOnlyRule(), buyerEntityTypeRule(types)] }
+}
+
+function preApprovalOnlyRule() {
+  return applicationIntentRule([BOND_APPLICATION_INTENTS.preApproval])
+}
+
+function existingPreApprovalRule() {
+  return {
+    any: [
+      applicationIntentRule([BOND_APPLICATION_INTENTS.bondApplicationWithPreApproval]),
+      { field: 'application.preApproval.status', in: [
+        BOND_APPLICATION_PRE_APPROVAL_STATUSES.existing,
+        BOND_APPLICATION_PRE_APPROVAL_STATUSES.approved,
+      ] },
+    ],
+  }
+}
+
 function incomeSourceTypeRule(types = []) {
   return {
     field: 'participants.primaryApplicant.incomeSources',
@@ -111,8 +146,8 @@ export const BOND_APPLICATION_DOCUMENT_RULES = [
     title: 'Offer to Purchase / Sale Agreement',
     description: 'The signed sale agreement or Offer to Purchase for this property.',
     reason: 'Banks require the signed purchase agreement before bond submission.',
-    visibleWhen: true,
-    requiredWhen: true,
+    visibleWhen: notPreApprovalOnlyRule(),
+    requiredWhen: notPreApprovalOnlyRule(),
     requiredBefore: BOND_APPLICATION_DOCUMENT_TIMING.requiredBeforeBankSubmission,
     satisfactionMode: BOND_APPLICATION_DOCUMENT_SATISFACTION_MODES.uploaded,
     minimumFileCount: 1,
@@ -131,8 +166,8 @@ export const BOND_APPLICATION_DOCUMENT_RULES = [
     title: 'Company registration documents',
     description: 'CIPC registration documents for the purchasing company.',
     reason: 'A company purchaser requires entity verification before bank submission.',
-    visibleWhen: buyerEntityTypeRule(['company']),
-    requiredWhen: buyerEntityTypeRule(['company']),
+    visibleWhen: fullApplicationBuyerEntityTypeRule(['company']),
+    requiredWhen: fullApplicationBuyerEntityTypeRule(['company']),
     requiredBefore: BOND_APPLICATION_DOCUMENT_TIMING.requiredBeforeBankSubmission,
     satisfactionMode: BOND_APPLICATION_DOCUMENT_SATISFACTION_MODES.uploaded,
     minimumFileCount: 1,
@@ -151,8 +186,8 @@ export const BOND_APPLICATION_DOCUMENT_RULES = [
     title: 'Director identity documents',
     description: 'Identity documents for company directors and authorised signatories.',
     reason: 'Banks need to verify the people controlling and signing for the company purchaser.',
-    visibleWhen: buyerEntityTypeRule(['company']),
-    requiredWhen: buyerEntityTypeRule(['company']),
+    visibleWhen: fullApplicationBuyerEntityTypeRule(['company']),
+    requiredWhen: fullApplicationBuyerEntityTypeRule(['company']),
     requiredBefore: BOND_APPLICATION_DOCUMENT_TIMING.requiredBeforeBankSubmission,
     satisfactionMode: BOND_APPLICATION_DOCUMENT_SATISFACTION_MODES.uploaded,
     minimumFileCount: 1,
@@ -172,8 +207,8 @@ export const BOND_APPLICATION_DOCUMENT_RULES = [
     title: 'Company resolution to purchase / borrow',
     description: 'Signed company resolution authorising the purchase, bond application and signatories.',
     reason: 'Banks require proof that the company is authorised to buy and borrow.',
-    visibleWhen: buyerEntityTypeRule(['company']),
-    requiredWhen: buyerEntityTypeRule(['company']),
+    visibleWhen: fullApplicationBuyerEntityTypeRule(['company']),
+    requiredWhen: fullApplicationBuyerEntityTypeRule(['company']),
     requiredBefore: BOND_APPLICATION_DOCUMENT_TIMING.requiredBeforeBankSubmission,
     satisfactionMode: BOND_APPLICATION_DOCUMENT_SATISFACTION_MODES.uploaded,
     minimumFileCount: 1,
@@ -192,8 +227,8 @@ export const BOND_APPLICATION_DOCUMENT_RULES = [
     title: 'Company financial statements',
     description: 'Latest company financial statements supporting the juristic purchaser application.',
     reason: 'Bank affordability and credit teams review company financial capacity.',
-    visibleWhen: buyerEntityTypeRule(['company']),
-    requiredWhen: buyerEntityTypeRule(['company']),
+    visibleWhen: fullApplicationBuyerEntityTypeRule(['company']),
+    requiredWhen: fullApplicationBuyerEntityTypeRule(['company']),
     requiredBefore: BOND_APPLICATION_DOCUMENT_TIMING.requiredBeforeBankSubmission,
     satisfactionMode: BOND_APPLICATION_DOCUMENT_SATISFACTION_MODES.uploaded,
     minimumFileCount: 1,
@@ -213,8 +248,8 @@ export const BOND_APPLICATION_DOCUMENT_RULES = [
     title: 'Company SARS tax documents',
     description: 'Company tax returns, SARS assessment or tax clearance where requested.',
     reason: 'Tax records support company compliance and credit assessment.',
-    visibleWhen: buyerEntityTypeRule(['company']),
-    requiredWhen: buyerEntityTypeRule(['company']),
+    visibleWhen: fullApplicationBuyerEntityTypeRule(['company']),
+    requiredWhen: fullApplicationBuyerEntityTypeRule(['company']),
     requiredBefore: BOND_APPLICATION_DOCUMENT_TIMING.requiredBeforeBankSubmission,
     satisfactionMode: BOND_APPLICATION_DOCUMENT_SATISFACTION_MODES.uploaded,
     minimumFileCount: 1,
@@ -234,8 +269,8 @@ export const BOND_APPLICATION_DOCUMENT_RULES = [
     title: 'Beneficial ownership declaration',
     description: 'Beneficial-owner, shareholder or controlling-person information for the company.',
     reason: 'Entity purchaser FICA requires beneficial ownership and control checks.',
-    visibleWhen: buyerEntityTypeRule(['company']),
-    requiredWhen: buyerEntityTypeRule(['company']),
+    visibleWhen: fullApplicationBuyerEntityTypeRule(['company']),
+    requiredWhen: fullApplicationBuyerEntityTypeRule(['company']),
     requiredBefore: BOND_APPLICATION_DOCUMENT_TIMING.requiredBeforeBankSubmission,
     satisfactionMode: BOND_APPLICATION_DOCUMENT_SATISFACTION_MODES.uploaded,
     minimumFileCount: 1,
@@ -255,8 +290,8 @@ export const BOND_APPLICATION_DOCUMENT_RULES = [
     title: 'Trust deed',
     description: 'Trust deed and amendments for the purchasing trust.',
     reason: 'Banks need to verify the trust and its powers before submission.',
-    visibleWhen: buyerEntityTypeRule(['trust']),
-    requiredWhen: buyerEntityTypeRule(['trust']),
+    visibleWhen: fullApplicationBuyerEntityTypeRule(['trust']),
+    requiredWhen: fullApplicationBuyerEntityTypeRule(['trust']),
     requiredBefore: BOND_APPLICATION_DOCUMENT_TIMING.requiredBeforeBankSubmission,
     satisfactionMode: BOND_APPLICATION_DOCUMENT_SATISFACTION_MODES.uploaded,
     minimumFileCount: 1,
@@ -275,8 +310,8 @@ export const BOND_APPLICATION_DOCUMENT_RULES = [
     title: 'Letters of authority',
     description: 'Master of the High Court letters of authority for the trustees.',
     reason: 'Trustees must be authorised to act for the trust.',
-    visibleWhen: buyerEntityTypeRule(['trust']),
-    requiredWhen: buyerEntityTypeRule(['trust']),
+    visibleWhen: fullApplicationBuyerEntityTypeRule(['trust']),
+    requiredWhen: fullApplicationBuyerEntityTypeRule(['trust']),
     requiredBefore: BOND_APPLICATION_DOCUMENT_TIMING.requiredBeforeBankSubmission,
     satisfactionMode: BOND_APPLICATION_DOCUMENT_SATISFACTION_MODES.uploaded,
     minimumFileCount: 1,
@@ -295,8 +330,8 @@ export const BOND_APPLICATION_DOCUMENT_RULES = [
     title: 'Trustee identity documents',
     description: 'Identity documents for trustees and authorised trust signatories.',
     reason: 'Banks need to verify the people controlling and signing for the trust purchaser.',
-    visibleWhen: buyerEntityTypeRule(['trust']),
-    requiredWhen: buyerEntityTypeRule(['trust']),
+    visibleWhen: fullApplicationBuyerEntityTypeRule(['trust']),
+    requiredWhen: fullApplicationBuyerEntityTypeRule(['trust']),
     requiredBefore: BOND_APPLICATION_DOCUMENT_TIMING.requiredBeforeBankSubmission,
     satisfactionMode: BOND_APPLICATION_DOCUMENT_SATISFACTION_MODES.uploaded,
     minimumFileCount: 1,
@@ -316,8 +351,8 @@ export const BOND_APPLICATION_DOCUMENT_RULES = [
     title: 'Trust resolution to purchase / borrow',
     description: 'Signed trustee resolution authorising the purchase, bond application and signatories.',
     reason: 'Banks require proof that trustees have authorised the purchase and borrowing.',
-    visibleWhen: buyerEntityTypeRule(['trust']),
-    requiredWhen: buyerEntityTypeRule(['trust']),
+    visibleWhen: fullApplicationBuyerEntityTypeRule(['trust']),
+    requiredWhen: fullApplicationBuyerEntityTypeRule(['trust']),
     requiredBefore: BOND_APPLICATION_DOCUMENT_TIMING.requiredBeforeBankSubmission,
     satisfactionMode: BOND_APPLICATION_DOCUMENT_SATISFACTION_MODES.uploaded,
     minimumFileCount: 1,
@@ -336,8 +371,8 @@ export const BOND_APPLICATION_DOCUMENT_RULES = [
     title: 'Trust beneficial ownership declaration',
     description: 'Beneficial-owner, founder, trustee, protector and beneficiary information for the trust.',
     reason: 'Trust purchaser FICA requires beneficial ownership and control checks.',
-    visibleWhen: buyerEntityTypeRule(['trust']),
-    requiredWhen: buyerEntityTypeRule(['trust']),
+    visibleWhen: fullApplicationBuyerEntityTypeRule(['trust']),
+    requiredWhen: fullApplicationBuyerEntityTypeRule(['trust']),
     requiredBefore: BOND_APPLICATION_DOCUMENT_TIMING.requiredBeforeBankSubmission,
     satisfactionMode: BOND_APPLICATION_DOCUMENT_SATISFACTION_MODES.uploaded,
     minimumFileCount: 1,
@@ -386,6 +421,66 @@ export const BOND_APPLICATION_DOCUMENT_RULES = [
     order: 20,
     matching: {
       canonicalTypes: ['buyer_proof_of_address', 'proof_of_address', 'residential_address_proof'],
+    },
+  },
+  {
+    key: 'bond_application_pre_approval_credit_check_consent',
+    ruleSetVersion: BOND_APPLICATION_DOCUMENT_RULE_SET_VERSION,
+    scope: 'participant',
+    participantRole: 'primary_applicant',
+    canonicalDocumentType: 'credit_check_consent',
+    title: 'Credit check consent',
+    description: 'Signed consent allowing credit bureau and affordability checks for pre-approval.',
+    reason: 'A pre-approval assessment requires consent before credit information can be checked.',
+    visibleWhen: preApprovalOnlyRule(),
+    requiredWhen: preApprovalOnlyRule(),
+    requiredBefore: BOND_APPLICATION_DOCUMENT_TIMING.requiredBeforeSignature,
+    satisfactionMode: BOND_APPLICATION_DOCUMENT_SATISFACTION_MODES.uploaded,
+    minimumFileCount: 1,
+    category: 'Pre-approval documents',
+    order: 21,
+    matching: {
+      canonicalTypes: ['credit_check_consent', 'credit_bureau_consent', 'pre_approval_credit_consent'],
+    },
+  },
+  {
+    key: 'bond_application_pre_approval_affordability_declaration',
+    ruleSetVersion: BOND_APPLICATION_DOCUMENT_RULE_SET_VERSION,
+    scope: 'participant',
+    participantRole: 'primary_applicant',
+    canonicalDocumentType: 'affordability_assessment',
+    title: 'Affordability and expense declaration',
+    description: 'Signed income, expense and affordability declaration for the pre-approval assessment.',
+    reason: 'Pre-approval depends on the applicant declared income, expenses and credit commitments.',
+    visibleWhen: preApprovalOnlyRule(),
+    requiredWhen: preApprovalOnlyRule(),
+    requiredBefore: BOND_APPLICATION_DOCUMENT_TIMING.requiredBeforeSignature,
+    satisfactionMode: BOND_APPLICATION_DOCUMENT_SATISFACTION_MODES.uploaded,
+    minimumFileCount: 1,
+    category: 'Pre-approval documents',
+    order: 22,
+    matching: {
+      canonicalTypes: ['affordability_assessment', 'affordability_declaration', 'income_expense_declaration', 'pre_approval_affordability'],
+    },
+  },
+  {
+    key: 'bond_application_existing_pre_approval_certificate',
+    ruleSetVersion: BOND_APPLICATION_DOCUMENT_RULE_SET_VERSION,
+    scope: 'application',
+    participantRole: 'primary_applicant',
+    canonicalDocumentType: 'pre_approval_certificate',
+    title: 'Pre-approval certificate',
+    description: 'Certificate or written confirmation for the existing pre-approval.',
+    reason: 'Existing pre-approval should be verified and attached as supporting evidence for the final bond application.',
+    visibleWhen: existingPreApprovalRule(),
+    requiredWhen: existingPreApprovalRule(),
+    requiredBefore: BOND_APPLICATION_DOCUMENT_TIMING.requiredBeforeBankSubmission,
+    satisfactionMode: BOND_APPLICATION_DOCUMENT_SATISFACTION_MODES.uploaded,
+    minimumFileCount: 1,
+    category: 'Pre-approval documents',
+    order: 23,
+    matching: {
+      canonicalTypes: ['pre_approval_certificate', 'preapproval_certificate', 'pre_approval_letter', 'pre_qualification_certificate'],
     },
   },
   {
@@ -617,8 +712,18 @@ export const BOND_APPLICATION_DOCUMENT_RULES = [
     title: 'Proof of deposit',
     description: 'Evidence for the deposit or buyer contribution recorded in your application.',
     reason: 'A deposit amount has been recorded.',
-    visibleWhen: { field: 'application.finance.depositAmount', greaterThan: 0 },
-    requiredWhen: { field: 'application.finance.depositAmount', greaterThan: 0 },
+    visibleWhen: {
+      all: [
+        notPreApprovalOnlyRule(),
+        { field: 'application.finance.depositAmount', greaterThan: 0 },
+      ],
+    },
+    requiredWhen: {
+      all: [
+        notPreApprovalOnlyRule(),
+        { field: 'application.finance.depositAmount', greaterThan: 0 },
+      ],
+    },
     requiredBefore: BOND_APPLICATION_DOCUMENT_TIMING.requiredBeforeBankSubmission,
     satisfactionMode: BOND_APPLICATION_DOCUMENT_SATISFACTION_MODES.uploaded,
     minimumFileCount: 1,

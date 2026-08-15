@@ -462,10 +462,13 @@ try {
   const buyerIntroCall = buyerIntroEmailCalls.find((call) => call.request.body.type === 'bond_originator_buyer_intro')
   assert.ok(buyerIntroCall)
   assert.equal(buyerIntroCall.request.body.to, 'mila@example.test')
+  assert.equal(buyerIntroCall.request.body.subject, 'Complete your bond application')
+  assert.equal(buyerIntroCall.request.body.title, 'Complete your bond application')
+  assert.match(buyerIntroCall.request.body.message, /Complete the online application/)
   assert.equal(buyerIntroCall.request.body.metadata.consultantName, 'Olive Originator')
   assert.equal(buyerIntroCall.request.body.metadata.consultantPhone, '082 555 0101')
   assert.equal(buyerIntroCall.request.body.metadata.organisationName, 'Originator Partners')
-  assert.equal(buyerIntroCall.request.body.metadata.applicationLink, '/client-access')
+  assert.equal(buyerIntroCall.request.body.metadata.applicationLink, '/client-access/bond-application')
   assert.equal(
     buyerIntroEmailClient.state.transaction_events.some((row) => row.event_type === 'buyer_bond_originator_introduced'),
     true,
@@ -474,6 +477,23 @@ try {
     buyerIntroEmailClient.state.transaction_notifications.some((row) => row.user_id === 'buyer-user-1' && row.notification_type === 'buyer_intro_email_sent'),
     true,
   )
+
+  const buyerIntroPortalPathEmailCalls = []
+  const buyerIntroPortalPathClient = createMockClient(baseState)
+  await notifyBondIntakeStartedForOnboarding({
+    transaction: transaction(),
+    formData: { finance_type: 'bond' },
+    metadata: { clientPortalPath: '/client/buyer-token-123/buying', clientPortalToken: 'buyer-token-123' },
+    emailEnabled: true,
+    invokeEmailFunction: async (functionName, request) => {
+      buyerIntroPortalPathEmailCalls.push({ functionName, request })
+      return { data: { ok: true, sent: true }, error: null }
+    },
+    client: buyerIntroPortalPathClient,
+  })
+  const buyerIntroPortalPathCall = buyerIntroPortalPathEmailCalls.find((call) => call.request.body.type === 'bond_originator_buyer_intro')
+  assert.ok(buyerIntroPortalPathCall)
+  assert.equal(buyerIntroPortalPathCall.request.body.metadata.applicationLink, '/client/buyer-token-123/bond-application')
 
   const rawResolverClient = createMockClient({
     ...baseState,

@@ -179,7 +179,7 @@ function getActionForEvent(type = '', metadata = {}) {
     return { label: 'Upload Document', route: 'documents' }
   }
   if (type === 'bond_application_required' || type === 'bond_application_attention_required') {
-    return { label: metadata?.actionLabel || 'Open Bond Application', route: metadata?.actionRoute || 'bond_application' }
+    return { label: metadata?.actionLabel || 'Complete Bond Application', route: metadata?.actionRoute || 'bond_application' }
   }
   if (type === 'otp_ready') {
     return { label: 'Sign OTP', route: 'documents' }
@@ -707,7 +707,7 @@ function buildWorkflowEvents(portalData = {}, clientRole = 'buyer') {
         metadata: {
           audience: 'buyer',
           category: 'finance',
-          actionLabel: 'Open Bond Application',
+          actionLabel: 'Complete Bond Application',
           actionRoute: 'bond_application',
         },
       })
@@ -724,7 +724,7 @@ function buildWorkflowEvents(portalData = {}, clientRole = 'buyer') {
         metadata: {
           audience: 'buyer',
           category: 'finance',
-          actionLabel: 'View application',
+          actionLabel: 'Complete Bond Application',
           actionRoute: 'bond_application',
         },
       })

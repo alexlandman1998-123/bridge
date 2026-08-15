@@ -127,6 +127,8 @@ export const BOND_HYBRID_WORKFLOW_EVENT_TYPES = [
   'bank_feedback_added',
   'quote_added',
   'quote_approved',
+  'pre_approval_outcome_captured',
+  'pre_approval_converted',
   'bond_approved',
   'grant_received',
   'grant_signed',

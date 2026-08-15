@@ -59,6 +59,7 @@ test('bond finance asks buyer to complete the bond application when not started'
   assert.equal(ids.has('bond_application_required'), true)
   const action = actions.find((item) => item.id === 'bond_application_required')
   assert.equal(action.blocking, true)
+  assert.equal(action.actionLabel, 'Complete Bond Application')
   assert.equal(action.actionRoute, 'bond_application')
 })
 
@@ -125,6 +126,9 @@ test('combination finance treats bond documents and application as buyer actions
   const ids = actionIds(actions)
   assert.equal(ids.has('bond_application_in_progress'), true)
   assert.equal(ids.has('bond_finance_documents_required'), true)
+  const bondAction = actions.find((item) => item.id === 'bond_application_in_progress')
+  assert.equal(bondAction.actionLabel, 'Complete Bond Application')
+  assert.equal(bondAction.actionRoute, 'bond_application')
 })
 
 test('submitted bond application is informational, not blocking', () => {

@@ -194,7 +194,7 @@ function deriveActionLabel(notification = {}) {
   if (type === 'document_requested' || type === 'additional_document_requested') return 'Upload Document'
   if (type === 'otp_signature_required') return 'Sign OTP'
   if (type === 'mandate_signature_required') return 'Sign Mandate'
-  if (type === 'bond_application_required') return 'Open Bond Application'
+  if (type === 'bond_application_required') return 'Complete Bond Application'
   if (type === 'onboarding_required') return 'Complete Onboarding'
   if (type === 'stage_updated') return 'View Progress'
   if (type === 'appointment_documents_required') return 'Upload Documents'

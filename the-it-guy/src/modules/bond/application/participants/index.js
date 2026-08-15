@@ -27,6 +27,7 @@ export {
   buildParticipantProgressSummary,
   buildParticipantScopedRequirementKey,
   calculateBondApplicationReviewContextHash,
+  convertNormalizedPreApprovalToBondApplication,
   createBondApplicationChangeRequest,
   createBondApplicationParticipant,
   createNormalizedBondApplicationRecord,

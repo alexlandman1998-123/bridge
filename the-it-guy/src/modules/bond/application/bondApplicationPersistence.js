@@ -1,5 +1,9 @@
 import { buildFinanceReadinessPayload } from '../../../core/finance/financeReadinessSelectors.js'
-import { cloneBondApplicationValue } from './bondApplicationState.js'
+import {
+  cloneBondApplicationValue,
+  convertPreApprovalToBondApplication,
+} from './bondApplicationState.js'
+import { toLegacyBondApplication } from './legacy/bondApplicationLegacyAdapter.js'
 
 export function mergeBondApplicationIntoFormData(existingFormData = {}, legacyBondApplication = {}) {
   return {
@@ -49,5 +53,35 @@ export function buildLegacyBondApplicationPersistencePayload({
   return {
     draftToPersist,
     formData: nextFormData,
+  }
+}
+
+export function buildPreApprovalConversionPersistencePayload({
+  applicationState = {},
+  existingFormData = {},
+  now = new Date().toISOString(),
+  preserveSelectedBankIds = false,
+  preApproval = {},
+} = {}) {
+  const convertedApplicationState = convertPreApprovalToBondApplication(applicationState, {
+    now,
+    preserveSelectedBankIds,
+    preApproval,
+  })
+  const convertedLegacyApplication = toLegacyBondApplication(convertedApplicationState)
+  const { draftToPersist, formData } = buildLegacyBondApplicationPersistencePayload({
+    existingFormData,
+    legacyBondApplication: {
+      ...convertedLegacyApplication,
+      status: convertedLegacyApplication?.status || 'In Progress',
+    },
+    submitted: false,
+    timestamp: now,
+  })
+
+  return {
+    applicationState: convertedApplicationState,
+    legacyBondApplication: draftToPersist,
+    formData,
   }
 }

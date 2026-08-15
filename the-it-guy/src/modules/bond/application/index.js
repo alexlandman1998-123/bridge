@@ -1,9 +1,14 @@
 export {
+  BOND_APPLICATION_INTENTS,
+  BOND_APPLICATION_PRE_APPROVAL_STATUSES,
   BOND_APPLICATION_SCHEMA_VERSION,
   LEGACY_BOND_APPLICATION_SCHEMA,
   LEGACY_BOND_APPLICATION_SCHEMA_VERSION,
   cloneBondApplicationValue,
+  createEmptyBondApplicationPreApproval,
   createEmptyBondApplicationState,
+  canConvertPreApprovalToBondApplication,
+  convertPreApprovalToBondApplication,
   isPlainObject,
 } from './bondApplicationState.js'
 export {
@@ -11,6 +16,7 @@ export {
   calculateLegacyBondApplicationCompletion,
 } from './bondApplicationCompletion.js'
 export {
+  buildPreApprovalConversionPersistencePayload,
   buildLegacyBondApplicationPersistencePayload,
   mergeBondApplicationIntoFormData,
 } from './bondApplicationPersistence.js'
@@ -41,6 +47,25 @@ export {
   normalizeBondOfferDecisionState,
   resolveBondApplicationStatus,
 } from './legacy/buildLegacyBondApplicationDraft.js'
+export {
+  BOND_APPLICATION_PREFILL_VERSION,
+  buildBondApplicationPrefillDraft,
+  getBondApplicationPrefillSourceForPath,
+} from './prefill/bondApplicationPrefillBuilder.js'
+export {
+  buildBondApplicationPrefillReviewModel,
+  getBondApplicationPrefillFieldReview,
+  normalizeBondApplicationPrefillSectionKey,
+} from './prefill/bondApplicationPrefillReviewModel.js'
+export {
+  BOND_APPLICATION_PREFILL_SOURCE_KEYS,
+  BOND_APPLICATION_PREFILL_SOURCE_MATRIX,
+  BOND_APPLICATION_PREFILL_SOURCE_PRIORITY,
+  getBondApplicationPrefillCoverageSummary,
+  getBondApplicationPrefillField,
+  getBondApplicationPrefillSource,
+} from './prefill/bondApplicationPrefillSourceMatrix.js'
+export { getBondApplicationOtpUnlockState } from './prefill/bondApplicationOtpUnlockGate.js'
 export {
   getPhase2GuidedBondApplicationEligibility,
   isPermanentEmploymentValue,
@@ -164,6 +189,7 @@ export {
   BOND_APPLICATION_JOURNEY_STAGE_DEFINITIONS,
   BOND_APPLICATION_JOURNEY_STAGE_KEYS,
   BOND_APPLICATION_JOURNEY_VERSION,
+  BOND_APPLICATION_PRE_APPROVAL_JOURNEY_STAGE_DEFINITIONS,
   buildBondApplicationJourneyModel,
 } from './journey/index.js'
 export {
@@ -190,6 +216,7 @@ export {
   buildApplicationStateFromNormalizedApplication,
   buildJointBondApplicationSubmissionSnapshot,
   buildJointSignerManifest,
+  convertNormalizedPreApprovalToBondApplication,
   buildNormalizedApplicationFromLegacyBondApplication,
   buildNormalizedBondApplicationFromState,
   buildParticipantProgressSummary,

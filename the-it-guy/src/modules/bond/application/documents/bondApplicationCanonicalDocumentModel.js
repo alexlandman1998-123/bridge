@@ -27,6 +27,7 @@ const LEGAL_CHILD_TYPES = new Set([
   'buyer_trustee_identity_documents',
   'buyer_trust_resolution',
   'buyer_trust_beneficial_ownership',
+  'pre_approval_certificate',
   'surety_undertaking',
 ])
 
@@ -55,6 +56,8 @@ const FINANCE_CHILD_TYPES = new Set([
   'property_finance_existing_bond',
   'debt_settlement_letter',
   'credit_history_supporting_documents',
+  'credit_check_consent',
+  'affordability_assessment',
 ])
 
 const BOND_ORIGINATOR_VISIBLE_PARENT_KEYS = new Set([

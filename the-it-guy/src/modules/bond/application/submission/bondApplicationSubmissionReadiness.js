@@ -1,5 +1,6 @@
 import { validateBondApplicationSteps } from '../flow/bondApplicationScreenValidation.js'
 import { calculateBondApplicationDocumentProgress } from '../documents/bondApplicationDocumentProgress.js'
+import { BOND_APPLICATION_INTENTS } from '../bondApplicationState.js'
 import { validateBondApplicationDeclarationAcceptance } from './bondApplicationDeclarations.js'
 import { BOND_APPLICATION_SUBMISSION_STATUSES } from './bondApplicationSubmissionLifecycle.js'
 
@@ -12,6 +13,10 @@ function present(value) {
 
 function issue({ category, code, message, stepKey = null, screenKey = null, path = null, target = null }) {
   return { category, code, message, stepKey, screenKey, path, target }
+}
+
+function isPreApprovalOnlyApplication(applicationState = {}) {
+  return String(applicationState?.application?.intent || '').trim().toLowerCase() === BOND_APPLICATION_INTENTS.preApproval
 }
 
 export function resolveBondApplicationSignerIdentity(applicationState = {}) {
@@ -82,7 +87,7 @@ export function validateBondApplicationSubmissionReadiness({
   declarationValues = {},
   latestSaveStatus = 'saved',
   submission = null,
-  requireSelectedBank = true,
+  requireSelectedBank = !isPreApprovalOnlyApplication(applicationState),
   participantReadiness = [],
   reviewContextHash = null,
 } = {}) {

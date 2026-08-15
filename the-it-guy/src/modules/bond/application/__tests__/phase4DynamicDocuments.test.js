@@ -7,6 +7,8 @@ import {
   BOND_APPLICATION_DOCUMENT_RULES,
   BOND_APPLICATION_DOCUMENT_RULE_SET_VERSION,
   BOND_APPLICATION_DOCUMENT_TIMING,
+  BOND_APPLICATION_INTENTS,
+  BOND_APPLICATION_PRE_APPROVAL_STATUSES,
   GUIDED_BOND_APPLICATION_PHASE4_REVIEW_SIGN_HANDOFF_REASON,
   GUIDED_BOND_APPLICATION_PHASE4_REVIEW_SIGN_HANDOFF_SECTION,
   GUIDED_BOND_APPLICATION_V2_FLOW_VERSION,
@@ -122,6 +124,42 @@ function runResolutionTests() {
   const noDepositResolution = resolveBondApplicationDocumentRequirements({ applicationState: noDeposit })
   assert.equal(noDepositResolution.activeRequirements.some((item) => item.key === 'bond_application_deposit_proof'), false)
   assert.equal(noDepositResolution.activeRequirements.some((item) => item.key === 'bond_application_offer_to_purchase'), true)
+
+  const preApproval = setPath(employmentState('permanent_employee'), 'application.intent', BOND_APPLICATION_INTENTS.preApproval)
+  const preApprovalResolved = resolveBondApplicationDocumentRequirements({ applicationState: preApproval })
+  const preApprovalKeys = new Set(preApprovalResolved.activeRequirements.map((item) => item.key))
+  assert.equal(preApprovalKeys.has('bond_application_offer_to_purchase'), false)
+  assert.equal(preApprovalKeys.has('bond_application_deposit_proof'), false)
+  assert.equal(preApprovalKeys.has('bond_application_primary_applicant_identity'), true)
+  assert.equal(preApprovalKeys.has('bond_application_primary_applicant_address'), true)
+  assert.equal(preApprovalKeys.has('bond_application_primary_applicant_bank_statements'), true)
+  assert.equal(preApprovalKeys.has('bond_application_salary_income_evidence'), true)
+  assert.equal(preApprovalKeys.has('bond_application_pre_approval_credit_check_consent'), true)
+  assert.equal(preApprovalKeys.has('bond_application_pre_approval_affordability_declaration'), true)
+  assert.equal(preApprovalKeys.has('bond_application_existing_pre_approval_certificate'), false)
+
+  const companyPreApproval = setPath(preApproval, 'application.buyerEntity.entityType', 'company')
+  const companyPreApprovalResolved = resolveBondApplicationDocumentRequirements({ applicationState: companyPreApproval })
+  const companyPreApprovalKeys = new Set(companyPreApprovalResolved.activeRequirements.map((item) => item.key))
+  assert.equal(companyPreApprovalKeys.has('bond_application_buyer_company_registration'), false)
+  assert.equal(companyPreApprovalKeys.has('bond_application_buyer_company_director_ids'), false)
+
+  let existingPreApproved = setPath(
+    employmentState('permanent_employee'),
+    'application.intent',
+    BOND_APPLICATION_INTENTS.bondApplicationWithPreApproval,
+  )
+  existingPreApproved = setPath(
+    existingPreApproved,
+    'application.preApproval.status',
+    BOND_APPLICATION_PRE_APPROVAL_STATUSES.existing,
+  )
+  const existingPreApprovedResolved = resolveBondApplicationDocumentRequirements({ applicationState: existingPreApproved })
+  const existingPreApprovedKeys = new Set(existingPreApprovedResolved.activeRequirements.map((item) => item.key))
+  assert.equal(existingPreApprovedKeys.has('bond_application_existing_pre_approval_certificate'), true)
+  assert.equal(existingPreApprovedKeys.has('bond_application_offer_to_purchase'), true)
+  assert.equal(existingPreApprovedKeys.has('bond_application_deposit_proof'), true)
+  assert.equal(existingPreApprovedKeys.has('bond_application_pre_approval_credit_check_consent'), false)
 
   let marriedAncState = employmentState('permanent_employee')
   marriedAncState = setPath(marriedAncState, 'participants.primaryApplicant.personal.marital_status', 'married')

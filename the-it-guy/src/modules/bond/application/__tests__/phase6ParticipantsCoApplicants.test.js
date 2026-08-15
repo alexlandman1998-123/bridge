@@ -4,9 +4,11 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import {
+  BOND_APPLICATION_INTENTS,
   BOND_APPLICATION_NORMALIZED_STORAGE_MODE,
   BOND_APPLICATION_PARTICIPANT_ROLES,
   BOND_APPLICATION_PARTICIPANT_STATUSES,
+  BOND_APPLICATION_PRE_APPROVAL_STATUSES,
   BOND_APPLICATION_STATUSES,
   BOND_APPLICATION_DECLARATIONS,
   BOND_APPLICATION_JOURNEY_STAGE_KEYS,
@@ -127,6 +129,17 @@ async function runNormalizedDomainTests() {
     name: 'Phase Six Holdings (Pty) Ltd',
     registrationNumber: '2026/654321/07',
   })
+  companyState.application.intent = BOND_APPLICATION_INTENTS.bondApplicationWithPreApproval
+  companyState.application.preApproval = {
+    status: BOND_APPLICATION_PRE_APPROVAL_STATUSES.existing,
+    provider: 'Standard Bank',
+    approvedAmount: '2300000',
+    issuedAt: '2026-07-19',
+    expiresAt: '2026-10-19',
+    referenceNumber: 'SB-PRE-1',
+    conditions: ['Subject to updated affordability'],
+    certificateDocumentId: 'preapproval-certificate-1',
+  }
   const normalized = buildNormalizedBondApplicationFromState({
     applicationState: companyState,
     transactionId: 'transaction-phase6',
@@ -142,8 +155,14 @@ async function runNormalizedDomainTests() {
   assert.equal(normalized.sharedSections.buyer_entity.entityType, 'company')
   assert.equal(normalized.sharedSections.buyer_entity.name, 'Phase Six Holdings (Pty) Ltd')
   assert.ok(normalized.participantSections['co_applicant:1']?.employment_income)
+  assert.equal(normalized.sharedSections.application_intent.intent, BOND_APPLICATION_INTENTS.bondApplicationWithPreApproval)
+  assert.equal(normalized.sharedSections.pre_approval.status, BOND_APPLICATION_PRE_APPROVAL_STATUSES.existing)
+  assert.equal(normalized.sharedSections.pre_approval.provider, 'Standard Bank')
 
   const rebuilt = buildApplicationStateFromNormalizedApplication(normalized)
+  assert.equal(rebuilt.application.intent, BOND_APPLICATION_INTENTS.bondApplicationWithPreApproval)
+  assert.equal(rebuilt.application.preApproval.referenceNumber, 'SB-PRE-1')
+  assert.equal(rebuilt.application.preApproval.certificateDocumentId, 'preapproval-certificate-1')
   assert.equal(rebuilt.application.buyerEntity.entityType, 'company')
   assert.equal(rebuilt.application.buyerEntity.registrationNumber, '2026/654321/07')
   assert.equal(rebuilt.participants.primaryApplicant.personal.first_name, 'Primary')

@@ -1,3 +1,8 @@
+import {
+  BOND_APPLICATION_INTENTS,
+  BOND_APPLICATION_PRE_APPROVAL_STATUSES,
+} from '../bondApplicationState.js'
+
 export const BOND_APPLICATION_JOURNEY_VERSION = 'phase-5-stage-gates-v1'
 
 export const BOND_APPLICATION_JOURNEY_STAGE_KEYS = Object.freeze({
@@ -86,6 +91,62 @@ export const BOND_APPLICATION_JOURNEY_STAGE_DEFINITIONS = Object.freeze([
   },
 ])
 
+export const BOND_APPLICATION_PRE_APPROVAL_JOURNEY_STAGE_DEFINITIONS = Object.freeze([
+  {
+    key: BOND_APPLICATION_JOURNEY_STAGE_KEYS.received,
+    label: 'Pre-approval Received',
+    iconKey: 'check',
+    actionLabel: 'Open pre-approval',
+    target: 'application',
+    requirements: [
+      { key: 'application_exists', label: 'Pre-approval file exists' },
+    ],
+  },
+  {
+    key: BOND_APPLICATION_JOURNEY_STAGE_KEYS.documents,
+    label: 'Documents Received',
+    iconKey: 'documents',
+    actionLabel: 'View outstanding documents',
+    target: 'documents',
+    requirements: [
+      { key: 'participant_applications_ready', label: 'All required applicants have completed their details' },
+      { key: 'required_documents_received', label: 'All blocking pre-approval documents received' },
+      { key: 'document_pack_ready_for_bank', label: 'Pre-approval pack is ready for assessment' },
+    ],
+  },
+  {
+    key: BOND_APPLICATION_JOURNEY_STAGE_KEYS.banks,
+    label: 'Submitted for Pre-approval',
+    iconKey: 'bank',
+    actionLabel: 'Submit pre-approval',
+    target: 'quotes',
+    requirements: [
+      { key: 'bank_selection_complete', label: 'At least one bank or assessment provider selected' },
+      { key: 'bank_submission_sent', label: 'Pre-approval pack submitted for assessment' },
+    ],
+  },
+  {
+    key: BOND_APPLICATION_JOURNEY_STAGE_KEYS.quotes,
+    label: 'Pre-approval Outcome',
+    iconKey: 'quote',
+    actionLabel: 'Capture outcome',
+    target: 'quotes',
+    requirements: [
+      { key: 'bank_response_received', label: 'Pre-approval outcome captured' },
+    ],
+  },
+  {
+    key: BOND_APPLICATION_JOURNEY_STAGE_KEYS.complete,
+    label: 'Complete',
+    iconKey: 'check',
+    actionLabel: 'View completed file',
+    target: 'quotes',
+    requirements: [
+      { key: 'bond_process_completed', label: 'Pre-approval issued, declined or marked complete' },
+    ],
+  },
+])
+
 function normalizeText(value = '') {
   return String(value || '').trim()
 }
@@ -101,12 +162,88 @@ function present(value) {
   return true
 }
 
+function firstPresent(...values) {
+  return values.find((value) => present(value))
+}
+
 function asArray(value) {
   return Array.isArray(value) ? value : []
 }
 
 function plural(count, singular, pluralLabel = `${singular}s`) {
   return `${count} ${count === 1 ? singular : pluralLabel}`
+}
+
+function resolvePreApprovalValue(source = {}) {
+  if (!source || typeof source !== 'object') return null
+  return firstPresent(
+    source.preApproval,
+    source.pre_approval,
+    source.application?.preApproval,
+    source.application?.pre_approval,
+    source.summary?.pre_approval,
+    source.sharedSections?.pre_approval,
+    source.shared_sections?.pre_approval,
+  )
+}
+
+function resolveApplicationIntent({ action = {}, applicationState = null, applicationViewModel = null, normalizedApplication = null, workflowData = {} } = {}) {
+  return normalizeKey(firstPresent(
+    applicationState?.application?.intent,
+    applicationState?.summary?.application_intent,
+    applicationViewModel?.canonical?.intent,
+    applicationViewModel?.application?.intent,
+    applicationViewModel?.applicationIntent,
+    applicationViewModel?.raw?.application_intent,
+    normalizedApplication?.sharedSections?.application_intent?.intent,
+    normalizedApplication?.sharedSections?.application_intent,
+    normalizedApplication?.shared_sections?.application_intent?.intent,
+    normalizedApplication?.shared_sections?.application_intent,
+    workflowData.applicationIntent,
+    workflowData.application_intent,
+    workflowData.intent,
+    action.applicationIntent,
+    action.application_intent,
+    action.intent,
+  ) || BOND_APPLICATION_INTENTS.bondApplication)
+}
+
+function resolvePreApprovalStatus({ action = {}, applicationState = null, applicationViewModel = null, normalizedApplication = null, workflowData = {} } = {}) {
+  const sources = [
+    resolvePreApprovalValue(applicationState),
+    resolvePreApprovalValue(applicationViewModel),
+    resolvePreApprovalValue(normalizedApplication),
+    resolvePreApprovalValue(workflowData),
+    resolvePreApprovalValue(action),
+  ].filter(Boolean)
+  return normalizeKey(firstPresent(
+    ...sources.map((source) => source?.status),
+    workflowData.preApprovalStatus,
+    workflowData.pre_approval_status,
+    action.preApprovalStatus,
+    action.pre_approval_status,
+  ) || BOND_APPLICATION_PRE_APPROVAL_STATUSES.none)
+}
+
+function isPreApprovalOnlyIntent(intent) {
+  return normalizeKey(intent) === BOND_APPLICATION_INTENTS.preApproval
+}
+
+function isPreApprovalSubmittedStatus(status) {
+  return [
+    BOND_APPLICATION_PRE_APPROVAL_STATUSES.submitted,
+    BOND_APPLICATION_PRE_APPROVAL_STATUSES.approved,
+    BOND_APPLICATION_PRE_APPROVAL_STATUSES.declined,
+    BOND_APPLICATION_PRE_APPROVAL_STATUSES.expired,
+  ].includes(normalizeKey(status))
+}
+
+function isPreApprovalOutcomeStatus(status) {
+  return [
+    BOND_APPLICATION_PRE_APPROVAL_STATUSES.approved,
+    BOND_APPLICATION_PRE_APPROVAL_STATUSES.declined,
+    BOND_APPLICATION_PRE_APPROVAL_STATUSES.expired,
+  ].includes(normalizeKey(status))
 }
 
 function isSubmittedBankRow(row = {}) {
@@ -235,6 +372,7 @@ function mergeRequirementDefinitions(definition = {}, statuses = {}) {
 
 export function buildBondApplicationJourneyModel({
   action = {},
+  applicationState = null,
   applicationViewModel = null,
   documentHealthSummary = {},
   documentProgress = null,
@@ -242,21 +380,46 @@ export function buildBondApplicationJourneyModel({
   submissionRows = [],
   quoteRows = [],
   acceptedQuote = null,
-  selectedBankIds = applicationViewModel?.application?.selectedBankIds || [],
+  selectedBankIds = null,
   participantReadiness = [],
   normalizedApplication = null,
   workflowData = {},
 } = {}) {
+  const applicationIntent = resolveApplicationIntent({
+    action,
+    applicationState,
+    applicationViewModel,
+    normalizedApplication,
+    workflowData,
+  })
+  const preApprovalStatus = resolvePreApprovalStatus({
+    action,
+    applicationState,
+    applicationViewModel,
+    normalizedApplication,
+    workflowData,
+  })
+  const preApprovalOnly = isPreApprovalOnlyIntent(applicationIntent)
   const documentReadiness = resolveDocumentReadiness({ documentHealthSummary, documentProgress, missingDocuments })
   const participants = resolveParticipantReadiness({ participantReadiness, normalizedApplication })
   const submittedBanks = asArray(submissionRows).filter(isSubmittedBankRow).length
-  const selectedBanks = Math.max(asArray(submissionRows).length, asArray(selectedBankIds).length)
+  const selectedBankList = asArray(selectedBankIds).length
+    ? asArray(selectedBankIds)
+    : asArray(applicationState?.application?.selectedBankIds).length
+      ? asArray(applicationState.application.selectedBankIds)
+      : asArray(applicationViewModel?.canonical?.selectedBankIds).length
+        ? asArray(applicationViewModel.canonical.selectedBankIds)
+        : asArray(applicationViewModel?.application?.selectedBankIds)
+  const selectedBanks = Math.max(asArray(submissionRows).length, selectedBankList.length)
   const quotes = asArray(quoteRows).filter((quote) => present(getQuoteBankName(quote)) || present(quote.id))
   const quoteCount = quotes.length
+  const preApprovalSubmitted = preApprovalOnly && (submittedBanks > 0 || isPreApprovalSubmittedStatus(preApprovalStatus))
+  const preApprovalOutcomeCaptured = preApprovalOnly && (quoteCount > 0 || isPreApprovalOutcomeStatus(preApprovalStatus))
   const acceptedBank = acceptedQuote ? getQuoteBankName(acceptedQuote) : ''
   const instructionSent = isInstructionSent(action, workflowData)
   const completed = isComplete(action, workflowData)
-  const applicationReceived = Boolean(applicationViewModel || action.applicationId || action.id || action.key)
+  const workflowCompleted = completed || (preApprovalOnly && preApprovalOutcomeCaptured)
+  const applicationReceived = Boolean(applicationState || applicationViewModel || action.applicationId || action.id || action.key)
   const receivedDate = normalizeText(
     applicationViewModel?.application?.createdAtDisplay ||
     applicationViewModel?.application?.receivedAtDisplay ||
@@ -296,20 +459,40 @@ export function buildBondApplicationJourneyModel({
     banks: {
       bank_selection_complete: buildRequirement(
         'bank_selection_complete',
-        selectedBanks > 0,
-        selectedBanks > 0 ? `${plural(selectedBanks, 'bank')} selected.` : 'Select at least one bank.',
+        preApprovalOnly ? selectedBanks > 0 || isPreApprovalSubmittedStatus(preApprovalStatus) : selectedBanks > 0,
+        preApprovalOnly
+          ? selectedBanks > 0
+            ? `${plural(selectedBanks, 'assessment provider')} selected.`
+            : isPreApprovalSubmittedStatus(preApprovalStatus)
+              ? 'Pre-approval has already been submitted.'
+              : 'Select a bank or assessment provider for the pre-approval request.'
+          : selectedBanks > 0
+            ? `${plural(selectedBanks, 'bank')} selected.`
+            : 'Select at least one bank.',
       ),
       bank_submission_sent: buildRequirement(
         'bank_submission_sent',
-        submittedBanks > 0,
-        submittedBanks > 0 ? `${plural(submittedBanks, 'bank submission')} sent.` : 'Submit the completed pack to selected banks.',
+        preApprovalOnly ? preApprovalSubmitted : submittedBanks > 0,
+        preApprovalOnly
+          ? preApprovalSubmitted
+            ? 'Pre-approval pack submitted for assessment.'
+            : 'Submit the completed pre-approval pack for assessment.'
+          : submittedBanks > 0
+            ? `${plural(submittedBanks, 'bank submission')} sent.`
+            : 'Submit the completed pack to selected banks.',
       ),
     },
     quotes: {
       bank_response_received: buildRequirement(
         'bank_response_received',
-        quoteCount > 0,
-        quoteCount > 0 ? `${plural(quoteCount, 'quote')} captured.` : 'Awaiting bank responses.',
+        preApprovalOnly ? preApprovalOutcomeCaptured : quoteCount > 0,
+        preApprovalOnly
+          ? preApprovalOutcomeCaptured
+            ? `Pre-approval ${preApprovalStatus || 'outcome'} captured.`
+            : 'Awaiting pre-approval assessment outcome.'
+          : quoteCount > 0
+            ? `${plural(quoteCount, 'quote')} captured.`
+            : 'Awaiting bank responses.',
       ),
     },
     grant: {
@@ -329,13 +512,23 @@ export function buildBondApplicationJourneyModel({
     complete: {
       bond_process_completed: buildRequirement(
         'bond_process_completed',
-        completed,
-        completed ? 'Bond process complete.' : 'Monitor attorney handoff through registration/completion.',
+        workflowCompleted,
+        preApprovalOnly
+          ? workflowCompleted
+            ? 'Pre-approval workflow complete.'
+            : 'Capture the pre-approval outcome to complete this request.'
+          : completed
+            ? 'Bond process complete.'
+            : 'Monitor attorney handoff through registration/completion.',
       ),
     },
   }
 
-  const stages = BOND_APPLICATION_JOURNEY_STAGE_DEFINITIONS.map((definition) => {
+  const stageDefinitions = preApprovalOnly
+    ? BOND_APPLICATION_PRE_APPROVAL_JOURNEY_STAGE_DEFINITIONS
+    : BOND_APPLICATION_JOURNEY_STAGE_DEFINITIONS
+
+  const stages = stageDefinitions.map((definition) => {
     const requirements = mergeRequirementDefinitions(definition, requirementStatusByStage[definition.key])
     const done = requirements.every((requirement) => requirement.complete)
     return {
@@ -356,6 +549,11 @@ export function buildBondApplicationJourneyModel({
   const currentStage = decoratedStages.find((stage) => stage.state === 'current') || decoratedStages.at(-1)
   const nextActions = buildBondApplicationJourneyActions({
     currentStage,
+    applicationIntent,
+    preApprovalOnly,
+    preApprovalStatus,
+    preApprovalSubmitted,
+    preApprovalOutcomeCaptured,
     documentReadiness,
     participants,
     missingDocuments,
@@ -365,15 +563,20 @@ export function buildBondApplicationJourneyModel({
     acceptedQuote,
     acceptedBank,
     instructionSent,
-    completed,
+    completed: workflowCompleted,
   })
 
   return {
     version: BOND_APPLICATION_JOURNEY_VERSION,
     stages: Object.freeze(decoratedStages),
-    currentStage: Object.freeze(buildCurrentStageSummary({ currentStage, nextActions, documentReadiness, participantReadiness: participants, missingDocuments, submittedBanks, selectedBanks, quoteCount, acceptedQuote, acceptedBank, instructionSent, completed })),
+    currentStage: Object.freeze(buildCurrentStageSummary({ currentStage, nextActions, applicationIntent, preApprovalOnly, preApprovalStatus, preApprovalSubmitted, preApprovalOutcomeCaptured, documentReadiness, participantReadiness: participants, missingDocuments, submittedBanks, selectedBanks, quoteCount, acceptedQuote, acceptedBank, instructionSent, completed: workflowCompleted })),
     nextActions: Object.freeze(nextActions),
     facts: Object.freeze({
+      applicationIntent,
+      preApprovalStatus,
+      preApprovalOnly,
+      preApprovalSubmitted,
+      preApprovalOutcomeCaptured,
       documentReadiness,
       participantReadiness: participants,
       submittedBanks,
@@ -381,13 +584,14 @@ export function buildBondApplicationJourneyModel({
       quoteCount,
       acceptedBank,
       instructionSent,
-      completed,
+      completed: workflowCompleted,
     }),
   }
 }
 
 function buildBondApplicationJourneyActions({
   currentStage = {},
+  preApprovalOnly = false,
   documentReadiness = {},
   participants = {},
   missingDocuments = [],
@@ -421,34 +625,40 @@ function buildBondApplicationJourneyActions({
     return [{
       key: 'request_outstanding_documents',
       label: 'Request outstanding documents',
-      helper: `${documentReadiness.missingCount || missingDocuments.length || 'Some'} document${(documentReadiness.missingCount || missingDocuments.length) === 1 ? '' : 's'} still required before bank submission.`,
+      helper: `${documentReadiness.missingCount || missingDocuments.length || 'Some'} document${(documentReadiness.missingCount || missingDocuments.length) === 1 ? '' : 's'} still required before ${preApprovalOnly ? 'pre-approval assessment' : 'bank submission'}.`,
       target: 'documents',
       priority: 'high',
     }]
   }
   if (currentStage.key === BOND_APPLICATION_JOURNEY_STAGE_KEYS.banks && selectedBanks === 0) {
     return [{
-      key: 'select_banks',
-      label: 'Select banks',
-      helper: 'Choose at least one bank to receive the application pack.',
+      key: preApprovalOnly ? 'select_pre_approval_provider' : 'select_banks',
+      label: preApprovalOnly ? 'Select provider' : 'Select banks',
+      helper: preApprovalOnly
+        ? 'Choose at least one bank or internal assessment provider for the pre-approval request.'
+        : 'Choose at least one bank to receive the application pack.',
       target: 'quotes',
       priority: 'high',
     }]
   }
   if (currentStage.key === BOND_APPLICATION_JOURNEY_STAGE_KEYS.banks) {
     return [{
-      key: 'submit_to_banks',
-      label: 'Submit to banks',
-      helper: `${selectedBanks} selected bank${selectedBanks === 1 ? '' : 's'} waiting for submission.`,
+      key: preApprovalOnly ? 'submit_pre_approval' : 'submit_to_banks',
+      label: preApprovalOnly ? 'Submit pre-approval' : 'Submit to banks',
+      helper: preApprovalOnly
+        ? `${selectedBanks} selected provider${selectedBanks === 1 ? '' : 's'} waiting for the pre-approval pack.`
+        : `${selectedBanks} selected bank${selectedBanks === 1 ? '' : 's'} waiting for submission.`,
       target: 'quotes',
       priority: 'high',
     }]
   }
   if (currentStage.key === BOND_APPLICATION_JOURNEY_STAGE_KEYS.quotes) {
     return [{
-      key: 'follow_up_bank_responses',
-      label: 'Follow up bank responses',
-      helper: `${submittedBanks} submission${submittedBanks === 1 ? '' : 's'} sent. Capture quote outcomes as they arrive.`,
+      key: preApprovalOnly ? 'capture_pre_approval_outcome' : 'follow_up_bank_responses',
+      label: preApprovalOnly ? 'Capture outcome' : 'Follow up bank responses',
+      helper: preApprovalOnly
+        ? 'Capture the approved, declined or expired pre-approval outcome.'
+        : `${submittedBanks} submission${submittedBanks === 1 ? '' : 's'} sent. Capture quote outcomes as they arrive.`,
       target: 'quotes',
       priority: 'normal',
     }]
@@ -483,6 +693,8 @@ function buildBondApplicationJourneyActions({
 function buildCurrentStageSummary({
   currentStage = {},
   nextActions = [],
+  preApprovalOnly = false,
+  preApprovalStatus = '',
   documentReadiness = {},
   participantReadiness = {},
   missingDocuments = [],
@@ -501,7 +713,7 @@ function buildCurrentStageSummary({
         key: currentStage.key,
         eyebrow: 'Current stage',
         title: 'Participants outstanding',
-        description: `${participantReadiness.outstanding?.length || 'Some'} required participant${(participantReadiness.outstanding?.length || 0) === 1 ? '' : 's'} still need to complete their application details before this file can move to bank submission.`,
+        description: `${participantReadiness.outstanding?.length || 'Some'} required participant${(participantReadiness.outstanding?.length || 0) === 1 ? '' : 's'} still need to complete their application details before this file can move to ${preApprovalOnly ? 'pre-approval assessment' : 'bank submission'}.`,
         ctaLabel: primaryAction.label || 'Complete participant applications',
         onOpen: primaryAction.target || 'application',
         documents: [],
@@ -513,7 +725,7 @@ function buildCurrentStageSummary({
       key: currentStage.key,
       eyebrow: 'Current stage',
       title: 'Documents outstanding',
-      description: `${documentReadiness.missingCount || missingDocuments.length || 'Some'} document${(documentReadiness.missingCount || missingDocuments.length) === 1 ? '' : 's'} still required before this application can be submitted to the banks.`,
+      description: `${documentReadiness.missingCount || missingDocuments.length || 'Some'} document${(documentReadiness.missingCount || missingDocuments.length) === 1 ? '' : 's'} still required before this ${preApprovalOnly ? 'pre-approval request can be assessed' : 'application can be submitted to the banks'}.`,
       ctaLabel: primaryAction.label || currentStage.actionLabel,
       onOpen: primaryAction.target || currentStage.target,
       documents: missingDocuments.slice(0, 4),
@@ -525,9 +737,11 @@ function buildCurrentStageSummary({
     return {
       key: currentStage.key,
       eyebrow: 'Current stage',
-      title: 'Banks not selected',
-      description: 'The application pack is ready. Select the banks that should receive this bond application.',
-      ctaLabel: primaryAction.label || 'Select banks',
+      title: preApprovalOnly ? 'Provider not selected' : 'Banks not selected',
+      description: preApprovalOnly
+        ? 'The pre-approval pack is ready. Select the bank or assessment provider that should assess it.'
+        : 'The application pack is ready. Select the banks that should receive this bond application.',
+      ctaLabel: primaryAction.label || (preApprovalOnly ? 'Select provider' : 'Select banks'),
       onOpen: primaryAction.target || 'quotes',
       documents: [],
       iconKey: currentStage.iconKey,
@@ -538,8 +752,10 @@ function buildCurrentStageSummary({
     return {
       key: currentStage.key,
       eyebrow: 'Current stage',
-      title: 'Ready to submit',
-      description: `The application and supporting documents are complete. ${selectedBanks || 0} bank${selectedBanks === 1 ? '' : 's'} selected.`,
+      title: preApprovalOnly ? 'Ready for assessment' : 'Ready to submit',
+      description: preApprovalOnly
+        ? `The pre-approval pack is complete. ${selectedBanks || 0} provider${selectedBanks === 1 ? '' : 's'} selected.`
+        : `The application and supporting documents are complete. ${selectedBanks || 0} bank${selectedBanks === 1 ? '' : 's'} selected.`,
       ctaLabel: primaryAction.label || currentStage.actionLabel,
       onOpen: primaryAction.target || currentStage.target,
       documents: [],
@@ -551,8 +767,10 @@ function buildCurrentStageSummary({
     return {
       key: currentStage.key,
       eyebrow: 'Current stage',
-      title: 'Awaiting bank responses',
-      description: `${submittedBanks} bank submission${submittedBanks === 1 ? '' : 's'} sent. Track responses and capture quote outcomes as they arrive.`,
+      title: preApprovalOnly ? 'Awaiting pre-approval outcome' : 'Awaiting bank responses',
+      description: preApprovalOnly
+        ? 'Track the assessment and capture the pre-approval outcome once received.'
+        : `${submittedBanks} bank submission${submittedBanks === 1 ? '' : 's'} sent. Track responses and capture quote outcomes as they arrive.`,
       ctaLabel: primaryAction.label || currentStage.actionLabel,
       onOpen: primaryAction.target || currentStage.target,
       documents: [],
@@ -589,10 +807,14 @@ function buildCurrentStageSummary({
   return {
     key: currentStage.key || BOND_APPLICATION_JOURNEY_STAGE_KEYS.complete,
     eyebrow: 'Current stage',
-    title: completed ? 'Complete' : 'Grant accepted',
+    title: completed ? 'Complete' : preApprovalOnly ? 'Pre-approval outcome captured' : 'Grant accepted',
     description: completed
-      ? 'This bond application has been completed.'
-      : `${acceptedBank || 'The selected grant'} has been accepted and the handoff can be monitored through completion.`,
+      ? preApprovalOnly
+        ? `This pre-approval request is ${preApprovalStatus || 'complete'}.`
+        : 'This bond application has been completed.'
+      : preApprovalOnly
+        ? `The pre-approval outcome is ${preApprovalStatus || 'captured'}.`
+        : `${acceptedBank || 'The selected grant'} has been accepted and the handoff can be monitored through completion.`,
     ctaLabel: primaryAction.label || currentStage.actionLabel || 'View quotes and grant',
     onOpen: primaryAction.target || currentStage.target || 'quotes',
     documents: [],

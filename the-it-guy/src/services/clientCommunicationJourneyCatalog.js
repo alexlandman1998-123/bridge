@@ -593,11 +593,11 @@ const CLIENT_COMMUNICATION_JOURNEY_ITEMS = Object.freeze([
     category: CLIENT_COMMUNICATION_CATEGORIES.INTRODUCTION,
     label: 'Introduce bond originator',
     trigger: 'Accepted bond or hybrid transaction has assigned originator',
-    cta: 'Start bond application',
+    cta: 'Complete bond application',
     automationKey: 'bond_originator_buyer_intro',
     communicationTypes: ['bond_originator_buyer_intro'],
     status: CLIENT_COMMUNICATION_IMPLEMENTATION_STATUS.EXISTING,
-    notes: 'Dedicated buyer introduction handler exists and is also invoked by bond intake orchestration.',
+    notes: 'Dedicated buyer bond application completion email exists and is invoked by bond intake orchestration.',
   }),
   item({
     key: 'bond_documents_required',

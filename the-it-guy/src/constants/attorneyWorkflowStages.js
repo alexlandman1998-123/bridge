@@ -43,6 +43,88 @@ const ATTORNEY_WORKFLOW_STATUS_LABELS = Object.freeze({
   complete: 'Complete',
 })
 
+export const TRANSFER_ATTORNEY_JOURNEY_PHASES = Object.freeze([
+  {
+    key: 'instruction',
+    label: 'Instruction & File Opening',
+    description: 'Instruction intake, source document checks, file opening, ownership checks, and seller bond/cancellation routing.',
+    stageKeys: Object.freeze([
+      'instruction_received',
+      'matter_opened',
+      'otp_source_docs_checked',
+      'title_deed_checked',
+      'existing_bond_confirmed',
+    ]),
+  },
+  {
+    key: 'fica_authority',
+    label: 'FICA & Authority',
+    description: 'Buyer and seller FICA, entity authority, signatory authority, and marital or representative capacity checks.',
+    stageKeys: Object.freeze([
+      'buyer_fica_requested',
+      'buyer_fica_received',
+      'buyer_fica_approved',
+      'seller_fica_requested',
+      'seller_fica_received',
+      'seller_fica_approved',
+      'entity_authority_checked',
+    ]),
+  },
+  {
+    key: 'financial_preparation',
+    label: 'Financial Preparation',
+    description: 'Transfer duty, municipal rates, levy or HOA clearance, and property compliance readiness.',
+    stageKeys: Object.freeze([
+      'transfer_duty_assessment_prepared',
+      'transfer_duty_submitted',
+      'transfer_duty_receipt_received',
+      'rates_figures_requested',
+      'rates_payment_confirmed',
+      'rates_clearance_received',
+      'levy_clearance_requested',
+      'levy_clearance_received',
+      'compliance_certificates_received',
+    ]),
+  },
+  {
+    key: 'documents_guarantees',
+    label: 'Documents & Guarantees',
+    description: 'Transfer document preparation, buyer and seller signing, and guarantee request, receipt, and acceptance.',
+    stageKeys: Object.freeze([
+      'transfer_documents_prepared',
+      'buyer_signing_scheduled',
+      'buyer_signed_transfer_documents',
+      'seller_signing_scheduled',
+      'seller_signed_transfer_documents',
+      'guarantees_requested',
+      'guarantees_received',
+      'transfer_guarantees_accepted',
+    ]),
+  },
+  {
+    key: 'lodgement_registration',
+    label: 'Lodgement & Registration',
+    description: 'Lodgement pack preparation, lodgement readiness, deeds office lodgement, prep, and registration.',
+    stageKeys: Object.freeze([
+      'lodgement_pack_prepared',
+      'lodgement_ready',
+      'lodged_at_deeds_office',
+      'in_prep',
+      'registered',
+    ]),
+  },
+  {
+    key: 'post_registration',
+    label: 'Post-Registration & Closure',
+    description: 'Final accounts, registration letters, final notifications, and administrative matter closure.',
+    stageKeys: Object.freeze([
+      'final_accounts_prepared',
+      'registration_letter_issued',
+      'matter_closed',
+    ]),
+  },
+])
+
 const DEFAULT_REQUIRED_DATA_VISIBILITY = 'internal'
 
 function normalizeLaneKey(value = '') {
@@ -1231,6 +1313,23 @@ export function getAttorneyStageLabel(stageKey, laneKey = null) {
 export function getAttorneyStageDefinitionsForLane(laneKey) {
   const lane = normalizeLaneKey(laneKey)
   return [...(ATTORNEY_WORKFLOW_STAGE_DEFINITIONS[lane] || [])]
+}
+
+export function getAttorneyJourneyPhasesForLane(laneKey) {
+  const lane = normalizeLaneKey(laneKey)
+  if (lane !== 'transfer') return []
+  return TRANSFER_ATTORNEY_JOURNEY_PHASES.map((phase) => ({
+    ...phase,
+    stageKeys: [...phase.stageKeys],
+  }))
+}
+
+export function getAttorneyJourneyPhaseForStage(stageKey, laneKey = 'transfer') {
+  const lane = normalizeLaneKey(laneKey)
+  const canonicalStageKey = normalizeAttorneyStageKey(stageKey, lane)
+  return getAttorneyJourneyPhasesForLane(lane).find((phase) =>
+    phase.stageKeys.some((key) => normalizeAttorneyStageKey(key, lane) === canonicalStageKey),
+  ) || null
 }
 
 export function getAttorneyStageKeysForLane(laneKey) {

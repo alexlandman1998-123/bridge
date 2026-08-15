@@ -5,9 +5,12 @@ import { fileURLToPath } from 'node:url'
 
 import { buildBondApplicationViewModel } from '../../utils/bondApplicationViewModel.js'
 import {
+  BOND_APPLICATION_INTENTS,
+  BOND_APPLICATION_PRE_APPROVAL_STATUSES,
   buildBondApplicationState,
   buildLegacyBondApplicationDraft,
   buildLegacyBondApplicationPersistencePayload,
+  buildNormalizedBondApplicationFromState,
   calculateLegacyBondApplicationCompletion,
   cloneBondApplicationValue,
   fromLegacyBondApplication,
@@ -79,6 +82,8 @@ function runLegacyToCleanMapping() {
   const coApplicant = getCoApplicant(state)
 
   assert.equal(state.schemaVersion, 2)
+  assert.equal(state.application.intent, BOND_APPLICATION_INTENTS.bondApplication)
+  assert.equal(state.application.preApproval.status, BOND_APPLICATION_PRE_APPROVAL_STATUSES.none)
   assert.equal(property.developmentName, 'Sample Gardens')
   assert.equal(property.unitReference, 'Unit A-104')
   assert.equal(property.propertyReference, 'Sample Gardens - Unit A-104')
@@ -120,6 +125,17 @@ function runCleanToLegacyMappingAndPassthrough() {
     registrationNumber: '2026/123456/07',
   }
   updated.application.selectedBankIds = ['FNB']
+  updated.application.intent = BOND_APPLICATION_INTENTS.bondApplicationWithPreApproval
+  updated.application.preApproval = {
+    status: BOND_APPLICATION_PRE_APPROVAL_STATUSES.existing,
+    provider: 'FNB',
+    approvedAmount: '1800000',
+    issuedAt: '2026-07-01',
+    expiresAt: '2026-10-01',
+    referenceNumber: 'PA-123',
+    conditions: ['Subject to property valuation'],
+    certificateDocumentId: 'document-preapproval-1',
+  }
   updated.participants.primaryApplicant.personal.first_name = 'Updated'
   updated.participants.primaryApplicant.bankAccounts[0].bankName = 'Nedbank'
   updated.legacySubmission.typedSignatureName = 'Updated Applicant'
@@ -130,6 +146,13 @@ function runCleanToLegacyMappingAndPassthrough() {
   assert.equal(roundTripped.summary.buyer_entity_name, 'Updated Holdings (Pty) Ltd')
   assert.equal(roundTripped.summary.buyer_entity_registration_number, '2026/123456/07')
   assert.deepEqual(roundTripped.selected_banks, ['FNB'])
+  assert.equal(roundTripped.summary.application_intent, BOND_APPLICATION_INTENTS.bondApplicationWithPreApproval)
+  assert.equal(roundTripped.application_intent, BOND_APPLICATION_INTENTS.bondApplicationWithPreApproval)
+  assert.equal(roundTripped.pre_approval.status, BOND_APPLICATION_PRE_APPROVAL_STATUSES.existing)
+  assert.equal(roundTripped.pre_approval.provider, 'FNB')
+  assert.equal(roundTripped.pre_approval.approved_amount, '1800000')
+  assert.equal(roundTripped.pre_approval.certificate_document_id, 'document-preapproval-1')
+  assert.deepEqual(roundTripped.pre_approval.conditions, ['Subject to property valuation'])
   assert.equal(roundTripped.applicants.find((applicant) => applicant.key === 'primary')?.first_name, 'Updated')
   assert.equal(roundTripped.banking_liabilities.primary_bank_name, 'Nedbank')
   assert.equal(roundTripped.declarations_consents.digital_signature_name, 'Updated Applicant')
@@ -261,7 +284,39 @@ function runViewModelAndRuntimeBoundaryCompatibility() {
     })
     assert.ok(viewModel.applicant.fullName)
     assert.ok(viewModel.property.label)
+    assert.equal(viewModel.applicant.email, fixture.sources.portalBuyer.email)
+    assert.equal(viewModel.applicant.phone, fixture.sources.portalBuyer.phone)
+    assert.equal(viewModel.primaryApplicantDetail.idNumber, legacy.applicants[0]?.identity_number)
+    assert.equal(viewModel.primaryApplicantDetail.employer, legacy.employment.primary.employer_name)
     assert.equal(viewModel.financials.purchasePrice.raw, fixture.sources.transactionInformation.purchase_price)
+    assert.equal(viewModel.financials.deposit.raw, fixture.sources.transactionInformation.deposit_amount)
+    assert.equal(viewModel.financials.bondAmountRequired.raw, fixture.sources.transactionInformation.bond_amount)
+
+    const normalized = buildNormalizedBondApplicationFromState({
+      applicationState: state,
+      transactionId: fixture.sources.transactionInformation.id,
+      onboardingFormDataId: `onboarding-${fixture.key}`,
+      includeCoApplicant: Boolean(state.participants.coApplicant),
+    })
+    const originatorViewModel = buildBondApplicationViewModel({
+      transaction: fixture.sources.transactionInformation,
+      buyer: fixture.sources.portalBuyer,
+      development: fixture.sources.developmentInformation,
+      unit: fixture.sources.unitInformation,
+      onboarding: { status: roundTripped.status },
+      onboardingFormData: roundTripped,
+      bondApplication: normalized,
+      reference: `NORMALIZED-${fixture.key}`,
+      statusLabel: roundTripped.status,
+    })
+    assert.equal(originatorViewModel.canonical.storageMode, 'normalized_v1')
+    assert.equal(originatorViewModel.applicant.fullName, viewModel.applicant.fullName)
+    assert.equal(originatorViewModel.applicant.email, viewModel.applicant.email)
+    assert.equal(originatorViewModel.applicant.phone, viewModel.applicant.phone)
+    assert.equal(originatorViewModel.primaryApplicantDetail.idNumber, viewModel.primaryApplicantDetail.idNumber)
+    assert.equal(originatorViewModel.financials.purchasePrice.raw, viewModel.financials.purchasePrice.raw)
+    assert.equal(originatorViewModel.financials.deposit.raw, viewModel.financials.deposit.raw)
+    assert.equal(originatorViewModel.financials.bondAmountRequired.raw, viewModel.financials.bondAmountRequired.raw)
   })
 
   const clientPortalSource = readFile('src/pages/ClientPortal.jsx')

@@ -1,10 +1,13 @@
 import {
+  BOND_APPLICATION_INTENTS,
+  BOND_APPLICATION_PRE_APPROVAL_STATUSES,
   cloneBondApplicationValue,
+  createEmptyBondApplicationPreApproval,
   createEmptyBondApplicationState,
   isPlainObject,
 } from '../bondApplicationState.js'
 import { getPurchaserEntityType, normalizePurchaserType } from '../../../../lib/purchaserPersonas.js'
-import { buildLegacyBondApplicationDraft } from './buildLegacyBondApplicationDraft.js'
+import { buildBondApplicationPrefillDraft } from '../prefill/bondApplicationPrefillBuilder.js'
 
 const KNOWN_LEGACY_TOP_LEVEL_PATHS = new Set([
   'status',
@@ -27,7 +30,11 @@ const KNOWN_LEGACY_TOP_LEVEL_PATHS = new Set([
   'income',
   'expenses',
   'assets',
+  'application_intent',
+  'pre_approval',
+  'preApproval',
   '_meta',
+  'prefill_metadata',
   '_guided_repeatables',
 ])
 
@@ -41,6 +48,127 @@ function firstPresentValue(...values) {
 
 function normalizeBuyerEntityType(value) {
   return getPurchaserEntityType(normalizePurchaserType(value || 'individual'))
+}
+
+function normalizeBondApplicationIntent(value, preApprovalStatus = BOND_APPLICATION_PRE_APPROVAL_STATUSES.none) {
+  const normalized = String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_')
+  if ([
+    BOND_APPLICATION_INTENTS.preApproval,
+    'preapproval',
+    'pre_qualification',
+    'prequalification',
+  ].includes(normalized)) {
+    return BOND_APPLICATION_INTENTS.preApproval
+  }
+  if ([
+    BOND_APPLICATION_INTENTS.bondApplicationWithPreApproval,
+    'bond_with_pre_approval',
+    'bond_application_with_preapproval',
+    'application_with_pre_approval',
+    'already_pre_approved',
+  ].includes(normalized)) {
+    return BOND_APPLICATION_INTENTS.bondApplicationWithPreApproval
+  }
+  if (normalized === BOND_APPLICATION_INTENTS.bondApplication || normalized === 'bond' || normalized === 'application') {
+    return BOND_APPLICATION_INTENTS.bondApplication
+  }
+  if ([BOND_APPLICATION_PRE_APPROVAL_STATUSES.existing, BOND_APPLICATION_PRE_APPROVAL_STATUSES.approved].includes(preApprovalStatus)) {
+    return BOND_APPLICATION_INTENTS.bondApplicationWithPreApproval
+  }
+  return BOND_APPLICATION_INTENTS.bondApplication
+}
+
+function normalizePreApprovalStatus(value) {
+  const normalized = String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_')
+  if (normalized === 'preapproved' || normalized === 'pre_approved') return BOND_APPLICATION_PRE_APPROVAL_STATUSES.approved
+  if (Object.values(BOND_APPLICATION_PRE_APPROVAL_STATUSES).includes(normalized)) return normalized
+  return BOND_APPLICATION_PRE_APPROVAL_STATUSES.none
+}
+
+function normalizePreApproval(raw = {}) {
+  const source = isPlainObject(raw) ? raw : {}
+  return {
+    ...createEmptyBondApplicationPreApproval(),
+    status: normalizePreApprovalStatus(source.status || source.preApprovalStatus || source.pre_approval_status),
+    provider: firstPresentValue(source.provider, source.issuer, source.bankName, source.bank_name) || null,
+    approvedAmount: firstPresentValue(source.approvedAmount, source.approved_amount, source.amount) || null,
+    issuedAt: firstPresentValue(source.issuedAt, source.issued_at, source.dateIssued, source.date_issued) || null,
+    expiresAt: firstPresentValue(source.expiresAt, source.expires_at, source.expiryDate, source.expiry_date) || null,
+    referenceNumber: firstPresentValue(source.referenceNumber, source.reference_number, source.reference, source.certificateNumber, source.certificate_number) || null,
+    conditions: Array.isArray(source.conditions) ? cloneBondApplicationValue(source.conditions) : [],
+    certificateDocumentId: firstPresentValue(source.certificateDocumentId, source.certificate_document_id, source.documentId, source.document_id) || null,
+  }
+}
+
+function resolveLegacyPreApproval(legacy = {}, portal = {}) {
+  return normalizePreApproval({
+    ...(isPlainObject(legacy.pre_approval) ? legacy.pre_approval : {}),
+    ...(isPlainObject(legacy.preApproval) ? legacy.preApproval : {}),
+    status: firstPresentValue(
+      legacy.pre_approval?.status,
+      legacy.preApproval?.status,
+      legacy.summary?.pre_approval_status,
+      portal?.onboardingFormData?.formData?.pre_approval_status,
+    ),
+    provider: firstPresentValue(
+      legacy.pre_approval?.provider,
+      legacy.preApproval?.provider,
+      legacy.summary?.pre_approval_provider,
+      portal?.onboardingFormData?.formData?.pre_approval_provider,
+    ),
+    approvedAmount: firstPresentValue(
+      legacy.pre_approval?.approved_amount,
+      legacy.preApproval?.approvedAmount,
+      legacy.summary?.pre_approval_amount,
+      portal?.onboardingFormData?.formData?.pre_approval_amount,
+    ),
+    issuedAt: firstPresentValue(
+      legacy.pre_approval?.issued_at,
+      legacy.preApproval?.issuedAt,
+      legacy.summary?.pre_approval_issued_at,
+      portal?.onboardingFormData?.formData?.pre_approval_issued_at,
+    ),
+    expiresAt: firstPresentValue(
+      legacy.pre_approval?.expires_at,
+      legacy.preApproval?.expiresAt,
+      legacy.summary?.pre_approval_expires_at,
+      portal?.onboardingFormData?.formData?.pre_approval_expires_at,
+    ),
+    referenceNumber: firstPresentValue(
+      legacy.pre_approval?.reference_number,
+      legacy.preApproval?.referenceNumber,
+      legacy.summary?.pre_approval_reference,
+      portal?.onboardingFormData?.formData?.pre_approval_reference,
+    ),
+    conditions: legacy.pre_approval?.conditions || legacy.preApproval?.conditions || [],
+    certificateDocumentId: firstPresentValue(
+      legacy.pre_approval?.certificate_document_id,
+      legacy.preApproval?.certificateDocumentId,
+      legacy.summary?.pre_approval_certificate_document_id,
+      portal?.onboardingFormData?.formData?.pre_approval_certificate_document_id,
+    ),
+  })
+}
+
+function preApprovalHasMeaningfulValue(preApproval = {}) {
+  const normalized = normalizePreApproval(preApproval)
+  return normalized.status !== BOND_APPLICATION_PRE_APPROVAL_STATUSES.none ||
+    Boolean(normalized.provider || normalized.approvedAmount || normalized.issuedAt || normalized.expiresAt || normalized.referenceNumber || normalized.certificateDocumentId) ||
+    normalized.conditions.length > 0
+}
+
+function serializePreApprovalForLegacy(preApproval = {}) {
+  const normalized = normalizePreApproval(preApproval)
+  return {
+    status: normalized.status,
+    provider: normalized.provider || '',
+    approved_amount: normalized.approvedAmount || '',
+    issued_at: normalized.issuedAt || '',
+    expires_at: normalized.expiresAt || '',
+    reference_number: normalized.referenceNumber || '',
+    conditions: cloneBondApplicationValue(normalized.conditions || []),
+    certificate_document_id: normalized.certificateDocumentId || '',
+  }
 }
 
 function getApplicant(legacy, key) {
@@ -260,6 +388,14 @@ export function fromLegacyBondApplication(legacyApplication = {}, options = {}) 
   state.meta.status = legacy.status ?? null
   state.meta.submittedAt = legacy.submitted_at ?? null
   state.application.transactionId = options.transactionId ?? options.portal?.transaction?.id ?? null
+  state.application.preApproval = resolveLegacyPreApproval(legacy, options.portal)
+  state.application.intent = normalizeBondApplicationIntent(firstPresentValue(
+    legacy.summary?.application_intent,
+    legacy.summary?.bond_application_intent,
+    legacy.application_intent,
+    options.portal?.onboardingFormData?.formData?.bond_application_intent,
+    options.portal?.onboardingFormData?.formData?.application_intent,
+  ), state.application.preApproval.status)
   state.application.applicantStructure = legacy.summary?.has_surety === 'yes'
     ? 'surety'
     : legacy.summary?.has_co_applicant === 'yes'
@@ -467,6 +603,13 @@ function applyGuidedRepeatablesToLegacy(legacy, state) {
 function applyKnownMappedState(legacy, state) {
   const buyerEntity = state?.application?.buyerEntity || {}
   const buyerEntityType = normalizeBuyerEntityType(buyerEntity.entityType)
+  const preApproval = normalizePreApproval(state?.application?.preApproval || {})
+  const intent = normalizeBondApplicationIntent(state?.application?.intent, preApproval.status)
+  const shouldWriteIntent = Boolean(legacy.summary?.application_intent || legacy.summary?.bond_application_intent || legacy.application_intent) ||
+    intent !== BOND_APPLICATION_INTENTS.bondApplication ||
+    preApprovalHasMeaningfulValue(preApproval)
+  const shouldWritePreApproval = Boolean(legacy.pre_approval || legacy.preApproval || legacy.summary?.pre_approval_status) ||
+    preApprovalHasMeaningfulValue(preApproval)
   const shouldWriteBuyerEntity =
     Boolean(legacy.summary?.buyer_entity_type || legacy.summary?.purchaser_type || legacy.summary?.buyer_entity_name || legacy.summary?.buyer_entity_registration_number) ||
     buyerEntityType !== 'individual' ||
@@ -482,6 +625,19 @@ function applyKnownMappedState(legacy, state) {
     purchase_price: state?.application?.finance?.purchasePrice ?? legacy.summary?.purchase_price,
     deposit_contribution: state?.application?.finance?.depositAmount ?? legacy.summary?.deposit_contribution,
     finance_type: state?.application?.finance?.financeType ?? legacy.summary?.finance_type,
+    ...(shouldWriteIntent ? {
+      application_intent: intent,
+      bond_application_intent: intent,
+    } : {}),
+    ...(shouldWritePreApproval ? {
+      pre_approval_status: preApproval.status,
+      pre_approval_provider: preApproval.provider || '',
+      pre_approval_amount: preApproval.approvedAmount || '',
+      pre_approval_issued_at: preApproval.issuedAt || '',
+      pre_approval_expires_at: preApproval.expiresAt || '',
+      pre_approval_reference: preApproval.referenceNumber || '',
+      pre_approval_certificate_document_id: preApproval.certificateDocumentId || '',
+    } : {}),
     ...(shouldWriteBuyerEntity ? {
       purchaser_type: buyerEntityType,
       buyer_entity_type: buyerEntityType,
@@ -501,6 +657,8 @@ function applyKnownMappedState(legacy, state) {
     ...(legacy.loan_details || {}),
     amount_to_be_registered: state?.application?.finance?.requestedBondAmount ?? legacy.loan_details?.amount_to_be_registered,
   }
+  if (shouldWriteIntent) legacy.application_intent = intent
+  if (shouldWritePreApproval) legacy.pre_approval = serializePreApprovalForLegacy(preApproval)
 
   const applicants = Array.isArray(legacy.applicants) ? cloneBondApplicationValue(legacy.applicants) : []
   const primaryContact = state?.participants?.primaryApplicant?.contact || {}
@@ -561,7 +719,7 @@ export function toLegacyBondApplication(applicationState = {}) {
 }
 
 export function buildBondApplicationState(portal, options = {}) {
-  const legacyDraft = buildLegacyBondApplicationDraft(portal)
+  const legacyDraft = buildBondApplicationPrefillDraft(portal).application
   return fromLegacyBondApplication(legacyDraft, {
     ...options,
     portal,

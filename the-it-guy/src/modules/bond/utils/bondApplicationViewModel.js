@@ -89,6 +89,153 @@ function lookup(data, paths = []) {
   )
 }
 
+function alignmentValueCaptured(value) {
+  if (value === null || value === undefined) return false
+  if (typeof value === 'string') return value.trim().length > 0
+  if (typeof value === 'number') return Number.isFinite(value)
+  if (typeof value === 'boolean') return true
+  if (Array.isArray(value)) return value.length > 0
+  if (typeof value === 'object') return Object.keys(value).length > 0
+  return Boolean(value)
+}
+
+function alignmentDisplayValue(value) {
+  if (Array.isArray(value)) return value.map((item) => text(item)).filter(Boolean).join(', ')
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No'
+  if (value === null || value === undefined || value === '') return 'Not captured'
+  return text(value)
+}
+
+function firstAlignmentValue(...values) {
+  return values.find((value) => alignmentValueCaptured(value))
+}
+
+function listAmountByLegacyKey(rows = [], legacyKey = '') {
+  const row = Array.isArray(rows) ? rows.find((item) => item?.legacyKey === legacyKey) : null
+  return firstAlignmentValue(row?.value, row?.amount, row?.balance)
+}
+
+function derivedAssetTotal(applicationState = {}) {
+  return sumListAmounts(applicationState?.participants?.primaryApplicant?.assets || [], ['value', 'amount'])
+}
+
+function derivedLiabilityTotal(applicationState = {}) {
+  const liabilities = applicationState?.participants?.primaryApplicant?.liabilities || []
+  return firstAlignmentValue(
+    listAmountByLegacyKey(liabilities, 'total_liabilities'),
+    listAmountByLegacyKey(liabilities, 'liabilities_total'),
+    sumListAmounts(liabilities, ['value', 'amount', 'balance']),
+  )
+}
+
+const ORIGINATOR_FIELD_ALIGNMENT_DEFINITIONS = [
+  { key: 'status', group: 'Application', label: 'Status', paths: ['legacySubmission.status', 'meta.status'] },
+  { key: 'submitted_at', group: 'Application', label: 'Submitted at', paths: ['legacySubmission.submittedAt', 'meta.submittedAt'] },
+  { key: 'selected_banks', group: 'Application', label: 'Selected banks', paths: ['application.selectedBankIds'] },
+  { key: 'applicant_structure', group: 'Application', label: 'Applicant structure', paths: ['application.applicantStructure'] },
+  { key: 'property_reference', group: 'Property', label: 'Property reference', paths: ['application.property.propertyReference'] },
+  { key: 'development_name', group: 'Property', label: 'Development name', paths: ['application.property.developmentName'] },
+  { key: 'unit_reference', group: 'Property', label: 'Unit reference', paths: ['application.property.unitReference'] },
+  { key: 'purchase_price', group: 'Finance', label: 'Purchase price', paths: ['application.finance.purchasePrice'] },
+  { key: 'deposit_contribution', group: 'Finance', label: 'Deposit contribution', paths: ['application.finance.depositAmount'] },
+  { key: 'amount_to_be_registered', group: 'Finance', label: 'Bond amount required', paths: ['application.finance.requestedBondAmount'] },
+  { key: 'finance_type', group: 'Finance', label: 'Finance type', paths: ['application.finance.financeType'] },
+  { key: 'primary_first_name', group: 'Primary Applicant', label: 'First name', paths: ['participants.primaryApplicant.personal.first_name'] },
+  { key: 'primary_surname', group: 'Primary Applicant', label: 'Surname', paths: ['participants.primaryApplicant.personal.surname', 'participants.primaryApplicant.personal.last_name'] },
+  { key: 'primary_identity_number', group: 'Primary Applicant', label: 'Identity number', paths: ['participants.primaryApplicant.personal.identity_number', 'participants.primaryApplicant.personal.id_number'] },
+  { key: 'primary_email', group: 'Primary Applicant', label: 'Email', paths: ['participants.primaryApplicant.contact.email', 'participants.primaryApplicant.personal.email'] },
+  { key: 'primary_phone', group: 'Primary Applicant', label: 'Phone', paths: ['participants.primaryApplicant.contact.phone', 'participants.primaryApplicant.personal.phone'] },
+  { key: 'primary_marital_status', group: 'Primary Applicant', label: 'Marital status', paths: ['participants.primaryApplicant.marital.maritalStatus', 'participants.primaryApplicant.personal.marital_status'] },
+  { key: 'primary_dependants', group: 'Primary Applicant', label: 'Dependants', paths: ['participants.primaryApplicant.personal.number_of_dependants', 'participants.primaryApplicant.personal.dependants'] },
+  { key: 'residential_address_street', group: 'Contact & Address', label: 'Residential address', paths: ['participants.primaryApplicant.address.residential_address_street'] },
+  { key: 'residential_address_suburb', group: 'Contact & Address', label: 'Residential suburb', paths: ['participants.primaryApplicant.address.residential_address_suburb'] },
+  { key: 'residential_address_city', group: 'Contact & Address', label: 'Residential city', paths: ['participants.primaryApplicant.address.residential_address_city'] },
+  { key: 'residential_address_postal_code', group: 'Contact & Address', label: 'Residential postal code', paths: ['participants.primaryApplicant.address.residential_address_postal_code'] },
+  { key: 'occupation_status', group: 'Employment', label: 'Occupation status', paths: ['participants.primaryApplicant.employment.occupation_status'] },
+  { key: 'employer_name', group: 'Employment', label: 'Employer name', paths: ['participants.primaryApplicant.employment.employer_name'] },
+  { key: 'nature_of_occupation', group: 'Employment', label: 'Nature of occupation', paths: ['participants.primaryApplicant.employment.nature_of_occupation'] },
+  { key: 'employment_years', group: 'Employment', label: 'Employment years', paths: ['participants.primaryApplicant.employment.employment_years'] },
+  { key: 'employment_months', group: 'Employment', label: 'Employment months', paths: ['participants.primaryApplicant.employment.employment_months'] },
+  { key: 'gross_salary', group: 'Income & Expenses', label: 'Gross salary', paths: ['participants.primaryApplicant.expenses.gross_salary'] },
+  { key: 'rental_income', group: 'Income & Expenses', label: 'Rental income', paths: ['participants.primaryApplicant.expenses.rental_income'] },
+  { key: 'other_income_value', group: 'Income & Expenses', label: 'Other income', paths: ['participants.primaryApplicant.expenses.other_income_value'] },
+  { key: 'rental_expense', group: 'Income & Expenses', label: 'Rental expense', paths: ['participants.primaryApplicant.expenses.rental_expense'] },
+  { key: 'groceries', group: 'Income & Expenses', label: 'Groceries', paths: ['participants.primaryApplicant.expenses.groceries'] },
+  { key: 'transport', group: 'Income & Expenses', label: 'Transport', paths: ['participants.primaryApplicant.expenses.transport'] },
+  { key: 'primary_bank_name', group: 'Banking & Liabilities', label: 'Primary bank', paths: ['participants.primaryApplicant.bankAccounts.0.bankName'] },
+  { key: 'primary_account_type', group: 'Banking & Liabilities', label: 'Account type', paths: ['participants.primaryApplicant.bankAccounts.0.accountType'] },
+  { key: 'primary_account_number', group: 'Banking & Liabilities', label: 'Account number', paths: ['participants.primaryApplicant.bankAccounts.0.accountNumber'] },
+  { key: 'home_loan_1_outstanding_balance', group: 'Banking & Liabilities', label: 'Home loan outstanding balance', paths: ['participants.primaryApplicant.debts.0.outstandingBalance'] },
+  { key: 'other_finance_1_current_balance', group: 'Banking & Liabilities', label: 'Other finance balance', paths: ['participants.primaryApplicant.debts.1.currentBalance'] },
+  {
+    key: 'total_assets',
+    group: 'Assets & Liabilities',
+    label: 'Total assets',
+    paths: ['compatibility.legacyBase.assets_liabilities.total_assets'],
+    derive: (state) => derivedAssetTotal(state),
+  },
+  {
+    key: 'total_liabilities',
+    group: 'Assets & Liabilities',
+    label: 'Total liabilities',
+    paths: ['compatibility.legacyBase.assets_liabilities.total_liabilities'],
+    derive: (state) => derivedLiabilityTotal(state),
+  },
+  {
+    key: 'net_asset_value',
+    group: 'Assets & Liabilities',
+    label: 'Net asset value',
+    paths: ['compatibility.legacyBase.assets_liabilities.net_asset_value'],
+    derive: (state) => {
+      const assets = number(derivedAssetTotal(state))
+      const liabilities = number(derivedLiabilityTotal(state))
+      return assets || liabilities ? String(assets - liabilities) : null
+    },
+  },
+  { key: 'currently_under_debt_review', group: 'Credit History', label: 'Currently under debt review', paths: ['participants.primaryApplicant.credit.currently_under_debt_review'] },
+  { key: 'judgments_taken', group: 'Credit History', label: 'Judgments taken', paths: ['participants.primaryApplicant.credit.judgments_taken'] },
+  { key: 'loan_processing_consent', group: 'Declarations', label: 'Loan processing consent', paths: ['legacySubmission.consents.declarations_consents.loan_processing_consent', 'participants.primaryApplicant.declarations.loan_processing_consent'] },
+  { key: 'credit_bureau_fraud_bank_data_consent', group: 'Declarations', label: 'Credit bureau consent', paths: ['legacySubmission.consents.declarations_consents.credit_bureau_fraud_bank_data_consent', 'participants.primaryApplicant.declarations.credit_bureau_fraud_bank_data_consent'] },
+  { key: 'declaration_accepted', group: 'Declarations', label: 'Declaration accepted', paths: ['legacySubmission.consents.declarations_consents.declaration_accepted', 'participants.primaryApplicant.declarations.declaration_accepted'] },
+  { key: 'digital_signature_name', group: 'Declarations', label: 'Digital signature name', paths: ['legacySubmission.typedSignatureName'] },
+  { key: 'digital_signature_date', group: 'Declarations', label: 'Digital signature date', paths: ['legacySubmission.typedSignatureDate'] },
+]
+
+function buildOriginatorFieldAlignment(applicationState = {}) {
+  const fields = ORIGINATOR_FIELD_ALIGNMENT_DEFINITIONS.map((definition) => {
+    const sourceValue = firstAlignmentValue(...definition.paths.map((path) => getNested(applicationState, [path])))
+    const value = firstAlignmentValue(sourceValue, typeof definition.derive === 'function' ? definition.derive(applicationState) : null)
+    const captured = alignmentValueCaptured(value)
+    return {
+      key: definition.key,
+      group: definition.group,
+      label: definition.label,
+      sourcePaths: definition.paths,
+      value: captured ? value : null,
+      displayValue: captured ? alignmentDisplayValue(value) : 'Not captured',
+      captured,
+    }
+  })
+  const sections = fields.reduce((accumulator, field) => {
+    const current = accumulator[field.group] || { total: 0, captured: 0, missing: 0 }
+    current.total += 1
+    if (field.captured) current.captured += 1
+    else current.missing += 1
+    accumulator[field.group] = current
+    return accumulator
+  }, {})
+
+  return {
+    source: 'buyer_portal_bond_application',
+    target: 'bond_originator_view_model',
+    fields,
+    sections,
+    capturedCount: fields.filter((field) => field.captured).length,
+    totalCount: fields.length,
+    missingKeys: fields.filter((field) => !field.captured).map((field) => field.key),
+  }
+}
+
 function toTitle(value) {
   return text(value)
     .replace(/[_-]+/g, ' ')
@@ -181,6 +328,12 @@ function getFormData(onboardingFormData = {}) {
   return onboardingFormData && typeof onboardingFormData === 'object' ? onboardingFormData : {}
 }
 
+function isLegacyBondApplicationShape(value = {}) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  if (value.bond_application && typeof value.bond_application === 'object') return false
+  return Boolean(value.summary || value.personal_details || value.contact_address || value.loan_details || Array.isArray(value.applicants))
+}
+
 function resolveCanonicalApplicationState({
   transaction = {},
   buyer = {},
@@ -204,6 +357,9 @@ function resolveCanonicalApplicationState({
   }
 
   const formData = getFormData(onboardingFormData)
+  const effectiveFormData = isLegacyBondApplicationShape(formData)
+    ? { ...formData, bond_application: formData }
+    : formData
   return {
     state: buildLegacyBondApplicationState({
       transaction,
@@ -213,7 +369,7 @@ function resolveCanonicalApplicationState({
       onboarding,
       onboardingFormData: {
         ...(onboardingFormData || {}),
-        formData,
+        formData: effectiveFormData,
       },
     }),
     storageMode: 'legacy_projection',
@@ -489,6 +645,7 @@ export function buildBondApplicationViewModel({
     bondApplication,
   })
   const applicationState = canonical.state || {}
+  const fieldAlignment = buildOriginatorFieldAlignment(applicationState)
   const primaryApplicant = buildApplicantViewModel(
     applicationState?.participants?.primaryApplicant || {},
     'primary_applicant',
@@ -611,6 +768,8 @@ export function buildBondApplicationViewModel({
       storageMode: canonical.storageMode,
       normalizedApplicationId: canonical.normalizedApplicationId,
       schemaVersion: applicationState?.schemaVersion || null,
+      intent: applicationState?.application?.intent || 'bond_application',
+      preApproval: applicationState?.application?.preApproval || null,
       applicantStructure: applicationState?.application?.applicantStructure || (applicants.length > 1 ? 'joint' : 'sole'),
       selectedBankIds: applicationState?.application?.selectedBankIds || [],
     },
@@ -625,6 +784,8 @@ export function buildBondApplicationViewModel({
     },
     application: {
       id: text(reference || transaction?.bond_application_id || transaction?.bondApplicationId || transaction?.application_reference || transaction?.id) || 'Pending',
+      intent: applicationState?.application?.intent || 'bond_application',
+      preApproval: applicationState?.application?.preApproval || null,
       status: applicationStatus,
       stage: toTitle(transaction?.stage || transaction?.current_stage || onboarding?.status || 'Onboarding'),
       createdAt: transaction?.created_at || onboarding?.created_at || '',
@@ -660,6 +821,8 @@ export function buildBondApplicationViewModel({
     actions: buildActions(readinessItems, {
       monthlyExpenses: { raw: monthlyExpenses },
     }),
+    fieldAlignment,
+    originatorFieldAlignment: fieldAlignment,
     activity: buildActivity({ activityFeed, transaction, onboarding, documents }),
     risk,
     consultant: text(assignedConsultant) || 'Unassigned',
@@ -681,6 +844,27 @@ export function getBondApplicationPdfFilename(viewModel) {
 
 export function buildBondApplicationPdfHtml(viewModel, generatedAt = new Date().toISOString()) {
   const vm = viewModel || {}
+  const summaryTitle = vm.application?.intent === 'pre_approval' ? 'Pre-approval Summary' : 'Bond Application Summary'
+  const fieldAlignment = vm.originatorFieldAlignment || vm.fieldAlignment || {}
+  const fieldAlignmentSections = Object.entries(fieldAlignment.sections || {})
+    .map(([label, summary]) => ({
+      label,
+      total: Number(summary?.total || 0),
+      captured: Number(summary?.captured || 0),
+      missing: Number(summary?.missing || 0),
+    }))
+    .filter((section) => section.total > 0)
+  const fieldAlignmentRows = fieldAlignmentSections
+    .map((section) => row(section.label, `${section.captured}/${section.total} captured${section.missing ? `, ${section.missing} missing` : ''}`))
+    .join('')
+  const fieldAlignmentMissingRows = (Array.isArray(fieldAlignment.fields) ? fieldAlignment.fields : [])
+    .filter((field) => !field?.captured)
+    .slice(0, 10)
+    .map((field) => row(field.label || field.key, 'Missing'))
+    .join('')
+  const fieldAlignmentPercent = fieldAlignment.totalCount
+    ? Math.round((Number(fieldAlignment.capturedCount || 0) / Number(fieldAlignment.totalCount || 1)) * 100)
+    : 0
   const documentRows = (vm.documents || [])
     .map((item) => row(item.label, item.status || (item.isUploaded ? 'Uploaded' : 'Missing')))
     .join('')
@@ -732,7 +916,7 @@ export function buildBondApplicationPdfHtml(viewModel, generatedAt = new Date().
   <main class="page">
     <header class="hero">
       <div class="brand"><strong>ooba homeloans</strong><span>Powered by Arch9</span></div>
-      <h1>Bond Application Summary</h1>
+      <h1>${escapeHtml(summaryTitle)}</h1>
       <p class="sub">${escapeHtml(vm.applicant?.fullName || 'Applicant not captured')} • ${escapeHtml(vm.application?.id || 'Pending')} • Generated ${escapeHtml(formatDateTime(generatedAt))}</p>
       <span class="pill">${escapeHtml(vm.application?.readinessLabel || 'Not Ready')} · ${escapeHtml(vm.risk?.level || 'Incomplete')}</span>
     </header>
@@ -795,6 +979,19 @@ export function buildBondApplicationPdfHtml(viewModel, generatedAt = new Date().
         <article class="card">
           <h2>Outstanding Items</h2>
           <table><tbody>${actionRows || row('Status', 'No outstanding actions')}</tbody></table>
+        </article>
+      </div>
+      <div class="section grid two">
+        <article class="card">
+          <h2>Buyer Portal Field Alignment</h2>
+          <table><tbody>
+            ${row('Coverage', fieldAlignment.totalCount ? `${fieldAlignment.capturedCount || 0}/${fieldAlignment.totalCount} fields matched (${fieldAlignmentPercent}%)` : 'Not available')}
+            ${fieldAlignmentRows || row('Tracked Sections', 'Not available')}
+          </tbody></table>
+        </article>
+        <article class="card">
+          <h2>Missing Originator Fields</h2>
+          <table><tbody>${fieldAlignmentMissingRows || row('Status', 'All tracked buyer portal fields are available')}</tbody></table>
         </article>
       </div>
     </section>
