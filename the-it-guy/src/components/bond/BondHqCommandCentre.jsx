@@ -1589,7 +1589,7 @@ function ManagementCommissionSection({ commission = {} }) {
     <section className={`${MANAGEMENT_PANEL_BASE} overflow-hidden`}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
-          <h2 className="text-[1.5rem] font-semibold tracking-normal text-[#142132]">Commission & Reconciliation</h2>
+          <h2 className="text-[1.5rem] font-semibold tracking-normal text-[#142132]">Reconciliations</h2>
           <p className="mt-1 text-sm font-medium text-[#60758d]">Forecast, payout and reconciliation movement.</p>
         </div>
         {commission.unpricedApplications ? (

@@ -112,7 +112,6 @@ const HQ_FILTER_DEFAULTS = {
   branch: 'all',
   consultant: 'all',
   status: 'all',
-  risk: 'all',
   dateRange: 'all',
   sort: 'newest',
 }
@@ -124,18 +123,9 @@ const DATE_RANGE_OPTIONS = [
   { key: '90d', label: 'Last 90 days', days: 90 },
 ]
 
-const RISK_OPTIONS = [
-  { key: 'all', label: 'All risk' },
-  { key: 'low', label: 'Low' },
-  { key: 'medium', label: 'Medium' },
-  { key: 'high', label: 'High' },
-  { key: 'critical', label: 'Critical' },
-]
-
 const SORT_OPTIONS = [
   { key: 'newest', label: 'Newest first' },
   { key: 'oldest', label: 'Oldest first' },
-  { key: 'highest_risk', label: 'Highest risk' },
   { key: 'status', label: 'Status' },
   { key: 'branch', label: 'Branch' },
   { key: 'consultant', label: 'Consultant' },
@@ -526,14 +516,6 @@ function riskLabelFromKey(key) {
   return 'Low'
 }
 
-function getRiskSortScore(row = {}) {
-  const key = normalizeRiskKey(row)
-  if (key === 'critical') return 4
-  if (key === 'high') return 3
-  if (key === 'medium') return 2
-  return 1
-}
-
 export function buildHqApplicationRegisterRows(rows = [], now = Date.now()) {
   return parseRowsForQuery(rows).map((row) => {
     const statusKey = resolveHqApplicationStatus(row)
@@ -614,7 +596,6 @@ export function sortHqApplicationRegisterRows(rows = [], sort = 'newest') {
   const sortedRows = [...parseRowsForQuery(rows)]
   const compareText = (left, right, field) => normalizeText(left[field]).localeCompare(normalizeText(right[field]))
   if (sort === 'oldest') return sortedRows.sort((left, right) => (left.createdTimestamp || 0) - (right.createdTimestamp || 0))
-  if (sort === 'highest_risk') return sortedRows.sort((left, right) => getRiskSortScore(right) - getRiskSortScore(left) || (right.createdTimestamp || 0) - (left.createdTimestamp || 0))
   if (sort === 'status') return sortedRows.sort((left, right) => compareText(left, right, 'statusLabel') || (right.createdTimestamp || 0) - (left.createdTimestamp || 0))
   if (sort === 'branch') return sortedRows.sort((left, right) => compareText(left, right, 'branchDisplay') || (right.createdTimestamp || 0) - (left.createdTimestamp || 0))
   if (sort === 'consultant') return sortedRows.sort((left, right) => compareText(left, right, 'consultantDisplay') || (right.createdTimestamp || 0) - (left.createdTimestamp || 0))
@@ -630,7 +611,6 @@ export function filterHqApplicationRegisterRows(rows = [], filters = HQ_FILTER_D
     if (safeFilters.branch !== 'all' && row.branchDisplay !== safeFilters.branch) return false
     if (safeFilters.consultant !== 'all' && row.consultantDisplay !== safeFilters.consultant) return false
     if (safeFilters.status !== 'all' && row.statusKey !== safeFilters.status) return false
-    if (safeFilters.risk !== 'all' && row.riskKey !== safeFilters.risk) return false
     return matchesHqDateRange(row, safeFilters.dateRange, now)
   })
   return sortHqApplicationRegisterRows(filteredRows, safeFilters.sort)
@@ -679,35 +659,6 @@ function HqFilterSelect({ label, value, onChange, options = [] }) {
         ))}
       </select>
     </label>
-  )
-}
-
-function ApplicationWorkspaceTabs({ value, counts = {}, onChange }) {
-  return (
-    <nav aria-label="Application status" className="overflow-x-auto">
-      <div className="inline-flex min-w-max items-center gap-1 rounded-[14px] border border-[#dce6f2] bg-[#f6f9fc] p-1.5">
-        {bondViews.transactions.tabs.map((tab) => {
-          const active = tab.key === value
-          const count = counts[tab.key] || 0
-          return (
-            <button
-              key={tab.key}
-              type="button"
-              onClick={() => onChange(tab.key)}
-              className={`inline-flex h-10 items-center gap-2 rounded-[10px] px-3.5 text-sm font-semibold transition ${
-                active ? 'bg-white text-[#102448] shadow-[0_3px_10px_rgba(15,23,42,0.09)]' : 'text-[#61758a] hover:bg-white/70 hover:text-[#17324d]'
-              }`}
-              aria-current={active ? 'page' : undefined}
-            >
-              {tab.label}
-              <span className={`rounded-full px-2 py-0.5 text-xs ${active ? 'bg-[#eaf2fb] text-[#1d508a]' : 'bg-[#e9eff5] text-[#6b7f94]'}`}>
-                {count}
-              </span>
-            </button>
-          )
-        })}
-      </div>
-    </nav>
   )
 }
 
@@ -1192,14 +1143,6 @@ export default function BondTransactionsPage({
     [hqCurrentPage, hqFilteredRows, hqRowsPerPage],
   )
   const hqKpis = useMemo(() => getHqApplicationKpis(hqRegisterRows), [hqRegisterRows])
-  const hqTabCounts = useMemo(
-    () => Object.fromEntries(bondViews.transactions.tabs.map((tab) => [tab.key, hqRegisterRows.filter((row) => matchesHqApplicationWorkspaceTab(row, tab.key)).length])),
-    [hqRegisterRows],
-  )
-  const applicationTabCounts = useMemo(
-    () => Object.fromEntries(bondViews.transactions.tabs.map((tab) => [tab.key, parseRowsForQuery(snapshot?.rows).filter((row) => matchesApplicationWorkspaceTab(row, tab.key)).length])),
-    [snapshot?.rows],
-  )
   const hasActiveHqFilters = useMemo(
     () => Object.entries(HQ_FILTER_DEFAULTS).some(([key, value]) => hqFilters[key] !== value),
     [hqFilters],
@@ -1220,17 +1163,6 @@ export default function BondTransactionsPage({
     setHqRowsPerPage(value)
     setHqPage(1)
   }, [])
-
-  const handleApplicationTabChange = useCallback(
-    (nextView) => {
-      const params = new URLSearchParams(location.search)
-      params.set(BOND_TRANSACTION_VIEW_PARAM, nextView)
-      params.delete('status')
-      navigate(`${bondViews.transactions.basePath}?${params.toString()}`)
-      setHqPage(1)
-    },
-    [location.search, navigate],
-  )
 
   const handleOpenHqApplication = useCallback(
     (row) => {
@@ -1292,13 +1224,6 @@ export default function BondTransactionsPage({
 
     return (
       <BondPageShell className="space-y-[clamp(1.1rem,1.6vw,1.75rem)]">
-        <section className="flex flex-col gap-4 rounded-[18px] border border-[#dce6f2] bg-white px-[clamp(1rem,1.25vw,1.5rem)] py-[clamp(1rem,1.25vw,1.4rem)] shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
-          <div>
-            <p className="text-lg font-semibold text-[#102448]">Applications</p>
-            <p className="mt-1 text-sm text-[#60758d]">Manage each bond application from intake through registration.</p>
-          </div>
-          <ApplicationWorkspaceTabs value={selectedView.key} counts={hqTabCounts} onChange={handleApplicationTabChange} />
-        </section>
         <section className="rounded-[22px] border border-[#dce6f2] bg-white p-[clamp(0.5rem,0.75vw,0.75rem)] shadow-[0_16px_38px_rgba(15,23,42,0.055)]">
           <div className="grid gap-[clamp(0.5rem,0.8vw,0.9rem)] [grid-template-columns:repeat(auto-fit,minmax(min(100%,13.25rem),1fr))]">
             {hqKpis.map((item) => (
@@ -1332,12 +1257,11 @@ export default function BondTransactionsPage({
               Clear filters
             </button>
           </div>
-          <div className="grid gap-[clamp(0.75rem,1vw,1rem)] [grid-template-columns:repeat(auto-fit,minmax(min(100%,12.25rem),1fr))]">
+          <div className="grid grid-cols-1 gap-[clamp(0.65rem,0.8vw,0.85rem)] sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
             <HqFilterSelect label="Region" value={hqFilters.region} onChange={(value) => handleHqFilterChange('region', value)} options={hqFilterOptions.regions} />
             <HqFilterSelect label="Branch" value={hqFilters.branch} onChange={(value) => handleHqFilterChange('branch', value)} options={hqFilterOptions.branches} />
             <HqFilterSelect label="Consultant" value={hqFilters.consultant} onChange={(value) => handleHqFilterChange('consultant', value)} options={hqFilterOptions.consultants} />
             <HqFilterSelect label="Status" value={hqFilters.status} onChange={(value) => handleHqFilterChange('status', value)} options={hqFilterOptions.statuses} />
-            <HqFilterSelect label="Risk" value={hqFilters.risk} onChange={(value) => handleHqFilterChange('risk', value)} options={RISK_OPTIONS} />
             <HqFilterSelect label="Date Range" value={hqFilters.dateRange} onChange={(value) => handleHqFilterChange('dateRange', value)} options={DATE_RANGE_OPTIONS} />
             <HqFilterSelect label="Sort" value={hqFilters.sort} onChange={(value) => handleHqFilterChange('sort', value)} options={SORT_OPTIONS} />
           </div>
@@ -1370,13 +1294,6 @@ export default function BondTransactionsPage({
 
   return (
     <BondPageShell className="space-y-[clamp(1rem,1.35vw,1.5rem)]">
-      <section className="flex flex-col gap-4 rounded-[18px] border border-[#dce6f2] bg-white px-[clamp(1rem,1.25vw,1.5rem)] py-[clamp(1rem,1.25vw,1.4rem)] shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
-        <div>
-          <p className="text-lg font-semibold text-[#102448]">Applications</p>
-          <p className="mt-1 text-sm text-[#60758d]">Your bond application workspace, from incoming requests to registration.</p>
-        </div>
-        <ApplicationWorkspaceTabs value={selectedView.key} counts={applicationTabCounts} onChange={handleApplicationTabChange} />
-      </section>
       <div className="rounded-[18px] border border-[#dce6f2] bg-white px-[clamp(1rem,1.25vw,1.5rem)] py-[clamp(1rem,1.25vw,1.4rem)] shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
         <div className="grid grid-cols-1 gap-[clamp(0.75rem,1vw,1rem)] md:grid-cols-2 lg:grid-cols-4">
           <label className="relative">

@@ -52,12 +52,12 @@ async function main() {
     )
     assert.deepEqual(
       hqBondNav.map((item) => item.label),
-      ['Dashboard', 'Applications', 'Developments', 'Partners', 'Clients', 'Commissions & Reconciliation', 'Team', 'Banks', 'Settings'],
+      ['Dashboard', 'Applications', 'Developments', 'Partners', 'Clients', 'Reconciliations', 'Team', 'Banks', 'Settings'],
     )
     assert.equal(consultantNav.some((item) => item.key === 'settings'), false)
     assert.deepEqual(
       hqBondNav.filter((item) => item.navSection !== 'secondary').map((item) => item.label),
-      ['Dashboard', 'Applications', 'Developments', 'Partners', 'Clients', 'Commissions & Reconciliation', 'Team', 'Banks'],
+      ['Dashboard', 'Applications', 'Developments', 'Partners', 'Clients', 'Reconciliations', 'Team', 'Banks'],
     )
     assert.deepEqual(
       hqBondNav.filter((item) => item.navSection === 'secondary').map((item) => item.label),

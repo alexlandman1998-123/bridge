@@ -124,7 +124,7 @@ try {
     assert.deepEqual(filterHqApplicationRegisterRows(rows).map((row) => row.key), ['tx-ready', 'tx-feedback', 'tx-instruction', 'tx-unassigned'])
     assert.deepEqual(filterHqApplicationRegisterRows(rows, { tab: 'unassigned' }).map((row) => row.key), ['tx-unassigned'])
     assert.deepEqual(filterHqApplicationRegisterRows(rows, { branch: 'Sandton' }).map((row) => row.key), ['tx-feedback', 'tx-instruction'])
-    assert.deepEqual(filterHqApplicationRegisterRows(rows, { risk: 'high' }).map((row) => row.key), ['tx-unassigned'])
+    assert.deepEqual(filterHqApplicationRegisterRows(rows, { status: 'bank_feedback' }).map((row) => row.key), ['tx-feedback'])
     assert.deepEqual(filterHqApplicationRegisterRows(rows, { dateRange: '7d' }, NOW).map((row) => row.key), ['tx-ready', 'tx-feedback'])
 
     const options = getHqApplicationFilterOptions(rows)

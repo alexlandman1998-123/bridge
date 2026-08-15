@@ -18,7 +18,7 @@ try {
 
     assert.deepEqual(
       hqItems.map((item) => item.label),
-      ['Dashboard', 'Applications', 'Developments', 'Partners', 'Clients', 'Commissions & Reconciliation', 'Team', 'Banks', 'Settings'],
+      ['Dashboard', 'Applications', 'Developments', 'Partners', 'Clients', 'Reconciliations', 'Team', 'Banks', 'Settings'],
     )
     assert.deepEqual(hqItems.find((item) => item.key === 'bond_applications')?.children.map((item) => item.label), ['Active Applications', 'Incoming Applications', 'Completed'])
     assert.equal(Array.isArray(hqItems.find((item) => item.key === 'bond_developments')?.children), false)
@@ -29,14 +29,14 @@ try {
     const regionalItems = roles.getRoleNavItems('bond_originator', { membershipRole: 'bond_regional_manager' })
     assert.deepEqual(
       regionalItems.map((item) => item.label),
-      ['Dashboard', 'Applications', 'Developments', 'Partners', 'Clients', 'Commissions & Reconciliation', 'Team', 'Banks', 'Settings'],
+      ['Dashboard', 'Applications', 'Developments', 'Partners', 'Clients', 'Reconciliations', 'Team', 'Banks', 'Settings'],
     )
     assert.equal(Array.isArray(regionalItems.find((item) => item.key === 'bond_organisation')?.children), false)
 
     const branchItems = roles.getRoleNavItems('bond_originator', { membershipRole: 'bond_branch_manager' })
     assert.deepEqual(
       branchItems.map((item) => item.label),
-      ['Dashboard', 'Applications', 'Developments', 'Partners', 'Clients', 'Commissions & Reconciliation', 'Team', 'Banks', 'Settings'],
+      ['Dashboard', 'Applications', 'Developments', 'Partners', 'Clients', 'Reconciliations', 'Team', 'Banks', 'Settings'],
     )
     assert.equal(Array.isArray(branchItems.find((item) => item.key === 'bond_organisation')?.children), false)
 

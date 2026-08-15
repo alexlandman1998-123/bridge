@@ -221,7 +221,7 @@ export const APP_NAV_BY_ROLE = {
     { key: 'bond_developments', label: 'Developments', to: '/bond/developments?view=current', navSection: 'main', activeMatch: ['/bond/developments'] },
     { key: 'partners', label: 'Partners', to: '/bond/partners', navSection: 'main', activeMatch: ['/bond/partners', '/partners', '/bond/partner-intelligence', '/bond/organisation/partners'] },
     { key: 'clients', label: 'Clients', to: '/bond/clients', navSection: 'main', activeMatch: ['/bond/clients', '/clients'] },
-    { key: 'revenue_commissions', label: 'Commissions & Reconciliation', to: '/bond/revenue', navSection: 'main', activeMatch: ['/bond/revenue'] },
+    { key: 'revenue_commissions', label: 'Reconciliations', to: '/bond/revenue', navSection: 'main', activeMatch: ['/bond/revenue'] },
     { key: 'bond_organisation', label: 'Team', to: '/bond/organisation?view=consultants', navSection: 'main', activeMatch: ['/bond/organisation', '/bond/hq-command-centre', '/bond/branch-operations', '/bond/regional-operations', '/bond/consultant-performance'] },
     { key: 'bank_relationships', label: 'Banks', to: '/bond/banks', navSection: 'main', activeMatch: ['/bond/banks'] },
     { key: 'settings', label: 'Settings', to: '/settings', navSection: 'secondary' },
@@ -316,7 +316,7 @@ function createBondClientsNav() {
 function createBondCommissionsNav({ ownOnly = false } = {}) {
   return {
     key: 'revenue_commissions',
-    label: ownOnly ? 'My Commissions' : 'Commissions & Reconciliation',
+    label: ownOnly ? 'My Commissions' : 'Reconciliations',
     to: '/bond/revenue',
     navSection: 'main',
     activeMatch: ['/bond/revenue'],
