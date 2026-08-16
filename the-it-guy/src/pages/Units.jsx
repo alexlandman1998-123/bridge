@@ -27,6 +27,7 @@ import { getBondApplicationStage, BOND_APPLICATION_STAGES } from '../core/transa
 import { financeTypeMatchesFilter, normalizeFinanceType } from '../core/transactions/financeType'
 import { SUBPROCESS_TYPES } from '../core/transactions/roleConfig'
 import { TRANSACTION_SCOPE_OPTIONS, getTransactionScopeForRow } from '../core/transactions/transactionScope'
+import { resolveTransactionWorkspaceRoute } from '../core/transactions/transactionWorkspaceRouting'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { resolveEffectiveBondAssignment } from '../services/bondAssignmentService'
 import {
@@ -1370,6 +1371,31 @@ function Units() {
     },
     [location.pathname, navigate],
   )
+  const navigateToDeveloperTransactionWorkspace = useCallback(
+    (row = {}, unitId = '', unitNumber = '-') => {
+      const route = resolveTransactionWorkspaceRoute({
+        transactionId: row?.transaction?.id,
+        unitId: unitId || row?.unit?.id || row?.transaction?.unit_id,
+        unitNumber: unitNumber || row?.unit?.unit_number,
+        transactionReference: row?.transaction?.transaction_reference,
+        title: row?.transaction?.transaction_reference || row?.buyer?.name || '',
+      })
+
+      if (route.kind === 'unit') {
+        void prefetchUnitWorkspaceShell(unitId || row?.unit?.id)
+      }
+
+      startRouteTransitionTrace({
+        from: location.pathname,
+        to: route.path,
+        label: route.kind === 'transaction'
+          ? 'transactions-list-to-transaction-detail'
+          : 'transactions-list-to-workspace',
+      })
+      navigate(route.path, route.state ? { state: route.state } : undefined)
+    },
+    [location.pathname, navigate],
+  )
 
   async function executeDeleteTransaction(row) {
     const transactionId = row?.transaction?.id
@@ -1547,11 +1573,6 @@ function Units() {
     const unitNumber = row?.unit?.unit_number || '-'
     const transactionId = row?.transaction?.id || null
 
-    if (unitId) {
-      navigateToUnitWorkspace(unitId, unitNumber)
-      return
-    }
-
     if (transactionId) {
       startRouteTransitionTrace({
         from: location.pathname,
@@ -1561,6 +1582,11 @@ function Units() {
       navigate(`/transactions/${transactionId}`, {
         state: { headerTitle: row?.transaction?.transaction_reference || 'Application' },
       })
+      return
+    }
+
+    if (unitId) {
+      navigateToUnitWorkspace(unitId, unitNumber)
       return
     }
 
@@ -1973,8 +1999,8 @@ function Units() {
             <div className="mt-6">
               <UnitCardsView
                 rows={rows}
-                onCardClick={(unitId, unitNumber) =>
-                  navigateToUnitWorkspace(unitId, unitNumber)
+                onCardClick={(row, unitId, unitNumber) =>
+                  navigateToDeveloperTransactionWorkspace(row, unitId, unitNumber)
                 }
               />
             </div>
@@ -2027,7 +2053,7 @@ function Units() {
               </div>
             }
             onRowClick={(row, unitId, unitNumber) => {
-              navigateToUnitWorkspace(unitId, unitNumber)
+              navigateToDeveloperTransactionWorkspace(row, unitId, unitNumber)
             }}
           />
         )
@@ -2084,11 +2110,7 @@ function Units() {
                     <Button
                       variant="secondary"
                       type="button"
-                      onClick={() =>
-                        navigate(`/units/${editingRow.unit.id}`, {
-                          state: { headerTitle: `Unit ${editingRow.unit.unit_number}` },
-                        })
-                      }
+                      onClick={() => navigateToDeveloperTransactionWorkspace(editingRow, editingRow?.unit?.id, editingRow?.unit?.unit_number)}
                     >
                       Open Full Workspace
                     </Button>

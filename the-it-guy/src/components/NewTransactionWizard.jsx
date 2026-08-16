@@ -47,6 +47,7 @@ import {
   validateTransactionPartnerInvitationDraft,
 } from '../services/transactionPartnerInvitationService'
 import { listTransactionPartnerConnectionOptions } from '../services/partnerNetworkService'
+import { resolveTransactionWorkspaceRoute } from '../core/transactions/transactionWorkspaceRouting'
 import Button from './ui/Button'
 import Modal from './ui/Modal'
 
@@ -2140,13 +2141,6 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
       {createdTransaction ? (
         <Button
           onClick={() => {
-            if (createdTransaction.unitId) {
-              navigate(`/units/${createdTransaction.unitId}`, {
-                state: { headerTitle: `Unit ${createdTransaction.unitNumber}` },
-              })
-              return
-            }
-
             if (createdTransaction.transactionId) {
               if (role === 'agent') {
                 const searchValue =
@@ -2154,11 +2148,26 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
                   createdTransaction.reference ||
                   createdTransaction.transactionId
                 const query = searchValue ? `?search=${encodeURIComponent(searchValue)}` : ''
-                navigate(`/units${query}`)
+                navigate(`/transactions${query}`)
                 return
               }
 
-              navigate(`/transactions/${createdTransaction.transactionId}`)
+              const route = resolveTransactionWorkspaceRoute({
+                transactionId: createdTransaction.transactionId,
+                unitId: createdTransaction.unitId,
+                unitNumber: createdTransaction.unitNumber,
+                transactionReference: createdTransaction.transactionReference || createdTransaction.reference,
+              })
+              navigate(route.path, route.state ? { state: route.state } : undefined)
+              return
+            }
+
+            if (createdTransaction.unitId) {
+              const route = resolveTransactionWorkspaceRoute({
+                unitId: createdTransaction.unitId,
+                unitNumber: createdTransaction.unitNumber,
+              })
+              navigate(route.path, route.state ? { state: route.state } : undefined)
             }
           }}
         >

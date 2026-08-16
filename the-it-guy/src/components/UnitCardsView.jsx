@@ -16,11 +16,11 @@ function UnitCardsView({ rows, onCardClick }) {
           <article
             key={row.unit.id}
             className="group flex flex-col gap-5 rounded-[24px] border border-[#dfe7f1] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.08)] transition duration-150 ease-out hover:-translate-y-[2px] hover:border-[#ccd6e3] hover:shadow-[0_20px_40px_rgba(15,23,42,0.12)]"
-            onClick={() => onCardClick(row.unit.id, row.unit.unit_number)}
+            onClick={() => onCardClick(row, row.unit.id, row.unit.unit_number)}
             onKeyDown={(event) => {
               if (event.key === 'Enter' || event.key === ' ') {
                 event.preventDefault()
-                onCardClick(row.unit.id, row.unit.unit_number)
+                onCardClick(row, row.unit.id, row.unit.unit_number)
               }
             }}
             tabIndex={0}

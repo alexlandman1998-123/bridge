@@ -44,6 +44,7 @@ import {
   selectStageDistribution,
 } from '../core/transactions/developerSelectors'
 import { getReportNextAction } from '../core/transactions/reportNextAction'
+import { resolveTransactionWorkspaceRoute } from '../core/transactions/transactionWorkspaceRouting'
 import {
   deleteDevelopment,
   deleteDevelopmentDocument,
@@ -1353,6 +1354,25 @@ function DevelopmentDetail() {
   const canManageDevelopment = role === 'developer' || role === 'internal_admin'
   const canCreateTransactions = canManageDevelopment || role === 'attorney'
   const canEditMarketing = role === 'developer' || role === 'internal_admin' || role === 'agent'
+  const openDevelopmentTransactionWorkspace = useCallback(
+    (record = {}) => {
+      const route = resolveTransactionWorkspaceRoute({
+        transactionId: record?.transactionId || record?.transaction?.id,
+        unitId: record?.unitId || record?.unit?.id,
+        unitNumber: record?.unitNumber || record?.unit?.unit_number,
+        transactionReference: record?.transactionReference || record?.reference || record?.transaction?.transaction_reference,
+        title: record?.buyerName || record?.buyer?.name || record?.transaction?.transaction_reference || '',
+      })
+
+      if (route.kind === 'fallback') {
+        setActiveTab('transactions')
+        return
+      }
+
+      navigate(route.path, route.state ? { state: route.state } : undefined)
+    },
+    [navigate],
+  )
 
   const loadData = useCallback(async () => {
     if (!isSupabaseConfigured) {
@@ -3718,13 +3738,7 @@ function DevelopmentDetail() {
                         <Button
                           variant="secondary"
                           size="sm"
-                          onClick={() =>
-                            item.unitId
-                              ? navigate(`/units/${item.unitId}`, {
-                                  state: { headerTitle: `Unit ${item.unitNumber || 'Workspace'}` },
-                                })
-                              : setActiveTab('transactions')
-                          }
+                          onClick={() => openDevelopmentTransactionWorkspace(item)}
                         >
                           View
                           <ArrowUpRight size={13} />
@@ -3826,11 +3840,7 @@ function DevelopmentDetail() {
                       <button
                         key={row.id}
                         type="button"
-                        onClick={() =>
-                          navigate(`/units/${row.unitId}`, {
-                            state: { headerTitle: `Unit ${row.unitNumber || 'Workspace'}` },
-                          })
-                        }
+                        onClick={() => openDevelopmentTransactionWorkspace(row)}
                         className="min-w-[280px] snap-start rounded-[18px] border border-[#dde4ee] bg-[#fbfcfe] p-4 text-left shadow-[0_8px_22px_rgba(15,23,42,0.05)] transition duration-150 ease-out hover:-translate-y-0.5 hover:border-[#cfd9e6] hover:bg-white"
                       >
                         <div className="mb-3 flex items-start justify-between gap-3">
@@ -6180,10 +6190,7 @@ function DevelopmentDetail() {
                           key={row.transaction?.id || row.unit?.id}
                           className="h-[64px] cursor-pointer align-middle hover:bg-[#f8fbff]"
                           onClick={() => {
-                            if (!row?.unit?.id) return
-                            navigate(`/units/${row.unit.id}`, {
-                              state: { headerTitle: `Unit ${row.unit?.unit_number || 'Workspace'}` },
-                            })
+                            openDevelopmentTransactionWorkspace(row)
                           }}
                         >
                           <td className="px-4 py-3 align-middle">

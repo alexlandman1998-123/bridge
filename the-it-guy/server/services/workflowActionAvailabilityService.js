@@ -160,8 +160,11 @@ const ACTION_DEFINITIONS = Object.freeze({
     executionMode: 'external',
     workflowKey: 'sales_otp',
     stepKey: 'buyer_onboarding_complete',
-    ownerRole: 'agent',
-    allowedRoles: ['agent'],
+    ownerRole: (state = {}) => isDevelopmentSale(state) ? 'developer' : 'agent',
+    allowedRoles: (state = {}) =>
+      isDevelopmentSale(state)
+        ? ['agent', 'developer', 'internal_admin']
+        : ['agent', 'internal_admin'],
     stages: ['SALES_OTP'],
     hideWhenStepComplete: true,
     reason(state = {}) {
@@ -185,6 +188,7 @@ const ACTION_DEFINITIONS = Object.freeze({
     allowedRoles: ['agent'],
     stages: ['SALES_OTP'],
     hideWhenStepComplete: true,
+    hiddenWhen: (state = {}) => isDevelopmentSale(state),
     reason(state = {}) {
       if (isDevelopmentSale(state)) {
         return 'Seller onboarding is not required for new development transactions.'
@@ -204,8 +208,11 @@ const ACTION_DEFINITIONS = Object.freeze({
     groupKey: 'stage',
     workflowKey: 'sales_otp',
     stepKey: 'ready_for_finance_handoff',
-    ownerRole: 'agent',
-    allowedRoles: ['agent'],
+    ownerRole: (state = {}) => isDevelopmentSale(state) ? 'developer' : 'agent',
+    allowedRoles: (state = {}) =>
+      isDevelopmentSale(state)
+        ? ['agent', 'developer', 'internal_admin']
+        : ['agent', 'internal_admin'],
     stages: ['SALES_OTP'],
     requires: (state = {}) => {
       const requiredSteps = ['buyer_onboarding_complete', 'signed_otp_received']
@@ -343,6 +350,9 @@ function resolveActionMetadata(definition = null, state = {}) {
       ? definition.requires({ ...state, workflowKey, stepKey })
       : definition.requires) || [],
   )
+  const hidden = typeof definition.hiddenWhen === 'function'
+    ? definition.hiddenWhen({ ...state, workflowKey, stepKey, ownerRole })
+    : definition.hiddenWhen === true
 
   return {
     actionKey: '',
@@ -361,6 +371,7 @@ function resolveActionMetadata(definition = null, state = {}) {
     executionMode: normalizeText(definition.executionMode || 'workflow'),
     transactionOnly: definition.transactionOnly === true,
     hideWhenStepComplete: definition.hideWhenStepComplete === true,
+    hidden,
     gateAction: definition.gateAction === true,
     gateKey: normalizeText(definition.gateKey),
     softPrerequisiteGates: unique(definition.softPrerequisiteGates || []),
@@ -404,6 +415,10 @@ export function isWorkflowActionAllowedForRole(descriptor = {}, actorRole = '') 
 }
 
 function isActionRelevant(descriptor = {}, state = {}) {
+  if (descriptor.hidden) {
+    return false
+  }
+
   const parentStage = normalizeText(state.parentStage || state.rollup?.parentStage)
   if (descriptor.stages.length && !descriptor.stages.includes(parentStage)) {
     return false

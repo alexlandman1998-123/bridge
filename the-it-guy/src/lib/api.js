@@ -39591,11 +39591,12 @@ async function resolveTransactionAndContext(client, transactionId) {
   const normalizedUnitId = normalizeNullableUuid(transaction.unit_id)
   const normalizedBuyerId = normalizeNullableUuid(transaction.buyer_id)
   const normalizedOrganisationId = normalizeNullableUuid(transaction.organisation_id)
-  const [unitQuery, buyerQuery, organisation] = await Promise.all([
+  const normalizedDevelopmentId = normalizeNullableUuid(transaction.development_id)
+  const [unitResult, buyerQuery, transactionOrganisation, directDevelopment] = await Promise.all([
     normalizedUnitId
       ? client
           .from('units')
-          .select('id, development_id, unit_number, phase, status, development:developments(id, name)')
+          .select('id, development_id, unit_number, phase, status, development:developments(id, name, organisation_id, developer_company)')
           .eq('id', normalizedUnitId)
           .maybeSingle()
       : Promise.resolve({ data: null, error: null }),
@@ -39603,7 +39604,25 @@ async function resolveTransactionAndContext(client, transactionId) {
       ? client.from('buyers').select('id, name, phone, email').eq('id', normalizedBuyerId).maybeSingle()
       : Promise.resolve({ data: null, error: null }),
     fetchOrganisationBrandContext(client, normalizedOrganisationId),
+    fetchDevelopmentBrandContext(client, normalizedDevelopmentId),
   ])
+
+  let unitQuery = unitResult
+  if (
+    unitQuery.error &&
+    (
+      isMissingColumnError(unitQuery.error, 'organisation_id') ||
+      isMissingColumnError(unitQuery.error, 'developer_company')
+    )
+  ) {
+    unitQuery = normalizedUnitId
+      ? await client
+          .from('units')
+          .select('id, development_id, unit_number, phase, status, development:developments(id, name)')
+          .eq('id', normalizedUnitId)
+          .maybeSingle()
+      : { data: null, error: null }
+  }
 
   if (unitQuery.error) {
     throw unitQuery.error
@@ -39613,12 +39632,77 @@ async function resolveTransactionAndContext(client, transactionId) {
     throw buyerQuery.error
   }
 
+  const embeddedDevelopment = Array.isArray(unitQuery.data?.development)
+    ? unitQuery.data.development[0]
+    : unitQuery.data?.development
+  const development =
+    directDevelopment && embeddedDevelopment
+      ? { ...embeddedDevelopment, ...directDevelopment, organisation_id: directDevelopment.organisation_id || embeddedDevelopment.organisation_id }
+      : directDevelopment || embeddedDevelopment || null
+  const developmentOrganisationId = normalizeNullableUuid(development?.organisation_id)
+  const brandingOrganisation =
+    developmentOrganisationId && developmentOrganisationId !== normalizedOrganisationId
+      ? await fetchOrganisationBrandContext(client, developmentOrganisationId)
+      : developmentOrganisationId && developmentOrganisationId === normalizedOrganisationId
+        ? transactionOrganisation
+        : transactionOrganisation
+
   return {
     transaction,
     unit: unitQuery.data || null,
     buyer: buyerQuery.data || null,
-    organisation,
+    organisation: transactionOrganisation,
+    brandingOrganisation: brandingOrganisation || transactionOrganisation,
+    brandingSource:
+      developmentOrganisationId && brandingOrganisation
+        ? 'development_organisation'
+        : 'transaction_organisation',
+    development,
   }
+}
+
+async function fetchDevelopmentBrandContext(client, developmentId) {
+  const normalizedDevelopmentId = normalizeNullableUuid(developmentId)
+  if (!normalizedDevelopmentId) {
+    return null
+  }
+
+  let developmentQuery = await client
+    .from('developments')
+    .select('id, name, organisation_id, developer_company')
+    .eq('id', normalizedDevelopmentId)
+    .maybeSingle()
+
+  if (
+    developmentQuery.error &&
+    (
+      isMissingColumnError(developmentQuery.error, 'developer_company') ||
+      isMissingColumnError(developmentQuery.error, 'organisation_id')
+    )
+  ) {
+    developmentQuery = await client
+      .from('developments')
+      .select(
+        isMissingColumnError(developmentQuery.error, 'organisation_id')
+          ? 'id, name'
+          : 'id, name, organisation_id',
+      )
+      .eq('id', normalizedDevelopmentId)
+      .maybeSingle()
+  }
+
+  if (developmentQuery.error) {
+    if (
+      isMissingTableError(developmentQuery.error, 'developments') ||
+      isMissingSchemaError(developmentQuery.error) ||
+      isPermissionDeniedError(developmentQuery.error)
+    ) {
+      return null
+    }
+    throw developmentQuery.error
+  }
+
+  return developmentQuery.data || null
 }
 
 async function fetchOrganisationBrandContext(client, organisationId) {
@@ -39766,8 +39850,15 @@ function getOrganisationOnboardingBrandingSources(organisation = null) {
   return [agencyBranding, settingsBranding, settingsJson]
 }
 
-function normalizeBuyerOnboardingBranding({ organisation = null, transaction = null, unit = null } = {}) {
-  const development = Array.isArray(unit?.development) ? unit.development[0] : unit?.development
+function normalizeBuyerOnboardingBranding({
+  organisation = null,
+  transaction = null,
+  unit = null,
+  development = null,
+  brandingSource = 'transaction_organisation',
+} = {}) {
+  const unitDevelopment = Array.isArray(unit?.development) ? unit.development[0] : unit?.development
+  const resolvedDevelopment = development || unitDevelopment || null
   const [agencyBranding, settingsBranding, settingsJson] = getOrganisationOnboardingBrandingSources(organisation)
   const organisationBranding = resolveOnboardingBranding(agencyBranding, settingsBranding, settingsJson, organisation)
   const contextBranding = resolveOnboardingBranding(
@@ -39776,7 +39867,7 @@ function normalizeBuyerOnboardingBranding({ organisation = null, transaction = n
     settingsJson,
     organisation,
     transaction,
-    development,
+    resolvedDevelopment,
   )
   const organisationName = normalizeNullableText(organisationBranding.organisationName)
   const senderName = organisationName || normalizeNullableText(contextBranding.organisationName) || 'Your property team'
@@ -39786,6 +39877,9 @@ function normalizeBuyerOnboardingBranding({ organisation = null, transaction = n
 
   return {
     organisationId: normalizeNullableUuid(organisation?.id || transaction?.organisation_id),
+    transactionOrganisationId: normalizeNullableUuid(transaction?.organisation_id),
+    developmentOrganisationId: normalizeNullableUuid(resolvedDevelopment?.organisation_id),
+    brandingSource,
     organisationName,
     agencyName: organisationName,
     senderName,
@@ -39802,7 +39896,7 @@ function normalizeBuyerOnboardingBranding({ organisation = null, transaction = n
 export async function fetchClientOnboardingByToken(token) {
   const client = requireOnboardingTokenClient(token)
   const onboarding = await resolveOnboardingTokenContext(client, token)
-  const { transaction, unit, buyer, organisation } = await resolveTransactionAndContext(
+  const { transaction, unit, buyer, organisation, brandingOrganisation, brandingSource, development } = await resolveTransactionAndContext(
     client,
     onboarding.transactionId,
   )
@@ -39920,10 +40014,13 @@ export async function fetchClientOnboardingByToken(token) {
     buyer,
     organisation,
     branding: normalizeBuyerOnboardingBranding({
-      organisation,
+      organisation: brandingOrganisation || organisation,
       transaction,
       unit,
+      development,
+      brandingSource,
     }),
+    development,
     purchaserType,
     purchaserTypeLabel: getPurchaserTypeLabel(purchaserType),
     formConfig,
@@ -42692,6 +42789,13 @@ function mapClientPortalAppointmentActionToRsvp(action = '') {
   return 'Pending'
 }
 
+function mapClientPortalAppointmentActionToNotificationEvent(action = '') {
+  if (action === 'confirm') return 'appointment_confirmed'
+  if (action === 'decline') return 'appointment_declined'
+  if (action === 'reschedule') return 'appointment_reschedule_requested'
+  return 'appointment_updated'
+}
+
 function deriveAppointmentStatusFromParticipants(participants = []) {
   const normalizedParticipants = (Array.isArray(participants) ? participants : []).map((participant) =>
     String(participant?.rsvp_status || participant?.rsvpStatus || 'Pending')
@@ -42779,6 +42883,14 @@ export async function respondToClientPortalAppointment({
       throw new Error('Please provide a valid preferred date and time.')
     }
     normalizedPreferredDateTime = parsedPreferredDate.toISOString()
+  }
+  if (normalizedAction === 'reschedule') {
+    if (!normalizedPreferredDateTime) {
+      throw new Error('Please choose a preferred date and time for the reschedule request.')
+    }
+    if (new Date(normalizedPreferredDateTime).getTime() <= Date.now()) {
+      throw new Error('Please choose a preferred date and time in the future.')
+    }
   }
 
   const appointmentQuery = await client
@@ -43132,6 +43244,36 @@ export async function respondToClientPortalAppointment({
     },
     createdByRole: 'client',
   }).catch(() => null)
+
+  const appointmentNotificationEventType = mapClientPortalAppointmentActionToNotificationEvent(normalizedAction)
+  const appointmentNotificationMetadata = {
+    trigger: 'client_portal_appointment_response',
+    action: normalizedAction,
+    role: roleScope,
+    participantId: targetParticipant?.participant_id || null,
+    preferredStart: normalizedPreferredDateTime,
+    preferredEnd: rescheduleRequestRecord?.preferredEnd || rescheduleRequestRecord?.preferred_end || null,
+    rescheduleRequestId: rescheduleRequestRecord?.id || null,
+    suggestedSlots: suggestedRescheduleSlots,
+    reason: normalizedNotes || null,
+    source: 'client_portal_appointment_response',
+  }
+  const {
+    cancelAppointmentReminders,
+    notifyAppointmentParticipants,
+  } = await import('../services/appointmentNotificationService')
+  await notifyAppointmentParticipants(normalizedAppointmentId, appointmentNotificationEventType, {
+    visibility: appointmentQuery.data?.visibility_scope || 'shared_role_players',
+    metadata: appointmentNotificationMetadata,
+  }).catch((notificationError) => {
+    console.warn('[client-portal-appointments] notification dispatch failed', notificationError)
+  })
+
+  if (normalizedAction === 'decline' || normalizedAction === 'reschedule') {
+    await cancelAppointmentReminders(normalizedAppointmentId).catch((reminderError) => {
+      console.warn('[client-portal-appointments] reminder cancellation failed', reminderError)
+    })
+  }
 
   const updatedRow = appointmentStatusUpdate.data || appointmentQuery.data
   const normalizedUpdatedAppointment = normalizeAppointmentRecordRow(updatedRow)

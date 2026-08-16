@@ -60,6 +60,7 @@ import {
   getMainStageFromDetailedStage,
 } from '../core/transactions/stageConfig'
 import { TRANSACTION_SCOPE_OPTIONS, filterRowsByTransactionScope, getTransactionScopeForRow } from '../core/transactions/transactionScope'
+import { resolveTransactionWorkspaceRoute } from '../core/transactions/transactionWorkspaceRouting'
 import { normalizeFinanceType } from '../core/transactions/financeType'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { useOrganisation } from '../context/OrganisationContext'
@@ -1271,21 +1272,16 @@ function openBondApplication(navigate, item) {
   const unitNumber = item?.unitNumber || '-'
   const transactionId = item?.transactionId || null
 
-  if (unitId) {
-    navigate(`/units/${unitId}`, {
-      state: { headerTitle: `Unit ${unitNumber}` },
-    })
-    return
-  }
+  const route = resolveTransactionWorkspaceRoute({
+    transactionId,
+    unitId,
+    unitNumber,
+    transactionReference: item?.reference,
+    title: item?.reference || 'Application',
+    fallbackPath: '/bond/pipeline',
+  })
 
-  if (transactionId) {
-    navigate(`/transactions/${transactionId}`, {
-      state: { headerTitle: item?.reference || 'Application' },
-    })
-    return
-  }
-
-  navigate('/bond/pipeline')
+  navigate(route.path, route.state ? { state: route.state } : undefined)
 }
 
 function toSignalText(row) {
@@ -1836,7 +1832,7 @@ function DeveloperLandingCommandCenter({ model, onNavigate = () => {} }) {
                     <p>{item.subtitle}</p>
                     <small>{item.meta}</small>
                   </div>
-                  <button type="button" onClick={() => onNavigate(item.unitId ? `/units/${item.unitId}` : '/transactions')}>
+                  <button type="button" onClick={() => onNavigate(item.transactionId ? `/transactions/${item.transactionId}` : item.unitId ? `/units/${item.unitId}` : '/transactions')}>
                     Open <ArrowRight size={15} />
                   </button>
                 </article>
@@ -2058,6 +2054,27 @@ function Dashboard() {
         label,
       })
       navigate(to)
+    },
+    [location.pathname, navigate],
+  )
+  const openTransactionWorkspaceFromDashboard = useCallback(
+    (item = {}, label = 'dashboard-to-transaction-workspace') => {
+      const route = resolveTransactionWorkspaceRoute({
+        transactionId: item?.transactionId || item?.transaction?.id,
+        unitId: item?.unitId || item?.unit?.id,
+        unitNumber: item?.unitNumber || item?.unit?.unit_number,
+        transactionReference: item?.transactionReference || item?.reference || item?.transaction?.transaction_reference,
+        title: item?.buyerName || item?.buyer?.name || item?.reference || '',
+      })
+
+      if (route.kind === 'fallback') return
+
+      startRouteTransitionTrace({
+        from: location.pathname,
+        to: route.path,
+        label,
+      })
+      navigate(route.path, route.state ? { state: route.state } : undefined)
     },
     [location.pathname, navigate],
   )
@@ -4750,13 +4767,7 @@ function renderActiveTransactionsBlock({
         onViewAll={() => navigateWithTrace(`${transactionsListPath}${transactionsListQuery}`, 'dashboard-to-transactions-list')}
         onOpenRecord={(id) => {
           const item = cards.find((card) => String(card.unitId || card.transactionId || card.id || '').trim() === String(id || '').trim())
-          if (!item?.unitId) return
-          startRouteTransitionTrace({
-            from: location.pathname,
-            to: `/units/${item.unitId}`,
-            label: 'dashboard-to-transaction-workspace',
-          })
-          navigate(`/units/${item.unitId}`, { state: { headerTitle: `Unit ${item.unitNumber}` } })
+          openTransactionWorkspaceFromDashboard(item)
         }}
         summary={{
           primary: `${activeTransactionCards.length} transaction${activeTransactionCards.length === 1 ? '' : 's'} in progress`,
@@ -4829,14 +4840,7 @@ function renderActiveTransactionsBlock({
               const updatedDateTimeLabel = formatDateTime(item.updatedAt)
               const supportingSignal = !item.buyerId ? 'Buyer record pending' : `Updated ${updatedLabel}`
               const cardAction = () => {
-                if (item.unitId) {
-                  startRouteTransitionTrace({
-                    from: location.pathname,
-                    to: `/units/${item.unitId}`,
-                    label: 'dashboard-to-transaction-workspace',
-                  })
-                  navigate(`/units/${item.unitId}`, { state: { headerTitle: `Unit ${item.unitNumber}` } })
-                }
+                openTransactionWorkspaceFromDashboard(item)
               }
 
               return (
@@ -4845,13 +4849,13 @@ function renderActiveTransactionsBlock({
                   className="group ui-surface-card flex w-[320px] min-w-[320px] flex-col overflow-hidden transition duration-200 ease-out hover:-translate-y-px hover:border-borderStrong hover:shadow-floating"
                   onClick={cardAction}
                   onKeyDown={(event) => {
-                    if ((event.key === 'Enter' || event.key === ' ') && item.unitId) {
+                    if ((event.key === 'Enter' || event.key === ' ') && (item.transactionId || item.unitId)) {
                       event.preventDefault()
                       cardAction()
                     }
                   }}
-                  role={item.unitId ? 'button' : undefined}
-                  tabIndex={item.unitId ? 0 : -1}
+                  role={item.transactionId || item.unitId ? 'button' : undefined}
+                  tabIndex={item.transactionId || item.unitId ? 0 : -1}
                 >
                   <header className="border-b border-[#dbe6f2] bg-[linear-gradient(135deg,#f1f6fb_0%,#ecf2f9_100%)] px-5 py-3">
                     <div className="flex items-start justify-between gap-3">
@@ -5038,29 +5042,15 @@ function renderActiveTransactionsBlock({
                   <li
                     key={item.id}
                     className="flex gap-4 rounded-[18px] border border-[#e3eaf3] bg-white px-4 py-4 transition duration-150 ease-out hover:border-[#d1dbe8] hover:bg-[#fbfdff]"
-                    onClick={() => {
-                      if (item.unitId) {
-                        startRouteTransitionTrace({
-                          from: location.pathname,
-                          to: `/units/${item.unitId}`,
-                          label: 'dashboard-to-transaction-workspace',
-                        })
-                        navigate(`/units/${item.unitId}`, { state: { headerTitle: `Unit ${item.unitNumber}` } })
-                      }
-                    }}
+                    onClick={() => openTransactionWorkspaceFromDashboard(item)}
                     onKeyDown={(event) => {
-                      if ((event.key === 'Enter' || event.key === ' ') && item.unitId) {
+                      if ((event.key === 'Enter' || event.key === ' ') && (item.transactionId || item.unitId)) {
                         event.preventDefault()
-                        startRouteTransitionTrace({
-                          from: location.pathname,
-                          to: `/units/${item.unitId}`,
-                          label: 'dashboard-to-transaction-workspace',
-                        })
-                        navigate(`/units/${item.unitId}`, { state: { headerTitle: `Unit ${item.unitNumber}` } })
+                        openTransactionWorkspaceFromDashboard(item)
                       }
                     }}
-                    role={item.unitId ? 'button' : undefined}
-                    tabIndex={item.unitId ? 0 : -1}
+                    role={item.transactionId || item.unitId ? 'button' : undefined}
+                    tabIndex={item.transactionId || item.unitId ? 0 : -1}
                   >
                     <span className="mt-1 inline-flex h-2.5 w-2.5 flex-none rounded-full bg-[#7fa7cc]" aria-hidden />
                     <div className="min-w-0 flex-1">

@@ -45,6 +45,50 @@ function normalizeEmail(value: unknown) {
   return normalizeText(value).toLowerCase();
 }
 
+async function loadDevelopmentBrandContext(
+  supabase: any,
+  developmentId: unknown,
+) {
+  const normalizedDevelopmentId = normalizeText(developmentId);
+  if (!normalizedDevelopmentId) return null;
+
+  let developmentQuery = await supabase
+    .from("developments")
+    .select("id, name, organisation_id, developer_company")
+    .eq("id", normalizedDevelopmentId)
+    .maybeSingle();
+
+  if (
+    developmentQuery.error &&
+    (
+      isMissingColumnError(developmentQuery.error, "developer_company") ||
+      isMissingColumnError(developmentQuery.error, "organisation_id")
+    )
+  ) {
+    developmentQuery = await supabase
+      .from("developments")
+      .select(
+        isMissingColumnError(developmentQuery.error, "organisation_id")
+          ? "id, name"
+          : "id, name, organisation_id",
+      )
+      .eq("id", normalizedDevelopmentId)
+      .maybeSingle();
+  }
+
+  if (
+    developmentQuery.error &&
+    !isMissingTableError(developmentQuery.error, "developments") &&
+    !isMissingSchemaError(developmentQuery.error)
+  ) {
+    throw developmentQuery.error;
+  }
+
+  return developmentQuery.data && typeof developmentQuery.data === "object"
+    ? developmentQuery.data as Record<string, unknown>
+    : null;
+}
+
 function payloadBuyerTarget(payload: SendClientOnboardingPayload) {
   const participantId = normalizeText(payload.buyerParticipantId);
   const buyerPartyId = normalizeText(payload.buyerPartyId);
@@ -404,7 +448,18 @@ export async function handleClientOnboardingEmail(
     normalizeText(Deno.env.get("SUPPORT_PHONE")) ||
     "";
   const transactionData = transaction as Record<string, unknown>;
-  const organisationId = normalizeText(transactionData?.organisation_id);
+  const transactionOrganisationId = normalizeText(transactionData?.organisation_id);
+  const developmentContext = await loadDevelopmentBrandContext(
+    supabase,
+    transactionData?.development_id,
+  );
+  const developmentOrganisationId = normalizeText(
+    developmentContext?.organisation_id,
+  );
+  const organisationId = developmentOrganisationId || transactionOrganisationId;
+  const brandingSource = developmentOrganisationId
+    ? "development_organisation"
+    : "transaction_organisation";
   const assignedAgentName = normalizeText(transactionData?.assigned_agent);
   const assignedAgentEmail = normalizeText(
     transactionData?.assigned_agent_email,
@@ -687,18 +742,7 @@ export async function handleClientOnboardingEmail(
     });
   }
 
-  let developmentName = "";
-  if (transaction.development_id) {
-    const developmentQuery = await supabase
-      .from("developments")
-      .select("id, name")
-      .eq("id", transaction.development_id)
-      .maybeSingle();
-
-    if (!developmentQuery.error) {
-      developmentName = normalizeText(developmentQuery.data?.name);
-    }
-  }
+  const developmentName = normalizeText(developmentContext?.name);
 
   let unitLabel = "";
   if (transaction.unit_id) {
@@ -813,6 +857,10 @@ export async function handleClientOnboardingEmail(
           buyerPartyId: normalizeText(buyerParticipant?.buyer_party_id) ||
             null,
           buyerTargetNonce: buyerTargetNonce || null,
+          brandingSource,
+          brandingOrganisationId: organisationId || null,
+          transactionOrganisationId: transactionOrganisationId || null,
+          developmentOrganisationId: developmentOrganisationId || null,
         },
       },
     },
