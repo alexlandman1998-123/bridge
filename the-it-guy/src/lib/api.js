@@ -1165,6 +1165,10 @@ function isRecoverableTransactionSetupError(error) {
   return isMissingSchemaError(error) || isPermissionDeniedError(error)
 }
 
+function isRecoverableTransactionCommentError(error) {
+  return isPermissionDeniedError(error)
+}
+
 function isOnConflictConstraintError(error, conflictColumn = '') {
   if (!error) {
     return false
@@ -29100,6 +29104,8 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
           text: status.notes.trim(),
         },
       })
+    } else if (noteError && isRecoverableTransactionCommentError(noteError)) {
+      recordSetupWarning('transaction_comments', noteError, 'Transaction setup note could not be recorded.')
     } else if (noteError) {
       throw noteError
     } else {

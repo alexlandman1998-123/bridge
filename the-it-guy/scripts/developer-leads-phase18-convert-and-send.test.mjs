@@ -7,6 +7,7 @@ const packageJson = JSON.parse(readFileSync(resolve(appRoot, 'package.json'), 'u
 const conversionSource = readFileSync(resolve(appRoot, 'src/services/developerLeadConversionService.js'), 'utf8')
 const pageSource = readFileSync(resolve(appRoot, 'src/pages/DeveloperLeadsPage.jsx'), 'utf8')
 const appSource = readFileSync(resolve(appRoot, 'src/App.jsx'), 'utf8')
+const apiSource = readFileSync(resolve(appRoot, 'src/lib/api.js'), 'utf8')
 const handoffSource = readFileSync(resolve(appRoot, 'src/core/developerLeads/developerLeadTransactionHandoff.js'), 'utf8')
 const intakeSource = readFileSync(resolve(appRoot, 'src/services/developerLeadService.js'), 'utf8')
 const docsSource = readFileSync(resolve(appRoot, 'docs/developer-leads-phase18-convert-and-send.md'), 'utf8')
@@ -90,6 +91,9 @@ assert.match(docsSource, /send-email/)
 assert.match(docsSource, /does not add\s+privileged database functions or bypass RLS/)
 assert.match(phase5Source, /test:developer-module-phase18/)
 assert.match(phase6Source, /test:developer-module-phase18/)
+assert.match(apiSource, /function isRecoverableTransactionCommentError/)
+assert.match(apiSource, /isRecoverableTransactionCommentError\(noteError\)/)
+assert.match(apiSource, /recordSetupWarning\('transaction_comments'/)
 
 console.log(JSON.stringify({
   version: 'developer_leads_phase18_convert_and_send_v1',
