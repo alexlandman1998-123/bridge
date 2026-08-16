@@ -5,11 +5,11 @@ Scope: Seller Lead -> Seller Onboarding -> Mandate -> Private Listing -> Publica
 
 ## Final Recommendation
 
-GO WITH REMEDIATION REQUIRED.
+GO WITH PHASE 1 OWNERSHIP REMEDIATION APPLIED.
 
 The Seller Lead -> Listing lifecycle is structurally sound and locally certified across idempotency, publication mapping, document continuity, relationship integrity, timeline continuity, portal alignment, and readiness logic.
 
-There is one important ownership gap before this should be considered fully enterprise-safe: if the signed-mandate edge function creates a listing from scratch instead of finding an existing seller lead/listing shell, it does not currently inherit `branch_id`, and it sets `created_by` to `null`. Existing pre-created listing shells avoid this path, but the fallback conversion path should still preserve branch ownership and historical attribution.
+Phase 1 fixes the known ownership gap: if the signed-mandate edge function creates a listing from scratch instead of finding an existing seller lead/listing shell, it now resolves `branch_id` and `created_by` from the lead/source context/source snapshot/packet/finalising actor/assigned-agent membership before insert. Existing listing rows may fill missing ownership fields without overwriting populated ownership attribution.
 
 ## Lifecycle Diagram
 
@@ -128,14 +128,14 @@ The read-only conversion timeline RPC exists and preserves source boundaries. Th
 | --- | --- | --- | --- | --- | --- |
 | Seller lead | `leads.organisation_id` | `leads.branch_id` | `assigned_user_id` / `assigned_agent_id` | `created_by` | Pass |
 | Existing private listing shell | `private_listings.organisation_id` | `private_listings.branch_id` | `assigned_agent_id` | `created_by` | Pass |
-| Signed-mandate fallback listing insert | `organisation_id` | Missing | `assigned_agent_id` | `created_by = null` | Needs remediation |
+| Signed-mandate fallback listing insert | `organisation_id` | Resolved from lead/source context/source snapshot/assigned-agent membership | `assigned_agent_id` | Resolved from lead/source context/source snapshot/packet/finalising actor/assigned agent | Phase 1 remediated |
 | Transaction | `transactions.organisation_id` | `assigned_branch_id` | `owner_user_id` / `assigned_user_id` | `created_by` | Pass |
 
-Required remediation:
+Phase 1 remediation:
 
-- Include `branch_id` when `ensureListingFromSignedMandate()` inserts a listing from scratch.
-- Preserve historical attribution where available, for example lead `created_by`, packet creator, or finalising actor.
-- Prefer existing listing shells where present, as the current code already does.
+- `ensureListingFromSignedMandate()` includes `branch_id` when it inserts a listing from scratch.
+- `ensureListingFromSignedMandate()` preserves historical attribution where available, including lead `created_by`, packet creator, finalising actor, or assigned agent fallback.
+- Existing listing shells remain preferred and duplicate insert conflicts still refetch the existing listing.
 
 ## Portal Validation
 
@@ -174,10 +174,9 @@ Passed locally:
 
 Seller Lead -> Listing is certified for core lifecycle architecture and local contract coverage.
 
-Before calling it fully enterprise-safe in live/staging operations, fix the signed-mandate fallback listing ownership gap and run the service-only diagnostics against staging:
+Before calling it fully enterprise-safe in live/staging operations, run the service-only diagnostics against staging after the Phase 1 ownership remediation is deployed:
 
 - `bridge_private_listing_relationship_integrity_report()`
 - `bridge_private_listing_relationship_graph_integrity_report()`
 - `bridge_private_listing_document_continuity_report()`
 - `bridge_private_listing_timeline_continuity_report()`
-

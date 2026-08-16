@@ -1,6 +1,6 @@
 # Phase 8 — pilot go/no-go
 
-Phase 8 does not deploy, unpause creation, or create transactions. It produces one fail-closed decision from local certification, the current pilot-session state, the two-transaction batch control, and fresh staging evidence.
+Phase 8 does not deploy, unpause creation, or create transactions. It produces one fail-closed decision from local certification, the current pilot-session state, the two-transaction batch control, Phase 7 accepted-offer creation lineage, and fresh staging evidence.
 
 ## Run the gate
 
@@ -9,6 +9,8 @@ node scripts/mvp-pilot-go-no-go.mjs --evidence=path/to/staging-exposure-evidence
 ```
 
 The only passing result is `ready_for_controlled_exposure`. It means a named pilot operator may open one batch of at most two transactions. Any other result is `do_not_expose`; leave `MVP_PILOT_CREATION_PAUSED` enabled and resolve every named blocker.
+
+The Phase 8 gate fails closed when the dry-run report lacks `creationLineage`, includes manual override lineage, has a missing accepted-offer id, is not confirmed, is not audit visible, or carries any lineage issue from the batch audit.
 
 ## Before opening the first batch
 

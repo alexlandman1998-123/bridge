@@ -19,7 +19,7 @@ Only real pilot work belongs in a live batch. Synthetic records must use the con
    node scripts/mvp-pilot-go-no-go.mjs --evidence=path/to/staging-exposure-evidence.json
    ```
 
-   Continue only when the first command returns `ready_for_mvp_launch`, the second returns `go_for_controlled_pilot`, and the Phase 8 gate returns `ready_for_controlled_exposure`.
+   Continue only when the first command returns `ready_for_mvp_launch`, the second returns `go_for_controlled_pilot`, and the Phase 8 gate returns `ready_for_controlled_exposure`. The Phase 8 gate also checks the dry-run batch's accepted-offer creation lineage; missing lineage, manual override lineage, or non-audit-visible lineage keeps exposure blocked.
 3. Confirm the batch has fewer than 2 newly created transactions. If the previous batch has not been closed, close it first.
 4. Open the transaction health panel. The pilot lead must be able to see the current gate, next action, participant/document counts, and recovery recommendation before accepting new work.
 
@@ -53,6 +53,7 @@ Create a local evidence file such as `pilot-batch-01.json`; do not put personal 
   "transactions": [
     {
       "transactionId": "<uuid>",
+      "acceptedOfferId": "<accepted-offer-uuid>",
       "idempotencyKey": "<creation-idempotency-key>",
       "participantBootstrapComplete": true,
       "documentBootstrapComplete": true,

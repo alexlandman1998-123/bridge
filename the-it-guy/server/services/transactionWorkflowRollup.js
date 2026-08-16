@@ -19,7 +19,7 @@ import {
   pickEvidenceSources,
   resolveTransactionWorkflowEvidence,
 } from './workflowEvidenceResolver.js'
-import { resolveWorkflowAvailableActions } from './workflowActionAvailabilityService.js'
+import { hasActiveSupportingDocumentRequirements, resolveWorkflowAvailableActions } from './workflowActionAvailabilityService.js'
 import { buildWorkflowStateMap, ensureTransactionWorkflowInstances } from './transactionWorkflowModelService.js'
 import {
   getAttorneyLaneStepAliases,
@@ -1311,6 +1311,7 @@ function buildRollupResult({
   derivedAt = null,
   rolePlayers = [],
   actorRole = '',
+  requiredDocuments = [],
 }) {
   const fallback = resolveWithFallback(transaction, parentWorkflows, ({ transaction: nextTransaction, workflows }) =>
     resolveParentStage(workflows, nextTransaction),
@@ -1318,7 +1319,11 @@ function buildRollupResult({
   const parentStage = fallback.value
   const activeWorkflow = resolveActiveWorkflowForParent(parentStage, allWorkflows)
   const activeStep = resolveActiveStep(activeWorkflow)
-  const blockers = dedupeBlockers(
+  const supportingDocumentsConfigured = hasActiveSupportingDocumentRequirements({ requiredDocuments })
+  const suppressDevelopmentSupportingDocs =
+    resolveTransactionFacts(transaction || {}).isDevelopmentSale === true &&
+    !supportingDocumentsConfigured
+  const activeWorkflowBlockers =
     parentStage === PARENT_STAGE_ENUM.SALES_OTP
       ? parentWorkflows.sales_otp.blockers
       : parentStage === PARENT_STAGE_ENUM.FINANCE
@@ -1327,8 +1332,11 @@ function buildRollupResult({
           ? parentWorkflows.transfer.blockers
           : parentStage === PARENT_STAGE_ENUM.REGISTRATION
             ? parentWorkflows.registration.blockers
-            : [],
-  )
+            : []
+  const blockers = dedupeBlockers(activeWorkflowBlockers).filter((blocker) => {
+    if (!suppressDevelopmentSupportingDocs) return true
+    return !['supporting_docs_complete', 'collect_supporting_documents'].includes(normalizeKey(blocker?.stepKey))
+  })
   const parentStatus = deriveParentStatusFromRules({
     parentStage,
     workflows: parentWorkflows,
@@ -1356,7 +1364,10 @@ function buildRollupResult({
       blockers,
       rolePlayers,
       actorRole,
+      requiredDocuments,
+      supportingDocumentsConfigured,
     }),
+    supportingDocumentsConfigured,
     derivedAt: toIsoString(derivedAt || transaction.updated_at || Date.now()),
     evidenceUsed: unique(evidenceUsed),
     derivedFrom,
@@ -1493,6 +1504,7 @@ export async function resolveTransactionRollup(transactionId, options = {}) {
       derivedAt: normalizedState.rollup?.derived_at || resolveDerivedAtFromNormalizedState(normalizedState),
       rolePlayers: context.readModel?.rolePlayers || [],
       actorRole: options.actorRole || '',
+      requiredDocuments: context.requiredDocuments || [],
     })
   }
 
@@ -1575,6 +1587,7 @@ export async function resolveTransactionRollup(transactionId, options = {}) {
     derivedAt: getEvidenceUpdatedAt(evidence) || context.transaction.updated_at || Date.now(),
     rolePlayers: context.readModel?.rolePlayers || [],
     actorRole: options.actorRole || '',
+    requiredDocuments: context.requiredDocuments || [],
   })
 }
 

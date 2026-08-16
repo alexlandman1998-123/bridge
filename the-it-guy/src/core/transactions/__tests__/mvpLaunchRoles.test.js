@@ -32,7 +32,7 @@ function keys(rows = []) {
     sellerEntityType: 'trust',
     requiresCancellationAttorney: true,
   })
-  assert.deepEqual(keys(plan.requiredByOtp), ['buyer_company_signatory', 'seller_trustee'])
+  assert.deepEqual(keys(plan.requiredByOtp), ['buyer_company_director', 'buyer_company_signatory', 'seller_trustee'])
   assert.deepEqual(keys(plan.requiredByFinance), ['bond_originator'])
   assert.deepEqual(keys(plan.requiredByTransfer), ['transfer_attorney', 'bond_attorney', 'cancellation_attorney'])
 }

@@ -27,11 +27,11 @@ function laneGateKey(lane = {}) {
 }
 
 /** Evaluates every MVP gate and applies those read-only decisions to each lane. */
-export function buildMvpWorkflowGateBoard({ routingProfile = {}, participants = [], documentRequirements = [], workflowLanes = [] } = {}) {
+export function buildMvpWorkflowGateBoard({ routingProfile = {}, participants = [], participantRequirements = [], documentRequirements = [], workflowLanes = [] } = {}) {
   const onboarding = evaluateMvpOnboardingGate({ participants, documentRequirements })
-  const otp = evaluateMvpOtpGate({ routingProfile, participants, documentRequirements })
-  const finance = evaluateMvpFinanceGate({ routingProfile, participants, documentRequirements })
-  const transfer = evaluateMvpTransferGate({ routingProfile, participants, documentRequirements })
+  const otp = evaluateMvpOtpGate({ routingProfile, participants, participantRequirements, documentRequirements })
+  const finance = evaluateMvpFinanceGate({ routingProfile, participants, participantRequirements, documentRequirements })
+  const transfer = evaluateMvpTransferGate({ routingProfile, participants, participantRequirements, documentRequirements })
   const gates = [
     { key: 'onboarding', label: 'Onboarding', blockers: withGateType('onboarding', onboarding.blockers) },
     { key: 'otp', label: 'OTP execution', blockers: withGateType('otp', otp.blockers) },

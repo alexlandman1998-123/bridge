@@ -52,6 +52,24 @@ test('signed mandate conversion searches all canonical lead/listing links before
   assert.match(finalSignedFunction, /column: "seller_lead_id"/)
 })
 
+test('signed mandate fallback listing preserves branch ownership and attribution', () => {
+  assert.match(finalSignedFunction, /const SIGNED_MANDATE_LISTING_SELECT =\s*"[^"]*branch_id[^"]*created_by[^"]*"/s)
+  assert.match(finalSignedFunction, /function resolveSignedMandateListingOwnership|async function resolveSignedMandateListingOwnership/)
+  assert.match(finalSignedFunction, /\.select\("lead_id, organisation_id, branch_id, assigned_agent_id, assigned_user_id, created_by,/)
+  assert.match(finalSignedFunction, /lead\?\.branch_id[\s\S]*sourceLead\.branchId[\s\S]*sourceContext\.branchId[\s\S]*sourceContext\.assignedBranchId/)
+  assert.match(finalSignedFunction, /lead\?\.created_by[\s\S]*sourceLead\.createdBy[\s\S]*sourceContext\.createdBy[\s\S]*packet\.created_by[\s\S]*finalisedBy/)
+  assert.match(finalSignedFunction, /resolveAssignedAgentBranchId/)
+  assert.match(finalSignedFunction, /branch_id: ownership\.branchId/)
+  assert.match(finalSignedFunction, /assigned_agent_id: ownership\.assignedAgentId/)
+  assert.match(finalSignedFunction, /created_by: ownership\.createdBy/)
+  assert.doesNotMatch(finalSignedFunction, /created_by:\s*null,\s*\n\s*};\s*\n\s*const insert = await supabase\s*\n\s*\.from\("private_listings"\)/)
+})
+
+test('signed mandate existing listing fills missing ownership without overwriting populated values', () => {
+  assert.match(finalSignedFunction, /branch_id: normalizeNullableUuid\(listing\.branch_id\) \|\| ownership\.branchId/)
+  assert.match(finalSignedFunction, /created_by: normalizeNullableUuid\(listing\.created_by\) \|\| ownership\.createdBy/)
+})
+
 test('signed mandate conversion recovers from duplicate insert conflicts', () => {
   assert.match(finalSignedFunction, /function isUniqueViolation/)
   assert.match(finalSignedFunction, /normalizeText\(details\.code\) === "23505"/)

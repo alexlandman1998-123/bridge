@@ -38,9 +38,16 @@ export function buildMvpTransactionParticipantBootstrap({
     })
   }
 
-  const testParticipants = controlledTestRoleSet === MVP_CONTROLLED_TEST_ROLE_SET
-    ? buildMvpControlledTestRoleSet({ routingProfile, rolePlan })
-    : []
+  let controlledTestRoleSetWarning = null
+  let testParticipants = []
+  if (controlledTestRoleSet === MVP_CONTROLLED_TEST_ROLE_SET) {
+    try {
+      testParticipants = buildMvpControlledTestRoleSet({ routingProfile, rolePlan })
+    } catch (error) {
+      if (!String(error?.message || '').includes('MVP_CONTROLLED_TEST_ROLE_SET_CLIENT_ROLE_COLLISION')) throw error
+      controlledTestRoleSetWarning = error.message
+    }
+  }
   const overrides = new Map(testParticipants.map((participant) => [participant.roleKey, participant]))
   const participants = baseParticipants.map((participant) => {
     const merged = {
@@ -67,12 +74,17 @@ export function buildMvpTransactionParticipantBootstrap({
     rolePlan,
     participants,
     controlledTestRoleSet: controlledTestRoleSet === MVP_CONTROLLED_TEST_ROLE_SET ? MVP_CONTROLLED_TEST_ROLE_SET : null,
+    controlledTestRoleSetWarning,
     requirements: rolePlan.roles
       .filter((role) => role.key !== 'internal_admin')
       .map((role) => ({
         roleKey: role.key, roleType: role.roleType, legalRole: role.legalRole || 'none',
         transactionRole: role.transactionRole, requiredBy: role.requiredBy,
         requiredAtCreation: role.requiredAtCreation, label: role.label, reason: role.reason,
+        identityPreserved: true,
+        participantCaptureMode: participants.some((participant) => participant.roleKey === role.key)
+          ? 'participant_row'
+          : 'participant_requirement',
       })),
   })
 }

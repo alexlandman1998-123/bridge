@@ -4,6 +4,14 @@ import { normaliseFinanceType, resolveFinanceWorkflowKey } from '../services/fin
 
 export const TRANSACTION_WORKFLOW_VERSION = 1
 
+const COMPLETE_ONBOARDING_STATUSES = new Set([
+  'approved',
+  'complete',
+  'completed',
+  'reviewed',
+  'submitted',
+])
+
 export const transactionWorkflowDefinitions = Object.freeze({
   sales_otp: {
     label: 'Sales / OTP',
@@ -163,8 +171,16 @@ export function buildWorkflowStepsForKey(workflowKey = '', options = {}) {
   const definition = getTransactionWorkflowDefinition(workflowKey)
   if (!definition) return []
   const facts = resolveTransactionFacts(options.transaction || {})
+  const onboardingStatus = String(options.transaction?.onboarding_status || '')
+    .trim()
+    .toLowerCase()
   return (definition.steps || []).map((step) => ({
     ...step,
+    ...(workflowKey === 'sales_otp' && step.key === 'buyer_onboarding_complete' && COMPLETE_ONBOARDING_STATUSES.has(onboardingStatus)
+      ? {
+          status: 'complete',
+        }
+      : {}),
     ...(workflowKey === 'sales_otp' && facts.isDevelopmentSale && step.key === 'seller_onboarding_complete'
       ? {
           label: 'Seller onboarding not required',

@@ -72,8 +72,17 @@ export function buildMvpTransactionAuditRecovery({
   const testData = health.testData || transaction.testDataProtection || {}
   const protectedTestData = testData.isTestData === true || testData.is_test_data === true
   const creation = health.creation || {}
-  const hasCreationEvidence = Boolean(creation.acceptedOfferId || creation.idempotencyKey || creation.receiptStatus)
-  if (hasCreationEvidence && creation.confirmed !== true) {
+  const hasCreationEvidence = Boolean(creation.mode || creation.acceptedOfferId || creation.idempotencyKey || creation.receiptStatus)
+  if (creation.mode === 'manual_override' && creation.confirmed !== true) {
+    issues.push(issue({
+      key: 'creation:override_audit_incomplete',
+      severity: 'critical',
+      title: 'Manual override audit metadata is incomplete',
+      detail: 'Override-created transactions must expose the written reason, authorised actor, actor role, and idempotency key in transaction health before workflow progress.',
+      recoveryActionKey: 'refresh_transaction_health',
+    }))
+    addAction({ key: 'refresh_transaction_health', label: 'Refresh transaction health', mode: 'read_only', safeToRun: true })
+  } else if (hasCreationEvidence && creation.confirmed !== true) {
     issues.push(issue({
       key: 'creation:unconfirmed',
       severity: 'critical',

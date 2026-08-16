@@ -194,6 +194,10 @@ import {
   OFFER_WORKFLOW_RETIRED,
   OFFER_WORKFLOW_RETIRED_MESSAGE,
 } from '../../core/offers/offerWorkflowRetirement'
+import {
+  assessBuyerLeadOfferReadiness,
+  formatBuyerLeadOfferReadinessBlocker,
+} from '../../core/leads/buyerLeadOfferReadiness'
 import { buildTransactionHandoffHealth } from '../../core/transactions/transactionHandoffHealth'
 import { resolveTransactionRoutingProfile } from '../../services/transactionRoutingProfileService'
 import {
@@ -8975,7 +8979,7 @@ const VIEWING_OUTCOME_OPTIONS = [
 ]
 
 const VIEWING_NEXT_STEP_OPTIONS = [
-  { value: 'send_buyer_onboarding_link', label: 'Send buyer onboarding link' },
+  { value: 'send_buyer_onboarding_link', label: 'Send offer link' },
   { value: 'follow_up', label: 'Follow up' },
   { value: 'continue_viewing', label: 'Continue viewing' },
   { value: 'mark_lost', label: 'Mark as lost' },
@@ -9068,7 +9072,7 @@ function getLeadViewingCompletionBlockers(form = {}, {
     const hasOfferReadyProperty = viewedListings.some((row) => VIEWING_POSITIVE_OUTCOMES.includes(row.outcome))
     if (!hasOfferReadyProperty) {
       blockers.push(requiresBuyerOnboardingContact
-        ? 'Mark at least one viewed property as interested, wants to offer, or needs follow-up before sending the buyer onboarding link.'
+        ? 'Mark at least one viewed property as interested, wants to offer, or needs follow-up before sending the offer link.'
         : 'Mark at least one viewed property as interested, wants to offer, or needs follow-up before capturing the signed OTP.')
     }
     if (
@@ -9077,7 +9081,7 @@ function getLeadViewingCompletionBlockers(form = {}, {
       !normalizeText(buyerEmail || contactEmail || leadEmail) &&
       !normalizeText(buyerPhone || contactPhone || leadPhone)
     ) {
-      blockers.push('Add buyer email or phone for the buyer onboarding link, or switch to agent-assisted / hard copy.')
+      blockers.push('Add buyer email or phone for the offer link, or switch to agent-assisted / hard copy.')
     }
   }
 
@@ -12370,6 +12374,55 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLeadIsSeller,
     workspace,
   ])
+
+  const appointmentListingById = useMemo(() => {
+    const map = new Map()
+    for (const option of appointmentListingOptions) {
+      if (option?.id) map.set(normalizeText(option.id), option)
+    }
+    return map
+  }, [appointmentListingOptions])
+
+  const appointmentListingByLabel = useMemo(() => {
+    const map = new Map()
+    for (const option of appointmentListingOptions) {
+      const labels = [
+        option?.label,
+        option?.title,
+        option?.address,
+        [option?.title, option?.address].filter(Boolean).join(' — '),
+      ]
+      for (const label of labels) {
+        const key = normalizeKey(label)
+        if (key && !map.has(key)) map.set(key, option)
+      }
+    }
+    return map
+  }, [appointmentListingOptions])
+
+  const resolveLeadLinkedListing = useCallback(
+    (lead = {}) => {
+      const listingId = normalizeText(lead?.listingId || lead?.listing_id)
+      if (listingId && appointmentListingById.has(listingId)) return appointmentListingById.get(listingId)
+      const possibleLabels = [
+        lead?.propertyInterest,
+        lead?.sellerPropertyAddress,
+        [lead?.propertyInterest, lead?.sellerPropertyAddress].filter(Boolean).join(' — '),
+      ]
+      for (const label of possibleLabels) {
+        const match = appointmentListingByLabel.get(normalizeKey(label))
+        if (match) return match
+      }
+      return null
+    },
+    [appointmentListingById, appointmentListingByLabel],
+  )
+
+  const selectedLeadLinkedListing = useMemo(
+    () => (selectedLead ? resolveLeadLinkedListing(selectedLead) : null),
+    [resolveLeadLinkedListing, selectedLead],
+  )
+
   const selectedLeadHasKingstonsBuyerSignal = useMemo(() => {
     if (selectedLeadIsSeller) return false
     return hasKingstonsPipelineSignal({
@@ -12486,54 +12539,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         .slice()
         .sort((a, b) => new Date(b?.dateTime || b?.createdAt || 0) - new Date(a?.dateTime || a?.createdAt || 0))[0] || null,
     [selectedLeadAppointments],
-  )
-
-  const appointmentListingById = useMemo(() => {
-    const map = new Map()
-    for (const option of appointmentListingOptions) {
-      if (option?.id) map.set(normalizeText(option.id), option)
-    }
-    return map
-  }, [appointmentListingOptions])
-
-  const appointmentListingByLabel = useMemo(() => {
-    const map = new Map()
-    for (const option of appointmentListingOptions) {
-      const labels = [
-        option?.label,
-        option?.title,
-        option?.address,
-        [option?.title, option?.address].filter(Boolean).join(' — '),
-      ]
-      for (const label of labels) {
-        const key = normalizeKey(label)
-        if (key && !map.has(key)) map.set(key, option)
-      }
-    }
-    return map
-  }, [appointmentListingOptions])
-
-  const resolveLeadLinkedListing = useCallback(
-    (lead = {}) => {
-      const listingId = normalizeText(lead?.listingId || lead?.listing_id)
-      if (listingId && appointmentListingById.has(listingId)) return appointmentListingById.get(listingId)
-      const possibleLabels = [
-        lead?.propertyInterest,
-        lead?.sellerPropertyAddress,
-        [lead?.propertyInterest, lead?.sellerPropertyAddress].filter(Boolean).join(' — '),
-      ]
-      for (const label of possibleLabels) {
-        const match = appointmentListingByLabel.get(normalizeKey(label))
-        if (match) return match
-      }
-      return null
-    },
-    [appointmentListingById, appointmentListingByLabel],
-  )
-
-  const selectedLeadLinkedListing = useMemo(
-    () => (selectedLead ? resolveLeadLinkedListing(selectedLead) : null),
-    [resolveLeadLinkedListing, selectedLead],
   )
   const selectedLeadValuationAddress = useMemo(() => {
     if (!selectedLead) return ''
@@ -13244,7 +13249,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             ? 'Resend Link to Portal'
             : selectedLeadLinkedTransactionId
               ? 'Resend Buyer Onboarding'
-	              : 'Send Buyer Onboarding Link'
+	              : 'Send Offer Link'
   const selectedLeadSellerPortalActionLabel = isSellerOnboardingSending
     ? 'Sending...'
     : 'Send Seller Portal Link'
@@ -15778,6 +15783,45 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLeadViewingAppointments,
   ])
 
+  const selectedLeadExplicitOfferListingId = normalizeText(
+    offerLinkForm.listingId ||
+      selectedLeadActiveViewing?.listingId ||
+      selectedLead?.listingId ||
+      selectedLead?.listing_id,
+  )
+
+  const selectedLeadBuyerOfferReadiness = useMemo(() => assessBuyerLeadOfferReadiness({
+    lead: selectedLead,
+    contact: selectedLeadContact,
+    listingId: selectedLeadExplicitOfferListingId,
+    transactionId: selectedLeadLinkedTransactionId,
+    offers: selectedLeadOffers,
+    qualificationEvidence: selectedLeadBuyerQualificationEvidence,
+    buyerEmail: offerLinkForm.buyerEmail,
+    buyerPhone: offerLinkForm.buyerPhone,
+    requiresDigitalContact: normalizeClientIntakePreference(offerLinkForm.clientIntakePreference) === CLIENT_INTAKE_PREFERENCE.DIGITAL_PORTAL,
+    buyerIntent: {
+      budget: selectedLeadBuyerBudgetLabel,
+      financeType: selectedLead?.financeType || selectedLead?.preferredFinanceType || selectedLead?.finance_type,
+      timeline: selectedLead?.moveTimeframe || selectedLead?.move_timeframe,
+      propertyInterest: selectedLead?.propertyInterest,
+      viewingStatus: selectedLeadActiveViewing?.status || selectedLeadOfferCentreProperty?.viewingStatusLabel,
+    },
+  }), [
+    offerLinkForm.buyerEmail,
+    offerLinkForm.buyerPhone,
+    offerLinkForm.clientIntakePreference,
+    selectedLead,
+    selectedLeadActiveViewing,
+    selectedLeadBuyerBudgetLabel,
+    selectedLeadBuyerQualificationEvidence,
+    selectedLeadContact,
+    selectedLeadExplicitOfferListingId,
+    selectedLeadLinkedTransactionId,
+    selectedLeadOfferCentreProperty?.viewingStatusLabel,
+    selectedLeadOffers,
+  ])
+
   const selectedLeadEnquiryPropertyContext = useMemo(() => {
     const linkedListingId = normalizeText(offerLinkForm.listingId || selectedLead?.listingId || selectedLead?.listing_id)
     const linkedListing = (
@@ -16070,8 +16114,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const accepted = ['accepted', 'converted_to_transaction'].includes(status) || Boolean(selectedLeadAcceptedOffer)
 	    const transactionCreated = Boolean(latestOffer?.transactionId || selectedLeadLinkedTransactionId)
 	    return [
-	      { key: 'sent', label: 'Onboarding Sent', detail: latestOffer?.createdAt || latestOffer?.submittedAt || offerLinkForm.expiryDate, done: hasOnboarding || hasOffer, icon: Send },
-	      { key: 'opened', label: 'Onboarding Opened', detail: buyerViewed ? (latestOffer?.updatedAt || latestOffer?.submittedAt) : '', done: buyerViewed, icon: Eye },
+	      { key: 'sent', label: 'Offer Link Sent', detail: latestOffer?.createdAt || latestOffer?.submittedAt || offerLinkForm.expiryDate, done: hasOnboarding || hasOffer, icon: Send },
+	      { key: 'opened', label: 'Offer Link Opened', detail: buyerViewed ? (latestOffer?.updatedAt || latestOffer?.submittedAt) : '', done: buyerViewed, icon: Eye },
 		      { key: 'viewed', label: 'OTP Document Uploaded', detail: buyerViewed ? (latestOffer?.updatedAt || latestOffer?.submittedAt) : '', done: buyerViewed, icon: FileText },
 		      { key: 'considering', label: 'OTP Review', detail: considering ? (latestOffer?.updatedAt || latestOffer?.submittedAt) : '', done: considering, icon: Clock3 },
 	      { key: 'accepted', label: 'OTP Accepted', detail: accepted ? (selectedLeadAcceptedOffer?.updatedAt || latestOffer?.updatedAt) : '', done: accepted, icon: CheckCircle2 },
@@ -16171,11 +16215,17 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             ? 'Buyer onboarding has been submitted'
             : offerLinkForm.lastBuyerOnboardingLink
               ? 'Buyer onboarding link sent'
-              : 'Send onboarding or capture the profile manually',
+              : selectedLeadLinkedTransactionId
+                ? 'Send onboarding or capture the profile manually'
+                : 'Convert an accepted offer before transaction onboarding',
 	        done: selectedLeadUsesKingstonsInPersonOtpFlow
 	          ? buyerPortalReady
 	          : Boolean(selectedLeadBuyerOnboardingSubmitted || offerLinkForm.lastBuyerOnboardingLink || buyerPortalReady),
-	        actionLabel: selectedLeadUsesKingstonsInPersonOtpFlow ? 'Record manual portal' : 'Send portal',
+	        actionLabel: selectedLeadUsesKingstonsInPersonOtpFlow
+            ? 'Record manual portal'
+            : selectedLeadLinkedTransactionId
+              ? 'Send portal'
+              : 'Requires transaction',
 	        onClick: () => void handleBuyerTransactionSetupChecklistAction('buyer_portal'),
 	      },
     ]
@@ -16321,7 +16371,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     : isViewingOnboardingNextStep(leadViewingCompletionNextStep)
       ? selectedLeadUsesKingstonsInPersonOtpFlow
         ? 'Ready to complete the viewing and upload the signed OTP completed in person.'
-        : 'Ready to complete the viewing and send the buyer onboarding link.'
+        : 'Ready to complete the viewing and send the offer link.'
       : leadViewingCompletionNextStep === 'mark_lost'
         ? 'Ready to complete the viewing and mark this buyer as lost.'
         : leadViewingCompletionNextStep === 'follow_up'
@@ -16391,7 +16441,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       { key: 'viewing', label: 'Viewing', detail: viewingCompleted ? 'Completed' : viewingStarted ? 'Upcoming' : 'Not booked', done: viewingCompleted, started: viewingStarted },
       ...(selectedLeadUsesKingstonsInPersonOtpFlow
         ? [offerStage, transactionSetupStage]
-        : [transactionSetupStage, offerStage]),
+        : [offerStage, transactionSetupStage]),
       { key: 'transaction', label: 'Transaction', detail: transactionDone ? 'Created' : 'Not started', done: transactionDone },
     ]
     const firstIncompleteIndex = rawStages.findIndex((stage) => !stage.done)
@@ -24864,10 +24914,19 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   async function handleBuyerJourneyMakeOfferAction() {
     if (!organisationId || !selectedLead || selectedLeadIsSeller) return
+    if (!selectedLeadBuyerOfferReadiness.readyForOffer) {
+      if (selectedLeadBuyerOfferReadiness.blockers?.includes('listing_required_for_offer')) {
+        setOfferPropertySelectorOpen(true)
+      } else if (selectedLeadBuyerOfferReadiness.blockers?.includes('qualification_required_for_offer')) {
+        handleOpenBuyerQualificationAction()
+      }
+      setError(formatBuyerLeadOfferReadinessBlocker(selectedLeadBuyerOfferReadiness))
+      return
+    }
     if (!selectedLeadViewingAppointments.length) {
       setError(selectedLeadUsesKingstonsInPersonOtpFlow
         ? 'Schedule the first viewing before uploading the signed OTP.'
-        : 'Schedule the first viewing before sending buyer onboarding.')
+        : 'Schedule the first viewing before sending an offer link.')
       handleBuyerJourneyScheduleViewingAction()
       return
     }
@@ -24880,8 +24939,24 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setError('')
       return
     }
-    await handleSendBuyerOnboardingFromLead()
-    setLeadWorkspaceTab(BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY)
+    try {
+      setIsOfferLinkSending(true)
+      const offerResult = await createAndSendOfferLinkForLead({
+        listingId: selectedLeadBuyerOfferReadiness.listingId,
+        buyerName: offerLinkForm.buyerName,
+        buyerEmail: offerLinkForm.buyerEmail,
+        buyerPhone: offerLinkForm.buyerPhone,
+        note: offerLinkForm.note,
+        clientIntakePreference: selectedLeadClientIntakePreference,
+        successPrefix: 'Offer ',
+      })
+      if (offerResult?.successMessage) setMessage(offerResult.successMessage)
+      setLeadWorkspaceTab(BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY)
+    } catch (offerError) {
+      setError(offerError?.message || 'Unable to send the buyer offer link.')
+    } finally {
+      setIsOfferLinkSending(false)
+    }
   }
 
   async function handleMarkBuyerQualifiedAction() {
@@ -25198,12 +25273,36 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const resolvedExpiryDate = normalizeText(expiryDate || offerLinkForm.expiryDate)
     const resolvedNote = normalizeText(note || offerLinkForm.note)
     const requiresDigitalContact = resolvedIntakePreference === CLIENT_INTAKE_PREFERENCE.DIGITAL_PORTAL
-
     if (!selectedListingId) {
-      throw new Error('Select the property before sending the offer link.')
+      setOfferPropertySelectorOpen(true)
+      throw new Error('Select a listing before sending an offer link. Buyer leads without a listing remain search opportunities.')
     }
-    if (requiresDigitalContact && !resolvedBuyerEmail && !resolvedBuyerPhone) {
-      throw new Error('Add buyer email or phone before sending the offer link.')
+    const offerReadiness = assessBuyerLeadOfferReadiness({
+      lead: selectedLead,
+      contact: selectedLeadContact,
+      listingId: selectedListingId,
+      transactionId: selectedLeadLinkedTransactionId,
+      offers: selectedLeadOffers,
+      qualificationEvidence: selectedLeadBuyerQualificationEvidence,
+      buyerEmail: resolvedBuyerEmail,
+      buyerPhone: resolvedBuyerPhone,
+      requiresDigitalContact,
+      buyerIntent: {
+        budget: selectedLeadBuyerBudgetLabel,
+        financeType: selectedLead?.financeType || selectedLead?.preferredFinanceType || selectedLead?.finance_type,
+        timeline: selectedLead?.moveTimeframe || selectedLead?.move_timeframe,
+        propertyInterest: selectedLead?.propertyInterest,
+        viewingStatus: selectedLeadActiveViewing?.status || selectedLeadOfferCentreProperty?.viewingStatusLabel,
+      },
+    })
+
+    if (!offerReadiness.readyForOffer) {
+      if (offerReadiness.blockers?.includes('listing_required_for_offer')) {
+        setOfferPropertySelectorOpen(true)
+      } else if (offerReadiness.blockers?.includes('qualification_required_for_offer')) {
+        handleOpenBuyerQualificationAction()
+      }
+      throw new Error(formatBuyerLeadOfferReadinessBlocker(offerReadiness))
     }
     const persistedLead = await ensureBuyerLeadPersistedForLifecycle(selectedLead, selectedLeadContact)
     const canonicalBuyerLeadId = normalizeText(persistedLead?.leadId || selectedLead.leadId)
@@ -25600,7 +25699,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	    buyerPhone = '',
 	    clientIntakePreference = '',
 	    source = 'buyer_lead_workspace',
-	    missingListingMessage = 'Select the property before sending buyer onboarding.',
+	    missingListingMessage = 'Select the property before sending transaction buyer onboarding.',
 	    transactionStage = 'Buyer Onboarding Pending',
 	    creationMode = 'onboarding_capture',
 	    idempotencyPrefix = 'buyer-onboarding',
@@ -25635,7 +25734,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         contactId: canonicalBuyerContactId || selectedLead.contactId,
       },
       listing: listingContext.listing,
-      actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+      actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email, role: membershipRole || role, isPrincipal },
       payload: {
         organisationId,
         originatingLeadId: canonicalBuyerLeadId || selectedLead.leadId,
@@ -25652,6 +25751,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         assignedAgentName: currentAgent.fullName,
         assignedAgentEmail: currentAgent.email,
         clientIntakePreference: resolvedIntakePreference,
+        transactionCreationOverrideReason: 'Principal authorised transaction buyer onboarding setup before accepted-offer conversion.',
+        transactionCreationOverrideActorId: currentAgent.id,
+        transactionCreationOverrideActorRole: membershipRole || role,
 	        creationMode,
 	        allowIncompleteRoutingFacts: true,
 	        stage: transactionStage,
@@ -25897,6 +25999,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     if (resolvedIntakePreference === CLIENT_INTAKE_PREFERENCE.DIGITAL_PORTAL && !resolvedBuyerEmail) {
       throw new Error('Buyer email is missing. Capture buyer email before sending onboarding.')
     }
+    if (!normalizeText(selectedLeadLinkedTransactionId)) {
+      throw new Error('Convert an accepted offer to a transaction before sending transaction buyer onboarding.')
+    }
 
     const transactionContext = await ensureBuyerOnboardingTransactionForLead({
       listingId,
@@ -25978,21 +26083,22 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     try {
       setIsOfferLinkSending(true)
       setError('')
-      const result = await createAndSendBuyerOnboardingForLead({
+      const result = await createAndSendOfferLinkForLead({
         listingId: offerLinkForm.listingId || selectedLeadActiveViewing?.listingId || selectedLead?.listingId,
         buyerName: offerLinkForm.buyerName,
         buyerEmail: offerLinkForm.buyerEmail,
         buyerPhone: offerLinkForm.buyerPhone,
         note: offerLinkForm.note,
         clientIntakePreference: offerLinkForm.clientIntakePreference,
+        directOfferCentreSubmission: event?.currentTarget?.dataset?.offerCentre === 'true',
         source: event?.currentTarget?.dataset?.offerCentre === 'true'
-          ? 'buyer_onboarding_otp_workspace'
-          : 'buyer_appointment_workspace',
+          ? 'buyer_offer_workspace'
+          : 'buyer_appointment_offer_workspace',
       })
       if (result?.successMessage) setMessage(result.successMessage)
       await reloadRecords(organisationId)
     } catch (onboardingError) {
-      setError(onboardingError?.message || 'Unable to send the buyer onboarding link.')
+      setError(onboardingError?.message || 'Unable to send the buyer offer link.')
     } finally {
       setIsOfferLinkSending(false)
     }
@@ -26208,7 +26314,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               contactId: canonicalBuyerContactId || selectedLead.contactId,
             },
             listing: selectedListing || { id: selectedListingId, listingId: selectedListingId },
-            actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+            actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email, role: membershipRole || role, isPrincipal },
             payload: {
               organisationId,
               originatingLeadId: canonicalBuyerLeadId || selectedLead.leadId,
@@ -26227,6 +26333,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               assignedAgentName: currentAgent.fullName,
               assignedAgentEmail: currentAgent.email,
               clientIntakePreference: offerLinkForm.clientIntakePreference,
+              transactionCreationOverrideReason: 'Principal authorised transaction setup from uploaded signed OTP before accepted-offer conversion.',
+              transactionCreationOverrideActorId: currentAgent.id,
+              transactionCreationOverrideActorRole: membershipRole || role,
               creationMode: 'onboarding_capture',
               allowIncompleteRoutingFacts: true,
               stage: 'OTP Uploaded',
@@ -26879,6 +26988,21 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     try {
       setCanonicalOfferActionId(leadActionId)
       setError('')
+      if (!normalizeText(selectedLeadLinkedTransactionId)) {
+        const offerResult = await createAndSendOfferLinkForLead({
+          listingId: offerLinkForm.listingId || selectedLeadActiveViewing?.listingId || selectedLead?.listingId,
+          buyerName: offerLinkForm.buyerName,
+          buyerEmail: offerLinkForm.buyerEmail,
+          buyerPhone: offerLinkForm.buyerPhone,
+          note: offerLinkForm.note,
+          clientIntakePreference: selectedLeadClientIntakePreference,
+          successPrefix: 'Offer ',
+        })
+        if (offerResult?.successMessage) setMessage(offerResult.successMessage)
+        setLeadWorkspaceTab(BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY)
+        await reloadRecords(organisationId)
+        return
+      }
       const result = await createAndSendBuyerOnboardingForLead({
         listingId: offerLinkForm.listingId || selectedLeadActiveViewing?.listingId || selectedLead?.listingId,
         buyerName: offerLinkForm.buyerName,
@@ -29517,7 +29641,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       {[
                         { key: 'overview', label: 'Overview', meta: '' },
                         { key: BUYER_PROFILE_WORKSPACE_TAB_KEY, label: 'Buyer Profile', meta: '' },
-                        { key: BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY, label: 'Transaction Setup / Offer', meta: selectedLeadTransactionSetupComplete ? 'Ready' : '' },
+                        { key: BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY, label: 'Offer / Transaction Setup', meta: selectedLeadTransactionSetupComplete ? 'Ready' : '' },
                         { key: 'properties', label: 'Properties', meta: selectedLeadBuyerRecommendations.length },
                         { key: 'appointments', label: 'Appointments', meta: selectedLeadAppointments.length },
                         { key: 'activity', label: 'Activity', meta: selectedLeadUnifiedTimeline.length },
@@ -29814,7 +29938,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       {[
                         { key: 'overview', label: 'Overview', meta: '' },
                         { key: BUYER_PROFILE_WORKSPACE_TAB_KEY, label: 'Buyer Profile', meta: '' },
-	                        { key: BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY, label: 'Transaction Setup / Offer', meta: selectedLeadTransactionSetupComplete ? 'Ready' : '' },
+	                        { key: BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY, label: 'Offer / Transaction Setup', meta: selectedLeadTransactionSetupComplete ? 'Ready' : '' },
                         { key: 'properties', label: 'Properties', meta: selectedLeadBuyerRecommendations.length },
                         { key: 'appointments', label: 'Appointments', meta: selectedLeadAppointments.length },
                         { key: 'activity', label: 'Activity', meta: selectedLeadUnifiedTimeline.length },
@@ -30932,9 +31056,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                   title: 'Viewing scheduled',
                                   description: selectedLeadUsesKingstonsInPersonOtpFlow
                                     ? 'Keep the buyer in Viewing until you upload the signed OTP or set another viewing.'
-                                    : 'Keep the buyer in Viewing until you send buyer onboarding or set another viewing.',
+                                    : 'Keep the buyer in Viewing until you send an offer link or set another viewing.',
                                   actions: [
-	                                    { key: 'make-offer', label: selectedLeadUsesKingstonsInPersonOtpFlow ? 'Upload signed OTP' : 'Open transaction setup', icon: FileText, primary: true, onClick: () => void handleBuyerJourneyMakeOfferAction() },
+	                                    { key: 'make-offer', label: selectedLeadUsesKingstonsInPersonOtpFlow ? 'Upload signed OTP' : 'Send offer link', icon: FileText, primary: true, onClick: () => void handleBuyerJourneyMakeOfferAction() },
                                     { key: 'another-viewing', label: 'Set another viewing', icon: CalendarDays, primary: false, onClick: () => handleBuyerJourneyScheduleViewingAction({ another: true }) },
                                   ],
                                 }
@@ -33900,9 +34024,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         {buyerOfferDocumentUploading ? 'Uploading OTP...' : 'Upload Signed OTP'}
                       </Button>
                       {!selectedLeadUsesKingstonsInPersonOtpFlow ? (
-                        <Button type="submit" size="sm" form="buyer-onboarding-otp-send-form" className="rounded-[12px] bg-[#061d3b] hover:bg-[#0a2a52]" disabled={isOfferLinkSending || !selectedLeadOfferCentreProperty}>
+                        <Button type="submit" size="sm" form="buyer-onboarding-otp-send-form" className="rounded-[12px] bg-[#061d3b] hover:bg-[#0a2a52]" disabled={isOfferLinkSending || !selectedLeadBuyerOfferReadiness.readyForOffer}>
                           <Send className="h-4 w-4" />
-                          {isOfferLinkSending ? 'Sending...' : 'Send Buyer Onboarding'}
+                          {isOfferLinkSending ? 'Sending...' : 'Send Offer Link'}
                         </Button>
                       ) : null}
                     </div>
@@ -33991,7 +34115,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             <div className="mt-4 rounded-[16px] border border-dashed border-[#d8e4f0] bg-[#fbfdff] p-5 text-sm text-[#6a8098]">
 	                              {selectedLeadUsesKingstonsInPersonOtpFlow
                                   ? 'Select a property before uploading the signed OTP.'
-                                  : 'Select a property before sending onboarding or uploading the OTP.'}
+                                  : 'Select a property before sending an offer link or uploading the OTP.'}
                             </div>
                           )}
 
@@ -34072,7 +34196,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                        <section className="rounded-[20px] border border-[#dfe9f4] bg-white p-5 shadow-[0_16px_34px_rgba(31,54,78,0.05)]">
                           <div className="flex items-center gap-2">
 	                            <span className="flex h-7 w-7 items-center justify-center rounded-[10px] bg-[#edf5ff] text-sm font-semibold text-[#0b63f6]">2A</span>
-	                            <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#18324b]">Send Buyer Onboarding</h4>
+	                            <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#18324b]">Send Offer Link</h4>
 	                          </div>
 	                          <form id="buyer-onboarding-otp-send-form" className="mt-4 grid gap-4" data-offer-centre="true" onSubmit={handleSendBuyerOnboardingFromAppointment}>
                             <div className="grid gap-4 lg:grid-cols-[1fr_240px]">
@@ -34092,7 +34216,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                 </div>
                               </label>
                               <label className="grid gap-1">
-	                                <span className="text-xs font-semibold text-[#6f849b]">Onboarding Link Expiry</span>
+	                                <span className="text-xs font-semibold text-[#6f849b]">Offer Link Expiry</span>
                                 <Field type="date" value={offerLinkForm.expiryDate} onChange={(event) => setOfferLinkForm((previous) => ({ ...previous, expiryDate: event.target.value }))} />
                                 <span className="text-[0.68rem] text-[#7b8fa5]">Link will expire at 23:59 on this date</span>
                               </label>
@@ -34148,17 +34272,20 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               </div>
                             </div>
 
-                            {offerLinkForm.lastBuyerOnboardingLink ? (
+                            {offerLinkForm.lastOfferLink ? (
                               <div className="rounded-[14px] border border-[#cde7d5] bg-[#f2fbf5] px-4 py-3 text-sm text-[#286b43]">
-	                                Buyer onboarding link ready: {offerLinkForm.lastBuyerOnboardingLink}
+	                                Offer link ready: {offerLinkForm.lastOfferLink}
                               </div>
                             ) : null}
 
 	                            <div className="flex flex-wrap items-center gap-3">
-	                              <Button type="submit" disabled={isOfferLinkSending || !selectedLeadOfferCentreProperty} className="rounded-[12px] bg-[#061d3b] hover:bg-[#0a2a52]">
+	                              <Button type="submit" disabled={isOfferLinkSending || !selectedLeadBuyerOfferReadiness.readyForOffer} className="rounded-[12px] bg-[#061d3b] hover:bg-[#0a2a52]">
 	                                <Send className="h-4 w-4" />
-	                                {isOfferLinkSending ? 'Sending...' : 'Send Buyer Onboarding'}
+	                                {isOfferLinkSending ? 'Sending...' : 'Send Offer Link'}
 	                              </Button>
+                                {!selectedLeadBuyerOfferReadiness.readyForOffer ? (
+                                  <span className="text-xs font-semibold text-[#8a641d]">{formatBuyerLeadOfferReadinessBlocker(selectedLeadBuyerOfferReadiness)}</span>
+                                ) : null}
 	                            </div>
 	                          </form>
 	                        </section>

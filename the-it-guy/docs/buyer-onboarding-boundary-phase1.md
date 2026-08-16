@@ -4,6 +4,11 @@ Date: 2026-08-12
 
 Purpose: confirm where the Agency buyer workspace is sending true buyer onboarding versus offer links, before restoring the current branded buyer onboarding form.
 
+The authoritative workflow boundary is
+[Lead, Listing, Offer, Transaction Workflow Contract - Phase 0](lead-listing-transaction-workflow-contract-phase0.md).
+In short: `Buyer Lead -> Offer -> Accepted Offer -> Transaction`; true buyer
+onboarding is transaction-backed and must not be confused with an offer link.
+
 ## Confirmed Route Boundaries
 
 - True buyer onboarding route: `/client/onboarding/:token`
@@ -44,11 +49,9 @@ Purpose: confirm where the Agency buyer workspace is sending true buyer onboardi
   - Creates `/offers/session/:token` when there is a viewing appointment context.
   - Creates `/offers/:token` when there is no viewing appointment context.
   - Sends email with `type: 'buyer_offer_link'`.
-  - Current misleading entry points:
-    - Appointment workspace card: `Send Buyer Onboarding Link`.
-    - Buyer Onboarding + OTP workspace header button: `Send Buyer Onboarding`.
-    - Buyer Onboarding + OTP step 2 form: `Send Buyer Onboarding`.
-    - Success UI: `Buyer onboarding link ready: {offerLinkForm.lastOfferLink}` even though the stored URL is an offer URL.
+  - Original misleading entry points were remediated in Phase 2:
+    appointment workspace, Buyer Onboarding + OTP workspace header, step 2
+    form, and success UI now present pre-transaction sends as offer-link work.
 
 ### Mixed / Risky Branch
 
@@ -82,10 +85,16 @@ Purpose: confirm where the Agency buyer workspace is sending true buyer onboardi
 4. Offer creation/review remains a separate flow and should be labelled as offer work.
 5. Phase 2 must decide how to create or reuse a transaction before sending onboarding from a buyer lead with no existing transaction.
 
-## Recommended Phase 2 Entry Criteria
+## Phase 2 Implemented Decision
 
-- A selected buyer lead and selected property/listing are available.
-- If `selectedLeadLinkedTransactionId` exists, send `client_onboarding` directly.
-- If no transaction exists, create/reuse a transaction-backed buyer onboarding record before sending.
-- After send, store and display the `/client/onboarding/:token` link, not an offer URL.
+See [Buyer Lead Offer Readiness - Phase 2](buyer-lead-offer-readiness-phase2.md).
 
+- A buyer lead without `listing_id` remains a search opportunity.
+- A buyer lead must have selected listing, contact details, and minimum buyer
+  intent before offer-link work can start.
+- If `selectedLeadLinkedTransactionId` exists, `Send Buyer Onboarding` sends
+  `client_onboarding` directly.
+- If no transaction exists, the Agency buyer workspace sends an offer link
+  instead of creating transaction-backed onboarding from a plain buyer lead.
+- Transaction buyer onboarding now requires an existing transaction or the
+  accepted-offer conversion path.

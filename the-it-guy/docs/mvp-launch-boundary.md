@@ -3,6 +3,12 @@
 **Version:** `arch9_mvp_launch_scope_v1`  
 **Purpose:** Keep the MVP focused on the residential transaction journeys that Arch9 can operate reliably at launch.
 
+The lead/listing/offer/transaction boundary for normal residential work is
+defined in
+[Lead, Listing, Offer, Transaction Workflow Contract - Phase 0](lead-listing-transaction-workflow-contract-phase0.md).
+The accepted offer, or an explicitly authorised override, is the normal
+transaction creation boundary.
+
 ## Supported transaction scope
 
 | Dimension | MVP-supported values |

@@ -27,6 +27,7 @@ function scenarioPasses(scenario = {}) {
   return scenario.leadToRegistrationPassed === true &&
     record.passed === true &&
     Boolean(text(batch.transactionId || record.transactionId)) &&
+    Boolean(text(batch.acceptedOfferId || batch.accepted_offer_id)) &&
     Boolean(text(batch.idempotencyKey)) &&
     batch.participantBootstrapComplete === true &&
     batch.documentBootstrapComplete === true &&

@@ -22,12 +22,40 @@ export const MVP_LAUNCH_ROLE_CATALOG = Object.freeze({
     accessScope: 'Own onboarding, documents, and client-visible transaction progress',
     responsibility: 'Supply buyer information, evidence, and signatures.',
   },
+  additional_buyer: {
+    label: 'Additional Buyer / Co-purchaser',
+    roleType: 'client',
+    transactionRole: 'buyer',
+    accessScope: 'Own co-purchaser documents and signing actions',
+    responsibility: 'Supply co-purchaser identity, FICA evidence, and signatures.',
+  },
+  buyer_spouse: {
+    label: 'Buyer Spouse / Consent Party',
+    roleType: 'client',
+    transactionRole: 'buyer',
+    accessScope: 'Buyer marital consent and signing actions only',
+    responsibility: 'Provide spouse consent, FICA evidence, and signatures where required.',
+  },
   seller: {
     label: 'Seller',
     roleType: 'seller',
     transactionRole: 'seller',
     accessScope: 'Own seller documents and client-visible transaction progress',
     responsibility: 'Supply seller information, authority, property evidence, and signatures.',
+  },
+  seller_spouse: {
+    label: 'Seller Spouse / Consent Party',
+    roleType: 'client',
+    transactionRole: 'seller',
+    accessScope: 'Seller marital consent and signing actions only',
+    responsibility: 'Provide spouse consent, FICA evidence, and signatures where required.',
+  },
+  buyer_company_director: {
+    label: 'Buyer Company Director',
+    roleType: 'client',
+    transactionRole: 'buyer',
+    accessScope: 'Buyer company director FICA and authority evidence only',
+    responsibility: 'Provide director FICA and authority evidence for the buyer entity.',
   },
   buyer_company_signatory: {
     label: 'Buyer Company Signatory',
@@ -42,6 +70,20 @@ export const MVP_LAUNCH_ROLE_CATALOG = Object.freeze({
     transactionRole: 'buyer',
     accessScope: 'Buyer trust documents and signing actions only',
     responsibility: 'Provide trust authority and sign where authorised.',
+  },
+  foreign_buyer_signatory: {
+    label: 'Foreign Buyer / Non-resident Signatory',
+    roleType: 'client',
+    transactionRole: 'buyer',
+    accessScope: 'Foreign buyer compliance and signing actions only',
+    responsibility: 'Provide passport, residency, tax and FICA evidence where required.',
+  },
+  seller_company_director: {
+    label: 'Seller Company Director',
+    roleType: 'client',
+    transactionRole: 'seller',
+    accessScope: 'Seller company director FICA and authority evidence only',
+    responsibility: 'Provide director FICA and authority evidence for the seller entity.',
   },
   seller_company_signatory: {
     label: 'Seller Company Signatory',
@@ -122,6 +164,7 @@ export function resolveMvpLaunchRolePlan(profile = {}) {
   const buyerEntityType = String(profile.buyerEntityType || '').trim().toLowerCase()
   const sellerEntityType = String(profile.sellerEntityType || '').trim().toLowerCase()
   const isDevelopmentSale = profile.transactionType === 'development_sale'
+  const buyerCount = Number(profile.buyerCount || profile.additionalBuyerCount || 0)
   const hasBondComponent = financeType === 'bond' || financeType === 'hybrid'
   const roles = [
     roleRequirement('internal_admin', 'exception_recovery', { reason: 'Internal recovery is available but is not an ordinary transaction participant.' }),
@@ -136,9 +179,19 @@ export function resolveMvpLaunchRolePlan(profile = {}) {
     roles.push(roleRequirement('agent', 'transaction_creation', { reason: 'Optional when the developer creates and stewards the deal directly.' }))
   }
 
-  if (buyerEntityType === 'company') roles.push(roleRequirement('buyer_company_signatory', 'otp_executed'))
+  if (buyerCount > 1 || profile.hasAdditionalBuyer || profile.multiBuyer) roles.push(roleRequirement('additional_buyer', 'otp_executed'))
+  if (profile.buyerSpouseConsentRequired || profile.hasBuyerSpouse) roles.push(roleRequirement('buyer_spouse', 'otp_executed'))
+  if (profile.sellerSpouseConsentRequired || profile.hasSellerSpouse) roles.push(roleRequirement('seller_spouse', 'otp_executed'))
+  if (profile.foreignBuyer || profile.buyerForeign || profile.isForeignBuyer) roles.push(roleRequirement('foreign_buyer_signatory', 'otp_executed'))
+  if (buyerEntityType === 'company') {
+    roles.push(roleRequirement('buyer_company_director', 'otp_executed'))
+    roles.push(roleRequirement('buyer_company_signatory', 'otp_executed'))
+  }
   if (buyerEntityType === 'trust') roles.push(roleRequirement('buyer_trustee', 'otp_executed'))
-  if (sellerEntityType === 'company') roles.push(roleRequirement('seller_company_signatory', 'otp_executed'))
+  if (sellerEntityType === 'company') {
+    roles.push(roleRequirement('seller_company_director', 'otp_executed'))
+    roles.push(roleRequirement('seller_company_signatory', 'otp_executed'))
+  }
   if (sellerEntityType === 'trust') roles.push(roleRequirement('seller_trustee', 'otp_executed'))
 
   if (hasBondComponent) {

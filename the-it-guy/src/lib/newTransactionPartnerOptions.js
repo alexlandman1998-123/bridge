@@ -23,12 +23,86 @@ export function mapPreferredDirectoryPartnerToTransactionOption(partner = {}) {
   }
 }
 
+export function mapDeveloperPartnerDefaultToTransactionOption(partner = {}) {
+  const id = String(partner.id || '').trim()
+  const companyName = String(partner.companyName || '').trim()
+  if (!id || !companyName || partner.isActive === false) return null
+
+  return {
+    id: `developer-default:${id}`,
+    source: 'developer_partner_default',
+    preferredPartnerId: id,
+    relationshipId: partner.relationshipId || null,
+    relationshipType: partner.isPreferredDefault ? 'preferred' : 'developer_partner_default',
+    companyName,
+    contactPerson: String(partner.contactPerson || companyName).trim(),
+    email: String(partner.email || '').trim().toLowerCase(),
+    phone: String(partner.phone || '').trim(),
+    organisationId: partner.partnerOrganisationId || null,
+    partnerOrganisationId: partner.partnerOrganisationId || null,
+    partnerOrganizationId: partner.partnerOrganisationId || null,
+    preferred: Boolean(partner.isPreferredDefault),
+    isPreferredDefault: Boolean(partner.isPreferredDefault),
+  }
+}
+
+export function mapDeveloperPartnerRelationshipToTransactionOption(relationship = {}) {
+  const id = String(relationship.id || '').trim()
+  const partnerType = normalizePreferredPartnerType(relationship.partnerType, '')
+  const companyName = String(
+    relationship.partnerName ||
+      relationship.partnerOrganisation?.displayName ||
+      relationship.partnerOrganisation?.name ||
+      relationship.partnerInvitationEmail ||
+      '',
+  ).trim()
+  const status = String(relationship.status || '').trim().toLowerCase()
+  if (!id || !companyName || ['archived', 'suspended', 'declined', 'rejected'].includes(status)) return null
+  if (!['transfer_attorney', 'bond_originator'].includes(partnerType)) return null
+
+  const activeAgreement = relationship.activeAgreement || null
+  const agreementReady = ['active', 'signed', 'waived'].includes(String(activeAgreement?.status || '').trim().toLowerCase())
+  const preferred = ['agreement_active', 'accepted'].includes(status) || agreementReady
+
+  return {
+    id: `developer-relationship:${id}`,
+    source: 'developer_partner_relationship',
+    relationshipId: id,
+    relationshipType: status || 'developer_partner_relationship',
+    companyName,
+    contactPerson: String(relationship.partnerOrganisation?.displayName || relationship.partnerName || companyName).trim(),
+    email: String(relationship.partnerInvitationEmail || '').trim().toLowerCase(),
+    phone: String(relationship.partnerOrganisation?.phone || '').trim(),
+    organisationId: relationship.partnerOrganisationId || null,
+    partnerOrganisationId: relationship.partnerOrganisationId || null,
+    partnerOrganizationId: relationship.partnerOrganisationId || null,
+    preferred,
+    isPreferredDefault: false,
+    partnerType,
+    status,
+  }
+}
+
 export function getPreferredDirectoryPartnerOptions(partners = [], roleType = '') {
   const normalizedRoleType = normalizePreferredPartnerType(roleType)
   return (Array.isArray(partners) ? partners : [])
     .filter((partner) => normalizePreferredPartnerType(partner?.partnerType) === normalizedRoleType)
     .map(mapPreferredDirectoryPartnerToTransactionOption)
     .filter(Boolean)
+}
+
+export function getDeveloperWorkspacePartnerOptions(workspace = {}, roleType = '') {
+  const normalizedRoleType = normalizePreferredPartnerType(roleType)
+  const defaults = (Array.isArray(workspace?.defaults) ? workspace.defaults : [])
+    .filter((partner) => normalizePreferredPartnerType(partner?.partnerType) === normalizedRoleType)
+    .map(mapDeveloperPartnerDefaultToTransactionOption)
+    .filter(Boolean)
+  const relationships = (Array.isArray(workspace?.relationships) ? workspace.relationships : [])
+    .filter((relationship) => normalizePreferredPartnerType(relationship?.partnerType, '') === normalizedRoleType)
+    .map(mapDeveloperPartnerRelationshipToTransactionOption)
+    .filter(Boolean)
+
+  return mergePartnerConnectionOptions(defaults, relationships)
 }
 
 export function mergePartnerConnectionOptions(connectionOptions = [], legacyOptions = []) {

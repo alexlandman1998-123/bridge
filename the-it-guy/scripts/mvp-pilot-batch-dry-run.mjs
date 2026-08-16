@@ -14,6 +14,7 @@ const transactions = Array.from({ length: PILOT_BATCH_LIMIT }, (_, index) => {
   const result = runMvpTransactionScenario({ id: `pilot-batch-${index + 1}`, transactionType, financeType, buyerEntityType, sellerEntityType, propertyTenure: 'sectional_title' })
   return {
     transactionId: result.truth.transactionId,
+    acceptedOfferId: result.command.acceptedOfferId,
     idempotencyKey: result.command.idempotencyKey,
     participantBootstrapComplete: result.participants.participants.length >= 2,
     documentBootstrapComplete: result.documents.requirements.length >= 4,

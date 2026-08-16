@@ -3,7 +3,9 @@ import { buildMvpTransactionDocumentBootstrap } from '../mvpTransactionDocumentB
 const rows = buildMvpTransactionDocumentBootstrap({ financeType: 'hybrid', buyerEntityType: 'trust', sellerEntityType: 'company', requiresCancellationAttorney: true }).requirements
 assert.ok(rows.some((row) => row.key === 'buyer_trust_authority'))
 assert.ok(rows.some((row) => row.key === 'seller_company_authority'))
+assert.ok(rows.some((row) => row.key === 'seller_director_fica'))
 assert.ok(rows.some((row) => row.key === 'proof_of_funds'))
 assert.ok(rows.some((row) => row.key === 'bond_preapproval'))
 assert.ok(rows.some((row) => row.key === 'bond_cancellation_figures'))
+assert.ok(rows.every((row) => row.requiresUpload === true))
 console.log('mvp transaction document bootstrap tests passed')

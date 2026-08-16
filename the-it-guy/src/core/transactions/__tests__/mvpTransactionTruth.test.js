@@ -66,6 +66,9 @@ const profile = {
       { mvp_launch_role_key: 'buyer_company_signatory', status: 'active' },
       { mvp_launch_role_key: 'seller_trustee', status: 'active' },
     ],
+    participantRequirements: [
+      { role_key: 'buyer_company_director', status: 'captured' },
+    ],
   })
 
   assert.deepEqual(truth.participants.missing.map((role) => role.key), [])

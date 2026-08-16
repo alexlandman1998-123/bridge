@@ -21,11 +21,18 @@ assert.equal(pendingRoster.summary.outstanding, bootstrap.requirements.length)
 
 const resolvedRoster = buildMvpDocumentRoster({
   requiredDocuments: [{ document_key: 'proof_of_funds', document_label: 'Proof of funds', required_from_role: 'buyer', is_required: true, enabled: true, status: 'pending' }],
-  documentRequests: [{ id: 'request-1', document_type: 'proof_of_funds', title: 'Proof of funds', requested_from: 'buyer', status: 'verified' }],
+  documentRequests: [{ id: 'request-1', document_type: 'proof_of_funds', title: 'Proof of funds', requested_from: 'buyer', status: 'verified', document_id: 'document-1' }],
 })
 assert.equal(resolvedRoster.requirements[0].status, 'verified')
 assert.equal(resolvedRoster.requirements[0].complete, true)
 assert.equal(resolvedRoster.summary.outstanding, 0)
+
+const statusOnlyRoster = buildMvpDocumentRoster({
+  requiredDocuments: [{ document_key: 'proof_of_funds', document_label: 'Proof of funds', required_from_role: 'buyer', is_required: true, enabled: true, status: 'verified' }],
+})
+assert.equal(statusOnlyRoster.requirements[0].complete, false)
+assert.equal(statusOnlyRoster.requirements[0].uploadMissing, true)
+assert.match(statusOnlyRoster.blockers[0].reason, /uploaded file/i)
 
 const rejectedRoster = buildMvpDocumentRoster({
   requiredDocuments: [{ document_key: 'buyer_identity', document_label: 'Buyer identity', is_required: true, enabled: true, status: 'rejected' }],

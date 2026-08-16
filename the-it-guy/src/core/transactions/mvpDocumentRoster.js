@@ -1,6 +1,19 @@
 export const MVP_DOCUMENT_ROSTER_VERSION = 'arch9_mvp_document_roster_v1'
 
 const COMPLETE_STATUSES = new Set(['approved', 'complete', 'completed', 'signed', 'verified', 'satisfied', 'waived', 'not_applicable'])
+const UPLOAD_REQUIRED_KEY_PATTERNS = [
+  /identity/,
+  /fica/,
+  /proof_of_address/,
+  /proof_of_funds/,
+  /authority/,
+  /trust/,
+  /director/,
+  /spouse_consent/,
+  /bond_preapproval/,
+  /bond_cancellation_figures/,
+  /title_deed/,
+]
 const STATUS_RANK = Object.freeze({
   rejected: 5,
   approved: 4,
@@ -31,6 +44,27 @@ function isComplete(status) {
   return COMPLETE_STATUSES.has(key(status))
 }
 
+function hasUploadEvidence(row = {}) {
+  return Boolean(
+    row.isUploaded === true ||
+      row.is_uploaded === true ||
+      text(row.documentId || row.document_id) ||
+      text(row.uploadId || row.upload_id) ||
+      text(row.storagePath || row.storage_path) ||
+      text(row.fileUrl || row.file_url || row.url) ||
+      text(row.uploadedAt || row.uploaded_at),
+  )
+}
+
+function requiresUpload(row = {}) {
+  if (row.requiresUpload !== undefined) return row.requiresUpload === true
+  if (row.requires_upload !== undefined) return row.requires_upload === true
+  if (text(row.satisfactionMode || row.satisfaction_mode) === 'verified_upload') return true
+  const documentKey = key(row.documentKey || row.document_key || row.key || row.documentType || row.document_type)
+  const groupKey = key(row.groupKey || row.group_key || row.category)
+  return UPLOAD_REQUIRED_KEY_PATTERNS.some((pattern) => pattern.test(documentKey) || pattern.test(groupKey))
+}
+
 function bestStatus(primary, secondary) {
   const primaryStatus = normalizeStatus(primary)
   const secondaryStatus = normalizeStatus(secondary)
@@ -50,6 +84,9 @@ function normalizeRequirement(row = {}) {
     isRequired: row.isRequired ?? row.is_required ?? row.required ?? true,
     enabled: row.enabled !== false,
     allowMultiple: Boolean(row.allowMultiple ?? row.allow_multiple),
+    requiresUpload: requiresUpload(row),
+    satisfactionMode: text(row.satisfactionMode || row.satisfaction_mode),
+    uploadEvidence: hasUploadEvidence(row),
     status: normalizeStatus(row.status || row.requiredDocumentStatus || row.required_document_status, Boolean(row.isUploaded ?? row.is_uploaded)),
     source: row.source || 'transaction_required_documents',
     linkedRequestId: text(row.linkedRequestId || row.linked_request_id),
@@ -86,10 +123,14 @@ export function buildMvpDocumentRoster({ requiredDocuments = [], documentRequest
   const roster = requirements.map((requirement) => {
     const request = requestsByKey.get(requirement.documentKey) || null
     const status = request ? bestStatus(requirement.status, request.status) : requirement.status
+    const uploadEvidence = requirement.uploadEvidence || request?.uploadEvidence || false
+    const complete = isComplete(status) && (requirement.requiresUpload ? uploadEvidence : true)
     return {
       ...requirement,
       status,
-      complete: isComplete(status),
+      complete,
+      uploadEvidence,
+      uploadMissing: requirement.requiresUpload && !uploadEvidence,
       linkedRequestId: request?.id || requirement.linkedRequestId || null,
       source: request ? 'atomic_requirement_with_request' : requirement.source,
     }
@@ -97,7 +138,11 @@ export function buildMvpDocumentRoster({ requiredDocuments = [], documentRequest
   const knownKeys = new Set(roster.map((item) => item.documentKey))
   for (const request of requests) {
     if (knownKeys.has(request.documentKey)) continue
-    roster.push({ ...request, complete: isComplete(request.status) })
+    roster.push({
+      ...request,
+      complete: isComplete(request.status) && (request.requiresUpload ? request.uploadEvidence : true),
+      uploadMissing: request.requiresUpload && !request.uploadEvidence,
+    })
   }
 
   const required = roster.filter((item) => item.enabled && item.isRequired !== false)
@@ -119,6 +164,8 @@ export function buildMvpDocumentRoster({ requiredDocuments = [], documentRequest
       ownerRole: item.requiredFromRole || 'transaction_coordinator',
       reason: item.status === 'rejected'
         ? `${item.label} was rejected and needs attention.`
+        : item.uploadMissing
+          ? `${item.label} needs an uploaded file before it can satisfy the transaction document gate.`
         : `${item.label} is still required.`,
     })),
   }

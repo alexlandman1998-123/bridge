@@ -9,6 +9,8 @@ const bootstrap = buildMvpTransactionParticipantBootstrap({
 
 assert.deepEqual(bootstrap.participants.map((participant) => participant.roleKey), ['buyer', 'seller', 'agent'])
 assert.ok(bootstrap.requirements.some((requirement) => requirement.roleKey === 'buyer_trustee'))
+assert.ok(bootstrap.requirements.some((requirement) => requirement.roleKey === 'seller_company_director'))
 assert.ok(bootstrap.requirements.some((requirement) => requirement.roleKey === 'seller_company_signatory'))
 assert.ok(bootstrap.requirements.some((requirement) => requirement.roleKey === 'bond_originator'))
+assert.ok(bootstrap.requirements.every((requirement) => requirement.identityPreserved === true))
 console.log('mvp transaction participant bootstrap tests passed')

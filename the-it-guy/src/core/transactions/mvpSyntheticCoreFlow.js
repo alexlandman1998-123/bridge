@@ -38,6 +38,21 @@ function asGateDocuments(requirements = [], status = 'pending') {
     requiredFromRole: requirement.requiredFromRole,
     isRequired: requirement.required !== false,
     status,
+    document_id: status === 'verified' ? `test-document-${requirement.key}` : undefined,
+    uploaded_at: status === 'verified' ? '2026-08-15T00:00:00.000Z' : undefined,
+  }))
+}
+
+function asGateParticipantRequirements(requirements = [], status = 'pending_assignment') {
+  return requirements.map((requirement) => ({
+    ...requirement,
+    roleKey: requirement.roleKey,
+    roleType: requirement.roleType,
+    legalRole: requirement.legalRole,
+    transactionRole: requirement.transactionRole,
+    requiredBy: requirement.requiredBy,
+    requiredAtCreation: requirement.requiredAtCreation,
+    status,
   }))
 }
 
@@ -144,10 +159,13 @@ export function runMvpSyntheticCoreFlow(scenario = {}) {
   const participants = asGateParticipants(participantBootstrap.participants)
   const draftDocuments = asGateDocuments(documentBootstrap.requirements, 'pending')
   const verifiedDocuments = asGateDocuments(documentBootstrap.requirements, 'verified')
+  const draftParticipantRequirements = asGateParticipantRequirements(participantBootstrap.requirements, 'pending_assignment')
+  const capturedParticipantRequirements = asGateParticipantRequirements(participantBootstrap.requirements, 'captured')
   const draftTruth = buildMvpTransactionTruth({
     transaction: { ...transaction, currentMainStage: 'DEP' },
     routingProfile,
     participants,
+    participantRequirements: draftParticipantRequirements,
     documentRequirements: draftDocuments,
     workflowLanes: workflowBootstrap.lanes,
   })
@@ -155,6 +173,7 @@ export function runMvpSyntheticCoreFlow(scenario = {}) {
     transaction: { ...transaction, currentMainStage: 'ATTY' },
     routingProfile,
     participants,
+    participantRequirements: capturedParticipantRequirements,
     documentRequirements: verifiedDocuments,
     workflowLanes: workflowBootstrap.lanes,
   })

@@ -1768,7 +1768,7 @@ function listingAlreadyOwnsOperationalFields(status: unknown) {
 }
 
 const SIGNED_MANDATE_LISTING_SELECT =
-  "id, assigned_agent_id, seller_lead_id, originating_crm_lead_id, listing_status, listing_visibility, mandate_status, seller_onboarding_status, is_active, title, address_line_1, property_type, suburb, city, province, asking_price, estimated_value";
+  "id, organisation_id, branch_id, assigned_agent_id, seller_lead_id, originating_crm_lead_id, listing_status, listing_visibility, mandate_status, seller_onboarding_status, is_active, title, address_line_1, property_type, suburb, city, province, asking_price, estimated_value, created_by";
 
 function isUniqueViolation(error: unknown) {
   const details = asRecord(error);
@@ -1849,6 +1849,93 @@ async function findExistingSignedMandateListing({
       leadId,
       column: "seller_lead_id",
     });
+}
+
+async function resolveAssignedAgentBranchId({
+  supabase,
+  organisationId,
+  assignedAgentId,
+}: {
+  supabase: any;
+  organisationId: string;
+  assignedAgentId: string;
+}) {
+  const normalizedOrganisationId = normalizeNullableUuid(organisationId);
+  const normalizedAgentId = normalizeNullableUuid(assignedAgentId);
+  if (!normalizedOrganisationId || !normalizedAgentId) return null;
+
+  const membership = await supabase
+    .from("organisation_users")
+    .select("branch_id, primary_branch_id")
+    .eq("organisation_id", normalizedOrganisationId)
+    .eq("user_id", normalizedAgentId)
+    .limit(1)
+    .maybeSingle();
+  if (membership.error || !membership.data) return null;
+  return normalizeNullableUuid(membership.data.branch_id) || normalizeNullableUuid(membership.data.primary_branch_id);
+}
+
+async function resolveSignedMandateListingOwnership({
+  supabase,
+  organisationId,
+  lead,
+  sourceLead,
+  sourceContext,
+  packet,
+  finalisedBy,
+}: {
+  supabase: any;
+  organisationId: string;
+  lead: Record<string, unknown> | null;
+  sourceLead: Record<string, unknown>;
+  sourceContext: Record<string, unknown>;
+  packet: Record<string, unknown>;
+  finalisedBy: string | null;
+}) {
+  const assignedAgentId = normalizeNullableUuid(
+    lead?.assigned_agent_id ||
+      lead?.assigned_user_id ||
+      sourceContext.assignedAgentId ||
+      sourceContext.assigned_agent_id ||
+      sourceContext.assignedUserId ||
+      sourceContext.assigned_user_id ||
+      sourceLead.assignedAgentId ||
+      sourceLead.assigned_agent_id ||
+      sourceLead.assignedUserId ||
+      sourceLead.assigned_user_id ||
+      packet.assigned_agent_id,
+  );
+  const branchId = normalizeNullableUuid(
+    lead?.branch_id ||
+      sourceLead.branchId ||
+      sourceLead.branch_id ||
+      sourceContext.branchId ||
+      sourceContext.branch_id ||
+      sourceContext.assignedBranchId ||
+      sourceContext.assigned_branch_id,
+  ) || await resolveAssignedAgentBranchId({
+    supabase,
+    organisationId,
+    assignedAgentId: assignedAgentId || "",
+  });
+  const createdBy = normalizeNullableUuid(
+    lead?.created_by ||
+      sourceLead.createdBy ||
+      sourceLead.created_by ||
+      sourceContext.createdBy ||
+      sourceContext.created_by ||
+      sourceContext.finalisedBy ||
+      sourceContext.finalised_by ||
+      packet.created_by ||
+      finalisedBy ||
+      assignedAgentId,
+  );
+
+  return {
+    assignedAgentId,
+    branchId,
+    createdBy,
+  };
 }
 
 function resolveSellerOnboardingSnapshot({
@@ -2298,11 +2385,13 @@ async function ensureListingFromSignedMandate({
   packet,
   version,
   finalArtifactPath,
+  finalisedBy,
 }: {
   supabase: any;
   packet: Record<string, unknown>;
   version: Record<string, unknown>;
   finalArtifactPath: string;
+  finalisedBy: string | null;
 }) {
   if (lower(packet.packet_type) !== "mandate") return null;
   const organisationId = normalizeText(packet.organisation_id);
@@ -2343,7 +2432,7 @@ async function ensureListingFromSignedMandate({
   if (leadId) {
     const leadQuery = await supabase
       .from("leads")
-      .select("lead_id, organisation_id, assigned_agent_id, contact_id, lead_category, stage, status, budget, area_interest, property_interest, seller_property_address, estimated_value, seller_onboarding_token, seller_onboarding_status, listing_id")
+      .select("lead_id, organisation_id, branch_id, assigned_agent_id, assigned_user_id, created_by, contact_id, lead_category, stage, status, budget, area_interest, property_interest, seller_property_address, estimated_value, seller_onboarding_token, seller_onboarding_status, listing_id")
       .eq("organisation_id", organisationId)
       .eq("lead_id", leadId)
       .maybeSingle();
@@ -2351,6 +2440,16 @@ async function ensureListingFromSignedMandate({
       lead = leadQuery.data as Record<string, unknown>;
     }
   }
+
+  const ownership = await resolveSignedMandateListingOwnership({
+    supabase,
+    organisationId,
+    lead,
+    sourceLead,
+    sourceContext,
+    packet,
+    finalisedBy,
+  });
 
   const linkedListingId = normalizeText(existingListingId || lead?.listing_id);
   let listing: Record<string, unknown> | null = await findExistingSignedMandateListing({
@@ -2405,7 +2504,8 @@ async function ensureListingFromSignedMandate({
       // fields must not be backfilled from a later-edited lead.
       assigned_agent_id: listingOwnsOperationalFields
         ? normalizeNullableUuid(listing.assigned_agent_id)
-        : normalizeNullableUuid(listing.assigned_agent_id || lead?.assigned_agent_id || sourceContext.assignedAgentId || sourceContext.assigned_agent_id || sourceLead.assignedAgentId || sourceLead.assigned_agent_id),
+        : normalizeNullableUuid(listing.assigned_agent_id || ownership.assignedAgentId),
+      branch_id: normalizeNullableUuid(listing.branch_id) || ownership.branchId,
       seller_lead_id: normalizeText(listing.seller_lead_id) || leadId || null,
       originating_crm_lead_id: normalizeText(listing.originating_crm_lead_id) || leadId || null,
       listing_status: nextListingStatus,
@@ -2426,6 +2526,7 @@ async function ensureListingFromSignedMandate({
       province: listingOwnsOperationalFields ? normalizeText(listing.province) || null : firstMissingText(listing.province, placeholders.property_province, placeholders["property.province"]),
       asking_price: listingOwnsOperationalFields ? normalizeNumber(listing.asking_price) : firstMissingNumber(listing.asking_price, askingPrice),
       estimated_value: listingOwnsOperationalFields ? normalizeNumber(listing.estimated_value) : firstMissingNumber(listing.estimated_value, askingPrice),
+      created_by: normalizeNullableUuid(listing.created_by) || ownership.createdBy,
       updated_at: new Date().toISOString(),
     };
     await supabase
@@ -2436,7 +2537,8 @@ async function ensureListingFromSignedMandate({
   } else {
     const insertPayload = {
       organisation_id: organisationId,
-      assigned_agent_id: normalizeNullableUuid(lead?.assigned_agent_id || sourceContext.assignedAgentId || sourceContext.assigned_agent_id || sourceLead.assignedAgentId || sourceLead.assigned_agent_id),
+      branch_id: ownership.branchId,
+      assigned_agent_id: ownership.assignedAgentId,
       seller_lead_id: leadId || null,
       originating_crm_lead_id: leadId || null,
       listing_reference: createListingReference(),
@@ -2458,7 +2560,7 @@ async function ensureListingFromSignedMandate({
       mandate_packet_id: normalizeText(packet.id) || null,
       seller_onboarding_status: sellerOnboardingStatus,
       is_active: true,
-      created_by: null,
+      created_by: ownership.createdBy,
     };
     const insert = await supabase
       .from("private_listings")
@@ -3320,6 +3422,7 @@ Deno.serve(async (req: Request) => {
         packet,
         version: finalisedVersion,
         finalArtifactPath: existingFinalPath,
+        finalisedBy,
       }).catch((error) => {
         logFinalisation("error", "final_signed_listing_conversion_failed", {
           requestId: finalisationRequestId,
@@ -3798,6 +3901,7 @@ Deno.serve(async (req: Request) => {
         ...(updateVersionData || {}),
       },
       finalArtifactPath: signedPath,
+      finalisedBy,
     }).catch((error) => {
       logFinalisation("error", "final_signed_listing_conversion_failed", {
         requestId: finalisationRequestId,

@@ -113,6 +113,13 @@ function buildStepPredecessorBlockers(descriptor = {}, state = {}) {
   if (!targetStep || descriptor.targetStatus !== 'complete') return []
 
   const requiredStepKeys = new Set((descriptor.requires || []).map((stepKey) => normalizeText(stepKey)).filter(Boolean))
+  const shouldRequireStep = (stepKey = '') => {
+    const normalizedStepKey = normalizeText(stepKey)
+    if (['supporting_docs_complete', 'collect_supporting_documents'].includes(normalizedStepKey)) {
+      return requiredStepKeys.has('supporting_docs_complete')
+    }
+    return true
+  }
   return workflowSteps
     .filter((step) => {
       const isExplicitRequirement = requiredStepKeys.has(step.step_key)
@@ -120,7 +127,7 @@ function buildStepPredecessorBlockers(descriptor = {}, state = {}) {
         Number(step.sort_order || 0) < Number(targetStep.sort_order || 0) &&
         step.required !== false &&
         step.blocking === true
-      return (isExplicitRequirement || isPriorBlockingStep) && !isCompleteStatus(step.status)
+      return shouldRequireStep(step.step_key) && (isExplicitRequirement || isPriorBlockingStep) && !isCompleteStatus(step.status)
     })
     .map((step) =>
       buildBlockerFromStep(
@@ -279,12 +286,22 @@ function validateWorkflowAction(descriptor, state = {}, rollup = {}, payload = {
     Array.isArray(rollup.blockers) &&
     rollup.blockers.length
   ) {
+    const requiredStepKeys = new Set((descriptor.requires || []).map((stepKey) => normalizeText(stepKey)).filter(Boolean))
     const blockersExcludingTarget = dedupeBlockers(rollup.blockers).filter(
-      (blocker) =>
-        !(
+      (blocker) => {
+        const blockerStepKey = normalizeText(blocker.stepKey)
+        if (
+          ['supporting_docs_complete', 'collect_supporting_documents'].includes(blockerStepKey) &&
+          !requiredStepKeys.has('supporting_docs_complete')
+        ) {
+          return false
+        }
+
+        return !(
           normalizeText(blocker.workflowKey) === normalizeText(descriptor.workflowKey) &&
-          normalizeText(blocker.stepKey) === normalizeText(descriptor.stepKey)
-        ),
+          blockerStepKey === normalizeText(descriptor.stepKey)
+        )
+      },
     )
     if (blockersExcludingTarget.length) {
       return blockersExcludingTarget
@@ -404,6 +421,7 @@ export async function runWorkflowAction({
     rollup: currentRollup,
     activeWorkflow: currentRollup?.workflows?.[currentRollup?.activeWorkflowKey] || null,
     workflows: currentRollup?.workflows || state.workflowMap,
+    supportingDocumentsConfigured: currentRollup?.supportingDocumentsConfigured === true,
   })
   const gateAction = isGateWorkflowAction(descriptor)
   const incompletePredecessors = descriptor
@@ -460,6 +478,18 @@ export async function runWorkflowAction({
 
   for (const followUpStep of getFollowUpStepUpdates(descriptor)) {
     await updateWorkflowStepStatus(transactionId, followUpStep.workflowKey, followUpStep.stepKey, followUpStep.targetStatus, {
+      client,
+      completedBy: userId || null,
+      now: nowIso,
+      transaction: state.transaction,
+    })
+  }
+
+  if (
+    descriptor?.actionKey === 'MOVE_TO_FINANCE' &&
+    !(descriptor.requires || []).includes('supporting_docs_complete')
+  ) {
+    await updateWorkflowStepStatus(transactionId, 'sales_otp', 'supporting_docs_complete', 'not_applicable', {
       client,
       completedBy: userId || null,
       now: nowIso,

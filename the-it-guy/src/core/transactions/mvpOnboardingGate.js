@@ -10,7 +10,12 @@ export function evaluateMvpOnboardingGate({ participants = [], documentRequireme
   const missingRoles = ['buyer', 'seller'].filter((role) => !activeRoles.has(role) && !activeRoles.has(role === 'seller' ? 'developer_contact' : role))
   const pendingDocuments = (documentRequirements || []).filter((item) => {
     const owner = key(item.requiredFromRole || item.required_from_role)
-    return ['buyer', 'seller', 'developer'].includes(owner) && item.isRequired !== false && !COMPLETE.has(key(item.status))
+    const complete = item.complete === true
+      ? true
+      : item.complete === false || item.uploadMissing === true || item.upload_missing === true
+        ? false
+        : COMPLETE.has(key(item.status))
+    return ['buyer', 'seller', 'developer'].includes(owner) && item.isRequired !== false && !complete
   })
   const blockers = [
     ...missingRoles.map((role) => ({ key: `participant:${role}`, ownerRole: 'agent', reason: `${role === 'buyer' ? 'Buyer' : 'Seller/developer representative'} must be captured before onboarding can complete.` })),

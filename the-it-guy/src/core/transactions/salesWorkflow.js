@@ -25,6 +25,14 @@ const OTP_GENERATED_TYPES = new Set([
 ])
 
 const OTP_SIGNED_TYPES = new Set([OTP_DOCUMENT_TYPES.signedReuploaded, OTP_DOCUMENT_TYPES.signedFinal])
+const MANUAL_SIGNED_OTP_TYPES = new Set([
+  'signed_otp',
+  'otp_signed',
+  OTP_DOCUMENT_TYPES.signedReuploaded,
+  'uploaded_signed',
+  'offer_to_purchase_signed',
+  'signed_offer_to_purchase',
+])
 // These are supporting/manual artifacts only. They must never satisfy the
 // signed-OTP gate or unlock Finance.
 const NON_CANONICAL_SIGNED_OTP_TYPES = new Set([
@@ -83,6 +91,15 @@ function isSignedOtpDocument(document = {}) {
   return normalizedType === OTP_DOCUMENT_TYPES.signedFinal
 }
 
+function isManualSignedOtpDocument(document = {}) {
+  const normalizedType = normalizeText(document?.document_type)
+  const normalizedOtpType = normalizeOtpDocumentType(document?.document_type)
+  const normalizedStatus = normalizeText(document?.status)
+  const manualType = MANUAL_SIGNED_OTP_TYPES.has(normalizedType) || MANUAL_SIGNED_OTP_TYPES.has(normalizedOtpType)
+
+  return manualType && ['uploaded', 'signed', 'received', 'approved', 'verified', 'completed'].includes(normalizedStatus)
+}
+
 function isGeneratedOtpDocument(document = {}) {
   const normalizedType = normalizeOtpDocumentType(document?.document_type)
   if (NON_CANONICAL_SIGNED_OTP_TYPES.has(normalizedType)) return false
@@ -135,6 +152,7 @@ export function resolveSalesWorkflowSnapshot({
   requiredDocuments = [],
   permissions = null,
   allowKingstonsManualSignedOtp = false,
+  allowDeveloperManualSignedOtp = false,
   kingstonsBuyerOtpReadiness = null,
 } = {}) {
   const normalizedOnboardingStatus = normalizeText(onboardingStatus)
@@ -161,7 +179,10 @@ export function resolveSalesWorkflowSnapshot({
         created_at: kingstonsManualSignedOtpRow.uploadedAt || kingstonsManualSignedOtpRow.document?.created_at,
       }
     : null
-  const latestSignedOtpDocument = latestCanonicalSignedOtpDocument || latestKingstonsManualSignedOtpDocument
+  const latestDeveloperManualSignedOtpDocument = allowDeveloperManualSignedOtp
+    ? sortedDocuments.find((item) => isManualSignedOtpDocument(item)) || null
+    : null
+  const latestSignedOtpDocument = latestCanonicalSignedOtpDocument || latestKingstonsManualSignedOtpDocument || latestDeveloperManualSignedOtpDocument
   const generatedType = normalizeOtpDocumentType(latestGeneratedOtpDocument?.document_type)
   const generatedCategory = normalizeText(latestGeneratedOtpDocument?.category)
   const generatedName = normalizeText(latestGeneratedOtpDocument?.name)
@@ -186,6 +207,8 @@ export function resolveSalesWorkflowSnapshot({
     ? 'canonical_signed_final'
     : latestKingstonsManualSignedOtpDocument
       ? 'kingstons_manual_upload'
+      : latestDeveloperManualSignedOtpDocument
+        ? 'developer_manual_upload'
       : ''
   const otpReleasedForSignature = otpAvailableToClient || (manualSignatureCapture && otpApproved)
 

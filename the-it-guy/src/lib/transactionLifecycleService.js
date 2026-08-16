@@ -10,6 +10,10 @@ import { buildMvpTransactionDocumentBootstrap } from '../core/transactions/mvpTr
 import { buildMvpTransactionWorkflowBootstrap } from '../core/transactions/mvpTransactionWorkflowBootstrap.js'
 import { assessMvpTestDataProtection, assertMvpTestDataProtection } from '../core/transactions/mvpTestDataProtection.js'
 import { assertMvpPilotCreationAllowed } from './mvpPilotCreationFreeze.js'
+import {
+  assertMvpTransactionOverrideAuthorization,
+  resolveTransactionCreationOverrideReason,
+} from '../core/transactions/mvpTransactionOverrideAuthorization.js'
 
 const KEY_AGENT_DEMO_TRANSACTIONS = 'itg:agent-demo-transactions:v1'
 const KEY_TRANSACTION_LIFECYCLE_EVENTS = 'itg:transaction-lifecycle-events:v1'
@@ -64,7 +68,8 @@ function normalizeLower(value) {
   return normalize(value).toLowerCase()
 }
 
-const TRANSACTION_IDENTITY_SELECT = 'id, organisation_id, accepted_offer_id, listing_id, originating_lead_id, originating_buyer_lead_id, stage, current_main_stage, finance_type, assigned_agent_email, buyer_id, created_at, updated_at'
+const TRANSACTION_IDENTITY_SELECT_LEGACY = 'id, organisation_id, accepted_offer_id, listing_id, originating_lead_id, originating_buyer_lead_id, stage, current_main_stage, finance_type, assigned_agent_email, buyer_id, created_at, updated_at'
+const TRANSACTION_IDENTITY_SELECT = `${TRANSACTION_IDENTITY_SELECT_LEGACY}, creation_idempotency_key, buyer_contact_id, assigned_agent_id`
 
 function isUuidLike(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalize(value))
@@ -371,6 +376,7 @@ function buildTransactionRow({
   const onboardingStatus = resolveOnboardingStatusForPreference(clientIntakePreference)
   const onboardingNextAction = resolveNextActionForPreference(clientIntakePreference)
   const onboardingLabel = getClientIntakePreferenceLabel(clientIntakePreference)
+  const overrideReason = resolveTransactionCreationOverrideReason(payload)
 
   const assignedAgentId = normalize(
     payload?.assignedAgentId || listing?.assignedAgentId || lead?.assignedAgentId || actor?.id || offerRecord?.agentId || null,
@@ -449,7 +455,7 @@ function buildTransactionRow({
       comment:
         source === 'accepted_offer'
           ? `Transaction auto-created from accepted offer. Client intake mode: ${onboardingLabel}.`
-          : 'Transaction created from lead with manual override (accepted offer missing).',
+          : `Transaction created from lead with manual override.${overrideReason ? ` Reason: ${overrideReason}` : ''}`,
       assigned_agent: assignedAgentName || null,
       assigned_agent_email: assignedAgentEmail || null,
       lifecycle_state: 'active',
@@ -477,6 +483,9 @@ function buildTransactionRow({
       agent_commission_amount: commissionSnapshot.agent_commission_amount,
       agency_commission_amount: commissionSnapshot.agency_commission_amount,
       commission_snapshot_source: commissionSnapshot.commission_snapshot_source,
+      transaction_creation_override_reason: overrideReason || null,
+      transaction_creation_override_actor_id: payload?.transactionCreationOverrideActorId || payload?.transaction_creation_override_actor_id || actor?.id || actor?.userId || null,
+      transaction_creation_override_actor_role: payload?.transactionCreationOverrideActorRole || payload?.transaction_creation_override_actor_role || actor?.role || actor?.membershipRole || null,
       workflow_health_issues: workflowHealthIssues,
       client_intake_preference: clientIntakePreference,
       created_at: nowIso,
@@ -730,13 +739,23 @@ export async function findExistingTransactionForAcceptedOffer({
   const normalizedOfferId = normalize(acceptedOfferId)
   if (!isUuidLike(normalizedOfferId)) return null
 
-  const query = await supabase
+  let query = await supabase
     .from('transactions')
     .select(TRANSACTION_IDENTITY_SELECT)
     .eq('organisation_id', organisationId)
     .eq('accepted_offer_id', normalizedOfferId)
     .order('created_at', { ascending: false })
     .limit(1)
+
+  if (query.error && isMissingColumnError(query.error)) {
+    query = await supabase
+      .from('transactions')
+      .select(TRANSACTION_IDENTITY_SELECT_LEGACY)
+      .eq('organisation_id', organisationId)
+      .eq('accepted_offer_id', normalizedOfferId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+  }
 
   if (query.error) {
     if (isMissingColumnError(query.error, 'accepted_offer_id') || isMissingTableError(query.error, 'transactions')) {
@@ -746,6 +765,39 @@ export async function findExistingTransactionForAcceptedOffer({
   }
 
   return (query.data || [])[0] || null
+}
+
+export async function findTransactionIdentityById({
+  organisationId = '',
+  transactionId = '',
+} = {}) {
+  if (!supabase || !organisationId) return null
+
+  const normalizedTransactionId = normalize(transactionId)
+  if (!isUuidLike(normalizedTransactionId)) return null
+
+  let query = await supabase
+    .from('transactions')
+    .select(TRANSACTION_IDENTITY_SELECT)
+    .eq('organisation_id', organisationId)
+    .eq('id', normalizedTransactionId)
+    .maybeSingle()
+
+  if (query.error && isMissingColumnError(query.error)) {
+    query = await supabase
+      .from('transactions')
+      .select(TRANSACTION_IDENTITY_SELECT_LEGACY)
+      .eq('organisation_id', organisationId)
+      .eq('id', normalizedTransactionId)
+      .maybeSingle()
+  }
+
+  if (query.error) {
+    if (isMissingTableError(query.error, 'transactions')) return null
+    throw query.error
+  }
+
+  return query.data || null
 }
 
 async function insertAgentParticipant({
@@ -867,6 +919,7 @@ export async function createTransactionFromLeadOverride({
   const nextListingId = normalize(payload?.listingId || listing?.id || created?.transactionRow?.transaction?.unit_id)
   const acceptedOfferId = normalize(payload?.acceptedOfferId || payload?.accepted_offer_id || options?.acceptedOfferId)
   const allowDirectLeadConversion = options?.allowDirectLeadConversion === true
+  const overrideReason = resolveTransactionCreationOverrideReason(payload, options)
   const unsafeFallbackAllowed = isUnsafeFallbackAllowed()
   const explicitMockMode = unsafeFallbackAllowed && (payload?.mockMode === true || options?.mockMode === true)
   const allowRuntimeFallback = unsafeFallbackAllowed && Boolean(options?.allowRuntimeFallback || explicitMockMode || !isSupabaseConfigured || !supabase)
@@ -881,6 +934,14 @@ export async function createTransactionFromLeadOverride({
   if (!acceptedOfferId && !allowDirectLeadConversion) {
     throw new Error('Buyer transactions must be created from an accepted offer. Create and accept an offer before conversion.')
   }
+  const overrideAuthorization = !acceptedOfferId && allowDirectLeadConversion
+    ? assertMvpTransactionOverrideAuthorization({
+      actor,
+      payload,
+      options,
+      acceptedOfferId,
+    })
+    : null
 
   const resolvedRoutingProfile = resolveRoutingProfileForTransaction({ listing, lead, payload })
   const testDataProtection = assessMvpTestDataProtection({ payload, listing, lead })
@@ -891,6 +952,14 @@ export async function createTransactionFromLeadOverride({
   const routingProfile = {
     ...resolvedRoutingProfile,
     testDataProtection,
+    transactionCreationOverride: overrideAuthorization
+      ? {
+          reason: overrideAuthorization.reason,
+          actorId: overrideAuthorization.actorId,
+          actorRole: overrideAuthorization.actorRole,
+          authorised: true,
+        }
+      : null,
   }
   const creationCommand = prepareMvpTransactionCreationCommand({
     routingProfile,
@@ -957,11 +1026,13 @@ export async function createTransactionFromLeadOverride({
       }
     }
 
-    const duplicate = await findExistingTransactionForLead({
-      organisationId: nextOrganisationId,
-      leadId: nextLeadId,
-      convertedTransactionId: lead?.convertedTransactionId || lead?.convertedDealId,
-    })
+    const duplicate = !acceptedOfferId
+      ? await findExistingTransactionForLead({
+        organisationId: nextOrganisationId,
+        leadId: nextLeadId,
+        convertedTransactionId: lead?.convertedTransactionId || lead?.convertedDealId,
+      })
+      : null
 
     if (duplicate?.id) {
       let leadLinkageResult = { updated: false, reason: null }
@@ -990,6 +1061,7 @@ export async function createTransactionFromLeadOverride({
           payload,
         }),
         leadLinkageUpdated: leadLinkageResult?.updated === true,
+        overrideAuthorization,
         warning: !leadLinkageResult?.updated
           ? leadLinkageResult?.reason || 'existing_transaction_reused'
           : 'existing_transaction_reused',
@@ -1046,7 +1118,7 @@ export async function createTransactionFromLeadOverride({
       next_action: onboardingNextAction,
       comment: acceptedOfferId
         ? `Transaction created from accepted buyer offer. Client intake mode: ${onboardingLabel}.`
-        : 'Transaction created from lead with manual override (accepted offer missing).',
+        : `Transaction created from lead with manual override. Reason: ${overrideReason}`,
       onboarding_status: onboardingStatus,
       assigned_agent: normalize(payload?.assignedAgentName || lead?.assignedAgentName || actor?.name) || null,
       assigned_agent_email: nextAssignedAgentEmail || null,
@@ -1065,6 +1137,9 @@ export async function createTransactionFromLeadOverride({
       commission_snapshot_id: normalize(payload?.commissionSnapshotId) || null,
       creation_idempotency_key: creationCommand.idempotencyKey,
       creation_mode: creationCommand.creationMode,
+      transaction_creation_override_reason: overrideReason || null,
+      transaction_creation_override_actor_id: overrideAuthorization?.actorId || null,
+      transaction_creation_override_actor_role: overrideAuthorization?.actorRole || null,
       gross_commission_percentage: asNumber(payload?.grossCommissionPercentage),
       gross_commission_amount: asNumber(payload?.grossCommissionAmount),
       agent_split_percentage_snapshot: asNumber(payload?.agentSplitPercentage),
@@ -1142,6 +1217,7 @@ export async function createTransactionFromLeadOverride({
       persisted: true,
       existing,
       atomicCreation,
+      overrideAuthorization,
       warning: existing ? 'existing_transaction_reused' : null,
     }
   } catch (error) {
@@ -1162,6 +1238,15 @@ export function createTransactionFromLeadManualOverride({
   if (!lead) {
     throw new Error('Lead not found.')
   }
+  const acceptedOfferId = normalize(payload?.acceptedOfferId || payload?.accepted_offer_id)
+  const overrideAuthorization = !acceptedOfferId
+    ? assertMvpTransactionOverrideAuthorization({
+      actor,
+      payload,
+      options: { allowDirectLeadConversion: true },
+      acceptedOfferId,
+    })
+    : null
   const created = buildTransactionRow({
     listing,
     offerRecord: null,
@@ -1179,10 +1264,12 @@ export function createTransactionFromLeadManualOverride({
     leadId: lead?.leadId || null,
     listingId: listing?.id || payload?.listingId || null,
     warning: 'missing_accepted_offer',
+    overrideReason: overrideAuthorization?.reason || null,
+    overrideActorId: overrideAuthorization?.actorId || null,
     agentId: created.transactionRow?.transaction?.assigned_agent_id || null,
     createdAt: new Date().toISOString(),
   })
-  return created
+  return { ...created, overrideAuthorization }
 }
 
 export function listTransactionLifecycleEvents() {

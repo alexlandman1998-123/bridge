@@ -6320,6 +6320,64 @@ function buildMatterPreviewShell(matterPreview, transactionId) {
   }
 }
 
+function buildTransactionRouteShell(transactionId) {
+  const normalizedTransactionId = String(transactionId || '').trim()
+  if (!normalizedTransactionId) return null
+  const shortReference = String(normalizedTransactionId).slice(0, 8).toUpperCase()
+  const now = new Date().toISOString()
+
+  return {
+    transaction: {
+      id: normalizedTransactionId,
+      matter_number: `MAT-${shortReference}`,
+      transaction_reference: `Matter ${shortReference}`,
+      finance_type: 'unknown',
+      purchase_price: 0,
+      sales_price: 0,
+      seller_name: '',
+      seller_has_existing_bond: false,
+      current_bond_bank: '',
+      estimated_settlement_amount: 0,
+      property_description: '',
+      lifecycle_state: 'active',
+      current_main_stage: '',
+      stage: '',
+      registration_date: null,
+      updated_at: now,
+      created_at: now,
+      is_active: true,
+    },
+    buyer: null,
+    development: null,
+    unit: null,
+    documents: [],
+    requiredDocumentChecklist: [],
+    transactionDiscussion: [],
+    transactionEvents: [],
+    transactionParticipants: [],
+    appointments: [],
+    documentRequests: [],
+    documentRequestSummary: {
+      total: 0,
+      pending: 0,
+      uploaded: 0,
+      approved: 0,
+      rejected: 0,
+    },
+    transactionChecklistItems: [],
+    checklistSummary: {
+      total: 0,
+      completed: 0,
+      open: 0,
+      blocked: 0,
+    },
+    stage: '',
+    mainStage: '',
+    __isRouteShell: true,
+    __loadedAt: now,
+  }
+}
+
 function MatterWorkspaceTabs({ tabs = [], activeTab = '', onChange, premium = false, spread = false, minimal = false }) {
   const iconByTab = {
     overview: Workflow,
@@ -14551,8 +14609,12 @@ function AttorneyTransactionDetail() {
     () => buildMatterPreviewShell(location.state?.matterPreview, transactionId),
     [location.state?.matterPreview, transactionId],
   )
-  const [data, setData] = useState(() => navigationPreviewData)
-  const [loading, setLoading] = useState(() => !navigationPreviewData)
+  const initialTransactionShell = useMemo(
+    () => navigationPreviewData || buildTransactionRouteShell(transactionId),
+    [navigationPreviewData, transactionId],
+  )
+  const [data, setData] = useState(() => initialTransactionShell)
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [matterAccessChecked, setMatterAccessChecked] = useState(workspaceRole !== 'attorney')
   const [matterAccessAllowed, setMatterAccessAllowed] = useState(workspaceRole !== 'attorney')
@@ -14800,7 +14862,7 @@ function AttorneyTransactionDetail() {
   }, [navigationPreviewData?.transaction, transactionId])
 
   useEffect(() => {
-    setData(navigationPreviewData)
+    setData(initialTransactionShell)
     setError('')
     setHydratingDetail(false)
     setWorkflowOperations(null)
@@ -14811,8 +14873,8 @@ function AttorneyTransactionDetail() {
     setWorkflowInlineStepDraft(null)
     setLocalLegalWorkflowDetailKey('')
     setMatterAccessKey(workspaceRole !== 'attorney' ? currentMatterAccessKey : '')
-    setLoading(!navigationPreviewData)
-  }, [currentMatterAccessKey, navigationPreviewData, transactionId, workspaceRole])
+    setLoading(true)
+  }, [currentMatterAccessKey, initialTransactionShell, transactionId, workspaceRole])
 
   useEffect(() => {
     if (workspaceRole === 'attorney') {
@@ -16329,30 +16391,54 @@ function AttorneyTransactionDetail() {
     try {
       const { default: html2pdf } = await import('html2pdf.js/src/index.js')
       const pdfDocument = new window.DOMParser().parseFromString(
-        buildBondApplicationPdfHtml(bondApplicationViewModel, new Date().toISOString()),
+        buildBondApplicationPdfHtml(bondApplicationViewModel, new Date().toISOString(), {
+          bondBrand: { name: 'BetterBond' },
+          referringAgency: bondHeaderReferringAgency,
+        }),
         'text/html',
       )
       const container = window.document.createElement('div')
       pdfContainer = container
       const style = pdfDocument.head.querySelector('style')
-      const page = pdfDocument.body.firstElementChild
+      const page = pdfDocument.body.querySelector('[data-bond-application-pdf-page]') || pdfDocument.body.firstElementChild
       if (style) container.appendChild(style.cloneNode(true))
       if (page) container.appendChild(page.cloneNode(true))
+      container.setAttribute('aria-hidden', 'true')
       container.style.position = 'fixed'
-      container.style.left = '-10000px'
+      container.style.left = '0'
       container.style.top = '0'
-      container.style.width = '980px'
+      container.style.width = '794px'
+      container.style.minHeight = '1123px'
+      container.style.zIndex = '-1'
+      container.style.pointerEvents = 'none'
+      container.style.background = '#ffffff'
       window.document.body.appendChild(container)
+      const imageLoads = Array.from(container.querySelectorAll('img')).map((image) => {
+        if (image.complete) return Promise.resolve()
+        return new Promise((resolve) => {
+          const timeout = window.setTimeout(resolve, 2500)
+          image.onload = () => {
+            window.clearTimeout(timeout)
+            resolve()
+          }
+          image.onerror = () => {
+            image.style.display = 'none'
+            window.clearTimeout(timeout)
+            resolve()
+          }
+        })
+      })
+      await Promise.all(imageLoads)
       await html2pdf()
         .set({
           margin: 0,
           filename: getBondApplicationPdfFilename(bondApplicationViewModel),
           image: { type: 'jpeg', quality: 0.98 },
-          html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
+          html2canvas: { scale: 2, useCORS: true, allowTaint: false, backgroundColor: '#ffffff', logging: false },
           jsPDF: { unit: 'pt', format: 'a4', orientation: 'portrait' },
-          pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
+          pagebreak: { mode: ['css', 'legacy'] },
         })
-        .from(container)
+        .from(container.querySelector('[data-bond-application-pdf-page]') || container)
         .save()
     } finally {
       pdfContainer?.remove()
@@ -19851,9 +19937,9 @@ function AttorneyTransactionDetail() {
     return <p className="status-message error">Supabase is not configured for this workspace.</p>
   }
 
-  const canRenderNavigationPreview = Boolean(navigationPreviewData && data?.__isNavigationPreview)
+  const canRenderInitialShell = Boolean(data?.transaction && (data?.__isNavigationPreview || data?.__isRouteShell))
 
-  if (workspaceRole === 'attorney' && attorneyPermissionState.loading && !canRenderNavigationPreview) {
+  if (workspaceRole === 'attorney' && attorneyPermissionState.loading && !canRenderInitialShell) {
     return <LoadingSkeleton lines={8} className="panel" />
   }
 
@@ -19861,7 +19947,7 @@ function AttorneyTransactionDetail() {
     return <p className="status-message error">You do not have access to this attorney workspace.</p>
   }
 
-  if (workspaceRole === 'attorney' && !matterAccessChecked && !canRenderNavigationPreview) {
+  if (workspaceRole === 'attorney' && !matterAccessChecked && !canRenderInitialShell) {
     return <LoadingSkeleton lines={8} className="panel" />
   }
 
@@ -19869,7 +19955,7 @@ function AttorneyTransactionDetail() {
     return <p className="status-message error">You do not have access to this matter.</p>
   }
 
-  if (loading) {
+  if (loading && !canRenderInitialShell) {
     return <LoadingSkeleton lines={8} className="panel" />
   }
 

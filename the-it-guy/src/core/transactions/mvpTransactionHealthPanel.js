@@ -1,3 +1,5 @@
+import { resolveMvpTransactionCreationLineage } from './mvpTransactionCreationLineage.js'
+
 export const MVP_TRANSACTION_HEALTH_PANEL_VERSION = 'arch9_mvp_transaction_health_panel_v2'
 
 function text(value) {
@@ -24,27 +26,6 @@ function notificationSummary(events = []) {
     sent: count((event) => ['sent', 'delivered'].includes(text(event?.status).toLowerCase())),
     suppressed: count((event) => text(event?.status).toLowerCase() === 'skipped' || event?.metadata?.notificationSuppressed === true),
     agentHandoffs: count((event) => event?.handoffRequired === true || event?.metadata?.handoffRequired === true),
-  }
-}
-
-function creationSummary(transaction = {}, conversionReceipt = null) {
-  const receipt = conversionReceipt && typeof conversionReceipt === 'object'
-    ? conversionReceipt
-    : (transaction.conversionReceipt || transaction.conversion_receipt || {})
-  const acceptedOfferId = text(
-    receipt.acceptedOfferId || transaction.acceptedOfferId || transaction.accepted_offer_id,
-  )
-  const idempotencyKey = text(
-    transaction.creationIdempotencyKey || transaction.creation_idempotency_key || receipt.idempotencyKey,
-  )
-  const hasEvidence = Boolean(acceptedOfferId || idempotencyKey || receipt.transactionId)
-  const receiptReady = receipt.ready === true && text(receipt.transactionId)
-  return {
-    acceptedOfferId: acceptedOfferId || null,
-    idempotencyKey: idempotencyKey || null,
-    receiptStatus: text(receipt.status) || null,
-    confirmed: hasEvidence ? Boolean(acceptedOfferId && idempotencyKey) && (receipt.ready !== false) : null,
-    receiptVerified: receiptReady || null,
   }
 }
 
@@ -136,7 +117,7 @@ export function buildMvpTransactionHealthPanel({
   })
   const testDataProtection = transaction.testDataProtection || transaction.test_data_protection || {}
   const isTestData = testDataProtection.isTestData === true || testDataProtection.is_test_data === true
-  const creation = creationSummary(transaction, conversionReceipt)
+  const creation = resolveMvpTransactionCreationLineage({ transaction, conversionReceipt })
   const notifications = notificationSummary(notificationOutbox)
 
   return {

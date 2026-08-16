@@ -8,6 +8,7 @@ export const TRANSACTION_LIFECYCLE_STAGE_ORDER = [
 
 export const TRANSACTION_LIFECYCLE_STAGE_LABELS = {
   confirmed: 'Confirmed',
+  reservation_deposit_paid: 'Reservation Deposit Paid',
   otp: 'OTP',
   finance: 'Finance',
   transfer: 'Transfer',
@@ -78,6 +79,27 @@ function normalizeKey(value) {
   return normalizeText(value).toLowerCase().replace(/[\s/-]+/g, '_')
 }
 
+function isReservationDepositRelevant(transaction = {}) {
+  return Boolean(transaction?.reservation_required || transaction?.reservationRequired)
+}
+
+function isReservationDepositPaid(transaction = {}) {
+  const normalizedStatus = normalizeKey(transaction?.reservation_status || transaction?.reservationStatus)
+  return ['paid', 'verified'].includes(normalizedStatus)
+}
+
+function getLifecycleStageOrder(transaction = {}) {
+  if (!isReservationDepositRelevant(transaction)) return TRANSACTION_LIFECYCLE_STAGE_ORDER
+  return [
+    'confirmed',
+    'reservation_deposit_paid',
+    'otp',
+    'finance',
+    'transfer',
+    'registration',
+  ]
+}
+
 function toTitleLabel(value = '') {
   return normalizeText(value)
     .replace(/_/g, ' ')
@@ -91,6 +113,7 @@ export function normalizeTransactionLifecycleStage(value, fallback = 'confirmed'
 
   const lower = normalizeKey(raw)
   if (TRANSACTION_LIFECYCLE_STAGE_ORDER.includes(lower)) return lower
+  if (lower === 'reservation_deposit_paid' || /reservation/.test(lower)) return 'reservation_deposit_paid'
 
   const upper = raw.toUpperCase()
   if (LEGACY_MAIN_STAGE_MAP[upper]) return LEGACY_MAIN_STAGE_MAP[upper]
@@ -208,11 +231,26 @@ function buildRollupBlockersByStage(rollup = {}, currentStage = 'confirmed') {
 export function buildTransactionLifecycleSummaryFromRollup(rollup = {}, options = {}) {
   if (!rollup || typeof rollup !== 'object') return null
 
+  const transaction = options.transaction || rollup.transaction || {}
   const parentStage = normalizeText(rollup.parentStage).toUpperCase()
-  const currentStage = mapRollupParentStageToLifecycleStage(parentStage || 'SETUP')
+  const stageOrder = getLifecycleStageOrder(transaction)
+  const reservationRelevant = isReservationDepositRelevant(transaction)
+  const reservationPaid = isReservationDepositPaid(transaction)
+  const mappedCurrentStage = mapRollupParentStageToLifecycleStage(parentStage || 'SETUP')
+  const currentStage =
+    reservationRelevant &&
+    !reservationPaid &&
+    ['confirmed', 'otp'].includes(mappedCurrentStage)
+      ? 'reservation_deposit_paid'
+      : mappedCurrentStage
   const lifecycleStatus = mapRollupStatusToLifecycleStatus(rollup.parentStatus, parentStage)
   const blockersByStage = buildRollupBlockersByStage(rollup, currentStage)
-  const currentStageIndex = TRANSACTION_LIFECYCLE_STAGE_ORDER.indexOf(currentStage)
+  if (reservationRelevant && !reservationPaid) {
+    blockersByStage.reservation_deposit_paid = blockersByStage.reservation_deposit_paid?.length
+      ? blockersByStage.reservation_deposit_paid
+      : ['Reservation deposit is not paid.']
+  }
+  const currentStageIndex = stageOrder.indexOf(currentStage)
   const isComplete = parentStage === 'COMPLETE'
 
   return {
@@ -220,7 +258,7 @@ export function buildTransactionLifecycleSummaryFromRollup(rollup = {}, options 
     currentStage,
     status: lifecycleStatus,
     progressPercent: Number.isFinite(Number(rollup.progressPercent)) ? Number(rollup.progressPercent) : 0,
-    stages: TRANSACTION_LIFECYCLE_STAGE_ORDER.map((stage, index) => {
+    stages: stageOrder.map((stage, index) => {
       const blocked = Array.isArray(blockersByStage[stage]) && blockersByStage[stage].length > 0
       let state = 'upcoming'
       if (isComplete) {
@@ -320,7 +358,16 @@ export function buildTransactionLifecycleSummary({
   status = '',
 } = {}) {
   const resolvedStage = normalizeTransactionLifecycleStage(currentStage || resolveMainStage(transaction, mainStage))
-  const currentIndex = TRANSACTION_LIFECYCLE_STAGE_ORDER.indexOf(resolvedStage)
+  const stageOrder = getLifecycleStageOrder(transaction)
+  const reservationRelevant = isReservationDepositRelevant(transaction)
+  const reservationPaid = isReservationDepositPaid(transaction)
+  const adjustedStage =
+    reservationRelevant &&
+    !reservationPaid &&
+    ['confirmed', 'otp'].includes(resolvedStage)
+      ? 'reservation_deposit_paid'
+      : resolvedStage
+  const currentIndex = stageOrder.indexOf(adjustedStage)
   const normalizedStatus = normalizeKey(status || transaction?.transaction_lifecycle_status || transaction?.lifecycleWorkflow?.status || transaction?.lifecycle_state)
   const lifecycleStatus =
     ['blocked', 'completed'].includes(normalizedStatus)
@@ -331,13 +378,13 @@ export function buildTransactionLifecycleSummary({
 
   return {
     transactionId: normalizeText(transaction?.id || transaction?.transaction_id || transaction?.transactionId),
-    currentStage: resolvedStage,
+    currentStage: adjustedStage,
     status: lifecycleStatus,
     progressPercent:
-      TRANSACTION_LIFECYCLE_STAGE_ORDER.length > 1
-        ? Math.round((currentIndex / (TRANSACTION_LIFECYCLE_STAGE_ORDER.length - 1)) * 100)
+      stageOrder.length > 1
+        ? Math.round((Math.max(currentIndex, 0) / (stageOrder.length - 1)) * 100)
         : 0,
-    stages: TRANSACTION_LIFECYCLE_STAGE_ORDER.map((stage, index) => ({
+    stages: stageOrder.map((stage, index) => ({
       key: stage,
       label: TRANSACTION_LIFECYCLE_STAGE_LABELS[stage],
       state:
@@ -349,7 +396,7 @@ export function buildTransactionLifecycleSummary({
               ? 'current'
               : 'upcoming',
     })),
-    subStatus: getSubStatusForStage({ currentStage: resolvedStage, transaction, subprocesses }),
+    subStatus: getSubStatusForStage({ currentStage: adjustedStage, transaction, subprocesses }),
     lastUpdatedAt: transaction?.updated_at || transaction?.updatedAt || null,
   }
 }

@@ -32,7 +32,12 @@ assert.match(source, /workspaceLabel=\{isAgentTransactionView \? 'Transaction Wo
 assert.match(source, /showWorkflowProgress=\{!isAgentTransactionView\}/, 'agent shell should suppress the duplicate header workflow rail')
 assert.match(source, /tabs=\{isAgentTransactionView[\s\S]*workspaceMenuTabs\.map\(\(tab\) => \(\{ id: tab\.id, label: tab\.label \}\)\)[\s\S]*: archlineWorkspaceTabs\}/, 'agent shell tabs should not render workflow status metadata chips')
 assert.doesNotMatch(source, /workspaceMenuTabs\.map\(\(tab\) => \(\{ id: tab\.id, label: tab\.label, count: tab\.meta \}\)\)/, 'agent shell should not pass FICA or onboarding metadata into the tab count slot')
-assert.match(source, /bg-\[linear-gradient\(135deg,#102f3a_0%,#1f4d52_54%,#35546c_100%\)\]/, 'agent shell header should use the contrasting transaction workspace header background')
+assert.match(source, /rounded-\[28px\] border border-\[#dfe8f2\] bg-white/, 'agent shell header should use the current transaction workspace header surface')
+assert.match(source, /function buildTransactionRouteShell\(transactionId\)/, 'transaction detail route should create a stable shell from the route id')
+assert.match(source, /const initialTransactionShell = useMemo\([\s\S]*navigationPreviewData \|\| buildTransactionRouteShell\(transactionId\)/, 'transaction detail should seed render state from preview data or the route shell')
+assert.match(source, /const \[data, setData\] = useState\(\(\) => initialTransactionShell\)/, 'transaction detail should keep shell data mounted while loading')
+assert.match(source, /const canRenderInitialShell = Boolean\(data\?\.transaction && \(data\?\.__isNavigationPreview \|\| data\?\.__isRouteShell\)\)/, 'transaction detail should recognise route shells as renderable')
+assert.match(source, /if \(loading && !canRenderInitialShell\) \{[\s\S]*return <LoadingSkeleton lines=\{8\} className="panel" \/>[\s\S]*\}/, 'transaction detail should only show the blocking loading skeleton when no shell can render')
 
 const documentDefinitions = sliceBetween(
   'const ATTORNEY_DOCUMENT_DASHBOARD_CATEGORY_DEFINITIONS = {',

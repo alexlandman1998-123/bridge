@@ -103,6 +103,28 @@ function isDevelopmentSale(state = {}) {
   return resolveTransactionFacts(state.transaction || {}).isDevelopmentSale === true
 }
 
+function isActiveRequiredDocument(item = {}) {
+  if (item?.required === false || item?.isRequired === false || item?.is_required === false) return false
+  if (item?.isEnabled === false || item?.is_enabled === false) return false
+
+  const status = normalizeKey(item.status || item.requirementStatus || item.requirement_status)
+  return !['waived', 'not_applicable', 'not applicable', 'not_required', 'not required', 'inactive', 'cancelled', 'canceled', 'removed'].includes(status)
+}
+
+export function hasActiveSupportingDocumentRequirements(state = {}) {
+  if (typeof state.supportingDocumentsConfigured === 'boolean') {
+    return state.supportingDocumentsConfigured
+  }
+
+  const configuredRows = [
+    ...(Array.isArray(state.requiredDocuments) ? state.requiredDocuments : []),
+    ...(Array.isArray(state.requiredDocumentChecklist) ? state.requiredDocumentChecklist : []),
+    ...(Array.isArray(state.transactionRequiredDocuments) ? state.transactionRequiredDocuments : []),
+  ]
+
+  return configuredRows.some((item) => isActiveRequiredDocument(item))
+}
+
 const ACTION_DEFINITIONS = Object.freeze({
   RECORD_SIGNED_OTP: {
     label: 'Record Signed OTP',
@@ -185,7 +207,13 @@ const ACTION_DEFINITIONS = Object.freeze({
     ownerRole: 'agent',
     allowedRoles: ['agent'],
     stages: ['SALES_OTP'],
-    requires: ['buyer_onboarding_complete', 'signed_otp_received', 'supporting_docs_complete'],
+    requires: (state = {}) => {
+      const requiredSteps = ['buyer_onboarding_complete', 'signed_otp_received']
+      if (!isDevelopmentSale(state) || hasActiveSupportingDocumentRequirements(state)) {
+        requiredSteps.push('supporting_docs_complete')
+      }
+      return requiredSteps
+    },
     targetStatus: 'complete',
     prerequisiteParentStage: 'SALES_OTP',
     targetParentStage: 'FINANCE',

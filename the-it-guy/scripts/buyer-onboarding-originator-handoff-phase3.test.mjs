@@ -3,9 +3,10 @@ import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
 const root = process.cwd()
-const [listingPage, transactionPage, apiSource, queueSource, migrationSource] = await Promise.all([
+const [listingPage, transactionPage, unitDetailSource, apiSource, queueSource, migrationSource] = await Promise.all([
   readFile(resolve(root, 'src/pages/AgentListingDetail.jsx'), 'utf8'),
   readFile(resolve(root, 'src/pages/AttorneyTransactionDetail.jsx'), 'utf8'),
+  readFile(resolve(root, 'src/pages/UnitDetail.jsx'), 'utf8'),
   readFile(resolve(root, 'src/lib/api.js'), 'utf8'),
   readFile(resolve(root, 'src/services/bondOperationalQueueService.js'), 'utf8'),
   readFile(resolve(root, '../supabase/migrations/202607140011_buyer_onboarding_originator_handoff_phase3.sql'), 'utf8'),
@@ -29,7 +30,12 @@ const copyLinkHandler = transactionPage.slice(
 )
 assert.match(copyLinkHandler, /saveTransactionRoleplayerSelections/)
 assert.match(copyLinkHandler, /recordBuyerOnboardingSent/)
+assert.match(unitDetailSource, /function resolveDeveloperBuyerOnboardingHandoffRoleplayers/)
+assert.match(unitDetailSource, /roleplayers:\s*resolveDeveloperBuyerOnboardingHandoffRoleplayers\(/)
+assert.match(unitDetailSource, /financeManagedBy === 'bond_originator'/)
 assert.match(apiSource, /bond_assignment_status:\s*'awaiting_buyer_onboarding'/)
+assert.match(apiSource, /bond assignment handoff update skipped/)
+assert.match(apiSource, /buyer participant onboarding status update skipped/)
 assert.match(queueSource, /BOND_INTAKE_STATUSES\.AWAITING_BUYER_APPLICATION/)
 assert.match(migrationSource, /buyer_onboarding_send/)
 assert.match(migrationSource, /seller_mandate/)

@@ -15,11 +15,26 @@ export function assessMvpAcceptedOfferConversionReceipt({
   result = {},
   acceptedOfferId = '',
 } = {}) {
-  const transactionId = text(result?.transactionId || result?.transactionRow?.transaction?.id)
+  const transactionId = text(result?.transactionId || result?.transactionRow?.transaction?.id || result?.transaction?.id)
   const expectedOfferId = text(acceptedOfferId || candidate?.acceptedOfferId)
   const candidateStatus = text(candidate?.status)
   const existing = result?.existing === true || result?.alreadyConverted === true
   const atomicCreation = result?.atomicCreation || null
+  const transaction = result?.transactionRow?.transaction || result?.transaction || null
+  const transactionAcceptedOfferId = text(
+    transaction?.accepted_offer_id ||
+      transaction?.acceptedOfferId ||
+      atomicCreation?.transaction?.accepted_offer_id ||
+      atomicCreation?.transaction?.acceptedOfferId,
+  )
+  const idempotencyKey = text(
+    transaction?.creation_idempotency_key ||
+      transaction?.creationIdempotencyKey ||
+      atomicCreation?.idempotencyKey ||
+      atomicCreation?.idempotency_key ||
+      result?.creationIdempotencyKey ||
+      result?.creation_idempotency_key,
+  )
   const issues = []
 
   if (!expectedOfferId) issues.push('accepted_offer_missing')
@@ -27,6 +42,12 @@ export function assessMvpAcceptedOfferConversionReceipt({
   if (!transactionId) issues.push('transaction_missing')
   if (result?.persisted !== true) issues.push('transaction_not_confirmed_persisted')
   if (!existing && atomicCreation?.ready !== true) issues.push('atomic_creation_not_verified')
+  if (!existing && transaction && expectedOfferId && !transactionAcceptedOfferId) issues.push('accepted_offer_link_not_verified')
+  if (transactionAcceptedOfferId && expectedOfferId && transactionAcceptedOfferId !== expectedOfferId) {
+    issues.push('accepted_offer_mismatch')
+  }
+  if (existing && !transactionAcceptedOfferId) issues.push('accepted_offer_link_not_verified')
+  if (existing && !idempotencyKey) issues.push('idempotency_key_missing')
 
   return {
     version: MVP_ACCEPTED_OFFER_CONVERSION_RECEIPT_VERSION,
@@ -34,6 +55,8 @@ export function assessMvpAcceptedOfferConversionReceipt({
     status: existing ? 'reused' : 'created',
     transactionId: transactionId || null,
     acceptedOfferId: expectedOfferId || null,
+    transactionAcceptedOfferId: transactionAcceptedOfferId || null,
+    idempotencyKey: idempotencyKey || null,
     candidateStatus: candidateStatus || 'unknown',
     atomicVerified: existing ? null : atomicCreation?.ready === true,
     issues,

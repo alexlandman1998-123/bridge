@@ -1,5 +1,5 @@
 import { isSupabaseConfigured, supabase } from './supabaseClient'
-import { createTransactionFromLeadOverride, findExistingTransactionForAcceptedOffer } from './transactionLifecycleService'
+import { createTransactionFromLeadOverride, findExistingTransactionForAcceptedOffer, findTransactionIdentityById } from './transactionLifecycleService'
 import { resolveTransactionRoutingProfile } from '../services/transactionRoutingProfileService.js'
 import { prepareAgentLegalHandoff } from '../services/agentLegalHandoffService.js'
 import { getListingReadinessSummary } from './privateListingRequirementEngine.js'
@@ -3012,6 +3012,10 @@ export async function createTransactionFromAcceptedCanonicalOffer({
   const linkedTransactionId = toNullableUuid(canonicalOffer.transactionId || canonicalOffer.transaction_id)
 
   if (linkedTransactionId) {
+    const linkedTransactionIdentity = await findTransactionIdentityById({
+      organisationId: scopedOrganisationId,
+      transactionId: linkedTransactionId,
+    })
     await finalizeAcceptedOfferTransactionLinkage({
       organisationId: scopedOrganisationId,
       offerId: scopedOfferId,
@@ -3023,20 +3027,26 @@ export async function createTransactionFromAcceptedCanonicalOffer({
       activityNote: 'Existing transaction reused for this accepted buyer offer.',
     })
 
-    return attachLegalHandoff({
+    const reusedResult = {
       transactionId: linkedTransactionId,
       existing: true,
       alreadyConverted: true,
       persisted: true,
       transactionRow: {
-        transaction: {
+        transaction: linkedTransactionIdentity || {
           id: linkedTransactionId,
           organisation_id: scopedOrganisationId,
-          accepted_offer_id: scopedOfferId,
         },
       },
       warning: 'existing_offer_transaction_reused',
-    }, linkedTransactionId)
+    }
+    const conversionReceipt = assertMvpAcceptedOfferConversionReceipt({
+      candidate: { status: 'converted', acceptedOfferId: scopedOfferId },
+      result: reusedResult,
+      acceptedOfferId: scopedOfferId,
+    })
+
+    return attachLegalHandoff({ ...reusedResult, conversionReceipt }, linkedTransactionId)
   }
 
   const existingAcceptedOfferTransaction = await findExistingTransactionForAcceptedOffer({
@@ -3057,7 +3067,7 @@ export async function createTransactionFromAcceptedCanonicalOffer({
       activityNote: 'Existing transaction reused from the accepted-offer conversion record.',
     })
 
-    return attachLegalHandoff({
+    const reusedResult = {
       transactionId: reusedTransactionId,
       existing: true,
       alreadyConverted: canonicalOfferStatus === 'converted_to_transaction',
@@ -3066,7 +3076,14 @@ export async function createTransactionFromAcceptedCanonicalOffer({
         transaction: existingAcceptedOfferTransaction,
       },
       warning: 'existing_offer_transaction_reused',
-    }, reusedTransactionId)
+    }
+    const conversionReceipt = assertMvpAcceptedOfferConversionReceipt({
+      candidate: { status: 'converted', acceptedOfferId: scopedOfferId },
+      result: reusedResult,
+      acceptedOfferId: scopedOfferId,
+    })
+
+    return attachLegalHandoff({ ...reusedResult, conversionReceipt }, reusedTransactionId)
   }
 
   if (canonicalOfferStatus !== 'accepted') {

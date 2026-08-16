@@ -42,6 +42,11 @@ function truthyFlag(value) {
   return ['1', 'true', 'yes', 'y', 'required', 'applies', 'applicable', 'vat', 'existing_bond', 'outstanding_bond'].includes(normalized)
 }
 
+function numberValue(value) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
 function firstValue(...values) {
   for (const value of values) {
     if (hasValue(value)) return value
@@ -269,6 +274,47 @@ function buildResolverInput(input = {}) {
       formData.purchaser_type,
       formData.purchaserType,
     ),
+    buyer_count: firstValue(
+      transaction?.buyer_count,
+      transaction?.buyerCount,
+      input.buyerCount,
+      input.buyer_count,
+      input.additionalBuyerCount,
+      input.additional_buyer_count,
+      buyerLead.buyerCount,
+      buyerLead.buyer_count,
+      formData.buyerCount,
+      formData.buyer_count,
+      Array.isArray(input.additionalBuyers) ? input.additionalBuyers.length + 1 : undefined,
+      Array.isArray(input.additional_buyers) ? input.additional_buyers.length + 1 : undefined,
+      Array.isArray(formData.additionalBuyers) ? formData.additionalBuyers.length + 1 : undefined,
+      Array.isArray(formData.additional_buyers) ? formData.additional_buyers.length + 1 : undefined,
+    ),
+    buyer_spouse_consent_required: firstValue(
+      transaction?.buyer_spouse_consent_required,
+      transaction?.buyerSpouseConsentRequired,
+      input.buyerSpouseConsentRequired,
+      input.buyer_spouse_consent_required,
+      formData.buyerSpouseConsentRequired,
+      formData.buyer_spouse_consent_required,
+    ),
+    buyer_foreign: firstValue(
+      transaction?.buyer_foreign,
+      transaction?.foreign_buyer,
+      transaction?.foreignBuyer,
+      input.foreignBuyer,
+      input.foreign_buyer,
+      input.buyerForeign,
+      input.buyer_foreign,
+      buyerLead.foreignBuyer,
+      buyerLead.foreign_buyer,
+      formData.foreignBuyer,
+      formData.foreign_buyer,
+      formData.buyerForeign,
+      formData.buyer_foreign,
+      formData.residencyStatus,
+      formData.residency_status,
+    ),
     seller_entity_type: firstValue(
       transaction?.seller_entity_type,
       transaction?.sellerEntityType,
@@ -283,6 +329,18 @@ function buildResolverInput(input = {}) {
       formData.sellerType,
       formData.seller_type,
       sellerOnboarding?.seller_type,
+    ),
+    seller_spouse_consent_required: firstValue(
+      transaction?.seller_spouse_consent_required,
+      transaction?.sellerSpouseConsentRequired,
+      input.sellerSpouseConsentRequired,
+      input.seller_spouse_consent_required,
+      listing?.sellerSpouseConsentRequired,
+      listing?.seller_spouse_consent_required,
+      formData.sellerSpouseConsentRequired,
+      formData.seller_spouse_consent_required,
+      formData.spouseConsentRequired,
+      formData.spouse_consent_required,
     ),
     seller_has_existing_bond: firstValue(
       transaction?.seller_has_existing_bond,
@@ -422,6 +480,12 @@ export function resolveTransactionRoutingProfile(input = {}) {
   )
   const sellerHasExistingBond = Boolean(facts.sellerHasExistingBond)
   const cancellationRequired = Boolean(facts.cancellationRequired || sellerHasExistingBond)
+  const buyerCount = Math.max(1, numberValue(resolverInput.buyer_count) || 1)
+  const buyerResidencyKey = normalizeKey(resolverInput.buyer_foreign)
+  const foreignBuyer = truthyFlag(resolverInput.buyer_foreign) ||
+    ['foreign', 'foreign_buyer', 'non_resident', 'nonresident', 'non_resident_buyer'].includes(buyerResidencyKey)
+  const buyerSpouseConsentRequired = truthyFlag(resolverInput.buyer_spouse_consent_required)
+  const sellerSpouseConsentRequired = truthyFlag(resolverInput.seller_spouse_consent_required)
 
   const baseProfile = {
     version: TRANSACTION_ROUTING_PROFILE_VERSION,
@@ -433,6 +497,13 @@ export function resolveTransactionRoutingProfile(input = {}) {
     sellerEntityType,
     sellerHasExistingBond,
     cancellationRequired,
+    buyerCount,
+    additionalBuyerCount: Math.max(0, buyerCount - 1),
+    hasAdditionalBuyer: buyerCount > 1,
+    multiBuyer: buyerCount > 1,
+    buyerSpouseConsentRequired,
+    sellerSpouseConsentRequired,
+    foreignBuyer,
     vatTreatment: vatTreatment === 'unknown' && transactionType !== 'commercial' && transactionType !== 'development_sale' ? 'transfer_duty' : vatTreatment,
     requiresTransferAttorney: true,
     requiresBondAttorney: financeType === 'bond' || financeType === 'hybrid',

@@ -17,6 +17,7 @@ function buildMockClient(seed = {}) {
     transaction_rollups: [],
     transaction_rollup_audit: [],
     transaction_workflow_events: [],
+    transaction_required_documents: seed.transaction_required_documents || [],
   }
 
   class Query {
@@ -274,6 +275,69 @@ try {
 
   assert.equal(blockedFinanceMove.allowed, false)
   assert.equal((blockedFinanceMove.blockers || []).length > 0, true)
+
+  const developmentClient = buildMockClient({
+    transactions: [{
+      id: 'tx-dev-1',
+      unit_id: 'unit-dev-1',
+      development_id: 'dev-1',
+      transaction_type: 'development_sale',
+      finance_type: 'bond',
+      current_main_stage: 'OTP',
+      stage: 'OTP In Progress',
+      onboarding_status: 'approved',
+      lifecycle_state: 'active',
+      seller_has_existing_bond: false,
+      updated_at: '2026-06-02T10:00:00.000Z',
+      created_at: '2026-05-29T09:00:00.000Z',
+    }],
+    units: [{ id: 'unit-dev-1', status: 'OTP In Progress' }],
+  })
+
+  await workflowModel.ensureTransactionWorkflowInstances('tx-dev-1', {
+    client: developmentClient,
+    transaction: developmentClient.state.transactions[0],
+  })
+
+  const blockedDevelopmentFinanceMove = await actionService.runWorkflowAction({
+    transactionId: 'tx-dev-1',
+    actionKey: 'MOVE_TO_FINANCE',
+    userId: 'developer-1',
+    actorRole: 'developer',
+    payload: { source: 'test' },
+    client: developmentClient,
+  })
+
+  assert.equal(blockedDevelopmentFinanceMove.allowed, false)
+  assert.equal(
+    blockedDevelopmentFinanceMove.blockers.some((blocker) => /Buyer onboarding complete/i.test(blocker.message)),
+    false,
+  )
+  assert.equal(
+    blockedDevelopmentFinanceMove.blockers.some((blocker) => /Seller onboarding/i.test(blocker.message)),
+    false,
+  )
+  assert.equal(
+    blockedDevelopmentFinanceMove.blockers.some((blocker) => /Signed OTP uploaded/i.test(blocker.message)),
+    true,
+  )
+
+  await workflowModel.updateWorkflowStepStatus('tx-dev-1', 'sales_otp', 'signed_otp_received', 'complete', {
+    client: developmentClient,
+    transaction: developmentClient.state.transactions[0],
+  })
+
+  const developmentFinanceMoveWithoutDocs = await actionService.runWorkflowAction({
+    transactionId: 'tx-dev-1',
+    actionKey: 'MOVE_TO_FINANCE',
+    userId: 'developer-1',
+    actorRole: 'developer',
+    payload: { source: 'test' },
+    client: developmentClient,
+  })
+
+  assert.equal(developmentFinanceMoveWithoutDocs.allowed, true)
+  assert.equal(developmentFinanceMoveWithoutDocs.rollup.parentStage, 'FINANCE')
 
   for (const key of [
     'buyer_onboarding_complete',

@@ -62,6 +62,7 @@ import {
   getOrCreateTransactionOnboarding,
   getOrCreateClientPortalLink,
   archiveTransactionLifecycle,
+  recordBuyerOnboardingSent,
   recordTransactionProxyUpdate,
   saveTransaction,
   saveTransactionClientInformation,
@@ -359,6 +360,64 @@ function resolveBuyerBondOriginatorRequestFromOnboarding(onboardingFormData = nu
     formData.buyerBondOriginatorRequest ||
     null
   )
+}
+
+function normalizeUnitDetailRoleType(value = '') {
+  const normalized = String(value || '').trim().toLowerCase().replace(/\s+/g, '_')
+  if (normalized === 'bond' || normalized === 'bondoriginator') return 'bond_originator'
+  if (normalized === 'conveyancer' || normalized === 'transfer_conveyancer' || normalized === 'attorney') {
+    return 'transfer_attorney'
+  }
+  return normalized
+}
+
+function resolveDeveloperBuyerOnboardingHandoffRoleplayers({
+  transaction = {},
+  rolePlayers = [],
+  transactionRolePlayers = [],
+  transactionRolePlayersSnake = [],
+  transactionParticipants = [],
+  stageForm = {},
+} = {}) {
+  const financeType = normalizeFinanceType(transaction?.finance_type || stageForm?.finance_type || 'cash', {
+    allowUnknown: true,
+  })
+  const financeManagedBy = normalizeFinanceManagedBy(
+    transaction?.finance_managed_by || stageForm?.finance_managed_by || 'bond_originator',
+  )
+  const shouldHandoffToOriginator =
+    ['bond', 'hybrid', 'combination'].includes(financeType) && financeManagedBy === 'bond_originator'
+  if (!shouldHandoffToOriginator) return []
+
+  const rows = [
+    ...(Array.isArray(rolePlayers) ? rolePlayers : []),
+    ...(Array.isArray(transactionRolePlayers) ? transactionRolePlayers : []),
+    ...(Array.isArray(transactionRolePlayersSnake) ? transactionRolePlayersSnake : []),
+    ...(Array.isArray(transactionParticipants) ? transactionParticipants : []),
+  ]
+  const selectedBondOriginator = rows.find((row) => (
+    normalizeUnitDetailRoleType(row?.roleType || row?.role_type || row?.legalRole || row?.legal_role) === 'bond_originator'
+  ))
+  const fallbackName = stageForm?.bond_originator || transaction?.bond_originator || ''
+  const fallbackEmail = stageForm?.assigned_bond_originator_email || transaction?.assigned_bond_originator_email || ''
+  if (!selectedBondOriginator && !fallbackName && !fallbackEmail) return []
+
+  return [
+    {
+      ...(selectedBondOriginator && typeof selectedBondOriginator === 'object' ? selectedBondOriginator : {}),
+      roleType: 'bond_originator',
+      partnerName:
+        selectedBondOriginator?.partnerName ||
+        selectedBondOriginator?.participantName ||
+        selectedBondOriginator?.name ||
+        fallbackName,
+      emailAddress:
+        selectedBondOriginator?.emailAddress ||
+        selectedBondOriginator?.participantEmail ||
+        selectedBondOriginator?.email ||
+        fallbackEmail,
+    },
+  ]
 }
 
 function getBuyerBondOriginatorRequestStatusLabel(request = null) {
@@ -3190,10 +3249,12 @@ function UnitDetail() {
   const workflowPanelRef = useRef(null)
   const uploadDocumentFileInputRef = useRef(null)
   const loadRequestRef = useRef(0)
+  const detailLoadedRef = useRef(false)
 
   const loadDetail = useCallback(async () => {
     const requestId = loadRequestRef.current + 1
     loadRequestRef.current = requestId
+    const shouldShowBlockingLoad = !detailLoadedRef.current
     const timer = createPerfTimer('ui.unitDetail.loadDetail', { unitId })
 
     if (!isSupabaseConfigured) {
@@ -3205,8 +3266,10 @@ function UnitDetail() {
 
     try {
       setError('')
-      setLoading(true)
-      setDeferredLoading(true)
+      if (shouldShowBlockingLoad) {
+        setLoading(true)
+        setDeferredLoading(true)
+      }
       timer.mark('shell_query_start')
       const shellData = await fetchUnitWorkspaceShell(unitId)
       timer.mark('shell_query_end', {
@@ -3220,6 +3283,7 @@ function UnitDetail() {
 
       if (shellData) {
         setDetail(shellData)
+        detailLoadedRef.current = true
         setLoading(false)
         timer.mark('shell_render_ready')
       } else {
@@ -3237,6 +3301,7 @@ function UnitDetail() {
       }
 
       setDetail(data)
+      detailLoadedRef.current = true
       const activePortalLink = (data?.clientPortalLinks || []).find((link) => link.is_active && link.token) || null
       setClientPortalLink(activePortalLink)
 
@@ -3278,6 +3343,10 @@ function UnitDetail() {
         setDeferredLoading(false)
       }
     }
+  }, [unitId])
+
+  useEffect(() => {
+    detailLoadedRef.current = false
   }, [unitId])
 
   useEffect(() => {
@@ -4791,8 +4860,9 @@ function UnitDetail() {
     try {
       setSendingOnboardingEmail(true)
       setError('')
+      const onboardingRecord = await ensureOnboardingToken()
 
-      const { error: invokeError } = await invokeEdgeFunction('send-email', {
+      const result = await invokeEdgeFunction('send-email', {
         body: {
           type: 'client_onboarding',
           transactionId: transaction.id,
@@ -4800,10 +4870,40 @@ function UnitDetail() {
           deliveryMode,
         },
       })
+      const payloadError = result?.data?.error || result?.data?.message
+      const invokeError = result?.error
 
-      if (invokeError) {
-        throw invokeError
+      if (invokeError || payloadError) {
+        throw invokeError || new Error(payloadError)
       }
+
+      const onboardingUrl =
+        result?.data?.onboardingUrl ||
+        result?.data?.onboardingLink ||
+        (onboardingRecord?.token && typeof window !== 'undefined'
+          ? `${window.location.origin}/client/onboarding/${onboardingRecord.token}`
+          : '')
+      if (onboardingUrl && typeof navigator !== 'undefined') {
+        void navigator.clipboard?.writeText(onboardingUrl)
+        setOnboardingLinkCopied(true)
+        window.setTimeout(() => setOnboardingLinkCopied(false), 1400)
+      }
+
+      await recordBuyerOnboardingSent({
+        transactionId: transaction.id,
+        actorRole: actingRole || 'developer',
+        recipientEmail: result?.data?.recipientEmail || buyer?.email || '',
+        roleplayers: resolveDeveloperBuyerOnboardingHandoffRoleplayers({
+          transaction,
+          rolePlayers: detail?.rolePlayers,
+          transactionRolePlayers: detail?.transactionRolePlayers,
+          transactionRolePlayersSnake: detail?.transaction_role_players,
+          transactionParticipants: detail?.transactionParticipants,
+          stageForm,
+        }),
+      }).catch((recordError) => {
+        console.warn('[UnitDetail] buyer onboarding send activity update failed', recordError)
+      })
 
       window.dispatchEvent(new Event('itg:transaction-updated'))
       await loadDetail()
@@ -5894,6 +5994,7 @@ function UnitDetail() {
     'No contact details supplied'
   const rollupLifecycleSummary = buildTransactionLifecycleSummaryFromRollup(transactionRollup, {
     transactionId: transaction?.id,
+    transaction,
     fallbackUpdatedAt: transaction?.updated_at || transaction?.created_at || null,
   })
   const usingTransactionRollupOverview = USE_TRANSACTION_ROLLUP_OVERVIEW && Boolean(rollupLifecycleSummary)
@@ -6094,6 +6195,7 @@ function UnitDetail() {
     requiredDocuments: requiredDocumentChecklist || [],
     permissions: salesLanePermissions,
     allowKingstonsManualSignedOtp: kingstonsBuyerOtpSalesWorkflowEnabled,
+    allowDeveloperManualSignedOtp: transactionWorkspaceProfile.isDeveloperSale,
     kingstonsBuyerOtpReadiness: kingstonsBuyerOtpSalesWorkflowReadiness,
   })
   const canEditSalesWorkflow = salesLanePermissions.canEditWorkflowLane
@@ -8427,26 +8529,28 @@ function UnitDetail() {
   try {
     workspaceContent = (
       <>
-      <SharedTransactionShell
-      printTitle="Unit Transaction Report"
-      printSubtitle={`${unit.development?.name || '-'} • Unit ${unit.unit_number}`}
-      printGeneratedAt={reportGeneratedAt}
-      errorMessage={error}
-      toolbar={workspaceNavigationSection}
-      headline={(
-        <TransactionWorkspaceHeader
-          contextLabel={canonicalWorkspaceHeaderConfig.contextLabel}
-          title={canonicalWorkspaceHeaderConfig.title}
-          unitLabel={canonicalWorkspaceHeaderConfig.unitLabel}
-          subtitle={canonicalWorkspaceHeaderConfig.subtitle}
-          pills={canonicalWorkspaceHeaderConfig.pills}
-          stats={canonicalWorkspaceHeaderConfig.stats}
-          actions={workspaceHeaderActions}
-        />
-      )}
-    >
-      <div className="space-y-4">
-        {showDeferredWorkspaceLoading ? (
+        <SharedTransactionShell
+          printTitle="Unit Transaction Report"
+          printSubtitle={`${unit.development?.name || '-'} • Unit ${unit.unit_number}`}
+          printGeneratedAt={reportGeneratedAt}
+          errorMessage={error}
+          toolbar={null}
+          headline={(
+            <TransactionWorkspaceHeader
+              contextLabel={canonicalWorkspaceHeaderConfig.contextLabel}
+              title={canonicalWorkspaceHeaderConfig.title}
+              unitLabel={canonicalWorkspaceHeaderConfig.unitLabel}
+              subtitle={canonicalWorkspaceHeaderConfig.subtitle}
+              pills={canonicalWorkspaceHeaderConfig.pills}
+              stats={canonicalWorkspaceHeaderConfig.stats}
+              actions={workspaceHeaderActions}
+            />
+          )}
+        >
+          <div className="space-y-4">
+            {workspaceNavigationSection}
+
+            {showDeferredWorkspaceLoading ? (
           <section className="rounded-[16px] border border-[#dbe7f3] bg-[#f8fbff] px-4 py-3">
             <p className="text-sm font-medium text-[#35546c]">
               Loading comments, documents, workflow details, and activity…

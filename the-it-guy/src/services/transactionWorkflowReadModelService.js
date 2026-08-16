@@ -1078,6 +1078,7 @@ export async function getTransactionWorkflowReadModel(transactionId, options = {
       requiresCancellationAttorney: transaction.sellerHasExistingBond,
     },
     participants,
+    participantRequirements,
     documentRequirements: documentRoster.requirements,
     workflowLanes: lanes,
     events,

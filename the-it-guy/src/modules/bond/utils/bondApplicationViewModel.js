@@ -1113,9 +1113,52 @@ export function getBondApplicationPdfFilename(viewModel) {
   return `bond-application-${applicant || 'applicant'}-${id || 'pending'}.pdf`
 }
 
-export function buildBondApplicationPdfHtml(viewModel, generatedAt = new Date().toISOString()) {
+export function buildBondApplicationPdfHtml(viewModel, generatedAt = new Date().toISOString(), options = {}) {
   const vm = viewModel || {}
-  const summaryTitle = vm.application?.intent === 'pre_approval' ? 'Pre-approval Summary' : 'Bond Application Summary'
+  const summaryTitle = vm.application?.intent === 'pre_approval' ? 'Pre-approval Application Pack' : 'Bond Application Pack'
+  const referringAgency = options.referringAgency || vm.referringAgency || {}
+  const bondBrand = options.bondBrand || {}
+  const bondBrandName = text(bondBrand.name || 'BetterBond')
+  const referringAgencyName = text(referringAgency.name || 'Referring Agency')
+  const applicantRows = (Array.isArray(vm.applicants) && vm.applicants.length ? vm.applicants : [vm.applicant || {}])
+    .map((applicant, index) => {
+      const financials = applicant.financials || {}
+      return `
+        <article class="section-card applicant-card">
+          <div class="section-title-row">
+            <h2>${escapeHtml(applicant.roleLabel || (index ? `Applicant ${index + 1}` : 'Primary Applicant'))}</h2>
+            <span class="badge">${escapeHtml(applicant.fullName || vm.applicant?.fullName || 'Applicant not captured')}</span>
+          </div>
+          <div class="columns">
+            <table><tbody>
+              ${row('Full name', applicant.fullName || vm.applicant?.fullName)}
+              ${row('ID / Passport', applicant.idNumber)}
+              ${row('Email', applicant.email || vm.applicant?.email)}
+              ${row('Phone', applicant.phone || vm.applicant?.phone)}
+              ${row('Marital status', applicant.maritalStatus)}
+              ${row('Dependants', applicant.dependants)}
+            </tbody></table>
+            <table><tbody>
+              ${row('Employment status', applicant.employmentStatus || vm.applicant?.employmentStatus)}
+              ${row('Employer', applicant.employer)}
+              ${row('Occupation', applicant.occupation)}
+              ${row('Employment duration', applicant.employmentDuration)}
+              ${row('Primary bank', applicant.banking?.primaryBank)}
+              ${row('Accounts captured', applicant.banking?.accountCount || 0)}
+            </tbody></table>
+          </div>
+          <div class="mini-metrics">
+            <div><span>Gross income</span><strong>${escapeHtml(financials.grossIncome?.display || 'Not captured')}</strong></div>
+            <div><span>Other income</span><strong>${escapeHtml(financials.otherIncome?.display || 'Not captured')}</strong></div>
+            <div><span>Expenses</span><strong>${escapeHtml(financials.monthlyExpenses?.display || 'Not captured')}</strong></div>
+            <div><span>Commitments</span><strong>${escapeHtml(financials.monthlyCommitments?.display || 'Not captured')}</strong></div>
+            <div><span>Existing debt</span><strong>${escapeHtml(financials.existingDebt?.display || 'Not captured')}</strong></div>
+            <div><span>Disposable</span><strong>${escapeHtml(financials.disposableIncome?.display || 'Not captured')}</strong></div>
+          </div>
+        </article>
+      `
+    })
+    .join('')
   const fieldAlignment = vm.originatorFieldAlignment || vm.fieldAlignment || {}
   const fieldAlignmentSections = Object.entries(fieldAlignment.sections || {})
     .map(([label, summary]) => ({
@@ -1164,6 +1207,12 @@ export function buildBondApplicationPdfHtml(viewModel, generatedAt = new Date().
     .map((item) => row(item.title, `${item.priority} priority - ${item.description}`))
     .join('')
   const factors = (vm.risk?.factors || []).map((factor) => `<li>${escapeHtml(factor)}</li>`).join('')
+  const bondLogo = text(bondBrand.logoUrl)
+    ? `<img class="brand-logo-img" src="${escapeHtml(bondBrand.logoUrl)}" crossorigin="anonymous" alt="${escapeHtml(bondBrandName)} logo" />`
+    : `<span class="betterbond-mark" aria-hidden="true"><i></i><b></b></span><strong class="betterbond-word" aria-label="BetterBond"><span>Better</span>Bond</strong>`
+  const referringAgencyLogo = text(referringAgency.logoUrl)
+    ? `<img class="agency-logo-img" src="${escapeHtml(referringAgency.logoUrl)}" crossorigin="anonymous" alt="${escapeHtml(referringAgencyName)} logo" />`
+    : `<span class="agency-initials">${escapeHtml(initialsFor(referringAgencyName))}</span>`
 
   return `<!doctype html>
 <html lang="en">
@@ -1172,44 +1221,93 @@ export function buildBondApplicationPdfHtml(viewModel, generatedAt = new Date().
   <title>${escapeHtml(vm.application?.id || 'Bond Application')}</title>
   <style>
     * { box-sizing: border-box; }
-    body { margin: 0; padding: 28px; font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #101827; background: #eef5ef; }
-    .page { max-width: 980px; margin: 0 auto; border: 1px solid #d7e6d9; border-radius: 24px; overflow: hidden; background: #fff; box-shadow: 0 24px 70px rgba(15, 23, 42, 0.12); }
-    .hero { padding: 28px; color: #fff; background: linear-gradient(135deg, #064a28, #0b6b3d); }
-    .brand { display: flex; align-items: center; justify-content: space-between; gap: 16px; font-size: 12px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
-    .brand span { color: #b8f5cc; }
-    h1 { margin: 26px 0 8px; font-size: 32px; letter-spacing: -0.04em; }
-    h2 { margin: 0 0 12px; font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: #60758d; }
+    html, body { margin: 0; padding: 0; background: #ffffff; color: #101827; font-family: Inter, Arial, Helvetica, sans-serif; }
+    body { width: 794px; }
+    .page { width: 794px; min-height: 1123px; background: #f4f7fb; }
+    .page-inner { padding: 26px; }
+    .cover { overflow: hidden; border: 1px solid #d8e2ee; border-radius: 18px; background: #ffffff; page-break-inside: avoid; }
+    .brand-row { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 18px 20px; border-bottom: 1px solid #e5edf5; }
+    .bond-brand, .agency-brand { display: flex; align-items: center; min-width: 0; gap: 12px; }
+    .agency-brand { justify-content: flex-end; text-align: right; }
+    .brand-logo-img, .agency-logo-img { max-width: 156px; max-height: 58px; object-fit: contain; }
+    .betterbond-mark { position: relative; display: inline-block; width: 48px; height: 38px; flex: 0 0 auto; }
+    .betterbond-mark i, .betterbond-mark b { position: absolute; display: block; width: 29px; height: 29px; border: 6px solid #0f2f63; border-radius: 999px; content: ""; }
+    .betterbond-mark i { left: 3px; top: 6px; }
+    .betterbond-mark b { right: 3px; top: 1px; border-color: #e2202d; background: transparent; }
+    .betterbond-word { display: block; color: #172e5e; font-size: 24px; line-height: 1; letter-spacing: -0.02em; }
+    .betterbond-word span { font-weight: 900; }
+    .agency-initials { display: inline-flex; width: 48px; height: 48px; align-items: center; justify-content: center; border-radius: 14px; background: #eef7f2; color: #08704f; font-size: 15px; font-weight: 900; }
+    .agency-meta { min-width: 0; }
+    .agency-meta span, .brand-caption { display: block; color: #60758d; font-size: 10px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+    .agency-meta strong { display: block; max-width: 210px; overflow: hidden; color: #101827; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+    .hero { padding: 26px 28px 28px; color: #ffffff; background: linear-gradient(135deg, #003b34, #08704f 58%, #0f8f68); }
+    h1 { margin: 0 0 10px; font-size: 30px; line-height: 1.08; letter-spacing: -0.02em; }
+    h2 { margin: 0; color: #0d1b2f; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; }
     p { margin: 0; }
-    .sub { color: #d9fbe6; font-size: 14px; line-height: 1.6; }
-    .content { padding: 24px; }
-    .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-    .two { grid-template-columns: 1.2fr .8fr; }
-    .card { border: 1px solid #dfe8e2; border-radius: 18px; padding: 16px; background: #fff; page-break-inside: avoid; }
-    .metric { border-color: #d8eadc; background: #f8fcf9; }
-    .label { display: block; margin-bottom: 6px; color: #60758d; font-size: 10px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
-    .value { color: #101827; font-size: 18px; font-weight: 800; letter-spacing: -0.03em; }
+    .sub { max-width: 560px; color: #d9fbe6; font-size: 13px; line-height: 1.55; }
+    .hero-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 18px; }
+    .hero-stat { border: 1px solid rgba(255,255,255,.22); border-radius: 14px; padding: 11px 12px; background: rgba(255,255,255,.08); }
+    .hero-stat span { display: block; margin-bottom: 4px; color: #b8f5cc; font-size: 9px; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
+    .hero-stat strong { display: block; color: #ffffff; font-size: 17px; line-height: 1.2; }
+    .content { padding: 16px 0 0; }
+    .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+    .two { grid-template-columns: 1fr 1fr; }
+    .section-card { border: 1px solid #dfe8ef; border-radius: 16px; padding: 15px; background: #ffffff; page-break-inside: avoid; break-inside: avoid; }
+    .card { border: 1px solid #dfe8ef; border-radius: 16px; padding: 15px; background: #ffffff; page-break-inside: avoid; break-inside: avoid; }
+    .metric { border-color: #d7eadf; background: #f7fbf8; }
+    .label { display: block; margin-bottom: 6px; color: #60758d; font-size: 9px; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
+    .value { color: #101827; font-size: 17px; font-weight: 900; line-height: 1.2; }
+    .section-title-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+    .badge { display: inline-flex; max-width: 260px; overflow: hidden; border-radius: 999px; background: #eef7f2; padding: 6px 10px; color: #08704f; font-size: 10px; font-weight: 900; text-overflow: ellipsis; white-space: nowrap; }
+    .columns { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .mini-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+    .mini-metrics div { border: 1px solid #e5edf5; border-radius: 12px; padding: 9px; background: #f8fafc; }
+    .mini-metrics span { display: block; color: #60758d; font-size: 9px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+    .mini-metrics strong { display: block; margin-top: 4px; color: #101827; font-size: 12px; }
     table { width: 100%; border-collapse: collapse; font-size: 12px; }
-    th, td { border-bottom: 1px solid #e8f0ea; padding: 9px 0; text-align: left; vertical-align: top; }
-    th { width: 42%; color: #60758d; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; }
-    td { color: #101827; font-weight: 700; }
-    .section { margin-top: 16px; }
-    .pill { display: inline-flex; margin-top: 14px; border: 1px solid rgba(255,255,255,.24); border-radius: 999px; padding: 7px 11px; color: #ecfff2; font-size: 12px; font-weight: 800; }
-    ul { margin: 8px 0 0; padding-left: 18px; color: #334155; font-size: 12px; line-height: 1.7; }
+    th, td { border-bottom: 1px solid #e8eff5; padding: 8px 0; text-align: left; vertical-align: top; }
+    tr:last-child th, tr:last-child td { border-bottom: 0; }
+    th { width: 42%; padding-right: 12px; color: #60758d; font-size: 9px; letter-spacing: .1em; text-transform: uppercase; }
+    td { color: #101827; font-size: 11px; font-weight: 800; line-height: 1.35; }
+    .section { margin-top: 12px; }
+    .applicant-card + .applicant-card { margin-top: 12px; }
+    .pill { display: inline-flex; margin-top: 14px; border: 1px solid rgba(255,255,255,.24); border-radius: 999px; padding: 7px 11px; color: #ecfff2; font-size: 11px; font-weight: 900; }
+    ul { margin: 8px 0 0; padding-left: 18px; color: #334155; font-size: 11px; line-height: 1.55; }
+    .footer { margin-top: 12px; color: #60758d; font-size: 9px; text-align: center; }
     @media print {
-      body { padding: 0; background: #fff; }
-      .page { border: 0; border-radius: 0; box-shadow: none; }
+      body { width: auto; background: #fff; }
+      .page { width: auto; min-height: auto; background: #fff; }
     }
   </style>
 </head>
 <body>
-  <main class="page">
-    <header class="hero">
-      <div class="brand"><strong>ooba homeloans</strong><span>Powered by Arch9</span></div>
-      <h1>${escapeHtml(summaryTitle)}</h1>
-      <p class="sub">${escapeHtml(vm.applicant?.fullName || 'Applicant not captured')} • ${escapeHtml(vm.application?.id || 'Pending')} • Generated ${escapeHtml(formatDateTime(generatedAt))}</p>
-      <span class="pill">${escapeHtml(vm.application?.readinessLabel || 'Not Ready')} · ${escapeHtml(vm.risk?.level || 'Incomplete')}</span>
-    </header>
-    <section class="content">
+  <main class="page" data-bond-application-pdf-page="true">
+    <div class="page-inner">
+      <section class="cover">
+        <div class="brand-row">
+          <div class="bond-brand">
+            ${bondLogo}
+          </div>
+          <div class="agency-brand">
+            <div class="agency-meta">
+              <span>Referred by</span>
+              <strong>${escapeHtml(referringAgencyName)}</strong>
+            </div>
+            ${referringAgencyLogo}
+          </div>
+        </div>
+        <header class="hero">
+          <h1>${escapeHtml(summaryTitle)}</h1>
+          <p class="sub">${escapeHtml(vm.applicant?.fullName || 'Applicant not captured')} - ${escapeHtml(vm.property?.label || 'Property not captured')} - Generated ${escapeHtml(formatDateTime(generatedAt))}</p>
+          <span class="pill">${escapeHtml(vm.application?.readinessLabel || 'Not Ready')} - ${escapeHtml(vm.risk?.level || 'Incomplete')}</span>
+          <div class="hero-grid">
+            <div class="hero-stat"><span>Application ID</span><strong>${escapeHtml(vm.application?.id || 'Pending')}</strong></div>
+            <div class="hero-stat"><span>Consultant</span><strong>${escapeHtml(vm.consultant || 'Unassigned')}</strong></div>
+            <div class="hero-stat"><span>Status</span><strong>${escapeHtml(vm.application?.status || 'Pending')}</strong></div>
+          </div>
+        </header>
+      </section>
+      <section class="content">
       <div class="grid">
         <article class="card metric"><span class="label">Completion</span><span class="value">${escapeHtml(vm.application?.completionPercent || 0)}%</span></article>
         <article class="card metric"><span class="label">Readiness</span><span class="value">${escapeHtml(vm.application?.readinessPercent || 0)}%</span></article>
@@ -1232,11 +1330,13 @@ export function buildBondApplicationPdfHtml(viewModel, generatedAt = new Date().
             ${row('Property', vm.property?.label)}
             ${row('Development', vm.property?.developmentName)}
             ${row('Unit', vm.property?.unitNumber)}
-            ${row('Stage', vm.application?.stage)}
-            ${row('Last Updated', vm.application?.updatedAtDisplay)}
+            ${row('Purchase price', vm.financials?.purchasePrice?.display)}
+            ${row('Deposit', `${vm.financials?.deposit?.display || 'Not captured'} ${vm.financials?.deposit?.secondary || ''}`)}
+            ${row('Bond required', vm.financials?.bondAmountRequired?.display)}
           </tbody></table>
         </article>
       </div>
+      <div class="section">${applicantRows}</div>
       <div class="section grid">
         <article class="card metric"><span class="label">Purchase Price</span><span class="value">${escapeHtml(vm.financials?.purchasePrice?.display)}</span></article>
         <article class="card metric"><span class="label">Deposit</span><span class="value">${escapeHtml(vm.financials?.deposit?.display)} ${escapeHtml(vm.financials?.deposit?.secondary || '')}</span></article>
@@ -1312,7 +1412,9 @@ export function buildBondApplicationPdfHtml(viewModel, generatedAt = new Date().
           <table><tbody>${fieldAlignmentMissingRows || row('Status', 'All tracked buyer portal fields are available')}</tbody></table>
         </article>
       </div>
-    </section>
+      </section>
+      <p class="footer">Generated by Arch9 for bond application processing. Confirm captured information before bank submission.</p>
+    </div>
   </main>
 </body>
 </html>`

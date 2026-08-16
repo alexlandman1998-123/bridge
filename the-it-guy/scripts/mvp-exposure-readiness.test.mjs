@@ -13,6 +13,7 @@ const scenario = (key) => ({
     transactionId: `transaction-${key}`,
     batchRecord: {
       transactionId: `transaction-${key}`,
+      acceptedOfferId: `offer-${key}`,
       idempotencyKey: `idempotency-${key}`,
       participantBootstrapComplete: true,
       documentBootstrapComplete: true,

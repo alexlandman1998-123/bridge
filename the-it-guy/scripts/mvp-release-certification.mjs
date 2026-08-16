@@ -23,6 +23,7 @@ const checks = [
   ['pilot batch audit controls', ['scripts/mvp-pilot-batch-audit.test.mjs']],
   ['exposure-readiness evidence controls', ['scripts/mvp-exposure-readiness.test.mjs']],
   ['phase 8 pilot go/no-go controls', ['scripts/mvp-pilot-go-no-go.test.mjs']],
+  ['phase 8 final exposure lineage gate', ['scripts/transaction-final-go-no-go-phase8.test.mjs']],
   ['100-transaction capacity and integrity', ['scripts/mvp-transaction-load-check.mjs']],
   ['2-transaction pilot batch dry run', ['scripts/mvp-pilot-batch-dry-run.mjs']],
 ]

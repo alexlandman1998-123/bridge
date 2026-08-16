@@ -46,5 +46,24 @@ const creationMismatch = buildMvpTransactionHealthPanel({
   transaction: { accepted_offer_id: 'offer-health-1', creation_idempotency_key: '' },
 })
 assert.equal(creationMismatch.creation.confirmed, false)
+assert.equal(creationMismatch.creation.mode, 'accepted_offer')
+
+const overrideHealth = buildMvpTransactionHealthPanel({
+  transaction: {
+    id: 'tx-health-override',
+    creation_idempotency_key: 'manual-override-key',
+    routing_profile_json: {
+      transactionCreationOverride: {
+        reason: 'Principal approved legacy transaction setup before offer conversion.',
+        actorId: 'principal-1',
+        actorRole: 'principal',
+        authorised: true,
+      },
+    },
+  },
+})
+assert.equal(overrideHealth.creation.mode, 'manual_override')
+assert.equal(overrideHealth.creation.confirmed, true)
+assert.equal(overrideHealth.creation.auditVisible, true)
 
 console.log('mvp-transaction-health-panel: passed')

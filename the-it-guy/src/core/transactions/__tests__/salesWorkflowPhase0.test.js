@@ -86,4 +86,23 @@ describe('sales workflow Phase 0 signed OTP containment', () => {
     expect(kingstonsSnapshot.nextAction).toBe('move_ready_for_finance')
     expect(kingstonsSnapshot.blockers).toEqual([])
   })
+
+  it('allows developer transactions to use manually uploaded signed OTP evidence', () => {
+    const manualSignedOtp = {
+      id: 'transaction-doc-signed-otp',
+      document_type: 'signed_otp',
+      name: 'Signed OTP - Buyer.pdf',
+      status: 'uploaded',
+    }
+
+    const snapshot = resolveSalesWorkflowSnapshot({
+      ...completeOnboarding,
+      documents: [manualSignedOtp],
+      allowDeveloperManualSignedOtp: true,
+    })
+
+    expect(snapshot.signedOtpReceived).toBe(true)
+    expect(snapshot.signedOtpSource).toBe('developer_manual_upload')
+    expect(snapshot.readyForFinance).toBe(true)
+  })
 })

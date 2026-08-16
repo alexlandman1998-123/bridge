@@ -15,12 +15,14 @@ import { cloneElement, isValidElement, useEffect, useMemo, useState } from 'reac
 import { useNavigate } from 'react-router-dom'
 import {
   createTransactionFromWizard,
+  fetchDeveloperPartnersWorkspace,
   fetchDevelopmentOptions,
   resolveTransactionWhatsAppContacts,
   fetchUnitsForTransactionSetup,
 } from '../lib/api'
 import { fetchPartnersSnapshot, getPartnerAssignmentOptions } from '../lib/partnersRepository'
 import {
+  getDeveloperWorkspacePartnerOptions,
   getPreferredDirectoryPartnerOptions,
   mergePartnerConnectionOptions,
   partnerOptionToRolePlayerSelection,
@@ -539,6 +541,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
   const [developments, setDevelopments] = useState([])
   const [units, setUnits] = useState([])
   const [partnerSnapshot, setPartnerSnapshot] = useState(null)
+  const [developerPartnerWorkspace, setDeveloperPartnerWorkspace] = useState(null)
   const [preferredRoutingRules, setPreferredRoutingRules] = useState([])
   const [preferredDirectoryPartners, setPreferredDirectoryPartners] = useState([])
   const [loadingPartners, setLoadingPartners] = useState(false)
@@ -600,6 +603,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
       bond_originator: '',
     })
     setPreferredDirectoryPartners([])
+    setDeveloperPartnerWorkspace(null)
     setPartnerProspects([])
     setPartnerProspectQueries(createInitialPartnerProspectQueries())
     setSelectedPartnerProspects(createInitialPartnerProspectState())
@@ -655,6 +659,25 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
         setPartnerSnapshot(snapshot)
         setPreferredRoutingRules(Array.isArray(routingRules) ? routingRules : [])
         setPreferredDirectoryPartners(Array.isArray(directoryPartners) ? directoryPartners : [])
+
+        const developerOrganisationId =
+          organisation?.id || workspace?.organisationId || workspace?.id || currentMembership?.organisation_id || ''
+        const shouldLoadDeveloperPartners =
+          Boolean(developerOrganisationId) &&
+          ['developer', 'development'].includes(String(organisation?.type || workspaceType || role || '').toLowerCase())
+        if (!shouldLoadDeveloperPartners) {
+          setDeveloperPartnerWorkspace(null)
+          return
+        }
+
+        const developerWorkspace = await fetchDeveloperPartnersWorkspace({
+          organisationId: developerOrganisationId,
+        }).catch((error) => {
+          console.warn('[NewTransactionWizard] developer partner workspace unavailable', error)
+          return null
+        })
+        if (!active) return
+        setDeveloperPartnerWorkspace(developerWorkspace)
       } catch (error) {
         if (active) {
           console.warn('[NewTransactionWizard] partner defaults unavailable', error)
@@ -669,7 +692,17 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
     return () => {
       active = false
     }
-  }, [currentMembership, open, organisation?.id, organisation?.type, profile, role, workspace?.id, workspaceType])
+  }, [
+    currentMembership,
+    open,
+    organisation?.id,
+    organisation?.type,
+    profile,
+    role,
+    workspace?.id,
+    workspace?.organisationId,
+    workspaceType,
+  ])
 
   useEffect(() => {
     if (!open || !isSupabaseConfigured) return
@@ -838,18 +871,30 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
   const attorneyPartnerOptions = useMemo(
     () =>
       mergePartnerConnectionOptions(partnerConnectionOptions.transfer_attorney, [
+        ...getDeveloperWorkspacePartnerOptions(developerPartnerWorkspace, 'transfer_attorney'),
         ...getPreferredDirectoryPartnerOptions(preferredDirectoryPartners, 'transfer_attorney'),
         ...legacyAttorneyPartnerOptions,
       ]),
-    [legacyAttorneyPartnerOptions, partnerConnectionOptions.transfer_attorney, preferredDirectoryPartners],
+    [
+      developerPartnerWorkspace,
+      legacyAttorneyPartnerOptions,
+      partnerConnectionOptions.transfer_attorney,
+      preferredDirectoryPartners,
+    ],
   )
   const bondOriginatorPartnerOptions = useMemo(
     () =>
       mergePartnerConnectionOptions(partnerConnectionOptions.bond_originator, [
+        ...getDeveloperWorkspacePartnerOptions(developerPartnerWorkspace, 'bond_originator'),
         ...getPreferredDirectoryPartnerOptions(preferredDirectoryPartners, 'bond_originator'),
         ...legacyBondOriginatorPartnerOptions,
       ]),
-    [legacyBondOriginatorPartnerOptions, partnerConnectionOptions.bond_originator, preferredDirectoryPartners],
+    [
+      developerPartnerWorkspace,
+      legacyBondOriginatorPartnerOptions,
+      partnerConnectionOptions.bond_originator,
+      preferredDirectoryPartners,
+    ],
   )
   const developmentRolePlayerDefaults = useMemo(
     () => getDevelopmentRolePlayerDefaults(selectedDevelopment || {}),
@@ -1844,6 +1889,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
         partnerInvitations: partnerInvitationResults,
         partnerProspects: partnerProspectResults,
         partnerInvitationWarnings,
+        setupWarnings: Array.isArray(result.setupWarnings) ? result.setupWarnings : [],
       })
 
       // Do not block transaction creation UX on post-create email automation.
@@ -3031,6 +3077,20 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
                 {createdTransaction.partnerInvitationWarnings.map((warning) => (
                   <p key={warning}>{warning}</p>
                 ))}
+              </section>
+            ) : null}
+
+            {createdTransaction.setupWarnings?.length ? (
+              <section className="rounded-[18px] border border-[#f5d7a8] bg-[#fff8eb] px-4 py-3 text-sm leading-6 text-[#8a5a12]">
+                <strong className="block text-xs uppercase tracking-[0.18em] text-[#a15c00]">Setup Needs Attention</strong>
+                <div className="mt-2 space-y-1">
+                  {createdTransaction.setupWarnings.map((warning) => (
+                    <p key={`${warning.area}:${warning.code || warning.message}`}>
+                      {warning.area ? `${warning.area.replaceAll('_', ' ')}: ` : ''}
+                      {warning.message}
+                    </p>
+                  ))}
+                </div>
               </section>
             ) : null}
 

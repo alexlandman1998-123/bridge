@@ -35,13 +35,23 @@ function TransactionLifecycleProgress({
       mainStage,
       subprocesses,
     })
-  const currentStageLabel = TRANSACTION_LIFECYCLE_STAGE_LABELS[lifecycleSummary.currentStage] || 'Confirmed'
-  const currentIndex = Math.max(TRANSACTION_LIFECYCLE_STAGE_ORDER.indexOf(lifecycleSummary.currentStage), 0)
+  const timelineStages = Array.isArray(lifecycleSummary?.stages) && lifecycleSummary.stages.length
+    ? lifecycleSummary.stages.map((stage) => stage.key).filter(Boolean)
+    : TRANSACTION_LIFECYCLE_STAGE_ORDER
+  const timelineStageLabelMap = {
+    ...TRANSACTION_LIFECYCLE_STAGE_LABELS,
+    ...((lifecycleSummary?.stages || []).reduce((labels, stage) => {
+      if (stage?.key && stage?.label) labels[stage.key] = stage.label
+      return labels
+    }, {})),
+  }
+  const currentStageLabel = timelineStageLabelMap[lifecycleSummary.currentStage] || 'Confirmed'
+  const currentIndex = Math.max(timelineStages.indexOf(lifecycleSummary.currentStage), 0)
   const progressPercent =
     Number.isFinite(Number(lifecycleSummary?.progressPercent))
       ? Number(lifecycleSummary.progressPercent)
-      : TRANSACTION_LIFECYCLE_STAGE_ORDER.length > 1
-        ? Math.round((currentIndex / (TRANSACTION_LIFECYCLE_STAGE_ORDER.length - 1)) * 100)
+      : timelineStages.length > 1
+        ? Math.round((currentIndex / (timelineStages.length - 1)) * 100)
         : 0
   const blockersByStage = lifecycleSummary?.blockersByStage || buildBlockersByStage(lifecycleSummary)
   const fallbackHelper = lifecycleSummary.subStatus?.label
@@ -66,8 +76,8 @@ function TransactionLifecycleProgress({
       ) : null}
       <ProgressTimeline
         currentStage={lifecycleSummary.currentStage}
-        stages={TRANSACTION_LIFECYCLE_STAGE_ORDER}
-        stageLabelMap={TRANSACTION_LIFECYCLE_STAGE_LABELS}
+        stages={timelineStages}
+        stageLabelMap={timelineStageLabelMap}
         framed={framed}
         compact={compact}
         premium={premium}

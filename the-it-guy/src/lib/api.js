@@ -1161,6 +1161,10 @@ function isMissingSchemaError(error) {
   return ['42P01', 'PGRST205', '42703', 'PGRST204'].includes(error.code)
 }
 
+function isRecoverableTransactionSetupError(error) {
+  return isMissingSchemaError(error) || isPermissionDeniedError(error)
+}
+
 function isOnConflictConstraintError(error, conflictColumn = '') {
   if (!error) {
     return false
@@ -26317,17 +26321,24 @@ export async function recordBuyerOnboardingSent({
     (roleplayer) => normalizeRoleType(roleplayer?.roleType || roleplayer?.role_type) === 'bond_originator',
   )
   if (selectedBondOriginator) {
-    await updateRecordByIdWithMissingColumnFallback(
-      client,
-      'transactions',
-      transactionId,
-      {
-        bond_assignment_status: 'awaiting_buyer_onboarding',
-        bond_assignment_source: 'buyer_onboarding_send',
-        updated_at: new Date().toISOString(),
-      },
-      'id, bond_assignment_status, bond_assignment_source, updated_at',
-    )
+    try {
+      await updateRecordByIdWithMissingColumnFallback(
+        client,
+        'transactions',
+        transactionId,
+        {
+          bond_assignment_status: 'awaiting_buyer_onboarding',
+          bond_assignment_source: 'buyer_onboarding_send',
+          updated_at: new Date().toISOString(),
+        },
+        'id, bond_assignment_status, bond_assignment_source, updated_at',
+      )
+    } catch (assignmentError) {
+      if (!isRecoverableTransactionSetupError(assignmentError)) {
+        throw assignmentError
+      }
+      console.warn('[recordBuyerOnboardingSent] bond assignment handoff update skipped', assignmentError)
+    }
   }
   const target = buyerTarget && typeof buyerTarget === 'object' ? buyerTarget : {}
   const targetParticipantId = normalizeNullableText(target.participantId || target.participant_id)
@@ -26366,9 +26377,13 @@ export async function recordBuyerOnboardingSent({
       !isMissingColumnError(participantUpdate.error, 'buyer_metadata') &&
       !isMissingColumnError(participantUpdate.error, 'updated_at') &&
       !isMissingColumnError(participantUpdate.error, 'buyer_party_id') &&
-      !isMissingColumnError(participantUpdate.error, 'participant_email')
+      !isMissingColumnError(participantUpdate.error, 'participant_email') &&
+      !isPermissionDeniedError(participantUpdate.error)
     ) {
       throw participantUpdate.error
+    }
+    if (participantUpdate.error) {
+      console.warn('[recordBuyerOnboardingSent] buyer participant onboarding status update skipped', participantUpdate.error)
     }
   }
   await logTransactionEventIfPossible(client, {
@@ -28786,6 +28801,16 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
   }
 
   const transaction = transactionResult.data
+  const setupWarnings = []
+  const recordSetupWarning = (area, error, fallbackMessage = 'Transaction setup step could not be completed.') => {
+    const warning = {
+      area,
+      message: error?.message || fallbackMessage,
+      code: error?.code || null,
+    }
+    setupWarnings.push(warning)
+    console.warn(`[createTransactionFromWizard] ${area} setup skipped`, error || warning)
+  }
   let persistedReservationRequired = Boolean(transactionPayload.reservation_required)
   let persistedReservationAmount = transactionPayload.reservation_amount ?? null
 
@@ -28874,9 +28899,10 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       actorProfile,
     })
   } catch (error) {
-    if (!isMissingSchemaError(error)) {
+    if (!isRecoverableTransactionSetupError(error)) {
       throw error
     }
+    recordSetupWarning('role_players', error, 'Role-player setup could not be completed.')
   }
 
   try {
@@ -28890,9 +28916,10 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       commissionSnapshot: options?.commissionSnapshot || null,
     })
   } catch (error) {
-    if (!isMissingSchemaError(error)) {
+    if (!isRecoverableTransactionSetupError(error)) {
       throw error
     }
+    recordSetupWarning('commission_snapshot', error, 'Commission setup could not be completed.')
   }
 
   try {
@@ -28906,9 +28933,10 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       subprocesses,
     )
   } catch (error) {
-    if (!isMissingSchemaError(error)) {
+    if (!isRecoverableTransactionSetupError(error)) {
       throw error
     }
+    recordSetupWarning('workflow_subprocesses', error, 'Workflow subprocess setup could not be completed.')
   }
 
   let onboardingRecord = null
@@ -28959,15 +28987,23 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
           .filter((item) => item?.id && !participantIds.has(item.id)),
       ]
     }
+  } catch (error) {
+    if (!isRecoverableTransactionSetupError(error)) {
+      throw error
+    }
+    recordSetupWarning('participants', error, 'Participant setup could not be completed.')
+  }
 
+  try {
     onboardingRecord = await getOrCreateTransactionOnboardingRecord(client, {
       transactionId: transaction.id,
       purchaserType,
     })
   } catch (error) {
-    if (!isMissingSchemaError(error)) {
+    if (!isRecoverableTransactionSetupError(error)) {
       throw error
     }
+    recordSetupWarning('buyer_onboarding', error, 'Buyer onboarding token could not be created.')
   }
 
   try {
@@ -28980,9 +29016,10 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       bondAmount: transactionPayload.bond_amount,
     })
   } catch (error) {
-    if (!isMissingSchemaError(error)) {
+    if (!isRecoverableTransactionSetupError(error)) {
       throw error
     }
+    recordSetupWarning('required_documents', error, 'Required document setup could not be completed.')
   }
 
   try {
@@ -28996,10 +29033,12 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     }
   } catch (error) {
     const missingPortalSchema =
-      isMissingSchemaError(error) || /client portal links are not set up yet/i.test(String(error?.message || ''))
+      isRecoverableTransactionSetupError(error) ||
+      /client portal links are not set up yet/i.test(String(error?.message || ''))
     if (!missingPortalSchema) {
       throw error
     }
+    recordSetupWarning('client_portal_link', error, 'Client portal link setup could not be completed.')
   }
 
   const financePayload = {
@@ -29027,8 +29066,11 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     .select('id')
     .single()
 
-  if (financeSave.error && !['42P01', '42703'].includes(financeSave.error.code)) {
+  if (financeSave.error && !isRecoverableTransactionSetupError(financeSave.error)) {
     throw financeSave.error
+  }
+  if (financeSave.error) {
+    recordSetupWarning('finance_details', financeSave.error, 'Finance detail setup could not be completed.')
   }
 
   if (status.notes?.trim()) {
@@ -29110,15 +29152,22 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     },
   })
 
-  await runDocumentAutomationIfPossible(client, {
-    transactionId: transaction.id,
-    documentId: null,
-    documentName: null,
-    category: null,
-    actorRole,
-    actorUserId: actorProfile.userId || null,
-    source: 'transaction_created',
-  })
+  try {
+    await runDocumentAutomationIfPossible(client, {
+      transactionId: transaction.id,
+      documentId: null,
+      documentName: null,
+      category: null,
+      actorRole,
+      actorUserId: actorProfile.userId || null,
+      source: 'transaction_created',
+    })
+  } catch (error) {
+    if (!isRecoverableTransactionSetupError(error)) {
+      throw error
+    }
+    recordSetupWarning('document_automation', error, 'Document automation could not be completed.')
+  }
 
   let unitData = null
   if (setup.unitId) {
@@ -29169,6 +29218,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     reservationTreatment: transactionPayload.reservation_treatment,
     reservationPayableTo: transactionPayload.reservation_payable_to,
     alterationChargeTreatment: transactionPayload.alteration_charge_treatment,
+    setupWarnings,
   }
 }
 

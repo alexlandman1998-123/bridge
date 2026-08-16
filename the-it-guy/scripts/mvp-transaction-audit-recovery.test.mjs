@@ -50,4 +50,18 @@ const unconfirmedCreationAudit = buildMvpTransactionAuditRecovery({
 assert.equal(unconfirmedCreationAudit.status, 'action_required')
 assert.equal(unconfirmedCreationAudit.issues.some((item) => item.key === 'creation:unconfirmed'), true)
 
+const incompleteOverrideAudit = buildMvpTransactionAuditRecovery({
+  transaction: { id: 'tx-audit-6' },
+  health: {
+    creation: {
+      mode: 'manual_override',
+      idempotencyKey: 'manual-key',
+      confirmed: false,
+      issues: ['override_actor_missing'],
+    },
+  },
+})
+assert.equal(incompleteOverrideAudit.status, 'action_required')
+assert.equal(incompleteOverrideAudit.issues.some((item) => item.key === 'creation:override_audit_incomplete'), true)
+
 console.log('mvp-transaction-audit-recovery: passed')

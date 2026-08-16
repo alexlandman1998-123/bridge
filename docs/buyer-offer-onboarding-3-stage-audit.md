@@ -1,5 +1,11 @@
 # Buyer Offer + Onboarding 3-Stage Experience Audit
 
+Authoritative boundary:
+[Lead, Listing, Offer, Transaction Workflow Contract - Phase 0](../the-it-guy/docs/lead-listing-transaction-workflow-contract-phase0.md).
+This flow captures offer-context buyer details before transaction creation; true
+transaction buyer onboarding starts only after accepted-offer conversion creates
+or reuses a transaction.
+
 ## Scope
 
 This audit supports the refactor of the public buyer offer link into a single guided experience:

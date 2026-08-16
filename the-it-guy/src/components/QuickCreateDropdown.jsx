@@ -30,6 +30,7 @@ import { readAgentPrivateListings } from '../lib/agentListingStorage'
 import { createAppointmentAsync } from '../lib/agencyPipelineService'
 import { fetchOrganisationSettings, listOrganisationUsers } from '../lib/settingsApi'
 import { getOrganisationPrivateListings } from '../services/privateListingService'
+import { BUYER_LEAD_OFFER_STATES, assessBuyerLeadOfferReadiness } from '../core/leads/buyerLeadOfferReadiness'
 import Modal from './ui/Modal'
 
 const RESIDENTIAL_QUICK_CREATE_GROUPS = [
@@ -342,6 +343,8 @@ const APPOINTMENT_TYPES = [
   'Lease Meeting',
   'General Meeting',
 ]
+const QUICK_CREATE_BUYER_FINANCE_OPTIONS = ['', 'Bond', 'Cash', 'Cash + bond', 'Not sure']
+const QUICK_CREATE_BUYER_TIMELINE_OPTIONS = ['', 'Immediately', '1-3 months', '3-6 months', '6+ months', 'Just browsing']
 
 const INITIAL_FORMS = {
   lead: {
@@ -351,6 +354,10 @@ const INITIAL_FORMS = {
     leadType: 'Buyer',
     source: LEAD_SOURCE_OPTIONS[0],
     listingId: '',
+    budget: '',
+    financeType: '',
+    timeline: '',
+    propertyInterest: '',
     notes: '',
     assignedAgent: '',
     assignedAgentId: '',
@@ -445,6 +452,12 @@ function formatListingPrice(value) {
   }).format(amount)
 }
 
+function parseCurrencyAmount(value = '') {
+  const normalized = normalizeText(value).replace(/[^\d.]/g, '')
+  const amount = Number(normalized)
+  return Number.isFinite(amount) ? amount : 0
+}
+
 function isBuyerStyleLeadType(value = '') {
   const normalized = normalizeText(value).toLowerCase()
   return ['buyer', 'tenant', 'investor'].includes(normalized)
@@ -486,6 +499,59 @@ function dedupeListingOptions(listings = []) {
       seen.add(key)
       return true
     })
+}
+
+function getQuickCreateBuyerQualificationEvidence(form = {}) {
+  const answeredCount = [
+    form.budget,
+    form.financeType,
+    form.timeline,
+    form.propertyInterest,
+  ].filter((value) => normalizeText(value)).length
+  return {
+    answeredCount,
+    minimumCount: 2,
+    complete: answeredCount >= 2,
+  }
+}
+
+function buildQuickCreateBuyerQualificationBlock(form = {}) {
+  const rows = [
+    ['Budget', normalizeText(form.budget)],
+    ['Move timeframe', normalizeText(form.timeline)],
+    ['Cash or bond', normalizeText(form.financeType)],
+    ['Property need', normalizeText(form.propertyInterest)],
+  ]
+  if (!rows.some(([, value]) => value)) return ''
+  return [
+    '[Buyer qualification]',
+    ...rows.map(([label, value]) => `${label}: ${value}`),
+    '[/Buyer qualification]',
+  ].join('\n')
+}
+
+function resolveQuickCreateBuyerLeadStage({ form = {}, selectedListing = null } = {}) {
+  const readiness = assessBuyerLeadOfferReadiness({
+    lead: {
+      leadCategory: normalizeLeadCategory(form.leadType, 'buyer'),
+      listingId: normalizeText(selectedListing?.id),
+      email: normalizeText(form.email).toLowerCase(),
+      phone: normalizeText(form.phone),
+      budget: normalizeText(form.budget),
+      financeType: normalizeText(form.financeType),
+      moveTimeframe: normalizeText(form.timeline),
+      propertyInterest: normalizeText(form.propertyInterest || selectedListing?.label),
+    },
+    contact: {
+      email: normalizeText(form.email).toLowerCase(),
+      phone: normalizeText(form.phone),
+    },
+    listingId: normalizeText(selectedListing?.id),
+    qualificationEvidence: getQuickCreateBuyerQualificationEvidence(form),
+  })
+  if (readiness.state === BUYER_LEAD_OFFER_STATES.offerReady) return 'Offer Ready'
+  if (readiness.state === BUYER_LEAD_OFFER_STATES.listingInterest) return 'Listing Interest'
+  return 'Search Opportunity'
 }
 
 async function resolveOrganisationId() {
@@ -596,7 +662,9 @@ function QuickCreateModal({
     setForm((previous) => ({
       ...previous,
       [field]: value,
-      ...(field === 'leadType' && !isBuyerStyleLeadType(value) ? { listingId: '' } : {}),
+      ...(field === 'leadType' && !isBuyerStyleLeadType(value)
+        ? { listingId: '', budget: '', financeType: '', timeline: '', propertyInterest: '' }
+        : {}),
     }))
   }
 
@@ -745,6 +813,48 @@ function QuickCreateModal({
                     ))}
                   </select>
                 </FormField>
+              ) : null}
+              {isLead && isBuyerStyleLeadType(form.leadType) ? (
+                <>
+                  <FormField label="Budget">
+                    <input
+                      className={inputClass}
+                      value={form.budget}
+                      onChange={(event) => updateField('budget', event.target.value)}
+                      placeholder="R2 000 000"
+                    />
+                  </FormField>
+                  <FormField label="Finance">
+                    <select
+                      className={inputClass}
+                      value={form.financeType}
+                      onChange={(event) => updateField('financeType', event.target.value)}
+                    >
+                      {QUICK_CREATE_BUYER_FINANCE_OPTIONS.map((option) => (
+                        <option key={option || 'blank'} value={option}>{option || 'Not captured'}</option>
+                      ))}
+                    </select>
+                  </FormField>
+                  <FormField label="Timeline">
+                    <select
+                      className={inputClass}
+                      value={form.timeline}
+                      onChange={(event) => updateField('timeline', event.target.value)}
+                    >
+                      {QUICK_CREATE_BUYER_TIMELINE_OPTIONS.map((option) => (
+                        <option key={option || 'blank'} value={option}>{option || 'Not captured'}</option>
+                      ))}
+                    </select>
+                  </FormField>
+                  <FormField label="Search requirement">
+                    <input
+                      className={inputClass}
+                      value={form.propertyInterest}
+                      onChange={(event) => updateField('propertyInterest', event.target.value)}
+                      placeholder="Area, property type, must-haves"
+                    />
+                  </FormField>
+                </>
               ) : null}
             </div>
             <FormField label="Notes">
@@ -1115,6 +1225,16 @@ function QuickCreateDropdown({ className = '' }) {
         const nameParts = splitName(form.name)
         const selectedListing = listingOptions.find((option) => option.id === normalizeText(form.listingId)) || null
         const selectedAssignedAgent = getSelectedAgentOption(form, agentOptions, actor)
+        const isBuyerLead = isBuyerStyleLeadType(form.leadType)
+        const buyerLeadStage = isBuyerLead
+          ? resolveQuickCreateBuyerLeadStage({ form, selectedListing })
+          : 'New Lead'
+        const buyerQualificationBlock = isBuyerLead ? buildQuickCreateBuyerQualificationBlock(form) : ''
+        const buyerNotes = [
+          buyerQualificationBlock,
+          normalizeText(form.notes),
+        ].filter(Boolean).join('\n\n')
+        const budgetAmount = parseCurrencyAmount(form.budget)
         await createAgencyCrmLeadRecord(
           organisationId,
           {
@@ -1127,23 +1247,42 @@ function QuickCreateDropdown({ className = '' }) {
               phone: normalizeText(form.phone),
               email: normalizeText(form.email).toLowerCase(),
               contactType: normalizeText(form.leadType) || 'Lead',
-              notes: normalizeText(form.notes),
+              notes: isBuyerLead ? buyerNotes : normalizeText(form.notes),
             },
             lead: {
               leadCategory: normalizeLeadCategory(form.leadType, 'buyer'),
               leadDirection: 'Inbound',
               leadSource: normalizeLeadSource(form.source),
-              stage: 'New Lead',
-              status: 'New Lead',
+              stage: buyerLeadStage,
+              status: buyerLeadStage,
               priority: 'Medium',
               listingId: normalizeText(selectedListing?.id),
-              propertyInterest: normalizeText(selectedListing?.label),
-              notes: normalizeText(form.notes),
+              budget: budgetAmount || 0,
+              estimatedValue: budgetAmount || 0,
+              propertyInterest: normalizeText(form.propertyInterest || selectedListing?.label),
+              rawEnquiryPayload: isBuyerLead
+                ? {
+                    buyerIntent: {
+                      budget: normalizeText(form.budget),
+                      financeType: normalizeText(form.financeType),
+                      timeline: normalizeText(form.timeline),
+                      propertyInterest: normalizeText(form.propertyInterest),
+                      listingId: normalizeText(selectedListing?.id),
+                      readinessState: buyerLeadStage,
+                    },
+                  }
+                : null,
+              notes: isBuyerLead ? buyerNotes : normalizeText(form.notes),
             },
           },
           { actor },
         )
-        setFeedback({ kind: 'success', message: 'Lead created. It is ready in the pipeline workspace.' })
+        setFeedback({
+          kind: 'success',
+          message: isBuyerLead && buyerLeadStage === 'Search Opportunity'
+            ? 'Buyer lead created as a search opportunity. Select a listing before offer work.'
+            : 'Lead created. It is ready in the pipeline workspace.',
+        })
       } else if (activeType === 'prospect') {
         const nameParts = splitName(form.name)
         const prospectType = normalizeText(form.prospectType) || 'Buyer'
@@ -1231,7 +1370,9 @@ function QuickCreateDropdown({ className = '' }) {
         assignedAgentId: actor.id,
         assignedAgentEmail: actor.email,
         assignedAgentAvatarUrl: getAgentProfileAvatarUrl(actor),
-        ...(activeType === 'lead' ? { source: LEAD_SOURCE_OPTIONS[0], listingId: '' } : {}),
+        ...(activeType === 'lead'
+          ? { source: LEAD_SOURCE_OPTIONS[0], listingId: '', budget: '', financeType: '', timeline: '', propertyInterest: '' }
+          : {}),
       })
     } catch {
       setFeedback({ kind: 'error', message: 'We could not save that yet. Please try again.' })

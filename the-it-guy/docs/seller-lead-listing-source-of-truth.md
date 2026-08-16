@@ -4,6 +4,10 @@ This contract defines ownership after the Seller Lead to Listing conversion path
 It is intentionally narrow: it does not redesign the workflow, and it does not
 change the listing publication mapper.
 
+The wider buyer/seller transaction boundary is locked in
+[Lead, Listing, Offer, Transaction Workflow Contract - Phase 0](lead-listing-transaction-workflow-contract-phase0.md).
+This seller contract must be read as the seller side of that lifecycle.
+
 ## Canonical Lifecycle
 
 ```text
@@ -33,6 +37,13 @@ Seller Lead
 
 Before a listing reaches `mandate_signed`, signed mandate conversion may use lead,
 placeholder, and onboarding data to complete missing listing shell fields.
+
+Phase 1 ownership remediation requires signed-mandate fallback listing creation
+to preserve `branch_id` and `created_by`. The fallback resolves ownership from
+the lead, source context, source lead snapshot, packet creator, finalising actor,
+and assigned-agent membership, in that order of practical availability. Existing
+listing rows may fill missing ownership fields, but populated ownership fields
+must not be overwritten by the fallback.
 
 After a listing reaches `mandate_signed` or later, signed mandate conversion may
 sync only lifecycle, linkage, mandate, and onboarding status fields. It must not

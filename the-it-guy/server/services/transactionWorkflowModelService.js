@@ -260,6 +260,55 @@ async function reconcileAttorneyWorkflowInstances(client, transaction = {}, curr
   return changed
 }
 
+async function reconcileContextualWorkflowSteps(client, transaction = {}, currentState = {}, nowIso = new Date().toISOString()) {
+  const stepsByWorkflowKey = currentState.stepsByWorkflowKey || {}
+  let changed = false
+
+  for (const [workflowKey, workflowSteps] of Object.entries(stepsByWorkflowKey)) {
+    const contextualStepsByKey = new Map(
+      buildWorkflowStepsForKey(workflowKey, { transaction })
+        .map((step) => [step.key, step]),
+    )
+
+    for (const existingStep of workflowSteps || []) {
+      const contextualStep = contextualStepsByKey.get(existingStep.step_key)
+      const contextualStatus = normalizeWorkflowStepStatus(contextualStep?.status)
+      const shouldApplyContextualStatus = ['complete', 'skipped', 'not_applicable'].includes(contextualStatus)
+      const payload = {}
+
+      if (contextualStep?.label && contextualStep.label !== existingStep.step_label) {
+        payload.step_label = contextualStep.label
+      }
+      if (contextualStep?.ownerRole && contextualStep.ownerRole !== existingStep.owner_role) {
+        payload.owner_role = contextualStep.ownerRole
+      }
+      if (contextualStep && contextualStep.required === false && existingStep.required !== false) {
+        payload.required = false
+      }
+      if (contextualStep && contextualStep.blocking === false && existingStep.blocking !== false) {
+        payload.blocking = false
+      }
+      if (shouldApplyContextualStatus && normalizeWorkflowStepStatus(existingStep.status) !== contextualStatus) {
+        payload.status = contextualStatus
+        payload.completed_at = toIsoString(nowIso)
+      }
+
+      if (!Object.keys(payload).length || !existingStep.id) {
+        continue
+      }
+
+      const update = await client
+        .from('transaction_workflow_steps')
+        .update(payload)
+        .eq('id', existingStep.id)
+      if (update.error) throw update.error
+      changed = true
+    }
+  }
+
+  return changed
+}
+
 export async function createWorkflowInstance(transactionId, workflowKey, options = {}) {
   const client = options.client || requireClient()
   const definition = getTransactionWorkflowDefinition(workflowKey)
@@ -368,6 +417,15 @@ export async function ensureTransactionWorkflowInstances(transactionId, options 
   }
 
   let state = await getWorkflowStateForTransaction(transactionId, { client, transaction })
+  const contextualStepsChanged = await reconcileContextualWorkflowSteps(
+    client,
+    transaction,
+    state,
+    options.now || new Date().toISOString(),
+  )
+  if (contextualStepsChanged) {
+    state = await getWorkflowStateForTransaction(transactionId, { client, transaction })
+  }
   const financeChanged = await reconcileFinanceWorkflowInstances(
     client,
     transaction,

@@ -1,5 +1,11 @@
 # Offer + Buyer Onboarding Flow Refactor Note
 
+Authoritative boundary:
+[Lead, Listing, Offer, Transaction Workflow Contract - Phase 0](../the-it-guy/docs/lead-listing-transaction-workflow-contract-phase0.md).
+Use `Buyer Lead -> Offer -> Accepted Offer -> Transaction` as the normal
+workflow language; do not use buyer offer links as shorthand for transaction
+buyer onboarding.
+
 ## Current Plumbing
 
 - Public routes are defined in `the-it-guy/src/App.jsx`:

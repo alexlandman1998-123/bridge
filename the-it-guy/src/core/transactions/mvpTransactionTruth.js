@@ -10,6 +10,7 @@ export const MVP_TRANSACTION_TRUTH_VERSION = 'arch9_mvp_transaction_truth_v1'
 
 const COMPLETE_DOCUMENT_STATUSES = new Set(['approved', 'completed', 'verified', 'satisfied', 'signed', 'waived', 'not_applicable'])
 const INACTIVE_PARTICIPANT_STATUSES = new Set(['removed', 'inactive', 'declined', 'expired'])
+const CAPTURED_REQUIREMENT_STATUSES = new Set(['captured', 'assigned', 'complete', 'completed', 'verified', 'satisfied'])
 
 const STAGE_META = Object.freeze({
   AVAIL: { rank: 0, label: 'Available' },
@@ -91,6 +92,8 @@ function isRequiredDocument(requirement = {}) {
 }
 
 function isCompletedDocument(requirement = {}) {
+  if (requirement.complete === false || requirement.uploadMissing === true || requirement.upload_missing === true) return false
+  if (requirement.complete === true) return true
   return COMPLETE_DOCUMENT_STATUSES.has(normalizeKey(requirement.status))
 }
 
@@ -147,9 +150,20 @@ function requiredRolesForStage(rolePlan = {}, stageRank = 0) {
   return uniqueByKey(roles).filter((role) => role.key !== 'internal_admin')
 }
 
-function buildParticipantSummary(participants = [], rolePlan = {}, stageRank = 0) {
+function capturedRequirementRoleKeys(participantRequirements = []) {
+  return new Set(toArray(participantRequirements)
+    .filter((requirement) => (
+      CAPTURED_REQUIREMENT_STATUSES.has(normalizeKey(requirement.status)) ||
+      Boolean(requirement.participantId || requirement.participant_id)
+    ))
+    .map((requirement) => normalizeKey(requirement.roleKey || requirement.role_key))
+    .filter(Boolean))
+}
+
+function buildParticipantSummary(participants = [], rolePlan = {}, stageRank = 0, participantRequirements = []) {
   const activeParticipants = toArray(participants).filter(isActiveParticipant)
   const activeRoleKeys = new Set(activeParticipants.flatMap(resolveParticipantRoleKeys))
+  for (const roleKey of capturedRequirementRoleKeys(participantRequirements)) activeRoleKeys.add(roleKey)
   const requiredNow = requiredRolesForStage(rolePlan, stageRank)
   const missing = requiredNow.filter((role) => !activeRoleKeys.has(role.key))
 
@@ -193,6 +207,7 @@ export function buildMvpTransactionTruth({
   transaction = {},
   routingProfile = {},
   participants = [],
+  participantRequirements = [],
   documentRequirements = [],
   workflowLanes = [],
   events = [],
@@ -202,12 +217,12 @@ export function buildMvpTransactionTruth({
   const launchScope = routingProfile.launchScope || evaluateMvpLaunchScope(routingProfile)
   const rolePlan = routingProfile.launchRolePlan || resolveMvpLaunchRolePlan(routingProfile)
   const documents = buildDocumentSummary(documentRequirements)
-  const participantSummary = buildParticipantSummary(participants, rolePlan, stageMeta.rank)
+  const participantSummary = buildParticipantSummary(participants, rolePlan, stageMeta.rank, participantRequirements)
   const onboardingGate = evaluateMvpOnboardingGate({ participants, documentRequirements })
-  const otpGate = evaluateMvpOtpGate({ routingProfile, participants, documentRequirements })
-  const financeGate = evaluateMvpFinanceGate({ routingProfile, participants, documentRequirements })
-  const transferGate = evaluateMvpTransferGate({ routingProfile, participants, documentRequirements })
-  const workflowGateBoard = buildMvpWorkflowGateBoard({ routingProfile, participants, documentRequirements, workflowLanes })
+  const otpGate = evaluateMvpOtpGate({ routingProfile, participants, participantRequirements, documentRequirements })
+  const financeGate = evaluateMvpFinanceGate({ routingProfile, participants, participantRequirements, documentRequirements })
+  const transferGate = evaluateMvpTransferGate({ routingProfile, participants, participantRequirements, documentRequirements })
+  const workflowGateBoard = buildMvpWorkflowGateBoard({ routingProfile, participants, participantRequirements, documentRequirements, workflowLanes })
   const currentGateKey = stageMeta.rank === 0 ? 'onboarding' : stageMeta.rank === 1 ? 'otp' : stageMeta.rank === 2 ? 'finance' : 'transfer'
   const currentGate = workflowGateBoard.gates.find((gate) => gate.key === currentGateKey) || null
   const workflowBlockers = buildWorkflowBlockers(workflowLanes)
