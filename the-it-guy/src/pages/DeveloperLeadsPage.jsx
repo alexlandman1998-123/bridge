@@ -1,17 +1,27 @@
 import {
   AlertTriangle,
   ArrowLeft,
+  ArrowUpRight,
+  CalendarDays,
   CheckCircle2,
+  CheckSquare,
+  ChevronRight,
   ClipboardList,
   ExternalLink,
   EyeOff,
   Filter,
+  Home,
+  Mail,
+  MoreHorizontal,
+  Phone,
   Plus,
   RefreshCw,
   Search,
   ShieldCheck,
+  TrendingUp,
   UserPlus,
   Users,
+  Zap,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
@@ -472,6 +482,117 @@ function getHandoffTone(status = 'blocked') {
   return 'border-[#f8d7da] bg-[#fff5f6] text-[#8d2831]'
 }
 
+function getInitials(value = '') {
+  const parts = normalizeText(value).split(/\s+/).filter(Boolean)
+  if (!parts.length) return 'BL'
+  return parts.slice(0, 2).map((part) => part[0]?.toUpperCase()).join('')
+}
+
+function getLeadSourceLabel(source = '') {
+  const normalized = normalizeLower(source)
+  return LEAD_SOURCE_OPTIONS.find((option) => option.key === normalized)?.label || normalizeText(source).replaceAll('_', ' ') || 'Unknown source'
+}
+
+function getLeadDisplayName(lead = {}) {
+  if (isAgencyFedLead(lead) && requiresAgencyHandover(lead) && !lead.buyerFullName) {
+    return lead.protectedSummary || 'Agency protected lead'
+  }
+  return normalizeText(lead.buyerFullName) || 'Buyer pending'
+}
+
+function getLeadContactLine(lead = {}, type = 'email') {
+  if (isAgencyFedLead(lead) && requiresAgencyHandover(lead)) return 'Hidden until handover'
+  const value = type === 'phone' ? lead.buyerPhone : lead.buyerEmail
+  return normalizeText(value) || (type === 'phone' ? 'No phone number' : 'No email address')
+}
+
+function getAgentAccent(seed = '') {
+  const palette = ['#315b7a', '#17613d', '#7c4d20', '#24568f', '#5a5278', '#8a5a12']
+  const text = normalizeText(seed) || 'developer-lead'
+  const index = Array.from(text).reduce((sum, char) => sum + char.charCodeAt(0), 0) % palette.length
+  return palette[index]
+}
+
+function formatRelativeTime(value) {
+  if (!value) return 'No activity yet'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'No activity yet'
+  const diffMs = Date.now() - date.getTime()
+  const minute = 60 * 1000
+  const hour = 60 * minute
+  const day = 24 * hour
+  if (diffMs < minute) return 'Just now'
+  if (diffMs < hour) return `${Math.max(1, Math.round(diffMs / minute))}m ago`
+  if (diffMs < day) return `${Math.max(1, Math.round(diffMs / hour))}h ago`
+  if (diffMs < 30 * day) return `${Math.max(1, Math.round(diffMs / day))}d ago`
+  return formatDate(value)
+}
+
+function getLeadStagePresentation(status = 'new') {
+  const normalized = normalizeLower(status)
+  if (normalized === 'converted') return { label: 'Transaction', className: 'border-[#d8efe4] bg-[#f1fbf6] text-[#17613d]', Icon: CheckCircle2 }
+  if (normalized === 'reserved') return { label: 'Reserved', className: 'border-[#d9e7ff] bg-[#f3f7ff] text-[#24568f]', Icon: ShieldCheck }
+  if (normalized === 'qualified') return { label: 'Qualified', className: 'border-[#d8efe4] bg-[#f1fbf6] text-[#17613d]', Icon: TrendingUp }
+  if (normalized === 'contacted') return { label: 'Contacted', className: 'border-[#f0dfb8] bg-[#fff9ec] text-[#8a5a12]', Icon: Phone }
+  if (normalized === 'lost') return { label: 'Lost', className: 'border-[#f8d7da] bg-[#fff5f6] text-[#8d2831]', Icon: AlertTriangle }
+  return { label: 'Captured', className: 'border-[#e4ebf4] bg-[#f8fafc] text-[#52677f]', Icon: ClipboardList }
+}
+
+function buildDeveloperLeadJourneyStages(lead = {}) {
+  const status = normalizeLower(lead.leadStatus || 'new')
+  const handoff = buildDeveloperLeadTransactionHandoff(lead)
+  const converted = isConvertedLead(lead)
+  const statusRank = {
+    new: 0,
+    contacted: 1,
+    qualified: 2,
+    reserved: 3,
+    converted: 5,
+    lost: 0,
+  }
+  const activeRank = converted ? 5 : statusRank[status] ?? 0
+  const reservationActive = status === 'reserved' || normalizeLower(lead.reservationState) === 'reserved'
+  const steps = [
+    { key: 'captured', label: 'Captured', detail: 'Lead created', rank: 0 },
+    { key: 'contacted', label: 'Contacted', detail: 'Buyer contacted', rank: 1 },
+    { key: 'qualified', label: 'Qualified', detail: handoff.eligible ? 'Transaction ready' : 'Buyer fit checked', rank: 2 },
+    ...(reservationActive ? [{ key: 'reservation', label: 'Reservation', detail: 'Reservation deposit', rank: 3 }] : []),
+    { key: 'onboarding_otp', label: 'Setup / OTP', detail: converted ? 'Onboarding sent' : 'Prepare transaction', rank: 4 },
+    { key: 'transaction', label: 'Transaction', detail: converted ? 'Created' : 'Convert when ready', rank: 5 },
+  ]
+
+  return steps.map((step) => {
+    const state = step.rank < activeRank ? 'completed' : step.rank === activeRank ? 'current' : 'upcoming'
+    return { ...step, state }
+  })
+}
+
+function getDeveloperLeadNextAction(lead = {}) {
+  const handoff = buildDeveloperLeadTransactionHandoff(lead)
+  if (isConvertedLead(lead)) {
+    return {
+      label: 'Open the transaction workspace',
+      helper: 'The buyer onboarding link has already been created from this developer lead.',
+    }
+  }
+  if (requiresAgencyHandover(lead)) {
+    return {
+      label: lead.visibilityState === 'consent_pending' ? 'Wait for agency handover' : 'Request agency handover',
+      helper: 'Buyer details stay protected until the source agency releases them.',
+    }
+  }
+  if (handoff.eligible) {
+    return {
+      label: 'Convert and send buyer onboarding',
+      helper: 'This creates the developer transaction and sends the buyer onboarding link.',
+    }
+  }
+  return {
+    label: handoff.blockers?.[0]?.message || 'Complete lead setup',
+    helper: 'Capture buyer details, development interest, and a qualified or reserved status before sending onboarding.',
+  }
+}
+
 function ReleasedDeveloperLeadConversionPanel({
   queue,
   summary,
@@ -750,21 +871,18 @@ function LeadRow({
   const assigned = agents.find((agent) => (agent.userId || agent.id) === lead.assignedAgentId)
   const developmentLabel = getDevelopmentLabel(lead.primaryDevelopmentId, developments)
   const handoff = buildDeveloperLeadTransactionHandoff(lead)
-  const budget = lead.budgetMin || lead.budgetMax
-    ? `${formatCurrency(lead.budgetMin)} - ${formatCurrency(lead.budgetMax)}`
-    : 'Open budget'
   const agencyFed = isAgencyFedLead(lead)
   const handoverRequired = requiresAgencyHandover(lead)
   const handoverPending = agencyFed && lead.visibilityState === 'consent_pending'
-  const title = agencyFed && !lead.buyerFullName
-    ? lead.protectedSummary || 'Agency protected lead'
-    : lead.buyerFullName || 'Buyer pending'
-  const subtitle = agencyFed && handoverRequired
-    ? 'Details hidden until handover'
-    : lead.buyerEmail || lead.buyerPhone || 'Contact details pending'
-
-  const primaryHandoffMessage = handoff.blockers[0]?.message || handoff.warnings[0]?.message || 'Transaction handoff payload is ready.'
-  const openLabel = isConvertedLead(lead) ? 'Open transaction' : 'Open lead workspace'
+  const title = getLeadDisplayName(lead)
+  const assignedLabel = assigned ? getUserLabel(assigned) : agencyFed ? 'Agency agent' : 'Unassigned'
+  const accent = getAgentAccent(lead.assignedAgentId || assignedLabel || title)
+  const sourceLabel = agencyFed ? 'Agency protected' : getLeadSourceLabel(lead.leadSource)
+  const stage = getLeadStagePresentation(lead.leadStatus)
+  const StageIcon = stage.Icon
+  const primaryHandoffMessage = handoff.blockers[0]?.message || handoff.warnings[0]?.message || (handoff.eligible ? 'Ready to convert and send onboarding' : 'Lead workspace ready')
+  const activityReference = lead.updatedAt || lead.createdAt
+  const openLabel = isConvertedLead(lead) ? 'Open developer lead' : 'Open lead workspace'
   const handleRowKeyDown = (event) => {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault()
@@ -773,59 +891,117 @@ function LeadRow({
   }
 
   return (
-    <div
+    <article
       role="button"
       tabIndex={0}
       aria-label={openLabel}
       onClick={() => onOpenLead(lead)}
       onKeyDown={handleRowKeyDown}
-      className={`grid cursor-pointer gap-4 border-b border-[#e5edf6] px-4 py-4 transition last:border-b-0 hover:bg-[#f8fbfd] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#17613d] xl:grid-cols-[minmax(260px,1.2fr)_180px_150px_160px_150px_190px_170px] xl:items-center ${selected ? 'bg-[#f1fbf6]' : ''}`}
+      className={`min-w-0 cursor-pointer rounded-[20px] border px-4 py-4 shadow-[0_10px_24px_rgba(24,45,68,0.04)] transition hover:-translate-y-[1px] hover:border-[#cfdeeb] hover:shadow-[0_18px_36px_rgba(24,45,68,0.08)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#17613d] ${
+        selected ? 'border-[#bfd5ea] bg-[#f7fbff]' : 'border-[#e2e8f0] bg-white'
+      }`}
     >
-      <div className="min-w-0">
-        <div className="flex items-center gap-2">
-          <p className="truncate text-sm font-semibold text-[#10243a]">{title}</p>
-          <StatusBadge status={lead.leadStatus} />
-          {agencyFed ? (
-            <span className="inline-flex h-7 items-center rounded-full border border-[#d9e5f2] bg-[#f5f8fb] px-2.5 text-xs font-semibold text-[#52677f]">
-              Agency-fed
+      <div
+        className="grid min-w-0 items-center gap-4"
+        style={{ gridTemplateColumns: 'minmax(240px,1.18fr) minmax(118px,0.44fr) minmax(220px,0.95fr) minmax(190px,0.78fr) minmax(140px,0.54fr) minmax(132px,132px)' }}
+      >
+        <div className="min-w-0">
+          <div className="flex min-w-0 items-start gap-3">
+            <span
+              className="grid h-11 w-11 shrink-0 place-items-center rounded-full text-[0.9rem] font-bold text-white shadow-[0_10px_22px_rgba(24,45,68,0.12)]"
+              style={{ backgroundImage: `linear-gradient(135deg, ${accent}, #173e63)` }}
+            >
+              {agencyFed && handoverRequired ? <EyeOff size={17} /> : getInitials(title)}
             </span>
-          ) : null}
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[1rem] font-semibold tracking-[-0.02em] text-[#142132]">{title}</p>
+              <div className="mt-2 grid gap-1 text-[0.82rem] font-medium text-[#60758b]">
+                <span className="flex min-w-0 items-center gap-2">
+                  <Phone size={13} className="shrink-0 text-[#8ba0b4]" />
+                  <span className="min-w-0 truncate">{getLeadContactLine(lead, 'phone')}</span>
+                </span>
+                <span className="flex min-w-0 items-center gap-2">
+                  <Mail size={13} className="shrink-0 text-[#8ba0b4]" />
+                  <span className="min-w-0 truncate">{getLeadContactLine(lead, 'email')}</span>
+                </span>
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center rounded-full border border-[#dbe6f1] bg-[#f8fbff] px-2.5 py-1 text-[0.72rem] font-semibold text-[#4d6782]">
+                  {assignedLabel === 'Unassigned' ? 'Unassigned' : `Assigned to ${assignedLabel}`}
+                </span>
+              </div>
+            </div>
+          </div>
         </div>
-        <p className="mt-1 truncate text-xs text-[#60758d]">{subtitle}</p>
+
+        <div className="min-w-0">
+          <span className="inline-flex max-w-full items-center rounded-full border border-[#dbe6f1] bg-[#f8fbff] px-3 py-1.5 text-[0.78rem] font-semibold capitalize text-[#4d6782]">
+            <span className="truncate">{sourceLabel}</span>
+          </span>
+          <p className="mt-2 truncate text-[0.8rem] font-medium text-[#60758b]">
+            {agencyFed ? 'Agency introduced' : lead.sellingModel === 'agent_led' ? 'Agent-led' : 'Developer-led'}
+          </p>
+        </div>
+
+        <div className="min-w-0">
+          <div className="flex min-w-0 items-start gap-2.5">
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[13px] border border-[#e1e8f0] bg-[#f8fbff] text-[#5c7894]">
+              <Home size={17} />
+            </span>
+            <div className="min-w-0">
+              <p className={`truncate text-[0.96rem] font-semibold tracking-[-0.02em] ${developmentLabel === 'Unallocated' ? 'text-[#8aa0b5]' : 'text-[#142132]'}`}>
+                {developmentLabel}
+              </p>
+              <p className="mt-1 truncate text-[0.84rem] font-medium text-[#60758b]">
+                {lead.unitTypeInterest || (lead.interestedDevelopmentIds?.length > 1 ? `${lead.interestedDevelopmentIds.length} development interests` : 'Unit interest pending')}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="min-w-0">
+          <span className={`inline-flex max-w-full items-center gap-2 rounded-full border px-3 py-2 text-[0.82rem] font-semibold ${stage.className}`}>
+            <StageIcon size={15} className="shrink-0" />
+            <span className="line-clamp-2">{stage.label}</span>
+          </span>
+          <p className="mt-2 line-clamp-2 text-[0.8rem] font-medium text-[#60758b]">{primaryHandoffMessage}</p>
+        </div>
+
+        <div className="min-w-0">
+          <p className="text-[0.95rem] font-semibold tracking-[-0.02em] text-[#142132]">{formatRelativeTime(activityReference)}</p>
+          <p className="mt-1 truncate text-[0.84rem] font-medium text-[#60758b]">
+            {handoverPending ? 'Handover requested' : lead.reservationState && lead.reservationState !== 'none' ? lead.reservationState : formatDate(activityReference)}
+          </p>
+        </div>
+
+        <div className="flex min-w-0 items-center justify-end gap-2 justify-self-end" onClick={(event) => event.stopPropagation()}>
+          <button
+            type="button"
+            className="inline-flex min-h-[40px] min-w-[78px] items-center justify-center gap-1.5 rounded-[13px] bg-[#0f2743] px-3 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,39,67,0.16)] transition hover:bg-[#0b223b]"
+            onClick={() => onOpenLead(lead)}
+          >
+            Open
+            <ArrowUpRight size={15} />
+          </button>
+          <button
+            type="button"
+            className="inline-flex h-[40px] w-[40px] items-center justify-center rounded-[13px] border border-[#dbe4ee] bg-white text-[#5b7289] transition hover:border-[#c7d6e5] hover:bg-[#f8fbfe] hover:text-[#20364c]"
+            aria-label={`More actions for ${title}`}
+            onClick={() => onOpenLead(lead)}
+          >
+            <MoreHorizontal size={18} />
+          </button>
+        </div>
       </div>
-      <div className="min-w-0">
-        <p className="truncate text-sm font-semibold text-[#29445f]">{developmentLabel}</p>
-        <p className="mt-1 text-xs text-[#7a8ba3]">{lead.interestedDevelopmentIds?.length > 1 ? `${lead.interestedDevelopmentIds.length} interests` : 'Single interest'}</p>
-      </div>
-      <div>
-        <p className="text-sm font-semibold text-[#29445f]">{assigned ? getUserLabel(assigned) : agencyFed ? 'Agency agent' : 'Developer direct'}</p>
-        <p className="mt-1 text-xs text-[#7a8ba3]">{agencyFed ? 'Agency introduced' : lead.sellingModel === 'agent_led' ? 'Agent-led' : 'Developer-led'}</p>
-      </div>
-      <div>
-        <p className="text-sm font-semibold text-[#29445f]">{lead.unitTypeInterest || 'Any unit'}</p>
-        <p className="mt-1 text-xs text-[#7a8ba3]">{budget}</p>
-      </div>
-      <div>
-        <p className="text-sm font-semibold text-[#29445f]">{formatDate(lead.updatedAt)}</p>
-        <p className="mt-1 text-xs text-[#7a8ba3]">{handoverPending ? 'Handover requested' : lead.reservationState === 'none' ? 'Not reserved' : lead.reservationState}</p>
-      </div>
-      <div className="min-w-0">
-        <span className={`inline-flex h-7 items-center rounded-full border px-2.5 text-xs font-semibold ${getHandoffTone(handoff.status)}`}>
-          {handoff.label}
-        </span>
-        <p className="mt-1 line-clamp-2 text-xs leading-5 text-[#7a8ba3]">{primaryHandoffMessage}</p>
-      </div>
-      <div className="flex xl:justify-end">
+
+      <div className="mt-4 flex flex-wrap gap-2 border-t border-[#edf3f8] pt-3 lg:hidden" onClick={(event) => event.stopPropagation()}>
         {handoverRequired ? (
           <Button
             type="button"
             variant="secondary"
             size="sm"
             disabled={handoverPending || handoverSubmitting}
-            onClick={(event) => {
-              event.stopPropagation()
-              onRequestHandover(lead.developerLeadId)
-            }}
+            onClick={() => onRequestHandover(lead.developerLeadId)}
           >
             <EyeOff size={15} />
             {handoverPending ? 'Requested' : 'Request Handover'}
@@ -835,21 +1011,177 @@ function LeadRow({
             type="button"
             size="sm"
             disabled={converting}
-            onClick={(event) => {
-              event.stopPropagation()
-              onConvertLead(lead)
-            }}
+            onClick={() => onConvertLead(lead)}
           >
             <ExternalLink size={15} />
             {converting ? 'Converting...' : 'Convert & Send'}
           </Button>
-        ) : (
-          <span className="inline-flex h-8 items-center rounded-full border border-[#d8efe4] bg-[#f1fbf6] px-3 text-xs font-semibold text-[#17613d]">
-            Details available
-          </span>
-        )}
+        ) : null}
       </div>
-    </div>
+    </article>
+  )
+}
+
+function DeveloperLeadList({
+  leads,
+  developments,
+  agents,
+  loading,
+  routeDeveloperLeadId,
+  searchTerm,
+  statusFilter,
+  sourceFilter,
+  error,
+  message,
+  convertedOnboardingUrl,
+  handoverSubmittingId,
+  convertingLeadId,
+  onSearchChange,
+  onStatusFilterChange,
+  onSourceFilterChange,
+  onOpenLead,
+  onRequestHandover,
+  onConvertLead,
+  onRefresh,
+  onCreateLead,
+}) {
+  return (
+    <section className="developer-leads-panel min-w-0 overflow-hidden rounded-[20px] border border-[#d9e5f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_16px_42px_rgba(31,54,78,0.06)]" data-developer-lead-table="true">
+      <div className="flex flex-col gap-4 border-b border-[#edf3f8] px-4 py-4 sm:px-5 lg:flex-row lg:items-center lg:justify-between">
+        <div className="min-w-0">
+          <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#6d839b]">Developer Leads</p>
+          <h1 className="mt-1 text-2xl font-semibold tracking-[-0.03em] text-[#102033]">Buyer Leads</h1>
+        </div>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="flex min-w-0 items-center gap-3 rounded-[14px] border border-[#d9e5f2] bg-white px-3 sm:w-[320px] lg:w-[380px]">
+            <Search size={17} className="shrink-0 text-[#7a8ba3]" />
+            <input
+              className="h-11 min-w-0 flex-1 text-sm text-[#10243a] outline-none"
+              value={searchTerm}
+              onChange={(event) => onSearchChange(event.target.value)}
+              placeholder="Search buyer, development, source..."
+            />
+          </div>
+          <Button type="button" variant="secondary" onClick={onRefresh} disabled={loading}>
+            <RefreshCw size={16} />
+            Refresh
+          </Button>
+          <Button type="button" onClick={onCreateLead}>
+            <Plus size={16} />
+            Create Lead
+          </Button>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-3 border-b border-[#edf3f8] px-4 py-3 sm:px-5 lg:flex-row lg:items-center lg:justify-between">
+        <p className="text-sm font-medium text-[#60758b]">
+          {loading ? 'Loading leads...' : `${leads.length} lead${leads.length === 1 ? '' : 's'} in this view`}
+        </p>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <label className="flex h-10 items-center gap-2 rounded-[12px] border border-[#d9e5f2] px-3 text-sm font-semibold text-[#29445f]">
+            <Filter size={16} />
+            <select className="bg-transparent outline-none" value={statusFilter} onChange={(event) => onStatusFilterChange(event.target.value)}>
+              <option value="all">All statuses</option>
+              {DEVELOPER_LEAD_STATUS_OPTIONS.map((status) => (
+                <option key={status.key} value={status.key}>{status.label}</option>
+              ))}
+            </select>
+          </label>
+          <label className="flex h-10 items-center gap-2 rounded-[12px] border border-[#d9e5f2] px-3 text-sm font-semibold text-[#29445f]">
+            <Users size={16} />
+            <select className="bg-transparent outline-none" value={sourceFilter} onChange={(event) => onSourceFilterChange(event.target.value)}>
+              {DEVELOPER_LEAD_SOURCE_FILTER_OPTIONS.map((source) => (
+                <option key={source.key} value={source.key}>{source.label}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+      </div>
+
+      {error ? (
+        <div className="m-4 rounded-[12px] border border-[#f8d7da] bg-[#fff5f6] p-4 text-sm text-[#8d2831]">{error}</div>
+      ) : null}
+      {message ? (
+        <div className="m-4 rounded-[12px] border border-[#d8efe4] bg-[#f1fbf6] p-4 text-sm text-[#17613d]">{message}</div>
+      ) : null}
+      {convertedOnboardingUrl ? (
+        <div className="m-4 rounded-[12px] border border-[#d9e5f2] bg-[#f8fafc] p-4 text-sm text-[#29445f]">
+          <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-[#7a8ba3]">Buyer onboarding link</span>
+          <a className="mt-2 block break-all font-semibold text-[#17613d]" href={convertedOnboardingUrl} target="_blank" rel="noreferrer">
+            {convertedOnboardingUrl}
+          </a>
+        </div>
+      ) : null}
+
+      {loading ? (
+        <div className="p-8 text-sm text-[#60758d]">Loading developer leads...</div>
+      ) : leads.length ? (
+        <>
+          <div className="hidden min-h-0 max-w-full flex-1 overflow-x-auto overflow-y-visible lg:block">
+            <div className="min-w-[1040px] px-4 py-4">
+              <div
+                className="grid items-center gap-4 px-3 text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]"
+                style={{ gridTemplateColumns: 'minmax(240px,1.18fr) minmax(118px,0.44fr) minmax(220px,0.95fr) minmax(190px,0.78fr) minmax(140px,0.54fr) minmax(132px,132px)' }}
+              >
+                <span>Lead</span>
+                <span>Source</span>
+                <span>Development</span>
+                <span>Stage</span>
+                <span>Last Activity</span>
+                <span className="sr-only">Actions</span>
+              </div>
+              <div className="mt-3 space-y-3">
+                {leads.map((lead) => (
+                  <LeadRow
+                    key={lead.developerLeadId}
+                    lead={lead}
+                    developments={developments}
+                    agents={agents}
+                    handoverSubmitting={handoverSubmittingId === lead.developerLeadId}
+                    converting={convertingLeadId === lead.developerLeadId}
+                    selected={normalizeText(routeDeveloperLeadId) === normalizeText(lead.developerLeadId)}
+                    onOpenLead={onOpenLead}
+                    onRequestHandover={onRequestHandover}
+                    onConvertLead={onConvertLead}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-3 p-4 lg:hidden">
+            {leads.map((lead) => (
+              <LeadRow
+                key={lead.developerLeadId}
+                lead={lead}
+                developments={developments}
+                agents={agents}
+                handoverSubmitting={handoverSubmittingId === lead.developerLeadId}
+                converting={convertingLeadId === lead.developerLeadId}
+                selected={normalizeText(routeDeveloperLeadId) === normalizeText(lead.developerLeadId)}
+                onOpenLead={onOpenLead}
+                onRequestHandover={onRequestHandover}
+                onConvertLead={onConvertLead}
+              />
+            ))}
+          </div>
+        </>
+      ) : (
+        <div className="p-8 text-center">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#eef8f2] text-[#0f8f4c]">
+            <ShieldCheck size={21} />
+          </div>
+          <h3 className="mt-4 text-base font-semibold text-[#10243a]">No developer leads yet</h3>
+          <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-[#60758d]">
+            Create a developer-owned buyer lead or wait for an agency-introduced protected lead to arrive.
+          </p>
+          <Button type="button" className="mt-5" onClick={onCreateLead}>
+            <Plus size={16} />
+            Create Lead
+          </Button>
+        </div>
+      )}
+    </section>
   )
 }
 
@@ -864,6 +1196,14 @@ function DeveloperLeadWorkspacePanel({
   onRequestHandover,
   onConvertLead,
 }) {
+  const [activeTab, setActiveTab] = useState('overview')
+  const [selectedJourneyStage, setSelectedJourneyStage] = useState('captured')
+
+  useEffect(() => {
+    setActiveTab('overview')
+    setSelectedJourneyStage('captured')
+  }, [lead?.developerLeadId])
+
   if (!lead) return null
 
   const assigned = agents.find((agent) => (agent.userId || agent.id) === lead.assignedAgentId)
@@ -872,91 +1212,395 @@ function DeveloperLeadWorkspacePanel({
   const handoverRequired = requiresAgencyHandover(lead)
   const handoverPending = agencyFed && lead.visibilityState === 'consent_pending'
   const converted = isConvertedLead(lead)
-  const title = agencyFed && !lead.buyerFullName
-    ? lead.protectedSummary || 'Agency protected lead'
-    : lead.buyerFullName || 'Buyer pending'
+  const title = getLeadDisplayName(lead)
   const subtitle = agencyFed && handoverRequired
     ? 'Buyer details are protected until the source agency completes handover.'
     : lead.buyerEmail || lead.buyerPhone || 'Capture buyer contact details before onboarding.'
   const blockers = handoff.blockers || []
   const warnings = handoff.warnings || []
+  const journeyStages = buildDeveloperLeadJourneyStages(lead)
+  const selectedStage = journeyStages.find((stage) => stage.key === selectedJourneyStage) || journeyStages.find((stage) => stage.state === 'current') || journeyStages[0]
+  const nextAction = getDeveloperLeadNextAction(lead)
+  const budget = lead.budgetMin || lead.budgetMax
+    ? `${formatCurrency(lead.budgetMin)} - ${formatCurrency(lead.budgetMax)}`
+    : 'Open budget'
+  const assignedLabel = assigned ? getUserLabel(assigned) : agencyFed ? 'Agency agent' : 'Unassigned'
+  const developmentLabel = getDevelopmentLabel(lead.primaryDevelopmentId, developments)
+  const workspaceTabs = [
+    { key: 'overview', label: 'Overview', meta: '' },
+    { key: 'buyer_profile', label: 'Buyer Profile', meta: handoverRequired ? 'Protected' : '' },
+    { key: 'onboarding_otp', label: 'Transaction Setup / Offer', meta: handoff.eligible ? 'Ready' : '' },
+    { key: 'development', label: 'Development', meta: lead.interestedDevelopmentIds?.length || '' },
+    { key: 'documents', label: 'Documents', meta: converted ? 'Transaction' : '' },
+    { key: 'activity', label: 'Activity', meta: '' },
+  ]
+  const activityItems = [
+    { key: 'created', title: 'Lead captured', detail: getLeadSourceLabel(lead.leadSource), timestamp: lead.createdAt, Icon: ClipboardList },
+    ...(handoverPending ? [{ key: 'handover', title: 'Agency handover requested', detail: 'Waiting for protected buyer details', timestamp: lead.updatedAt, Icon: EyeOff }] : []),
+    ...(converted ? [{ key: 'converted', title: 'Transaction created', detail: 'Buyer onboarding flow available', timestamp: lead.updatedAt, Icon: CheckCircle2 }] : []),
+  ]
+
+  function renderPrimaryAction({ compact = false } = {}) {
+    if (converted) {
+      return (
+        <Button type="button" size={compact ? 'sm' : undefined} onClick={() => onOpenTransaction(lead.convertedTransactionId)}>
+          <ExternalLink size={16} />
+          Open Transaction
+        </Button>
+      )
+    }
+    if (handoverRequired) {
+      return (
+        <Button type="button" size={compact ? 'sm' : undefined} variant="secondary" disabled={handoverPending || handoverSubmitting} onClick={() => onRequestHandover(lead.developerLeadId)}>
+          <EyeOff size={16} />
+          {handoverPending ? 'Handover Requested' : 'Request Handover'}
+        </Button>
+      )
+    }
+    if (handoff.eligible) {
+      return (
+        <Button type="button" size={compact ? 'sm' : undefined} disabled={converting} onClick={() => onConvertLead(lead)}>
+          <ExternalLink size={16} />
+          {converting ? 'Converting...' : 'Convert & Send Buyer Onboarding'}
+        </Button>
+      )
+    }
+    return (
+      <span className="inline-flex min-h-10 items-center rounded-[12px] border border-[#d9e5f2] bg-[#f8fafc] px-3 text-sm font-semibold text-[#52677f]">
+        Complete setup before onboarding can be sent.
+      </span>
+    )
+  }
 
   return (
-    <section className="developer-leads-panel rounded-[8px] border border-[#d9e5f2] bg-white p-5 shadow-[0_12px_35px_rgba(15,23,42,0.05)]" data-developer-lead-workspace="true">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div className="min-w-0">
-          <button type="button" className="mb-3 inline-flex items-center gap-2 text-sm font-semibold text-[#60758d] hover:text-[#17613d]" onClick={onClose}>
-            <ArrowLeft size={16} />
-            Back to leads
-          </button>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#7a8ba3]">Buyer Lead Workspace</p>
-          <h2 className="mt-1 truncate text-2xl font-semibold text-[#10243a]">{title}</h2>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-[#60758d]">{subtitle}</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <StatusBadge status={lead.leadStatus} />
-          <span className={`inline-flex h-8 items-center rounded-full border px-3 text-xs font-semibold ${getHandoffTone(handoff.status)}`}>
-            {converted ? 'Transaction created' : handoff.label}
-          </span>
-        </div>
-      </div>
-
-      <div className="mt-5 grid gap-3 lg:grid-cols-4">
-        <div className="rounded-[8px] border border-[#e5edf6] p-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7a8ba3]">Development</p>
-          <p className="mt-1 text-sm font-semibold text-[#29445f]">{getDevelopmentLabel(lead.primaryDevelopmentId, developments)}</p>
-        </div>
-        <div className="rounded-[8px] border border-[#e5edf6] p-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7a8ba3]">Assigned</p>
-          <p className="mt-1 text-sm font-semibold text-[#29445f]">{assigned ? getUserLabel(assigned) : agencyFed ? 'Agency agent' : 'Developer direct'}</p>
-        </div>
-        <div className="rounded-[8px] border border-[#e5edf6] p-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7a8ba3]">Interest</p>
-          <p className="mt-1 text-sm font-semibold text-[#29445f]">{lead.unitTypeInterest || 'Any unit'}</p>
-        </div>
-        <div className="rounded-[8px] border border-[#e5edf6] p-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7a8ba3]">Updated</p>
-          <p className="mt-1 text-sm font-semibold text-[#29445f]">{formatDate(lead.updatedAt)}</p>
-        </div>
-      </div>
-
-      {blockers.length || warnings.length ? (
-        <div className="mt-5 grid gap-3">
-          {blockers.map((blocker) => (
-            <div key={blocker.code} className="rounded-[8px] border border-[#f0dfb8] bg-[#fff9ec] p-3 text-sm text-[#8a5a12]">
-              {blocker.message}
+    <section className="grid min-w-0 gap-5" data-developer-lead-workspace="true">
+      <div className="overflow-hidden rounded-[24px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_16px_42px_rgba(31,54,78,0.06)]">
+        <div className="flex flex-col gap-5 border-b border-[#edf3f8] px-5 py-5 sm:px-7 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <button type="button" className="mb-4 inline-flex items-center gap-2 text-sm font-semibold text-[#60758d] hover:text-[#17613d]" onClick={onClose}>
+              <ArrowLeft size={16} />
+              Back to leads
+            </button>
+            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#6d839b]">Buyer Lead Workspace</p>
+            <h2 className="mt-2 truncate text-3xl font-semibold tracking-[-0.04em] text-[#102033]">{title}</h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-[#60758d]">{subtitle}</p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <span className="inline-flex h-8 items-center rounded-full border border-[#dbe6f1] bg-[#f8fbff] px-3 text-xs font-semibold text-[#4d6782]">{getLeadSourceLabel(lead.leadSource)}</span>
+              <StatusBadge status={lead.leadStatus} />
+              <span className={`inline-flex h-8 items-center rounded-full border px-3 text-xs font-semibold ${getHandoffTone(handoff.status)}`}>
+                {converted ? 'Transaction created' : handoff.label}
+              </span>
             </div>
-          ))}
-          {warnings.map((warning) => (
-            <div key={warning.code} className="rounded-[8px] border border-[#d9e5f2] bg-[#f8fafc] p-3 text-sm text-[#29445f]">
-              {warning.message}
-            </div>
-          ))}
+          </div>
+          <div className="flex flex-wrap gap-2 lg:justify-end">
+            <Button type="button" variant="secondary" onClick={onClose}>
+              <ArrowLeft size={16} />
+              Lead Table
+            </Button>
+            {renderPrimaryAction()}
+          </div>
         </div>
-      ) : null}
 
-      <div className="mt-5 flex flex-wrap gap-2">
-        {converted ? (
-          <Button type="button" onClick={() => onOpenTransaction(lead.convertedTransactionId)}>
-            <ExternalLink size={16} />
-            Open Transaction
-          </Button>
-        ) : handoverRequired ? (
-          <Button type="button" variant="secondary" disabled={handoverPending || handoverSubmitting} onClick={() => onRequestHandover(lead.developerLeadId)}>
-            <EyeOff size={16} />
-            {handoverPending ? 'Handover Requested' : 'Request Handover'}
-          </Button>
-        ) : handoff.eligible ? (
-          <Button type="button" disabled={converting} onClick={() => onConvertLead(lead)}>
-            <ExternalLink size={16} />
-            {converting ? 'Converting...' : 'Convert & Send Buyer Onboarding'}
-          </Button>
-        ) : (
-          <span className="inline-flex min-h-10 items-center rounded-[8px] border border-[#d9e5f2] bg-[#f8fafc] px-3 text-sm font-semibold text-[#52677f]">
-            Complete the setup items above before buyer onboarding can be sent.
-          </span>
-        )}
+        <div className="px-5 py-5 sm:px-7">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h3 className="text-[18px] font-semibold uppercase tracking-[0.08em] text-[#102033]">Deal Journey</h3>
+            <span className="rounded-full border border-[#d8e5f1] bg-[#fbfdff] px-3 py-1 text-[12px] font-semibold text-[#60758b]">
+              {selectedStage?.label || 'Lead captured'}
+            </span>
+          </div>
+          <div className="mt-6 overflow-x-auto pb-2">
+            <ol
+              className="grid min-w-[840px] items-start"
+              style={{ gridTemplateColumns: `repeat(${Math.max(journeyStages.length, 1)}, minmax(140px, 1fr))` }}
+            >
+              {journeyStages.map((stage, index) => {
+                const isSelected = selectedStage?.key === stage.key
+                const isCompleted = stage.state === 'completed'
+                const isCurrent = stage.state === 'current'
+                return (
+                  <li key={stage.key} className="relative px-2">
+                    {index < journeyStages.length - 1 ? (
+                      <span className={`absolute left-[calc(50%+18px)] right-[calc(-50%+18px)] top-[18px] h-0.5 ${isCompleted || isCurrent ? 'bg-[#9bc7de]' : 'bg-[#dce6f1]'}`} aria-hidden="true" />
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => setSelectedJourneyStage(stage.key)}
+                      className={`relative flex min-h-[112px] w-full flex-col items-center text-center transition ${
+                        isCurrent || isSelected ? 'rounded-[18px] border border-[#cfe0ee] bg-[#f4f9fc] px-3 py-3 shadow-[0_10px_22px_rgba(31,54,78,0.06)]' : 'px-2 py-3 hover:rounded-[18px] hover:bg-[#f8fbfd]'
+                      }`}
+                      aria-current={isCurrent ? 'step' : undefined}
+                    >
+                      <span className={`z-10 grid h-9 w-9 place-items-center rounded-full border-2 text-xs font-bold ${
+                        isCompleted
+                          ? 'border-[#2f7b9e] bg-[#2f7b9e] text-white'
+                          : isCurrent
+                            ? 'border-[#2f7b9e] bg-white text-[#245f86] shadow-[0_0_0_7px_rgba(47,123,158,0.12)]'
+                            : 'border-[#cad7e5] bg-white text-[#8fa1b4]'
+                      }`}>
+                        {isCompleted ? <CheckCircle2 size={15} /> : index + 1}
+                      </span>
+                      <p className="mt-3 max-w-[150px] text-sm font-semibold leading-5 text-[#203a54]">{stage.label}</p>
+                      <p className="mt-1 max-w-[150px] truncate text-xs font-semibold text-[#6d839b]" title={stage.detail}>{stage.detail}</p>
+                      {isCurrent ? <span className="mt-2 rounded-full bg-[#dfeef7] px-2.5 py-1 text-[0.64rem] font-bold uppercase tracking-[0.1em] text-[#245f86]">Live</span> : null}
+                    </button>
+                  </li>
+                )
+              })}
+            </ol>
+          </div>
+          <div className="mt-5 rounded-[16px] border border-[#e4edf6] bg-[#fbfdff] p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-[12px] font-semibold uppercase tracking-[0.12em] text-[#7d91a8]">Stage Actions</p>
+                <h3 className="mt-1 text-base font-semibold text-[#18324b]">{selectedStage?.label || 'Lead captured'}</h3>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {selectedStage?.key === 'captured' || selectedStage?.key === 'contacted' ? (
+                  <>
+                    <Button type="button" size="sm" variant="secondary" onClick={() => setActiveTab('buyer_profile')}>Open profile</Button>
+                    <Button type="button" size="sm" variant="secondary" onClick={() => setActiveTab('activity')}>View activity</Button>
+                  </>
+                ) : selectedStage?.key === 'qualified' || selectedStage?.key === 'reservation' || selectedStage?.key === 'onboarding_otp' ? (
+                  <>
+                    {renderPrimaryAction({ compact: true })}
+                    <Button type="button" size="sm" variant="secondary" onClick={() => setActiveTab('onboarding_otp')}>Open setup</Button>
+                  </>
+                ) : (
+                  <>
+                    {renderPrimaryAction({ compact: true })}
+                    <Button type="button" size="sm" variant="secondary" onClick={() => setActiveTab('documents')}>Documents</Button>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
+
+      <section className="grid gap-5 xl:grid-cols-[0.8fr_1.2fr_0.9fr]">
+        <div className="rounded-[20px] border border-[#dce7f2] bg-white p-5 shadow-[0_10px_30px_rgba(31,54,78,0.045)]">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-[18px] font-semibold text-[#102033]">Next Best Action</h2>
+            <Zap className="h-4 w-4 text-[#24568f]" />
+          </div>
+          <div className="mt-4 rounded-[16px] border border-[#dceafe] bg-[#f8fbff] p-4">
+            <p className="text-sm font-semibold text-[#18324b]">{nextAction.label}</p>
+            <p className="mt-2 text-sm leading-6 text-[#60758b]">{nextAction.helper}</p>
+          </div>
+          <div className="mt-4 grid gap-2">
+            {[
+              ['Buyer Profile', UserPlus, () => setActiveTab('buyer_profile')],
+              ['Transaction Setup / Offer', CheckSquare, () => setActiveTab('onboarding_otp')],
+              ['Development Interest', Home, () => setActiveTab('development')],
+              ['Activity', CalendarDays, () => setActiveTab('activity')],
+            ].map(([label, Icon, onClick]) => (
+              <button
+                key={label}
+                type="button"
+                className="flex w-full items-center gap-3 rounded-[12px] border border-[#dbe6f2] bg-white px-3 py-2.5 text-left text-sm font-semibold text-[#20364c] transition hover:border-[#b9cade] hover:bg-[#fbfdff]"
+                onClick={onClick}
+              >
+                <Icon className="h-4 w-4 text-[#315b7a]" />
+                <span className="min-w-0 flex-1">{label}</span>
+                <ChevronRight className="h-4 w-4 text-[#9aacbf]" />
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-[20px] border border-[#dce7f2] bg-white p-5 shadow-[0_10px_30px_rgba(31,54,78,0.045)]">
+          <h2 className="text-[18px] font-semibold text-[#102033]">Buyer Intelligence</h2>
+          <div className="mt-4 grid overflow-hidden rounded-[16px] border border-[#e4edf6] sm:grid-cols-2">
+            {[
+              ['Budget', budget, Home],
+              ['Financing', lead.financeManagedBy || lead.financeRoute || 'Not captured', CheckSquare],
+              ['Development', developmentLabel, Home],
+              ['Unit Interest', lead.unitTypeInterest || 'Any unit', ClipboardList],
+              ['Assigned', assignedLabel, UserPlus],
+              ['Stage', getLeadStagePresentation(lead.leadStatus).label, TrendingUp],
+            ].map(([label, value, Icon]) => (
+              <div key={label} className="flex min-h-[74px] items-center gap-3 border-b border-[#e4edf6] px-4 py-3 even:sm:border-l last:border-b-0 sm:[&:nth-last-child(2)]:border-b-0">
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[12px] bg-[#eef5fb] text-[#315b7a]">
+                  <Icon className="h-4 w-4" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-[12px] font-semibold text-[#60758b]">{label}</p>
+                  <p className="mt-1 truncate text-sm font-semibold text-[#20364c]" title={String(value)}>{value}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-[20px] border border-[#dce7f2] bg-white p-5 shadow-[0_10px_30px_rgba(31,54,78,0.045)]">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-[18px] font-semibold text-[#102033]">Recent Activity</h2>
+            <button type="button" className="text-xs font-semibold text-[#24568f]" onClick={() => setActiveTab('activity')}>View all</button>
+          </div>
+          <div className="mt-4 space-y-1">
+            {activityItems.map((item) => {
+              const Icon = item.Icon
+              return (
+                <button key={item.key} type="button" className="flex w-full items-start gap-3 rounded-[14px] px-2 py-3 text-left transition hover:bg-[#f8fbff]" onClick={() => setActiveTab('activity')}>
+                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#eef5fb] text-[#315b7a]">
+                    <Icon className="h-4 w-4" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-semibold text-[#20364c]">{item.title}</span>
+                    <span className="mt-0.5 block truncate text-xs text-[#60758b]">{item.detail}</span>
+                  </span>
+                  <span className="shrink-0 text-xs font-medium text-[#7d91a8]">{formatRelativeTime(item.timestamp)}</span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      </section>
+
+      <section className="scroll-mt-4 overflow-x-auto rounded-[20px] border border-[#dce7f2] bg-white shadow-[0_10px_30px_rgba(31,54,78,0.045)]" role="tablist" aria-label="Buyer workspace sections" data-testid="lead-workspace-tabs">
+        <div className="grid min-w-[900px]" style={{ gridTemplateColumns: `repeat(${workspaceTabs.length}, minmax(140px, 1fr))` }}>
+          {workspaceTabs.map((tab) => {
+            const isActive = activeTab === tab.key
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setActiveTab(tab.key)}
+                role="tab"
+                aria-selected={isActive}
+                className={`relative flex min-h-[64px] items-center justify-center gap-2 whitespace-nowrap px-4 text-sm transition ${
+                  isActive ? 'font-semibold text-[#123955]' : 'font-medium text-[#60758b] hover:text-[#163247]'
+                }`}
+              >
+                <span>{tab.label}</span>
+                {tab.meta !== '' ? (
+                  <span className={`rounded-full px-2 py-0.5 text-[0.72rem] ${isActive ? 'bg-[#e8f2fb] text-[#1f5f8a]' : 'bg-[#f6f9fc] text-[#8aa0b7]'}`}>{tab.meta}</span>
+                ) : null}
+                <span className={`absolute inset-x-6 bottom-0 h-0.5 rounded-full bg-[#2f7b9e] transition ${isActive ? 'opacity-100' : 'opacity-0'}`} />
+              </button>
+            )
+          })}
+        </div>
+      </section>
+
+      <section className="rounded-[20px] border border-[#dce7f2] bg-white p-5 shadow-[0_10px_30px_rgba(31,54,78,0.045)] sm:p-6">
+        {activeTab === 'overview' ? (
+          <div className="grid gap-4 lg:grid-cols-3">
+            <div className="rounded-[16px] border border-[#e4edf6] bg-[#fbfdff] p-4">
+              <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-[#7a8ba3]">Buyer</p>
+              <p className="mt-2 text-lg font-semibold text-[#10243a]">{title}</p>
+              <p className="mt-1 text-sm text-[#60758b]">{subtitle}</p>
+            </div>
+            <div className="rounded-[16px] border border-[#e4edf6] bg-[#fbfdff] p-4">
+              <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-[#7a8ba3]">Development</p>
+              <p className="mt-2 text-lg font-semibold text-[#10243a]">{developmentLabel}</p>
+              <p className="mt-1 text-sm text-[#60758b]">{lead.unitTypeInterest || 'Unit interest pending'}</p>
+            </div>
+            <div className="rounded-[16px] border border-[#e4edf6] bg-[#fbfdff] p-4">
+              <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-[#7a8ba3]">Onboarding</p>
+              <p className="mt-2 text-lg font-semibold text-[#10243a]">{handoff.eligible ? 'Ready to send' : 'Setup required'}</p>
+              <p className="mt-1 text-sm text-[#60758b]">{nextAction.label}</p>
+            </div>
+          </div>
+        ) : null}
+
+        {activeTab === 'buyer_profile' ? (
+          <div>
+            <h3 className="text-xl font-semibold tracking-[-0.02em] text-[#102033]">Buyer Profile</h3>
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              {[
+                ['Full name', handoverRequired ? 'Protected until handover' : title],
+                ['Email', getLeadContactLine(lead, 'email')],
+                ['Phone', getLeadContactLine(lead, 'phone')],
+                ['Budget', budget],
+                ['Assigned agent', assignedLabel],
+                ['Source', agencyFed ? 'Agency-fed protected lead' : getLeadSourceLabel(lead.leadSource)],
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-[14px] border border-[#e4edf6] bg-[#fbfdff] p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7a8ba3]">{label}</p>
+                  <p className="mt-2 text-sm font-semibold text-[#29445f]">{value}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        {activeTab === 'onboarding_otp' ? (
+          <div className="grid gap-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <h3 className="text-xl font-semibold tracking-[-0.02em] text-[#102033]">Transaction Setup / Offer</h3>
+                <p className="mt-2 max-w-3xl text-sm leading-6 text-[#60758b]">
+                  This mirrors the buyer lead onboarding step from the agency workspace, scoped to a developer transaction.
+                </p>
+              </div>
+              {renderPrimaryAction()}
+            </div>
+            {blockers.length || warnings.length ? (
+              <div className="grid gap-3">
+                {blockers.map((blocker) => (
+                  <div key={blocker.code} className="rounded-[14px] border border-[#f0dfb8] bg-[#fff9ec] p-3 text-sm text-[#8a5a12]">
+                    {blocker.message}
+                  </div>
+                ))}
+                {warnings.map((warning) => (
+                  <div key={warning.code} className="rounded-[14px] border border-[#d9e5f2] bg-[#f8fafc] p-3 text-sm text-[#29445f]">
+                    {warning.message}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-[14px] border border-[#d8efe4] bg-[#f1fbf6] p-3 text-sm font-semibold text-[#17613d]">
+                The lead is ready to become a developer transaction and send buyer onboarding.
+              </div>
+            )}
+          </div>
+        ) : null}
+
+        {activeTab === 'development' ? (
+          <div>
+            <h3 className="text-xl font-semibold tracking-[-0.02em] text-[#102033]">Development Interest</h3>
+            <div className="mt-4 grid gap-3 md:grid-cols-3">
+              <div className="rounded-[14px] border border-[#e4edf6] bg-[#fbfdff] p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7a8ba3]">Primary Development</p>
+                <p className="mt-2 text-sm font-semibold text-[#29445f]">{developmentLabel}</p>
+              </div>
+              <div className="rounded-[14px] border border-[#e4edf6] bg-[#fbfdff] p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7a8ba3]">Unit Type</p>
+                <p className="mt-2 text-sm font-semibold text-[#29445f]">{lead.unitTypeInterest || 'Any unit'}</p>
+              </div>
+              <div className="rounded-[14px] border border-[#e4edf6] bg-[#fbfdff] p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7a8ba3]">Reservation</p>
+                <p className="mt-2 text-sm font-semibold capitalize text-[#29445f]">{lead.reservationState || 'Not reserved'}</p>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {activeTab === 'documents' ? (
+          <div>
+            <h3 className="text-xl font-semibold tracking-[-0.02em] text-[#102033]">Documents</h3>
+            <p className="mt-2 text-sm leading-6 text-[#60758b]">
+              Documents, OTP upload, finance, transfer, and registration continue in the transaction workspace once this lead is converted.
+            </p>
+            <div className="mt-4">{renderPrimaryAction()}</div>
+          </div>
+        ) : null}
+
+        {activeTab === 'activity' ? (
+          <div>
+            <h3 className="text-xl font-semibold tracking-[-0.02em] text-[#102033]">Activity</h3>
+            <div className="mt-4 grid gap-2">
+              {activityItems.map((item) => (
+                <div key={item.key} className="rounded-[14px] border border-[#e4edf6] bg-[#fbfdff] p-4">
+                  <p className="text-sm font-semibold text-[#29445f]">{item.title}</p>
+                  <p className="mt-1 text-sm text-[#60758b]">{item.detail} · {formatRelativeTime(item.timestamp)}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+      </section>
     </section>
   )
 }
@@ -1206,156 +1850,65 @@ export default function DeveloperLeadsPage() {
   }
 
   return (
-    <main className="developer-leads-page min-h-screen bg-[#f6f9fc] p-4 sm:p-5 lg:p-6">
-      <div className="developer-leads-shell mx-auto grid gap-6">
-        <section className="developer-leads-panel developer-leads-hero flex flex-col gap-4 rounded-[8px] border border-[#d9e5f2] bg-white p-5 shadow-[0_12px_35px_rgba(15,23,42,0.05)] lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#7a8ba3]">Developer Leads</p>
-            <h1 className="mt-1 text-3xl font-semibold tracking-[-0.035em] text-[#10243a]">Lead Intake</h1>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-[#60758d]">
-              Developer-fed buyer leads and agency-fed protected lead cards, with handover before private buyer details become visible.
-            </p>
-          </div>
-          <div className="developer-leads-actions flex flex-wrap gap-2">
-            <Button type="button" variant="secondary" onClick={loadData} disabled={loading}>
-              <RefreshCw size={16} />
-              Refresh
-            </Button>
-            <Button type="button" onClick={() => setShowCreateModal(true)}>
-              <Plus size={16} />
-              Create Lead
-            </Button>
-          </div>
-        </section>
-
-        <section className="developer-leads-metrics grid gap-4">
-          <MetricCard label="Open leads" value={metrics.open} helper="Not converted or lost" icon={ClipboardList} />
-          <MetricCard label="Assigned" value={metrics.assigned} helper="Worked by an agent" icon={UserPlus} />
-          <MetricCard label="Agency protected" value={metrics.agencyProtected} helper="Buyer details hidden" icon={EyeOff} />
-          <MetricCard label="Transaction ready" value={metrics.handoffReady} helper={`${metrics.qualified} qualified or reserved`} icon={CheckCircle2} />
-        </section>
-
-        <DeveloperLeadReadinessPanel readiness={readiness} />
-
-        <ProtectedDeveloperLeadQueuePanel
-          queue={protectedLeadQueue}
-          summary={protectedLeadQueueSummary}
-          developments={developments}
-          handoverSubmittingId={handoverSubmittingId}
-          onRequestHandover={handleRequestHandover}
-        />
-
-        <ReleasedDeveloperLeadConversionPanel
-          queue={releasedConversionQueue}
-          summary={releasedConversionQueueSummary}
-          developments={developments}
-          convertingLeadId={convertingLeadId}
-          onConvertLead={handleConvertLead}
-        />
-
-        <DeveloperLeadAttributionLedgerPanel
-          ledger={attributionLedger}
-          summary={attributionLedgerSummary}
-          developments={developments}
-          agents={agents}
-        />
-
-        <DeveloperLeadOperationsHealthPanel
-          health={operationsHealth}
-          summary={operationsHealthSummary}
-          developments={developments}
-          agents={agents}
-        />
-
+    <main className="developer-leads-page min-h-screen overflow-x-hidden bg-[#f6f9fc] p-4 sm:p-5 lg:p-6">
+      <div className="developer-leads-shell mx-auto grid w-full min-w-0 max-w-[1680px] gap-6">
         {routeDeveloperLeadId && selectedLead ? (
-          <DeveloperLeadWorkspacePanel
-            lead={selectedLead}
-            developments={developments}
-            agents={agents}
-            handoverSubmitting={handoverSubmittingId === selectedLead.developerLeadId}
-            converting={convertingLeadId === selectedLead.developerLeadId}
-            onClose={handleCloseLeadWorkspace}
-            onOpenTransaction={handleOpenTransaction}
-            onRequestHandover={handleRequestHandover}
-            onConvertLead={handleConvertLead}
-          />
+          <>
+            {error ? (
+              <div className="rounded-[12px] border border-[#f8d7da] bg-[#fff5f6] p-4 text-sm text-[#8d2831]">{error}</div>
+            ) : null}
+            {message ? (
+              <div className="rounded-[12px] border border-[#d8efe4] bg-[#f1fbf6] p-4 text-sm text-[#17613d]">{message}</div>
+            ) : null}
+            {convertedOnboardingUrl ? (
+              <div className="rounded-[12px] border border-[#d9e5f2] bg-[#f8fafc] p-4 text-sm text-[#29445f]">
+                <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-[#7a8ba3]">Buyer onboarding link</span>
+                <a className="mt-2 block break-all font-semibold text-[#17613d]" href={convertedOnboardingUrl} target="_blank" rel="noreferrer">
+                  {convertedOnboardingUrl}
+                </a>
+              </div>
+            ) : null}
+            <DeveloperLeadWorkspacePanel
+              lead={selectedLead}
+              developments={developments}
+              agents={agents}
+              handoverSubmitting={handoverSubmittingId === selectedLead.developerLeadId}
+              converting={convertingLeadId === selectedLead.developerLeadId}
+              onClose={handleCloseLeadWorkspace}
+              onOpenTransaction={handleOpenTransaction}
+              onRequestHandover={handleRequestHandover}
+              onConvertLead={handleConvertLead}
+            />
+          </>
         ) : routeDeveloperLeadId && !loading ? (
-          <section className="developer-leads-panel rounded-[8px] border border-[#f0dfb8] bg-[#fff9ec] p-4 text-sm text-[#8a5a12]">
+          <section className="developer-leads-panel rounded-[12px] border border-[#f0dfb8] bg-[#fff9ec] p-4 text-sm text-[#8a5a12]">
             This developer lead could not be found in the current workspace.
           </section>
-        ) : null}
-
-        <section className="developer-leads-panel rounded-[8px] border border-[#d9e5f2] bg-white shadow-[0_12px_35px_rgba(15,23,42,0.05)]">
-          <div className="flex flex-col gap-4 border-b border-[#e5edf6] p-4 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex min-w-0 flex-1 items-center gap-3 rounded-[8px] border border-[#d9e5f2] bg-white px-3">
-              <Search size={17} className="shrink-0 text-[#7a8ba3]" />
-              <input className="h-11 min-w-0 flex-1 text-sm text-[#10243a] outline-none" value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search buyer, development, source..." />
-            </div>
-            <label className="flex h-11 items-center gap-2 rounded-[8px] border border-[#d9e5f2] px-3 text-sm font-semibold text-[#29445f]">
-              <Filter size={16} />
-              <select className="bg-transparent outline-none" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
-                <option value="all">All statuses</option>
-                {DEVELOPER_LEAD_STATUS_OPTIONS.map((status) => (
-                  <option key={status.key} value={status.key}>{status.label}</option>
-                ))}
-              </select>
-            </label>
-            <label className="flex h-11 items-center gap-2 rounded-[8px] border border-[#d9e5f2] px-3 text-sm font-semibold text-[#29445f]">
-              <Users size={16} />
-              <select className="bg-transparent outline-none" value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value)}>
-                {DEVELOPER_LEAD_SOURCE_FILTER_OPTIONS.map((source) => (
-                  <option key={source.key} value={source.key}>{source.label}</option>
-                ))}
-              </select>
-            </label>
-          </div>
-
-          {error ? (
-            <div className="m-4 rounded-[8px] border border-[#f8d7da] bg-[#fff5f6] p-4 text-sm text-[#8d2831]">{error}</div>
-          ) : null}
-          {message ? (
-            <div className="m-4 rounded-[8px] border border-[#d8efe4] bg-[#f1fbf6] p-4 text-sm text-[#17613d]">{message}</div>
-          ) : null}
-          {convertedOnboardingUrl ? (
-            <div className="m-4 rounded-[8px] border border-[#d9e5f2] bg-[#f8fafc] p-4 text-sm text-[#29445f]">
-              <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-[#7a8ba3]">Buyer onboarding link</span>
-              <a className="mt-2 block break-all font-semibold text-[#17613d]" href={convertedOnboardingUrl} target="_blank" rel="noreferrer">
-                {convertedOnboardingUrl}
-              </a>
-            </div>
-          ) : null}
-
-          {loading ? (
-            <div className="p-8 text-sm text-[#60758d]">Loading developer leads...</div>
-          ) : filteredLeads.length ? (
-            <div>
-              {filteredLeads.map((lead) => (
-                <LeadRow
-                  key={lead.developerLeadId}
-                  lead={lead}
-                  developments={developments}
-                  agents={agents}
-                  handoverSubmitting={handoverSubmittingId === lead.developerLeadId}
-                  converting={convertingLeadId === lead.developerLeadId}
-                  selected={normalizeText(routeDeveloperLeadId) === normalizeText(lead.developerLeadId)}
-                  onOpenLead={handleOpenLead}
-                  onRequestHandover={handleRequestHandover}
-                  onConvertLead={handleConvertLead}
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="p-8 text-center">
-              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#eef8f2] text-[#0f8f4c]">
-                <ShieldCheck size={21} />
-              </div>
-              <h3 className="mt-4 text-base font-semibold text-[#10243a]">No developer leads yet</h3>
-              <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-[#60758d]">
-                Create a developer-owned buyer lead or wait for an agency-introduced protected lead to arrive.
-              </p>
-            </div>
-          )}
-        </section>
+        ) : (
+          <DeveloperLeadList
+            leads={filteredLeads}
+            developments={developments}
+            agents={agents}
+            loading={loading}
+            routeDeveloperLeadId={routeDeveloperLeadId}
+            searchTerm={searchTerm}
+            statusFilter={statusFilter}
+            sourceFilter={sourceFilter}
+            error={error}
+            message={message}
+            convertedOnboardingUrl={convertedOnboardingUrl}
+            handoverSubmittingId={handoverSubmittingId}
+            convertingLeadId={convertingLeadId}
+            onSearchChange={setSearchTerm}
+            onStatusFilterChange={setStatusFilter}
+            onSourceFilterChange={setSourceFilter}
+            onOpenLead={handleOpenLead}
+            onRequestHandover={handleRequestHandover}
+            onConvertLead={handleConvertLead}
+            onRefresh={loadData}
+            onCreateLead={() => setShowCreateModal(true)}
+          />
+        )}
 
         <div className="hidden" data-contract={DEVELOPER_LEAD_PHASE11_CONTRACT} />
         <div className="hidden" data-contract={DEVELOPER_LEAD_PHASE12_CONTRACT} />
