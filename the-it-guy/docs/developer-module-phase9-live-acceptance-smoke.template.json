@@ -1,0 +1,54 @@
+{
+  "contract": "developer-module-phase9-live-acceptance-smoke-v1",
+  "observedAt": "REPLACE_WITH_ISO_TIMESTAMP",
+  "environment": "staging",
+  "projectRef": "REPLACE_WITH_SAFE_PROJECT_REF",
+  "releaseSource": {
+    "commitSha": "REPLACE_WITH_COMMIT_SHA_OR_SOURCE_REF",
+    "developerModuleCommand": "npm run verify:developer-module",
+    "developerModulePassed": false,
+    "buildPassed": false
+  },
+  "operator": {
+    "reference": "REPLACE_WITH_OPAQUE_OPERATOR_REFERENCE",
+    "confirmation": "DEVELOPER_MODULE_PHASE9_LIVE_ACCEPTANCE_COMPLETE"
+  },
+  "smokeResult": {
+    "status": "pending",
+    "runRef": "REPLACE_WITH_REDACTED_LIVE_ACCEPTANCE_SMOKE_REFERENCE"
+  },
+  "observations": {
+    "changeWindowApproved": false,
+    "developerOverviewOpened": false,
+    "controlledDevelopmentTransactionOpened": false,
+    "workspaceClicksNoFullPageRefresh": false,
+    "topMenuContrastOrderChecked": false,
+    "noSellerOnboardingBlocker": false,
+    "buyerOnboardingPrerequisiteVisible": false,
+    "signedOtpManualUploadGateVisible": false,
+    "reservationDepositBeforeOtpWhenEnabled": false,
+    "reservationDepositNotRequiredWhenDisabled": false,
+    "buyerOnboardingLinkControlled": false,
+    "bondOriginatorHandoffObserved": false,
+    "setupWarningsVisibleAndNonBlocking": false,
+    "requiredDocumentsRlsClear": false,
+    "subprocessesRlsClear": false,
+    "statusLinksAndOnboardingRlsClear": false,
+    "financialReconciliationDownloadObserved": false,
+    "handoffReadinessVisible": false,
+    "supportMonitoringClear": false,
+    "rollbackReadyAndUnused": false
+  },
+  "rollback": {
+    "ownerRef": "REPLACE_WITH_OPAQUE_ROLLBACK_OWNER_REFERENCE",
+    "planRef": "REPLACE_WITH_REDACTED_ROLLBACK_PLAN_REFERENCE",
+    "validatedBeforeSmoke": false,
+    "activated": false
+  },
+  "closeout": {
+    "testTransactionArchivedOrMarked": false,
+    "supportHandoffComplete": false,
+    "regressionTicketOpened": false
+  },
+  "notes": "Replace placeholders only with redacted operational references. Do not include emails, names, phone numbers, URLs, property addresses, private portal access material, signed URLs, OTP files, document contents, credentials, or raw logs."
+}

@@ -17597,7 +17597,7 @@ export async function fetchDevelopmentOptions({ developmentIds = [], organisatio
 
     let scopedQuery = await client
       .from('developments')
-      .select('id, name, planned_units')
+      .select('id, organisation_id, name, planned_units')
       .in('id', normalizedDevelopmentIds)
       .order('name', { ascending: true })
 
@@ -17609,7 +17609,10 @@ export async function fetchDevelopmentOptions({ developmentIds = [], organisatio
       return attachReservationDefaults(scopedRows)
     }
 
-    if (scopedQuery.error.code !== '42703') {
+    if (
+      scopedQuery.error.code !== '42703' &&
+      !isMissingColumnError(scopedQuery.error, 'organisation_id')
+    ) {
       throw scopedQuery.error
     }
 
@@ -17692,7 +17695,7 @@ export async function fetchDevelopmentOptions({ developmentIds = [], organisatio
 
     const { data, error } = await client
       .from('developments')
-      .select('id, name, planned_units')
+      .select('id, organisation_id, name, planned_units')
       .order('name', { ascending: true })
 
     if (!error) {
@@ -17706,7 +17709,7 @@ export async function fetchDevelopmentOptions({ developmentIds = [], organisatio
       return rowsWithDefaults
     }
 
-    if (error.code !== '42703') {
+    if (error.code !== '42703' && !isMissingColumnError(error, 'organisation_id')) {
       throw error
     }
 

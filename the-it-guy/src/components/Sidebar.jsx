@@ -63,6 +63,7 @@ const ICON_BY_KEY = {
   pipeline: KanbanSquare,
   agency_pipeline: KanbanSquare,
   developer_pipeline: KanbanSquare,
+  developer_leads: Users,
   leads: Users,
   enquiries: ClipboardList,
   pipeline_overview: KanbanSquare,
