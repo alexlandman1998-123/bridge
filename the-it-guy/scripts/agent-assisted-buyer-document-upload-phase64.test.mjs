@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
-const leadWorkspaceSource = await readFile(new URL('../src/pages/AgentLeadsPage.jsx', import.meta.url), 'utf8')
+const leadWorkspaceSource = await readFile(new URL('../src/pages/agency/AgencyPipelinePage.jsx', import.meta.url), 'utf8')
 const workflowSmokeSource = await readFile(new URL('./agency-workflow-smoke.test.mjs', import.meta.url), 'utf8')
 const packageJson = await readFile(new URL('../package.json', import.meta.url), 'utf8')
 
@@ -29,7 +29,7 @@ assert.match(
 
 assert.match(
   leadWorkspaceSource,
-  /getAgentUploadedBuyerDocuments\(row\),/,
+  /const selectedLeadAgentUploadedBuyerDocuments = useMemo\([\s\S]*getAgentUploadedBuyerDocuments\(selectedLead\)/,
   'Buyer document readiness should include agent-uploaded buyer lead documents.',
 )
 
@@ -77,7 +77,7 @@ assert.match(
 
 assert.match(
   leadWorkspaceSource,
-  /\{ key: 'documents', label: 'Documents' \}/,
+  /\{ key: 'documents', label: 'Documents'[\s\S]*?selectedLeadAgentUploadedBuyerDocuments\.length/,
   'Buyer workspace should expose the Documents tab to agents.',
 )
 

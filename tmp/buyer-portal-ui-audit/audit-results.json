@@ -1,0 +1,2171 @@
+{
+  "target": "http://127.0.0.1:5174/client/demo-buyer-portal/buying",
+  "outDir": "/Users/alexanderlandman/the-it-guy/tmp/buyer-portal-ui-audit",
+  "desktop": {
+    "screenshot": "/Users/alexanderlandman/the-it-guy/tmp/buyer-portal-ui-audit/desktop.png",
+    "url": "http://127.0.0.1:5174/client/demo-buyer-portal/buying",
+    "title": "Arch9 | Platform",
+    "overlay": false,
+    "bodyLength": 3785,
+    "bodyPreview": "Arch9\n\nBuyer Workspace\n\nWORKSPACE\nBuying\nSelling (Request access)\n\nHOME\n\nOverview\n\nYOUR PURCHASE\n\nProgress\nAppointments\nFinance\n\nPROPERTY\n\nDocuments\n3 required\nHandover\nSnags\n0 open\n\nACCOUNT\n\nAccount\nMy Details\nTeam\n\nNeed help?\n\nWe're here for you.\n\nMessage Team\nCall Team\n\nArch9\n\nReal Estate\n\nWelcome, Mia.\n\nYour purchase is moving forward, with finance, transfer, and handover in one place.\n\nSee what is needed from you, where the legal and finance work sits, and what happens before key collection.\n\nYOUR BUYING TEAM\n\nS\nSarah Williams\n\nsarah.demo@arch9.co.za\n\nPurchase support active\n\nOpen Documents\nMessage\nFinance\n\nBuyer Workspace\n\nPine Avenue Apartments\n\nUnit 4\n\nACTION REQUIRED\n\nCURRENT PURCHASE STAGE\n\nFinance\n\nNext milestone: Transfer Preparation\n\nPURCHASE PRICE\nR 2 850 000\nACTIVE FOR\n40 days\nUPDATED\n06 Jul 2026\n50%\nCOMPLETE\nBuyer Actions\n\nThe purchase items that may unblock finance, transfer, or handover.\n\n1 need action\nBLOCKING\nDue 10 Jul 2026\nUpload the latest payslip\n\nThe bond originator needs one updated payslip before submitting the application pack.\n\nOpen Documents\nNORMAL\nDue 08 Jul 2026\nConfirm bond readiness call\n\nA short call is scheduled to confirm finance preferences and bank choices.\n\nView Appointment\nPurchase Dashboard\n\nDocuments, finance, appointments, handover, and snags at a glance.\n\n5 areas\n\nPURCHASE DOCS\n\n3 required\n\nBuyer uploads needed\n\nPURCHASE FINANCE\n\nBond\n\nFinance workspace\n\nBUYER MEETINGS\n\nNone\n\nNo meeting scheduled\n\nKEY HANDOVER\n\nIn Progress\n\nAwaiting key date\n\nSNAG LIST\n\n0 open\n\n0 resolved\n\nYour Purchase Journey\n\nFollow reservation, OTP, finance, transfer, registration, and handover.\n\n50% complete\nReservation / Deposit\nOffer Accepted\nOTP\nFinance\nCurrent\nTransfer Preparation\nTransfer / Registration\n\nCurrent milestone: Finance. Next milestone: Transfer Preparation.\n\nOpen Documents\nPurchase Updates\n\n1 update need your attention.\n\n2 UPDATES\nArch9 Team\nARCH9 SYSTEM\n\n7/6/2026, 11:30:00 AM\n\nBond package in progress\n\nYour bond originator is waiting for the latest payslip before sending the application pack to the banks.\n\nArch9 Team\nARCH9 SYSTEM\n\n7/6/2026, 11:05:00 AM\n\nOTP shared\n\nThe draft Offer to Purchase is available in your documents area.\n\nASK YOUR TEAM\nSend Message\nBond Application\n\nYour finance application details are being prepared and submitted.\n\nThis includes personal/business affordability details and bank submission packs.\n\nWHAT YOU NEED TO DO\n\nComplete bond form sections and upload requested financial documents.\n\nWHAT HAPPEN",
+    "headings": [
+      {
+        "tag": "H2",
+        "text": "Pine Avenue Apartments"
+      },
+      {
+        "tag": "H3",
+        "text": "Purchase timeline"
+      },
+      {
+        "tag": "H3",
+        "text": "Upload the latest payslip"
+      },
+      {
+        "tag": "H3",
+        "text": "Transfer Preparation"
+      },
+      {
+        "tag": "H3",
+        "text": "Purchase updates"
+      },
+      {
+        "tag": "H1",
+        "text": "Arch9"
+      },
+      {
+        "tag": "H1",
+        "text": "Welcome, Mia."
+      },
+      {
+        "tag": "H2",
+        "text": "Pine Avenue Apartments"
+      },
+      {
+        "tag": "H2",
+        "text": "Buyer Actions"
+      },
+      {
+        "tag": "H3",
+        "text": "Upload the latest payslip"
+      },
+      {
+        "tag": "H3",
+        "text": "Confirm bond readiness call"
+      },
+      {
+        "tag": "H2",
+        "text": "Purchase Dashboard"
+      },
+      {
+        "tag": "H2",
+        "text": "Your Purchase Journey"
+      },
+      {
+        "tag": "H3",
+        "text": "Purchase Updates"
+      },
+      {
+        "tag": "H2",
+        "text": "Bond Application"
+      },
+      {
+        "tag": "H3",
+        "text": "Reservation Deposit Required"
+      }
+    ],
+    "links": [
+      {
+        "tag": "A",
+        "text": "Contact team",
+        "href": "/client/demo-buyer-portal/team",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Call team",
+        "href": "tel:+27 21 555 0100",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "BUTTON",
+        "text": "View Reservation / Deposit",
+        "href": null,
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "BUTTON",
+        "text": "Reservation / Deposit",
+        "href": null,
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "BUTTON",
+        "text": "View Offer Accepted",
+        "href": null,
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "BUTTON",
+        "text": "Offer Accepted",
+        "href": null,
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "BUTTON",
+        "text": "View OTP",
+        "href": null,
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "BUTTON",
+        "text": "OTP",
+        "href": null,
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "BUTTON",
+        "text": "4",
+        "href": null,
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "BUTTON",
+        "text": "Finance",
+        "href": null,
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "BUTTON",
+        "text": "5",
+        "href": null,
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "BUTTON",
+        "text": "Transfer Preparation",
+        "href": null,
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "BUTTON",
+        "text": "6",
+        "href": null,
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "BUTTON",
+        "text": "Transfer / Registration",
+        "href": null,
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "View tasks",
+        "href": "/client/demo-buyer-portal/progress",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Open Documents",
+        "href": "/client/demo-buyer-portal/documents",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Purchase Docs3 requiredBuyer uploads neededView documents",
+        "href": "/client/demo-buyer-portal/documents",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Purchase FinanceBondFinance workspaceView finance",
+        "href": "/client/demo-buyer-portal/bond-application",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "View progress",
+        "href": "/client/demo-buyer-portal/progress",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Home",
+        "href": "/client/demo-buyer-portal",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Tasks",
+        "href": "/client/demo-buyer-portal/progress",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Documents",
+        "href": "/client/demo-buyer-portal/documents",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Finance",
+        "href": "/client/demo-buyer-portal/bond-application",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Team",
+        "href": "/client/demo-buyer-portal/team",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "SELECT",
+        "text": "Buying Selling (Request access)",
+        "href": null,
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 33,
+          "y": 158,
+          "w": 214,
+          "h": 37
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Overview",
+        "href": "/client/demo-buyer-portal",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 20,
+          "y": 262,
+          "w": 240,
+          "h": 44
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Progress",
+        "href": "/client/demo-buyer-portal/progress",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 20,
+          "y": 351,
+          "w": 240,
+          "h": 44
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Appointments",
+        "href": "/client/demo-buyer-portal/appointments",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 20,
+          "y": 399,
+          "w": 240,
+          "h": 44
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Finance",
+        "href": "/client/demo-buyer-portal/bond-application",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 20,
+          "y": 447,
+          "w": 240,
+          "h": 44
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Documents 3 required",
+        "href": "/client/demo-buyer-portal/documents",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 20,
+          "y": 535,
+          "w": 240,
+          "h": 44
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Handover",
+        "href": "/client/demo-buyer-portal/handover",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 20,
+          "y": 583,
+          "w": 240,
+          "h": 44
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Snags 0 open",
+        "href": "/client/demo-buyer-portal/snags",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 20,
+          "y": 631,
+          "w": 240,
+          "h": 44
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Account",
+        "href": "/client/demo-buyer-portal/account",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 20,
+          "y": 720,
+          "w": 240,
+          "h": 44
+        }
+      },
+      {
+        "tag": "A",
+        "text": "My Details",
+        "href": "/client/demo-buyer-portal/details",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 20,
+          "y": 768,
+          "w": 240,
+          "h": 44
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Team",
+        "href": "/client/demo-buyer-portal/team",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 20,
+          "y": 816,
+          "w": 240,
+          "h": 44
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Message Team",
+        "href": "mailto:sarah.demo@arch9.co.za",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 33,
+          "y": 957,
+          "w": 214,
+          "h": 36
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Call Team",
+        "href": "tel:+27 21 555 0100",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 33,
+          "y": 1001,
+          "w": 214,
+          "h": 36
+        }
+      },
+      {
+        "tag": "SELECT",
+        "text": "BuyingSelling (Request access)",
+        "href": null,
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Overview",
+        "href": "/client/demo-buyer-portal",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Progress",
+        "href": "/client/demo-buyer-portal/progress",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Appointments",
+        "href": "/client/demo-buyer-portal/appointments",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "My Details",
+        "href": "/client/demo-buyer-portal/details",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Account",
+        "href": "/client/demo-buyer-portal/account",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Bond Application",
+        "href": "/client/demo-buyer-portal/bond-application",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Documents",
+        "href": "/client/demo-buyer-portal/documents",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Handover",
+        "href": "/client/demo-buyer-portal/handover",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Snags",
+        "href": "/client/demo-buyer-portal/snags",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Team",
+        "href": "/client/demo-buyer-portal/team",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Open Documents",
+        "href": "/client/demo-buyer-portal/documents",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 321,
+          "y": 390,
+          "w": 153,
+          "h": 56
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Message",
+        "href": "mailto:sarah.demo@arch9.co.za",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 482,
+          "y": 390,
+          "w": 155,
+          "h": 56
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Finance",
+        "href": "/client/demo-buyer-portal/bond-application",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 644,
+          "y": 390,
+          "w": 155,
+          "h": 56
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Open Documents",
+        "href": "/client/demo-buyer-portal/documents",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 342,
+          "y": 736,
+          "w": 150,
+          "h": 38
+        }
+      },
+      {
+        "tag": "A",
+        "text": "View Appointment",
+        "href": "/client/demo-buyer-portal/appointments",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 883,
+          "y": 712,
+          "w": 156,
+          "h": 38
+        }
+      },
+      {
+        "tag": "A",
+        "text": "PURCHASE DOCS 3 required Buyer uploads needed",
+        "href": "/client/demo-buyer-portal/documents",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 321,
+          "y": 931,
+          "w": 206,
+          "h": 140
+        }
+      },
+      {
+        "tag": "A",
+        "text": "PURCHASE FINANCE Bond Finance workspace",
+        "href": "/client/demo-buyer-portal/bond-application",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 539,
+          "y": 931,
+          "w": 206,
+          "h": 140
+        }
+      },
+      {
+        "tag": "A",
+        "text": "BUYER MEETINGS None No meeting scheduled",
+        "href": "/client/demo-buyer-portal/appointments",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 757,
+          "y": 931,
+          "w": 206,
+          "h": 140
+        }
+      },
+      {
+        "tag": "A",
+        "text": "KEY HANDOVER In Progress Awaiting key date",
+        "href": "/client/demo-buyer-portal/handover",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 975,
+          "y": 931,
+          "w": 206,
+          "h": 140
+        }
+      },
+      {
+        "tag": "A",
+        "text": "SNAG LIST 0 open 0 resolved",
+        "href": "/client/demo-buyer-portal/snags",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 1193,
+          "y": 931,
+          "w": 206,
+          "h": 140
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Open Documents",
+        "href": "/client/demo-buyer-portal/documents",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 342,
+          "y": 1467,
+          "w": 139,
+          "h": 20
+        }
+      },
+      {
+        "tag": "BUTTON",
+        "text": "Send Message",
+        "href": null,
+        "role": null,
+        "disabled": true,
+        "rect": {
+          "x": 1247,
+          "y": 1642,
+          "w": 131,
+          "h": 36
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Message Team",
+        "href": "mailto:sarah.demo@arch9.co.za",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 1117,
+          "y": 2433,
+          "w": 153,
+          "h": 38
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Call Team",
+        "href": "tel:+27 21 555 0100",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 1280,
+          "y": 2433,
+          "w": 119,
+          "h": 38
+        }
+      },
+      {
+        "tag": "BUTTON",
+        "text": "Upload proof of payment",
+        "href": null,
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 1108,
+          "y": 2731,
+          "w": 291,
+          "h": 42
+        }
+      }
+    ],
+    "tinyTargets": [
+      {
+        "tag": "SELECT",
+        "text": "Buying Selling (Request access)",
+        "href": null,
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 33,
+          "y": 158,
+          "w": 214,
+          "h": 37
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Message Team",
+        "href": "mailto:sarah.demo@arch9.co.za",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 33,
+          "y": 957,
+          "w": 214,
+          "h": 36
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Call Team",
+        "href": "tel:+27 21 555 0100",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 33,
+          "y": 1001,
+          "w": 214,
+          "h": 36
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Open Documents",
+        "href": "/client/demo-buyer-portal/documents",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 342,
+          "y": 736,
+          "w": 150,
+          "h": 38
+        }
+      },
+      {
+        "tag": "A",
+        "text": "View Appointment",
+        "href": "/client/demo-buyer-portal/appointments",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 883,
+          "y": 712,
+          "w": 156,
+          "h": 38
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Open Documents",
+        "href": "/client/demo-buyer-portal/documents",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 342,
+          "y": 1467,
+          "w": 139,
+          "h": 20
+        }
+      },
+      {
+        "tag": "BUTTON",
+        "text": "Send Message",
+        "href": null,
+        "role": null,
+        "disabled": true,
+        "rect": {
+          "x": 1247,
+          "y": 1642,
+          "w": 131,
+          "h": 36
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Message Team",
+        "href": "mailto:sarah.demo@arch9.co.za",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 1117,
+          "y": 2433,
+          "w": 153,
+          "h": 38
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Call Team",
+        "href": "tel:+27 21 555 0100",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 1280,
+          "y": 2433,
+          "w": 119,
+          "h": 38
+        }
+      }
+    ],
+    "horizontalOverflow": false,
+    "viewport": {
+      "w": 1440,
+      "h": 1000,
+      "scrollW": 1440,
+      "scrollH": 2826
+    },
+    "visibleTopText": [
+      "Arch9 Buyer Workspace WORKSPACE Buying Selling (Request access) HOME Overview YOUR PURCHASE Progress Appointments Finance PROPERTY Documents 3 required Handover Snags 0 open ACCOUNT Account My Details Team Need help? We'",
+      "MBuyer WorkspacePine Avenue ApartmentsUnit 4Action RequiredCurrent purchase stageFinanceNext milestone: Transfer Preparation50%CompletePurchase timelineR 2 850 000Reservation / DepositOffer AcceptedOTP4Finance5Transfer P",
+      "M",
+      "Buyer WorkspacePine Avenue ApartmentsUnit 4Action RequiredCurrent purchase stageFinanceNext milestone: Transfer Preparation50%Complete",
+      "Purchase timelineR 2 850 000Reservation / DepositOffer AcceptedOTP4Finance5Transfer Preparation6Transfer / RegistrationFinanceCurrent stepYour finance team coordinates lender submissions and tracks approval outcomes.Your",
+      "FinanceCurrent stepYour finance team coordinates lender submissions and tracks approval outcomes.Your buying team will guide this milestone.View tasks",
+      "Buyer action needed1 need actionUpload the latest payslipThe bond originator needs one updated payslip before submitting the application pack.Due 10 Jul 2026Open Documents",
+      "Purchase Docs3 requiredBuyer uploads neededView documentsPurchase FinanceBondFinance workspaceView financeNext milestoneTransfer PreparationYour finance team coordinates lender submissions and tracks approval outcomes.Af",
+      "Next milestoneTransfer PreparationYour finance team coordinates lender submissions and tracks approval outcomes.After your documents are uploaded, your team will review them for completeness.Any missing details will be r",
+      "Purchase updates2 items7/6/2026, 11:30:00 AMBond package in progressYour bond originator is waiting for the latest payslip before sending the application pack to the banks.7/6/2026, 11:05:00 AMOTP sharedThe draft Offer t",
+      "HomeTasksDocumentsFinanceTeam",
+      "HOME Overview YOUR PURCHASE Progress Appointments Finance PROPERTY Documents 3 required Handover Snags 0 open ACCOUNT Account My Details Team Need help? We're here for you. Message Team Call Team Arch9 Real Estate",
+      "OverviewProgressAppointmentsMy DetailsAccountBond ApplicationDocumentsHandoverSnagsTeam",
+      "Welcome, Mia. Your purchase is moving forward, with finance, transfer, and handover in one place. See what is needed from you, where the legal and finance work sits, and what happens before key collection. YOUR BUYING TE",
+      "Welcome, Mia. Your purchase is moving forward, with finance, transfer, and handover in one place. See what is needed from you, where the legal and finance work sits, and what happens before key collection. YOUR BUYING TE"
+    ]
+  },
+  "mobile": {
+    "screenshot": "/Users/alexanderlandman/the-it-guy/tmp/buyer-portal-ui-audit/mobile.png",
+    "url": "http://127.0.0.1:5174/client/demo-buyer-portal/buying",
+    "title": "Arch9 | Platform",
+    "overlay": false,
+    "bodyLength": 1395,
+    "bodyPreview": "M\n\nBuyer Workspace\n\nPine Avenue Apartments\n\nUnit 4\n\nACTION REQUIRED\n\nCURRENT PURCHASE STAGE\n\nFinance\n\nNext milestone: Transfer Preparation\n\n50%\nCOMPLETE\nPurchase timeline\nR 2 850 000\nReservation / Deposit\nOffer Accepted\nOTP\n4\nFinance\n5\nTransfer Preparation\n6\nTransfer / Registration\nFinance\nCURRENT STEP\n\nYour finance team coordinates lender submissions and tracks approval outcomes.\n\nYour buying team will guide this milestone.\n\nView tasks\n\nBUYER ACTION NEEDED\n\n1 NEED ACTION\nUpload the latest payslip\n\nThe bond originator needs one updated payslip before submitting the application pack.\n\nDue 10 Jul 2026\n\nOpen Documents\n\nPURCHASE DOCS\n\n3 required\nBuyer uploads needed\nView documents\n\nPURCHASE FINANCE\n\nBond\nFinance workspace\nView finance\n\nNEXT MILESTONE\n\nTransfer Preparation\n\nYour finance team coordinates lender submissions and tracks approval outcomes.\n\nAfter your documents are uploaded, your team will review them for completeness.\n\nAny missing details will be requested quickly so your file does not stall.\n\nOnce reviewed, your journey will move to Transfer Preparation.\n\nPurchase updates\n2 items\n7/6/2026, 11:30:00 AM\n\nBond package in progress\n\nYour bond originator is waiting for the latest payslip before sending the application pack to the banks.\n\n7/6/2026, 11:05:00 AM\n\nOTP shared\n\nThe draft Offer to Purchase is available in your documents area.\n\nHome\nTasks\nDocuments\nFinance\nTeam",
+    "headings": [
+      {
+        "tag": "H2",
+        "text": "Pine Avenue Apartments"
+      },
+      {
+        "tag": "H3",
+        "text": "Purchase timeline"
+      },
+      {
+        "tag": "H3",
+        "text": "Upload the latest payslip"
+      },
+      {
+        "tag": "H3",
+        "text": "Transfer Preparation"
+      },
+      {
+        "tag": "H3",
+        "text": "Purchase updates"
+      },
+      {
+        "tag": "H1",
+        "text": "Arch9"
+      },
+      {
+        "tag": "H1",
+        "text": "Welcome, Mia."
+      },
+      {
+        "tag": "H2",
+        "text": "Pine Avenue Apartments"
+      },
+      {
+        "tag": "H2",
+        "text": "Buyer Actions"
+      },
+      {
+        "tag": "H3",
+        "text": "Upload the latest payslip"
+      },
+      {
+        "tag": "H3",
+        "text": "Confirm bond readiness call"
+      },
+      {
+        "tag": "H2",
+        "text": "Purchase Dashboard"
+      },
+      {
+        "tag": "H2",
+        "text": "Your Purchase Journey"
+      },
+      {
+        "tag": "H3",
+        "text": "Purchase Updates"
+      },
+      {
+        "tag": "H2",
+        "text": "Bond Application"
+      },
+      {
+        "tag": "H3",
+        "text": "Reservation Deposit Required"
+      }
+    ],
+    "links": [
+      {
+        "tag": "A",
+        "text": "Contact team",
+        "href": "/client/demo-buyer-portal/team",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 226,
+          "y": 20,
+          "w": 44,
+          "h": 44
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Call team",
+        "href": "tel:+27 21 555 0100",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 278,
+          "y": 20,
+          "w": 44,
+          "h": 44
+        }
+      },
+      {
+        "tag": "BUTTON",
+        "text": "View Reservation / Deposit",
+        "href": null,
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 55,
+          "y": 522,
+          "w": 40,
+          "h": 40
+        }
+      },
+      {
+        "tag": "BUTTON",
+        "text": "Reservation / Deposit",
+        "href": null,
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 37,
+          "y": 570,
+          "w": 76,
+          "h": 32
+        }
+      },
+      {
+        "tag": "BUTTON",
+        "text": "View Offer Accepted",
+        "href": null,
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 143,
+          "y": 522,
+          "w": 40,
+          "h": 40
+        }
+      },
+      {
+        "tag": "BUTTON",
+        "text": "Offer Accepted",
+        "href": null,
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 125,
+          "y": 570,
+          "w": 76,
+          "h": 32
+        }
+      },
+      {
+        "tag": "BUTTON",
+        "text": "View OTP",
+        "href": null,
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 231,
+          "y": 522,
+          "w": 40,
+          "h": 40
+        }
+      },
+      {
+        "tag": "BUTTON",
+        "text": "OTP",
+        "href": null,
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 213,
+          "y": 570,
+          "w": 76,
+          "h": 16
+        }
+      },
+      {
+        "tag": "BUTTON",
+        "text": "4",
+        "href": null,
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 319,
+          "y": 522,
+          "w": 40,
+          "h": 40
+        }
+      },
+      {
+        "tag": "BUTTON",
+        "text": "Finance",
+        "href": null,
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 301,
+          "y": 570,
+          "w": 76,
+          "h": 16
+        }
+      },
+      {
+        "tag": "BUTTON",
+        "text": "5",
+        "href": null,
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 407,
+          "y": 522,
+          "w": 40,
+          "h": 40
+        }
+      },
+      {
+        "tag": "BUTTON",
+        "text": "Transfer Preparation",
+        "href": null,
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 389,
+          "y": 570,
+          "w": 76,
+          "h": 32
+        }
+      },
+      {
+        "tag": "BUTTON",
+        "text": "6",
+        "href": null,
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 495,
+          "y": 522,
+          "w": 40,
+          "h": 40
+        }
+      },
+      {
+        "tag": "BUTTON",
+        "text": "Transfer / Registration",
+        "href": null,
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 477,
+          "y": 570,
+          "w": 76,
+          "h": 32
+        }
+      },
+      {
+        "tag": "A",
+        "text": "View tasks",
+        "href": "/client/demo-buyer-portal/progress",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 118,
+          "y": 792,
+          "w": 218,
+          "h": 42
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Open Documents",
+        "href": "/client/demo-buyer-portal/documents",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 33,
+          "y": 1065,
+          "w": 324,
+          "h": 44
+        }
+      },
+      {
+        "tag": "A",
+        "text": "PURCHASE DOCS 3 required Buyer uploads needed View documents",
+        "href": "/client/demo-buyer-portal/documents",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 16,
+          "y": 1142,
+          "w": 173,
+          "h": 214
+        }
+      },
+      {
+        "tag": "A",
+        "text": "PURCHASE FINANCE Bond Finance workspace View finance",
+        "href": "/client/demo-buyer-portal/bond-application",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 201,
+          "y": 1142,
+          "w": 173,
+          "h": 214
+        }
+      },
+      {
+        "tag": "A",
+        "text": "View progress",
+        "href": "/client/demo-buyer-portal/progress",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 317,
+          "y": 1385,
+          "w": 40,
+          "h": 40
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Home",
+        "href": "/client/demo-buyer-portal",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 12,
+          "y": 775,
+          "w": 70,
+          "h": 58
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Tasks",
+        "href": "/client/demo-buyer-portal/progress",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 86,
+          "y": 775,
+          "w": 70,
+          "h": 58
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Documents",
+        "href": "/client/demo-buyer-portal/documents",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 160,
+          "y": 775,
+          "w": 70,
+          "h": 58
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Finance",
+        "href": "/client/demo-buyer-portal/bond-application",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 234,
+          "y": 775,
+          "w": 70,
+          "h": 58
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Team",
+        "href": "/client/demo-buyer-portal/team",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 308,
+          "y": 775,
+          "w": 70,
+          "h": 58
+        }
+      },
+      {
+        "tag": "SELECT",
+        "text": "BuyingSelling (Request access)",
+        "href": null,
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Overview",
+        "href": "/client/demo-buyer-portal",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Progress",
+        "href": "/client/demo-buyer-portal/progress",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Appointments",
+        "href": "/client/demo-buyer-portal/appointments",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Finance",
+        "href": "/client/demo-buyer-portal/bond-application",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Documents3 required",
+        "href": "/client/demo-buyer-portal/documents",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Handover",
+        "href": "/client/demo-buyer-portal/handover",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Snags0 open",
+        "href": "/client/demo-buyer-portal/snags",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Account",
+        "href": "/client/demo-buyer-portal/account",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "My Details",
+        "href": "/client/demo-buyer-portal/details",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Team",
+        "href": "/client/demo-buyer-portal/team",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Message Team",
+        "href": "mailto:sarah.demo@arch9.co.za",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Call Team",
+        "href": "tel:+27 21 555 0100",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "SELECT",
+        "text": "BuyingSelling (Request access)",
+        "href": null,
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Overview",
+        "href": "/client/demo-buyer-portal",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Progress",
+        "href": "/client/demo-buyer-portal/progress",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Appointments",
+        "href": "/client/demo-buyer-portal/appointments",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "My Details",
+        "href": "/client/demo-buyer-portal/details",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Account",
+        "href": "/client/demo-buyer-portal/account",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Bond Application",
+        "href": "/client/demo-buyer-portal/bond-application",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Documents",
+        "href": "/client/demo-buyer-portal/documents",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Handover",
+        "href": "/client/demo-buyer-portal/handover",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Snags",
+        "href": "/client/demo-buyer-portal/snags",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Team",
+        "href": "/client/demo-buyer-portal/team",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Open Documents",
+        "href": "/client/demo-buyer-portal/documents",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Message",
+        "href": "mailto:sarah.demo@arch9.co.za",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Finance",
+        "href": "/client/demo-buyer-portal/bond-application",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Open Documents",
+        "href": "/client/demo-buyer-portal/documents",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "View Appointment",
+        "href": "/client/demo-buyer-portal/appointments",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Purchase Docs3 requiredBuyer uploads needed",
+        "href": "/client/demo-buyer-portal/documents",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Purchase FinanceBondFinance workspace",
+        "href": "/client/demo-buyer-portal/bond-application",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Buyer MeetingsNoneNo meeting scheduled",
+        "href": "/client/demo-buyer-portal/appointments",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Key HandoverIn ProgressAwaiting key date",
+        "href": "/client/demo-buyer-portal/handover",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Snag List0 open0 resolved",
+        "href": "/client/demo-buyer-portal/snags",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Open Documents",
+        "href": "/client/demo-buyer-portal/documents",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "BUTTON",
+        "text": "Send Message",
+        "href": null,
+        "role": null,
+        "disabled": true,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Message Team",
+        "href": "mailto:sarah.demo@arch9.co.za",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "A",
+        "text": "Call Team",
+        "href": "tel:+27 21 555 0100",
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      {
+        "tag": "BUTTON",
+        "text": "Upload proof of payment",
+        "href": null,
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      }
+    ],
+    "tinyTargets": [
+      {
+        "tag": "BUTTON",
+        "text": "Reservation / Deposit",
+        "href": null,
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 37,
+          "y": 570,
+          "w": 76,
+          "h": 32
+        }
+      },
+      {
+        "tag": "BUTTON",
+        "text": "Offer Accepted",
+        "href": null,
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 125,
+          "y": 570,
+          "w": 76,
+          "h": 32
+        }
+      },
+      {
+        "tag": "BUTTON",
+        "text": "OTP",
+        "href": null,
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 213,
+          "y": 570,
+          "w": 76,
+          "h": 16
+        }
+      },
+      {
+        "tag": "BUTTON",
+        "text": "Finance",
+        "href": null,
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 301,
+          "y": 570,
+          "w": 76,
+          "h": 16
+        }
+      },
+      {
+        "tag": "BUTTON",
+        "text": "Transfer Preparation",
+        "href": null,
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 389,
+          "y": 570,
+          "w": 76,
+          "h": 32
+        }
+      },
+      {
+        "tag": "BUTTON",
+        "text": "Transfer / Registration",
+        "href": null,
+        "role": null,
+        "disabled": false,
+        "rect": {
+          "x": 477,
+          "y": 570,
+          "w": 76,
+          "h": 32
+        }
+      }
+    ],
+    "horizontalOverflow": false,
+    "viewport": {
+      "w": 390,
+      "h": 844,
+      "scrollW": 390,
+      "scrollH": 2011
+    },
+    "visibleTopText": [
+      "M Buyer Workspace Pine Avenue Apartments Unit 4 ACTION REQUIRED CURRENT PURCHASE STAGE Finance Next milestone: Transfer Preparation 50% COMPLETE Purchase timeline R 2 850 000 Reservation / Deposit Offer Accepted OTP 4 Fi",
+      "M Buyer Workspace Pine Avenue Apartments Unit 4 ACTION REQUIRED CURRENT PURCHASE STAGE Finance Next milestone: Transfer Preparation 50% COMPLETE Purchase timeline R 2 850 000 Reservation / Deposit Offer Accepted OTP 4 Fi",
+      "M",
+      "Buyer Workspace Pine Avenue Apartments Unit 4 ACTION REQUIRED CURRENT PURCHASE STAGE Finance Next milestone: Transfer Preparation 50% COMPLETE",
+      "Purchase timeline R 2 850 000 Reservation / Deposit Offer Accepted OTP 4 Finance 5 Transfer Preparation 6 Transfer / Registration Finance CURRENT STEP Your finance team coordinates lender submissions and tracks approval ",
+      "Finance CURRENT STEP Your finance team coordinates lender submissions and tracks approval outcomes. Your buying team will guide this milestone. View tasks",
+      "BUYER ACTION NEEDED 1 NEED ACTION Upload the latest payslip The bond originator needs one updated payslip before submitting the application pack. Due 10 Jul 2026 Open Documents",
+      "PURCHASE DOCS 3 required Buyer uploads needed View documents PURCHASE FINANCE Bond Finance workspace View finance NEXT MILESTONE Transfer Preparation Your finance team coordinates lender submissions and tracks approval o",
+      "NEXT MILESTONE Transfer Preparation Your finance team coordinates lender submissions and tracks approval outcomes. After your documents are uploaded, your team will review them for completeness. Any missing details will ",
+      "Purchase updates 2 items 7/6/2026, 11:30:00 AM Bond package in progress Your bond originator is waiting for the latest payslip before sending the application pack to the banks. 7/6/2026, 11:05:00 AM OTP shared The draft ",
+      "Home Tasks Documents Finance Team",
+      "HomeOverviewYour PurchaseProgressAppointmentsFinancePropertyDocuments3 requiredHandoverSnags0 openAccountAccountMy DetailsTeamNeed help?We're here for you.Message TeamCall TeamArch9Real Estate",
+      "OverviewProgressAppointmentsMy DetailsAccountBond ApplicationDocumentsHandoverSnagsTeam",
+      "Welcome, Mia.Your purchase is moving forward, with finance, transfer, and handover in one place.See what is needed from you, where the legal and finance work sits, and what happens before key collection.Your buying teamS",
+      "Welcome, Mia.Your purchase is moving forward, with finance, transfer, and handover in one place.See what is needed from you, where the legal and finance work sits, and what happens before key collection.Your buying teamS"
+    ],
+    "firstControls": [
+      "Contact team",
+      "Call team",
+      "View Reservation / Deposit",
+      "Reservation / Deposit",
+      "View Offer Accepted",
+      "Offer Accepted",
+      "View OTP",
+      "OTP",
+      "4",
+      "Finance",
+      "5",
+      "Transfer Preparation",
+      "6",
+      "Transfer / Registration",
+      "View tasks",
+      "Open Documents",
+      "PURCHASE DOCS 3 required Buyer uploads needed View documents",
+      "PURCHASE FINANCE Bond Finance workspace View finance",
+      "View progress",
+      "Home",
+      "Tasks",
+      "Documents",
+      "Finance",
+      "Team",
+      "Overview",
+      "Progress",
+      "Appointments",
+      "Finance",
+      "Documents3 required",
+      "Handover",
+      "Snags0 open",
+      "Account",
+      "My Details",
+      "Team",
+      "Message Team",
+      "Call Team",
+      "Overview",
+      "Progress",
+      "Appointments",
+      "My Details",
+      "Account",
+      "Bond Application",
+      "Documents",
+      "Handover",
+      "Snags",
+      "Team",
+      "Open Documents",
+      "Message",
+      "Finance",
+      "Open Documents",
+      "View Appointment",
+      "Purchase Docs3 requiredBuyer uploads needed",
+      "Purchase FinanceBondFinance workspace",
+      "Buyer MeetingsNoneNo meeting scheduled",
+      "Key HandoverIn ProgressAwaiting key date",
+      "Snag List0 open0 resolved",
+      "Open Documents",
+      "Send Message",
+      "Message Team",
+      "Call Team"
+    ]
+  },
+  "interactions": [
+    {
+      "text": "Documents",
+      "found": true,
+      "before": "http://127.0.0.1:5174/client/demo-buyer-portal/buying",
+      "after": "http://127.0.0.1:5174/client/demo-buyer-portal/documents",
+      "bodyHasContent": true,
+      "error": null
+    },
+    {
+      "text": "Appointments",
+      "found": true,
+      "before": "http://127.0.0.1:5174/client/demo-buyer-portal/documents",
+      "after": "http://127.0.0.1:5174/client/demo-buyer-portal/appointments",
+      "bodyHasContent": true,
+      "error": null
+    },
+    {
+      "text": "Progress",
+      "found": true,
+      "before": "http://127.0.0.1:5174/client/demo-buyer-portal/appointments",
+      "after": "http://127.0.0.1:5174/client/demo-buyer-portal/progress",
+      "bodyHasContent": true,
+      "error": null
+    },
+    {
+      "text": "Details",
+      "found": true,
+      "before": "http://127.0.0.1:5174/client/demo-buyer-portal/progress",
+      "after": "http://127.0.0.1:5174/client/demo-buyer-portal/details",
+      "bodyHasContent": true,
+      "error": null
+    },
+    {
+      "text": "Team",
+      "found": true,
+      "before": "http://127.0.0.1:5174/client/demo-buyer-portal/details",
+      "after": "http://127.0.0.1:5174/client/demo-buyer-portal/team",
+      "bodyHasContent": true,
+      "error": null
+    },
+    {
+      "text": "Settings",
+      "found": false,
+      "before": "http://127.0.0.1:5174/client/demo-buyer-portal/team",
+      "after": null,
+      "bodyHasContent": false,
+      "error": null
+    }
+  ],
+  "console": [
+    {
+      "label": "desktop",
+      "type": "warning",
+      "text": "GoTrueClient@sb-isdowlnollckzvltkasn-auth-token:1 (2.98.0) 2026-08-16T08:38:22.304Z Multiple GoTrueClient instances detected in the same browser context. It is not an error, but this should be avoided as it may produce undefined behavior when used concurrently under the same storage key."
+    },
+    {
+      "label": "desktop",
+      "type": "warning",
+      "text": "GoTrueClient@sb-isdowlnollckzvltkasn-auth-token:1 (2.98.0) 2026-08-16T08:38:31.193Z Multiple GoTrueClient instances detected in the same browser context. It is not an error, but this should be avoided as it may produce undefined behavior when used concurrently under the same storage key."
+    },
+    {
+      "label": "mobile",
+      "type": "warning",
+      "text": "GoTrueClient@sb-isdowlnollckzvltkasn-auth-token:1 (2.98.0) 2026-08-16T08:38:34.665Z Multiple GoTrueClient instances detected in the same browser context. It is not an error, but this should be avoided as it may produce undefined behavior when used concurrently under the same storage key."
+    }
+  ],
+  "pageErrors": []
+}

@@ -1,0 +1,277 @@
+[
+  {
+    "viewport": "desktop",
+    "route": "overview",
+    "path": "/client/demo-buyer-portal/buying",
+    "textLength": 1263,
+    "loadMs": 2599,
+    "visibleErrorText": false,
+    "failedRequests": [],
+    "badResponses": [],
+    "consoleWarnings": [],
+    "goTrueWarnings": 1,
+    "sample": "Arch9 Your purchase MODE Buying Selling (Request access) NOW 50% Finance Next: Transfer Preparation START Overview NEXT STEPS Progress Appointments Finance PROP"
+  },
+  {
+    "viewport": "desktop",
+    "route": "progress",
+    "path": "/client/demo-buyer-portal/progress",
+    "textLength": 1083,
+    "loadMs": 2232,
+    "visibleErrorText": false,
+    "failedRequests": [],
+    "badResponses": [],
+    "consoleWarnings": [],
+    "goTrueWarnings": 1,
+    "sample": "Arch9 Your purchase MODE Buying Selling (Request access) NOW 50% Finance Next: Transfer Preparation START Overview NEXT STEPS Progress Appointments Finance PROP"
+  },
+  {
+    "viewport": "desktop",
+    "route": "appointments",
+    "path": "/client/demo-buyer-portal/appointments",
+    "textLength": 577,
+    "loadMs": 2820,
+    "visibleErrorText": false,
+    "failedRequests": [],
+    "badResponses": [],
+    "consoleWarnings": [],
+    "goTrueWarnings": 1,
+    "sample": "Arch9 Your purchase MODE Buying Selling (Request access) NOW 50% Finance Next: Transfer Preparation START Overview NEXT STEPS Progress Appointments Finance PROP"
+  },
+  {
+    "viewport": "desktop",
+    "route": "documents",
+    "path": "/client/demo-buyer-portal/documents",
+    "textLength": 1657,
+    "loadMs": 2233,
+    "visibleErrorText": false,
+    "failedRequests": [],
+    "badResponses": [],
+    "consoleWarnings": [],
+    "goTrueWarnings": 1,
+    "sample": "Arch9 Your purchase MODE Buying Selling (Request access) NOW 50% Finance Next: Transfer Preparation START Overview NEXT STEPS Progress Appointments Finance PROP"
+  },
+  {
+    "viewport": "desktop",
+    "route": "details",
+    "path": "/client/demo-buyer-portal/details",
+    "textLength": 1721,
+    "loadMs": 2367,
+    "visibleErrorText": false,
+    "failedRequests": [],
+    "badResponses": [],
+    "consoleWarnings": [],
+    "goTrueWarnings": 1,
+    "sample": "Arch9 Your purchase MODE Buying Selling (Request access) NOW 50% Finance Next: Transfer Preparation START Overview NEXT STEPS Progress Appointments Finance PROP"
+  },
+  {
+    "viewport": "desktop",
+    "route": "bond-application",
+    "path": "/client/demo-buyer-portal/bond-application",
+    "textLength": 865,
+    "loadMs": 2349,
+    "visibleErrorText": false,
+    "failedRequests": [],
+    "badResponses": [],
+    "consoleWarnings": [],
+    "goTrueWarnings": 1,
+    "sample": "Arch9 Your purchase MODE Buying Selling (Request access) NOW 50% Finance Next: Transfer Preparation START Overview NEXT STEPS Progress Appointments Finance PROP"
+  },
+  {
+    "viewport": "desktop",
+    "route": "team",
+    "path": "/client/demo-buyer-portal/team",
+    "textLength": 724,
+    "loadMs": 2352,
+    "visibleErrorText": false,
+    "failedRequests": [],
+    "badResponses": [],
+    "consoleWarnings": [],
+    "goTrueWarnings": 1,
+    "sample": "Arch9 Your purchase MODE Buying Selling (Request access) NOW 50% Finance Next: Transfer Preparation START Overview NEXT STEPS Progress Appointments Finance PROP"
+  },
+  {
+    "viewport": "desktop",
+    "route": "handover",
+    "path": "/client/demo-buyer-portal/handover",
+    "textLength": 3382,
+    "loadMs": 2321,
+    "visibleErrorText": false,
+    "failedRequests": [],
+    "badResponses": [],
+    "consoleWarnings": [],
+    "goTrueWarnings": 1,
+    "sample": "Arch9 Your purchase MODE Buying Selling (Request access) NOW 50% Finance Next: Transfer Preparation START Overview NEXT STEPS Progress Appointments Finance PROP"
+  },
+  {
+    "viewport": "desktop",
+    "route": "snags",
+    "path": "/client/demo-buyer-portal/snags",
+    "textLength": 858,
+    "loadMs": 2296,
+    "visibleErrorText": false,
+    "failedRequests": [],
+    "badResponses": [],
+    "consoleWarnings": [],
+    "goTrueWarnings": 1,
+    "sample": "Arch9 Your purchase MODE Buying Selling (Request access) NOW 50% Finance Next: Transfer Preparation START Overview NEXT STEPS Progress Appointments Finance PROP"
+  },
+  {
+    "viewport": "desktop",
+    "route": "settings",
+    "path": "/client/demo-buyer-portal/settings",
+    "textLength": 1316,
+    "loadMs": 3212,
+    "visibleErrorText": false,
+    "failedRequests": [],
+    "badResponses": [],
+    "consoleWarnings": [],
+    "goTrueWarnings": 1,
+    "sample": "Arch9 Your purchase MODE Buying Selling (Request access) NOW 50% Finance Next: Transfer Preparation START Overview NEXT STEPS Progress Appointments Finance PROP"
+  },
+  {
+    "viewport": "mobile",
+    "route": "overview",
+    "path": "/client/demo-buyer-portal/buying",
+    "textLength": 806,
+    "loadMs": 3206,
+    "visibleErrorText": false,
+    "failedRequests": [],
+    "badResponses": [],
+    "consoleWarnings": [],
+    "goTrueWarnings": 1,
+    "sample": "M Your purchase Pine Avenue Apartments Unit 4 ACTION NEEDED WHERE THINGS STAND Finance Next: Transfer Preparation 50% COMPLETE NEEDS YOUR ATTENTION 1 OPEN Uploa"
+  },
+  {
+    "viewport": "mobile",
+    "route": "progress",
+    "path": "/client/demo-buyer-portal/progress",
+    "textLength": 471,
+    "loadMs": 3466,
+    "visibleErrorText": false,
+    "failedRequests": [],
+    "badResponses": [],
+    "consoleWarnings": [],
+    "goTrueWarnings": 1,
+    "sample": "M PROGRESS Finance Reservation / Deposit Your reservation is captured and any required deposit is being confirmed. Offer Accepted Your accepted offer is confirm"
+  },
+  {
+    "viewport": "mobile",
+    "route": "appointments",
+    "path": "/client/demo-buyer-portal/appointments",
+    "textLength": 208,
+    "loadMs": 3425,
+    "visibleErrorText": false,
+    "failedRequests": [
+      {
+        "url": "https://fonts.gstatic.com/s/inter/v20/UcCB3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuLyfU5NJeWUdIOjBeTHFXZdND2MVsiEu.woff2",
+        "failure": "net::ERR_ABORTED"
+      }
+    ],
+    "badResponses": [
+      {
+        "status": 404,
+        "url": "https://fonts.gstatic.com/s/inter/v20/UcCB3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuLyfU5NJeWUdIOjBeTHFXZdND2MVsiEu.woff2"
+      }
+    ],
+    "consoleWarnings": [
+      {
+        "type": "error",
+        "text": "Failed to load resource: the server responded with a status of 404 ()"
+      }
+    ],
+    "goTrueWarnings": 1,
+    "sample": "M APPOINTMENTS No appointment scheduled Your team will schedule meetings when the next step needs one. UPCOMING 0 HISTORY 0 TEAM 4 No upcoming appointments are "
+  },
+  {
+    "viewport": "mobile",
+    "route": "documents",
+    "path": "/client/demo-buyer-portal/documents",
+    "textLength": 906,
+    "loadMs": 2813,
+    "visibleErrorText": false,
+    "failedRequests": [],
+    "badResponses": [],
+    "consoleWarnings": [],
+    "goTrueWarnings": 1,
+    "sample": "M DOCUMENTS 10 pending 10 purchase documents need action. Pending 10 Review 3 Approved 1 All 14 Proof of Income Upload required Latest payslip or income confirm"
+  },
+  {
+    "viewport": "mobile",
+    "route": "details",
+    "path": "/client/demo-buyer-portal/details",
+    "textLength": 1192,
+    "loadMs": 3007,
+    "visibleErrorText": false,
+    "failedRequests": [],
+    "badResponses": [],
+    "consoleWarnings": [],
+    "goTrueWarnings": 1,
+    "sample": "M MORE More options Contacts, appointments, key readiness, settings, and buyer tools are grouped here. Secure portal access This portal opens from your private "
+  },
+  {
+    "viewport": "mobile",
+    "route": "bond-application",
+    "path": "/client/demo-buyer-portal/bond-application",
+    "textLength": 289,
+    "loadMs": 3278,
+    "visibleErrorText": false,
+    "failedRequests": [],
+    "badResponses": [],
+    "consoleWarnings": [],
+    "goTrueWarnings": 1,
+    "sample": "M FINANCE Bond Finance and payment details will appear here once published. BALANCE Pending REQUESTS 0 UPDATES 0 No buyer account has been published yet. When y"
+  },
+  {
+    "viewport": "mobile",
+    "route": "team",
+    "path": "/client/demo-buyer-portal/team",
+    "textLength": 1192,
+    "loadMs": 2839,
+    "visibleErrorText": false,
+    "failedRequests": [],
+    "badResponses": [],
+    "consoleWarnings": [],
+    "goTrueWarnings": 1,
+    "sample": "M MORE More options Contacts, appointments, key readiness, settings, and buyer tools are grouped here. Secure portal access This portal opens from your private "
+  },
+  {
+    "viewport": "mobile",
+    "route": "handover",
+    "path": "/client/demo-buyer-portal/handover",
+    "textLength": 1192,
+    "loadMs": 2883,
+    "visibleErrorText": false,
+    "failedRequests": [],
+    "badResponses": [],
+    "consoleWarnings": [],
+    "goTrueWarnings": 1,
+    "sample": "M MORE More options Contacts, appointments, key readiness, settings, and buyer tools are grouped here. Secure portal access This portal opens from your private "
+  },
+  {
+    "viewport": "mobile",
+    "route": "snags",
+    "path": "/client/demo-buyer-portal/snags",
+    "textLength": 1192,
+    "loadMs": 3163,
+    "visibleErrorText": false,
+    "failedRequests": [],
+    "badResponses": [],
+    "consoleWarnings": [],
+    "goTrueWarnings": 1,
+    "sample": "M MORE More options Contacts, appointments, key readiness, settings, and buyer tools are grouped here. Secure portal access This portal opens from your private "
+  },
+  {
+    "viewport": "mobile",
+    "route": "settings",
+    "path": "/client/demo-buyer-portal/settings",
+    "textLength": 1192,
+    "loadMs": 2820,
+    "visibleErrorText": false,
+    "failedRequests": [],
+    "badResponses": [],
+    "consoleWarnings": [],
+    "goTrueWarnings": 1,
+    "sample": "M MORE More options Contacts, appointments, key readiness, settings, and buyer tools are grouped here. Secure portal access This portal opens from your private "
+  }
+]

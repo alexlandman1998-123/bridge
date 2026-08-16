@@ -1,0 +1,1689 @@
+{
+  "phase": "document_request_phase5_seller_cleanup",
+  "generatedAt": "2026-08-16T17:31:35.202Z",
+  "commit": false,
+  "mutatedData": false,
+  "strict": false,
+  "version": "seller_document_canonical_cleanup_v1",
+  "scenarioCount": 11,
+  "summary": {
+    "unmappedCount": 0,
+    "professionalOnlyLegacyCount": 0,
+    "missingCoveredByCanonicalPlanCount": 49,
+    "pendingPolicyLegacyCount": 0,
+    "duplicateCanonicalGroupCount": 9,
+    "deferredSellerUploadCount": 0
+  },
+  "results": [
+    {
+      "id": "individual_freehold",
+      "label": "Individual seller, freehold residential",
+      "profile": {
+        "version": "seller_document_canonical_cleanup_v1",
+        "sellerType": "individual",
+        "sellerBranch": "individual",
+        "propertyBranch": "residential",
+        "propertyStructureType": "other",
+        "bondStatus": "unknown",
+        "occupancyStatus": "unknown",
+        "scenario": {
+          "sellerEntityType": "individual",
+          "sellerMaritalRegime": "single",
+          "propertyType": "residential",
+          "propertyTriggers": [
+            "residential",
+            "other",
+            "freehold",
+            "identity_documents",
+            "proof_of_address",
+            "signed_mandate",
+            "title_deed_copy",
+            "rates_account",
+            "property_condition_disclosure"
+          ],
+          "sellerHasExistingBond": false,
+          "financeType": "cash"
+        },
+        "legacyRequirementCount": 7,
+        "mappedRequirementCount": 7,
+        "sellerClientUploadCount": 7,
+        "requestableSellerClientUploadCount": 7,
+        "canonicalPlanRequestCount": 10,
+        "canonicalPlanRequestableCount": 10,
+        "unmappedRows": [],
+        "professionalOnlyLegacyRows": [],
+        "pendingPolicyLegacyRows": [],
+        "deferredLegacyRows": [],
+        "duplicateCanonicalGroups": [],
+        "missingFromLegacyButCoveredByCanonicalPlan": [
+          "rates_clearance",
+          "seller_bank_account_confirmation",
+          "seller_tax_number",
+          "electrical_compliance_certificate"
+        ],
+        "extraLegacyKeysOutsideSellerUpload": [],
+        "sellerClientUploadKeys": [
+          "signed_mandate",
+          "property_condition_disclosure",
+          "seller_fica_pack",
+          "title_deed_copy",
+          "rates_account",
+          "seller_id_document",
+          "seller_proof_of_address"
+        ],
+        "requestableSellerClientUploadKeys": [
+          "signed_mandate",
+          "property_condition_disclosure",
+          "seller_fica_pack",
+          "title_deed_copy",
+          "rates_account",
+          "seller_id_document",
+          "seller_proof_of_address"
+        ],
+        "canonicalPlanKeys": [
+          "seller_fica_pack",
+          "rates_clearance",
+          "seller_id_document",
+          "seller_proof_of_address",
+          "title_deed_copy",
+          "rates_account",
+          "property_condition_disclosure",
+          "seller_bank_account_confirmation",
+          "seller_tax_number",
+          "electrical_compliance_certificate"
+        ],
+        "canonicalPlanRequestableKeys": [
+          "seller_fica_pack",
+          "rates_clearance",
+          "seller_id_document",
+          "seller_proof_of_address",
+          "title_deed_copy",
+          "rates_account",
+          "property_condition_disclosure",
+          "seller_bank_account_confirmation",
+          "seller_tax_number",
+          "electrical_compliance_certificate"
+        ],
+        "containerSummary": {
+          "total": 10,
+          "canonicalRequired": 10,
+          "additionalRequests": 0,
+          "blocking": 10,
+          "uploaded": 0,
+          "byRequestedFrom": {
+            "seller": 10
+          },
+          "byAudience": {
+            "agent": 10,
+            "attorney": 10,
+            "internal": 10,
+            "seller": 10
+          },
+          "byStatus": {
+            "required": 10
+          }
+        }
+      }
+    },
+    {
+      "id": "married_cop_existing_bond",
+      "label": "Married COP seller with existing bond",
+      "profile": {
+        "version": "seller_document_canonical_cleanup_v1",
+        "sellerType": "individual",
+        "sellerBranch": "married",
+        "propertyBranch": "residential",
+        "propertyStructureType": "other",
+        "bondStatus": "bonded",
+        "occupancyStatus": "unknown",
+        "scenario": {
+          "sellerEntityType": "individual",
+          "sellerMaritalRegime": "married_in_community",
+          "propertyType": "residential",
+          "propertyTriggers": [
+            "residential",
+            "other",
+            "freehold",
+            "identity_documents",
+            "proof_of_address",
+            "signed_mandate",
+            "marriage_certificate",
+            "spouse_consent",
+            "antenuptial_contract",
+            "title_deed_copy",
+            "rates_account",
+            "property_condition_disclosure"
+          ],
+          "sellerHasExistingBond": true,
+          "financeType": "cash"
+        },
+        "legacyRequirementCount": 14,
+        "mappedRequirementCount": 14,
+        "sellerClientUploadCount": 14,
+        "requestableSellerClientUploadCount": 14,
+        "canonicalPlanRequestCount": 14,
+        "canonicalPlanRequestableCount": 14,
+        "unmappedRows": [],
+        "professionalOnlyLegacyRows": [],
+        "pendingPolicyLegacyRows": [],
+        "deferredLegacyRows": [],
+        "duplicateCanonicalGroups": [
+          {
+            "canonicalKey": "bond_statement",
+            "legacyKeys": [
+              "bond_statement",
+              "bond_bank_details",
+              "bond_cancellation_attorney_details",
+              "settlement_figure"
+            ]
+          }
+        ],
+        "missingFromLegacyButCoveredByCanonicalPlan": [
+          "rates_clearance",
+          "seller_bank_account_confirmation",
+          "seller_tax_number",
+          "electrical_compliance_certificate"
+        ],
+        "extraLegacyKeysOutsideSellerUpload": [],
+        "sellerClientUploadKeys": [
+          "signed_mandate",
+          "property_condition_disclosure",
+          "seller_fica_pack",
+          "title_deed_copy",
+          "rates_account",
+          "seller_id_document",
+          "seller_proof_of_address",
+          "seller_marriage_certificate",
+          "seller_spouse_id_document",
+          "seller_spouse_consent",
+          "bond_statement"
+        ],
+        "requestableSellerClientUploadKeys": [
+          "signed_mandate",
+          "property_condition_disclosure",
+          "seller_fica_pack",
+          "title_deed_copy",
+          "rates_account",
+          "seller_id_document",
+          "seller_proof_of_address",
+          "seller_marriage_certificate",
+          "seller_spouse_id_document",
+          "seller_spouse_consent",
+          "bond_statement"
+        ],
+        "canonicalPlanKeys": [
+          "seller_fica_pack",
+          "rates_clearance",
+          "seller_id_document",
+          "seller_proof_of_address",
+          "seller_marriage_certificate",
+          "seller_spouse_id_document",
+          "seller_spouse_consent",
+          "title_deed_copy",
+          "rates_account",
+          "property_condition_disclosure",
+          "seller_bank_account_confirmation",
+          "seller_tax_number",
+          "bond_statement",
+          "electrical_compliance_certificate"
+        ],
+        "canonicalPlanRequestableKeys": [
+          "seller_fica_pack",
+          "rates_clearance",
+          "seller_id_document",
+          "seller_proof_of_address",
+          "seller_marriage_certificate",
+          "seller_spouse_id_document",
+          "seller_spouse_consent",
+          "title_deed_copy",
+          "rates_account",
+          "property_condition_disclosure",
+          "seller_bank_account_confirmation",
+          "seller_tax_number",
+          "bond_statement",
+          "electrical_compliance_certificate"
+        ],
+        "containerSummary": {
+          "total": 14,
+          "canonicalRequired": 14,
+          "additionalRequests": 0,
+          "blocking": 14,
+          "uploaded": 0,
+          "byRequestedFrom": {
+            "seller": 14
+          },
+          "byAudience": {
+            "agent": 14,
+            "attorney": 14,
+            "internal": 14,
+            "seller": 14
+          },
+          "byStatus": {
+            "required": 14
+          }
+        }
+      }
+    },
+    {
+      "id": "married_anc_sectional_title",
+      "label": "Married ANC seller, sectional title",
+      "profile": {
+        "version": "seller_document_canonical_cleanup_v1",
+        "sellerType": "individual",
+        "sellerBranch": "married",
+        "propertyBranch": "sectional_title",
+        "propertyStructureType": "other",
+        "bondStatus": "unknown",
+        "occupancyStatus": "unknown",
+        "scenario": {
+          "sellerEntityType": "individual",
+          "sellerMaritalRegime": "married_out_of_community",
+          "propertyType": "sectional_title",
+          "propertyTriggers": [
+            "sectional_title",
+            "other",
+            "residential",
+            "identity_documents",
+            "proof_of_address",
+            "signed_mandate",
+            "marriage_certificate",
+            "spouse_consent",
+            "antenuptial_contract",
+            "title_deed_copy",
+            "rates_account",
+            "property_condition_disclosure",
+            "sectional_levy_statement",
+            "body_corporate_details"
+          ],
+          "sellerHasExistingBond": false,
+          "financeType": "cash"
+        },
+        "legacyRequirementCount": 11,
+        "mappedRequirementCount": 11,
+        "sellerClientUploadCount": 11,
+        "requestableSellerClientUploadCount": 11,
+        "canonicalPlanRequestCount": 15,
+        "canonicalPlanRequestableCount": 15,
+        "unmappedRows": [],
+        "professionalOnlyLegacyRows": [],
+        "pendingPolicyLegacyRows": [],
+        "deferredLegacyRows": [],
+        "duplicateCanonicalGroups": [],
+        "missingFromLegacyButCoveredByCanonicalPlan": [
+          "rates_clearance",
+          "seller_spouse_id_document",
+          "seller_bank_account_confirmation",
+          "seller_tax_number",
+          "electrical_compliance_certificate"
+        ],
+        "extraLegacyKeysOutsideSellerUpload": [],
+        "sellerClientUploadKeys": [
+          "signed_mandate",
+          "property_condition_disclosure",
+          "seller_fica_pack",
+          "title_deed_copy",
+          "rates_account",
+          "seller_id_document",
+          "seller_proof_of_address",
+          "seller_marriage_certificate",
+          "seller_anc_document",
+          "levy_statement",
+          "body_corporate_details"
+        ],
+        "requestableSellerClientUploadKeys": [
+          "signed_mandate",
+          "property_condition_disclosure",
+          "seller_fica_pack",
+          "title_deed_copy",
+          "rates_account",
+          "seller_id_document",
+          "seller_proof_of_address",
+          "seller_marriage_certificate",
+          "seller_anc_document",
+          "levy_statement",
+          "body_corporate_details"
+        ],
+        "canonicalPlanKeys": [
+          "seller_fica_pack",
+          "rates_clearance",
+          "seller_id_document",
+          "seller_proof_of_address",
+          "seller_marriage_certificate",
+          "seller_spouse_id_document",
+          "seller_anc_document",
+          "title_deed_copy",
+          "rates_account",
+          "property_condition_disclosure",
+          "seller_bank_account_confirmation",
+          "seller_tax_number",
+          "electrical_compliance_certificate",
+          "levy_statement",
+          "body_corporate_details"
+        ],
+        "canonicalPlanRequestableKeys": [
+          "seller_fica_pack",
+          "rates_clearance",
+          "seller_id_document",
+          "seller_proof_of_address",
+          "seller_marriage_certificate",
+          "seller_spouse_id_document",
+          "seller_anc_document",
+          "title_deed_copy",
+          "rates_account",
+          "property_condition_disclosure",
+          "seller_bank_account_confirmation",
+          "seller_tax_number",
+          "electrical_compliance_certificate",
+          "levy_statement",
+          "body_corporate_details"
+        ],
+        "containerSummary": {
+          "total": 15,
+          "canonicalRequired": 15,
+          "additionalRequests": 0,
+          "blocking": 15,
+          "uploaded": 0,
+          "byRequestedFrom": {
+            "seller": 15
+          },
+          "byAudience": {
+            "agent": 15,
+            "attorney": 15,
+            "internal": 15,
+            "seller": 15
+          },
+          "byStatus": {
+            "required": 15
+          }
+        }
+      }
+    },
+    {
+      "id": "company_seller",
+      "label": "Company seller",
+      "profile": {
+        "version": "seller_document_canonical_cleanup_v1",
+        "sellerType": "company",
+        "sellerBranch": "company",
+        "propertyBranch": "residential",
+        "propertyStructureType": "other",
+        "bondStatus": "unknown",
+        "occupancyStatus": "unknown",
+        "scenario": {
+          "sellerEntityType": "company",
+          "sellerMaritalRegime": "single",
+          "propertyType": "residential",
+          "propertyTriggers": [
+            "residential",
+            "other",
+            "freehold",
+            "identity_documents",
+            "proof_of_address",
+            "signed_mandate",
+            "company_registration",
+            "company_resolution",
+            "director_identity",
+            "company_address_proof",
+            "title_deed_copy",
+            "rates_account",
+            "property_condition_disclosure"
+          ],
+          "sellerHasExistingBond": false,
+          "financeType": "cash"
+        },
+        "legacyRequirementCount": 11,
+        "mappedRequirementCount": 11,
+        "sellerClientUploadCount": 11,
+        "requestableSellerClientUploadCount": 11,
+        "canonicalPlanRequestCount": 12,
+        "canonicalPlanRequestableCount": 11,
+        "unmappedRows": [],
+        "professionalOnlyLegacyRows": [],
+        "pendingPolicyLegacyRows": [],
+        "deferredLegacyRows": [],
+        "duplicateCanonicalGroups": [
+          {
+            "canonicalKey": "seller_company_registration",
+            "legacyKeys": [
+              "company_registration",
+              "cipc_documents",
+              "company_address_proof"
+            ]
+          },
+          {
+            "canonicalKey": "seller_director_fica",
+            "legacyKeys": [
+              "director_member_ids",
+              "authorised_signatory_id"
+            ]
+          }
+        ],
+        "missingFromLegacyButCoveredByCanonicalPlan": [
+          "rates_clearance",
+          "seller_bank_account_confirmation",
+          "seller_tax_number",
+          "electrical_compliance_certificate"
+        ],
+        "extraLegacyKeysOutsideSellerUpload": [],
+        "sellerClientUploadKeys": [
+          "signed_mandate",
+          "property_condition_disclosure",
+          "seller_fica_pack",
+          "title_deed_copy",
+          "rates_account",
+          "seller_company_registration",
+          "seller_company_resolution",
+          "seller_director_fica"
+        ],
+        "requestableSellerClientUploadKeys": [
+          "signed_mandate",
+          "property_condition_disclosure",
+          "seller_fica_pack",
+          "title_deed_copy",
+          "rates_account",
+          "seller_company_registration",
+          "seller_company_resolution",
+          "seller_director_fica"
+        ],
+        "canonicalPlanKeys": [
+          "seller_fica_pack",
+          "rates_clearance",
+          "seller_company_registration",
+          "seller_company_resolution",
+          "seller_director_fica",
+          "seller_company_beneficial_ownership",
+          "title_deed_copy",
+          "rates_account",
+          "property_condition_disclosure",
+          "seller_bank_account_confirmation",
+          "seller_tax_number",
+          "electrical_compliance_certificate"
+        ],
+        "canonicalPlanRequestableKeys": [
+          "seller_fica_pack",
+          "rates_clearance",
+          "seller_company_registration",
+          "seller_company_resolution",
+          "seller_director_fica",
+          "title_deed_copy",
+          "rates_account",
+          "property_condition_disclosure",
+          "seller_bank_account_confirmation",
+          "seller_tax_number",
+          "electrical_compliance_certificate"
+        ],
+        "containerSummary": {
+          "total": 12,
+          "canonicalRequired": 12,
+          "additionalRequests": 0,
+          "blocking": 11,
+          "uploaded": 0,
+          "byRequestedFrom": {
+            "seller": 12
+          },
+          "byAudience": {
+            "agent": 12,
+            "attorney": 12,
+            "internal": 12,
+            "seller": 12
+          },
+          "byStatus": {
+            "required": 11,
+            "not_applicable": 1
+          }
+        }
+      }
+    },
+    {
+      "id": "trust_seller",
+      "label": "Trust seller",
+      "profile": {
+        "version": "seller_document_canonical_cleanup_v1",
+        "sellerType": "trust",
+        "sellerBranch": "trust",
+        "propertyBranch": "residential",
+        "propertyStructureType": "other",
+        "bondStatus": "unknown",
+        "occupancyStatus": "unknown",
+        "scenario": {
+          "sellerEntityType": "trust",
+          "sellerMaritalRegime": "single",
+          "propertyType": "residential",
+          "propertyTriggers": [
+            "residential",
+            "other",
+            "freehold",
+            "identity_documents",
+            "proof_of_address",
+            "signed_mandate",
+            "trust_deed",
+            "letters_of_authority",
+            "trustee_identity",
+            "trustee_resolution",
+            "title_deed_copy",
+            "rates_account",
+            "property_condition_disclosure"
+          ],
+          "sellerHasExistingBond": false,
+          "financeType": "cash"
+        },
+        "legacyRequirementCount": 10,
+        "mappedRequirementCount": 10,
+        "sellerClientUploadCount": 10,
+        "requestableSellerClientUploadCount": 10,
+        "canonicalPlanRequestCount": 13,
+        "canonicalPlanRequestableCount": 12,
+        "unmappedRows": [],
+        "professionalOnlyLegacyRows": [],
+        "pendingPolicyLegacyRows": [],
+        "deferredLegacyRows": [],
+        "duplicateCanonicalGroups": [
+          {
+            "canonicalKey": "seller_trustee_fica",
+            "legacyKeys": [
+              "trustee_ids",
+              "authorised_trustee_signatory_id"
+            ]
+          }
+        ],
+        "missingFromLegacyButCoveredByCanonicalPlan": [
+          "rates_clearance",
+          "seller_bank_account_confirmation",
+          "seller_tax_number",
+          "electrical_compliance_certificate"
+        ],
+        "extraLegacyKeysOutsideSellerUpload": [],
+        "sellerClientUploadKeys": [
+          "signed_mandate",
+          "property_condition_disclosure",
+          "seller_fica_pack",
+          "title_deed_copy",
+          "rates_account",
+          "seller_trust_deed",
+          "seller_letters_of_authority",
+          "seller_trustee_fica",
+          "seller_trustee_resolution"
+        ],
+        "requestableSellerClientUploadKeys": [
+          "signed_mandate",
+          "property_condition_disclosure",
+          "seller_fica_pack",
+          "title_deed_copy",
+          "rates_account",
+          "seller_trust_deed",
+          "seller_letters_of_authority",
+          "seller_trustee_fica",
+          "seller_trustee_resolution"
+        ],
+        "canonicalPlanKeys": [
+          "seller_fica_pack",
+          "rates_clearance",
+          "seller_trust_deed",
+          "seller_letters_of_authority",
+          "seller_trustee_resolution",
+          "seller_trustee_fica",
+          "seller_trust_beneficial_ownership",
+          "title_deed_copy",
+          "rates_account",
+          "property_condition_disclosure",
+          "seller_bank_account_confirmation",
+          "seller_tax_number",
+          "electrical_compliance_certificate"
+        ],
+        "canonicalPlanRequestableKeys": [
+          "seller_fica_pack",
+          "rates_clearance",
+          "seller_trust_deed",
+          "seller_letters_of_authority",
+          "seller_trustee_resolution",
+          "seller_trustee_fica",
+          "title_deed_copy",
+          "rates_account",
+          "property_condition_disclosure",
+          "seller_bank_account_confirmation",
+          "seller_tax_number",
+          "electrical_compliance_certificate"
+        ],
+        "containerSummary": {
+          "total": 13,
+          "canonicalRequired": 13,
+          "additionalRequests": 0,
+          "blocking": 12,
+          "uploaded": 0,
+          "byRequestedFrom": {
+            "seller": 13
+          },
+          "byAudience": {
+            "agent": 13,
+            "attorney": 13,
+            "internal": 13,
+            "seller": 13
+          },
+          "byStatus": {
+            "required": 12,
+            "not_applicable": 1
+          }
+        }
+      }
+    },
+    {
+      "id": "deceased_estate",
+      "label": "Deceased estate seller",
+      "profile": {
+        "version": "seller_document_canonical_cleanup_v1",
+        "sellerType": "deceased_estate",
+        "sellerBranch": "deceased_estate",
+        "propertyBranch": "residential",
+        "propertyStructureType": "other",
+        "bondStatus": "unknown",
+        "occupancyStatus": "unknown",
+        "scenario": {
+          "sellerEntityType": "deceased_estate",
+          "sellerMaritalRegime": "single",
+          "propertyType": "residential",
+          "propertyTriggers": [
+            "residential",
+            "other",
+            "freehold",
+            "identity_documents",
+            "proof_of_address",
+            "signed_mandate",
+            "estate_executorship",
+            "deceased_death_certificate",
+            "executor_identity",
+            "title_deed_copy",
+            "rates_account",
+            "property_condition_disclosure"
+          ],
+          "sellerHasExistingBond": false,
+          "financeType": "cash"
+        },
+        "legacyRequirementCount": 9,
+        "mappedRequirementCount": 9,
+        "sellerClientUploadCount": 9,
+        "requestableSellerClientUploadCount": 9,
+        "canonicalPlanRequestCount": 10,
+        "canonicalPlanRequestableCount": 10,
+        "unmappedRows": [],
+        "professionalOnlyLegacyRows": [],
+        "pendingPolicyLegacyRows": [],
+        "deferredLegacyRows": [],
+        "duplicateCanonicalGroups": [
+          {
+            "canonicalKey": "seller_executor_authority",
+            "legacyKeys": [
+              "seller_executor_authority",
+              "executor_id_document",
+              "deceased_death_certificate",
+              "estate_owner_details"
+            ]
+          }
+        ],
+        "missingFromLegacyButCoveredByCanonicalPlan": [
+          "rates_clearance",
+          "seller_bank_account_confirmation",
+          "seller_tax_number",
+          "electrical_compliance_certificate",
+          "hoa_levy_statement"
+        ],
+        "extraLegacyKeysOutsideSellerUpload": [],
+        "sellerClientUploadKeys": [
+          "signed_mandate",
+          "property_condition_disclosure",
+          "seller_fica_pack",
+          "title_deed_copy",
+          "rates_account",
+          "seller_executor_authority"
+        ],
+        "requestableSellerClientUploadKeys": [
+          "signed_mandate",
+          "property_condition_disclosure",
+          "seller_fica_pack",
+          "title_deed_copy",
+          "rates_account",
+          "seller_executor_authority"
+        ],
+        "canonicalPlanKeys": [
+          "seller_fica_pack",
+          "rates_clearance",
+          "seller_executor_authority",
+          "title_deed_copy",
+          "rates_account",
+          "property_condition_disclosure",
+          "seller_bank_account_confirmation",
+          "seller_tax_number",
+          "electrical_compliance_certificate",
+          "hoa_levy_statement"
+        ],
+        "canonicalPlanRequestableKeys": [
+          "seller_fica_pack",
+          "rates_clearance",
+          "seller_executor_authority",
+          "title_deed_copy",
+          "rates_account",
+          "property_condition_disclosure",
+          "seller_bank_account_confirmation",
+          "seller_tax_number",
+          "electrical_compliance_certificate",
+          "hoa_levy_statement"
+        ],
+        "containerSummary": {
+          "total": 10,
+          "canonicalRequired": 10,
+          "additionalRequests": 0,
+          "blocking": 10,
+          "uploaded": 0,
+          "byRequestedFrom": {
+            "seller": 10
+          },
+          "byAudience": {
+            "agent": 10,
+            "attorney": 10,
+            "internal": 10,
+            "seller": 10
+          },
+          "byStatus": {
+            "required": 10
+          }
+        }
+      }
+    },
+    {
+      "id": "power_of_attorney",
+      "label": "Seller represented by power of attorney",
+      "profile": {
+        "version": "seller_document_canonical_cleanup_v1",
+        "sellerType": "other_legal_entity",
+        "sellerBranch": "power_of_attorney",
+        "propertyBranch": "residential",
+        "propertyStructureType": "other",
+        "bondStatus": "unknown",
+        "occupancyStatus": "unknown",
+        "scenario": {
+          "sellerEntityType": "other_legal_entity",
+          "sellerMaritalRegime": "single",
+          "propertyType": "residential",
+          "propertyTriggers": [
+            "residential",
+            "other",
+            "freehold",
+            "identity_documents",
+            "proof_of_address",
+            "signed_mandate",
+            "power_of_attorney_document",
+            "principal_identity",
+            "title_deed_copy",
+            "rates_account",
+            "property_condition_disclosure"
+          ],
+          "sellerHasExistingBond": false,
+          "financeType": "cash"
+        },
+        "legacyRequirementCount": 6,
+        "mappedRequirementCount": 6,
+        "sellerClientUploadCount": 6,
+        "requestableSellerClientUploadCount": 6,
+        "canonicalPlanRequestCount": 10,
+        "canonicalPlanRequestableCount": 10,
+        "unmappedRows": [],
+        "professionalOnlyLegacyRows": [],
+        "pendingPolicyLegacyRows": [],
+        "deferredLegacyRows": [],
+        "duplicateCanonicalGroups": [],
+        "missingFromLegacyButCoveredByCanonicalPlan": [
+          "rates_clearance",
+          "seller_id_document",
+          "seller_proof_of_address",
+          "seller_bank_account_confirmation",
+          "seller_tax_number",
+          "electrical_compliance_certificate"
+        ],
+        "extraLegacyKeysOutsideSellerUpload": [],
+        "sellerClientUploadKeys": [
+          "signed_mandate",
+          "property_condition_disclosure",
+          "seller_fica_pack",
+          "title_deed_copy",
+          "rates_account",
+          "seller_power_of_attorney"
+        ],
+        "requestableSellerClientUploadKeys": [
+          "signed_mandate",
+          "property_condition_disclosure",
+          "seller_fica_pack",
+          "title_deed_copy",
+          "rates_account",
+          "seller_power_of_attorney"
+        ],
+        "canonicalPlanKeys": [
+          "seller_fica_pack",
+          "rates_clearance",
+          "seller_id_document",
+          "seller_proof_of_address",
+          "title_deed_copy",
+          "rates_account",
+          "property_condition_disclosure",
+          "seller_bank_account_confirmation",
+          "seller_tax_number",
+          "electrical_compliance_certificate"
+        ],
+        "canonicalPlanRequestableKeys": [
+          "seller_fica_pack",
+          "rates_clearance",
+          "seller_id_document",
+          "seller_proof_of_address",
+          "title_deed_copy",
+          "rates_account",
+          "property_condition_disclosure",
+          "seller_bank_account_confirmation",
+          "seller_tax_number",
+          "electrical_compliance_certificate"
+        ],
+        "containerSummary": {
+          "total": 10,
+          "canonicalRequired": 10,
+          "additionalRequests": 0,
+          "blocking": 10,
+          "uploaded": 0,
+          "byRequestedFrom": {
+            "seller": 10
+          },
+          "byAudience": {
+            "agent": 10,
+            "attorney": 10,
+            "internal": 10,
+            "seller": 10
+          },
+          "byStatus": {
+            "required": 10
+          }
+        }
+      }
+    },
+    {
+      "id": "tenant_occupied_estate",
+      "label": "Tenant-occupied estate / HOA property",
+      "profile": {
+        "version": "seller_document_canonical_cleanup_v1",
+        "sellerType": "individual",
+        "sellerBranch": "individual",
+        "propertyBranch": "estate_hoa",
+        "propertyStructureType": "other",
+        "bondStatus": "unknown",
+        "occupancyStatus": "tenant_occupied",
+        "scenario": {
+          "sellerEntityType": "individual",
+          "sellerMaritalRegime": "single",
+          "propertyType": "estate_hoa",
+          "propertyTriggers": [
+            "estate_hoa",
+            "other",
+            "estate",
+            "residential",
+            "identity_documents",
+            "proof_of_address",
+            "signed_mandate",
+            "title_deed_copy",
+            "rates_account",
+            "property_condition_disclosure",
+            "hoa_levy_statement",
+            "hoa_details",
+            "lease_agreement",
+            "tenant_details",
+            "rental_schedule",
+            "deposit_details",
+            "notice_period_details"
+          ],
+          "sellerHasExistingBond": false,
+          "financeType": "cash"
+        },
+        "legacyRequirementCount": 11,
+        "mappedRequirementCount": 11,
+        "sellerClientUploadCount": 11,
+        "requestableSellerClientUploadCount": 11,
+        "canonicalPlanRequestCount": 12,
+        "canonicalPlanRequestableCount": 12,
+        "unmappedRows": [],
+        "professionalOnlyLegacyRows": [],
+        "pendingPolicyLegacyRows": [],
+        "deferredLegacyRows": [],
+        "duplicateCanonicalGroups": [
+          {
+            "canonicalKey": "hoa_levy_statement",
+            "legacyKeys": [
+              "hoa_levy_statement",
+              "hoa_contact_details"
+            ]
+          },
+          {
+            "canonicalKey": "lease_agreement",
+            "legacyKeys": [
+              "lease_agreement",
+              "tenant_details"
+            ]
+          }
+        ],
+        "missingFromLegacyButCoveredByCanonicalPlan": [
+          "rates_clearance",
+          "seller_bank_account_confirmation",
+          "seller_tax_number",
+          "electrical_compliance_certificate"
+        ],
+        "extraLegacyKeysOutsideSellerUpload": [],
+        "sellerClientUploadKeys": [
+          "signed_mandate",
+          "property_condition_disclosure",
+          "seller_fica_pack",
+          "title_deed_copy",
+          "rates_account",
+          "seller_id_document",
+          "seller_proof_of_address",
+          "hoa_levy_statement",
+          "lease_agreement"
+        ],
+        "requestableSellerClientUploadKeys": [
+          "signed_mandate",
+          "property_condition_disclosure",
+          "seller_fica_pack",
+          "title_deed_copy",
+          "rates_account",
+          "seller_id_document",
+          "seller_proof_of_address",
+          "hoa_levy_statement",
+          "lease_agreement"
+        ],
+        "canonicalPlanKeys": [
+          "seller_fica_pack",
+          "rates_clearance",
+          "seller_id_document",
+          "seller_proof_of_address",
+          "title_deed_copy",
+          "rates_account",
+          "property_condition_disclosure",
+          "seller_bank_account_confirmation",
+          "seller_tax_number",
+          "electrical_compliance_certificate",
+          "hoa_levy_statement",
+          "lease_agreement"
+        ],
+        "canonicalPlanRequestableKeys": [
+          "seller_fica_pack",
+          "rates_clearance",
+          "seller_id_document",
+          "seller_proof_of_address",
+          "title_deed_copy",
+          "rates_account",
+          "property_condition_disclosure",
+          "seller_bank_account_confirmation",
+          "seller_tax_number",
+          "electrical_compliance_certificate",
+          "hoa_levy_statement",
+          "lease_agreement"
+        ],
+        "containerSummary": {
+          "total": 12,
+          "canonicalRequired": 12,
+          "additionalRequests": 0,
+          "blocking": 12,
+          "uploaded": 0,
+          "byRequestedFrom": {
+            "seller": 12
+          },
+          "byAudience": {
+            "agent": 12,
+            "attorney": 12,
+            "internal": 12,
+            "seller": 12
+          },
+          "byStatus": {
+            "required": 12
+          }
+        }
+      }
+    },
+    {
+      "id": "commercial_vat",
+      "label": "Commercial seller with VAT trigger",
+      "profile": {
+        "version": "seller_document_canonical_cleanup_v1",
+        "sellerType": "company",
+        "sellerBranch": "company",
+        "propertyBranch": "commercial",
+        "propertyStructureType": "other",
+        "bondStatus": "unknown",
+        "occupancyStatus": "unknown",
+        "scenario": {
+          "sellerEntityType": "company",
+          "sellerMaritalRegime": "single",
+          "propertyType": "commercial",
+          "propertyTriggers": [
+            "commercial",
+            "other",
+            "identity_documents",
+            "proof_of_address",
+            "signed_mandate",
+            "company_registration",
+            "company_resolution",
+            "director_identity",
+            "company_address_proof",
+            "title_deed_copy",
+            "rates_account",
+            "property_condition_disclosure",
+            "zoning_certificate",
+            "occupation_certificate",
+            "commercial_use_summary",
+            "vat_registration_certificate"
+          ],
+          "sellerHasExistingBond": false,
+          "financeType": "cash"
+        },
+        "legacyRequirementCount": 12,
+        "mappedRequirementCount": 12,
+        "sellerClientUploadCount": 12,
+        "requestableSellerClientUploadCount": 12,
+        "canonicalPlanRequestCount": 14,
+        "canonicalPlanRequestableCount": 13,
+        "unmappedRows": [],
+        "professionalOnlyLegacyRows": [],
+        "pendingPolicyLegacyRows": [],
+        "deferredLegacyRows": [],
+        "duplicateCanonicalGroups": [
+          {
+            "canonicalKey": "seller_company_registration",
+            "legacyKeys": [
+              "company_registration",
+              "cipc_documents",
+              "company_address_proof"
+            ]
+          },
+          {
+            "canonicalKey": "seller_director_fica",
+            "legacyKeys": [
+              "director_member_ids",
+              "authorised_signatory_id"
+            ]
+          }
+        ],
+        "missingFromLegacyButCoveredByCanonicalPlan": [
+          "rates_clearance",
+          "seller_bank_account_confirmation",
+          "seller_tax_number",
+          "electrical_compliance_certificate",
+          "vat_status_confirmation"
+        ],
+        "extraLegacyKeysOutsideSellerUpload": [],
+        "sellerClientUploadKeys": [
+          "signed_mandate",
+          "property_condition_disclosure",
+          "seller_fica_pack",
+          "title_deed_copy",
+          "rates_account",
+          "seller_company_registration",
+          "seller_company_resolution",
+          "seller_director_fica",
+          "zoning_certificate"
+        ],
+        "requestableSellerClientUploadKeys": [
+          "signed_mandate",
+          "property_condition_disclosure",
+          "seller_fica_pack",
+          "title_deed_copy",
+          "rates_account",
+          "seller_company_registration",
+          "seller_company_resolution",
+          "seller_director_fica",
+          "zoning_certificate"
+        ],
+        "canonicalPlanKeys": [
+          "seller_fica_pack",
+          "rates_clearance",
+          "seller_company_registration",
+          "seller_company_resolution",
+          "seller_director_fica",
+          "seller_company_beneficial_ownership",
+          "title_deed_copy",
+          "rates_account",
+          "property_condition_disclosure",
+          "seller_bank_account_confirmation",
+          "seller_tax_number",
+          "electrical_compliance_certificate",
+          "zoning_certificate",
+          "vat_status_confirmation"
+        ],
+        "canonicalPlanRequestableKeys": [
+          "seller_fica_pack",
+          "rates_clearance",
+          "seller_company_registration",
+          "seller_company_resolution",
+          "seller_director_fica",
+          "title_deed_copy",
+          "rates_account",
+          "property_condition_disclosure",
+          "seller_bank_account_confirmation",
+          "seller_tax_number",
+          "electrical_compliance_certificate",
+          "zoning_certificate",
+          "vat_status_confirmation"
+        ],
+        "containerSummary": {
+          "total": 14,
+          "canonicalRequired": 14,
+          "additionalRequests": 0,
+          "blocking": 13,
+          "uploaded": 0,
+          "byRequestedFrom": {
+            "seller": 14
+          },
+          "byAudience": {
+            "agent": 14,
+            "attorney": 14,
+            "internal": 14,
+            "seller": 14
+          },
+          "byStatus": {
+            "required": 13,
+            "not_applicable": 1
+          }
+        }
+      }
+    },
+    {
+      "id": "conditional_compliance",
+      "label": "Seller with conditional compliance documents",
+      "profile": {
+        "version": "seller_document_canonical_cleanup_v1",
+        "sellerType": "individual",
+        "sellerBranch": "individual",
+        "propertyBranch": "residential",
+        "propertyStructureType": "other",
+        "bondStatus": "unknown",
+        "occupancyStatus": "unknown",
+        "scenario": {
+          "sellerEntityType": "individual",
+          "sellerMaritalRegime": "single",
+          "propertyType": "residential",
+          "propertyTriggers": [
+            "residential",
+            "other",
+            "freehold",
+            "identity_documents",
+            "proof_of_address",
+            "signed_mandate",
+            "title_deed_copy",
+            "rates_account",
+            "property_condition_disclosure",
+            "water_installation_certificate",
+            "beetle_certificate",
+            "gas_compliance_certificate",
+            "solar_compliance_documents",
+            "electric_fence_certificate",
+            "alteration_approvals",
+            "approved_building_plans",
+            "occupation_certificate"
+          ],
+          "sellerHasExistingBond": false,
+          "financeType": "cash"
+        },
+        "legacyRequirementCount": 12,
+        "mappedRequirementCount": 12,
+        "sellerClientUploadCount": 12,
+        "requestableSellerClientUploadCount": 12,
+        "canonicalPlanRequestCount": 10,
+        "canonicalPlanRequestableCount": 10,
+        "unmappedRows": [],
+        "professionalOnlyLegacyRows": [],
+        "pendingPolicyLegacyRows": [],
+        "deferredLegacyRows": [],
+        "duplicateCanonicalGroups": [],
+        "missingFromLegacyButCoveredByCanonicalPlan": [
+          "rates_clearance",
+          "seller_bank_account_confirmation",
+          "seller_tax_number",
+          "electrical_compliance_certificate"
+        ],
+        "extraLegacyKeysOutsideSellerUpload": [],
+        "sellerClientUploadKeys": [
+          "signed_mandate",
+          "property_condition_disclosure",
+          "seller_fica_pack",
+          "title_deed_copy",
+          "rates_account",
+          "seller_id_document",
+          "seller_proof_of_address",
+          "gas_compliance_certificate",
+          "solar_compliance_documents",
+          "electric_fence_certificate",
+          "water_installation_certificate",
+          "beetle_certificate"
+        ],
+        "requestableSellerClientUploadKeys": [
+          "signed_mandate",
+          "property_condition_disclosure",
+          "seller_fica_pack",
+          "title_deed_copy",
+          "rates_account",
+          "seller_id_document",
+          "seller_proof_of_address",
+          "gas_compliance_certificate",
+          "solar_compliance_documents",
+          "electric_fence_certificate",
+          "water_installation_certificate",
+          "beetle_certificate"
+        ],
+        "canonicalPlanKeys": [
+          "seller_fica_pack",
+          "rates_clearance",
+          "seller_id_document",
+          "seller_proof_of_address",
+          "title_deed_copy",
+          "rates_account",
+          "property_condition_disclosure",
+          "seller_bank_account_confirmation",
+          "seller_tax_number",
+          "electrical_compliance_certificate"
+        ],
+        "canonicalPlanRequestableKeys": [
+          "seller_fica_pack",
+          "rates_clearance",
+          "seller_id_document",
+          "seller_proof_of_address",
+          "title_deed_copy",
+          "rates_account",
+          "property_condition_disclosure",
+          "seller_bank_account_confirmation",
+          "seller_tax_number",
+          "electrical_compliance_certificate"
+        ],
+        "containerSummary": {
+          "total": 10,
+          "canonicalRequired": 10,
+          "additionalRequests": 0,
+          "blocking": 10,
+          "uploaded": 0,
+          "byRequestedFrom": {
+            "seller": 10
+          },
+          "byAudience": {
+            "agent": 10,
+            "attorney": 10,
+            "internal": 10,
+            "seller": 10
+          },
+          "byStatus": {
+            "required": 10
+          }
+        }
+      }
+    },
+    {
+      "id": "stale_persisted_deferred_documents",
+      "label": "Seller with stale persisted acquisition / improvement rows",
+      "profile": {
+        "version": "seller_document_canonical_cleanup_v1",
+        "sellerType": "individual",
+        "sellerBranch": "individual",
+        "propertyBranch": "residential",
+        "propertyStructureType": "other",
+        "bondStatus": "unknown",
+        "occupancyStatus": "unknown",
+        "scenario": {
+          "sellerEntityType": "individual",
+          "sellerMaritalRegime": "single",
+          "propertyType": "residential",
+          "propertyTriggers": [
+            "residential",
+            "other",
+            "freehold",
+            "identity_documents",
+            "proof_of_address",
+            "signed_mandate",
+            "title_deed_copy",
+            "rates_account",
+            "property_condition_disclosure"
+          ],
+          "sellerHasExistingBond": false,
+          "financeType": "cash"
+        },
+        "legacyRequirementCount": 7,
+        "mappedRequirementCount": 7,
+        "sellerClientUploadCount": 7,
+        "requestableSellerClientUploadCount": 7,
+        "canonicalPlanRequestCount": 10,
+        "canonicalPlanRequestableCount": 10,
+        "unmappedRows": [],
+        "professionalOnlyLegacyRows": [],
+        "pendingPolicyLegacyRows": [],
+        "deferredLegacyRows": [],
+        "duplicateCanonicalGroups": [],
+        "missingFromLegacyButCoveredByCanonicalPlan": [
+          "rates_clearance",
+          "seller_bank_account_confirmation",
+          "seller_tax_number",
+          "electrical_compliance_certificate"
+        ],
+        "extraLegacyKeysOutsideSellerUpload": [],
+        "sellerClientUploadKeys": [
+          "signed_mandate",
+          "property_condition_disclosure",
+          "seller_fica_pack",
+          "title_deed_copy",
+          "rates_account",
+          "seller_id_document",
+          "seller_proof_of_address"
+        ],
+        "requestableSellerClientUploadKeys": [
+          "signed_mandate",
+          "property_condition_disclosure",
+          "seller_fica_pack",
+          "title_deed_copy",
+          "rates_account",
+          "seller_id_document",
+          "seller_proof_of_address"
+        ],
+        "canonicalPlanKeys": [
+          "seller_fica_pack",
+          "rates_clearance",
+          "seller_id_document",
+          "seller_proof_of_address",
+          "title_deed_copy",
+          "rates_account",
+          "property_condition_disclosure",
+          "seller_bank_account_confirmation",
+          "seller_tax_number",
+          "electrical_compliance_certificate"
+        ],
+        "canonicalPlanRequestableKeys": [
+          "seller_fica_pack",
+          "rates_clearance",
+          "seller_id_document",
+          "seller_proof_of_address",
+          "title_deed_copy",
+          "rates_account",
+          "property_condition_disclosure",
+          "seller_bank_account_confirmation",
+          "seller_tax_number",
+          "electrical_compliance_certificate"
+        ],
+        "containerSummary": {
+          "total": 10,
+          "canonicalRequired": 10,
+          "additionalRequests": 0,
+          "blocking": 10,
+          "uploaded": 0,
+          "byRequestedFrom": {
+            "seller": 10
+          },
+          "byAudience": {
+            "agent": 10,
+            "attorney": 10,
+            "internal": 10,
+            "seller": 10
+          },
+          "byStatus": {
+            "required": 10
+          }
+        }
+      }
+    }
+  ],
+  "unmapped": [],
+  "professionalOnly": [],
+  "missingCoveredByCanonicalPlan": [
+    {
+      "scenarioId": "individual_freehold",
+      "key": "rates_clearance"
+    },
+    {
+      "scenarioId": "individual_freehold",
+      "key": "seller_bank_account_confirmation"
+    },
+    {
+      "scenarioId": "individual_freehold",
+      "key": "seller_tax_number"
+    },
+    {
+      "scenarioId": "individual_freehold",
+      "key": "electrical_compliance_certificate"
+    },
+    {
+      "scenarioId": "married_cop_existing_bond",
+      "key": "rates_clearance"
+    },
+    {
+      "scenarioId": "married_cop_existing_bond",
+      "key": "seller_bank_account_confirmation"
+    },
+    {
+      "scenarioId": "married_cop_existing_bond",
+      "key": "seller_tax_number"
+    },
+    {
+      "scenarioId": "married_cop_existing_bond",
+      "key": "electrical_compliance_certificate"
+    },
+    {
+      "scenarioId": "married_anc_sectional_title",
+      "key": "rates_clearance"
+    },
+    {
+      "scenarioId": "married_anc_sectional_title",
+      "key": "seller_spouse_id_document"
+    },
+    {
+      "scenarioId": "married_anc_sectional_title",
+      "key": "seller_bank_account_confirmation"
+    },
+    {
+      "scenarioId": "married_anc_sectional_title",
+      "key": "seller_tax_number"
+    },
+    {
+      "scenarioId": "married_anc_sectional_title",
+      "key": "electrical_compliance_certificate"
+    },
+    {
+      "scenarioId": "company_seller",
+      "key": "rates_clearance"
+    },
+    {
+      "scenarioId": "company_seller",
+      "key": "seller_bank_account_confirmation"
+    },
+    {
+      "scenarioId": "company_seller",
+      "key": "seller_tax_number"
+    },
+    {
+      "scenarioId": "company_seller",
+      "key": "electrical_compliance_certificate"
+    },
+    {
+      "scenarioId": "trust_seller",
+      "key": "rates_clearance"
+    },
+    {
+      "scenarioId": "trust_seller",
+      "key": "seller_bank_account_confirmation"
+    },
+    {
+      "scenarioId": "trust_seller",
+      "key": "seller_tax_number"
+    },
+    {
+      "scenarioId": "trust_seller",
+      "key": "electrical_compliance_certificate"
+    },
+    {
+      "scenarioId": "deceased_estate",
+      "key": "rates_clearance"
+    },
+    {
+      "scenarioId": "deceased_estate",
+      "key": "seller_bank_account_confirmation"
+    },
+    {
+      "scenarioId": "deceased_estate",
+      "key": "seller_tax_number"
+    },
+    {
+      "scenarioId": "deceased_estate",
+      "key": "electrical_compliance_certificate"
+    },
+    {
+      "scenarioId": "deceased_estate",
+      "key": "hoa_levy_statement"
+    },
+    {
+      "scenarioId": "power_of_attorney",
+      "key": "rates_clearance"
+    },
+    {
+      "scenarioId": "power_of_attorney",
+      "key": "seller_id_document"
+    },
+    {
+      "scenarioId": "power_of_attorney",
+      "key": "seller_proof_of_address"
+    },
+    {
+      "scenarioId": "power_of_attorney",
+      "key": "seller_bank_account_confirmation"
+    },
+    {
+      "scenarioId": "power_of_attorney",
+      "key": "seller_tax_number"
+    },
+    {
+      "scenarioId": "power_of_attorney",
+      "key": "electrical_compliance_certificate"
+    },
+    {
+      "scenarioId": "tenant_occupied_estate",
+      "key": "rates_clearance"
+    },
+    {
+      "scenarioId": "tenant_occupied_estate",
+      "key": "seller_bank_account_confirmation"
+    },
+    {
+      "scenarioId": "tenant_occupied_estate",
+      "key": "seller_tax_number"
+    },
+    {
+      "scenarioId": "tenant_occupied_estate",
+      "key": "electrical_compliance_certificate"
+    },
+    {
+      "scenarioId": "commercial_vat",
+      "key": "rates_clearance"
+    },
+    {
+      "scenarioId": "commercial_vat",
+      "key": "seller_bank_account_confirmation"
+    },
+    {
+      "scenarioId": "commercial_vat",
+      "key": "seller_tax_number"
+    },
+    {
+      "scenarioId": "commercial_vat",
+      "key": "electrical_compliance_certificate"
+    },
+    {
+      "scenarioId": "commercial_vat",
+      "key": "vat_status_confirmation"
+    },
+    {
+      "scenarioId": "conditional_compliance",
+      "key": "rates_clearance"
+    },
+    {
+      "scenarioId": "conditional_compliance",
+      "key": "seller_bank_account_confirmation"
+    },
+    {
+      "scenarioId": "conditional_compliance",
+      "key": "seller_tax_number"
+    },
+    {
+      "scenarioId": "conditional_compliance",
+      "key": "electrical_compliance_certificate"
+    },
+    {
+      "scenarioId": "stale_persisted_deferred_documents",
+      "key": "rates_clearance"
+    },
+    {
+      "scenarioId": "stale_persisted_deferred_documents",
+      "key": "seller_bank_account_confirmation"
+    },
+    {
+      "scenarioId": "stale_persisted_deferred_documents",
+      "key": "seller_tax_number"
+    },
+    {
+      "scenarioId": "stale_persisted_deferred_documents",
+      "key": "electrical_compliance_certificate"
+    }
+  ],
+  "deferredSellerUploads": [],
+  "phase5Decisions": [
+    {
+      "key": "seller_portal_agent_workspace_alignment",
+      "decision": "Agent-upload and seller-portal seller documents are audited against the same canonical seller audience plan."
+    },
+    {
+      "key": "defer_acquisition_and_improvements",
+      "decision": "Original acquisition records and capital-improvement/CGT records are not seller upload requests at this phase unless legal policy explicitly enables them later."
+    },
+    {
+      "key": "professional_only_separation",
+      "decision": "Professional-only seller policy requests remain visible to attorney workflows, not as seller portal upload prompts."
+    }
+  ],
+  "gate": {
+    "status": "seller_cleanup_mapped_with_warnings",
+    "ok": true,
+    "mayProceedToPhase6": true,
+    "productionActivationReady": false,
+    "checks": [
+      {
+        "key": "seller_cleanup_service_exists",
+        "ok": true
+      },
+      {
+        "key": "seller_scenarios_cover_core_entities",
+        "ok": true
+      },
+      {
+        "key": "no_unmapped_seller_requirements",
+        "ok": true
+      },
+      {
+        "key": "deferred_acquisition_improvement_not_requested",
+        "ok": true
+      },
+      {
+        "key": "seller_portal_filters_deferred_uploads",
+        "ok": true
+      },
+      {
+        "key": "seller_containers_are_modelled",
+        "ok": true
+      }
+    ],
+    "failed": [],
+    "warnings": [
+      {
+        "code": "legacy_seller_generator_not_full_canonical_policy",
+        "message": "The legacy seller generator is mapped, but some canonical seller policy containers are not emitted by every seller scenario yet.",
+        "count": 49
+      },
+      {
+        "code": "legacy_rows_roll_up_to_parent_containers",
+        "message": "Some detailed seller rows roll up to one canonical parent container, such as company/trust FICA and bond-statement support rows.",
+        "count": 9
+      }
+    ]
+  }
+}

@@ -1697,6 +1697,57 @@ function formatStatusLabel(value) {
     .join(' ')
 }
 
+function getSellerPortalRecoveryStatusLabel(accessState = null) {
+  if (accessState?.linkActive === false) return 'Unavailable'
+  const recovery = accessState?.recovery || {}
+  const status = normalizeKey(recovery.status)
+  if (status === 'active') return recovery.expiresAt ? `Active until ${formatDateTime(recovery.expiresAt)}` : 'Active'
+  if (status === 'consumed') return recovery.consumedAt ? `Completed ${formatDateTime(recovery.consumedAt)}` : 'Completed'
+  if (status === 'expired') return 'Expired'
+  if (status === 'not_requested') return 'Not requested'
+  if (recovery.lastRequestedAt) return `Requested ${formatDateTime(recovery.lastRequestedAt)}`
+  return accessState?.passwordSet ? 'Available' : 'Not set'
+}
+
+const SELLER_ONBOARDING_EMAIL_COMMUNICATION_TYPES = new Set([
+  'seller_onboarding_link',
+  'seller_onboarding_link_seller',
+  'seller_portal_link_seller',
+  'seller_onboarding_submitted_agent',
+])
+
+function isSellerOnboardingEmailDelivery(row = {}) {
+  const communicationType = normalizeKey(row.communicationType || row.communication_type || row.type || row.notificationType || row.notification_type)
+  const channel = normalizeKey(row.channel || row.deliveryChannel || row.delivery_channel || row.mode || row.notificationMode || row.notification_mode)
+  if (!SELLER_ONBOARDING_EMAIL_COMMUNICATION_TYPES.has(communicationType)) return false
+  return !channel || channel === 'email'
+}
+
+function buildSellerOnboardingEmailDiagnostics(deliveries = []) {
+  const rows = (Array.isArray(deliveries) ? deliveries : [])
+    .filter(isSellerOnboardingEmailDelivery)
+    .sort((left, right) => {
+      const leftTime = new Date(left.createdAt || left.created_at || left.sentAt || left.sent_at || 0).getTime()
+      const rightTime = new Date(right.createdAt || right.created_at || right.sentAt || right.sent_at || 0).getTime()
+      return (Number.isFinite(rightTime) ? rightTime : 0) - (Number.isFinite(leftTime) ? leftTime : 0)
+    })
+  const failedRows = rows.filter((row) => ['failed', 'error', 'bounced'].includes(normalizeKey(row.status || row.deliveryStatus || row.delivery_status)))
+  const sentRows = rows.filter((row) => ['sent', 'delivered', 'queued'].includes(normalizeKey(row.status || row.deliveryStatus || row.delivery_status)))
+  const latestFailure = failedRows[0] || null
+  const latestFailureMessage = latestFailure
+    ? String(latestFailure.errorMessage || latestFailure.error_message || latestFailure.providerError || latestFailure.provider_error || latestFailure.failureReason || latestFailure.failure_reason || 'Email delivery needs attention.').trim()
+    : ''
+
+  return {
+    rows,
+    totalCount: rows.length,
+    sentCount: sentRows.length,
+    failedCount: failedRows.length,
+    pendingCount: Math.max(0, rows.length - sentRows.length - failedRows.length),
+    latestFailureMessage,
+  }
+}
+
 function statusClass(status) {
   const key = String(status || '').trim().toLowerCase()
   if (key === 'approved' || key === 'completed' || key === 'accepted' || key === 'delivered') return 'border-[#d8eddf] bg-[#ecfaf1] text-[#1f7d44]'
@@ -1774,6 +1825,15 @@ function CompactSnapshotRow({ label, value }) {
     <div className="grid grid-cols-[minmax(0,0.9fr)_minmax(0,1fr)] items-center gap-3 border-b border-[#edf2f7] py-2 last:border-b-0">
       <span className="min-w-0 text-[0.72rem] font-semibold leading-5 text-[#6b7d93]">{label}</span>
       <span className="min-w-0 break-words text-right text-[0.8rem] font-semibold leading-5 text-[#142132]">{value || '—'}</span>
+    </div>
+  )
+}
+
+function OverviewStatusRow({ label, value, status = '' }) {
+  return (
+    <div className="flex min-h-[34px] items-center justify-between gap-3 border-b border-[#edf2f7] py-1.5 last:border-b-0">
+      <span className="text-xs font-semibold text-[#6b7d93]">{label}</span>
+      {status ? <StatusPill status={status} label={value} /> : <span className="text-right text-xs font-semibold text-[#142132]">{value}</span>}
     </div>
   )
 }
@@ -3272,6 +3332,10 @@ function AgentListingDetail() {
     propertyShares: sentPropertyRows,
     communicationDeliveries: communicationDeliveryRows,
   }), [canonicalListingOffers, communicationDeliveryRows, interestedLeadRows, sentPropertyRows, viewings])
+  const sellerOnboardingEmailDiagnostics = useMemo(
+    () => buildSellerOnboardingEmailDiagnostics(communicationDeliveryRows),
+    [communicationDeliveryRows],
+  )
 
   useEffect(() => {
     if (!listingRecord) return
@@ -10763,18 +10827,40 @@ function AgentListingDetail() {
                   </div>
                   <p className="mt-4 text-sm font-semibold text-[#142132]">{overviewSellerSnapshot.name}</p>
                   <div className="mt-3 space-y-2">
-                    {[
-                      { label: 'Seller Portal', value: overviewSellerSnapshot.portalStatus, status: overviewSellerSnapshot.portalStatusKey },
-                      { label: 'FICA', value: overviewSellerSnapshot.ficaStatus, status: overviewSellerSnapshot.ficaStatusKey },
-                      { label: 'Mandate', value: overviewSellerSnapshot.mandateStatus, status: overviewSellerSnapshot.mandateStatusKey },
-                      { label: 'Mandate expiry', value: overviewSellerSnapshot.mandateExpiry },
-                      { label: 'Last contact', value: overviewSellerSnapshot.lastContact },
-                    ].map((row) => (
-                      <div key={row.label} className="flex min-h-[34px] items-center justify-between gap-3 border-b border-[#edf2f7] py-1.5 last:border-b-0">
-                        <span className="text-xs font-semibold text-[#6b7d93]">{row.label}</span>
-                        {row.status ? <StatusPill status={row.status} label={row.value} /> : <span className="text-right text-xs font-semibold text-[#142132]">{row.value}</span>}
+                    <OverviewStatusRow label="Seller Portal" value={overviewSellerSnapshot.portalStatus} status={overviewSellerSnapshot.portalStatusKey} />
+                    <OverviewStatusRow label="Recovery" value={getSellerPortalRecoveryStatusLabel(sellerPortalAccessState)} />
+                    <OverviewStatusRow label="FICA" value={overviewSellerSnapshot.ficaStatus} status={overviewSellerSnapshot.ficaStatusKey} />
+                    <OverviewStatusRow label="Mandate" value={overviewSellerSnapshot.mandateStatus} status={overviewSellerSnapshot.mandateStatusKey} />
+                    <OverviewStatusRow label="Mandate expiry" value={overviewSellerSnapshot.mandateExpiry} />
+                    <OverviewStatusRow label="Last contact" value={overviewSellerSnapshot.lastContact} />
+                  </div>
+                  <div className="mt-4 rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <h3 className="text-sm font-semibold text-[#142132]">Portal Security</h3>
+                      <StatusPill
+                        status={sellerPortalSecurityDiagnostics?.health || sellerPortalLifecycleStatus}
+                        label={formatStatusLabel(sellerPortalSecurityDiagnostics?.health || sellerPortalLifecycleStatus || 'unavailable')}
+                      />
+                    </div>
+                    <div className="mt-3 grid gap-2 text-xs leading-5 text-[#607387]">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="font-semibold text-[#6b7d93]">Failures (24h)</span>
+                        <span className="font-semibold text-[#142132]">
+                          {Number(
+                            sellerPortalSecurityDiagnostics?.authentication?.failedEvents24h ??
+                              sellerPortalSecurityDiagnostics?.failedEvents24h ??
+                              sellerPortalSecurityDiagnostics?.authentication?.failedLoginCount ??
+                              0,
+                          )}
+                        </span>
                       </div>
-                    ))}
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="font-semibold text-[#6b7d93]">Open alerts</span>
+                        <span className="font-semibold text-[#142132]">
+                          {`${sellerPortalSecurityDiagnostics?.openAlerts?.length || 0} open security alert${(sellerPortalSecurityDiagnostics?.openAlerts?.length || 0) === 1 ? '' : 's'}`}
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 </article>
 
@@ -11203,6 +11289,68 @@ function AgentListingDetail() {
                   </details>
                 </div>
               </div>
+
+              <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#6b7d93]">Seller Onboarding Email Diagnostics</p>
+                    <h3 className="mt-1 text-base font-semibold text-[#142132]">Delivery health</h3>
+                    <p className="mt-1 text-sm leading-6 text-[#607387]">
+                      Tracks seller onboarding link, seller portal link, and submitted-onboarding agent notification email rows for this listing.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <StatusPill status={sellerOnboardingEmailDiagnostics.failedCount ? 'failed' : sellerOnboardingEmailDiagnostics.totalCount ? 'sent' : 'pending'} label={sellerOnboardingEmailDiagnostics.failedCount ? 'Needs attention' : sellerOnboardingEmailDiagnostics.totalCount ? 'Tracked' : 'No rows'} />
+                  </div>
+                </div>
+                {sellerOnboardingEmailDiagnostics.totalCount ? (
+                  <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                    <MetricCard label="Tracked Rows" value={sellerOnboardingEmailDiagnostics.totalCount} meta="Seller onboarding emails" />
+                    <MetricCard label="Sent / Queued" value={sellerOnboardingEmailDiagnostics.sentCount} meta="Provider accepted rows" />
+                    <MetricCard label="Failures" value={sellerOnboardingEmailDiagnostics.failedCount} meta={sellerOnboardingEmailDiagnostics.latestFailureMessage ? `Latest failure: ${sellerOnboardingEmailDiagnostics.latestFailureMessage}` : 'No provider failure logged'} />
+                  </div>
+                ) : (
+                  <div className="mt-4 rounded-[16px] border border-dashed border-[#d3deea] bg-[#fbfcfe] p-4 text-sm text-[#607387]">
+                    No seller onboarding email delivery rows have been logged for this listing yet.
+                  </div>
+                )}
+                {sellerOnboardingEmailDiagnostics.latestFailureMessage ? (
+                  <p className="mt-3 text-xs font-semibold text-[#9a5b13]">Latest failure: {sellerOnboardingEmailDiagnostics.latestFailureMessage}</p>
+                ) : null}
+              </article>
+
+              <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#6b7d93]">Seller Mandate</p>
+                    <h3 className="mt-1 text-base font-semibold text-[#142132]">Mandate Continuity</h3>
+                    <p className="mt-1 text-sm leading-6 text-[#607387]">
+                      Confirms the signed mandate is connected across the listing, documents, seller portal and activity feed.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <StatusPill status={mandateContinuity.ready ? 'verified' : mandateContinuity.status} label={mandateContinuity.ready ? 'Verified' : mandateContinuity.status === 'warning' ? 'Warnings' : 'Needs attention'} />
+                  </div>
+                </div>
+
+                <div className="mt-4 grid gap-3 md:grid-cols-3">
+                  <MetricCard label="Packet" value={mandateContinuity.packetId || 'Not linked'} meta="Mandate packet ID" />
+                  <MetricCard label="Checks" value={`${mandateContinuity.summary.complete}/${mandateContinuity.summary.total}`} meta="Continuity checks complete" />
+                  <MetricCard label="Portal Invite" value={formatStatusLabel(mandateContinuity.portalInviteStatus || 'not_recorded')} meta={mandateContinuity.portalInviteDetail || 'Seller portal invite status'} />
+                </div>
+
+                <div className="mt-4 grid gap-2">
+                  {mandateContinuity.checks.map((check) => (
+                    <div key={check.key} className="flex flex-col gap-2 rounded-[14px] border border-[#e1e9f2] bg-[#fbfdff] px-3 py-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-[#243d56]">{check.label}</p>
+                        <p className="mt-1 text-xs leading-5 text-[#607387]">{check.detail}</p>
+                      </div>
+                      <StatusPill status={check.state === 'complete' ? 'verified' : check.state === 'not_applicable' ? 'pending' : check.state} label={check.state === 'complete' ? 'Done' : check.state === 'not_applicable' ? 'N/A' : check.state === 'warning' ? 'Warning' : 'Missing'} />
+                    </div>
+                  ))}
+                </div>
+              </article>
 
               {directListingOperationalSummary.hasIntake ? (
                 <article data-testid="direct-listing-operational-audit" className="rounded-[24px] border border-[#dbe6f2] bg-[#f7fbff] p-5 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">

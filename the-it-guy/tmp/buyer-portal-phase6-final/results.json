@@ -1,0 +1,302 @@
+{
+  "checkedAt": "2026-08-16T10:15:14.545Z",
+  "pass": true,
+  "results": [
+    {
+      "key": "documents-desktop",
+      "url": "http://127.0.0.1:5174/client/demo-buyer-portal/buying/documents",
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      },
+      "routePass": true,
+      "screenshotPath": "/Users/alexanderlandman/the-it-guy/the-it-guy/tmp/buyer-portal-phase6-final/documents-desktop.png",
+      "expandedScreenshotPath": null,
+      "consoleMessages": [
+        {
+          "type": "warning",
+          "text": "GoTrueClient@sb-isdowlnollckzvltkasn-auth-token:1 (2.98.0) 2026-08-16T10:14:51.395Z Multiple GoTrueClient instances detected in the same browser context. It is not an error, but this should be avoided as it may produce undefined behavior when used concurrently under the same storage key."
+        }
+      ],
+      "pageErrors": [],
+      "beforeClick": {
+        "title": "Arch9 | Platform",
+        "hasContent": true,
+        "textSample": "Arch9\n\nYour purchase\n\nMODE\nBuying\nSelling (Request access)\nNOW\n50%\n\nFinance\n\nNext: Transfer Preparation\n\nSTART\n\nOverview\n\nNEXT STEPS\n\nProgress\nAppointments\nFinance\n\nPROPERTY\n\nDocuments\n3 required\nKeys\nIssues\n0 open\n\nSUPPORT\n\nTeam\nAccount\nMy Details\n\nNeed help?\n\nSarah Williams\n\nMessage\nCall\n\nArch9\n\nReal Estate\n\nBUYER PORTAL\n\nDocuments\n\nUpload and track the documents needed for your purchase.\n\nUpload documents\n\nDOCUMENTS\n\n2 of 12 approved\n\n17% approved\n\n17% received · approval is required for completion.\n\nASSURANCE PROGRESS\n2 / 12\nOUTSTANDING\n\n10\n\nUPLOADED\n\n1\n\nUNDER REVIEW\n\n0\n\nAPPROVED\n\n1\n\nStill needed\n\nThese outstanding required documents are still blocking transaction progress.\n\nProof of Income\n\nReservation Deposit Proof of Payment\n\nSigned Offer to Purchase\n\nBuyer FICA Pack\n\nBuyer Proof of",
+        "errorOverlay": false,
+        "horizontalOverflow": false,
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "fixedInsetOverlay": false,
+        "advancedDocumentCopyPresent": false,
+        "buyerFinanceCopyPresent": false,
+        "financeLandingPresent": false,
+        "detailedFinancePresent": false,
+        "mobileFinancePresent": false,
+        "headings": [
+          "10 pending",
+          "Arch9",
+          "Documents",
+          "2 of 12 approved",
+          "Still needed",
+          "Status summary",
+          "Sales Documents"
+        ],
+        "navCurrent": [
+          "Documents",
+          "Documents\n3 required",
+          "Documents"
+        ]
+      },
+      "afterClick": null
+    },
+    {
+      "key": "finance-desktop",
+      "url": "http://127.0.0.1:5174/client/demo-buyer-portal/buying/bond_application",
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      },
+      "routePass": true,
+      "screenshotPath": "/Users/alexanderlandman/the-it-guy/the-it-guy/tmp/buyer-portal-phase6-final/finance-desktop.png",
+      "expandedScreenshotPath": "/Users/alexanderlandman/the-it-guy/the-it-guy/tmp/buyer-portal-phase6-final/finance-desktop-expanded.png",
+      "consoleMessages": [
+        {
+          "type": "warning",
+          "text": "GoTrueClient@sb-isdowlnollckzvltkasn-auth-token:1 (2.98.0) 2026-08-16T10:14:54.555Z Multiple GoTrueClient instances detected in the same browser context. It is not an error, but this should be avoided as it may produce undefined behavior when used concurrently under the same storage key."
+        }
+      ],
+      "pageErrors": [],
+      "beforeClick": {
+        "title": "Arch9 | Platform",
+        "hasContent": true,
+        "textSample": "Arch9\n\nYour purchase\n\nMODE\nBuying\nSelling (Request access)\nNOW\n50%\n\nFinance\n\nNext: Transfer Preparation\n\nSTART\n\nOverview\n\nNEXT STEPS\n\nProgress\nAppointments\nFinance\n\nPROPERTY\n\nDocuments\n3 required\nKeys\nIssues\n0 open\n\nSUPPORT\n\nTeam\nAccount\nMy Details\n\nNeed help?\n\nSarah Williams\n\nMessage\nCall\n\nArch9\n\nReal Estate\n\nFINANCE\nMia Khumalo\n\nUnit 4 • Pine Avenue Apartments\n\nPurchase price R 2 850 000\n\nNOT STARTED\nOverview\nAPPLICATION COMPLETION\n0%\nDocuments\nTeam Contacts\nFINANCE STATUS\nReady to start your bond application\n\nReview the basics here. Open the application only when you need to complete or check finance details.\n\nNOT STARTED\nCOMPLETION\n0%\n\n10 sections need review\n\nDOCUMENTS\n3\n\nFinance requirements\n\nOFFERS\n1\n\nPublished offers\n\nGRANT\n0\n\nNot uploaded yet\n\nNEXT\nContinue when you are ready\n\nThe",
+        "errorOverlay": false,
+        "horizontalOverflow": false,
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "fixedInsetOverlay": false,
+        "advancedDocumentCopyPresent": false,
+        "buyerFinanceCopyPresent": false,
+        "financeLandingPresent": true,
+        "detailedFinancePresent": false,
+        "mobileFinancePresent": false,
+        "headings": [
+          "Bond",
+          "Arch9",
+          "Mia Khumalo"
+        ],
+        "navCurrent": [
+          "Finance",
+          "Finance",
+          "Finance"
+        ]
+      },
+      "afterClick": {
+        "title": "Arch9 | Platform",
+        "hasContent": true,
+        "textSample": "Arch9\n\nYour purchase\n\nMODE\nBuying\nSelling (Request access)\nNOW\n50%\n\nFinance\n\nNext: Transfer Preparation\n\nSTART\n\nOverview\n\nNEXT STEPS\n\nProgress\nAppointments\nFinance\n\nPROPERTY\n\nDocuments\n3 required\nKeys\nIssues\n0 open\n\nSUPPORT\n\nTeam\nAccount\nMy Details\n\nNeed help?\n\nSarah Williams\n\nMessage\nCall\n\nArch9\n\nReal Estate\n\nFINANCE\nMia Khumalo\n\nUnit 4 • Pine Avenue Apartments\n\nPurchase price R 2 850 000\n\nNOT STARTED\nOverview\nAPPLICATION COMPLETION\n0%\nDocuments\nTeam Contacts\nFINANCE STATUS\nReady to start your bond application\n\nReview the basics here. Open the application only when you need to complete or check finance details.\n\nNOT STARTED\nCOMPLETION\n0%\n\n10 sections need review\n\nDOCUMENTS\n3\n\nFinance requirements\n\nOFFERS\n1\n\nPublished offers\n\nGRANT\n0\n\nNot uploaded yet\n\nNEXT\nContinue when you are ready\n\nThe",
+        "errorOverlay": false,
+        "horizontalOverflow": false,
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "fixedInsetOverlay": false,
+        "advancedDocumentCopyPresent": false,
+        "buyerFinanceCopyPresent": false,
+        "financeLandingPresent": false,
+        "detailedFinancePresent": true,
+        "mobileFinancePresent": false,
+        "headings": [
+          "Bond",
+          "Arch9",
+          "Mia Khumalo"
+        ],
+        "navCurrent": [
+          "Finance",
+          "Finance",
+          "Finance"
+        ]
+      }
+    },
+    {
+      "key": "finance-dash-desktop",
+      "url": "http://127.0.0.1:5174/client/demo-buyer-portal/buying/bond-application",
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      },
+      "routePass": true,
+      "screenshotPath": "/Users/alexanderlandman/the-it-guy/the-it-guy/tmp/buyer-portal-phase6-final/finance-dash-desktop.png",
+      "expandedScreenshotPath": null,
+      "consoleMessages": [
+        {
+          "type": "warning",
+          "text": "GoTrueClient@sb-isdowlnollckzvltkasn-auth-token:1 (2.98.0) 2026-08-16T10:15:00.376Z Multiple GoTrueClient instances detected in the same browser context. It is not an error, but this should be avoided as it may produce undefined behavior when used concurrently under the same storage key."
+        }
+      ],
+      "pageErrors": [],
+      "beforeClick": {
+        "title": "Arch9 | Platform",
+        "hasContent": true,
+        "textSample": "Arch9\n\nYour purchase\n\nMODE\nBuying\nSelling (Request access)\nNOW\n50%\n\nFinance\n\nNext: Transfer Preparation\n\nSTART\n\nOverview\n\nNEXT STEPS\n\nProgress\nAppointments\nFinance\n\nPROPERTY\n\nDocuments\n3 required\nKeys\nIssues\n0 open\n\nSUPPORT\n\nTeam\nAccount\nMy Details\n\nNeed help?\n\nSarah Williams\n\nMessage\nCall\n\nArch9\n\nReal Estate\n\nFINANCE\nMia Khumalo\n\nUnit 4 • Pine Avenue Apartments\n\nPurchase price R 2 850 000\n\nNOT STARTED\nOverview\nAPPLICATION COMPLETION\n0%\nDocuments\nTeam Contacts\nFINANCE STATUS\nReady to start your bond application\n\nReview the basics here. Open the application only when you need to complete or check finance details.\n\nNOT STARTED\nCOMPLETION\n0%\n\n10 sections need review\n\nDOCUMENTS\n3\n\nFinance requirements\n\nOFFERS\n1\n\nPublished offers\n\nGRANT\n0\n\nNot uploaded yet\n\nNEXT\nContinue when you are ready\n\nThe",
+        "errorOverlay": false,
+        "horizontalOverflow": false,
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "fixedInsetOverlay": false,
+        "advancedDocumentCopyPresent": false,
+        "buyerFinanceCopyPresent": false,
+        "financeLandingPresent": true,
+        "detailedFinancePresent": false,
+        "mobileFinancePresent": false,
+        "headings": [
+          "Bond",
+          "Arch9",
+          "Mia Khumalo"
+        ],
+        "navCurrent": [
+          "Finance",
+          "Finance",
+          "Finance"
+        ]
+      },
+      "afterClick": null
+    },
+    {
+      "key": "account-desktop",
+      "url": "http://127.0.0.1:5174/client/demo-buyer-portal/buying/account",
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      },
+      "routePass": true,
+      "screenshotPath": "/Users/alexanderlandman/the-it-guy/the-it-guy/tmp/buyer-portal-phase6-final/account-desktop.png",
+      "expandedScreenshotPath": null,
+      "consoleMessages": [
+        {
+          "type": "warning",
+          "text": "GoTrueClient@sb-isdowlnollckzvltkasn-auth-token:1 (2.98.0) 2026-08-16T10:15:04.276Z Multiple GoTrueClient instances detected in the same browser context. It is not an error, but this should be avoided as it may produce undefined behavior when used concurrently under the same storage key."
+        }
+      ],
+      "pageErrors": [],
+      "beforeClick": {
+        "title": "Arch9 | Platform",
+        "hasContent": true,
+        "textSample": "Arch9\n\nYour purchase\n\nMODE\nBuying\nSelling (Request access)\nNOW\n50%\n\nFinance\n\nNext: Transfer Preparation\n\nSTART\n\nOverview\n\nNEXT STEPS\n\nProgress\nAppointments\nFinance\n\nPROPERTY\n\nDocuments\n3 required\nKeys\nIssues\n0 open\n\nSUPPORT\n\nTeam\nAccount\nMy Details\n\nNeed help?\n\nSarah Williams\n\nMessage\nCall\n\nArch9\n\nReal Estate\n\nSECURE BUYER FINANCE\nFinance\n\nPayment requests, statements, and proof uploads from your legal team.\n\nNo account published yet\nBALANCE DUE\nR 0,00\n\nVisible posted entries\n\nREQUESTS\n0\n\n0 overdue\n\nDOCUMENTS\n0\n\nStatements and receipts\n\nUPDATES\n0\n\nPublished updates\n\nNo account details published yet\n\nYour legal team can publish invoices, statements, and payment updates here once they are ready for you to review.",
+        "errorOverlay": false,
+        "horizontalOverflow": false,
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "fixedInsetOverlay": false,
+        "advancedDocumentCopyPresent": false,
+        "buyerFinanceCopyPresent": true,
+        "financeLandingPresent": false,
+        "detailedFinancePresent": false,
+        "mobileFinancePresent": false,
+        "headings": [
+          "Bond",
+          "Arch9",
+          "Finance"
+        ],
+        "navCurrent": [
+          "Finance",
+          "Account",
+          "Account"
+        ]
+      },
+      "afterClick": null
+    },
+    {
+      "key": "documents-mobile",
+      "url": "http://127.0.0.1:5174/client/demo-buyer-portal/buying/documents",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "routePass": true,
+      "screenshotPath": "/Users/alexanderlandman/the-it-guy/the-it-guy/tmp/buyer-portal-phase6-final/documents-mobile.png",
+      "expandedScreenshotPath": null,
+      "consoleMessages": [
+        {
+          "type": "warning",
+          "text": "GoTrueClient@sb-isdowlnollckzvltkasn-auth-token:1 (2.98.0) 2026-08-16T10:15:08.348Z Multiple GoTrueClient instances detected in the same browser context. It is not an error, but this should be avoided as it may produce undefined behavior when used concurrently under the same storage key."
+        }
+      ],
+      "pageErrors": [],
+      "beforeClick": {
+        "title": "Arch9 | Platform",
+        "hasContent": true,
+        "textSample": "M\n\nDOCUMENTS\n\n10 pending\n\n10 purchase documents need action.\n\nPending\n10\nReview\n3\nApproved\n1\nAll\n14\nProof of Income\nUpload required\nLatest payslip or income confirmation.\nReservation Deposit Proof of Payment\nUpload required\nProof of payment for the reservation deposit.\nSigned Offer to Purchase\nUpload required\nSigned OTP once the agreement is ready.\nBuyer FICA Pack\nUpload required\nThis document is needed before your transaction can move forward.\nBuyer Proof of Address\nUpload required\nThis document is needed before your transaction can move forward.\nBuyer Marital Status Declaration\nUpload required\nThis document is needed before your transaction can move forward.\nBond Approval\nUpload required\nThis document is needed before your transaction can move forward.\nSigned Grant / Loan Agreement\nUploa",
+        "errorOverlay": false,
+        "horizontalOverflow": false,
+        "scrollWidth": 390,
+        "clientWidth": 390,
+        "fixedInsetOverlay": false,
+        "advancedDocumentCopyPresent": false,
+        "buyerFinanceCopyPresent": false,
+        "financeLandingPresent": false,
+        "detailedFinancePresent": false,
+        "mobileFinancePresent": false,
+        "headings": [
+          "10 pending",
+          "Arch9",
+          "Documents",
+          "2 of 12 approved",
+          "Still needed",
+          "Status summary",
+          "Sales Documents"
+        ],
+        "navCurrent": [
+          "Documents",
+          "Documents3 required",
+          "Documents"
+        ]
+      },
+      "afterClick": null
+    },
+    {
+      "key": "finance-mobile",
+      "url": "http://127.0.0.1:5174/client/demo-buyer-portal/buying/bond_application",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "routePass": true,
+      "screenshotPath": "/Users/alexanderlandman/the-it-guy/the-it-guy/tmp/buyer-portal-phase6-final/finance-mobile.png",
+      "expandedScreenshotPath": null,
+      "consoleMessages": [
+        {
+          "type": "warning",
+          "text": "GoTrueClient@sb-isdowlnollckzvltkasn-auth-token:1 (2.98.0) 2026-08-16T10:15:12.302Z Multiple GoTrueClient instances detected in the same browser context. It is not an error, but this should be avoided as it may produce undefined behavior when used concurrently under the same storage key."
+        }
+      ],
+      "pageErrors": [],
+      "beforeClick": {
+        "title": "Arch9 | Platform",
+        "hasContent": true,
+        "textSample": "M\n\nFINANCE\n\nBond\n\nFinance and payment details will appear here once published.\n\nBALANCE\nPending\nREQUESTS\n0\nUPDATES\n0\n\nNo buyer account has been published yet. When your legal team adds payment instructions, statements, or proof requests, they will appear here.\n\nHome\nTasks\nDocuments\nFinance\nTeam",
+        "errorOverlay": false,
+        "horizontalOverflow": false,
+        "scrollWidth": 390,
+        "clientWidth": 390,
+        "fixedInsetOverlay": false,
+        "advancedDocumentCopyPresent": false,
+        "buyerFinanceCopyPresent": false,
+        "financeLandingPresent": false,
+        "detailedFinancePresent": false,
+        "mobileFinancePresent": true,
+        "headings": [
+          "Bond",
+          "Arch9",
+          "Mia Khumalo"
+        ],
+        "navCurrent": [
+          "Finance",
+          "Finance",
+          "Finance"
+        ]
+      },
+      "afterClick": null
+    }
+  ]
+}

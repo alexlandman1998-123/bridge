@@ -1,0 +1,746 @@
+[
+  {
+    "viewport": {
+      "name": "desktop",
+      "width": 1440,
+      "height": 1000
+    },
+    "url": "http://127.0.0.1:5175/client/demo-seller-portal/selling",
+    "elapsedMs": 16562,
+    "title": "Arch9 | Platform",
+    "textLength": 2411,
+    "textSample": "Seller Portal\n\nHOME\n\nOverview\n\nYOUR SALE\n\nProgress\nOffers\n2\nAppointments\n\nPROPERTY\n\nListing\nMarketing\nDocuments\n2 required\n\nACCOUNT\n\nAccount\nMy Details\n\nNeed help?\n\nWe're here for you.\n\nMessage Agent\nCall Agent\n\nProduktive Realty\n\nReal Estate\n\nGood afternoon, Thabo.\n\nYour offer is accepted and the sale is moving forward.\n\nWe're actively marketing your property across leading platforms and we'll let you know whenever something important happens.\n\nYOUR AGENT\n\nSW\nSarah Williams\n\nProduktive Realty\n\nHere when you need us\n\nMessage\nSchedule\nOpen listing\n\nPROPERTY IMAGE PENDING\n\nOFFER ACCEPTED\n0%\n\nTransaction Health\n\nNeeds Attention\n\nA few items still need attention.\n\n11 items need attention to keep your sale moving.\n\nSale Progress\n\nTrack OTP, finance, transfer, and registration milestones for your sale.\n\n0% complete\nListing Progress\nSale Progress\nOTP\nCurrent\nFinance\nTransfer\nRegistration\n\nYour seller file is complete. The next milestone is OTP activity for the sale.\n\nView offers\nListing Performance\n\nBuyer attention, viewings, and offer movement shared by your agent.\n\nVIEWS\n\n0\n\n0 portal / 0 Arch9\n\nLEADS\n\n0\n\n0 new this week\n\nVIEWINGS\n\n0\n\n0 completed\n\nOFFERS\n\n0\n\n0 active / pending\n\nDAYS MKT\n\n0\n\nArea average pending\n\nMarketing Activity\n\nYour property is shown only on channels shared by your agent.\n\nProperty24\n\nUpdated 06 Jul 2026\n\nView Listing\nAgent Update\n\nLatest update from your agent.\n\n\"\n\nYour listing is live and the first two offers are visible in the seller portal.\n\nSW\n\nSarah Williams\n\n7/6/2026, 11:40:00 AM\n\nJourney Timeline\n\nA timeline of important milestones.\n\n7/6/2026, 11:40:00 AM\n\nYour listing is live and the first two offers are visible in the seller portal.\n\n7/6/2026, 11:15:00 AM\n\nUpload the latest levy statement so compliance can be marked complete.\n\nAsk Your Property Team\n\nPost a question or follow up on your latest updates.\n\nArch9 Team\n7/6/2026, 11:40:00 AM\n\nYour listing is live and the first two offers are visible in the seller portal.\n\nArch9 Team\n7/6/2026, 11:1",
+    "hasErrorOverlay": false,
+    "consoleMessages": [
+      {
+        "type": "warning",
+        "text": "GoTrueClient@sb-isdowlnollckzvltkasn-auth-token:1 (2.98.0) 2026-08-16T13:55:09.054Z Multiple GoTrueClient instances detected in the same browser context. It is not an error, but this should be avoided as it may produce undefined behavior when used concurrently under the same storage key."
+      }
+    ],
+    "requestFailures": [],
+    "responseFailures": [],
+    "elements": [
+      {
+        "tag": "a",
+        "text": "Message agent",
+        "disabled": false,
+        "href": "mailto:sarah.demo@arch9.co.za"
+      },
+      {
+        "tag": "a",
+        "text": "Call agent",
+        "disabled": false,
+        "href": "tel:+27 21 555 0100"
+      },
+      {
+        "tag": "button",
+        "text": "View Seller onboarding",
+        "disabled": false,
+        "href": ""
+      },
+      {
+        "tag": "button",
+        "text": "Seller onboarding",
+        "disabled": false,
+        "href": ""
+      },
+      {
+        "tag": "button",
+        "text": "View Mandate",
+        "disabled": false,
+        "href": ""
+      },
+      {
+        "tag": "button",
+        "text": "Mandate",
+        "disabled": false,
+        "href": ""
+      },
+      {
+        "tag": "button",
+        "text": "View Listing Created",
+        "disabled": false,
+        "href": ""
+      },
+      {
+        "tag": "button",
+        "text": "Listing Created",
+        "disabled": false,
+        "href": ""
+      },
+      {
+        "tag": "button",
+        "text": "View Offers received",
+        "disabled": false,
+        "href": ""
+      },
+      {
+        "tag": "button",
+        "text": "Offers received",
+        "disabled": false,
+        "href": ""
+      },
+      {
+        "tag": "button",
+        "text": "5",
+        "disabled": false,
+        "href": ""
+      },
+      {
+        "tag": "button",
+        "text": "Contract",
+        "disabled": false,
+        "href": ""
+      },
+      {
+        "tag": "button",
+        "text": "6",
+        "disabled": false,
+        "href": ""
+      },
+      {
+        "tag": "button",
+        "text": "Transfer",
+        "disabled": false,
+        "href": ""
+      },
+      {
+        "tag": "button",
+        "text": "7",
+        "disabled": false,
+        "href": ""
+      },
+      {
+        "tag": "button",
+        "text": "Registration",
+        "disabled": false,
+        "href": ""
+      },
+      {
+        "tag": "a",
+        "text": "Open Documents",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling/documents"
+      },
+      {
+        "tag": "button",
+        "text": "Upload document",
+        "disabled": false,
+        "href": ""
+      },
+      {
+        "tag": "a",
+        "text": "Offers2Active offersView offers",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling/offers"
+      },
+      {
+        "tag": "a",
+        "text": "Documents10Need attentionView documents",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling/documents"
+      },
+      {
+        "tag": "input",
+        "text": "",
+        "disabled": false,
+        "href": ""
+      },
+      {
+        "tag": "input",
+        "text": "",
+        "disabled": false,
+        "href": ""
+      },
+      {
+        "tag": "a",
+        "text": "Home",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling"
+      },
+      {
+        "tag": "a",
+        "text": "Tasks",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling/progress"
+      },
+      {
+        "tag": "a",
+        "text": "Documents",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling/documents"
+      },
+      {
+        "tag": "a",
+        "text": "Offers",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling/offers"
+      },
+      {
+        "tag": "a",
+        "text": "Team",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling/team"
+      },
+      {
+        "tag": "a",
+        "text": "Overview",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling"
+      },
+      {
+        "tag": "a",
+        "text": "Progress",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling/progress"
+      },
+      {
+        "tag": "a",
+        "text": "Offers\n2",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling/offers"
+      },
+      {
+        "tag": "a",
+        "text": "Appointments",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling/appointments"
+      },
+      {
+        "tag": "a",
+        "text": "Listing",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling#seller-property-hero"
+      },
+      {
+        "tag": "a",
+        "text": "Marketing",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling#seller-marketing-activity"
+      },
+      {
+        "tag": "a",
+        "text": "Documents\n2 required",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling/documents"
+      },
+      {
+        "tag": "a",
+        "text": "Account",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling/account"
+      },
+      {
+        "tag": "a",
+        "text": "My Details",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling/details"
+      },
+      {
+        "tag": "a",
+        "text": "Message Agent",
+        "disabled": false,
+        "href": "mailto:sarah.demo@arch9.co.za"
+      },
+      {
+        "tag": "a",
+        "text": "Call Agent",
+        "disabled": false,
+        "href": "tel:+27 21 555 0100"
+      },
+      {
+        "tag": "a",
+        "text": "Overview",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling"
+      },
+      {
+        "tag": "a",
+        "text": "Progress",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling/progress"
+      },
+      {
+        "tag": "a",
+        "text": "Offers",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling/offers"
+      },
+      {
+        "tag": "a",
+        "text": "Appointments",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling/appointments"
+      },
+      {
+        "tag": "a",
+        "text": "Listing",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling#seller-property-hero"
+      },
+      {
+        "tag": "a",
+        "text": "Marketing",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling#seller-marketing-activity"
+      },
+      {
+        "tag": "a",
+        "text": "Documents",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling/documents"
+      },
+      {
+        "tag": "a",
+        "text": "Account",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling/account"
+      },
+      {
+        "tag": "a",
+        "text": "My Details",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling/details"
+      },
+      {
+        "tag": "a",
+        "text": "Message",
+        "disabled": false,
+        "href": "mailto:sarah.demo@arch9.co.za"
+      },
+      {
+        "tag": "a",
+        "text": "Schedule",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling/appointments"
+      },
+      {
+        "tag": "a",
+        "text": "Open listing",
+        "disabled": false,
+        "href": "https://www.property24.com/for-sale/sea-point/cape-town/western-cape/11021/demo"
+      },
+      {
+        "tag": "button",
+        "text": "Listing Progress",
+        "disabled": false,
+        "href": ""
+      },
+      {
+        "tag": "button",
+        "text": "Sale Progress",
+        "disabled": false,
+        "href": ""
+      },
+      {
+        "tag": "a",
+        "text": "View offers",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling/offers"
+      },
+      {
+        "tag": "a",
+        "text": "View Listing",
+        "disabled": false,
+        "href": "https://www.property24.com/for-sale/sea-point/cape-town/western-cape/11021/demo"
+      },
+      {
+        "tag": "textarea",
+        "text": "Ask a question or share an update...",
+        "disabled": false,
+        "href": ""
+      },
+      {
+        "tag": "button",
+        "text": "Post message",
+        "disabled": true,
+        "href": ""
+      },
+      {
+        "tag": "a",
+        "text": "Open document centre",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling/documents"
+      },
+      {
+        "tag": "a",
+        "text": "Message Agent",
+        "disabled": false,
+        "href": "mailto:sarah.demo@arch9.co.za"
+      }
+    ],
+    "screenshotPath": "/Users/alexanderlandman/the-it-guy/the-it-guy/tmp/seller-portal-mvp-check/desktop.png"
+  },
+  {
+    "viewport": {
+      "name": "mobile",
+      "width": 390,
+      "height": 844
+    },
+    "url": "http://127.0.0.1:5175/client/demo-seller-portal/selling",
+    "elapsedMs": 3748,
+    "title": "Arch9 | Platform",
+    "textLength": 871,
+    "textSample": "Seller Portal\n\n2 Pine Avenue, Unit 4, Sea Point, Cape Town, Western Cape, 8005\n\nCURRENT STATUS\n\nOffer Accepted\n\nStep 5 of 7\n\n67%\nCOMPLETE\nYour sale journey\nStep 5 of 7\nSeller onboarding\nMandate\nListing Created\nOffers received\n5\nContract\n6\nTransfer\n7\nRegistration\nContract\nCURRENT STEP\n\nAccepted offer documents and sale instructions are prepared for the next legal step.\n\nTransaction team\n.\nToday\n\nOpen Documents\n\nNEXT REQUIRED ITEM\n\nBody Corporate / Managing Agent Details\n\nBody corporate or managing agent contact details.\n\nUpload document\n\nOFFERS\n\n2\nActive offers\nView offers\n\nDOCUMENTS\n\n10\nNeed attention\nView documents\nRecent activity\n7/6/2026, 11:40:00 AM\n\nYour listing is live and the first two offers are visible in the seller portal.\n\n7/6/2026, 11:15:00 AM\n\nUpload the latest levy statement so compliance can be marked complete.\n\nHome\nTasks\nDocuments\nOffers\nTeam",
+    "hasErrorOverlay": false,
+    "consoleMessages": [
+      {
+        "type": "warning",
+        "text": "GoTrueClient@sb-isdowlnollckzvltkasn-auth-token:1 (2.98.0) 2026-08-16T13:55:13.597Z Multiple GoTrueClient instances detected in the same browser context. It is not an error, but this should be avoided as it may produce undefined behavior when used concurrently under the same storage key."
+      }
+    ],
+    "requestFailures": [],
+    "responseFailures": [],
+    "elements": [
+      {
+        "tag": "a",
+        "text": "Message agent",
+        "disabled": false,
+        "href": "mailto:sarah.demo@arch9.co.za"
+      },
+      {
+        "tag": "a",
+        "text": "Call agent",
+        "disabled": false,
+        "href": "tel:+27 21 555 0100"
+      },
+      {
+        "tag": "button",
+        "text": "View Seller onboarding",
+        "disabled": false,
+        "href": ""
+      },
+      {
+        "tag": "button",
+        "text": "Seller onboarding",
+        "disabled": false,
+        "href": ""
+      },
+      {
+        "tag": "button",
+        "text": "View Mandate",
+        "disabled": false,
+        "href": ""
+      },
+      {
+        "tag": "button",
+        "text": "Mandate",
+        "disabled": false,
+        "href": ""
+      },
+      {
+        "tag": "button",
+        "text": "View Listing Created",
+        "disabled": false,
+        "href": ""
+      },
+      {
+        "tag": "button",
+        "text": "Listing Created",
+        "disabled": false,
+        "href": ""
+      },
+      {
+        "tag": "button",
+        "text": "View Offers received",
+        "disabled": false,
+        "href": ""
+      },
+      {
+        "tag": "button",
+        "text": "Offers received",
+        "disabled": false,
+        "href": ""
+      },
+      {
+        "tag": "button",
+        "text": "5",
+        "disabled": false,
+        "href": ""
+      },
+      {
+        "tag": "button",
+        "text": "Contract",
+        "disabled": false,
+        "href": ""
+      },
+      {
+        "tag": "button",
+        "text": "6",
+        "disabled": false,
+        "href": ""
+      },
+      {
+        "tag": "button",
+        "text": "Transfer",
+        "disabled": false,
+        "href": ""
+      },
+      {
+        "tag": "button",
+        "text": "7",
+        "disabled": false,
+        "href": ""
+      },
+      {
+        "tag": "button",
+        "text": "Registration",
+        "disabled": false,
+        "href": ""
+      },
+      {
+        "tag": "a",
+        "text": "Open Documents",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling/documents"
+      },
+      {
+        "tag": "button",
+        "text": "Upload document",
+        "disabled": false,
+        "href": ""
+      },
+      {
+        "tag": "a",
+        "text": "OFFERS\n\n2\nActive offers\nView offers",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling/offers"
+      },
+      {
+        "tag": "a",
+        "text": "DOCUMENTS\n\n10\nNeed attention\nView documents",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling/documents"
+      },
+      {
+        "tag": "input",
+        "text": "",
+        "disabled": false,
+        "href": ""
+      },
+      {
+        "tag": "input",
+        "text": "",
+        "disabled": false,
+        "href": ""
+      },
+      {
+        "tag": "a",
+        "text": "Home",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling"
+      },
+      {
+        "tag": "a",
+        "text": "Tasks",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling/progress"
+      },
+      {
+        "tag": "a",
+        "text": "Documents",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling/documents"
+      },
+      {
+        "tag": "a",
+        "text": "Offers",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling/offers"
+      },
+      {
+        "tag": "a",
+        "text": "Team",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling/team"
+      },
+      {
+        "tag": "a",
+        "text": "Overview",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling"
+      },
+      {
+        "tag": "a",
+        "text": "Progress",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling/progress"
+      },
+      {
+        "tag": "a",
+        "text": "Offers2",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling/offers"
+      },
+      {
+        "tag": "a",
+        "text": "Appointments",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling/appointments"
+      },
+      {
+        "tag": "a",
+        "text": "Listing",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling#seller-property-hero"
+      },
+      {
+        "tag": "a",
+        "text": "Marketing",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling#seller-marketing-activity"
+      },
+      {
+        "tag": "a",
+        "text": "Documents2 required",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling/documents"
+      },
+      {
+        "tag": "a",
+        "text": "Account",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling/account"
+      },
+      {
+        "tag": "a",
+        "text": "My Details",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling/details"
+      },
+      {
+        "tag": "a",
+        "text": "Message Agent",
+        "disabled": false,
+        "href": "mailto:sarah.demo@arch9.co.za"
+      },
+      {
+        "tag": "a",
+        "text": "Call Agent",
+        "disabled": false,
+        "href": "tel:+27 21 555 0100"
+      },
+      {
+        "tag": "a",
+        "text": "Overview",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling"
+      },
+      {
+        "tag": "a",
+        "text": "Progress",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling/progress"
+      },
+      {
+        "tag": "a",
+        "text": "Offers",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling/offers"
+      },
+      {
+        "tag": "a",
+        "text": "Appointments",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling/appointments"
+      },
+      {
+        "tag": "a",
+        "text": "Listing",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling#seller-property-hero"
+      },
+      {
+        "tag": "a",
+        "text": "Marketing",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling#seller-marketing-activity"
+      },
+      {
+        "tag": "a",
+        "text": "Documents",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling/documents"
+      },
+      {
+        "tag": "a",
+        "text": "Account",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling/account"
+      },
+      {
+        "tag": "a",
+        "text": "My Details",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling/details"
+      },
+      {
+        "tag": "a",
+        "text": "Message",
+        "disabled": false,
+        "href": "mailto:sarah.demo@arch9.co.za"
+      },
+      {
+        "tag": "a",
+        "text": "Schedule",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling/appointments"
+      },
+      {
+        "tag": "a",
+        "text": "Open listing",
+        "disabled": false,
+        "href": "https://www.property24.com/for-sale/sea-point/cape-town/western-cape/11021/demo"
+      },
+      {
+        "tag": "button",
+        "text": "Listing Progress",
+        "disabled": false,
+        "href": ""
+      },
+      {
+        "tag": "button",
+        "text": "Sale Progress",
+        "disabled": false,
+        "href": ""
+      },
+      {
+        "tag": "a",
+        "text": "View offers",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling/offers"
+      },
+      {
+        "tag": "a",
+        "text": "View Listing",
+        "disabled": false,
+        "href": "https://www.property24.com/for-sale/sea-point/cape-town/western-cape/11021/demo"
+      },
+      {
+        "tag": "textarea",
+        "text": "Ask a question or share an update...",
+        "disabled": false,
+        "href": ""
+      },
+      {
+        "tag": "button",
+        "text": "Post message",
+        "disabled": true,
+        "href": ""
+      },
+      {
+        "tag": "a",
+        "text": "Open document centre",
+        "disabled": false,
+        "href": "/client/demo-seller-portal/selling/documents"
+      },
+      {
+        "tag": "a",
+        "text": "Message Agent",
+        "disabled": false,
+        "href": "mailto:sarah.demo@arch9.co.za"
+      }
+    ],
+    "screenshotPath": "/Users/alexanderlandman/the-it-guy/the-it-guy/tmp/seller-portal-mvp-check/mobile.png"
+  }
+]

@@ -1,0 +1,114 @@
+[
+  {
+    "route": "/client/demo-seller-portal/selling",
+    "textLength": 2411,
+    "title": "Seller Portal |  | HOME |  | Overview | ",
+    "overlay": false,
+    "consoleMessages": [
+      {
+        "type": "warning",
+        "text": "GoTrueClient@sb-isdowlnollckzvltkasn-auth-token:1 (2.98.0) 2026-08-16T13:56:01.815Z Multiple GoTrueClient instances detected in the same browser context. It is not an error, but this should be avoided as it may produce undefined behavior when used concurrently under the same storage key."
+      }
+    ],
+    "failed": [],
+    "badResponses": []
+  },
+  {
+    "route": "/client/demo-seller-portal/selling/progress",
+    "textLength": 2395,
+    "title": "Seller Portal |  | HOME |  | Overview | ",
+    "overlay": false,
+    "consoleMessages": [
+      {
+        "type": "warning",
+        "text": "GoTrueClient@sb-isdowlnollckzvltkasn-auth-token:1 (2.98.0) 2026-08-16T13:56:04.456Z Multiple GoTrueClient instances detected in the same browser context. It is not an error, but this should be avoided as it may produce undefined behavior when used concurrently under the same storage key."
+      }
+    ],
+    "failed": [],
+    "badResponses": []
+  },
+  {
+    "route": "/client/demo-seller-portal/selling/offers",
+    "textLength": 1904,
+    "title": "Seller Portal |  | HOME |  | Overview | ",
+    "overlay": false,
+    "consoleMessages": [
+      {
+        "type": "warning",
+        "text": "GoTrueClient@sb-isdowlnollckzvltkasn-auth-token:1 (2.98.0) 2026-08-16T13:56:06.852Z Multiple GoTrueClient instances detected in the same browser context. It is not an error, but this should be avoided as it may produce undefined behavior when used concurrently under the same storage key."
+      }
+    ],
+    "failed": [],
+    "badResponses": []
+  },
+  {
+    "route": "/client/demo-seller-portal/selling/appointments",
+    "textLength": 972,
+    "title": "Seller Portal |  | HOME |  | Overview | ",
+    "overlay": false,
+    "consoleMessages": [
+      {
+        "type": "warning",
+        "text": "GoTrueClient@sb-isdowlnollckzvltkasn-auth-token:1 (2.98.0) 2026-08-16T13:56:09.145Z Multiple GoTrueClient instances detected in the same browser context. It is not an error, but this should be avoided as it may produce undefined behavior when used concurrently under the same storage key."
+      }
+    ],
+    "failed": [],
+    "badResponses": []
+  },
+  {
+    "route": "/client/demo-seller-portal/selling/documents",
+    "textLength": 4014,
+    "title": "Seller Portal |  | HOME |  | Overview | ",
+    "overlay": false,
+    "consoleMessages": [
+      {
+        "type": "warning",
+        "text": "GoTrueClient@sb-isdowlnollckzvltkasn-auth-token:1 (2.98.0) 2026-08-16T13:56:11.362Z Multiple GoTrueClient instances detected in the same browser context. It is not an error, but this should be avoided as it may produce undefined behavior when used concurrently under the same storage key."
+      }
+    ],
+    "failed": [],
+    "badResponses": []
+  },
+  {
+    "route": "/client/demo-seller-portal/selling/details",
+    "textLength": 1432,
+    "title": "Seller Portal |  | HOME |  | Overview | ",
+    "overlay": false,
+    "consoleMessages": [
+      {
+        "type": "warning",
+        "text": "GoTrueClient@sb-isdowlnollckzvltkasn-auth-token:1 (2.98.0) 2026-08-16T13:56:13.423Z Multiple GoTrueClient instances detected in the same browser context. It is not an error, but this should be avoided as it may produce undefined behavior when used concurrently under the same storage key."
+      }
+    ],
+    "failed": [],
+    "badResponses": []
+  },
+  {
+    "route": "/client/demo-seller-portal/selling/account",
+    "textLength": 824,
+    "title": "Seller Portal |  | HOME |  | Overview | ",
+    "overlay": false,
+    "consoleMessages": [
+      {
+        "type": "warning",
+        "text": "GoTrueClient@sb-isdowlnollckzvltkasn-auth-token:1 (2.98.0) 2026-08-16T13:56:15.686Z Multiple GoTrueClient instances detected in the same browser context. It is not an error, but this should be avoided as it may produce undefined behavior when used concurrently under the same storage key."
+      }
+    ],
+    "failed": [],
+    "badResponses": []
+  },
+  {
+    "route": "/client/demo-seller-portal/selling/team",
+    "textLength": 1059,
+    "title": "Seller Portal |  | HOME |  | Overview | ",
+    "overlay": false,
+    "consoleMessages": [
+      {
+        "type": "warning",
+        "text": "GoTrueClient@sb-isdowlnollckzvltkasn-auth-token:1 (2.98.0) 2026-08-16T13:56:17.978Z Multiple GoTrueClient instances detected in the same browser context. It is not an error, but this should be avoided as it may produce undefined behavior when used concurrently under the same storage key."
+      }
+    ],
+    "failed": [],
+    "badResponses": []
+  }
+]

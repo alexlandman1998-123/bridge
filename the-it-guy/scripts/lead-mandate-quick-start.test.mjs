@@ -649,7 +649,7 @@ for (const reference of [
   'selectedLeadOtpQuickStartBlockers.length',
   'selectedLeadOtpTemplateBlocking',
   'createAndSendOfferLinkForLead',
-  "successPrefix: 'Offer upload '",
+  'OFFER_UPLOAD_SUCCESS_PREFIX',
   'setOtpQuickStartOpen(false)',
 ]) {
   assert.ok(otpQuickStartBlock.includes(reference), `Offer upload quick start flow should keep ${reference}.`)

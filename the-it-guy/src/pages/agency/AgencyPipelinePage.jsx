@@ -655,6 +655,14 @@ const BUYER_OFFER_DOCUMENT_LABEL = 'Buyer Offer Document'
 const BUYER_OTP_DOCUMENT_STORAGE_FOLDER = 'buyer-otp-documents'
 const BUYER_OTP_DOCUMENT_TYPE = 'uploaded_otp'
 const BUYER_OTP_DOCUMENT_LABEL = 'Uploaded OTP'
+const BUYER_AGENT_DOCUMENT_STORAGE_FOLDER = 'buyer-agent-documents'
+const BUYER_AGENT_DOCUMENT_TYPES = [
+  { key: 'buyer_id_document', label: 'Buyer ID document' },
+  { key: 'buyer_proof_of_address', label: 'Buyer proof of address' },
+  { key: 'proof_of_funds', label: 'Proof of funds' },
+  { key: 'bank_statements', label: 'Bank statements' },
+  { key: 'bond_pre_approval', label: 'Bond pre-approval' },
+]
 const KINGSTONS_SELLER_PACK_LISTING_HANDOFF_SOURCE = 'kingstons_seller_pack_phase4_listing_handoff'
 const KINGSTONS_SELLER_PACK_TRANSACTION_HANDOFF_SOURCE = 'kingstons_seller_pack_phase5_transaction_handoff'
 const KINGSTONS_SELLER_PACK_PORTAL_REQUEST_SYNC_SOURCE = 'kingstons_seller_pack_phase9_portal_request_sync'
@@ -769,6 +777,16 @@ function joinKingstonsSellerPackList(value = []) {
     .map((item) => normalizeText(item?.name || item))
     .filter(Boolean)
     .join('\n')
+}
+
+function getAgentUploadedBuyerDocuments(row = {}) {
+  const rawPayload = parseLeadRawEnquiryPayload(row?.rawEnquiryPayload || row?.raw_enquiry_payload)
+  return [
+    ...(Array.isArray(row?.agentUploadedBuyerDocuments) ? row.agentUploadedBuyerDocuments : []),
+    ...(Array.isArray(row?.agent_uploaded_buyer_documents) ? row.agent_uploaded_buyer_documents : []),
+    ...(Array.isArray(rawPayload.agentUploadedBuyerDocuments) ? rawPayload.agentUploadedBuyerDocuments : []),
+    ...(Array.isArray(rawPayload.agent_uploaded_buyer_documents) ? rawPayload.agent_uploaded_buyer_documents : []),
+  ].filter((documentRow) => documentRow && typeof documentRow === 'object')
 }
 
 function buildKingstonsSellerPackPersonRecords(value = '', prefix = 'person') {
@@ -1710,6 +1728,9 @@ function buildKingstonsPrincipalListingTermsExceptionReport({
   organisationId = '',
   currentAgent = {},
   resolveLeadLinkedListing = null,
+  attorneyAllocationsByListingId = {},
+  allocationsLoading = false,
+  allocationsError = '',
 } = {}) {
   const rows = []
   let totalKingstonsLeads = 0
@@ -1751,6 +1772,15 @@ function buildKingstonsPrincipalListingTermsExceptionReport({
       sellerPackSummary,
       listingId,
     })
+    const allocation = listingId ? attorneyAllocationsByListingId?.[listingId] || null : null
+    const attorneyPipelineVerification = buildKingstonsAttorneyPipelineVerification({
+      listingId,
+      summary: sellerPackSummary,
+      terms: getKingstonsListingTermsState(lead, listing),
+      allocation,
+      loading: allocationsLoading,
+      error: allocationsError,
+    })
 
     for (const item of report.items || []) {
       rows.push({
@@ -1761,6 +1791,8 @@ function buildKingstonsPrincipalListingTermsExceptionReport({
         property: normalizeText(lead?.sellerPropertyAddress || lead?.propertyInterest || listing?.address || listing?.label || listing?.title) || 'Property pending',
         stage: sellerJourney?.stage?.label || KINGSTONS_PIPELINE_STAGE_LABELS[normalizeKey(sellerJourney?.stage?.key)] || 'Kingstons Seller Process',
         days: report.currentStageDays,
+        allocationChecked: allocationsLoading ? 'Checking' : allocationsError ? 'Failed' : listingId ? 'Yes' : 'No listing',
+        attorneyPipeline: attorneyPipelineVerification?.label || 'Not checked',
       })
     }
   }
@@ -1782,6 +1814,8 @@ function buildKingstonsPrincipalListingTermsExceptionReport({
     criticalCount,
     warningCount,
     listPropertyCount,
+    allocationsLoading,
+    allocationsError,
     averageDays: sortedRows.length
       ? Math.round(sortedRows.reduce((sum, row) => sum + Number(row.days || 0), 0) / sortedRows.length)
       : 0,
@@ -1817,6 +1851,8 @@ function buildKingstonsPrincipalExceptionReportCsv(report = {}, { generatedAt = 
     'Exception',
     'Detail',
     'Recommended Action',
+    'Allocation Checked',
+    'Attorney Pipeline',
     'Lead ID',
   ]
   const bodyRows = rows.length
@@ -1831,6 +1867,8 @@ function buildKingstonsPrincipalExceptionReportCsv(report = {}, { generatedAt = 
         row.title,
         row.copy,
         formatKingstonsPrincipalActionLabel(row.action),
+        row.allocationChecked,
+        row.attorneyPipeline,
         row.leadId,
       ])
     : [[
@@ -1844,6 +1882,8 @@ function buildKingstonsPrincipalExceptionReportCsv(report = {}, { generatedAt = 
         'Clear',
         `Kingstons leads checked: ${report.totalKingstonsLeads || 0}`,
         'No action required',
+        report.allocationsLoading ? 'Checking' : report.allocationsError ? 'Failed' : 'Yes',
+        report.allocationsError || 'Attorney Pipeline clear',
         '',
       ]]
 
@@ -1988,6 +2028,7 @@ function KingstonsPrincipalExceptionReportCard({
               type="button"
               className="inline-flex min-h-9 items-center gap-2 rounded-full border border-[#d9e4ef] bg-white px-3 text-xs font-semibold text-[#2d4560] shadow-[0_8px_18px_rgba(31,54,78,0.06)] transition hover:border-[#b9cadd] hover:bg-[#f7faff] disabled:cursor-not-allowed disabled:opacity-60"
               onClick={() => onExportCsv?.()}
+              disabled={report.allocationsLoading}
             >
               <Download className="h-3.5 w-3.5" />
               Export CSV
@@ -2148,7 +2189,7 @@ function KingstonsListingTermsSummaryCard({
             onClick={onEdit}
           >
             <Pencil className="h-3.5 w-3.5" />
-            {summary.complete ? 'Edit terms' : 'Select terms'}
+            {summary.complete ? 'Edit Offer / Terms' : 'Select terms'}
           </Button>
         </div>
       </div>
@@ -2832,6 +2873,21 @@ async function uploadKingstonsSellerPackFile({
     fileName: file.name || 'seller-pack-document',
     storageFolder,
   })
+  return uploadToStorageCandidateBuckets({
+    file,
+    objectPath,
+    context: 'seller pack document upload',
+  })
+}
+
+async function uploadToStorageCandidateBuckets({
+  file,
+  objectPath = '',
+  context = 'document upload',
+} = {}) {
+  if (!file) throw new Error('Select a file before uploading.')
+  if (!objectPath) throw new Error('A storage path is required before uploading.')
+  if (!isSupabaseConfigured || !supabase) throw new Error('Supabase storage is required before uploading documents.')
   let lastError = null
   for (const bucketName of DOCUMENTS_BUCKET_CANDIDATES) {
     const { data, error: uploadError } = await supabase.storage
@@ -2851,7 +2907,7 @@ async function uploadKingstonsSellerPackFile({
       url: '',
     }
   }
-  throw lastError || new Error('Unable to upload the seller pack file.')
+  throw lastError || new Error(`Unable to complete ${context}.`)
 }
 
 async function uploadBuyerOfferDocumentFile({
@@ -3443,9 +3499,11 @@ function isStaleMandateGenerationRecoveryMessage(value = '') {
 }
 
 const BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY = 'onboarding_otp'
+const BUYER_ONBOARDING_OTP_WORKSPACE_SOURCE = 'buyer_onboarding_otp_workspace'
+const OFFER_UPLOAD_SUCCESS_PREFIX = 'Offer upload '
 const SELLER_LEAD_WORKSPACE_TAB_KEYS = new Set(['overview', 'seller', 'property', 'mandate', 'appointments', 'documents', 'activity'])
 const BUYER_PROFILE_WORKSPACE_TAB_KEY = 'buyer_profile'
-const BUYER_LEAD_WORKSPACE_TAB_KEYS = new Set(['overview', BUYER_PROFILE_WORKSPACE_TAB_KEY, BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY, 'properties', 'appointments', 'activity'])
+const BUYER_LEAD_WORKSPACE_TAB_KEYS = new Set(['overview', BUYER_PROFILE_WORKSPACE_TAB_KEY, BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY, 'properties', 'appointments', 'documents', 'activity'])
 
 function normalizeLeadWorkspaceTabKey(tabKey = '') {
   const normalized = normalizeKey(tabKey)
@@ -9420,6 +9478,19 @@ function resolveLeadCategoryView(value = '') {
   return normalizeLeadCategory(value, 'other')
 }
 
+function isArchivedLead(row = {}) {
+  const lifecycleValues = [
+    row?.lifecycleState,
+    row?.lifecycle_state,
+    row?.archiveStatus,
+    row?.archive_status,
+    row?.status,
+    row?.stage,
+  ].map((value) => normalizeText(value).toLowerCase())
+  return Boolean(row?.archivedAt || row?.archived_at || row?.isArchived || row?.is_archived) ||
+    lifecycleValues.some((value) => ['archived', 'deleted', 'closed_lost'].includes(value))
+}
+
 function leadCategoryLabelForView(value = '') {
   return leadCategoryLabel(resolveLeadCategoryView(value))
 }
@@ -9427,6 +9498,7 @@ function leadCategoryLabelForView(value = '') {
 const LEAD_CATEGORY_VIEW_TABS = [
   { key: 'buyer', label: 'Buyer Leads', Icon: UserRound },
   { key: 'seller', label: 'Seller Leads', Icon: Home },
+  { key: 'archived', label: 'Archived', Icon: Box },
 ]
 
 const LEAD_DETAIL_DEFAULTS = {
@@ -10425,6 +10497,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [sellerPackUploadingKey, setSellerPackUploadingKey] = useState('')
   const [formalValuationUploading, setFormalValuationUploading] = useState(false)
   const [buyerOfferDocumentUploading, setBuyerOfferDocumentUploading] = useState(false)
+  const [agentBuyerDocumentUploading, setAgentBuyerDocumentUploading] = useState(false)
+  const [agentBuyerDocumentType, setAgentBuyerDocumentType] = useState(BUYER_AGENT_DOCUMENT_TYPES[0]?.key || '')
   const [activeSellerFicaRoleplayerId, setActiveSellerFicaRoleplayerId] = useState('')
   const [activeBuyerFicaRoleplayerId, setActiveBuyerFicaRoleplayerId] = useState('')
   const formalValuationUploadInputRef = useRef(null)
@@ -10636,6 +10710,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [otpQuickStartError, setOtpQuickStartError] = useState('')
   const [selectedLeadOtpTemplateReadiness, setSelectedLeadOtpTemplateReadiness] = useState(null)
   const buyerOtpUploadInputRef = useRef(null)
+  const agentBuyerDocumentUploadInputRef = useRef(null)
   const [selectedLeadOffers, setSelectedLeadOffers] = useState([])
   const [selectedLeadOfferPortalSessions, setSelectedLeadOfferPortalSessions] = useState([])
   const [selectedLeadOffersLoading, setSelectedLeadOffersLoading] = useState(false)
@@ -12033,8 +12108,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const nextOpenTask = records.tasks
         .filter((task) => normalizeText(task?.leadId || task?.lead_id) === normalizeText(lead?.leadId || lead?.lead_id) && normalizeText(task?.status) !== 'Completed')
         .sort((a, b) => new Date(a?.dueDate || a?.createdAt || 0) - new Date(b?.dueDate || b?.createdAt || 0))[0]
+      const archivedLead = isArchivedLead(lead)
       const resolvedCategory = resolveLeadCategoryView(lead)
-      const categoryMatch = leadTypeView === 'all' ? true : resolvedCategory === leadTypeView
+      const categoryMatch = leadTypeView === 'archived'
+        ? archivedLead
+        : (leadTypeView === 'all' ? true : resolvedCategory === leadTypeView) && !archivedLead
       const searchMatch = leadFilter.search
         ? [
             lead?.name,
@@ -12967,6 +13045,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	    selectedLeadOfferSummary.accepted,
 	    selectedLeadOfferSummary.submitted,
 	  ])
+  const selectedLeadAgentUploadedBuyerDocuments = useMemo(
+    () => getAgentUploadedBuyerDocuments(selectedLead),
+    [selectedLead],
+  )
   const selectedLeadLifecycleDiagnosticOffer = useMemo(() => {
     const rows = Array.isArray(selectedLeadOffers) ? selectedLeadOffers : []
     return rows.find((offer) => normalizeText(offer?.transactionId)) ||
@@ -15871,6 +15953,28 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLeadLinkedListing,
   ])
 
+  async function handleLinkBuyerEnquiryListing(nextListingId = '') {
+    if (!organisationId || !selectedLeadRecordId || selectedLeadIsSeller) return
+    const linkedListingId = normalizeText(nextListingId)
+    const linkedListing = linkedListingId ? appointmentListingById.get(linkedListingId) : null
+    const leadPatch = {
+      listingId: linkedListingId,
+      listing_id: linkedListingId,
+      enquiredPropertyTitle: normalizeText(linkedListing?.label || linkedListing?.title || linkedListing?.address || selectedLeadEnquiryPropertyContext.originalTitle),
+      enquiredPropertyAddress: normalizeText(linkedListing?.address || linkedListing?.property_address || linkedListing?.address_line_1 || selectedLeadEnquiryPropertyContext.originalAddress),
+    }
+    patchSelectedLeadRecord(leadPatch, selectedLeadRecordId)
+    setOfferLinkForm((previous) => ({ ...previous, listingId: linkedListingId, appointmentId: '' }))
+    try {
+      await updateAgencyCrmLeadRecord(organisationId, selectedLeadRecordId, leadPatch)
+      setMessage(linkedListingId ? 'Buyer enquiry linked to listing.' : 'Buyer enquiry listing link cleared.')
+      setError('')
+    } catch (linkError) {
+      setError(linkError?.message || 'Unable to link this enquiry to the listing.')
+      await reloadRecords(organisationId)
+    }
+  }
+
   const selectedLeadOtpReadiness = useMemo(() => {
     const deliveryMode = normalizeClientIntakePreference(offerLinkForm.clientIntakePreference)
     const requiresDigitalContact = deliveryMode === CLIENT_INTAKE_PREFERENCE.DIGITAL_PORTAL
@@ -17034,16 +17138,20 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   const leadCategoryCounts = useMemo(() => {
     return records.leads.reduce((counts, lead) => {
+      if (isArchivedLead(lead)) {
+        counts.archived += 1
+        return counts
+      }
       const category = resolveLeadCategoryView(lead)
       counts[category] = (counts[category] || 0) + 1
       counts.all += 1
       return counts
-    }, { all: 0, buyer: 0, seller: 0, other: 0 })
+    }, { all: 0, buyer: 0, seller: 0, archived: 0, other: 0 })
   }, [records.leads])
 
   const activeLeadCategoryView = leadTypeView === 'seller' ? 'seller' : 'buyer'
-  const activeLeadCategoryLabel = leadCategoryLabel(activeLeadCategoryView)
-  const leadTypeViewTitle = `${activeLeadCategoryLabel} Leads`
+  const activeLeadCategoryLabel = leadTypeView === 'archived' ? 'Archived' : leadCategoryLabel(activeLeadCategoryView)
+  const leadTypeViewTitle = leadTypeView === 'archived' ? 'Archived Leads' : `${activeLeadCategoryLabel} Leads`
 
   const sellerJourneyMetrics = useMemo(() => getSellerJourneyMetrics({
     leads: records.leads,
@@ -17070,9 +17178,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         organisationId,
         currentAgent,
         resolveLeadLinkedListing,
+        attorneyAllocationsByListingId: kingstonsPrincipalAttorneyAllocationsState.byListingId,
+        allocationsLoading: kingstonsPrincipalAttorneyAllocationsState.loading,
+        allocationsError: kingstonsPrincipalAttorneyAllocationsState.error,
       }),
     [
       currentAgent,
+      kingstonsPrincipalAttorneyAllocationsState.byListingId,
+      kingstonsPrincipalAttorneyAllocationsState.error,
+      kingstonsPrincipalAttorneyAllocationsState.loading,
       organisationId,
       records.appointments,
       records.leads,
@@ -21718,6 +21832,18 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         packetSourceContextJson.mandate_manual_override = existingManualOverride
       }
       const scopedAssignedAgentId = isUuidLike(currentAgent.id) ? currentAgent.id : ''
+      const preferredAttorney = sellerPreferredAttorneys.find((attorney) => (
+        normalizeText(attorney.id) === normalizeText(selectedSellerAttorneyId) ||
+        normalizeText(attorney.preferredPartnerId) === normalizeText(selectedSellerAttorneyId) ||
+        normalizeText(attorney.id) === normalizeText(selectedLeadPreferredTransferAttorneyId) ||
+        normalizeText(attorney.preferredPartnerId) === normalizeText(selectedLeadPreferredTransferAttorneyId)
+      )) || null
+      const preferredAttorneyId = normalizeText(
+        preferredAttorney?.preferredPartnerId ||
+          preferredAttorney?.preferred_partner_id ||
+          selectedLeadPreferredTransferAttorneyId ||
+          selectedSellerAttorneyId,
+      )
       const loadExistingPacket = async () => {
         return existingPacketForGeneration || fetchExistingMandatePacket()
       }
@@ -21852,6 +21978,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               commissionAmount: mandateData.mandate.commissionAmount,
               mandateStartDate: mandateData.mandate.startDate,
               mandateEndDate: mandateData.mandate.endDate,
+              transferAttorneyPreferredPartnerId: preferredAttorneyId,
             },
           },
         }
@@ -25981,7 +26108,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     buyerPhone = '',
     note = '',
     clientIntakePreference = '',
-    source = 'buyer_lead_workspace',
+    source = BUYER_ONBOARDING_OTP_WORKSPACE_SOURCE,
     successPrefix = '',
   } = {}) {
     if (!organisationId || !selectedLead || selectedLeadIsSeller) return null
@@ -25999,10 +26126,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     if (resolvedIntakePreference === CLIENT_INTAKE_PREFERENCE.DIGITAL_PORTAL && !resolvedBuyerEmail) {
       throw new Error('Buyer email is missing. Capture buyer email before sending onboarding.')
     }
-    if (!normalizeText(selectedLeadLinkedTransactionId)) {
-      throw new Error('Convert an accepted offer to a transaction before sending transaction buyer onboarding.')
-    }
-
     const transactionContext = await ensureBuyerOnboardingTransactionForLead({
       listingId,
       buyerName: resolvedBuyerName,
@@ -26083,22 +26206,21 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     try {
       setIsOfferLinkSending(true)
       setError('')
-      const result = await createAndSendOfferLinkForLead({
+      const result = await createAndSendBuyerOnboardingForLead({
         listingId: offerLinkForm.listingId || selectedLeadActiveViewing?.listingId || selectedLead?.listingId,
         buyerName: offerLinkForm.buyerName,
         buyerEmail: offerLinkForm.buyerEmail,
         buyerPhone: offerLinkForm.buyerPhone,
         note: offerLinkForm.note,
         clientIntakePreference: offerLinkForm.clientIntakePreference,
-        directOfferCentreSubmission: event?.currentTarget?.dataset?.offerCentre === 'true',
         source: event?.currentTarget?.dataset?.offerCentre === 'true'
-          ? 'buyer_offer_workspace'
-          : 'buyer_appointment_offer_workspace',
+          ? BUYER_ONBOARDING_OTP_WORKSPACE_SOURCE
+          : 'buyer_appointment_onboarding_workspace',
       })
       if (result?.successMessage) setMessage(result.successMessage)
       await reloadRecords(organisationId)
     } catch (onboardingError) {
-      setError(onboardingError?.message || 'Unable to send the buyer offer link.')
+      setError(onboardingError?.message || 'Unable to send the buyer onboarding link.')
     } finally {
       setIsOfferLinkSending(false)
     }
@@ -26499,6 +26621,86 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
+  async function uploadAgentBuyerLeadDocument(event = null) {
+    const file = event?.target?.files?.[0] || null
+    if (event?.target) event.target.value = ''
+    if (!organisationId || !selectedLead || selectedLeadIsSeller || !file) return
+    const workspaceId = organisationId
+    const leadId = selectedLeadRecordId || selectedLead.leadId
+    const documentType = BUYER_AGENT_DOCUMENT_TYPES.find((item) => item.key === agentBuyerDocumentType) || BUYER_AGENT_DOCUMENT_TYPES[0]
+    const uploadedAt = new Date().toISOString()
+    try {
+      setAgentBuyerDocumentUploading(true)
+      setError('')
+      const upload = await uploadToStorageCandidateBuckets({
+        file,
+        objectPath: buildKingstonsSellerPackStoragePath({
+          organisationId,
+          leadId,
+          documentKey: documentType.key || 'buyer_document',
+          fileName: file.name || documentType.label || 'buyer-document',
+          storageFolder: BUYER_AGENT_DOCUMENT_STORAGE_FOLDER,
+        }),
+        context: 'buyer lead document upload',
+      })
+      const uploadedDocument = {
+        key: documentType.key,
+        requirementKey: documentType.key,
+        requirement_key: documentType.key,
+        documentType: documentType.key,
+        document_type: documentType.key,
+        label: documentType.label,
+        title: documentType.label,
+        category: 'buyer',
+        document_category: 'buyer',
+        source: 'agent_buyer_document_upload',
+        uploadSource: 'agent_buyer_document_upload',
+        status: 'uploaded',
+        statusLabel: 'Uploaded',
+        uploadedAt,
+        uploadedBy: normalizeText(currentAgent.email || currentAgent.fullName || currentAgent.id),
+        uploadedFileName: file.name || documentType.label,
+        fileName: file.name || documentType.label,
+        fileSize: Number(file.size || 0) || null,
+        fileType: normalizeText(file.type),
+        storageBucket: upload.storageBucket,
+        storagePath: upload.storagePath,
+        url: upload.url,
+      }
+      const rawPayload = parseLeadRawEnquiryPayload(selectedLead?.rawEnquiryPayload || selectedLead?.raw_enquiry_payload)
+      const agentUploadedBuyerDocuments = [
+        ...getAgentUploadedBuyerDocuments(selectedLead),
+        uploadedDocument,
+      ]
+      const nextRawPayload = {
+        ...rawPayload,
+        agentUploadedBuyerDocuments,
+      }
+      const leadPatch = {
+        rawEnquiryPayload: nextRawPayload,
+        agentUploadedBuyerDocuments,
+      }
+      patchSelectedLeadRecord(leadPatch, leadId)
+      await updateAgencyCrmLeadRecord(workspaceId, leadId, {
+        rawEnquiryPayload: nextRawPayload,
+        agentUploadedBuyerDocuments,
+      })
+      await createAgencyCrmLeadActivity(workspaceId, leadId, {
+        agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+        activityType: 'Buyer Document Uploaded By Agent',
+        activityNote: `${documentType.label} uploaded by agent: ${file.name || documentType.label}.`,
+        outcome: 'Buyer document captured',
+        activityDate: uploadedAt,
+      }, { actor: currentAgent })
+      setMessage(`${documentType.label} uploaded for this buyer.`)
+      setLeadWorkspaceTab('documents')
+    } catch (uploadError) {
+      setError(uploadError?.message || 'Unable to upload the buyer document.')
+    } finally {
+      setAgentBuyerDocumentUploading(false)
+    }
+  }
+
   function openSelectedLeadOtpEditor() {
     setOtpQuickStartOpen(false)
     setOtpQuickStartError('')
@@ -26518,10 +26720,25 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     try {
       setOtpQuickStartBusy(true)
       setOtpQuickStartError('')
-      setOtpQuickStartProgress('Opening OTP upload workspace...')
+      if (selectedLeadOtpQuickStartBlockers.length) {
+        throw new Error(selectedLeadOtpQuickStartBlockers[0] || 'Review the buyer process details before uploading the signed OTP.')
+      }
+      if (selectedLeadOtpTemplateBlocking) {
+        throw new Error(selectedLeadOtpTemplateReadiness?.value || 'No published OTP template matches this legal route.')
+      }
+      setOtpQuickStartProgress('Opening OTP upload workspace. OTP workspace ready. Preparing offer upload...')
+      const offerResult = await createAndSendOfferLinkForLead({
+        listingId: offerLinkForm.listingId || selectedLeadActiveViewing?.listingId || selectedLead?.listingId,
+        buyerName: offerLinkForm.buyerName,
+        buyerEmail: offerLinkForm.buyerEmail,
+        buyerPhone: offerLinkForm.buyerPhone,
+        note: offerLinkForm.note,
+        clientIntakePreference: selectedLeadClientIntakePreference,
+        successPrefix: OFFER_UPLOAD_SUCCESS_PREFIX,
+      })
+      if (offerResult?.successMessage) setMessage(offerResult.successMessage)
       setLeadWorkspaceTab(BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY)
       setOtpQuickStartOpen(false)
-      setMessage('OTP workspace ready. Upload the signed OTP when it is available.')
     } catch (otpError) {
       setOtpQuickStartError(otpError?.message || 'Unable to open the OTP workspace.')
     } finally {
@@ -26988,21 +27205,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     try {
       setCanonicalOfferActionId(leadActionId)
       setError('')
-      if (!normalizeText(selectedLeadLinkedTransactionId)) {
-        const offerResult = await createAndSendOfferLinkForLead({
-          listingId: offerLinkForm.listingId || selectedLeadActiveViewing?.listingId || selectedLead?.listingId,
-          buyerName: offerLinkForm.buyerName,
-          buyerEmail: offerLinkForm.buyerEmail,
-          buyerPhone: offerLinkForm.buyerPhone,
-          note: offerLinkForm.note,
-          clientIntakePreference: selectedLeadClientIntakePreference,
-          successPrefix: 'Offer ',
-        })
-        if (offerResult?.successMessage) setMessage(offerResult.successMessage)
-        setLeadWorkspaceTab(BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY)
-        await reloadRecords(organisationId)
-        return
-      }
       const result = await createAndSendBuyerOnboardingForLead({
         listingId: offerLinkForm.listingId || selectedLeadActiveViewing?.listingId || selectedLead?.listingId,
         buyerName: offerLinkForm.buyerName,
@@ -27011,7 +27213,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         note: offerLinkForm.note,
         clientIntakePreference: selectedLeadClientIntakePreference,
         source: normalizeText(selectedLeadLinkedTransactionId)
-          ? 'buyer_lead_workspace'
+          ? BUYER_ONBOARDING_OTP_WORKSPACE_SOURCE
           : 'buyer_lead_workspace_transaction_bootstrap',
       })
       if (result?.successMessage) setMessage(result.successMessage)
@@ -28182,21 +28384,23 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       <Filter size={15} />
                       Filter
                     </button>
-                    <button
-                      type="button"
-                      className="inline-flex min-h-[42px] items-center justify-center gap-2 rounded-[14px] bg-[#0f2743] px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,39,67,0.18)] transition hover:bg-[#0b223b]"
-                      onClick={() => openLeadForm(activeLeadCategoryView)}
-                    >
-                      <Plus size={16} />
-                      Add {activeLeadCategoryLabel} Lead
-                    </button>
+                    {leadTypeView !== 'archived' ? (
+                      <button
+                        type="button"
+                        className="inline-flex min-h-[42px] items-center justify-center gap-2 rounded-[14px] bg-[#0f2743] px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,39,67,0.18)] transition hover:bg-[#0b223b]"
+                        onClick={() => openLeadForm(activeLeadCategoryView)}
+                      >
+                        <Plus size={16} />
+                        Add {activeLeadCategoryLabel} Lead
+                      </button>
+                    ) : null}
                   </div>
                 </div>
-                <div className="mt-4 grid gap-2 rounded-[16px] border border-[#dbe4ee] bg-[#f8fbff] p-1.5 sm:grid-cols-2" role="tablist" aria-label="Lead categories">
+                <div className="mt-4 grid gap-2 rounded-[16px] border border-[#dbe4ee] bg-[#f8fbff] p-1.5 sm:grid-cols-3 xl:grid-cols-5" role="tablist" aria-label="Lead categories">
                   {LEAD_CATEGORY_VIEW_TABS.map((tab) => {
                     const { key, label } = tab
                     const TabIcon = tab.Icon
-                    const isActive = activeLeadCategoryView === key
+                    const isActive = leadTypeView === key
                     const count = leadCategoryCounts[key] || 0
                     return (
                       <button
@@ -29637,13 +29841,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
                 {selectedLead && !selectedLeadIsSeller ? (
                   <div className="mx-5 mb-5 scroll-mt-4 overflow-x-auto rounded-[22px] border border-[#dbe7f2] bg-[#fbfdff] p-2 shadow-[0_12px_32px_rgba(31,54,78,0.06)] sm:mx-7 lg:mx-8" role="tablist" aria-label="Lead workspace sections" data-testid="lead-workspace-tabs">
-                    <div className="grid min-w-[840px] grid-cols-6 gap-2">
+                    <div className="grid min-w-[960px] grid-cols-7 gap-2">
                       {[
                         { key: 'overview', label: 'Overview', meta: '' },
                         { key: BUYER_PROFILE_WORKSPACE_TAB_KEY, label: 'Buyer Profile', meta: '' },
                         { key: BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY, label: 'Transaction Setup / Offer', meta: selectedLeadTransactionSetupComplete ? 'Ready' : '' },
                         { key: 'properties', label: 'Properties', meta: selectedLeadBuyerRecommendations.length },
                         { key: 'appointments', label: 'Appointments', meta: selectedLeadAppointments.length },
+                        { key: 'documents', label: 'Documents', meta: selectedLeadAgentUploadedBuyerDocuments.length },
                         { key: 'activity', label: 'Activity', meta: selectedLeadUnifiedTimeline.length },
                       ].map((tab) => {
                         const isActive = resolveBuyerWorkspaceTabKey(leadWorkspaceTab) === tab.key
@@ -29934,13 +30139,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   </section>
 
 	                  <section className="scroll-mt-4 overflow-x-auto rounded-[20px] border border-[#dce7f2] bg-white shadow-[0_10px_30px_rgba(31,54,78,0.045)]" role="tablist" aria-label="Buyer workspace sections" data-testid="lead-workspace-tabs">
-	                    <div className="grid min-w-[840px] grid-cols-6">
+	                    <div className="grid min-w-[960px] grid-cols-7">
                       {[
                         { key: 'overview', label: 'Overview', meta: '' },
                         { key: BUYER_PROFILE_WORKSPACE_TAB_KEY, label: 'Buyer Profile', meta: '' },
 	                        { key: BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY, label: 'Transaction Setup / Offer', meta: selectedLeadTransactionSetupComplete ? 'Ready' : '' },
                         { key: 'properties', label: 'Properties', meta: selectedLeadBuyerRecommendations.length },
                         { key: 'appointments', label: 'Appointments', meta: selectedLeadAppointments.length },
+                        { key: 'documents', label: 'Documents', meta: selectedLeadAgentUploadedBuyerDocuments.length },
                         { key: 'activity', label: 'Activity', meta: selectedLeadUnifiedTimeline.length },
                       ].map((tab) => {
                         const isActive = resolveBuyerWorkspaceTabKey(leadWorkspaceTab) === tab.key
@@ -31425,6 +31631,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                     </button>
                                   )}
                                 </div>
+                              </div>
+                              <div className="mt-4 max-w-xl pl-1">
+                                <ListingPicker
+                                  listings={appointmentListingOptions}
+                                  value={selectedLeadEnquiryPropertyContext.linkedListingId}
+                                  onChange={handleLinkBuyerEnquiryListing}
+                                  label="Link to listing"
+                                />
                               </div>
                             </section>
 
@@ -34216,7 +34430,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                 </div>
                               </label>
                               <label className="grid gap-1">
-	                                <span className="text-xs font-semibold text-[#6f849b]">Offer Link Expiry</span>
+	                                <span className="text-xs font-semibold text-[#6f849b]">Buyer Onboarding Link Expiry</span>
                                 <Field type="date" value={offerLinkForm.expiryDate} onChange={(event) => setOfferLinkForm((previous) => ({ ...previous, expiryDate: event.target.value }))} />
                                 <span className="text-[0.68rem] text-[#7b8fa5]">Link will expire at 23:59 on this date</span>
                               </label>
@@ -34272,9 +34486,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               </div>
                             </div>
 
-                            {offerLinkForm.lastOfferLink ? (
+                            {offerLinkForm.lastBuyerOnboardingLink ? (
                               <div className="rounded-[14px] border border-[#cde7d5] bg-[#f2fbf5] px-4 py-3 text-sm text-[#286b43]">
-	                                Offer link ready: {offerLinkForm.lastOfferLink}
+	                                Buyer onboarding link ready: {offerLinkForm.lastBuyerOnboardingLink}
                               </div>
                             ) : null}
 
@@ -35081,6 +35295,59 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               <p className="mt-1 break-all text-sm font-semibold text-[#203a54]">{value}</p>
                             </div>
                           ))}
+                        </div>
+                        <div className="mt-4 rounded-[16px] border border-[#dbe7f2] bg-[#fbfdff] p-4">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-semibold text-[#20364c]">Agent-assisted buyer uploads</p>
+                              <p className="mt-1 text-xs leading-5 text-[#6a8098]">Use this when the buyer emailed documents to the agent.</p>
+                            </div>
+                            <span className="rounded-full border border-[#dbe7f2] bg-white px-3 py-1 text-xs font-semibold text-[#607891]">
+                              {selectedLeadAgentUploadedBuyerDocuments.length} uploaded
+                            </span>
+                          </div>
+                          <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
+                            <Field
+                              as="select"
+                              value={agentBuyerDocumentType}
+                              onChange={(event) => setAgentBuyerDocumentType(event.target.value)}
+                            >
+                              {BUYER_AGENT_DOCUMENT_TYPES.map((option) => (
+                                <option key={option.key} value={option.key}>{option.label}</option>
+                              ))}
+                            </Field>
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              className="rounded-[12px]"
+                              disabled={agentBuyerDocumentUploading}
+                              onClick={() => agentBuyerDocumentUploadInputRef.current?.click?.()}
+                            >
+                              <Upload className="h-4 w-4" />
+                              {agentBuyerDocumentUploading ? 'Uploading...' : 'Upload Buyer Document'}
+                            </Button>
+                            <input
+                              ref={agentBuyerDocumentUploadInputRef}
+                              type="file"
+                              className="sr-only"
+                              accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+                              disabled={agentBuyerDocumentUploading}
+                              onChange={(event) => void uploadAgentBuyerLeadDocument(event)}
+                            />
+                          </div>
+                          {selectedLeadAgentUploadedBuyerDocuments.length ? (
+                            <div className="mt-4 grid gap-2">
+                              {selectedLeadAgentUploadedBuyerDocuments.slice(-5).reverse().map((documentRow, index) => (
+                                <div key={`${documentRow.storagePath || documentRow.fileName || documentRow.label}-${index}`} className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-[#e6eef7] bg-white px-4 py-3">
+                                  <div className="min-w-0">
+                                    <p className="truncate text-sm font-semibold text-[#203a54]">{documentRow.label || documentRow.title || 'Buyer document'}</p>
+                                    <p className="mt-0.5 truncate text-xs font-medium text-[#6a8098]">{documentRow.uploadedFileName || documentRow.fileName || 'Uploaded file'}</p>
+                                  </div>
+                                  <span className="rounded-full border border-[#cfe8dc] bg-[#f5fcf8] px-2.5 py-1 text-xs font-semibold text-[#286b43]">Uploaded</span>
+                                </div>
+                              ))}
+                            </div>
+                          ) : null}
                         </div>
                         {selectedBuyerFicaRoleplayerModel.length ? (
                           <div className="mt-4 rounded-[16px] border border-[#dbe7f2] bg-[#fbfdff] p-4">

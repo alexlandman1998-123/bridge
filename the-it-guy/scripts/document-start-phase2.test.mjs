@@ -110,7 +110,7 @@ assertIncludes(
 const otpQuickStartBlock = getFunctionBlock(agencyPipeline, 'handleOtpQuickStartGenerateAndSend')
 for (const reference of [
   'createAndSendOfferLinkForLead',
-  "successPrefix: 'Offer upload '",
+  'OFFER_UPLOAD_SUCCESS_PREFIX',
   'setOtpQuickStartOpen(false)',
 ]) {
   assertIncludes(otpQuickStartBlock, reference, `Offer upload quick start flow should keep ${reference}.`)

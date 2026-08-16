@@ -4663,7 +4663,7 @@ function UnitDetail() {
 
   async function ensureOnboardingToken() {
     if (kingstonsBuyerOnboardingLinksDisabled) {
-      throw new Error(buyerOnboardingAccessDecisionReason)
+      throw new Error(kingstonsBuyerPortalDecisionReason)
     }
 
     if (!detail?.transaction?.id) {
@@ -4687,7 +4687,7 @@ function UnitDetail() {
     try {
       setError('')
       if (kingstonsBuyerOnboardingLinksDisabled) {
-        throw new Error(buyerOnboardingAccessDecisionReason)
+        throw new Error(kingstonsBuyerPortalDecisionReason)
       }
       const record = detail?.onboarding?.token ? detail.onboarding : await ensureOnboardingToken()
       const url = `${window.location.origin}/client/onboarding/${record.token}`
@@ -4819,7 +4819,7 @@ function UnitDetail() {
   async function handleOpenOnboardingLink() {
     try {
       if (kingstonsBuyerOnboardingLinksDisabled) {
-        throw new Error(buyerOnboardingAccessDecisionReason)
+        throw new Error(kingstonsBuyerPortalDecisionReason)
       }
       const record = detail?.onboarding?.token ? detail.onboarding : await ensureOnboardingToken()
       window.open(`/client/onboarding/${record.token}`, '_blank', 'noopener,noreferrer')
@@ -6185,6 +6185,7 @@ function UnitDetail() {
   const kingstonsBuyerOnboardingLinksDisabled = !buyerOnboardingAccessDecision.enabled
   const buyerPortalAccessDecisionReason = getClientAccessPolicyMessage(buyerPortalAccessDecision.reason, kingstonsBuyerPortalDecision?.reason || '')
   const buyerOnboardingAccessDecisionReason = getClientAccessPolicyMessage(buyerOnboardingAccessDecision.reason, kingstonsBuyerPortalDecision?.reason || '')
+  const kingstonsBuyerPortalDecisionReason = buyerOnboardingAccessDecisionReason || buyerPortalAccessDecisionReason || kingstonsBuyerPortalDecision?.reason || ''
   const salesWorkflowSnapshot = resolveSalesWorkflowSnapshot({
     onboardingStatus,
     onboardingCompletedAt: transaction?.onboarding_completed_at || null,

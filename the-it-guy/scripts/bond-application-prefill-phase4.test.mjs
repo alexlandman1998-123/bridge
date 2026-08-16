@@ -132,6 +132,16 @@ async function runStaticChecks() {
   assert.match(clientPortalSource, /data-bond-prefill-review-panel="true"/)
   assert.match(clientPortalSource, /Already filled/)
   assert.match(clientPortalSource, /renderBondPrefillBadge/)
+  assert.match(
+    clientPortalSource,
+    /className=\{isBondApplication \? 'hidden' : 'lg:hidden'\}/,
+    'The simplified buyer mobile portal should not swallow the bond application deep link.',
+  )
+  assert.match(
+    clientPortalSource,
+    /isBondApplication && effectiveWorkspace !== 'seller' \? 'flex min-h-screen' : 'hidden min-h-screen lg:flex'/,
+    'The full bond application workspace should render on mobile for /client/:token/bond-application.',
+  )
   assert.match(indexSource, /buildBondApplicationPrefillReviewModel/)
   assert.match(indexSource, /getBondApplicationPrefillFieldReview/)
   assert.match(reviewModelSource, /Saved answer/)

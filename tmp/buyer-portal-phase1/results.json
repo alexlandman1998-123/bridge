@@ -1,0 +1,58 @@
+{
+  "target": "http://127.0.0.1:5174/client/demo-buyer-portal/buying",
+  "console": [
+    {
+      "label": "desktop",
+      "type": "warning",
+      "text": "GoTrueClient@sb-isdowlnollckzvltkasn-auth-token:1 (2.98.0) 2026-08-16T09:07:13.260Z Multiple GoTrueClient instances detected in the same browser context. It is not an error, but this should be avoided as it may produce undefined behavior when used concurrently under the same storage key."
+    },
+    {
+      "label": "mobile",
+      "type": "warning",
+      "text": "GoTrueClient@sb-isdowlnollckzvltkasn-auth-token:1 (2.98.0) 2026-08-16T09:07:18.238Z Multiple GoTrueClient instances detected in the same browser context. It is not an error, but this should be avoided as it may produce undefined behavior when used concurrently under the same storage key."
+    }
+  ],
+  "pageErrors": [],
+  "desktop": {
+    "screenshot": "/Users/alexanderlandman/the-it-guy/tmp/buyer-portal-phase1/desktop.png",
+    "url": "http://127.0.0.1:5174/client/demo-buyer-portal/buying",
+    "overlay": false,
+    "bodyLength": 1793,
+    "horizontalOverflow": false,
+    "headings": [
+      "H2: Pine Avenue Apartments",
+      "H3: Upload the latest payslip",
+      "H3: Your progress",
+      "H3: Purchase updates",
+      "H1: Arch9",
+      "H1: Welcome, Mia.",
+      "H2: Upload the latest payslip",
+      "H2: Pine Avenue Apartments",
+      "H2: Your Purchase Journey",
+      "H3: Purchase Updates",
+      "H3: Reservation Deposit Required"
+    ],
+    "topText": "Arch9\n\nBuyer Workspace\n\nWORKSPACE\nBuying\nSelling (Request access)\n\nHOME\n\nOverview\n\nYOUR PURCHASE\n\nProgress\nAppointments\nFinance\n\nPROPERTY\n\nDocuments\n3 required\nHandover\nSnags\n0 open\n\nACCOUNT\n\nAccount\nMy Details\nTeam\n\nNeed help?\n\nWe're here for you.\n\nMessage Team\nCall Team\n\nArch9\n\nReal Estate\n\nWelcome, Mia.\n\nNEEDS YOUR ATTENTION\n\nUpload the latest payslip\nACTION NEEDED\n\nThe bond originator needs one updated payslip before submitting the application pack.\n\nOpen Documents\nMessage\nCall\n\nBuyer Workspace\n\nPine Avenue Apartments\n\nUnit 4\n\nACTION REQUIRED\n\nCURRENT PURCHASE STAGE\n\nFinance\n\nNext: Transfer Preparation\n\nR 2 850 000\n\n50%\nCOMPLETE\n\nDOCUMENTS\n\n3 required\n\n3 needed\n\nFINANCE\n\nBond\n\nStatus\n\nYour Purchase Journey\n\nFollow reservation, OTP, finance, transfer, registration, and handover.\n\n50% complete\nReservation / Deposit\nOffer Accepted\nOTP\nFinance\nCurrent\nTransfer Preparation\nTransfer / Registration\n\nCurrent milestone: Finance. Next milestone: Transfer Preparation.\n\nOpen Documents\nPurchase Updates\n\n1 update need your attention.\n\n2 UPDATES\nArch9 Team\nARCH9 SYSTEM\n\n7/6/2026, 11:30:00 AM\n\nBond package in progress\n\nYour bond originator is waiting for the latest payslip before sending the application pack to the banks.\n\nArch9 Team\nARCH9 SYSTEM\n\n7/6/2026, 11:05:00 AM\n\nOTP shared\n\nThe draft Offer to Purchase is available in your documents area.\n\nASK YOUR TEAM\nSend Message\nReservation Depo"
+  },
+  "mobile": {
+    "screenshot": "/Users/alexanderlandman/the-it-guy/tmp/buyer-portal-phase1/mobile.png",
+    "url": "http://127.0.0.1:5174/client/demo-buyer-portal/buying",
+    "overlay": false,
+    "bodyLength": 851,
+    "horizontalOverflow": false,
+    "headings": [
+      "H2: Pine Avenue Apartments",
+      "H3: Upload the latest payslip",
+      "H3: Your progress",
+      "H3: Purchase updates",
+      "H1: Arch9",
+      "H1: Welcome, Mia.",
+      "H2: Upload the latest payslip",
+      "H2: Pine Avenue Apartments",
+      "H2: Your Purchase Journey",
+      "H3: Purchase Updates",
+      "H3: Reservation Deposit Required"
+    ],
+    "topText": "M\n\nBuyer Workspace\n\nPine Avenue Apartments\n\nUnit 4\n\nACTION REQUIRED\n\nCURRENT PURCHASE STAGE\n\nFinance\n\nNext milestone: Transfer Preparation\n\n50%\nCOMPLETE\n\nNEEDS YOUR ATTENTION\n\n1 OPEN\nUpload the latest payslip\n\nThe bond originator needs one updated payslip before submitting the application pack.\n\nDue 10 Jul 2026\n\nOpen Documents\nYour progress\nR 2 850 000\nReservation / Deposit\nOffer Accepted\nOTP\n4\nFinance\n5\nTransfer Preparation\n6\nTransfer / Registration\n\nDOCUMENTS\n\n3 required\n3 needed\nView documents\n\nFINANCE\n\nBond\nStatus\nView finance\nPurchase updates\n2 items\n7/6/2026, 11:30:00 AM\n\nBond package in progress\n\nYour bond originator is waiting for the latest payslip before sending the application pack to the banks.\n\n7/6/2026, 11:05:00 AM\n\nOTP shared\n\nThe draft Offer to Purchase is available in your documents area.\n\nHome\nTasks\nDocuments\nFinance\nTeam"
+  }
+}

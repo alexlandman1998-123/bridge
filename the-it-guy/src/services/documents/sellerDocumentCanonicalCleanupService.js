@@ -185,6 +185,10 @@ const PROFESSIONAL_ONLY_CANONICAL_KEYS = new Set([
   'vat_status_confirmation',
 ])
 
+const COVERED_NON_CATALOGUE_SELLER_KEYS = new Set([
+  'signed_mandate',
+])
+
 const GRANULAR_SELLER_KEY_PATTERNS = Object.freeze([
   [/^owner_\d+_id_document$/, 'seller_id_document'],
   [/^owner_\d+_proof_of_address$/, 'seller_proof_of_address'],
@@ -247,7 +251,9 @@ function canonicalKeyFor(row = {}) {
 
 function isMappedOrGranularCovered(row = {}) {
   if (row.canonicalDocumentRequestKnown) return true
-  return canonicalKeyFor(row) !== normalizeKey(row.key || row.requirement_key || row.id)
+  const rowKey = normalizeKey(row.key || row.requirement_key || row.id)
+  if (COVERED_NON_CATALOGUE_SELLER_KEYS.has(rowKey)) return true
+  return canonicalKeyFor(row) !== rowKey
 }
 
 function isProfessionalOnlySellerRow(row = {}) {

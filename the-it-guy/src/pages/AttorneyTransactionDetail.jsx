@@ -17515,6 +17515,21 @@ function AttorneyTransactionDetail() {
     () => getBondApplicationAlignmentFields(bondApplicationViewModel),
     [bondApplicationViewModel],
   )
+  const bondApplicationFieldAlignmentSections = useMemo(
+    () => Object.entries(bondApplicationViewModel.originatorFieldAlignment?.sections || {})
+      .map(([key, section]) => ({
+        key,
+        label: section?.label || toTitle(key),
+        captured: Number(section?.capturedCount || section?.captured || 0),
+        total: Number(section?.totalCount || section?.total || 0),
+      })),
+    [bondApplicationViewModel.originatorFieldAlignment],
+  )
+  const bondApplicationFieldAlignmentMissingFields = useMemo(
+    () => bondApplicationAlignmentFields.filter((field) => !(field?.captured || field?.complete)),
+    [bondApplicationAlignmentFields],
+  )
+  const bondApplicationConfirmationConfidence = bondApplicationViewModel.buyerConfirmationConfidence || bondApplicationViewModel.confirmationConfidence || {}
   const bondApplicationSectionMetrics = useMemo(
     () => buildBondApplicationSectionMetrics(bondApplicationViewModel),
     [bondApplicationViewModel],
@@ -21639,6 +21654,88 @@ function AttorneyTransactionDetail() {
                     {secondary ? <span className="mt-1 block text-xs font-medium text-textMuted">{secondary}</span> : null}
                   </article>
                 ))}
+              </div>
+            </section>
+
+            <section className="rounded-[18px] border border-borderDefault bg-white px-5 py-4 shadow-surface">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <p className="text-label font-semibold uppercase text-textMuted">Buyer Portal Field Alignment</p>
+                  <h3 className="mt-1 text-base font-semibold text-textStrong">
+                    {bondApplicationViewModel.originatorFieldAlignment?.capturedCount || 0}/{bondApplicationViewModel.originatorFieldAlignment?.totalCount || 0} originator fields matched
+                  </h3>
+                  <p className="mt-1 text-sm leading-6 text-textMuted">
+                    Shows whether the buyer portal bond application has the fields the originator needs before bank submission.
+                  </p>
+                </div>
+                <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+                  bondApplicationFieldAlignmentMissingFields.length
+                    ? 'border-[#f1dfbd] bg-[#fff9ec] text-[#8a641d]'
+                    : 'border-[#cfe8dc] bg-[#f2fbf5] text-[#286b43]'
+                }`}>
+                  {bondApplicationFieldAlignmentMissingFields.length ? 'Missing Fields' : 'Ready'}
+                </span>
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {bondApplicationFieldAlignmentSections.map((section) => (
+                  <div key={section.key} className="rounded-[14px] border border-borderSoft bg-surfaceSubtle px-3 py-3">
+                    <p className="text-xs font-semibold text-textMuted">{section.label}</p>
+                    <p className="mt-1 text-sm font-semibold text-textStrong">{section.captured}/{section.total || 0} matched</p>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-4 rounded-[14px] border border-borderSoft bg-surfaceSubtle px-4 py-3">
+                <p className="text-xs font-semibold uppercase text-textMuted">Missing Fields</p>
+                {bondApplicationFieldAlignmentMissingFields.length ? (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {bondApplicationFieldAlignmentMissingFields.slice(0, 8).map((field) => (
+                      <span key={field.key || field.label} className="rounded-full border border-[#f1dfbd] bg-white px-2.5 py-1 text-xs font-semibold text-[#8a641d]">
+                        {field.label || toTitle(field.key)}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-2 text-sm font-semibold text-success">All tracked originator fields matched.</p>
+                )}
+              </div>
+            </section>
+
+            <section className="rounded-[18px] border border-borderDefault bg-white px-5 py-4 shadow-surface">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <p className="text-label font-semibold uppercase text-textMuted">Buyer Section Confirmations</p>
+                  <h3 className="mt-1 text-base font-semibold text-textStrong">
+                    {bondApplicationConfirmationConfidence.confirmedCount || 0}/{bondApplicationConfirmationConfidence.totalSupportedSections || 0} buyer sections confirmed ({bondApplicationConfirmationConfidence.percent || 0}%)
+                  </h3>
+                  <p className="mt-1 text-sm leading-6 text-textMuted">
+                    Read-only confidence signal from buyer portal prefill confirmations before originator processing.
+                  </p>
+                </div>
+                <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+                  bondApplicationConfirmationConfidence.confidenceLevel === 'full'
+                    ? 'border-[#cfe8dc] bg-[#f2fbf5] text-[#286b43]'
+                    : 'border-[#f1dfbd] bg-[#fff9ec] text-[#8a641d]'
+                }`}>
+                  {formatApplicationValue(bondApplicationConfirmationConfidence.confidenceLevel || 'pending')}
+                </span>
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                <div className="rounded-[14px] border border-borderSoft bg-surfaceSubtle px-4 py-3">
+                  <p className="text-xs font-semibold uppercase text-textMuted">Confirmed Sections</p>
+                  <p className="mt-2 text-sm font-semibold text-textStrong">
+                    {(bondApplicationConfirmationConfidence.confirmedSectionKeys || []).length
+                      ? bondApplicationConfirmationConfidence.confirmedSectionKeys.map((key) => toTitle(key)).join(', ')
+                      : 'None confirmed yet'}
+                  </p>
+                </div>
+                <div className="rounded-[14px] border border-borderSoft bg-surfaceSubtle px-4 py-3">
+                  <p className="text-xs font-semibold uppercase text-textMuted">Unconfirmed Buyer Sections</p>
+                  <p className="mt-2 text-sm font-semibold text-textStrong">
+                    {(bondApplicationConfirmationConfidence.missingSectionKeys || []).length
+                      ? bondApplicationConfirmationConfidence.missingSectionKeys.map((key) => toTitle(key)).join(', ')
+                      : 'All supported sections confirmed'}
+                  </p>
+                </div>
               </div>
             </section>
 

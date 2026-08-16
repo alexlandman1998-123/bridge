@@ -1802,7 +1802,8 @@ function getPortalSectionFromRoute(pathname = '', routeSection = '') {
   const normalizedSection = String(section || '').trim().toLowerCase()
 
   if (normalizedSection === 'progress') return 'progress'
-  if (normalizedSection === 'bond-application' || normalizedSection === 'bond_application') return 'bond_application'
+  if (normalizedSection === 'bond-application') return 'bond_application'
+  if (normalizedSection === 'bond_application') return 'bond_application'
   if (normalizedSection === 'appointments') return 'appointments'
   if (normalizedSection === 'offers') return 'offers'
   if (normalizedSection === 'account') return 'account'
@@ -12468,7 +12469,7 @@ function ClientPortal() {
           />
         </div>
       ) : (
-        <div className="lg:hidden">
+        <div className={isBondApplication ? 'hidden' : 'lg:hidden'}>
           <BuyerMobilePortal
             token={token}
             workspaceNavigationScope={workspaceNavigationScope}
@@ -12543,7 +12544,7 @@ function ClientPortal() {
           />
         </div>
       )}
-      <div className="hidden min-h-screen lg:flex">
+      <div className={isBondApplication && effectiveWorkspace !== 'seller' ? 'flex min-h-screen' : 'hidden min-h-screen lg:flex'}>
         <aside className="fixed inset-y-0 left-0 z-30 hidden w-[280px] flex-col overflow-y-auto bg-[#152432] px-5 py-4 text-slate-100 [background-image:radial-gradient(circle_at_18%_-6%,rgba(108,152,193,0.18)_0%,transparent_34%),linear-gradient(180deg,#243c4f_0%,#152432_100%)] lg:flex">
           <div className="border-b border-white/10 pb-3 pt-[1.2rem]">
             {effectiveWorkspace === 'seller' ? (

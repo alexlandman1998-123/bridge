@@ -1,0 +1,152 @@
+{
+  "checkedAt": "2026-08-16T09:55:19.338Z",
+  "results": [
+    {
+      "name": "overview-desktop",
+      "url": "http://127.0.0.1:5174/client/demo-buyer-portal/buying",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "metrics": {
+        "hasContent": true,
+        "hasErrorOverlay": false,
+        "horizontalOverflow": false,
+        "activeLinks": [
+          "Home",
+          "Overview",
+          "Overview"
+        ],
+        "hasGenericBuyerHeader": false,
+        "hasProgressPage": false,
+        "hasTeamActions": false,
+        "bodyTextSample": "Arch9\n\nYour purchase\n\nMODE\nBuying\nSelling (Request access)\nNOW\n50%\n\nFinance\n\nNext: Transfer Preparation\n\nSTART\n\nOverview\n\nNEXT STEPS\n\nProgress\nAppointments\nFinance\n\nPROPERTY\n\nDocuments\n3 required\nKeys\nIssues\n0 open\n\nSUPPORT\n\nTeam\nAccount\nLoading\nMy Details\n\nNeed help?\n\nSarah Williams\n\nMessage\nCall\n\nArch9\n\nReal Estate\n\nWelcome, Mia.\n\nNEEDS YOUR ATTENTION\n\nUpload the latest payslip\nACTION NEEDED\n\nThe bond originator needs one updated payslip before submitting the application pack.\n\nOpen Documents\nMessage\nCall\n\nYour purchase\n\nPine Avenue Apartments\n\nUnit 4\n\nACTION NEEDED\n\nWHERE THINGS STAND\n\nFinance\n\nNext: Transfer Preparation\n\nR 2 850 000\n\n50%\nCOMPLETE\n\nDOCUMENTS\n\n3 required\n\n3 needed\n\nFINANCE\n\nBond\n\nStatus\n\nYour progress\n\nReservation, offer, finance, transfer, registration, keys.\n\n50% complete\nReservation / Deposit\nOffer Accepted\nOTP\nFinance\nCurrent\nTransfer Preparation\nTransfer / Registr"
+      },
+      "pageErrors": [],
+      "consoleMessages": [
+        {
+          "type": "warning",
+          "text": "GoTrueClient@sb-isdowlnollckzvltkasn-auth-token:1 (2.98.0) 2026-08-16T09:55:03.323Z Multiple GoTrueClient instances detected in the same browser context. It is not an error, but this should be avoided as it may produce undefined behavior when used concurrently under the same storage key."
+        }
+      ]
+    },
+    {
+      "name": "progress-desktop",
+      "url": "http://127.0.0.1:5174/client/demo-buyer-portal/buying/progress",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "metrics": {
+        "hasContent": true,
+        "hasErrorOverlay": false,
+        "horizontalOverflow": false,
+        "activeLinks": [
+          "Tasks",
+          "Progress",
+          "Progress"
+        ],
+        "hasGenericBuyerHeader": false,
+        "hasProgressPage": false,
+        "hasTeamActions": false,
+        "bodyTextSample": "Arch9\n\nYour purchase\n\nMODE\nBuying\nSelling (Request access)\nNOW\n50%\n\nFinance\n\nNext: Transfer Preparation\n\nSTART\n\nOverview\n\nNEXT STEPS\n\nProgress\nAppointments\nFinance\n\nPROPERTY\n\nDocuments\n3 required\nKeys\nIssues\n0 open\n\nSUPPORT\n\nTeam\nAccount\nMy Details\n\nNeed help?\n\nSarah Williams\n\nMessage\nCall\n\nArch9\n\nReal Estate\n\nPURCHASE PROGRESS\n\nTrack what is complete and what comes next.\n\nNow: Finance. Next: Transfer Preparation.\n\nOpen Documents\nYour progress\n\nReservation, offer, finance, transfer, registration, keys.\n\n50% complete\nReservation / Deposit\nOffer Accepted\nOTP\nFinance\nCurrent\nTransfer Preparation\nTransfer / Registration\n\nNow: Finance. Next: Transfer Preparation.\n\nOpen Documents\n\nWHERE THINGS STAND\n\nFinance\n50% complete\n\nWHAT YOU NEED TO DO\n\nComplete bond form sections and upload requested financial documents.\n\nWHAT YOUR TEAM IS DOING\n\nYour file is currently moving through finance progression"
+      },
+      "pageErrors": [],
+      "consoleMessages": [
+        {
+          "type": "warning",
+          "text": "GoTrueClient@sb-isdowlnollckzvltkasn-auth-token:1 (2.98.0) 2026-08-16T09:55:06.130Z Multiple GoTrueClient instances detected in the same browser context. It is not an error, but this should be avoided as it may produce undefined behavior when used concurrently under the same storage key."
+        }
+      ]
+    },
+    {
+      "name": "team-desktop",
+      "url": "http://127.0.0.1:5174/client/demo-buyer-portal/buying/team",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "metrics": {
+        "hasContent": true,
+        "hasErrorOverlay": false,
+        "horizontalOverflow": false,
+        "activeLinks": [
+          "Team",
+          "Team",
+          "Team"
+        ],
+        "hasGenericBuyerHeader": false,
+        "hasProgressPage": false,
+        "hasTeamActions": true,
+        "bodyTextSample": "Arch9\n\nYour purchase\n\nMODE\nBuying\nSelling (Request access)\nNOW\n50%\n\nFinance\n\nNext: Transfer Preparation\n\nSTART\n\nOverview\n\nNEXT STEPS\n\nProgress\nAppointments\nFinance\n\nPROPERTY\n\nDocuments\n3 required\nKeys\nIssues\n0 open\n\nSUPPORT\n\nTeam\nAccount\nMy Details\n\nNeed help?\n\nSarah Williams\n\nMessage\nCall\n\nArch9\n\nReal Estate\n\nSUPPORT\n\nYour team\n\nThe people helping with your purchase, finance, transfer, and coordination.\n\n4 team contacts\nSALES TEAM\nSarah Williams\n\nsarah.demo@arch9.co.za\n\nMessage\nCall\nATTORNEY / CONVEYANCER\nJacobs Transfer Attorneys\n\ntransfers.demo@jacobs.example\n\nMessage\nBOND ORIGINATOR\nBetterBond Demo Desk\n\nbond.demo@betterbond.example\n\nMessage\nARCH9 SUPPORT\nArch9 Demo Agency\n\nKeeps your portal, documents, and key collection records aligned."
+      },
+      "pageErrors": [],
+      "consoleMessages": [
+        {
+          "type": "warning",
+          "text": "GoTrueClient@sb-isdowlnollckzvltkasn-auth-token:1 (2.98.0) 2026-08-16T09:55:09.803Z Multiple GoTrueClient instances detected in the same browser context. It is not an error, but this should be avoided as it may produce undefined behavior when used concurrently under the same storage key."
+        }
+      ]
+    },
+    {
+      "name": "overview-mobile",
+      "url": "http://127.0.0.1:5174/client/demo-buyer-portal/buying",
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "isMobile": true
+      },
+      "metrics": {
+        "hasContent": true,
+        "hasErrorOverlay": false,
+        "horizontalOverflow": false,
+        "activeLinks": [
+          "Home",
+          "Overview",
+          "Overview"
+        ],
+        "hasGenericBuyerHeader": false,
+        "hasProgressPage": false,
+        "hasTeamActions": false,
+        "bodyTextSample": "M\n\nYour purchase\n\nPine Avenue Apartments\n\nUnit 4\n\nACTION NEEDED\n\nWHERE THINGS STAND\n\nFinance\n\nNext: Transfer Preparation\n\n50%\nCOMPLETE\n\nNEEDS YOUR ATTENTION\n\n1 OPEN\nUpload the latest payslip\n\nThe bond originator needs one updated payslip before submitting the application pack.\n\nDue 10 Jul 2026\n\nOpen Documents\nYour progress\nR 2 850 000\nReservation / Deposit\nOffer Accepted\nOTP\n4\nFinance\n5\nTransfer Preparation\n6\nTransfer / Registration\n\nDOCUMENTS\n\n3 required\n3 needed\nView documents\n\nFINANCE\n\nBond\nStatus\nView finance\nTeam updates\n2 items\n7/6/2026, 11:30:00 AM\n\nBond package in progress\n\nYour bond originator is waiting for the latest payslip before sending the application pack to the banks.\n\n7/6/2026, 11:05:00 AM\n\nOTP shared\n\nThe draft Offer to Purchase is available in your documents area.\n\nHome\nTasks\nDocuments\nFinance\nTeam"
+      },
+      "pageErrors": [],
+      "consoleMessages": [
+        {
+          "type": "warning",
+          "text": "GoTrueClient@sb-isdowlnollckzvltkasn-auth-token:1 (2.98.0) 2026-08-16T09:55:13.453Z Multiple GoTrueClient instances detected in the same browser context. It is not an error, but this should be avoided as it may produce undefined behavior when used concurrently under the same storage key."
+        }
+      ]
+    },
+    {
+      "name": "progress-mobile",
+      "url": "http://127.0.0.1:5174/client/demo-buyer-portal/buying/progress",
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "isMobile": true
+      },
+      "metrics": {
+        "hasContent": true,
+        "hasErrorOverlay": false,
+        "horizontalOverflow": false,
+        "activeLinks": [
+          "Tasks",
+          "Progress",
+          "Progress"
+        ],
+        "hasGenericBuyerHeader": false,
+        "hasProgressPage": false,
+        "hasTeamActions": false,
+        "bodyTextSample": "M\n\nPROGRESS\n\nFinance\nReservation / Deposit\nYour reservation is captured and any required deposit is being confirmed.\nOffer Accepted\nYour accepted offer is confirmed and prepared for legal progression.\nOTP\nYour Offer to Purchase is prepared, shared, and signed by required parties.\nFinance\nYour bond application and lender approvals are progressing.\nTransfer Preparation\nAttorneys are preparing legal transfer packs and lodgement readiness.\nHome\nTasks\nDocuments\nFinance\nTeam"
+      },
+      "pageErrors": [],
+      "consoleMessages": [
+        {
+          "type": "warning",
+          "text": "GoTrueClient@sb-isdowlnollckzvltkasn-auth-token:1 (2.98.0) 2026-08-16T09:55:17.140Z Multiple GoTrueClient instances detected in the same browser context. It is not an error, but this should be avoided as it may produce undefined behavior when used concurrently under the same storage key."
+        }
+      ]
+    }
+  ]
+}

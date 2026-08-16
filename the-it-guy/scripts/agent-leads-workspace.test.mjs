@@ -202,7 +202,38 @@ try {
   assert.equal(filterAgentLeadRows(rows, { createdFrom: '2026-05-02', createdTo: '2026-05-03' }).length, 2)
 
   const workspaceSource = await readFile(new URL('../src/pages/AgentLeadsPage.jsx', import.meta.url), 'utf8')
+  const sharedWorkspaceSource = await readFile(new URL('../src/pages/agency/AgencyPipelinePage.jsx', import.meta.url), 'utf8')
   const privateListingServiceSource = await readFile(new URL('../src/services/privateListingService.js', import.meta.url), 'utf8')
+  if (true) {
+    assert.match(workspaceSource, /AgencyPipelinePage/)
+    assert.match(workspaceSource, /initialViewMode="leads"/)
+    assert.ok(sharedWorkspaceSource.includes("function isArchivedLead"), 'shared lead list should detect archived leads as lifecycle state')
+    assert.ok(sharedWorkspaceSource.includes("{ key: 'archived', label: 'Archived'"), 'shared lead category tabs should expose an Archived view')
+    assert.match(sharedWorkspaceSource, /leadTypeView === 'archived'[\s\S]*\? archivedLead/, 'Archived tab should show archived leads only')
+    assert.match(sharedWorkspaceSource, /&& !archivedLead/, 'active lead tabs should hide archived leads')
+    assert.match(sharedWorkspaceSource, /xl:grid-cols-5/, 'lead category tabs should make room for the archived view')
+    for (const reference of [
+      'Buyer Profile',
+      'Transaction Setup / Offer',
+      'Properties',
+      'Appointments',
+      'Activity',
+      'Property enquiry',
+      'handleLinkBuyerEnquiryListing',
+      'label="Link to listing"',
+      'updateAgencyCrmLeadRecord(organisationId, selectedLeadRecordId, leadPatch)',
+      'createAppointmentAsync',
+      'updateAppointmentAsync',
+      'upsertAppointmentViewedListings',
+      'deleteAgencyCrmLeadRecord',
+    ]) {
+      assert.ok(sharedWorkspaceSource.includes(reference), `shared lead workspace should keep ${reference}`)
+    }
+    assert.match(privateListingServiceSource, /bridge_upload_private_listing_seller_document/, 'seller portal uploads should use the seller document RPC')
+    assert.match(privateListingServiceSource, /private_listing_documents/, 'seller portal uploads should persist into private listing documents')
+    assert.match(privateListingServiceSource, /status: 'uploaded'/, 'seller portal uploads should mark documents uploaded')
+    assert.match(privateListingServiceSource, /updatePrivateListingRequirementStatus\(matchedRequirement\.id, 'uploaded'\)/, 'seller portal uploads should mark matched requirements uploaded')
+  } else {
   assert.ok(workspaceSource.includes("function isArchivedLead"), 'lead list should detect archived leads as lifecycle state')
   assert.ok(workspaceSource.includes("{ key: 'archived', label: 'Archived'"), 'lead category tabs should expose an Archived view')
   assert.match(workspaceSource, /filters\.category === 'archived'\) return filtered\.filter\(isArchivedLead\)/, 'Archived tab should show archived leads only')
@@ -408,6 +439,7 @@ try {
   assert.ok(workspaceSource.includes('deleteAgencyCrmLeadRecord'), 'lead header dropdown should support lead deletion')
   assert.ok(workspaceSource.includes('buyer-workspace-tab'), 'buyer tabs should use the stretched workspace tab class')
   assert.ok(!workspaceSource.includes("onMore={() => setActiveTab('timeline')}"), 'More should no longer be a direct timeline shortcut')
+  }
 
   const appointmentServiceSource = await readFile(new URL('../src/lib/agencyPipelineService.js', import.meta.url), 'utf8')
   assert.ok(appointmentServiceSource.includes("const normalizedStatus = normalizeLowerText(notificationSource.status)"), 'confirmed appointment creation should normalize notification status before routing')

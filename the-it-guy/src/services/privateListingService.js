@@ -7620,10 +7620,12 @@ export async function getSellerOnboardingByToken(token, options = {}) {
       ? null
       : await fetchSellerPortalOnboardingRowByToken(client, normalizedToken, portalPayload.listing.id)
     const hydratedPortalPayload = mergeSellerPortalOnboardingFormData(portalPayload, persistedOnboarding)
-    const [branding, mediaByListingId] = await Promise.all([
+    const [initialBranding, hydratedBranding, mediaByListingId] = await Promise.all([
+      resolveSellerOnboardingBrandingSnapshot(client, normalizedToken, portalPayload.listing),
       resolveSellerOnboardingBrandingSnapshot(client, normalizedToken, hydratedPortalPayload.listing),
       fetchMediaRowsForListings(client, [hydratedPortalPayload.listing.id]),
     ])
+    const branding = mergeSellerOnboardingBrandingSnapshots(initialBranding, hydratedBranding)
     const listingWithMedia = attachDistributionMediaToListing(
       hydratedPortalPayload.listing,
       mediaByListingId.get(String(hydratedPortalPayload.listing.id)) || [],

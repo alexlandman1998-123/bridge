@@ -1,0 +1,67 @@
+{
+  "baseUrl": "http://127.0.0.1:5174/client/demo-buyer-portal/buying",
+  "checkedAt": "2026-08-16T09:37:01.266Z",
+  "results": [
+    {
+      "name": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "metrics": {
+        "hasContent": true,
+        "hasErrorOverlay": false,
+        "horizontalOverflow": false,
+        "hasOverviewComposer": false,
+        "activeLinks": [
+          "Home",
+          "Overview",
+          "Overview"
+        ],
+        "activeLinkCount": 3,
+        "hasSidebarProgress": false,
+        "oldVisibleTerms": [],
+        "hasHelpBox": true,
+        "bodyTextSample": "Arch9\n\nYour purchase\n\nMODE\nBuying\nSelling (Request access)\nNOW\n50%\n\nFinance\n\nNext: Transfer Preparation\n\nSTART\n\nOverview\n\nNEXT STEPS\n\nProgress\nAppointments\nFinance\n\nPROPERTY\n\nDocuments\n3 required\nKeys\nIssues\n0 open\n\nSUPPORT\n\nTeam\nAccount\nMy Details\n\nNeed help?\n\nSarah Williams\n\nMessage\nCall\n\nArch9\n\nReal Estate\n\nWelcome, Mia.\n\nNEEDS YOUR ATTENTION\n\nUpload the latest payslip\nACTION NEEDED\n\nThe bond originator needs one updated payslip before submitting the application pack.\n\nOpen Documents\nMessage\nCall\n\nYour purchase\n\nPine Avenue Apartments\n\nUnit 4\n\nACTION NEEDED\n\nWHERE THINGS STAND\n\nFinance\n\nNext: Transfer Preparation\n\nR 2 850 000\n\n50%\nCOMPLETE\n\nDOCUMENTS\n\n3 required\n\n3 needed\n\nFINANCE\n\nBond\n\n"
+      },
+      "consoleMessages": [
+        {
+          "type": "warning",
+          "text": "GoTrueClient@sb-isdowlnollckzvltkasn-auth-token:1 (2.98.0) 2026-08-16T09:36:54.920Z Multiple GoTrueClient instances detected in the same browser context. It is not an error, but this should be avoided as it may produce undefined behavior when used concurrently under the same storage key."
+        }
+      ],
+      "pageErrors": []
+    },
+    {
+      "name": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "isMobile": true
+      },
+      "metrics": {
+        "hasContent": true,
+        "hasErrorOverlay": false,
+        "horizontalOverflow": false,
+        "hasOverviewComposer": false,
+        "activeLinks": [
+          "Home",
+          "Overview",
+          "Overview"
+        ],
+        "activeLinkCount": 3,
+        "hasSidebarProgress": false,
+        "oldVisibleTerms": [],
+        "hasHelpBox": false,
+        "bodyTextSample": "M\n\nYour purchase\n\nPine Avenue Apartments\n\nUnit 4\n\nACTION NEEDED\n\nWHERE THINGS STAND\n\nFinance\n\nNext: Transfer Preparation\n\n50%\nCOMPLETE\n\nNEEDS YOUR ATTENTION\n\n1 OPEN\nUpload the latest payslip\n\nThe bond originator needs one updated payslip before submitting the application pack.\n\nDue 10 Jul 2026\n\nOpen Documents\nYour progress\nR 2 850 000\nReservation / Deposit\nOffer Accepted\nOTP\n4\nFinance\n5\nTransfer Preparation\n6\nTransfer / Registration\n\nDOCUMENTS\n\n3 required\n3 needed\nView documents\n\nFINANCE\n\nBond\nStatus\nView finance\nTeam updates\n2 items\n7/6/2026, 11:30:00 AM\n\nBond package in progress\n\nYour bond originator is waiting for the latest payslip before sending the application pack to the banks.\n\n7/6/2"
+      },
+      "consoleMessages": [
+        {
+          "type": "warning",
+          "text": "GoTrueClient@sb-isdowlnollckzvltkasn-auth-token:1 (2.98.0) 2026-08-16T09:36:59.053Z Multiple GoTrueClient instances detected in the same browser context. It is not an error, but this should be avoided as it may produce undefined behavior when used concurrently under the same storage key."
+        }
+      ],
+      "pageErrors": []
+    }
+  ]
+}

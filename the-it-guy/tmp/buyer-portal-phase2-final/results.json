@@ -1,0 +1,140 @@
+[
+  {
+    "name": "desktop",
+    "status": 200,
+    "metrics": {
+      "title": "Arch9 | Platform",
+      "textSample": "Arch9\n\nYour purchase\n\nWORKSPACE\nBuying\nSelling (Request access)\n\nHOME\n\nOverview\n\nYOUR PURCHASE\n\nProgress\nAppointments\nFinance\n\nPROPERTY\n\nDocuments\n3 required\nKeys\nIssues\n0 open\n\nACCOUNT\n\nAccount\nMy Details\nTeam\n\nNeed help?\n\nWe're here for you.\n\nMessage Team\nCall Team\n\nArch9\n\nReal Estate\n\nWelcome, Mia.\n\nNEEDS YOUR ATTENTION\n\nUpload the latest payslip\nACTION NEEDED\n\nThe bond originator needs one updated payslip before submitting the application pack.\n\nOpen Documents\nMessage\nCall\n\nYour purchase\n\nPine Avenue Apartments\n\nUnit 4\n\nACTION NEEDED\n\nWHERE THINGS STAND\n\nFinance\n\nNext: Transfer Preparation\n\nR 2 850 000\n\n50%\nCOMPLETE\n\nDOCUMENTS\n\n3 required\n\n3 needed\n\nFINANCE\n\nBond\n\nStatus\n\nYour progress\n\nReservation, offer, finance, transfer, registration, keys.\n\n50% complete\nReservation / Deposit\nOffer Accepted\nOTP\nFinance\nCurrent\nTransfer Preparation\nTransfer / Registration\n\nNow: Finance. Next: Tran",
+      "textLength": 1319,
+      "hasErrorOverlay": false,
+      "overlayText": "",
+      "scrollWidth": 1440,
+      "clientWidth": 1440,
+      "hasHorizontalOverflow": false,
+      "hasNeedsAttention": true,
+      "hasTeamUpdates": true,
+      "hasBuyerWorkspace": false,
+      "hasPurchaseUpdates": false,
+      "hasBondApplication": false,
+      "hasArch9System": false,
+      "hasTransactionTeam": false,
+      "hasSnags": false
+    },
+    "pageErrors": [],
+    "consoleMessages": [
+      {
+        "type": "debug",
+        "text": "[vite] connecting..."
+      },
+      {
+        "type": "debug",
+        "text": "[vite] connected."
+      },
+      {
+        "type": "info",
+        "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"
+      },
+      {
+        "type": "debug",
+        "text": "[AUTH] session-bootstrap:start"
+      },
+      {
+        "type": "debug",
+        "text": "[AUTH] session-bootstrap:start"
+      },
+      {
+        "type": "debug",
+        "text": "[AUTH] state-change {event: INITIAL_SESSION, hasSession: false}"
+      },
+      {
+        "type": "debug",
+        "text": "[AUTH] session-bootstrap:success {hasSession: false}"
+      },
+      {
+        "type": "debug",
+        "text": "[TELEMETRY] {category: auth, eventName: no_session, route: , severity: info, metadata: Object}"
+      },
+      {
+        "type": "log",
+        "text": "[perf][client-portal] core data loaded {token: demo-buyer-portal, durationMs: 2}"
+      },
+      {
+        "type": "log",
+        "text": "[perf][client-portal] full data loaded {token: demo-buyer-portal, durationMs: 3}"
+      },
+      {
+        "type": "warning",
+        "text": "GoTrueClient@sb-isdowlnollckzvltkasn-auth-token:1 (2.98.0) 2026-08-16T09:20:25.268Z Multiple GoTrueClient instances detected in the same browser context. It is not an error, but this should be avoided as it may produce undefined behavior when used concurrently under the same storage key."
+      }
+    ]
+  },
+  {
+    "name": "mobile",
+    "status": 200,
+    "metrics": {
+      "title": "Arch9 | Platform",
+      "textSample": "M\n\nYour purchase\n\nPine Avenue Apartments\n\nUnit 4\n\nACTION NEEDED\n\nWHERE THINGS STAND\n\nFinance\n\nNext: Transfer Preparation\n\n50%\nCOMPLETE\n\nNEEDS YOUR ATTENTION\n\n1 OPEN\nUpload the latest payslip\n\nThe bond originator needs one updated payslip before submitting the application pack.\n\nDue 10 Jul 2026\n\nOpen Documents\nYour progress\nR 2 850 000\nReservation / Deposit\nOffer Accepted\nOTP\n4\nFinance\n5\nTransfer Preparation\n6\nTransfer / Registration\n\nDOCUMENTS\n\n3 required\n3 needed\nView documents\n\nFINANCE\n\nBond\nStatus\nView finance\nTeam updates\n2 items\n7/6/2026, 11:30:00 AM\n\nBond package in progress\n\nYour bond originator is waiting for the latest payslip before sending the application pack to the banks.\n\n7/6/2026, 11:05:00 AM\n\nOTP shared\n\nThe draft Offer to Purchase is available in your documents area.\n\nHome\nTasks\nDocuments\nFinance\nTeam",
+      "textLength": 829,
+      "hasErrorOverlay": false,
+      "overlayText": "",
+      "scrollWidth": 390,
+      "clientWidth": 390,
+      "hasHorizontalOverflow": false,
+      "hasNeedsAttention": true,
+      "hasTeamUpdates": true,
+      "hasBuyerWorkspace": false,
+      "hasPurchaseUpdates": false,
+      "hasBondApplication": false,
+      "hasArch9System": false,
+      "hasTransactionTeam": false,
+      "hasSnags": false
+    },
+    "pageErrors": [],
+    "consoleMessages": [
+      {
+        "type": "debug",
+        "text": "[vite] connecting..."
+      },
+      {
+        "type": "debug",
+        "text": "[vite] connected."
+      },
+      {
+        "type": "info",
+        "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"
+      },
+      {
+        "type": "debug",
+        "text": "[AUTH] session-bootstrap:start"
+      },
+      {
+        "type": "debug",
+        "text": "[AUTH] session-bootstrap:start"
+      },
+      {
+        "type": "debug",
+        "text": "[AUTH] state-change {event: INITIAL_SESSION, hasSession: false}"
+      },
+      {
+        "type": "debug",
+        "text": "[AUTH] session-bootstrap:success {hasSession: false}"
+      },
+      {
+        "type": "debug",
+        "text": "[TELEMETRY] {category: auth, eventName: no_session, route: , severity: info, metadata: Object}"
+      },
+      {
+        "type": "log",
+        "text": "[perf][client-portal] core data loaded {token: demo-buyer-portal, durationMs: 4}"
+      },
+      {
+        "type": "log",
+        "text": "[perf][client-portal] full data loaded {token: demo-buyer-portal, durationMs: 6}"
+      },
+      {
+        "type": "warning",
+        "text": "GoTrueClient@sb-isdowlnollckzvltkasn-auth-token:1 (2.98.0) 2026-08-16T09:20:29.908Z Multiple GoTrueClient instances detected in the same browser context. It is not an error, but this should be avoided as it may produce undefined behavior when used concurrently under the same storage key."
+      }
+    ]
+  }
+]

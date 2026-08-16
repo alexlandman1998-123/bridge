@@ -1,0 +1,150 @@
+[
+  {
+    "name": "desktop",
+    "status": 200,
+    "metrics": {
+      "title": "Arch9 | Platform",
+      "textLength": 1291,
+      "hasErrorOverlay": false,
+      "overlayText": "",
+      "scrollWidth": 1440,
+      "clientWidth": 1440,
+      "hasHorizontalOverflow": false,
+      "hasNeedsAttention": true,
+      "hasTeamUpdates": true,
+      "hasBuyerWorkspace": false,
+      "hasPurchaseUpdates": false,
+      "hasBondApplication": false,
+      "hasArch9System": false,
+      "hasTransactionTeam": false,
+      "hasSnags": false,
+      "hasOverviewComposer": false,
+      "mobileNavRect": {
+        "top": 0,
+        "bottom": 0,
+        "width": 0
+      }
+    },
+    "pageErrors": [],
+    "consoleMessages": [
+      {
+        "type": "debug",
+        "text": "[vite] connecting..."
+      },
+      {
+        "type": "debug",
+        "text": "[vite] connected."
+      },
+      {
+        "type": "info",
+        "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"
+      },
+      {
+        "type": "debug",
+        "text": "[AUTH] session-bootstrap:start"
+      },
+      {
+        "type": "debug",
+        "text": "[AUTH] session-bootstrap:start"
+      },
+      {
+        "type": "debug",
+        "text": "[AUTH] state-change {event: INITIAL_SESSION, hasSession: false}"
+      },
+      {
+        "type": "debug",
+        "text": "[AUTH] session-bootstrap:success {hasSession: false}"
+      },
+      {
+        "type": "debug",
+        "text": "[TELEMETRY] {category: auth, eventName: no_session, route: , severity: info, metadata: Object}"
+      },
+      {
+        "type": "log",
+        "text": "[perf][client-portal] core data loaded {token: demo-buyer-portal, durationMs: 2}"
+      },
+      {
+        "type": "log",
+        "text": "[perf][client-portal] full data loaded {token: demo-buyer-portal, durationMs: 4}"
+      },
+      {
+        "type": "warning",
+        "text": "GoTrueClient@sb-isdowlnollckzvltkasn-auth-token:1 (2.98.0) 2026-08-16T09:31:07.685Z Multiple GoTrueClient instances detected in the same browser context. It is not an error, but this should be avoided as it may produce undefined behavior when used concurrently under the same storage key."
+      }
+    ]
+  },
+  {
+    "name": "mobile",
+    "status": 200,
+    "metrics": {
+      "title": "Arch9 | Platform",
+      "textLength": 829,
+      "hasErrorOverlay": false,
+      "overlayText": "",
+      "scrollWidth": 390,
+      "clientWidth": 390,
+      "hasHorizontalOverflow": false,
+      "hasNeedsAttention": true,
+      "hasTeamUpdates": true,
+      "hasBuyerWorkspace": false,
+      "hasPurchaseUpdates": false,
+      "hasBondApplication": false,
+      "hasArch9System": false,
+      "hasTransactionTeam": false,
+      "hasSnags": false,
+      "hasOverviewComposer": false,
+      "mobileNavRect": {
+        "top": 774,
+        "bottom": 832,
+        "width": 366
+      }
+    },
+    "pageErrors": [],
+    "consoleMessages": [
+      {
+        "type": "debug",
+        "text": "[vite] connecting..."
+      },
+      {
+        "type": "debug",
+        "text": "[vite] connected."
+      },
+      {
+        "type": "info",
+        "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"
+      },
+      {
+        "type": "debug",
+        "text": "[AUTH] session-bootstrap:start"
+      },
+      {
+        "type": "debug",
+        "text": "[AUTH] session-bootstrap:start"
+      },
+      {
+        "type": "debug",
+        "text": "[AUTH] state-change {event: INITIAL_SESSION, hasSession: false}"
+      },
+      {
+        "type": "debug",
+        "text": "[AUTH] session-bootstrap:success {hasSession: false}"
+      },
+      {
+        "type": "debug",
+        "text": "[TELEMETRY] {category: auth, eventName: no_session, route: , severity: info, metadata: Object}"
+      },
+      {
+        "type": "log",
+        "text": "[perf][client-portal] core data loaded {token: demo-buyer-portal, durationMs: 2}"
+      },
+      {
+        "type": "log",
+        "text": "[perf][client-portal] full data loaded {token: demo-buyer-portal, durationMs: 4}"
+      },
+      {
+        "type": "warning",
+        "text": "GoTrueClient@sb-isdowlnollckzvltkasn-auth-token:1 (2.98.0) 2026-08-16T09:31:10.948Z Multiple GoTrueClient instances detected in the same browser context. It is not an error, but this should be avoided as it may produce undefined behavior when used concurrently under the same storage key."
+      }
+    ]
+  }
+]

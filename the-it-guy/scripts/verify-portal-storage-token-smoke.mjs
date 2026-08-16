@@ -275,7 +275,7 @@ async function createSellerFixture() {
       listing_status: 'active',
       listing_visibility: 'internal',
       seller_onboarding_status: 'in_progress',
-      mandate_status: 'not_started',
+      mandate_status: 'signed_external_pending_upload',
       is_active: true,
       title: 'Storage policy smoke fixture',
       address_line_1: 'Temporary smoke fixture',
