@@ -13,6 +13,7 @@ const DEV_AUTH_STORAGE_KEY = 'itg:dev-auth-role'
 const DEFAULT_TRANSACTION_ID = 'demo-conveyancing-overflow-audit'
 const OUT_DIR = path.join('test-results', 'conveyancing-workspace-ui-overflow')
 const SOURCE_FILE = 'src/pages/AttorneyTransactionDetail.jsx'
+const NAVIGATION_TIMEOUT_MS = 60_000
 
 const VIEWPORTS = Object.freeze([
   Object.freeze({ key: 'desktop', width: 1440, height: 1050 }),
@@ -166,7 +167,7 @@ async function signInIfConfigured(page, baseUrl) {
   const password = compactText(process.env.CONVEYANCING_WORKSPACE_AUDIT_PASSWORD || process.env.STAGING_INTERNAL_PASSWORD)
   if (!email || !password) return false
 
-  await page.goto(`${baseUrl}/auth`, { waitUntil: 'domcontentloaded', timeout: 60_000 })
+  await page.goto(`${baseUrl}/auth`, { waitUntil: 'domcontentloaded', timeout: NAVIGATION_TIMEOUT_MS })
   await page.getByLabel(/email/i).fill(email)
   await page.getByRole('textbox', { name: /^password$/i }).fill(password)
   await page.getByRole('button', { name: /sign in securely|launch workspace|sign in/i }).first().click()
@@ -175,26 +176,32 @@ async function signInIfConfigured(page, baseUrl) {
 }
 
 async function settle(page) {
-  await page.waitForLoadState('domcontentloaded', { timeout: 60_000 })
+  await page.waitForLoadState('domcontentloaded', { timeout: NAVIGATION_TIMEOUT_MS })
   await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => null)
   await page.waitForTimeout(750)
 }
 
 async function openRoute(page, baseUrl, routePath) {
-  await page.goto(`${baseUrl}${routePath}`, { waitUntil: 'domcontentloaded', timeout: 60_000 })
+  await page.goto(`${baseUrl}${routePath}`, { waitUntil: 'domcontentloaded', timeout: NAVIGATION_TIMEOUT_MS })
   await settle(page)
   if (new URL(page.url()).pathname.startsWith('/auth') && await signInIfConfigured(page, baseUrl)) {
-    await page.goto(`${baseUrl}${routePath}`, { waitUntil: 'domcontentloaded', timeout: 60_000 })
+    await page.goto(`${baseUrl}${routePath}`, { waitUntil: 'domcontentloaded', timeout: NAVIGATION_TIMEOUT_MS })
     await settle(page)
   }
 }
 
 async function inspectViewport(page, baseUrl, routePath, viewport) {
   await page.setViewportSize({ width: viewport.width, height: viewport.height })
-  await openRoute(page, baseUrl, routePath)
+  let navigationError = null
+  try {
+    await openRoute(page, baseUrl, routePath)
+  } catch (error) {
+    navigationError = `${error.name || 'Error'}: ${error.message || error}`
+    await page.waitForTimeout(500).catch(() => null)
+  }
 
   const screenshot = path.join(OUT_DIR, `${viewport.key}-${safeSegment(routePath)}.png`)
-  await page.screenshot({ path: screenshot, fullPage: true })
+  await page.screenshot({ path: screenshot, fullPage: true }).catch(() => null)
 
   return page.evaluate(({ screenshotPath, routePathValue }) => {
     function text(value) {
@@ -282,7 +289,24 @@ async function inspectViewport(page, baseUrl, routePath, viewport) {
       textFitIssues: textFitIssues.slice(0, 60),
       layoutIssues: layoutIssues.slice(0, 40),
     }
-  }, { screenshotPath: screenshot, routePathValue: routePath })
+  }, { screenshotPath: screenshot, routePathValue: routePath }).then((inspection) => ({
+    ...inspection,
+    navigationError,
+  })).catch((error) => ({
+    route: routePath,
+    finalUrl: page.url(),
+    authBlocked: false,
+    frameworkOverlay: false,
+    navigationError: navigationError || `${error.name || 'Error'}: ${error.message || error}`,
+    bodyTextSample: '',
+    horizontalOverflowPx: 0,
+    workspaceDetected: false,
+    screenshot,
+    textFitIssueCount: 0,
+    layoutIssueCount: 0,
+    textFitIssues: [],
+    layoutIssues: [],
+  }))
 }
 
 function sourceAudit() {
@@ -418,6 +442,7 @@ async function browserAudit() {
   }
 
   const authBlocked = inspections.filter((item) => item.authBlocked)
+  const navigationFailures = inspections.filter((item) => item.navigationError)
   const workspaceNotDetected = inspections.filter((item) => !item.authBlocked && !item.workspaceDetected)
   const horizontalOverflow = inspections.filter((item) => item.horizontalOverflowPx > 2)
   const frameworkOverlays = inspections.filter((item) => item.frameworkOverlay)
@@ -435,6 +460,14 @@ async function browserAudit() {
       pageErrors: [...new Set(pageErrors)],
     },
     blockers: [
+      ...navigationFailures.map((item) => ({
+        code: 'CONVEYANCING_WORKSPACE_NAVIGATION_FAILED',
+        viewport: item.viewport.key,
+        route: item.route,
+        finalUrl: item.finalUrl,
+        message: item.navigationError,
+        solution: 'Fix route loading, point --app-url at a responsive running app, or use --source-only until a stable fixture route exists.',
+      })),
       ...authBlocked.map((item) => ({
         code: 'CONVEYANCING_WORKSPACE_AUTH_BLOCKED',
         viewport: item.viewport.key,
@@ -476,6 +509,7 @@ async function browserAudit() {
     ],
     totals: {
       inspectedRoutes: inspections.length,
+      navigationFailures: navigationFailures.length,
       authBlocked: authBlocked.length,
       workspaceNotDetected: workspaceNotDetected.length,
       horizontalOverflow: horizontalOverflow.length,
