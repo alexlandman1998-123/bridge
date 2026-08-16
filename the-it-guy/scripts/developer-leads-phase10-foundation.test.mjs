@@ -10,8 +10,13 @@ const migration = readFileSync(
   resolve(repoRoot, 'supabase/migrations/20260816092532_developer_leads_phase10_foundation.sql'),
   'utf8',
 )
+const statusNormalizationMigration = readFileSync(
+  resolve(repoRoot, 'supabase/migrations/20260816223000_developer_lead_status_normalization.sql'),
+  'utf8',
+)
 const contract = readFileSync(resolve(appRoot, 'src/core/developerLeads/developerLeadContract.js'), 'utf8')
 const contractTest = readFileSync(resolve(appRoot, 'src/core/developerLeads/__tests__/developerLeadContract.test.js'), 'utf8')
+const service = readFileSync(resolve(appRoot, 'src/services/developerLeadService.js'), 'utf8')
 const doc = readFileSync(resolve(appRoot, 'docs/developer-leads-phase10-foundation.md'), 'utf8')
 const phase5 = readFileSync(resolve(appRoot, 'scripts/developer-module-phase5-release-readiness.test.mjs'), 'utf8')
 const phase6 = readFileSync(resolve(appRoot, 'scripts/developer-module-phase6-post-rollout-monitoring.mjs'), 'utf8')
@@ -58,12 +63,34 @@ assert.equal(/\bauth\.role\s*\(/i.test(migration), false)
 assert.equal(/security\s+definer/i.test(migration), false)
 assert.equal(/buyer_email|buyer_phone|buyer_full_name|buyer_id_number/i.test(migration.match(/create table if not exists public\.developer_leads[\s\S]*?\);/i)?.[0] || ''), false)
 
+for (const token of [
+  'normalize_developer_lead_status_before_write',
+  'trg_developer_leads_normalize_status',
+  "when 'captured' then 'new'",
+  "when 'lead_captured' then 'new'",
+  "when 'buyer_onboarding_sent' then 'onboarding_sent'",
+  "when 'signed_otp_uploaded' then 'otp'",
+  "when 'transaction_created' then 'converted'",
+  'before insert or update of lead_status',
+  "notify pgrst, 'reload schema'",
+]) {
+  assert.match(statusNormalizationMigration, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'))
+}
+assert.equal(/security\s+definer/i.test(statusNormalizationMigration), false)
+assert.equal(/\bauth\.role\s*\(/i.test(statusNormalizationMigration), false)
+
 assert.match(contract, /DEVELOPER_LEAD_PHASE10_CONTRACT/)
+assert.match(contract, /DEVELOPER_LEAD_STATUS_ALIASES/)
+assert.match(contract, /captured:\s*'new'/)
+assert.match(contract, /signed_otp_uploaded:\s*'otp'/)
 assert.match(contract, /AGENCY_FED_LIMITED_DEVELOPER_FIELDS/)
 assert.match(contract, /AGENCY_FED_REDACTED_FIELDS/)
 assert.match(contract, /buildDeveloperLeadAccessProfile/)
 assert.match(contract, /maskDeveloperLeadForDeveloper/)
+assert.match(contractTest, /normalizeDeveloperLeadStatus\('captured'\), 'new'/)
 assert.match(contractTest, /developer lead Phase 10 domain contract passed/)
+assert.match(service, /normalizeDeveloperLeadStatus\(value\)/)
+assert.match(service, /\{ key: 'new', label: 'Captured' \}/)
 
 for (const pattern of [
   /Developer Leads Phase 10 Foundation/i,

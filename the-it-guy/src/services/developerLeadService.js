@@ -1,7 +1,7 @@
 import {
-  DEVELOPER_LEAD_STATUSES,
   buildDeveloperLeadAccessProfile,
   maskDeveloperLeadForDeveloper,
+  normalizeDeveloperLeadStatus,
 } from '../core/developerLeads/developerLeadContract.js'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js'
 
@@ -67,7 +67,7 @@ export const DEVELOPER_LEAD_PHASE12_CONTRACT = 'developer-leads-phase12-agency-f
 export const DEVELOPER_LEAD_PHASE22_CONTRACT = 'developer-leads-phase22-agency-handover-release-v1'
 
 export const DEVELOPER_LEAD_STATUS_OPTIONS = Object.freeze([
-  { key: 'new', label: 'New' },
+  { key: 'new', label: 'Captured' },
   { key: 'contacted', label: 'Contacted' },
   { key: 'qualified', label: 'Qualified' },
   { key: 'viewing', label: 'Viewing' },
@@ -103,8 +103,7 @@ function normalizeEmail(value = '') {
 }
 
 function normalizeStatus(value = '') {
-  const normalized = normalizeLower(value).replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
-  return DEVELOPER_LEAD_STATUSES.includes(normalized) ? normalized : 'new'
+  return normalizeDeveloperLeadStatus(value)
 }
 
 function normalizeSourceFilter(value = 'all') {

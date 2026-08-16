@@ -33,6 +33,18 @@ export const DEVELOPER_LEAD_STATUSES = Object.freeze([
   'lost',
 ])
 
+export const DEVELOPER_LEAD_STATUS_ALIASES = Object.freeze({
+  captured: 'new',
+  lead_captured: 'new',
+  new_lead: 'new',
+  buyer_onboarding_sent: 'onboarding_sent',
+  buyer_onboarding_submitted: 'onboarding_submitted',
+  signed_otp_uploaded: 'otp',
+  signed_otp: 'otp',
+  otp_uploaded: 'otp',
+  transaction_created: 'converted',
+})
+
 export const AGENCY_FED_LIMITED_DEVELOPER_FIELDS = Object.freeze([
   'developerLeadId',
   'developerOrgId',
@@ -125,7 +137,9 @@ export function normalizeDeveloperLeadReservationState(value) {
 }
 
 export function normalizeDeveloperLeadStatus(value) {
-  return firstKnown(value, DEVELOPER_LEAD_STATUSES, 'new')
+  const normalized = normalizeToken(value)
+  const canonical = DEVELOPER_LEAD_STATUS_ALIASES[normalized] || normalized
+  return DEVELOPER_LEAD_STATUSES.includes(canonical) ? canonical : 'new'
 }
 
 export function resolveDeveloperLeadDevelopmentScope(lead = {}) {

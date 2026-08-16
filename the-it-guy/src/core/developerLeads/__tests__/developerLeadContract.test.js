@@ -4,6 +4,7 @@ import {
   DEVELOPER_LEAD_PHASE10_CONTRACT,
   buildDeveloperLeadAccessProfile,
   maskDeveloperLeadForDeveloper,
+  normalizeDeveloperLeadStatus,
 } from '../developerLeadContract.js'
 
 const directLead = buildDeveloperLeadAccessProfile({
@@ -18,6 +19,10 @@ assert.equal(directLead.sellingModel, 'developer_led')
 assert.equal(directLead.visibilityState, 'full')
 assert.equal(directLead.developmentScope, 'one')
 assert.equal(directLead.canDeveloperSeePrivateDetails, true)
+assert.equal(normalizeDeveloperLeadStatus('captured'), 'new')
+assert.equal(normalizeDeveloperLeadStatus('lead captured'), 'new')
+assert.equal(normalizeDeveloperLeadStatus('buyer_onboarding_sent'), 'onboarding_sent')
+assert.equal(normalizeDeveloperLeadStatus('signed OTP uploaded'), 'otp')
 
 const multiDevelopmentLead = buildDeveloperLeadAccessProfile({
   leadOwner: 'developer',
