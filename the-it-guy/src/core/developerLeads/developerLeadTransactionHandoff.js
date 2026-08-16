@@ -35,10 +35,16 @@ function buildWarning(code, message) {
   return Object.freeze({ code, message })
 }
 
-function resolveConversionStage(lead = {}) {
+function resolveConversionDetailedStage(lead = {}) {
   const reservationState = normalizeLower(lead.reservationState)
-  if (reservationState === 'reserved' || normalizeLower(lead.leadStatus) === 'reserved') return 'Reserved'
-  return 'Onboarding'
+  const reservationStatus = normalizeLower(lead.reservationStatus)
+
+  if (reservationState === 'reserved' || reservationStatus === 'paid') return 'Deposit Paid'
+  return 'Reserved'
+}
+
+function resolveConversionMainStage() {
+  return 'DEP'
 }
 
 export function buildDeveloperLeadTransactionHandoff(lead = {}, {
@@ -107,8 +113,8 @@ export function buildDeveloperLeadTransactionHandoff(lead = {}, {
       nextAction: 'Send buyer onboarding link from the lead workspace.',
     },
     status: {
-      stage: resolveConversionStage(lead),
-      mainStage: resolveConversionStage(lead),
+      stage: resolveConversionDetailedStage(lead),
+      mainStage: resolveConversionMainStage(),
       nextAction: 'Send buyer onboarding link from the lead workspace.',
       notes: `Prepared from developer lead ${normalizeText(lead.publicReference || lead.developerLeadId)}.`,
     },

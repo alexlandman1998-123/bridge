@@ -47,6 +47,8 @@ const ready = buildDeveloperLeadTransactionHandoff(readyLead)
 assert.equal(ready.contract, DEVELOPER_LEAD_PHASE17_CONTRACT)
 assert.equal(ready.eligible, true)
 assert.equal(ready.status, 'ready')
+assert.equal(ready.handoff.status.stage, 'Reserved')
+assert.equal(ready.handoff.status.mainStage, 'DEP')
 assert.equal(ready.handoff.setup.transactionType, 'developer_sale')
 assert.equal(ready.handoff.setup.developmentId, 'development-1')
 assert.equal(ready.handoff.setup.unitId, 'unit-1')
@@ -62,6 +64,37 @@ const missingEmail = buildDeveloperLeadTransactionHandoff({
 assert.equal(missingEmail.eligible, true)
 assert.equal(missingEmail.status, 'attention')
 assert.equal(missingEmail.warnings[0]?.code, 'buyer_email_missing')
+
+const reservedLead = buildDeveloperLeadTransactionHandoff({
+  ...readyLead,
+  leadStatus: 'reserved',
+  reservationState: 'reserved',
+})
+assert.equal(reservedLead.eligible, true)
+assert.equal(reservedLead.handoff.status.stage, 'Deposit Paid')
+assert.equal(reservedLead.handoff.status.mainStage, 'DEP')
+
+const allowedTransactionStages = [
+  'Available',
+  'Reserved',
+  'OTP Signed',
+  'Deposit Paid',
+  'Finance Pending',
+  'Bond Approved / Proof of Funds',
+  'Proceed to Attorneys',
+  'Transfer in Progress',
+  'Transfer Lodged',
+  'Registered',
+]
+assert.ok(
+  allowedTransactionStages.includes(ready.handoff.status.stage),
+  'developer lead handoff must use a transactions_stage_check-compatible stage',
+)
+assert.notEqual(
+  ready.handoff.status.stage,
+  'Onboarding',
+  'buyer onboarding is a lead status, not a valid transactions.stage value',
+)
 
 const blockedAgency = buildDeveloperLeadTransactionHandoff({
   ...readyLead,
@@ -102,6 +135,8 @@ for (const token of [
   'preferredUnitId',
   'developer_sale',
   'sourceContext',
+  'resolveConversionDetailedStage',
+  "'DEP'",
 ]) {
   assert.match(handoffSource, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
 }

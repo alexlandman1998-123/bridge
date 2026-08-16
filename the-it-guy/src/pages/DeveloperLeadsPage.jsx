@@ -303,7 +303,7 @@ function ProtectedDeveloperLeadQueuePanel({
                   <span>Source: <strong className="text-[#29445f]">{card.sourceAgencyOrgId ? 'Agency' : 'Pending'}</strong></span>
                 </div>
                 <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-[#e5edf6] pt-3">
-                  <p className="text-xs leading-5 text-[#7a8ba3]">Buyer identity and contact details are hidden.</p>
+                  <p className="text-xs leading-5 text-[#7a8ba3]">Details hidden until handover. Buyer identity and contact details are hidden.</p>
                   <Button
                     type="button"
                     size="sm"
