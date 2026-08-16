@@ -49,3 +49,25 @@ test('raw postgres statement timeouts report status hydration failure', () => {
   assert.match(recovery, /do not start another duplicate generation/i)
   assert.doesNotMatch(recovery, /could not confirm a usable mandate draft/i)
 })
+
+test('mandate packet version wrapper reports a saved draft failure', () => {
+  const recovery = formatLegalDocumentGenerationRecovery({
+    code: 'MANDATE_PACKET_VERSION_FAILED',
+    message: 'Mandate packet was created, but version generation failed.',
+  }, { packetType: 'mandate' })
+
+  assert.match(recovery, /mandate generation did not produce a saved draft/i)
+  assert.match(recovery, /contact support with the packet reference/i)
+  assert.doesNotMatch(recovery, /could not confirm a usable mandate draft/i)
+})
+
+test('edge renderer failures report an assembly failure', () => {
+  const recovery = formatLegalDocumentGenerationRecovery({
+    code: 'EDGE_FUNCTION_FAILED',
+    message: 'Unable to generate mandate from template right now.',
+  }, { packetType: 'mandate' })
+
+  assert.match(recovery, /mandate document could not be assembled/i)
+  assert.match(recovery, /legal-template administrator/i)
+  assert.doesNotMatch(recovery, /could not confirm a usable mandate draft/i)
+})

@@ -291,28 +291,28 @@ export function CompanyTargetTracker({ tracker = {}, onEdit, compact = false }) 
     <section className={`rounded-[16px] border border-[#dfe7f0] bg-white shadow-[0_12px_30px_rgba(15,23,42,0.045)] ${compact ? 'p-4' : 'p-4 sm:p-5'}`}>
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div className="flex items-start gap-3">
-          <span className="grid h-11 w-11 place-items-center rounded-[15px] bg-[#fff4e5] text-[#d87907]">
-            <Target size={20} />
+          <span className={`grid ${compact ? 'h-10 w-10 rounded-[13px]' : 'h-11 w-11 rounded-[15px]'} place-items-center bg-[#fff4e5] text-[#d87907]`}>
+            <Target size={compact ? 18 : 20} />
           </span>
           <div>
             <h3 className="text-base font-semibold text-[#101828]">{tracker.title || 'Commission Target'}</h3>
-            <p className="mt-1 text-sm leading-6 text-[#667085]">Monthly minimum company commission target.</p>
+            <p className={`${compact ? 'mt-0.5 text-[0.82rem] leading-5' : 'mt-1 text-sm leading-6'} text-[#667085]`}>Monthly minimum company commission target.</p>
           </div>
         </div>
         <CommissionStatusBadge status={tracker.statusLabel || 'No target'} tone={tracker.statusTone || 'slate'} />
       </div>
-      <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
+      <div className={`${compact ? 'mt-3 gap-3 lg:grid-cols-[minmax(0,1fr)_220px]' : 'mt-4 gap-4 lg:grid-cols-[minmax(0,1fr)_260px]'} grid`}>
         <div className="min-w-0">
-          <p className="text-[1.6rem] font-semibold leading-none text-[#0f7f4f]">
+          <p className={`${compact ? 'text-[1.35rem]' : 'text-[1.6rem]'} font-semibold leading-none text-[#0f7f4f]`}>
             {formatCurrency(tracker.currentAmount || 0)} <span className="text-[#8a9aac]">/ {formatCurrency(tracker.targetAmount || 0)}</span>
           </p>
-          <p className="mt-2 text-sm text-[#52657a]">Company commission earned this month</p>
-          <div className="mt-4">
+          <p className={`${compact ? 'mt-1.5 text-[0.82rem]' : 'mt-2 text-sm'} text-[#52657a]`}>Company commission earned this month</p>
+          <div className={compact ? 'mt-3' : 'mt-4'}>
             <CommissionProgressBar value={tracker.progressPercent || tracker.percentageAchieved || 0} tone={tracker.statusTone || 'green'} label={`${tracker.percentageAchieved || 0}% of monthly target`} />
           </div>
-          <p className="mt-3 text-xs text-[#667085]">{tracker.daysLeftInMonth ?? 0} days left in month</p>
+          <p className={`${compact ? 'mt-2' : 'mt-3'} text-xs text-[#667085]`}>{tracker.daysLeftInMonth ?? 0} days left in month</p>
         </div>
-        <div className="grid gap-2 rounded-[14px] border border-[#e4edf6] bg-[#fbfdff] p-3">
+        <div className={`${compact ? 'gap-1.5 p-2.5' : 'gap-2 p-3'} grid rounded-[14px] border border-[#e4edf6] bg-[#fbfdff]`}>
           <Metric label="Projected" value={formatCurrency(tracker.projectedCommission || 0, { compact: true })} />
           <Metric label="Pending" value={formatCurrency(tracker.pendingAmount || 0, { compact: true })} />
           <Metric label="Registered / paid" value={formatCurrency(tracker.registeredPaidAmount || 0, { compact: true })} />
@@ -355,27 +355,27 @@ export function AgentCommissionTracker({ tracker = {}, compact = false }) {
     <section className={`rounded-[16px] border border-[#dfe7f0] bg-white shadow-[0_12px_30px_rgba(15,23,42,0.045)] ${compact ? 'p-4' : 'p-4 sm:p-5'}`}>
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div className="flex items-start gap-3">
-          <span className="grid h-11 w-11 place-items-center rounded-[15px] bg-[#ecfdf3] text-[#16894f]">
-            <TrendingUp size={20} />
+          <span className={`grid ${compact ? 'h-10 w-10 rounded-[13px]' : 'h-11 w-11 rounded-[15px]'} place-items-center bg-[#ecfdf3] text-[#16894f]`}>
+            <TrendingUp size={compact ? 18 : 20} />
           </span>
           <div>
             <h3 className="text-base font-semibold text-[#101828]">{tracker.title || 'My Commission'}</h3>
-            <p className="mt-1 text-sm leading-6 text-[#667085]">Personal commission progress for this month.</p>
+            <p className={`${compact ? 'mt-0.5 text-[0.82rem] leading-5' : 'mt-1 text-sm leading-6'} text-[#667085]`}>Personal commission progress for this month.</p>
           </div>
         </div>
         <CommissionStatusBadge status={tracker.statusLabel || 'No target'} tone={tracker.statusTone || 'slate'} />
       </div>
-      <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
+      <div className={`${compact ? 'mt-3 gap-3 lg:grid-cols-[minmax(0,1fr)_220px]' : 'mt-4 gap-4 lg:grid-cols-[minmax(0,1fr)_260px]'} grid`}>
         <div className="min-w-0">
-          <p className="text-[1.6rem] font-semibold leading-none text-[#0f7f4f]">
+          <p className={`${compact ? 'text-[1.35rem]' : 'text-[1.6rem]'} font-semibold leading-none text-[#0f7f4f]`}>
             {formatCurrency(tracker.currentAmount || 0)} <span className="text-[#8a9aac]">/ {formatCurrency(tracker.targetAmount || 0)}</span>
           </p>
-          <p className="mt-2 text-sm text-[#52657a]">{tracker.percentageAchieved || 0}% of monthly target</p>
-          <div className="mt-4">
+          <p className={`${compact ? 'mt-1.5 text-[0.82rem]' : 'mt-2 text-sm'} text-[#52657a]`}>{tracker.percentageAchieved || 0}% of monthly target</p>
+          <div className={compact ? 'mt-3' : 'mt-4'}>
             <CommissionProgressBar value={tracker.progressPercent || tracker.percentageAchieved || 0} tone={tracker.statusTone || 'green'} />
           </div>
         </div>
-        <div className="grid gap-2 rounded-[14px] border border-[#e4edf6] bg-[#fbfdff] p-3">
+        <div className={`${compact ? 'gap-1.5 p-2.5' : 'gap-2 p-3'} grid rounded-[14px] border border-[#e4edf6] bg-[#fbfdff]`}>
           <Metric label="Level" value={tracker.commissionLevel || 'Standard'} />
           <Metric label="Agent split" value={`${formatPercent(tracker.agentSplit || 60)} / ${formatPercent(tracker.agencySplit || 40)}`} />
           <Metric label="Pending" value={formatCurrency(tracker.pendingAmount || 0, { compact: true })} />

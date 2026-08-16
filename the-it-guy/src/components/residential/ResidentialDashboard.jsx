@@ -127,26 +127,26 @@ export function ResidentialKpiCard({ icon, label, value, trend, sparkline = [], 
   const { line, area, dots } = buildSparklinePath(sparkline)
   const gradientId = `spark-${label.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}`
   return (
-    <article className={`${cardClass} grid h-[184px] min-w-0 grid-rows-[44px_50px_24px_1fr] overflow-hidden p-3`}>
+    <article className={`${cardClass} grid h-[160px] min-w-0 grid-rows-[38px_42px_22px_1fr] overflow-hidden p-3`}>
       <div className="grid min-w-0 grid-cols-[38px_minmax(0,1fr)] items-start gap-2.5">
         <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-[13px] ${style.bubble}`}>
           <IconComponent size={17} />
         </span>
-        <p className="line-clamp-2 min-h-[34px] text-[0.78rem] font-semibold leading-[1.08rem] text-[#344054]">{label}</p>
+        <p className="line-clamp-2 min-h-[32px] text-[0.76rem] font-semibold leading-[1rem] text-[#344054]">{label}</p>
       </div>
 
       <div className="flex min-w-0 items-start">
-        <p className="min-w-0 truncate text-[1.7rem] font-semibold leading-none text-[#101828] tabular-nums xl:text-[1.85rem]">{value}</p>
+        <p className="min-w-0 truncate text-[1.55rem] font-semibold leading-none text-[#101828] tabular-nums xl:text-[1.72rem]">{value}</p>
       </div>
 
       <div className="min-w-0">
         <TrendPill value={trend} label="vs previous 30 days" />
       </div>
 
-      <div className="min-w-0 border-t border-[#edf2f7] pt-2">
+      <div className="min-w-0 border-t border-[#edf2f7] pt-1.5">
         {emptyCopy ? <p className="text-[0.7rem] text-[#7b8ca2]">{emptyCopy}</p> : null}
         {line ? (
-          <svg viewBox="0 0 100 84" preserveAspectRatio="none" className="h-[42px] w-full overflow-visible" role="img" aria-label={`${label} trend sparkline`}>
+          <svg viewBox="0 0 100 84" preserveAspectRatio="none" className="h-[34px] w-full overflow-visible" role="img" aria-label={`${label} trend sparkline`}>
             <defs>
               <linearGradient id={gradientId} x1="0" x2="0" y1="0" y2="1">
                 <stop offset="0%" stopColor={style.stroke} stopOpacity="0.12" />
@@ -161,7 +161,7 @@ export function ResidentialKpiCard({ icon, label, value, trend, sparkline = [], 
             ) : null}
           </svg>
         ) : (
-          <div className="flex h-[42px] items-center justify-center rounded-[12px] bg-[#f8fafc] text-[0.7rem] text-[#8a9aac]">No trend yet</div>
+          <div className="flex h-[34px] items-center justify-center rounded-[12px] bg-[#f8fafc] text-[0.7rem] text-[#8a9aac]">No trend yet</div>
         )}
       </div>
     </article>
@@ -434,6 +434,7 @@ export function ResidentialActiveTransactionsCarousel({ title, rows = [], scope 
         onViewAll={onViewAll}
         onOpenRecord={(recordId) => onOpenRecord?.(recordById.get(recordId) || recordId)}
         viewAllLabel="View all"
+        compactCards
         summary={{
           primary: `${rows.length} transaction${rows.length === 1 ? '' : 's'} in progress`,
           secondary: `${formatCurrencyCompactZAR(totalPipelineValue)} total pipeline value`,
@@ -683,8 +684,8 @@ export function ResidentialCommandCenterGrid({
 
       {commissionTracker ? (
         scope === 'agent'
-          ? <AgentCommissionTracker tracker={commissionTracker} />
-          : <CompanyTargetTracker tracker={commissionTracker} />
+          ? <AgentCommissionTracker tracker={commissionTracker} compact />
+          : <CompanyTargetTracker tracker={commissionTracker} compact />
       ) : null}
 
       <ResidentialActiveTransactionsCarousel

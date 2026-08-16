@@ -8017,6 +8017,95 @@ function mergeSellerOnboardingSnapshot(baseRow = {}, localRow = {}, remoteRow = 
   }
 }
 
+const ROUTE_LEAD_STICKY_TEXT_FIELDS = [
+  'name',
+  'buyerName',
+  'firstName',
+  'lastName',
+  'email',
+  'phone',
+  'sellerName',
+  'sellerSurname',
+  'sellerEmail',
+  'sellerPhone',
+  'leadCategory',
+  'leadDirection',
+  'stage',
+  'status',
+  'currentStage',
+  'current_stage',
+  'sellerOnboardingStatus',
+  'seller_onboarding_status',
+  'sellerOnboardingToken',
+  'seller_onboarding_token',
+  'sellerOnboardingLink',
+  'seller_onboarding_link',
+  'sellerWorkflowLeadId',
+  'seller_workflow_lead_id',
+  'sellerPropertyAddress',
+  'seller_property_address',
+  'propertyInterest',
+  'property_interest',
+  'mandatePacketId',
+  'mandate_packet_id',
+  'listingId',
+  'listing_id',
+  'privateListingId',
+  'private_listing_id',
+  'canvassingProspectId',
+]
+
+const ROUTE_LEAD_STICKY_OBJECT_FIELDS = [
+  'sellerOnboarding',
+  'seller_onboarding',
+  'rawEnquiryPayload',
+  'raw_enquiry_payload',
+  'sellerReadiness',
+  'seller_readiness',
+]
+
+function mergeSelectedRouteLeadSnapshot(recordLead = null, snapshotLead = null) {
+  if (!recordLead && !snapshotLead) return null
+  if (!recordLead) return snapshotLead
+  if (!snapshotLead) return recordLead
+
+  const recordKey = normalizeLeadIdentityKey(recordLead?.leadId)
+  const snapshotKey = normalizeLeadIdentityKey(snapshotLead?.leadId)
+  const mergedRows = mergeLeadRowsForReload([snapshotLead], [recordLead])
+  const merged = mergedRows.find((lead) => {
+    const key = normalizeLeadIdentityKey(lead?.leadId)
+    return key && (key === recordKey || key === snapshotKey)
+  }) || mergedRows[0] || { ...snapshotLead, ...recordLead }
+  const hydrated = { ...merged }
+
+  for (const field of ROUTE_LEAD_STICKY_TEXT_FIELDS) {
+    const currentValue = normalizeText(hydrated[field])
+    const snapshotValue = normalizeText(snapshotLead[field])
+    if (!snapshotValue) continue
+    const currentLooksGenericName =
+      ['name', 'buyerName'].includes(field) &&
+      isGenericLeadPersonName(currentValue) &&
+      !isGenericLeadPersonName(snapshotValue)
+    if (!currentValue || currentLooksGenericName) {
+      hydrated[field] = snapshotLead[field]
+    }
+  }
+
+  for (const field of ROUTE_LEAD_STICKY_OBJECT_FIELDS) {
+    if (!hydrated[field] && snapshotLead[field]) {
+      hydrated[field] = snapshotLead[field]
+    }
+  }
+
+  const mergedSellerOnboarding = mergeSellerOnboardingSnapshot(hydrated, snapshotLead, recordLead)
+  if (mergedSellerOnboarding) {
+    hydrated.sellerOnboarding = mergedSellerOnboarding
+    hydrated.seller_onboarding = mergedSellerOnboarding
+  }
+
+  return mergeLeadRowsPreservingFormalValuationEvidence(hydrated, snapshotLead)
+}
+
 function mapPrivateListingToLeadFallback(listing = {}) {
   const formData = listing?.sellerOnboarding?.formData && typeof listing.sellerOnboarding.formData === 'object'
     ? listing.sellerOnboarding.formData
@@ -12295,20 +12384,45 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       .filter(Boolean)
     return snapshotLeads.find((lead) => candidateKeys.includes(normalizeLeadIdentityKey(lead?.leadId))) || snapshotLeads[0] || null
   })()
-  const selectedLead = selectedLeadId
-    ? (allLeadById.get(selectedLeadId) || leadById.get(selectedLeadId) || allLeadById.get(selectedLeadKey) || leadById.get(selectedLeadKey) || routeLeadSnapshotLead || null)
-    : routeLeadSnapshotLead
+  const selectedLeadRecord = selectedLeadId
+    ? (allLeadById.get(selectedLeadId) || leadById.get(selectedLeadId) || allLeadById.get(selectedLeadKey) || leadById.get(selectedLeadKey) || null)
+    : null
+  const selectedLead = useMemo(
+    () => isLeadWorkspaceRoute
+      ? mergeSelectedRouteLeadSnapshot(selectedLeadRecord, routeLeadSnapshotLead)
+      : selectedLeadRecord,
+    [isLeadWorkspaceRoute, routeLeadSnapshotLead, selectedLeadRecord],
+  )
   const selectedLeadWorkspaceRouteHydrating = Boolean(isLeadWorkspaceRoute && routeLeadId && routeLeadHydrationStatus === 'loading')
 
   useEffect(() => {
     if (!isLeadWorkspaceRoute || !organisationId || !selectedLead) return
     const leadId = selectedLead.leadId || selectedLead.lead_id || routeLeadId || selectedLeadId
-    writeLeadWorkspaceSessionSnapshot(organisationId, leadId, {
+    const currentSnapshot = routeLeadWorkspaceSnapshotRef.current ||
+      readLeadWorkspaceSessionSnapshot(organisationId, leadId) ||
+      readLeadWorkspaceSessionSnapshot(organisationId, routeLeadId)
+    const existingLeads = Array.isArray(currentSnapshot?.leads) ? currentSnapshot.leads : []
+    const nextSnapshot = {
+      ...(currentSnapshot || {}),
       organisationId: normalizeText(organisationId),
       requestedLeadId: normalizeText(routeLeadId || leadId),
       resolvedLeadId: normalizeText(leadId),
-      leads: [selectedLead],
-    })
+      contacts: Array.isArray(currentSnapshot?.contacts) ? currentSnapshot.contacts : [],
+      leads: mergeLeadRowsForReload(existingLeads, [selectedLead]),
+      leadActivities: Array.isArray(currentSnapshot?.leadActivities) ? currentSnapshot.leadActivities : [],
+      tasks: Array.isArray(currentSnapshot?.tasks) ? currentSnapshot.tasks : [],
+      linkedListings: Array.isArray(currentSnapshot?.linkedListings) ? currentSnapshot.linkedListings : [],
+    }
+    if (routeLeadWorkspaceSnapshotRef.current) {
+      routeLeadWorkspaceSnapshotRef.current = {
+        ...routeLeadWorkspaceSnapshotRef.current,
+        ...nextSnapshot,
+      }
+    }
+    writeLeadWorkspaceSessionSnapshot(organisationId, leadId, nextSnapshot)
+    if (routeLeadId && normalizeLeadIdentityKey(routeLeadId) !== normalizeLeadIdentityKey(leadId)) {
+      writeLeadWorkspaceSessionSnapshot(organisationId, routeLeadId, nextSnapshot)
+    }
   }, [isLeadWorkspaceRoute, organisationId, routeLeadId, selectedLead, selectedLeadId])
 
   const selectedLeadContact = useMemo(() => {
@@ -28396,7 +28510,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     ) : null}
                   </div>
                 </div>
-                <div className="mt-4 grid gap-2 rounded-[16px] border border-[#dbe4ee] bg-[#f8fbff] p-1.5 sm:grid-cols-3 xl:grid-cols-5" role="tablist" aria-label="Lead categories">
+                <div className="mt-4 grid gap-2 rounded-[16px] border border-[#dbe4ee] bg-[#f8fbff] p-1.5 sm:grid-cols-3" role="tablist" aria-label="Lead categories">
                   {LEAD_CATEGORY_VIEW_TABS.map((tab) => {
                     const { key, label } = tab
                     const TabIcon = tab.Icon
@@ -28686,9 +28800,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         return (
                           <article
                             key={lead.leadId}
-                            className={`min-w-0 cursor-pointer rounded-[20px] border px-4 py-4 shadow-[0_10px_24px_rgba(24,45,68,0.04)] transition hover:-translate-y-[1px] hover:border-[#cfdeeb] hover:shadow-[0_18px_36px_rgba(24,45,68,0.08)] ${
+                            className={`relative min-w-0 cursor-pointer overflow-visible rounded-[20px] border px-4 py-4 shadow-[0_10px_24px_rgba(24,45,68,0.04)] transition hover:-translate-y-[1px] hover:border-[#cfdeeb] hover:shadow-[0_18px_36px_rgba(24,45,68,0.08)] ${
                               isActive ? 'border-[#bfd5ea] bg-[#f7fbff]' : 'border-[#e2e8f0] bg-white'
-                            }`}
+                            } ${leadListActionsMenuId === leadId ? 'z-[80]' : 'z-0'}`}
                             onClick={() => {
                               setSelectedLeadId(lead.leadId)
                               navigate(`/pipeline/leads/${lead.leadId}`)
@@ -28785,7 +28899,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                     <MoreHorizontal size={18} />
                                   </button>
                                   {leadListActionsMenuId === leadId ? (
-                                    <div className="absolute right-0 z-30 mt-2 w-52 overflow-hidden rounded-[16px] border border-[#dbe7f2] bg-white py-2 shadow-[0_18px_40px_rgba(18,44,68,0.16)]" role="menu">
+                                    <div className="absolute right-0 z-[90] mt-2 w-52 overflow-hidden rounded-[16px] border border-[#dbe7f2] bg-white py-2 shadow-[0_18px_40px_rgba(18,44,68,0.16)]" role="menu">
                                       <button
                                         type="button"
                                         className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm font-semibold text-[#29435d] transition hover:bg-[#f5f9fc]"
@@ -28903,7 +29017,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     return (
                       <article
                         key={`mobile-${lead.leadId}`}
-                        className="rounded-[18px] border border-[#e1e8f0] bg-white p-4 shadow-[0_10px_24px_rgba(24,45,68,0.055)]"
+                        className={`relative overflow-visible rounded-[18px] border border-[#e1e8f0] bg-white p-4 shadow-[0_10px_24px_rgba(24,45,68,0.055)] ${leadListActionsMenuId === leadId ? 'z-[80]' : 'z-0'}`}
                         onClick={() => {
                           setSelectedLeadId(lead.leadId)
                           navigate(`/pipeline/leads/${lead.leadId}`)
@@ -28975,7 +29089,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                   <MoreHorizontal size={17} />
                                 </button>
                                 {leadListActionsMenuId === leadId ? (
-                                  <div className="absolute right-0 z-30 mt-2 w-52 overflow-hidden rounded-[16px] border border-[#dbe7f2] bg-white py-2 shadow-[0_18px_40px_rgba(18,44,68,0.16)]" role="menu">
+                                  <div className="absolute right-0 z-[90] mt-2 w-52 overflow-hidden rounded-[16px] border border-[#dbe7f2] bg-white py-2 shadow-[0_18px_40px_rgba(18,44,68,0.16)]" role="menu">
                                     <button
                                       type="button"
                                       className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm font-semibold text-[#29435d] transition hover:bg-[#f5f9fc]"

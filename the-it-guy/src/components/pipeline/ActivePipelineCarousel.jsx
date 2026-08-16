@@ -208,7 +208,7 @@ export function StageProgressTracker({ mode, currentStageKey }) {
   )
 }
 
-function PipelineImage({ mode, record }) {
+function PipelineImage({ mode, record, compact = false }) {
   const config = useModeConfig(mode)
   const [broken, setBroken] = useState(false)
   const imageUrl = broken ? '' : resolveRecordImage(record)
@@ -227,14 +227,14 @@ function PipelineImage({ mode, record }) {
 
   return (
     <div className={`grid h-full w-full place-items-center bg-gradient-to-br ${config.placeholder}`}>
-      <div className={`grid h-12 w-12 place-items-center rounded-2xl ${config.iconClass}`}>
-        <PlaceholderIcon size={22} />
+      <div className={`grid ${compact ? 'h-14 w-14 rounded-[18px]' : 'h-12 w-12 rounded-2xl'} place-items-center ${config.iconClass}`}>
+        <PlaceholderIcon size={compact ? 26 : 22} />
       </div>
     </div>
   )
 }
 
-export function ActivePipelineCard({ mode, record, onOpenRecord }) {
+export function ActivePipelineCard({ mode, record, onOpenRecord, compact = false }) {
   const config = useModeConfig(mode)
   const normalizedStageKey = normalizeStageKey(record.stageKey)
   const currentStage = config.stages.find((stage) => stage.key === normalizedStageKey) || config.stages[0]
@@ -252,18 +252,18 @@ export function ActivePipelineCard({ mode, record, onOpenRecord }) {
       onClick={() => onOpenRecord?.(record.id)}
       className={`${config.cardWidth} group shrink-0 snap-start overflow-hidden rounded-[24px] border border-[#dde5ef] bg-white text-left shadow-[0_14px_30px_rgba(15,23,42,0.06)] transition duration-200 ease-out hover:-translate-y-0.5 hover:border-[#ccd8e6] hover:shadow-[0_18px_38px_rgba(15,23,42,0.08)]`}
     >
-      <div className={`relative h-[164px] overflow-hidden bg-gradient-to-br ${config.gradient}`}>
-        <PipelineImage mode={mode} record={record} />
+      <div className={`relative ${compact ? 'h-[118px]' : 'h-[164px]'} overflow-hidden bg-gradient-to-br ${config.gradient}`}>
+        <PipelineImage mode={mode} record={record} compact={compact} />
         <span className={`absolute right-3 top-3 inline-flex max-w-[70%] items-center rounded-full border px-3 py-1 text-[11px] font-semibold shadow-sm backdrop-blur ${badgeClass}`}>
           <span className="truncate">{normalizeText(record.statusLabel) || currentStage.label}</span>
         </span>
       </div>
 
-      <div className="space-y-4 p-4">
-        <div className="space-y-1.5">
+      <div className={`${compact ? 'space-y-3 p-3.5' : 'space-y-4 p-4'}`}>
+        <div className={compact ? 'space-y-1' : 'space-y-1.5'}>
           <p className="truncate text-[13px] font-semibold tracking-[-0.01em] text-[#10243a]" title={record.title}>{record.title || 'Property pending'}</p>
           <p className="truncate text-[12px] text-[#66768a]" title={record.subtitle}>{record.subtitle || 'Area pending'}</p>
-          <p className="pt-1 text-[16px] font-semibold tracking-[-0.02em] text-[#0f2748]">{formatValueLabel(record, mode)}</p>
+          <p className={`${compact ? 'pt-0.5 text-[15px]' : 'pt-1 text-[16px]'} font-semibold tracking-[-0.02em] text-[#0f2748]`}>{formatValueLabel(record, mode)}</p>
         </div>
 
         <div className="flex items-start justify-between gap-3">
@@ -287,7 +287,7 @@ export function ActivePipelineCard({ mode, record, onOpenRecord }) {
             <span className="font-medium text-[#5d7288]">{clientLabel}:</span> <span className="text-[#203247]">{clientName}</span>
           </p>
         </div>
-        {secondaryClientLabel && secondaryClientName ? (
+        {!compact && secondaryClientLabel && secondaryClientName ? (
           <div className="flex items-center gap-2 text-[12px] text-[#4a5f78]">
             <Users size={14} className="shrink-0 text-[#70839a]" />
             <p className="truncate" title={`${secondaryClientLabel}: ${secondaryClientName}`}>
@@ -330,6 +330,7 @@ export default function ActivePipelineCarousel({
   onOpenRecord,
   summary = null,
   viewAllLabel = 'View all transactions',
+  compactCards = false,
 }) {
   const config = useModeConfig(mode)
   const scrollRef = useRef(null)
@@ -390,6 +391,7 @@ export default function ActivePipelineCarousel({
                   mode={mode}
                   record={record}
                   onOpenRecord={onOpenRecord}
+                  compact={compactCards}
                 />
               ))}
             </div>
