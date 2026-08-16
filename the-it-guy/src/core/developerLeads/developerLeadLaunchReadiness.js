@@ -13,7 +13,7 @@ function isProtectedAgencyLead(lead = {}) {
 }
 
 function isConvertedLead(lead = {}) {
-  return Boolean(normalizeText(lead.convertedTransactionId)) || normalizeText(lead.leadStatus) === 'converted'
+  return normalizeText(lead.leadStatus) === 'converted'
 }
 
 function hasLeakedProtectedDetails(lead = {}) {
@@ -80,15 +80,15 @@ export function buildDeveloperLeadLaunchReadiness({
       label: 'Lead-to-transaction bridge',
       status: conversionBridgeEnabled ? 'ready' : 'pending',
       detail: conversionBridgeEnabled
-        ? `${convertedCount} converted lead${convertedCount === 1 ? '' : 's'} linked to transactions.`
-        : 'Conversion from developer lead to development transaction is still gated.',
+        ? `${convertedCount} OTP-ready lead${convertedCount === 1 ? '' : 's'} linked to transaction workflow.`
+        : 'Transaction workflow handoff is gated until OTP upload.',
     }),
     buildCheck({
       key: 'buyer_onboarding_send',
       label: 'Buyer onboarding send',
       status: buyerOnboardingSendEnabled ? 'ready' : 'pending',
       detail: buyerOnboardingSendEnabled
-        ? 'Buyer onboarding links can be sent from converted developer leads.'
+        ? 'Buyer onboarding links can be sent from qualified, viewing, or reserved developer leads.'
         : 'Buyer onboarding links remain available from transaction workspaces only.',
     }),
   ]

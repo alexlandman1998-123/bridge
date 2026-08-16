@@ -30,9 +30,9 @@ for (const token of [
   'recordBuyerOnboardingSent',
   "invokeEdgeFunction('send-email'",
   "type: 'client_onboarding'",
-  "lead_status: 'converted'",
-  "reservation_state: 'converted'",
+  "lead_status: sendBuyerOnboarding ? 'onboarding_sent' : 'qualified'",
   'converted_transaction_id',
+  'buyer_onboarding_sent',
   'developer_lead_activity',
   'developer_lead_phase18',
 ]) {
@@ -49,13 +49,13 @@ for (const token of [
   'convertDeveloperLeadToTransactionAndSendOnboarding',
   'fetchUnitsForTransactionSetup',
   'preferredUnitId',
-  'Convert & Send',
+  'Send Onboarding',
   'convertedOnboardingUrl',
   'Buyer onboarding link',
   'Buyer Lead Workspace',
   'data-developer-lead-workspace="true"',
   'onOpenLead={handleOpenLead}',
-  'Convert & Send Buyer Onboarding',
+  'Send Buyer Onboarding',
   'buyerOnboardingSendEnabled: true',
   'data-contract={DEVELOPER_LEAD_PHASE18_CONTRACT}',
 ]) {
@@ -76,8 +76,10 @@ assert.equal(
   'Developer lead intake service must stay non-converting; Phase 18 conversion belongs in developerLeadConversionService',
 )
 
-assert.match(docsSource, /Developer Leads Phase 18 Convert And Send/)
+assert.match(docsSource, /Developer Leads Phase 18 Buyer Onboarding Send/)
 assert.match(docsSource, /existing transaction creation engine/)
+assert.match(docsSource, /onboarding_sent/)
+assert.match(docsSource, /Uploading the signed OTP/)
 assert.match(docsSource, /send-email/)
 assert.match(docsSource, /does not add\s+privileged database functions or bypass RLS/)
 assert.match(phase5Source, /test:developer-module-phase18/)

@@ -9,6 +9,7 @@ import {
   ClipboardList,
   ExternalLink,
   EyeOff,
+  FileText,
   Filter,
   Home,
   Mail,
@@ -139,7 +140,11 @@ function getDevelopmentLabel(developmentId, developments = []) {
 
 function getStatusMeta(status = 'new') {
   if (status === 'converted') return { label: 'Converted', className: 'border-[#d8efe4] bg-[#f1fbf6] text-[#17613d]' }
+  if (status === 'otp') return { label: 'OTP', className: 'border-[#d9e7ff] bg-[#f3f7ff] text-[#24568f]' }
+  if (status === 'onboarding_submitted') return { label: 'Onboarding Submitted', className: 'border-[#d8efe4] bg-[#f1fbf6] text-[#17613d]' }
+  if (status === 'onboarding_sent') return { label: 'Onboarding Sent', className: 'border-[#d9e7ff] bg-[#f3f7ff] text-[#24568f]' }
   if (status === 'reserved') return { label: 'Reserved', className: 'border-[#d9e7ff] bg-[#f3f7ff] text-[#1e4d82]' }
+  if (status === 'viewing') return { label: 'Viewing', className: 'border-[#d9e7ff] bg-[#f3f7ff] text-[#24568f]' }
   if (status === 'qualified') return { label: 'Qualified', className: 'border-[#d8efe4] bg-[#f1fbf6] text-[#17613d]' }
   if (status === 'contacted') return { label: 'Contacted', className: 'border-[#f0dfb8] bg-[#fff9ec] text-[#8a5a12]' }
   if (status === 'lost') return { label: 'Lost', className: 'border-[#f8d7da] bg-[#fff5f6] text-[#8d2831]' }
@@ -147,7 +152,7 @@ function getStatusMeta(status = 'new') {
 }
 
 function isConvertedLead(lead = {}) {
-  return Boolean(normalizeText(lead.convertedTransactionId)) || normalizeLower(lead.leadStatus) === 'converted'
+  return normalizeLower(lead.leadStatus) === 'converted'
 }
 
 function isAgencyFedLead(lead = {}) {
@@ -240,7 +245,7 @@ function ProtectedDeveloperLeadQueuePanel({
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7a8ba3]">Protected Intake Queue</p>
           <h2 className="mt-1 text-lg font-semibold text-[#10243a]">Agency-submitted buyer leads</h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-[#60758d]">
-            Review protected agency-fed leads, request buyer-detail handover, and keep conversion locked until the agency releases the private record.
+            Review protected agency-fed leads, request buyer-detail handover, and keep onboarding locked until the agency releases the private record.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -531,7 +536,11 @@ function formatRelativeTime(value) {
 function getLeadStagePresentation(status = 'new') {
   const normalized = normalizeLower(status)
   if (normalized === 'converted') return { label: 'Transaction', className: 'border-[#d8efe4] bg-[#f1fbf6] text-[#17613d]', Icon: CheckCircle2 }
+  if (normalized === 'otp') return { label: 'OTP', className: 'border-[#d9e7ff] bg-[#f3f7ff] text-[#24568f]', Icon: FileText }
+  if (normalized === 'onboarding_submitted') return { label: 'Onboarding Submitted', className: 'border-[#d8efe4] bg-[#f1fbf6] text-[#17613d]', Icon: CheckSquare }
+  if (normalized === 'onboarding_sent') return { label: 'Onboarding Sent', className: 'border-[#d9e7ff] bg-[#f3f7ff] text-[#24568f]', Icon: Mail }
   if (normalized === 'reserved') return { label: 'Reserved', className: 'border-[#d9e7ff] bg-[#f3f7ff] text-[#24568f]', Icon: ShieldCheck }
+  if (normalized === 'viewing') return { label: 'Viewing', className: 'border-[#d9e7ff] bg-[#f3f7ff] text-[#24568f]', Icon: CalendarDays }
   if (normalized === 'qualified') return { label: 'Qualified', className: 'border-[#d8efe4] bg-[#f1fbf6] text-[#17613d]', Icon: TrendingUp }
   if (normalized === 'contacted') return { label: 'Contacted', className: 'border-[#f0dfb8] bg-[#fff9ec] text-[#8a5a12]', Icon: Phone }
   if (normalized === 'lost') return { label: 'Lost', className: 'border-[#f8d7da] bg-[#fff5f6] text-[#8d2831]', Icon: AlertTriangle }
@@ -541,24 +550,29 @@ function getLeadStagePresentation(status = 'new') {
 function buildDeveloperLeadJourneyStages(lead = {}) {
   const status = normalizeLower(lead.leadStatus || 'new')
   const handoff = buildDeveloperLeadTransactionHandoff(lead)
-  const converted = isConvertedLead(lead)
   const statusRank = {
     new: 0,
     contacted: 1,
     qualified: 2,
+    viewing: 3,
     reserved: 3,
-    converted: 5,
+    onboarding_sent: 4,
+    onboarding_submitted: 5,
+    otp: 6,
+    converted: 6,
     lost: 0,
   }
-  const activeRank = converted ? 5 : statusRank[status] ?? 0
+  const activeRank = statusRank[status] ?? 0
   const reservationActive = status === 'reserved' || normalizeLower(lead.reservationState) === 'reserved'
   const steps = [
     { key: 'captured', label: 'Captured', detail: 'Lead created', rank: 0 },
     { key: 'contacted', label: 'Contacted', detail: 'Buyer contacted', rank: 1 },
-    { key: 'qualified', label: 'Qualified', detail: handoff.eligible ? 'Transaction ready' : 'Buyer fit checked', rank: 2 },
-    ...(reservationActive ? [{ key: 'reservation', label: 'Reservation', detail: 'Reservation deposit', rank: 3 }] : []),
-    { key: 'onboarding_otp', label: 'Setup / OTP', detail: converted ? 'Onboarding sent' : 'Prepare transaction', rank: 4 },
-    { key: 'transaction', label: 'Transaction', detail: converted ? 'Created' : 'Convert when ready', rank: 5 },
+    { key: 'qualified', label: 'Qualified', detail: handoff.eligible ? 'Ready for onboarding' : 'Buyer fit checked', rank: 2 },
+    { key: 'viewing', label: 'Viewing', detail: reservationActive ? 'Reservation relevant' : 'Viewing / selection', rank: 3 },
+    { key: 'onboarding_sent', label: 'Onboarding sent', detail: 'Buyer link sent', rank: 4 },
+    { key: 'onboarding_submitted', label: 'Onboarding submitted', detail: 'Buyer details complete', rank: 5 },
+    ...(reservationActive ? [{ key: 'reservation', label: 'Reservation deposit', detail: 'Deposit paid', rank: 5 }] : []),
+    { key: 'otp', label: 'OTP', detail: 'Upload signed OTP', rank: 6 },
   ]
 
   return steps.map((step) => {
@@ -569,10 +583,29 @@ function buildDeveloperLeadJourneyStages(lead = {}) {
 
 function getDeveloperLeadNextAction(lead = {}) {
   const handoff = buildDeveloperLeadTransactionHandoff(lead)
+  const leadStatus = normalizeLower(lead.leadStatus || 'new')
   if (isConvertedLead(lead)) {
     return {
-      label: 'Open the transaction workspace',
-      helper: 'The buyer onboarding link has already been created from this developer lead.',
+      label: 'Open the transaction workflow',
+      helper: 'The signed OTP has moved this lead into the transaction workflow.',
+    }
+  }
+  if (leadStatus === 'otp') {
+    return {
+      label: 'Open the transaction workflow',
+      helper: 'Signed OTP has been uploaded, so finance, transfer, and registration can continue from the transaction workflow.',
+    }
+  }
+  if (leadStatus === 'onboarding_submitted') {
+    return {
+      label: 'Upload signed OTP',
+      helper: 'Buyer onboarding is submitted. The next handoff is signed OTP upload, which starts the transaction workflow.',
+    }
+  }
+  if (leadStatus === 'onboarding_sent') {
+    return {
+      label: 'Wait for buyer onboarding submission',
+      helper: 'The buyer has the onboarding link. Once submitted, upload the signed OTP to start the transaction workflow.',
     }
   }
   if (requiresAgencyHandover(lead)) {
@@ -583,13 +616,13 @@ function getDeveloperLeadNextAction(lead = {}) {
   }
   if (handoff.eligible) {
     return {
-      label: 'Convert and send buyer onboarding',
-      helper: 'This creates the developer transaction and sends the buyer onboarding link.',
+      label: 'Send buyer onboarding',
+      helper: 'This sends the buyer onboarding link and prepares the onboarding context before OTP.',
     }
   }
   return {
     label: handoff.blockers?.[0]?.message || 'Complete lead setup',
-    helper: 'Capture buyer details, development interest, and a qualified or reserved status before sending onboarding.',
+    helper: 'Capture buyer details, development interest, and a qualified, viewing, or reserved status before sending onboarding.',
   }
 }
 
@@ -604,10 +637,10 @@ function ReleasedDeveloperLeadConversionPanel({
     <section className="rounded-[8px] border border-[#d9e5f2] bg-white p-4 shadow-[0_12px_35px_rgba(15,23,42,0.05)]" data-contract={DEVELOPER_LEAD_PHASE23_CONTRACT}>
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7a8ba3]">Released Buyer Conversion</p>
-          <h2 className="mt-1 text-lg font-semibold text-[#10243a]">Agency leads ready for transaction setup</h2>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7a8ba3]">Released Buyer Onboarding</p>
+          <h2 className="mt-1 text-lg font-semibold text-[#10243a]">Agency leads ready for buyer onboarding</h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-[#60758d]">
-            Buyer details released by the agency are checked against the same transaction handoff rules before conversion and buyer onboarding.
+            Buyer details released by the agency are checked against the same handoff rules before buyer onboarding can be sent.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -615,7 +648,7 @@ function ReleasedDeveloperLeadConversionPanel({
             {summary.label}
           </span>
           <span className="inline-flex h-8 items-center rounded-full border border-[#d9e5f2] bg-[#f8fafc] px-3 text-xs font-semibold text-[#52677f]">
-            {queue.convertedCount} converted
+            {queue.convertedCount} in transaction workflow
           </span>
         </div>
       </div>
@@ -668,7 +701,7 @@ function ReleasedDeveloperLeadConversionPanel({
                     onClick={() => onConvertLead(card.lead)}
                   >
                     <ExternalLink size={15} />
-                    {converting ? 'Converting...' : 'Convert & Send'}
+                    {converting ? 'Sending...' : 'Send Onboarding'}
                   </Button>
                 </div>
               </article>
@@ -712,7 +745,7 @@ function DeveloperLeadAttributionLedgerPanel({
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7a8ba3]">Attribution Ledger</p>
           <h2 className="mt-1 text-lg font-semibold text-[#10243a]">Lead source and conversion ownership</h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-[#60758d]">
-            Track developer-direct and agency-introduced lead lanes by development, credited agent, handover state, and conversion outcome.
+            Track developer-direct and agency-introduced lead lanes by development, credited agent, handover state, and transaction outcome.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -739,7 +772,7 @@ function DeveloperLeadAttributionLedgerPanel({
           <strong className="mt-1 block text-2xl font-semibold text-[#10243a]">{ledger.developerOwnedCount}</strong>
         </div>
         <div className="rounded-[8px] border border-[#e5edf6] p-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7a8ba3]">Converted</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7a8ba3]">Transactions</p>
           <strong className="mt-1 block text-2xl font-semibold text-[#10243a]">{ledger.convertedCount}</strong>
         </div>
       </div>
@@ -758,7 +791,7 @@ function DeveloperLeadAttributionLedgerPanel({
               </div>
               <span className="text-xs text-[#60758d]">Leads <strong className="block text-sm text-[#10243a]">{row.totalLeads}</strong></span>
               <span className="text-xs text-[#60758d]">Released <strong className="block text-sm text-[#10243a]">{row.releasedCount}</strong></span>
-              <span className="text-xs text-[#60758d]">Converted <strong className="block text-sm text-[#10243a]">{row.convertedCount}</strong></span>
+              <span className="text-xs text-[#60758d]">Transactions <strong className="block text-sm text-[#10243a]">{row.convertedCount}</strong></span>
               <span className="text-xs text-[#60758d]">Rate <strong className="block text-sm text-[#10243a]">{formatPercent(row.conversionRate)}</strong></span>
             </article>
           ))}
@@ -794,7 +827,7 @@ function DeveloperLeadOperationsHealthPanel({
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7a8ba3]">Operations Health</p>
           <h2 className="mt-1 text-lg font-semibold text-[#10243a]">Lead follow-up exceptions</h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-[#60758d]">
-            Watch stale leads, missing development allocation, unassigned developer-owned leads, pending handovers, and released leads still waiting for conversion.
+            Watch stale leads, missing development allocation, unassigned developer-owned leads, pending handovers, and released leads still waiting for onboarding.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -1014,7 +1047,7 @@ function LeadRow({
             onClick={() => onConvertLead(lead)}
           >
             <ExternalLink size={15} />
-            {converting ? 'Converting...' : 'Convert & Send'}
+            {converting ? 'Sending...' : 'Send Onboarding'}
           </Button>
         ) : null}
       </div>
@@ -1212,6 +1245,8 @@ function DeveloperLeadWorkspacePanel({
   const handoverRequired = requiresAgencyHandover(lead)
   const handoverPending = agencyFed && lead.visibilityState === 'consent_pending'
   const converted = isConvertedLead(lead)
+  const leadStatus = normalizeLower(lead.leadStatus || 'new')
+  const onboardingStarted = ['onboarding_sent', 'onboarding_submitted', 'otp'].includes(leadStatus) && Boolean(normalizeText(lead.convertedTransactionId))
   const title = getLeadDisplayName(lead)
   const subtitle = agencyFed && handoverRequired
     ? 'Buyer details are protected until the source agency completes handover.'
@@ -1231,21 +1266,32 @@ function DeveloperLeadWorkspacePanel({
     { key: 'buyer_profile', label: 'Buyer Profile', meta: handoverRequired ? 'Protected' : '' },
     { key: 'onboarding_otp', label: 'Transaction Setup / Offer', meta: handoff.eligible ? 'Ready' : '' },
     { key: 'development', label: 'Development', meta: lead.interestedDevelopmentIds?.length || '' },
-    { key: 'documents', label: 'Documents', meta: converted ? 'Transaction' : '' },
+    { key: 'documents', label: 'Documents', meta: onboardingStarted || converted ? 'Context' : '' },
     { key: 'activity', label: 'Activity', meta: '' },
   ]
   const activityItems = [
     { key: 'created', title: 'Lead captured', detail: getLeadSourceLabel(lead.leadSource), timestamp: lead.createdAt, Icon: ClipboardList },
     ...(handoverPending ? [{ key: 'handover', title: 'Agency handover requested', detail: 'Waiting for protected buyer details', timestamp: lead.updatedAt, Icon: EyeOff }] : []),
-    ...(converted ? [{ key: 'converted', title: 'Transaction created', detail: 'Buyer onboarding flow available', timestamp: lead.updatedAt, Icon: CheckCircle2 }] : []),
+    ...(leadStatus === 'onboarding_sent' ? [{ key: 'onboarding_sent', title: 'Buyer onboarding sent', detail: 'Waiting for buyer submission', timestamp: lead.updatedAt, Icon: Mail }] : []),
+    ...(leadStatus === 'onboarding_submitted' ? [{ key: 'onboarding_submitted', title: 'Buyer onboarding submitted', detail: 'Ready for signed OTP upload', timestamp: lead.updatedAt, Icon: CheckSquare }] : []),
+    ...(leadStatus === 'otp' ? [{ key: 'otp', title: 'Signed OTP uploaded', detail: 'Transaction workflow has started', timestamp: lead.updatedAt, Icon: FileText }] : []),
+    ...(converted ? [{ key: 'converted', title: 'Transaction workflow active', detail: 'Buyer lead has entered the transaction workflow', timestamp: lead.updatedAt, Icon: CheckCircle2 }] : []),
   ]
 
   function renderPrimaryAction({ compact = false } = {}) {
+    if (onboardingStarted && !converted) {
+      return (
+        <Button type="button" size={compact ? 'sm' : undefined} variant="secondary" onClick={() => onOpenTransaction(lead.convertedTransactionId)}>
+          <ExternalLink size={16} />
+          {leadStatus === 'otp' ? 'Open Transaction Workflow' : 'Open Onboarding Context'}
+        </Button>
+      )
+    }
     if (converted) {
       return (
         <Button type="button" size={compact ? 'sm' : undefined} onClick={() => onOpenTransaction(lead.convertedTransactionId)}>
           <ExternalLink size={16} />
-          Open Transaction
+          Open Transaction Workflow
         </Button>
       )
     }
@@ -1261,7 +1307,7 @@ function DeveloperLeadWorkspacePanel({
       return (
         <Button type="button" size={compact ? 'sm' : undefined} disabled={converting} onClick={() => onConvertLead(lead)}>
           <ExternalLink size={16} />
-          {converting ? 'Converting...' : 'Convert & Send Buyer Onboarding'}
+          {converting ? 'Sending...' : 'Send Buyer Onboarding'}
         </Button>
       )
     }
@@ -1531,7 +1577,7 @@ function DeveloperLeadWorkspacePanel({
               <div>
                 <h3 className="text-xl font-semibold tracking-[-0.02em] text-[#102033]">Transaction Setup / Offer</h3>
                 <p className="mt-2 max-w-3xl text-sm leading-6 text-[#60758b]">
-                  This mirrors the buyer lead onboarding step from the agency workspace, scoped to a developer transaction.
+                  This mirrors the buyer lead onboarding step from the agency workspace. OTP upload is the handoff into the transaction workflow.
                 </p>
               </div>
               {renderPrimaryAction()}
@@ -1551,7 +1597,7 @@ function DeveloperLeadWorkspacePanel({
               </div>
             ) : (
               <div className="rounded-[14px] border border-[#d8efe4] bg-[#f1fbf6] p-3 text-sm font-semibold text-[#17613d]">
-                The lead is ready to become a developer transaction and send buyer onboarding.
+                The lead is ready for buyer onboarding. Upload the signed OTP after onboarding is submitted to start the transaction workflow.
               </div>
             )}
           </div>
@@ -1581,7 +1627,7 @@ function DeveloperLeadWorkspacePanel({
           <div>
             <h3 className="text-xl font-semibold tracking-[-0.02em] text-[#102033]">Documents</h3>
             <p className="mt-2 text-sm leading-6 text-[#60758b]">
-              Documents, OTP upload, finance, transfer, and registration continue in the transaction workspace once this lead is converted.
+              Buyer onboarding documents stay with the onboarding context. Uploading the signed OTP starts the transaction workflow for finance, transfer, and registration.
             </p>
             <div className="mt-4">{renderPrimaryAction()}</div>
           </div>
@@ -1822,8 +1868,8 @@ export default function DeveloperLeadsPage() {
       setConvertedOnboardingUrl(result.onboardingUrl || '')
       setMessage(
         result.onboardingEmail?.sent
-          ? 'Developer lead converted and buyer onboarding email sent.'
-          : 'Developer lead converted. Buyer onboarding link is ready, but email delivery needs attention.',
+          ? 'Buyer onboarding email sent from the developer lead.'
+          : 'Buyer onboarding link is ready, but email delivery needs attention.',
       )
       window.dispatchEvent(new CustomEvent('itg:transaction-created', { detail: result }))
       window.dispatchEvent(new Event('itg:developer-leads-changed'))
@@ -1832,7 +1878,7 @@ export default function DeveloperLeadsPage() {
         navigate(`/developer/leads/${lead.developerLeadId}`)
       }
     } catch (conversionError) {
-      setError(conversionError.message || 'Developer lead could not be converted.')
+      setError(conversionError.message || 'Buyer onboarding could not be sent from this developer lead.')
     } finally {
       setConvertingLeadId('')
     }

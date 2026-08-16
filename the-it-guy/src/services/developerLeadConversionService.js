@@ -63,7 +63,7 @@ function isRecoverableLeadActivityError(error) {
   )
 }
 
-async function markLeadConverted(client, {
+async function markLeadBuyerOnboardingSent(client, {
   developerOrgId,
   developerLeadId,
   transactionId,
@@ -75,9 +75,7 @@ async function markLeadConverted(client, {
     .from('developer_leads')
     .update({
       converted_transaction_id: transactionId,
-      lead_status: 'converted',
-      reservation_state: 'converted',
-      converted_at: now,
+      lead_status: sendBuyerOnboarding ? 'onboarding_sent' : 'qualified',
       updated_at: now,
     })
     .eq('developer_org_id', developerOrgId)
@@ -94,10 +92,10 @@ async function markLeadConverted(client, {
       developer_org_id: developerOrgId,
       source_agency_org_id: normalizeUuid(sourceAgencyOrgId),
       actor_user_id: null,
-      activity_type: sendBuyerOnboarding ? 'converted_and_onboarding_sent' : 'converted',
+      activity_type: sendBuyerOnboarding ? 'buyer_onboarding_sent' : 'system',
       activity_note: sendBuyerOnboarding
-        ? 'Developer lead converted to transaction and buyer onboarding was triggered.'
-        : 'Developer lead converted to transaction.',
+        ? 'Buyer onboarding was sent from the developer lead workspace.'
+        : 'Developer lead onboarding context was prepared.',
       visibility_scope: sourceAgencyOrgId ? 'shared' : 'developer',
       metadata: {
         contract: DEVELOPER_LEAD_PHASE18_CONTRACT,
@@ -173,7 +171,7 @@ export async function convertDeveloperLeadToTransactionAndSendOnboarding({
     fallbackToken: transaction?.onboardingToken,
   })
 
-  const convertedLead = await markLeadConverted(client, {
+  const convertedLead = await markLeadBuyerOnboardingSent(client, {
     developerOrgId: orgId,
     developerLeadId: leadId,
     transactionId,
@@ -209,7 +207,7 @@ export async function convertDeveloperLeadToTransactionAndSendOnboarding({
       const payloadError = response?.data?.error || response?.data?.message
       if (response?.error || payloadError) {
         const message = response?.error
-          ? await parseEdgeFunctionError(response.error, 'Developer lead converted, but buyer onboarding email failed to send.')
+          ? await parseEdgeFunctionError(response.error, 'Buyer onboarding context was prepared, but the email failed to send.')
           : normalizeText(payloadError)
         onboardingEmail = {
           sent: false,

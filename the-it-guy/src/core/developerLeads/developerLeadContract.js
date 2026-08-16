@@ -24,7 +24,11 @@ export const DEVELOPER_LEAD_STATUSES = Object.freeze([
   'new',
   'contacted',
   'qualified',
+  'viewing',
   'reserved',
+  'onboarding_sent',
+  'onboarding_submitted',
+  'otp',
   'converted',
   'lost',
 ])

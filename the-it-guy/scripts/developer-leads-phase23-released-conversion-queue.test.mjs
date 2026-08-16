@@ -87,7 +87,7 @@ assert.equal(queue.cards[0].canSendBuyerOnboarding, true)
 assert.equal(queue.cards[0].buyerEmail, 'released@example.test')
 assert.equal(queue.cards[0].lead.developerLeadId, 'lead-ready')
 assert.equal(queue.cards[1].canConvert, false)
-assert.match(queue.cards[1].nextAction, /Mark the lead as qualified or reserved|Select a preferred unit/)
+assert.match(queue.cards[1].nextAction, /qualified, viewing, or reserved|Select a preferred unit/)
 assert.equal(queue.cards.some((card) => card.developerLeadId === 'lead-protected'), false)
 
 const summary = summarizeReleasedDeveloperLeadConversionQueue(sampleLeads)
@@ -111,8 +111,8 @@ for (const token of [
   'ReleasedDeveloperLeadConversionPanel',
   'buildReleasedDeveloperLeadConversionQueue(leads)',
   'summarizeReleasedDeveloperLeadConversionQueue(leads)',
-  'Released Buyer Conversion',
-  'Convert & Send',
+  'Released Buyer Onboarding',
+  'Send Onboarding',
   'data-contract={DEVELOPER_LEAD_PHASE23_CONTRACT}',
   'convertDeveloperLeadToTransactionAndSendOnboarding',
   'handleConvertLead',
@@ -131,7 +131,7 @@ for (const token of [
 assert.doesNotMatch(queueSource, /createTransactionFromWizard|recordBuyerOnboardingSent|invokeEdgeFunction|send-email|service_role/i)
 assert.doesNotMatch(developerLeadsPageSource, /service_role|sb_secret_|security\s+definer/i)
 
-assert.match(docsSource, /Developer Leads Phase 23 Released Conversion Queue/)
+assert.match(docsSource, /Developer Leads Phase 23 Released Buyer Onboarding Queue/)
 assert.match(docsSource, /visibility_state = handed_over/)
 assert.match(docsSource, /existing Phase 18/)
 assert.match(docsSource, /does not create new Supabase tables/)

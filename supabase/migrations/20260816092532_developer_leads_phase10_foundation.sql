@@ -40,7 +40,7 @@ create table if not exists public.developer_leads (
   constraint developer_leads_reservation_state_check
     check (reservation_state in ('none', 'provisional', 'reserved', 'expired', 'converted')),
   constraint developer_leads_status_check
-    check (lead_status in ('new', 'contacted', 'qualified', 'reserved', 'converted', 'lost')),
+    check (lead_status in ('new', 'contacted', 'qualified', 'viewing', 'reserved', 'onboarding_sent', 'onboarding_submitted', 'otp', 'converted', 'lost')),
   constraint developer_leads_budget_range_check
     check (budget_min is null or budget_max is null or budget_min <= budget_max),
   constraint developer_leads_agency_visibility_check
@@ -123,7 +123,7 @@ create table if not exists public.developer_lead_activity (
   metadata jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
   constraint developer_lead_activity_type_check
-    check (activity_type in ('created', 'assigned', 'status_changed', 'reservation_changed', 'handover_requested', 'handover_completed', 'note', 'system')),
+    check (activity_type in ('created', 'assigned', 'status_changed', 'reservation_changed', 'handover_requested', 'handover_completed', 'buyer_onboarding_sent', 'buyer_onboarding_submitted', 'otp_uploaded', 'converted_and_onboarding_sent', 'converted', 'note', 'system')),
   constraint developer_lead_activity_visibility_check
     check (visibility_scope in ('developer', 'agency', 'shared', 'system'))
 );

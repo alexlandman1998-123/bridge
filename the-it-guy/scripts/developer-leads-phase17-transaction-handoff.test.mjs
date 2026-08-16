@@ -110,7 +110,7 @@ for (const token of [
   'DEVELOPER_LEAD_PHASE17_CONTRACT',
   'buildDeveloperLeadTransactionHandoff',
   'summarizeDeveloperLeadTransactionHandoffs',
-  'Transaction ready',
+  'Send Buyer Onboarding',
   'conversionBridgeEnabled: true',
   'data-contract={DEVELOPER_LEAD_PHASE17_CONTRACT}',
 ]) {
@@ -122,7 +122,7 @@ assert.equal(
   false,
   'Phase 17 must not mutate transactions or send buyer onboarding from developerLeadService',
 )
-assert.match(docsSource, /Developer Leads Phase 17 Transaction Handoff/)
+assert.match(docsSource, /Developer Leads Phase 17 Buyer Onboarding Handoff/)
 assert.match(docsSource, /non-mutating handoff payload/)
 assert.match(docsSource, /does not send the buyer onboarding email/)
 assert.match(phase5Source, /test:developer-module-phase17/)

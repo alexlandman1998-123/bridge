@@ -1,6 +1,7 @@
 export const DEVELOPER_LEAD_PHASE17_CONTRACT = 'developer-leads-phase17-transaction-handoff-v1'
 
-const TRANSACTION_READY_STATUSES = Object.freeze(['qualified', 'reserved'])
+const TRANSACTION_READY_STATUSES = Object.freeze(['qualified', 'viewing', 'reserved'])
+const ONBOARDING_CONTEXT_STATUSES = Object.freeze(['onboarding_sent', 'onboarding_submitted', 'otp'])
 
 function normalizeText(value = '') {
   return String(value || '').trim()
@@ -23,7 +24,7 @@ function requiresAgencyHandover(lead = {}) {
 }
 
 function isConvertedLead(lead = {}) {
-  return Boolean(normalizeText(lead.convertedTransactionId)) || normalizeLower(lead.leadStatus) === 'converted'
+  return normalizeLower(lead.leadStatus) === 'converted'
 }
 
 function buildBlocker(code, message) {
@@ -37,7 +38,7 @@ function buildWarning(code, message) {
 function resolveConversionStage(lead = {}) {
   const reservationState = normalizeLower(lead.reservationState)
   if (reservationState === 'reserved' || normalizeLower(lead.leadStatus) === 'reserved') return 'Reserved'
-  return 'Deposit'
+  return 'Onboarding'
 }
 
 export function buildDeveloperLeadTransactionHandoff(lead = {}, {
@@ -53,19 +54,23 @@ export function buildDeveloperLeadTransactionHandoff(lead = {}, {
   }
 
   if (isConvertedLead(lead)) {
-    blockers.push(buildBlocker('already_converted', 'This lead is already linked to a transaction.'))
+    blockers.push(buildBlocker('already_converted', 'This lead is already in the transaction workflow.'))
+  }
+
+  if (ONBOARDING_CONTEXT_STATUSES.includes(leadStatus)) {
+    blockers.push(buildBlocker('onboarding_already_started', 'Buyer onboarding has already been sent for this lead.'))
   }
 
   if (requiresAgencyHandover(lead)) {
-    blockers.push(buildBlocker('agency_handover_required', 'Agency-fed buyer details must be handed over before conversion.'))
+    blockers.push(buildBlocker('agency_handover_required', 'Agency-fed buyer details must be handed over before buyer onboarding.'))
   }
 
   if (!TRANSACTION_READY_STATUSES.includes(leadStatus)) {
-    blockers.push(buildBlocker('lead_not_qualified', 'Mark the lead as qualified or reserved before conversion.'))
+    blockers.push(buildBlocker('lead_not_qualified', 'Move the lead to qualified, viewing, or reserved before buyer onboarding can be sent.'))
   }
 
   if (!normalizeText(lead.buyerFullName)) {
-    blockers.push(buildBlocker('buyer_name_missing', 'Buyer full name is required for transaction creation.'))
+    blockers.push(buildBlocker('buyer_name_missing', 'Buyer full name is required before buyer onboarding can be sent.'))
   }
 
   if (!hasContactChannel(lead)) {
@@ -77,11 +82,11 @@ export function buildDeveloperLeadTransactionHandoff(lead = {}, {
   }
 
   if (!normalizeText(lead.primaryDevelopmentId)) {
-    blockers.push(buildBlocker('development_missing', 'Select one primary development before conversion.'))
+    blockers.push(buildBlocker('development_missing', 'Select one primary development before buyer onboarding.'))
   }
 
   if (!normalizeText(lead.preferredUnitId)) {
-    blockers.push(buildBlocker('unit_missing', 'Select a preferred unit before creating a development transaction.'))
+    blockers.push(buildBlocker('unit_missing', 'Select a preferred unit before buyer onboarding can be sent.'))
   }
 
   const handoff = {
@@ -99,12 +104,12 @@ export function buildDeveloperLeadTransactionHandoff(lead = {}, {
     finance: {
       reservationRequired: ['provisional', 'reserved'].includes(normalizeLower(lead.reservationState)),
       reservationStatus: normalizeLower(lead.reservationState) === 'reserved' ? 'paid' : 'not_required',
-      nextAction: 'Send buyer onboarding link from the transaction workspace.',
+      nextAction: 'Send buyer onboarding link from the lead workspace.',
     },
     status: {
       stage: resolveConversionStage(lead),
       mainStage: resolveConversionStage(lead),
-      nextAction: 'Send buyer onboarding link from the transaction workspace.',
+      nextAction: 'Send buyer onboarding link from the lead workspace.',
       notes: `Prepared from developer lead ${normalizeText(lead.publicReference || lead.developerLeadId)}.`,
     },
     options: {
@@ -124,7 +129,7 @@ export function buildDeveloperLeadTransactionHandoff(lead = {}, {
     contract: DEVELOPER_LEAD_PHASE17_CONTRACT,
     eligible: blockers.length === 0,
     status: blockers.length === 0 ? warnings.length > 0 ? 'attention' : 'ready' : 'blocked',
-    label: blockers.length === 0 ? 'Ready to prepare transaction' : 'Setup needed',
+    label: blockers.length === 0 ? 'Ready to send onboarding' : 'Setup needed',
     blockers,
     warnings,
     handoff,

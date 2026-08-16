@@ -40,7 +40,7 @@ for (const token of [
   "selling_model in ('developer_led', 'agent_led')",
   "visibility_state in ('full', 'limited', 'consent_pending', 'handed_over')",
   "reservation_state in ('none', 'provisional', 'reserved', 'expired', 'converted')",
-  "lead_status in ('new', 'contacted', 'qualified', 'reserved', 'converted', 'lost')",
+  "lead_status in ('new', 'contacted', 'qualified', 'viewing', 'reserved', 'onboarding_sent', 'onboarding_submitted', 'otp', 'converted', 'lost')",
 ]) {
   assert.match(migration, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'))
 }

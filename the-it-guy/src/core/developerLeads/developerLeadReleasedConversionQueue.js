@@ -19,13 +19,13 @@ function isReleasedAgencyLead(lead = {}) {
 }
 
 function isConvertedLead(lead = {}) {
-  return Boolean(normalizeText(lead.convertedTransactionId)) || normalizeLower(lead.leadStatus) === 'converted'
+  return normalizeLower(lead.leadStatus) === 'converted'
 }
 
 function resolveNextAction(handoff = {}) {
   return handoff.blockers?.[0]?.message ||
     handoff.warnings?.[0]?.message ||
-    'Convert to a development transaction and send buyer onboarding.'
+    'Send buyer onboarding from the developer lead workspace.'
 }
 
 export function buildReleasedDeveloperLeadConversionQueue(leads = []) {
@@ -87,7 +87,7 @@ export function summarizeReleasedDeveloperLeadConversionQueue(leads = []) {
       ? `${queue.readyToConvertCount} released lead${queue.readyToConvertCount === 1 ? '' : 's'} ready`
       : 'No released leads ready',
     detail: queue.activeReleasedCount > 0
-      ? `${queue.activeReleasedCount} released agency lead${queue.activeReleasedCount === 1 ? '' : 's'} awaiting conversion checks.`
-      : 'Released agency leads will appear here after handover, before transaction conversion.',
+      ? `${queue.activeReleasedCount} released agency lead${queue.activeReleasedCount === 1 ? '' : 's'} awaiting buyer onboarding checks.`
+      : 'Released agency leads will appear here after handover, before buyer onboarding.',
   })
 }

@@ -13,7 +13,7 @@ function isAgencyIntroducedLead(lead = {}) {
 }
 
 function isConvertedLead(lead = {}) {
-  return Boolean(normalizeText(lead.convertedTransactionId)) || normalizeLower(lead.leadStatus) === 'converted'
+  return normalizeLower(lead.leadStatus) === 'converted'
 }
 
 function resolveAttributionType(lead = {}) {
