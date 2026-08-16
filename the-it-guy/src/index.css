@@ -6271,6 +6271,71 @@
   outline-offset: 2px;
 }
 
+.developer-leads-page {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+.developer-leads-shell {
+  width: min(100%, 1360px);
+  max-width: 100%;
+  min-width: 0;
+}
+
+.developer-leads-page .developer-leads-panel,
+.developer-leads-page section,
+.developer-leads-page article {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.developer-leads-page .developer-leads-panel {
+  overflow: hidden;
+}
+
+.developer-leads-page .developer-leads-hero {
+  align-items: stretch;
+}
+
+.developer-leads-page .developer-leads-actions {
+  max-width: 100%;
+  min-width: 0;
+  justify-content: flex-start;
+}
+
+.developer-leads-page .developer-leads-actions button {
+  min-width: 0;
+}
+
+.developer-leads-page .developer-leads-metrics,
+.developer-leads-page .developer-leads-card-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
+}
+
+.developer-leads-page p,
+.developer-leads-page h1,
+.developer-leads-page h2,
+.developer-leads-page h3,
+.developer-leads-page h4,
+.developer-leads-page h5,
+.developer-leads-page span,
+.developer-leads-page strong,
+.developer-leads-page a {
+  overflow-wrap: anywhere;
+}
+
+@media (min-width: 1024px) {
+  .developer-leads-page .developer-leads-hero {
+    align-items: center;
+  }
+
+  .developer-leads-page .developer-leads-actions {
+    justify-content: flex-end;
+  }
+}
+
 .ui-main-region {
   margin-left: 268px !important;
   width: calc(100% - 268px) !important;

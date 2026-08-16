@@ -187,7 +187,7 @@ function DeveloperLeadReadinessPanel({ readiness }) {
           {readiness.status}
         </span>
       </div>
-      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+      <div className="developer-leads-card-grid mt-4 grid gap-3">
         {readiness.checks.map((check) => (
           <div key={check.key} className="rounded-[8px] border border-[#e5edf6] p-3">
             <div className="flex items-center justify-between gap-3">
@@ -1044,9 +1044,9 @@ export default function DeveloperLeadsPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#f6f9fc] p-6 lg:p-8">
-      <div className="mx-auto grid max-w-[1500px] gap-6">
-        <section className="flex flex-col gap-4 rounded-[8px] border border-[#d9e5f2] bg-white p-5 shadow-[0_12px_35px_rgba(15,23,42,0.05)] lg:flex-row lg:items-center lg:justify-between">
+    <main className="developer-leads-page min-h-screen bg-[#f6f9fc] p-4 sm:p-5 lg:p-6">
+      <div className="developer-leads-shell mx-auto grid gap-6">
+        <section className="developer-leads-panel developer-leads-hero flex flex-col gap-4 rounded-[8px] border border-[#d9e5f2] bg-white p-5 shadow-[0_12px_35px_rgba(15,23,42,0.05)] lg:flex-row lg:items-center lg:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#7a8ba3]">Developer Leads</p>
             <h1 className="mt-1 text-3xl font-semibold tracking-[-0.035em] text-[#10243a]">Lead Intake</h1>
@@ -1054,7 +1054,7 @@ export default function DeveloperLeadsPage() {
               Developer-fed buyer leads and agency-fed protected lead cards, with handover before private buyer details become visible.
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="developer-leads-actions flex flex-wrap gap-2">
             <Button type="button" variant="secondary" onClick={loadData} disabled={loading}>
               <RefreshCw size={16} />
               Refresh
@@ -1066,7 +1066,7 @@ export default function DeveloperLeadsPage() {
           </div>
         </section>
 
-        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <section className="developer-leads-metrics grid gap-4">
           <MetricCard label="Open leads" value={metrics.open} helper="Not converted or lost" icon={ClipboardList} />
           <MetricCard label="Assigned" value={metrics.assigned} helper="Worked by an agent" icon={UserPlus} />
           <MetricCard label="Agency protected" value={metrics.agencyProtected} helper="Buyer details hidden" icon={EyeOff} />
@@ -1105,7 +1105,7 @@ export default function DeveloperLeadsPage() {
           agents={agents}
         />
 
-        <section className="rounded-[8px] border border-[#d9e5f2] bg-white shadow-[0_12px_35px_rgba(15,23,42,0.05)]">
+        <section className="developer-leads-panel rounded-[8px] border border-[#d9e5f2] bg-white shadow-[0_12px_35px_rgba(15,23,42,0.05)]">
           <div className="flex flex-col gap-4 border-b border-[#e5edf6] p-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex min-w-0 flex-1 items-center gap-3 rounded-[8px] border border-[#d9e5f2] bg-white px-3">
               <Search size={17} className="shrink-0 text-[#7a8ba3]" />
