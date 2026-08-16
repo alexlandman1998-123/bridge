@@ -21,6 +21,13 @@ alter table if exists public.transaction_participants
   add column if not exists buyer_metadata jsonb not null default '{}'::jsonb;
 
 alter table if exists public.transaction_participants
+  drop constraint if exists transaction_participants_transaction_id_role_type_legal_role_ke;
+
+create unique index if not exists transaction_participants_non_buyer_role_uidx
+  on public.transaction_participants (transaction_id, role_type, legal_role)
+  where coalesce(transaction_role, '') <> 'buyer';
+
+alter table if exists public.transaction_participants
   drop constraint if exists transaction_participants_buyer_party_role_check;
 alter table if exists public.transaction_participants
   add constraint transaction_participants_buyer_party_role_check
@@ -98,7 +105,7 @@ insert into public.transaction_participants (
 select
   txn.id,
   buyer.id,
-  buyer.user_id,
+  null::uuid,
   nullif(trim(coalesce(buyer.name, txn.buyer_name, '')), ''),
   lower(nullif(trim(coalesce(buyer.email, '')), '')),
   nullif(trim(coalesce(buyer.phone, '')), ''),
@@ -168,8 +175,7 @@ where participant.transaction_role = 'buyer'
   and participant.is_primary_buyer = false;
 
 update public.transactions txn
-set primary_buyer_participant_id = primary_participant.id
-from lateral (
+set primary_buyer_participant_id = (
   select participant.id
   from public.transaction_participants participant
   where participant.transaction_id = txn.id
@@ -178,8 +184,16 @@ from lateral (
     and coalesce(participant.status, 'active') not in ('inactive', 'removed', 'archived', 'deleted')
   order by participant.buyer_party_position asc, participant.id asc
   limit 1
-) primary_participant
-where txn.primary_buyer_participant_id is null;
+)
+where txn.primary_buyer_participant_id is null
+  and exists (
+    select 1
+    from public.transaction_participants participant
+    where participant.transaction_id = txn.id
+      and participant.transaction_role = 'buyer'
+      and participant.is_primary_buyer = true
+      and coalesce(participant.status, 'active') not in ('inactive', 'removed', 'archived', 'deleted')
+  );
 
 comment on column public.transactions.primary_buyer_participant_id is
   'Primary buyer participant for the transaction multi-buyer model. Legacy transactions.buyer_id remains the compatibility bridge.';

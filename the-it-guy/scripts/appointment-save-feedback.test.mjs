@@ -45,7 +45,21 @@ assert.equal(
       attachCalendarInvite: true,
     },
   ),
-  'Appointment saved. Email failed. Recipient email: client@example.test. ICS not attached. External calendar not synced.',
+  'Appointment saved. Email failed. Reason: send failed, provider_error. Recipient email: client@example.test. ICS not attached. External calendar not synced.',
+)
+
+assert.equal(
+  buildAppointmentSaveFeedback(
+    {
+      notificationResults: [{ participant: { email: 'client@example.test' }, email: { sent: false, status: 'queued', reason: 'outbox_retry_queued' } }],
+      externalCalendarStatus: 'not_synced',
+    },
+    {
+      requestedInvite: true,
+      attachCalendarInvite: true,
+    },
+  ),
+  'Appointment saved. Email queued. Recipient email: client@example.test. ICS attached. External calendar not synced.',
 )
 
 assert.equal(

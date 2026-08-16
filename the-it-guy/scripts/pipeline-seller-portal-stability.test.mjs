@@ -68,7 +68,7 @@ assert.match(
 assert.match(pipelineSource, /const PIPELINE_CONTEXT_TIMEOUT_MS = 8000/, 'context loads should not timeout at 3.5s')
 assert.match(pipelineSource, /const PIPELINE_RECORDS_TIMEOUT_MS = 10000/, 'private listing and record enrichments should get the same 10s budget as CRM')
 assert.match(pipelineSource, /const LEAD_WORKSPACE_HYDRATION_TIMEOUT_MS = 8000/, 'lead workspace hydration should not retry on a 2.5s hair trigger')
-assert.match(pipelineSource, /snapshot\?\.leadWorkspaceStatus === 'not_found'[\s\S]*?setRouteLeadHydrationStatus\('not_found'\)/, 'stale lead workspace links should stop retrying and enter a not-found state')
+assert.match(pipelineSource, /workspaceSnapshot\?\.leadWorkspaceStatus === 'not_found'[\s\S]*?setRouteLeadHydrationStatus\('not_found'\)/, 'stale lead workspace links should stop retrying and enter a not-found state')
 assert.ok(pipelineSource.includes('This lead link is stale or the lead has been removed from the selected workspace.'), 'stale lead workspace links should show an explicit recovery message')
 assert.ok(pipelineSource.includes('Back to Leads'), 'stale lead workspace links should offer a path back to the lead list')
 assert.match(pipelineSource, /const resolvedRouteLeadId = normalizeText\(snapshot\?\.resolvedLeadId \|\| snapshot\.leads\[0\]\?\.leadId\)[\s\S]*?setSelectedLeadId\(resolvedRouteLeadId\)/, 'listing-derived lead routes should pivot the selected workspace row to the resolved canonical lead id')
@@ -79,7 +79,7 @@ assert.match(
 )
 assert.match(
   pipelineSource,
-  /mergeActiveRouteLeadSnapshot[\s\S]*?routeLeadWorkspaceSnapshotRef\.current[\s\S]*?sourceHasRouteLead[\s\S]*?mergeLeadRowsForReload\(sourceLeads, pinned\.leads\)/,
+  /mergeActiveRouteLeadSnapshot[\s\S]*?routeLeadWorkspaceSnapshotRef\.current[\s\S]*?pinnedLeadKeys[\s\S]*?scopedPinnedLeads[\s\S]*?mergeLeadRowsForReload\(sourceLeads, scopedPinnedLeads\)/,
   'background pipeline refreshes should preserve the active route lead when the full list omits it',
 )
 assert.match(

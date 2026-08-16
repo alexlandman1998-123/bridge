@@ -16,8 +16,12 @@ function assertIncludes(source, token, label = token) {
 
 for (const [source, token, label] of [
   [component, 'ATTORNEY_INVITE_LOCATION_OPTIONS.map', 'shared location options in the invite modal'],
-  [component, "updateDraft('locationMode', event.target.value)} required", 'required location mode control'],
+  [component, 'aria-label="Create attorney invite"', 'create invite drawer landmark'],
+  [component, 'role="radiogroup" aria-label="Invite type"', 'contract-backed invite type chooser'],
+  [component, 'ATTORNEY_INVITE_TYPES.map', 'supported invite types only'],
+  [component, 'aria-label="Location type"', 'required location mode control'],
   [component, "updateDraft('resourceId', event.target.value)", 'boardroom control'],
+  [component, "resolveInviteDraftDurationMinutes(inviteDraft", 'visible end time wired to invite duration'],
   [component, 'buildAttorneyInviteContract({', 'contract validation before submission'],
   [component, 'recipientName: inviteDraft.recipientName || selectedMatter?.clientName', 'matter client-name fallback'],
   [component, 'createAttorneyAppointmentInvite(inviteContract.value)', 'normalized invite service payload'],
@@ -33,5 +37,10 @@ for (const [source, token, label] of [
 
 assert(!component.includes('<option value="office">'), 'The invite modal must not submit the unsupported office location type')
 assert(!component.includes('inviteDraft.locationType'), 'The invite modal must use locationMode and normalize it at the contract boundary')
+assert(!component.includes('New Event'), 'The invite modal must not describe attorney invites as generic events')
+assert(!component.includes('Create Event'), 'The invite modal must not submit attorney invites as generic events')
+assert(!component.includes('All day'), 'The invite modal must not expose unsupported all-day state')
+assert(!component.includes('Does not repeat'), 'The invite modal must not expose unsupported repeat state')
+assert(!component.includes("updateDraft('assignedStaffId'"), 'The invite modal must not expose create-time staff assignment unless it is persisted')
 
 console.log('attorney calendar Phase 2 integration contract passed')

@@ -1,0 +1,9 @@
+.env
+.env.*
+.vercel
+node_modules
+dist
+tmp
+test-results
+output
+private-evidence

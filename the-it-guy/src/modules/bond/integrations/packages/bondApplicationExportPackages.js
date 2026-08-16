@@ -3859,7 +3859,7 @@ export function buildBondOriginatorOperationalHardeningReport({
   const pilotStatus = launchPlan?.status || pilotReport?.status || null
   const normalizedPackages = normalizeList(packages).map(normalizeOriginatorWorkspacePackage).filter(Boolean)
   const normalizedIncidents = normalizeList(incidents).map(normalizeOperationalIncident)
-  const latestActivityAt = latestOperationalTimestamp(progressEvents, documentRequests, offerCaptures, grantCaptures, normalizedPackages)
+  const latestActivityAt = latestOperationalTimestamp(progressEvents)
   const staleThresholdHours = normalizeInteger(operationalControls.staleActivityThresholdHours || operationalControls.stale_activity_threshold_hours || 48) || 48
   const staleHours = latestActivityAt ? hoursBetween(generatedAt, latestActivityAt) : null
   const openCriticalIncidents = normalizedIncidents.filter((incident) =>

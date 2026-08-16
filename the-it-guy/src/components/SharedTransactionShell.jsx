@@ -5,10 +5,11 @@ function SharedTransactionShell({
   headline = null,
   toolbar = null,
   errorMessage = '',
+  className = '',
   children,
 }) {
   return (
-    <section className="min-w-0 space-y-4">
+    <section className={`min-w-0 space-y-4 ${className}`.trim()}>
       <section className="hidden print:block">
         <h2>{printTitle}</h2>
         {printSubtitle ? <p>{printSubtitle}</p> : null}

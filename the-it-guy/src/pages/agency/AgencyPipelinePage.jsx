@@ -8979,7 +8979,7 @@ const VIEWING_OUTCOME_OPTIONS = [
 ]
 
 const VIEWING_NEXT_STEP_OPTIONS = [
-  { value: 'send_buyer_onboarding_link', label: 'Send offer link' },
+  { value: 'send_buyer_onboarding_link', label: 'Send buyer onboarding link' },
   { value: 'follow_up', label: 'Follow up' },
   { value: 'continue_viewing', label: 'Continue viewing' },
   { value: 'mark_lost', label: 'Mark as lost' },
@@ -13249,7 +13249,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             ? 'Resend Link to Portal'
             : selectedLeadLinkedTransactionId
               ? 'Resend Buyer Onboarding'
-	              : 'Send Offer Link'
+	              : 'Send Buyer Onboarding Link'
   const selectedLeadSellerPortalActionLabel = isSellerOnboardingSending
     ? 'Sending...'
     : 'Send Seller Portal Link'
@@ -29641,7 +29641,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       {[
                         { key: 'overview', label: 'Overview', meta: '' },
                         { key: BUYER_PROFILE_WORKSPACE_TAB_KEY, label: 'Buyer Profile', meta: '' },
-                        { key: BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY, label: 'Offer / Transaction Setup', meta: selectedLeadTransactionSetupComplete ? 'Ready' : '' },
+                        { key: BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY, label: 'Transaction Setup / Offer', meta: selectedLeadTransactionSetupComplete ? 'Ready' : '' },
                         { key: 'properties', label: 'Properties', meta: selectedLeadBuyerRecommendations.length },
                         { key: 'appointments', label: 'Appointments', meta: selectedLeadAppointments.length },
                         { key: 'activity', label: 'Activity', meta: selectedLeadUnifiedTimeline.length },
@@ -29938,7 +29938,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       {[
                         { key: 'overview', label: 'Overview', meta: '' },
                         { key: BUYER_PROFILE_WORKSPACE_TAB_KEY, label: 'Buyer Profile', meta: '' },
-	                        { key: BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY, label: 'Offer / Transaction Setup', meta: selectedLeadTransactionSetupComplete ? 'Ready' : '' },
+	                        { key: BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY, label: 'Transaction Setup / Offer', meta: selectedLeadTransactionSetupComplete ? 'Ready' : '' },
                         { key: 'properties', label: 'Properties', meta: selectedLeadBuyerRecommendations.length },
                         { key: 'appointments', label: 'Appointments', meta: selectedLeadAppointments.length },
                         { key: 'activity', label: 'Activity', meta: selectedLeadUnifiedTimeline.length },
@@ -31058,7 +31058,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                     ? 'Keep the buyer in Viewing until you upload the signed OTP or set another viewing.'
                                     : 'Keep the buyer in Viewing until you send an offer link or set another viewing.',
                                   actions: [
-	                                    { key: 'make-offer', label: selectedLeadUsesKingstonsInPersonOtpFlow ? 'Upload signed OTP' : 'Send offer link', icon: FileText, primary: true, onClick: () => void handleBuyerJourneyMakeOfferAction() },
+	                                    { key: 'make-offer', label: selectedLeadUsesKingstonsInPersonOtpFlow ? 'Upload signed OTP' : 'Send buyer onboarding link', icon: FileText, primary: true, onClick: () => void handleBuyerJourneyMakeOfferAction() },
                                     { key: 'another-viewing', label: 'Set another viewing', icon: CalendarDays, primary: false, onClick: () => handleBuyerJourneyScheduleViewingAction({ another: true }) },
                                   ],
                                 }
@@ -34026,7 +34026,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       {!selectedLeadUsesKingstonsInPersonOtpFlow ? (
                         <Button type="submit" size="sm" form="buyer-onboarding-otp-send-form" className="rounded-[12px] bg-[#061d3b] hover:bg-[#0a2a52]" disabled={isOfferLinkSending || !selectedLeadBuyerOfferReadiness.readyForOffer}>
                           <Send className="h-4 w-4" />
-                          {isOfferLinkSending ? 'Sending...' : 'Send Offer Link'}
+                          {isOfferLinkSending ? 'Sending...' : 'Send Buyer Onboarding Link'}
                         </Button>
                       ) : null}
                     </div>
@@ -34115,7 +34115,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             <div className="mt-4 rounded-[16px] border border-dashed border-[#d8e4f0] bg-[#fbfdff] p-5 text-sm text-[#6a8098]">
 	                              {selectedLeadUsesKingstonsInPersonOtpFlow
                                   ? 'Select a property before uploading the signed OTP.'
-                                  : 'Select a property before sending an offer link or uploading the OTP.'}
+                                  : 'Select a property before sending buyer onboarding or uploading the OTP.'}
                             </div>
                           )}
 
@@ -34196,7 +34196,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                        <section className="rounded-[20px] border border-[#dfe9f4] bg-white p-5 shadow-[0_16px_34px_rgba(31,54,78,0.05)]">
                           <div className="flex items-center gap-2">
 	                            <span className="flex h-7 w-7 items-center justify-center rounded-[10px] bg-[#edf5ff] text-sm font-semibold text-[#0b63f6]">2A</span>
-	                            <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#18324b]">Send Offer Link</h4>
+	                            <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#18324b]">Send Buyer Onboarding Link</h4>
 	                          </div>
 	                          <form id="buyer-onboarding-otp-send-form" className="mt-4 grid gap-4" data-offer-centre="true" onSubmit={handleSendBuyerOnboardingFromAppointment}>
                             <div className="grid gap-4 lg:grid-cols-[1fr_240px]">
@@ -34281,7 +34281,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                            <div className="flex flex-wrap items-center gap-3">
 	                              <Button type="submit" disabled={isOfferLinkSending || !selectedLeadBuyerOfferReadiness.readyForOffer} className="rounded-[12px] bg-[#061d3b] hover:bg-[#0a2a52]">
 	                                <Send className="h-4 w-4" />
-	                                {isOfferLinkSending ? 'Sending...' : 'Send Offer Link'}
+	                                {isOfferLinkSending ? 'Sending...' : 'Send Buyer Onboarding Link'}
 	                              </Button>
                                 {!selectedLeadBuyerOfferReadiness.readyForOffer ? (
                                   <span className="text-xs font-semibold text-[#8a641d]">{formatBuyerLeadOfferReadinessBlocker(selectedLeadBuyerOfferReadiness)}</span>

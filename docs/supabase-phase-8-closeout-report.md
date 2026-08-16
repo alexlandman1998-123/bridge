@@ -1,11 +1,11 @@
 # Supabase Phase 8 Closeout Report
 
-Generated: 2026-07-31T17:49:22.504Z
+Generated: 2026-08-16T15:33:55.727Z
 Production project: `isdowlnollckzvltkasn`
 
 ## Decision
 
-**Status: LOCAL_CLOSEOUT_NOT_READY**
+**Status: READY_FOR_REVIEWED_PHASE0_FREEZE_RETIREMENT**
 
 The Phase 0 broad-push freeze remains active unless this report says `READY_FOR_REVIEWED_PHASE0_FREEZE_RETIREMENT`. Even a ready report authorizes a reviewed guard-removal change; it does not remove the guard automatically.
 
@@ -13,7 +13,7 @@ The Phase 0 broad-push freeze remains active unless this report says `READY_FOR_
 
 | Check | Result |
 | --- | --- |
-| Local migration files | 615 |
+| Local migration files | 694 |
 | Phase 5 manifest rows | 33 |
 | Duplicate versions | 0 |
 | Missing manifest files | 0 |
@@ -24,16 +24,16 @@ The Phase 0 broad-push freeze remains active unless this report says `READY_FOR_
 | Unknown evidence rows | 0 |
 | Duplicate evidence versions | 0 |
 | Ledger drift resolution loaded | Yes |
-| Ledger drift resolution status | LEDGER_DRIFT_RESOLVED |
-| Ledger drift resolution blockers | 0 |
-| Live verification performed | No |
-| Pure local-only versions | Not checked |
-| Pure remote-only versions | Not checked |
-| Divergent versions | Not checked |
-| Unreviewed split versions | Not checked |
-| Production PITR | Not checked |
-| Physical backups | Not checked |
-| Ready for reviewed freeze retirement | No |
+| Ledger drift resolution status | LEDGER_DRIFT_BLOCKED |
+| Ledger drift resolution blockers | 2 |
+| Live verification performed | Yes |
+| Pure local-only versions | 0 |
+| Pure remote-only versions | 0 |
+| Divergent versions | 0 |
+| Unreviewed split versions | 0 |
+| Production PITR | Disabled |
+| Physical backups | 8 |
+| Ready for reviewed freeze retirement | Yes |
 
 ## Incomplete Evidence Versions
 

@@ -73,6 +73,9 @@ export default function ClientPortalMatterAccountsPanel({
   const workspaceLabel = workspace === 'seller' || workspace === 'selling' ? 'seller' : 'buyer'
   const accountCount = Array.isArray(accounts) ? accounts.length : 0
   const hasAccounts = accountCount > 0
+  const isBuyerWorkspace = workspaceLabel === 'buyer'
+  const documentCount = Number(summary.documentCount || accounts.reduce((total, account) => total + (account.documents?.length || 0), 0))
+  const requestCount = Number(summary.openRequests || accounts.reduce((total, account) => total + (account.requests?.length || 0), 0))
   const [proofDrafts, setProofDrafts] = useState({})
   const [proofFiles, setProofFiles] = useState({})
   const [requestDrafts, setRequestDrafts] = useState({})
@@ -184,16 +187,20 @@ export default function ClientPortalMatterAccountsPanel({
 
   return (
     <section className="space-y-5">
-      <header className="rounded-[26px] border border-[#dbe5ef] bg-white px-6 py-6 shadow-[0_16px_34px_rgba(15,23,42,0.06)]">
+      <header className="rounded-[18px] border border-[#dbe5ef] bg-white px-6 py-6 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div>
             <span className="inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-3.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#64748b]">
               <ShieldCheck size={13} />
-              Secure {title(workspaceLabel)} account
+              Secure {title(workspaceLabel)} finance
             </span>
-            <h3 className="mt-3 text-[1.36rem] font-semibold tracking-[-0.03em] text-[#142132]">Account details</h3>
+            <h3 className="mt-3 text-[1.85rem] font-semibold tracking-[-0.04em] text-[#142132]">
+              {isBuyerWorkspace ? 'Finance' : 'Account details'}
+            </h3>
             <p className="mt-1.5 max-w-3xl text-sm leading-6 text-[#6b7d93]">
-              These figures and documents are published by your legal team. Drafts and internal notes are kept private until they are approved for your portal.
+              {isBuyerWorkspace
+                ? 'Payment requests, statements, and proof uploads from your legal team.'
+                : 'These figures and documents are published by your legal team. Drafts and internal notes are kept private until they are approved for your portal.'}
             </p>
           </div>
           <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-[#fbfdff] px-4 py-2 text-sm font-semibold text-[#64748b]">
@@ -210,14 +217,22 @@ export default function ClientPortalMatterAccountsPanel({
           </p>
         ) : null}
 
-        <div className="mt-5 grid gap-3 md:grid-cols-4">
-          {[
-            ['Balance due', formatCurrency(summary.balanceDue || 0), 'Visible posted entries'],
-            ['Charged', formatCurrency(summary.totalCharged || 0), 'Published charges/debits'],
-            ['Received / credited', formatCurrency(summary.totalCredited || 0), 'Payments, credits, write-offs'],
-            ['Requests', summary.openRequests || 0, `${summary.overdueRequests || 0} overdue checklist items`],
-            ['Updates', summary.eventCount || 0, 'Published account updates'],
-          ].map(([label, value, helper]) => (
+        <div className={`mt-5 grid gap-3 ${isBuyerWorkspace ? 'md:grid-cols-4' : 'md:grid-cols-5'}`}>
+          {(isBuyerWorkspace
+            ? [
+                ['Balance due', formatCurrency(summary.balanceDue || 0), 'Visible posted entries'],
+                ['Requests', requestCount, `${summary.overdueRequests || 0} overdue`],
+                ['Documents', documentCount, 'Statements and receipts'],
+                ['Updates', summary.eventCount || 0, 'Published updates'],
+              ]
+            : [
+                ['Balance due', formatCurrency(summary.balanceDue || 0), 'Visible posted entries'],
+                ['Charged', formatCurrency(summary.totalCharged || 0), 'Published charges/debits'],
+                ['Received / credited', formatCurrency(summary.totalCredited || 0), 'Payments, credits, write-offs'],
+                ['Requests', summary.openRequests || 0, `${summary.overdueRequests || 0} overdue checklist items`],
+                ['Updates', summary.eventCount || 0, 'Published account updates'],
+              ]
+          ).map(([label, value, helper]) => (
             <article key={label} className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-3">
               <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">{label}</span>
               <strong className="mt-1.5 block text-lg font-semibold text-[#142132]">{value}</strong>

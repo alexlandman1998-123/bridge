@@ -4,7 +4,7 @@ import path from 'node:path'
 
 const root = process.cwd()
 const statusSharePath = path.join(root, 'src/pages/TransactionStatusShare.jsx')
-const agentLeadsPath = path.join(root, 'src/pages/AgentLeadsPage.jsx')
+const agentLeadsPath = path.join(root, 'src/pages/agency/AgencyPipelinePage.jsx')
 const migrationPath = path.join(root, '../supabase/migrations/202605250013_browser_verification_entry_blockers.sql')
 
 const statusShare = fs.readFileSync(statusSharePath, 'utf8')
@@ -13,8 +13,8 @@ assert.match(statusShare, /getClientStageExplainer/, 'TransactionStatusShare mus
 assert.match(statusShare, /const\s+stageExplainer\s*=\s*getClientStageExplainer/, 'TransactionStatusShare must define stageExplainer before render')
 assert.match(statusShare, /mainStage\s*\|\|\s*stage/, 'stage explainer should fall back from mainStage to detailed stage')
 
-assert.match(agentLeads, /function\s+normalizeLeadCategory\(row\s*=\s*\{\}\)\s*\{\s*const\s+safeRow\s*=\s*row\s*&&\s*typeof\s+row\s*===\s*'object'\s*\?\s*row\s*:\s*\{\}/s, 'Agent leads category normalization must tolerate null lead rows')
-assert.match(agentLeads, /const\s+category\s*=\s*normalizeLeadCategory\(lead\)[\s\S]*?<Modal\s+open=\{Boolean\(lead\)\}/, 'Closed delete lead modal must not crash when its lead prop is null')
+assert.match(agentLeads, /function\s+resolveLeadCategoryView\(value\s*=\s*''\)\s*\{[\s\S]*?typeof value === 'object' && value !== null[\s\S]*?inferLeadCategoryFromRecord\(value, 'other'\)[\s\S]*?normalizeLeadCategory\(value, 'other'\)/, 'Agent leads category normalization must tolerate null lead rows')
+assert.match(agentLeads, /const\s+isSellerLeadDelete\s*=\s*resolveLeadCategoryView\(leadForDelete\) === 'seller'[\s\S]*?<Modal\s+open=\{leadDeleteModal\.open\}/, 'Closed delete lead modal must not crash when its lead record is null')
 
 const migration = fs.readFileSync(migrationPath, 'utf8')
 assert.match(migration, /appt\.listing_id\s*=\s*v_listing\.id::text/, 'seller portal RPC must compare text listing_id to uuid listing id via text cast')

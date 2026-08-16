@@ -155,7 +155,7 @@ const ISSUE_CATEGORIES = [
   'Other',
 ]
 
-function getClientPortalLoadErrorMessage(error, fallback = 'We could not load your client workspace right now.') {
+function getClientPortalLoadErrorMessage(error, fallback = 'We could not load your portal right now.') {
   const message = String(error?.message || error || '').trim()
   const normalized = message.toLowerCase()
   if (
@@ -1296,22 +1296,22 @@ const CLIENT_PORTAL_MENU = [
   { key: 'appointments', label: 'Appointments', icon: CalendarClock },
   { key: 'details', label: 'My Details', icon: User },
   { key: 'account', label: 'Account', icon: HandCoins },
-  { key: 'bond_application', label: 'Bond Application', icon: FileSignature },
+  { key: 'bond_application', label: 'Finance', icon: FileSignature },
   { key: 'documents', label: 'Documents', icon: FileText },
-  { key: 'handover', label: 'Handover', icon: KeyRound },
-  { key: 'snags', label: 'Snags', icon: Wrench },
+  { key: 'handover', label: 'Keys', icon: KeyRound },
+  { key: 'snags', label: 'Issues', icon: Wrench },
   { key: 'team', label: 'Team', icon: Users },
 ]
 
 const BUYER_PORTAL_NAV_GROUPS = [
   {
-    label: 'Home',
+    label: 'Start',
     items: [
       { key: 'overview', label: 'Overview', icon: Home },
     ],
   },
   {
-    label: 'Your Purchase',
+    label: 'Next Steps',
     items: [
       { key: 'progress', label: 'Progress', icon: BarChart3 },
       { key: 'appointments', label: 'Appointments', icon: CalendarClock },
@@ -1322,16 +1322,16 @@ const BUYER_PORTAL_NAV_GROUPS = [
     label: 'Property',
     items: [
       { key: 'documents', label: 'Documents', icon: FileText },
-      { key: 'handover', label: 'Handover', icon: KeyRound },
-      { key: 'snags', label: 'Snags', icon: Wrench },
+      { key: 'handover', label: 'Keys', icon: KeyRound },
+      { key: 'snags', label: 'Issues', icon: Wrench },
     ],
   },
   {
-    label: 'Account',
+    label: 'Support',
     items: [
+      { key: 'team', label: 'Team', icon: Users },
       { key: 'account', label: 'Account', icon: HandCoins },
       { key: 'details', label: 'My Details', icon: User },
-      { key: 'team', label: 'Team', icon: Users },
     ],
   },
 ]
@@ -1345,9 +1345,9 @@ const PORTAL_DESIGN_TOKENS = {
   },
   shadow: {
     soft: 'shadow-[0_12px_26px_rgba(15,23,42,0.04)]',
-    card: 'shadow-[0_14px_30px_rgba(15,23,42,0.05)]',
+    card: 'shadow-[0_12px_26px_rgba(15,23,42,0.045)]',
     strong: 'shadow-[0_18px_36px_rgba(15,23,42,0.06)]',
-    hero: 'shadow-[0_18px_38px_rgba(15,23,42,0.13)]',
+    hero: 'shadow-[0_18px_38px_rgba(15,23,42,0.12)]',
   },
   text: {
     heading: 'text-[#142132]',
@@ -1802,7 +1802,7 @@ function getPortalSectionFromRoute(pathname = '', routeSection = '') {
   const normalizedSection = String(section || '').trim().toLowerCase()
 
   if (normalizedSection === 'progress') return 'progress'
-  if (normalizedSection === 'bond-application') return 'bond_application'
+  if (normalizedSection === 'bond-application' || normalizedSection === 'bond_application') return 'bond_application'
   if (normalizedSection === 'appointments') return 'appointments'
   if (normalizedSection === 'offers') return 'offers'
   if (normalizedSection === 'account') return 'account'
@@ -2353,8 +2353,8 @@ function resolveClientNextStepState({
       type: 'no_action_required',
       label: 'Next Step',
       title: 'No action required from you right now',
-      description: 'Your team is currently progressing the next steps in your transaction.',
-      helperText: `Everything is on track. Next milestone: ${nextStage}.`,
+      description: 'Your team is currently moving the purchase forward.',
+      helperText: `Everything is on track. Next: ${nextStage}.`,
       ctaLabel: 'View Progress',
       ctaTo: 'overview',
       tone: 'calm',
@@ -2375,7 +2375,7 @@ function resolveClientNextStepState({
         ? 'Complete your onboarding information so the transaction can move forward.'
         : normalizedType.includes('awaiting')
           ? 'No immediate action is required unless your team contacts you.'
-          : `Everything is on track. Next milestone: ${nextStage}.`
+          : `Everything is on track. Next: ${nextStage}.`
 
   const actionCount = list.filter((action) => Boolean(action?.blocking)).length
 
@@ -2460,8 +2460,8 @@ function buildClientFacingUpdate(item) {
   const stagePair = rawBody.match(/transaction stage updated:\s*(.+?)\s*changed to\s*(.+?)(?: by | at |$)/i)
   if (stagePair) {
     return {
-      title: `Your transaction moved to ${stagePair[2]}`,
-      summary: `Your team has completed ${stagePair[1]} and moved your purchase into the next milestone.`,
+      title: `Your purchase moved to ${stagePair[2]}`,
+      summary: `Your team has completed ${stagePair[1]} and moved your purchase to the next step.`,
       contextLabel,
     }
   }
@@ -2548,7 +2548,7 @@ function buildClientJourneyFeedItem(item, index = 0) {
           ? 'Developer'
           : normalizedRole.includes('admin')
             ? 'Internal Admin'
-            : 'Arch9 System'
+            : 'Team update'
   const formatted = buildClientFacingUpdate(item)
 
   return {
@@ -2587,10 +2587,10 @@ function buildClientWhatsHappeningSummary({
 
   const teamFocusMap = {
     AVAIL: 'Your team is aligning the initial transaction setup so the process can move smoothly.',
-    DEP: 'Your team is confirming reservation records and preparing the next deal milestones.',
-    OTP: 'Your team is finalising signed deal records and preparing finance and legal handover.',
-    FIN: 'The finance team is handling lender-side workflow and approvals.',
-    ATTY: 'The legal team is preparing transfer documents and required legal milestones.',
+    DEP: 'Your team is confirming reservation records and preparing the next steps.',
+    OTP: 'Your team is finalising signed deal records and preparing finance and legal steps.',
+    FIN: 'The finance team is handling lender approvals.',
+    ATTY: 'The legal team is preparing transfer documents and legal requirements.',
     XFER: 'The attorney and transfer teams are coordinating final legal progression and registration readiness.',
     REG: 'Your team is finalising registration confirmations and close-out tasks.',
   }
@@ -2658,7 +2658,7 @@ function buildClientWhatHappensNextCopy({
   }
 
   return [
-    'Your transaction team is actively progressing your file behind the scenes.',
+    'Your team is actively moving your purchase forward.',
     'No action is needed unless we request it in your Next Step card.',
     `Your journey is currently moving toward ${nextStageLabel}.`,
   ]
@@ -2881,7 +2881,7 @@ function buildSellerTransactionHealth({
     return {
       score: null,
       label: 'On Track',
-      summary: 'Your transaction team is setting up the next steps.',
+      summary: 'Your team is setting up the next steps.',
       detail: 'No immediate action is required from you right now.',
       tone: 'neutral',
     }
@@ -2901,7 +2901,7 @@ function buildSellerTransactionHealth({
     ? `${blockerCount} item${blockerCount === 1 ? '' : 's'} need attention to keep your sale moving.`
     : hasDocumentsComplete
       ? 'Everything required has been received. No action required from you.'
-      : 'Your agent is progressing the next milestone.'
+      : 'Your agent is moving the next step forward.'
 
   return {
     score,
@@ -3572,7 +3572,7 @@ function BuyerMobilePortal({
     },
     {
       key: 'handover',
-      label: 'Handover',
+      label: 'Keys',
       value: buyerMoreSummary.handoverStatus || 'Preparing',
       description: buyerMoreSummary.handoverSummary || 'Track final readiness before key collection.',
       to: 'handover',
@@ -3581,9 +3581,9 @@ function BuyerMobilePortal({
     },
     {
       key: 'snags',
-      label: 'Snags',
+      label: 'Issues',
       value: Number(buyerMoreSummary.snagOpenCount || 0) ? `${buyerMoreSummary.snagOpenCount} open` : 'Clear',
-      description: enabledSections.snags ? 'Log and monitor practical completion items.' : 'Snag reporting is not active for this transaction.',
+      description: enabledSections.snags ? 'Log and track items that need fixing.' : 'Issue reporting is not active yet.',
       to: 'snags',
       icon: Wrench,
       enabled: Boolean(enabledSections.snags),
@@ -3658,7 +3658,6 @@ function BuyerMobilePortal({
     : selectedBuyerFinanceAccount?.partyLabel || 'Send payment evidence to your legal team.'
   const visibleActionItems = prioritizedNextActions.slice(0, 3)
   const visibleRecentUpdates = latestJourneyFeedItems.slice(0, 3)
-  const nextMilestoneItems = whatHappensNextItems.slice(0, 3)
   const buyerDocumentCounts = buyerDocumentItems.reduce((counts, item) => {
     const bucket = getBuyerMobileDocumentBucket(item)
     counts.all += 1
@@ -3709,24 +3708,24 @@ function BuyerMobilePortal({
         priority: nextStepState.requiresAction ? 'high' : 'normal',
         blocking: Boolean(nextStepState.requiresAction),
       }]
-  const quickActionItems = [
-    {
-      key: 'documents',
-      label: 'Purchase Docs',
-      value: missingRequired ? `${missingRequired} required` : 'Ready',
-      detail: missingRequired ? 'Buyer uploads needed' : 'No buyer uploads due',
-      to: 'documents',
-      icon: FileText,
-      tone: missingRequired ? 'action' : 'complete',
-    },
-    {
-      key: 'finance',
-      label: 'Purchase Finance',
-      value: financeTypeLabel,
-      detail: financeDocumentCount ? `${financeDocumentCount} account document${financeDocumentCount === 1 ? '' : 's'}` : 'Finance workspace',
-      to: financeSectionKey,
-      icon: HandCoins,
-      tone: 'info',
+    const quickActionItems = [
+      {
+        key: 'documents',
+        label: 'Documents',
+        value: missingRequired ? `${missingRequired} required` : 'Ready',
+        detail: missingRequired ? `${missingRequired} needed` : 'No uploads due',
+        to: 'documents',
+        icon: FileText,
+        tone: missingRequired ? 'action' : 'complete',
+      },
+      {
+        key: 'finance',
+        label: 'Finance',
+        value: financeTypeLabel,
+        detail: financeDocumentCount ? `${financeDocumentCount} document${financeDocumentCount === 1 ? '' : 's'}` : 'Status',
+        to: financeSectionKey,
+        icon: HandCoins,
+        tone: 'info',
     },
     reservationAction
       ? {
@@ -3761,7 +3760,7 @@ function BuyerMobilePortal({
   const primaryBuyerActionTitle = primaryBuyerAction?.title || nextStepState.title || 'No further action from your side'
   const primaryBuyerActionDescription = primaryBuyerAction?.description ||
     nextStepState.description ||
-    'Everything needed from you is currently up to date. Your transaction team will update this space when the next action is ready.'
+    'Everything needed from you is up to date. Your team will post the next step here.'
   const primaryBuyerActionDueDateLabel = primaryBuyerAction?.dueDate ? formatShortPortalDate(primaryBuyerAction.dueDate, '') : ''
   const hasRequiredBuyerAction = Boolean(
     primaryBuyerAction?.blocking ||
@@ -4005,8 +4004,8 @@ function BuyerMobilePortal({
   }
 
   return (
-    <main className="min-h-screen bg-[#f7f8fa] font-sans text-[#101823]">
-      <div className="mx-auto min-h-screen w-full max-w-[430px] px-4 pb-28 pt-5">
+    <main className="min-h-screen bg-[#f4f7f6] font-sans text-[#101823]">
+      <div className="mx-auto min-h-screen w-full max-w-[430px] px-4 pb-44 pt-5">
         <header className="flex min-h-[44px] items-center justify-end gap-2">
           <div className="flex shrink-0 items-center gap-2">
             <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, 'team')} aria-label="Contact team" className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#e1e5ea] bg-white/90 text-[#1f2937] shadow-[0_10px_24px_rgba(15,23,42,0.06)] backdrop-blur">
@@ -4029,13 +4028,13 @@ function BuyerMobilePortal({
 
         {isOverviewSection ? (
           <>
-            <section className="relative mt-6 min-h-[304px] overflow-hidden rounded-[18px] border border-white/70 bg-[#062b2b] bg-[linear-gradient(135deg,#062b2b_0%,#123a54_64%,#315c7d_100%)] p-6 text-white shadow-[0_18px_48px_rgba(15,23,42,0.16)]">
+            <section className="relative mt-5 min-h-[252px] overflow-hidden rounded-[20px] border border-white/70 bg-[#062b2b] bg-[linear-gradient(135deg,#062b2b_0%,#123a54_64%,#315c7d_100%)] p-5 text-white shadow-[0_18px_42px_rgba(15,23,42,0.15)]">
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_86%_18%,rgba(255,255,255,0.2),transparent_26%),linear-gradient(180deg,rgba(5,28,34,0)_48%,rgba(5,28,34,0.68)_100%)]" aria-hidden="true" />
-              <div className="relative flex min-h-[256px] flex-col">
-                <p className="text-sm font-medium text-[#a5d8a7]">Buyer Workspace</p>
+              <div className="relative flex min-h-[212px] flex-col">
+                <p className="text-sm font-medium text-[#a5d8a7]">Your purchase</p>
                 <div className="mt-4 flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <h2 className="max-w-[19rem] text-[2rem] font-semibold leading-[1.08] tracking-[-0.035em] text-white">
+                    <h2 className="max-w-[18rem] text-[1.82rem] font-semibold leading-[1.06] tracking-[-0.035em] text-white">
                       {developmentName}
                     </h2>
                     <p className="mt-2 text-base font-semibold tracking-[-0.02em] text-[#d8e7e5]">{unitLabel}</p>
@@ -4045,31 +4044,60 @@ function BuyerMobilePortal({
                   </span>
                 </div>
 
-                <div className="mt-auto grid grid-cols-[minmax(0,1fr)_104px] items-end gap-4 border-t border-white/[0.22] pt-5">
+                <div className="mt-auto grid grid-cols-[minmax(0,1fr)_88px] items-end gap-4 border-t border-white/[0.22] pt-4">
                   <div className="min-w-0">
-                    <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#d8e7e5]">Current purchase stage</p>
+                    <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#d8e7e5]">Where things stand</p>
                     <p className="mt-2 flex items-center gap-2 text-[1.12rem] font-semibold text-white">
                       <span className="h-2 w-2 rounded-full bg-[#76d46f]" />
                       <span className="min-w-0 truncate">{journeyCurrentStageLabel}</span>
                     </p>
-                    <p className="mt-1 text-sm font-medium text-[#d8e7e5]">Next milestone: {journeyNextStageLabel}</p>
+                    <p className="mt-1 text-sm font-medium text-[#d8e7e5]">Next: {journeyNextStageLabel}</p>
                   </div>
-                  <div className="relative inline-flex h-[104px] w-[104px] shrink-0 items-center justify-center rounded-full shadow-[0_16px_30px_rgba(0,0,0,0.28)]" style={{ background: `conic-gradient(#74d46e ${safeProgress * 3.6}deg, rgba(255,255,255,0.2) 0deg)` }}>
-                    <span className="absolute inset-[9px] rounded-full bg-[#10243a]/[0.94] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]" />
+                  <div className="relative inline-flex h-[88px] w-[88px] shrink-0 items-center justify-center rounded-full shadow-[0_16px_30px_rgba(0,0,0,0.24)]" style={{ background: `conic-gradient(#74d46e ${safeProgress * 3.6}deg, rgba(255,255,255,0.2) 0deg)` }}>
+                    <span className="absolute inset-2 rounded-full bg-[#10243a]/[0.94] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]" />
                     <span className="relative text-center">
-                      <span className="block text-[1.55rem] font-semibold leading-none text-white">{safeProgress}%</span>
+                      <span className="block text-[1.32rem] font-semibold leading-none text-white">{safeProgress}%</span>
                       <span className="mt-1 block text-[0.62rem] font-semibold uppercase tracking-[0.12em] text-[#d8e7e5]">Complete</span>
                     </span>
                   </div>
+                  </div>
                 </div>
-              </div>
-            </section>
+              </section>
 
-            <section className="mt-4 rounded-[18px] border border-white/80 bg-white/95 p-5 shadow-[0_14px_36px_rgba(15,23,42,0.065)]">
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <h3 className="text-[1.16rem] font-semibold text-[#101823]">Purchase timeline</h3>
-                <span className="rounded-full bg-[#f2f4f7] px-3 py-1 text-xs font-semibold text-[#667085]">{purchasePriceLabel}</span>
-              </div>
+              <section className="mt-3 overflow-hidden rounded-[20px] border border-[#1f6f52]/[0.4] bg-[#063f34] p-4 text-white shadow-[0_14px_30px_rgba(6,63,52,0.18)]">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#9fe091]">Needs your attention</p>
+                  <span className="rounded-full border border-[#8bd985]/[0.45] bg-white/[0.1] px-2.5 py-1 text-[0.64rem] font-semibold uppercase tracking-[0.08em] text-[#d8ffd2]">
+                    {blockingActionCount} open
+                  </span>
+                </div>
+                <div className="mt-3 flex items-start gap-3">
+                  <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] border border-[#8bd985]/[0.45] bg-white/[0.1] text-[#a9ec9c]">
+                    {hasRequiredBuyerAction ? <FileText size={20} /> : <ShieldCheck size={20} />}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <h3 className="text-[1.08rem] font-semibold leading-tight text-white">{primaryBuyerActionTitle}</h3>
+                    <p className="mt-1 text-sm leading-5 text-[#d8efe3]">{primaryBuyerActionDescription}</p>
+                    {primaryBuyerActionDueDateLabel ? <p className="mt-1.5 text-xs font-semibold text-[#a9ec9c]">Due {primaryBuyerActionDueDateLabel}</p> : null}
+                  </div>
+                </div>
+                {hasRequiredBuyerAction ? (
+                  <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, primaryBuyerActionRoute)} className="mt-3 flex min-h-[42px] w-full items-center justify-center gap-2 rounded-[14px] border border-[#8bd985]/[0.6] bg-[#0a4d40] px-4 text-sm font-semibold text-[#d8ffd2]">
+                    <span>{primaryBuyerActionLabel}</span>
+                    <ChevronRight size={18} />
+                  </Link>
+                ) : (
+                  <div className="mt-3 flex min-h-[44px] items-center justify-center rounded-[14px] border border-[#8bd985]/[0.45] bg-[#0a4d40]/[0.86] px-4 text-sm font-semibold text-[#d8ffd2]">
+                    All caught up
+                  </div>
+                )}
+              </section>
+
+              <section className="mt-4 rounded-[20px] border border-white/80 bg-white/95 p-5 shadow-[0_12px_30px_rgba(15,23,42,0.055)]">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <h3 className="text-[1.16rem] font-semibold text-[#101823]">Your progress</h3>
+                  <span className="rounded-full bg-[#f2f4f7] px-3 py-1 text-xs font-semibold text-[#667085]">{purchasePriceLabel}</span>
+                </div>
               <ol className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-3 [scrollbar-width:none]">
                 {clientJourneySteps.map((step, index) => {
                   const isExpanded = activeStep?.id === step.id
@@ -4096,74 +4124,17 @@ function BuyerMobilePortal({
                         <span className={`block text-[0.69rem] font-semibold leading-4 ${isCurrent || isExpanded ? 'text-[#10213a]' : isComplete ? 'text-[#344054]' : 'text-[#7b8491]'}`}>{step.label}</span>
                       </button>
                     </li>
-                  )
-                })}
-              </ol>
-              <article className="mt-2 rounded-[16px] border border-[#dfe7ef] bg-[#fbfcfd] p-4">
-                <div className="flex items-start gap-4">
-                  <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px] bg-[#063f34] text-white">
-                    <CheckCircle2 size={22} />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-start justify-between gap-3">
-                      <h4 className="text-[1.25rem] font-semibold leading-tight text-[#101823]">{activeStep?.label || journeyCurrentStageLabel}</h4>
-                      <span className="shrink-0 rounded-full bg-[#edf7ed] px-2.5 py-1 text-[0.64rem] font-semibold uppercase tracking-[0.08em] text-[#4d8a48]">
-                        {activeStep?.status === 'current' || activeStep?.status === 'blocked' ? 'Current step' : 'Overview'}
-                      </span>
-                    </div>
-                    <p className="mt-2 text-sm leading-5 text-[#344054]">{activeStep?.whatHappensNow || activeStep?.shortDescription || journeyHeroSubtext}</p>
-                    <p className="mt-3 flex flex-wrap items-center gap-2 text-xs font-medium text-[#7b8491]">
-                      <span>{activeStep?.clientRole || 'Your buying team will guide this milestone.'}</span>
-                    </p>
-                    <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, 'progress')} className="mt-4 inline-flex min-h-[42px] w-full items-center justify-center gap-2 rounded-[12px] bg-[#063f34] px-4 text-sm font-semibold text-white">
-                      <span>View tasks</span>
-                      <ChevronRight size={17} />
-                    </Link>
-                  </div>
-                </div>
-              </article>
-            </section>
+                    )
+                  })}
+                </ol>
+              </section>
 
-            <section className="mt-4 overflow-hidden rounded-[18px] border border-[#1f6f52]/[0.4] bg-[#063f34] p-4 text-white shadow-[0_16px_34px_rgba(6,63,52,0.2)]">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#9fe091]">Buyer action needed</p>
-                <span className="rounded-full border border-[#8bd985]/[0.45] bg-white/[0.1] px-2.5 py-1 text-[0.64rem] font-semibold uppercase tracking-[0.08em] text-[#d8ffd2]">
-                  {blockingActionCount} need action
-                </span>
-              </div>
-              <div className="mt-3 flex items-start gap-3">
-                <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] border border-[#8bd985]/[0.45] bg-white/[0.1] text-[#a9ec9c]">
-                  {hasRequiredBuyerAction ? <FileText size={20} /> : <ShieldCheck size={20} />}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <h3 className="text-[1.18rem] font-semibold leading-tight text-white">{primaryBuyerActionTitle}</h3>
-                  <p className="mt-1 text-sm leading-5 text-[#d8efe3]">{primaryBuyerActionDescription}</p>
-                  {primaryBuyerActionDueDateLabel ? <p className="mt-1.5 text-xs font-semibold text-[#a9ec9c]">Due {primaryBuyerActionDueDateLabel}</p> : null}
-                </div>
-              </div>
-              {hasRequiredBuyerAction ? (
-                <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, primaryBuyerActionRoute)} className="mt-3 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-[14px] border border-[#8bd985]/[0.6] bg-[#0a4d40] px-4 text-sm font-semibold text-[#d8ffd2]">
-                  <span>{primaryBuyerActionLabel}</span>
-                  <ChevronRight size={18} />
-                </Link>
-              ) : (
-                <div className="mt-3 flex min-h-[44px] items-center justify-center rounded-[14px] border border-[#8bd985]/[0.45] bg-[#0a4d40]/[0.86] px-4 text-sm font-semibold text-[#d8ffd2]">
-                  All caught up
-                </div>
-              )}
-              {hiddenNextActionCount > 0 ? (
-                <p className="mt-3 text-xs font-medium text-[#bfeac9]">
-                  {hiddenNextActionCount} more action{hiddenNextActionCount === 1 ? '' : 's'} available in the full workflow.
-                </p>
-              ) : null}
-            </section>
-
-            <section className="mt-4 grid gap-3">
+            <section className="mt-28 grid gap-3">
               <div className="grid grid-cols-2 gap-3">
                 {buyerDashboardCards.map((item) => {
                   const Icon = item.icon
                   return (
-                    <Link key={item.key} to={getPortalWorkspacePath(token, workspaceNavigationScope, item.to)} className={`overflow-hidden rounded-[16px] border border-white/80 bg-white/95 shadow-[0_10px_26px_rgba(15,23,42,0.055)] ${quickActionToneClasses[item.tone] || quickActionToneClasses.neutral}`}>
+                    <Link key={item.key} to={getPortalWorkspacePath(token, workspaceNavigationScope, item.to)} className={`overflow-hidden rounded-[18px] border border-white/80 bg-white/95 shadow-[0_10px_24px_rgba(15,23,42,0.05)] ${quickActionToneClasses[item.tone] || quickActionToneClasses.neutral}`}>
                       <div className="p-4">
                         <span className="inline-flex h-10 w-10 items-center justify-center rounded-[12px] bg-white/85 text-current shadow-[inset_0_0_0_1px_rgba(255,255,255,0.78)]">
                           <Icon size={20} />
@@ -4180,31 +4151,9 @@ function BuyerMobilePortal({
                   )
                 })}
               </div>
-              <article className="rounded-[22px] border border-white/80 bg-white/95 p-4 shadow-[0_10px_26px_rgba(15,23,42,0.055)]">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#7b8491]">Next milestone</p>
-                    <h3 className="mt-2 text-[1.18rem] font-semibold tracking-[-0.04em] text-[#101823]">{journeyNextStageLabel}</h3>
-                  </div>
-                  <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, 'progress')} aria-label="View progress" className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#eef2f6] text-[#24364d]">
-                    <ChevronRight size={18} />
-                  </Link>
-                </div>
-                <p className="mt-2 text-sm leading-6 text-[#5f6b7a]">{journeyHeroSubtext}</p>
-                {nextMilestoneItems.length ? (
-                  <div className="mt-4 grid gap-2">
-                    {nextMilestoneItems.map((item) => (
-                      <p key={item} className="flex items-start gap-2 text-xs leading-5 text-[#667085]">
-                        <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[#8fa1b5]" />
-                        <span>{item}</span>
-                      </p>
-                    ))}
-                  </div>
-                ) : null}
-              </article>
-              <article className="rounded-[22px] border border-white/80 bg-white/95 p-4 shadow-[0_10px_26px_rgba(15,23,42,0.055)]">
+                <article className="rounded-[20px] border border-white/80 bg-white/95 p-4 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
                 <div className="flex items-center justify-between gap-3">
-                <h3 className="text-base font-semibold tracking-[-0.03em] text-[#101823]">Purchase updates</h3>
+                <h3 className="text-base font-semibold tracking-[-0.03em] text-[#101823]">Team updates</h3>
                   <span className="text-xs font-semibold text-[#98a2b3]">{visibleRecentUpdates.length || 'No'} items</span>
                 </div>
                 <div className="mt-3 space-y-3">
@@ -4213,10 +4162,10 @@ function BuyerMobilePortal({
                       <span className="text-xs font-semibold text-[#98a2b3]">{item.timestampLabel || 'Recent'}</span>
                       <div className="min-w-0">
                         <p className="font-semibold leading-5 text-[#27364a]">{item.title || 'Update from your team'}</p>
-                        <p className="mt-0.5 leading-5 text-[#667085]">{item.message || 'Your transaction team posted an update.'}</p>
+                        <p className="mt-0.5 leading-5 text-[#667085]">{item.message || 'Your team posted an update.'}</p>
                       </div>
                     </div>
-                  )) : <p className="text-sm leading-6 text-[#667085]">Purchase updates from your transaction team will appear here.</p>}
+                  )) : <p className="text-sm leading-6 text-[#667085]">Updates from your team will appear here.</p>}
                 </div>
               </article>
             </section>
@@ -4231,7 +4180,7 @@ function BuyerMobilePortal({
             items={clientJourneySteps.map((step) => ({
               id: step.id,
               title: step.label,
-              description: step.shortDescription || step.whatHappensNow || 'Your team is progressing this milestone.',
+              description: step.shortDescription || step.whatHappensNow || 'Your team is moving this step forward.',
               to: 'progress',
             }))}
             token={token}
@@ -4248,7 +4197,7 @@ function BuyerMobilePortal({
             <p className="mt-1 text-sm leading-6 text-[#667085]">
               {buyerDocumentCounts.action
                 ? `${buyerDocumentCounts.action} purchase document${buyerDocumentCounts.action === 1 ? '' : 's'} need action.`
-                : 'Review uploaded and approved purchase documents from your transaction team.'}
+                : 'Review uploaded and approved purchase documents from your team.'}
             </p>
             <div className="mt-4 rounded-[18px] bg-[#f2f4f7] p-1">
               <div className="grid grid-cols-4 gap-1">
@@ -4355,7 +4304,7 @@ function BuyerMobilePortal({
               <Link
                 to={getPortalWorkspacePath(token, workspaceNavigationScope, financeSectionKey)}
                 className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#eef2f6] text-[#24364d]"
-                aria-label="Open finance workspace"
+                aria-label="Open finance"
               >
                 <ChevronRight size={18} />
               </Link>
@@ -4570,7 +4519,7 @@ function BuyerMobilePortal({
                 <p className="mt-1 text-sm leading-6 text-[#667085]">
                   {nextBuyerAppointment
                     ? `${nextBuyerAppointment.title} at ${nextBuyerAppointment.timeLabel}.`
-                    : 'Your team will schedule meetings when your next milestone requires one.'}
+                    : 'Your team will schedule meetings when the next step needs one.'}
                 </p>
               </div>
               <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#eef2f6] text-[#24364d]">
@@ -4686,9 +4635,9 @@ function BuyerMobilePortal({
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="text-[0.74rem] font-semibold uppercase tracking-[0.14em] text-[#7b8491]">More</p>
-                <h3 className="mt-2 text-[1.4rem] font-semibold tracking-[-0.04em] text-[#101823]">Your purchase workspace</h3>
+                <h3 className="mt-2 text-[1.4rem] font-semibold tracking-[-0.04em] text-[#101823]">More options</h3>
                 <p className="mt-1 text-sm leading-6 text-[#667085]">
-                  Contacts, appointments, handover readiness, settings, and buyer tools are grouped here.
+                  Contacts, appointments, key readiness, settings, and buyer tools are grouped here.
                 </p>
               </div>
               <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, 'appointments')} className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#eef2f6] text-[#24364d]" aria-label="Open appointments">
@@ -5201,14 +5150,19 @@ function BuyerMobilePortal({
         </div>
       ) : null}
 
-      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-[#e4e7ec] bg-white px-3 pb-[max(0.7rem,env(safe-area-inset-bottom))] pt-2 lg:hidden" aria-label="Buyer portal mobile navigation">
-        <div className="mx-auto grid max-w-[430px] grid-cols-5 gap-1">
+      <nav className="fixed inset-x-3 bottom-2 z-40 mx-auto max-w-[430px] rounded-[22px] border border-[#dfe7ee] bg-white/95 px-1.5 py-0.5 shadow-[0_18px_40px_rgba(15,23,42,0.16)] backdrop-blur lg:hidden" aria-label="Buyer portal mobile navigation">
+        <div className="grid grid-cols-5 gap-1">
           {bottomNavItems.map((item) => {
             const Icon = item.icon
             const isActive = item.key === mobileSection || (item.key === 'more' && mobileSection === 'appointments')
             return (
-              <Link key={item.key} to={getPortalWorkspacePath(token, workspaceNavigationScope, item.section)} className={`flex min-h-[58px] flex-col items-center justify-center gap-1 rounded-[18px] text-[0.72rem] font-semibold transition ${isActive ? 'bg-[#eef8f1] text-[#063f34]' : 'text-[#667085] hover:bg-[#f7f8fa] hover:text-[#344054]'}`}>
-                <Icon size={21} strokeWidth={isActive ? 2.4 : 2} />
+              <Link
+                key={item.key}
+                to={getPortalWorkspacePath(token, workspaceNavigationScope, item.section)}
+                aria-current={isActive ? 'page' : undefined}
+                className={`flex min-h-[42px] flex-col items-center justify-center gap-0.5 rounded-[16px] text-[0.66rem] font-semibold transition ${isActive ? 'bg-[#e9f8ef] text-[#063f34]' : 'text-[#667085] hover:bg-[#f7f8fa] hover:text-[#344054]'}`}
+              >
+                <Icon size={18} strokeWidth={isActive ? 2.4 : 2} />
                 <span>{item.label}</span>
               </Link>
             )
@@ -7436,6 +7390,7 @@ function BuyerOverviewHero({
   progressPercent,
   timeInStageLabel,
   stageUpdatedDateLabel,
+  nextStepState = {},
   primaryAction,
   supportContact,
   financeSectionKey = 'account',
@@ -7445,36 +7400,33 @@ function BuyerOverviewHero({
   const messageAction = supportContact?.email
     ? { label: 'Message Team', href: `mailto:${supportContact.email}` }
     : { label: 'Message Team', to: 'team' }
-  const financeAction = { label: 'Open Finance', to: financeSectionKey }
+  const callAction = supportContact?.phone
+    ? { label: 'Call Team', href: `tel:${supportContact.phone}` }
+    : null
   const safeProgress = Math.max(0, Math.min(100, Number(progressPercent) || 0))
+  const actionTitle = nextStepState?.title || 'No action needed right now'
+  const actionDescription = nextStepState?.description || 'Your team will post the next step here.'
 
   return (
-    <section className="grid gap-5 xl:grid-cols-[minmax(520px,0.92fr)_minmax(0,1.08fr)] xl:items-stretch">
+    <section className="grid gap-5 xl:grid-cols-[minmax(480px,0.88fr)_minmax(0,1.12fr)] xl:items-stretch">
       <div className="flex h-full min-w-0 flex-col py-1 xl:py-3">
         <h1 className="text-[2.1rem] font-semibold leading-[1.08] tracking-[-0.045em] text-[#102a2b] sm:text-[2.55rem]">
           Welcome, {buyerFirstName}.
         </h1>
-        <p className="mt-3 max-w-2xl text-lg font-medium leading-7 text-[#078449] sm:text-[1.3rem]">
-          Your purchase is moving forward, with finance, transfer, and handover in one place.
-        </p>
-        <p className="mt-3 max-w-xl text-sm leading-6 text-[#617187]">
-          See what is needed from you, where the legal and finance work sits, and what happens before key collection.
-        </p>
 
         <div className="mt-6 flex flex-1">
-          <article className={`flex min-h-[172px] w-full flex-col rounded-[20px] border border-[#dbe5ec] bg-white p-5 ${PORTAL_DESIGN_TOKENS.shadow.card}`}>
-            <p className={`text-[0.67rem] font-semibold uppercase tracking-[0.13em] ${PORTAL_DESIGN_TOKENS.text.eyebrow}`}>Your buying team</p>
-            <div className="mt-3 flex min-w-0 items-center gap-4">
-              <span className="inline-flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-[16px] bg-[#e6f2ef] text-lg font-semibold text-[#063f37] ring-1 ring-[#d6e8e2]">
-                {String(supportContact?.name || supportContact?.title || buyerName || 'Team').trim().charAt(0).toUpperCase()}
-              </span>
+          <article className={`flex min-h-[214px] w-full flex-col rounded-[20px] border border-[#dbe5ec] bg-white p-5 ${PORTAL_DESIGN_TOKENS.shadow.card}`}>
+            <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0">
-                <strong className="block truncate text-[1.05rem] font-semibold text-[#102032]">{supportContact?.name || supportContact?.title || 'Arch9 Transaction Team'}</strong>
-                <p className="mt-0.5 truncate text-sm text-[#64748b]">{supportContact?.detail || 'Here when your purchase needs help'}</p>
-                <p className="mt-1.5 flex items-center gap-1.5 text-xs text-[#64748b]"><span className="h-1.5 w-1.5 rounded-full bg-[#16a466]" /> Purchase support active</p>
+                <p className={`text-[0.67rem] font-semibold uppercase tracking-[0.13em] ${PORTAL_DESIGN_TOKENS.text.eyebrow}`}>Needs your attention</p>
+                <h2 className="mt-2 text-[1.35rem] font-semibold leading-tight tracking-[-0.03em] text-[#102032]">{actionTitle}</h2>
               </div>
+              <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[0.66rem] font-semibold uppercase tracking-[0.1em] ${nextStepState?.requiresAction ? 'border-[#f0d8ae] bg-[#fff6e7] text-[#9a5b0f]' : 'border-[#cfe8d8] bg-[#f2fbf5] text-[#1f7d44]'}`}>
+                {nextStepState?.requiresAction ? 'Action needed' : 'On track'}
+              </span>
             </div>
-            <div className="mt-4 flex flex-wrap gap-2 border-t border-[#e7edf2] pt-3">
+            <p className="mt-3 max-w-xl text-sm leading-6 text-[#566b82]">{actionDescription}</p>
+            <div className="mt-auto flex flex-wrap gap-2 border-t border-[#e7edf2] pt-4">
               <SellerPortalAction action={primaryAction} token={token} workspaceNavigationScope={workspaceNavigationScope} className={PORTAL_DESIGN_TOKENS.button.primary}>
                 <ArrowRight size={14} />
                 <span>{primaryAction?.label || 'Open next step'}</span>
@@ -7483,21 +7435,23 @@ function BuyerOverviewHero({
                 <MessageCircle size={14} />
                 <span>Message</span>
               </SellerPortalAction>
-              <SellerPortalAction action={financeAction} token={token} workspaceNavigationScope={workspaceNavigationScope} className={PORTAL_DESIGN_TOKENS.button.secondary}>
-                <HandCoins size={14} />
-                <span>Finance</span>
-              </SellerPortalAction>
+              {callAction ? (
+                <SellerPortalAction action={callAction} token={token} workspaceNavigationScope={workspaceNavigationScope} className={PORTAL_DESIGN_TOKENS.button.secondary}>
+                  <PhoneCall size={14} />
+                  <span>Call</span>
+                </SellerPortalAction>
+              ) : null}
             </div>
           </article>
         </div>
       </div>
 
-      <div className={`relative min-h-[360px] overflow-hidden ${PORTAL_DESIGN_TOKENS.surface.buyerHero} p-6 text-white ${PORTAL_DESIGN_TOKENS.shadow.hero} xl:min-h-[410px]`}>
+      <div className={`relative min-h-[360px] overflow-hidden ${PORTAL_DESIGN_TOKENS.surface.buyerHero} p-6 text-white ${PORTAL_DESIGN_TOKENS.shadow.hero} xl:min-h-[392px]`}>
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_83%_18%,rgba(255,255,255,0.2),transparent_26%),linear-gradient(180deg,rgba(5,28,34,0)_50%,rgba(5,28,34,0.64)_100%)]" aria-hidden="true" />
         <div className="relative flex h-full min-h-[312px] flex-col">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <p className="text-sm font-medium text-[#a5d8a7]">Buyer Workspace</p>
+              <p className="text-sm font-medium text-[#a5d8a7]">Your purchase</p>
               <h2 className="mt-4 max-w-xl text-[2.05rem] font-semibold leading-[1.08] tracking-[-0.04em] text-white">{developmentName}</h2>
               <p className="mt-2 text-base font-semibold text-[#d8e7e5]">{unitLabel}</p>
             </div>
@@ -7508,24 +7462,13 @@ function BuyerOverviewHero({
 
           <div className="mt-auto grid gap-4 border-t border-white/[0.2] pt-5 md:grid-cols-[minmax(0,1fr)_120px] md:items-end">
             <div className="min-w-0">
-              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#d8e7e5]">Current purchase stage</p>
+              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#d8e7e5]">Where things stand</p>
               <p className="mt-2 flex items-center gap-2 text-[1.2rem] font-semibold text-white">
                 <span className="h-2 w-2 rounded-full bg-[#76d46f]" />
                 <span className="min-w-0 truncate">{currentStageLabel}</span>
               </p>
-              <p className="mt-1 text-sm font-medium text-[#d8e7e5]">Next milestone: {nextStageLabel}</p>
-              <div className="mt-4 grid gap-2 sm:grid-cols-3">
-                {[
-                  ['Purchase price', purchasePriceLabel],
-                  ['Active for', timeInStageLabel],
-                  ['Updated', stageUpdatedDateLabel],
-                ].map(([label, value]) => (
-                  <article key={label} className="rounded-[12px] border border-white/12 bg-white/[0.08] px-3 py-2">
-                    <span className="block text-[0.62rem] font-semibold uppercase tracking-[0.12em] text-[#bcd1d7]">{label}</span>
-                    <strong className="mt-1 block truncate text-sm font-semibold text-white">{value}</strong>
-                  </article>
-                ))}
-              </div>
+              <p className="mt-1 text-sm font-medium text-[#d8e7e5]">Next: {nextStageLabel}</p>
+              <p className="mt-4 inline-flex rounded-full border border-white/12 bg-white/[0.08] px-3 py-1.5 text-sm font-semibold text-white">{purchasePriceLabel}</p>
             </div>
             <div className="relative inline-flex h-[120px] w-[120px] shrink-0 items-center justify-center rounded-full shadow-[0_16px_30px_rgba(0,0,0,0.28)]" style={{ background: `conic-gradient(#74d46e ${safeProgress * 3.6}deg, rgba(255,255,255,0.2) 0deg)` }}>
               <span className="absolute inset-[10px] rounded-full bg-[#10243a]/[0.94] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]" />
@@ -7565,7 +7508,7 @@ function BuyerOverviewActionPanel({
   return (
     <section className={`${PORTAL_DESIGN_TOKENS.surface.card} p-6 ${PORTAL_DESIGN_TOKENS.shadow.card}`}>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <SellerSectionHeading title="Buyer Actions" subtitle="The purchase items that may unblock finance, transfer, or handover." />
+        <SellerSectionHeading title="Needs your attention" subtitle="Items that need a decision, upload, or response from you." />
         <span className={PORTAL_DESIGN_TOKENS.pill.count}>
           {blockingActionCount} need action
         </span>
@@ -7602,7 +7545,7 @@ function BuyerOverviewActionPanel({
       </div>
       {hiddenActionCount > 0 ? (
         <p className="mt-3 text-xs font-medium text-[#6b7d93]">
-          {hiddenActionCount} more action{hiddenActionCount === 1 ? '' : 's'} available in your full workflow.
+          {hiddenActionCount} more action{hiddenActionCount === 1 ? '' : 's'} available.
         </p>
       ) : null}
     </section>
@@ -7613,7 +7556,7 @@ function BuyerOverviewMetricGrid({ cards = [], token, workspaceNavigationScope }
   return (
     <article className={`${PORTAL_DESIGN_TOKENS.surface.card} p-5 ${PORTAL_DESIGN_TOKENS.shadow.card}`}>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <SellerSectionHeading title="Purchase Dashboard" subtitle="Documents, finance, appointments, handover, and snags at a glance." />
+        <SellerSectionHeading title="Your purchase" subtitle="Documents, finance, meetings, keys, and issues at a glance." />
         <span className={PORTAL_DESIGN_TOKENS.pill.count}>
           {cards.length} areas
         </span>
@@ -7644,15 +7587,49 @@ function BuyerOverviewMetricGrid({ cards = [], token, workspaceNavigationScope }
   )
 }
 
+function BuyerOverviewStatusStrip({ cards = [], token, workspaceNavigationScope }) {
+  const visibleCards = cards.filter((card) => ['documents', 'finance'].includes(card.key)).slice(0, 2)
+  if (!visibleCards.length) return null
+
+  return (
+    <section className="hidden gap-3 sm:grid-cols-2 lg:grid" aria-label="Buyer purchase status">
+      {visibleCards.map((card) => {
+        const Icon = card.icon
+        const toneClasses = card.tone === 'action'
+          ? 'bg-[#fff8ec] text-[#9a5b0f]'
+          : card.tone === 'complete'
+            ? 'bg-[#eff8f1] text-[#347d43]'
+            : 'bg-[#eef5fb] text-[#35546c]'
+        return (
+          <Link
+            key={card.key}
+            to={getPortalWorkspacePath(token, workspaceNavigationScope, card.to)}
+            className="group flex min-h-[104px] items-center justify-between gap-4 rounded-[16px] border border-[#dbe5ec] bg-white px-5 py-4 shadow-[0_8px_20px_rgba(15,23,42,0.035)] transition hover:border-[#c9d8e6] hover:shadow-[0_12px_26px_rgba(15,23,42,0.055)]"
+          >
+            <div className="min-w-0">
+              <p className={`text-[0.68rem] font-semibold uppercase tracking-[0.12em] ${PORTAL_DESIGN_TOKENS.text.eyebrow}`}>{card.label}</p>
+              <p className="mt-2 truncate text-[1.45rem] font-semibold tracking-[-0.03em] text-[#102032]">{card.value}</p>
+              <p className="mt-1 text-sm leading-5 text-[#64748b]">{card.helper}</p>
+            </div>
+            <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-[12px] ${toneClasses}`}>
+              <Icon size={18} />
+            </span>
+          </Link>
+        )
+      })}
+    </section>
+  )
+}
+
 function BuyerStageGuide({ stageEducation = {}, whatHappensNextItems = [], whatsHappeningSummary = [], rolePlayerGuidance = [] }) {
   return (
     <article className={`h-full ${PORTAL_DESIGN_TOKENS.surface.card} p-5 ${PORTAL_DESIGN_TOKENS.shadow.card}`}>
       <SellerSectionHeading
-        title={stageEducation?.title || 'Purchase milestone in progress'}
+        title={stageEducation?.title || 'Your purchase is moving forward'}
         subtitle={stageEducation?.shortDescription || 'A simple guide to what is happening in your purchase now.'}
       />
       <p className={`mt-4 text-sm leading-6 ${PORTAL_DESIGN_TOKENS.text.bodyStrong}`}>
-        {stageEducation?.detailedExplanation || 'Your transaction team will keep this milestone moving and tell you when your input is needed.'}
+        {stageEducation?.detailedExplanation || 'Your team will keep things moving and tell you when your input is needed.'}
       </p>
       <div className="mt-5 grid gap-3 md:grid-cols-2">
         <div className={`${PORTAL_DESIGN_TOKENS.surface.cardInset} px-3.5 py-3`}>
@@ -7661,7 +7638,7 @@ function BuyerStageGuide({ stageEducation = {}, whatHappensNextItems = [], whats
         </div>
         <div className={`${PORTAL_DESIGN_TOKENS.surface.cardInset} px-3.5 py-3`}>
           <p className="text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">What happens next</p>
-          <p className="mt-1.5 text-sm leading-6 text-[#324559]">{stageEducation?.whatHappensNext || whatHappensNextItems[0] || 'Your team will guide you through the next purchase milestone.'}</p>
+          <p className="mt-1.5 text-sm leading-6 text-[#324559]">{stageEducation?.whatHappensNext || whatHappensNextItems[0] || 'Your team will guide you through the next step.'}</p>
         </div>
       </div>
       <div className="mt-5 grid gap-2">
@@ -7674,7 +7651,7 @@ function BuyerStageGuide({ stageEducation = {}, whatHappensNextItems = [], whats
       </div>
       {rolePlayerGuidance.length ? (
         <div className="mt-5 border-t border-[#e5edf2] pt-4">
-          <p className="text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Role players at this stage</p>
+          <p className="text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Team involved now</p>
           <div className="mt-2 grid gap-2">
             {rolePlayerGuidance.slice(0, 3).map((entry) => (
               <p key={entry?.key} className="text-sm leading-6 text-[#52647a]">{entry?.explanation}</p>
@@ -7702,8 +7679,8 @@ function BuyerSupportFooter({ supportContact = {}, buyerPortalAccessDescription 
             <ShieldCheck size={20} />
           </span>
           <div>
-            <p className="text-sm font-semibold text-[#102032]">Your purchase workspace is secure and private.</p>
-            <p className="mt-0.5 max-w-2xl text-xs leading-5 text-[#64748b]">{buyerPortalAccessDescription || 'Only people with your secure purchase link can access this workspace.'}</p>
+            <p className="text-sm font-semibold text-[#102032]">Your purchase link is secure and private.</p>
+            <p className="mt-0.5 max-w-2xl text-xs leading-5 text-[#64748b]">{buyerPortalAccessDescription || 'Only people with your secure purchase link can access this portal.'}</p>
           </div>
         </div>
         <div className="flex flex-wrap gap-2.5">
@@ -7725,22 +7702,103 @@ function BuyerProgressJourney({
   workspaceNavigationScope,
 }) {
   const safeProgress = Math.max(0, Math.min(100, Number(progressPercent) || 0))
-  const currentLabel = currentStageLabel || 'Your current milestone'
-  const nextLabel = nextStageLabel || 'The next milestone'
+  const currentLabel = currentStageLabel || 'Current step'
+  const nextLabel = nextStageLabel || 'Next step'
 
   return (
     <PortalProgressJourney
-      title="Your Purchase Journey"
-      subtitle="Follow reservation, OTP, finance, transfer, registration, and handover."
+      title="Your progress"
+      subtitle="Reservation, offer, finance, transfer, registration, keys."
       statusLabel={`${safeProgress}% complete`}
       steps={steps.slice(0, 7)}
       progressPercent={safeProgress}
-      helperMessage={`Current milestone: ${currentLabel}. Next milestone: ${nextLabel}.`}
-      actionLabel={primaryAction?.label || 'View tasks'}
+      helperMessage={`Now: ${currentLabel}. Next: ${nextLabel}.`}
+      actionLabel={primaryAction?.label || 'View details'}
       actionTo={primaryAction?.to || 'progress'}
       token={token}
       workspaceNavigationScope={workspaceNavigationScope}
     />
+  )
+}
+
+function BuyerProgressPage({
+  currentStageLabel,
+  nextStageLabel,
+  progressPercent,
+  journeySteps = [],
+  stageEducation = {},
+  whatHappensNextItems = [],
+  whatsHappeningSummary = [],
+  primaryAction = {},
+  latestUpdate = null,
+  token,
+  workspaceNavigationScope,
+}) {
+  const safeProgress = Math.max(0, Math.min(100, Number(progressPercent) || 0))
+  const currentStep = journeySteps.find((step) => step.status === 'current' || step.status === 'blocked') || journeySteps[0] || {}
+  const buyerActionCopy = stageEducation?.whatClientNeedsToDo || 'No action is needed unless your team asks for something.'
+  const nextCopy = stageEducation?.whatHappensNext || whatHappensNextItems[0] || `Your purchase is moving toward ${nextStageLabel || 'the next step'}.`
+  const teamCopy = whatsHappeningSummary[0] || stageEducation?.shortDescription || 'Your team is moving the purchase forward and will post updates here.'
+
+  return (
+    <section className="space-y-5">
+      <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#64748b]">Purchase progress</p>
+          <h2 className="mt-2 text-[1.85rem] font-semibold leading-tight tracking-[-0.04em] text-[#102032]">Track what is complete and what comes next.</h2>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-[#64748b]">
+            Now: <strong className="font-semibold text-[#102032]">{currentStageLabel || 'Current step'}</strong>. Next: {nextStageLabel || 'Next step'}.
+          </p>
+        </div>
+        <SellerPortalAction action={primaryAction} token={token} workspaceNavigationScope={workspaceNavigationScope} className={`${PORTAL_DESIGN_TOKENS.button.primary} lg:flex-none lg:px-6`}>
+          <ArrowRight size={14} />
+          <span>{primaryAction?.label || 'Open next step'}</span>
+        </SellerPortalAction>
+      </header>
+
+      <section className="grid gap-5 xl:grid-cols-[minmax(660px,1fr)_360px] xl:items-start">
+        <BuyerProgressJourney
+          progressPercent={safeProgress}
+          currentStageLabel={currentStageLabel}
+          nextStageLabel={nextStageLabel}
+          steps={journeySteps}
+          primaryAction={primaryAction}
+          token={token}
+          workspaceNavigationScope={workspaceNavigationScope}
+        />
+
+        <aside className={`${PORTAL_DESIGN_TOKENS.surface.card} p-5 ${PORTAL_DESIGN_TOKENS.shadow.card}`}>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#64748b]">Where things stand</p>
+              <h3 className="mt-2 text-[1.2rem] font-semibold tracking-[-0.03em] text-[#142132]">{currentStep.label || currentStageLabel || 'Current step'}</h3>
+            </div>
+            <span className="rounded-full border border-[#dbe7f4] bg-[#f4f8fd] px-3 py-1 text-xs font-semibold text-[#1263b5]">{safeProgress}% complete</span>
+          </div>
+
+          <div className="mt-5 grid gap-3">
+            {[
+              ['What you need to do', buyerActionCopy],
+              ['What your team is doing', teamCopy],
+              ['Next', nextCopy],
+            ].map(([label, copy]) => (
+              <article key={label} className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-3">
+                <p className="text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">{label}</p>
+                <p className="mt-1.5 text-sm leading-6 text-[#324559]">{copy}</p>
+              </article>
+            ))}
+          </div>
+
+          {latestUpdate ? (
+            <div className="mt-4 rounded-[14px] border border-[#dbe7f4] bg-white px-4 py-3">
+              <p className="text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Latest update</p>
+              <p className="mt-1.5 text-sm font-semibold text-[#142132]">{latestUpdate.title || latestUpdate.authorName || 'Team update'}</p>
+              <p className="mt-1 text-sm leading-6 text-[#52647a]">{latestUpdate.message || latestUpdate.summary}</p>
+            </div>
+          ) : null}
+        </aside>
+      </section>
+    </section>
   )
 }
 
@@ -7766,7 +7824,7 @@ function AttorneySaysCard({ update = null, fallbackStageLabel = '' }) {
       </div>
       <div className="mt-3 rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
         <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">{laneLabel}</span>
-        <strong className="mt-1 block text-sm font-semibold text-[#142132]">{stage || 'Current legal workflow'}</strong>
+        <strong className="mt-1 block text-sm font-semibold text-[#142132]">{stage || 'Current legal step'}</strong>
       </div>
       <p className="mt-3 text-sm leading-6 text-[#566b82]">{message}</p>
     </article>
@@ -7812,40 +7870,31 @@ function BuyerPortalDashboard({
   workspaceNavigationScope,
 }) {
   return (
-    <section className="space-y-6">
-      <BuyerOverviewHero
-        buyerFirstName={buyerFirstName}
-        buyerName={buyerName}
-        developmentName={developmentName}
+      <section className="space-y-6">
+        <BuyerOverviewHero
+          buyerFirstName={buyerFirstName}
+          buyerName={buyerName}
+          developmentName={developmentName}
         unitLabel={unitLabel}
         purchasePriceLabel={purchasePriceLabel}
         heroStatusBadge={heroStatusBadge}
         currentStageLabel={currentStageLabel}
         nextStageLabel={nextStageLabel}
-        progressPercent={progressPercent}
-        timeInStageLabel={timeInStageLabel}
-        stageUpdatedDateLabel={stageUpdatedDateLabel}
-        primaryAction={primaryAction}
-        supportContact={supportContact}
-        financeSectionKey={financeSectionKey}
-        token={token}
-        workspaceNavigationScope={workspaceNavigationScope}
-      />
-      <BuyerOverviewActionPanel
-        actions={prioritizedNextActions}
-        blockingActionCount={blockingActionCount}
-        hiddenActionCount={hiddenNextActionCount}
-        primaryAction={primaryAction}
-        nextStepState={nextStepState}
-        token={token}
-        workspaceNavigationScope={workspaceNavigationScope}
-      />
-      <BuyerOverviewMetricGrid cards={metricCards} token={token} workspaceNavigationScope={workspaceNavigationScope} />
-      <AttorneySaysCard update={latestAttorneyUpdate} fallbackStageLabel={currentStageLabel} />
-      <section className="grid gap-5 xl:grid-cols-2">
-        <BuyerProgressJourney
           progressPercent={progressPercent}
-          currentStageLabel={currentStageLabel}
+          timeInStageLabel={timeInStageLabel}
+          stageUpdatedDateLabel={stageUpdatedDateLabel}
+          nextStepState={nextStepState}
+          primaryAction={primaryAction}
+          supportContact={supportContact}
+          financeSectionKey={financeSectionKey}
+          token={token}
+          workspaceNavigationScope={workspaceNavigationScope}
+        />
+        <BuyerOverviewStatusStrip cards={metricCards} token={token} workspaceNavigationScope={workspaceNavigationScope} />
+        <section className="grid gap-5 xl:grid-cols-2 xl:items-start">
+          <BuyerProgressJourney
+            progressPercent={progressPercent}
+            currentStageLabel={currentStageLabel}
           nextStageLabel={nextStageLabel}
           steps={journeySteps}
           primaryAction={primaryAction}
@@ -7859,23 +7908,15 @@ function BuyerPortalDashboard({
           onCommentDraftChange={onCommentDraftChange}
           onCommentSubmit={onCommentSubmit}
           onActionClick={onActionClick}
-          heading="Purchase Updates"
-          subtitle={latestUpdatesSubtitle}
-        />
+          heading="Team updates"
+            subtitle={latestUpdatesSubtitle}
+          showComposer={false}
+          maxUpdates={2}
+          />
+        </section>
       </section>
-      <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.8fr)]">
-        <BuyerStageGuide
-          stageEducation={stageEducation}
-          whatHappensNextItems={whatHappensNextItems}
-          whatsHappeningSummary={whatsHappeningSummary}
-          rolePlayerGuidance={rolePlayerGuidance}
-        />
-        <MvpTransactionControlBoard controlBoard={controlBoard} compact />
-      </section>
-      <BuyerSupportFooter supportContact={supportContact} buyerPortalAccessDescription={buyerPortalAccessDescription} />
-    </section>
-  )
-}
+    )
+  }
 
 function SellerPortalPasswordGate({
   authState = {},
@@ -8036,6 +8077,7 @@ function ClientPortal() {
   const [activeBondApplicationTab, setActiveBondApplicationTab] = useState('application')
   const [activeBondApplicationSectionTab, setActiveBondApplicationSectionTab] = useState('summary')
   const [activeBondApplicantKey, setActiveBondApplicantKey] = useState('primary')
+  const [showBondApplicationWorkspace, setShowBondApplicationWorkspace] = useState(false)
   const [guidedBondApplicationSuppressed, setGuidedBondApplicationSuppressed] = useState(false)
   const [bondApplicationConfirmedSectionKeys, setBondApplicationConfirmedSectionKeys] = useState([])
   const [bondApplicationExpandedSectionKeys, setBondApplicationExpandedSectionKeys] = useState([])
@@ -8272,7 +8314,7 @@ function ClientPortal() {
         return
       }
       if (!hasCoreData) {
-        setError(getClientPortalLoadErrorMessage(coreError, 'We could not load your client workspace.'))
+        setError(getClientPortalLoadErrorMessage(coreError, 'We could not load your portal.'))
         if (isClientPortalLoadTimeoutError(coreError)) {
           setPortal(null)
           setWorkspaceData(null)
@@ -8320,7 +8362,7 @@ function ClientPortal() {
         return
       }
       if (!hasCoreData) {
-        setError(getClientPortalLoadErrorMessage(loadError, 'We could not finish loading your client workspace.'))
+        setError(getClientPortalLoadErrorMessage(loadError, 'We could not finish loading your portal.'))
       }
     } finally {
       if (isCurrentLoad()) {
@@ -9292,11 +9334,11 @@ function ClientPortal() {
       })
       setAppointmentFeedback(
         normalizedAction === 'confirm'
-          ? 'Appointment confirmed. Your transaction team has been updated.'
+          ? 'Appointment confirmed. Your team has been updated.'
           : normalizedAction === 'decline'
-            ? 'Appointment declined. Your transaction team has been updated.'
+            ? 'Appointment declined. Your team has been updated.'
             : (Array.isArray(response?.suggestedSlots) && response.suggestedSlots.length
-                ? `Reschedule request sent. ${response.suggestedSlots.length} alternative slots were shared with your transaction team.`
+                ? `Reschedule request sent. ${response.suggestedSlots.length} alternative slots were shared with your team.`
                 : 'Reschedule request sent. The team will confirm a new time shortly.'),
       )
       await loadPortal({ background: true })
@@ -9749,7 +9791,7 @@ function ClientPortal() {
         <section className="mx-auto max-w-[760px] rounded-[24px] border border-[#dbe5ef] bg-white px-6 py-7 text-center shadow-[0_16px_34px_rgba(15,23,42,0.06)]">
           <h1 className="text-[1.2rem] font-semibold tracking-[-0.02em] text-[#142132]">Preparing your portal</h1>
           <p className="mt-2 text-sm leading-6 text-[#5f7288]">
-            We are loading your transaction workspace and latest updates.
+            We are loading your portal and latest updates.
           </p>
         </section>
       </main>
@@ -10596,7 +10638,7 @@ function ClientPortal() {
     if (overdue > 0) return `${overdue} overdue item${overdue === 1 ? '' : 's'} need attention.`
     if (actionRequired > 0) return `${actionRequired} update${actionRequired === 1 ? '' : 's'} need your attention.`
     if (dueSoon > 0) return `${dueSoon} document reminder${dueSoon === 1 ? '' : 's'} due soon.`
-    return 'Latest progress from your transaction team.'
+    return 'Latest progress from your team.'
   })()
   const latestJourneyUpdates = latestUpdates.map((item) => buildClientFacingUpdate(item))
   const latestJourneyFeedItems = latestUpdates.map((item, index) => buildClientJourneyFeedItem(item, index))
@@ -10609,14 +10651,14 @@ function ClientPortal() {
   const onboardingComplete = isClientOnboardingComplete(onboardingStatus)
   const buyerPortalAccessMethod = 'Secure link'
   const buyerPortalAccessDescription =
-    'This purchase workspace opens from your private transaction link. You do not need to create a password for this purchase workspace.'
+    'This portal opens from your private purchase link. You do not need to create a password.'
   const buyerPortalBondApplicationStatusValue = bondApplicationOtpUnlockState.unlocked
     ? bondApplicationStatus
     : bondApplicationOtpUnlockState.label
   const buyerPortalBondApplicationStatusDetail = (() => {
-    if (!isOriginatorManagedPortalFinance) return 'Finance is not managed by the bond originator workflow'
+    if (!isOriginatorManagedPortalFinance) return 'Finance is being handled outside this portal'
     if (!bondApplicationOtpUnlockState.unlocked) return bondApplicationOtpUnlockState.description
-    if (bondApplicationStatus === 'Submitted') return 'Submitted to the transaction workspace'
+    if (bondApplicationStatus === 'Submitted') return 'Submitted to your team'
     if (bondApplicationStatus === 'Not Started') return 'Ready to complete from your secure link'
     return 'Progress saved in the portal'
   })()
@@ -10749,7 +10791,7 @@ function ClientPortal() {
     {
       key: 'bond_approved',
       title: 'Bond approved',
-      description: 'Finance approval from the lending side is required before handover.',
+      description: 'Finance approval from the lending side is required before keys can be released.',
       status: resolveChecklistProgressState({
         complete: atOrBeyondFinance || hasStepWithStatus(financeSteps, /approval|approved|bond/i, ['completed', 'approved']),
         inProgress: mainStage === 'FIN' || hasStartedStep(financeSteps, /approval|bond/i),
@@ -10822,19 +10864,19 @@ function ClientPortal() {
   const propertyChecklistItems = [
     {
       key: 'snag_list_complete',
-      title: 'Snag list complete',
+      title: 'Issues complete',
       description: portal?.settings?.snag_reporting_enabled
         ? snagOpenCount === 0
-          ? 'No open snag items are currently blocking handover.'
-          : `${snagOpenCount} snag item${snagOpenCount === 1 ? '' : 's'} still open.`
-        : 'Snag reporting is not required for this transaction.',
+          ? 'No open issues are currently blocking key collection.'
+          : `${snagOpenCount} issue${snagOpenCount === 1 ? '' : 's'} still open.`
+        : 'Issue reporting is not required for this purchase.',
       status: resolveChecklistProgressState({
         complete: !portal?.settings?.snag_reporting_enabled || snagOpenCount === 0,
         inProgress: portal?.settings?.snag_reporting_enabled && portal?.issues?.length > 0 && snagOpenCount > 0,
       }),
       responsible: 'Developer',
       actionTo: portal?.settings?.snag_reporting_enabled ? 'snags' : null,
-      actionLabel: portal?.settings?.snag_reporting_enabled ? 'View Snags' : null,
+      actionLabel: portal?.settings?.snag_reporting_enabled ? 'View Issues' : null,
     },
     {
       key: 'final_inspection_done',
@@ -10849,7 +10891,7 @@ function ClientPortal() {
     {
       key: 'utilities_connected',
       title: 'Utilities connected and recorded',
-      description: 'Electricity and water readings should be captured for handover records.',
+      description: 'Electricity and water readings should be captured for key collection records.',
       status: resolveChecklistProgressState({
         complete: Boolean(handoverForm.electricityMeterReading) && Boolean(handoverForm.waterMeterReading),
         inProgress: Boolean(handoverForm.electricityMeterReading) || Boolean(handoverForm.waterMeterReading),
@@ -10872,10 +10914,10 @@ function ClientPortal() {
   const handoverPreparationItems = [
     {
       key: 'handover_scheduled',
-      title: 'Handover date scheduled',
+      title: 'Key collection date scheduled',
       description: handoverScheduled
-        ? `Handover is currently scheduled for ${formatClientPortalDate(handoverForm.handoverDate || portal?.handover?.handoverDate)}.`
-        : 'A confirmed handover date is still pending.',
+        ? `Key collection is currently scheduled for ${formatClientPortalDate(handoverForm.handoverDate || portal?.handover?.handoverDate)}.`
+        : 'A confirmed key collection date is still pending.',
       status: resolveChecklistProgressState({
         complete: handoverScheduled,
         inProgress: normalizePortalStatus(handoverStatus) === 'in_progress',
@@ -10885,7 +10927,7 @@ function ClientPortal() {
     {
       key: 'key_collection_arranged',
       title: 'Key collection arranged',
-      description: 'Key collection details should be confirmed before handover day.',
+      description: 'Key collection details should be confirmed before collection day.',
       status: resolveChecklistProgressState({
         complete: Boolean(handoverForm.keysHandedOver) || normalizePortalStatus(handoverStatus) === 'completed',
         inProgress: handoverScheduled,
@@ -10895,7 +10937,7 @@ function ClientPortal() {
     {
       key: 'welcome_pack_ready',
       title: 'Welcome pack ready',
-      description: 'Final manuals and welcome pack should be prepared for handover.',
+      description: 'Final manuals and welcome pack should be prepared for key collection.',
       status: resolveChecklistProgressState({
         complete: Boolean(handoverForm.manualsHandedOver) || hasWelcomePack,
         inProgress: Boolean(handoverForm.remoteHandedOver),
@@ -10907,7 +10949,7 @@ function ClientPortal() {
     {
       key: 'client_requirements',
       title: 'Client requirements',
-      description: 'Items you need to complete before handover can be finalized.',
+      description: 'Items you need to complete before keys can be released.',
       items: clientChecklistItems,
     },
     {
@@ -10919,7 +10961,7 @@ function ClientPortal() {
     {
       key: 'legal_transfer',
       title: 'Legal & transfer',
-      description: 'Attorney-led milestones that drive legal readiness.',
+      description: 'Legal checks that need to be completed before keys.',
       items: legalChecklistItems,
     },
     {
@@ -10930,8 +10972,8 @@ function ClientPortal() {
     },
     {
       key: 'handover_preparation',
-      title: 'Handover preparation',
-      description: 'Final readiness checks before key collection.',
+      title: 'Key collection',
+      description: 'Final checks before key collection.',
       items: handoverPreparationItems,
     },
   ].map((section) => {
@@ -10968,12 +11010,12 @@ function ClientPortal() {
         : 'border-[#f1ddd0] bg-[#fff6f0] text-[#a15b31]'
   const handoverReadinessSummary =
     handoverReadinessStatus === 'Completed'
-      ? 'Your handover is complete and all readiness items are closed.'
+      ? 'Key collection is complete and all readiness items are closed.'
       : handoverReadinessStatus === 'Ready'
-        ? 'Your file is close to handover completion. Final scheduling and key collection can proceed.'
+        ? 'Your file is close to ready. Final scheduling and key collection can proceed.'
         : handoverReadinessStatus === 'In Progress'
-          ? 'Handover preparation is underway. Complete the remaining items to stay on track.'
-          : 'Handover is not ready yet. Start with your client requirements to move forward.'
+          ? 'Key collection preparation is underway. Complete the remaining items to stay on track.'
+          : 'Keys are not ready yet. Start with your requirements to move forward.'
   const stageUpdatedAt = portal?.transaction?.stage_updated_at || portal?.lastUpdated || portal?.transaction?.updated_at || null
   const stageAgeDays = getDaysElapsed(stageUpdatedAt)
   const timeInStageLabel = getDaysInStageLabel(stageUpdatedAt)
@@ -11044,6 +11086,7 @@ function ClientPortal() {
   const journeyProgressPercent = clientJourneySteps.length
     ? Math.round((journeyCompletedSteps / clientJourneySteps.length) * 100)
     : progressPercent
+  const safeJourneyProgressPercent = Math.max(0, Math.min(100, Number(journeyProgressPercent) || 0))
   const journeyHeroSubtext = journeyCurrentStep?.whatHappensNow
     ? String(journeyCurrentStep.whatHappensNow)
     : stageEducation?.shortDescription || `Your team is progressing ${journeyCurrentStageLabel.toLowerCase()} right now.`
@@ -11139,7 +11182,7 @@ function ClientPortal() {
     {
       title: 'Arch9 Support',
       name: portal?.unit?.development?.developer_company || 'Arch9 Operations',
-      detail: 'Keeps the transaction workspace, documents, and handover records aligned.',
+      detail: 'Keeps your portal, documents, and key collection records aligned.',
     },
   ]
   const buyerSupportContact = teamMembers.find((member) => member.email || member.phone) || teamMembers[0] || {}
@@ -11213,30 +11256,30 @@ function ClientPortal() {
       }
     : null
   const buyerMobileDocumentItems = buildBuyerMobileDocumentItems(workspaceData?.documentCenter || {})
-  const buyerOverviewMetricCards = [
-    {
-      key: 'documents',
-      label: 'Purchase Docs',
-      value: missingRequired ? `${missingRequired} required` : 'Ready',
-      helper: missingRequired ? 'Buyer uploads needed' : 'No buyer uploads due',
-      to: 'documents',
-      icon: FileText,
-      tone: missingRequired ? 'action' : 'complete',
-    },
-    {
-      key: 'finance',
-      label: 'Purchase Finance',
-      value: buyerFinanceTypeLabel,
-      helper: matterAccountsState.summary?.documentCount
-        ? `${matterAccountsState.summary.documentCount} account document${matterAccountsState.summary.documentCount === 1 ? '' : 's'}`
-        : 'Finance workspace',
+    const buyerOverviewMetricCards = [
+      {
+        key: 'documents',
+        label: 'Documents',
+        value: missingRequired ? `${missingRequired} required` : 'Ready',
+        helper: missingRequired ? `${missingRequired} needed` : 'No uploads due',
+        to: 'documents',
+        icon: FileText,
+        tone: missingRequired ? 'action' : 'complete',
+      },
+      {
+        key: 'finance',
+        label: 'Finance',
+        value: buyerFinanceTypeLabel,
+        helper: matterAccountsState.summary?.documentCount
+          ? `${matterAccountsState.summary.documentCount} document${matterAccountsState.summary.documentCount === 1 ? '' : 's'}`
+          : 'Status',
       to: buyerMobileFinanceSectionKey,
       icon: HandCoins,
       tone: 'info',
     },
     {
       key: 'appointments',
-      label: 'Buyer Meetings',
+      label: 'Meetings',
       value: upcomingAppointmentCount ? `${upcomingAppointmentCount} upcoming` : 'None',
       helper: upcomingAppointmentCount ? 'Review your schedule' : 'No meeting scheduled',
       to: 'appointments',
@@ -11245,18 +11288,18 @@ function ClientPortal() {
     },
     {
       key: 'handover',
-      label: 'Key Handover',
+      label: 'Keys',
       value: handoverReadinessStatus,
-      helper: handoverScheduled ? 'Key date on file' : 'Awaiting key date',
+      helper: handoverScheduled ? 'Key date on file' : 'Date pending',
       to: 'handover',
       icon: KeyRound,
       tone: handoverCompleted ? 'complete' : 'info',
     },
     {
       key: 'snags',
-      label: 'Snag List',
+      label: 'Issues',
       value: portal?.settings?.snag_reporting_enabled ? `${snagOpenCount} open` : 'Inactive',
-      helper: portal?.settings?.snag_reporting_enabled ? `${snagResolvedCount} resolved` : 'Not active for this unit',
+      helper: portal?.settings?.snag_reporting_enabled ? `${snagResolvedCount} resolved` : 'Not active',
       to: 'snags',
       icon: Wrench,
       tone: snagOpenCount ? 'action' : 'complete',
@@ -11775,7 +11818,7 @@ function ClientPortal() {
   const sellerMobileProgressPercent = Math.round((sellerMobileCurrentIndex / Math.max(sellerMobileJourneyStages.length - 1, 1)) * 100)
   const sellerMobileStepLabel = `Step ${sellerMobileCurrentIndex + 1} of ${sellerMobileJourneyStages.length}`
   const overviewStatusLabel = ['REGISTERED', 'REG'].includes(mainStage) ? 'Registered' : 'In Progress'
-  const workspaceHeaderStatusLabel = isHandover ? (handoverCompleted ? 'Handover Completed' : 'Preparing for Handover') : overviewStatusLabel
+  const workspaceHeaderStatusLabel = isHandover ? (handoverCompleted ? 'Keys collected' : 'Preparing for keys') : overviewStatusLabel
   const bondApplicationCompletion = calculateLegacyBondApplicationCompletion({
     application: bondApplicationData,
     sections: BOND_APPLICATION_SECTION_TABS,
@@ -11790,7 +11833,7 @@ function ClientPortal() {
     label: nextStepState.ctaLabel || 'Open Documents',
   }
   const secondaryOverviewActions = [
-    { to: 'handover', label: 'Handover', icon: KeyRound },
+    { to: 'handover', label: 'Keys', icon: KeyRound },
     { to: 'team', label: 'Team Contacts', icon: Users },
     { to: 'documents', label: 'Documents', icon: FileText },
   ]
@@ -11802,7 +11845,7 @@ function ClientPortal() {
       : 'bg-[#35546c] text-white hover:bg-[#2d475d]'
   const heroStatusBadge = nextStepState.requiresAction
     ? {
-        label: 'Action Required',
+        label: 'Action needed',
         className: 'border-[#f0d8ae] bg-[#fff6e7] text-[#9a5b0f]',
       }
     : stageAgeDays !== null && stageAgeDays >= 21
@@ -12520,11 +12563,11 @@ function ClientPortal() {
             <>
               <div className="min-h-[72px]">
                 <h1 className="text-[2rem] font-bold leading-tight tracking-[-0.04em] text-[#f8fbff]">Arch9</h1>
-                <p className="mt-2 text-[0.82rem] tracking-[0.02em] text-[#c8d5e3]">Buyer Workspace</p>
+                <p className="mt-2 text-[0.82rem] tracking-[0.02em] text-[#c8d5e3]">Your purchase</p>
               </div>
             <div className="mt-4 rounded-[14px] border border-white/10 bg-[rgba(7,14,24,0.34)] px-3 py-3">
               <label htmlFor="client-journey-selector" className="block text-[0.64rem] font-semibold uppercase tracking-[0.14em] text-[#a8bdd2]">
-                Workspace
+                Mode
               </label>
               <select
                 id="client-journey-selector"
@@ -12535,6 +12578,17 @@ function ClientPortal() {
                 <option value="buyer">Buying</option>
                 <option value="seller">{canSwitchJourney ? 'Selling' : 'Selling (Request access)'}</option>
               </select>
+            </div>
+            <div className="mt-3 rounded-[14px] border border-white/10 bg-[rgba(4,30,28,0.42)] px-3 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-[0.64rem] font-semibold uppercase tracking-[0.14em] text-[#9fd7a0]">Now</span>
+                <span className="text-xs font-semibold text-white">{safeJourneyProgressPercent}%</span>
+              </div>
+              <p className="mt-1 truncate text-sm font-semibold text-white">{journeyCurrentStageLabel}</p>
+              <p className="mt-1 truncate text-xs text-[#b9cad8]">Next: {journeyNextStageLabel}</p>
+              <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/12" aria-hidden="true">
+                <div className="h-full rounded-full bg-[#74d46e]" style={{ width: `${safeJourneyProgressPercent}%` }} />
+              </div>
             </div>
             </>
             )}
@@ -12555,6 +12609,7 @@ function ClientPortal() {
                         <Link
                           key={item.key}
                           to={getPortalNavigationPath(token, workspaceNavigationScope, item)}
+                          aria-current={isActive ? 'page' : undefined}
                           className={[
                             'relative flex min-h-[44px] items-center gap-3 rounded-[10px] border px-3 py-2 text-[0.9rem] font-medium transition duration-150 ease-out',
                             isActive
@@ -12621,6 +12676,7 @@ function ClientPortal() {
                         <Link
                           key={item.key}
                           to={getPortalNavigationPath(token, workspaceNavigationScope, item)}
+                          aria-current={isActive ? 'page' : undefined}
                           className={[
                             'relative flex min-h-[44px] items-center gap-3 rounded-[10px] border px-3 py-2 text-[0.9rem] font-medium transition duration-150 ease-out',
                             isActive
@@ -12651,18 +12707,18 @@ function ClientPortal() {
               ))}
               <div className="mt-2 rounded-[14px] border border-white/12 bg-[rgba(4,30,28,0.52)] p-3">
                 <p className="text-sm font-semibold text-white">Need help?</p>
-                <p className="mt-1 text-xs leading-5 text-[#c0cfde]">We&apos;re here for you.</p>
+                <p className="mt-1 truncate text-xs leading-5 text-[#c0cfde]">{buyerSupportContact.name || buyerSupportContact.title || 'Your team is available.'}</p>
                 <div className="mt-3 grid gap-2">
                   {buyerSupportContact.email ? (
                     <a href={`mailto:${buyerSupportContact.email}`} className="inline-flex min-h-[36px] items-center justify-center gap-2 rounded-[9px] bg-[#12a06b] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#0f855b]">
                       <MessageCircle size={14} />
-                      Message Team
+                      Message
                     </a>
                   ) : null}
                   {buyerSupportContact.phone ? (
                     <a href={`tel:${buyerSupportContact.phone}`} className="inline-flex min-h-[36px] items-center justify-center gap-2 rounded-[9px] border border-white/12 px-3 py-2 text-xs font-semibold text-white transition hover:bg-white/5">
                       <PhoneCall size={14} />
-                      Call Team
+                      Call
                     </a>
                   ) : null}
                 </div>
@@ -12711,6 +12767,7 @@ function ClientPortal() {
                     <Link
                       key={item.key}
                       to={getPortalNavigationPath(token, workspaceNavigationScope, item)}
+                      aria-current={isActive ? 'page' : undefined}
                       className={`inline-flex flex-1 items-center justify-center gap-2 rounded-[18px] px-5 py-3 text-sm font-semibold transition ${
                         isActive
                           ? 'bg-[#35546c] text-white shadow-[0_12px_24px_rgba(53,84,108,0.18)]'
@@ -12727,11 +12784,11 @@ function ClientPortal() {
           </div>
 
           <div className="space-y-6 px-3 py-5 md:px-4 md:py-8 xl:px-5">
-            {hideSellerWorkspaceHeader || (isOverview && effectiveWorkspace !== 'seller') ? null : (
+            {hideSellerWorkspaceHeader || effectiveWorkspace !== 'seller' ? null : (
             <section className="rounded-[24px] border border-[#223d57] bg-[linear-gradient(135deg,#10253a_0%,#1d3c5b_60%,#2a5078_100%)] px-5 py-5 text-white shadow-[0_20px_36px_rgba(12,24,40,0.3)]">
               <h2 className="text-[1.35rem] font-semibold tracking-[-0.03em] text-[#f8fbff]">Welcome, {clientFirstName}</h2>
               <p className="mt-2 text-sm leading-6 text-[#d6e5f3]">
-                This is your secure transaction workspace. Your updates, documents, and next steps are kept in one place so
+                This is your secure purchase portal. Your updates, documents, and next steps are kept in one place so
                 you can always see what is happening.
               </p>
               <p className="mt-2 text-sm leading-6 text-[#d6e5f3]">
@@ -12742,7 +12799,7 @@ function ClientPortal() {
             </section>
             )}
 
-            {hideSellerWorkspaceHeader || (isOverview && effectiveWorkspace !== 'seller') ? null : (
+            {hideSellerWorkspaceHeader || effectiveWorkspace !== 'seller' ? null : (
             <section className="rounded-[28px] border border-[#dbe5ef] bg-white px-6 py-5 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
               {effectiveWorkspace === 'seller' ? (
                 <div>
@@ -12890,7 +12947,7 @@ function ClientPortal() {
 
                     <div className="mt-4 grid gap-3 sm:grid-cols-4">
                       <article className="rounded-[14px] border border-[#e3ebf4] bg-white px-3.5 py-3">
-                        <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Current purchase stage</span>
+                        <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Where things stand</span>
                         <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{MAIN_STAGE_LABELS[mainStage]}</strong>
                       </article>
                       <article className="rounded-[14px] border border-[#e3ebf4] bg-white px-3.5 py-3">
@@ -12987,7 +13044,7 @@ function ClientPortal() {
                 <div className="space-y-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-3 py-1.5 text-xs font-semibold text-[#4a5f77]">
-                      {isBondApplication ? `Application status: ${bondApplicationStatus}` : workspaceHeaderStatusLabel}
+                      {isBondApplication ? `Finance status: ${bondApplicationStatus}` : workspaceHeaderStatusLabel}
                     </span>
                     <div className="flex flex-wrap gap-2.5">
                       <Link
@@ -13011,7 +13068,7 @@ function ClientPortal() {
                           className="inline-flex min-h-[42px] items-center gap-2 rounded-[12px] border border-[#d1deeb] bg-white px-3.5 py-2 text-sm font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-[#f8fbff]"
                         >
                           <KeyRound size={15} />
-                          Handover
+                          Keys
                         </Link>
                       )}
                       <Link
@@ -13185,101 +13242,6 @@ function ClientPortal() {
                   token={token}
                   workspaceNavigationScope={workspaceNavigationScope}
                 />
-                {effectiveWorkspace !== 'seller' && showReservationDepositUploadCard ? (
-                  <section className="rounded-[22px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
-                    <div className="grid gap-5 lg:grid-cols-[1.45fr_0.55fr]">
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center justify-between gap-3">
-                          <h3 className="text-[1.12rem] font-semibold tracking-[-0.03em] text-[#142132]">Reservation Deposit Required</h3>
-                          <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${getStatusToneClasses(reservationProofStatusLabel)}`}>
-                            {reservationProofStatusLabel}
-                          </span>
-                        </div>
-                        <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">
-                          Please pay the reservation deposit and upload proof of payment so your team can verify and continue.
-                        </p>
-
-                        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-                          <article className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
-                            <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Amount due</span>
-                            <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{reservationAmountLabel}</strong>
-                          </article>
-                          <article className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
-                            <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Amount type</span>
-                            <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{reservationAmountTypeLabel}</strong>
-                          </article>
-                          <article className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
-                            <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">How it is treated</span>
-                            <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{reservationTreatmentLabel}</strong>
-                          </article>
-                          <article className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
-                            <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Payable to</span>
-                            <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{reservationPayableToLabel}</strong>
-                          </article>
-                          <article className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
-                            <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Current status</span>
-                            <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{reservationProofStatusLabel}</strong>
-                          </article>
-                        </div>
-
-                        <p className="mt-3 rounded-[12px] border border-[#e3ebf4] bg-[#fbfdff] px-3 py-2 text-xs leading-5 text-[#5f7288]">
-                          {reservationTreatmentDescription}
-                        </p>
-
-                        {reservationProofUploaded ? (
-                          <div className="mt-3 space-y-1 text-xs text-[#6b7d93]">
-                            <p>
-                              File: <span className="font-medium text-[#324559]">{reservationProofFileName || 'Reservation deposit proof of payment'}</span>
-                            </p>
-                            <p>Uploaded: {formatShortPortalDate(reservationProofUploadedAt, 'Recently')}</p>
-                          </div>
-                        ) : null}
-
-                        {reservationPaymentInstructions ? (
-                          <p className="mt-3 text-sm leading-6 text-[#566b82]">{reservationPaymentInstructions}</p>
-                        ) : null}
-                      </div>
-
-                      <div className="flex flex-col justify-end gap-2.5">
-                        <button
-                          type="button"
-                          disabled={uploadingDocumentKey === reservationProofUploadStateKey}
-                          onClick={() => reservationProofInputRef.current?.click()}
-                          className="inline-flex min-h-[42px] items-center justify-center rounded-[12px] bg-[#35546c] px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-[#2d475d] disabled:cursor-not-allowed disabled:bg-[#7e95ab]"
-                        >
-                          {uploadingDocumentKey === reservationProofUploadStateKey
-                            ? 'Uploading...'
-                            : reservationProofUploaded
-                              ? 'Replace proof of payment'
-                              : 'Upload proof of payment'}
-                        </button>
-                        <input
-                          ref={reservationProofInputRef}
-                          type="file"
-                          className="hidden"
-                          disabled={uploadingDocumentKey === reservationProofUploadStateKey}
-                          onChange={(event) => {
-                            const file = event.target.files?.[0]
-                            if (file) {
-                              if (reservationProofRequirement?.key) {
-                                void handleUploadRequiredDocument(reservationProofRequirement.key, file)
-                              } else {
-                                void handleUploadReservationDepositProof(file)
-                              }
-                            }
-                            event.target.value = ''
-                          }}
-                        />
-                        {reservationProofUploadFeedback.message ? (
-                          <p className={`rounded-[10px] border px-3 py-2 text-xs font-medium ${reservationProofUploadFeedbackClasses}`}>
-                            {reservationProofUploadFeedback.message}
-                          </p>
-                        ) : null}
-                      </div>
-                    </div>
-                  </section>
-                ) : null}
-
               </>
               )
             ) : null}
@@ -13300,6 +13262,22 @@ function ClientPortal() {
                 documentsPath={getPortalWorkspacePath(token, workspaceNavigationScope, 'documents')}
                 listingUrl={sellerListingUrl}
                 agentEmail={sellerAgentEmail}
+              />
+            ) : null}
+
+            {isProgress && effectiveWorkspace !== 'seller' ? (
+              <BuyerProgressPage
+                currentStageLabel={journeyCurrentStageLabel}
+                nextStageLabel={journeyNextStageLabel}
+                progressPercent={journeyProgressPercent}
+                journeySteps={clientJourneySteps}
+                stageEducation={stageEducation}
+                whatHappensNextItems={whatHappensNextItems}
+                whatsHappeningSummary={whatsHappeningSummary}
+                primaryAction={primaryOverviewAction}
+                latestUpdate={latestJourneyFeedItems[0]}
+                token={token}
+                workspaceNavigationScope={workspaceNavigationScope}
               />
             ) : null}
 
@@ -13510,16 +13488,14 @@ function ClientPortal() {
 
             {isBondApplication ? (
               <section
-                className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#142132]/55 px-3 py-4 backdrop-blur-sm sm:px-6 lg:px-8"
-                role="dialog"
-                aria-modal="true"
+                className="space-y-5"
                 aria-labelledby="buyer-bond-application-title"
               >
-                <div className="w-full max-w-7xl space-y-5 rounded-[24px] border border-[#dbe5ef] bg-white p-4 shadow-[0_24px_70px_rgba(15,23,42,0.28)] sm:p-6">
-                <header className="rounded-[22px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+                <div className="space-y-5">
+                <header className="rounded-[18px] border border-[#dbe5ef] bg-white px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
                   <div className="flex flex-wrap items-start justify-between gap-4">
                     <div>
-                      <span className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7b8ca2]">Bond Application</span>
+                      <span className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7b8ca2]">Finance</span>
                       <h3 id="buyer-bond-application-title" className="mt-2 text-[1.26rem] font-semibold tracking-[-0.03em] text-[#142132]">{bondApplicationApplicantHeader}</h3>
                       <p className="mt-1 text-sm text-[#6b7d93]">
                         {unitLabel} • {developmentName}
@@ -13534,10 +13510,10 @@ function ClientPortal() {
                       </span>
                       <Link
                         to={getClientPortalPath(token, 'overview')}
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#d1deeb] bg-white text-[#425a72] transition hover:border-[#b9cbde] hover:bg-[#f8fbff] hover:text-[#142132]"
-                        aria-label="Close bond application"
+                        className="inline-flex min-h-[38px] items-center gap-1.5 rounded-[10px] border border-[#d1deeb] bg-white px-3 py-1.5 text-xs font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-[#f8fbff]"
                       >
-                        <X size={16} />
+                        <LayoutDashboard size={13} />
+                        Overview
                       </Link>
                     </div>
                   </div>
@@ -13555,13 +13531,6 @@ function ClientPortal() {
                   </div>
                   <div className="mt-4 flex flex-wrap items-center gap-2.5">
                     <Link
-                      to={getClientPortalPath(token, 'overview')}
-                      className="inline-flex min-h-[38px] items-center gap-1.5 rounded-[10px] border border-[#d1deeb] bg-white px-3 py-1.5 text-xs font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-[#f8fbff]"
-                    >
-                      <LayoutDashboard size={13} />
-                      Overview
-                    </Link>
-                    <Link
                       to={getClientPortalPath(token, 'documents')}
                       className="inline-flex min-h-[38px] items-center gap-1.5 rounded-[10px] border border-[#d1deeb] bg-white px-3 py-1.5 text-xs font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-[#f8fbff]"
                     >
@@ -13578,90 +13547,151 @@ function ClientPortal() {
                   </div>
                 </header>
 
-	                {!bondApplicationOtpUnlockState.unlocked ? (
-	                  <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-	                    <article className="rounded-[22px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-	                      <div className="flex flex-wrap items-start justify-between gap-4">
-	                        <div className="flex items-start gap-3">
-	                          <span className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] border ${
-	                            bondApplicationOtpUnlockState.status === 'preparing'
-	                              ? 'border-[#f0d8ae] bg-[#fff6e7] text-[#9a5b0f]'
-	                              : 'border-[#d8e4ef] bg-white text-[#35546c]'
-	                          }`}>
-	                            {bondApplicationOtpUnlockState.status === 'preparing' ? <Clock3 size={20} /> : <ShieldCheck size={20} />}
-	                          </span>
-	                          <div>
-	                            <span className="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">
-	                              {bondApplicationOtpUnlockState.label}
-	                            </span>
-	                            <h4 className="mt-1 text-[1.2rem] font-semibold tracking-[-0.03em] text-[#142132]">
-	                              {bondApplicationOtpUnlockState.title}
-	                            </h4>
-	                            <p className="mt-2 max-w-3xl text-sm leading-6 text-[#5f7288]">
-	                              {bondApplicationOtpUnlockState.description}
-	                            </p>
-	                          </div>
-	                        </div>
-	                        <span className="inline-flex items-center rounded-full border border-[#d8e4ef] bg-white px-3 py-1.5 text-xs font-semibold text-[#35546c]">
-	                          OTP: {otpStatusLabel}
-	                        </span>
-		                      </div>
+                  {!bondApplicationOtpUnlockState.unlocked ? (
+                    <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+                      <article className="rounded-[22px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+                        <div className="flex flex-wrap items-start justify-between gap-4">
+                          <div className="flex items-start gap-3">
+                            <span className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] border ${
+                              bondApplicationOtpUnlockState.status === 'preparing'
+                                ? 'border-[#f0d8ae] bg-[#fff6e7] text-[#9a5b0f]'
+                                : 'border-[#d8e4ef] bg-white text-[#35546c]'
+                            }`}>
+                              {bondApplicationOtpUnlockState.status === 'preparing' ? <Clock3 size={20} /> : <ShieldCheck size={20} />}
+                            </span>
+                            <div>
+                              <span className="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">
+                                {bondApplicationOtpUnlockState.label}
+                              </span>
+                              <h4 className="mt-1 text-[1.2rem] font-semibold tracking-[-0.03em] text-[#142132]">
+                                {bondApplicationOtpUnlockState.title}
+                              </h4>
+                              <p className="mt-2 max-w-3xl text-sm leading-6 text-[#5f7288]">
+                                {bondApplicationOtpUnlockState.description}
+                              </p>
+                            </div>
+                          </div>
+                          <span className="inline-flex items-center rounded-full border border-[#d8e4ef] bg-white px-3 py-1.5 text-xs font-semibold text-[#35546c]">
+                            OTP: {otpStatusLabel}
+                          </span>
+                          </div>
 
-		                      <div className="mt-5 grid gap-3 md:grid-cols-3">
-	                        {[
-	                          {
-	                            label: 'OTP status',
-	                            value: otpStatusLabel,
-	                            detail: bondApplicationOtpUnlockState.status === 'preparing' ? 'Signature handoff in progress' : 'Awaiting signed OTP handoff',
-	                          },
-	                          {
-	                            label: 'Application data',
-	                            value: 'Prefill ready',
-	                            detail: 'Onboarding, buyer, property, and finance details are mapped.',
-	                          },
-	                          {
-	                            label: 'Finance owner',
-	                            value: isOriginatorManagedPortalFinance ? 'Bond originator' : 'External finance',
-	                            detail: isOriginatorManagedPortalFinance ? 'Application will route to the originator workspace.' : 'This finance route is not originator-managed.',
-	                          },
-	                        ].map((item) => (
-	                          <article key={item.label} className="rounded-[16px] border border-[#e3ebf4] bg-white px-4 py-3">
-	                            <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">{item.label}</span>
-	                            <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{item.value}</strong>
-	                            <p className="mt-1 text-xs leading-5 text-[#6b7d93]">{item.detail}</p>
-	                          </article>
-	                        ))}
-	                      </div>
-		                    </article>
+                          <div className="mt-5 grid gap-3 md:grid-cols-3">
+                          {[
+                            {
+                              label: 'OTP status',
+                              value: otpStatusLabel,
+                              detail: bondApplicationOtpUnlockState.status === 'preparing' ? 'Signature handoff in progress' : 'Awaiting signed OTP handoff',
+                            },
+                            {
+                              label: 'Application data',
+                              value: 'Prefill ready',
+                              detail: 'Onboarding, buyer, property, and finance details are mapped.',
+                            },
+                            {
+                              label: 'Finance owner',
+                              value: isOriginatorManagedPortalFinance ? 'Bond originator' : 'External finance',
+                              detail: isOriginatorManagedPortalFinance ? 'Application will route to the originator.' : 'This finance route is handled outside the originator.',
+                            },
+                          ].map((item) => (
+                            <article key={item.label} className="rounded-[16px] border border-[#e3ebf4] bg-white px-4 py-3">
+                              <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">{item.label}</span>
+                              <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{item.value}</strong>
+                              <p className="mt-1 text-xs leading-5 text-[#6b7d93]">{item.detail}</p>
+                            </article>
+                          ))}
+                        </div>
+                        </article>
 
-		                    <aside className="rounded-[22px] border border-[#dbe5ef] bg-white px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-	                      <span className="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Next</span>
-	                      <h4 className="mt-1 text-[1.05rem] font-semibold tracking-[-0.02em] text-[#142132]">Complete the OTP step</h4>
-	                      <p className="mt-2 text-sm leading-6 text-[#5f7288]">
-	                        Once the signed OTP is received, this link will open the application directly.
-	                      </p>
-	                      <div className="mt-4 space-y-2">
-	                        <Link
-	                          to={getClientPortalPath(token, 'documents')}
-	                          className="inline-flex w-full min-h-[40px] items-center justify-center gap-2 rounded-[12px] border border-[#d1deeb] bg-[#f8fbff] px-3 py-2 text-sm font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-white"
-	                        >
-	                          <FileText size={15} />
-	                          Documents
-	                        </Link>
-	                        <Link
-	                          to={getClientPortalPath(token, 'team')}
-	                          className="inline-flex w-full min-h-[40px] items-center justify-center gap-2 rounded-[12px] bg-[#2f5478] px-3 py-2 text-sm font-semibold text-white transition hover:bg-[#254664]"
-	                        >
-	                          <Users size={15} />
-	                          Team Contacts
-	                        </Link>
-	                      </div>
-	                    </aside>
-	                  </section>
-	                ) : (
-	                  <>
-	                <div className="overflow-x-auto">
-	                  <nav className="inline-flex min-w-full gap-2 rounded-[18px] border border-[#e2eaf3] bg-[#f8fbff] p-2">
+                        <aside className="rounded-[22px] border border-[#dbe5ef] bg-white px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+                        <span className="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Next</span>
+                        <h4 className="mt-1 text-[1.05rem] font-semibold tracking-[-0.02em] text-[#142132]">Complete the OTP step</h4>
+                        <p className="mt-2 text-sm leading-6 text-[#5f7288]">
+                          Once the signed OTP is received, this link will open the application directly.
+                        </p>
+                        <div className="mt-4 space-y-2">
+                          <Link
+                            to={getClientPortalPath(token, 'documents')}
+                            className="inline-flex w-full min-h-[40px] items-center justify-center gap-2 rounded-[12px] border border-[#d1deeb] bg-[#f8fbff] px-3 py-2 text-sm font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-white"
+                          >
+                            <FileText size={15} />
+                            Documents
+                          </Link>
+                          <Link
+                            to={getClientPortalPath(token, 'team')}
+                            className="inline-flex w-full min-h-[40px] items-center justify-center gap-2 rounded-[12px] bg-[#2f5478] px-3 py-2 text-sm font-semibold text-white transition hover:bg-[#254664]"
+                          >
+                            <Users size={15} />
+                            Team Contacts
+                          </Link>
+                        </div>
+                      </aside>
+                    </section>
+                  ) : (
+                    <>
+                  <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+                    <article className="rounded-[18px] border border-[#dbe5ef] bg-white px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+                      <div className="flex flex-wrap items-start justify-between gap-4">
+                        <div>
+                          <span className="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Finance status</span>
+                          <h4 className="mt-1 text-[1.2rem] font-semibold tracking-[-0.03em] text-[#142132]">
+                            {bondApplicationStatus === 'Not Started' ? 'Ready to start your bond application' : bondApplicationStatus}
+                          </h4>
+                          <p className="mt-2 max-w-3xl text-sm leading-6 text-[#5f7288]">
+                            Review the basics here. Open the application only when you need to complete or check finance details.
+                          </p>
+                        </div>
+                        <span className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] ${bondApplicationStatusClasses}`}>
+                          {bondApplicationStatus}
+                        </span>
+                      </div>
+
+                      <div className="mt-5 grid gap-3 md:grid-cols-4">
+                        {[
+                          ['Completion', `${bondApplicationProgressPercent}%`, `${missingBondApplicationSectionLabels.length} section${missingBondApplicationSectionLabels.length === 1 ? '' : 's'} need review`],
+                          ['Documents', `${bondApplicationRequiredDocuments.length}`, 'Finance requirements'],
+                          ['Offers', displayedBondOfferCards.length || 0, displayedBondOfferCards.length ? 'Published offers' : 'None yet'],
+                          ['Grant', displayedBondGrantCards.length || 0, displayedBondGrantCards.length ? 'Grant documents ready' : 'Not uploaded yet'],
+                        ].map(([label, value, detail]) => (
+                          <article key={label} className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-3">
+                            <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">{label}</span>
+                            <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{value}</strong>
+                            <p className="mt-1 text-xs leading-5 text-[#6b7d93]">{detail}</p>
+                          </article>
+                        ))}
+                      </div>
+                    </article>
+
+                    <aside className="rounded-[18px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+                      <span className="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Next</span>
+                      <h4 className="mt-1 text-[1.05rem] font-semibold tracking-[-0.02em] text-[#142132]">Continue when you are ready</h4>
+                      <p className="mt-2 text-sm leading-6 text-[#5f7288]">
+                        The application opens below and keeps your progress on this page.
+                      </p>
+                      <div className="mt-4 space-y-2">
+                        <button
+                          type="button"
+                          onClick={() => setShowBondApplicationWorkspace((current) => !current)}
+                          className="inline-flex w-full min-h-[40px] items-center justify-center gap-2 rounded-[12px] bg-[#123f3a] px-3 py-2 text-sm font-semibold text-white transition hover:bg-[#0b312d]"
+                        >
+                          <FileSignature size={15} />
+                          {showBondApplicationWorkspace ? 'Hide application' : 'Continue application'}
+                        </button>
+                        <Link
+                          to={getClientPortalPath(token, 'team')}
+                          className="inline-flex w-full min-h-[40px] items-center justify-center gap-2 rounded-[12px] border border-[#d1deeb] bg-white px-3 py-2 text-sm font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-[#f8fbff]"
+                        >
+                          <Users size={15} />
+                          Team Contacts
+                        </Link>
+                      </div>
+                    </aside>
+                  </section>
+
+                  {showBondApplicationWorkspace ? (
+                    <>
+                  <div className="overflow-x-auto">
+                    <nav className="inline-flex min-w-full gap-2 rounded-[18px] border border-[#e2eaf3] bg-[#f8fbff] p-2">
                     {BOND_APPLICATION_TABS.map((tab) => {
                       const isActive = activeBondApplicationTab === tab.key
                       return (
@@ -14593,13 +14623,15 @@ function ClientPortal() {
                       <article className="rounded-[16px] border border-dashed border-[#d8e2ee] bg-white px-4 py-5 text-sm text-[#6b7d93]">
                         Grant documents are not uploaded yet.
                       </article>
-	                    )}
-	                  </section>
-	                ) : null}
-	                </>
-	                )}
-	                </div>
-	              </section>
+                      )}
+                    </section>
+                  ) : null}
+                    </>
+                  ) : null}
+                  </>
+                  )}
+                  </div>
+                </section>
             ) : null}
 
             {isAccount ? (
@@ -14631,12 +14663,14 @@ function ClientPortal() {
             onOpenDocument={handleOpenPortalDocument}
           />
 
+          {effectiveWorkspace === 'seller' ? (
+            <>
           <section className="mt-5 rounded-[18px] border border-[#dbe5ef] bg-white px-4 py-3 shadow-[0_12px_24px_rgba(15,23,42,0.04)]">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
-                <h4 className="text-sm font-semibold text-[#142132]">Need the detailed workspace?</h4>
+                <h4 className="text-sm font-semibold text-[#142132]">Need the detailed view?</h4>
                 <p className="text-xs leading-5 text-[#6b7d93]">
-                  Use the advanced view for grouped legacy tabs and full historical document utilities.
+                  Use the advanced view for grouped tabs and older document tools.
                 </p>
               </div>
               <button
@@ -15735,7 +15769,7 @@ function ClientPortal() {
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
                           <strong className="block text-sm font-semibold text-[#142132]">{document.name || 'Additional request document'}</strong>
-                          <p className="mt-1 text-sm leading-6 text-[#6b7d93]">{document.category || 'Shared by your transaction team.'}</p>
+                          <p className="mt-1 text-sm leading-6 text-[#6b7d93]">{document.category || 'Shared by your team.'}</p>
                         </div>
                         <span className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold ${getStatusToneClasses('Uploaded')}`}>
                           Uploaded
@@ -15808,16 +15842,18 @@ function ClientPortal() {
           ) : null}
           </section>
           ) : null}
+            </>
+          ) : null}
         </>
       ) : null}
 
       {isHandover ? (
         <section className="space-y-5 rounded-[28px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
           <article className="rounded-[22px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-            <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">About handover</span>
+            <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">About keys</span>
             <h3 className="mt-3 text-[1.2rem] font-semibold tracking-[-0.03em] text-[#142132]">Final readiness before key collection</h3>
             <p className="mt-2 text-sm leading-7 text-[#5f7288]">
-              Handover is the final step where the property is officially ready for you to take possession. This checklist shows
+              Key collection is the final step where the property is officially ready for you to take possession. This checklist shows
               what still needs to be completed, who is responsible, and how close your file is to completion.
             </p>
           </article>
@@ -15825,7 +15861,7 @@ function ClientPortal() {
           <article className="rounded-[22px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
-                <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Handover status</span>
+                <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Key status</span>
                 <strong className="mt-3 block text-[1.35rem] font-semibold tracking-[-0.03em] text-[#142132]">{handoverReadinessStatus}</strong>
                 <p className="mt-2 text-sm leading-7 text-[#5f7288]">{handoverReadinessSummary}</p>
               </div>
@@ -15915,14 +15951,14 @@ function ClientPortal() {
         <section className="rounded-[28px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
           <div className="section-header">
             <div className="section-header-copy">
-              <h3>Snags</h3>
-              <p>Log practical completion items, attach supporting photos, and track how your team is progressing each fix.</p>
+              <h3>Issues</h3>
+              <p>Log items that need fixing, attach photos, and track progress.</p>
             </div>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-3">
             {[
-              ['Logged snags', portal.issues.length],
+              ['Logged issues', portal.issues.length],
               ['Open items', snagOpenCount],
               ['Resolved', snagResolvedCount],
             ].map(([label, value]) => (
@@ -15937,7 +15973,7 @@ function ClientPortal() {
             <section className="rounded-[22px] border border-[#dbe5ef] bg-white px-5 py-5 shadow-[0_12px_26px_rgba(15,23,42,0.05)]">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <h4 className="text-[1.08rem] font-semibold tracking-[-0.03em] text-[#142132]">Log a new snag</h4>
+                  <h4 className="text-[1.08rem] font-semibold tracking-[-0.03em] text-[#142132]">Log a new issue</h4>
                   <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Add the room, explain the issue clearly, and upload a supporting image if you have one.</p>
                 </div>
                 <span className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#dde7f1] bg-[#f8fbff] text-[#35546c]">
@@ -16076,7 +16112,7 @@ function ClientPortal() {
 
                 {!portal.issues.length ? (
                   <div className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-4 py-5 text-sm text-[#6b7d93]">
-                    No snags have been submitted yet.
+                    No issues have been submitted yet.
                   </div>
                 ) : null}
               </div>
@@ -16091,7 +16127,7 @@ function ClientPortal() {
             <div>
               <h3 className="text-[1.3rem] font-semibold tracking-[-0.03em] text-[#142132]">Settings</h3>
               <p className="mt-1.5 max-w-3xl text-sm leading-6 text-[#6b7d93]">
-                The client workspace stays intentionally light. These settings show which support features are active on your transaction and how the team will communicate with you.
+                The buyer portal stays intentionally light. These settings show which support features are active and how the team will communicate with you.
               </p>
             </div>
             <span className="inline-flex items-center gap-2 rounded-full border border-[#dde7f1] bg-[#fbfdff] px-4 py-2 text-sm font-semibold text-[#64748b]">
@@ -16144,10 +16180,10 @@ function ClientPortal() {
               <h4 className="text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">Support notes</h4>
               <div className="mt-4 space-y-3">
                 {[
-                  'Keep your purchase workspace link private. Anyone who needs access should use the link sent by your transaction team.',
-                  'Use Comments & Updates on the progress page when you want your team to respond inside the shared transaction record.',
-                  'Document upload requests will appear automatically in your document workspace as different role players ask for additional items.',
-                  'Handover scheduling and warranty information will only appear once your transaction is close enough to occupation or transfer.',
+                  'Keep your purchase link private. Anyone who needs access should use the link sent by your team.',
+                  'Use Team updates when you want your team to respond inside the portal.',
+                  'Document upload requests will appear automatically as your team asks for additional items.',
+                  'Key collection and warranty information will appear when your purchase is close enough to occupation or transfer.',
                 ].map((note) => (
                   <article key={note} className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4 text-sm leading-6 text-[#5a6b80]">
                     {note}
@@ -16160,12 +16196,13 @@ function ClientPortal() {
       ) : null}
 
       {isTeam ? (
-        <section className="rounded-[28px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
+        <section className="space-y-5">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
             <div>
-              <h3 className="text-[1.3rem] font-semibold tracking-[-0.03em] text-[#142132]">Team</h3>
+              <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#64748b]">Support</p>
+              <h3 className="mt-2 text-[1.85rem] font-semibold tracking-[-0.04em] text-[#142132]">Your team</h3>
               <p className="mt-1.5 max-w-3xl text-sm leading-6 text-[#6b7d93]">
-                The people and firms currently supporting your transaction across sales, legal transfer, finance, and operational coordination.
+                The people helping with your purchase, finance, transfer, and coordination.
               </p>
             </div>
             <span className="inline-flex items-center gap-2 rounded-full border border-[#dde7f1] bg-[#fbfdff] px-4 py-2 text-sm font-semibold text-[#64748b]">
@@ -16175,12 +16212,12 @@ function ClientPortal() {
           </div>
 
           {attorneyRolePlayerCards.length ? (
-            <section className="mt-5 rounded-[22px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+            <section className="rounded-[18px] border border-[#dbe5ef] bg-white px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
               <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                 <div>
-                  <h4 className="text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">Legal team handling this transaction</h4>
+                  <h4 className="text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">Legal team handling this purchase</h4>
                   <p className="mt-1.5 max-w-3xl text-sm leading-6 text-[#6b7d93]">
-                    Your transfer and legal milestones are managed by the firms below.
+                    Your transfer and legal checks are managed by the firms below.
                   </p>
                 </div>
                 <div className="rounded-[16px] border border-[#dce7f3] bg-white px-4 py-3 text-sm text-[#35546c]">
@@ -16206,9 +16243,13 @@ function ClientPortal() {
             </section>
           ) : null}
 
-          <div className="mt-5 grid gap-4 xl:grid-cols-2">
-            {teamMembers.map((member) => (
-              <article key={member.title} className="rounded-[22px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+          <div className="grid gap-4 xl:grid-cols-2">
+            {teamMembers.map((member) => {
+              const canMessageMember = Boolean(member.email)
+              const canCallMember = Boolean(member.phone)
+
+              return (
+              <article key={member.title} className="rounded-[18px] border border-[#dbe5ef] bg-white px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7b8ca2]">{member.title}</span>
@@ -16224,8 +16265,25 @@ function ClientPortal() {
                     <Users size={18} />
                   </span>
                 </div>
+                {canMessageMember || canCallMember ? (
+                  <div className="mt-4 flex flex-wrap gap-2 border-t border-[#e8eef5] pt-4">
+                    {canMessageMember ? (
+                      <a href={`mailto:${member.email}`} className="inline-flex min-h-[38px] items-center justify-center gap-2 rounded-[10px] bg-[#123f3a] px-3.5 py-2 text-xs font-semibold text-white transition hover:bg-[#0b312d]">
+                        <MessageCircle size={14} />
+                        Message
+                      </a>
+                    ) : null}
+                    {canCallMember ? (
+                      <a href={`tel:${member.phone}`} className="inline-flex min-h-[38px] items-center justify-center gap-2 rounded-[10px] border border-[#dbe5ef] bg-[#fbfdff] px-3.5 py-2 text-xs font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-white">
+                        <PhoneCall size={14} />
+                        Call
+                      </a>
+                    ) : null}
+                  </div>
+                ) : null}
               </article>
-            ))}
+              )
+            })}
           </div>
         </section>
       ) : null}
@@ -16419,7 +16477,7 @@ function ClientPortal() {
               </button>
             </form>
           ) : (
-            <p className="status-message">Reviews open once your transaction reaches registration/handover stage.</p>
+            <p className="status-message">Reviews open once your purchase reaches registration or key collection.</p>
           )}
 
           <ul className="request-list">

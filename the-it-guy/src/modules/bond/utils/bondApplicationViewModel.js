@@ -1055,6 +1055,7 @@ export function buildBondApplicationViewModel({
     application: {
       id: text(reference || transaction?.bond_application_id || transaction?.bondApplicationId || transaction?.application_reference || transaction?.id) || 'Pending',
       intent: applicationState?.application?.intent || 'bond_application',
+      summaryTitle: applicationState?.application?.intent === 'pre_approval' ? 'Pre-approval Summary' : 'Bond Application Summary',
       preApproval: applicationState?.application?.preApproval || null,
       status: applicationStatus,
       stage: toTitle(transaction?.stage || transaction?.current_stage || onboarding?.status || 'Onboarding'),

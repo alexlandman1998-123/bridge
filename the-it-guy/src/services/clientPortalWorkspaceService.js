@@ -2346,12 +2346,19 @@ function buildSellerPortalSaleDocuments(portalData = {}, workspaceMode = 'buying
   if (workspaceMode !== 'selling') return []
   const generatedMandateDocument = buildGeneratedMandateDocumentFromPacket(portalData, workspaceMode)
   const signedMandateDocument = buildSignedMandateDocumentFromPacket(portalData, workspaceMode)
+  const propertyDisclosureDocument = buildPropertyDisclosureDocumentFromFormData(portalData, workspaceMode)
   return [
     (signedMandateDocument || generatedMandateDocument)
       ? buildSellerSaleDocumentCenterItem(signedMandateDocument || generatedMandateDocument, {
           id: 'mandate',
           title: 'Mandate',
           description: 'Mandate document available for download.',
+        })
+      : null,
+    propertyDisclosureDocument
+      ? buildSellerSaleDocumentCenterItem(propertyDisclosureDocument, {
+          id: 'seller-declaration-disclosure',
+          description: 'Completed seller property disclosure available for download.',
         })
       : null,
   ].filter(Boolean)

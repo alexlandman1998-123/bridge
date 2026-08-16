@@ -233,10 +233,15 @@ export function LatestUpdatesCard({
   onCommentSubmit,
   onActionClick,
   heading = 'Latest Updates',
-  subtitle = 'Recent activity and messages from your transaction team.',
+  subtitle = 'Recent activity and messages from your team.',
+  showComposer = true,
+  maxUpdates = null,
+  className = '',
 }) {
+  const visibleUpdates = Number.isFinite(maxUpdates) ? updates.slice(0, maxUpdates) : updates
+
   return (
-    <aside className="rounded-[24px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)] xl:p-6">
+    <aside className={`rounded-[20px] border border-[#dbe5ef] bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.045)] xl:p-6 ${className}`}>
       <header className="mb-4 flex items-start justify-between gap-3">
         <div>
           <h3 className="text-[1.28rem] font-semibold tracking-[-0.03em] text-[#142132]">{heading}</h3>
@@ -248,8 +253,8 @@ export function LatestUpdatesCard({
       </header>
 
       <div className="space-y-3">
-        {updates.length ? (
-          updates.map((item) => (
+        {visibleUpdates.length ? (
+          visibleUpdates.map((item) => (
             <article key={item.id} className="rounded-[14px] border border-[#e1e9f2] bg-[#fbfdff] px-4 py-3 transition hover:border-[#cad9e8] hover:bg-white">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex flex-wrap items-center gap-2">
@@ -295,30 +300,32 @@ export function LatestUpdatesCard({
         ) : (
           <div className="rounded-[14px] border border-dashed border-[#d8e2ee] bg-[#fbfdff] px-4 py-4 text-sm leading-6 text-[#6b7d93]">
             <p className="font-semibold text-[#35546c]">No updates yet</p>
-            <p className="mt-1">Your transaction updates will appear here as your team shares progress.</p>
+            <p className="mt-1">Your updates will appear here as your team shares progress.</p>
           </div>
         )}
       </div>
 
-      <form onSubmit={onCommentSubmit} className="mt-4 rounded-[14px] border border-[#dbe5ef] bg-[#fbfdff] px-4 py-4 shadow-[0_8px_18px_rgba(15,23,42,0.04)]">
-        <label className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Ask your team</label>
-        <textarea
-          value={commentDraft}
-          onChange={(event) => onCommentDraftChange(event.target.value)}
-          rows={3}
-          placeholder="Ask your agent or transaction team a question..."
-          className="mt-2 w-full rounded-[12px] border border-[#dbe5ef] bg-white px-3 py-2.5 text-sm leading-6 text-[#142132] outline-none transition placeholder:text-[#8ca0b8] focus:border-[#b9cade] focus:ring-2 focus:ring-[#dce7f3]"
-        />
-        <div className="mt-3 flex justify-end">
-          <button
-            type="submit"
-            disabled={saving || !String(commentDraft || '').trim()}
-            className="inline-flex items-center justify-center rounded-[12px] bg-[#35546c] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#2d475d] disabled:cursor-not-allowed disabled:bg-[#9aa9b8]"
-          >
-            {saving ? 'Sending...' : 'Send Message'}
-          </button>
-        </div>
-      </form>
+      {showComposer ? (
+        <form onSubmit={onCommentSubmit} className="mt-4 rounded-[14px] border border-[#dbe5ef] bg-[#fbfdff] px-4 py-4 shadow-[0_8px_18px_rgba(15,23,42,0.04)]">
+          <label className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Ask your team</label>
+          <textarea
+            value={commentDraft}
+            onChange={(event) => onCommentDraftChange(event.target.value)}
+            rows={3}
+            placeholder="Ask your team a question..."
+            className="mt-2 w-full rounded-[12px] border border-[#dbe5ef] bg-white px-3 py-2.5 text-sm leading-6 text-[#142132] outline-none transition placeholder:text-[#8ca0b8] focus:border-[#b9cade] focus:ring-2 focus:ring-[#dce7f3]"
+          />
+          <div className="mt-3 flex justify-end">
+            <button
+              type="submit"
+              disabled={saving || !String(commentDraft || '').trim()}
+              className="inline-flex items-center justify-center rounded-[12px] bg-[#35546c] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#2d475d] disabled:cursor-not-allowed disabled:bg-[#9aa9b8]"
+            >
+              {saving ? 'Sending...' : 'Send Message'}
+            </button>
+          </div>
+        </form>
+      ) : null}
     </aside>
   )
 }

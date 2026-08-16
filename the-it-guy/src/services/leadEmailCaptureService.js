@@ -1048,7 +1048,8 @@ function extractPropertyTitle(text = '') {
     .replace(/^(new\s+)?(?:property24|private property|website)\s+enquiry\s*[:-]?\s*/i, '')
     .replace(/\b(?:listing|web|property)\s+(?:ref|reference|id|number)\s*[:#-]\s*[a-z0-9/_-]+/ig, '')
     .replace(/\s{2,}/g, ' ')
-    .replace(/^[-:|\s]+|[-:|\s]+$/g, '')
+    .trim()
+    .replace(/^[\u007c:-]+|[\u007c:-]+$/g, '')
   return cleanedSubject !== subject ? cleanedSubject : ''
 }
 

@@ -65,8 +65,14 @@ describe('CreateInviteDrawer', () => {
     expect(screen.getByLabelText('Invitee email').required).toBe(true)
     expect(screen.getByLabelText('Date').required).toBe(true)
     expect(screen.getByLabelText('Start time').required).toBe(true)
+    expect(screen.getByLabelText('End time')).toBeTruthy()
     expect(screen.getByLabelText('Location type').required).toBe(true)
     expect(screen.getByLabelText('Meeting link').required).toBe(true)
+    expect(screen.queryByLabelText('Boardroom')).toBeNull()
+    expect(screen.queryByText('All day')).toBeNull()
+    expect(screen.queryByText('Repeat')).toBeNull()
+    expect(screen.queryByText('Attorneys / Staff')).toBeNull()
+    expect(screen.queryByText('Reminder')).toBeNull()
   })
 
   it('switches conditional location controls without losing the form', () => {

@@ -541,6 +541,12 @@ export async function invokeEdgeFunction(functionName, { body, headers = {}, cli
       error: { message: 'Supabase client is not configured.' },
     }
   }
+  if (typeof client.functions?.invoke !== 'function') {
+    return {
+      data: null,
+      error: { message: 'Supabase Edge Functions are not configured on this client.' },
+    }
+  }
 
   const primaryResult = await client.functions.invoke(functionName, {
     body,

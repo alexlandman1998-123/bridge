@@ -4030,15 +4030,11 @@ async function fetchSellerClientPortalCorePayloadByToken(client, token, options 
   if (!normalizedToken || sellerPortalCorePayloadRpcUnavailable) return null
   const accessToken = normalizeText(options.accessToken)
   const requirePortalAccess = Boolean(options.requirePortalAccess)
-  const rpcArgs = requirePortalAccess || accessToken
-    ? {
-        p_token: normalizedToken,
-        p_access_token: accessToken || null,
-        p_require_access: requirePortalAccess,
-      }
-    : {
-        p_token: normalizedToken,
-      }
+  const rpcArgs = {
+    p_token: normalizedToken,
+    p_access_token: accessToken || null,
+    p_require_access: requirePortalAccess,
+  }
   const rpc = await client.rpc('bridge_private_listing_seller_portal_core_payload', rpcArgs)
   if (rpc.error) {
     if (
@@ -7625,7 +7621,7 @@ export async function getSellerOnboardingByToken(token, options = {}) {
       : await fetchSellerPortalOnboardingRowByToken(client, normalizedToken, portalPayload.listing.id)
     const hydratedPortalPayload = mergeSellerPortalOnboardingFormData(portalPayload, persistedOnboarding)
     const [branding, mediaByListingId] = await Promise.all([
-      resolveSellerOnboardingBrandingSnapshot(client, normalizedToken, portalPayload.listing),
+      resolveSellerOnboardingBrandingSnapshot(client, normalizedToken, hydratedPortalPayload.listing),
       fetchMediaRowsForListings(client, [hydratedPortalPayload.listing.id]),
     ])
     const listingWithMedia = attachDistributionMediaToListing(

@@ -10,6 +10,7 @@ import {
   requireClient,
 } from './attorneyFirmServiceShared'
 import { getAppointmentTypeLabel, normalizeAppointmentTypeKey } from '../lib/appointmentTypeDefinitions'
+import { checkAppointmentSchedulingIntegrityAsync } from '../lib/agencyPipelineService'
 import { applyAppointmentTemplate } from './appointmentTemplateService'
 import {
   notifyAppointmentParticipants,
@@ -122,6 +123,47 @@ function buildAppointmentDateTime(date = '', startTime = '', fallback = '') {
   const safeStart = normalizeText(startTime)
   if (!safeDate || !safeStart) return ''
   return `${safeDate}T${safeStart.length === 5 ? `${safeStart}:00` : safeStart}`
+}
+
+function deriveAttorneyInviteDateAndTimeParts(dateTimeValue = '', fallbackDate = '', fallbackStartTime = '', fallbackEndTime = '') {
+  const parsed = dateTimeValue ? new Date(dateTimeValue) : null
+  if (!parsed || Number.isNaN(parsed.getTime())) {
+    return {
+      date: normalizeText(fallbackDate),
+      startTime: normalizeText(fallbackStartTime).slice(0, 5),
+      endTime: normalizeText(fallbackEndTime).slice(0, 5),
+    }
+  }
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Africa/Johannesburg',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(parsed).reduce((accumulator, part) => {
+    accumulator[part.type] = part.value
+    return accumulator
+  }, {})
+  return {
+    date: `${parts.year}-${parts.month}-${parts.day}`,
+    startTime: `${parts.hour}:${parts.minute}`,
+    endTime: normalizeText(fallbackEndTime).slice(0, 5),
+  }
+}
+
+function mapAttorneyParticipantRowForScheduling(row = {}) {
+  return {
+    participantId: normalizeText(row?.participant_id),
+    appointmentId: normalizeText(row?.appointment_id),
+    organisationId: normalizeText(row?.organisation_id),
+    name: normalizeText(row?.name),
+    email: toLower(row?.email),
+    participantRole: normalizeText(row?.participant_role),
+    rsvpStatus: normalizeText(row?.rsvp_status || 'Pending'),
+    isRequired: row?.is_required !== false,
+  }
 }
 
 function buildStageLabel(transaction = {}) {
@@ -1670,6 +1712,83 @@ export async function createAttorneyAppointmentInvite(input = {}) {
     updated_at: nowIso,
   }
 
+  const recipientParticipantId = createUuid()
+  const participantRows = [
+    {
+      participant_id: recipientParticipantId,
+      appointment_id: appointmentId,
+      organisation_id: organisationId,
+      name: recipientName || 'Client',
+      email: recipientEmail,
+      participant_role: invite.participantRole || 'Client',
+      rsvp_status: 'Pending',
+      rsvp_expires_at: dateTime || null,
+      created_at: nowIso,
+      updated_at: nowIso,
+    },
+  ]
+
+  const attorneyName = normalizeText(invite.attorneyName || user?.user_metadata?.full_name || user?.email)
+  const attorneyEmail = toLower(invite.attorneyEmail || user?.email)
+  if (attorneyName || attorneyEmail) {
+    participantRows.push({
+      participant_id: createUuid(),
+      appointment_id: appointmentId,
+      organisation_id: organisationId,
+      name: attorneyName || 'Attorney',
+      email: attorneyEmail || null,
+      participant_role: 'Attorney',
+      rsvp_status: 'Accepted',
+      rsvp_expires_at: null,
+      created_at: nowIso,
+      updated_at: nowIso,
+    })
+  }
+
+  const inviteTimeParts = deriveAttorneyInviteDateAndTimeParts(dateTime, appointmentDate, startTime, endTime)
+  const schedulingIntegrity = await checkAppointmentSchedulingIntegrityAsync(
+    organisationId,
+    {
+      appointmentId,
+      appointmentType,
+      title: insertPayload.title,
+      date: inviteTimeParts.date,
+      startTime: inviteTimeParts.startTime,
+      endTime: inviteTimeParts.endTime,
+      dateTime,
+      transactionId,
+      resourceId: invite.resourceId || null,
+      location: invite.location || null,
+      participants: participantRows.map(mapAttorneyParticipantRowForScheduling),
+      linkedWorkflowStage: insertPayload.linked_workflow_stage || null,
+      linkedTransactionStage: insertPayload.linked_transaction_stage || null,
+      allowOutsideBusinessHours: false,
+      status: insertPayload.status,
+    },
+    {
+      excludeAppointmentId: appointmentId,
+      allowOutsideBusinessHours: false,
+      maxSuggestions: 5,
+    },
+  )
+
+  if (schedulingIntegrity?.hasHardConflicts) {
+    const conflictError = new Error('Appointment has hard scheduling conflicts.')
+    conflictError.code = 'APPOINTMENT_HARD_CONFLICT'
+    conflictError.schedulingConflicts = schedulingIntegrity
+    await recordAttorneyCalendarRolloutEvent('persistence_failed', {
+      organisationId,
+      transactionId,
+      appointmentId,
+      metadata: {
+        stage: 'scheduling_integrity',
+        code: conflictError.code,
+        hardConflictCount: schedulingIntegrity.hardConflicts?.length || 0,
+      },
+    }, { client })
+    throw conflictError
+  }
+
   let appointmentResult = await client
     .from('appointments')
     .insert(insertPayload)
@@ -1703,39 +1822,6 @@ export async function createAttorneyAppointmentInvite(input = {}) {
       metadata: { stage: 'appointment', code: appointmentResult.error.code || null },
     }, { client })
     throw appointmentResult.error
-  }
-
-  const recipientParticipantId = createUuid()
-  const participantRows = [
-    {
-      participant_id: recipientParticipantId,
-      appointment_id: appointmentId,
-      organisation_id: organisationId,
-      name: recipientName || 'Client',
-      email: recipientEmail,
-      participant_role: invite.participantRole || 'Client',
-      rsvp_status: 'Pending',
-      rsvp_expires_at: dateTime || null,
-      created_at: nowIso,
-      updated_at: nowIso,
-    },
-  ]
-
-  const attorneyName = normalizeText(invite.attorneyName || user?.user_metadata?.full_name || user?.email)
-  const attorneyEmail = toLower(invite.attorneyEmail || user?.email)
-  if (attorneyName || attorneyEmail) {
-    participantRows.push({
-      participant_id: createUuid(),
-      appointment_id: appointmentId,
-      organisation_id: organisationId,
-      name: attorneyName || 'Attorney',
-      email: attorneyEmail || null,
-      participant_role: 'Attorney',
-      rsvp_status: 'Accepted',
-      rsvp_expires_at: null,
-      created_at: nowIso,
-      updated_at: nowIso,
-    })
   }
 
   let participantResult = await client.from('appointment_participants').insert(participantRows)

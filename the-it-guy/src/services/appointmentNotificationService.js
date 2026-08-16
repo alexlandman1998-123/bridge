@@ -1,6 +1,8 @@
 import { getEdgeFunctionInvokeError, invokeEdgeFunction, supabase, isSupabaseConfigured } from '../lib/supabaseClient'
 import { createClientPortalNotification } from './clientPortalNotificationsService'
 import { getAppointmentTypeTemplate } from './appointmentTemplateService'
+import { prepareNotificationOutbox } from './notificationOutboxService'
+import { NOTIFICATION_MODE } from './communicationDeliveryService'
 
 const APPOINTMENT_EVENT_TYPES = new Set([
   'appointment_scheduled',
@@ -117,6 +119,11 @@ function serializeNotificationError(error = {}) {
     hint: error?.hint ?? null,
     status: error?.status ?? null,
   }
+}
+
+function isMissingOutboxTableError(error) {
+  const message = String(error?.message || error?.details || '').toLowerCase()
+  return error?.code === '42P01' || message.includes('notification_events') || message.includes('notification outbox is unavailable')
 }
 
 function formatDate(appointment = {}) {
@@ -504,6 +511,60 @@ async function sendAppointmentEmailToRecipient({ recipientEmail, eventType, appo
   return { sent: true, status: 'sent', reason: '', response: data || null }
 }
 
+async function enqueueAppointmentNotificationRetry({
+  appointment = {},
+  participant = {},
+  eventType = '',
+  title = '',
+  message = '',
+  dedupeKey = '',
+  emailResult = {},
+  metadata = {},
+} = {}) {
+  const organisationId = normalizeText(appointment?.organisation_id || appointment?.organisationId)
+  const recipientEmail = normalizeLower(participant?.email)
+  if (!organisationId || !recipientEmail) return null
+
+  try {
+    const prepared = await prepareNotificationOutbox({
+      organisationId,
+      transactionId: normalizeText(appointment?.transaction_id || appointment?.transactionId),
+      appointmentId: normalizeText(appointment?.appointment_id || appointment?.appointmentId),
+      communicationType: eventToEmailType(eventType),
+      notificationMode: NOTIFICATION_MODE.EMAIL,
+      recipientName: normalizeText(participant?.name || recipientEmail),
+      recipientRole: normalizeParticipantRole(participant?.participantRole),
+      email: recipientEmail,
+      subject: title || resolveEventTitle(eventType),
+      message: message || resolveEventMessage(eventType, appointment),
+      source: 'appointment_notifications',
+      dedupeKey: `appointment-notification-retry:${normalizeText(dedupeKey) || normalizeText(appointment?.appointment_id || appointment?.appointmentId)}:${normalizeEventType(eventType)}`,
+      metadata: {
+        ...(metadata && typeof metadata === 'object' && !Array.isArray(metadata) ? metadata : {}),
+        appointmentNotificationRetry: true,
+        originalDeliveryStatus: normalizeText(emailResult?.status || 'failed'),
+        originalDeliveryReason: normalizeText(emailResult?.reason || emailResult?.error || ''),
+        appointmentType: normalizeText(appointment?.appointment_type || appointment?.appointmentType),
+        appointmentTitle: normalizeText(appointment?.title),
+        appointmentDate: formatDate(appointment),
+        appointmentTime: formatTime(appointment),
+        recipientParticipantId: normalizeText(participant?.participantId),
+      },
+    })
+    return prepared?.items?.[0] || null
+  } catch (outboxError) {
+    if (!isMissingOutboxTableError(outboxError)) {
+      console.warn('[appointment-notifications] retry outbox enqueue failed', {
+        appointmentId: normalizeText(appointment?.appointment_id || appointment?.appointmentId),
+        eventType: normalizeEventType(eventType),
+        recipientEmailPresent: Boolean(recipientEmail),
+        reason: serializeNotificationError(outboxError),
+      })
+    }
+    return null
+  }
+}
+
 function buildReminderEntries({ appointment = {}, participants = [], includeDocsReminder = false }) {
   const appointmentStart = buildAppointmentDateTime(appointment)
   if (!appointmentStart) return []
@@ -801,6 +862,30 @@ export async function notifyAppointmentParticipants(appointmentId, eventType, op
       }
     }
 
+    let outboxRetry = null
+    if (!emailResult.sent && emailResult.status === 'failed') {
+      outboxRetry = await enqueueAppointmentNotificationRetry({
+        appointment,
+        participant,
+        eventType: normalizedEventType,
+        title,
+        message,
+        dedupeKey,
+        emailResult,
+        metadata: options?.metadata || {},
+      })
+      if (outboxRetry?.id) {
+        emailResult = {
+          ...emailResult,
+          status: 'queued',
+          reason: 'outbox_retry_queued',
+          originalStatus: 'failed',
+          originalReason: normalizeText(emailResult.reason),
+          outboxEventId: outboxRetry.id,
+        }
+      }
+    }
+
     let inAppStatus = 'skipped'
     try {
       if (visibility === 'client_visible' && ['buyer', 'seller'].includes(role) && appointment?.transaction_id) {
@@ -870,6 +955,7 @@ export async function notifyAppointmentParticipants(appointmentId, eventType, op
       eventError,
       participant,
       email: emailResult,
+      outbox: outboxRetry,
       inAppStatus,
     })
   }

@@ -9112,6 +9112,303 @@
 }
 
 /* Transaction workspace UX refinement */
+.conveyancing-workspace-fit {
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: clip;
+}
+
+.conveyancing-workspace-fit :where(
+  section,
+  article,
+  aside,
+  main,
+  header,
+  nav,
+  form,
+  fieldset,
+  label,
+  div,
+  dl,
+  dt,
+  dd,
+  ul,
+  ol,
+  li,
+  table,
+  thead,
+  tbody,
+  tr,
+  th,
+  td
+) {
+  min-width: 0;
+}
+
+.conveyancing-workspace-fit :where(h1, h2, h3, h4, h5, h6, p, span, strong, em, small, dt, dd, li, label) {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.conveyancing-workspace-fit :where(button, a, summary, input, select, textarea) {
+  max-width: 100%;
+}
+
+.conveyancing-workspace-fit :where(button:not([aria-label]), a:not([aria-label]), summary) {
+  min-width: 0;
+  white-space: normal;
+}
+
+.conveyancing-workspace-fit :where(button:not([aria-label]), a:not([aria-label])) {
+  height: auto;
+  min-height: 2.5rem;
+}
+
+.conveyancing-workspace-fit :where([class*="overflow-x-auto"]) {
+  max-width: 100%;
+  overscroll-behavior-x: contain;
+}
+
+.conveyancing-workspace-fit :where(table) {
+  max-width: none;
+}
+
+.conveyancing-workspace-fit :where(article, section, td, dd, li) :where(.truncate) {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.conveyancing-workspace-fit :where(.line-clamp-2, .line-clamp-3, .line-clamp-4) {
+  overflow-wrap: anywhere;
+}
+
+.conveyancing-workspace-fit .archline-matter-header {
+  max-width: 100%;
+  overflow-x: clip;
+}
+
+.conveyancing-workspace-fit .archline-matter-header-topbar {
+  min-width: 0;
+}
+
+.conveyancing-workspace-fit .archline-matter-header-actions {
+  max-width: 100%;
+}
+
+.conveyancing-workspace-fit .archline-matter-header-actions button {
+  flex: 0 1 auto;
+}
+
+.conveyancing-workspace-fit .archline-matter-header-media {
+  aspect-ratio: 16 / 10;
+}
+
+.conveyancing-workspace-fit .archline-matter-property-title {
+  max-width: 26ch;
+  overflow-wrap: anywhere;
+}
+
+.conveyancing-workspace-fit .archline-matter-header nav button {
+  align-self: stretch;
+  white-space: normal;
+}
+
+.conveyancing-workspace-fit .archline-matter-header nav button span {
+  overflow-wrap: anywhere;
+}
+
+.conveyancing-workspace-fit .archline-transfer-workspace {
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: clip;
+}
+
+.conveyancing-workspace-fit .archline-transfer-workspace :where(button, input, select, textarea) {
+  max-width: 100%;
+}
+
+.conveyancing-workspace-fit .archline-transfer-workspace :where(button:not([aria-label])) {
+  min-width: 0;
+  white-space: normal;
+}
+
+.conveyancing-workspace-fit .archline-transfer-workspace :where(.truncate) {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.conveyancing-workspace-fit .archline-transfer-workspace :where(.line-clamp-2, .line-clamp-3) {
+  overflow-wrap: anywhere;
+}
+
+.conveyancing-workspace-fit .archline-transfer-workspace :where([class*="overflow-y-auto"]) {
+  max-width: 100%;
+}
+
+.conveyancing-workspace-fit .archline-workflow-workspace {
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: clip;
+}
+
+.conveyancing-workspace-fit .archline-workflow-workspace :where(button, input, select, textarea) {
+  max-width: 100%;
+}
+
+.conveyancing-workspace-fit .archline-workflow-workspace :where(button:not([aria-label])) {
+  min-width: 0;
+  white-space: normal;
+}
+
+.conveyancing-workspace-fit .archline-workflow-workspace :where(table) {
+  min-width: 720px;
+}
+
+.conveyancing-workspace-fit .archline-workflow-workspace :where(th, td) {
+  vertical-align: top;
+  white-space: normal;
+}
+
+.conveyancing-workspace-fit .archline-workflow-workspace :where(.truncate) {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.conveyancing-workspace-fit .archline-documents-workspace {
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: clip;
+}
+
+.conveyancing-workspace-fit .archline-documents-workspace :where(button, a, input, select, textarea) {
+  max-width: 100%;
+}
+
+.conveyancing-workspace-fit .archline-documents-workspace :where(button:not([aria-label]), a:not([aria-label])) {
+  min-width: 0;
+  white-space: normal;
+}
+
+.conveyancing-workspace-fit .archline-documents-workspace :where(.truncate) {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.conveyancing-workspace-fit :where(.archline-matter-command-center, .attorney-role-workspace-panel, .archline-workflow-details-drawer) {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.conveyancing-workspace-fit :where(.archline-matter-command-center, .attorney-role-workspace-panel, .archline-workflow-details-drawer) :where(button, a, input, select, textarea) {
+  max-width: 100%;
+}
+
+.conveyancing-workspace-fit :where(.archline-matter-command-center, .attorney-role-workspace-panel, .archline-workflow-details-drawer) :where(button:not([aria-label]), a:not([aria-label])) {
+  min-width: 0;
+  white-space: normal;
+}
+
+.conveyancing-workspace-fit :where(.archline-matter-command-center, .attorney-role-workspace-panel, .archline-workflow-details-drawer) :where(.truncate) {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+@media (max-width: 640px) {
+  .conveyancing-workspace-fit :where([class*="grid-cols-2"], [class*="grid-cols-3"], [class*="grid-cols-4"], [class*="grid-cols-5"], [class*="grid-cols-6"], [class*="grid-cols-7"]) {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .conveyancing-workspace-fit :where([class*="justify-between"]) {
+    flex-wrap: wrap;
+  }
+
+  .conveyancing-workspace-fit :where(button:not([aria-label]), a:not([aria-label])) {
+    align-items: center;
+    justify-content: center;
+    line-height: 1.35;
+  }
+
+  .conveyancing-workspace-fit .archline-matter-header-topbar {
+    align-items: stretch;
+  }
+
+  .conveyancing-workspace-fit .archline-matter-header-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .conveyancing-workspace-fit .archline-matter-header-actions button:not([aria-label]) {
+    flex: 1 1 9rem;
+  }
+
+  .conveyancing-workspace-fit .archline-matter-header-media {
+    min-height: 190px;
+  }
+
+  .conveyancing-workspace-fit .archline-matter-property-title {
+    max-width: 100%;
+    font-size: 1.75rem;
+  }
+
+  .conveyancing-workspace-fit .archline-matter-header nav button {
+    flex: 0 0 min(10.5rem, 78vw);
+    min-width: 0;
+  }
+
+  .conveyancing-workspace-fit .archline-transfer-workspace {
+    position: static;
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .conveyancing-workspace-fit .archline-transfer-workspace :where(aside, main) {
+    min-height: 0;
+  }
+
+  .conveyancing-workspace-fit .archline-transfer-workspace :where([class*="overflow-y-auto"]) {
+    max-height: none;
+    overflow-y: visible;
+  }
+
+  .conveyancing-workspace-fit .archline-transfer-workspace :where(button:not([aria-label])) {
+    min-height: 2.5rem;
+    text-align: left;
+  }
+
+  .conveyancing-workspace-fit .archline-workflow-workspace {
+    overflow: visible;
+  }
+
+  .conveyancing-workspace-fit .archline-workflow-workspace :where(button:not([aria-label])) {
+    min-height: 2.5rem;
+    text-align: left;
+  }
+
+  .conveyancing-workspace-fit .archline-documents-workspace {
+    overflow: visible;
+  }
+
+  .conveyancing-workspace-fit .archline-documents-workspace :where(button:not([aria-label]), a:not([aria-label])) {
+    min-height: 2.5rem;
+    text-align: left;
+  }
+
+  .conveyancing-workspace-fit :where(.archline-matter-command-center, .attorney-role-workspace-panel, .archline-workflow-details-drawer) {
+    overflow: visible;
+  }
+
+  .conveyancing-workspace-fit :where(.archline-matter-command-center, .attorney-role-workspace-panel, .archline-workflow-details-drawer) :where(button:not([aria-label]), a:not([aria-label])) {
+    min-height: 2.5rem;
+    text-align: left;
+  }
+}
+
 .workspace-view-switcher {
   display: flex;
   justify-content: flex-start;

@@ -45737,6 +45737,40 @@ export async function uploadClientPortalDocument({
     throw new Error('A file is required.')
   }
 
+  let transactionForBondNotifications = null
+  let onboardingFormDataForBondNotifications = {}
+  let previousReadiness = null
+  try {
+    const transactionQuery = await client
+      .from('transactions')
+      .select(
+        'id, finance_type, finance_managed_by, purchaser_type, buyer_id, buyer_name, buyer_email, assigned_agent, assigned_agent_email, bond_originator, assigned_bond_originator_email, bond_workspace_id, primary_bond_consultant_user_id, property_address_line_1, property_description, development_id, unit_id',
+      )
+      .eq('id', link.transaction_id)
+      .maybeSingle()
+
+    if (transactionQuery.error) {
+      if (
+        !isMissingTableError(transactionQuery.error, 'transactions') &&
+        !isMissingSchemaError(transactionQuery.error) &&
+        !isPermissionDeniedError(transactionQuery.error)
+      ) {
+        throw transactionQuery.error
+      }
+    } else {
+      transactionForBondNotifications = transactionQuery.data || null
+    }
+
+    const purchaserType = normalizePurchaserType(
+      transactionForBondNotifications?.purchaser_type || transactionForBondNotifications?.purchaserType || 'individual',
+    )
+    const formDataRow = await fetchOnboardingFormDataForTransaction(client, link.transaction_id, purchaserType)
+    onboardingFormDataForBondNotifications = formDataRow?.formData || formDataRow?.form_data || {}
+    previousReadiness = await computeTransactionReadinessSnapshot(client, link.transaction_id)
+  } catch (readinessError) {
+    console.warn('Client portal upload readiness baseline skipped', readinessError)
+  }
+
   const normalizedRequiredDocumentKey = normalizeDocumentKeyCandidate(requiredDocumentKey)
   const normalizedInputDocumentType = normalizePortalDocumentType(documentType)
   const isReservationDepositProofUpload =
@@ -45934,7 +45968,7 @@ export async function uploadClientPortalDocument({
     actorUserId: null,
   })
 
-  await runDocumentAutomationIfPossible(client, {
+  const readiness = await runDocumentAutomationIfPossible(client, {
     transactionId: link.transaction_id,
     documentId: result.data.id,
     documentName: result.data.name,
@@ -45945,6 +45979,72 @@ export async function uploadClientPortalDocument({
     actorUserId: null,
     source: normalizeNullableText(source) || 'client_portal_upload',
   })
+
+  const financeTypeForBondNotifications =
+    readiness?.financeType ||
+    transactionForBondNotifications?.finance_type ||
+    transactionForBondNotifications?.financeType
+  const financeManagedByForBondNotifications = deriveFinanceManagedBy({
+    financeType: financeTypeForBondNotifications,
+    financeManagedBy:
+      transactionForBondNotifications?.finance_managed_by ||
+      transactionForBondNotifications?.financeManagedBy,
+    formData: onboardingFormDataForBondNotifications,
+  })
+  if (
+    transactionForBondNotifications &&
+    isBondFinanceType(financeTypeForBondNotifications) &&
+    financeManagedByForBondNotifications === 'bond_originator'
+  ) {
+    try {
+      const notificationTransaction = {
+        ...transactionForBondNotifications,
+        finance_type: financeTypeForBondNotifications,
+        finance_managed_by: financeManagedByForBondNotifications,
+        buyer_name: buyerName || transactionForBondNotifications.buyer_name || null,
+        buyer_email: buyerEmail || transactionForBondNotifications.buyer_email || null,
+      }
+      const notificationMetadata = {
+        source: normalizeNullableText(source) || 'client_portal_upload',
+        documentKey: normalizedRequiredDocumentKey || null,
+        documentType: normalizedDocumentType,
+        documentId: result.data.id,
+        financeManagedBy: financeManagedByForBondNotifications,
+      }
+      const bondDocumentsCompleteResult = await checkAndNotifyBondDocumentsComplete({
+        transaction: notificationTransaction,
+        previousMissingCount: previousReadiness?.missingRequiredDocs,
+        readiness,
+        actor: { roleType: 'client' },
+        metadata: notificationMetadata,
+        client,
+      })
+      const bondProgress = getBondApplicationProgress({
+        transaction: notificationTransaction,
+        onboardingFormData: onboardingFormDataForBondNotifications,
+      })
+      await checkAndNotifyBondApplicationReadyForReview({
+        transaction: notificationTransaction,
+        previousReadyForReview: Boolean(
+          previousReadiness?.docsComplete && bondProgress.status === BOND_APPLICATION_PROGRESS_STATUSES.SUBMITTED,
+        ),
+        currentReadyForReview: Boolean(
+          readiness?.docsComplete && bondProgress.status === BOND_APPLICATION_PROGRESS_STATUSES.SUBMITTED,
+        ),
+        actor: { roleType: 'client' },
+        metadata: notificationMetadata,
+        client,
+      })
+      await notifyAttorneysForBondDocumentsComplete(client, {
+        transactionId: link.transaction_id,
+        result: bondDocumentsCompleteResult,
+        actor: { roleType: 'client' },
+        metadata: notificationMetadata,
+      })
+    } catch (bondNotificationError) {
+      console.warn('Client portal bond document completion notification failed', bondNotificationError)
+    }
+  }
 
   return {
     ...result.data,

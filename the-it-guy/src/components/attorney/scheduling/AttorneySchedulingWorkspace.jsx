@@ -42,6 +42,7 @@ import {
 import {
   APPOINTMENT_RESCHEDULE_TIMEZONE,
   buildAppointmentRescheduleProposalContract,
+  buildAppointmentRescheduleResolutionContract,
 } from '../../../core/appointments/appointmentRescheduleContract'
 
 const BUSINESS_DAY_START = 8
@@ -139,19 +140,12 @@ const STATUS_TONES = {
 
 const VIEW_MODES = ['Day', 'Week', 'Month', 'Agenda']
 const STAFF_COLORS = ['#2563eb', '#16a34a', '#7c3aed', '#f97316', '#db2777', '#0891b2', '#65a30d', '#dc2626']
-const EVENT_TYPE_CARDS = [
-  { value: 'signing', appointmentType: 'transfer_signing', label: 'Signing', icon: Send },
-  { value: 'meeting', appointmentType: 'attorney_consultation', label: 'Meeting', icon: Users },
-  { value: 'deadline', appointmentType: 'internal_meeting', label: 'Deadline', icon: Clock3 },
-  { value: 'task', appointmentType: 'internal_meeting', label: 'Task', icon: CheckCircle2 },
-  { value: 'other', appointmentType: 'internal_meeting', label: 'Other', icon: LayoutGrid },
-]
-const RELATED_TO_OPTIONS = [
-  { value: 'buyer', label: 'Buyer' },
-  { value: 'seller', label: 'Seller' },
-  { value: 'both', label: 'Both' },
-]
-
+const INVITE_TYPE_ICONS = {
+  transfer_signing: Send,
+  bond_signing: Send,
+  attorney_consultation: Users,
+  internal_meeting: CheckCircle2,
+}
 function normalizeText(value = '') {
   return String(value || '').trim()
 }
@@ -217,6 +211,24 @@ function formatTime(value) {
   const parsed = new Date(value || '')
   if (Number.isNaN(parsed.getTime())) return 'Time pending'
   return parsed.toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' })
+}
+
+function timeInputToMinutes(value = '') {
+  const match = normalizeText(value).match(/^(\d{2}):(\d{2})$/)
+  if (!match) return Number.NaN
+  const hours = Number(match[1])
+  const minutes = Number(match[2])
+  if (hours > 23 || minutes > 59) return Number.NaN
+  return (hours * 60) + minutes
+}
+
+function resolveInviteDraftDurationMinutes(draft = {}, fallbackMinutes = 60) {
+  const startMinutes = timeInputToMinutes(draft.startTime)
+  const endMinutes = timeInputToMinutes(draft.endTime)
+  if (Number.isFinite(startMinutes) && Number.isFinite(endMinutes) && endMinutes > startMinutes) {
+    return endMinutes - startMinutes
+  }
+  return fallbackMinutes
 }
 
 function formatDateTime(value) {
@@ -712,15 +724,9 @@ function createInviteDraftDefaults(selectedDate = new Date()) {
   return {
     ...DEFAULT_ATTORNEY_INVITE_DRAFT,
     title: '',
-    eventType: 'signing',
     date: toDateInputValue(start),
     startTime: `${String(start.getHours()).padStart(2, '0')}:${String(start.getMinutes()).padStart(2, '0')}`,
     endTime: `${String(Math.min(start.getHours() + 1, 23)).padStart(2, '0')}:${String(start.getMinutes()).padStart(2, '0')}`,
-    allDay: false,
-    repeat: 'none',
-    relatedTo: 'buyer',
-    visibility: 'shared_role_players',
-    reminder: '15',
     sendNotifications: true,
   }
 }
@@ -739,10 +745,10 @@ function SchedulingPageHeader({ onCreateInvite, rolloutStatus }) {
           className="scheduling-primary-action"
           onClick={onCreateInvite}
           disabled={!inviteEnabled}
-          title={inviteEnabled ? 'Create a new event' : 'New Event is outside the active rollout cohort'}
+          title={inviteEnabled ? 'Create attorney invite' : 'Create Invite is outside the active rollout cohort'}
         >
           <Plus size={16} />
-          New Event
+          Create Invite
         </button>
       </div>
     </section>
@@ -1129,7 +1135,7 @@ function CalendarSurface({ rows, viewMode, setViewMode, selectedDate, setSelecte
   )
 }
 
-function ReschedulePanel({ rows, onPropose, onResolve, onSelect }) {
+function ReschedulePanel({ rows, onPropose, onResolve, onSelect, busyId = '' }) {
   return (
     <section className="scheduling-panel">
       <div className="scheduling-panel-header">
@@ -1153,9 +1159,13 @@ function ReschedulePanel({ rows, onPropose, onResolve, onSelect }) {
                 {row.reason ? <small>{row.reason}</small> : null}
               </button>
               <div className="reschedule-actions">
-                <button type="button" onClick={() => onResolve(row, 'accepted')}>Approve</button>
-                <button type="button" onClick={() => onResolve(row, 'rejected')}>Decline</button>
-                <button type="button" onClick={() => onPropose(row)}>Counter time</button>
+                <button type="button" disabled={Boolean(busyId)} onClick={() => onResolve(row, 'accepted')}>
+                  {busyId === `resolve-${row.requestId}-accepted` ? 'Approving...' : 'Approve'}
+                </button>
+                <button type="button" disabled={Boolean(busyId)} onClick={() => onResolve(row, 'rejected')}>
+                  {busyId === `resolve-${row.requestId}-rejected` ? 'Declining...' : 'Decline'}
+                </button>
+                <button type="button" disabled={Boolean(busyId)} onClick={() => onPropose(row)}>Counter time</button>
               </div>
             </article>
           ))}
@@ -1288,7 +1298,6 @@ export function CreateInviteDrawer({
   setDraft,
   matterOptions,
   resources,
-  staffOptions = [],
   busyId,
   onClose,
   onSubmit,
@@ -1297,7 +1306,8 @@ export function CreateInviteDrawer({
   const selectedInviteType = getInviteType(draft.appointmentType)
   const selectedMatter = matterOptions.find((matter) => matter.matterId === draft.matterId)
   const isBoardroomInvite = draft.locationMode === ATTORNEY_INVITE_LOCATION_MODES.boardroom
-  const selectedEventType = draft.eventType || 'signing'
+  const isVideoInvite = draft.locationMode === ATTORNEY_INVITE_LOCATION_MODES.videoCall
+  const isPhoneInvite = draft.locationMode === ATTORNEY_INVITE_LOCATION_MODES.phoneCall
   const matterRequired = draft.appointmentType !== 'internal_meeting'
   const searchableMatterOptions = matterOptions.filter((matter) => {
     const query = normalizeLower(draft.matterSearch || '')
@@ -1310,14 +1320,14 @@ export function CreateInviteDrawer({
   }
 
   return (
-    <aside className="invite-drawer event-modal-backdrop" aria-label="Create new calendar event">
+    <aside className="invite-drawer event-modal-backdrop" aria-label="Create attorney invite">
       <form className="invite-drawer-card event-modal-card" onSubmit={onSubmit}>
         <div className="event-modal-header">
           <div className="event-modal-title">
             <span><CalendarDays size={18} /></span>
             <div>
-              <h2>New Event</h2>
-              <p>Schedule an appointment, deadline or important action.</p>
+              <h2>Create attorney invite</h2>
+              <p>Schedule a supported attorney appointment and send the invite.</p>
             </div>
           </div>
           <button type="button" onClick={onClose} aria-label="Close create invite"><X size={17} /></button>
@@ -1326,8 +1336,9 @@ export function CreateInviteDrawer({
         <div className="event-modal-body">
           <div className="event-modal-column">
             <label className="drawer-field invite-field-wide">
-              <span>Event Title *</span>
+              <span>Invite title *</span>
               <input
+                aria-label="Invite title"
                 value={draft.title || ''}
                 onChange={(event) => updateDraft('title', event.target.value)}
                 placeholder="e.g. OTP Signing with Buyer"
@@ -1336,26 +1347,26 @@ export function CreateInviteDrawer({
             </label>
 
             <div className="drawer-field invite-field-wide">
-              <span>Event Type *</span>
-              <div className="event-type-card-list" role="radiogroup" aria-label="Event type">
-                {EVENT_TYPE_CARDS.map((type) => {
-                  const Icon = type.icon
+              <span>Invite type *</span>
+              <div className="event-type-card-list" role="radiogroup" aria-label="Invite type">
+                {ATTORNEY_INVITE_TYPES.map((type) => {
+                  const Icon = INVITE_TYPE_ICONS[type.value] || CalendarDays
                   return (
                     <button
                       key={type.value}
                       type="button"
-                      className={`event-type-card ${selectedEventType === type.value ? 'is-active' : ''}`}
-                      aria-pressed={selectedEventType === type.value}
+                      className={`event-type-card ${draft.appointmentType === type.value ? 'is-active' : ''}`}
+                      aria-pressed={draft.appointmentType === type.value}
                       onClick={() => {
                         setDraft((previous) => ({
                           ...previous,
-                          eventType: type.value,
-                          appointmentType: type.appointmentType,
+                          appointmentType: type.value,
                         }))
                       }}
                     >
                       <Icon size={17} />
                       <strong>{type.label}</strong>
+                      <small>{type.durationMinutes} min</small>
                     </button>
                   )
                 })}
@@ -1365,12 +1376,17 @@ export function CreateInviteDrawer({
             <div className="drawer-field invite-field-wide">
               <span>Date &amp; Time *</span>
               <div className="event-date-grid">
-                <input type="date" value={draft.date} onChange={(event) => updateDraft('date', event.target.value)} required />
-                <input type="time" value={draft.startTime} onChange={(event) => updateDraft('startTime', event.target.value)} required />
-                <input type="time" value={draft.endTime || ''} onChange={(event) => updateDraft('endTime', event.target.value)} />
-                <label className="event-check-row">
-                  <input type="checkbox" checked={Boolean(draft.allDay)} onChange={(event) => updateDraft('allDay', event.target.checked)} />
-                  <span>All day</span>
+                <label>
+                  <span>Date</span>
+                  <input aria-label="Date" type="date" value={draft.date} onChange={(event) => updateDraft('date', event.target.value)} required />
+                </label>
+                <label>
+                  <span>Start time</span>
+                  <input aria-label="Start time" type="time" value={draft.startTime} onChange={(event) => updateDraft('startTime', event.target.value)} required />
+                </label>
+                <label>
+                  <span>End time</span>
+                  <input aria-label="End time" type="time" value={draft.endTime || ''} onChange={(event) => updateDraft('endTime', event.target.value)} />
                 </label>
               </div>
               <select value={draft.timezone || APPOINTMENT_RESCHEDULE_TIMEZONE} onChange={(event) => updateDraft('timezone', event.target.value)}>
@@ -1378,30 +1394,24 @@ export function CreateInviteDrawer({
               </select>
             </div>
 
-            <label className="drawer-field invite-field-wide">
-              <span>Repeat</span>
-              <select value={draft.repeat || 'none'} onChange={(event) => updateDraft('repeat', event.target.value)}>
-                <option value="none">Does not repeat</option>
-                <option value="daily">Daily</option>
-                <option value="weekly">Weekly</option>
-                <option value="monthly">Monthly</option>
-              </select>
-            </label>
-
             <div className="drawer-field invite-field-wide">
-              <span>Location</span>
-              <select value={draft.locationMode} onChange={(event) => updateDraft('locationMode', event.target.value)} required>
+              <span>Location type</span>
+              <select aria-label="Location type" value={draft.locationMode} onChange={(event) => updateDraft('locationMode', event.target.value)} required>
                 {ATTORNEY_INVITE_LOCATION_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>{option.label}</option>
                 ))}
               </select>
               {isBoardroomInvite ? null : (
-                <input
-                  value={draft.location}
-                  onChange={(event) => updateDraft('location', event.target.value)}
-                  placeholder={draft.locationMode === ATTORNEY_INVITE_LOCATION_MODES.videoCall ? 'Microsoft Teams, Zoom or meeting link' : 'Office, external address or phone details'}
-                  required
-                />
+                <label className="drawer-nested-field">
+                  <span>{isVideoInvite ? 'Meeting link' : isPhoneInvite ? 'Phone details' : 'Location'}</span>
+                  <input
+                    aria-label={isVideoInvite ? 'Meeting link' : isPhoneInvite ? 'Phone details' : 'Location'}
+                    value={draft.location}
+                    onChange={(event) => updateDraft('location', event.target.value)}
+                    placeholder={isVideoInvite ? 'Microsoft Teams, Zoom or meeting link' : 'Office, external address or phone details'}
+                    required
+                  />
+                </label>
               )}
             </div>
 
@@ -1420,13 +1430,15 @@ export function CreateInviteDrawer({
             <div className="drawer-field invite-field-wide">
               <span>Invitees</span>
               <input
+                aria-label="Invitee email"
                 value={draft.recipientEmail}
                 onChange={(event) => updateDraft('recipientEmail', event.target.value)}
-                placeholder="Search to add attorneys, staff or external contacts..."
+                placeholder="Invitee email address"
                 type="email"
                 required
               />
               <input
+                aria-label="Invitee name"
                 value={draft.recipientName}
                 onChange={(event) => updateDraft('recipientName', event.target.value)}
                 placeholder="Invitee name"
@@ -1436,13 +1448,13 @@ export function CreateInviteDrawer({
 
           <div className="event-modal-column event-modal-side">
             <div className="drawer-field invite-field-wide">
-              <span>Link to Matter</span>
+              <span>Matter</span>
               <input
                 value={draft.matterSearch || ''}
                 onChange={(event) => updateDraft('matterSearch', event.target.value)}
                 placeholder="Search matter number or address..."
               />
-              <select value={draft.matterId} onChange={(event) => updateDraft('matterId', event.target.value)} required={matterRequired}>
+              <select aria-label="Matter" value={draft.matterId} onChange={(event) => updateDraft('matterId', event.target.value)} required={matterRequired}>
                 <option value="">Choose a matter</option>
                 {searchableMatterOptions.map((matter) => (
                   <option key={matter.matterId} value={matter.matterId}>
@@ -1462,65 +1474,22 @@ export function CreateInviteDrawer({
               ) : null}
             </div>
 
-            {selectedMatter ? (
-              <div className="drawer-field invite-field-wide">
-                <span>Related To</span>
-                <div className="related-toggle">
-                  {RELATED_TO_OPTIONS.map((option) => (
-                    <button
-                      key={option.value}
-                      type="button"
-                      className={draft.relatedTo === option.value ? 'is-active' : ''}
-                      onClick={() => updateDraft('relatedTo', option.value)}
-                    >
-                      {option.label}
-                    </button>
+            {isBoardroomInvite ? (
+              <label className="drawer-field invite-field-wide">
+                <span>Boardroom</span>
+                <select aria-label="Boardroom" value={draft.resourceId} onChange={(event) => updateDraft('resourceId', event.target.value)} required>
+                  <option value="">Choose boardroom</option>
+                  {resources.map((resource) => (
+                    <option key={resource.resourceId} value={resource.resourceId}>{resource.resourceName}</option>
                   ))}
-                </div>
-              </div>
+                </select>
+              </label>
             ) : null}
 
-            <label className="drawer-field invite-field-wide">
-              <span>Boardroom</span>
-              <select value={draft.resourceId} onChange={(event) => {
-                updateDraft('resourceId', event.target.value)
-                if (event.target.value) updateDraft('locationMode', ATTORNEY_INVITE_LOCATION_MODES.boardroom)
-              }}>
-                <option value="">No boardroom</option>
-                {resources.map((resource) => (
-                  <option key={resource.resourceId} value={resource.resourceId}>{resource.resourceName}</option>
-                ))}
-              </select>
-            </label>
-
-            <label className="drawer-field invite-field-wide">
-              <span>Attorneys / Staff</span>
-              <select value="" onChange={(event) => updateDraft('assignedStaffId', event.target.value)}>
-                <option value="">Choose staff member</option>
-                {staffOptions.map((member) => (
-                  <option key={member.value} value={member.value}>{member.label}</option>
-                ))}
-              </select>
-            </label>
-
-            <label className="drawer-field invite-field-wide">
+            <div className="invite-selected-summary">
               <span>Visibility</span>
-              <select value={draft.visibility || 'shared_role_players'} onChange={(event) => updateDraft('visibility', event.target.value)}>
-                <option value="shared_role_players">All Firm</option>
-                <option value="internal_only">Internal Only</option>
-                <option value="client_visible">Client Visible</option>
-              </select>
-            </label>
-
-            <label className="drawer-field invite-field-wide">
-              <span>Reminder</span>
-              <select value={draft.reminder || '15'} onChange={(event) => updateDraft('reminder', event.target.value)}>
-                <option value="15">15 minutes before</option>
-                <option value="30">30 minutes before</option>
-                <option value="60">1 hour before</option>
-                <option value="1440">1 day before</option>
-              </select>
-            </label>
+              <strong>{selectedInviteType.visibility === 'internal_only' ? 'Internal only' : selectedInviteType.visibility === 'client_visible' ? 'Client visible' : 'Shared role players'}</strong>
+            </div>
           </div>
         </div>
 
@@ -1536,7 +1505,7 @@ export function CreateInviteDrawer({
           <button type="button" onClick={onClose}>Cancel</button>
           <button type="submit" disabled={Boolean(busyId)}>
             <Send size={15} />
-            Create Event
+            Create Invite
           </button>
         </div>
       </form>
@@ -2773,7 +2742,7 @@ function SchedulingStyles() {
 
       .event-type-card-list {
         display: grid;
-        grid-template-columns: repeat(5, minmax(0, 1fr));
+        grid-template-columns: repeat(4, minmax(0, 1fr));
         gap: 0.55rem;
       }
 
@@ -2794,6 +2763,12 @@ function SchedulingStyles() {
         font-size: 0.78rem;
       }
 
+      .event-type-card small {
+        color: #60748c;
+        font-size: 0.68rem;
+        font-weight: 800;
+      }
+
       .event-type-card.is-active {
         border-color: #93c5fd;
         background: #eff6ff;
@@ -2803,9 +2778,24 @@ function SchedulingStyles() {
 
       .event-date-grid {
         display: grid;
-        grid-template-columns: minmax(145px, 1fr) minmax(96px, 0.55fr) minmax(96px, 0.55fr) auto;
+        grid-template-columns: minmax(145px, 1fr) repeat(2, minmax(96px, 0.55fr));
         gap: 0.55rem;
         align-items: center;
+      }
+
+      .event-date-grid label,
+      .drawer-nested-field {
+        display: grid;
+        gap: 0.28rem;
+      }
+
+      .event-date-grid label span,
+      .drawer-nested-field span {
+        color: #60748c;
+        font-size: 0.68rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
       }
 
       .event-check-row {
@@ -3193,17 +3183,37 @@ function AttorneySchedulingWorkspace({
     })
   }
 
-  const handleResolveReschedule = (row, decision) => withBusy(`resolve-${row.requestId}-${decision}`, async () => {
-    await resolveAttorneyAppointmentReschedule(row.requestId, {
+  const handleResolveReschedule = (row, decision) => {
+    const resolutionDraft = {
       decision,
+      confirmedStart: decision === 'accepted' ? row.preferredStart : null,
+      confirmedEnd: decision === 'accepted' ? row.preferredEnd : null,
       reason: decision === 'rejected' ? 'Unable to accommodate requested slot.' : 'Reschedule approved.',
+    }
+    if (decision === 'accepted' && !resolutionDraft.confirmedStart) {
+      setError('Approve requires a preferred appointment time.')
+      return null
+    }
+    const resolution = buildAppointmentRescheduleResolutionContract(resolutionDraft)
+    if (!resolution.isValid) {
+      setError(resolution.errors[0]?.message || 'Choose a valid reschedule decision.')
+      return null
+    }
+    return withBusy(`resolve-${row.requestId}-${decision}`, async () => {
+      await resolveAttorneyAppointmentReschedule(row.requestId, resolution.value)
+      return {
+        tone: 'success',
+        message: decision === 'accepted'
+          ? 'Reschedule approved and appointment calendar updated.'
+          : 'Reschedule request declined and appointment retained.',
+      }
     })
-  })
+  }
 
   const handleCreateInvite = (event) => {
     event.preventDefault()
     if (!rolloutStatus.enabled) {
-      setError('New Event is temporarily unavailable for this firm.')
+      setError('Create Invite is temporarily unavailable for this firm.')
       return
     }
     const selectedMatter = matterOptions.find((matter) => matter.matterId === inviteDraft.matterId)
@@ -3218,7 +3228,7 @@ function AttorneySchedulingWorkspace({
     const inviteContract = buildAttorneyInviteContract({
       ...inviteDraft,
       title: inviteDraft.title,
-      visibility: inviteDraft.visibility,
+      durationMinutes: resolveInviteDraftDurationMinutes(inviteDraft, getInviteType(inviteDraft.appointmentType).durationMinutes),
       attachCalendarInvite: inviteDraft.sendNotifications !== false,
       recipientName: inviteDraft.recipientName || selectedMatter?.clientName || currentUser?.name || currentUser?.email || 'Team Member',
       organisationId: organisationId || selectedMatter?.organisationId,
@@ -3241,7 +3251,7 @@ function AttorneySchedulingWorkspace({
     })
   }
 
-  function openCreateEventModal() {
+  function openCreateInviteDrawer() {
     setInviteDraft(createInviteDraftDefaults(selectedDate))
     setInviteOpen(true)
   }
@@ -3249,7 +3259,7 @@ function AttorneySchedulingWorkspace({
   return (
     <section className="attorney-scheduling-os">
       <SchedulingStyles />
-      <SchedulingPageHeader onCreateInvite={openCreateEventModal} rolloutStatus={rolloutStatus} />
+      <SchedulingPageHeader onCreateInvite={openCreateInviteDrawer} rolloutStatus={rolloutStatus} />
       {error ? <div className="scheduling-alert is-error">{error}</div> : null}
       {message ? <div className="scheduling-alert is-success">{message}</div> : null}
       {busyId ? <div className="scheduling-alert">Processing scheduling action...</div> : null}
@@ -3277,6 +3287,7 @@ function AttorneySchedulingWorkspace({
           onPropose={handleOpenRescheduleProposal}
           onResolve={handleResolveReschedule}
           onSelect={setSelectedAppointment}
+          busyId={busyId}
         />
         <BoardroomUtilisationPanel rows={visibleRows} resources={resources} />
         <OperationalFeedPanel rows={feedRows} />

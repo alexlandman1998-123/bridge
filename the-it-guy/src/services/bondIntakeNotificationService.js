@@ -1318,7 +1318,9 @@ export async function notifyBondIntakeEvent({
 
   const notifications = []
   const emailResults = []
-  const allowEmail = emailsEnabled({ emailEnabled })
+  const customInvokeEmailFunction = typeof invokeEmailFunction === 'function'
+  const emailTransportAvailable = customInvokeEmailFunction || typeof db?.functions?.invoke === 'function'
+  const allowEmail = emailsEnabled({ emailEnabled }) && emailTransportAvailable
   for (const recipient of selectedRecipients) {
     const notification = await createNotification(db, {
       transactionId: id,

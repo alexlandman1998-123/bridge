@@ -42,6 +42,9 @@ for (const token of [
   'Counter time',
   'Send counter proposal',
   'johannesburgDateTimeInputToIso',
+  'buildAppointmentRescheduleResolutionContract(resolutionDraft)',
+  "confirmedStart: decision === 'accepted' ? row.preferredStart : null",
+  "message: decision === 'accepted'",
   'decision,',
 ]) {
   assert.ok(workspace.includes(token), `Phase 5 workspace should include ${token}`)

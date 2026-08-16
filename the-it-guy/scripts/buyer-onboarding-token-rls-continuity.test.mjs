@@ -265,7 +265,7 @@ assert.match(
 )
 assert.match(
   saveOnboardingSource,
-  /try\s*\{[\s\S]*document_key['"]\s*,\s*['"]information_sheet[\s\S]*\}\s*catch\s*\(\s*informationSheetError\s*\)/,
+  /try\s*\{[\s\S]*fetchTransactionRequiredDocumentByKeyIfPossible\s*\([\s\S]*documentKey:\s*INFORMATION_SHEET_DOCUMENT_KEY[\s\S]*updateTransactionRequiredDocumentCaptureIfPossible\s*\([\s\S]*documentKey:\s*informationSheetCapture\.documentKey[\s\S]*\}\s*catch\s*\(\s*informationSheetError\s*\)/,
   'information-sheet projection after snapshot save must be best-effort',
 )
 assert.match(

@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   client: null,
   notify: vi.fn(),
   schedule: vi.fn(),
+  checkScheduling: vi.fn(),
 }))
 
 vi.mock('../attorneyFirmServiceShared', () => ({
@@ -22,6 +23,10 @@ vi.mock('../appointmentNotificationService', () => ({
   notifyAppointmentParticipants: mocks.notify,
   scheduleAppointmentReminders: mocks.schedule,
   cancelAppointmentReminders: vi.fn(),
+}))
+
+vi.mock('../../lib/agencyPipelineService', () => ({
+  checkAppointmentSchedulingIntegrityAsync: mocks.checkScheduling,
 }))
 
 import { createAttorneyAppointmentInvite } from '../attorneyOperations'
@@ -102,6 +107,13 @@ beforeEach(() => {
   mocks.client = database.client
   mocks.notify.mockReset().mockResolvedValue([{ email: { sent: true, status: 'sent' } }])
   mocks.schedule.mockReset().mockResolvedValue([{ id: 'reminder-1' }])
+  mocks.checkScheduling.mockReset().mockResolvedValue({
+    hasHardConflicts: false,
+    hardConflicts: [],
+    hasSoftConflicts: false,
+    softConflicts: [],
+    suggestedSlots: [],
+  })
 })
 
 describe('createAttorneyAppointmentInvite', () => {
@@ -117,6 +129,18 @@ describe('createAttorneyAppointmentInvite', () => {
       location_type: 'video_call',
       meeting_url: 'https://meet.example.com/invite',
     })
+    expect(mocks.checkScheduling).toHaveBeenCalledWith(
+      '11111111-1111-4111-8111-111111111111',
+      expect.objectContaining({
+        appointmentType: 'attorney_consultation',
+        transactionId: '22222222-2222-4222-8222-222222222222',
+        participants: expect.arrayContaining([
+          expect.objectContaining({ email: 'client@example.com', participantRole: 'Client' }),
+          expect.objectContaining({ email: 'attorney@example.com', participantRole: 'Attorney' }),
+        ]),
+      }),
+      expect.objectContaining({ maxSuggestions: 5 }),
+    )
     expect(database.state.participantRows).toHaveLength(2)
     expect(database.state.participantRows[0]).toMatchObject({
       email: 'client@example.com',
@@ -136,6 +160,27 @@ describe('createAttorneyAppointmentInvite', () => {
     )
     expect(mocks.schedule).toHaveBeenCalledWith(result.appointmentId, { recipientParticipantIds: [recipientId] })
     expect(result.delivery).toMatchObject({ status: 'sent', sentCount: 1 })
+  })
+
+  it('blocks hard scheduling conflicts before persisting the appointment', async () => {
+    const database = createDatabase()
+    mocks.client = database.client
+    mocks.checkScheduling.mockResolvedValueOnce({
+      hasHardConflicts: true,
+      hardConflicts: [{ type: 'resource_overlap', message: 'Boardroom already booked.' }],
+      hasSoftConflicts: false,
+      softConflicts: [],
+      suggestedSlots: [],
+    })
+
+    await expect(createAttorneyAppointmentInvite(validInvite())).rejects.toMatchObject({
+      code: 'APPOINTMENT_HARD_CONFLICT',
+      schedulingConflicts: expect.objectContaining({ hasHardConflicts: true }),
+    })
+    expect(database.state.appointmentPayload).toBeNull()
+    expect(database.state.participantRows).toBeNull()
+    expect(mocks.notify).not.toHaveBeenCalled()
+    expect(mocks.schedule).not.toHaveBeenCalled()
   })
 
   it('rolls back the appointment when participant persistence fails', async () => {

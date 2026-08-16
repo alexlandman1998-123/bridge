@@ -1,5 +1,6 @@
 export const ATTORNEY_INVITE_DELIVERY_STATUSES = Object.freeze({
   sent: 'sent',
+  queued: 'queued',
   partial: 'partial',
   failed: 'failed',
   skipped: 'skipped',
@@ -22,6 +23,7 @@ export function summarizeAttorneyInviteDelivery({
 } = {}) {
   const rows = Array.isArray(notificationResults) ? notificationResults : []
   const sentRows = rows.filter((row) => row?.email?.sent === true || row?.email?.status === 'sent')
+  const queuedRows = rows.filter((row) => row?.email?.status === 'queued')
   const failedRows = rows.filter((row) => row?.error || row?.email?.status === 'failed')
   const skippedRows = rows.filter((row) => row?.email?.status === 'skipped')
   const failureReasons = unique([
@@ -30,10 +32,12 @@ export function summarizeAttorneyInviteDelivery({
   ])
 
   let status = ATTORNEY_INVITE_DELIVERY_STATUSES.skipped
-  if (sentRows.length && failedRows.length) {
+  if (sentRows.length && (failedRows.length || queuedRows.length)) {
     status = ATTORNEY_INVITE_DELIVERY_STATUSES.partial
   } else if (sentRows.length) {
     status = ATTORNEY_INVITE_DELIVERY_STATUSES.sent
+  } else if (queuedRows.length) {
+    status = ATTORNEY_INVITE_DELIVERY_STATUSES.queued
   } else if (failedRows.length || notificationError) {
     status = ATTORNEY_INVITE_DELIVERY_STATUSES.failed
   }
@@ -43,10 +47,11 @@ export function summarizeAttorneyInviteDelivery({
   return {
     status,
     sentCount: sentRows.length,
+    queuedCount: queuedRows.length,
     failedCount: failedRows.length + (notificationError && !failedRows.length ? 1 : 0),
     skippedCount: skippedRows.length,
     failureReasons,
-    retryable: status === ATTORNEY_INVITE_DELIVERY_STATUSES.failed || status === ATTORNEY_INVITE_DELIVERY_STATUSES.partial,
+    retryable: status === ATTORNEY_INVITE_DELIVERY_STATUSES.failed || status === ATTORNEY_INVITE_DELIVERY_STATUSES.partial || status === ATTORNEY_INVITE_DELIVERY_STATUSES.queued,
     calendarInviteRequested: calendarInviteRequested !== false,
     calendarInviteDelivered: calendarInviteRequested !== false && sentRows.length > 0,
     reminders: {
@@ -64,6 +69,9 @@ export function buildAttorneyInviteOutcome(delivery = {}) {
   }
   if (status === ATTORNEY_INVITE_DELIVERY_STATUSES.partial) {
     return { tone: 'error', message: 'Appointment saved, but one or more invite deliveries failed. Use Resend from the appointment.' }
+  }
+  if (status === ATTORNEY_INVITE_DELIVERY_STATUSES.queued) {
+    return { tone: 'success', message: 'Attorney invite created and email queued with a calendar attachment.' }
   }
   if (status === ATTORNEY_INVITE_DELIVERY_STATUSES.failed) {
     return { tone: 'error', message: 'Appointment saved, but the invite email could not be delivered. Use Resend from the appointment.' }

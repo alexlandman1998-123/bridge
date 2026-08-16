@@ -25,7 +25,7 @@ for (const token of [
 
 for (const token of [
   'getAttorneyCalendarRolloutStatus',
-  'New Event is temporarily unavailable for this firm',
+  'Create Invite is temporarily unavailable for this firm',
   'disabled={!inviteEnabled}',
 ]) {
   assert.ok(workspace.includes(token), `Phase 8 workspace should include ${token}`)

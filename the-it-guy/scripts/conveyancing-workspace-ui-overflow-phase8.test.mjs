@@ -1,0 +1,33 @@
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+
+const verifySource = readFileSync(new URL('./conveyancing-workspace-ui-overflow-phase8-verify.mjs', import.meta.url), 'utf8')
+const packageSource = readFileSync(new URL('../package.json', import.meta.url), 'utf8')
+
+assert.match(verifySource, /conveyancing_workspace_ui_overflow_phase8/)
+assert.match(verifySource, /MAX_SOURCE_ISSUES_AFTER_PHASE7 = 168/)
+assert.match(verifySource, /conveyancing-workspace-ui-overflow-audit\.test\.mjs/)
+assert.match(verifySource, /conveyancing-workspace-ui-overflow-phase2\.test\.mjs/)
+assert.match(verifySource, /conveyancing-workspace-ui-overflow-phase3\.test\.mjs/)
+assert.match(verifySource, /conveyancing-workspace-ui-overflow-phase4\.test\.mjs/)
+assert.match(verifySource, /conveyancing-workspace-ui-overflow-phase5\.test\.mjs/)
+assert.match(verifySource, /conveyancing-workspace-ui-overflow-phase6\.test\.mjs/)
+assert.match(verifySource, /conveyancing-workspace-ui-overflow-phase7\.test\.mjs/)
+assert.match(verifySource, /ArchlineMatterHeader/)
+assert.match(verifySource, /ArchlineTransferWorkspace/)
+assert.match(verifySource, /ArchlineWorkflowWorkspace/)
+assert.match(verifySource, /ArchlineDocumentsWorkspace/)
+assert.match(verifySource, /WorkflowDetailsDrawer/)
+assert.match(verifySource, /AttorneyRoleWorkspacePanel/)
+assert.match(verifySource, /AttorneyMatterCommandCenter/)
+assert.match(verifySource, /--browser/)
+assert.match(verifySource, /--strict-browser/)
+assert.match(verifySource, /CONVEYANCING_WORKSPACE_AUTH_BLOCKED/)
+assert.match(packageSource, /test:conveyancing-workspace-overflow-phase8/)
+assert.match(packageSource, /test:conveyancing-workspace-overflow-phase6/)
+assert.match(packageSource, /test:conveyancing-workspace-overflow-phase7/)
+assert.match(packageSource, /verify:conveyancing-workspace-overflow/)
+assert.match(packageSource, /verify:conveyancing-workspace-overflow:browser/)
+assert.match(packageSource, /verify:conveyancing-workspace-overflow:strict-browser/)
+
+console.log('conveyancing workspace UI overflow phase 8 contract passed')

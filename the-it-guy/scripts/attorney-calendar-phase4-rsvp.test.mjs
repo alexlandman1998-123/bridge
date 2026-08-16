@@ -8,6 +8,7 @@ const root = resolve(import.meta.dirname, '..')
 const migration = readFileSync(resolve(root, '../supabase/migrations/202607180047_attorney_calendar_phase4_rsvp_lifecycle.sql'), 'utf8')
 const page = readFileSync(resolve(root, 'src/pages/AppointmentRsvpPage.jsx'), 'utf8')
 const operations = readFileSync(resolve(root, 'src/services/attorneyOperations.js'), 'utf8')
+const api = readFileSync(resolve(root, 'src/lib/api.js'), 'utf8')
 const liveMode = process.argv.includes('--live')
 
 for (const token of [
@@ -44,6 +45,16 @@ for (const token of [
 
 assert.ok(operations.includes('rsvp_expires_at: dateTime || null'), 'New attorney invites should expire RSVP capability at appointment start.')
 assert.ok(operations.includes('delete next.rsvp_expires_at'), 'Pre-migration fallback should remove the expiry column safely.')
+
+for (const token of [
+  "notifyAppointmentParticipants(normalizedAppointmentId, appointmentNotificationEventType",
+  "mapClientPortalAppointmentActionToNotificationEvent(normalizedAction)",
+  "trigger: 'client_portal_appointment_response'",
+  "cancelAppointmentReminders(normalizedAppointmentId)",
+  "normalizedAction === 'decline' || normalizedAction === 'reschedule'",
+]) {
+  assert.ok(api.includes(token), `Client portal appointment responses should include ${token}`)
+}
 
 if (!liveMode) {
   console.log('attorney calendar Phase 4 RSVP contract passed')

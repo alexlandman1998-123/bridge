@@ -205,7 +205,7 @@ export function ResidentialTransactionHealth({ data, scope = 'principal' }) {
   const attentionCount = toNumber(data?.attentionRequired) + toNumber(data?.criticalDelays)
 
   return (
-    <section className={`${sectionClass} p-4 sm:p-5`}>
+    <section className={`${sectionClass} flex h-full flex-col p-4 sm:p-5`}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 className="text-[1rem] font-semibold text-[#101828]">{data?.title || 'Transaction Health'}</h3>
@@ -290,7 +290,7 @@ export function ResidentialPerformanceChart({ data, scope = 'principal' }) {
   const currentValue = Number.isFinite(Number(data?.currentValue)) ? Math.round(Number(data.currentValue)) : null
 
   return (
-    <section className={`${sectionClass} p-4 sm:p-5`}>
+    <section className={`${sectionClass} flex h-full flex-col p-4 sm:p-5`}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 className="text-[1rem] font-semibold text-[#101828]">{data?.title || (scope === 'agent' ? 'My Performance' : 'Agency Performance')}</h3>
@@ -695,7 +695,7 @@ export function ResidentialCommandCenterGrid({
         onOpenRecord={onOpenTransaction}
       />
 
-      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+      <div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
         <ResidentialTransactionHealth data={model.transactionHealth} scope={scope} mode={mode} />
         <ResidentialPerformanceChart data={model.performance} scope={scope} mode={mode} />
       </div>

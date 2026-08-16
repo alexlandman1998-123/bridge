@@ -39,6 +39,30 @@ assert.match(apiSource, /requested_document_id:\s*documentId/, 'Buyer upload lin
 assert.match(apiSource, /completed_at:\s*nextStatus === 'completed' \? now : null/, 'Buyer upload linker should close non-review requests.')
 assert.match(apiSource, /rejected_reason:\s*null/, 'Buyer upload linker should clear rejected reasons on replacement upload.')
 assert.match(apiSource, /await updateDocumentRequestFromUploadIfPossible\(client,/, 'Buyer upload flow should invoke the linker.')
+const clientPortalUploadSource = apiSource.slice(
+  apiSource.indexOf('export async function uploadClientPortalDocument'),
+  apiSource.indexOf('export async function reconcileClientPortalBondDocumentRequirements'),
+)
+assert.match(
+  clientPortalUploadSource,
+  /previousReadiness = await computeTransactionReadinessSnapshot\(client, link\.transaction_id\)/,
+  'Buyer portal upload should capture a pre-upload readiness baseline.',
+)
+assert.match(
+  clientPortalUploadSource,
+  /const readiness = await runDocumentAutomationIfPossible\(client,/,
+  'Buyer portal upload should use the recalculated post-upload readiness.',
+)
+assert.match(
+  clientPortalUploadSource,
+  /checkAndNotifyBondDocumentsComplete\(/,
+  'Buyer portal upload should notify the bond originator when documents cross the complete threshold.',
+)
+assert.match(
+  clientPortalUploadSource,
+  /checkAndNotifyBondApplicationReadyForReview\(/,
+  'Buyer portal upload should notify the bond originator when a submitted application becomes ready for review.',
+)
 
 assert.match(privateListingSource, /async function linkSellerPortalDocumentRequestUpload/, 'Seller upload linker should exist.')
 assert.match(privateListingSource, /documentRequestId\s*=\s*''/, 'Seller upload should accept a documentRequestId option.')

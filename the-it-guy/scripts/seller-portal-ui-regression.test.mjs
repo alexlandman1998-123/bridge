@@ -13,7 +13,7 @@ const clientDocumentCentreSource = await fs.readFile(new URL('../src/components/
 const linkNormalizer = source.match(/function normalizeSellerVisibleListingLinks[\s\S]*?\n}\n\nfunction getFriendlySellerStatusLabel/)?.[0] || ''
 const marketingBuilder = source.match(/function buildSellerMarketingChannels[\s\S]*?\n}\n\nfunction buildSellerAgentUpdate/)?.[0] || ''
 const sellerHero = source.match(/function SellerPropertyHero[\s\S]*?\n}\n\nfunction SellerTransactionHealthCard/)?.[0] || ''
-const sellerDashboard = source.match(/function SellerPortalDashboard[\s\S]*?\n}\n\nfunction SellerPortalPasswordGate/)?.[0] || ''
+const sellerDashboard = source.match(/function SellerPortalDashboard[\s\S]*?\n}\n\nfunction BuyerOverviewHero/)?.[0] || ''
 const sellerLogoResolver = source.match(/const sellerAgencyLogoUrl = pickFirstText\([\s\S]*?\n  \)/)?.[0] || ''
 
 assert.match(linkNormalizer, /const linksByChannel = new Map\(\)/, 'seller-visible links should be deduplicated before dashboard models are built')

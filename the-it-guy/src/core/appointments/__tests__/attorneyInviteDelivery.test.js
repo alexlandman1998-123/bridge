@@ -25,6 +25,15 @@ assert.deepEqual(failed.failureReasons, ['provider unavailable'])
 assert.equal(failed.reminders.status, 'failed')
 assert.match(buildAttorneyInviteOutcome(failed).message, /Appointment saved/)
 
+const queued = summarizeAttorneyInviteDelivery({
+  notificationResults: [{ email: { sent: false, status: 'queued', reason: 'outbox_retry_queued' } }],
+})
+assert.equal(queued.status, 'queued')
+assert.equal(queued.queuedCount, 1)
+assert.equal(queued.failedCount, 0)
+assert.equal(queued.retryable, true)
+assert.match(buildAttorneyInviteOutcome(queued).message, /email queued/)
+
 const partial = summarizeAttorneyInviteDelivery({
   notificationResults: [
     { email: { sent: true, status: 'sent' } },
