@@ -7,13 +7,13 @@ import {
   CheckSquare,
   ChevronRight,
   ClipboardList,
+  Copy,
   ExternalLink,
   EyeOff,
   FileText,
   Filter,
   Home,
   Mail,
-  MoreHorizontal,
   Phone,
   Plus,
   RefreshCw,
@@ -917,10 +917,12 @@ function LeadRow({
   agents,
   handoverSubmitting,
   converting,
+  copying,
   selected,
   onOpenLead,
   onRequestHandover,
   onConvertLead,
+  onCopyLeadOnboarding,
 }) {
   const assigned = agents.find((agent) => (agent.userId || agent.id) === lead.assignedAgentId)
   const developmentLabel = getDevelopmentLabel(lead.primaryDevelopmentId, developments)
@@ -1031,19 +1033,21 @@ function LeadRow({
         <div className="flex min-w-0 items-center justify-end gap-2 justify-self-end" onClick={(event) => event.stopPropagation()}>
           <button
             type="button"
+            className="inline-flex h-[40px] w-[40px] items-center justify-center rounded-[13px] border border-[#dbe4ee] bg-white text-[#5b7289] transition hover:border-[#c7d6e5] hover:bg-[#f8fbfe] hover:text-[#20364c] disabled:cursor-not-allowed disabled:opacity-55"
+            aria-label={`Copy buyer onboarding link for ${title}`}
+            title="Copy buyer onboarding link"
+            disabled={handoverRequired || copying}
+            onClick={() => onCopyLeadOnboarding(lead)}
+          >
+            <Copy size={17} />
+          </button>
+          <button
+            type="button"
             className="inline-flex min-h-[40px] min-w-[78px] items-center justify-center gap-1.5 rounded-[13px] bg-[#0f2743] px-3 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,39,67,0.16)] transition hover:bg-[#0b223b]"
             onClick={() => onOpenLead(lead)}
           >
             Open
             <ArrowUpRight size={15} />
-          </button>
-          <button
-            type="button"
-            className="inline-flex h-[40px] w-[40px] items-center justify-center rounded-[13px] border border-[#dbe4ee] bg-white text-[#5b7289] transition hover:border-[#c7d6e5] hover:bg-[#f8fbfe] hover:text-[#20364c]"
-            aria-label={`More actions for ${title}`}
-            onClick={() => onOpenLead(lead)}
-          >
-            <MoreHorizontal size={18} />
           </button>
         </div>
       </div>
@@ -1060,17 +1064,31 @@ function LeadRow({
             <EyeOff size={15} />
             {handoverPending ? 'Requested' : 'Request Handover'}
           </Button>
-        ) : handoff.eligible ? (
-          <Button
-            type="button"
-            size="sm"
-            disabled={converting}
-            onClick={() => onConvertLead(lead)}
-          >
-            <ExternalLink size={15} />
-            {converting ? 'Sending...' : 'Send Onboarding'}
-          </Button>
-        ) : null}
+        ) : (
+          <>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              disabled={copying}
+              onClick={() => onCopyLeadOnboarding(lead)}
+            >
+              <Copy size={15} />
+              {copying ? 'Copying...' : 'Copy Link'}
+            </Button>
+            {handoff.eligible ? (
+              <Button
+                type="button"
+                size="sm"
+                disabled={converting}
+                onClick={() => onConvertLead(lead)}
+              >
+                <ExternalLink size={15} />
+                {converting ? 'Sending...' : 'Send Onboarding'}
+              </Button>
+            ) : null}
+          </>
+        )}
       </div>
     </article>
   )
@@ -1090,12 +1108,14 @@ function DeveloperLeadList({
   convertedOnboardingUrl,
   handoverSubmittingId,
   convertingLeadId,
+  copyingLeadId,
   onSearchChange,
   onStatusFilterChange,
   onSourceFilterChange,
   onOpenLead,
   onRequestHandover,
   onConvertLead,
+  onCopyLeadOnboarding,
   onRefresh,
   onCreateLead,
 }) {
@@ -1193,10 +1213,12 @@ function DeveloperLeadList({
                     agents={agents}
                     handoverSubmitting={handoverSubmittingId === lead.developerLeadId}
                     converting={convertingLeadId === lead.developerLeadId}
+                    copying={copyingLeadId === lead.developerLeadId}
                     selected={normalizeText(routeDeveloperLeadId) === normalizeText(lead.developerLeadId)}
                     onOpenLead={onOpenLead}
                     onRequestHandover={onRequestHandover}
                     onConvertLead={onConvertLead}
+                    onCopyLeadOnboarding={onCopyLeadOnboarding}
                   />
                 ))}
               </div>
@@ -1212,10 +1234,12 @@ function DeveloperLeadList({
                 agents={agents}
                 handoverSubmitting={handoverSubmittingId === lead.developerLeadId}
                 converting={convertingLeadId === lead.developerLeadId}
+                copying={copyingLeadId === lead.developerLeadId}
                 selected={normalizeText(routeDeveloperLeadId) === normalizeText(lead.developerLeadId)}
                 onOpenLead={onOpenLead}
                 onRequestHandover={onRequestHandover}
                 onConvertLead={onConvertLead}
+                onCopyLeadOnboarding={onCopyLeadOnboarding}
               />
             ))}
           </div>
@@ -1245,11 +1269,13 @@ function DeveloperLeadWorkspacePanel({
   agents,
   handoverSubmitting,
   converting,
+  copying,
   setupUpdating,
   onClose,
   onOpenTransaction,
   onRequestHandover,
   onConvertLead,
+  onCopyLeadOnboarding,
   onUpdateLeadSetup,
 }) {
   const [activeTab, setActiveTab] = useState('overview')
@@ -1413,6 +1439,16 @@ function DeveloperLeadWorkspacePanel({
     )
   }
 
+  function renderCopyOnboardingAction({ compact = false } = {}) {
+    if (handoverRequired) return null
+    return (
+      <Button type="button" size={compact ? 'sm' : undefined} variant="secondary" disabled={copying} onClick={() => onCopyLeadOnboarding(lead)}>
+        <Copy size={16} />
+        {copying ? 'Copying...' : 'Copy Buyer Onboarding Link'}
+      </Button>
+    )
+  }
+
   return (
     <section className="grid min-w-0 gap-5" data-developer-lead-workspace="true">
       <div className="overflow-hidden rounded-[24px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_16px_42px_rgba(31,54,78,0.06)]">
@@ -1438,6 +1474,7 @@ function DeveloperLeadWorkspacePanel({
               <ArrowLeft size={16} />
               Lead Table
             </Button>
+            {renderCopyOnboardingAction()}
             {renderPrimaryAction()}
           </div>
         </div>
@@ -1499,11 +1536,13 @@ function DeveloperLeadWorkspacePanel({
                 {renderStageCompletionAction(selectedStageCompletion, { compact: true })}
                 {selectedStage?.key === 'captured' || selectedStage?.key === 'contacted' ? (
                   <>
+                    {renderCopyOnboardingAction({ compact: true })}
                     <Button type="button" size="sm" variant="secondary" onClick={() => setActiveTab('buyer_profile')}>Open profile</Button>
                     <Button type="button" size="sm" variant="secondary" onClick={() => setActiveTab('activity')}>View activity</Button>
                   </>
                 ) : selectedStage?.key === 'qualified' || selectedStage?.key === 'reservation' || selectedStage?.key === 'onboarding_otp' ? (
                   <>
+                    {renderCopyOnboardingAction({ compact: true })}
                     {renderPrimaryAction({ compact: true })}
                     <Button type="button" size="sm" variant="secondary" onClick={() => setActiveTab('onboarding_otp')}>Open setup</Button>
                   </>
@@ -1676,7 +1715,10 @@ function DeveloperLeadWorkspacePanel({
                   This mirrors the buyer lead onboarding step from the agency workspace. OTP upload is the handoff into the transaction workflow.
                 </p>
               </div>
-              {renderPrimaryAction()}
+              <div className="flex flex-wrap gap-2 lg:justify-end">
+                {renderCopyOnboardingAction()}
+                {renderPrimaryAction()}
+              </div>
             </div>
             {blockers.length || warnings.length ? (
               <div className="grid gap-3">
@@ -1760,7 +1802,10 @@ function DeveloperLeadWorkspacePanel({
             <p className="mt-2 text-sm leading-6 text-[#60758b]">
               Buyer onboarding documents stay with the onboarding context. Uploading the signed OTP starts the transaction workflow for finance, transfer, and registration.
             </p>
-            <div className="mt-4">{renderPrimaryAction()}</div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {renderCopyOnboardingAction()}
+              {renderPrimaryAction()}
+            </div>
           </div>
         ) : null}
 
@@ -1804,6 +1849,7 @@ export default function DeveloperLeadsPage() {
   const [duplicateWarnings, setDuplicateWarnings] = useState([])
   const [handoverSubmittingId, setHandoverSubmittingId] = useState('')
   const [convertingLeadId, setConvertingLeadId] = useState('')
+  const [copyingLeadId, setCopyingLeadId] = useState('')
   const [setupUpdatingLeadId, setSetupUpdatingLeadId] = useState('')
   const [convertedOnboardingUrl, setConvertedOnboardingUrl] = useState('')
 
@@ -2048,6 +2094,41 @@ export default function DeveloperLeadsPage() {
     }
   }
 
+  async function handleCopyLeadOnboarding(lead) {
+    if (!developerOrgId || !lead?.developerLeadId) return
+    try {
+      setCopyingLeadId(lead.developerLeadId)
+      setError('')
+      setMessage('')
+      setConvertedOnboardingUrl('')
+      const result = await convertDeveloperLeadToTransactionAndSendOnboarding({
+        developerOrgId,
+        lead,
+        sendBuyerOnboarding: false,
+        manualBuyerOnboardingDelivery: true,
+      })
+      if (result.onboardingUrl && typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(result.onboardingUrl).catch(() => null)
+      }
+      setConvertedOnboardingUrl(result.onboardingUrl || '')
+      setMessage(
+        result.onboardingUrl
+          ? 'Buyer onboarding link copied. You can paste it into WhatsApp.'
+          : 'Buyer onboarding context is ready, but no link was returned.',
+      )
+      window.dispatchEvent(new CustomEvent('itg:transaction-created', { detail: result }))
+      window.dispatchEvent(new Event('itg:developer-leads-changed'))
+      await loadData()
+      if (result.transactionId) {
+        navigate(`/developer/leads/${lead.developerLeadId}`)
+      }
+    } catch (copyError) {
+      setError(copyError.message || 'Buyer onboarding link could not be copied from this developer lead.')
+    } finally {
+      setCopyingLeadId('')
+    }
+  }
+
   if (!isSupabaseConfigured) {
     return (
       <main className="min-h-screen bg-[#f6f9fc] p-8">
@@ -2084,11 +2165,13 @@ export default function DeveloperLeadsPage() {
               agents={agents}
               handoverSubmitting={handoverSubmittingId === selectedLead.developerLeadId}
               converting={convertingLeadId === selectedLead.developerLeadId}
+              copying={copyingLeadId === selectedLead.developerLeadId}
               setupUpdating={setupUpdatingLeadId === selectedLead.developerLeadId}
               onClose={handleCloseLeadWorkspace}
               onOpenTransaction={handleOpenTransaction}
               onRequestHandover={handleRequestHandover}
               onConvertLead={handleConvertLead}
+              onCopyLeadOnboarding={handleCopyLeadOnboarding}
               onUpdateLeadSetup={handleUpdateLeadSetup}
             />
           </>
@@ -2111,12 +2194,14 @@ export default function DeveloperLeadsPage() {
             convertedOnboardingUrl={convertedOnboardingUrl}
             handoverSubmittingId={handoverSubmittingId}
             convertingLeadId={convertingLeadId}
+            copyingLeadId={copyingLeadId}
             onSearchChange={setSearchTerm}
             onStatusFilterChange={setStatusFilter}
             onSourceFilterChange={setSourceFilter}
             onOpenLead={handleOpenLead}
             onRequestHandover={handleRequestHandover}
             onConvertLead={handleConvertLead}
+            onCopyLeadOnboarding={handleCopyLeadOnboarding}
             onRefresh={loadData}
             onCreateLead={() => setShowCreateModal(true)}
           />

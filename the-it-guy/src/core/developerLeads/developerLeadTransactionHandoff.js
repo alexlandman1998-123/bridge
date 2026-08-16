@@ -1,6 +1,7 @@
 export const DEVELOPER_LEAD_PHASE17_CONTRACT = 'developer-leads-phase17-transaction-handoff-v1'
 
 const TRANSACTION_READY_STATUSES = Object.freeze(['qualified', 'viewing', 'reserved'])
+const EARLY_ONBOARDING_LINK_STATUSES = Object.freeze(['new', 'contacted', ...TRANSACTION_READY_STATUSES])
 const ONBOARDING_CONTEXT_STATUSES = Object.freeze(['onboarding_sent', 'onboarding_submitted', 'otp'])
 
 function normalizeText(value = '') {
@@ -50,8 +51,10 @@ function resolveConversionMainStage() {
 export function buildDeveloperLeadTransactionHandoff(lead = {}, {
   defaultPurchaserType = 'individual',
   defaultFinanceType = 'unknown',
+  allowEarlyLeadStatus = false,
 } = {}) {
   const leadStatus = normalizeLower(lead.leadStatus || 'new')
+  const readyStatuses = allowEarlyLeadStatus ? EARLY_ONBOARDING_LINK_STATUSES : TRANSACTION_READY_STATUSES
   const blockers = []
   const warnings = []
 
@@ -71,8 +74,13 @@ export function buildDeveloperLeadTransactionHandoff(lead = {}, {
     blockers.push(buildBlocker('agency_handover_required', 'Agency-fed buyer details must be handed over before buyer onboarding.'))
   }
 
-  if (!TRANSACTION_READY_STATUSES.includes(leadStatus)) {
-    blockers.push(buildBlocker('lead_not_qualified', 'Move the lead to qualified, viewing, or reserved before buyer onboarding can be sent.'))
+  if (!readyStatuses.includes(leadStatus)) {
+    blockers.push(buildBlocker(
+      'lead_not_qualified',
+      allowEarlyLeadStatus
+        ? 'Capture or contact the lead before copying buyer onboarding.'
+        : 'Move the lead to qualified, viewing, or reserved before buyer onboarding can be sent.',
+    ))
   }
 
   if (!normalizeText(lead.buyerFullName)) {

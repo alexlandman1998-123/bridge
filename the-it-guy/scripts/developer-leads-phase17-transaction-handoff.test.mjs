@@ -121,6 +121,16 @@ assert.equal(blockedNewLead.status, 'blocked')
 assert.ok(blockedNewLead.blockers.some((blocker) => blocker.code === 'lead_not_qualified'))
 assert.ok(blockedNewLead.blockers.some((blocker) => blocker.code === 'unit_missing'))
 
+const earlyCopyLead = buildDeveloperLeadTransactionHandoff({
+  ...readyLead,
+  leadStatus: 'new',
+}, {
+  allowEarlyLeadStatus: true,
+})
+assert.equal(earlyCopyLead.eligible, true)
+assert.equal(earlyCopyLead.handoff.status.stage, 'Reserved')
+assert.equal(earlyCopyLead.handoff.status.mainStage, 'DEP')
+
 const summary = summarizeDeveloperLeadTransactionHandoffs([readyLead, blockedAgency, blockedNewLead])
 assert.equal(summary.contract, DEVELOPER_LEAD_PHASE17_CONTRACT)
 assert.equal(summary.total, 3)
@@ -136,6 +146,8 @@ for (const token of [
   'developer_sale',
   'sourceContext',
   'resolveConversionDetailedStage',
+  'allowEarlyLeadStatus',
+  'EARLY_ONBOARDING_LINK_STATUSES',
   "'DEP'",
 ]) {
   assert.match(handoffSource, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))

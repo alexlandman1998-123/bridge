@@ -69,13 +69,15 @@ async function markLeadBuyerOnboardingSent(client, {
   transactionId,
   sourceAgencyOrgId = '',
   sendBuyerOnboarding = true,
+  manualBuyerOnboardingDelivery = false,
 } = {}) {
   const now = new Date().toISOString()
+  const buyerOnboardingDelivered = sendBuyerOnboarding || manualBuyerOnboardingDelivery
   const { data, error } = await client
     .from('developer_leads')
     .update({
       converted_transaction_id: transactionId,
-      lead_status: sendBuyerOnboarding ? 'onboarding_sent' : 'qualified',
+      lead_status: buyerOnboardingDelivered ? 'onboarding_sent' : 'qualified',
       updated_at: now,
     })
     .eq('developer_org_id', developerOrgId)
@@ -92,15 +94,18 @@ async function markLeadBuyerOnboardingSent(client, {
       developer_org_id: developerOrgId,
       source_agency_org_id: normalizeUuid(sourceAgencyOrgId),
       actor_user_id: null,
-      activity_type: sendBuyerOnboarding ? 'buyer_onboarding_sent' : 'system',
+      activity_type: buyerOnboardingDelivered ? 'buyer_onboarding_sent' : 'system',
       activity_note: sendBuyerOnboarding
         ? 'Buyer onboarding was sent from the developer lead workspace.'
-        : 'Developer lead onboarding context was prepared.',
+        : manualBuyerOnboardingDelivery
+          ? 'Buyer onboarding link was copied from the developer lead workspace.'
+          : 'Developer lead onboarding context was prepared.',
       visibility_scope: sourceAgencyOrgId ? 'shared' : 'developer',
       metadata: {
         contract: DEVELOPER_LEAD_PHASE18_CONTRACT,
         transactionId,
         sendBuyerOnboarding,
+        manualBuyerOnboardingDelivery,
       },
     })
 
@@ -134,11 +139,50 @@ export async function convertDeveloperLeadToTransactionAndSendOnboarding({
   developerOrgId = '',
   lead = {},
   sendBuyerOnboarding = true,
+  manualBuyerOnboardingDelivery = false,
 } = {}) {
   const orgId = requireDeveloperOrgId(developerOrgId || lead.developerOrgId)
   const leadId = requireDeveloperLeadId(lead.developerLeadId)
   const client = requireClient()
-  const handoff = buildDeveloperLeadTransactionHandoff(lead)
+  const existingTransactionId = normalizeUuid(lead.convertedTransactionId)
+  const manualDelivery = Boolean(manualBuyerOnboardingDelivery)
+
+  if (!sendBuyerOnboarding && existingTransactionId) {
+    const onboarding = await ensureOnboardingLink({
+      transactionId: existingTransactionId,
+      purchaserType: lead.purchaserType || 'individual',
+    })
+    const convertedLead = manualDelivery
+      ? await markLeadBuyerOnboardingSent(client, {
+        developerOrgId: orgId,
+        developerLeadId: leadId,
+        transactionId: existingTransactionId,
+        sourceAgencyOrgId: lead.sourceAgencyOrgId,
+        sendBuyerOnboarding: false,
+        manualBuyerOnboardingDelivery: true,
+      })
+      : lead
+
+    return {
+      contract: DEVELOPER_LEAD_PHASE18_CONTRACT,
+      developerLeadId: leadId,
+      transactionId: existingTransactionId,
+      convertedLead,
+      onboarding,
+      onboardingUrl: onboarding?.url || buildOnboardingUrl(onboarding?.token),
+      onboardingEmail: {
+        sent: false,
+        skipped: true,
+        reason: manualDelivery ? 'manual_delivery_existing_link' : 'send_disabled',
+        recipientEmail: normalizeLower(lead.buyerEmail),
+      },
+      setupWarnings: [],
+    }
+  }
+
+  const handoff = buildDeveloperLeadTransactionHandoff(lead, {
+    allowEarlyLeadStatus: manualDelivery && !sendBuyerOnboarding,
+  })
 
   if (!handoff.eligible) {
     const reason = handoff.blockers.map((blocker) => blocker.message).filter(Boolean).join(' ')
@@ -177,6 +221,7 @@ export async function convertDeveloperLeadToTransactionAndSendOnboarding({
     transactionId,
     sourceAgencyOrgId: lead.sourceAgencyOrgId,
     sendBuyerOnboarding,
+    manualBuyerOnboardingDelivery: manualDelivery,
   })
 
   let onboardingEmail = {
