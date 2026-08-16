@@ -567,6 +567,8 @@
     "test:attorney-incoming-matter-ui": "node scripts/attorney-incoming-matter-ui.test.mjs",
     "test:attorney-matter-today-phase1": "node scripts/attorney-matter-today-phase1.test.mjs",
     "test:attorney-matter-guidance-phase2": "node scripts/attorney-matter-guidance-phase2.test.mjs && node scripts/verify-attorney-workflow-phase2.mjs",
+    "test:conveyancing-workspace-overflow-audit": "node scripts/conveyancing-workspace-ui-overflow-audit.test.mjs",
+    "audit:conveyancing-workspace-overflow": "node scripts/conveyancing-workspace-ui-overflow-audit.mjs",
     "test:attorney-document-control-phase3": "node scripts/attorney-document-control-phase3.test.mjs",
     "test:attorney-communication-control-phase4": "node scripts/attorney-communication-control-phase4.test.mjs",
     "test:document-request-phase0-freeze-and-map": "node scripts/document-request-phase0-freeze-and-map.test.mjs",
