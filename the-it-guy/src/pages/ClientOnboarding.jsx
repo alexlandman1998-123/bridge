@@ -105,11 +105,13 @@ function getBuyerBrandContrastText(hex = '#ffffff', darkText = '#142033') {
 }
 
 function resolveBuyerOnboardingTheme(brand = {}) {
-  const primary = normalizeBuyerBrandColour(brand?.primaryColour, '#002b62')
-  const secondary = normalizeBuyerBrandColour(brand?.secondaryColour, primary)
+  const configuredPrimary = normalizeBuyerBrandColour(brand?.primaryColour, '')
+  const primary = configuredPrimary || '#002b62'
+  const configuredSecondary = normalizeBuyerBrandColour(brand?.secondaryColour, '')
+  const secondary = configuredSecondary || primary
   const configuredAccent = normalizeBuyerBrandColour(brand?.accentColour, '')
-  const accent = configuredAccent || '#f7cf22'
-  const action = configuredAccent || primary
+  const accent = configuredAccent || configuredSecondary || (configuredPrimary ? primary : '#f7cf22')
+  const action = configuredAccent || configuredPrimary || primary
   return {
     primary,
     secondary,
