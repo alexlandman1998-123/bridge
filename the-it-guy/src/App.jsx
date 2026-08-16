@@ -3280,6 +3280,9 @@ function PipelineEntryRoute() {
   if (role === 'agent') {
     return <Navigate to="/pipeline/leads" replace />
   }
+  if (role === 'developer') {
+    return <Navigate to="/developer/leads?view=pipeline" replace />
+  }
   if (role === 'bond_originator') {
     return <Navigate to="/bond/pipeline" replace />
   }

@@ -81,7 +81,7 @@ export const APP_NAV_BY_ROLE = {
     { key: 'developer_leads', label: 'Leads', to: '/developer/leads', activeMatch: ['/developer/leads'] },
     { key: 'developer_partners', label: 'Partners', to: '/developer/partners', activeMatch: ['/developer/partners'] },
     { key: 'transactions', label: 'Transactions', to: '/units' },
-    { key: 'developer_pipeline', label: 'Pipeline', to: '/pipeline' },
+    { key: 'developer_pipeline', label: 'Pipeline', to: '/developer/leads?view=pipeline' },
     { key: 'developer_snags', label: 'Snags', to: '/snags' },
     { key: 'clients', label: 'Clients', to: '/clients' },
     { key: 'reports', label: 'Reports', to: '/reports' },

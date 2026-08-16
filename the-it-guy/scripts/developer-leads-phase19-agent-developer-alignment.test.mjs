@@ -182,8 +182,10 @@ for (const token of [
 
 assert.match(rolesSource, /developer_leads/)
 assert.match(rolesSource, /to: '\/developer\/leads'/)
+assert.match(rolesSource, /developer_pipeline[\s\S]*to: '\/developer\/leads\?view=pipeline'/)
 assert.match(rolesSource, /label: 'Listings'/)
 assert.match(appSource, /path="\/developer\/leads"/)
+assert.match(appSource, /role === 'developer'[\s\S]*<Navigate to="\/developer\/leads\?view=pipeline" replace \/>/)
 assert.match(appSource, /path="\/listings\/:listingSection\?"/)
 assert.match(agentListingsSource, /fetchAssignedDevelopmentIdsForRole/)
 assert.match(agentListingsSource, /navigate\('\/listings\/developments'\)/)
