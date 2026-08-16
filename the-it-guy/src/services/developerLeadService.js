@@ -676,6 +676,89 @@ export async function updateDeveloperFedLead(input = {}) {
   })
 }
 
+export async function updateDeveloperLeadWorkspaceSetup(input = {}) {
+  const developerOrgId = requireDeveloperOrgId(input.developerOrgId)
+  const developerLeadId = normalizeUuid(input.developerLeadId)
+  if (!developerLeadId) throw new Error('A valid developer lead id is required.')
+
+  const patch = {}
+  if (Object.prototype.hasOwnProperty.call(input, 'leadStatus')) {
+    patch.lead_status = normalizeStatus(input.leadStatus)
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'preferredUnitId')) {
+    patch.preferred_unit_id = normalizeUuid(input.preferredUnitId)
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'primaryDevelopmentId')) {
+    patch.primary_development_id = normalizeUuid(input.primaryDevelopmentId)
+  }
+
+  if (!Object.keys(patch).length) {
+    throw new Error('No developer lead workspace changes were provided.')
+  }
+
+  const client = requireClient()
+  const { data, error } = await client
+    .from('developer_leads')
+    .update(patch)
+    .eq('developer_org_id', developerOrgId)
+    .eq('developer_lead_id', developerLeadId)
+    .select(DEVELOPER_LEAD_SELECT)
+    .single()
+
+  if (error) throw error
+
+  if (patch.preferred_unit_id && data.primary_development_id) {
+    const interestUpdate = await client
+      .from('developer_lead_development_interests')
+      .update({
+        unit_id: patch.preferred_unit_id,
+        is_primary: true,
+      })
+      .eq('developer_org_id', developerOrgId)
+      .eq('developer_lead_id', developerLeadId)
+      .eq('development_id', data.primary_development_id)
+
+    if (interestUpdate.error && !isMissingDeveloperLeadSchema(interestUpdate.error) && !isPermissionError(interestUpdate.error)) {
+      throw interestUpdate.error
+    }
+  }
+
+  const activityType = patch.lead_status ? 'status_changed' : 'system'
+  const activityInsert = await client
+    .from('developer_lead_activity')
+    .insert({
+      developer_lead_id: developerLeadId,
+      developer_org_id: developerOrgId,
+      source_agency_org_id: normalizeUuid(data.source_agency_org_id),
+      actor_user_id: null,
+      activity_type: activityType,
+      activity_note: normalizeText(input.activityNote) || (patch.lead_status
+        ? `Developer lead moved to ${patch.lead_status}.`
+        : 'Developer lead setup was updated.'),
+      visibility_scope: data.source_agency_org_id ? 'shared' : 'developer',
+      metadata: {
+        contract: DEVELOPER_LEAD_PHASE11_CONTRACT,
+        previousLeadStatus: normalizeText(input.previousLeadStatus) || null,
+        nextLeadStatus: patch.lead_status || null,
+        preferredUnitId: patch.preferred_unit_id || null,
+      },
+    })
+
+  if (activityInsert.error && !isMissingDeveloperLeadSchema(activityInsert.error) && !isPermissionError(activityInsert.error)) {
+    throw activityInsert.error
+  }
+
+  const [privateById, interestsById] = await Promise.all([
+    fetchPrivateDetailsByLeadIds(client, [developerLeadId]),
+    fetchInterestsByLeadIds(client, [developerLeadId]),
+  ])
+
+  return mapDeveloperLead(data, {
+    privateDetails: privateById.get(developerLeadId) || null,
+    interests: interestsById.get(developerLeadId) || [],
+  })
+}
+
 export async function requestAgencyLeadHandover({ developerOrgId = '', developerLeadId = '' } = {}) {
   const orgId = requireDeveloperOrgId(developerOrgId)
   const leadId = normalizeUuid(developerLeadId)

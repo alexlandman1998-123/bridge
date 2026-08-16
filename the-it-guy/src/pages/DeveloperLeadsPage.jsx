@@ -73,6 +73,7 @@ import {
   findDeveloperLeadDuplicateWarnings,
   listDeveloperLeadIntake,
   requestAgencyLeadHandover,
+  updateDeveloperLeadWorkspaceSetup,
 } from '../services/developerLeadService'
 
 const EMPTY_FORM = {
@@ -579,6 +580,26 @@ function buildDeveloperLeadJourneyStages(lead = {}) {
     const state = step.rank < activeRank ? 'completed' : step.rank === activeRank ? 'current' : 'upcoming'
     return { ...step, state }
   })
+}
+
+function getNextManualLeadStatus(lead = {}) {
+  const status = normalizeLower(lead.leadStatus || 'new')
+  if (status === 'new') return { status: 'contacted', label: 'Mark Contacted', detail: 'Buyer has been contacted.' }
+  if (status === 'contacted') return { status: 'qualified', label: 'Mark Qualified', detail: 'Buyer fit and development interest are qualified.' }
+  if (status === 'qualified') return { status: 'viewing', label: 'Mark Viewing', detail: 'Buyer is viewing or selecting a unit.' }
+  if (status === 'onboarding_sent') return { status: 'onboarding_submitted', label: 'Mark Onboarding Submitted', detail: 'Buyer onboarding has been submitted.' }
+  if (status === 'onboarding_submitted') return { status: 'otp', label: 'Mark Signed OTP Uploaded', detail: 'Signed OTP has been uploaded manually.' }
+  return null
+}
+
+function getStageCompletionStatus(stageKey = '', lead = {}) {
+  const status = normalizeLower(lead.leadStatus || 'new')
+  if (stageKey === 'captured' && status === 'new') return getNextManualLeadStatus(lead)
+  if (stageKey === 'contacted' && status === 'contacted') return getNextManualLeadStatus(lead)
+  if (stageKey === 'qualified' && status === 'qualified') return getNextManualLeadStatus(lead)
+  if (stageKey === 'onboarding_sent' && status === 'onboarding_sent') return getNextManualLeadStatus(lead)
+  if (stageKey === 'onboarding_submitted' && status === 'onboarding_submitted') return getNextManualLeadStatus(lead)
+  return null
 }
 
 function getDeveloperLeadNextAction(lead = {}) {
@@ -1224,18 +1245,52 @@ function DeveloperLeadWorkspacePanel({
   agents,
   handoverSubmitting,
   converting,
+  setupUpdating,
   onClose,
   onOpenTransaction,
   onRequestHandover,
   onConvertLead,
+  onUpdateLeadSetup,
 }) {
   const [activeTab, setActiveTab] = useState('overview')
   const [selectedJourneyStage, setSelectedJourneyStage] = useState('captured')
+  const [leadUnits, setLeadUnits] = useState([])
+  const [leadUnitsLoading, setLeadUnitsLoading] = useState(false)
+  const [selectedPreferredUnitId, setSelectedPreferredUnitId] = useState('')
 
   useEffect(() => {
     setActiveTab('overview')
     setSelectedJourneyStage('captured')
   }, [lead?.developerLeadId])
+
+  useEffect(() => {
+    setSelectedPreferredUnitId(normalizeText(lead?.preferredUnitId))
+  }, [lead?.preferredUnitId, lead?.developerLeadId])
+
+  useEffect(() => {
+    let cancelled = false
+    async function loadLeadUnits() {
+      const developmentId = normalizeText(lead?.primaryDevelopmentId)
+      if (!developmentId) {
+        setLeadUnits([])
+        setLeadUnitsLoading(false)
+        return
+      }
+      try {
+        setLeadUnitsLoading(true)
+        const rows = await fetchUnitsForTransactionSetup(developmentId)
+        if (!cancelled) setLeadUnits(rows || [])
+      } catch {
+        if (!cancelled) setLeadUnits([])
+      } finally {
+        if (!cancelled) setLeadUnitsLoading(false)
+      }
+    }
+    void loadLeadUnits()
+    return () => {
+      cancelled = true
+    }
+  }, [lead?.primaryDevelopmentId])
 
   if (!lead) return null
 
@@ -1255,6 +1310,9 @@ function DeveloperLeadWorkspacePanel({
   const warnings = handoff.warnings || []
   const journeyStages = buildDeveloperLeadJourneyStages(lead)
   const selectedStage = journeyStages.find((stage) => stage.key === selectedJourneyStage) || journeyStages.find((stage) => stage.state === 'current') || journeyStages[0]
+  const nextManualStatus = getNextManualLeadStatus(lead)
+  const selectedStageCompletion = getStageCompletionStatus(selectedStage?.key, lead)
+  const needsPreferredUnit = ['qualified', 'viewing', 'reserved'].includes(leadStatus) && blockers.some((blocker) => blocker.code === 'unit_missing')
   const nextAction = getDeveloperLeadNextAction(lead)
   const budget = lead.budgetMin || lead.budgetMax
     ? `${formatCurrency(lead.budgetMin)} - ${formatCurrency(lead.budgetMax)}`
@@ -1277,6 +1335,32 @@ function DeveloperLeadWorkspacePanel({
     ...(leadStatus === 'otp' ? [{ key: 'otp', title: 'Signed OTP uploaded', detail: 'Transaction workflow has started', timestamp: lead.updatedAt, Icon: FileText }] : []),
     ...(converted ? [{ key: 'converted', title: 'Transaction workflow active', detail: 'Buyer lead has entered the transaction workflow', timestamp: lead.updatedAt, Icon: CheckCircle2 }] : []),
   ]
+
+  function handleMarkStatus(action) {
+    if (!action?.status) return
+    onUpdateLeadSetup(lead, {
+      leadStatus: action.status,
+      previousLeadStatus: leadStatus,
+      activityNote: action.detail,
+    })
+  }
+
+  function handleSavePreferredUnit() {
+    onUpdateLeadSetup(lead, {
+      preferredUnitId: selectedPreferredUnitId,
+      activityNote: 'Preferred unit was selected for buyer onboarding.',
+    })
+  }
+
+  function renderStageCompletionAction(action, { compact = false } = {}) {
+    if (!action) return null
+    return (
+      <Button type="button" size={compact ? 'sm' : undefined} variant="secondary" disabled={setupUpdating} onClick={() => handleMarkStatus(action)}>
+        <CheckCircle2 size={16} />
+        {setupUpdating ? 'Updating...' : action.label}
+      </Button>
+    )
+  }
 
   function renderPrimaryAction({ compact = false } = {}) {
     if (onboardingStarted && !converted) {
@@ -1310,6 +1394,17 @@ function DeveloperLeadWorkspacePanel({
           {converting ? 'Sending...' : 'Send Buyer Onboarding'}
         </Button>
       )
+    }
+    if (needsPreferredUnit) {
+      return (
+        <Button type="button" size={compact ? 'sm' : undefined} variant="secondary" onClick={() => setActiveTab('development')}>
+          <Home size={16} />
+          Select Preferred Unit
+        </Button>
+      )
+    }
+    if (nextManualStatus) {
+      return renderStageCompletionAction(nextManualStatus, { compact })
     }
     return (
       <span className="inline-flex min-h-10 items-center rounded-[12px] border border-[#d9e5f2] bg-[#f8fafc] px-3 text-sm font-semibold text-[#52677f]">
@@ -1401,6 +1496,7 @@ function DeveloperLeadWorkspacePanel({
                 <h3 className="mt-1 text-base font-semibold text-[#18324b]">{selectedStage?.label || 'Lead captured'}</h3>
               </div>
               <div className="flex flex-wrap gap-2">
+                {renderStageCompletionAction(selectedStageCompletion, { compact: true })}
                 {selectedStage?.key === 'captured' || selectedStage?.key === 'contacted' ? (
                   <>
                     <Button type="button" size="sm" variant="secondary" onClick={() => setActiveTab('buyer_profile')}>Open profile</Button>
@@ -1620,6 +1716,41 @@ function DeveloperLeadWorkspacePanel({
                 <p className="mt-2 text-sm font-semibold capitalize text-[#29445f]">{lead.reservationState || 'Not reserved'}</p>
               </div>
             </div>
+            <div className="mt-4 rounded-[16px] border border-[#e4edf6] bg-[#fbfdff] p-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                <div className="min-w-0 flex-1">
+                  <label className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7a8ba3]" htmlFor="developer-lead-preferred-unit">
+                    Preferred Unit
+                  </label>
+                  <select
+                    id="developer-lead-preferred-unit"
+                    className="mt-2 h-11 w-full rounded-[12px] border border-[#d9e5f2] bg-white px-3 text-sm font-semibold text-[#20364c] outline-none transition focus:border-[#2f7b9e] focus:ring-2 focus:ring-[#d9eaf3]"
+                    value={selectedPreferredUnitId}
+                    onChange={(event) => setSelectedPreferredUnitId(event.target.value)}
+                    disabled={leadUnitsLoading || !lead.primaryDevelopmentId || setupUpdating}
+                  >
+                    <option value="">{leadUnitsLoading ? 'Loading units...' : 'Select a unit'}</option>
+                    {leadUnits.map((unit) => (
+                      <option key={unit.id} value={unit.id}>
+                        {unit.unit_number || unit.unitNumber || unit.name || unit.title || `Unit ${unit.id}`}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-2 text-xs leading-5 text-[#60758b]">
+                    Buyer onboarding for a development sale needs a preferred unit before the link can be sent.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={setupUpdating || leadUnitsLoading || !selectedPreferredUnitId || selectedPreferredUnitId === normalizeText(lead.preferredUnitId)}
+                  onClick={handleSavePreferredUnit}
+                >
+                  <CheckCircle2 size={16} />
+                  {setupUpdating ? 'Saving...' : 'Save Unit'}
+                </Button>
+              </div>
+            </div>
           </div>
         ) : null}
 
@@ -1673,6 +1804,7 @@ export default function DeveloperLeadsPage() {
   const [duplicateWarnings, setDuplicateWarnings] = useState([])
   const [handoverSubmittingId, setHandoverSubmittingId] = useState('')
   const [convertingLeadId, setConvertingLeadId] = useState('')
+  const [setupUpdatingLeadId, setSetupUpdatingLeadId] = useState('')
   const [convertedOnboardingUrl, setConvertedOnboardingUrl] = useState('')
 
   const loadData = useCallback(async () => {
@@ -1850,6 +1982,38 @@ export default function DeveloperLeadsPage() {
     }
   }
 
+  async function handleUpdateLeadSetup(lead, updates = {}) {
+    if (!developerOrgId || !lead?.developerLeadId) return
+    try {
+      setSetupUpdatingLeadId(lead.developerLeadId)
+      setError('')
+      setMessage('')
+      setConvertedOnboardingUrl('')
+      await updateDeveloperLeadWorkspaceSetup({
+        developerOrgId,
+        developerLeadId: lead.developerLeadId,
+        ...updates,
+      })
+
+      const nextStatus = normalizeText(updates.leadStatus)
+      if (nextStatus === 'otp') {
+        setMessage('Signed OTP marked uploaded. The transaction workflow is ready to open.')
+      } else if (nextStatus) {
+        setMessage(`Lead moved to ${getLeadStagePresentation(nextStatus).label}.`)
+      } else if (Object.prototype.hasOwnProperty.call(updates, 'preferredUnitId')) {
+        setMessage('Preferred unit saved for buyer onboarding.')
+      } else {
+        setMessage('Developer lead setup updated.')
+      }
+      window.dispatchEvent(new Event('itg:developer-leads-changed'))
+      await loadData()
+    } catch (setupError) {
+      setError(setupError.message || 'Developer lead setup could not be updated.')
+    } finally {
+      setSetupUpdatingLeadId('')
+    }
+  }
+
   async function handleConvertLead(lead) {
     if (!developerOrgId || !lead?.developerLeadId) return
     try {
@@ -1920,10 +2084,12 @@ export default function DeveloperLeadsPage() {
               agents={agents}
               handoverSubmitting={handoverSubmittingId === selectedLead.developerLeadId}
               converting={convertingLeadId === selectedLead.developerLeadId}
+              setupUpdating={setupUpdatingLeadId === selectedLead.developerLeadId}
               onClose={handleCloseLeadWorkspace}
               onOpenTransaction={handleOpenTransaction}
               onRequestHandover={handleRequestHandover}
               onConvertLead={handleConvertLead}
+              onUpdateLeadSetup={handleUpdateLeadSetup}
             />
           </>
         ) : routeDeveloperLeadId && !loading ? (
