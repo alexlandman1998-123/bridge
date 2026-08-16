@@ -1,5 +1,6 @@
 import {
   AlertTriangle,
+  ArrowLeft,
   CheckCircle2,
   ClipboardList,
   ExternalLink,
@@ -13,6 +14,7 @@ import {
   Users,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
 import {
   DEVELOPER_LEAD_PHASE16_CONTRACT,
   buildDeveloperLeadLaunchReadiness,
@@ -132,6 +134,10 @@ function getStatusMeta(status = 'new') {
   if (status === 'contacted') return { label: 'Contacted', className: 'border-[#f0dfb8] bg-[#fff9ec] text-[#8a5a12]' }
   if (status === 'lost') return { label: 'Lost', className: 'border-[#f8d7da] bg-[#fff5f6] text-[#8d2831]' }
   return { label: 'New', className: 'border-[#e4ebf4] bg-[#f8fafc] text-[#52677f]' }
+}
+
+function isConvertedLead(lead = {}) {
+  return Boolean(normalizeText(lead.convertedTransactionId)) || normalizeLower(lead.leadStatus) === 'converted'
 }
 
 function isAgencyFedLead(lead = {}) {
@@ -736,6 +742,8 @@ function LeadRow({
   agents,
   handoverSubmitting,
   converting,
+  selected,
+  onOpenLead,
   onRequestHandover,
   onConvertLead,
 }) {
@@ -756,9 +764,23 @@ function LeadRow({
     : lead.buyerEmail || lead.buyerPhone || 'Contact details pending'
 
   const primaryHandoffMessage = handoff.blockers[0]?.message || handoff.warnings[0]?.message || 'Transaction handoff payload is ready.'
+  const openLabel = isConvertedLead(lead) ? 'Open transaction' : 'Open lead workspace'
+  const handleRowKeyDown = (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      onOpenLead(lead)
+    }
+  }
 
   return (
-    <div className="grid gap-4 border-b border-[#e5edf6] px-4 py-4 last:border-b-0 xl:grid-cols-[minmax(260px,1.2fr)_180px_150px_160px_150px_190px_170px] xl:items-center">
+    <div
+      role="button"
+      tabIndex={0}
+      aria-label={openLabel}
+      onClick={() => onOpenLead(lead)}
+      onKeyDown={handleRowKeyDown}
+      className={`grid cursor-pointer gap-4 border-b border-[#e5edf6] px-4 py-4 transition last:border-b-0 hover:bg-[#f8fbfd] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#17613d] xl:grid-cols-[minmax(260px,1.2fr)_180px_150px_160px_150px_190px_170px] xl:items-center ${selected ? 'bg-[#f1fbf6]' : ''}`}
+    >
       <div className="min-w-0">
         <div className="flex items-center gap-2">
           <p className="truncate text-sm font-semibold text-[#10243a]">{title}</p>
@@ -800,7 +822,10 @@ function LeadRow({
             variant="secondary"
             size="sm"
             disabled={handoverPending || handoverSubmitting}
-            onClick={() => onRequestHandover(lead.developerLeadId)}
+            onClick={(event) => {
+              event.stopPropagation()
+              onRequestHandover(lead.developerLeadId)
+            }}
           >
             <EyeOff size={15} />
             {handoverPending ? 'Requested' : 'Request Handover'}
@@ -810,7 +835,10 @@ function LeadRow({
             type="button"
             size="sm"
             disabled={converting}
-            onClick={() => onConvertLead(lead)}
+            onClick={(event) => {
+              event.stopPropagation()
+              onConvertLead(lead)
+            }}
           >
             <ExternalLink size={15} />
             {converting ? 'Converting...' : 'Convert & Send'}
@@ -825,7 +853,117 @@ function LeadRow({
   )
 }
 
+function DeveloperLeadWorkspacePanel({
+  lead,
+  developments,
+  agents,
+  handoverSubmitting,
+  converting,
+  onClose,
+  onOpenTransaction,
+  onRequestHandover,
+  onConvertLead,
+}) {
+  if (!lead) return null
+
+  const assigned = agents.find((agent) => (agent.userId || agent.id) === lead.assignedAgentId)
+  const handoff = buildDeveloperLeadTransactionHandoff(lead)
+  const agencyFed = isAgencyFedLead(lead)
+  const handoverRequired = requiresAgencyHandover(lead)
+  const handoverPending = agencyFed && lead.visibilityState === 'consent_pending'
+  const converted = isConvertedLead(lead)
+  const title = agencyFed && !lead.buyerFullName
+    ? lead.protectedSummary || 'Agency protected lead'
+    : lead.buyerFullName || 'Buyer pending'
+  const subtitle = agencyFed && handoverRequired
+    ? 'Buyer details are protected until the source agency completes handover.'
+    : lead.buyerEmail || lead.buyerPhone || 'Capture buyer contact details before onboarding.'
+  const blockers = handoff.blockers || []
+  const warnings = handoff.warnings || []
+
+  return (
+    <section className="developer-leads-panel rounded-[8px] border border-[#d9e5f2] bg-white p-5 shadow-[0_12px_35px_rgba(15,23,42,0.05)]" data-developer-lead-workspace="true">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <button type="button" className="mb-3 inline-flex items-center gap-2 text-sm font-semibold text-[#60758d] hover:text-[#17613d]" onClick={onClose}>
+            <ArrowLeft size={16} />
+            Back to leads
+          </button>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#7a8ba3]">Buyer Lead Workspace</p>
+          <h2 className="mt-1 truncate text-2xl font-semibold text-[#10243a]">{title}</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-[#60758d]">{subtitle}</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <StatusBadge status={lead.leadStatus} />
+          <span className={`inline-flex h-8 items-center rounded-full border px-3 text-xs font-semibold ${getHandoffTone(handoff.status)}`}>
+            {converted ? 'Transaction created' : handoff.label}
+          </span>
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-3 lg:grid-cols-4">
+        <div className="rounded-[8px] border border-[#e5edf6] p-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7a8ba3]">Development</p>
+          <p className="mt-1 text-sm font-semibold text-[#29445f]">{getDevelopmentLabel(lead.primaryDevelopmentId, developments)}</p>
+        </div>
+        <div className="rounded-[8px] border border-[#e5edf6] p-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7a8ba3]">Assigned</p>
+          <p className="mt-1 text-sm font-semibold text-[#29445f]">{assigned ? getUserLabel(assigned) : agencyFed ? 'Agency agent' : 'Developer direct'}</p>
+        </div>
+        <div className="rounded-[8px] border border-[#e5edf6] p-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7a8ba3]">Interest</p>
+          <p className="mt-1 text-sm font-semibold text-[#29445f]">{lead.unitTypeInterest || 'Any unit'}</p>
+        </div>
+        <div className="rounded-[8px] border border-[#e5edf6] p-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7a8ba3]">Updated</p>
+          <p className="mt-1 text-sm font-semibold text-[#29445f]">{formatDate(lead.updatedAt)}</p>
+        </div>
+      </div>
+
+      {blockers.length || warnings.length ? (
+        <div className="mt-5 grid gap-3">
+          {blockers.map((blocker) => (
+            <div key={blocker.code} className="rounded-[8px] border border-[#f0dfb8] bg-[#fff9ec] p-3 text-sm text-[#8a5a12]">
+              {blocker.message}
+            </div>
+          ))}
+          {warnings.map((warning) => (
+            <div key={warning.code} className="rounded-[8px] border border-[#d9e5f2] bg-[#f8fafc] p-3 text-sm text-[#29445f]">
+              {warning.message}
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      <div className="mt-5 flex flex-wrap gap-2">
+        {converted ? (
+          <Button type="button" onClick={() => onOpenTransaction(lead.convertedTransactionId)}>
+            <ExternalLink size={16} />
+            Open Transaction
+          </Button>
+        ) : handoverRequired ? (
+          <Button type="button" variant="secondary" disabled={handoverPending || handoverSubmitting} onClick={() => onRequestHandover(lead.developerLeadId)}>
+            <EyeOff size={16} />
+            {handoverPending ? 'Handover Requested' : 'Request Handover'}
+          </Button>
+        ) : handoff.eligible ? (
+          <Button type="button" disabled={converting} onClick={() => onConvertLead(lead)}>
+            <ExternalLink size={16} />
+            {converting ? 'Converting...' : 'Convert & Send Buyer Onboarding'}
+          </Button>
+        ) : (
+          <span className="inline-flex min-h-10 items-center rounded-[8px] border border-[#d9e5f2] bg-[#f8fafc] px-3 text-sm font-semibold text-[#52677f]">
+            Complete the setup items above before buyer onboarding can be sent.
+          </span>
+        )}
+      </div>
+    </section>
+  )
+}
+
 export default function DeveloperLeadsPage() {
+  const navigate = useNavigate()
+  const { developerLeadId: routeDeveloperLeadId = '' } = useParams()
   const { currentWorkspace } = useWorkspace()
   const developerOrgId = normalizeText(currentWorkspace?.id)
   const [loading, setLoading] = useState(true)
@@ -954,6 +1092,11 @@ export default function DeveloperLeadsPage() {
   const attributionLedgerSummary = useMemo(() => summarizeDeveloperLeadAttributionLedger(leads), [leads])
   const operationsHealth = useMemo(() => buildDeveloperLeadOperationsHealth(leads), [leads])
   const operationsHealthSummary = useMemo(() => summarizeDeveloperLeadOperationsHealth(leads), [leads])
+  const selectedLead = useMemo(() => {
+    const selectedKey = normalizeText(routeDeveloperLeadId)
+    if (!selectedKey) return null
+    return leads.find((lead) => normalizeText(lead.developerLeadId) === selectedKey) || null
+  }, [leads, routeDeveloperLeadId])
 
   const readiness = useMemo(() => buildDeveloperLeadLaunchReadiness({
     leads,
@@ -981,6 +1124,22 @@ export default function DeveloperLeadsPage() {
     } finally {
       setSaving(false)
     }
+  }
+
+  function handleOpenLead(lead) {
+    const leadId = normalizeText(lead?.developerLeadId)
+    if (!leadId) return
+    navigate(`/developer/leads/${leadId}`)
+  }
+
+  function handleCloseLeadWorkspace() {
+    navigate('/developer/leads')
+  }
+
+  function handleOpenTransaction(transactionId) {
+    const normalizedTransactionId = normalizeText(transactionId)
+    if (!normalizedTransactionId) return
+    navigate(`/transactions/${normalizedTransactionId}`)
   }
 
   async function handleRequestHandover(developerLeadId) {
@@ -1025,6 +1184,9 @@ export default function DeveloperLeadsPage() {
       window.dispatchEvent(new CustomEvent('itg:transaction-created', { detail: result }))
       window.dispatchEvent(new Event('itg:developer-leads-changed'))
       await loadData()
+      if (result.transactionId) {
+        navigate(`/developer/leads/${lead.developerLeadId}`)
+      }
     } catch (conversionError) {
       setError(conversionError.message || 'Developer lead could not be converted.')
     } finally {
@@ -1105,6 +1267,24 @@ export default function DeveloperLeadsPage() {
           agents={agents}
         />
 
+        {routeDeveloperLeadId && selectedLead ? (
+          <DeveloperLeadWorkspacePanel
+            lead={selectedLead}
+            developments={developments}
+            agents={agents}
+            handoverSubmitting={handoverSubmittingId === selectedLead.developerLeadId}
+            converting={convertingLeadId === selectedLead.developerLeadId}
+            onClose={handleCloseLeadWorkspace}
+            onOpenTransaction={handleOpenTransaction}
+            onRequestHandover={handleRequestHandover}
+            onConvertLead={handleConvertLead}
+          />
+        ) : routeDeveloperLeadId && !loading ? (
+          <section className="developer-leads-panel rounded-[8px] border border-[#f0dfb8] bg-[#fff9ec] p-4 text-sm text-[#8a5a12]">
+            This developer lead could not be found in the current workspace.
+          </section>
+        ) : null}
+
         <section className="developer-leads-panel rounded-[8px] border border-[#d9e5f2] bg-white shadow-[0_12px_35px_rgba(15,23,42,0.05)]">
           <div className="flex flex-col gap-4 border-b border-[#e5edf6] p-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex min-w-0 flex-1 items-center gap-3 rounded-[8px] border border-[#d9e5f2] bg-white px-3">
@@ -1157,6 +1337,8 @@ export default function DeveloperLeadsPage() {
                   agents={agents}
                   handoverSubmitting={handoverSubmittingId === lead.developerLeadId}
                   converting={convertingLeadId === lead.developerLeadId}
+                  selected={normalizeText(routeDeveloperLeadId) === normalizeText(lead.developerLeadId)}
+                  onOpenLead={handleOpenLead}
                   onRequestHandover={handleRequestHandover}
                   onConvertLead={handleConvertLead}
                 />

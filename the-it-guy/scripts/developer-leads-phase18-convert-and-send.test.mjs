@@ -6,6 +6,7 @@ const appRoot = resolve(import.meta.dirname, '..')
 const packageJson = JSON.parse(readFileSync(resolve(appRoot, 'package.json'), 'utf8'))
 const conversionSource = readFileSync(resolve(appRoot, 'src/services/developerLeadConversionService.js'), 'utf8')
 const pageSource = readFileSync(resolve(appRoot, 'src/pages/DeveloperLeadsPage.jsx'), 'utf8')
+const appSource = readFileSync(resolve(appRoot, 'src/App.jsx'), 'utf8')
 const handoffSource = readFileSync(resolve(appRoot, 'src/core/developerLeads/developerLeadTransactionHandoff.js'), 'utf8')
 const intakeSource = readFileSync(resolve(appRoot, 'src/services/developerLeadService.js'), 'utf8')
 const docsSource = readFileSync(resolve(appRoot, 'docs/developer-leads-phase18-convert-and-send.md'), 'utf8')
@@ -51,11 +52,20 @@ for (const token of [
   'Convert & Send',
   'convertedOnboardingUrl',
   'Buyer onboarding link',
+  'Buyer Lead Workspace',
+  'data-developer-lead-workspace="true"',
+  'onOpenLead={handleOpenLead}',
+  'Convert & Send Buyer Onboarding',
   'buyerOnboardingSendEnabled: true',
   'data-contract={DEVELOPER_LEAD_PHASE18_CONTRACT}',
 ]) {
   assert.match(pageSource, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
 }
+
+assert.match(appSource, /path="\/developer\/leads\/:developerLeadId"/)
+assert.match(pageSource, /navigate\(`\/developer\/leads\/\$\{leadId\}`\)/)
+assert.match(pageSource, /navigate\(`\/transactions\/\$\{normalizedTransactionId\}`\)/)
+assert.match(pageSource, /event\.stopPropagation\(\)/)
 
 assert.match(handoffSource, /preferredUnitId/)
 assert.match(handoffSource, /unit_missing/)
