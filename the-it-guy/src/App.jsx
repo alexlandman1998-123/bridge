@@ -45,6 +45,30 @@ const lazyNamed = (loader, exportName) => lazy(() => loader().then((module) => (
 
 const PUBLIC_WEBSITE_HOSTS = new Set(['arch9.co.za', 'www.arch9.co.za'])
 
+function resetLockedShellWindowScroll() {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return
+  const scrollTargets = [document.scrollingElement, document.documentElement, document.body].filter(Boolean)
+  scrollTargets.forEach((target) => {
+    try {
+      if (typeof target.scrollTo === 'function') {
+        target.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+      } else {
+        target.scrollTop = 0
+        target.scrollLeft = 0
+      }
+    } catch {
+      // Some browser-controlled contexts expose read-only scroll properties during focus restoration.
+    }
+  })
+  if (typeof window.scrollTo === 'function') {
+    try {
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+    } catch {
+      // Keep shell recovery best-effort; a failed scroll reset must not blank the route.
+    }
+  }
+}
+
 function normalizeRouteText(value = '') {
   return String(value || '').trim().toLowerCase()
 }
@@ -472,7 +496,7 @@ function AppLayout({ onLogout, session = null, user }) {
   useEffect(() => {
     const documentElement = document.documentElement
     documentElement.classList.add('ui-shell-scroll-locked')
-    window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+    resetLockedShellWindowScroll()
 
     return () => {
       documentElement.classList.remove('ui-shell-scroll-locked')
@@ -624,14 +648,39 @@ function AppLayout({ onLogout, session = null, user }) {
       if (mainEl && typeof mainEl.scrollTo === 'function') {
         mainEl.scrollTo({ top: 0, left: 0, behavior: 'auto' })
       }
-      if (typeof window !== 'undefined' && typeof window.scrollTo === 'function') {
-        window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
-      }
+      resetLockedShellWindowScroll()
     })
     return () => {
       window.cancelAnimationFrame(frameId)
     }
-  }, [location.pathname])
+  }, [location.pathname, location.search])
+
+  useEffect(() => {
+    function resetShellScrollIfLocked() {
+      if (!document.documentElement.classList.contains('ui-shell-scroll-locked')) return
+      const mainEl = mainScrollRef.current
+      if (mainEl && typeof mainEl.scrollTo === 'function') {
+        mainEl.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+      }
+      resetLockedShellWindowScroll()
+    }
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === 'visible') {
+        resetShellScrollIfLocked()
+      }
+    }
+
+    window.addEventListener('focus', resetShellScrollIfLocked)
+    window.addEventListener('pageshow', resetShellScrollIfLocked)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      window.removeEventListener('focus', resetShellScrollIfLocked)
+      window.removeEventListener('pageshow', resetShellScrollIfLocked)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [])
 
   function handleOpenNewTransaction(initialDevelopmentId = defaultDevelopmentId) {
     setWizardInitialDevelopmentId(initialDevelopmentId)

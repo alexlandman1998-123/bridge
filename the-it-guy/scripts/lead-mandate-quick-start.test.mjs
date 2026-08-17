@@ -47,6 +47,23 @@ assert.match(
   /path="\/pipeline\/leads\/:leadId"[\s\S]{0,180}<Pipeline initialAgentViewMode="leads" \/>/,
   'The canonical lead detail route should use the unified pipeline workspace.',
 )
+assert.ok(
+  appSource.includes('function resetLockedShellWindowScroll') &&
+    appSource.includes('document.scrollingElement') &&
+    appSource.includes('Some browser-controlled contexts expose read-only scroll properties'),
+  'The locked desktop shell should clear stale browser window scroll safely, not only the internal main scroll container.',
+)
+assert.match(
+  appSource,
+  /\}, \[location\.pathname, location\.search\]\)/,
+  'The shell should reset scroll on lead workspace tab query changes as well as path changes.',
+)
+assert.ok(
+  appSource.includes("window.addEventListener('focus', resetShellScrollIfLocked)") &&
+    appSource.includes("window.addEventListener('pageshow', resetShellScrollIfLocked)") &&
+    appSource.includes("document.addEventListener('visibilitychange', handleVisibilityChange)"),
+  'The shell should recover stale scroll after native file picker focus/page restoration.',
+)
 
 for (const reference of [
   'function resolveMandateQuickStartPrimaryLabel',
