@@ -591,7 +591,7 @@ export function selectActiveTransactions(rows = []) {
         updatedAt: getComparableTimestamp(row),
       }
     })
-    .filter((item) => item.stageKey !== 'REG')
+    .filter((item) => !['AVAIL', 'REG'].includes(item.stageKey))
 
   const deduped = new Map()
   for (const item of items) {

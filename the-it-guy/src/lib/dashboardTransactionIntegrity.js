@@ -1,4 +1,6 @@
 const EXCLUDED_STATUS_TERMS = [
+  'avail',
+  'available',
   'registered',
   'closed',
   'completed',

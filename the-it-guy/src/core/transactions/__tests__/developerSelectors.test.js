@@ -76,6 +76,22 @@ test('active developer transactions preserve explicit stage progress while addin
   assert.equal(rows[0].nextAction, 'Progress developer transaction workflow')
 })
 
+test('active developer transactions exclude available fixture rows', () => {
+  const rows = selectActiveTransactions([
+    developmentRow({
+      transaction: {
+        current_main_stage: 'AVAIL',
+        stage: 'Available',
+        lifecycle_state: 'active',
+        is_active: true,
+        transaction_reference: 'PHASE9-PHASE3-LAUNCH-SELLER-ONBOARDING',
+      },
+    }),
+  ])
+
+  assert.equal(rows.length, 0)
+})
+
 test('developer bottleneck summary includes readiness-specific counters', () => {
   const summary = selectDealBottleneckSummary([
     developmentRow(),

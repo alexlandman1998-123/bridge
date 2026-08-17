@@ -55,9 +55,10 @@ import {
   saveDevelopmentDocument,
   saveDevelopmentFinancials,
   saveDevelopmentUnit,
+  updateTransactionLifecycleStage,
   updateDevelopmentSettings,
 } from '../lib/api'
-import { fetchOrganisationSettings, normalizeOrganisationDeveloperProfile } from '../lib/settingsApi'
+import { fetchOrganisationSettings, listOrganisationUsers, normalizeOrganisationDeveloperProfile } from '../lib/settingsApi'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 
 const currency = new Intl.NumberFormat('en-ZA', {
@@ -270,10 +271,21 @@ const DEFAULT_UNIT_FORM = {
 }
 
 const DEFAULT_BULK_UNIT_FORM = {
+  step: 'breakdown',
+  breakdownMode: 'individual',
   count: '',
   startNumber: '',
   prefix: '',
   padding: '0',
+  individualUnitNumbers: '',
+  blockCount: '1',
+  unitsPerBlock: '',
+  blockLabels: 'A',
+  blockStartNumber: '1',
+  blockPrefixMode: 'block',
+  blockCustomPrefix: '',
+  phaseMode: 'single',
+  phaseNames: 'Phase 1',
   phase: '',
   block: '',
   unitType: '',
@@ -281,6 +293,144 @@ const DEFAULT_BULK_UNIT_FORM = {
   status: 'Available',
   vatApplicable: '',
   notes: '',
+  unitOptions: {
+    oneBed: { enabled: true, label: '1 Bed', unitType: '1 Bed', bedrooms: '1', listPrice: '' },
+    twoBed: { enabled: true, label: '2 Bed', unitType: '2 Bed', bedrooms: '2', listPrice: '' },
+    threeBed: { enabled: false, label: '3 Bed', unitType: '3 Bed', bedrooms: '3', listPrice: '' },
+  },
+  generatedRows: [],
+}
+
+const BULK_UNIT_STEPS = [
+  { id: 'breakdown', label: 'Unit Breakdown' },
+  { id: 'numbering', label: 'Unit Numbers' },
+  { id: 'options', label: 'Unit Options' },
+  { id: 'phases', label: 'Building Phases' },
+  { id: 'review', label: 'Review & Edit' },
+]
+
+function splitBulkTextList(value) {
+  return String(value || '')
+    .split(/[\n,;]+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function getAlphabeticLabel(index) {
+  let value = Math.max(0, Number(index) || 0)
+  let label = ''
+  do {
+    label = String.fromCharCode(65 + (value % 26)) + label
+    value = Math.floor(value / 26) - 1
+  } while (value >= 0)
+  return label
+}
+
+function getBulkBlockLabels(form = {}) {
+  const blockCount = Math.max(1, Math.trunc(Number(form.blockCount || 1)))
+  const providedLabels = splitBulkTextList(form.blockLabels)
+  return Array.from({ length: blockCount }, (_, index) => providedLabels[index] || getAlphabeticLabel(index))
+}
+
+function getBulkUnitTemplates(form = {}) {
+  const configuredOptions = form.unitOptions || DEFAULT_BULK_UNIT_FORM.unitOptions
+  const templates = Object.values(configuredOptions)
+    .filter((option) => option?.enabled)
+    .map((option) => ({
+      unitType: String(option.unitType || option.label || '').trim(),
+      bedrooms: String(option.bedrooms || '').trim(),
+      listPrice: option.listPrice === '' ? form.listPrice || '' : option.listPrice,
+    }))
+
+  if (templates.length) {
+    return templates
+  }
+
+  return [
+    {
+      unitType: String(form.unitType || '').trim(),
+      bedrooms: '',
+      listPrice: form.listPrice || '',
+    },
+  ]
+}
+
+function getBulkPhaseNames(form = {}) {
+  if (form.phaseMode !== 'staged') {
+    return [String(form.phase || '').trim()].filter(Boolean)
+  }
+  return splitBulkTextList(form.phaseNames)
+}
+
+function resolveBulkPhaseForRow(form = {}, rowIndex = 0, totalRows = 0) {
+  const phases = getBulkPhaseNames(form)
+  if (!phases.length) return ''
+  if (phases.length === 1) return phases[0]
+
+  const rowsPerPhase = Math.max(1, Math.ceil(totalRows / phases.length))
+  return phases[Math.min(phases.length - 1, Math.floor(rowIndex / rowsPerPhase))] || ''
+}
+
+function buildBulkUnitRows(form = {}) {
+  const templates = getBulkUnitTemplates(form)
+  const padding = Math.max(0, Math.trunc(Number(form.padding || 0)))
+  const rows = []
+
+  if (form.breakdownMode === 'blocks') {
+    const labels = getBulkBlockLabels(form)
+    const unitsPerBlock = Math.max(0, Math.trunc(Number(form.unitsPerBlock || 0)))
+    const startNumber = Math.max(1, Math.trunc(Number(form.blockStartNumber || form.startNumber || 1)))
+    let plainSequence = startNumber
+
+    labels.forEach((blockLabel) => {
+      for (let unitIndex = 0; unitIndex < unitsPerBlock; unitIndex += 1) {
+        const sequenceNumber = form.blockPrefixMode === 'block' ? startNumber + unitIndex : plainSequence
+        const padded = String(sequenceNumber).padStart(padding, '0')
+        const unitNumber =
+          form.blockPrefixMode === 'block'
+            ? `${blockLabel}${padded}`
+            : form.blockPrefixMode === 'custom'
+              ? `${form.blockCustomPrefix || ''}${padded}`
+              : padded
+        const template = templates[rows.length % templates.length] || templates[0]
+        rows.push({
+          unitNumber,
+          unitLabel: unitNumber,
+          phase: '',
+          block: blockLabel,
+          unitType: template.unitType,
+          bedrooms: template.bedrooms,
+          listPrice: template.listPrice === '' ? 0 : template.listPrice,
+          status: form.status || 'Available',
+          vatApplicable: form.vatApplicable,
+          notes: form.notes || '',
+        })
+        plainSequence += 1
+      }
+    })
+  } else {
+    const numbers = splitBulkTextList(form.individualUnitNumbers)
+    numbers.forEach((unitNumber, index) => {
+      const template = templates[index % templates.length] || templates[0]
+      rows.push({
+        unitNumber,
+        unitLabel: unitNumber,
+        phase: '',
+        block: form.block || '',
+        unitType: template.unitType,
+        bedrooms: template.bedrooms,
+        listPrice: template.listPrice === '' ? 0 : template.listPrice,
+        status: form.status || 'Available',
+        vatApplicable: form.vatApplicable,
+        notes: form.notes || '',
+      })
+    })
+  }
+
+  return rows.map((row, index) => ({
+    ...row,
+    phase: resolveBulkPhaseForRow(form, index, rows.length) || row.phase,
+  }))
 }
 
 const DEFAULT_DOCUMENT_FORM = {
@@ -340,6 +490,25 @@ const OVERVIEW_PROGRESS_TONE = {
 
 const TRANSACTION_MAIN_STAGE_ORDER = ['AVAIL', 'DEP', 'OTP', 'FIN', 'ATTY', 'XFER', 'REG']
 
+const DEVELOPMENT_UNIT_STATUS_OPTIONS = [
+  { value: 'Available', label: 'Available', mainStage: 'AVAIL', lifecycleStage: null },
+  { value: 'Reserved', label: 'Reserved', mainStage: 'DEP', lifecycleStage: null },
+  { value: 'OTP Signed', label: 'OTP', mainStage: 'OTP', lifecycleStage: 'otp' },
+  { value: 'Finance Pending', label: 'Finance Pending', mainStage: 'FIN', lifecycleStage: 'finance' },
+  { value: 'Proceed to Attorneys', label: 'Attorneys', mainStage: 'ATTY', lifecycleStage: 'transfer' },
+  { value: 'Transfer in Progress', label: 'Transfer', mainStage: 'XFER', lifecycleStage: 'transfer' },
+  { value: 'Sold', label: 'Sold', mainStage: 'OTP', lifecycleStage: 'otp' },
+  { value: 'Registered', label: 'Registered', mainStage: 'REG', lifecycleStage: 'registration', completed: true },
+  { value: 'Blocked', label: 'Blocked', mainStage: 'BLOCKED', lifecycleStage: null },
+]
+
+const DEVELOPMENT_UNIT_STATUS_LOOKUP = new Map(
+  DEVELOPMENT_UNIT_STATUS_OPTIONS.flatMap((option) => [
+    [normalizeUnitStatusKey(option.value), option],
+    [normalizeUnitStatusKey(option.label), option],
+  ]),
+)
+
 const CARD_SHELL =
   'rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.06)]'
 const READ_ONLY_FIELD_CLASS =
@@ -379,6 +548,147 @@ function parseEmailRecipients(value) {
 
 function isValidEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim())
+}
+
+function getStakeholderTeamsFromSettings(settings = {}) {
+  return settings?.stakeholderTeams || settings?.stakeholder_teams || {}
+}
+
+function buildAgentAssignmentKey(member = {}) {
+  const email = String(member?.email || member?.contactEmail || '')
+    .trim()
+    .toLowerCase()
+  if (email) return `email:${email}`
+
+  const id = String(
+    member?.organisationUserId ||
+      member?.organisation_user_id ||
+      member?.userId ||
+      member?.user_id ||
+      member?.id ||
+      '',
+  ).trim()
+  if (id) return `id:${id}`
+
+  return `name:${String(member?.name || member?.contactName || '').trim().toLowerCase()}`
+}
+
+function normalizeDevelopmentAgentAssignment(member = {}) {
+  const firstName = String(member?.firstName || member?.first_name || '').trim()
+  const lastName = String(member?.lastName || member?.last_name || '').trim()
+  const fullName = [firstName, lastName].filter(Boolean).join(' ')
+  const name = String(
+    member?.name ||
+      member?.contactName ||
+      member?.fullName ||
+      member?.full_name ||
+      fullName ||
+      member?.email ||
+      member?.contactEmail ||
+      '',
+  ).trim()
+  const email = String(member?.email || member?.contactEmail || '')
+    .trim()
+    .toLowerCase()
+  const userId = String(member?.userId || member?.user_id || '').trim()
+  const organisationUserId = String(
+    member?.organisationUserId ||
+      member?.organisation_user_id ||
+      member?.organisationUserID ||
+      member?.membershipId ||
+      member?.id ||
+      '',
+  ).trim()
+
+  if (!name && !email && !userId && !organisationUserId) {
+    return null
+  }
+
+  return {
+    id: organisationUserId || userId || email || name,
+    organisationUserId,
+    userId,
+    name,
+    contactName: name,
+    email,
+    contactEmail: email,
+    company: String(member?.company || member?.agency || member?.organisationName || '').trim(),
+    role: String(member?.role || member?.workspaceRole || member?.organisationRole || '').trim(),
+    workspaceRole: String(member?.workspaceRole || member?.workspace_role || '').trim(),
+    status: String(member?.status || member?.membershipStatus || member?.membership_status || 'active').trim(),
+    source: String(member?.source || (organisationUserId || userId ? 'organisation_user' : 'manual')).trim(),
+  }
+}
+
+function normalizeDevelopmentAgentAssignments(members = []) {
+  const seen = new Set()
+  const normalizedMembers = []
+
+  for (const member of Array.isArray(members) ? members : []) {
+    const normalized = normalizeDevelopmentAgentAssignment(member)
+    if (!normalized) continue
+
+    const key = buildAgentAssignmentKey(normalized)
+    if (seen.has(key)) continue
+    seen.add(key)
+    normalizedMembers.push(normalized)
+  }
+
+  return normalizedMembers
+}
+
+function getDevelopmentAgentAssignments(settings = {}) {
+  return normalizeDevelopmentAgentAssignments(getStakeholderTeamsFromSettings(settings).agents)
+}
+
+function isAssignableDevelopmentAgent(user = {}) {
+  const status = String(user?.status || user?.membershipStatus || user?.membership_status || 'active').toLowerCase()
+  if (status && !['active', 'accepted', 'invited', 'pending'].includes(status)) {
+    return false
+  }
+
+  const roleText = [
+    user?.role,
+    user?.workspaceRole,
+    user?.workspace_role,
+    user?.organisationRole,
+    user?.organisation_role,
+    user?.organizationRole,
+    user?.organization_role,
+    user?.jobTitle,
+    user?.job_title,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+
+  if (!roleText) return true
+
+  return [
+    'agent',
+    'principal',
+    'manager',
+    'team lead',
+    'team_lead',
+    'branch manager',
+    'branch_manager',
+    'sales',
+  ].some((token) => roleText.includes(token))
+}
+
+function buildDevelopmentAgentAssignmentFromUser(user = {}) {
+  return normalizeDevelopmentAgentAssignment({
+    ...user,
+    id: user.id,
+    organisationUserId: user.id,
+    userId: user.userId || user.user_id,
+    name: user.fullName || user.full_name || [user.firstName || user.first_name, user.lastName || user.last_name].filter(Boolean).join(' '),
+    email: user.email,
+    role: user.role,
+    workspaceRole: user.workspaceRole || user.workspace_role,
+    organisationRole: user.organisationRole || user.organisation_role || user.organizationRole || user.organization_role,
+    source: 'organisation_user',
+  })
 }
 
 function getFileExtensionFromUrl(value) {
@@ -500,6 +810,27 @@ function normalizeMarketingBoolean(value, fallback = false) {
   return fallback
 }
 
+function parseMarketingAmount(value) {
+  if (value === null || value === undefined) return null
+  const numeric = Number(String(value).replace(/[^0-9.-]+/g, ''))
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : null
+}
+
+function formatMarketingFloorplanPriceSummary(floorplan = {}) {
+  const from = parseMarketingAmount(floorplan.priceFrom)
+  const to = parseMarketingAmount(floorplan.priceTo)
+  const single = parseMarketingAmount(floorplan.price)
+
+  if (from && to) {
+    return from === to ? currency.format(from) : `${currency.format(from)} - ${currency.format(to)}`
+  }
+
+  if (from) return `From ${currency.format(from)}`
+  if (to) return `Up to ${currency.format(to)}`
+  if (single) return currency.format(single)
+  return ''
+}
+
 function buildFloorplanDraftId() {
   return `fp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
 }
@@ -519,22 +850,15 @@ function createDefaultMarketingFloorplan(index = 1) {
     garage: '',
     pool: '',
     price: '',
+    priceFrom: '',
+    priceTo: '',
+    description: '',
+    imageUrls: '',
+    floorplanUrls: '',
     ratesAndTaxes: '',
     levies: '',
     noTransferDuty: false,
     customisationOptions: false,
-  }
-}
-
-function createDefaultMarketingAgency(index = 1) {
-  return {
-    id: buildMarketingAgencyDraftId(),
-    name: '',
-    contactName: '',
-    contactEmail: '',
-    contactPhone: '',
-    notes: '',
-    isPreferred: index === 1,
   }
 }
 
@@ -551,6 +875,11 @@ function normalizeMarketingFloorplan(input = {}, index = 1) {
     garage: text(source.garage, ''),
     pool: text(source.pool, ''),
     price: text(source.price, ''),
+    priceFrom: text(source.priceFrom, source.minPrice || source.price || ''),
+    priceTo: text(source.priceTo, source.maxPrice || source.price || ''),
+    description: text(source.description, source.notes || ''),
+    imageUrls: text(source.imageUrls, source.imageUrl || ''),
+    floorplanUrls: text(source.floorplanUrls, source.floorplanUrl || source.planUrl || ''),
     ratesAndTaxes: text(source.ratesAndTaxes, ''),
     levies: text(source.levies, ''),
     noTransferDuty: normalizeMarketingBoolean(source.noTransferDuty, false),
@@ -796,22 +1125,18 @@ function buildMarketingForm(profile = {}, development = {}) {
 function getMarketingLegacyPayload(marketingInput = null) {
   const marketing = normalizeMarketingContentForm(marketingInput)
   const dedupe = (values = []) => [...new Set(values.map((item) => String(item || '').trim()).filter(Boolean))]
-  const parseAmount = (value) => {
-    if (value === null || value === undefined) return null
-    const numeric = Number(String(value).replace(/[^0-9.-]+/g, ''))
-    return Number.isFinite(numeric) && numeric > 0 ? numeric : null
-  }
-
   const imageLinks = dedupe([
     marketing.mediaLibrary.heroImageUrl,
     marketing.mediaLibrary.developmentLogoUrl,
     ...textareaToList(marketing.mediaLibrary.galleryImageUrls),
+    ...marketing.floorplans.flatMap((item) => textareaToList(item.imageUrls)),
   ])
 
   const sitePlans = dedupe([
     marketing.mediaLibrary.sitePlanUrl,
     marketing.mediaLibrary.masterplanUrl,
     ...textareaToList(marketing.mediaLibrary.floorplanUrls),
+    ...marketing.floorplans.flatMap((item) => textareaToList(item.floorplanUrls)),
   ])
 
   const plans = dedupe([
@@ -844,7 +1169,7 @@ function getMarketingLegacyPayload(marketingInput = null) {
   ])
 
   const floorplanPrices = marketing.floorplans
-    .map((item) => parseAmount(item?.price))
+    .flatMap((item) => [parseMarketingAmount(item?.priceFrom), parseMarketingAmount(item?.priceTo), parseMarketingAmount(item?.price)])
     .filter((value) => value !== null)
   let derivedPriceRange = ''
   if (floorplanPrices.length) {
@@ -879,6 +1204,12 @@ function toTitleLabel(value) {
   return String(value || '')
     .replaceAll('_', ' ')
     .replace(/\b\w/g, (character) => character.toUpperCase())
+}
+
+function normalizeUnitStatusKey(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
 }
 
 function normalizeDeveloperFinancialChoice(value, allowedValues, fallback) {
@@ -959,6 +1290,62 @@ function resolveTransactionMainStage(row = {}) {
   if (normalizedStage.includes('attorney') || normalizedStage.includes('transfer preparation') || normalizedStage.includes('proceed to attorneys')) return 'ATTY'
   if (normalizedStage.includes('transfer')) return 'XFER'
   return 'AVAIL'
+}
+
+function getDevelopmentUnitStatusOption(status) {
+  const normalized = normalizeUnitStatusKey(status)
+  return DEVELOPMENT_UNIT_STATUS_LOOKUP.get(normalized) || {
+    value: String(status || 'Available').trim() || 'Available',
+    label: toTitleLabel(status || 'Available'),
+    mainStage: normalized === 'sold' ? 'OTP' : 'AVAIL',
+    lifecycleStage: null,
+  }
+}
+
+function resolveDevelopmentUnitStatusMainStage(status) {
+  return getDevelopmentUnitStatusOption(status).mainStage || 'AVAIL'
+}
+
+function resolveDevelopmentTrackerMainStage(row = {}) {
+  const unitStatus = row?.unit?.status ?? row?.status
+  const unitMainStage = resolveDevelopmentUnitStatusMainStage(unitStatus)
+  if (unitMainStage && unitMainStage !== 'AVAIL') {
+    return unitMainStage
+  }
+
+  return resolveTransactionMainStage(row)
+}
+
+function isAvailableDevelopmentUnitStatus(status) {
+  return resolveDevelopmentUnitStatusMainStage(status) === 'AVAIL'
+}
+
+function getDevelopmentTrackerProgressPercent(stageKey) {
+  const stageIndex = TRANSACTION_MAIN_STAGE_ORDER.indexOf(stageKey)
+  if (stageIndex <= 0) return 0
+  return Math.round((stageIndex / (TRANSACTION_MAIN_STAGE_ORDER.length - 1)) * 100)
+}
+
+function getDevelopmentUnitStatusPillClassName(status) {
+  const stageKey = resolveDevelopmentUnitStatusMainStage(status)
+
+  if (stageKey === 'AVAIL') {
+    return 'border-[#b7e4c7] bg-[#f1fbf4] text-[#166534]'
+  }
+
+  if (stageKey === 'DEP') {
+    return 'border-[#f5d7a8] bg-[#fff8eb] text-[#8a5a12]'
+  }
+
+  if (['OTP', 'FIN', 'ATTY', 'XFER'].includes(stageKey)) {
+    return 'border-[#bfdbfe] bg-[#eff6ff] text-[#1d4ed8]'
+  }
+
+  if (stageKey === 'REG') {
+    return 'border-[#d8e3ef] bg-[#f8fafc] text-[#475569]'
+  }
+
+  return 'border-[#e2e8f0] bg-[#f8fafc] text-[#64748b]'
 }
 
 function getTransactionMonetaryValue(row = {}) {
@@ -1317,6 +1704,11 @@ function DevelopmentDetail() {
   const [selectedFloorplanId, setSelectedFloorplanId] = useState('')
   const [detailsForm, setDetailsForm] = useState(DEFAULT_DETAILS_FORM)
   const [developerProfileDefaults, setDeveloperProfileDefaults] = useState(() => normalizeOrganisationDeveloperProfile())
+  const [organisationUsers, setOrganisationUsers] = useState([])
+  const [organisationUsersLoading, setOrganisationUsersLoading] = useState(false)
+  const [agentAssignments, setAgentAssignments] = useState([])
+  const [selectedAgentUserId, setSelectedAgentUserId] = useState('')
+  const [manualAgentDraft, setManualAgentDraft] = useState({ name: '', email: '' })
   const [financialsForm, setFinancialsForm] = useState(DEFAULT_FINANCIALS_FORM)
   const [reservationSettingsForm, setReservationSettingsForm] = useState(
     DEFAULT_RESERVATION_SETTINGS_FORM,
@@ -1332,15 +1724,16 @@ function DevelopmentDetail() {
     conveyancing: { ...DEFAULT_COMMERCIAL_DOCUMENT_FORM },
     bond_originator: { ...DEFAULT_COMMERCIAL_DOCUMENT_FORM },
   })
-  const [unitDrafts, setUnitDrafts] = useState({})
   const [unitModalOpen, setUnitModalOpen] = useState(false)
   const [bulkUnitModalOpen, setBulkUnitModalOpen] = useState(false)
   const [detailsSaving, setDetailsSaving] = useState(false)
+  const [agentAssignmentsSaving, setAgentAssignmentsSaving] = useState(false)
   const [financialsSaving, setFinancialsSaving] = useState(false)
   const [reservationSettingsSaving, setReservationSettingsSaving] = useState(false)
   const [isEditingDetailsSection, setIsEditingDetailsSection] = useState(false)
   const [isEditingFinancialsSection, setIsEditingFinancialsSection] = useState(false)
   const [unitSaving, setUnitSaving] = useState(false)
+  const [unitStatusSavingId, setUnitStatusSavingId] = useState('')
   const [bulkUnitSaving, setBulkUnitSaving] = useState(false)
   const [documentSaving, setDocumentSaving] = useState(false)
   const [documentDownloadingId, setDocumentDownloadingId] = useState('')
@@ -1404,6 +1797,33 @@ function DevelopmentDetail() {
   useEffect(() => {
     let active = true
 
+    async function loadOrganisationUsers() {
+      try {
+        setOrganisationUsersLoading(true)
+        const users = await listOrganisationUsers()
+        if (active) {
+          setOrganisationUsers(Array.isArray(users) ? users : [])
+        }
+      } catch {
+        if (active) {
+          setOrganisationUsers([])
+        }
+      } finally {
+        if (active) {
+          setOrganisationUsersLoading(false)
+        }
+      }
+    }
+
+    void loadOrganisationUsers()
+    return () => {
+      active = false
+    }
+  }, [])
+
+  useEffect(() => {
+    let active = true
+
     async function loadDeveloperProfileDefaults() {
       try {
         const response = await fetchOrganisationSettings()
@@ -1450,6 +1870,9 @@ function DevelopmentDetail() {
     setDetailsForm(buildDetailsForm(data))
     setFinancialsForm(buildFinancialsForm(data.financials))
     setReservationSettingsForm(buildReservationSettingsForm(data.settings))
+    setAgentAssignments(getDevelopmentAgentAssignments(data.settings))
+    setSelectedAgentUserId('')
+    setManualAgentDraft({ name: '', email: '' })
     setIsEditingDetailsSection(false)
     setIsEditingFinancialsSection(false)
   }, [data])
@@ -1470,21 +1893,6 @@ function DevelopmentDetail() {
     [documents],
   )
 
-  useEffect(() => {
-    setUnitDrafts(
-      Object.fromEntries(
-        rows.map((row) => [
-          row?.unit?.id,
-          {
-            listPrice: row?.unit?.listPrice ?? row?.unit?.price ?? '',
-            currentPrice: row?.unit?.currentPrice ?? '',
-            status: row?.unit?.status || 'Available',
-            phase: row?.unit?.phase || '',
-          },
-        ]),
-      ),
-    )
-  }, [rows])
   const totalListedStockValue = useMemo(
     () => rows.reduce((sum, row) => sum + Number(row?.unit?.list_price || row?.unit?.price || row?.unit?.listPrice || 0), 0),
     [rows],
@@ -1494,8 +1902,8 @@ function DevelopmentDetail() {
     () =>
       rows.reduce((sum, row) => {
         const hasTransaction = Boolean(row?.transaction?.id)
-        const unitStatus = String(row?.unit?.status || '').toLowerCase()
-        if (hasTransaction || (unitStatus && unitStatus !== 'available')) {
+        const unitStatus = row?.unit?.status || 'Available'
+        if (hasTransaction || !isAvailableDevelopmentUnitStatus(unitStatus)) {
           return sum
         }
 
@@ -1515,23 +1923,19 @@ function DevelopmentDetail() {
     for (const row of rows) {
       const unitId = row?.unit?.id || row?.unit?.unit_number || null
       const unitIdKey = unitId ? String(unitId) : null
-      const unitStatus = String(row?.unit?.status || '')
-        .trim()
-        .toLowerCase()
+      const mainStageKey = resolveDevelopmentTrackerMainStage(row)
 
       if (unitIdKey) {
         allUnitIds.add(unitIdKey)
-        if (unitStatus === 'available') {
+        if (mainStageKey === 'AVAIL') {
           availableUnitIds.add(unitIdKey)
         }
       }
 
-      const transaction = row?.transaction
-      if (!transaction) {
+      if (mainStageKey === 'AVAIL' || mainStageKey === 'BLOCKED') {
         continue
       }
 
-      const mainStageKey = resolveTransactionMainStage(row)
       const dealValue = getTransactionMonetaryValue(row)
 
       if (mainStageKey === 'REG') {
@@ -1589,6 +1993,35 @@ function DevelopmentDetail() {
   const developmentStageDistribution = useMemo(() => selectStageDistribution(rows), [rows])
   const developmentBottleneckSummary = useMemo(() => selectDealBottleneckSummary(rows), [rows])
   const developmentPerformance = useMemo(() => selectDevelopmentPerformance(rows)[0] || null, [rows])
+  const developmentTrackerStageCounts = useMemo(() => {
+    const counts = { AVAIL: 0, DEP: 0, OTP: 0, FIN: 0, ATTY: 0, XFER: 0, REG: 0, BLOCKED: 0 }
+    rows.forEach((row) => {
+      const stageKey = resolveDevelopmentTrackerMainStage(row)
+      counts[stageKey] = Number(counts[stageKey] || 0) + 1
+    })
+    return counts
+  }, [rows])
+  const developmentTrackerMetrics = useMemo(() => {
+    const available = Number(developmentTrackerStageCounts.AVAIL || 0)
+    const inProgress =
+      Number(developmentTrackerStageCounts.DEP || 0) +
+      Number(developmentTrackerStageCounts.OTP || 0) +
+      Number(developmentTrackerStageCounts.FIN || 0) +
+      Number(developmentTrackerStageCounts.ATTY || 0) +
+      Number(developmentTrackerStageCounts.XFER || 0)
+    const registered = Number(developmentTrackerStageCounts.REG || 0)
+    const sold = inProgress + registered
+    const totalUnits = rows.length || Number(developmentMetrics.totalUnits || 0)
+
+    return {
+      totalUnits,
+      unitsAvailable: available,
+      dealsInProgress: inProgress,
+      unitsRegistered: registered,
+      unitsSold: sold,
+      sellThroughPercent: totalUnits > 0 ? (sold / totalUnits) * 100 : 0,
+    }
+  }, [developmentMetrics.totalUnits, developmentTrackerStageCounts, rows.length])
   const financeMix = useMemo(() => {
     const segments = selectFinanceMix(rows)
     const totalCount = segments.reduce((sum, item) => sum + item.count, 0)
@@ -1623,13 +2056,13 @@ function DevelopmentDetail() {
   }, [rows])
 
   const overviewSalesProgress = useMemo(() => {
-    const baseTotal = Number(detailsForm.totalUnitsExpected || developmentMetrics.totalUnits || 0)
-    const available = Number(developmentMetrics.unitsAvailable || 0)
-    const inProgress = Number(developmentMetrics.dealsInProgress || 0)
-    const completed = Number(developmentMetrics.unitsRegistered || 0)
+    const baseTotal = Number(detailsForm.totalUnitsExpected || developmentTrackerMetrics.totalUnits || 0)
+    const available = Number(developmentTrackerMetrics.unitsAvailable || 0)
+    const inProgress = Number(developmentTrackerMetrics.dealsInProgress || 0)
+    const completed = Number(developmentTrackerMetrics.unitsRegistered || 0)
     const calculatedTotal = available + inProgress + completed
     const totalUnits = Math.max(baseTotal, calculatedTotal)
-    const sellThroughPercent = Number(developmentPerformance?.sellThroughPercent || 0)
+    const sellThroughPercent = Number(developmentTrackerMetrics.sellThroughPercent || developmentPerformance?.sellThroughPercent || 0)
     const safeTotal = totalUnits > 0 ? totalUnits : 1
 
     return {
@@ -1643,10 +2076,11 @@ function DevelopmentDetail() {
       completedWidth: (completed / safeTotal) * 100,
     }
   }, [
-    developmentMetrics.dealsInProgress,
-    developmentMetrics.totalUnits,
-    developmentMetrics.unitsAvailable,
-    developmentMetrics.unitsRegistered,
+    developmentTrackerMetrics.dealsInProgress,
+    developmentTrackerMetrics.sellThroughPercent,
+    developmentTrackerMetrics.totalUnits,
+    developmentTrackerMetrics.unitsAvailable,
+    developmentTrackerMetrics.unitsRegistered,
     developmentPerformance?.sellThroughPercent,
     detailsForm.totalUnitsExpected,
   ])
@@ -1862,10 +2296,11 @@ function DevelopmentDetail() {
   const remainingPlannedUnits = Math.max(expectedUnitCount - unitRows.length, 0)
 
   const filteredUnits = useMemo(() => {
+    const selectedStatus = getDevelopmentUnitStatusOption(unitStatusFilter)
     const scopedUnits =
       unitStatusFilter === 'all'
         ? [...unitRows]
-        : unitRows.filter((unit) => String(unit?.status || '').toLowerCase() === unitStatusFilter)
+        : unitRows.filter((unit) => getDevelopmentUnitStatusOption(unit?.status).value === selectedStatus.value)
 
     return scopedUnits.sort((left, right) => {
       if (unitStructureConfig.mode === 'phase') {
@@ -1904,26 +2339,62 @@ function DevelopmentDetail() {
   const transactionRows = useMemo(() => {
     return rows
       .filter((row) => {
-        if (!row?.transaction?.id || !row?.unit?.id) {
+        if (!row?.unit?.id) {
           return false
         }
 
-        const searchHaystack = `${row?.unit?.unit_number || ''} ${row?.buyer?.name || ''} ${row?.buyer?.email || ''}`.toLowerCase()
+        const mainStageKey = resolveDevelopmentTrackerMainStage(row)
+        if (!row?.transaction?.id && (mainStageKey === 'AVAIL' || mainStageKey === 'BLOCKED')) {
+          return false
+        }
+
+        const stageLabel = row?.transaction?.stage || row?.unit?.status || ''
+        const searchHaystack = `${row?.unit?.unit_number || ''} ${row?.buyer?.name || ''} ${row?.buyer?.email || ''} ${stageLabel}`.toLowerCase()
         const matchesSearch = !transactionSearch.trim() || searchHaystack.includes(transactionSearch.trim().toLowerCase())
-        const matchesStage = transactionStageFilter === 'all' || String(row?.transaction?.stage || '').toLowerCase() === transactionStageFilter
+        const matchesStage =
+          transactionStageFilter === 'all' ||
+          normalizeUnitStatusKey(stageLabel) === normalizeUnitStatusKey(transactionStageFilter)
         return matchesSearch && matchesStage
       })
       .map((row) => {
-        const mainStageKey = resolveTransactionMainStage(row)
+        const mainStageKey = resolveDevelopmentTrackerMainStage(row)
+        const isManualUnitStatus = !row?.transaction?.id
         return {
           ...row,
           mainStageKey,
-          progressPercent: getTransactionProgressPercent(row),
-          buyerDisplayName: row?.buyer?.name || 'No buyer assigned',
-          buyerEmail: row?.buyer?.email || 'No email',
+          isManualUnitStatus,
+          progressPercent: isManualUnitStatus
+            ? getDevelopmentTrackerProgressPercent(mainStageKey)
+            : getTransactionProgressPercent(row),
+          buyerDisplayName: row?.buyer?.name || (isManualUnitStatus ? 'External / direct sale' : 'No buyer assigned'),
+          buyerEmail: row?.buyer?.email || (isManualUnitStatus ? 'Manual stock update' : 'No email'),
         }
       })
   }, [rows, transactionSearch, transactionStageFilter])
+  const assignedAgentKeys = useMemo(
+    () => new Set(agentAssignments.map((member) => buildAgentAssignmentKey(member))),
+    [agentAssignments],
+  )
+  const assignableAgentOptions = useMemo(
+    () =>
+      organisationUsers
+        .filter(isAssignableDevelopmentAgent)
+        .map(buildDevelopmentAgentAssignmentFromUser)
+        .filter(Boolean)
+        .filter((member) => !assignedAgentKeys.has(buildAgentAssignmentKey(member)))
+        .sort((left, right) => String(left.name || left.email).localeCompare(String(right.name || right.email))),
+    [assignedAgentKeys, organisationUsers],
+  )
+  const bulkUnitStepIndex = useMemo(
+    () => Math.max(0, BULK_UNIT_STEPS.findIndex((step) => step.id === bulkUnitForm.step)),
+    [bulkUnitForm.step],
+  )
+  const bulkPreviewRows = useMemo(
+    () => (bulkUnitForm.step === 'review' && bulkUnitForm.generatedRows.length
+      ? bulkUnitForm.generatedRows
+      : buildBulkUnitRows(bulkUnitForm)),
+    [bulkUnitForm],
+  )
   const selectedUnitRow = useMemo(
     () => unitRows.find((unit) => unit.id === unitForm.id) || null,
     [unitForm.id, unitRows],
@@ -1932,7 +2403,11 @@ function DevelopmentDetail() {
   const marketingForm = useMemo(() => normalizeMarketingContentForm(detailsForm.marketing), [detailsForm.marketing])
   const marketingFloorplanPriceRange = useMemo(() => {
     const values = marketingForm.floorplans
-      .map((item) => Number(String(item?.price || '').replace(/[^0-9.-]+/g, '')))
+      .flatMap((item) => [
+        parseMarketingAmount(item?.priceFrom),
+        parseMarketingAmount(item?.priceTo),
+        parseMarketingAmount(item?.price),
+      ])
       .filter((value) => Number.isFinite(value) && value > 0)
 
     if (!values.length) {
@@ -2170,7 +2645,7 @@ function DevelopmentDetail() {
   const revenueSecured = Number(developmentPerformance?.revenueSecured || developmentMetrics.totalSalesValue || 0)
   const revenueAtRisk = Math.max(effectiveProjectedRevenue - revenueSecured, 0)
   const securedCoverage = effectiveProjectedRevenue > 0 ? (revenueSecured / effectiveProjectedRevenue) * 100 : 0
-  const averageSecuredUnitValue = developmentMetrics.unitsRegistered > 0 ? revenueSecured / developmentMetrics.unitsRegistered : 0
+  const averageSecuredUnitValue = developmentTrackerMetrics.unitsRegistered > 0 ? revenueSecured / developmentTrackerMetrics.unitsRegistered : 0
   const averageListedUnitValue = rows.length > 0 ? totalListedStockValue / rows.length : 0
 
   const commercialKpis = useMemo(
@@ -2202,20 +2677,20 @@ function DevelopmentDetail() {
       {
         label: 'Pipeline Value',
         value: currency.format(developmentMetrics.pipelineValue || 0),
-        meta: `${formatNumber(developmentMetrics.dealsInProgress || 0)} deals still in flight`,
+        meta: `${formatNumber(developmentTrackerMetrics.dealsInProgress || 0)} units still in flight`,
         icon: Workflow,
       },
       {
         label: 'Revenue At Risk',
         value: currency.format(revenueAtRisk || 0),
-        meta: `${formatNumber(developmentMetrics.unitsAvailable || 0)} units still to convert`,
+        meta: `${formatNumber(developmentTrackerMetrics.unitsAvailable || 0)} units still to convert`,
         icon: AlertTriangle,
       },
     ],
     [
-      developmentMetrics.dealsInProgress,
       developmentMetrics.pipelineValue,
-      developmentMetrics.unitsAvailable,
+      developmentTrackerMetrics.dealsInProgress,
+      developmentTrackerMetrics.unitsAvailable,
       effectiveProjectedCost,
       effectiveProjectedProfit,
       effectiveProjectedRevenue,
@@ -2606,13 +3081,13 @@ function DevelopmentDetail() {
     () => [
       {
         label: 'Sell-through',
-        value: `${(developmentPerformance?.sellThroughPercent || 0).toFixed(1)}%`,
-        meta: `${formatNumber(developmentMetrics.unitsSold || 0)} sold or committed`,
+        value: `${(developmentTrackerMetrics.sellThroughPercent || 0).toFixed(1)}%`,
+        meta: `${formatNumber(developmentTrackerMetrics.unitsSold || 0)} sold or committed`,
       },
       {
         label: 'Available Stock Value',
         value: currency.format(availableStockValue || 0),
-        meta: `${formatNumber(developmentMetrics.unitsAvailable || 0)} units still unsold`,
+        meta: `${formatNumber(developmentTrackerMetrics.unitsAvailable || 0)} units still unsold`,
       },
       {
         label: 'Avg Secured Deal',
@@ -2626,8 +3101,8 @@ function DevelopmentDetail() {
       },
       {
         label: 'Transfer Fee Exposure',
-        value: currency.format((Number(data?.attorneyConfig?.defaultFeeAmount || 0) || 0) * (developmentMetrics.unitsRegistered || 0)),
-        meta: `${formatNumber(developmentMetrics.unitsRegistered || 0)} registered transactions`,
+        value: currency.format((Number(data?.attorneyConfig?.defaultFeeAmount || 0) || 0) * (developmentTrackerMetrics.unitsRegistered || 0)),
+        meta: `${formatNumber(developmentTrackerMetrics.unitsRegistered || 0)} registered units`,
       },
       {
         label: 'Bond Commission Pool',
@@ -2641,10 +3116,10 @@ function DevelopmentDetail() {
       averageSecuredUnitValue,
       bondEligibleRows.length,
       data?.attorneyConfig?.defaultFeeAmount,
-      developmentMetrics.unitsAvailable,
-      developmentMetrics.unitsRegistered,
-      developmentMetrics.unitsSold,
-      developmentPerformance?.sellThroughPercent,
+      developmentTrackerMetrics.sellThroughPercent,
+      developmentTrackerMetrics.unitsAvailable,
+      developmentTrackerMetrics.unitsRegistered,
+      developmentTrackerMetrics.unitsSold,
       expectedBondCommissionPool,
     ],
   )
@@ -2684,10 +3159,10 @@ function DevelopmentDetail() {
       })
     }
 
-    if (developmentMetrics.totalUnits > 0 && (developmentMetrics.unitsAvailable / developmentMetrics.totalUnits) * 100 > 45) {
+    if (developmentTrackerMetrics.totalUnits > 0 && (developmentTrackerMetrics.unitsAvailable / developmentTrackerMetrics.totalUnits) * 100 > 45) {
       items.push({
         title: 'Large unsold inventory remains',
-        body: `${formatNumber(developmentMetrics.unitsAvailable)} of ${formatNumber(developmentMetrics.totalUnits)} units are still available. Check pricing, launch pacing, and broker focus.`,
+        body: `${formatNumber(developmentTrackerMetrics.unitsAvailable)} of ${formatNumber(developmentTrackerMetrics.totalUnits)} units are still available. Check pricing, launch pacing, and broker focus.`,
         tone: 'normal',
       })
     }
@@ -2706,8 +3181,8 @@ function DevelopmentDetail() {
     data?.bondConfig?.bondOriginatorName,
     developmentBottleneckSummary.leadLabel,
     developmentBottleneckSummary.totalFlagged,
-    developmentMetrics.totalUnits,
-    developmentMetrics.unitsAvailable,
+    developmentTrackerMetrics.totalUnits,
+    developmentTrackerMetrics.unitsAvailable,
     effectiveTargetMargin,
     financeMix.bondShare,
   ])
@@ -2715,12 +3190,12 @@ function DevelopmentDetail() {
   const overviewBottlenecks = useMemo(() => selectBottlenecks(rows).slice(0, 3), [rows])
 
   const transactionPipelineItems = useMemo(() => {
-    const counts = developmentMetrics.stageCounts || {}
+    const counts = developmentTrackerStageCounts || {}
     const reservedCount = Number(counts.DEP || 0)
     const offerCount = Number(counts.OTP || 0) + Number(counts.FIN || 0)
     const transferCount = Number(counts.ATTY || 0) + Number(counts.XFER || 0)
     const registeredCount = Number(counts.REG || 0)
-    const availableCount = Number(counts.AVAIL || developmentMetrics.unitsAvailable || 0)
+    const availableCount = Number(counts.AVAIL || 0)
     const max = Math.max(availableCount, reservedCount, offerCount, transferCount, registeredCount, 1)
 
     return [
@@ -2733,7 +3208,7 @@ function DevelopmentDetail() {
       ...item,
       width: Math.max((item.count / max) * 100, item.count > 0 ? 8 : 3),
     }))
-  }, [developmentMetrics.stageCounts, developmentMetrics.unitsAvailable])
+  }, [developmentTrackerStageCounts])
 
   const unitStatusItems = useMemo(() => {
     const counts = {
@@ -2742,10 +3217,11 @@ function DevelopmentDetail() {
       sold: 0,
       transferred: 0,
       registered: 0,
+      blocked: 0,
     }
 
     rows.forEach((row) => {
-      const stageKey = resolveTransactionMainStage(row)
+      const stageKey = resolveDevelopmentTrackerMainStage(row)
       if (stageKey === 'REG') {
         counts.registered += 1
       } else if (stageKey === 'XFER') {
@@ -2754,6 +3230,8 @@ function DevelopmentDetail() {
         counts.sold += 1
       } else if (stageKey === 'DEP') {
         counts.reserved += 1
+      } else if (stageKey === 'BLOCKED') {
+        counts.blocked += 1
       } else {
         counts.available += 1
       }
@@ -2766,6 +3244,7 @@ function DevelopmentDetail() {
       sold: '#1d7fc2',
       transferred: '#7c3aed',
       registered: '#9ca3af',
+      blocked: '#64748b',
     }
     let cursor = 0
     const gradientParts = Object.entries(counts)
@@ -2786,6 +3265,7 @@ function DevelopmentDetail() {
         { key: 'sold', label: 'Sold', color: colors.sold },
         { key: 'transferred', label: 'Transferred', color: colors.transferred },
         { key: 'registered', label: 'Registered', color: colors.registered },
+        { key: 'blocked', label: 'Blocked', color: colors.blocked },
       ].map((item) => ({
         ...item,
         count: counts[item.key],
@@ -2956,40 +3436,6 @@ function DevelopmentDetail() {
     setMarketingSellingPointEntries((previous) => previous.filter((_, currentIndex) => currentIndex !== index))
   }
 
-  function setMarketingAgencies(updater) {
-    setDetailsForm((previous) => {
-      const normalizedMarketing = normalizeMarketingContentForm(previous.marketing)
-      const nextAgencies =
-        typeof updater === 'function'
-          ? updater(normalizedMarketing.agencies)
-          : Array.isArray(updater)
-            ? updater
-            : normalizedMarketing.agencies
-
-      return {
-        ...previous,
-        marketing: {
-          ...normalizedMarketing,
-          agencies: nextAgencies.map((item, index) => normalizeMarketingAgency(item, index + 1)),
-        },
-      }
-    })
-  }
-
-  function addMarketingAgency() {
-    setMarketingAgencies((previous) => [...previous, createDefaultMarketingAgency(previous.length + 1)])
-  }
-
-  function updateMarketingAgencyEntry(id, fieldKey, value) {
-    setMarketingAgencies((previous) =>
-      previous.map((item) => (item.id === id ? { ...item, [fieldKey]: value } : item)),
-    )
-  }
-
-  function removeMarketingAgency(id) {
-    setMarketingAgencies((previous) => previous.filter((item) => item.id !== id))
-  }
-
   function buildDevelopmentDetailsPayload() {
     const marketingLegacyPayload = getMarketingLegacyPayload(detailsForm.marketing)
     const marketingOverview = marketingLegacyPayload.marketingContent.listingOverview
@@ -3068,6 +3514,97 @@ function DevelopmentDetail() {
       setError(saveError.message)
     } finally {
       setFinancialsSaving(false)
+    }
+  }
+
+  function handleAddSelectedAgentAssignment() {
+    if (!selectedAgentUserId) {
+      return
+    }
+
+    const selectedAgent = assignableAgentOptions.find(
+      (member) => buildAgentAssignmentKey(member) === selectedAgentUserId,
+    )
+    if (!selectedAgent) {
+      return
+    }
+
+    setAgentAssignments((previous) =>
+      normalizeDevelopmentAgentAssignments([...previous, selectedAgent]),
+    )
+    setSelectedAgentUserId('')
+  }
+
+  function handleAddManualAgentAssignment() {
+    const name = String(manualAgentDraft.name || '').trim()
+    const email = String(manualAgentDraft.email || '').trim().toLowerCase()
+
+    if (!name && !email) {
+      setError('Add an agent name or email address before assigning them.')
+      return
+    }
+
+    if (email && !isValidEmail(email)) {
+      setError('Use a valid email address for the assigned agent.')
+      return
+    }
+
+    setError('')
+    setAgentAssignments((previous) =>
+      normalizeDevelopmentAgentAssignments([
+        ...previous,
+        {
+          name: name || email,
+          contactName: name || email,
+          email,
+          contactEmail: email,
+          role: 'agent',
+          source: 'manual',
+          status: 'active',
+        },
+      ]),
+    )
+    setManualAgentDraft({ name: '', email: '' })
+  }
+
+  function handleRemoveAgentAssignment(member) {
+    const removeKey = buildAgentAssignmentKey(member)
+    setAgentAssignments((previous) =>
+      previous.filter((item) => buildAgentAssignmentKey(item) !== removeKey),
+    )
+  }
+
+  async function handleAgentAssignmentsSave(event) {
+    event.preventDefault()
+    if (!canManageDevelopment) {
+      return
+    }
+
+    try {
+      setAgentAssignmentsSaving(true)
+      setFeedback('')
+      setError('')
+
+      const currentSettings = data?.settings || {}
+      const existingStakeholderTeams = getStakeholderTeamsFromSettings(currentSettings)
+      const normalizedAgents = normalizeDevelopmentAgentAssignments(agentAssignments)
+
+      await updateDevelopmentSettings(data.development.id, {
+        ...currentSettings,
+        stakeholderTeams: {
+          ...existingStakeholderTeams,
+          agents: normalizedAgents,
+        },
+      })
+
+      setAgentAssignments(normalizedAgents)
+      setFeedback('Development agent assignments updated.')
+      window.dispatchEvent(new Event('itg:developments-changed'))
+      await loadData()
+    } catch (saveError) {
+      setError(saveError.message)
+    } finally {
+      setAgentAssignmentsSaving(false)
     }
   }
 
@@ -3347,12 +3884,15 @@ function DevelopmentDetail() {
     }
   }
 
-  async function handleUnitRowSave(unit) {
-    const draft = unitDrafts[unit.id] || {}
+  async function handleUnitStatusQuickChange(unit, nextStatus) {
+    const statusOption = getDevelopmentUnitStatusOption(nextStatus)
+    const nextStatusValue = statusOption.value || 'Available'
 
     try {
       setUnitSaving(true)
+      setUnitStatusSavingId(unit.id)
       setFeedback('')
+      setError('')
       await saveDevelopmentUnit({
         ...buildUnitForm(unit),
         id: unit.id,
@@ -3367,18 +3907,31 @@ function DevelopmentDetail() {
         sizeSqm: unit.sizeSqm ?? null,
         floorplanId: unit.floorplanId || null,
         notes: unit.notes || '',
-        phase: draft.phase ?? unit.phase ?? '',
-        status: draft.status ?? unit.status ?? 'Available',
-        listPrice: draft.listPrice === '' ? 0 : draft.listPrice,
-        currentPrice: draft.currentPrice === '' ? null : draft.currentPrice,
+        phase: unit.phase ?? '',
+        status: nextStatusValue,
+        listPrice: unit.listPrice === '' ? 0 : unit.listPrice ?? unit.price ?? 0,
+        currentPrice: unit.currentPrice === '' ? null : unit.currentPrice ?? unit.salesPrice ?? null,
         vatApplicable: unit.vatApplicable ?? null,
       })
-      setFeedback(`Unit ${unit.unitNumber} pricing updated.`)
+
+      if (unit.currentTransactionId && statusOption.lifecycleStage) {
+        await updateTransactionLifecycleStage(unit.currentTransactionId, statusOption.lifecycleStage, {
+          completed: Boolean(statusOption.completed),
+          status: statusOption.completed ? 'completed' : 'active',
+          source: 'development_unit_status_quick_update',
+          note: `Unit ${unit.unitNumber} marked ${nextStatusValue} from the development stock table.`,
+        })
+      }
+
+      setFeedback(`Unit ${unit.unitNumber} marked ${nextStatusValue}.`)
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      window.dispatchEvent(new Event('itg:developments-changed'))
       await loadData()
     } catch (saveError) {
       setError(saveError.message)
     } finally {
       setUnitSaving(false)
+      setUnitStatusSavingId('')
     }
   }
 
@@ -3396,10 +3949,19 @@ function DevelopmentDetail() {
   }
 
   function openBulkUnitModal() {
+    const suggestedCount = remainingPlannedUnits > 0 ? remainingPlannedUnits : 10
+    const suggestedNumbers = Array.from(
+      { length: Math.min(suggestedCount, 80) },
+      (_, index) => String(suggestedBulkStartNumber + index),
+    ).join('\n')
     setBulkUnitForm({
       ...DEFAULT_BULK_UNIT_FORM,
+      step: 'breakdown',
       count: remainingPlannedUnits > 0 ? String(remainingPlannedUnits) : '',
       startNumber: String(suggestedBulkStartNumber),
+      individualUnitNumbers: suggestedNumbers,
+      unitsPerBlock: remainingPlannedUnits > 0 ? String(remainingPlannedUnits) : '',
+      blockStartNumber: '1',
       phase: unitForm.phase || '',
       block: unitForm.block || '',
       unitType: unitForm.unitType || '',
@@ -3411,29 +3973,115 @@ function DevelopmentDetail() {
     setBulkUnitModalOpen(true)
   }
 
+  function validateBulkUnitStep(step = bulkUnitForm.step) {
+    if (step === 'breakdown' && bulkUnitForm.breakdownMode === 'blocks') {
+      const blockCount = Math.trunc(Number(bulkUnitForm.blockCount || 0))
+      const unitsPerBlock = Math.trunc(Number(bulkUnitForm.unitsPerBlock || 0))
+      if (!blockCount || blockCount < 1) return 'Enter how many blocks this development has.'
+      if (!unitsPerBlock || unitsPerBlock < 1) return 'Enter how many units are in each block.'
+    }
+
+    if (step === 'numbering') {
+      if (bulkUnitForm.breakdownMode === 'individual' && !splitBulkTextList(bulkUnitForm.individualUnitNumbers).length) {
+        return 'Enter the unit numbers, one per line or separated by commas.'
+      }
+      if (bulkUnitForm.breakdownMode === 'blocks') {
+        const startNumber = Math.trunc(Number(bulkUnitForm.blockStartNumber || 0))
+        if (!startNumber || startNumber < 1) return 'Enter a valid starting unit number for each block.'
+        if (bulkUnitForm.blockPrefixMode === 'custom' && !String(bulkUnitForm.blockCustomPrefix || '').trim()) {
+          return 'Enter the custom prefix, or choose block prefix / plain numbering.'
+        }
+      }
+    }
+
+    if (step === 'options' && !getBulkUnitTemplates(bulkUnitForm).some((template) => template.unitType || template.bedrooms || template.listPrice !== '')) {
+      return 'Select at least one unit option before reviewing the units.'
+    }
+
+    if (step === 'phases' && bulkUnitForm.phaseMode === 'staged' && !getBulkPhaseNames(bulkUnitForm).length) {
+      return 'Add at least one phase name, or choose that all units are built together.'
+    }
+
+    return ''
+  }
+
+  function handleBulkUnitNext() {
+    const currentStepIndex = BULK_UNIT_STEPS.findIndex((step) => step.id === bulkUnitForm.step)
+    const currentStep = BULK_UNIT_STEPS[currentStepIndex] || BULK_UNIT_STEPS[0]
+    const validationMessage = validateBulkUnitStep(currentStep.id)
+    if (validationMessage) {
+      setError(validationMessage)
+      return
+    }
+
+    setError('')
+    const nextStep = BULK_UNIT_STEPS[Math.min(BULK_UNIT_STEPS.length - 1, currentStepIndex + 1)] || BULK_UNIT_STEPS.at(-1)
+    setBulkUnitForm((previous) => ({
+      ...previous,
+      step: nextStep.id,
+      generatedRows: nextStep.id === 'review' ? buildBulkUnitRows(previous) : previous.generatedRows,
+    }))
+  }
+
+  function handleBulkUnitBack() {
+    const currentStepIndex = BULK_UNIT_STEPS.findIndex((step) => step.id === bulkUnitForm.step)
+    const previousStep = BULK_UNIT_STEPS[Math.max(0, currentStepIndex - 1)] || BULK_UNIT_STEPS[0]
+    setError('')
+    setBulkUnitForm((previous) => ({ ...previous, step: previousStep.id }))
+  }
+
+  function updateBulkUnitOption(optionKey, patch) {
+    setBulkUnitForm((previous) => ({
+      ...previous,
+      unitOptions: {
+        ...previous.unitOptions,
+        [optionKey]: {
+          ...(previous.unitOptions?.[optionKey] || DEFAULT_BULK_UNIT_FORM.unitOptions[optionKey]),
+          ...patch,
+        },
+      },
+    }))
+  }
+
+  function updateBulkGeneratedRow(rowIndex, patch) {
+    setBulkUnitForm((previous) => ({
+      ...previous,
+      generatedRows: previous.generatedRows.map((row, index) =>
+        index === rowIndex ? { ...row, ...patch } : row,
+      ),
+    }))
+  }
+
   async function handleBulkUnitSave(event) {
     event.preventDefault()
 
-    const count = Math.trunc(Number(bulkUnitForm.count || 0))
-    const startNumber = Math.trunc(Number(bulkUnitForm.startNumber || 0))
-    const padding = Math.max(0, Math.trunc(Number(bulkUnitForm.padding || 0)))
-    const prefix = String(bulkUnitForm.prefix || '')
-
-    if (!count || count < 1) {
-      setError('Enter how many units to create.')
+    if (bulkUnitForm.step !== 'review') {
+      handleBulkUnitNext()
       return
     }
 
-    if (!startNumber || startNumber < 1) {
-      setError('Enter a valid starting unit number.')
+    const generatedRows = bulkUnitForm.generatedRows.length
+      ? bulkUnitForm.generatedRows
+      : buildBulkUnitRows(bulkUnitForm)
+
+    if (!generatedRows.length) {
+      setError('Generate at least one unit before creating units.')
       return
     }
 
-    const generatedNumbers = Array.from({ length: count }, (_, index) => `${prefix}${String(startNumber + index).padStart(padding, '0')}`)
+    const missingNumber = generatedRows.find((row) => !String(row.unitNumber || '').trim())
+    if (missingNumber) {
+      setError('Every generated row needs a unit number before creating units.')
+      return
+    }
+
+    const generatedNumbers = generatedRows.map((row) => String(row.unitNumber || '').trim())
     const existingNumbers = new Set(
       unitRows.map((unit) => String(unit?.unitNumber || unit?.unit_number || '').trim().toLowerCase()).filter(Boolean),
     )
-    const duplicateGenerated = generatedNumbers.find((value, index) => generatedNumbers.indexOf(value) !== index)
+    const duplicateGenerated = generatedNumbers.find((value, index) =>
+      generatedNumbers.findIndex((item) => item.toLowerCase() === value.toLowerCase()) !== index,
+    )
     if (duplicateGenerated) {
       setError(`Bulk creation produced duplicate unit numbers (${duplicateGenerated}).`)
       return
@@ -3451,24 +4099,25 @@ function DevelopmentDetail() {
       setError('')
 
       await Promise.all(
-        generatedNumbers.map((unitNumber) =>
+        generatedRows.map((row) =>
           saveDevelopmentUnit({
             developmentId: data.development.id,
-            unitNumber,
-            unitLabel: unitNumber,
-            phase: bulkUnitForm.phase,
-            block: bulkUnitForm.block,
-            unitType: bulkUnitForm.unitType,
-            listPrice: bulkUnitForm.listPrice === '' ? 0 : bulkUnitForm.listPrice,
+            unitNumber: row.unitNumber,
+            unitLabel: row.unitLabel || row.unitNumber,
+            phase: row.phase,
+            block: row.block,
+            unitType: row.unitType,
+            bedrooms: row.bedrooms === '' ? null : row.bedrooms,
+            listPrice: row.listPrice === '' ? 0 : row.listPrice,
             currentPrice: null,
-            status: bulkUnitForm.status || 'Available',
-            vatApplicable: bulkUnitForm.vatApplicable === '' ? null : bulkUnitForm.vatApplicable === 'true',
-            notes: bulkUnitForm.notes,
+            status: row.status || 'Available',
+            vatApplicable: row.vatApplicable === '' ? null : row.vatApplicable === 'true',
+            notes: row.notes,
           }),
         ),
       )
 
-      setFeedback(`${formatNumber(count)} units added to development.`)
+      setFeedback(`${formatNumber(generatedRows.length)} units added to development.`)
       setBulkUnitForm(DEFAULT_BULK_UNIT_FORM)
       setBulkUnitModalOpen(false)
       window.dispatchEvent(new Event('itg:developments-changed'))
@@ -3688,7 +4337,7 @@ function DevelopmentDetail() {
             <article className="rounded-[18px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
               <div className="mb-5 flex items-center justify-between gap-3">
                 <h3 className="text-[1.05rem] font-semibold tracking-[-0.02em] text-[#142132]">Transaction Pipeline</h3>
-                <span className="text-xs font-semibold text-[#6b7d93]">{formatNumber(developmentMetrics.totalUnits || 0)} units</span>
+                <span className="text-xs font-semibold text-[#6b7d93]">{formatNumber(developmentTrackerMetrics.totalUnits || 0)} units</span>
               </div>
               <div className="grid gap-4">
                 {transactionPipelineItems.map((item) => (
@@ -3703,7 +4352,7 @@ function DevelopmentDetail() {
               </div>
               <div className="mt-5 rounded-[16px] border border-[#e3ebf4] bg-[#f8fafc] px-4 py-3">
                 <p className="text-sm font-semibold text-[#142132]">
-                  {formatNumber(developmentMetrics.dealsInProgress || 0)} {developmentMetrics.dealsInProgress === 1 ? 'unit is' : 'units are'} in active transactions
+                  {formatNumber(developmentTrackerMetrics.dealsInProgress || 0)} {developmentTrackerMetrics.dealsInProgress === 1 ? 'unit is' : 'units are'} in active transactions
                 </p>
                 <Button variant="ghost" className="mt-2 w-full justify-between px-0" onClick={() => setActiveTab('transactions')}>
                   View all transactions
@@ -4503,6 +5152,157 @@ function DevelopmentDetail() {
             </form>
             ) : null}
 
+            {activeTab === 'configuration' ? (
+            <form className={CARD_SHELL} onSubmit={handleAgentAssignmentsSave}>
+              <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div className="min-w-0">
+                  <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Internal Agent Access</h3>
+                  <p className="mt-1.5 max-w-[760px] text-sm leading-6 text-[#6b7d93]">
+                    Add the agency agents who should work this development, see it in the development workspace, and receive protected buyer lead handovers.
+                  </p>
+                </div>
+                <span className="inline-flex w-fit items-center gap-2 rounded-full border border-[#dbe7f3] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#35546c]">
+                  <ShieldCheck size={13} />
+                  {agentAssignments.length} assigned
+                </span>
+              </div>
+
+              {!canManageDevelopment ? (
+                <div className="mb-4 rounded-[14px] border border-[#e4ebf3] bg-[#f8fafc] px-4 py-3 text-sm text-[#6b7d93]">
+                  You can view the assigned agents for this development, but you need development management access to change them.
+                </div>
+              ) : null}
+
+              <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.8fr)]">
+                <section className="rounded-[18px] border border-[#dde6f1] bg-[#fbfcfe] p-4">
+                  <div className="mb-4">
+                    <h4 className="text-sm font-semibold text-[#142132]">Add Internal Agent</h4>
+                    <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
+                      Pick from organisation users first. Use manual details only when the agent has not been added as a user yet.
+                    </p>
+                  </div>
+
+                  <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
+                    <Field
+                      as="select"
+                      value={selectedAgentUserId}
+                      disabled={!canManageDevelopment || organisationUsersLoading || agentAssignmentsSaving}
+                      onChange={(event) => setSelectedAgentUserId(event.target.value)}
+                    >
+                      <option value="">
+                        {organisationUsersLoading ? 'Loading agents…' : 'Select an internal agent'}
+                      </option>
+                      {assignableAgentOptions.map((member) => {
+                        const optionKey = buildAgentAssignmentKey(member)
+                        return (
+                          <option key={optionKey} value={optionKey}>
+                            {member.name || member.email}
+                            {member.email ? ` — ${member.email}` : ''}
+                          </option>
+                        )
+                      })}
+                    </Field>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      disabled={!canManageDevelopment || !selectedAgentUserId || agentAssignmentsSaving}
+                      onClick={handleAddSelectedAgentAssignment}
+                    >
+                      <Plus size={15} />
+                      Add Agent
+                    </Button>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 border-t border-[#e6edf5] pt-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+                    <Field
+                      value={manualAgentDraft.name}
+                      disabled={!canManageDevelopment || agentAssignmentsSaving}
+                      onChange={(event) =>
+                        setManualAgentDraft((previous) => ({ ...previous, name: event.target.value }))
+                      }
+                      placeholder="Agent name"
+                    />
+                    <Field
+                      type="email"
+                      value={manualAgentDraft.email}
+                      disabled={!canManageDevelopment || agentAssignmentsSaving}
+                      onChange={(event) =>
+                        setManualAgentDraft((previous) => ({ ...previous, email: event.target.value }))
+                      }
+                      placeholder="agent@email.co.za"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      disabled={
+                        !canManageDevelopment ||
+                        agentAssignmentsSaving ||
+                        (!manualAgentDraft.name.trim() && !manualAgentDraft.email.trim())
+                      }
+                      onClick={handleAddManualAgentAssignment}
+                    >
+                      <Plus size={15} />
+                      Add Manual
+                    </Button>
+                  </div>
+                </section>
+
+                <section className="rounded-[18px] border border-[#dde6f1] bg-white p-4">
+                  <h4 className="text-sm font-semibold text-[#142132]">Assigned Agents</h4>
+                  <div className="mt-3 grid gap-2">
+                    {agentAssignments.length ? (
+                      agentAssignments.map((member) => (
+                        <article
+                          key={buildAgentAssignmentKey(member)}
+                          className="flex items-center justify-between gap-3 rounded-[14px] border border-[#e3ebf4] bg-[#fbfcfe] px-3 py-3"
+                        >
+                          <div className="min-w-0">
+                            <strong className="block truncate text-sm font-semibold text-[#142132]">
+                              {member.name || member.email || 'Assigned agent'}
+                            </strong>
+                            <span className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-[#6b7d93]">
+                              <Mail size={12} className="shrink-0" />
+                              <span className="truncate">{member.email || 'No email captured'}</span>
+                            </span>
+                          </div>
+                          {canManageDevelopment ? (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="shrink-0 px-2"
+                              disabled={agentAssignmentsSaving}
+                              onClick={() => handleRemoveAgentAssignment(member)}
+                              title="Remove assigned agent"
+                            >
+                              <XCircle size={15} />
+                            </Button>
+                          ) : null}
+                        </article>
+                      ))
+                    ) : (
+                      <div className="rounded-[14px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-4 py-5 text-sm text-[#6b7d93]">
+                        No internal agents have been assigned to this development yet.
+                      </div>
+                    )}
+                  </div>
+                </section>
+              </div>
+
+              <div className="mt-5 flex flex-col gap-3 border-t border-[#e6edf5] pt-4 sm:flex-row sm:items-center sm:justify-between">
+                <p className="max-w-[760px] text-xs leading-5 text-[#7b8ca2]">
+                  Saving updates the development team and syncs the matching participant records used by workspace access and development transactions.
+                </p>
+                <Button
+                  type="submit"
+                  disabled={!canManageDevelopment || agentAssignmentsSaving}
+                >
+                  {agentAssignmentsSaving ? 'Saving…' : 'Save Agent Access'}
+                </Button>
+              </div>
+            </form>
+            ) : null}
+
             {activeTab === 'performance' && canManageDevelopment ? (
             <form className={CARD_SHELL} onSubmit={handleFinancialsSave}>
               <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
@@ -5111,7 +5911,7 @@ function DevelopmentDetail() {
                           >
                             <strong className="block text-sm text-[#142132]">{item.name || 'Untitled option'}</strong>
                             <span className="mt-1 block text-xs text-[#6b7d93]">
-                              {item.price ? currency.format(Number(String(item.price).replace(/[^0-9.-]+/g, '') || 0)) : 'No price'}
+                              {formatMarketingFloorplanPriceSummary(item) || 'No price'}
                             </span>
                           </button>
                         ))}
@@ -5129,7 +5929,7 @@ function DevelopmentDetail() {
                             ['Bathrooms', selectedMarketingFloorplan.bathrooms],
                             ['Garage', selectedMarketingFloorplan.garage],
                             ['Pool', selectedMarketingFloorplan.pool],
-                            ['Price', selectedMarketingFloorplan.price ? currency.format(Number(String(selectedMarketingFloorplan.price).replace(/[^0-9.-]+/g, '') || 0)) : 'Not set'],
+                            ['Price', formatMarketingFloorplanPriceSummary(selectedMarketingFloorplan) || 'Not set'],
                             ['Rates & Taxes', selectedMarketingFloorplan.ratesAndTaxes],
                             ['Levies', selectedMarketingFloorplan.levies],
                             ['No Transfer Duty', selectedMarketingFloorplan.noTransferDuty ? 'Yes' : 'No'],
@@ -5333,18 +6133,24 @@ function DevelopmentDetail() {
             </section>
           ) : (
           <form className={`${CARD_SHELL} space-y-5`} onSubmit={handleMarketingSave}>
-            <div>
-              <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Development Listing Backend</h3>
-              <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">
-                Configure development-level listing information, floorplan options, media assets, and SEO in one structured workspace.
-              </p>
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Marketing</h3>
+                <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">
+                  Manage the public listing content by unit type, with clear pricing, descriptions, images, and floorplans.
+                </p>
+              </div>
+              <Button type="button" variant="secondary" onClick={() => setActiveTab('documents')}>
+                <Upload size={15} />
+                Upload Assets
+              </Button>
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               {[
                 ['Price Range', marketingFloorplanPriceRange || 'Not set'],
-                ['Floorplans', `${marketingReadinessSummary.floorplanCount}`],
-                ['Local Assets', `${marketingReadinessSummary.assetCount}`],
+                ['Unit Types', `${marketingReadinessSummary.floorplanCount}`],
+                ['Assets', `${marketingReadinessSummary.assetCount}`],
                 ['Listing Status', toTitleLabel(marketingReadinessSummary.listingStatus)],
               ].map(([label, value]) => (
                 <article key={label} className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4">
@@ -5354,677 +6160,435 @@ function DevelopmentDetail() {
               ))}
             </div>
 
-            <div className="flex flex-wrap gap-2">
-              {[
-                { id: 'overview', label: 'Listing Overview' },
-                { id: 'floorplans', label: 'Floorplans & Options' },
-                { id: 'media', label: 'Media & Assets' },
-                { id: 'seo', label: 'SEO' },
-                { id: 'agencies', label: 'Agencies' },
-                { id: 'selling_points', label: 'Selling Points' },
-              ].map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => setMarketingEditorSection(item.id)}
-                  className={`rounded-full border px-3 py-1.5 text-sm font-medium transition ${
-                    marketingEditorSection === item.id
-                      ? 'border-[#2f6fec] bg-[#e9f0ff] text-[#1d4db3]'
-                      : 'border-[#dbe5ef] bg-white text-[#5c7289] hover:border-[#c6d5e5]'
-                  }`}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-
-            {marketingEditorSection === 'overview' ? (
-              <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
-                <div className="mb-4">
-                  <h4 className="text-sm font-semibold text-[#142132]">Listing Overview</h4>
+            <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
+              <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h4 className="text-sm font-semibold text-[#142132]">Unit Types</h4>
                   <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
-                    Development-level listing content shared across all floorplan options.
+                    Select a unit type to edit its description, price range, images, and floorplans.
                   </p>
                 </div>
-                <div className="grid gap-4 md:grid-cols-2">
-                  <DetailField label="Listing Title">
-                    <Field
-                      value={marketingForm.listingOverview.listingTitle}
-                      onChange={(event) => setMarketingField('listingOverview', 'listingTitle', event.target.value)}
-                      placeholder="Junoah Estate"
-                    />
-                  </DetailField>
-                  <DetailField label="Listing Heading">
-                    <Field
-                      value={marketingForm.listingOverview.listingHeading}
-                      onChange={(event) => setMarketingField('listingOverview', 'listingHeading', event.target.value)}
-                      placeholder="Secure modern living in Bartlett"
-                    />
-                  </DetailField>
-                  <DetailField label="Ownership Type">
-                    <Field
-                      as="select"
-                      value={marketingForm.listingOverview.ownershipType}
-                      onChange={(event) => setMarketingField('listingOverview', 'ownershipType', event.target.value)}
-                    >
-                      {MARKETING_OWNERSHIP_TYPE_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </Field>
-                  </DetailField>
-                  <DetailField label="Price Range">
-                    <Field value={marketingFloorplanPriceRange || 'No floorplan prices yet'} readOnly />
-                  </DetailField>
-                  <DetailField label="Location Label">
-                    <Field
-                      value={marketingForm.listingOverview.locationLabel}
-                      onChange={(event) => setMarketingField('listingOverview', 'locationLabel', event.target.value)}
-                      placeholder="Bartlett, Boksburg"
-                    />
-                  </DetailField>
-                  <DetailField label="Address">
-                    <Field
-                      value={marketingForm.listingOverview.address}
-                      onChange={(event) => setMarketingField('listingOverview', 'address', event.target.value)}
-                      placeholder="123 Example Street"
-                    />
-                  </DetailField>
-                  <DetailField label="Suburb">
-                    <Field
-                      value={marketingForm.listingOverview.suburb}
-                      onChange={(event) => setMarketingField('listingOverview', 'suburb', event.target.value)}
-                      placeholder="Bartlett"
-                    />
-                  </DetailField>
-                  <DetailField label="City">
-                    <Field
-                      value={marketingForm.listingOverview.city}
-                      onChange={(event) => setMarketingField('listingOverview', 'city', event.target.value)}
-                      placeholder="Boksburg"
-                    />
-                  </DetailField>
-                  <DetailField label="Province">
-                    <Field
-                      value={marketingForm.listingOverview.province}
-                      onChange={(event) => setMarketingField('listingOverview', 'province', event.target.value)}
-                      placeholder="Gauteng"
-                    />
-                  </DetailField>
-                  <DetailField label="Listing Status">
-                    <Field
-                      as="select"
-                      value={marketingForm.listingOverview.listingStatus}
-                      onChange={(event) => setMarketingField('listingOverview', 'listingStatus', event.target.value)}
-                    >
-                      {MARKETING_LISTING_STATUS_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </Field>
-                  </DetailField>
-                  <DetailField label="Listing Description" className="md:col-span-2">
-                    <Field
-                      as="textarea"
-                      rows={8}
-                      value={marketingForm.listingOverview.listingDescription}
-                      onChange={(event) =>
-                        setMarketingField('listingOverview', 'listingDescription', event.target.value)
-                      }
-                      placeholder="Describe positioning, buyer profile, product mix, and development value proposition."
-                    />
-                  </DetailField>
-                  <DetailField label="Notes" className="md:col-span-2">
-                    <Field
-                      as="textarea"
-                      rows={4}
-                      value={marketingForm.listingOverview.notes}
-                      onChange={(event) => setMarketingField('listingOverview', 'notes', event.target.value)}
-                      placeholder="Internal listing context and handling notes."
-                    />
-                  </DetailField>
-                  <DetailField label="Development Checklist Completed">
-                    <Field
-                      as="select"
-                      value={marketingForm.listingOverview.developmentChecklist ? 'yes' : 'no'}
-                      onChange={(event) =>
-                        setMarketingField('listingOverview', 'developmentChecklist', event.target.value === 'yes')
-                      }
-                    >
-                      <option value="yes">Yes</option>
-                      <option value="no">No</option>
-                    </Field>
-                  </DetailField>
-                </div>
+                <Button type="button" size="sm" variant="secondary" onClick={addMarketingFloorplan}>
+                  <Plus size={14} />
+                  Add Unit Type
+                </Button>
+              </div>
 
-                <div className="mt-5 grid gap-4 md:grid-cols-3">
-                  {[
-                    ['fibreReady', 'Internet Access (Fibre Ready)'],
-                    ['borehole', 'Borehole'],
-                    ['backupBatteryInverter', 'Backup Battery / Inverter'],
-                    ['gasGeyser', 'Gas Geyser'],
-                    ['solarGeyser', 'Solar Geyser'],
-                    ['solarPanels', 'Solar Panels'],
-                    ['waterTanks', 'Water Tanks'],
-                    ['petsAllowed', 'Pets Allowed'],
-                  ].map(([fieldKey, label]) => (
-                    <label
-                      key={fieldKey}
-                      className="flex items-center justify-between rounded-[12px] border border-[#dbe6f1] bg-white px-3 py-2.5 text-sm text-[#30485f]"
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                {marketingForm.floorplans.map((item, index) => {
+                  const priceSummary = formatMarketingFloorplanPriceSummary(item)
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => setSelectedFloorplanId(item.id)}
+                      className={`min-w-[180px] rounded-[14px] border px-4 py-3 text-left transition ${
+                        selectedMarketingFloorplan?.id === item.id
+                          ? 'border-[#1f7a45] bg-[#edf9f1] text-[#123322]'
+                          : 'border-[#dbe5ef] bg-white text-[#31475c] hover:border-[#bcd0e4]'
+                      }`}
                     >
-                      <span>{label}</span>
-                      <input
-                        type="checkbox"
-                        checked={Boolean(marketingForm.listingOverview[fieldKey])}
+                      <strong className="block text-sm font-semibold">
+                        {item.name || `Unit Type ${index + 1}`}
+                      </strong>
+                      <span className="mt-1 block text-xs text-[#64788f]">
+                        {priceSummary || 'Price not set'}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            </section>
+
+            <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
+              <div className="mb-4">
+                <h4 className="text-sm font-semibold text-[#142132]">Listing Description</h4>
+                <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
+                  This is the shared development copy that appears above the selected unit types.
+                </p>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <DetailField label="Listing Title">
+                  <Field
+                    value={marketingForm.listingOverview.listingTitle}
+                    onChange={(event) => setMarketingField('listingOverview', 'listingTitle', event.target.value)}
+                    placeholder="Amari Residence"
+                  />
+                </DetailField>
+                <DetailField label="Listing Heading">
+                  <Field
+                    value={marketingForm.listingOverview.listingHeading}
+                    onChange={(event) => setMarketingField('listingOverview', 'listingHeading', event.target.value)}
+                    placeholder="Modern apartments in Pomona"
+                  />
+                </DetailField>
+                <DetailField label="Ownership Type">
+                  <Field
+                    as="select"
+                    value={marketingForm.listingOverview.ownershipType}
+                    onChange={(event) => setMarketingField('listingOverview', 'ownershipType', event.target.value)}
+                  >
+                    {MARKETING_OWNERSHIP_TYPE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </Field>
+                </DetailField>
+                <DetailField label="Listing Status">
+                  <Field
+                    as="select"
+                    value={marketingForm.listingOverview.listingStatus}
+                    onChange={(event) => setMarketingField('listingOverview', 'listingStatus', event.target.value)}
+                  >
+                    {MARKETING_LISTING_STATUS_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </Field>
+                </DetailField>
+                <DetailField label="Description" className="md:col-span-2">
+                  <Field
+                    as="textarea"
+                    rows={6}
+                    value={marketingForm.listingOverview.listingDescription}
+                    onChange={(event) => setMarketingField('listingOverview', 'listingDescription', event.target.value)}
+                    placeholder="Describe the development, location, buyer appeal, and main lifestyle benefits."
+                  />
+                </DetailField>
+                <DetailField label="Location Label">
+                  <Field
+                    value={marketingForm.listingOverview.locationLabel}
+                    onChange={(event) => setMarketingField('listingOverview', 'locationLabel', event.target.value)}
+                    placeholder="Pomona, Kempton Park"
+                  />
+                </DetailField>
+                <DetailField label="Address">
+                  <Field
+                    value={marketingForm.listingOverview.address}
+                    onChange={(event) => setMarketingField('listingOverview', 'address', event.target.value)}
+                    placeholder="254 Outeniqua Street"
+                  />
+                </DetailField>
+              </div>
+            </section>
+
+            {selectedMarketingFloorplan ? (
+              <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.42fr)]">
+                <div className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
+                  <div className="mb-4 flex items-center justify-between gap-3">
+                    <div>
+                      <h4 className="text-sm font-semibold text-[#142132]">Unit Type Details</h4>
+                      <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
+                        Keep the selling copy and price range specific to this unit type.
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="text-[#b42318] hover:bg-[#fff1f1]"
+                      onClick={() => removeMarketingFloorplan(selectedMarketingFloorplan.id)}
+                    >
+                      Remove
+                    </Button>
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <DetailField label="Unit Type Name" className="md:col-span-2">
+                      <Field
+                        value={selectedMarketingFloorplan.name}
                         onChange={(event) =>
-                          setMarketingField('listingOverview', fieldKey, event.target.checked)
+                          setMarketingFloorplanField(selectedMarketingFloorplan.id, 'name', event.target.value)
+                        }
+                        placeholder="2 Bedroom Apartment"
+                      />
+                    </DetailField>
+                    <DetailField label="Description" className="md:col-span-2">
+                      <Field
+                        as="textarea"
+                        rows={5}
+                        value={selectedMarketingFloorplan.description}
+                        onChange={(event) =>
+                          setMarketingFloorplanField(selectedMarketingFloorplan.id, 'description', event.target.value)
+                        }
+                        placeholder="Describe this specific unit type, layout, finishes, and buyer appeal."
+                      />
+                    </DetailField>
+                    <DetailField label="Price From">
+                      <Field
+                        inputMode="numeric"
+                        value={selectedMarketingFloorplan.priceFrom}
+                        onChange={(event) =>
+                          setMarketingFloorplanField(selectedMarketingFloorplan.id, 'priceFrom', event.target.value)
+                        }
+                        placeholder="950000"
+                      />
+                    </DetailField>
+                    <DetailField label="Price To">
+                      <Field
+                        inputMode="numeric"
+                        value={selectedMarketingFloorplan.priceTo}
+                        onChange={(event) =>
+                          setMarketingFloorplanField(selectedMarketingFloorplan.id, 'priceTo', event.target.value)
+                        }
+                        placeholder="1250000"
+                      />
+                    </DetailField>
+                    <DetailField label="Bedrooms">
+                      <Field
+                        value={selectedMarketingFloorplan.bedrooms}
+                        onChange={(event) =>
+                          setMarketingFloorplanField(selectedMarketingFloorplan.id, 'bedrooms', event.target.value)
                         }
                       />
-                    </label>
-                  ))}
-                </div>
-
-              </section>
-            ) : null}
-
-            {marketingEditorSection === 'floorplans' ? (
-              <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
-                <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <h4 className="text-sm font-semibold text-[#142132]">Floorplans &amp; Options</h4>
-                    <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
-                      Manage product variants and pricing. Development price range is derived from these values.
-                    </p>
+                    </DetailField>
+                    <DetailField label="Bathrooms">
+                      <Field
+                        value={selectedMarketingFloorplan.bathrooms}
+                        onChange={(event) =>
+                          setMarketingFloorplanField(selectedMarketingFloorplan.id, 'bathrooms', event.target.value)
+                        }
+                      />
+                    </DetailField>
+                    <DetailField label="Parking">
+                      <Field
+                        value={selectedMarketingFloorplan.garage}
+                        onChange={(event) =>
+                          setMarketingFloorplanField(selectedMarketingFloorplan.id, 'garage', event.target.value)
+                        }
+                      />
+                    </DetailField>
+                    <DetailField label="Floor Size">
+                      <Field
+                        value={selectedMarketingFloorplan.floorSize}
+                        onChange={(event) =>
+                          setMarketingFloorplanField(selectedMarketingFloorplan.id, 'floorSize', event.target.value)
+                        }
+                        placeholder="74 sqm"
+                      />
+                    </DetailField>
+                    <DetailField label="Levies">
+                      <Field
+                        value={selectedMarketingFloorplan.levies}
+                        onChange={(event) =>
+                          setMarketingFloorplanField(selectedMarketingFloorplan.id, 'levies', event.target.value)
+                        }
+                        placeholder="1450"
+                      />
+                    </DetailField>
+                    <DetailField label="Rates & Taxes">
+                      <Field
+                        value={selectedMarketingFloorplan.ratesAndTaxes}
+                        onChange={(event) =>
+                          setMarketingFloorplanField(selectedMarketingFloorplan.id, 'ratesAndTaxes', event.target.value)
+                        }
+                        placeholder="850"
+                      />
+                    </DetailField>
+                    <DetailField label="No Transfer Duty">
+                      <Field
+                        as="select"
+                        value={selectedMarketingFloorplan.noTransferDuty ? 'yes' : 'no'}
+                        onChange={(event) =>
+                          setMarketingFloorplanField(
+                            selectedMarketingFloorplan.id,
+                            'noTransferDuty',
+                            event.target.value === 'yes',
+                          )
+                        }
+                      >
+                        <option value="yes">Yes</option>
+                        <option value="no">No</option>
+                      </Field>
+                    </DetailField>
+                    <DetailField label="Customisation Options">
+                      <Field
+                        as="select"
+                        value={selectedMarketingFloorplan.customisationOptions ? 'yes' : 'no'}
+                        onChange={(event) =>
+                          setMarketingFloorplanField(
+                            selectedMarketingFloorplan.id,
+                            'customisationOptions',
+                            event.target.value === 'yes',
+                          )
+                        }
+                      >
+                        <option value="yes">Yes</option>
+                        <option value="no">No</option>
+                      </Field>
+                    </DetailField>
                   </div>
-                  <Button type="button" size="sm" variant="secondary" onClick={addMarketingFloorplan}>
-                    <Plus size={14} />
-                    Add Floorplan
-                  </Button>
                 </div>
 
-                <div className="grid gap-4 xl:grid-cols-[260px_minmax(0,1fr)]">
-                  <aside className="rounded-[14px] border border-[#e3ebf4] bg-white p-2">
-                    <div className="grid gap-1.5">
-                      {marketingForm.floorplans.map((item) => (
-                        <button
-                          key={item.id}
-                          type="button"
-                          onClick={() => setSelectedFloorplanId(item.id)}
-                          className={`rounded-[10px] border px-3 py-2 text-left ${
-                            selectedMarketingFloorplan?.id === item.id
-                              ? 'border-[#2f6fec] bg-[#e9f0ff]'
-                              : 'border-transparent hover:border-[#d7e4f2] hover:bg-[#f8fbff]'
-                          }`}
-                        >
-                          <strong className="block text-sm text-[#142132]">{item.name || 'Untitled option'}</strong>
-                          <span className="mt-1 block text-xs text-[#6b7d93]">
-                            {item.price ? currency.format(Number(String(item.price).replace(/[^0-9.-]+/g, '') || 0)) : 'No price'}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  </aside>
-
-                  {selectedMarketingFloorplan ? (
-                    <div className="rounded-[14px] border border-[#e3ebf4] bg-white p-4">
-                      <div className="mb-4 flex items-center justify-between gap-2">
-                        <h5 className="text-sm font-semibold text-[#142132]">Floorplan Details</h5>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          className="text-[#b42318] hover:bg-[#fff1f1]"
-                          onClick={() => removeMarketingFloorplan(selectedMarketingFloorplan.id)}
-                        >
-                          Remove
-                        </Button>
-                      </div>
-
-                      <div className="grid gap-4 md:grid-cols-3">
-                        <DetailField label="Floorplan Name" className="md:col-span-3">
-                          <Field
-                            value={selectedMarketingFloorplan.name}
-                            onChange={(event) =>
-                              setMarketingFloorplanField(selectedMarketingFloorplan.id, 'name', event.target.value)
-                            }
-                          />
-                        </DetailField>
-                        <DetailField label="Erf Size">
-                          <Field
-                            value={selectedMarketingFloorplan.erfSize}
-                            onChange={(event) =>
-                              setMarketingFloorplanField(selectedMarketingFloorplan.id, 'erfSize', event.target.value)
-                            }
-                            placeholder="450 sqm"
-                          />
-                        </DetailField>
-                        <DetailField label="Floor Size">
-                          <Field
-                            value={selectedMarketingFloorplan.floorSize}
-                            onChange={(event) =>
-                              setMarketingFloorplanField(selectedMarketingFloorplan.id, 'floorSize', event.target.value)
-                            }
-                            placeholder="180 sqm"
-                          />
-                        </DetailField>
-                        <DetailField label="Price">
-                          <Field
-                            value={selectedMarketingFloorplan.price}
-                            onChange={(event) =>
-                              setMarketingFloorplanField(selectedMarketingFloorplan.id, 'price', event.target.value)
-                            }
-                            placeholder="2190000"
-                          />
-                        </DetailField>
-                        <DetailField label="Bedrooms">
-                          <Field
-                            value={selectedMarketingFloorplan.bedrooms}
-                            onChange={(event) =>
-                              setMarketingFloorplanField(selectedMarketingFloorplan.id, 'bedrooms', event.target.value)
-                            }
-                          />
-                        </DetailField>
-                        <DetailField label="Bathrooms">
-                          <Field
-                            value={selectedMarketingFloorplan.bathrooms}
-                            onChange={(event) =>
-                              setMarketingFloorplanField(selectedMarketingFloorplan.id, 'bathrooms', event.target.value)
-                            }
-                          />
-                        </DetailField>
-                        <DetailField label="Garage">
-                          <Field
-                            value={selectedMarketingFloorplan.garage}
-                            onChange={(event) =>
-                              setMarketingFloorplanField(selectedMarketingFloorplan.id, 'garage', event.target.value)
-                            }
-                          />
-                        </DetailField>
-                        <DetailField label="Pool">
-                          <Field
-                            value={selectedMarketingFloorplan.pool}
-                            onChange={(event) =>
-                              setMarketingFloorplanField(selectedMarketingFloorplan.id, 'pool', event.target.value)
-                            }
-                            placeholder="Yes / No"
-                          />
-                        </DetailField>
-                        <DetailField label="Rates & Taxes">
-                          <Field
-                            value={selectedMarketingFloorplan.ratesAndTaxes}
-                            onChange={(event) =>
-                              setMarketingFloorplanField(selectedMarketingFloorplan.id, 'ratesAndTaxes', event.target.value)
-                            }
-                          />
-                        </DetailField>
-                        <DetailField label="Levies">
-                          <Field
-                            value={selectedMarketingFloorplan.levies}
-                            onChange={(event) =>
-                              setMarketingFloorplanField(selectedMarketingFloorplan.id, 'levies', event.target.value)
-                            }
-                          />
-                        </DetailField>
-                        <DetailField label="No Transfer Duty">
-                          <Field
-                            as="select"
-                            value={selectedMarketingFloorplan.noTransferDuty ? 'yes' : 'no'}
-                            onChange={(event) =>
-                              setMarketingFloorplanField(
-                                selectedMarketingFloorplan.id,
-                                'noTransferDuty',
-                                event.target.value === 'yes',
-                              )
-                            }
-                          >
-                            <option value="yes">Yes</option>
-                            <option value="no">No</option>
-                          </Field>
-                        </DetailField>
-                        <DetailField label="Customisation Options">
-                          <Field
-                            as="select"
-                            value={selectedMarketingFloorplan.customisationOptions ? 'yes' : 'no'}
-                            onChange={(event) =>
-                              setMarketingFloorplanField(
-                                selectedMarketingFloorplan.id,
-                                'customisationOptions',
-                                event.target.value === 'yes',
-                              )
-                            }
-                          >
-                            <option value="yes">Yes</option>
-                            <option value="no">No</option>
-                          </Field>
-                        </DetailField>
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-              </section>
-            ) : null}
-
-            {marketingEditorSection === 'media' ? (
-              <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
-                <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <h4 className="text-sm font-semibold text-[#142132]">Media &amp; Assets</h4>
-                    <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
-                      Local development files are shown as card assets. Upload and document management stays in the Documents tab.
-                    </p>
-                  </div>
-                  <Button type="button" size="sm" variant="secondary" onClick={() => setActiveTab('documents')}>
-                    <Upload size={14} />
-                    Open Documents Tab
-                  </Button>
-                </div>
-
-                <div className="grid gap-4">
-                  {marketingAssetGroups.map((group) => (
-                    <section key={group.key} className="rounded-[14px] border border-[#e3ebf4] bg-white p-3.5">
-                      <div className="mb-3 flex items-center justify-between gap-2">
-                        <strong className="text-[0.82rem] font-semibold uppercase tracking-[0.08em] text-[#5c7289]">{group.title}</strong>
-                        <span className="text-[0.74rem] font-semibold text-[#7b8ca2]">{group.items.length} assets</span>
-                      </div>
-
-                      {group.items.length ? (
-                        <div className="grid gap-2.5 md:grid-cols-2">
-                          {group.items.map((item) => (
-                            <article key={item.id} className="rounded-[12px] border border-[#e8eef6] bg-[#fbfcff] px-3 py-2.5">
-                              <span className="inline-flex rounded-full border border-[#dbe7f5] bg-white px-2 py-0.5 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#607a95]">
-                                {item.typeLabel}
-                              </span>
-                              <strong className="mt-2 block text-sm font-semibold text-[#1f344a]">{item.title}</strong>
-                              <p className="mt-1 line-clamp-2 text-xs text-[#6b7d93]">{item.description || 'No description'}</p>
-                              <div className="mt-2 flex items-center gap-2">
-                                <Button type="button" size="sm" variant="secondary" onClick={() => window.open(item.fileUrl, '_blank', 'noopener,noreferrer')}>
-                                  View
-                                </Button>
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="secondary"
-                                  onClick={() => void handleDownloadMarketingResource({ key: item.id, label: item.title, url: item.fileUrl })}
-                                >
-                                  <Download size={13} />
-                                  Download
-                                </Button>
-                              </div>
-                            </article>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="rounded-[12px] border border-dashed border-[#d8e3ef] bg-[#fbfdff] px-3 py-5 text-sm text-[#6b7d93]">
-                          No local assets mapped yet.
+                <div className="grid gap-5">
+                  <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
+                    <div className="mb-4 flex items-start justify-between gap-3">
+                      <div>
+                        <h4 className="text-sm font-semibold text-[#142132]">Upload Images</h4>
+                        <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
+                          Add image links for this unit type, one per line, or use assets from Documents.
                         </p>
-                      )}
-                    </section>
-                  ))}
-                </div>
+                      </div>
+                      <Upload size={16} className="text-[#607891]" />
+                    </div>
+                    <Field
+                      as="textarea"
+                      rows={5}
+                      value={selectedMarketingFloorplan.imageUrls}
+                      onChange={(event) =>
+                        setMarketingFloorplanField(selectedMarketingFloorplan.id, 'imageUrls', event.target.value)
+                      }
+                      placeholder="https://.../unit-type-image.jpg"
+                    />
+                    <Button type="button" size="sm" variant="secondary" className="mt-3" onClick={() => setActiveTab('documents')}>
+                      <Upload size={13} />
+                      Manage Image Uploads
+                    </Button>
+                  </section>
 
-                <div className="mt-4 grid gap-4 md:grid-cols-2">
-                  <DetailField label="Video URL (optional external)">
+                  <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
+                    <div className="mb-4 flex items-start justify-between gap-3">
+                      <div>
+                        <h4 className="text-sm font-semibold text-[#142132]">Upload Floorplans</h4>
+                        <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
+                          Add floorplan links for this unit type, one per line, or upload them in Documents.
+                        </p>
+                      </div>
+                      <Upload size={16} className="text-[#607891]" />
+                    </div>
                     <Field
-                      value={marketingForm.mediaLibrary.videoUrl}
-                      onChange={(event) => setMarketingField('mediaLibrary', 'videoUrl', event.target.value)}
-                      placeholder="https://.../promo-video"
+                      as="textarea"
+                      rows={5}
+                      value={selectedMarketingFloorplan.floorplanUrls}
+                      onChange={(event) =>
+                        setMarketingFloorplanField(selectedMarketingFloorplan.id, 'floorplanUrls', event.target.value)
+                      }
+                      placeholder="https://.../floorplan.pdf"
                     />
-                  </DetailField>
-                  <DetailField label="Virtual Tour URL (optional external)">
-                    <Field
-                      value={marketingForm.mediaLibrary.virtualTourUrl}
-                      onChange={(event) => setMarketingField('mediaLibrary', 'virtualTourUrl', event.target.value)}
-                      placeholder="https://.../virtual-tour"
-                    />
-                  </DetailField>
+                    <Button type="button" size="sm" variant="secondary" className="mt-3" onClick={() => setActiveTab('documents')}>
+                      <Upload size={13} />
+                      Manage Floorplan Uploads
+                    </Button>
+                  </section>
                 </div>
               </section>
-            ) : null}
+            ) : (
+              <section className="rounded-[18px] border border-dashed border-[#d8e3ef] bg-[#fbfdff] px-4 py-6 text-sm text-[#6b7d93]">
+                Add a unit type to start configuring marketing content.
+              </section>
+            )}
 
-            {marketingEditorSection === 'seo' ? (
-              <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
-                <div className="mb-4">
-                  <h4 className="text-sm font-semibold text-[#142132]">SEO &amp; Listing Controls</h4>
+            <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
+              <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h4 className="text-sm font-semibold text-[#142132]">Selling Points</h4>
                   <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
-                    Search metadata and publish controls for development listing distribution.
+                    Add the short highlights agents need for this development listing.
                   </p>
                 </div>
+                <Button type="button" size="sm" variant="secondary" onClick={addMarketingSellingPointEntry}>
+                  <Plus size={14} />
+                  Add Point
+                </Button>
+              </div>
 
-                <div className="grid gap-4 md:grid-cols-2">
-                  <DetailField label="SEO Title">
-                    <Field
-                      as="textarea"
-                      rows={4}
-                      value={marketingForm.listingOverview.seoTitle}
-                      onChange={(event) => setMarketingField('listingOverview', 'seoTitle', event.target.value)}
-                      placeholder="Junoah Estate | Modern Secure Living"
-                    />
-                  </DetailField>
-                  <DetailField label="SEO Meta Description">
-                    <Field
-                      as="textarea"
-                      rows={4}
-                      value={marketingForm.listingOverview.seoMetaDescription}
-                      onChange={(event) =>
-                        setMarketingField('listingOverview', 'seoMetaDescription', event.target.value)
-                      }
-                      placeholder="Search snippet description for the public listing page."
-                    />
-                  </DetailField>
-                </div>
+              <div className="grid gap-3">
+                {marketingSellingPointEntries.map((entry, index) => (
+                  <article key={`selling-point-${index}`} className="rounded-[14px] border border-[#e3ebf4] bg-white p-3.5">
+                    <div className="mb-3 flex items-center justify-between gap-2">
+                      <span className="inline-flex rounded-full border border-[#d8e4f2] bg-[#f8fbff] px-2.5 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#627d98]">
+                        Point {index + 1}
+                      </span>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="text-[#b42318] hover:bg-[#fff1f1]"
+                        onClick={() => removeMarketingSellingPointEntry(index)}
+                      >
+                        Remove
+                      </Button>
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-[minmax(0,0.42fr)_minmax(0,0.58fr)]">
+                      <DetailField label="Headline">
+                        <Field
+                          value={entry.title}
+                          onChange={(event) => updateMarketingSellingPointEntry(index, 'title', event.target.value)}
+                          placeholder="Secure estate access"
+                        />
+                      </DetailField>
+                      <DetailField label="Supporting Text">
+                        <Field
+                          value={entry.note}
+                          onChange={(event) => updateMarketingSellingPointEntry(index, 'note', event.target.value)}
+                          placeholder="24/7 access control with patrol response."
+                        />
+                      </DetailField>
+                    </div>
+                  </article>
+                ))}
+              </div>
 
-                <div className="mt-4 grid gap-4 md:grid-cols-2">
-                  <DetailField label="Marketing Status">
-                    <Field
-                      as="select"
-                      value={marketingForm.listingConfiguration.marketingStatus}
-                      onChange={(event) => setMarketingField('listingConfiguration', 'marketingStatus', event.target.value)}
-                    >
-                      {MARKETING_PUBLISH_STATUS_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </Field>
-                  </DetailField>
-                  <DetailField label="Public Visibility">
-                    <Field
-                      as="select"
-                      value={marketingForm.listingConfiguration.publicVisibility ? 'visible' : 'hidden'}
-                      onChange={(event) =>
-                        setMarketingField('listingConfiguration', 'publicVisibility', event.target.value === 'visible')
-                      }
-                    >
-                      <option value="visible">Visible</option>
-                      <option value="hidden">Hidden</option>
-                    </Field>
-                  </DetailField>
-                  <DetailField label="Show on Listing Website">
-                    <Field
-                      as="select"
-                      value={marketingForm.listingConfiguration.showOnListingWebsite ? 'yes' : 'no'}
-                      onChange={(event) =>
-                        setMarketingField('listingConfiguration', 'showOnListingWebsite', event.target.value === 'yes')
-                      }
-                    >
-                      <option value="yes">Yes</option>
-                      <option value="no">No</option>
-                    </Field>
-                  </DetailField>
-                  <DetailField label="Featured Development">
-                    <Field
-                      as="select"
-                      value={marketingForm.listingConfiguration.featuredDevelopment ? 'yes' : 'no'}
-                      onChange={(event) =>
-                        setMarketingField('listingConfiguration', 'featuredDevelopment', event.target.value === 'yes')
-                      }
-                    >
-                      <option value="yes">Yes</option>
-                      <option value="no">No</option>
-                    </Field>
-                  </DetailField>
-                </div>
-              </section>
-            ) : null}
+              {!marketingSellingPointEntries.length ? (
+                <p className="rounded-[12px] border border-dashed border-[#d8e3ef] bg-white px-4 py-6 text-sm text-[#6b7d93]">
+                  No selling points added yet.
+                </p>
+              ) : null}
+            </section>
 
-            {marketingEditorSection === 'agencies' ? (
-              <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
-                <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <h4 className="text-sm font-semibold text-[#142132]">Assigned Agencies</h4>
-                    <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
-                      Add and manage the agency partners assigned to this development.
-                    </p>
-                  </div>
-                  <Button type="button" size="sm" variant="secondary" onClick={addMarketingAgency}>
-                    <Plus size={14} />
-                    Add Agency
-                  </Button>
-                </div>
-
-                <div className="grid gap-3">
-                  {marketingAgencyEntries.map((agency, index) => (
-                    <article key={`agency-edit-${agency.id}`} className="rounded-[14px] border border-[#e3ebf4] bg-white p-3.5">
-                      <div className="mb-3 flex items-center justify-between gap-2">
-                        <span className="inline-flex rounded-full border border-[#d8e4f2] bg-[#f8fbff] px-2.5 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#627d98]">
-                          Agency {index + 1}
-                        </span>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          className="text-[#b42318] hover:bg-[#fff1f1]"
-                          onClick={() => removeMarketingAgency(agency.id)}
-                        >
-                          Remove
-                        </Button>
-                      </div>
-
-                      <div className="grid gap-3 md:grid-cols-2">
-                        <DetailField label="Agency Name">
-                          <Field
-                            value={agency.name}
-                            onChange={(event) => updateMarketingAgencyEntry(agency.id, 'name', event.target.value)}
-                            placeholder="Prime Residential Group"
-                          />
-                        </DetailField>
-                        <DetailField label="Contact Name">
-                          <Field
-                            value={agency.contactName}
-                            onChange={(event) => updateMarketingAgencyEntry(agency.id, 'contactName', event.target.value)}
-                            placeholder="Melissa van Rensburg"
-                          />
-                        </DetailField>
-                        <DetailField label="Contact Email">
-                          <Field
-                            type="email"
-                            value={agency.contactEmail}
-                            onChange={(event) => updateMarketingAgencyEntry(agency.id, 'contactEmail', event.target.value)}
-                            placeholder="agent@agency.co.za"
-                          />
-                        </DetailField>
-                        <DetailField label="Contact Phone">
-                          <Field
-                            value={agency.contactPhone}
-                            onChange={(event) => updateMarketingAgencyEntry(agency.id, 'contactPhone', event.target.value)}
-                            placeholder="082 123 4567"
-                          />
-                        </DetailField>
-                        <DetailField label="Preferred Agency">
-                          <Field
-                            as="select"
-                            value={agency.isPreferred ? 'yes' : 'no'}
-                            onChange={(event) => updateMarketingAgencyEntry(agency.id, 'isPreferred', event.target.value === 'yes')}
-                          >
-                            <option value="yes">Yes</option>
-                            <option value="no">No</option>
-                          </Field>
-                        </DetailField>
-                        <DetailField label="Notes">
-                          <Field
-                            value={agency.notes}
-                            onChange={(event) => updateMarketingAgencyEntry(agency.id, 'notes', event.target.value)}
-                            placeholder="Focus on 2-bed units under R1.35M."
-                          />
-                        </DetailField>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-
-                {!marketingAgencyEntries.length ? (
-                  <p className="mt-4 rounded-[12px] border border-dashed border-[#d8e3ef] bg-white px-4 py-6 text-sm text-[#6b7d93]">
-                    No agencies added yet.
-                  </p>
-                ) : null}
-              </section>
-            ) : null}
-
-            {marketingEditorSection === 'selling_points' ? (
-              <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
-                <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <h4 className="text-sm font-semibold text-[#142132]">Key Selling Points</h4>
-                    <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
-                      Curate concise listing highlights in a clean card editor. These feed the shared listing narrative.
-                    </p>
-                  </div>
-                  <Button type="button" size="sm" variant="secondary" onClick={addMarketingSellingPointEntry}>
-                    <Plus size={14} />
-                    Add Selling Point
-                  </Button>
-                </div>
-
-                <div className="grid gap-3">
-                  {marketingSellingPointEntries.map((entry, index) => (
-                    <article key={`selling-point-${index}`} className="rounded-[14px] border border-[#e3ebf4] bg-white p-3.5">
-                      <div className="mb-3 flex items-center justify-between gap-2">
-                        <span className="inline-flex rounded-full border border-[#d8e4f2] bg-[#f8fbff] px-2.5 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#627d98]">
-                          Point {index + 1}
-                        </span>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          className="text-[#b42318] hover:bg-[#fff1f1]"
-                          onClick={() => removeMarketingSellingPointEntry(index)}
-                        >
-                          Remove
-                        </Button>
-                      </div>
-                      <div className="grid gap-3 md:grid-cols-[minmax(0,0.42fr)_minmax(0,0.58fr)]">
-                        <DetailField label="Headline">
-                          <Field
-                            value={entry.title}
-                            onChange={(event) =>
-                              updateMarketingSellingPointEntry(index, 'title', event.target.value)
-                            }
-                            placeholder="Secure estate access"
-                          />
-                        </DetailField>
-                        <DetailField label="Supporting Text (optional)">
-                          <Field
-                            value={entry.note}
-                            onChange={(event) =>
-                              updateMarketingSellingPointEntry(index, 'note', event.target.value)
-                            }
-                            placeholder="24/7 access control with patrol response."
-                          />
-                        </DetailField>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-
-                {!marketingSellingPointEntries.length ? (
-                  <p className="mt-4 rounded-[12px] border border-dashed border-[#d8e3ef] bg-white px-4 py-6 text-sm text-[#6b7d93]">
-                    No selling points added yet.
-                  </p>
-                ) : null}
-              </section>
-            ) : null}
+            <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
+              <div className="mb-4">
+                <h4 className="text-sm font-semibold text-[#142132]">Publishing</h4>
+                <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
+                  Keep the listing visibility and search copy close to the marketing content.
+                </p>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <DetailField label="Marketing Status">
+                  <Field
+                    as="select"
+                    value={marketingForm.listingConfiguration.marketingStatus}
+                    onChange={(event) => setMarketingField('listingConfiguration', 'marketingStatus', event.target.value)}
+                  >
+                    {MARKETING_PUBLISH_STATUS_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </Field>
+                </DetailField>
+                <DetailField label="Public Visibility">
+                  <Field
+                    as="select"
+                    value={marketingForm.listingConfiguration.publicVisibility ? 'visible' : 'hidden'}
+                    onChange={(event) =>
+                      setMarketingField('listingConfiguration', 'publicVisibility', event.target.value === 'visible')
+                    }
+                  >
+                    <option value="visible">Visible</option>
+                    <option value="hidden">Hidden</option>
+                  </Field>
+                </DetailField>
+                <DetailField label="SEO Title">
+                  <Field
+                    value={marketingForm.listingOverview.seoTitle}
+                    onChange={(event) => setMarketingField('listingOverview', 'seoTitle', event.target.value)}
+                    placeholder="Amari Residence | Apartments in Pomona"
+                  />
+                </DetailField>
+                <DetailField label="SEO Meta Description">
+                  <Field
+                    value={marketingForm.listingOverview.seoMetaDescription}
+                    onChange={(event) =>
+                      setMarketingField('listingOverview', 'seoMetaDescription', event.target.value)
+                    }
+                    placeholder="Short search description for the public listing page."
+                  />
+                </DetailField>
+              </div>
+            </section>
 
             <div className="flex items-center justify-end border-t border-[#e6edf5] pt-4">
               <Button type="submit" disabled={detailsSaving}>
@@ -6047,11 +6611,9 @@ function DevelopmentDetail() {
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                 <Field as="select" className="min-w-[180px]" value={unitStatusFilter} onChange={(event) => setUnitStatusFilter(event.target.value)}>
                   <option value="all">All statuses</option>
-                  <option value="available">Available</option>
-                  <option value="reserved">Reserved</option>
-                  <option value="sold">Sold</option>
-                  <option value="registered">Registered</option>
-                  <option value="blocked">Blocked</option>
+                  {DEVELOPMENT_UNIT_STATUS_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
                 </Field>
                 <Button variant="secondary" className="whitespace-nowrap" onClick={openBulkUnitModal}>
                   <Plus size={15} />
@@ -6113,10 +6675,31 @@ function DevelopmentDetail() {
                             </td>
                           ) : null}
                           <td className="px-5 py-4 text-sm text-[#44576d]">{unit.buyerName || 'No purchaser assigned'}</td>
-                          <td className="px-5 py-4">
-                            <span className="inline-flex rounded-full border border-[#d7e5f5] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#5b7895]">
-                              {unit.status || 'Available'}
-                            </span>
+                          <td className="px-5 py-4" onClick={(event) => event.stopPropagation()}>
+                            <div className="grid min-w-[180px] gap-1.5">
+                              <Field
+                                as="select"
+                                className={`h-10 rounded-full border px-3 py-1 text-xs font-semibold ${getDevelopmentUnitStatusPillClassName(unit.status)}`}
+                                value={getDevelopmentUnitStatusOption(unit.status).value}
+                                disabled={unitStatusSavingId === unit.id}
+                                aria-label={`Update status for unit ${unit.unitNumber}`}
+                                onMouseDown={(event) => event.stopPropagation()}
+                                onClick={(event) => event.stopPropagation()}
+                                onChange={(event) => {
+                                  event.stopPropagation()
+                                  void handleUnitStatusQuickChange(unit, event.target.value)
+                                }}
+                              >
+                                {DEVELOPMENT_UNIT_STATUS_OPTIONS.map((option) => (
+                                  <option key={option.value} value={option.value}>{option.label}</option>
+                                ))}
+                              </Field>
+                              {!unit.currentTransactionId && !isAvailableDevelopmentUnitStatus(unit.status) ? (
+                                <span className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Manual / external</span>
+                              ) : unit.currentTransactionId ? (
+                                <span className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#1f7a43]">Transaction linked</span>
+                              ) : null}
+                            </div>
                           </td>
                           <td className="px-5 py-4 text-sm text-[#44576d]">
                             {Number.isFinite(Number(unit.salesPrice)) ? currency.format(Number(unit.salesPrice)) : 'Not set'}
@@ -6154,7 +6737,10 @@ function DevelopmentDetail() {
                 <Field type="search" className="min-w-[260px]" value={transactionSearch} onChange={(event) => setTransactionSearch(event.target.value)} placeholder="Search buyer, unit, or email" />
                 <Field as="select" className="min-w-[180px]" value={transactionStageFilter} onChange={(event) => setTransactionStageFilter(event.target.value)}>
                   <option value="all">All stages</option>
-                  {Array.from(new Set(rows.map((row) => String(row?.transaction?.stage || '').toLowerCase()).filter(Boolean))).map((stage) => (
+                  {Array.from(new Set([
+                    ...rows.map((row) => String(row?.transaction?.stage || '').trim()).filter(Boolean),
+                    ...DEVELOPMENT_UNIT_STATUS_OPTIONS.map((option) => option.value),
+                  ])).map((stage) => (
                     <option key={stage} value={stage}>{toTitleLabel(stage)}</option>
                   ))}
                 </Field>
@@ -6191,6 +6777,11 @@ function DevelopmentDetail() {
                           key={row.transaction?.id || row.unit?.id}
                           className="h-[64px] cursor-pointer align-middle hover:bg-[#f8fbff]"
                           onClick={() => {
+                            if (row.isManualUnitStatus) {
+                              const unit = unitRows.find((item) => item.id === row.unit?.id)
+                              openUnitModal(unit || row.unit)
+                              return
+                            }
                             openDevelopmentTransactionWorkspace(row)
                           }}
                         >
@@ -6223,9 +6814,9 @@ function DevelopmentDetail() {
                           <td className="px-4 py-3 align-middle">
                             <span
                               className={`inline-flex max-w-full overflow-hidden text-ellipsis whitespace-nowrap rounded-full border px-3 py-1 text-xs font-semibold ${getTransactionStagePillClassName(row.mainStageKey)}`}
-                              title={row.transaction?.stage || 'Available'}
+                              title={row.transaction?.stage || row.unit?.status || 'Available'}
                             >
-                              {toTitleLabel(row.transaction?.stage || 'available')}
+                              {toTitleLabel(row.transaction?.stage || row.unit?.status || 'available')}
                             </span>
                           </td>
                         </tr>
@@ -7012,11 +7603,9 @@ function DevelopmentDetail() {
               <label>
                 Status
                 <Field as="select" value={unitForm.status} onChange={(event) => setUnitForm((previous) => ({ ...previous, status: event.target.value }))}>
-                  <option value="Available">Available</option>
-                  <option value="Reserved">Reserved</option>
-                  <option value="Sold">Sold</option>
-                  <option value="Registered">Registered</option>
-                  <option value="Blocked">Blocked</option>
+                  {DEVELOPMENT_UNIT_STATUS_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
                 </Field>
               </label>
               <label>
@@ -7066,165 +7655,267 @@ function DevelopmentDetail() {
           className="development-unit-modal max-w-5xl"
         >
           <form className="grid gap-5" onSubmit={handleBulkUnitSave}>
-            <section className="rounded-[20px] border border-[#dbe7f3] bg-[linear-gradient(180deg,#f8fbff_0%,#f2f7fc_100%)] p-4">
-              <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start">
+            <section className="rounded-[20px] border border-[#dbe7f3] bg-[#f8fbff] p-4">
+              <div className="mb-4 flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
                 <div>
-                  <strong className="block text-[1rem] font-semibold text-[#142132]">Planned stock setup</strong>
+                  <strong className="block text-[1rem] font-semibold text-[#142132]">Guided stock setup</strong>
                   <p className="mt-1 text-sm leading-6 text-[#5c7289]">
                     Expected units: {formatNumber(expectedUnitCount)}. Current stock rows: {formatNumber(unitRows.length)}. Suggested bulk add: {formatNumber(remainingPlannedUnits || 0)}.
                   </p>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  {[
-                    remainingPlannedUnits > 0 ? String(remainingPlannedUnits) : null,
-                    '5',
-                    '10',
-                    '20',
-                  ]
-                    .filter(Boolean)
-                    .map((value) => (
-                      <Button
-                        key={value}
-                        variant={String(bulkUnitForm.count || '') === value ? 'primary' : 'secondary'}
-                        className="min-w-[72px]"
-                        onClick={() => setBulkUnitForm((previous) => ({ ...previous, count: value }))}
-                      >
-                        {value} units
-                      </Button>
-                    ))}
-                </div>
+                <span className="rounded-full border border-[#d7e5f5] bg-white px-3 py-1 text-xs font-semibold text-[#35546c]">
+                  Step {bulkUnitStepIndex + 1} of {BULK_UNIT_STEPS.length}
+                </span>
+              </div>
+              <div className="grid gap-2 md:grid-cols-5">
+                {BULK_UNIT_STEPS.map((step, index) => (
+                  <div
+                    key={step.id}
+                    className={`rounded-[14px] border px-3 py-2 text-xs font-semibold ${
+                      index === bulkUnitStepIndex
+                        ? 'border-[#17764f] bg-[#eaf8f1] text-[#126341]'
+                        : index < bulkUnitStepIndex
+                          ? 'border-[#cfe8d8] bg-white text-[#1f7a43]'
+                          : 'border-[#dbe4ef] bg-white text-[#6b7d93]'
+                    }`}
+                  >
+                    <span className="block text-[0.68rem] uppercase tracking-[0.1em]">Step {index + 1}</span>
+                    {step.label}
+                  </div>
+                ))}
               </div>
             </section>
 
-            <div className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
-              <div className="grid gap-5">
-                <section className="rounded-[20px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
-                  <div className="mb-4">
-                    <h4 className="text-[1rem] font-semibold tracking-[-0.025em] text-[#142132]">Unit numbering</h4>
-                    <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Start with the sequence. Everything else below applies as defaults to all generated units.</p>
+            {bulkUnitForm.step === 'breakdown' ? (
+              <section className="grid gap-4 lg:grid-cols-2">
+                {[
+                  ['individual', 'Individual Units', 'Paste or type the exact unit numbers. Best when the numbering is already known.'],
+                  ['blocks', 'Units In Blocks', 'Use block counts, block labels, and automatic numbering for apartment blocks.'],
+                ].map(([value, title, copy]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    className={`rounded-[20px] border p-5 text-left transition ${
+                      bulkUnitForm.breakdownMode === value
+                        ? 'border-[#17764f] bg-[#eef9f3] shadow-[0_12px_26px_rgba(23,118,79,0.12)]'
+                        : 'border-[#e3ebf4] bg-white hover:border-[#b9ccdf]'
+                    }`}
+                    onClick={() => setBulkUnitForm((previous) => ({ ...previous, breakdownMode: value }))}
+                  >
+                    <strong className="block text-lg font-semibold tracking-[-0.025em] text-[#142132]">{title}</strong>
+                    <span className="mt-2 block text-sm leading-6 text-[#6b7d93]">{copy}</span>
+                  </button>
+                ))}
+                {bulkUnitForm.breakdownMode === 'blocks' ? (
+                  <div className="rounded-[20px] border border-[#e3ebf4] bg-[#fbfcfe] p-4 lg:col-span-2">
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <DetailField label="How Many Blocks?">
+                        <Field type="number" min="1" value={bulkUnitForm.blockCount} onChange={(event) => setBulkUnitForm((previous) => ({ ...previous, blockCount: event.target.value }))} />
+                      </DetailField>
+                      <DetailField label="Units Per Block">
+                        <Field type="number" min="1" value={bulkUnitForm.unitsPerBlock} onChange={(event) => setBulkUnitForm((previous) => ({ ...previous, unitsPerBlock: event.target.value }))} />
+                      </DetailField>
+                    </div>
                   </div>
+                ) : null}
+              </section>
+            ) : null}
 
-                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                    <label className="grid gap-2 text-sm font-medium text-[#35546c]">
-                      <span>Number of Units</span>
-                      <Field type="number" min="1" value={bulkUnitForm.count} onChange={(event) => setBulkUnitForm((previous) => ({ ...previous, count: event.target.value }))} />
-                    </label>
-                    <label className="grid gap-2 text-sm font-medium text-[#35546c]">
-                      <span>Starting Number</span>
-                      <Field type="number" min="1" value={bulkUnitForm.startNumber} onChange={(event) => setBulkUnitForm((previous) => ({ ...previous, startNumber: event.target.value }))} />
-                    </label>
-                    <label className="grid gap-2 text-sm font-medium text-[#35546c]">
-                      <span>Prefix</span>
-                      <Field value={bulkUnitForm.prefix} onChange={(event) => setBulkUnitForm((previous) => ({ ...previous, prefix: event.target.value }))} placeholder="Optional, e.g. A-" />
-                    </label>
-                    <label className="grid gap-2 text-sm font-medium text-[#35546c]">
-                      <span>Zero Padding</span>
-                      <Field as="select" value={bulkUnitForm.padding} onChange={(event) => setBulkUnitForm((previous) => ({ ...previous, padding: event.target.value }))}>
-                        <option value="0">None</option>
-                        <option value="2">2 digits</option>
-                        <option value="3">3 digits</option>
-                        <option value="4">4 digits</option>
-                      </Field>
-                    </label>
-                  </div>
-                </section>
+            {bulkUnitForm.step === 'numbering' ? (
+              <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+                <div className="rounded-[20px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
+                  {bulkUnitForm.breakdownMode === 'blocks' ? (
+                    <div className="grid gap-4">
+                      <div>
+                        <h4 className="text-[1rem] font-semibold tracking-[-0.025em] text-[#142132]">Block Numbering</h4>
+                        <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Choose whether unit numbers should include the block letter or run as a plain sequence.</p>
+                      </div>
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <DetailField label="Block Labels">
+                          <Field value={bulkUnitForm.blockLabels} onChange={(event) => setBulkUnitForm((previous) => ({ ...previous, blockLabels: event.target.value }))} placeholder="A, B, C" />
+                        </DetailField>
+                        <DetailField label="Starting Number">
+                          <Field type="number" min="1" value={bulkUnitForm.blockStartNumber} onChange={(event) => setBulkUnitForm((previous) => ({ ...previous, blockStartNumber: event.target.value }))} />
+                        </DetailField>
+                        <DetailField label="Number Style">
+                          <Field as="select" value={bulkUnitForm.blockPrefixMode} onChange={(event) => setBulkUnitForm((previous) => ({ ...previous, blockPrefixMode: event.target.value }))}>
+                            <option value="block">Use block prefix, e.g. A1</option>
+                            <option value="none">Plain unit numbers, e.g. 1</option>
+                            <option value="custom">Custom prefix</option>
+                          </Field>
+                        </DetailField>
+                        <DetailField label="Zero Padding">
+                          <Field as="select" value={bulkUnitForm.padding} onChange={(event) => setBulkUnitForm((previous) => ({ ...previous, padding: event.target.value }))}>
+                            <option value="0">None</option>
+                            <option value="2">2 digits</option>
+                            <option value="3">3 digits</option>
+                            <option value="4">4 digits</option>
+                          </Field>
+                        </DetailField>
+                        {bulkUnitForm.blockPrefixMode === 'custom' ? (
+                          <DetailField label="Custom Prefix" className="md:col-span-2">
+                            <Field value={bulkUnitForm.blockCustomPrefix} onChange={(event) => setBulkUnitForm((previous) => ({ ...previous, blockCustomPrefix: event.target.value }))} placeholder="BLK-" />
+                          </DetailField>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="grid gap-4">
+                      <div>
+                        <h4 className="text-[1rem] font-semibold tracking-[-0.025em] text-[#142132]">Individual Unit Numbers</h4>
+                        <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Enter one unit per line, or separate units with commas.</p>
+                      </div>
+                      <Field
+                        as="textarea"
+                        rows={10}
+                        value={bulkUnitForm.individualUnitNumbers}
+                        onChange={(event) => setBulkUnitForm((previous) => ({ ...previous, individualUnitNumbers: event.target.value }))}
+                        placeholder="101&#10;102&#10;103"
+                      />
+                    </div>
+                  )}
+                </div>
 
-                <section className="rounded-[20px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
-                  <div className="mb-4">
-                    <h4 className="text-[1rem] font-semibold tracking-[-0.025em] text-[#142132]">Shared defaults</h4>
-                    <p className="mt-1 text-sm leading-6 text-[#6b7d93]">These values are copied to every new unit so the stock master is usable immediately.</p>
-                  </div>
-
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <label className="grid gap-2 text-sm font-medium text-[#35546c]">
-                      <span>Phase</span>
-                      <Field value={bulkUnitForm.phase} onChange={(event) => setBulkUnitForm((previous) => ({ ...previous, phase: event.target.value }))} />
-                    </label>
-                    <label className="grid gap-2 text-sm font-medium text-[#35546c]">
-                      <span>Block</span>
-                      <Field value={bulkUnitForm.block} onChange={(event) => setBulkUnitForm((previous) => ({ ...previous, block: event.target.value }))} />
-                    </label>
-                    <label className="grid gap-2 text-sm font-medium text-[#35546c]">
-                      <span>Unit Type</span>
-                      <Field value={bulkUnitForm.unitType} onChange={(event) => setBulkUnitForm((previous) => ({ ...previous, unitType: event.target.value }))} />
-                    </label>
-                    <label className="grid gap-2 text-sm font-medium text-[#35546c]">
-                      <span>Default List Price</span>
-                      <Field type="number" min="0" value={bulkUnitForm.listPrice} onChange={(event) => setBulkUnitForm((previous) => ({ ...previous, listPrice: event.target.value }))} />
-                    </label>
-                    <label className="grid gap-2 text-sm font-medium text-[#35546c]">
-                      <span>Default Status</span>
-                      <Field as="select" value={bulkUnitForm.status} onChange={(event) => setBulkUnitForm((previous) => ({ ...previous, status: event.target.value }))}>
-                        <option value="Available">Available</option>
-                        <option value="Reserved">Reserved</option>
-                        <option value="Sold">Sold</option>
-                        <option value="Registered">Registered</option>
-                        <option value="Blocked">Blocked</option>
-                      </Field>
-                    </label>
-                    <label className="grid gap-2 text-sm font-medium text-[#35546c]">
-                      <span>VAT Applicable</span>
-                      <Field as="select" value={bulkUnitForm.vatApplicable} onChange={(event) => setBulkUnitForm((previous) => ({ ...previous, vatApplicable: event.target.value }))}>
-                        <option value="">Not set</option>
-                        <option value="true">Yes</option>
-                        <option value="false">No</option>
-                      </Field>
-                    </label>
-                    <label className="grid gap-2 text-sm font-medium text-[#35546c] md:col-span-2">
-                      <span>Notes</span>
-                      <Field as="textarea" rows={3} value={bulkUnitForm.notes} onChange={(event) => setBulkUnitForm((previous) => ({ ...previous, notes: event.target.value }))} />
-                    </label>
-                  </div>
-                </section>
-              </div>
-
-              <aside className="grid gap-4">
-                <section className="rounded-[20px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
-                  <div className="mb-3">
-                    <h4 className="text-[1rem] font-semibold tracking-[-0.025em] text-[#142132]">Preview</h4>
-                    <p className="mt-1 text-sm leading-6 text-[#6b7d93]">This is what the first few generated unit numbers will look like.</p>
-                  </div>
-                  <div className="grid gap-2">
-                    {Array.from({ length: Math.min(4, Math.max(1, Number(bulkUnitForm.count || 0) || 1)) }, (_, index) => {
-                      const nextNumber = Number(bulkUnitForm.startNumber || 0) + index
-                      const padded = String(nextNumber).padStart(Math.max(0, Number(bulkUnitForm.padding || 0)), '0')
-                      const unitNumber = `${bulkUnitForm.prefix || ''}${Number.isFinite(nextNumber) && nextNumber > 0 ? padded : ''}`
-                      return (
-                        <div key={`${unitNumber || 'preview'}-${index}`} className="flex items-center justify-between rounded-[16px] border border-[#e3ebf4] bg-white px-3.5 py-3">
-                          <span className="text-sm font-semibold text-[#142132]">{unitNumber || 'Enter numbering details'}</span>
-                          <span className="text-xs font-medium text-[#7b8ca2]">{bulkUnitForm.status || 'Available'}</span>
-                        </div>
-                      )
-                    })}
-                    {Number(bulkUnitForm.count || 0) > 4 ? (
-                      <div className="rounded-[16px] border border-dashed border-[#d8e2ee] bg-white px-3.5 py-3 text-xs font-medium text-[#7b8ca2]">
-                        + {formatNumber(Number(bulkUnitForm.count || 0) - 4)} more units
+                <aside className="rounded-[20px] border border-[#e3ebf4] bg-white p-4">
+                  <h4 className="text-[1rem] font-semibold tracking-[-0.025em] text-[#142132]">Number Preview</h4>
+                  <div className="mt-3 grid gap-2">
+                    {(bulkPreviewRows.length ? bulkPreviewRows.slice(0, 6) : [{ unitNumber: 'Add numbering details' }]).map((row, index) => (
+                      <div key={`${row.unitNumber}-${index}`} className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfcfe] px-3 py-2 text-sm font-semibold text-[#142132]">
+                        {row.unitNumber}
+                      </div>
+                    ))}
+                    {bulkPreviewRows.length > 6 ? (
+                      <div className="rounded-[14px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-3 py-2 text-xs font-semibold text-[#7b8ca2]">
+                        + {formatNumber(bulkPreviewRows.length - 6)} more
                       </div>
                     ) : null}
                   </div>
-                </section>
+                </aside>
+              </section>
+            ) : null}
 
-                <section className="rounded-[20px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
-                  <h4 className="text-[1rem] font-semibold tracking-[-0.025em] text-[#142132]">What gets created</h4>
-                  <div className="mt-3 grid gap-3">
-                    {[
-                      ['Unit label', 'Matches the generated unit number'],
-                      ['Price', bulkUnitForm.listPrice ? currency.format(Number(bulkUnitForm.listPrice || 0)) : 'Defaults to R0 until priced'],
-                      ['Status', bulkUnitForm.status || 'Available'],
-                      ['Phase / Block', [bulkUnitForm.phase, bulkUnitForm.block].filter(Boolean).join(' • ') || 'Left blank if not set'],
-                    ].map(([label, value]) => (
-                      <div key={label} className="rounded-[16px] border border-[#e3ebf4] bg-white px-3.5 py-3">
-                        <span className="block text-[0.72rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{label}</span>
-                        <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{value}</strong>
-                      </div>
+            {bulkUnitForm.step === 'options' ? (
+              <section className="grid gap-5">
+                <div className="rounded-[20px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
+                  <h4 className="text-[1rem] font-semibold tracking-[-0.025em] text-[#142132]">Unit Options</h4>
+                  <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Select the bedroom types in this development and add a starting price for each.</p>
+                  <div className="mt-4 grid gap-3 lg:grid-cols-3">
+                    {Object.entries(bulkUnitForm.unitOptions || DEFAULT_BULK_UNIT_FORM.unitOptions).map(([optionKey, option]) => (
+                      <article key={optionKey} className="rounded-[18px] border border-[#dbe4ef] bg-white p-4">
+                        <label className="mb-3 flex items-center justify-between gap-3 text-sm font-semibold text-[#142132]">
+                          <span>{option.label}</span>
+                          <input
+                            type="checkbox"
+                            checked={Boolean(option.enabled)}
+                            onChange={(event) => updateBulkUnitOption(optionKey, { enabled: event.target.checked })}
+                          />
+                        </label>
+                        <div className="grid gap-3">
+                          <Field value={option.unitType} onChange={(event) => updateBulkUnitOption(optionKey, { unitType: event.target.value })} placeholder="Unit type" />
+                          <Field type="number" min="0" value={option.listPrice} onChange={(event) => updateBulkUnitOption(optionKey, { listPrice: event.target.value })} placeholder="Starting price" />
+                        </div>
+                      </article>
                     ))}
                   </div>
-                </section>
-              </aside>
-            </div>
+                </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <DetailField label="Default Status">
+                    <Field as="select" value={bulkUnitForm.status} onChange={(event) => setBulkUnitForm((previous) => ({ ...previous, status: event.target.value }))}>
+                      {DEVELOPMENT_UNIT_STATUS_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </Field>
+                  </DetailField>
+                  <DetailField label="VAT Applicable">
+                    <Field as="select" value={bulkUnitForm.vatApplicable} onChange={(event) => setBulkUnitForm((previous) => ({ ...previous, vatApplicable: event.target.value }))}>
+                      <option value="">Not set</option>
+                      <option value="true">Yes</option>
+                      <option value="false">No</option>
+                    </Field>
+                  </DetailField>
+                </div>
+              </section>
+            ) : null}
+
+            {bulkUnitForm.step === 'phases' ? (
+              <section className="grid gap-5">
+                <div className="grid gap-4 lg:grid-cols-2">
+                  {[
+                    ['single', 'Built Together', 'All generated units share the same phase or no phase.'],
+                    ['staged', 'Built In Phases', 'Split generated units across named building phases.'],
+                  ].map(([value, title, copy]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      className={`rounded-[20px] border p-5 text-left transition ${
+                        bulkUnitForm.phaseMode === value
+                          ? 'border-[#17764f] bg-[#eef9f3]'
+                          : 'border-[#e3ebf4] bg-white hover:border-[#b9ccdf]'
+                      }`}
+                      onClick={() => setBulkUnitForm((previous) => ({ ...previous, phaseMode: value }))}
+                    >
+                      <strong className="block text-lg font-semibold tracking-[-0.025em] text-[#142132]">{title}</strong>
+                      <span className="mt-2 block text-sm leading-6 text-[#6b7d93]">{copy}</span>
+                    </button>
+                  ))}
+                </div>
+                {bulkUnitForm.phaseMode === 'staged' ? (
+                  <DetailField label="Phase Names">
+                    <Field as="textarea" rows={4} value={bulkUnitForm.phaseNames} onChange={(event) => setBulkUnitForm((previous) => ({ ...previous, phaseNames: event.target.value }))} placeholder="Phase 1&#10;Phase 2" />
+                  </DetailField>
+                ) : (
+                  <DetailField label="Phase Name">
+                    <Field value={bulkUnitForm.phase} onChange={(event) => setBulkUnitForm((previous) => ({ ...previous, phase: event.target.value }))} placeholder="Optional" />
+                  </DetailField>
+                )}
+              </section>
+            ) : null}
+
+            {bulkUnitForm.step === 'review' ? (
+              <section className="grid gap-4">
+                <div className="rounded-[18px] border border-[#dbe7f3] bg-[#f8fbff] px-4 py-3">
+                  <strong className="text-sm font-semibold text-[#142132]">{formatNumber(bulkUnitForm.generatedRows.length)} units ready</strong>
+                  <p className="mt-1 text-sm text-[#6b7d93]">Quick edit unit type and price before creating stock rows.</p>
+                </div>
+                <div className="max-h-[420px] overflow-auto rounded-[20px] border border-[#e3ebf4]">
+                  <table className="min-w-full divide-y divide-[#e6edf5] text-sm">
+                    <thead className="sticky top-0 bg-[#f8fbff] text-left text-xs uppercase tracking-[0.1em] text-[#6b7d93]">
+                      <tr>
+                        <th className="px-3 py-3">Unit</th>
+                        <th className="px-3 py-3">Block</th>
+                        <th className="px-3 py-3">Phase</th>
+                        <th className="px-3 py-3">Unit Type</th>
+                        <th className="px-3 py-3">Price</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#eef2f7] bg-white">
+                      {bulkUnitForm.generatedRows.map((row, index) => (
+                        <tr key={`${row.unitNumber}-${index}`}>
+                          <td className="px-3 py-2 font-semibold text-[#142132]">{row.unitNumber}</td>
+                          <td className="px-3 py-2 text-[#5d7086]">{row.block || '-'}</td>
+                          <td className="px-3 py-2 text-[#5d7086]">{row.phase || '-'}</td>
+                          <td className="px-3 py-2">
+                            <Field value={row.unitType} onChange={(event) => updateBulkGeneratedRow(index, { unitType: event.target.value })} />
+                          </td>
+                          <td className="px-3 py-2">
+                            <Field type="number" min="0" value={row.listPrice} onChange={(event) => updateBulkGeneratedRow(index, { listPrice: event.target.value })} />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            ) : null}
 
             <div className="flex items-center justify-end gap-3 border-t border-bridge-border pt-4">
+              {bulkUnitStepIndex > 0 ? (
+                <Button type="button" variant="secondary" onClick={handleBulkUnitBack} disabled={bulkUnitSaving}>
+                  Back
+                </Button>
+              ) : null}
               <Button
+                type="button"
                 variant="ghost"
                 onClick={() => {
                   setBulkUnitForm(DEFAULT_BULK_UNIT_FORM)
@@ -7234,9 +7925,15 @@ function DevelopmentDetail() {
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={bulkUnitSaving}>
-                {bulkUnitSaving ? 'Creating…' : 'Create Units'}
-              </Button>
+              {bulkUnitForm.step === 'review' ? (
+                <Button type="submit" disabled={bulkUnitSaving || !bulkUnitForm.generatedRows.length}>
+                  {bulkUnitSaving ? 'Creating…' : 'Create Units'}
+                </Button>
+              ) : (
+                <Button type="button" onClick={handleBulkUnitNext} disabled={bulkUnitSaving}>
+                  Next
+                </Button>
+              )}
             </div>
           </form>
         </Modal>
