@@ -1,4 +1,5 @@
-import { Bookmark, ChevronRight, ClipboardCheck, Clock3, Home, MapPin, ShieldCheck } from 'lucide-react'
+import { useState } from 'react'
+import { Bookmark, ChevronRight, ClipboardCheck, Clock3, MapPin, ShieldCheck } from 'lucide-react'
 
 const DEFAULT_BACKGROUND_IMAGES = {
   buyer: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1400&q=82',
@@ -103,13 +104,21 @@ function resolveTheme({ primaryColour = '', secondaryColour = '', accentColour =
 
 function AgencyLogo({ logoUrl = '', agencyName = '' }) {
   const safeName = String(agencyName || '').trim() || 'Your Agency'
+  const initials = safeName
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join('') || 'A9'
+  const [logoFailed, setLogoFailed] = useState(false)
 
-  if (logoUrl) {
+  if (logoUrl && !logoFailed) {
     return (
       <img
         src={logoUrl}
         alt={`${safeName} logo`}
-        className="h-28 w-[70vw] max-w-[340px] object-contain object-left drop-shadow-[0_18px_34px_rgba(0,0,0,0.38)] sm:h-32 sm:w-[420px] sm:max-w-[420px]"
+        className="h-20 w-[64vw] max-w-[300px] object-contain object-left drop-shadow-[0_18px_34px_rgba(0,0,0,0.38)] sm:h-24 sm:w-[360px] sm:max-w-[360px] lg:h-20 lg:w-[320px]"
+        onError={() => setLogoFailed(true)}
       />
     )
   }
@@ -117,7 +126,7 @@ function AgencyLogo({ logoUrl = '', agencyName = '' }) {
   return (
     <div className="flex min-w-0 items-center">
       <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-[18px] border bg-[var(--landing-accent-soft)] text-[var(--landing-accent)] shadow-[0_18px_42px_rgba(0,0,0,0.28)] backdrop-blur-xl" style={{ borderColor: 'var(--landing-accent-border)' }}>
-        <Home size={25} strokeWidth={1.8} />
+        <span className="text-sm font-semibold">{initials}</span>
       </span>
     </div>
   )
@@ -197,24 +206,24 @@ export default function PremiumOnboardingLanding({
       <div aria-hidden className="absolute inset-0" style={{ background: theme.overlayHorizontal }} />
       <div aria-hidden className="absolute inset-0" style={{ background: theme.overlayVertical }} />
 
-      <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-[1440px] flex-col px-5 pb-32 pt-5 sm:px-8 sm:pb-36 sm:pt-7 lg:px-10 lg:pb-36 lg:pt-8">
+      <div className="relative z-10 mx-auto flex min-h-[100svh] w-full max-w-[1560px] flex-col px-5 pb-28 pt-5 sm:px-8 sm:pb-30 sm:pt-7 lg:px-12 lg:pb-28 lg:pt-7">
         <header className="flex items-center">
           <AgencyLogo logoUrl={agencyLogo} agencyName={agencyName} />
         </header>
 
-        <div className="grid flex-1 items-center gap-8 py-9 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-12 lg:py-8 xl:grid-cols-[minmax(0,1fr)_400px]">
+        <div className="grid flex-1 items-center gap-7 py-7 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-10 lg:py-5 xl:grid-cols-[minmax(0,1fr)_400px]">
           <div className="max-w-[720px]">
             {safePersonName ? <p className="mb-4 text-base font-semibold text-white/80">Hi {safePersonName},</p> : null}
             <p className="text-sm font-semibold uppercase text-[var(--landing-accent)]">{content.label}</p>
-            <h1 className="mt-4 max-w-[700px] text-[3.2rem] font-semibold leading-none text-white">
+            <h1 className="mt-4 max-w-[700px] text-[2.85rem] font-semibold leading-none text-white sm:text-[3.1rem] lg:text-[3.35rem] xl:text-[3.6rem]">
               {content.headlinePrefix}{' '}
               <span className="block text-[var(--landing-accent)]">{content.headlineAccent}</span>
             </h1>
-            <p className="mt-5 max-w-[540px] text-lg leading-8 text-white/80">
+            <p className="mt-5 max-w-[540px] text-base leading-7 text-white/80 sm:text-lg sm:leading-8">
               {content.subtext}
             </p>
 
-            <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+            <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
               {resolvedReassuranceRows.map((item) => {
                 const RowIcon = item.icon
                 return (
@@ -233,7 +242,7 @@ export default function PremiumOnboardingLanding({
 
           </div>
 
-          <aside className="rounded-lg border border-white/15 bg-white/10 p-5 shadow-[0_24px_58px_rgba(0,0,0,0.28)] backdrop-blur-2xl lg:p-6">
+          <aside className="rounded-lg border border-white/15 bg-white/10 p-5 shadow-[0_24px_58px_rgba(0,0,0,0.28)] backdrop-blur-2xl lg:p-5 xl:p-6">
             <p className="text-xs font-semibold uppercase text-[var(--landing-accent)]">Before you start</p>
             <h2 className="mt-2 text-2xl font-semibold leading-tight text-white">{safeBeforeStartTitle}</h2>
             {safePropertyTitle || safePropertyImage ? (
@@ -278,7 +287,7 @@ export default function PremiumOnboardingLanding({
           background: `linear-gradient(180deg, ${hexToRgba(theme.primary, 0.9)} 0%, ${hexToRgba(theme.secondary, 0.98)} 100%)`,
         }}
       >
-        <div className="mx-auto flex w-full max-w-[1440px] justify-center sm:justify-start">
+        <div className="mx-auto flex w-full max-w-[1560px] justify-center sm:justify-start">
           <button
             type="button"
             onClick={onStart}

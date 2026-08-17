@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 
-import { resolveOnboardingBranding } from '../onboardingBranding.js'
+import { normalizeOnboardingLogoUrl, resolveOnboardingBranding } from '../onboardingBranding.js'
 
 const branding = resolveOnboardingBranding({
   organisation_display_name: 'Agency CI',
@@ -17,5 +17,10 @@ assert.equal(branding.logoDarkUrl, 'https://cdn.example.test/agency-dark.svg')
 assert.equal(branding.primaryColour, '#123abc')
 assert.equal(branding.secondaryColour, '#fedcba')
 assert.equal(branding.accentColour, '#45de90')
+
+const signedLogoUrl = 'https://example.supabase.co/storage/v1/object/sign/organisation-branding/organisations/org-1/branding/logo.png?token=expiring-token'
+const publicLogoUrl = 'https://example.supabase.co/storage/v1/object/public/organisation-branding/organisations/org-1/branding/logo.png'
+assert.equal(normalizeOnboardingLogoUrl(signedLogoUrl), publicLogoUrl)
+assert.equal(resolveOnboardingBranding({ logo_light_url: signedLogoUrl }).logoLightUrl, publicLogoUrl)
 
 console.log('onboardingBranding tests passed')

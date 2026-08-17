@@ -252,6 +252,26 @@ export function normalizeOnboardingBrandingText(value = '') {
   return String(value).trim()
 }
 
+export function normalizeOnboardingLogoUrl(value = '') {
+  const text = normalizeOnboardingBrandingText(value)
+  if (!text) return ''
+
+  try {
+    const url = new URL(text)
+    const signedStoragePrefix = '/storage/v1/object/sign/'
+    if (url.pathname.startsWith(signedStoragePrefix)) {
+      url.pathname = url.pathname.replace(signedStoragePrefix, '/storage/v1/object/public/')
+      url.search = ''
+      url.hash = ''
+      return url.toString()
+    }
+  } catch {
+    return text
+  }
+
+  return text
+}
+
 function isRecord(value) {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value))
 }
@@ -310,10 +330,10 @@ export function getOnboardingBrandInitials(value = '') {
 
 export function resolveOnboardingBranding(...sources) {
   const flattenedSources = collectSources(sources)
-  const genericLogoUrl = pickFirstText(flattenedSources, LOGO_GENERIC_KEYS)
-  const logoLightUrl = pickFirstText(flattenedSources, LOGO_LIGHT_KEYS) || genericLogoUrl
-  const logoDarkUrl = pickFirstText(flattenedSources, LOGO_DARK_KEYS) || genericLogoUrl || logoLightUrl
-  const logoIconUrl = pickFirstText(flattenedSources, LOGO_ICON_KEYS) || genericLogoUrl
+  const genericLogoUrl = normalizeOnboardingLogoUrl(pickFirstText(flattenedSources, LOGO_GENERIC_KEYS))
+  const logoLightUrl = normalizeOnboardingLogoUrl(pickFirstText(flattenedSources, LOGO_LIGHT_KEYS)) || genericLogoUrl
+  const logoDarkUrl = normalizeOnboardingLogoUrl(pickFirstText(flattenedSources, LOGO_DARK_KEYS)) || genericLogoUrl || logoLightUrl
+  const logoIconUrl = normalizeOnboardingLogoUrl(pickFirstText(flattenedSources, LOGO_ICON_KEYS)) || genericLogoUrl
 
   return {
     ...DEFAULT_ONBOARDING_BRANDING,

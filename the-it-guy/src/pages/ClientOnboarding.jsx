@@ -4741,12 +4741,12 @@ function ClientOnboarding() {
   }
 
   const onboardingMainClass = showLandingPage
-    ? 'min-h-screen overflow-x-hidden bg-[#02070b] px-3 py-3 pb-3 md:px-4 md:py-5 md:pb-5'
+    ? 'min-h-screen overflow-x-hidden bg-[#02070b]'
     : `min-h-screen overflow-x-hidden bg-[linear-gradient(180deg,#f9fbfd_0%,#eef4fb_44%,#e7eef7_100%)] px-3 py-3 ${!submissionComplete ? 'pb-40' : 'pb-24'} md:px-4 md:py-5 md:pb-12`
 
   return (
     <main className={onboardingMainClass} style={onboardingTheme.cssVars}>
-      <div className={`${PAGE_CONTAINER_CLASS} space-y-4 md:space-y-5`}>
+      <div className={`${showLandingPage ? 'w-full' : PAGE_CONTAINER_CLASS} space-y-4 md:space-y-5`}>
         {showLandingPage ? (
           <PremiumOnboardingLanding
             portalType="buyer"
