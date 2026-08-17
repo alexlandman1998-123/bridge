@@ -11,6 +11,10 @@ import {
 const appRoot = resolve(import.meta.dirname, '..')
 const packageJson = JSON.parse(readFileSync(resolve(appRoot, 'package.json'), 'utf8'))
 const agencyPipelineSource = readFileSync(resolve(appRoot, 'src/pages/agency/AgencyPipelinePage.jsx'), 'utf8')
+const sellerPackStoragePolicyMigration = readFileSync(
+  resolve(appRoot, '../supabase/migrations/20260817204613_kingstons_seller_pack_storage_policy_fix.sql'),
+  'utf8',
+)
 
 assert.equal(
   packageJson.scripts?.['test:seller-document-upload-state-persistence'],
@@ -100,5 +104,14 @@ assert.match(agencyPipelineSource, /linkPrivateListingDocument\(linkedListingId/
 assert.match(agencyPipelineSource, /kingstons_seller_pack_upload_status_sync/)
 assert.match(agencyPipelineSource, /\[canonicalRequirementKey\]: uploadedDocument/)
 assert.match(agencyPipelineSource, /key === KINGSTONS_FORMAL_VALUATION_DOCUMENT\.key/)
+assert.match(agencyPipelineSource, /KINGSTONS_SELLER_PACK_STORAGE_FOLDER = 'kingstons-seller-pack'/)
+assert.match(
+  sellerPackStoragePolicyMigration,
+  /v_root in \('kingstons-formal-valuations', 'kingstons-seller-pack'\)/,
+)
+assert.match(
+  sellerPackStoragePolicyMigration,
+  /bridge_can_access_assignment\(v_organisation_id, v_assigned_agent_id, null\)/,
+)
 
 console.log('Seller document upload-state persistence regression passed.')
