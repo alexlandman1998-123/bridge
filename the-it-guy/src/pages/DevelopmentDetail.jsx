@@ -1366,12 +1366,6 @@ function isAvailableDevelopmentUnitStatus(status) {
   return resolveDevelopmentUnitStatusMainStage(status) === 'AVAIL'
 }
 
-function getDevelopmentTrackerProgressPercent(stageKey) {
-  const stageIndex = TRANSACTION_MAIN_STAGE_ORDER.indexOf(stageKey)
-  if (stageIndex <= 0) return 0
-  return Math.round((stageIndex / (TRANSACTION_MAIN_STAGE_ORDER.length - 1)) * 100)
-}
-
 function getDevelopmentUnitStatusPillClassName(status) {
   const stageKey = resolveDevelopmentUnitStatusMainStage(status)
 
@@ -1437,13 +1431,17 @@ function buildDevelopmentLeadAccessKeys(profile = {}, organisationUsers = []) {
   return keys
 }
 
-function canOpenDevelopmentLead(lead = {}, accessKeys = new Set()) {
+function canOpenDevelopmentLead(lead = {}) {
+  return Boolean(normalizeDevelopmentLeadText(lead.developerLeadId))
+}
+
+function canViewDevelopmentLeadPrivateDetails(lead = {}, accessKeys = new Set()) {
   const assignedKeys = [
     lead.assignedAgentId,
     lead.sourceAgentUserId,
     lead.assignedAgentEmail,
   ].map(normalizeDevelopmentLeadKey).filter(Boolean)
-  return Boolean(normalizeDevelopmentLeadText(lead.sourceLeadId) && assignedKeys.some((key) => accessKeys.has(key)))
+  return Boolean(assignedKeys.some((key) => accessKeys.has(key)))
 }
 
 function getDevelopmentLeadDisplayName(lead = {}, canViewDetails = false) {
@@ -2057,7 +2055,7 @@ function DevelopmentDetail() {
       const status = normalizeDevelopmentLeadKey(lead?.leadStatus || 'new')
       const stage = DEVELOPMENT_LEAD_FUNNEL_STAGES.find((item) => item.statuses.includes(status)) || DEVELOPMENT_LEAD_FUNNEL_STAGES[0]
       counts.set(stage.key, Number(counts.get(stage.key) || 0) + 1)
-      if (!canOpenDevelopmentLead(lead, developmentLeadAccessKeys)) {
+      if (!canViewDevelopmentLeadPrivateDetails(lead, developmentLeadAccessKeys)) {
         protectedCount += 1
       }
     })
@@ -2534,8 +2532,7 @@ function DevelopmentDetail() {
           return false
         }
 
-        const mainStageKey = resolveDevelopmentTrackerMainStage(row)
-        if (!row?.transaction?.id && (mainStageKey === 'AVAIL' || mainStageKey === 'BLOCKED')) {
+        if (!row?.transaction?.id) {
           return false
         }
 
@@ -2549,16 +2546,12 @@ function DevelopmentDetail() {
       })
       .map((row) => {
         const mainStageKey = resolveDevelopmentTrackerMainStage(row)
-        const isManualUnitStatus = !row?.transaction?.id
         return {
           ...row,
           mainStageKey,
-          isManualUnitStatus,
-          progressPercent: isManualUnitStatus
-            ? getDevelopmentTrackerProgressPercent(mainStageKey)
-            : getTransactionProgressPercent(row),
-          buyerDisplayName: row?.buyer?.name || (isManualUnitStatus ? 'External / direct sale' : 'No buyer assigned'),
-          buyerEmail: row?.buyer?.email || (isManualUnitStatus ? 'Manual stock update' : 'No email'),
+          progressPercent: getTransactionProgressPercent(row),
+          buyerDisplayName: row?.buyer?.name || 'No buyer assigned',
+          buyerEmail: row?.buyer?.email || 'No email',
         }
       })
   }, [rows, transactionSearch, transactionStageFilter])
@@ -7656,8 +7649,8 @@ function DevelopmentDetail() {
                             key={lead.developerLeadId || lead.sourceLeadId || `${displayName}-${lead.createdAt}`}
                             className={`transition ${canOpenLead ? 'cursor-pointer hover:bg-[#f8fbff]' : 'bg-white'}`}
                             onClick={() => {
-                              if (!canOpenLead || !sourceLeadId) return
-                              navigate(`/pipeline/leads/${encodeURIComponent(sourceLeadId)}`)
+                              if (!canOpenLead || !lead.developerLeadId) return
+                              navigate(`/developer/leads/${encodeURIComponent(lead.developerLeadId)}`)
                             }}
                           >
                             <td className="px-5 py-4 align-top">
@@ -7682,13 +7675,13 @@ function DevelopmentDetail() {
                             <td className="px-5 py-4 align-top">
                               {canOpenLead ? (
                                 <span className="inline-flex items-center gap-1.5 rounded-full border border-[#cfe8d8] bg-[#edf9f1] px-3 py-1 text-xs font-semibold text-[#1f7a43]">
-                                  Open buyer lead
+                                  Open developer lead
                                   <ArrowUpRight size={12} />
                                 </span>
                               ) : (
                                 <span className="inline-flex items-center gap-1.5 rounded-full border border-[#e2e8f0] bg-[#f8fafc] px-3 py-1 text-xs font-semibold text-[#64748b]">
                                   <EyeOff size={12} />
-                                  {sourceLeadId ? 'Protected' : 'No buyer lead link'}
+                                  {sourceLeadId ? 'Protected' : 'No developer lead link'}
                                 </span>
                               )}
                             </td>
@@ -7756,11 +7749,6 @@ function DevelopmentDetail() {
                           key={row.transaction?.id || row.unit?.id}
                           className="h-[64px] cursor-pointer align-middle hover:bg-[#f8fbff]"
                           onClick={() => {
-                            if (row.isManualUnitStatus) {
-                              const unit = unitRows.find((item) => item.id === row.unit?.id)
-                              openUnitModal(unit || row.unit)
-                              return
-                            }
                             openDevelopmentTransactionWorkspace(row)
                           }}
                         >

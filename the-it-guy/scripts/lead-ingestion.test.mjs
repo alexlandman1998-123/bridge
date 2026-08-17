@@ -57,6 +57,12 @@ assert.match(serviceSource, /findExistingLead/)
 assert.match(serviceSource, /createAgencyCrmLeadActivity/)
 assert.match(serviceSource, /createAgencyCrmLeadTask/)
 assert.match(serviceSource, /upsertLeadListingInterest/)
+assert.match(serviceSource, /createAgencyIntroducedDeveloperLead/)
+assert.match(serviceSource, /resolveDevelopmentInterest/)
+assert.match(serviceSource, /scoreDevelopmentTextMatch/)
+assert.match(serviceSource, /lead-ingestion-development-mirror-v1/)
+assert.match(serviceSource, /Development lead mirrored/)
+assert.match(serviceSource, /sourceLeadId: lead\.leadId/)
 assert.match(serviceSource, /isOriginalEnquiry: true/)
 assert.match(serviceSource, /status: 'interested'/)
 assert.match(serviceSource, /createIngestionLog/)
@@ -109,6 +115,7 @@ try {
     normalizeEnquiryPayload,
     normalizeLeadSource,
     normalizePhone,
+    scoreDevelopmentTextMatch,
     scoreListingTextMatch,
   } = __leadIngestionServiceTestUtils
 
@@ -178,6 +185,32 @@ try {
     ),
     0,
     'unrelated listing text should not match',
+  )
+
+  const developmentTextMatchScore = scoreDevelopmentTextMatch(
+    {
+      name: 'Amari Residences',
+      location: 'Pomona, Kempton Park',
+      developer_company: 'Amari Developments',
+    },
+    {
+      developmentName: '',
+      lead: {
+        enquiredPropertyTitle: '3 Bedroom Apartment at Amari Residences',
+        enquiredPropertyAddress: 'Pomona, Kempton Park',
+        propertyInterest: 'Apartment',
+      },
+      raw: {},
+    },
+  )
+  assert.ok(developmentTextMatchScore >= 0.8, 'development name/title text should mirror a buyer lead into the development lane')
+  assert.equal(
+    scoreDevelopmentTextMatch(
+      { name: 'Amari Residences', location: 'Pomona, Kempton Park' },
+      { lead: { enquiredPropertyTitle: 'Standalone house in Sandton', enquiredPropertyAddress: 'Sandton' }, raw: {} },
+    ),
+    0,
+    'unrelated development text should not create a mirror',
   )
 
   const invalid = normalizeEnquiryPayload({ organisationId: enquiry.organisationId, source: 'Website' })

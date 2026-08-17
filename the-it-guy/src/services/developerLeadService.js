@@ -256,6 +256,46 @@ function buildProtectedSummary(input = {}) {
   ].filter(Boolean).join(' | ')
 }
 
+async function findExistingAgencyIntroducedDeveloperLead(client, {
+  developerOrgId = '',
+  sourceAgencyOrgId = '',
+  sourceLeadId = '',
+  primaryDevelopmentId = '',
+} = {}) {
+  const normalizedSourceLeadId = normalizeUuid(sourceLeadId)
+  if (!normalizedSourceLeadId) return null
+
+  const { data, error } = await client
+    .from('developer_leads')
+    .select(DEVELOPER_LEAD_SELECT)
+    .eq('developer_org_id', developerOrgId)
+    .eq('source_agency_org_id', sourceAgencyOrgId)
+    .eq('source_lead_id', normalizedSourceLeadId)
+    .eq('primary_development_id', primaryDevelopmentId)
+    .eq('ownership_model', 'agency_introduced')
+    .eq('lead_owner', 'agency')
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (error) {
+    if (isMissingDeveloperLeadSchema(error) || isPermissionError(error)) return null
+    throw error
+  }
+  if (!data) return null
+
+  const leadId = data.developer_lead_id
+  const [privateById, interestsById] = await Promise.all([
+    fetchPrivateDetailsByLeadIds(client, [leadId]),
+    fetchInterestsByLeadIds(client, [leadId]),
+  ])
+
+  return mapDeveloperLead(data, {
+    privateDetails: privateById.get(leadId) || null,
+    interests: interestsById.get(leadId) || [],
+  })
+}
+
 async function fetchPrivateDetailsByLeadIds(client, leadIds = []) {
   const ids = leadIds.map(normalizeUuid).filter(Boolean)
   if (!ids.length) return new Map()
@@ -412,6 +452,14 @@ export async function createAgencyIntroducedDeveloperLead(input = {}) {
     buyerFullName: 'Agency protected buyer',
   })
   const now = new Date().toISOString()
+
+  const existingLead = await findExistingAgencyIntroducedDeveloperLead(client, {
+    developerOrgId,
+    sourceAgencyOrgId,
+    sourceLeadId: input.sourceLeadId,
+    primaryDevelopmentId,
+  })
+  if (existingLead) return existingLead
 
   const leadPayload = {
     developer_org_id: developerOrgId,

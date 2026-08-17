@@ -102,6 +102,10 @@ export async function handleBuyerViewingAvailabilityRequestEmail(
       payload.agentDigitalCardUrl || payload.agent_digital_card_url ||
       payload.digitalContactCardUrl || payload.digital_contact_card_url,
   );
+  const agentAvatarUrl = normalizeText(
+    payload.agentAvatarUrl || payload.agent_avatar_url ||
+      payload.agentPhotoUrl || payload.agent_photo_url,
+  );
   const branding = await resolveEmailBranding({
     payload: rawPayload,
     organisationId: normalizeText(
@@ -129,6 +133,7 @@ export async function handleBuyerViewingAvailabilityRequestEmail(
     supportPhone: branding.supportPhone || supportPhone,
     actionLink,
     agentCardUrl,
+    agentAvatarUrl,
     branding,
   });
   const text = buildBuyerViewingAvailabilityRequestEmailText({
@@ -141,6 +146,7 @@ export async function handleBuyerViewingAvailabilityRequestEmail(
     supportPhone: branding.supportPhone || supportPhone,
     actionLink,
     agentCardUrl,
+    agentAvatarUrl,
   });
 
   const delivery = await prepareEmailDelivery(

@@ -18,6 +18,7 @@ assert.match(plannerHandler, /invokeEdgeFunction\('send-email'/, 'planner should
 assert.match(plannerHandler, /invokeEdgeFunction\('buyer-viewing-preferences'/, 'planner should create a buyer viewing preference link before sending')
 assert.match(plannerHandler, /type: 'buyer_viewing_availability_request'/, 'planner should send the buyer viewing template type')
 assert.match(plannerHandler, /actionLink: preferenceLink/, 'planner should pass the preference link as the email CTA')
+assert.match(plannerHandler, /agentAvatarUrl/, 'planner should pass the agent avatar URL to the buyer viewing email')
 assert.match(plannerHandler, /buyerViewingPreferenceLinkId/, 'planner should include the preference link id in delivery metadata')
 assert.match(plannerHandler, /resend: isResend/, 'planner resend should stay on the edge-function email path')
 assert.match(pageSource, /imageUrl: normalizeText\(property\?\.image/, 'planner should include the listing image in the email payload')
@@ -48,6 +49,7 @@ assert.match(sendEmailIndexSource, /handleBuyerViewingAvailabilityRequestEmail/,
 assert.match(sendEmailIndexSource, /buyer_viewing_availability_request/, 'send-email router should route the buyer viewing template')
 assert.match(sendEmailTypesSource, /SendBuyerViewingAvailabilityRequestPayload/, 'send-email types should define the buyer viewing payload')
 assert.match(sendEmailTypesSource, /ViewingAvailabilityRequestPropertyPayload/, 'send-email types should define property payloads')
+assert.match(sendEmailTypesSource, /agentAvatarUrl\?: string/, 'send-email types should define the buyer viewing agent avatar URL')
 
 for (const contract of [
   /prepareEmailDelivery/,
@@ -57,6 +59,7 @@ for (const contract of [
   /communicationType: "buyer_viewing_availability_request"/,
   /recipientRole: "buyer"/,
   /replyTo: agentEmail/,
+  /agentAvatarUrl/,
 ]) {
   assert.match(handlerSource, contract, `handler should include ${contract}`)
 }
@@ -66,6 +69,8 @@ for (const contract of [
   /Choose your preferred viewing times/,
   /Viewing request/,
   /actionLink/,
+  /agentAvatarUrl/,
+  /<img src="\$\{\s*escapeHtml\(avatarUrl\)\s*\}"/,
   /Property requested/,
   /imageUrl/,
   /Please reply with/,

@@ -40,7 +40,7 @@ function getPageTitle(pathname, stateTitle, role) {
   if (pathname === '/developments') return 'Developments'
   if (pathname === '/units') return role === 'developer' ? 'Units' : role === 'bond_originator' ? 'Applications' : 'Transactions'
   if (pathname === '/deals') return 'Transactions'
-  if (pathname === '/listings') return ''
+  if (pathname === '/listings' || pathname.startsWith('/listings/')) return ''
   if (pathname.startsWith('/agent/listings/')) return ''
   if (
     pathname === '/agents' ||
@@ -1136,6 +1136,7 @@ function HeaderBar({ onLogout, user }) {
       location.pathname === '/dashboard' ||
       location.pathname === '/' ||
       location.pathname === '/listings' ||
+      location.pathname.startsWith('/listings/') ||
       location.pathname.startsWith('/agent/listings/') ||
       location.pathname.startsWith('/agency/') ||
       location.pathname === '/calendar' ||

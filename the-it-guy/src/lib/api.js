@@ -18924,7 +18924,6 @@ export async function uploadDevelopmentDocumentAsset({
       : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
   const filePath = `developments/${developmentId}/${safeType}/${objectId}-${safeName}`
   const uploadedBucket = await uploadToDocumentsBucket(client, filePath, selectedFile, {
-    upsert: true,
     cacheControl: '3600',
     contentType: selectedFile.type || 'application/octet-stream',
   })

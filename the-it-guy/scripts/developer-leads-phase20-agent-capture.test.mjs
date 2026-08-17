@@ -53,7 +53,7 @@ for (const token of [
   assert.match(developerLeadServiceSource, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
 }
 
-assert.match(apiSource, /select\('id, organisation_id, name, planned_units'\)/)
+assert.match(apiSource, /select\(normalizedOrganisationId \? 'id, organisation_id, name, planned_units' : 'id, name, planned_units'\)/)
 assert.match(apiSource, /isMissingColumnError\(scopedQuery\.error, 'organisation_id'\)/)
 assert.match(apiSource, /isMissingColumnError\(error, 'organisation_id'\)/)
 

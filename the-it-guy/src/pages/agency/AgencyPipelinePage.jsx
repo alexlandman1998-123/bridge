@@ -11085,9 +11085,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       email: normalizeText(profile?.email).toLowerCase(),
       fullName: normalizeText(profile?.fullName || [profile?.firstName, profile?.lastName].filter(Boolean).join(' ')) || 'Current Agent',
       phone: normalizeText(profile?.phone || profile?.mobile || profile?.mobileNumber || profile?.contactNumber || profile?.contact_number),
+      avatarUrl: normalizeText(profile?.avatarUrl || profile?.avatar_url || profile?.profilePhotoUrl || profile?.profile_photo_url || profile?.photoUrl || profile?.photo_url),
       branchId: '',
     }),
-    [profile?.contact_number, profile?.contactNumber, profile?.email, profile?.firstName, profile?.fullName, profile?.id, profile?.lastName, profile?.mobile, profile?.mobileNumber, profile?.phone],
+    [profile?.avatarUrl, profile?.avatar_url, profile?.contact_number, profile?.contactNumber, profile?.email, profile?.firstName, profile?.fullName, profile?.id, profile?.lastName, profile?.mobile, profile?.mobileNumber, profile?.phone, profile?.photoUrl, profile?.photo_url, profile?.profilePhotoUrl, profile?.profile_photo_url],
   )
 
   const isPrincipal = useMemo(
@@ -11107,6 +11108,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         userId: normalizeText(row?.userId || row?.id || row?.email),
         name: normalizeText(row?.fullName || `${row?.firstName || ''} ${row?.lastName || ''}`) || normalizeText(row?.email) || 'Agent',
         email: normalizeText(row?.email).toLowerCase(),
+        avatarUrl: normalizeText(row?.avatarUrl || row?.avatar_url || row?.profilePhotoUrl || row?.profile_photo_url || row?.photoUrl || row?.photo_url || row?.profile?.avatar_url),
         branchId: normalizeText(row?.branchId),
       }))
       .filter((row) => row.id)
@@ -11120,12 +11122,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         userId: currentAgent.userId,
         name: currentAgent.fullName,
         email: currentAgent.email,
+        avatarUrl: currentAgent.avatarUrl,
         branchId: currentAgent.branchId,
       })
     }
 
     return normalized
-  }, [currentAgent.branchId, currentAgent.email, currentAgent.fullName, currentAgent.id, currentAgent.userId, users])
+  }, [currentAgent.avatarUrl, currentAgent.branchId, currentAgent.email, currentAgent.fullName, currentAgent.id, currentAgent.userId, users])
 
   const resolveAgentById = useCallback(
     (id) => {
@@ -11139,10 +11142,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         userId: currentAgent.userId,
         name: currentAgent.fullName,
         email: currentAgent.email,
+        avatarUrl: currentAgent.avatarUrl,
         branchId: currentAgent.branchId,
       }
     },
-    [agentOptions, currentAgent.branchId, currentAgent.email, currentAgent.fullName, currentAgent.id, currentAgent.userId],
+    [agentOptions, currentAgent.avatarUrl, currentAgent.branchId, currentAgent.email, currentAgent.fullName, currentAgent.id, currentAgent.userId],
   )
 
   useEffect(() => {
@@ -17772,6 +17776,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     ) || normalizeText(leadForm.firstName) || 'there'
     const agentName = normalizeText(assignedAgent?.name || assignedAgent?.fullName || assignedAgent?.email || currentAgent?.fullName) || 'your agent'
     const agentEmail = normalizeText(assignedAgent?.email || currentAgent?.email).toLowerCase()
+    const agentAvatarUrl = normalizeText(assignedAgent?.avatarUrl || assignedAgent?.avatar_url || currentAgent?.avatarUrl || currentAgent?.avatar_url)
     const resolvedOrganisationName = normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName)
 
     try {
@@ -17809,6 +17814,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           recipientName: buyerName,
           agentName,
           agentEmail,
+          agentAvatarUrl,
           organisationId: workspaceId,
           organisationName: resolvedOrganisationName,
           leadId,
@@ -18622,6 +18628,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const buyerName = normalizeText(selectedLeadDisplayName || selectedLeadContact?.firstName || selectedLead?.firstName) || 'there'
       const agentName = normalizeText(currentAgent?.fullName || currentAgent?.email) || 'your agent'
       const agentEmail = normalizeText(currentAgent?.email).toLowerCase()
+      const agentAvatarUrl = normalizeText(currentAgent?.avatarUrl || currentAgent?.avatar_url)
       const emailProperties = buildBuyerViewingAvailabilityEmailProperties(selectedProperties, origin)
       const preferenceLinkResponse = await invokeEdgeFunction('buyer-viewing-preferences', {
         body: {
@@ -18650,6 +18657,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           recipientName: buyerName,
           agentName,
           agentEmail,
+          agentAvatarUrl,
           organisationId: workspaceId,
           organisationName: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
           leadId: selectedLeadUuid,

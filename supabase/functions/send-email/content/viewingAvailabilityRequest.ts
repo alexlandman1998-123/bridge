@@ -149,17 +149,21 @@ function renderActionButton(actionLink = "", accent = "#d9a128") {
   `;
 }
 
-function renderAgentCard(agentName: string, agentCardUrl = "") {
+function renderAgentCard(agentName: string, agentCardUrl = "", agentAvatarUrl = "") {
   const cardUrl = normalizeText(agentCardUrl);
+  const avatarUrl = normalizeText(agentAvatarUrl);
+  const avatarHtml = avatarUrl
+    ? `<img src="${escapeHtml(avatarUrl)}" alt="${escapeHtml(agentName)}" width="76" height="76" style="display:block; width:76px; height:76px; border-radius:50%; object-fit:cover; border:0; background:#e6ecef;" />`
+    : `<div style="width: 76px; height: 76px; border-radius: 50%; background: #06142f; color: #ffffff; font-size: 24px; line-height: 76px; font-weight: 800; text-align: center;">${
+      escapeHtml(getInitials(agentName))
+    }</div>`;
   return `
     <div style="margin: 0 0 22px;">
       <p style="margin: 0 0 14px; color: #00604f; font-size: 15px; line-height: 1.2; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase;">Meet your agent</p>
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse; background: linear-gradient(90deg, #edf8f4 0%, #f5fbf8 100%); border-radius: 12px;">
         <tr>
           <td width="92" valign="top" style="padding: 20px 0 20px 20px;">
-            <div style="width: 76px; height: 76px; border-radius: 50%; background: #06142f; color: #ffffff; font-size: 24px; line-height: 76px; font-weight: 800; text-align: center;">${
-    escapeHtml(getInitials(agentName))
-  }</div>
+            ${avatarHtml}
           </td>
           <td valign="top" style="padding: 20px 20px 20px 0;">
             <p style="margin: 0 0 7px; color: #00604f; font-size: 12px; line-height: 1.2; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase;">Your property professional</p>
@@ -271,6 +275,7 @@ export function buildBuyerViewingAvailabilityRequestEmailHtml({
   supportPhone = "",
   actionLink = "",
   agentCardUrl = "",
+  agentAvatarUrl = "",
   branding,
 }: {
   buyerName?: string;
@@ -282,6 +287,7 @@ export function buildBuyerViewingAvailabilityRequestEmailHtml({
   supportPhone?: string;
   actionLink?: string;
   agentCardUrl?: string;
+  agentAvatarUrl?: string;
   branding?: BridgeEmailLayoutBranding;
 }) {
   const selectedProperties = normalizeProperties(properties);
@@ -329,7 +335,7 @@ export function buildBuyerViewingAvailabilityRequestEmailHtml({
             <p style="margin:12px 0 0; color:#687487; font-size:12px; line-height:1.45; font-weight:600;">Secure public link. No sign-in needed.</p>
           </div>
           ${renderPropertyCard(selectedProperties)}
-          ${renderAgentCard(pickText(agentName, "your agent"), agentCardUrl)}
+          ${renderAgentCard(pickText(agentName, "your agent"), agentCardUrl, agentAvatarUrl)}
           ${renderRequestedSlots()}
           ${renderNextSteps(pickText(agentName, "your agent"))}
           ${
@@ -373,6 +379,7 @@ export function buildBuyerViewingAvailabilityRequestEmailText({
   supportPhone = "",
   actionLink = "",
   agentCardUrl = "",
+  agentAvatarUrl = "",
 }: {
   buyerName?: string;
   agentName?: string;
@@ -383,6 +390,7 @@ export function buildBuyerViewingAvailabilityRequestEmailText({
   supportPhone?: string;
   actionLink?: string;
   agentCardUrl?: string;
+  agentAvatarUrl?: string;
 }) {
   const selectedProperties = normalizeProperties(properties);
   const propertyLines = selectedProperties.length
@@ -415,6 +423,7 @@ export function buildBuyerViewingAvailabilityRequestEmailText({
       ? "Select 3 viewing times here:"
       : "Please reply with exactly three time windows that suit you.",
     actionLink || null,
+    agentAvatarUrl ? `Agent photo: ${agentAvatarUrl}` : null,
     agentCardUrl ? `Agent digital contact card: ${agentCardUrl}` : null,
     note ? `Agent note: ${note}` : null,
     "",

@@ -44,13 +44,19 @@ assert.ok(
 )
 
 assert.ok(
-  detailSource.includes('return Boolean(normalizeDevelopmentLeadText(lead.sourceLeadId) && assignedKeys.some((key) => accessKeys.has(key)))'),
-  'buyer lead navigation should require a source lead and a current-user assigned agent match',
+  detailSource.includes('return Boolean(normalizeDevelopmentLeadText(lead.developerLeadId))'),
+  'development lead navigation should use the developer lead workspace identifier',
 )
 
 assert.ok(
-  detailSource.includes("navigate(`/pipeline/leads/${encodeURIComponent(sourceLeadId)}`)"),
-  'assigned agents should click through to the normal buyer lead module',
+  detailSource.includes("navigate(`/developer/leads/${encodeURIComponent(lead.developerLeadId)}`)"),
+  'development lead rows should click through to the developer lead module workspace',
+)
+
+assert.ok(
+  detailSource.includes('function canViewDevelopmentLeadPrivateDetails') &&
+    detailSource.includes('assignedKeys.some((key) => accessKeys.has(key))'),
+  'buyer private details should still require a current-user assigned agent match',
 )
 
 assert.ok(
@@ -64,7 +70,7 @@ assert.ok(
 )
 
 assert.ok(
-  detailSource.includes('Open buyer lead') && detailSource.includes('Protected'),
+  detailSource.includes('Open developer lead') && detailSource.includes('Protected'),
   'lead rows should clearly distinguish openable leads from protected leads',
 )
 

@@ -10,16 +10,6 @@ import {
   DOCUMENT_START_ENTRY_POINTS,
   DOCUMENT_START_SOURCE_MODES,
 } from '../core/documents/documentStartRules'
-import {
-  DEVELOPER_LEAD_PHASE22_CONTRACT,
-  buildAgencyDeveloperLeadHandoverReleaseQueue,
-  summarizeAgencyDeveloperLeadHandoverReleaseQueue,
-} from '../core/developerLeads/developerLeadAgencyHandoverReleaseQueue'
-import {
-  DEVELOPER_LEAD_PHASE24_CONTRACT,
-  buildAgencyDeveloperLeadConversionReceiptQueue,
-  summarizeAgencyDeveloperLeadConversionReceiptQueue,
-} from '../core/developerLeads/developerLeadAgencyConversionReceiptQueue'
 import { useWorkspace } from '../context/WorkspaceContext'
 import {
   fetchAssignedDevelopmentIdsForRole,
@@ -62,8 +52,6 @@ import {
 import { createPrivateListing, createPrivateListingActivity, deletePrivateListing, getAgentPrivateListings, persistSellerProfileOnboardingFormData, syncPrivateListingRequirements, updatePrivateListing, uploadPrivateListingDocument } from '../services/privateListingService'
 import {
   createAgencyIntroducedDeveloperLead,
-  listAgencyIntroducedDeveloperLeadsForAgency,
-  releaseAgencyDeveloperLeadHandover,
 } from '../services/developerLeadService'
 import {
   activateSellerPortalForListing,
@@ -501,155 +489,6 @@ function buildAgencyDeveloperLeadProtectedSummary(form = {}, developmentName = '
     developmentName ? `Development: ${developmentName}` : '',
     budgetLabel,
   ].filter(Boolean).join('. ')
-}
-
-function getAgencyHandoverQueueTone(status = 'ready') {
-  if (status === 'blocked') return 'border-[#f8d7da] bg-[#fff5f6] text-[#8d2831]'
-  if (status === 'attention') return 'border-[#f0dfb8] bg-[#fff9ec] text-[#8a5a12]'
-  return 'border-[#d8efe4] bg-[#f1fbf6] text-[#17613d]'
-}
-
-function AgencyDeveloperLeadHandoverPanel({
-  queue,
-  summary,
-  developments,
-  releasingId,
-  onRelease,
-}) {
-  const developmentById = new Map((developments || []).map((development) => [development.id, development]))
-
-  return (
-    <section className="rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4" data-contract={DEVELOPER_LEAD_PHASE22_CONTRACT}>
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <p className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Developer Handover Requests</p>
-          <h3 className="mt-1 text-base font-semibold text-[#142132]">Buyer detail release queue</h3>
-          <p className="mt-1 max-w-3xl text-sm leading-6 text-[#607387]">
-            Release buyer details only after the developer has requested handover. Released leads become eligible for conversion in the developer module.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <span className={`inline-flex h-8 items-center rounded-full border px-3 text-xs font-semibold ${getAgencyHandoverQueueTone(summary.status)}`}>
-            {summary.label}
-          </span>
-          <span className="inline-flex h-8 items-center rounded-full border border-[#d9e5f2] bg-white px-3 text-xs font-semibold text-[#52677f]">
-            {queue.releasedCount} released
-          </span>
-        </div>
-      </div>
-
-      {queue.cards.length ? (
-        <div className="mt-4 grid gap-3 xl:grid-cols-2">
-          {queue.cards.slice(0, 4).map((card) => {
-            const development = developmentById.get(card.primaryDevelopmentId)
-            const contact = [card.buyerEmail, card.buyerPhone].filter(Boolean).join(' / ') || 'Contact missing'
-            const releasing = releasingId === card.developerLeadId
-            return (
-              <article key={card.developerLeadId} className="rounded-[14px] border border-[#dce6f2] bg-white p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-[#142132]">{card.buyerFullName || 'Buyer pending'}</p>
-                    <p className="mt-1 truncate text-xs text-[#607387]">{contact}</p>
-                  </div>
-                  <span className="shrink-0 rounded-full border border-[#f0dfb8] bg-[#fff9ec] px-2.5 py-1 text-xs font-semibold text-[#8a5a12]">
-                    Handover requested
-                  </span>
-                </div>
-                <p className="mt-3 line-clamp-2 text-sm leading-6 text-[#51657b]">{card.protectedSummary}</p>
-                <div className="mt-3 grid gap-2 text-xs text-[#607387] md:grid-cols-2">
-                  <span>Development: <strong className="text-[#35546c]">{development?.name || 'Development pending'}</strong></span>
-                  <span>Interest: <strong className="text-[#35546c]">{card.unitTypeInterest}</strong></span>
-                </div>
-                {card.releaseBlockers.length ? (
-                  <p className="mt-3 rounded-[10px] border border-[#f8d7da] bg-[#fff5f6] px-3 py-2 text-xs text-[#8d2831]">
-                    {card.releaseBlockers[0]}
-                  </p>
-                ) : null}
-                <div className="mt-4 flex justify-end border-t border-[#eef3f8] pt-3">
-                  <Button
-                    type="button"
-                    size="sm"
-                    disabled={!card.canRelease || releasing}
-                    onClick={() => onRelease(card)}
-                  >
-                    {releasing ? <Loader2 size={15} className="animate-spin" /> : <ShieldCheck size={15} />}
-                    {releasing ? 'Releasing...' : 'Release Buyer Details'}
-                  </Button>
-                </div>
-              </article>
-            )
-          })}
-        </div>
-      ) : (
-        <div className="mt-4 rounded-[14px] border border-dashed border-[#d3deea] bg-white px-4 py-3 text-sm text-[#607387]">
-          {summary.detail}
-        </div>
-      )}
-    </section>
-  )
-}
-
-function AgencyDeveloperLeadConversionReceiptPanel({
-  queue,
-  summary,
-  developments,
-}) {
-  const developmentById = new Map((developments || []).map((development) => [development.id, development]))
-
-  return (
-    <section className="rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4" data-contract={DEVELOPER_LEAD_PHASE24_CONTRACT}>
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <p className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Developer Conversion Receipts</p>
-          <h3 className="mt-1 text-base font-semibold text-[#142132]">Converted agency buyer leads</h3>
-          <p className="mt-1 max-w-3xl text-sm leading-6 text-[#607387]">
-            Track agency-introduced buyer leads converted by the developer. Receipts confirm conversion without opening the developer transaction workspace.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <span className={`inline-flex h-8 items-center rounded-full border px-3 text-xs font-semibold ${getAgencyHandoverQueueTone(summary.status)}`}>
-            {summary.label}
-          </span>
-          <span className="inline-flex h-8 items-center rounded-full border border-[#d9e5f2] bg-white px-3 text-xs font-semibold text-[#52677f]">
-            {queue.releasedAwaitingConversionCount} awaiting conversion
-          </span>
-        </div>
-      </div>
-
-      {queue.cards.length ? (
-        <div className="mt-4 grid gap-3 xl:grid-cols-2">
-          {queue.cards.slice(0, 4).map((card) => {
-            const development = developmentById.get(card.primaryDevelopmentId)
-            const contact = [card.buyerEmail, card.buyerPhone].filter(Boolean).join(' / ') || 'Contact retained by agency'
-            return (
-              <article key={card.developerLeadId} className="rounded-[14px] border border-[#dce6f2] bg-white p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-[#142132]">{card.buyerFullName}</p>
-                    <p className="mt-1 truncate text-xs text-[#607387]">{contact}</p>
-                  </div>
-                  <span className="shrink-0 rounded-full border border-[#d8efe4] bg-[#f1fbf6] px-2.5 py-1 text-xs font-semibold text-[#17613d]">
-                    Converted
-                  </span>
-                </div>
-                <p className="mt-3 line-clamp-2 text-sm leading-6 text-[#51657b]">{card.protectedSummary}</p>
-                <div className="mt-3 grid gap-2 text-xs text-[#607387] md:grid-cols-2">
-                  <span>Development: <strong className="text-[#35546c]">{development?.name || 'Development pending'}</strong></span>
-                  <span>Receipt: <strong className="text-[#35546c]">{card.transactionReceipt}</strong></span>
-                  <span>Converted: <strong className="text-[#35546c]">{formatRelativeDate(card.convertedAt)}</strong></span>
-                  <span>Access: <strong className="text-[#35546c]">{card.agencyCanOpenTransaction ? 'Transaction workspace' : 'Receipt only'}</strong></span>
-                </div>
-              </article>
-            )
-          })}
-        </div>
-      ) : (
-        <div className="mt-4 rounded-[14px] border border-dashed border-[#d3deea] bg-white px-4 py-3 text-sm text-[#607387]">
-          {summary.detail}
-        </div>
-      )}
-    </section>
-  )
 }
 
 function normalizeDirectListingKey(value) {
@@ -2448,8 +2287,6 @@ function AgentListings({ initialTab = null } = {}) {
   const [developerLeadUnits, setDeveloperLeadUnits] = useState([])
   const [developerLeadUnitsLoading, setDeveloperLeadUnitsLoading] = useState(false)
   const [developerLeadSubmitting, setDeveloperLeadSubmitting] = useState(false)
-  const [agencyDeveloperLeads, setAgencyDeveloperLeads] = useState([])
-  const [agencyDeveloperLeadReleasingId, setAgencyDeveloperLeadReleasingId] = useState('')
 
   const [form, setForm] = useState(() => buildInitialListingLeadForm(profile, workspace))
   const selectedWorkspaceOrganisationId = useMemo(
@@ -2466,7 +2303,6 @@ function AgentListings({ initialTab = null } = {}) {
       let assignedIds = []
       let userRows = []
       let branchRows = []
-      let agencyDeveloperLeadRows = []
       const locallyDeletedIds = new Set([
         ...readDeletedListingIds(),
         ...(deletedIdsOverride instanceof Set ? Array.from(deletedIdsOverride) : []),
@@ -2498,12 +2334,6 @@ function AgentListings({ initialTab = null } = {}) {
           ? await fetchDevelopmentOptions({ developmentIds: assignedIds })
           : await fetchDevelopmentOptions()
 
-        if (resolvedOrganisationId && resolvedOrganisationId !== 'all') {
-          agencyDeveloperLeadRows = await listAgencyIntroducedDeveloperLeadsForAgency({
-            sourceAgencyOrgId: resolvedOrganisationId,
-          }).catch(() => [])
-        }
-
         const canUseDbFirstPrivateListings = !MOCK_DATA_ENABLED && Boolean(resolvedOrganisationId && profile?.id)
         if (canUseDbFirstPrivateListings) {
           const agentAssignmentIds = resolveAgentAssignmentIds({ id: profile?.id, email: profile?.email }, userRows)
@@ -2527,7 +2357,6 @@ function AgentListings({ initialTab = null } = {}) {
       setOrganisationUsers(userRows)
       setBranchOptions(branchRows)
       setOrganisationId(resolvedOrganisationId)
-      setAgencyDeveloperLeads(Array.isArray(agencyDeveloperLeadRows) ? agencyDeveloperLeadRows : [])
       setPrivateListings(mergePrivateListingRows(dbPrivateListings, runtimeListings, locallyDeletedIds))
     } catch (loadError) {
       setError(loadError?.message || 'Unable to load listings at the moment.')
@@ -4432,26 +4261,6 @@ function AgentListings({ initialTab = null } = {}) {
     [developerLeadForm.primaryDevelopmentId, developmentCards],
   )
 
-  const agencyDeveloperLeadHandoverQueue = useMemo(
-    () => buildAgencyDeveloperLeadHandoverReleaseQueue(agencyDeveloperLeads),
-    [agencyDeveloperLeads],
-  )
-
-  const agencyDeveloperLeadHandoverSummary = useMemo(
-    () => summarizeAgencyDeveloperLeadHandoverReleaseQueue(agencyDeveloperLeads),
-    [agencyDeveloperLeads],
-  )
-
-  const agencyDeveloperLeadConversionReceiptQueue = useMemo(
-    () => buildAgencyDeveloperLeadConversionReceiptQueue(agencyDeveloperLeads),
-    [agencyDeveloperLeads],
-  )
-
-  const agencyDeveloperLeadConversionReceiptSummary = useMemo(
-    () => summarizeAgencyDeveloperLeadConversionReceiptQueue(agencyDeveloperLeads),
-    [agencyDeveloperLeads],
-  )
-
   useEffect(() => {
     if (!developerLeadModalOpen || !developerLeadForm.primaryDevelopmentId || !isSupabaseConfigured) {
       setDeveloperLeadUnits([])
@@ -4590,38 +4399,6 @@ function AgentListings({ initialTab = null } = {}) {
       setError(submitError?.message || 'Unable to submit protected developer lead.')
     } finally {
       setDeveloperLeadSubmitting(false)
-    }
-  }
-
-  async function handleReleaseAgencyDeveloperLeadHandover(card = {}) {
-    const developerLeadId = normalizeText(card.developerLeadId)
-    const sourceAgencyOrgId = normalizeText(organisationId || selectedWorkspaceOrganisationId || workspace?.id)
-    if (!developerLeadId || !sourceAgencyOrgId || sourceAgencyOrgId === 'all') {
-      setError('Select an agency workspace before releasing buyer details.')
-      return
-    }
-    if (card.releaseBlockers?.length) {
-      setError(card.releaseBlockers[0])
-      return
-    }
-
-    try {
-      setAgencyDeveloperLeadReleasingId(developerLeadId)
-      setError('')
-      setWorkflowMessage('')
-      await releaseAgencyDeveloperLeadHandover({
-        sourceAgencyOrgId,
-        developerLeadId,
-        actorUserId: profile?.id || '',
-        consentReference: `agency-release-${developerLeadId}`,
-      })
-      setWorkflowMessage('Buyer details released to the developer.')
-      window.dispatchEvent(new Event('itg:developer-leads-changed'))
-      await loadData({ showLoading: false })
-    } catch (releaseError) {
-      setError(releaseError?.message || 'Unable to release buyer details to the developer.')
-    } finally {
-      setAgencyDeveloperLeadReleasingId('')
     }
   }
 
@@ -4981,18 +4758,6 @@ function AgentListings({ initialTab = null } = {}) {
 
         {!loading && listingsTab === 'developments' ? (
           <>
-            <AgencyDeveloperLeadHandoverPanel
-              queue={agencyDeveloperLeadHandoverQueue}
-              summary={agencyDeveloperLeadHandoverSummary}
-              developments={developmentCards}
-              releasingId={agencyDeveloperLeadReleasingId}
-              onRelease={handleReleaseAgencyDeveloperLeadHandover}
-            />
-            <AgencyDeveloperLeadConversionReceiptPanel
-              queue={agencyDeveloperLeadConversionReceiptQueue}
-              summary={agencyDeveloperLeadConversionReceiptSummary}
-              developments={developmentCards}
-            />
             {filteredDevelopmentCards.length ? (
               <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
               {filteredDevelopmentCards.map((card) => (

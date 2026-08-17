@@ -45,9 +45,16 @@ assert.ok(
 )
 
 assert.ok(
-  detailSource.includes('!row?.transaction?.id && (mainStageKey === \'AVAIL\' || mainStageKey === \'BLOCKED\')') &&
-    detailSource.includes("buyerDisplayName: row?.buyer?.name || (isManualUnitStatus ? 'External / direct sale'"),
-  'manual external unit sales should show in the transaction tab without requiring transaction records',
+  detailSource.includes('if (!row?.transaction?.id) {') &&
+    detailSource.includes('return false') &&
+    detailSource.includes("buyerDisplayName: row?.buyer?.name || 'No buyer assigned'"),
+  'development transaction tab should only show rows backed by real transaction records',
+)
+
+assert.ok(
+  !detailSource.includes('row.isManualUnitStatus') &&
+    !detailSource.includes("buyerDisplayName: row?.buyer?.name || (isManualUnitStatus ? 'External / direct sale'"),
+  'transaction row clicks should not fall back to the stock-master unit drawer',
 )
 
 assert.ok(

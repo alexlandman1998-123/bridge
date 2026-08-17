@@ -79,6 +79,13 @@ assert.ok(
   'development upload helper should store files under a development-specific path',
 )
 
+const developmentUploadSource = apiSource.match(/export async function uploadDevelopmentDocumentAsset[\s\S]*?\n}\n\nexport async function deleteDevelopmentDocument/)?.[0] || ''
+assert.doesNotMatch(
+  developmentUploadSource,
+  /upsert:\s*true/,
+  'development asset uploads use UUID object paths and should not require Supabase Storage update/select policies',
+)
+
 assert.ok(
   detailSource.includes('formatMarketingFloorplanPriceSummary'),
   'marketing price summaries should read the from/to fields',

@@ -101,10 +101,7 @@ for (const token of [
 }
 
 for (const token of [
-  'DEVELOPER_LEAD_PHASE22_CONTRACT',
   'AgencyDeveloperLeadHandoverPanel',
-  'listAgencyIntroducedDeveloperLeadsForAgency',
-  'releaseAgencyDeveloperLeadHandover',
   'buildAgencyDeveloperLeadHandoverReleaseQueue(agencyDeveloperLeads)',
   'summarizeAgencyDeveloperLeadHandoverReleaseQueue(agencyDeveloperLeads)',
   'handleReleaseAgencyDeveloperLeadHandover',
@@ -112,7 +109,7 @@ for (const token of [
   'Release Buyer Details',
   'data-contract={DEVELOPER_LEAD_PHASE22_CONTRACT}',
 ]) {
-  assert.match(agentListingsSource, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+  assert.doesNotMatch(agentListingsSource, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
 }
 
 for (const token of [

@@ -8,6 +8,7 @@ import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { createLeadRequirement, listLeadRequirements } from './leadRequirementService'
 import { upsertLeadListingInterest } from './leadListingInterestService'
 import { autoAssignLead } from './leadAssignmentService'
+import { createAgencyIntroducedDeveloperLead } from './developerLeadService'
 import { inferLeadCategoryFromRecord, inferLeadCategoryFromSource, normalizeLeadCategory } from '../lib/leadCategory'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -55,6 +56,13 @@ function normalizeListingMatchText(value = '') {
     .trim()
 }
 
+function normalizeDevelopmentMatchText(value = '') {
+  return normalizeListingMatchText(value)
+    .replace(/\b(?:development|estate|residences|residence|apartments|apartment|unit|units)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 function scoreListingTextMatch(listing = {}, enquiry = {}) {
   const enquirySignals = [
     enquiry.lead?.enquiredPropertyTitle,
@@ -81,6 +89,60 @@ function scoreListingTextMatch(listing = {}, enquiry = {}) {
       const listingTokens = new Set(listingSignal.split(' ').filter((token) => token.length > 2))
       const overlap = [...enquiryTokens].filter((token) => listingTokens.has(token)).length
       const denominator = Math.max(1, Math.min(enquiryTokens.size, listingTokens.size))
+      bestScore = Math.max(bestScore, overlap / denominator)
+    }
+  }
+  return Number(bestScore.toFixed(2))
+}
+
+function scoreDevelopmentTextMatch(development = {}, enquiry = {}) {
+  const raw = enquiry.raw || {}
+  const explicitDevelopmentSignals = [
+    enquiry.developmentName,
+    raw.developmentName,
+    raw.development_name,
+    raw.primaryDevelopmentName,
+    raw.primary_development_name,
+    raw.projectName,
+    raw.project_name,
+  ].map(normalizeDevelopmentMatchText).filter((value) => value.length >= 4)
+  const enquirySignals = [
+    ...explicitDevelopmentSignals,
+    enquiry.lead?.enquiredPropertyTitle,
+    enquiry.lead?.enquiredPropertyAddress,
+    enquiry.lead?.propertyInterest,
+    enquiry.message,
+    raw.propertyTitle,
+    raw.property_title,
+    raw.propertyAddress,
+    raw.property_address,
+  ].map(normalizeDevelopmentMatchText).filter((value) => value.length >= 4)
+  if (!enquirySignals.length) return 0
+
+  const developmentSignals = [
+    development.name,
+    development.development_name,
+    development.developer_company,
+    development.location,
+    development.address,
+    development.formatted_address,
+    development.street_address,
+    [development.suburb, development.city].filter(Boolean).join(' '),
+    [development.name, development.suburb, development.city].filter(Boolean).join(' '),
+  ].map(normalizeDevelopmentMatchText).filter((value) => value.length >= 4)
+  if (!developmentSignals.length) return 0
+
+  let bestScore = 0
+  for (const enquirySignal of enquirySignals) {
+    const enquiryTokens = new Set(enquirySignal.split(' ').filter((token) => token.length > 2))
+    for (const developmentSignal of developmentSignals) {
+      if (enquirySignal === developmentSignal) bestScore = Math.max(bestScore, explicitDevelopmentSignals.includes(enquirySignal) ? 1 : 0.96)
+      if (enquirySignal.includes(developmentSignal) || developmentSignal.includes(enquirySignal)) {
+        bestScore = Math.max(bestScore, explicitDevelopmentSignals.includes(enquirySignal) ? 0.98 : 0.9)
+      }
+      const developmentTokens = new Set(developmentSignal.split(' ').filter((token) => token.length > 2))
+      const overlap = [...enquiryTokens].filter((token) => developmentTokens.has(token)).length
+      const denominator = Math.max(1, Math.min(enquiryTokens.size, developmentTokens.size))
       bestScore = Math.max(bestScore, overlap / denominator)
     }
   }
@@ -156,6 +218,9 @@ export function normalizeEnquiryPayload(payload = {}, defaultSource = 'Other') {
   const phone = normalizePhone(payload.phone || contact.phone || payload.mobile || payload.fromPhone)
   const externalReference = normalizeText(payload.externalReference || payload.external_reference || payload.enquiryId || payload.enquiry_id || payload.id || payload.reference)
   const listingReference = normalizeText(payload.listingReference || payload.listing_reference || payload.externalListingReference || payload.external_listing_reference || payload.property24ListingId || payload.privatePropertyListingId)
+  const developmentId = normalizeText(lead.developmentId || lead.development_id || payload.developmentId || payload.development_id || payload.primaryDevelopmentId || payload.primary_development_id)
+  const developmentReference = normalizeText(lead.developmentReference || lead.development_reference || payload.developmentReference || payload.development_reference || payload.externalDevelopmentReference || payload.external_development_reference)
+  const developmentName = normalizeText(lead.developmentName || lead.development_name || payload.developmentName || payload.development_name || payload.primaryDevelopmentName || payload.primary_development_name || payload.projectName || payload.project_name)
   const enquiredPropertyAddress = normalizeText(payload.enquiredPropertyAddress || payload.enquired_property_address || payload.propertyAddress || payload.property_address)
   const enquiredPropertyTitle = normalizeText(payload.enquiredPropertyTitle || payload.enquired_property_title || payload.propertyTitle || payload.property_title)
   const enquiredPropertyPrice = payload.enquiredPropertyPrice ?? payload.enquired_property_price ?? payload.propertyPrice ?? payload.property_price
@@ -194,6 +259,9 @@ export function normalizeEnquiryPayload(payload = {}, defaultSource = 'Other') {
     },
     listingId: normalizeText(payload.listingId || payload.listing_id || payload.privateListingId || payload.private_listing_id || lead.listingId),
     listingReference,
+    developmentId,
+    developmentReference,
+    developmentName,
     assignedAgent: payload.assignedAgent && typeof payload.assignedAgent === 'object' ? payload.assignedAgent : null,
     requirement: payload.requirement && typeof payload.requirement === 'object' ? payload.requirement : null,
     raw: payload,
@@ -392,12 +460,215 @@ async function resolveListing(client, enquiry) {
   return null
 }
 
+async function fetchDevelopmentById(client, developmentId) {
+  if (!isUuidLike(developmentId)) return null
+  const selectVariants = [
+    'id, organisation_id, name, status, location, developer_company, address, formatted_address, street_address, suburb, city, province',
+    'id, organisation_id, name, status, location, developer_company',
+    'id, organisation_id, name',
+  ]
+  for (const fields of selectVariants) {
+    const { data, error } = await client
+      .from('developments')
+      .select(fields)
+      .eq('id', developmentId)
+      .maybeSingle()
+    if (!error && data) return data
+    if (error && !isRecoverableReadError(error, 'developments')) throw error
+  }
+  return null
+}
+
+async function fetchDevelopmentsForMatching(client) {
+  const selectVariants = [
+    'id, organisation_id, name, status, location, developer_company, address, formatted_address, street_address, suburb, city, province, external_reference, development_reference',
+    'id, organisation_id, name, status, location, developer_company, address, formatted_address, street_address, suburb, city, province',
+    'id, organisation_id, name, status, location, developer_company',
+    'id, organisation_id, name',
+  ]
+  for (const fields of selectVariants) {
+    const { data, error } = await client
+      .from('developments')
+      .select(fields)
+      .limit(500)
+    if (!error) return Array.isArray(data) ? data : []
+    if (!isRecoverableReadError(error, 'developments')) throw error
+  }
+  return []
+}
+
+async function resolveDevelopmentByReference(client, reference = '') {
+  const normalizedReference = normalizeText(reference)
+  if (!normalizedReference) return null
+  for (const column of ['external_reference', 'development_reference']) {
+    const { data, error } = await client
+      .from('developments')
+      .select('id, organisation_id, name, status, location, developer_company')
+      .eq(column, normalizedReference)
+      .limit(1)
+      .maybeSingle()
+    if (!error && data) return data
+    if (error && !isRecoverableReadError(error, 'developments')) throw error
+  }
+  return null
+}
+
+async function resolveDevelopmentInterest(client, enquiry) {
+  const explicitDevelopment = await fetchDevelopmentById(client, enquiry.developmentId)
+  if (explicitDevelopment) {
+    return { development: explicitDevelopment, score: 1, reason: 'explicit_development_id' }
+  }
+
+  const explicitReferenceMatch = await resolveDevelopmentByReference(client, enquiry.developmentReference)
+  if (explicitReferenceMatch) {
+    return { development: explicitReferenceMatch, score: 1, reason: 'explicit_development_reference' }
+  }
+
+  const referenceSignals = [
+    enquiry.developmentReference,
+    enquiry.listingReference,
+    enquiry.lead?.sourceReferenceId,
+  ].map(normalizeLower).filter(Boolean)
+  const hasTextMatchSignal = [
+    enquiry.developmentName,
+    enquiry.lead?.enquiredPropertyTitle,
+    enquiry.lead?.enquiredPropertyAddress,
+    enquiry.lead?.propertyInterest,
+    enquiry.message,
+  ].some((value) => normalizeDevelopmentMatchText(value).length >= 4)
+  if (!referenceSignals.length && !hasTextMatchSignal) return null
+
+  const developments = await fetchDevelopmentsForMatching(client)
+  const referenceCandidate = developments.find((development) => {
+    const candidateReferences = [
+      development.external_reference,
+      development.development_reference,
+      development.public_reference,
+    ].map(normalizeLower).filter(Boolean)
+    return referenceSignals.some((reference) => candidateReferences.includes(reference))
+  })
+  if (referenceCandidate) {
+    return { development: referenceCandidate, score: 1, reason: 'matched_development_reference' }
+  }
+
+  const candidates = developments
+    .map((development) => ({ development, score: scoreDevelopmentTextMatch(development, enquiry) }))
+    .filter((candidate) => candidate.score >= 0.8)
+    .sort((left, right) => right.score - left.score)
+  const best = candidates[0]
+  if (!best?.development) return null
+  const secondScore = candidates[1]?.score || 0
+  if (best.score < 0.92 && best.score - secondScore < 0.1) return null
+  return {
+    development: best.development,
+    score: best.score,
+    reason: best.score >= 0.92 ? 'strong_text_match' : 'text_match',
+  }
+}
+
 function buildAssignedAgent(enquiry, listing) {
   const listingAgentId = normalizeText(listing?.assigned_agent_id)
   const listingAgentEmail = normalizeEmail(listing?.assigned_agent_email)
   if (listingAgentId || listingAgentEmail) return { id: listingAgentId, userId: listingAgentId, email: listingAgentEmail }
   if (enquiry.assignedAgent) return enquiry.assignedAgent
   return null
+}
+
+function buildBuyerFullName(enquiry) {
+  return [enquiry.contact.firstName, enquiry.contact.lastName].map(normalizeText).filter(Boolean).join(' ')
+}
+
+function formatCurrencySignal(value) {
+  const amount = Number(value || 0)
+  if (!Number.isFinite(amount) || amount <= 0) return ''
+  return `R ${amount.toLocaleString('en-ZA', { maximumFractionDigits: 0 })}`
+}
+
+function buildDevelopmentMirrorProtectedSummary(enquiry, development = {}) {
+  const priceSignal = formatCurrencySignal(enquiry.lead.enquiredPropertyPrice || enquiry.lead.budget)
+  return [
+    normalizeText(development.name) || 'Development enquiry',
+    normalizeText(enquiry.lead.propertyInterest || enquiry.lead.enquiredPropertyTitle),
+    priceSignal ? `Budget/price signal ${priceSignal}` : '',
+    `${enquiry.source} inbound lead`,
+  ].filter(Boolean).join(' | ')
+}
+
+async function mirrorDevelopmentLeadFromEnquiry({
+  enquiry,
+  lead,
+  contactId,
+  developmentMatch,
+  assignedAgentId = '',
+  actor = null,
+} = {}) {
+  const development = developmentMatch?.development || null
+  if (!development?.id) return { developerLead: null, warning: '' }
+
+  const developerOrgId = normalizeText(development.organisation_id || development.organisationId)
+  if (!isUuidLike(developerOrgId)) {
+    return { developerLead: null, warning: 'Development match missing developer workspace id.' }
+  }
+
+  const buyerFullName = buildBuyerFullName(enquiry) || 'Inbound buyer lead'
+  const budgetMax = enquiry.lead.enquiredPropertyPrice || enquiry.lead.budget || null
+  const assignedAgent = normalizeText(assignedAgentId)
+  const sourceReference = normalizeText(enquiry.externalReference || enquiry.lead.sourceReferenceId)
+
+  const developerLead = await createAgencyIntroducedDeveloperLead({
+    developerOrgId,
+    sourceAgencyOrgId: enquiry.organisationId,
+    sourceAgentUserId: assignedAgent,
+    assignedAgentId: assignedAgent,
+    sourceLeadId: lead.leadId,
+    primaryDevelopmentId: development.id,
+    buyerFullName,
+    buyerEmail: enquiry.contact.email,
+    buyerPhone: enquiry.contact.phone,
+    budgetMax,
+    unitTypeInterest: enquiry.lead.propertyInterest || enquiry.lead.enquiredPropertyTitle,
+    protectedSummary: buildDevelopmentMirrorProtectedSummary(enquiry, development),
+    privateNotes: [
+      `Mirrored from ${enquiry.source} pipeline lead ${lead.leadId}.`,
+      contactId ? `CRM contact: ${contactId}` : '',
+      sourceReference ? `External reference: ${sourceReference}` : '',
+      enquiry.message ? `Original message: ${enquiry.message}` : '',
+    ].filter(Boolean).join('\n'),
+    leadSource: `${enquiry.source} development enquiry`,
+    leadStatus: 'new',
+    publicReference: sourceReference,
+    rawPayload: {
+      contract: 'lead-ingestion-development-mirror-v1',
+      source: enquiry.source,
+      externalReference: enquiry.externalReference,
+      developmentMatch: {
+        developmentId: development.id,
+        developmentName: normalizeText(development.name),
+        score: developmentMatch.score,
+        reason: developmentMatch.reason,
+      },
+    },
+  })
+
+  await createAgencyCrmLeadActivity(
+    enquiry.organisationId,
+    lead.leadId,
+    {
+      activityType: 'Development lead mirrored',
+      activityNote: [
+        `Mirrored into development module for ${normalizeText(development.name) || 'matched development'}.`,
+        `Match: ${developmentMatch.reason || 'development_match'} (${developmentMatch.score || 0}).`,
+        developerLead?.developerLeadId ? `Developer lead: ${developerLead.developerLeadId}` : '',
+      ].filter(Boolean).join('\n'),
+      activityDate: new Date().toISOString(),
+      outcome: 'development_mirror',
+    },
+    { actor },
+  ).catch((activityError) => {
+    console.warn('[leadIngestionService] development mirror activity skipped', activityError)
+  })
+
+  return { developerLead, warning: '' }
 }
 
 function buildRequirementPayload(enquiry, lead, existingRequirements = []) {
@@ -545,9 +816,10 @@ export async function createOrUpdateLeadFromEnquiry(
   }
 
   try {
-    const [existingContact, listing] = await Promise.all([
+    const [existingContact, listing, developmentMatch] = await Promise.all([
       findExistingContact(client, enquiry),
       resolveListing(client, enquiry),
+      resolveDevelopmentInterest(client, enquiry),
     ])
     if (existingContact) await maybeUpdateContact(enquiry.organisationId, existingContact, enquiry)
     const { lead, reusedLead } = await createOrReuseLead({ enquiry, contact: existingContact, listing, actor })
@@ -612,21 +884,40 @@ export async function createOrUpdateLeadFromEnquiry(
       warning = 'Unknown listing: original enquiry listing could not be resolved.'
     }
 
-    const log = await createIngestionLog(client, enquiry, {
-      status: reusedLead ? 'assigned' : 'processed',
-      leadId: lead.leadId,
-      contactId,
-      listingId: listing?.id,
-      reviewStatus: warning ? 'needs_review' : null,
-      error: warning,
-    })
-
     const assignment = await autoAssignLead(
       { organisationId: enquiry.organisationId, leadId: lead.leadId },
       { actor },
     ).catch((assignmentError) => {
       console.warn('[leadIngestionService] auto assignment skipped', assignmentError)
       return null
+    })
+
+    let developerLead = null
+    if (isBuyerLead && developmentMatch?.development) {
+      const assignedAgentId = assignment?.agentId || assignment?.newAgentId || buildAssignedAgent(enquiry, listing)?.id || actor?.id
+      const mirrorResult = await mirrorDevelopmentLeadFromEnquiry({
+        enquiry,
+        lead,
+        contactId,
+        developmentMatch,
+        assignedAgentId,
+        actor,
+      }).catch((mirrorError) => ({
+        developerLead: null,
+        warning: `Development lead mirror skipped: ${mirrorError?.message || 'Unable to create development lead mirror.'}`,
+      }))
+      developerLead = mirrorResult.developerLead
+      warning = [warning, mirrorResult.warning].filter(Boolean).join('\n')
+    }
+
+    const log = await createIngestionLog(client, enquiry, {
+      status: reusedLead ? 'assigned' : 'processed',
+      leadId: lead.leadId,
+      contactId,
+      listingId: listing?.id,
+      assignedAgentId: assignment?.agentId || assignment?.newAgentId || buildAssignedAgent(enquiry, listing)?.id,
+      reviewStatus: warning ? 'needs_review' : null,
+      error: warning,
     })
 
     if (shouldCreateLeadRecommendation) {
@@ -658,6 +949,8 @@ export async function createOrUpdateLeadFromEnquiry(
       requirement,
       listing,
       listingInterest,
+      developmentMatch,
+      developerLead,
       activity,
       task,
       log,
@@ -699,8 +992,10 @@ export const __leadIngestionServiceTestUtils = {
   buildRequirementPayload,
   isActiveLead,
   normalizeEnquiryPayload,
+  normalizeDevelopmentMatchText,
   normalizeListingMatchText,
   normalizeLeadSource,
   normalizePhone,
+  scoreDevelopmentTextMatch,
   scoreListingTextMatch,
 }

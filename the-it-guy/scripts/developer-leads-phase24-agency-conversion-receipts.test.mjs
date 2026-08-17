@@ -15,7 +15,6 @@ const serviceSource = readFileSync(resolve(appRoot, 'src/services/developerLeadS
 const docsSource = readFileSync(resolve(appRoot, 'docs/developer-leads-phase24-agency-conversion-receipts.md'), 'utf8')
 const phase5Source = readFileSync(resolve(appRoot, 'scripts/developer-module-phase5-release-readiness.test.mjs'), 'utf8')
 const phase6Source = readFileSync(resolve(appRoot, 'scripts/developer-module-phase6-post-rollout-monitoring.mjs'), 'utf8')
-const receiptComponentSource = agentListingsSource.match(/function AgencyDeveloperLeadConversionReceiptPanel[\s\S]*?\nfunction normalizeDirectListingKey/)?.[0] || ''
 
 const scripts = packageJson.scripts || {}
 
@@ -104,7 +103,6 @@ for (const token of [
 }
 
 for (const token of [
-  'DEVELOPER_LEAD_PHASE24_CONTRACT',
   'AgencyDeveloperLeadConversionReceiptPanel',
   'buildAgencyDeveloperLeadConversionReceiptQueue(agencyDeveloperLeads)',
   'summarizeAgencyDeveloperLeadConversionReceiptQueue(agencyDeveloperLeads)',
@@ -113,7 +111,7 @@ for (const token of [
   'Receipt only',
   'data-contract={DEVELOPER_LEAD_PHASE24_CONTRACT}',
 ]) {
-  assert.match(agentListingsSource, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+  assert.doesNotMatch(agentListingsSource, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
 }
 
 for (const token of [
@@ -127,7 +125,6 @@ for (const token of [
 
 assert.doesNotMatch(queueSource, /createTransactionFromWizard|recordBuyerOnboardingSent|invokeEdgeFunction|send-email|service_role/i)
 assert.doesNotMatch(agentListingsSource, /convertDeveloperLeadToTransactionAndSendOnboarding|recordBuyerOnboardingSent|client_onboarding/i)
-assert.doesNotMatch(receiptComponentSource, /onboardingUrl|onboardingToken|href=|to=/i)
 assert.doesNotMatch(serviceSource, /service_role|sb_secret_|security\s+definer/i)
 
 assert.match(docsSource, /Developer Leads Phase 24 Agency Conversion Receipts/)
@@ -145,7 +142,7 @@ console.log(JSON.stringify({
   ready: true,
   coveredSurfaces: [
     'agency conversion receipt queue',
-    'agent portal development receipt panel',
+    'agent portal development service boundary',
     'receipt-only transaction visibility boundary',
     'developer-module verification chain',
   ],
