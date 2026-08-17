@@ -1283,6 +1283,8 @@ function DeveloperLeadWorkspacePanel({
   const [leadUnits, setLeadUnits] = useState([])
   const [leadUnitsLoading, setLeadUnitsLoading] = useState(false)
   const [selectedPreferredUnitId, setSelectedPreferredUnitId] = useState('')
+  const [qualificationNote, setQualificationNote] = useState('')
+  const [nextActionNote, setNextActionNote] = useState('')
 
   useEffect(() => {
     setActiveTab('overview')
@@ -1292,6 +1294,11 @@ function DeveloperLeadWorkspacePanel({
   useEffect(() => {
     setSelectedPreferredUnitId(normalizeText(lead?.preferredUnitId))
   }, [lead?.preferredUnitId, lead?.developerLeadId])
+
+  useEffect(() => {
+    setQualificationNote(normalizeText(lead?.qualificationNote))
+    setNextActionNote(normalizeText(lead?.nextActionNote))
+  }, [lead?.qualificationNote, lead?.nextActionNote, lead?.developerLeadId])
 
   useEffect(() => {
     let cancelled = false
@@ -1340,6 +1347,7 @@ function DeveloperLeadWorkspacePanel({
   const selectedStageCompletion = getStageCompletionStatus(selectedStage?.key, lead)
   const needsPreferredUnit = ['qualified', 'viewing', 'reserved'].includes(leadStatus) && blockers.some((blocker) => blocker.code === 'unit_missing')
   const nextAction = getDeveloperLeadNextAction(lead)
+  const displayedNextActionLabel = normalizeText(lead.nextActionNote) || nextAction.label
   const budget = lead.budgetMin || lead.budgetMax
     ? `${formatCurrency(lead.budgetMin)} - ${formatCurrency(lead.budgetMax)}`
     : 'Open budget'
@@ -1376,6 +1384,23 @@ function DeveloperLeadWorkspacePanel({
       preferredUnitId: selectedPreferredUnitId,
       activityNote: 'Preferred unit was selected for buyer onboarding.',
     })
+  }
+
+  function handleSaveQualificationPlan({ markQualified = false } = {}) {
+    const normalizedQualificationNote = normalizeText(qualificationNote)
+    const normalizedNextActionNote = normalizeText(nextActionNote)
+    const updates = {
+      qualificationNote: normalizedQualificationNote,
+      nextActionNote: normalizedNextActionNote,
+      activityNote: markQualified
+        ? normalizedQualificationNote || 'Lead was marked qualified.'
+        : 'Lead qualification plan updated.',
+    }
+    if (markQualified) {
+      updates.leadStatus = 'qualified'
+      updates.previousLeadStatus = leadStatus
+    }
+    onUpdateLeadSetup(lead, updates)
   }
 
   function renderStageCompletionAction(action, { compact = false } = {}) {
@@ -1565,8 +1590,48 @@ function DeveloperLeadWorkspacePanel({
             <Zap className="h-4 w-4 text-[#24568f]" />
           </div>
           <div className="mt-4 rounded-[16px] border border-[#dceafe] bg-[#f8fbff] p-4">
-            <p className="text-sm font-semibold text-[#18324b]">{nextAction.label}</p>
+            <p className="text-sm font-semibold text-[#18324b]">{displayedNextActionLabel}</p>
             <p className="mt-2 text-sm leading-6 text-[#60758b]">{nextAction.helper}</p>
+          </div>
+          <div className="mt-4 grid gap-3 rounded-[16px] border border-[#e4edf6] bg-white p-4">
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7a8ba3]" htmlFor={`developer-lead-qualification-${lead.developerLeadId}`}>
+                Qualification note
+              </label>
+              <textarea
+                id={`developer-lead-qualification-${lead.developerLeadId}`}
+                className="mt-2 min-h-24 w-full rounded-[12px] border border-[#d9e5f2] bg-white px-3 py-3 text-sm text-[#20364c] outline-none transition focus:border-[#2f7b9e] focus:ring-2 focus:ring-[#d9eaf3]"
+                value={qualificationNote}
+                onChange={(event) => setQualificationNote(event.target.value)}
+                placeholder="Budget, buying intent, unit fit, decision maker..."
+                disabled={setupUpdating}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7a8ba3]" htmlFor={`developer-lead-next-action-${lead.developerLeadId}`}>
+                Next action
+              </label>
+              <input
+                id={`developer-lead-next-action-${lead.developerLeadId}`}
+                className="mt-2 h-11 w-full rounded-[12px] border border-[#d9e5f2] bg-white px-3 text-sm font-semibold text-[#20364c] outline-none transition focus:border-[#2f7b9e] focus:ring-2 focus:ring-[#d9eaf3]"
+                value={nextActionNote}
+                onChange={(event) => setNextActionNote(event.target.value)}
+                placeholder="Call buyer, book viewing, send onboarding..."
+                disabled={setupUpdating}
+              />
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" size="sm" variant="secondary" disabled={setupUpdating} onClick={() => handleSaveQualificationPlan()}>
+                <CheckCircle2 size={16} />
+                {setupUpdating ? 'Saving...' : 'Save Plan'}
+              </Button>
+              {!['qualified', 'viewing', 'reserved', 'onboarding_sent', 'onboarding_submitted', 'otp', 'converted'].includes(leadStatus) ? (
+                <Button type="button" size="sm" disabled={setupUpdating} onClick={() => handleSaveQualificationPlan({ markQualified: true })}>
+                  <TrendingUp size={16} />
+                  {setupUpdating ? 'Saving...' : 'Save & Mark Qualified'}
+                </Button>
+              ) : null}
+            </div>
           </div>
           <div className="mt-4 grid gap-2">
             {[
@@ -1680,7 +1745,7 @@ function DeveloperLeadWorkspacePanel({
             <div className="rounded-[16px] border border-[#e4edf6] bg-[#fbfdff] p-4">
               <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-[#7a8ba3]">Onboarding</p>
               <p className="mt-2 text-lg font-semibold text-[#10243a]">{handoff.eligible ? 'Ready to send' : 'Setup required'}</p>
-              <p className="mt-1 text-sm text-[#60758b]">{nextAction.label}</p>
+              <p className="mt-1 text-sm text-[#60758b]">{displayedNextActionLabel}</p>
             </div>
           </div>
         ) : null}

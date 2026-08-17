@@ -25,6 +25,8 @@ const DEVELOPER_LEAD_SELECT = [
   'budget_min',
   'budget_max',
   'unit_type_interest',
+  'qualification_note',
+  'next_action_note',
   'public_reference',
   'protected_summary',
   'consent_requested_at',
@@ -186,11 +188,13 @@ function mapDeveloperLead(row = {}, { privateDetails = null, interests = [], mas
     sellingModel: normalizeText(row.selling_model) || 'developer_led',
     visibilityState: normalizeText(row.visibility_state) || 'full',
     reservationState: normalizeText(row.reservation_state) || 'none',
-    leadStatus: normalizeText(row.lead_status) || 'new',
+    leadStatus: normalizeStatus(row.lead_status),
     leadSource: normalizeText(row.lead_source) || 'developer_direct',
     budgetMin: nullableNumber(row.budget_min),
     budgetMax: nullableNumber(row.budget_max),
     unitTypeInterest: normalizeText(row.unit_type_interest),
+    qualificationNote: normalizeText(row.qualification_note),
+    nextActionNote: normalizeText(row.next_action_note),
     publicReference: normalizeText(row.public_reference),
     protectedSummary: normalizeText(row.protected_summary),
     consentRequestedAt: row.consent_requested_at || null,
@@ -517,7 +521,7 @@ export async function findDeveloperLeadDuplicateWarnings({ developerOrgId = '', 
 
   return (leadQuery.data || []).map((row) => ({
     developerLeadId: normalizeText(row.developer_lead_id),
-    leadStatus: normalizeText(row.lead_status),
+    leadStatus: normalizeStatus(row.lead_status),
     updatedAt: row.updated_at || row.created_at || null,
     reason: email ? 'email_match' : 'phone_match',
   }))
@@ -690,6 +694,12 @@ export async function updateDeveloperLeadWorkspaceSetup(input = {}) {
   if (Object.prototype.hasOwnProperty.call(input, 'primaryDevelopmentId')) {
     patch.primary_development_id = normalizeUuid(input.primaryDevelopmentId)
   }
+  if (Object.prototype.hasOwnProperty.call(input, 'qualificationNote')) {
+    patch.qualification_note = normalizeText(input.qualificationNote) || null
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'nextActionNote')) {
+    patch.next_action_note = normalizeText(input.nextActionNote) || null
+  }
 
   if (!Object.keys(patch).length) {
     throw new Error('No developer lead workspace changes were provided.')
@@ -740,6 +750,8 @@ export async function updateDeveloperLeadWorkspaceSetup(input = {}) {
         previousLeadStatus: normalizeText(input.previousLeadStatus) || null,
         nextLeadStatus: patch.lead_status || null,
         preferredUnitId: patch.preferred_unit_id || null,
+        qualificationNoteUpdated: Object.prototype.hasOwnProperty.call(patch, 'qualification_note'),
+        nextActionNoteUpdated: Object.prototype.hasOwnProperty.call(patch, 'next_action_note'),
       },
     })
 

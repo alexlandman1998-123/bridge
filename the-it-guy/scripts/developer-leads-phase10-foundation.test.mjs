@@ -14,9 +14,14 @@ const statusNormalizationMigration = readFileSync(
   resolve(repoRoot, 'supabase/migrations/20260816223000_developer_lead_status_normalization.sql'),
   'utf8',
 )
+const statusCompatibilityMigration = readFileSync(
+  resolve(repoRoot, 'supabase/migrations/20260817045901_developer_lead_status_compatibility_aliases.sql'),
+  'utf8',
+)
 const contract = readFileSync(resolve(appRoot, 'src/core/developerLeads/developerLeadContract.js'), 'utf8')
 const contractTest = readFileSync(resolve(appRoot, 'src/core/developerLeads/__tests__/developerLeadContract.test.js'), 'utf8')
 const service = readFileSync(resolve(appRoot, 'src/services/developerLeadService.js'), 'utf8')
+const page = readFileSync(resolve(appRoot, 'src/pages/DeveloperLeadsPage.jsx'), 'utf8')
 const doc = readFileSync(resolve(appRoot, 'docs/developer-leads-phase10-foundation.md'), 'utf8')
 const phase5 = readFileSync(resolve(appRoot, 'scripts/developer-module-phase5-release-readiness.test.mjs'), 'utf8')
 const phase6 = readFileSync(resolve(appRoot, 'scripts/developer-module-phase6-post-rollout-monitoring.mjs'), 'utf8')
@@ -79,6 +84,20 @@ for (const token of [
 assert.equal(/security\s+definer/i.test(statusNormalizationMigration), false)
 assert.equal(/\bauth\.role\s*\(/i.test(statusNormalizationMigration), false)
 
+for (const token of [
+  'qualification_note text',
+  'next_action_note text',
+  "lead_status in (",
+  "'captured'",
+  "'buyer_onboarding_sent'",
+  "'signed_otp_uploaded'",
+  "notify pgrst, 'reload schema'",
+]) {
+  assert.match(statusCompatibilityMigration, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'))
+}
+assert.equal(/security\s+definer/i.test(statusCompatibilityMigration), false)
+assert.equal(/\bauth\.role\s*\(/i.test(statusCompatibilityMigration), false)
+
 assert.match(contract, /DEVELOPER_LEAD_PHASE10_CONTRACT/)
 assert.match(contract, /DEVELOPER_LEAD_STATUS_ALIASES/)
 assert.match(contract, /captured:\s*'new'/)
@@ -91,6 +110,11 @@ assert.match(contractTest, /normalizeDeveloperLeadStatus\('captured'\), 'new'/)
 assert.match(contractTest, /developer lead Phase 10 domain contract passed/)
 assert.match(service, /normalizeDeveloperLeadStatus\(value\)/)
 assert.match(service, /\{ key: 'new', label: 'Captured' \}/)
+assert.match(service, /qualification_note/)
+assert.match(service, /next_action_note/)
+assert.match(page, /Qualification note/)
+assert.match(page, /Next action/)
+assert.match(page, /Save & Mark Qualified/)
 
 for (const pattern of [
   /Developer Leads Phase 10 Foundation/i,
