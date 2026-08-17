@@ -295,6 +295,14 @@ const LISTING_COORDINATOR_PERMISSIONS = [
   PERMISSIONS.requestDocuments,
 ]
 
+const AGENCY_DEVELOPMENT_PERMISSIONS = [
+  PERMISSIONS.viewDevelopments,
+  PERMISSIONS.createDevelopments,
+  PERMISSIONS.editDevelopments,
+  PERMISSIONS.manageUnits,
+  PERMISSIONS.manageDeveloperTransactions,
+]
+
 const ADMIN_COORDINATOR_PERMISSIONS = [
   PERMISSIONS.viewDashboard,
   PERMISSIONS.viewAgencyDashboard,
@@ -314,17 +322,17 @@ const ADMIN_COORDINATOR_PERMISSIONS = [
 
 export const permissionsByWorkspaceRole = Object.freeze({
   [WORKSPACE_TYPES.agency]: Object.freeze({
-    [ORG_ROLES.owner]: mergeGrants(allGeneral, grant(ACCESS_SCOPES.allWorkspace, AGENCY_PERMISSIONS)),
-    [ORG_ROLES.principal]: mergeGrants(allGeneral, grant(ACCESS_SCOPES.allWorkspace, AGENCY_PERMISSIONS)),
+    [ORG_ROLES.owner]: mergeGrants(allGeneral, grant(ACCESS_SCOPES.allWorkspace, [...AGENCY_PERMISSIONS, ...AGENCY_DEVELOPMENT_PERMISSIONS])),
+    [ORG_ROLES.principal]: mergeGrants(allGeneral, grant(ACCESS_SCOPES.allWorkspace, [...AGENCY_PERMISSIONS, ...AGENCY_DEVELOPMENT_PERMISSIONS])),
     [ORG_ROLES.branchManager]: mergeGrants(
-      grant(ACCESS_SCOPES.branchOnly, [...GENERAL_READ, ...AGENCY_PERMISSIONS.filter((permission) => permission !== PERMISSIONS.manageBranches && permission !== PERMISSIONS.manageBilling)]),
+      grant(ACCESS_SCOPES.branchOnly, [...GENERAL_READ, ...AGENCY_PERMISSIONS.filter((permission) => permission !== PERMISSIONS.manageBranches && permission !== PERMISSIONS.manageBilling), ...AGENCY_DEVELOPMENT_PERMISSIONS]),
       grant(ACCESS_SCOPES.branchOnly, [PERMISSIONS.inviteUsers, PERMISSIONS.manageUsers]),
     ),
     [ORG_ROLES.manager]: mergeGrants(
-      grant(ACCESS_SCOPES.branchOnly, [PERMISSIONS.viewDashboard, PERMISSIONS.viewAgencyDashboard, PERMISSIONS.viewLeads, PERMISSIONS.createLeads, PERMISSIONS.editLeads, PERMISSIONS.assignLeads, PERMISSIONS.viewListings, PERMISSIONS.createListings, PERMISSIONS.editListings, PERMISSIONS.viewClients, PERMISSIONS.createClients, PERMISSIONS.editClients, PERMISSIONS.viewTransactions, PERMISSIONS.createTransactions, PERMISSIONS.editTransactions, PERMISSIONS.manageAppointments, PERMISSIONS.viewReports]),
+      grant(ACCESS_SCOPES.branchOnly, [PERMISSIONS.viewDashboard, PERMISSIONS.viewAgencyDashboard, PERMISSIONS.viewLeads, PERMISSIONS.createLeads, PERMISSIONS.editLeads, PERMISSIONS.assignLeads, PERMISSIONS.viewListings, PERMISSIONS.createListings, PERMISSIONS.editListings, PERMISSIONS.viewClients, PERMISSIONS.createClients, PERMISSIONS.editClients, PERMISSIONS.viewTransactions, PERMISSIONS.createTransactions, PERMISSIONS.editTransactions, PERMISSIONS.manageAppointments, PERMISSIONS.viewReports, ...AGENCY_DEVELOPMENT_PERMISSIONS]),
     ),
-    [ORG_ROLES.teamLead]: grant(ACCESS_SCOPES.teamOnly, [PERMISSIONS.viewDashboard, PERMISSIONS.viewAgencyDashboard, PERMISSIONS.viewLeads, PERMISSIONS.createLeads, PERMISSIONS.editLeads, PERMISSIONS.assignLeads, PERMISSIONS.viewListings, PERMISSIONS.createListings, PERMISSIONS.editListings, PERMISSIONS.viewClients, PERMISSIONS.createClients, PERMISSIONS.editClients, PERMISSIONS.viewTransactions, PERMISSIONS.createTransactions, PERMISSIONS.editTransactions, PERMISSIONS.manageAppointments, PERMISSIONS.viewReports]),
-    [ORG_ROLES.agent]: grant(ACCESS_SCOPES.assignedOnly, [PERMISSIONS.viewDashboard, PERMISSIONS.viewAgencyDashboard, PERMISSIONS.viewLeads, PERMISSIONS.createLeads, PERMISSIONS.editLeads, PERMISSIONS.viewListings, PERMISSIONS.createListings, PERMISSIONS.editListings, PERMISSIONS.viewClients, PERMISSIONS.createClients, PERMISSIONS.editClients, PERMISSIONS.viewTransactions, PERMISSIONS.createTransactions, PERMISSIONS.editTransactions, PERMISSIONS.manageAppointments]),
+    [ORG_ROLES.teamLead]: grant(ACCESS_SCOPES.teamOnly, [PERMISSIONS.viewDashboard, PERMISSIONS.viewAgencyDashboard, PERMISSIONS.viewLeads, PERMISSIONS.createLeads, PERMISSIONS.editLeads, PERMISSIONS.assignLeads, PERMISSIONS.viewListings, PERMISSIONS.createListings, PERMISSIONS.editListings, PERMISSIONS.viewClients, PERMISSIONS.createClients, PERMISSIONS.editClients, PERMISSIONS.viewTransactions, PERMISSIONS.createTransactions, PERMISSIONS.editTransactions, PERMISSIONS.manageAppointments, PERMISSIONS.viewReports, ...AGENCY_DEVELOPMENT_PERMISSIONS]),
+    [ORG_ROLES.agent]: grant(ACCESS_SCOPES.assignedOnly, [PERMISSIONS.viewDashboard, PERMISSIONS.viewAgencyDashboard, PERMISSIONS.viewLeads, PERMISSIONS.createLeads, PERMISSIONS.editLeads, PERMISSIONS.viewListings, PERMISSIONS.createListings, PERMISSIONS.editListings, PERMISSIONS.viewClients, PERMISSIONS.createClients, PERMISSIONS.editClients, PERMISSIONS.viewTransactions, PERMISSIONS.createTransactions, PERMISSIONS.editTransactions, PERMISSIONS.manageAppointments, ...AGENCY_DEVELOPMENT_PERMISSIONS]),
     [ORG_ROLES.assistant]: grant(ACCESS_SCOPES.assignedOnly, ASSISTANT_SUPPORT_PERMISSIONS),
     [ORG_ROLES.transactionCoordinator]: grant(ACCESS_SCOPES.branchOnly, TRANSACTION_COORDINATOR_PERMISSIONS),
     [ORG_ROLES.listingCoordinator]: grant(ACCESS_SCOPES.branchOnly, LISTING_COORDINATOR_PERMISSIONS),

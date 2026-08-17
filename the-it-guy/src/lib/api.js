@@ -17601,14 +17601,14 @@ export async function fetchDevelopmentOptions({ developmentIds = [], organisatio
 
     let scopedQuery = await client
       .from('developments')
-      .select('id, organisation_id, name, planned_units')
+      .select('id, organisation_id, name, planned_units, total_units_expected, location, address, formatted_address, street_address, suburb, city, province, developer_company, status')
       .in('id', normalizedDevelopmentIds)
       .order('name', { ascending: true })
 
     if (!scopedQuery.error) {
       const scopedRows = scopedQuery.data.map((row) => ({
         ...row,
-        planned_units: typeof row.planned_units === 'number' ? row.planned_units : null,
+        planned_units: typeof row.planned_units === 'number' ? row.planned_units : normalizeOptionalNumber(row.total_units_expected),
       }))
       return attachReservationDefaults(scopedRows)
     }
@@ -17699,13 +17699,13 @@ export async function fetchDevelopmentOptions({ developmentIds = [], organisatio
 
     const { data, error } = await client
       .from('developments')
-      .select('id, organisation_id, name, planned_units')
+      .select('id, organisation_id, name, planned_units, total_units_expected, location, address, formatted_address, street_address, suburb, city, province, developer_company, status')
       .order('name', { ascending: true })
 
     if (!error) {
       const normalizedRows = data.map((row) => ({
         ...row,
-        planned_units: typeof row.planned_units === 'number' ? row.planned_units : null,
+        planned_units: typeof row.planned_units === 'number' ? row.planned_units : normalizeOptionalNumber(row.total_units_expected),
       }))
       const rowsWithDefaults = await attachReservationDefaults(normalizedRows)
       developmentOptionsCache = rowsWithDefaults
@@ -19068,6 +19068,8 @@ export async function saveDevelopmentDetails(developmentId, input = {}, { allowN
       throw settingsSyncError
     }
   }
+
+  invalidateDevelopmentOptionsCache()
 
   return true
 }
@@ -48892,6 +48894,8 @@ export async function createDevelopment({ name, plannedUnits, profile = {} }) {
   } catch {
     // Non-blocking for environments where development_profiles is not yet available.
   }
+
+  invalidateDevelopmentOptionsCache()
 
   return {
     ...result.data,

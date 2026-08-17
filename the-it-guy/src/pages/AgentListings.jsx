@@ -1013,6 +1013,17 @@ function isUuidLike(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(String(value || '').trim())
 }
 
+function getRemotePrivateListingId(row = {}) {
+  const source = row && typeof row === 'object' ? row : {}
+  return [
+    source.privateListingId,
+    source.private_listing_id,
+    source.listingId,
+    source.listing_id,
+    source.id,
+  ].map((value) => String(value || '').trim()).find((value) => isUuidLike(value)) || ''
+}
+
 function getListingIdentityKeys(row = {}) {
   const keys = [
     row.id,
@@ -2446,7 +2457,7 @@ function AgentListings({ initialTab = null } = {}) {
     [currentMembership, workspace],
   )
 
-  const loadData = useCallback(async ({ showLoading = true } = {}) => {
+  const loadData = useCallback(async ({ showLoading = true, deletedIdsOverride = null } = {}) => {
     try {
       if (showLoading) setLoading(true)
       setError('')
@@ -2456,7 +2467,10 @@ function AgentListings({ initialTab = null } = {}) {
       let userRows = []
       let branchRows = []
       let agencyDeveloperLeadRows = []
-      const locallyDeletedIds = readDeletedListingIds()
+      const locallyDeletedIds = new Set([
+        ...readDeletedListingIds(),
+        ...(deletedIdsOverride instanceof Set ? Array.from(deletedIdsOverride) : []),
+      ].map((value) => String(value || '').trim()).filter(Boolean))
       setDeletedListingIds(locallyDeletedIds)
       const runtimeListings = readAgentPrivateListings()
       let dbPrivateListings = []
@@ -2523,7 +2537,10 @@ function AgentListings({ initialTab = null } = {}) {
       setAssignedDevelopmentIds([])
       setOrganisationUsers([])
       setBranchOptions([])
-      const locallyDeletedIds = readDeletedListingIds()
+      const locallyDeletedIds = new Set([
+        ...readDeletedListingIds(),
+        ...(deletedIdsOverride instanceof Set ? Array.from(deletedIdsOverride) : []),
+      ].map((value) => String(value || '').trim()).filter(Boolean))
       setDeletedListingIds(locallyDeletedIds)
       setPrivateListings(mergePrivateListingRows([], readAgentPrivateListings(), locallyDeletedIds))
     } finally {
@@ -4013,7 +4030,7 @@ function AgentListings({ initialTab = null } = {}) {
       card?.id,
     ].map((value) => String(value || '').trim()).filter(Boolean)))
     const listingId = listingIdentityKeys[0] || ''
-    const remoteListingId = listingIdentityKeys.find((value) => isUuidLike(value)) || ''
+    const remoteListingId = getRemotePrivateListingId(card?.listingRecord || card)
     if (!listingId) {
       setError('Unable to delete this listing because it is missing a listing id.')
       return
@@ -4045,7 +4062,7 @@ function AgentListings({ initialTab = null } = {}) {
       rememberDeletedListingIds(deletedIds)
       setDeletedListingIds((previous) => new Set([...previous, ...deletedIds]))
       setPrivateListings((rows) => rows.filter((row) => !rowMatchesDeletedListing(row, deletedIds)))
-      await loadData({ showLoading: false })
+      await loadData({ showLoading: false, deletedIdsOverride: deletedIds })
       setWorkflowMessage(`"${listingTitle}" was permanently deleted.`)
     } catch (deleteError) {
       setError(deleteError?.message || 'Unable to delete this listing.')
@@ -4055,12 +4072,7 @@ function AgentListings({ initialTab = null } = {}) {
   }
 
   function getRemoteListingIdForCard(card = {}) {
-    const listingIdentityKeys = Array.from(new Set([
-      ...(Array.isArray(card?.identityKeys) ? card.identityKeys : []),
-      ...getListingIdentityKeys(card?.listingRecord || {}),
-      card?.id,
-    ].map((value) => String(value || '').trim()).filter(Boolean)))
-    return listingIdentityKeys.find((value) => isUuidLike(value)) || ''
+    return getRemotePrivateListingId(card?.listingRecord || card)
   }
 
   async function openPartnerShareModal(card, event) {
@@ -4246,6 +4258,21 @@ function AgentListings({ initialTab = null } = {}) {
     const grouped = new Map()
     const normalizedProfileEmail = String(profile?.email || '').trim().toLowerCase()
     const normalizedProfileName = String(profile?.fullName || profile?.name || '').trim().toLowerCase()
+    const resolveDevelopmentLocation = (...sources) =>
+      sources.flatMap((source = {}) => [
+        source?.location,
+        source?.formatted_address,
+        source?.formattedAddress,
+        source?.address,
+        source?.street_address,
+        source?.streetAddress,
+        [source?.suburb, source?.city].filter(Boolean).join(', '),
+        source?.suburb,
+        source?.city,
+        source?.province,
+      ])
+        .map((value) => String(value || '').trim())
+        .find(Boolean) || 'Location pending'
 
     for (const option of developmentOptions) {
       const developmentId = String(option?.id || '').trim()
@@ -4273,8 +4300,10 @@ function AgentListings({ initialTab = null } = {}) {
         id: developmentId,
         developerOrgId: normalizeText(option?.organisation_id || option?.organisationId),
         name: option?.name || 'Development',
-        location: option?.location || 'Location pending',
+        location: resolveDevelopmentLocation(option),
         developer:
+          option?.developer_company ||
+          option?.developerCompany ||
           assignedDevelopers.find((developer) => String(developer?.company || '').trim())?.company ||
           assignedDevelopers.find((developer) => String(developer?.name || '').trim())?.name ||
           'Developer pending',
@@ -4312,8 +4341,8 @@ function AgentListings({ initialTab = null } = {}) {
           id: developmentId,
           developerOrgId: normalizeText(row?.development?.organisation_id || row?.development?.organisationId),
           name: row?.development?.name || 'Development',
-          location: row?.development?.location || row?.transaction?.suburb || 'Location pending',
-          developer: row?.development?.developerCompany || 'Developer pending',
+          location: resolveDevelopmentLocation(row?.development, row?.transaction),
+          developer: row?.development?.developerCompany || row?.development?.developer_company || 'Developer pending',
           status: String(row?.development?.status || 'active').trim().toLowerCase(),
           assignedAgent: row?.transaction?.assigned_agent || profile?.fullName || profile?.name || 'Assigned Agent',
           totalUnits: 0,
@@ -4972,15 +5001,14 @@ function AgentListings({ initialTab = null } = {}) {
                   onClick={() => handleOpenDevelopmentWorkspace(card)}
                   className="group cursor-pointer overflow-hidden rounded-[20px] border border-[#dce6f2] bg-white shadow-[0_8px_24px_rgba(15,23,42,0.06)] transition hover:-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(15,23,42,0.1)]"
                 >
-                  <div className="relative h-[170px] overflow-hidden border-b border-[#e5edf6] bg-[linear-gradient(135deg,#113350_0%,#1f4f78_38%,#6e9fc6_100%)]">
-                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_18%,rgba(255,255,255,0.2),transparent_46%)]" />
-                    <div className="absolute left-4 top-4 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/12 px-3 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-white/90">
+                  <div className="relative h-[170px] overflow-hidden border-b border-[#e5edf6] bg-white">
+                    <div className="absolute left-4 top-4 inline-flex items-center gap-2 rounded-full border border-[#dce6f2] bg-[#f8fbff] px-3 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#35546c]">
                       <FolderKanban size={14} />
                       Development Workspace
                     </div>
                     <div className="absolute bottom-4 left-4 right-4">
-                      <p className="text-[1.08rem] font-semibold text-white">{card.name}</p>
-                      <p className="mt-1 text-sm text-white/78">{card.location}</p>
+                      <p className="text-[1.08rem] font-semibold text-[#142132]">{card.name}</p>
+                      <p className="mt-1 text-sm text-[#60758c]">{card.location}</p>
                     </div>
                   </div>
 

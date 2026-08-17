@@ -125,8 +125,12 @@ try {
     assert.equal(agentKeys.includes('agency_pipeline'), true, `${workspaceRole} should see agency pipeline navigation`)
     assert.equal(can(PERMISSIONS.viewLeads, agentContext), true, `${workspaceRole} should view residential leads`)
     assert.equal(can(PERMISSIONS.createLeads, agentContext), true, `${workspaceRole} should create residential leads`)
+    assert.equal(can(PERMISSIONS.viewDevelopments, agentContext), true, `${workspaceRole} should view agent-created developments`)
+    assert.equal(can(PERMISSIONS.createDevelopments, agentContext), true, `${workspaceRole} should create developments from agency listings`)
+    assert.equal(can(PERMISSIONS.editDevelopments, agentContext), true, `${workspaceRole} should manage developments they create`)
     assert.equal(evaluateAccessRequirement(getRouteAccessRequirement('/pipeline/leads'), agentContext).ok, true, `${workspaceRole} should access residential leads`)
     assert.equal(evaluateAccessRequirement(getRouteAccessRequirement('/pipeline/canvassing'), agentContext).ok, true, `${workspaceRole} should access residential canvassing`)
+    assert.equal(evaluateAccessRequirement(getRouteAccessRequirement('/developments/example-development-id'), agentContext).ok, true, `${workspaceRole} should open development detail after creating it`)
   }
 
   const agencyTeamLeadContext = context({ appRole: 'agent', workspaceType: 'agency', workspaceRole: 'team_lead' })

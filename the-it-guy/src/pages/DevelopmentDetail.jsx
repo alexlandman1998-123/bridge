@@ -33,6 +33,7 @@ import Drawer from '../components/ui/Drawer'
 import Field from '../components/ui/Field'
 import Modal from '../components/ui/Modal'
 import { useWorkspace } from '../context/WorkspaceContext'
+import { PERMISSIONS } from '../auth/permissions/permissionRegistry'
 import {
   DEVELOPER_FUNNEL_STAGES,
   selectActiveTransactions,
@@ -1307,7 +1308,7 @@ function normalizeBankLabel(value) {
 function DevelopmentDetail() {
   const navigate = useNavigate()
   const { developmentId } = useParams()
-  const { role } = useWorkspace()
+  const { role, can } = useWorkspace()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -1351,9 +1352,9 @@ function DevelopmentDetail() {
   const [deleteSaving, setDeleteSaving] = useState(false)
   const [feedback, setFeedback] = useState('')
 
-  const canManageDevelopment = role === 'developer' || role === 'internal_admin'
-  const canCreateTransactions = canManageDevelopment || role === 'attorney'
-  const canEditMarketing = role === 'developer' || role === 'internal_admin' || role === 'agent'
+  const canManageDevelopment = can(PERMISSIONS.editDevelopments) || role === 'internal_admin'
+  const canCreateTransactions = can(PERMISSIONS.manageDeveloperTransactions) || role === 'attorney'
+  const canEditMarketing = canManageDevelopment || role === 'agent'
   const openDevelopmentTransactionWorkspace = useCallback(
     (record = {}) => {
       const route = resolveTransactionWorkspaceRoute({
