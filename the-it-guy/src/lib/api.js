@@ -39267,36 +39267,13 @@ async function acceptBuyerPlatformFeeConsent(client, {
   onboarding = null,
   acceptedAt = null,
 } = {}) {
-  if (!transaction?.id) {
-    throw new Error('Transaction is required before platform fee consent can be recorded.')
+  return {
+    skipped: true,
+    reason: 'platform_fee_deferred_to_otp',
+    transactionId: normalizeNullableUuid(transaction?.id),
+    onboardingId: normalizeNullableUuid(onboarding?.id),
+    acceptedAt: acceptedAt || new Date().toISOString(),
   }
-  if (!isPlatformFeeConsentAccepted(formData, 'buyer')) {
-    throw new Error(getPlatformFeeConsentConfig('buyer').validationMessage)
-  }
-
-  const consent = readPlatformFeeConsentAcceptance(formData, 'buyer')
-  const { data, error } = await client.rpc('bridge_accept_transaction_platform_fee_consent', {
-    p_party_type: 'buyer',
-    p_acceptance: {
-      ...consent,
-      acceptedAt: acceptedAt || consent.acceptedAt || consent.accepted_at || new Date().toISOString(),
-      acceptedByName: normalizeTextValue(buyer?.name || formData?.full_name || formData?.buyer_full_name || ''),
-      acceptedByEmail: normalizeEmailAddress(buyer?.email || formData?.email || ''),
-      acceptedByPhone: normalizeTextValue(buyer?.phone || formData?.phone || ''),
-      transactionReference: normalizeTextValue(transaction?.transaction_reference || transaction?.matter_number || ''),
-      relatedDocumentId: normalizeNullableUuid(onboarding?.id),
-      source: 'buyer_onboarding',
-    },
-  })
-
-  if (error) {
-    if (isMissingFunctionError(error, 'bridge_accept_transaction_platform_fee_consent') || isMissingSchemaError(error)) {
-      throw new Error('Platform fee consent capture is not ready yet. Apply the platform fee consent migration.')
-    }
-    throw error
-  }
-
-  return data
 }
 
 async function fetchTransactionRequiredDocumentByKeyIfPossible(client, { transactionId, documentKey }) {

@@ -4717,9 +4717,6 @@ function ClientOnboarding() {
               <h4 className="text-base font-semibold tracking-normal text-[#142132]">{platformFeeConfig.title}</h4>
               <p className="mt-2 text-sm leading-6 text-[#5f738a]">{platformFeeConfig.body}</p>
             </div>
-            <span className="rounded-full border border-[#d7eadf] bg-[#f4fbf7] px-3 py-1 text-xs font-semibold text-[#22824d]">
-              R750.00
-            </span>
           </div>
           <label className="mt-4 flex min-h-[52px] items-start gap-3 rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3 py-3 text-sm font-medium text-[#324559]">
             <input
