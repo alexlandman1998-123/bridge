@@ -64,6 +64,15 @@ const INTEREST_SELECT = [
   'updated_at',
 ].join(', ')
 
+const ONBOARDING_FORM_DATA_SELECT = [
+  'id',
+  'transaction_id',
+  'purchaser_type',
+  'form_data',
+  'created_at',
+  'updated_at',
+].join(', ')
+
 export const DEVELOPER_LEAD_PHASE11_CONTRACT = 'developer-leads-phase11-developer-fed-v1'
 export const DEVELOPER_LEAD_PHASE12_CONTRACT = 'developer-leads-phase12-agency-fed-privacy-v1'
 export const DEVELOPER_LEAD_PHASE22_CONTRACT = 'developer-leads-phase22-agency-handover-release-v1'
@@ -138,11 +147,32 @@ function isMissingDeveloperLeadSchema(error) {
   return code === '42P01' || code === '42703' || code === 'PGRST204' || code === 'PGRST205' || message.includes('developer_leads')
 }
 
+function isMissingOptionalSchema(error, tableName = '') {
+  const code = normalizeText(error?.code).toUpperCase()
+  const message = normalizeLower(`${error?.message || ''} ${error?.details || ''}`)
+  return code === '42P01' || code === '42703' || code === 'PGRST204' || code === 'PGRST205' || (tableName && message.includes(tableName))
+}
+
 function isPermissionError(error) {
   const status = Number(error?.status || error?.statusCode || 0)
   const code = normalizeText(error?.code)
   const message = normalizeLower(`${error?.message || ''} ${error?.details || ''}`)
   return status === 403 || code === '42501' || message.includes('row-level security') || message.includes('permission denied')
+}
+
+function mapOnboardingFormData(row = {}) {
+  const formData = row.form_data && typeof row.form_data === 'object' && !Array.isArray(row.form_data)
+    ? row.form_data
+    : {}
+  return {
+    id: normalizeText(row.id),
+    transactionId: normalizeText(row.transaction_id),
+    purchaserType: normalizeText(row.purchaser_type || formData.purchaser_type),
+    formData,
+    createdAt: row.created_at || null,
+    updatedAt: row.updated_at || null,
+    submittedAt: formData.submitted_at || formData.submittedAt || row.updated_at || null,
+  }
 }
 
 function mapPrivateDetails(row = {}) {
@@ -172,7 +202,7 @@ function mapInterest(row = {}) {
   }
 }
 
-function mapDeveloperLead(row = {}, { privateDetails = null, interests = [], maskForDeveloper = true } = {}) {
+function mapDeveloperLead(row = {}, { privateDetails = null, interests = [], onboardingFormData = null, maskForDeveloper = true } = {}) {
   const lead = {
     developerLeadId: normalizeText(row.developer_lead_id),
     developerOrgId: normalizeText(row.developer_org_id),
@@ -204,6 +234,7 @@ function mapDeveloperLead(row = {}, { privateDetails = null, interests = [], mas
     createdBy: normalizeText(row.created_by),
     createdAt: row.created_at || null,
     updatedAt: row.updated_at || null,
+    onboardingFormData,
     interestedDevelopmentIds: interests.map((item) => item.developmentId).filter(Boolean),
     interests,
     ...(privateDetails || {}),
@@ -263,6 +294,23 @@ async function fetchInterestsByLeadIds(client, leadIds = []) {
   }, new Map())
 }
 
+async function fetchOnboardingFormDataByTransactionIds(client, transactionIds = []) {
+  const ids = [...new Set(transactionIds.map(normalizeUuid).filter(Boolean))]
+  if (!ids.length) return new Map()
+
+  const { data, error } = await client
+    .from('onboarding_form_data')
+    .select(ONBOARDING_FORM_DATA_SELECT)
+    .in('transaction_id', ids)
+
+  if (error) {
+    if (isMissingOptionalSchema(error, 'onboarding_form_data') || isPermissionError(error)) return new Map()
+    throw error
+  }
+
+  return new Map((data || []).map((row) => [row.transaction_id, mapOnboardingFormData(row)]))
+}
+
 export async function listDeveloperFedLeads({ developerOrgId = '', status = 'all' } = {}) {
   return listDeveloperLeadIntake({ developerOrgId, status, source: 'developer' })
 }
@@ -294,14 +342,17 @@ export async function listAgencyIntroducedDeveloperLeadsForAgency({ sourceAgency
   }
 
   const leadIds = (data || []).map((row) => row.developer_lead_id).filter(Boolean)
-  const [privateById, interestsById] = await Promise.all([
+  const transactionIds = (data || []).map((row) => row.converted_transaction_id).filter(Boolean)
+  const [privateById, interestsById, onboardingByTransactionId] = await Promise.all([
     fetchPrivateDetailsByLeadIds(client, leadIds),
     fetchInterestsByLeadIds(client, leadIds),
+    fetchOnboardingFormDataByTransactionIds(client, transactionIds),
   ])
 
   return (data || []).map((row) => mapDeveloperLead(row, {
     privateDetails: privateById.get(row.developer_lead_id) || null,
     interests: interestsById.get(row.developer_lead_id) || [],
+    onboardingFormData: onboardingByTransactionId.get(row.converted_transaction_id) || null,
     maskForDeveloper: false,
   }))
 }
@@ -333,14 +384,17 @@ export async function listDeveloperLeadIntake({ developerOrgId = '', status = 'a
   }
 
   const leadIds = (data || []).map((row) => row.developer_lead_id).filter(Boolean)
-  const [privateById, interestsById] = await Promise.all([
+  const transactionIds = (data || []).map((row) => row.converted_transaction_id).filter(Boolean)
+  const [privateById, interestsById, onboardingByTransactionId] = await Promise.all([
     fetchPrivateDetailsByLeadIds(client, leadIds),
     fetchInterestsByLeadIds(client, leadIds),
+    fetchOnboardingFormDataByTransactionIds(client, transactionIds),
   ])
 
   return (data || []).map((row) => mapDeveloperLead(row, {
     privateDetails: privateById.get(row.developer_lead_id) || null,
     interests: interestsById.get(row.developer_lead_id) || [],
+    onboardingFormData: onboardingByTransactionId.get(row.converted_transaction_id) || null,
   }))
 }
 

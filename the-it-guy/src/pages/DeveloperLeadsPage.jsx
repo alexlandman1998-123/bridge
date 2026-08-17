@@ -534,6 +534,195 @@ function formatRelativeTime(value) {
   return formatDate(value)
 }
 
+function isPlainObject(value) {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value))
+}
+
+function firstFilled(...values) {
+  return values.map((value) => normalizeText(value)).find(Boolean) || ''
+}
+
+function compactFullName(...parts) {
+  return parts.map(normalizeText).filter(Boolean).join(' ')
+}
+
+function formatChoice(value = '') {
+  const text = normalizeText(value)
+  if (!text) return ''
+  return text
+    .replaceAll('_', ' ')
+    .replaceAll('-', ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
+function formatYesNo(value = '') {
+  const normalized = normalizeLower(value)
+  if (normalized === 'yes') return 'Yes'
+  if (normalized === 'no') return 'No'
+  return formatChoice(value)
+}
+
+function formatOnboardingCurrency(value) {
+  const normalized = Number(value || 0)
+  return Number.isFinite(normalized) && normalized > 0 ? formatCurrency(normalized) : ''
+}
+
+function getLeadOnboardingFormData(lead = {}) {
+  const candidate = lead.onboardingFormData?.formData || lead.onboardingFormData?.form_data || lead.onboardingFormData
+  return isPlainObject(candidate) ? candidate : {}
+}
+
+function getPrimaryOnboardingPurchaser(formData = {}) {
+  if (Array.isArray(formData.purchasers)) {
+    const populated = formData.purchasers.find((item) => isPlainObject(item) && Object.values(item).some((value) => normalizeText(value)))
+    if (populated) return populated
+  }
+  if (isPlainObject(formData.purchaser)) return formData.purchaser
+  return {
+    full_name: firstFilled(formData.full_name, formData.buyer_full_name, compactFullName(formData.first_name, formData.surname || formData.last_name)),
+    first_name: formData.first_name,
+    surname: formData.surname || formData.last_name,
+    email: formData.email || formData.buyer_email,
+    phone: formData.phone || formData.mobile || formData.buyer_phone,
+    identity_number: formData.identity_number || formData.id_number,
+    passport_number: formData.passport_number,
+    residential_address: formData.residential_address,
+    marital_status: formData.marital_status,
+    marital_regime: formData.marital_regime,
+    employment_type: formData.employment_type,
+    employer_name: formData.employer_name,
+    gross_monthly_income: formData.gross_monthly_income,
+    net_monthly_income: formData.net_monthly_income,
+  }
+}
+
+function getOnboardingBuyerName(lead = {}, fallbackTitle = '') {
+  const formData = getLeadOnboardingFormData(lead)
+  const purchaser = getPrimaryOnboardingPurchaser(formData)
+  return firstFilled(
+    purchaser.full_name,
+    purchaser.fullName,
+    compactFullName(purchaser.first_name || purchaser.firstName, purchaser.surname || purchaser.last_name || purchaser.lastName),
+    formData.company?.company_name,
+    formData.trust?.trust_name,
+    fallbackTitle,
+  )
+}
+
+function profileRow(label, value, { format = (item) => item } = {}) {
+  const formatted = format(value)
+  return normalizeText(formatted) ? { label, value: formatted } : null
+}
+
+function buildDeveloperLeadOnboardingProfile({
+  lead,
+  title,
+  subtitle,
+  budget,
+  assignedLabel,
+  sourceLabel,
+  handoverRequired,
+} = {}) {
+  const formData = getLeadOnboardingFormData(lead)
+  const hasOnboarding = Boolean(lead?.onboardingFormData?.id || Object.keys(formData).length)
+  if (!hasOnboarding) {
+    return {
+      hasOnboarding: false,
+      sourceLabel: 'Lead capture',
+      updatedAt: null,
+      sections: [
+        {
+          title: 'Lead Capture',
+          description: 'Buyer onboarding has not populated this workspace yet.',
+          rows: [
+            { label: 'Full name', value: handoverRequired ? 'Protected until handover' : title },
+            { label: 'Email', value: subtitle?.includes('@') ? subtitle : getLeadContactLine(lead, 'email') },
+            { label: 'Phone', value: getLeadContactLine(lead, 'phone') },
+            { label: 'Budget', value: budget },
+            { label: 'Assigned agent', value: assignedLabel },
+            { label: 'Source', value: sourceLabel },
+          ],
+        },
+      ],
+      financeRows: [],
+    }
+  }
+
+  const purchaser = getPrimaryOnboardingPurchaser(formData)
+  const finance = isPlainObject(formData.finance) ? formData.finance : {}
+  const company = isPlainObject(formData.company) ? formData.company : {}
+  const trust = isPlainObject(formData.trust) ? formData.trust : {}
+  const purchaserType = firstFilled(formData.purchaser_entity_type, formData.purchaser_type, lead?.onboardingFormData?.purchaserType)
+  const financeType = firstFilled(formData.purchase_finance_type, formData.finance_type, finance.purchase_finance_type, finance.finance_type)
+  const financeManagedBy = firstFilled(formData.finance_managed_by, formData.financeManagedBy, finance.finance_managed_by, finance.financeManagedBy)
+  const naturalRows = [
+    profileRow('Purchaser type', purchaserType, { format: formatChoice }),
+    profileRow('Purchase mode', formData.natural_person_purchase_mode || purchaser.natural_person_purchase_mode, { format: formatChoice }),
+    profileRow('Full name', getOnboardingBuyerName(lead, title)),
+    profileRow('Email', firstFilled(purchaser.email, formData.email, lead.buyerEmail)),
+    profileRow('Phone', firstFilled(purchaser.phone, purchaser.mobile, formData.phone, lead.buyerPhone)),
+    profileRow('ID / Passport', firstFilled(purchaser.identity_number, purchaser.id_number, purchaser.passport_number)),
+    profileRow('Residential address', firstFilled(purchaser.residential_address, purchaser.address)),
+    profileRow('Marital status', purchaser.marital_status, { format: formatChoice }),
+    profileRow('Marital regime', purchaser.marital_regime, { format: formatChoice }),
+    profileRow('Spouse co-purchaser', purchaser.spouse_is_co_purchaser, { format: formatYesNo }),
+  ].filter(Boolean)
+  const employmentRows = [
+    profileRow('Employment type', purchaser.employment_type, { format: formatChoice }),
+    profileRow('Employer', purchaser.employer_name),
+    profileRow('Gross monthly income', purchaser.gross_monthly_income, { format: formatOnboardingCurrency }),
+    profileRow('Net monthly income', purchaser.net_monthly_income, { format: formatOnboardingCurrency }),
+    profileRow('Monthly commitments', purchaser.monthly_credit_commitments, { format: formatOnboardingCurrency }),
+  ].filter(Boolean)
+  const entityRows = [
+    profileRow('Company name', company.company_name),
+    profileRow('Company registration', company.company_registration_number),
+    profileRow('Company tax number', company.company_tax_number),
+    profileRow('Registered address', company.company_registered_address),
+    profileRow('Authorised signatory', company.authorised_signatory_name),
+    profileRow('Trust name', trust.trust_name),
+    profileRow('Trust registration', trust.trust_registration_number),
+    profileRow('Trust type', trust.trust_type, { format: formatChoice }),
+    profileRow('Authorised trustee', trust.authorised_trustee_name),
+    profileRow('Trustees', Array.isArray(trust.trustees) ? `${trust.trustees.length} captured` : ''),
+  ].filter(Boolean)
+  const financeRows = [
+    profileRow('Finance type', financeType, { format: formatChoice }),
+    profileRow('Finance managed by', financeManagedBy, { format: formatChoice }),
+    profileRow('Cash funds confirmed', firstFilled(finance.cash_funds_confirmed, formData.cash_funds_confirmed), { format: formatYesNo }),
+    profileRow('Cash contribution available', firstFilled(finance.cash_contribution_available, formData.cash_contribution_available), { format: formatOnboardingCurrency }),
+    profileRow('Deposit source', firstFilled(finance.deposit_source, formData.deposit_source), { format: formatChoice }),
+    profileRow('Bond amount', firstFilled(finance.bond_amount, formData.bond_amount), { format: formatOnboardingCurrency }),
+    profileRow('Bond process started', firstFilled(finance.bond_process_started, formData.bond_process_started), { format: formatYesNo }),
+    profileRow('Pre-approval completed', firstFilled(finance.bond_preapproval_completed, formData.bond_preapproval_completed), { format: formatYesNo }),
+    profileRow('Bond help requested', firstFilled(finance.bond_help_requested, formData.bond_help_requested), { format: formatYesNo }),
+    profileRow('Preferred banks', Array.isArray(finance.buyer_banks) ? finance.buyer_banks.map(formatChoice).join(', ') : firstFilled(finance.bond_bank_name, formData.bond_bank_name)),
+  ].filter(Boolean)
+
+  return {
+    hasOnboarding: true,
+    sourceLabel: 'Submitted buyer onboarding',
+    updatedAt: lead.onboardingFormData?.updatedAt || lead.onboardingFormData?.submittedAt || null,
+    sections: [
+      { title: 'Buyer Profile', description: 'Submitted buyer onboarding answers.', rows: naturalRows },
+      ...(employmentRows.length ? [{ title: 'Employment & Income', description: 'Shown only when the buyer submitted finance/employment details.', rows: employmentRows }] : []),
+      ...(entityRows.length ? [{ title: 'Entity Details', description: 'Company or trust buyer details from onboarding.', rows: entityRows }] : []),
+      ...(financeRows.length ? [{ title: 'Finance', description: 'Buyer finance answers from onboarding.', rows: financeRows }] : []),
+      {
+        title: 'Workspace Context',
+        description: 'Developer lead context linked to the submitted onboarding.',
+        rows: [
+          { label: 'Assigned agent', value: assignedLabel },
+          { label: 'Source', value: sourceLabel },
+          { label: 'Lead budget', value: budget },
+        ],
+      },
+    ].filter((section) => section.rows.length),
+    financeRows,
+  }
+}
+
 function getLeadStagePresentation(status = 'new') {
   const normalized = normalizeLower(status)
   if (normalized === 'converted') return { label: 'Transaction', className: 'border-[#d8efe4] bg-[#f1fbf6] text-[#17613d]', Icon: CheckCircle2 }
@@ -1335,7 +1524,8 @@ function DeveloperLeadWorkspacePanel({
   const converted = isConvertedLead(lead)
   const leadStatus = normalizeLower(lead.leadStatus || 'new')
   const onboardingStarted = ['onboarding_sent', 'onboarding_submitted', 'otp'].includes(leadStatus) && Boolean(normalizeText(lead.convertedTransactionId))
-  const title = getLeadDisplayName(lead)
+  const capturedTitle = getLeadDisplayName(lead)
+  const title = handoverRequired ? capturedTitle : getOnboardingBuyerName(lead, capturedTitle)
   const subtitle = agencyFed && handoverRequired
     ? 'Buyer details are protected until the source agency completes handover.'
     : lead.buyerEmail || lead.buyerPhone || 'Capture buyer contact details before onboarding.'
@@ -1353,6 +1543,16 @@ function DeveloperLeadWorkspacePanel({
     : 'Open budget'
   const assignedLabel = assigned ? getUserLabel(assigned) : agencyFed ? 'Agency agent' : 'Unassigned'
   const developmentLabel = getDevelopmentLabel(lead.primaryDevelopmentId, developments)
+  const sourceLabel = agencyFed ? 'Agency-fed protected lead' : getLeadSourceLabel(lead.leadSource)
+  const onboardingProfile = buildDeveloperLeadOnboardingProfile({
+    lead,
+    title,
+    subtitle,
+    budget,
+    assignedLabel,
+    sourceLabel,
+    handoverRequired,
+  })
   const workspaceTabs = [
     { key: 'overview', label: 'Overview', meta: '' },
     { key: 'buyer_profile', label: 'Buyer Profile', meta: handoverRequired ? 'Protected' : '' },
@@ -1752,20 +1952,49 @@ function DeveloperLeadWorkspacePanel({
 
         {activeTab === 'buyer_profile' ? (
           <div>
-            <h3 className="text-xl font-semibold tracking-[-0.02em] text-[#102033]">Buyer Profile</h3>
-            <div className="mt-4 grid gap-3 md:grid-cols-2">
-              {[
-                ['Full name', handoverRequired ? 'Protected until handover' : title],
-                ['Email', getLeadContactLine(lead, 'email')],
-                ['Phone', getLeadContactLine(lead, 'phone')],
-                ['Budget', budget],
-                ['Assigned agent', assignedLabel],
-                ['Source', agencyFed ? 'Agency-fed protected lead' : getLeadSourceLabel(lead.leadSource)],
-              ].map(([label, value]) => (
-                <div key={label} className="rounded-[14px] border border-[#e4edf6] bg-[#fbfdff] p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7a8ba3]">{label}</p>
-                  <p className="mt-2 text-sm font-semibold text-[#29445f]">{value}</p>
-                </div>
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <h3 className="text-xl font-semibold tracking-[-0.02em] text-[#102033]">Buyer Profile</h3>
+                <p className="mt-2 text-sm leading-6 text-[#60758b]">
+                  {onboardingProfile.hasOnboarding
+                    ? 'These fields are populated from the submitted buyer onboarding.'
+                    : 'These fields are still using the original lead capture because buyer onboarding has not populated this lead yet.'}
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2 lg:justify-end">
+                <span className={`inline-flex h-8 items-center rounded-full border px-3 text-xs font-semibold ${
+                  onboardingProfile.hasOnboarding
+                    ? 'border-[#d8efe4] bg-[#f1fbf6] text-[#17613d]'
+                    : 'border-[#d9e5f2] bg-[#f8fafc] text-[#52677f]'
+                }`}>
+                  {onboardingProfile.sourceLabel}
+                </span>
+                {onboardingProfile.updatedAt ? (
+                  <span className="inline-flex h-8 items-center rounded-full border border-[#d9e5f2] bg-[#fbfdff] px-3 text-xs font-semibold text-[#60758b]">
+                    Updated {formatRelativeTime(onboardingProfile.updatedAt)}
+                  </span>
+                ) : null}
+              </div>
+            </div>
+            <div className="mt-5 grid gap-4">
+              {onboardingProfile.sections.map((section) => (
+                <section key={section.title} className="rounded-[16px] border border-[#e4edf6] bg-[#fbfdff] p-4">
+                  <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7a8ba3]">{section.title}</p>
+                      <p className="mt-1 text-sm text-[#60758b]">{section.description}</p>
+                    </div>
+                    <span className="text-xs font-semibold text-[#7a8ba3]">{section.rows.length} field{section.rows.length === 1 ? '' : 's'}</span>
+                  </div>
+                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    {section.rows.map((row) => (
+                      <div key={`${section.title}-${row.label}`} className="rounded-[14px] border border-[#e4edf6] bg-white p-4">
+                        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7a8ba3]">{row.label}</p>
+                        <p className="mt-2 whitespace-pre-line break-words text-sm font-semibold text-[#29445f]">{row.value}</p>
+                      </div>
+                    ))}
+                  </div>
+                </section>
               ))}
             </div>
           </div>
@@ -1803,6 +2032,19 @@ function DeveloperLeadWorkspacePanel({
                 The lead is ready for buyer onboarding. Upload the signed OTP after onboarding is submitted to start the transaction workflow.
               </div>
             )}
+            {onboardingProfile.hasOnboarding && onboardingProfile.financeRows.length ? (
+              <section className="rounded-[16px] border border-[#e4edf6] bg-[#fbfdff] p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7a8ba3]">Submitted Finance Setup</p>
+                <div className="mt-4 grid gap-3 md:grid-cols-2">
+                  {onboardingProfile.financeRows.map((row) => (
+                    <div key={`finance-${row.label}`} className="rounded-[14px] border border-[#e4edf6] bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7a8ba3]">{row.label}</p>
+                      <p className="mt-2 whitespace-pre-line break-words text-sm font-semibold text-[#29445f]">{row.value}</p>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ) : null}
           </div>
         ) : null}
 
