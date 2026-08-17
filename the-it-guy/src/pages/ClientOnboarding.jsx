@@ -311,6 +311,18 @@ const PURCHASER_STRUCTURED_KEYS = [
   'surety_obligations',
 ]
 
+const EMPLOYMENT_INCOME_DETAIL_KEYS = [
+  'employment_type',
+  'employer_name',
+  'job_title',
+  'employment_start_date',
+  'business_name',
+  'years_in_business',
+  'gross_monthly_income',
+  'net_monthly_income',
+  'income_frequency',
+]
+
 const FINANCE_DETAIL_KEYS = [
   'purchase_price',
   'cash_amount',
@@ -341,6 +353,21 @@ const FINANCE_DETAIL_KEYS = [
   'bond_assistance_contact_consent',
   'bond_assistance_consent_version',
 ]
+
+function clearEmploymentIncomeFields(source = {}) {
+  const next = { ...(source || {}) }
+  EMPLOYMENT_INCOME_DETAIL_KEYS.forEach((key) => {
+    next[key] = ''
+  })
+  return next
+}
+
+function clearFlatEmploymentIncomeFields(target = {}) {
+  EMPLOYMENT_INCOME_DETAIL_KEYS.forEach((key) => {
+    target[key] = ''
+    target[`co_${key}`] = ''
+  })
+}
 
 const COMPANY_DETAIL_KEYS = [
   'company_name',
@@ -521,6 +548,7 @@ const NATURAL_PURCHASER_SECTIONS = [
   {
     key: 'employment_income',
     title: 'Employment & Income',
+    visibleWhen: ({ financeType }) => isBondOrHybridFinanceType(financeType),
     fields: [
       {
         key: 'employment_type',
@@ -528,7 +556,8 @@ const NATURAL_PURCHASER_SECTIONS = [
         type: 'select',
         required: true,
         options: [{ value: '', label: 'Select type' }, ...EMPLOYMENT_TYPE_OPTIONS.map((item) => ({ value: item.value, label: item.label }))],
-        requiredWhen: ({ financeType }) => ['bond', 'combination'].includes(financeType),
+        visibleWhen: ({ financeType }) => isBondOrHybridFinanceType(financeType),
+        requiredWhen: ({ financeType }) => isBondOrHybridFinanceType(financeType),
       },
       {
         key: 'employer_name',
@@ -536,7 +565,7 @@ const NATURAL_PURCHASER_SECTIONS = [
         type: 'text',
         required: true,
         visibleWhen: ({ purchaser, financeType }) =>
-          ['bond', 'combination'].includes(financeType) && String(purchaser.employment_type || '').trim().toLowerCase() === 'full_time',
+          isBondOrHybridFinanceType(financeType) && String(purchaser.employment_type || '').trim().toLowerCase() === 'full_time',
       },
       {
         key: 'job_title',
@@ -544,7 +573,7 @@ const NATURAL_PURCHASER_SECTIONS = [
         type: 'text',
         required: true,
         visibleWhen: ({ purchaser, financeType }) =>
-          ['bond', 'combination'].includes(financeType) && String(purchaser.employment_type || '').trim().toLowerCase() === 'full_time',
+          isBondOrHybridFinanceType(financeType) && String(purchaser.employment_type || '').trim().toLowerCase() === 'full_time',
       },
       {
         key: 'employment_start_date',
@@ -552,7 +581,7 @@ const NATURAL_PURCHASER_SECTIONS = [
         type: 'date',
         required: true,
         visibleWhen: ({ purchaser, financeType }) =>
-          ['bond', 'combination'].includes(financeType) && String(purchaser.employment_type || '').trim().toLowerCase() === 'full_time',
+          isBondOrHybridFinanceType(financeType) && String(purchaser.employment_type || '').trim().toLowerCase() === 'full_time',
       },
       {
         key: 'business_name',
@@ -560,7 +589,7 @@ const NATURAL_PURCHASER_SECTIONS = [
         type: 'text',
         required: true,
         visibleWhen: ({ purchaser, financeType }) =>
-          ['bond', 'combination'].includes(financeType) && String(purchaser.employment_type || '').trim().toLowerCase() === 'self_employed',
+          isBondOrHybridFinanceType(financeType) && String(purchaser.employment_type || '').trim().toLowerCase() === 'self_employed',
       },
       {
         key: 'years_in_business',
@@ -568,7 +597,7 @@ const NATURAL_PURCHASER_SECTIONS = [
         type: 'number',
         required: true,
         visibleWhen: ({ purchaser, financeType }) =>
-          ['bond', 'combination'].includes(financeType) && String(purchaser.employment_type || '').trim().toLowerCase() === 'self_employed',
+          isBondOrHybridFinanceType(financeType) && String(purchaser.employment_type || '').trim().toLowerCase() === 'self_employed',
       },
       {
         key: 'gross_monthly_income',
@@ -576,7 +605,7 @@ const NATURAL_PURCHASER_SECTIONS = [
         type: 'number',
         required: true,
         visibleWhen: ({ purchaser, financeType }) =>
-          ['bond', 'combination'].includes(financeType) &&
+          isBondOrHybridFinanceType(financeType) &&
           ['full_time', 'self_employed', 'retired', 'contract', 'other', 'commission'].includes(
             String(purchaser.employment_type || '').trim().toLowerCase(),
           ),
@@ -587,7 +616,7 @@ const NATURAL_PURCHASER_SECTIONS = [
         type: 'number',
         required: true,
         visibleWhen: ({ purchaser, financeType }) =>
-          ['bond', 'combination'].includes(financeType) &&
+          isBondOrHybridFinanceType(financeType) &&
           ['full_time', 'self_employed', 'retired', 'contract', 'other', 'commission'].includes(
             String(purchaser.employment_type || '').trim().toLowerCase(),
           ),
@@ -599,7 +628,7 @@ const NATURAL_PURCHASER_SECTIONS = [
         required: true,
         options: INCOME_FREQUENCY_OPTIONS,
         visibleWhen: ({ purchaser, financeType }) =>
-          ['bond', 'combination'].includes(financeType) &&
+          isBondOrHybridFinanceType(financeType) &&
           ['full_time', 'self_employed', 'retired', 'contract', 'other', 'commission'].includes(
             String(purchaser.employment_type || '').trim().toLowerCase(),
           ),
@@ -961,8 +990,12 @@ function formatFinanceTypeForWhatsApp(value) {
 }
 
 function isBondOrHybridFinanceTypeForWhatsApp(value) {
+  return isBondOrHybridFinanceType(value)
+}
+
+function isBondOrHybridFinanceType(value) {
   const normalized = normalizeFinanceType(value || '')
-  return normalized === 'bond' || normalized === 'hybrid' || normalized === 'combination'
+  return normalized === 'bond' || normalized === 'combination'
 }
 
 function normalizeYesNoChoice(value) {
@@ -1690,6 +1723,13 @@ function sanitizeClientFormData(formData = {}, { purchaserType, financeType, fun
     })
   }
 
+  if (!isBondOrHybridFinanceType(financeType)) {
+    clearFlatEmploymentIncomeFields(cleaned)
+    if (Array.isArray(cleaned.purchasers)) {
+      cleaned.purchasers = cleaned.purchasers.map((purchaser) => clearEmploymentIncomeFields(purchaser))
+    }
+  }
+
   if (financeType === 'cash') {
     cleaned.bond_amount = ''
     cleaned.cash_contribution_available = ''
@@ -2013,6 +2053,13 @@ function isVisibleDetailField(fieldConfig, context) {
   return true
 }
 
+function isVisibleDetailSection(sectionConfig, context) {
+  if (typeof sectionConfig?.visibleWhen === 'function') {
+    return sectionConfig.visibleWhen(context)
+  }
+  return true
+}
+
 function resolveVisibleFinanceSections({
   values = {},
   purchaserEntityType,
@@ -2028,7 +2075,7 @@ function resolveVisibleFinanceSections({
     finance: details.finance,
   }
 
-  return FINANCE_DETAIL_SECTIONS.filter((sectionConfig) => isVisibleDetailField(sectionConfig, context))
+  return FINANCE_DETAIL_SECTIONS.filter((sectionConfig) => isVisibleDetailSection(sectionConfig, context))
     .map((sectionConfig) => {
       const nextSection = { ...sectionConfig }
       nextSection.fields = (nextSection.fields || [])
@@ -2575,9 +2622,16 @@ function ClientOnboarding() {
           .toLowerCase(),
         financeType: normalizedType || 'cash',
       })
+      const nextPurchasers = isBondOrHybridFinanceType(normalizedType)
+        ? normalized.purchasers
+        : normalized.purchasers.map((purchaser) => clearEmploymentIncomeFields(purchaser))
+      if (!isBondOrHybridFinanceType(normalizedType)) {
+        clearFlatEmploymentIncomeFields(next)
+      }
       return {
         ...next,
         finance: normalized.finance,
+        purchasers: nextPurchasers,
       }
     })
   }
@@ -2617,17 +2671,37 @@ function ClientOnboarding() {
       return []
     }
     return NATURAL_PURCHASER_SECTIONS.flatMap((sectionConfig) =>
-      sectionConfig.fields
-        .filter((fieldConfig) =>
-          isDetailFieldVisible(fieldConfig, {
-            purchaser,
-            purchaserIndex,
-            financeType,
-            purchaserEntityType: entityType,
-            purchaseMode,
-          }),
-        )
-        .map((fieldConfig) => detailFieldPath('purchasers', purchaserIndex, fieldConfig.key)),
+      isVisibleDetailSection(sectionConfig, {
+        purchaser,
+        purchaserIndex,
+        financeType,
+        purchaserEntityType: entityType,
+        purchaseMode,
+      })
+        ? sectionConfig.fields
+            .filter((fieldConfig) =>
+              isDetailFieldVisible(fieldConfig, {
+                purchaser,
+                purchaserIndex,
+                financeType,
+                purchaserEntityType: entityType,
+                purchaseMode,
+              }),
+            )
+            .map((fieldConfig) => detailFieldPath('purchasers', purchaserIndex, fieldConfig.key))
+        : [],
+    )
+  }
+
+  function getVisibleNaturalSectionsForPurchaser(purchaser, purchaserIndex, purchaseMode, financeType, entityType) {
+    return NATURAL_PURCHASER_SECTIONS.filter((sectionConfig) =>
+      isVisibleDetailSection(sectionConfig, {
+        purchaser,
+        purchaserIndex,
+        financeType,
+        purchaserEntityType: entityType,
+        purchaseMode,
+      }),
     )
   }
 
@@ -2754,7 +2828,13 @@ function ClientOnboarding() {
       }
 
       details.purchasers.forEach((purchaser, purchaserIndex) => {
-        NATURAL_PURCHASER_SECTIONS.forEach((sectionConfig) => {
+        getVisibleNaturalSectionsForPurchaser(
+          purchaser,
+          purchaserIndex,
+          details.naturalPersonPurchaseMode,
+          normalizedFinanceType,
+          purchaserEntityType,
+        ).forEach((sectionConfig) => {
           sectionConfig.fields.forEach((fieldConfig) => {
             const isVisible = isDetailFieldVisible(fieldConfig, {
               purchaser,
@@ -3993,7 +4073,13 @@ function ClientOnboarding() {
           <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Purchaser {purchaserIndex + 1} Details</h4>
         </header>
         <div className="space-y-5">
-          {NATURAL_PURCHASER_SECTIONS.map((sectionConfig) => {
+          {getVisibleNaturalSectionsForPurchaser(
+            purchaser,
+            purchaserIndex,
+            naturalPersonPurchaseMode,
+            normalizedFinanceType,
+            purchaserEntityType,
+          ).map((sectionConfig) => {
             const visibleFields = sectionConfig.fields.filter((fieldConfig) =>
               isDetailFieldVisible(fieldConfig, {
                 purchaser,
