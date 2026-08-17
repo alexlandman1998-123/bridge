@@ -1222,21 +1222,21 @@ const FINANCE_DETAIL_SECTIONS = [
     key: 'finance_totals',
     title: 'Finance Structure',
     description: 'Confirm how the purchase is being funded.',
+    visibleWhen: ({ financeType }) => isBondOrHybridFinanceType(financeType),
     fields: [
-      { key: 'purchase_price', label: 'Purchase Price', type: 'number', required: true },
       {
         key: 'cash_amount',
-        label: 'Cash Amount',
+        label: 'Cash Contribution Amount',
         type: 'number',
         required: true,
-        visibleWhen: ({ financeType }) => ['cash', 'combination'].includes(financeType),
+        visibleWhen: ({ financeType }) => normalizeFinanceType(financeType || '') === 'combination',
       },
       {
         key: 'bond_amount',
         label: 'Bond Amount',
         type: 'number',
         required: true,
-        visibleWhen: ({ financeType }) => ['bond', 'combination'].includes(financeType),
+        visibleWhen: ({ financeType }) => isBondOrHybridFinanceType(financeType),
       },
     ],
   },
@@ -1653,12 +1653,14 @@ function sanitizeClientFormData(formData = {}, { purchaserType, financeType, fun
   cleaned.finance = {
     ...normalized.finance,
     purchase_finance_type: financeType,
+    purchase_price: '',
   }
   cleaned.purchase_finance_type = financeType
 
   FINANCE_DETAIL_KEYS.forEach((key) => {
     cleaned[key] = cleaned.finance[key] ?? ''
   })
+  cleaned.purchase_price = ''
   cleaned.deposit_source = cleaned.finance.deposit_source ?? cleaned.cash_contribution_source ?? ''
   cleaned.cash_contribution_source = cleaned.finance.cash_contribution_source ?? cleaned.deposit_source ?? ''
   cleaned.finance.buyer_banks = normalizeBuyerBankSelections(cleaned.finance.buyer_banks)
@@ -1731,6 +1733,7 @@ function sanitizeClientFormData(formData = {}, { purchaserType, financeType, fun
   }
 
   if (financeType === 'cash') {
+    cleaned.cash_amount = ''
     cleaned.bond_amount = ''
     cleaned.cash_contribution_available = ''
     cleaned.deposit_source = ''
@@ -1754,6 +1757,7 @@ function sanitizeClientFormData(formData = {}, { purchaserType, financeType, fun
     cleaned.joint_bond_application = ''
     cleaned.bond_originator_name = ''
     cleaned.bond_originator_contact = ''
+    cleaned.finance.cash_amount = ''
     cleaned.finance.bond_amount = ''
     cleaned.finance.cash_contribution_available = ''
     cleaned.finance.deposit_source = ''
@@ -2129,7 +2133,6 @@ function ClientOnboarding() {
         ? getDemoBuyerOnboardingPayload(token)
         : await fetchClientOnboardingByToken(token)
       setSubmittedClientPortalPath('')
-      const transactionPurchasePriceValue = normalizeInputValue(data?.transaction?.purchase_price)
       const initialFlow =
         data?.onboardingFlow ||
         resolveBuyerOnboardingFlow(data.formData || {}, data.transaction || {}, {
@@ -2154,13 +2157,13 @@ function ClientOnboarding() {
         purchasers: normalizedDetails.purchasers,
         finance: {
           ...normalizedDetails.finance,
-          purchase_price: transactionPurchasePriceValue,
+          purchase_price: '',
         },
         company: normalizedDetails.company,
         trust: normalizedDetails.trust,
         directors: normalizedDetails.company.directors || [],
         trustees: normalizedDetails.trust.trustees || [],
-        purchase_price: transactionPurchasePriceValue,
+        purchase_price: '',
         funding_sources: normalizeFundingSources(data.formData?.funding_sources || data.fundingSources || []),
       }
       if (initialPurchaserType) {
@@ -4605,10 +4608,15 @@ function ClientOnboarding() {
           ]
     const financeRows = [
       { label: 'Finance type', value: financeTypeReviewLabel },
-      { label: 'Purchase price', value: formatReviewCurrency(structuredFinance.purchase_price) },
-      ...(normalizedFinanceType === 'cash' || normalizedFinanceType === 'combination'
+      ...(normalizedFinanceType === 'cash'
         ? [
-            { label: 'Cash amount', value: formatReviewCurrency(structuredFinance.cash_amount) },
+            { label: 'Source of funds', value: formatReviewOption(sourceOfFundsField?.options, structuredFinance.source_of_funds) },
+            { label: 'Proof of funds', value: formatReviewYesNo(structuredFinance.proof_of_funds_available) },
+          ]
+        : []),
+      ...(normalizedFinanceType === 'combination'
+        ? [
+            { label: 'Cash contribution', value: formatReviewCurrency(structuredFinance.cash_amount) },
             { label: 'Source of funds', value: formatReviewOption(sourceOfFundsField?.options, structuredFinance.source_of_funds) },
             { label: 'Proof of funds', value: formatReviewYesNo(structuredFinance.proof_of_funds_available) },
           ]
