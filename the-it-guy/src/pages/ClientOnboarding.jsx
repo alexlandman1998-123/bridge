@@ -21,7 +21,11 @@ import PremiumOnboardingLanding from '../components/onboarding/PremiumOnboarding
 import Button from '../components/ui/Button'
 import { parseEdgeFunctionError } from '../lib/edgeFunctions'
 import { resolveBuyerOnboardingFlow } from '../lib/buyerOnboardingFlow.js'
-import { getOnboardingBrandInitials, resolveOnboardingBranding } from '../lib/onboardingBranding'
+import {
+  getOnboardingBrandInitials,
+  normalizeOnboardingLogoUrl,
+  resolveOnboardingBranding,
+} from '../lib/onboardingBranding'
 import {
   buildPlatformFeeConsentAcceptance,
   getPlatformFeeConsentConfig,
@@ -59,7 +63,7 @@ const INNER_PANEL_CLASS =
 const MUTED_TEXT_CLASS = 'text-sm leading-6 text-[#6b7d93]'
 const DETAIL_FLOW_WRAP_CLASS =
   'mx-auto w-full max-w-[1120px] space-y-4 md:space-y-6'
-const PAGE_CONTAINER_CLASS = 'mx-auto w-full max-w-[560px] md:max-w-[1120px]'
+const PAGE_CONTAINER_CLASS = 'mx-auto w-full max-w-[560px] md:max-w-[1440px]'
 const DETAIL_INPUT_CLASS =
   'w-full min-h-[52px] rounded-[12px] border border-[#d9e2ee] bg-white px-4 py-3 text-base text-[#162334] outline-none transition duration-150 ease-out placeholder:text-[#8aa0b8] focus:border-[var(--buyer-brand-action-border)] focus:ring-2 focus:ring-[var(--buyer-brand-action-soft)]'
 const HERO_SECTION_CLASS =
@@ -81,6 +85,19 @@ function normalizeBuyerBrandColour(value = '', fallback = '') {
   }
   if (/^#[0-9a-f]{6}$/i.test(text)) return text
   return fallback
+}
+
+function normalizeOptionalPurchaserType(value) {
+  const text = normalizeInputValue(value)
+  if (!text) return ''
+  return normalizePurchaserType(text)
+}
+
+function normalizeOptionalFinanceType(value) {
+  const text = normalizeInputValue(value)
+  if (!text) return ''
+  const normalized = normalizeFinanceType(text, { allowUnknown: true })
+  return normalized === 'unknown' ? '' : normalized
 }
 
 function buyerBrandHexToRgb(hex = '#002b62') {
@@ -1877,9 +1894,14 @@ function resolveBuyerQuestionHeaderIdentity(payload = {}) {
 }
 
 function BuyerAgencyMark({ brand = {}, tone = 'light' }) {
-  const logoUrl = tone === 'light'
-    ? brand?.logoDarkUrl || brand?.logoUrl || brand?.logoLightUrl
-    : brand?.logoLightUrl || brand?.logoUrl || brand?.logoDarkUrl
+  const preferredLogoUrls = tone === 'light'
+    ? [brand?.logoDarkUrl, brand?.logoUrl, brand?.logoLightUrl, brand?.logoIconUrl]
+    : [brand?.logoLightUrl, brand?.logoUrl, brand?.logoDarkUrl, brand?.logoIconUrl]
+  const logoCandidates = Array.from(
+    new Set(preferredLogoUrls.map((url) => normalizeOnboardingLogoUrl(url)).filter(Boolean)),
+  )
+  const [logoIndex, setLogoIndex] = useState(0)
+  const logoUrl = logoCandidates[logoIndex] || ''
   const name = String(brand?.name || 'Your property team').trim()
 
   if (logoUrl) {
@@ -1888,6 +1910,7 @@ function BuyerAgencyMark({ brand = {}, tone = 'light' }) {
         src={logoUrl}
         alt={`${name} logo`}
         className="h-12 w-auto max-w-[210px] object-contain object-left md:h-14 md:max-w-[250px]"
+        onError={() => setLogoIndex((current) => current + 1)}
       />
     )
   }
@@ -2063,30 +2086,23 @@ function ClientOnboarding() {
       const initialFlow =
         data?.onboardingFlow ||
         resolveBuyerOnboardingFlow(data.formData || {}, data.transaction || {}, {
-          purchaserType: data.formData?.purchaser_type || data.purchaserType,
-          financeType: data.formData?.purchase_finance_type || data.transaction?.finance_type || 'cash',
+          purchaserType: data.formData?.purchaser_type,
+          financeType: data.formData?.purchase_finance_type,
         })
-      const initialPurchaserType = normalizePurchaserType(initialFlow.purchaser_branch || data.formData?.purchaser_type || data.purchaserType)
+      const initialPurchaserType = normalizeOptionalPurchaserType(data.formData?.purchaser_type)
       const initialPurchaserEntityType = String(
-        data.formData?.purchaser_entity_type || getPurchaserEntityType(initialPurchaserType),
+        data.formData?.purchaser_entity_type || (initialPurchaserType ? getPurchaserEntityType(initialPurchaserType) : ''),
       )
         .trim()
         .toLowerCase()
-      const initialFinanceType = normalizeFinanceType(initialFlow.finance_type || data.formData?.purchase_finance_type || data.transaction?.finance_type || 'cash')
+      const initialFinanceType = normalizeOptionalFinanceType(data.formData?.purchase_finance_type)
       const normalizedDetails = normalizeDetailsState(data.formData || {}, {
-        purchaserEntityType: initialPurchaserEntityType,
-        financeType: initialFinanceType,
+        purchaserEntityType: initialPurchaserEntityType || 'individual',
+        financeType: initialFinanceType || 'cash',
       })
-      setPayload({
-        ...data,
-        buyerLinkTarget,
-        onboardingFlow: initialFlow,
-      })
-      setFormData({
+      const initialFormData = {
         ...(data.formData || {}),
         ...buyerLinkTarget,
-        purchaser_type: initialPurchaserType,
-        purchaser_entity_type: initialPurchaserEntityType,
         natural_person_purchase_mode: normalizedDetails.naturalPersonPurchaseMode,
         purchasers: normalizedDetails.purchasers,
         finance: {
@@ -2098,9 +2114,29 @@ function ClientOnboarding() {
         directors: normalizedDetails.company.directors || [],
         trustees: normalizedDetails.trust.trustees || [],
         purchase_price: transactionPurchasePriceValue,
-        purchase_finance_type: initialFinanceType,
         funding_sources: normalizeFundingSources(data.formData?.funding_sources || data.fundingSources || []),
+      }
+      if (initialPurchaserType) {
+        initialFormData.purchaser_type = initialPurchaserType
+      } else {
+        delete initialFormData.purchaser_type
+      }
+      if (initialPurchaserEntityType) {
+        initialFormData.purchaser_entity_type = initialPurchaserEntityType
+      } else {
+        delete initialFormData.purchaser_entity_type
+      }
+      if (initialFinanceType) {
+        initialFormData.purchase_finance_type = initialFinanceType
+      } else {
+        delete initialFormData.purchase_finance_type
+      }
+      setPayload({
+        ...data,
+        buyerLinkTarget,
+        onboardingFlow: initialFlow,
       })
+      setFormData(initialFormData)
       setCompletionBannerVisible(data?.onboarding?.status === 'Submitted')
       setFieldErrors({})
       setTouchedFields({})
@@ -2140,24 +2176,20 @@ function ClientOnboarding() {
   const buyerFlow = useMemo(
     () =>
       resolveBuyerOnboardingFlow(formData, payload?.transaction || {}, {
-        purchaserType: formData.purchaser_type || payload?.purchaserType || payload?.transaction?.purchaser_type || 'individual',
-        financeType: formData.purchase_finance_type || payload?.transaction?.finance_type || 'cash',
+        purchaserType: formData.purchaser_type || '',
+        financeType: formData.purchase_finance_type || '',
       }),
-    [formData, payload?.purchaserType, payload?.transaction],
+    [formData, payload?.transaction],
   )
-  const purchaserType = normalizePurchaserType(
-    buyerFlow.purchaser_branch || formData.purchaser_type || payload?.purchaserType || 'individual',
-  )
-  const purchaserEntityType = String(formData.purchaser_entity_type || getPurchaserEntityType(purchaserType)).trim().toLowerCase()
+  const purchaserType = normalizeOptionalPurchaserType(formData.purchaser_type)
+  const purchaserEntityType = String(formData.purchaser_entity_type || (purchaserType ? getPurchaserEntityType(purchaserType) : '')).trim().toLowerCase()
   const isNaturalPersonPurchase = isNaturalPersonEntityType(purchaserEntityType)
-  const normalizedFinanceType = normalizeFinanceType(
-    buyerFlow.finance_type || formData.purchase_finance_type || payload?.transaction?.finance_type || 'cash',
-  )
+  const normalizedFinanceType = normalizeOptionalFinanceType(formData.purchase_finance_type)
   const detailsState = useMemo(
     () =>
       normalizeDetailsState(formData, {
-        purchaserEntityType,
-        financeType: normalizedFinanceType,
+        purchaserEntityType: purchaserEntityType || 'individual',
+        financeType: normalizedFinanceType || 'cash',
       }),
     [formData, purchaserEntityType, normalizedFinanceType],
   )
@@ -2448,6 +2480,10 @@ function ClientOnboarding() {
   const shouldAdvanceMobileDetailPane = isMobileDetailFlowActive && !isLastMobileDetailPane
   const shouldShowBackButton = activeStepIndex > 0 || (isMobileDetailFlowActive && activeMobileDetailPaneIndex > 0)
   const primaryActionLabel = shouldAdvanceMobileDetailPane ? 'Continue' : isLastStep ? 'Submit Onboarding' : isMobileViewport ? 'Continue' : 'Next Step'
+  const buyerSummaryLabel = purchaserEntityType
+    ? formatReviewOption(PURCHASER_ENTITY_OPTIONS, purchaserEntityType, 'Selected')
+    : 'Not selected yet'
+  const financeSummaryLabel = normalizedFinanceType ? formatFinanceTypeForWhatsApp(normalizedFinanceType) : 'Not selected yet'
   const buyerFlowSummaryItems = [
     {
       label: 'Property',
@@ -2455,15 +2491,11 @@ function ClientOnboarding() {
     },
     {
       label: 'Buyer',
-      value: buyerFlow.branch_summary?.purchaser?.label || purchaserType || 'Individual',
+      value: buyerSummaryLabel,
     },
     {
       label: 'Finance',
-      value:
-        buyerFlow.branch_summary?.finance?.label ||
-        buyerFlow.buyer_finance_branch_label ||
-        normalizedFinanceType ||
-        'Cash',
+      value: financeSummaryLabel,
     },
     {
       label: 'Step',
@@ -2507,13 +2539,15 @@ function ClientOnboarding() {
 
   function updatePurchaserEntityType(nextEntityType) {
     setFormData((previous) => {
+      const normalizedPurchaserType = normalizeOptionalPurchaserType(nextEntityType)
       const next = {
         ...previous,
+        purchaser_type: normalizedPurchaserType,
         purchaser_entity_type: nextEntityType,
       }
       const normalized = normalizeDetailsState(next, {
         purchaserEntityType: nextEntityType,
-        financeType: normalizeFinanceType(next.purchase_finance_type || normalizedFinanceType || 'cash'),
+        financeType: normalizeOptionalFinanceType(next.purchase_finance_type || normalizedFinanceType) || 'cash',
       })
       return {
         ...next,
@@ -2530,7 +2564,7 @@ function ClientOnboarding() {
 
   function updateFinanceType(nextFinanceType) {
     setFormData((previous) => {
-      const normalizedType = normalizeFinanceType(nextFinanceType || 'cash')
+      const normalizedType = normalizeOptionalFinanceType(nextFinanceType)
       const next = {
         ...previous,
         purchase_finance_type: normalizedType,
@@ -2539,7 +2573,7 @@ function ClientOnboarding() {
         purchaserEntityType: String(next.purchaser_entity_type || purchaserEntityType || 'individual')
           .trim()
           .toLowerCase(),
-        financeType: normalizedType,
+        financeType: normalizedType || 'cash',
       })
       return {
         ...next,
