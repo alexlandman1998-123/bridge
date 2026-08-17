@@ -1789,7 +1789,7 @@ function getPortalWorkspaceFromPath(pathname = '') {
     return 'seller'
   }
   if (/\/buying(\/|$)/.test(normalizedPath)) {
-    return 'buyer'
+    return 'buyer_explicit'
   }
   return ''
 }
@@ -6913,7 +6913,7 @@ function SellerPropertyHero({
 
   return (
     <section id="seller-property-hero" className="grid gap-5 xl:grid-cols-[minmax(520px,0.92fr)_minmax(0,1.08fr)] xl:items-stretch">
-      <div className="flex h-full min-w-0 flex-col py-1 xl:py-3">
+      <div className="flex h-full min-w-0 flex-col">
         <h1 className="text-[2.1rem] font-semibold leading-[1.08] tracking-[-0.045em] text-[#102a2b] sm:text-[2.55rem]">
           {sellerGreeting}, {sellerFirstName}.
         </h1>
@@ -7409,14 +7409,14 @@ function BuyerOverviewHero({
   const actionDescription = nextStepState?.description || 'Your team will post the next step here.'
 
   return (
-    <section className="grid gap-5 xl:grid-cols-[minmax(480px,0.88fr)_minmax(0,1.12fr)] xl:items-stretch">
-      <div className="flex h-full min-w-0 flex-col py-1 xl:py-3">
+    <section className="grid gap-5 xl:grid-cols-[minmax(420px,0.84fr)_minmax(0,1.16fr)] xl:items-stretch">
+      <div className="flex min-h-[320px] min-w-0 flex-col xl:min-h-[342px]">
         <h1 className="text-[2.1rem] font-semibold leading-[1.08] tracking-[-0.045em] text-[#102a2b] sm:text-[2.55rem]">
           Welcome, {buyerFirstName}.
         </h1>
 
-        <div className="mt-6 flex flex-1">
-          <article className={`flex min-h-[214px] w-full flex-col rounded-[20px] border border-[#dbe5ec] bg-white p-5 ${PORTAL_DESIGN_TOKENS.shadow.card}`}>
+        <div className="mt-6 flex flex-1 items-stretch">
+          <article className={`flex h-full min-h-[214px] w-full flex-1 flex-col rounded-[20px] border border-[#dbe5ec] bg-white p-5 ${PORTAL_DESIGN_TOKENS.shadow.card}`}>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className={`text-[0.67rem] font-semibold uppercase tracking-[0.13em] ${PORTAL_DESIGN_TOKENS.text.eyebrow}`}>Needs your attention</p>
@@ -7447,9 +7447,9 @@ function BuyerOverviewHero({
         </div>
       </div>
 
-      <div className={`relative min-h-[360px] overflow-hidden ${PORTAL_DESIGN_TOKENS.surface.buyerHero} p-6 text-white ${PORTAL_DESIGN_TOKENS.shadow.hero} xl:min-h-[392px]`}>
+      <div className={`relative min-h-[320px] overflow-hidden ${PORTAL_DESIGN_TOKENS.surface.buyerHero} p-6 text-white ${PORTAL_DESIGN_TOKENS.shadow.hero} xl:min-h-[342px]`}>
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_83%_18%,rgba(255,255,255,0.2),transparent_26%),linear-gradient(180deg,rgba(5,28,34,0)_50%,rgba(5,28,34,0.64)_100%)]" aria-hidden="true" />
-        <div className="relative flex h-full min-h-[312px] flex-col">
+        <div className="relative flex h-full min-h-[272px] flex-col">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               <p className="text-sm font-medium text-[#a5d8a7]">Your purchase</p>
@@ -7461,7 +7461,7 @@ function BuyerOverviewHero({
             </span>
           </div>
 
-          <div className="mt-auto grid gap-4 border-t border-white/[0.2] pt-5 md:grid-cols-[minmax(0,1fr)_120px] md:items-end">
+          <div className="mt-auto grid gap-4 border-t border-white/[0.2] pt-5 md:grid-cols-[minmax(0,1fr)_108px] md:items-end">
             <div className="min-w-0">
               <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#d8e7e5]">Where things stand</p>
               <p className="mt-2 flex items-center gap-2 text-[1.2rem] font-semibold text-white">
@@ -7469,12 +7469,23 @@ function BuyerOverviewHero({
                 <span className="min-w-0 truncate">{currentStageLabel}</span>
               </p>
               <p className="mt-1 text-sm font-medium text-[#d8e7e5]">Next: {nextStageLabel}</p>
-              <p className="mt-4 inline-flex rounded-full border border-white/12 bg-white/[0.08] px-3 py-1.5 text-sm font-semibold text-white">{purchasePriceLabel}</p>
+              <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                {[
+                  ['Price', purchasePriceLabel],
+                  ['Active', timeInStageLabel],
+                  ['Updated', stageUpdatedDateLabel],
+                ].map(([label, value]) => (
+                  <div key={label} className="rounded-[12px] border border-white/12 bg-white/[0.08] px-3 py-2">
+                    <p className="text-[0.62rem] font-semibold uppercase tracking-[0.12em] text-[#c8dcdd]">{label}</p>
+                    <p className="mt-1 truncate text-sm font-semibold text-white">{value || 'Not set'}</p>
+                  </div>
+                ))}
+              </div>
             </div>
-            <div className="relative inline-flex h-[120px] w-[120px] shrink-0 items-center justify-center rounded-full shadow-[0_16px_30px_rgba(0,0,0,0.28)]" style={{ background: `conic-gradient(#74d46e ${safeProgress * 3.6}deg, rgba(255,255,255,0.2) 0deg)` }}>
-              <span className="absolute inset-[10px] rounded-full bg-[#10243a]/[0.94] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]" />
+            <div className="relative inline-flex h-[108px] w-[108px] shrink-0 items-center justify-center rounded-full shadow-[0_16px_30px_rgba(0,0,0,0.28)]" style={{ background: `conic-gradient(#74d46e ${safeProgress * 3.6}deg, rgba(255,255,255,0.2) 0deg)` }}>
+              <span className="absolute inset-[9px] rounded-full bg-[#10243a]/[0.94] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]" />
               <span className="relative text-center">
-                <span className="block text-[1.7rem] font-semibold leading-none text-white">{safeProgress}%</span>
+                <span className="block text-[1.55rem] font-semibold leading-none text-white">{safeProgress}%</span>
                 <span className="mt-1 block text-[0.64rem] font-semibold uppercase tracking-[0.12em] text-[#d8e7e5]">Complete</span>
               </span>
             </div>
@@ -7495,6 +7506,7 @@ function BuyerOverviewActionPanel({
   workspaceNavigationScope,
 }) {
   const visibleActions = actions.slice(0, 4)
+  const actionCountLabel = blockingActionCount === 1 ? '1 needs action' : `${blockingActionCount} need action`
   const fallbackAction = {
     id: 'buyer-overview-next-step',
     title: nextStepState?.title || 'Your purchase file is up to date',
@@ -7511,7 +7523,7 @@ function BuyerOverviewActionPanel({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <SellerSectionHeading title="Needs your attention" subtitle="Items that need a decision, upload, or response from you." />
         <span className={PORTAL_DESIGN_TOKENS.pill.count}>
-          {blockingActionCount} need action
+          {actionCountLabel}
         </span>
       </div>
       <div className="mt-5 grid gap-3 md:grid-cols-2">
@@ -7554,6 +7566,8 @@ function BuyerOverviewActionPanel({
 }
 
 function BuyerOverviewMetricGrid({ cards = [], token, workspaceNavigationScope }) {
+  if (!cards.length) return null
+
   return (
     <article className={`${PORTAL_DESIGN_TOKENS.surface.card} p-5 ${PORTAL_DESIGN_TOKENS.shadow.card}`}>
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -7588,37 +7602,120 @@ function BuyerOverviewMetricGrid({ cards = [], token, workspaceNavigationScope }
   )
 }
 
-function BuyerOverviewStatusStrip({ cards = [], token, workspaceNavigationScope }) {
-  const visibleCards = cards.filter((card) => ['documents', 'finance'].includes(card.key)).slice(0, 2)
-  if (!visibleCards.length) return null
+function BuyerOverviewDocumentsCard({ documents = [], token, workspaceNavigationScope }) {
+  const bucketPriority = { action: 0, review: 1, approved: 2 }
+  const sortedDocuments = [...documents].sort((left, right) => {
+    const leftBucket = getBuyerMobileDocumentBucket(left)
+    const rightBucket = getBuyerMobileDocumentBucket(right)
+    const priorityDelta = (bucketPriority[leftBucket] ?? 9) - (bucketPriority[rightBucket] ?? 9)
+    if (priorityDelta !== 0) return priorityDelta
+    return String(left?.title || '').localeCompare(String(right?.title || ''))
+  })
+  const documentCounts = sortedDocuments.reduce((counts, item) => {
+    const bucket = getBuyerMobileDocumentBucket(item)
+    counts.total += 1
+    counts[bucket] += 1
+    return counts
+  }, { action: 0, review: 0, approved: 0, total: 0 })
+
+  const getDocumentStatus = (item) => {
+    const bucket = getBuyerMobileDocumentBucket(item)
+    if (bucket === 'approved') {
+      return {
+        label: 'Uploaded',
+        Icon: CheckCircle2,
+        classes: 'border-[#cde8d5] bg-[#eefbf3] text-[#1f7a46]',
+      }
+    }
+    if (bucket === 'review') {
+      return {
+        label: 'In review',
+        Icon: Clock3,
+        classes: 'border-[#f0ddbc] bg-[#fff7e8] text-[#9a5b0f]',
+      }
+    }
+    return {
+      label: normalizePortalStatus(item?.status) === 'rejected' ? 'Rejected' : 'Outstanding',
+      Icon: UploadCloud,
+      classes: 'border-[#f0d1c8] bg-[#fff4f2] text-[#b42318]',
+    }
+  }
 
   return (
-    <section className="hidden gap-3 sm:grid-cols-2 lg:grid" aria-label="Buyer purchase status">
-      {visibleCards.map((card) => {
-        const Icon = card.icon
-        const toneClasses = card.tone === 'action'
-          ? 'bg-[#fff8ec] text-[#9a5b0f]'
-          : card.tone === 'complete'
-            ? 'bg-[#eff8f1] text-[#347d43]'
-            : 'bg-[#eef5fb] text-[#35546c]'
-        return (
-          <Link
-            key={card.key}
-            to={getPortalWorkspacePath(token, workspaceNavigationScope, card.to)}
-            className="group flex min-h-[104px] items-center justify-between gap-4 rounded-[16px] border border-[#dbe5ec] bg-white px-5 py-4 shadow-[0_8px_20px_rgba(15,23,42,0.035)] transition hover:border-[#c9d8e6] hover:shadow-[0_12px_26px_rgba(15,23,42,0.055)]"
-          >
-            <div className="min-w-0">
-              <p className={`text-[0.68rem] font-semibold uppercase tracking-[0.12em] ${PORTAL_DESIGN_TOKENS.text.eyebrow}`}>{card.label}</p>
-              <p className="mt-2 truncate text-[1.45rem] font-semibold tracking-[-0.03em] text-[#102032]">{card.value}</p>
-              <p className="mt-1 text-sm leading-5 text-[#64748b]">{card.helper}</p>
-            </div>
-            <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-[12px] ${toneClasses}`}>
-              <Icon size={18} />
-            </span>
-          </Link>
-        )
-      })}
-    </section>
+    <article className={`${PORTAL_DESIGN_TOKENS.surface.card} flex h-[430px] flex-col p-5 ${PORTAL_DESIGN_TOKENS.shadow.card}`}>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <SellerSectionHeading
+          title="Documents"
+          subtitle={documentCounts.action ? `${documentCounts.action} outstanding document${documentCounts.action === 1 ? '' : 's'} need attention.` : 'Uploaded and outstanding purchase documents.'}
+        />
+        <span className={PORTAL_DESIGN_TOKENS.pill.count}>
+          {documentCounts.total ? `${documentCounts.total} docs` : 'No docs'}
+        </span>
+      </div>
+
+      <div className="mt-4 grid grid-cols-3 gap-2">
+        {[
+          ['Outstanding', documentCounts.action],
+          ['Review', documentCounts.review],
+          ['Uploaded', documentCounts.approved],
+        ].map(([label, count]) => (
+          <div key={label} className="rounded-[12px] border border-[#e3ebf4] bg-[#fbfdff] px-3 py-2">
+            <p className="text-[0.62rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">{label}</p>
+            <p className="mt-1 text-lg font-semibold leading-none text-[#142132]">{count}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
+        {sortedDocuments.length ? (
+          <div className="grid gap-3">
+            {sortedDocuments.map((item, index) => {
+              const status = getDocumentStatus(item)
+              const StatusIcon = status.Icon
+              const dateLabel = formatShortPortalDate(
+                item?.uploadedAt ||
+                  item?.uploaded_at ||
+                  item?.createdAt ||
+                  item?.created_at ||
+                  item?.linkedDocument?.created_at ||
+                  item?.document?.created_at,
+                '',
+              )
+              const meta = item?.rejectionReason || item?.description || item?.metaLine || `${item?.buyerCategoryLabel || 'Purchase'} document`
+              return (
+                <article key={item.id || item.sourceId || `${item.title || 'document'}-${index}`} className="rounded-[14px] border border-[#e1e9f2] bg-[#fbfdff] px-4 py-3">
+                  <div className="flex items-start gap-3">
+                    <span className={`mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] border ${status.classes}`}>
+                      <StatusIcon size={17} />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="min-w-0 text-sm font-semibold leading-5 text-[#142132]">{item.title || 'Requested document'}</h3>
+                        <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[0.64rem] font-semibold uppercase tracking-[0.08em] ${status.classes}`}>
+                          {status.label}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs leading-5 text-[#64748b]">{meta}</p>
+                      {dateLabel ? <p className="mt-1 text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#8a9aab]">{dateLabel}</p> : null}
+                    </div>
+                  </div>
+                </article>
+              )
+            })}
+          </div>
+        ) : (
+          <div className="rounded-[14px] border border-dashed border-[#d8e2ee] bg-[#fbfdff] px-4 py-4 text-sm leading-6 text-[#6b7d93]">
+            <p className="font-semibold text-[#35546c]">No documents yet</p>
+            <p className="mt-1">Uploaded and outstanding purchase documents will appear here.</p>
+          </div>
+        )}
+      </div>
+
+      <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, 'documents')} className="mt-4 inline-flex min-h-[40px] items-center justify-center gap-2 rounded-[12px] border border-[#dbe5ef] bg-[#fbfdff] px-4 text-sm font-semibold text-[#35546c] transition hover:border-[#c8d8e7] hover:bg-white">
+        <FileText size={15} />
+        <span>Open documents</span>
+      </Link>
+    </article>
   )
 }
 
@@ -7736,68 +7833,44 @@ function BuyerProgressPage({
   workspaceNavigationScope,
 }) {
   const safeProgress = Math.max(0, Math.min(100, Number(progressPercent) || 0))
-  const currentStep = journeySteps.find((step) => step.status === 'current' || step.status === 'blocked') || journeySteps[0] || {}
   const buyerActionCopy = stageEducation?.whatClientNeedsToDo || 'No action is needed unless your team asks for something.'
   const nextCopy = stageEducation?.whatHappensNext || whatHappensNextItems[0] || `Your purchase is moving toward ${nextStageLabel || 'the next step'}.`
   const teamCopy = whatsHappeningSummary[0] || stageEducation?.shortDescription || 'Your team is moving the purchase forward and will post updates here.'
+  const latestUpdateTitle = latestUpdate?.title || latestUpdate?.authorName || 'No update yet'
+  const latestUpdateCopy = latestUpdate?.message || latestUpdate?.summary || 'Your latest team update will appear here.'
+  const progressInsightCards = [
+    ['What you need to do', buyerActionCopy],
+    ['What your team is doing', teamCopy],
+    ['Next', nextCopy],
+    ['Latest update', latestUpdateTitle, latestUpdateCopy],
+  ]
 
   return (
     <section className="space-y-5">
-      <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#64748b]">Purchase progress</p>
-          <h2 className="mt-2 text-[1.85rem] font-semibold leading-tight tracking-[-0.04em] text-[#102032]">Track what is complete and what comes next.</h2>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-[#64748b]">
-            Now: <strong className="font-semibold text-[#102032]">{currentStageLabel || 'Current step'}</strong>. Next: {nextStageLabel || 'Next step'}.
-          </p>
-        </div>
-        <SellerPortalAction action={primaryAction} token={token} workspaceNavigationScope={workspaceNavigationScope} className={`${PORTAL_DESIGN_TOKENS.button.primary} lg:flex-none lg:px-6`}>
-          <ArrowRight size={14} />
-          <span>{primaryAction?.label || 'Open next step'}</span>
-        </SellerPortalAction>
-      </header>
+      <BuyerProgressJourney
+        progressPercent={safeProgress}
+        currentStageLabel={currentStageLabel}
+        nextStageLabel={nextStageLabel}
+        steps={journeySteps}
+        primaryAction={primaryAction}
+        token={token}
+        workspaceNavigationScope={workspaceNavigationScope}
+      />
 
-      <section className="grid gap-5 xl:grid-cols-[minmax(660px,1fr)_360px] xl:items-start">
-        <BuyerProgressJourney
-          progressPercent={safeProgress}
-          currentStageLabel={currentStageLabel}
-          nextStageLabel={nextStageLabel}
-          steps={journeySteps}
-          primaryAction={primaryAction}
-          token={token}
-          workspaceNavigationScope={workspaceNavigationScope}
-        />
-
-        <aside className={`${PORTAL_DESIGN_TOKENS.surface.card} p-5 ${PORTAL_DESIGN_TOKENS.shadow.card}`}>
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#64748b]">Where things stand</p>
-              <h3 className="mt-2 text-[1.2rem] font-semibold tracking-[-0.03em] text-[#142132]">{currentStep.label || currentStageLabel || 'Current step'}</h3>
-            </div>
-            <span className="rounded-full border border-[#dbe7f4] bg-[#f4f8fd] px-3 py-1 text-xs font-semibold text-[#1263b5]">{safeProgress}% complete</span>
-          </div>
-
-          <div className="mt-5 grid gap-3">
-            {[
-              ['What you need to do', buyerActionCopy],
-              ['What your team is doing', teamCopy],
-              ['Next', nextCopy],
-            ].map(([label, copy]) => (
-              <article key={label} className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-3">
-                <p className="text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">{label}</p>
-                <p className="mt-1.5 text-sm leading-6 text-[#324559]">{copy}</p>
-              </article>
-            ))}
-          </div>
-
-          {latestUpdate ? (
-            <div className="mt-4 rounded-[14px] border border-[#dbe7f4] bg-white px-4 py-3">
-              <p className="text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Latest update</p>
-              <p className="mt-1.5 text-sm font-semibold text-[#142132]">{latestUpdate.title || latestUpdate.authorName || 'Team update'}</p>
-              <p className="mt-1 text-sm leading-6 text-[#52647a]">{latestUpdate.message || latestUpdate.summary}</p>
-            </div>
-          ) : null}
-        </aside>
+      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        {progressInsightCards.map(([label, copy, detail]) => (
+          <article key={label} className={`${PORTAL_DESIGN_TOKENS.surface.cardInset} min-h-[142px] px-4 py-4`}>
+            <p className="text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">{label}</p>
+            {detail ? (
+              <>
+                <h3 className="mt-3 text-sm font-semibold leading-5 text-[#142132]">{copy}</h3>
+                <p className="mt-2 text-sm leading-6 text-[#52647a]">{detail}</p>
+              </>
+            ) : (
+              <p className="mt-3 text-sm leading-6 text-[#324559]">{copy}</p>
+            )}
+          </article>
+        ))}
       </section>
     </section>
   )
@@ -7851,6 +7924,7 @@ function BuyerPortalDashboard({
   prioritizedNextActions,
   hiddenNextActionCount,
   metricCards,
+  buyerDocumentItems,
   journeySteps,
   updates,
   latestUpdatesSubtitle,
@@ -7870,38 +7944,39 @@ function BuyerPortalDashboard({
   token,
   workspaceNavigationScope,
 }) {
+  const hasSecondaryInsight = Boolean(controlBoard || latestAttorneyUpdate)
+
   return (
-      <section className="space-y-6">
-        <BuyerOverviewHero
-          buyerFirstName={buyerFirstName}
-          buyerName={buyerName}
-          developmentName={developmentName}
+    <section className="space-y-6">
+      <BuyerOverviewHero
+        buyerFirstName={buyerFirstName}
+        buyerName={buyerName}
+        developmentName={developmentName}
         unitLabel={unitLabel}
         purchasePriceLabel={purchasePriceLabel}
         heroStatusBadge={heroStatusBadge}
         currentStageLabel={currentStageLabel}
         nextStageLabel={nextStageLabel}
-          progressPercent={progressPercent}
-          timeInStageLabel={timeInStageLabel}
-          stageUpdatedDateLabel={stageUpdatedDateLabel}
-          nextStepState={nextStepState}
-          primaryAction={primaryAction}
-          supportContact={supportContact}
-          financeSectionKey={financeSectionKey}
-          token={token}
-          workspaceNavigationScope={workspaceNavigationScope}
-        />
-        <BuyerOverviewStatusStrip cards={metricCards} token={token} workspaceNavigationScope={workspaceNavigationScope} />
-        <section className="grid gap-5 xl:grid-cols-2 xl:items-start">
-          <BuyerProgressJourney
-            progressPercent={progressPercent}
-            currentStageLabel={currentStageLabel}
-          nextStageLabel={nextStageLabel}
-          steps={journeySteps}
-          primaryAction={primaryAction}
-          token={token}
-          workspaceNavigationScope={workspaceNavigationScope}
-        />
+        progressPercent={progressPercent}
+        timeInStageLabel={timeInStageLabel}
+        stageUpdatedDateLabel={stageUpdatedDateLabel}
+        nextStepState={nextStepState}
+        primaryAction={primaryAction}
+        supportContact={supportContact}
+        financeSectionKey={financeSectionKey}
+        token={token}
+        workspaceNavigationScope={workspaceNavigationScope}
+      />
+      <BuyerProgressJourney
+        progressPercent={progressPercent}
+        currentStageLabel={currentStageLabel}
+        nextStageLabel={nextStageLabel}
+        steps={journeySteps}
+        primaryAction={primaryAction}
+        token={token}
+        workspaceNavigationScope={workspaceNavigationScope}
+      />
+      <section className="grid gap-5 xl:grid-cols-2 xl:items-stretch">
         <LatestUpdatesCard
           updates={updates}
           commentDraft={commentDraft}
@@ -7910,14 +7985,39 @@ function BuyerPortalDashboard({
           onCommentSubmit={onCommentSubmit}
           onActionClick={onActionClick}
           heading="Team updates"
-            subtitle={latestUpdatesSubtitle}
+          subtitle={latestUpdatesSubtitle}
           showComposer={false}
-          maxUpdates={2}
-          />
-        </section>
+          className="h-[430px] overflow-y-auto"
+        />
+        <BuyerOverviewDocumentsCard
+          documents={buyerDocumentItems}
+          token={token}
+          workspaceNavigationScope={workspaceNavigationScope}
+        />
       </section>
-    )
-  }
+      <section className={`grid gap-5 xl:items-start ${hasSecondaryInsight ? 'xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]' : 'xl:grid-cols-1'}`}>
+        <BuyerStageGuide
+          stageEducation={stageEducation}
+          whatHappensNextItems={whatHappensNextItems}
+          whatsHappeningSummary={whatsHappeningSummary}
+          rolePlayerGuidance={rolePlayerGuidance}
+        />
+        {controlBoard ? (
+          <MvpTransactionControlBoard controlBoard={controlBoard} compact />
+        ) : (
+          <AttorneySaysCard update={latestAttorneyUpdate} fallbackStageLabel={currentStageLabel} />
+        )}
+      </section>
+      {controlBoard && latestAttorneyUpdate ? (
+        <AttorneySaysCard update={latestAttorneyUpdate} fallbackStageLabel={currentStageLabel} />
+      ) : null}
+      <BuyerSupportFooter
+        supportContact={supportContact}
+        buyerPortalAccessDescription={buyerPortalAccessDescription}
+      />
+    </section>
+  )
+}
 
 function SellerPortalPasswordGate({
   authState = {},
@@ -8154,6 +8254,7 @@ function ClientPortal() {
   const [sellerRequestFeedback, setSellerRequestFeedback] = useState({ tone: '', message: '' })
 
   const requestedWorkspace = useMemo(() => getPortalWorkspaceFromPath(location.pathname), [location.pathname])
+  const portalDataWorkspace = requestedWorkspace === 'buyer_explicit' ? 'buyer' : requestedWorkspace
   const isSellerPortalToken = useMemo(() => String(token || '').trim().toLowerCase().startsWith('seller-'), [token])
 
   const requestedSection = useMemo(
@@ -8235,7 +8336,7 @@ function ClientPortal() {
         setError('')
         setHydratingPortal(true)
         const data = await withClientPortalLoadTimeout(
-          getClientPortalWorkspaceData(token, requestedWorkspace, {
+          getClientPortalWorkspaceData(token, portalDataWorkspace, {
             mode: 'full',
             sellerPortalAccessToken: isSellerPortalToken ? effectiveSellerPortalAccessToken : '',
           }),
@@ -8280,7 +8381,7 @@ function ClientPortal() {
       setError('')
       setDocumentActionError('')
       const coreData = await withClientPortalLoadTimeout(
-        getClientPortalWorkspaceData(token, requestedWorkspace, {
+        getClientPortalWorkspaceData(token, portalDataWorkspace, {
           mode: 'core',
           sellerPortalAccessToken: isSellerPortalToken ? effectiveSellerPortalAccessToken : '',
         }),
@@ -8328,7 +8429,7 @@ function ClientPortal() {
     try {
       setHydratingPortal(true)
       const fullData = await withClientPortalLoadTimeout(
-        getClientPortalWorkspaceData(token, requestedWorkspace, {
+        getClientPortalWorkspaceData(token, portalDataWorkspace, {
           mode: 'full',
           sellerPortalAccessToken: isSellerPortalToken ? effectiveSellerPortalAccessToken : '',
         }),
@@ -8371,7 +8472,7 @@ function ClientPortal() {
         setLoading(false)
       }
     }
-  }, [isSellerPortalToken, sellerPortalAccessToken, token, requestedWorkspace])
+  }, [isSellerPortalToken, portalDataWorkspace, sellerPortalAccessToken, token])
 
   const handleSellerPortalPasswordChange = useCallback((field, value) => {
     setSellerPortalPasswordForm((previous) => ({
@@ -8557,7 +8658,7 @@ function ClientPortal() {
     transactionId: workspaceData?.transaction?.id || portal?.transaction?.id,
     onRefresh: () => loadPortal({ background: true }),
     includeNotifications: false,
-    pollingIntervalMs: requestedWorkspace === 'seller' || isSellerPortalToken ? 15_000 : 30_000,
+    pollingIntervalMs: portalDataWorkspace === 'seller' || isSellerPortalToken ? 15_000 : 30_000,
   })
 
   useEffect(() => {
@@ -9596,7 +9697,11 @@ function ClientPortal() {
   const effectiveWorkspace = activeWorkspace === 'seller' && !hasSellingContext ? 'seller' : activeWorkspace
   const selectedJourney = effectiveWorkspace === 'seller' ? 'seller' : 'buyer'
   const canSwitchJourney = hasSellingContext
-  const workspaceNavigationScope = effectiveWorkspace === 'seller' ? 'seller' : 'buyer'
+  const workspaceNavigationScope = effectiveWorkspace === 'buyer_explicit'
+    ? 'buyer_explicit'
+    : effectiveWorkspace === 'seller'
+      ? 'seller'
+      : 'buyer'
 
   useEffect(() => {
     let active = true
@@ -13219,6 +13324,7 @@ function ClientPortal() {
                   prioritizedNextActions={prioritizedNextActions}
                   hiddenNextActionCount={hiddenNextActionCount}
                   metricCards={buyerOverviewMetricCards}
+                  buyerDocumentItems={buyerMobileDocumentItems}
                   journeyStatus={journeyStatusFlag}
                   journeySteps={clientJourneySteps}
                   expandedJourneyStepId={resolvedExpandedJourneyStepId}

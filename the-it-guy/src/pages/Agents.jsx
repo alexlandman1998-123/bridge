@@ -6396,6 +6396,44 @@ export function AgentsPage() {
     [agentDirectory?.agency?.id, agents, appointmentRows, branchFilter, branches, canvassingActivities, dateRange, effectiveStatusFilter, leadActivities, leadRows, leaderboardMetric, listingRows, officeFilter, organisationFilter, profile?.id, searchTerm, sortBy, taskRows, transactionRows, workspaceOrganisation?.id],
   )
 
+  const currentWorkspaceSnapshot = useMemo(
+    () => ({
+      branches,
+      leads: leadRows,
+      transactions: transactionRows,
+      transactionRolePlayers: [],
+      listings: listingRows,
+      appointments: appointmentRows,
+      tasks: taskRows,
+      leadActivities,
+      canvassingProspects: [],
+      canvassingActivities,
+    }),
+    [appointmentRows, branches, canvassingActivities, leadActivities, leadRows, listingRows, taskRows, transactionRows],
+  )
+
+  const openAgentWorkspace = useCallback((targetAgent) => {
+    const targetId = normalizeAgentRecordId(
+      targetAgent?.id ||
+        targetAgent?.userId ||
+        targetAgent?.user_id ||
+        targetAgent?.organisationUserId ||
+        targetAgent?.organisation_user_id ||
+        targetAgent?.email,
+    )
+    if (!targetId) return
+    navigate(`/agency/agents/${encodeURIComponent(targetId)}`, {
+      state: {
+        agentWorkspaceSeed: {
+          agent: targetAgent,
+          workspaceSnapshot: currentWorkspaceSnapshot,
+          branches,
+          commissionStructures,
+        },
+      },
+    })
+  }, [branches, commissionStructures, currentWorkspaceSnapshot, navigate])
+
   const invitedAgentRows = useMemo(() => {
     const selectedOrganisationId = organisationFilter === EMPTY_ORGANISATION.id
       ? String(workspaceOrganisation?.id || agentDirectory?.agency?.id || '').trim().toLowerCase()
@@ -7016,11 +7054,11 @@ export function AgentsPage() {
               metric={leaderboardMetric}
               metricOptions={commandCentreModel.filterOptions.leaderboardMetrics}
               onMetricChange={setLeaderboardMetric}
-              onView={(agent) => navigate(`/agency/agents/${encodeURIComponent(agent.id)}`)}
+              onView={openAgentWorkspace}
             />
             <AttentionAgentsPanel
               rows={commandCentreModel.attentionAgents}
-              onView={(agent) => navigate(`/agency/agents/${encodeURIComponent(agent.id)}`)}
+              onView={openAgentWorkspace}
             />
           </section>
         </>
@@ -7070,7 +7108,7 @@ export function AgentsPage() {
               canManage={canManageDirectory}
               sortBy={sortBy}
               onSort={setSortBy}
-              onView={(agent) => navigate(`/agency/agents/${encodeURIComponent(agent.id)}`)}
+              onView={openAgentWorkspace}
               onDeactivate={(agent) => openConfirm('deactivate', agent)}
               onViewTransactions={(agent, stage) => navigate(`/transactions?agent=${encodeURIComponent(agent.id || agent.email || '')}${stage ? `&stage=${encodeURIComponent(stage)}` : ''}`)}
               onAssignLead={(agent) => navigate(`/pipeline/leads?assignAgent=${encodeURIComponent(agent.id || agent.email || '')}`)}
@@ -7288,6 +7326,7 @@ export function AgentsPage() {
 
 export function AgentWorkspacePage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { agentId } = useParams()
   const { role, baseRole, profile, workspaceReady, profileLoading, currentMembership, workspaceRole, workspaceType } = useWorkspace()
   const contextMembershipRole = useMemo(
@@ -7312,6 +7351,7 @@ export function AgentWorkspacePage() {
   const [branches, setBranches] = useState([])
   const [commissionStructures, setCommissionStructures] = useState([])
   const [workspaceSnapshot, setWorkspaceSnapshot] = useState(() => createEmptyAgentWorkspaceSnapshot())
+  const routeSeed = location.state && typeof location.state === 'object' ? location.state.agentWorkspaceSeed : null
 
   const canAccess = canAccessAgentsModule({ role, baseRole, profile, membershipRole })
   const canManageSettings = canManageAgentOrganisations({ role, baseRole, profile, membershipRole })
@@ -7467,6 +7507,22 @@ export function AgentWorkspacePage() {
     }
 
     try {
+      const seededAgent = routeSeed?.agent && findAgentByRouteId([routeSeed.agent], agentId)
+      if (seededAgent) {
+        const seededSnapshot = {
+          ...createEmptyAgentWorkspaceSnapshot(),
+          ...(routeSeed.workspaceSnapshot && typeof routeSeed.workspaceSnapshot === 'object' ? routeSeed.workspaceSnapshot : {}),
+        }
+        setAgent(seededAgent)
+        setBranches(Array.isArray(routeSeed.branches) ? routeSeed.branches : seededSnapshot.branches)
+        setCommissionStructures(Array.isArray(routeSeed.commissionStructures) ? routeSeed.commissionStructures : [])
+        setWorkspaceSnapshot(seededSnapshot)
+        setLoading(false)
+        setError('')
+        void loadFullWorkspace({ blockInitialRender: false })
+        return
+      }
+
       setLoading(true)
       setError('')
       setBranches([])
@@ -7522,7 +7578,7 @@ export function AgentWorkspacePage() {
       setWorkspaceSnapshot(createEmptyAgentWorkspaceSnapshot())
       setLoading(false)
     }
-  }, [agentId, canAccess, canManageSettings, loadFullWorkspace, permissionCheckPending])
+  }, [agentId, canAccess, canManageSettings, loadFullWorkspace, permissionCheckPending, routeSeed])
 
   useEffect(() => {
     void loadWorkspace()

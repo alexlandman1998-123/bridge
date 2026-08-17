@@ -834,6 +834,7 @@ function ClientDocumentCentre({
       allCompleteMessage="All required buyer documents have been uploaded."
       footerText="Use the row actions to upload, view, or re-upload documents without leaving this page."
       listId="buyer-document-list"
+      hideHeader
     />
   )
 }

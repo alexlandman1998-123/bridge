@@ -119,6 +119,7 @@ function SellerDocumentWorkspace({
   footerText = 'Use the row actions to upload, view, or re-upload documents without leaving this page.',
   listId = 'seller-document-list',
   experienceModel = null,
+  hideHeader = false,
 }) {
   const activeTab = tabs.find((tab) => tab.key === activeTabKey) || tabs[0] || null
   const summary = summaryFromExperience(experienceModel, requiredItems)
@@ -143,23 +144,25 @@ function SellerDocumentWorkspace({
 
   return (
     <section className="w-full space-y-6">
-      <header className="rounded-[28px] border border-[#dde6f0] bg-white px-5 py-5 shadow-[0_20px_40px_rgba(15,23,42,0.06)] sm:px-6">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="max-w-2xl">
-            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7b8ca2]">{eyebrow}</p>
-            <h2 className="mt-2 text-[2rem] font-semibold tracking-[-0.05em] text-[#142132] sm:text-[2.125rem]">Documents</h2>
-            <p className="mt-2 text-[0.97rem] leading-7 text-[#5f7288]">{description}</p>
+      {!hideHeader ? (
+        <header className="rounded-[28px] border border-[#dde6f0] bg-white px-5 py-5 shadow-[0_20px_40px_rgba(15,23,42,0.06)] sm:px-6">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="max-w-2xl">
+              <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7b8ca2]">{eyebrow}</p>
+              <h2 className="mt-2 text-[2rem] font-semibold tracking-[-0.05em] text-[#142132] sm:text-[2.125rem]">Documents</h2>
+              <p className="mt-2 text-[0.97rem] leading-7 text-[#5f7288]">{description}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => onPrimaryUploadAction?.()}
+              className="inline-flex min-h-[46px] items-center justify-center gap-2 rounded-[15px] border border-[#cfe0ef] bg-[#2f6fa4] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#275f8d]"
+            >
+              <UploadCloud size={16} />
+              Upload documents
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={() => onPrimaryUploadAction?.()}
-            className="inline-flex min-h-[46px] items-center justify-center gap-2 rounded-[15px] border border-[#cfe0ef] bg-[#2f6fa4] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#275f8d]"
-          >
-            <UploadCloud size={16} />
-            Upload documents
-          </button>
-        </div>
-      </header>
+        </header>
+      ) : null}
 
       <section className="rounded-[28px] border border-[#dde6f0] bg-white px-5 py-5 shadow-[0_20px_40px_rgba(15,23,42,0.06)] sm:px-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -214,17 +217,17 @@ function SellerDocumentWorkspace({
         ) : null}
       </section>
 
-      <div className="grid gap-5 lg:grid-cols-[320px_minmax(0,1fr)]">
+      <div className="grid gap-5 lg:grid-cols-[320px_minmax(0,1fr)] lg:items-start">
         <aside className="space-y-5">
-          <section className="rounded-[26px] border border-[#dde6f0] bg-white px-5 py-5 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
-            <div className="flex items-start justify-between gap-3">
+          <section className="flex max-h-[360px] min-h-0 flex-col rounded-[26px] border border-[#dde6f0] bg-white px-5 py-5 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
+            <div className="shrink-0 flex items-start justify-between gap-3">
               <div>
                 <h3 className="text-[1.08rem] font-semibold tracking-[-0.03em] text-[#142132]">Still needed</h3>
                 <p className="mt-1 text-sm leading-6 text-[#6b7d93]">{stillNeededDescription}</p>
               </div>
             </div>
             {summary.blockingItems.length ? (
-              <div className="mt-4 space-y-2.5">
+              <div className="mt-4 min-h-0 flex-1 space-y-2.5 overflow-y-auto pr-1">
                 {summary.blockingItems.map((item) => {
                   const normalized = normalizeDocumentStatus(item?.status || '')
                   const needsReupload = normalized === 'rejected'
@@ -270,8 +273,8 @@ function SellerDocumentWorkspace({
           </section>
         </aside>
 
-        <section id={listId} className="rounded-[28px] border border-[#dde6f0] bg-white px-4 py-4 shadow-[0_20px_40px_rgba(15,23,42,0.06)] sm:px-5 sm:py-5">
-          <div className="overflow-x-auto">
+        <section id={listId} className="flex min-h-0 flex-col rounded-[28px] border border-[#dde6f0] bg-white px-4 py-4 shadow-[0_20px_40px_rgba(15,23,42,0.06)] sm:px-5 sm:py-5 lg:h-[620px] lg:max-h-[620px]">
+          <div className="shrink-0 overflow-x-auto">
             <nav className="inline-flex min-w-full gap-2 rounded-[18px] bg-[#f3f6fa] p-1.5">
               {tabs.map((tab) => {
                 const isActive = tab.key === activeTabKey
@@ -297,8 +300,8 @@ function SellerDocumentWorkspace({
           </div>
 
           {activeTab ? (
-            <div className="mt-5">
-              <div className="flex flex-col gap-2 border-b border-[#e7eef5] pb-4 sm:flex-row sm:items-end sm:justify-between">
+            <div className="mt-5 flex min-h-0 flex-1 flex-col">
+              <div className="shrink-0 flex flex-col gap-2 border-b border-[#e7eef5] pb-4 sm:flex-row sm:items-end sm:justify-between">
                 <div>
                   <h3 className="text-[1.08rem] font-semibold tracking-[-0.03em] text-[#142132]">{activeTab.title}</h3>
                   <p className="mt-1 text-sm leading-6 text-[#6b7d93]">{activeTab.subtitle}</p>
@@ -306,7 +309,7 @@ function SellerDocumentWorkspace({
               </div>
 
               {activeTab.items.length ? (
-                <div className="mt-5 space-y-3.5">
+                <div className="mt-5 min-h-0 flex-1 space-y-3.5 overflow-y-auto pr-1">
                   {activeTab.items.map((item) => (
                     <SellerDocumentRow
                       key={item.id}
@@ -326,7 +329,7 @@ function SellerDocumentWorkspace({
             </div>
           ) : null}
 
-          <div className="mt-5 flex items-center justify-between rounded-[20px] border border-[#e4ebf3] bg-[#f9fbfe] px-4 py-3 text-sm text-[#60748a]">
+          <div className="mt-5 flex shrink-0 items-center justify-between rounded-[20px] border border-[#e4ebf3] bg-[#f9fbfe] px-4 py-3 text-sm text-[#60748a]">
             <p>{footerText}</p>
             <button
               type="button"

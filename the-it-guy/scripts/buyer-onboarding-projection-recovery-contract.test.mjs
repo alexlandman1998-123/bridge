@@ -142,6 +142,21 @@ assert.match(
   /let\s+otpPendingState\s*=\s*\{[\s\S]*awaiting_signed_otp[\s\S]*nextAction:\s*onboardingNextAction/,
   'awaiting-signed-OTP state must have a local fallback if the projection write fails',
 )
+assert.doesNotMatch(
+  saveOnboardingSource,
+  /transaction_roleplayer_intro|sendBuyerRoleplayerIntroEmailForOnboarding/,
+  'buyer onboarding submit must not send the buyer a confirmed roleplayer introduction before OTP preparation',
+)
+assert.match(
+  saveOnboardingSource,
+  /title:\s*'Prepare OTP'[\s\S]*Buyer onboarding has been submitted\. Prepare the OTP before finance or attorney handoff\./,
+  'buyer onboarding submit must notify internal users that OTP preparation is next',
+)
+assert.doesNotMatch(
+  saveOnboardingSource,
+  /title:\s*'Signed OTP required'|Buyer onboarding completed\./,
+  'buyer onboarding submit copy must not imply confirmation or signed OTP completion',
+)
 
 assert.match(
   markerPayloadSource,

@@ -5511,14 +5511,34 @@ function parseCurrencyAmount(value) {
   if (typeof value === 'number') return Number.isFinite(value) ? value : 0
   const raw = normalizeText(value).toLowerCase()
   if (!raw) return 0
-  const firstNumber = raw.match(/[\d]+(?:[.,]\d+)?/)
+  const firstNumber = raw.match(/\d[\d\s.,]*/)
   if (!firstNumber) return 0
-  const number = Number(firstNumber[0].replace(',', '.'))
+  let numericText = firstNumber[0].replace(/\s/g, '')
+  const commaCount = (numericText.match(/,/g) || []).length
+  const dotCount = (numericText.match(/\./g) || []).length
+  if (commaCount && dotCount) {
+    const decimalSeparator = numericText.lastIndexOf(',') > numericText.lastIndexOf('.') ? ',' : '.'
+    const groupSeparator = decimalSeparator === ',' ? '.' : ','
+    numericText = numericText.replaceAll(groupSeparator, '').replace(decimalSeparator, '.')
+  } else if (commaCount > 1) {
+    numericText = numericText.replaceAll(',', '')
+  } else if (dotCount > 1) {
+    numericText = numericText.replaceAll('.', '')
+  } else if (commaCount === 1) {
+    const [, decimalPart = ''] = numericText.split(',')
+    numericText = decimalPart.length === 3 ? numericText.replace(',', '') : numericText.replace(',', '.')
+  } else if (dotCount === 1) {
+    const [integerPart = '', decimalPart = ''] = numericText.split('.')
+    if (integerPart.length <= 3 && decimalPart.length === 3) numericText = numericText.replace('.', '')
+  }
+  const number = Number(numericText)
   if (!Number.isFinite(number)) return 0
   if (raw.includes('million') || raw.includes('m')) return number * 1000000
   if (raw.includes('k')) return number * 1000
   return number
 }
+
+const VIEWING_PLANNER_PRICE_MATCH_TOLERANCE = 500000
 
 const PROPERTY_WORKSPACE_FIELD_MAPPING = [
   { uiField: 'fullAddress', source: 'property', sourceField: 'sellerPropertyAddress', fallbackSource: 'seller_onboarding.propertyAddress', writable: true },
@@ -5886,24 +5906,99 @@ function resolveMediaUrl(media = {}) {
 }
 
 function resolveListingImageUrl(listing = {}) {
-  const marketing = listing?.marketing && typeof listing.marketing === 'object' ? listing.marketing : {}
-  const propertyDetails = listing?.propertyDetails && typeof listing.propertyDetails === 'object' ? listing.propertyDetails : {}
+  const sourceListing = listing?.sourceListing && typeof listing.sourceListing === 'object' ? listing.sourceListing : {}
+  const marketing = listing?.marketing && typeof listing.marketing === 'object'
+    ? listing.marketing
+    : sourceListing?.marketing && typeof sourceListing.marketing === 'object'
+      ? sourceListing.marketing
+      : {}
+  const propertyDetails = listing?.propertyDetails && typeof listing.propertyDetails === 'object'
+    ? listing.propertyDetails
+    : sourceListing?.propertyDetails && typeof sourceListing.propertyDetails === 'object'
+      ? sourceListing.propertyDetails
+      : {}
   const onboardingFormData =
     listing?.sellerOnboarding?.formData && typeof listing.sellerOnboarding.formData === 'object'
       ? listing.sellerOnboarding.formData
-      : {}
+      : sourceListing?.sellerOnboarding?.formData && typeof sourceListing.sellerOnboarding.formData === 'object'
+        ? sourceListing.sellerOnboarding.formData
+        : {}
   const gallery = [
     ...(Array.isArray(marketing.imageGallery) ? marketing.imageGallery : []),
     ...(Array.isArray(listing?.imageGallery) ? listing.imageGallery : []),
+    ...(Array.isArray(sourceListing?.imageGallery) ? sourceListing.imageGallery : []),
     ...(Array.isArray(onboardingFormData.imageGallery) ? onboardingFormData.imageGallery : []),
     ...(Array.isArray(listing?.images) ? listing.images : []),
+    ...(Array.isArray(sourceListing?.images) ? sourceListing.images : []),
   ].filter((item) => resolveMediaUrl(item))
   const coverImageId = normalizeText(marketing.coverImageId || propertyDetails.coverImageId || onboardingFormData.coverImageId || listing?.coverImageId || listing?.cover_image_id)
   const coverImage =
     resolveMediaUrl(listing?.coverImage)
       ? listing.coverImage
+      : resolveMediaUrl(sourceListing?.coverImage)
+        ? sourceListing.coverImage
       : gallery.find((item) => normalizeText(item?.id || item?.path) === coverImageId) || gallery[0] || null
-  return normalizeText(marketing.mediaUrl || listing?.mediaUrl || listing?.coverImageUrl || listing?.thumbnailUrl || resolveMediaUrl(coverImage))
+  return normalizeText(
+    marketing.mediaUrl ||
+      listing?.mediaUrl ||
+      sourceListing?.mediaUrl ||
+      listing?.coverImageUrl ||
+      sourceListing?.coverImageUrl ||
+      listing?.thumbnailUrl ||
+      sourceListing?.thumbnailUrl ||
+      resolveMediaUrl(coverImage),
+  )
+}
+
+function resolveListingComparablePrice(listing = {}) {
+  const sourceListing = listing?.sourceListing && typeof listing.sourceListing === 'object' ? listing.sourceListing : {}
+  for (const value of [
+    listing?.askingPrice,
+    listing?.asking_price,
+    listing?.price,
+    listing?.estimatedValue,
+    listing?.estimated_value,
+    listing?.propertyDetails?.price,
+    sourceListing?.askingPrice,
+    sourceListing?.asking_price,
+    sourceListing?.price,
+    sourceListing?.estimatedValue,
+    sourceListing?.estimated_value,
+    sourceListing?.propertyDetails?.price,
+  ]) {
+    const amount = parseCurrencyAmount(value)
+    if (amount > 0) return amount
+  }
+  return 0
+}
+
+function resolveLeadViewingPlannerPrice(lead = {}, linkedListing = null) {
+  const linkedListingPrice = linkedListing ? resolveListingComparablePrice(linkedListing) : 0
+  for (const value of [
+    lead?.enquiredPropertyPrice,
+    lead?.enquired_property_price,
+    linkedListingPrice,
+    lead?.estimatedValue,
+    lead?.estimated_value,
+    lead?.budget,
+  ]) {
+    const amount = parseCurrencyAmount(value)
+    if (amount > 0) return amount
+  }
+  return 0
+}
+
+function ViewingPlannerPropertyImage({ src = '', alt = '', className = '' }) {
+  const imageUrl = normalizeText(src)
+  if (imageUrl) return <img src={imageUrl} alt={alt} className={className} />
+  return (
+    <span className={`${className} grid place-items-center bg-[#eef4f9] text-[#7c91a8]`} aria-label={alt || 'Listing image'}>
+      <span className="flex flex-col items-center gap-1 text-[0.58rem] font-semibold uppercase tracking-[0.08em]">
+        <ImageIcon className="h-4 w-4" />
+        <span>Listing image</span>
+      </span>
+    </span>
+  )
 }
 
 function resolveListingAddressLabel(listing = {}) {
@@ -15772,28 +15867,61 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }, [selectedLeadBuyerScore, selectedLeadTransactionConfidence, selectedLeadWorkflowHealth.percent])
 
   const selectedLeadBuyerRecommendations = useMemo(() => {
-    const fallbackImages = [
-      'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=900&q=80',
-      'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=900&q=80',
-      'https://images.unsplash.com/photo-1600566753190-17f0baa2a6c3?auto=format&fit=crop&w=900&q=80',
-      'https://images.unsplash.com/photo-1600047509807-ba8f99d2cdde?auto=format&fit=crop&w=900&q=80',
-    ]
-    const options = leadAppointmentOfferListingOptions.length ? leadAppointmentOfferListingOptions : appointmentListingOptions.slice(0, 4)
-    return options.slice(0, 6).map((option, index) => {
-      const listing = appointmentListingById.get(normalizeText(option?.id)) || option || {}
-      const match = Math.max(72, Math.min(96, selectedLeadBuyerMatchScore - index * 2 + (option?.source === 'Viewed' ? 3 : 0)))
+    if (!selectedLead) return []
+    const enquiryListingId = normalizeText(selectedLead?.listingId || selectedLead?.listing_id || selectedLead?.propertyId)
+    const linkedListing = (enquiryListingId && appointmentListingById.get(enquiryListingId)) || selectedLeadLinkedListing || null
+    const enquiryPrice = resolveLeadViewingPlannerPrice(selectedLead, linkedListing)
+    const priceFloor = enquiryPrice > 0 ? Math.max(0, enquiryPrice - VIEWING_PLANNER_PRICE_MATCH_TOLERANCE) : 0
+    const priceCeiling = enquiryPrice > 0 ? enquiryPrice + VIEWING_PLANNER_PRICE_MATCH_TOLERANCE : 0
+    const rowsById = new Map()
+    const getListingTitle = (listing = {}) => normalizeText(
+      listing?.title ||
+        listing?.sourceListing?.listingTitle ||
+        listing?.sourceListing?.title ||
+        listing?.sourceListing?.propertyName ||
+        listing?.sourceListing?.property_name ||
+        listing?.address ||
+        listing?.label,
+    )
+    const getListingArea = (listing = {}) => normalizeText(
+      listing?.suburb ||
+        listing?.sourceListing?.suburb ||
+        listing?.address ||
+        selectedLead?.areaInterest ||
+        selectedLeadPropertyLabel,
+    )
+    const addRecommendation = (listing = {}, options = {}) => {
+      const {
+        source = 'Suggested match',
+        planLabel = '',
+        index = 0,
+        syntheticId = '',
+      } = options
+      const id = normalizeText(listing?.id || listing?.listingId || listing?.listing_id || syntheticId)
+      if (!id || rowsById.has(id)) return
+      const priceAmount = resolveListingComparablePrice(listing)
+      const priceDifference = enquiryPrice > 0 && priceAmount > 0 ? Math.abs(priceAmount - enquiryPrice) : 0
+      const priceMatchScore = enquiryPrice > 0 && priceAmount > 0
+        ? Math.round(96 - Math.min(20, (priceDifference / VIEWING_PLANNER_PRICE_MATCH_TOLERANCE) * 20))
+        : selectedLeadBuyerMatchScore - index * 2
+      const match = planLabel === 'Original enquiry'
+        ? 100
+        : Math.max(72, Math.min(96, priceMatchScore + (source === 'Viewed' ? 3 : 0)))
       const sellerViewingAvailability = resolveSellerViewingAvailabilityFromListing(listing)
-      return {
-        id: normalizeText(option?.id || listing?.id) || `recommended-${index}`,
-        title: normalizeText(listing?.title || option?.label) || 'Recommended property',
-        area: normalizeText(listing?.suburb || selectedLead?.areaInterest || selectedLeadPropertyLabel) || 'Area pending',
-        price: Number(listing?.askingPrice || 0) > 0 ? formatCurrency(listing.askingPrice) : selectedLeadBuyerBudgetLabel,
-        bedrooms: Number(listing?.bedrooms || 0) || 3,
-        bathrooms: Number(listing?.bathrooms || 0) || 2,
-        parking: Number(listing?.parking || 0) || 2,
-        image: normalizeText(listing?.thumbnailUrl) || fallbackImages[index % fallbackImages.length],
+      rowsById.set(id, {
+        id,
+        title: getListingTitle(listing) || normalizeText(selectedLead?.enquiredPropertyTitle || selectedLead?.enquired_property_title || selectedLead?.propertyInterest || selectedLead?.property_interest) || 'Recommended property',
+        area: getListingArea(listing) || 'Area pending',
+        price: priceAmount > 0 ? formatCurrency(priceAmount) : selectedLeadBuyerBudgetLabel,
+        priceAmount,
+        priceDifference,
+        bedrooms: Number(listing?.bedrooms || listing?.sourceListing?.bedrooms || listing?.sourceListing?.propertyDetails?.bedrooms || 0) || 0,
+        bathrooms: Number(listing?.bathrooms || listing?.sourceListing?.bathrooms || listing?.sourceListing?.propertyDetails?.bathrooms || 0) || 0,
+        parking: Number(listing?.parking || listing?.sourceListing?.parking || listing?.sourceListing?.garages || listing?.sourceListing?.propertyDetails?.garages || 0) || 0,
+        image: resolveListingImageUrl(listing),
         match,
-        source: normalizeText(option?.source) || 'Recommended',
+        source,
+        planLabel,
         sellerName: resolveSellerNameFromListing(listing),
         sellerEmail: resolveSellerEmailFromListing(listing),
         sellerPhone: resolveSellerPhoneFromListing(listing),
@@ -15802,35 +15930,99 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         sellerViewingAccessInstructions: sellerViewingAvailability.accessInstructions,
         sellerViewingNoticePeriod: sellerViewingAvailability.noticePeriod,
         sellerViewingNoticeRequired: sellerViewingAvailability.noticeRequired,
-      }
+      })
+    }
+
+    if (linkedListing) {
+      addRecommendation(linkedListing, { source: 'Lead', planLabel: 'Original enquiry' })
+    } else if (
+      enquiryListingId ||
+      selectedLead?.enquiredPropertyTitle ||
+      selectedLead?.enquired_property_title ||
+      selectedLead?.enquiredPropertyAddress ||
+      selectedLead?.enquired_property_address ||
+      enquiryPrice > 0
+    ) {
+      addRecommendation(
+        {
+          id: enquiryListingId || `lead-enquiry-${normalizeText(selectedLead?.leadId || selectedLead?.id) || 'property'}`,
+          title: normalizeText(selectedLead?.enquiredPropertyTitle || selectedLead?.enquired_property_title || selectedLead?.propertyInterest || selectedLead?.property_interest),
+          address: normalizeText(selectedLead?.enquiredPropertyAddress || selectedLead?.enquired_property_address || selectedLead?.sellerPropertyAddress || selectedLead?.seller_property_address),
+          suburb: normalizeText(selectedLead?.suburb || selectedLead?.areaInterest),
+          askingPrice: enquiryPrice,
+          bedrooms: Number(selectedLead?.bedrooms || 0) || 0,
+          bathrooms: Number(selectedLead?.bathrooms || 0) || 0,
+          parking: Number(selectedLead?.parking || 0) || 0,
+        },
+        { source: 'Lead', planLabel: 'Original enquiry' },
+      )
+    }
+
+    const explicitInterestIds = new Set(
+      leadAppointmentOfferListingOptions
+        .filter((option) => ['Viewed', 'Lead interest'].includes(normalizeText(option?.source)))
+        .map((option) => normalizeText(option?.id))
+        .filter(Boolean),
+    )
+    const priceMatchedListings = appointmentListingOptions
+      .filter((listing) => {
+        const id = normalizeText(listing?.id || listing?.listingId || listing?.listing_id)
+        if (!id || id === enquiryListingId) return false
+        const priceAmount = resolveListingComparablePrice(listing)
+        if (enquiryPrice <= 0) return explicitInterestIds.has(id)
+        return priceAmount >= priceFloor && priceAmount <= priceCeiling
+      })
+      .sort((left, right) => {
+        const leftPrice = resolveListingComparablePrice(left)
+        const rightPrice = resolveListingComparablePrice(right)
+        const leftDelta = enquiryPrice > 0 ? Math.abs(leftPrice - enquiryPrice) : 0
+        const rightDelta = enquiryPrice > 0 ? Math.abs(rightPrice - enquiryPrice) : 0
+        if (leftDelta !== rightDelta) return leftDelta - rightDelta
+        return getListingTitle(left).localeCompare(getListingTitle(right))
+      })
+
+    priceMatchedListings.forEach((listing, index) => {
+      const source = explicitInterestIds.has(normalizeText(listing?.id)) ? 'Lead interest' : 'Price band match'
+      addRecommendation(listing, { source, index })
     })
+
+    return Array.from(rowsById.values())
   }, [
     appointmentListingById,
     appointmentListingOptions,
     leadAppointmentOfferListingOptions,
-    selectedLead?.areaInterest,
+    selectedLead,
     selectedLeadBuyerBudgetLabel,
     selectedLeadBuyerMatchScore,
+    selectedLeadLinkedListing,
     selectedLeadPropertyLabel,
   ])
 
   const selectedLeadViewingPlanProperties = useMemo(() => {
     const enquiryListingId = normalizeText(selectedLead?.listingId || selectedLead?.propertyId)
     const ordered = [...selectedLeadBuyerRecommendations].sort((left, right) => {
+      const leftIsOriginalLabel = left?.planLabel === 'Original enquiry'
+      const rightIsOriginalLabel = right?.planLabel === 'Original enquiry'
+      if (leftIsOriginalLabel && !rightIsOriginalLabel) return -1
+      if (!leftIsOriginalLabel && rightIsOriginalLabel) return 1
       const leftIsOriginal = enquiryListingId && normalizeText(left?.id) === enquiryListingId
       const rightIsOriginal = enquiryListingId && normalizeText(right?.id) === enquiryListingId
       if (leftIsOriginal && !rightIsOriginal) return -1
       if (!leftIsOriginal && rightIsOriginal) return 1
+      if ((left?.priceDifference || 0) !== (right?.priceDifference || 0)) return (left?.priceDifference || 0) - (right?.priceDifference || 0)
       return 0
     })
-    return ordered.slice(0, 4).map((property, index) => ({
-      ...property,
-      planLabel: enquiryListingId && normalizeText(property?.id) === enquiryListingId
-        ? 'Original enquiry'
-        : index === 0
-          ? 'Primary match'
-          : 'Suggested match',
-    }))
+    return ordered.map((property, index) => {
+      const isOriginalEnquiry = property?.planLabel === 'Original enquiry' || (enquiryListingId && normalizeText(property?.id) === enquiryListingId)
+      return {
+        ...property,
+        planLabel: isOriginalEnquiry
+          ? 'Original enquiry'
+          : index === 0
+            ? 'Primary match'
+            : 'Suggested match',
+      }
+    })
   }, [selectedLead?.listingId, selectedLead?.propertyId, selectedLeadBuyerRecommendations])
 
   useEffect(() => {
@@ -15882,15 +16074,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }, [selectedLead, selectedLeadIsSeller, selectedLeadViewingPlanProperties])
 
   const selectedLeadOfferPropertyOptions = useMemo(() => {
-    const fallbackImages = [
-      'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=900&q=80',
-      'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=900&q=80',
-      'https://images.unsplash.com/photo-1600566753190-17f0baa2a6c3?auto=format&fit=crop&w=900&q=80',
-      'https://images.unsplash.com/photo-1600047509807-ba8f99d2cdde?auto=format&fit=crop&w=900&q=80',
-    ]
     const byId = new Map()
     const viewedListingIds = new Set(selectedLeadViewingAppointments.map((appointment) => normalizeText(appointment?.listingId)).filter(Boolean))
-    const addProperty = (raw = {}, source = 'Matched property', index = 0) => {
+    const addProperty = (raw = {}, source = 'Matched property') => {
       const id = normalizeText(raw?.id || raw?.listingId)
       if (!id || byId.has(id)) return
       const listing = appointmentListingById.get(id) || raw || {}
@@ -15913,7 +16099,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         bathrooms: Number(listing?.bathrooms || recommendation?.bathrooms || 0) || 0,
         parking: Number(listing?.parking || recommendation?.parking || 0) || 0,
         sizeLabel: normalizeText(listing?.erfSize || listing?.floorSize || listing?.propertySize || raw?.erfSize || raw?.floorSize) || 'Size pending',
-        image: normalizeText(listing?.thumbnailUrl || recommendation?.image) || fallbackImages[index % fallbackImages.length],
+        image: resolveListingImageUrl(listing) || normalizeText(recommendation?.image),
         match: Number(recommendation?.match || raw?.match || selectedLeadBuyerMatchScore || 0) || 0,
         source: sourceLabel,
         updatedAt: listing?.updatedAt || raw?.updatedAt || '',
@@ -31901,7 +32087,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                                 aria-pressed={isSelected}
                                               >
                                                 <span className="relative block aspect-[16/9] w-full overflow-hidden rounded-[14px] bg-[#edf4fb]">
-                                                  <img src={property.image} alt={property.title} className="h-full w-full object-cover" />
+                                                  <ViewingPlannerPropertyImage src={property.image} alt={property.title} className="h-full w-full object-cover" />
                                                   <span className={`absolute left-2 top-2 grid h-7 w-7 place-items-center rounded-[8px] border ${isSelected ? 'border-[#157a4d] bg-[#157a4d] text-white' : 'border-[#cbd8e6] bg-white text-[#9aa9b8]'}`}>
                                                     {isSelected ? <CheckCircle2 className="h-4 w-4" /> : null}
                                                   </span>
@@ -31939,7 +32125,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                                 aria-pressed={isSelected}
                                               >
                                                 <span className="relative h-28 overflow-hidden rounded-[10px] bg-[#edf4fb] sm:h-full">
-                                                  <img src={property.image} alt={property.title} className="h-full w-full object-cover" />
+                                                  <ViewingPlannerPropertyImage src={property.image} alt={property.title} className="h-full w-full object-cover" />
                                                   <span className={`absolute left-2 top-2 grid h-6 w-6 place-items-center rounded-[7px] border ${isSelected ? 'border-[#157a4d] bg-[#157a4d] text-white' : 'border-[#cbd8e6] bg-white text-[#9aa9b8]'}`}>
                                                     {isSelected ? <CheckCircle2 className="h-3.5 w-3.5" /> : null}
                                                   </span>
@@ -31984,12 +32170,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                     </label>
                                     <div className="mt-6 space-y-3">
                                       <p className="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[#526a85]">Viewing schedule</p>
-                                      {viewingPlannerScheduleRows.map((row, index) => {
+                                      {viewingPlannerScheduleRows.map((row) => {
                                         const propertyId = normalizeText(row.property?.id)
                                         return (
                                           <article key={`schedule-${propertyId}`} className="grid w-full gap-5 rounded-[16px] border border-[#dce7f2] bg-[#fbfdff] p-4 xl:grid-cols-[minmax(280px,0.8fr)_minmax(520px,1.2fr)] xl:items-center">
                                             <div className="flex min-w-0 items-center gap-3">
-                                              <img src={row.property.image} alt="" className="h-16 w-16 rounded-[12px] object-cover" />
+                                              <ViewingPlannerPropertyImage src={row.property.image} alt="" className="h-16 w-16 rounded-[12px] object-cover" />
                                               <div className="min-w-0">
                                                 <p className="truncate text-base font-semibold text-[#07162d]" title={row.property.title}>{row.property.title}</p>
                                                 <p className="mt-1 truncate text-sm text-[#526a85]" title={row.property.area}>{row.property.area || 'Area pending'}</p>
@@ -32140,7 +32326,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               ) : null}
                             </section>
 
-                            {false ? (
+                            {showLegacyViewingPlanWorkspace ? (
                             <section className="rounded-[20px] border border-[#dce7f2] bg-white p-4 shadow-[0_12px_34px_rgba(31,54,78,0.045)] sm:p-5">
                               <div className="flex flex-wrap items-start justify-between gap-4">
 	                                <div className="min-w-[220px]">
@@ -32219,7 +32405,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                                 aria-pressed={isSelected}
                                               >
                                                 <span className="relative h-32 overflow-hidden rounded-[10px] bg-[#edf4fb] sm:h-full">
-                                                  <img src={property.image} alt={property.title} className="h-full w-full object-cover" />
+                                                  <ViewingPlannerPropertyImage src={property.image} alt={property.title} className="h-full w-full object-cover" />
                                                   <span className={`absolute left-2 top-2 grid h-7 w-7 place-items-center rounded-full border text-[0.65rem] ${isSelected ? 'border-white/80 bg-[#157a4d] text-white shadow-sm' : 'border-white/80 bg-white/90 text-[#7d93aa]'}`}>
                                                     {isSelected ? <CheckCircle2 className="h-4 w-4" /> : <span className="sr-only">Not selected</span>}
                                                   </span>
@@ -32508,7 +32694,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                                      <div className="mt-3 space-y-2">
                                         {viewingPlanConfirmedProperties.map((property) => (
                                           <article key={`seller-card-${property.id}`} className="grid min-w-0 grid-cols-[52px_minmax(0,1fr)_auto] items-center gap-3 rounded-[12px] border border-[#e4edf6] bg-white p-2.5">
-                                            <img src={property.image} alt="" className="h-12 w-12 rounded-[10px] object-cover" />
+                                            <ViewingPlannerPropertyImage src={property.image} alt="" className="h-12 w-12 rounded-[10px] object-cover" />
                                             <div className="min-w-0">
                                               <p className="truncate text-sm font-semibold text-[#102033]" title={property.title}>{property.title}</p>
                                               <p className="mt-0.5 truncate text-xs text-[#60758b]" title={property.sellerEmail || property.area}>
@@ -32595,7 +32781,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                                   className={`grid w-full min-w-0 grid-cols-[52px_minmax(0,1fr)_auto] items-center gap-3 rounded-[12px] border p-2.5 text-left transition ${isActive ? 'border-[#b9dbc9] bg-white shadow-[0_8px_22px_rgba(21,122,77,0.08)]' : 'border-[#edf3f8] bg-white hover:border-[#cbdbea]'}`}
                                                   onClick={() => setViewingPlanBookingPropertyId(propertyId)}
                                                 >
-                                                  <img src={property.image} alt="" className="h-12 w-12 rounded-[10px] object-cover" />
+                                                  <ViewingPlannerPropertyImage src={property.image} alt="" className="h-12 w-12 rounded-[10px] object-cover" />
                                                   <span className="min-w-0">
                                                     <span className="block truncate text-sm font-semibold text-[#102033]" title={property.title}>{property.title}</span>
                                                     <span className="mt-0.5 block truncate text-xs text-[#60758b]">{property.area || property.price || 'Viewing property'}</span>
@@ -32648,7 +32834,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
                                           {viewingPlannerSelectedPreviewProperties.map((property) => (
                                             <div key={`selected-tray-${property.id}`} className="grid min-w-[138px] max-w-[180px] grid-cols-[36px_minmax(0,1fr)] items-center gap-2 rounded-[10px] border border-[#e3ecf5] bg-[#fbfdff] p-1.5">
-                                              <img src={property.image} alt="" className="h-9 w-9 rounded-[8px] object-cover" />
+                                              <ViewingPlannerPropertyImage src={property.image} alt="" className="h-9 w-9 rounded-[8px] object-cover" />
                                               <span className="min-w-0">
                                                 <span className="block truncate text-xs font-semibold text-[#20364c]" title={property.title}>{property.title}</span>
                                                 <span className="block truncate text-[0.66rem] text-[#7c91a8]">{property.area || property.price || 'Viewing property'}</span>
@@ -32701,7 +32887,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                   {selectedLeadBuyerRecommendations.slice(0, 5).map((property) => (
                                     <article key={property.id} className="flex min-w-0 flex-col overflow-hidden rounded-[16px] border border-[#e0e8f2] bg-white">
                                       <div className="relative aspect-[4/3] overflow-hidden bg-[#edf4fb]">
-                                        <img src={property.image} alt={property.title} className="h-full w-full object-cover" />
+                                        <ViewingPlannerPropertyImage src={property.image} alt={property.title} className="h-full w-full object-cover" />
                                         <span className="absolute left-3 top-3 rounded-full bg-white/95 px-2.5 py-1 text-[12px] font-semibold text-[#17643a] shadow-sm">{property.match}% Match</span>
                                       </div>
                                       <div className="flex flex-1 flex-col p-4">
@@ -32794,7 +32980,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                             aria-pressed={isSelected}
                                           >
                                             <span className="relative h-[72px] overflow-hidden rounded-[10px] bg-[#edf4fb]">
-                                              <img src={property.image} alt={property.title} className="h-full w-full object-cover" />
+                                              <ViewingPlannerPropertyImage src={property.image} alt={property.title} className="h-full w-full object-cover" />
                                               <span className={`absolute left-2 top-2 grid h-5 w-5 place-items-center rounded-full border text-[0.65rem] ${isSelected ? 'border-[#157a4d] bg-[#157a4d] text-white' : 'border-white/80 bg-white/90 text-[#7d93aa]'}`}>
                                                 {isSelected ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
                                               </span>
@@ -32929,7 +33115,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                         {viewingPlanConfirmedProperties.length ? (
                                           viewingPlanConfirmedProperties.map((property) => (
                                             <div key={`seller-coordinate-${property.id}`} className="grid min-w-0 grid-cols-[52px_minmax(0,1fr)] gap-3 rounded-[12px] border border-[#edf3f8] bg-[#fbfdff] p-2.5">
-                                              <img src={property.image} alt="" className="h-12 w-12 rounded-[10px] object-cover" />
+                                              <ViewingPlannerPropertyImage src={property.image} alt="" className="h-12 w-12 rounded-[10px] object-cover" />
                                               <div className="min-w-0">
                                                 <p className="truncate text-sm font-semibold text-[#102033]" title={property.title}>{property.title}</p>
                                                 <p className="mt-0.5 truncate text-xs text-[#60758b]" title={property.sellerEmail || property.area}>
@@ -33020,7 +33206,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                                 className={`grid w-full min-w-0 grid-cols-[52px_minmax(0,1fr)_auto] items-center gap-3 rounded-[12px] border p-2.5 text-left transition ${isActive ? 'border-[#b9dbc9] bg-white shadow-[0_8px_22px_rgba(21,122,77,0.08)]' : 'border-[#edf3f8] bg-white hover:border-[#cbdbea]'}`}
                                                 onClick={() => setViewingPlanBookingPropertyId(propertyId)}
                                               >
-                                                <img src={property.image} alt="" className="h-12 w-12 rounded-[10px] object-cover" />
+                                                <ViewingPlannerPropertyImage src={property.image} alt="" className="h-12 w-12 rounded-[10px] object-cover" />
                                                 <span className="min-w-0">
                                                   <span className="block truncate text-sm font-semibold text-[#102033]" title={property.title}>{property.title}</span>
                                                   <span className="mt-0.5 block truncate text-xs text-[#60758b]">{property.area || property.price || 'Viewing property'}</span>
@@ -33108,7 +33294,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                   <div className="mt-4 space-y-2">
                                     {viewingPlanSelectedProperties.slice(0, 3).map((property) => (
                                       <div key={property.id} className="flex items-center gap-2 rounded-[12px] bg-white px-2.5 py-2 ring-1 ring-[#edf3f8]">
-                                        <img src={property.image} alt="" className="h-9 w-9 rounded-[9px] object-cover" />
+                                        <ViewingPlannerPropertyImage src={property.image} alt="" className="h-9 w-9 rounded-[9px] object-cover" />
                                         <div className="min-w-0">
                                           <p className="truncate text-xs font-semibold text-[#20364c]">{property.title}</p>
                                           <p className="truncate text-[0.68rem] text-[#7c91a8]">{property.price}</p>
@@ -33751,7 +33937,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         {selectedLeadBuyerRecommendations.map((property) => (
                           <article key={property.id} className="overflow-hidden rounded-[16px] border border-[#e0e8f2] bg-white shadow-[0_10px_22px_rgba(31,54,78,0.045)]">
                             <div className="relative aspect-[4/3] overflow-hidden bg-[#edf4fb]">
-                              <img src={property.image} alt={property.title} className="h-full w-full object-cover" />
+                              <ViewingPlannerPropertyImage src={property.image} alt={property.title} className="h-full w-full object-cover" />
                               <span className="absolute left-3 top-3 rounded-full bg-white/95 px-2.5 py-1 text-[12px] font-semibold text-[#17643a] shadow-sm">
                                 {property.match}% Match
                               </span>
@@ -36166,7 +36352,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       isSelected ? 'border-[#0b63f6] ring-2 ring-[#d9e8ff]' : 'border-[#dfe9f4]'
                     }`}
                   >
-                    <img src={property.image} alt="" className="h-[104px] w-full rounded-[14px] object-cover" />
+                    <ViewingPlannerPropertyImage src={property.image} alt="" className="h-[104px] w-full rounded-[14px] object-cover" />
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="rounded-full bg-[#eef5ff] px-2.5 py-1 text-[0.68rem] font-semibold text-[#0b63f6]">{property.source}</span>

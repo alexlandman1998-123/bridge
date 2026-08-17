@@ -27601,41 +27601,6 @@ async function promoteMandateTransferAttorneyAllocationToInstruction(
   return { updatedCount, transactionId, listingId, instructedAt }
 }
 
-async function sendBuyerRoleplayerIntroEmailForOnboarding(client, { transaction, buyer = null } = {}) {
-  const transactionId = normalizeTextValue(transaction?.id || transaction?.transaction_id)
-  const buyerEmail = normalizeTextValue(
-    buyer?.email || transaction?.buyer_email || transaction?.buyerEmail || '',
-  ).toLowerCase()
-  if (!transactionId || !buyerEmail) {
-    return { skipped: true, reason: 'missing_transaction_or_buyer_email' }
-  }
-
-  const { data, error } = await invokeEdgeFunction('send-email', {
-    client,
-    body: {
-      type: 'transaction_roleplayer_intro',
-      transactionId,
-      to: buyerEmail,
-      recipientName: normalizeTextValue(buyer?.name || transaction?.buyer_name || transaction?.buyerName || ''),
-      source: 'client_onboarding_submitted',
-      resend: false,
-    },
-  })
-
-  if (error) throw error
-  if (data?.ok === false || data?.error) {
-    throw new Error(data?.error || data?.message || 'Unable to send buyer roleplayer introduction.')
-  }
-  return (
-    data || {
-      ok: true,
-      type: 'transaction_roleplayer_intro',
-      transactionId,
-      recipientEmail: buyerEmail,
-    }
-  )
-}
-
 async function sendRoleplayerHandoffEmailForOnboarding(client, { transactionId } = {}) {
   const normalizedTransactionId = normalizeNullableUuid(transactionId)
   if (!normalizedTransactionId) {
@@ -40396,15 +40361,15 @@ async function notifyTransactionOwnerOnOnboardingSubmitted(
     normalizeTextValue(transactionReference) || normalizeTextValue(ownerQuery.data?.transaction_reference)
 
   const message = propertyLine
-    ? `Client ${resolvedBuyerName} buying ${propertyLine} has completed the onboarding. Prepare their OTP and upload it to the transaction.`
-    : `Client ${resolvedBuyerName} has completed the onboarding. Prepare their OTP and upload it to the transaction.`
+    ? `Client ${resolvedBuyerName} buying ${propertyLine} has submitted the onboarding. Prepare their OTP and upload it to the transaction.`
+    : `Client ${resolvedBuyerName} has submitted the onboarding. Prepare their OTP and upload it to the transaction.`
 
   return createTransactionNotificationIfPossible(client, {
     transactionId,
     userId: ownerUserId,
     roleType: ownerRoleType,
     notificationType: 'readiness_updated',
-    title: 'Onboarding Completed',
+    title: 'Buyer Onboarding Submitted',
     message,
     eventType: 'TransactionUpdated',
     eventData: {
@@ -41097,7 +41062,7 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
       transactionId: transaction.id,
       authorName: 'Arch9 System',
       authorRole: 'internal_admin',
-      commentText: `[system] Buyer onboarding completed. ${otpPendingState?.nextAction || 'Signed OTP is required before finance or attorney handoff.'}`,
+      commentText: `[system] Buyer onboarding submitted. ${otpPendingState?.nextAction || 'Prepare the OTP before finance or attorney handoff.'}`,
       unitId: transaction.unit_id || null,
       client,
     }).catch((discussionError) => {
@@ -41127,8 +41092,8 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
       await notifyRolesForTransaction(client, {
         transactionId: transaction.id,
         roleTypes: ['agent', 'developer'],
-        title: 'Signed OTP required',
-        message: otpPendingState?.nextAction || 'Signed OTP is required before finance or attorney handoff.',
+        title: 'Prepare OTP',
+        message: otpPendingState?.nextAction || 'Buyer onboarding has been submitted. Prepare the OTP before finance or attorney handoff.',
         notificationType: 'readiness_updated',
         eventType: 'TransactionUpdated',
         eventData: {
@@ -41141,20 +41106,6 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
       })
     } catch (otpNotificationError) {
       console.warn('OTP pending notification failed', otpNotificationError)
-    }
-
-    try {
-      await sendBuyerRoleplayerIntroEmailForOnboarding(client, {
-        transaction: {
-          ...transaction,
-          finance_type: financeSnapshot.financeType || transaction.finance_type,
-          buyer_email: buyer?.email || null,
-          buyer_name: buyer?.name || null,
-        },
-        buyer,
-      })
-    } catch (roleplayerIntroError) {
-      console.warn('Buyer roleplayer introduction email failed', roleplayerIntroError)
     }
   }
 

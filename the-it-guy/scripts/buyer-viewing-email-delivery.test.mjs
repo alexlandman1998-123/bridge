@@ -36,6 +36,13 @@ assert.match(pageSource, />\s*Back\s*<\/Button>/, 'planner should expose a simpl
 assert.doesNotMatch(pageSource, /Edit selected properties/, 'planner should not use the old edit-selected-properties copy')
 assert.match(pageSource, /data-testid="buyer-submitted-viewing-times"[\s\S]*data-testid="simplified-viewing-planner"/, 'planner should show buyer-submitted viewing times above Viewing Planner')
 assert.match(pageSource, /Buyer submitted 3 preferred options/, 'planner should surface the three buyer-submitted preferred viewing options')
+assert.match(pageSource, /const VIEWING_PLANNER_PRICE_MATCH_TOLERANCE = 500000/, 'planner should keep suggested listings within the R500k price class')
+assert.match(pageSource, /raw\.match\(\/\\d\[\\d\\s\.,\]\*\//, 'price matching should parse formatted currency values with thousands separators')
+assert.match(pageSource, /priceAmount >= priceFloor && priceAmount <= priceCeiling/, 'planner suggestions should filter active listings to the enquiry price band')
+assert.match(pageSource, /resolveListingImageUrl\(listing\)/, 'planner cards should use real listing image fields')
+assert.match(pageSource, /ViewingPlannerPropertyImage/, 'planner should render a neutral placeholder when real listing media is missing')
+assert.doesNotMatch(pageSource, /images\.unsplash\.com\/photo-1600/, 'planner should not use hard-coded stock listing images')
+assert.doesNotMatch(pageSource, /return ordered\.slice\(0,\s*4\)/, 'planner should not cap suggested price-band matches to four properties')
 
 assert.match(sendEmailIndexSource, /handleBuyerViewingAvailabilityRequestEmail/, 'send-email router should import the buyer viewing handler')
 assert.match(sendEmailIndexSource, /buyer_viewing_availability_request/, 'send-email router should route the buyer viewing template')

@@ -463,6 +463,9 @@ export function buildAgentPerformanceModel({
     const key = getAgentKeys(bucket)[0]
     leadCount.set(key, (leadCount.get(key) || 0) + 1)
     bucket.performance.totalLeads += 1
+    if (isOpenLead(lead)) {
+      bucket.performance.pipelineValue += getOpportunityValue(lead)
+    }
     if (isOtpLead(lead)) {
       convertedLeadCount.set(key, (convertedLeadCount.get(key) || 0) + 1)
       bucket.performance.otpSignedCount += 1
@@ -473,7 +476,6 @@ export function buildAgentPerformanceModel({
     }
     if (isWithinRange(getLeadDate(lead), range)) {
       bucket.performance.totalOpportunities += 1
-      bucket.performance.pipelineValue += getOpportunityValue(lead)
     }
   }
 

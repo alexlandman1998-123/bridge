@@ -1087,6 +1087,19 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
     setDeveloperAccess((previous) => ({ ...previous, [key]: value }))
   }
 
+  function hasDeveloperAccessDraft() {
+    if (!isAgentContext) return false
+    if (developerAccess.mode === 'invite') {
+      return [
+        developerAccess.inviteCompanyName,
+        developerAccess.inviteContactName,
+        developerAccess.inviteEmail,
+        developerAccess.invitePhone,
+      ].some((value) => String(value || '').trim())
+    }
+    return Boolean(String(developerAccess.selectedDeveloperId || '').trim())
+  }
+
   function handleSelectDeveloper(value) {
     const selectedId = String(value || '').trim()
     const selected = developerOptions.find((item) => String(item?.id || '').trim() === selectedId) || null
@@ -1102,6 +1115,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
 
   function buildDeveloperTeamFromAccess() {
     if (!isAgentContext) return []
+    if (!hasDeveloperAccessDraft()) return []
 
     if (developerAccess.mode === 'invite') {
       const inviteToken = createInviteToken('dev')
@@ -1186,7 +1200,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
       if (!details.address.trim() && !details.suburb.trim() && !details.city.trim()) {
         throw new Error('Add at least a street address, suburb, or city for the development.')
       }
-      if (isAgentContext) {
+      if (isAgentContext && hasDeveloperAccessDraft()) {
         if (developerAccess.mode === 'invite') {
           if (
             !String(developerAccess.inviteCompanyName || '').trim() ||
@@ -1195,8 +1209,6 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
           ) {
             throw new Error('Developer company name, contact name, and email are required for new developer invites.')
           }
-        } else if (!String(developerAccess.selectedDeveloperId || '').trim()) {
-          throw new Error('Select an existing developer profile before continuing.')
         }
       }
     }
@@ -1268,7 +1280,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
       const commissionType = primaryBondOriginator?.commission_type || legal.commission_type || 'purchase_price'
       const commissionPercentage = normalizeOptionalNumber(primaryBondOriginator?.commission_percentage ?? legal.commission_percentage)
       const developerTeam = buildDeveloperTeamFromAccess()
-      const resolvedDeveloperCompany = isAgentContext
+      const resolvedDeveloperCompany = isAgentContext && hasDeveloperAccessDraft()
         ? (developerAccess.mode === 'invite'
             ? String(developerAccess.inviteCompanyName || '').trim()
             : String(developerAccess.selectedDeveloperCompany || '').trim()) || effectiveDetails.developerCompany
@@ -1629,8 +1641,8 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
               {isAgentContext ? (
                 <div className="mt-5 space-y-4 rounded-[20px] border border-[#dbe6f2] bg-[#f8fbff] p-4">
                   <div>
-                    <h5 className="text-sm font-semibold text-[#142132]">Developer Access (Required)</h5>
-                    <p className="mt-1 text-sm text-[#6b7d93]">Link an existing developer profile or invite a new developer to access this development workspace.</p>
+                    <h5 className="text-sm font-semibold text-[#142132]">Developer Access</h5>
+                    <p className="mt-1 text-sm text-[#6b7d93]">Optionally link an existing developer profile or invite a new developer when they are ready to access this development workspace.</p>
                   </div>
 
                   <div className="grid gap-3 md:grid-cols-2">

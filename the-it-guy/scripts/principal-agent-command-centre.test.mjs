@@ -255,6 +255,59 @@ function buildModel(overrides = {}) {
 }
 
 {
+  const rangeNow = new Date('2026-08-17T08:00:00.000Z')
+  const rangeSensitiveAgent = {
+    id: 'range-agent',
+    name: 'Range Agent',
+    email: 'range-agent@test.com',
+    role: 'agent',
+    status: 'active',
+    organisationId: 'agency-a',
+    branchId: 'benoni',
+  }
+  const sharedInput = {
+    principalId: 'principal-a',
+    organisationId: 'agency-a',
+    branchId: 'all',
+    agents: [rangeSensitiveAgent],
+    branches,
+    leads: [
+      {
+        id: 'range-lead',
+        assignedAgentId: 'range-agent',
+        status: 'Lead',
+        budget: 1200000,
+        createdAt: '2026-07-25T08:00:00.000Z',
+      },
+    ],
+    listings: [
+      {
+        id: 'range-listing',
+        assignedAgentId: 'range-agent',
+        status: 'active',
+        price: 3400000,
+        updatedAt: '2026-08-15T08:00:00.000Z',
+      },
+    ],
+    now: rangeNow,
+  }
+  const agentsPageModel = getPrincipalAgentCommandCentre({
+    ...sharedInput,
+    filters: { dateRange: 'last_30_days', rankingMetric: 'pipelineValue', sortBy: 'pipeline' },
+  })
+  const detailModel = getPrincipalAgentDetailCommandCentre({
+    agent: rangeSensitiveAgent,
+    branches,
+    leads: sharedInput.leads,
+    listings: sharedInput.listings,
+    now: rangeNow,
+  })
+  const agentsPagePipeline = agentsPageModel.agentsTable[0]?.performance.pipelineValue
+  assert.equal(agentsPagePipeline, 4600000, 'agents page pipeline should include current open lead and listing value')
+  assert.equal(detailModel.pipelineHealth.pipelineValue, agentsPagePipeline, 'agent detail pipeline should not drop open lead value because it uses month-to-date metrics')
+}
+
+{
   const model = getPrincipalAgentCommandCentre({
     principalId: 'principal-a',
     organisationId: 'agency-a',
