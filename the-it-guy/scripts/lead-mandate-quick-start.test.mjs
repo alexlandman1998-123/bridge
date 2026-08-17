@@ -203,8 +203,9 @@ assert.ok(
 )
 assert.ok(
   source.includes('selectedLeadWorkspaceRouteHydrating') &&
+    source.includes("routeLeadHydrationStatus === 'loading' && !selectedLead") &&
     source.includes('selectedLead && !selectedLeadWorkspaceRouteHydrating'),
-  'Direct lead routes should not render seller journey cards from partial CRM data while route hydration is loading.',
+  'Direct lead routes should keep hydrated lead content mounted during background route hydration.',
 )
 assert.ok(
   source.includes('activateSellerPortalForListing') &&

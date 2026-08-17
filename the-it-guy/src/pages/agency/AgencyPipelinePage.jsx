@@ -13059,7 +13059,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       : selectedLeadRecord,
     [isLeadWorkspaceRoute, routeLeadSnapshotLead, selectedLeadRecord],
   )
-  const selectedLeadWorkspaceRouteHydrating = Boolean(isLeadWorkspaceRoute && routeLeadId && routeLeadHydrationStatus === 'loading')
+  const selectedLeadWorkspaceRouteHydrating = Boolean(isLeadWorkspaceRoute && routeLeadId && routeLeadHydrationStatus === 'loading' && !selectedLead)
 
   useEffect(() => {
     if (!isLeadWorkspaceRoute || !organisationId || !selectedLead) return
