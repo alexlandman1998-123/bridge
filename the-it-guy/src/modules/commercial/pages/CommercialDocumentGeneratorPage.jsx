@@ -1,4 +1,4 @@
-import { Building2, CheckCircle2, ChevronRight, FileText, Layers3, Plus, Save, Sparkles } from 'lucide-react'
+import { Building2, CheckCircle2, ChevronRight, FileText, Plus, Save, Sparkles } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import CommercialEmptyState from '../components/CommercialEmptyState'
@@ -503,10 +503,6 @@ function CommercialDocumentGeneratorPage() {
               <Link to="/commercial/documents" className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-[#102236] transition hover:bg-slate-50">
                 <FileText size={16} />
                 Document Centre
-              </Link>
-              <Link to="/commercial/settings/document-templates" className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-[#102236] transition hover:bg-slate-50">
-                <Layers3 size={16} />
-                Templates
               </Link>
             </div>
           </div>

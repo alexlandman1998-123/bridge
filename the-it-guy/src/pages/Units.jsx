@@ -1036,7 +1036,7 @@ function Units() {
             developmentId: filters.developmentId === 'all' ? null : filters.developmentId,
             stage: filters.stage,
             financeType: filters.financeType,
-            activeTransactionsOnly: false,
+            activeTransactionsOnly: true,
           })
           unitsData = principalTransactions || []
           options = (unitsData || [])

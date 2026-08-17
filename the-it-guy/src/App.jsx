@@ -1631,15 +1631,7 @@ function AppRoutes() {
                 <Route path="settings/bulk-upload" element={<CommercialManagerRouteGate><CommercialBulkUploadSettingsPage /></CommercialManagerRouteGate>} />
                 <Route
                   path="settings/document-templates"
-                  element={
-                    <SettingsSigningTemplatesPage
-                      templateModuleType="commercial"
-                      allowedPacketTypes={['commercial_sale', 'commercial_lease']}
-                      title="Commercial Document Builder"
-                      eyebrow="Commercial / Documents"
-                      description="Create, preview, send, and manage commercial sale and lease documents."
-                    />
-                  }
+                  element={<Navigate to="/commercial/settings" replace />}
                 />
                 <Route path="*" element={<Navigate to="/commercial" replace />} />
               </Route>

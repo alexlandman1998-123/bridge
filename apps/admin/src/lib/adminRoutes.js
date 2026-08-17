@@ -2,6 +2,7 @@ import { ADMIN_LEVELS } from './adminAccess.js'
 
 export const ADMIN_NAV_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', levels: [ADMIN_LEVELS.EXECUTIVE] },
+  { id: 'inboundLeads', label: 'Inbound Leads', levels: [ADMIN_LEVELS.EXECUTIVE, ADMIN_LEVELS.CUSTOMER_SUPPORT] },
   { id: 'organisations', label: 'Organisations', levels: [ADMIN_LEVELS.EXECUTIVE] },
   { id: 'transactions', label: 'Transactions', levels: [ADMIN_LEVELS.EXECUTIVE] },
   { id: 'users', label: 'Users', levels: [ADMIN_LEVELS.EXECUTIVE] },
@@ -21,6 +22,7 @@ export function getAllowedAdminViews(level = '') {
 
 export function getViewFromPath(pathname = '', level = '') {
   const path = String(pathname || '')
+  if (path.includes('/admin/inbound-leads')) return 'inboundLeads'
   if (path.includes('/admin/organisations')) return 'organisations'
   if (path.includes('/admin/transactions')) return 'transactions'
   if (path.includes('/admin/users')) return 'users'
@@ -32,6 +34,7 @@ export function getViewFromPath(pathname = '', level = '') {
 }
 
 export function pathForView(viewId = 'dashboard') {
+  if (viewId === 'inboundLeads') return '/admin/inbound-leads'
   if (viewId === 'organisations') return '/admin/organisations'
   if (viewId === 'transactions') return '/admin/transactions'
   if (viewId === 'users') return '/admin/users'

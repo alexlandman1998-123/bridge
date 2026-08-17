@@ -16485,16 +16485,60 @@ async function hydrateUnitRows(client, units, { includeOperationalSignals = true
     }, {})
   }
 
+  const transactionOrganisationIds = [
+    ...new Set(transactions.map((transaction) => transaction.organisation_id).filter(Boolean)),
+  ]
+  let organisationsById = {}
+
+  if (transactionOrganisationIds.length) {
+    let organisationsQuery = await client
+      .from('organisations')
+      .select('id, name, display_name, logo_url')
+      .in('id', transactionOrganisationIds)
+
+    if (
+      organisationsQuery.error &&
+      (isMissingColumnError(organisationsQuery.error, 'display_name') ||
+        isMissingColumnError(organisationsQuery.error, 'logo_url'))
+    ) {
+      organisationsQuery = await client
+        .from('organisations')
+        .select('id, name')
+        .in('id', transactionOrganisationIds)
+    }
+
+    if (organisationsQuery.error) {
+      if (
+        !isMissingTableError(organisationsQuery.error, 'organisations') &&
+        !isPermissionDeniedError(organisationsQuery.error)
+      ) {
+        throw organisationsQuery.error
+      }
+    } else {
+      organisationsById = (organisationsQuery.data || []).reduce((accumulator, organisation) => {
+        accumulator[organisation.id] = {
+          id: organisation.id,
+          name: normalizeTextValue(organisation.display_name || organisation.name),
+          displayName: normalizeTextValue(organisation.display_name || organisation.name),
+          logoUrl: normalizeTextValue(organisation.logo_url),
+        }
+        return accumulator
+      }, {})
+    }
+  }
+
   const rows = units.map((unit) => {
     const transaction = latestByUnit[unit.id] || null
     const buyer = transaction?.buyer_id ? buyersById[transaction.buyer_id] || null : null
     const stage = normalizeStage(transaction?.stage, unit.status)
+    const responsibleAgency = transaction?.organisation_id ? organisationsById[transaction.organisation_id] || null : null
 
     return {
       unit,
       development: unit.development,
       transaction,
       buyer,
+      responsibleAgency,
       stage,
       mainStage: normalizeMainStage(transaction?.current_main_stage, stage),
     }
@@ -19652,7 +19696,7 @@ async function fetchActiveTransactionsForUnitIds(client, unitIds) {
     .from('transactions')
     .select(
       selectWithoutKnownMissingColumns(
-        'id, unit_id, buyer_id, finance_type, purchaser_type, stage, current_main_stage, current_sub_stage_summary, risk_status, sales_price, purchase_price, cash_amount, bond_amount, deposit_amount, bank, attorney, bond_originator, next_action, comment, owner_user_id, access_level, lifecycle_state, attorney_stage, operational_state, waiting_on_role, registration_date, title_deed_number, registered_at, completed_at, archived_at, cancelled_at, last_meaningful_activity_at, final_report_generated_at, updated_at, created_at',
+        'id, organisation_id, unit_id, buyer_id, finance_type, purchaser_type, stage, current_main_stage, current_sub_stage_summary, risk_status, sales_price, purchase_price, cash_amount, bond_amount, deposit_amount, bank, attorney, bond_originator, next_action, comment, owner_user_id, access_level, lifecycle_state, attorney_stage, operational_state, waiting_on_role, registration_date, title_deed_number, registered_at, completed_at, archived_at, cancelled_at, last_meaningful_activity_at, final_report_generated_at, updated_at, created_at',
       ),
     )
     .in('unit_id', unitIds)
@@ -19665,6 +19709,7 @@ async function fetchActiveTransactionsForUnitIds(client, unitIds) {
 
   if (
     !isMissingColumnError(withActiveFlag.error, 'risk_status') &&
+    !isMissingColumnError(withActiveFlag.error, 'organisation_id') &&
     !isMissingColumnError(withActiveFlag.error, 'is_active') &&
     !isMissingColumnError(withActiveFlag.error, 'sales_price') &&
     !isMissingColumnError(withActiveFlag.error, 'purchase_price') &&
@@ -19696,6 +19741,7 @@ async function fetchActiveTransactionsForUnitIds(client, unitIds) {
 
   registerKnownMissingColumns(withActiveFlag.error, [
     'risk_status',
+    'organisation_id',
     'is_active',
     'sales_price',
     'purchase_price',
@@ -19727,7 +19773,7 @@ async function fetchActiveTransactionsForUnitIds(client, unitIds) {
     .from('transactions')
     .select(
       selectWithoutKnownMissingColumns(
-        'id, unit_id, buyer_id, finance_type, purchaser_type, stage, current_main_stage, current_sub_stage_summary, sales_price, purchase_price, cash_amount, bond_amount, deposit_amount, bank, attorney, bond_originator, next_action, comment, owner_user_id, access_level, lifecycle_state, attorney_stage, operational_state, waiting_on_role, registration_date, title_deed_number, registered_at, completed_at, archived_at, cancelled_at, last_meaningful_activity_at, final_report_generated_at, updated_at, created_at',
+        'id, organisation_id, unit_id, buyer_id, finance_type, purchaser_type, stage, current_main_stage, current_sub_stage_summary, sales_price, purchase_price, cash_amount, bond_amount, deposit_amount, bank, attorney, bond_originator, next_action, comment, owner_user_id, access_level, lifecycle_state, attorney_stage, operational_state, waiting_on_role, registration_date, title_deed_number, registered_at, completed_at, archived_at, cancelled_at, last_meaningful_activity_at, final_report_generated_at, updated_at, created_at',
       ),
     )
     .in('unit_id', unitIds)
@@ -19735,7 +19781,8 @@ async function fetchActiveTransactionsForUnitIds(client, unitIds) {
 
   if (
     fallbackQuery.error &&
-    (isMissingColumnError(fallbackQuery.error, 'sales_price') ||
+    (isMissingColumnError(fallbackQuery.error, 'organisation_id') ||
+      isMissingColumnError(fallbackQuery.error, 'sales_price') ||
       isMissingColumnError(fallbackQuery.error, 'purchase_price') ||
       isMissingColumnError(fallbackQuery.error, 'cash_amount') ||
       isMissingColumnError(fallbackQuery.error, 'bond_amount') ||
@@ -19761,6 +19808,7 @@ async function fetchActiveTransactionsForUnitIds(client, unitIds) {
       isMissingColumnError(fallbackQuery.error, 'final_report_generated_at'))
   ) {
     registerKnownMissingColumns(fallbackQuery.error, [
+      'organisation_id',
       'sales_price',
       'purchase_price',
       'cash_amount',
@@ -19789,7 +19837,9 @@ async function fetchActiveTransactionsForUnitIds(client, unitIds) {
     fallbackQuery = await client
       .from('transactions')
       .select(
-        'id, unit_id, buyer_id, finance_type, stage, attorney, bond_originator, next_action, updated_at, created_at',
+        selectWithoutKnownMissingColumns(
+          'id, organisation_id, unit_id, buyer_id, finance_type, stage, attorney, bond_originator, next_action, updated_at, created_at',
+        ),
       )
       .in('unit_id', unitIds)
       .order('updated_at', { ascending: false })

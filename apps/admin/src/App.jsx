@@ -7,16 +7,21 @@ import {
   ChevronRight,
   CircleDollarSign,
   Clock3,
+  Download,
   FileText,
+  Filter,
   Headphones,
   Home,
   ListChecks,
   Loader2,
   LogOut,
+  NotebookPen,
+  Plus,
   RefreshCw,
   Search,
   Settings,
   ShieldCheck,
+  Target,
   UserRoundCheck,
   UsersRound,
   X,
@@ -31,6 +36,10 @@ import {
 } from './lib/adminRoutes'
 import { getSupabaseConfigStatus, isSupabaseConfigured, supabase } from './lib/supabaseClient'
 
+const APP_ENV = import.meta.env || {}
+const ARCH9_BOOKING_URL = APP_ENV.VITE_ARCH9_BOOKING_URL || '/admin'
+const ARCH9_EXPLORE_URL = APP_ENV.VITE_ARCH9_EXPLORE_URL || '/'
+
 const RANGE_OPTIONS = [
   { id: 'today', label: 'Today' },
   { id: '7d', label: '7 Days' },
@@ -38,8 +47,137 @@ const RANGE_OPTIONS = [
   { id: 'month', label: 'This Month' },
 ]
 
+const INBOUND_STATUSES = [
+  { id: 'new', label: 'New' },
+  { id: 'contacted', label: 'Contacted' },
+  { id: 'demo_booked', label: 'Demo Booked' },
+  { id: 'trial_setup', label: 'Trial / Setup' },
+  { id: 'onboarding', label: 'Onboarding' },
+  { id: 'live', label: 'Live' },
+  { id: 'not_proceeding', label: 'Not Proceeding' },
+]
+
+const SOURCE_OPTIONS = [
+  { id: 'instagram', label: 'Instagram' },
+  { id: 'facebook', label: 'Facebook' },
+  { id: 'linkedin', label: 'LinkedIn' },
+  { id: 'website', label: 'Website' },
+  { id: 'qr', label: 'QR' },
+  { id: 'email', label: 'Email' },
+  { id: 'direct', label: 'Direct' },
+  { id: 'manual', label: 'Manual' },
+  { id: 'other', label: 'Other' },
+]
+
+const ROLE_CONFIGS = {
+  developer: {
+    label: 'Developer',
+    shortLabel: 'Developer',
+    icon: Building2,
+    intro: 'Manage developments, sales and transactions in one place.',
+    organisationLabel: 'Developer / company name',
+    positionOptions: ['Director / Owner', 'Development Manager', 'Sales Manager', 'Administrator', 'Other'],
+    fields: [
+      { id: 'active_developments', label: 'Number of active developments', required: true },
+      { id: 'available_units', label: 'Approximate total available units', required: true },
+      { id: 'monthly_sales', label: 'Approximate monthly sales', required: true },
+      { id: 'bring_development', label: 'Do you currently have a development you would like to bring onto Arch9?', options: ['Yes', 'Not yet', 'I would like to learn more'], required: true },
+      { id: 'development_name', label: 'Development name', showWhen: (metrics) => metrics.bring_development === 'Yes' },
+    ],
+    interests: [
+      'Development inventory',
+      'Sales team management',
+      'Agent management',
+      'Reservations',
+      'Buyer onboarding',
+      'OTPs',
+      'Bond applications',
+      'Transfer tracking',
+      'Buyer communication',
+      'Sales reporting',
+      'Full development journey',
+    ],
+  },
+  agency: {
+    label: 'Estate Agency',
+    shortLabel: 'Agency',
+    icon: Home,
+    intro: 'Connect your agents, listings, buyers and transactions.',
+    organisationLabel: 'Agency name',
+    positionOptions: ['Principal', 'Director / Owner', 'Manager', 'Agent', 'Administrator', 'Other'],
+    fields: [
+      { id: 'agent_range', label: 'Approximate number of agents', options: ['1-5', '6-15', '16-30', '31-50', '51-100', '100+'], required: true },
+      { id: 'transactions_per_month', label: 'Approximate transactions per month', options: ['0-10', '11-25', '26-50', '51-100', '100+'], required: true },
+    ],
+    interests: [
+      'Lead management',
+      'Listings & seller management',
+      'Buyer management',
+      'Offers & OTPs',
+      'Transaction tracking',
+      'Bond applications',
+      'Attorney communication',
+      'Client experience',
+      'Reporting & oversight',
+      'Everything',
+    ],
+  },
+  bond_originator: {
+    label: 'Bond Originator',
+    shortLabel: 'Bond Originator',
+    icon: CircleDollarSign,
+    intro: 'Manage applications and stay connected to every transaction.',
+    organisationLabel: 'Company name',
+    positionOptions: ['Principal', 'Director / Owner', 'Manager', 'Consultant', 'Administrator', 'Other'],
+    fields: [
+      { id: 'consultants', label: 'Number of consultants', required: true },
+      { id: 'applications_per_month', label: 'Approximate applications per month', required: true },
+      { id: 'agency_partners', label: 'Approximate number of estate agencies currently worked with', required: true },
+      { id: 'operating_model', label: 'How do you operate?', options: ['Independently', 'Branch', 'National group'], required: true },
+    ],
+    interests: [
+      'Receiving applications from agencies',
+      'Application management',
+      'Bank submissions',
+      'Quotes & grants',
+      'Document collection',
+      'Referral partner management',
+      'Reconciliation / incentives',
+      'Transaction tracking',
+      'Reporting',
+      'Full Arch9 bond workspace',
+    ],
+  },
+  attorney: {
+    label: 'Attorney',
+    shortLabel: 'Attorney',
+    icon: ShieldCheck,
+    intro: 'Manage matters and collaborate with every role player.',
+    organisationLabel: 'Firm name',
+    positionOptions: ['Director / Partner', 'Conveyancer', 'Practice Manager', 'Attorney', 'Administrator', 'Other'],
+    fields: [
+      { id: 'branches', label: 'Number of branches', required: true },
+      { id: 'conveyancing_staff', label: 'Approximate number of conveyancing staff', required: true },
+      { id: 'matters_per_month', label: 'Approximate property matters per month', required: true },
+    ],
+    serviceOptions: ['Property transfers', 'Bond registrations', 'Bond cancellations', 'Developments', 'Correspondent work', 'Other'],
+    interests: [
+      'Receiving instructions digitally',
+      'Matter management',
+      'Document management',
+      'Client communication',
+      'Agent communication',
+      'Milestone tracking',
+      'Reporting',
+      'Partner / referral network',
+      'Full Arch9 attorney workspace',
+    ],
+  },
+}
+
 const NAV_ICONS = {
   dashboard: Home,
+  inboundLeads: Target,
   organisations: Building2,
   reports: BarChart3,
   transactions: FileText,
@@ -89,6 +227,14 @@ const EMPTY_SUPPORT = {
     totalItems: 0,
     urgentTickets: 0,
   },
+  warnings: [],
+}
+
+const EMPTY_INBOUND = {
+  activities: [],
+  generatedAt: '',
+  leads: [],
+  owners: [],
   warnings: [],
 }
 
@@ -185,6 +331,10 @@ function formatAge(value = '') {
 
 function normalizeText(value = '') {
   return String(value || '').trim()
+}
+
+function normalizeToken(value = '') {
+  return String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_')
 }
 
 function compactList(values = []) {
@@ -403,6 +553,123 @@ function getInitials(value = '') {
   const words = String(value || 'A9').trim().split(/\s+/).filter(Boolean)
   return words.slice(0, 2).map((word) => word[0]).join('').toUpperCase() || 'A9'
 }
+
+function getRoleConfig(roleType = '') {
+  return ROLE_CONFIGS[roleType] || ROLE_CONFIGS.agency
+}
+
+function formatRoleType(roleType = '') {
+  return getRoleConfig(roleType).shortLabel
+}
+
+function formatInboundStatus(status = '') {
+  return INBOUND_STATUSES.find((item) => item.id === status)?.label || normalizeStageLabel(status)
+}
+
+function formatSource(source = '') {
+  return SOURCE_OPTIONS.find((item) => item.id === source)?.label || normalizeStageLabel(source)
+}
+
+function normalizeInboundLead(row = {}) {
+  const businessMetrics = row.business_metrics || row.businessMetrics || {}
+  const selectedInterests = row.selected_interests || row.selectedInterests || []
+  return {
+    ...row,
+    businessMetrics,
+    fullName: [row.first_name || row.firstName, row.last_name || row.lastName].filter(Boolean).join(' '),
+    id: row.id,
+    organisationName: row.organisation_name || row.organisationName || '',
+    ownerId: row.owner_id || row.ownerId || '',
+    ownerLabel: row.owner_name || row.owner_email || '',
+    roleType: row.role_type || row.roleType || 'agency',
+    selectedInterests,
+    services: row.services || [],
+    source: row.source || 'other',
+    status: row.status || 'new',
+    utmCampaign: row.utm_campaign || row.utmCampaign || '',
+    utmContent: row.utm_content || row.utmContent || '',
+    utmMedium: row.utm_medium || row.utmMedium || '',
+    utmSource: row.utm_source || row.utmSource || '',
+  }
+}
+
+function inferSourceFromLocation() {
+  if (typeof window === 'undefined') return {}
+  const url = new URL(window.location.href)
+  const params = url.searchParams
+  return {
+    landing_url: window.location.href,
+    referrer: document.referrer || '',
+    source: params.get('source') || '',
+    utm_campaign: params.get('utm_campaign') || '',
+    utm_content: params.get('utm_content') || '',
+    utm_medium: params.get('utm_medium') || '',
+    utm_source: params.get('utm_source') || '',
+  }
+}
+
+function buildIdempotencyKey() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return `join:${crypto.randomUUID()}`
+  return `join:${Date.now()}:${Math.random().toString(16).slice(2)}`
+}
+
+function isValidEmail(value = '') {
+  return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(value || '').trim())
+}
+
+function isValidSaMobile(value = '') {
+  const digits = String(value || '').replace(/\D+/g, '')
+  return /^(0[6-8][0-9]{8}|27[6-8][0-9]{8}|[6-8][0-9]{8})$/.test(digits)
+}
+
+function getLeadScaleLines(lead = {}) {
+  const metrics = lead.businessMetrics || {}
+  if (lead.roleType === 'developer') {
+    return compactList([
+      metrics.active_developments ? `${metrics.active_developments} developments` : '',
+      metrics.available_units ? `${metrics.available_units} available units` : '',
+      metrics.monthly_sales ? `${metrics.monthly_sales} sales / month` : '',
+    ]).slice(0, 2)
+  }
+  if (lead.roleType === 'bond_originator') {
+    return compactList([
+      metrics.consultants ? `${metrics.consultants} consultants` : '',
+      metrics.applications_per_month ? `${metrics.applications_per_month} applications / month` : '',
+      metrics.agency_partners ? `${metrics.agency_partners} agency partners` : '',
+    ]).slice(0, 2)
+  }
+  if (lead.roleType === 'attorney') {
+    return compactList([
+      metrics.conveyancing_staff ? `${metrics.conveyancing_staff} staff` : '',
+      metrics.matters_per_month ? `${metrics.matters_per_month} matters / month` : '',
+      metrics.branches ? `${metrics.branches} branches` : '',
+    ]).slice(0, 2)
+  }
+  return compactList([
+    metrics.agent_range ? `${metrics.agent_range} agents` : '',
+    metrics.transactions_per_month ? `${metrics.transactions_per_month} tx / month` : '',
+  ]).slice(0, 2)
+}
+
+function buildInboundCsv(leads = []) {
+  const headers = ['Lead', 'Role', 'Organisation', 'Email', 'Mobile', 'Source', 'Campaign', 'Status', 'Owner', 'Created']
+  const rows = leads.map((lead) => [
+    lead.fullName,
+    formatRoleType(lead.roleType),
+    lead.organisationName,
+    lead.email,
+    lead.mobile,
+    formatSource(lead.source),
+    lead.utmCampaign,
+    formatInboundStatus(lead.status),
+    lead.ownerLabel,
+    formatDate(lead.created_at),
+  ])
+  return [headers, ...rows]
+    .map((row) => row.map((value) => `"${String(value || '').replace(/"/g, '""')}"`).join(','))
+    .join('\n')
+}
+
 
 function getTransactionTitle(row = {}) {
   return row.title || row.propertyAddress || row.address || row.reference || row.id || 'Transaction'
@@ -722,6 +989,55 @@ async function loadSupportSnapshot(rangeId) {
   }
 }
 
+async function submitInboundLead(payload = {}, idempotencyKey = buildIdempotencyKey()) {
+  if (!supabase) return { data: null, error: 'Supabase is not configured.' }
+  const { data, error } = await supabase.rpc('submit_arch9_inbound_lead', {
+    p_idempotency_key: idempotencyKey,
+    p_payload: payload,
+  })
+  return { data, error: error?.message || '' }
+}
+
+async function loadInboundLeadsSnapshot() {
+  if (!supabase) return { data: EMPTY_INBOUND, error: 'Supabase is not configured.' }
+  const { data, error } = await supabase.rpc('arch9_admin_inbound_leads_snapshot')
+  return {
+    data: {
+      ...EMPTY_INBOUND,
+      ...(data || {}),
+      leads: (data?.leads || []).map(normalizeInboundLead),
+    },
+    error: error?.message || '',
+  }
+}
+
+async function updateInboundLead(leadId, patch) {
+  if (!supabase) return { data: null, error: 'Supabase is not configured.' }
+  const { data, error } = await supabase.rpc('arch9_admin_update_inbound_lead', {
+    p_lead_id: leadId,
+    p_patch: patch,
+  })
+  return { data: data ? normalizeInboundLead(data) : null, error: error?.message || '' }
+}
+
+async function addInboundLeadNote(leadId, note) {
+  if (!supabase) return { data: null, error: 'Supabase is not configured.' }
+  const { data, error } = await supabase.rpc('arch9_admin_add_inbound_lead_note', {
+    p_lead_id: leadId,
+    p_note: note,
+  })
+  return { data: data ? normalizeInboundLead(data) : null, error: error?.message || '' }
+}
+
+async function markInboundLeadConverted(leadId) {
+  if (!supabase) return { data: null, error: 'Supabase is not configured.' }
+  const { data, error } = await supabase.rpc('arch9_admin_mark_inbound_lead_converted', {
+    p_converted_entity_id: null,
+    p_lead_id: leadId,
+  })
+  return { data: data ? normalizeInboundLead(data) : null, error: error?.message || '' }
+}
+
 async function searchAdminData(term = '') {
   const query = normalizeText(term)
   if (!supabase || !query) return { results: [], warnings: [] }
@@ -787,6 +1103,322 @@ async function searchAdminData(term = '') {
     ),
     warnings: settled.filter((group) => group.error).map((group) => `${group.label}: ${group.error}`),
   }
+}
+
+function IntakeProgress({ step }) {
+  const labels = ['Choose your role', 'About you', 'Business', 'Interests', 'Confirmation']
+  return (
+    <div className="intake-progress" aria-label="Intake progress">
+      {labels.map((label, index) => (
+        <div className={index <= step ? 'active' : ''} key={label}>
+          <span>{index + 1}</span>
+          <strong>{label}</strong>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function IntakeField({ field, metrics, onChange }) {
+  if (field.showWhen && !field.showWhen(metrics)) return null
+  const value = metrics[field.id] || ''
+  return (
+    <label className="intake-field">
+      <span>{field.label}</span>
+      {field.options ? (
+        <select onChange={(event) => onChange(field.id, event.target.value)} value={value}>
+          <option value="">Select</option>
+          {field.options.map((option) => (
+            <option key={option} value={option}>{option}</option>
+          ))}
+        </select>
+      ) : (
+        <input onChange={(event) => onChange(field.id, event.target.value)} value={value} />
+      )}
+    </label>
+  )
+}
+
+function PublicIntakePage() {
+  const [step, setStep] = useState(0)
+  const [error, setError] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [idempotencyKey] = useState(() => buildIdempotencyKey())
+  const [form, setForm] = useState(() => ({
+    businessMetrics: {},
+    email: '',
+    firstName: '',
+    lastName: '',
+    location: '',
+    mobile: '',
+    organisationName: '',
+    position: '',
+    roleType: '',
+    selectedInterests: [],
+    services: [],
+    source: inferSourceFromLocation(),
+    website: '',
+  }))
+  const roleConfig = form.roleType ? getRoleConfig(form.roleType) : null
+  const selectedRoleConfig = roleConfig || ROLE_CONFIGS.agency
+  const isConfirmation = step === 4
+
+  function setValue(key, value) {
+    setForm((current) => ({ ...current, [key]: value }))
+  }
+
+  function setMetric(key, value) {
+    setForm((current) => ({
+      ...current,
+      businessMetrics: {
+        ...current.businessMetrics,
+        [key]: value,
+      },
+    }))
+  }
+
+  function toggleArray(key, value) {
+    setForm((current) => {
+      const values = current[key] || []
+      return {
+        ...current,
+        [key]: values.includes(value) ? values.filter((item) => item !== value) : [...values, value],
+      }
+    })
+  }
+
+  function validateStep(targetStep = step) {
+    if (targetStep === 0) return Boolean(form.roleType)
+    if (targetStep === 1) {
+      return (
+        normalizeText(form.firstName) &&
+        normalizeText(form.lastName) &&
+        isValidEmail(form.email) &&
+        isValidSaMobile(form.mobile) &&
+        normalizeText(form.position)
+      )
+    }
+    if (targetStep === 2) {
+      const requiredFields = selectedRoleConfig.fields.filter((field) => field.required && (!field.showWhen || field.showWhen(form.businessMetrics)))
+      return (
+        normalizeText(form.organisationName) &&
+        normalizeText(form.location) &&
+        requiredFields.every((field) => normalizeText(form.businessMetrics[field.id]))
+      )
+    }
+    if (targetStep === 3) return form.selectedInterests.length > 0
+    return true
+  }
+
+  async function continueFlow() {
+    setError('')
+    if (!validateStep()) {
+      setError('Please complete the highlighted step before continuing.')
+      return
+    }
+
+    if (step < 3) {
+      setStep(step + 1)
+      return
+    }
+
+    setIsSubmitting(true)
+    const payload = {
+      ...form.source,
+      business_metrics: form.businessMetrics,
+      email: normalizeText(form.email),
+      first_name: normalizeText(form.firstName),
+      last_name: normalizeText(form.lastName),
+      location: normalizeText(form.location),
+      mobile: normalizeText(form.mobile),
+      organisation_name: normalizeText(form.organisationName),
+      position: normalizeText(form.position),
+      role_type: form.roleType,
+      selected_interests: form.selectedInterests,
+      services: form.services,
+      website: normalizeText(form.website),
+    }
+    const result = await submitInboundLead(payload, idempotencyKey)
+    setIsSubmitting(false)
+    if (result.error || !result.data?.accepted) {
+      setError(result.error || 'We could not send your details right now. Please try again.')
+      return
+    }
+    setStep(4)
+  }
+
+  return (
+    <main className="public-intake-shell">
+      <section className="intake-hero">
+        <div className="intake-brand">
+          <span>A9</span>
+          <strong>Arch9 Intake Journey</strong>
+        </div>
+        <IntakeProgress step={step} />
+      </section>
+
+      <section className={`intake-card${isConfirmation ? ' confirmation-card' : ''}`}>
+        {!isConfirmation ? (
+          <>
+            <div className="intake-step-meta">
+              <span>Step {step + 1} of 5</span>
+              <div><b style={{ width: `${((step + 1) / 5) * 100}%` }} /></div>
+            </div>
+
+            {step === 0 ? (
+              <div className="intake-stack">
+                <div>
+                  <h1>Let's get you connected.</h1>
+                  <p>Tell us where you fit into the property journey and we'll take it from there.</p>
+                </div>
+                <div className="role-card-grid">
+                  {Object.entries(ROLE_CONFIGS).map(([roleType, config]) => {
+                    const Icon = config.icon
+                    return (
+                      <button
+                        className={form.roleType === roleType ? 'selected' : ''}
+                        key={roleType}
+                        onClick={() => {
+                          setForm((current) => ({
+                            ...current,
+                            businessMetrics: {},
+                            position: '',
+                            roleType,
+                            selectedInterests: [],
+                            services: [],
+                          }))
+                        }}
+                        type="button"
+                      >
+                        <Icon size={24} />
+                        <strong>{config.shortLabel}</strong>
+                        <span>{config.intro}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            ) : null}
+
+            {step === 1 ? (
+              <div className="intake-stack">
+                <div>
+                  <h1>Tell us about you.</h1>
+                  <p>This helps us configure Arch9 around the way you work.</p>
+                </div>
+                <div className="intake-field-grid">
+                  <label className="intake-field">
+                    <span>First name</span>
+                    <input autoComplete="given-name" onChange={(event) => setValue('firstName', event.target.value)} value={form.firstName} />
+                  </label>
+                  <label className="intake-field">
+                    <span>Last name</span>
+                    <input autoComplete="family-name" onChange={(event) => setValue('lastName', event.target.value)} value={form.lastName} />
+                  </label>
+                  <label className="intake-field wide">
+                    <span>Work email</span>
+                    <input autoComplete="email" inputMode="email" onChange={(event) => setValue('email', event.target.value)} value={form.email} />
+                  </label>
+                  <label className="intake-field wide">
+                    <span>Mobile number</span>
+                    <input autoComplete="tel" inputMode="tel" onChange={(event) => setValue('mobile', event.target.value)} placeholder="082 123 4567" value={form.mobile} />
+                  </label>
+                  <label className="intake-field wide">
+                    <span>Your role</span>
+                    <select onChange={(event) => setValue('position', event.target.value)} value={form.position}>
+                      <option value="">Select</option>
+                      {selectedRoleConfig.positionOptions.map((option) => (
+                        <option key={option} value={option}>{option}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              </div>
+            ) : null}
+
+            {step === 2 ? (
+              <div className="intake-stack">
+                <div>
+                  <h1>Tell us about your business.</h1>
+                  <p>Only the essentials for a useful first conversation.</p>
+                </div>
+                <div className="intake-field-grid">
+                  <label className="intake-field wide">
+                    <span>{selectedRoleConfig.organisationLabel}</span>
+                    <input onChange={(event) => setValue('organisationName', event.target.value)} value={form.organisationName} />
+                  </label>
+                  <label className="intake-field">
+                    <span>Website <small>optional</small></span>
+                    <input inputMode="url" onChange={(event) => setValue('website', event.target.value)} value={form.website} />
+                  </label>
+                  <label className="intake-field">
+                    <span>Primary location</span>
+                    <input onChange={(event) => setValue('location', event.target.value)} value={form.location} />
+                  </label>
+                  {selectedRoleConfig.fields.map((field) => (
+                    <IntakeField field={field} key={field.id} metrics={form.businessMetrics} onChange={setMetric} />
+                  ))}
+                </div>
+                {selectedRoleConfig.serviceOptions ? (
+                  <div className="intake-check-grid">
+                    {selectedRoleConfig.serviceOptions.map((service) => (
+                      <button className={form.services.includes(service) ? 'selected' : ''} key={service} onClick={() => toggleArray('services', service)} type="button">
+                        <CheckCircle2 size={16} />
+                        <span>{service}</span>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {step === 3 ? (
+              <div className="intake-stack">
+                <div>
+                  <h1>What are you most interested in improving?</h1>
+                  <p>Select all that apply.</p>
+                </div>
+                <div className="intake-check-grid two-col">
+                  {selectedRoleConfig.interests.map((interest) => (
+                    <button className={form.selectedInterests.includes(interest) ? 'selected' : ''} key={interest} onClick={() => toggleArray('selectedInterests', interest)} type="button">
+                      <CheckCircle2 size={16} />
+                      <span>{interest}</span>
+                    </button>
+                  ))}
+                </div>
+                <div className="intake-note">
+                  <Target size={16} />
+                  <span>This helps us tailor Arch9 to what matters most to you.</span>
+                </div>
+              </div>
+            ) : null}
+
+            {error ? <Notice tone="danger" text={error} /> : null}
+
+            <div className="intake-actions">
+              <button className="secondary-button" disabled={step === 0 || isSubmitting} onClick={() => setStep(Math.max(0, step - 1))} type="button">
+                Back
+              </button>
+              <button className="primary-button" disabled={!validateStep() || isSubmitting} onClick={continueFlow} type="button">
+                <span>{isSubmitting ? 'Sending...' : step === 3 ? 'Submit' : 'Continue'}</span>
+              </button>
+            </div>
+          </>
+        ) : (
+          <div className="confirmation-content">
+            <CheckCircle2 size={42} />
+            <h1>Welcome to Arch9, {form.firstName}.</h1>
+            <p>We're connecting the property industry - and you're now part of it.</p>
+            <p>We've received your details and someone from Arch9 will be in touch to help you get started.</p>
+            <div className="confirmation-actions">
+              <a className="primary-button" href={ARCH9_BOOKING_URL}>Book an introduction</a>
+              <a className="secondary-button" href={ARCH9_EXPLORE_URL}>Explore Arch9</a>
+            </div>
+          </div>
+        )}
+      </section>
+    </main>
+  )
 }
 
 function LoginScreen({ authError, onMagicLink, onSignIn }) {
@@ -922,6 +1554,8 @@ function Topbar({ activeView, generatedAt, isLoading, onRefresh, rangeId, setRan
   const title =
     activeView === 'support'
       ? 'Support Queue'
+      : activeView === 'inboundLeads'
+        ? 'Inbound Leads'
       : activeView === 'search'
         ? 'Search'
         : activeView === 'settings'
@@ -941,6 +1575,8 @@ function Topbar({ activeView, generatedAt, isLoading, onRefresh, rangeId, setRan
       ? 'Platform performance and transaction activity.'
       : activeView === 'support'
         ? 'Open support work and operational exceptions.'
+        : activeView === 'inboundLeads'
+          ? 'Manage and convert inbound Arch9 enquiries.'
         : activeView === 'search'
           ? 'Find organisations, users, and transactions.'
           : activeView === 'settings'
@@ -2143,6 +2779,502 @@ function SearchView() {
   )
 }
 
+function PipelineSummary({ activeStatus, leads = [], onSelect }) {
+  const counts = INBOUND_STATUSES.reduce((totals, status) => {
+    totals[status.id] = leads.filter((lead) => lead.status === status.id).length
+    return totals
+  }, {})
+
+  return (
+    <section className="inbound-pipeline-summary" aria-label="Inbound pipeline summary">
+      {INBOUND_STATUSES.map((status) => (
+        <button
+          className={`${activeStatus === status.id ? 'active' : ''} ${status.id === 'not_proceeding' ? 'separated' : ''}`}
+          key={status.id}
+          onClick={() => onSelect(activeStatus === status.id ? 'all' : status.id)}
+          type="button"
+        >
+          <span>{status.label}</span>
+          <strong>{formatCount(counts[status.id] || 0)}</strong>
+        </button>
+      ))}
+    </section>
+  )
+}
+
+function InboundLeadTable({ leads = [], onSelect, selectedLeadId = '' }) {
+  return (
+    <section className="data-panel inbound-table-panel">
+      <div className="panel-title">
+        <h2>Lead Table</h2>
+        <span>{formatCount(leads.length)}</span>
+      </div>
+      <div className="table-shell">
+        {leads.length ? (
+          <table className="inbound-leads-table">
+            <thead>
+              <tr>
+                <th>Lead</th>
+                <th>Role</th>
+                <th>Organisation</th>
+                <th>Contact details</th>
+                <th>Source</th>
+                <th>Size / Volume</th>
+                <th>Top interests</th>
+                <th>Status</th>
+                <th>Owner</th>
+                <th>Created</th>
+              </tr>
+            </thead>
+            <tbody>
+              {leads.map((lead) => {
+                const scale = getLeadScaleLines(lead)
+                const interests = lead.selectedInterests || []
+                return (
+                  <tr
+                    className={selectedLeadId === lead.id ? 'selected-row' : ''}
+                    key={lead.id}
+                    onClick={() => onSelect(lead)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') onSelect(lead)
+                    }}
+                    tabIndex={0}
+                  >
+                    <td>
+                      <div className="lead-name-cell">
+                        <b>{getInitials(lead.fullName)}</b>
+                        <span>
+                          <strong>{lead.fullName}</strong>
+                          <small>{lead.position || 'No position'}</small>
+                        </span>
+                      </div>
+                    </td>
+                    <td><span className={`role-pill ${lead.roleType}`}>{formatRoleType(lead.roleType)}</span></td>
+                    <td>{lead.organisationName}</td>
+                    <td>
+                      <strong>{lead.email}</strong>
+                      <span>{lead.mobile}</span>
+                    </td>
+                    <td>{formatSource(lead.source)}</td>
+                    <td>{scale.length ? scale.map((item) => <span key={item}>{item}</span>) : 'No scale yet'}</td>
+                    <td>
+                      {interests.slice(0, 3).map((interest) => <span key={interest}>{interest}</span>)}
+                      {interests.length > 3 ? <small>+{interests.length - 3} more</small> : null}
+                    </td>
+                    <td><span className={`status-badge ${lead.status}`}>{formatInboundStatus(lead.status)}</span></td>
+                    <td>{lead.ownerLabel || '-'}</td>
+                    <td>{formatDate(lead.created_at)}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        ) : (
+          <p className="empty-state">No inbound leads match the current filters.</p>
+        )}
+      </div>
+    </section>
+  )
+}
+
+function InboundLeadDetail({ activities = [], lead, onRefresh, owners = [] }) {
+  const [note, setNote] = useState('')
+  const [error, setError] = useState('')
+  const [isSaving, setIsSaving] = useState(false)
+
+  if (!lead) {
+    return (
+      <section className="detail-panel inbound-detail-panel">
+        <div className="panel-title">
+          <h2>Lead Workspace</h2>
+          <span>None selected</span>
+        </div>
+        <p className="empty-state">Select an inbound lead to manage status, owner, notes and activity.</p>
+      </section>
+    )
+  }
+
+  const leadActivities = activities
+    .filter((activity) => activity.inbound_lead_id === lead.id || activity.inboundLeadId === lead.id)
+    .sort((left, right) => new Date(right.created_at || 0) - new Date(left.created_at || 0))
+  const profileRows = [
+    ['Name', lead.fullName],
+    ['Role', formatRoleType(lead.roleType)],
+    ['Position', lead.position || 'Not captured'],
+    ['Organisation', lead.organisationName],
+    ['Email', lead.email],
+    ['Mobile', lead.mobile],
+    ['Website', lead.website || 'Not captured'],
+    ['Location', lead.location || 'Not captured'],
+    ['Source', formatSource(lead.source)],
+    ['Campaign', lead.utmCampaign || 'No campaign'],
+    ['Created', formatDateTime(lead.created_at)],
+  ]
+  const acquisitionRows = [
+    ['Source', formatSource(lead.source)],
+    ['Medium', lead.utmMedium || 'Not captured'],
+    ['Campaign', lead.utmCampaign || 'Not captured'],
+    ['Content', lead.utmContent || 'Not captured'],
+    ['Landing page', lead.landing_url || 'Not captured'],
+    ['Referrer', lead.referrer || 'Not captured'],
+  ]
+
+  async function savePatch(patch) {
+    setError('')
+    setIsSaving(true)
+    const result = await updateInboundLead(lead.id, patch)
+    setIsSaving(false)
+    if (result.error) {
+      setError(result.error)
+      return
+    }
+    await onRefresh?.()
+  }
+
+  async function submitNote(event) {
+    event.preventDefault()
+    if (!normalizeText(note)) return
+    setError('')
+    setIsSaving(true)
+    const result = await addInboundLeadNote(lead.id, note)
+    setIsSaving(false)
+    if (result.error) {
+      setError(result.error)
+      return
+    }
+    setNote('')
+    await onRefresh?.()
+  }
+
+  async function markLive() {
+    setError('')
+    setIsSaving(true)
+    const result = await markInboundLeadConverted(lead.id)
+    setIsSaving(false)
+    if (result.error) {
+      setError(result.error)
+      return
+    }
+    await onRefresh?.()
+  }
+
+  return (
+    <section className="detail-panel inbound-detail-panel">
+      <div className="panel-title">
+        <div>
+          <h2>{lead.fullName}</h2>
+          <span>{formatRoleType(lead.roleType)}</span>
+        </div>
+      </div>
+
+      {error ? <Notice tone="danger" text={error} /> : null}
+
+      <div className="lead-workspace-controls">
+        <label>
+          <span>Owner</span>
+          <select disabled={isSaving} onChange={(event) => savePatch({ owner_id: event.target.value || null })} value={lead.ownerId || ''}>
+            <option value="">Unassigned</option>
+            {owners.map((owner) => (
+              <option key={owner.id} value={owner.id}>{owner.full_name || owner.email}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>Status</span>
+          <select disabled={isSaving} onChange={(event) => savePatch({ status: event.target.value })} value={lead.status}>
+            {INBOUND_STATUSES.map((status) => (
+              <option key={status.id} value={status.id}>{status.label}</option>
+            ))}
+          </select>
+        </label>
+        <button className="secondary-button" disabled={isSaving || lead.status === 'live'} onClick={markLive} type="button">
+          <CheckCircle2 size={16} />
+          <span>Mark Live</span>
+        </button>
+      </div>
+
+      <div className="lead-detail-section">
+        <h3>Overview</h3>
+        <dl>
+          {profileRows.map(([label, value]) => (
+            <div key={label}>
+              <dt>{label}</dt>
+              <dd>{value}</dd>
+            </div>
+          ))}
+        </dl>
+      </div>
+
+      <div className="lead-detail-section">
+        <h3>Business Profile</h3>
+        <dl>
+          {Object.entries(lead.businessMetrics || {}).map(([key, value]) => (
+            <div key={key}>
+              <dt>{normalizeStageLabel(key)}</dt>
+              <dd>{String(value || 'Not captured')}</dd>
+            </div>
+          ))}
+        </dl>
+      </div>
+
+      <div className="lead-detail-section">
+        <h3>Interests</h3>
+        <div className="chip-list">
+          {(lead.selectedInterests || []).map((interest) => <span key={interest}>{interest}</span>)}
+          {(lead.services || []).map((service) => <span key={service}>{service}</span>)}
+        </div>
+      </div>
+
+      <div className="lead-detail-section">
+        <h3>Acquisition</h3>
+        <dl>
+          {acquisitionRows.map(([label, value]) => (
+            <div key={label}>
+              <dt>{label}</dt>
+              <dd>{value}</dd>
+            </div>
+          ))}
+        </dl>
+      </div>
+
+      <form className="lead-note-form" onSubmit={submitNote}>
+        <label>
+          <span>Notes</span>
+          <textarea onChange={(event) => setNote(event.target.value)} placeholder="Add a note..." rows={3} value={note} />
+        </label>
+        <button className="primary-button compact" disabled={isSaving || !normalizeText(note)} type="submit">
+          <NotebookPen size={16} />
+          <span>Add note</span>
+        </button>
+      </form>
+
+      <div className="lead-detail-section">
+        <h3>Activity</h3>
+        <div className="activity-list">
+          {leadActivities.length ? leadActivities.map((activity) => (
+            <article key={activity.id}>
+              <strong>{normalizeStageLabel(activity.event_type || activity.eventType)}</strong>
+              <span>{activity.note || 'No note'}</span>
+              <small>{formatDateTime(activity.created_at)} {activity.actor_name || activity.actor_email ? `by ${activity.actor_name || activity.actor_email}` : ''}</small>
+            </article>
+          )) : <p className="empty-state">No activity has been logged yet.</p>}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function AddInboundLeadPanel({ onCancel, onCreated }) {
+  const [error, setError] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [form, setForm] = useState({
+    email: '',
+    firstName: '',
+    lastName: '',
+    mobile: '',
+    organisationName: '',
+    position: '',
+    roleType: 'agency',
+  })
+  const roleConfig = getRoleConfig(form.roleType)
+
+  function setValue(key, value) {
+    setForm((current) => ({ ...current, [key]: value }))
+  }
+
+  async function submit(event) {
+    event.preventDefault()
+    setError('')
+    if (!form.firstName || !form.lastName || !isValidEmail(form.email) || !isValidSaMobile(form.mobile) || !form.organisationName) {
+      setError('First name, last name, work email, mobile and organisation are required.')
+      return
+    }
+    setIsSubmitting(true)
+    const result = await submitInboundLead({
+      business_metrics: {},
+      email: form.email,
+      first_name: form.firstName,
+      last_name: form.lastName,
+      mobile: form.mobile,
+      organisation_name: form.organisationName,
+      position: form.position || 'Other',
+      role_type: form.roleType,
+      selected_interests: [],
+      services: [],
+      source: 'manual',
+      utm_source: 'manual',
+    }, `manual:${buildIdempotencyKey()}`)
+    setIsSubmitting(false)
+    if (result.error) {
+      setError(result.error)
+      return
+    }
+    await onCreated?.()
+  }
+
+  return (
+    <section className="data-panel add-lead-panel">
+      <div className="panel-title">
+        <h2>Add Lead</h2>
+        <button className="icon-button" onClick={onCancel} title="Close" type="button"><X size={16} /></button>
+      </div>
+      <form className="add-lead-form" onSubmit={submit}>
+        <label>
+          <span>Role</span>
+          <select onChange={(event) => setValue('roleType', event.target.value)} value={form.roleType}>
+            {Object.entries(ROLE_CONFIGS).map(([id, config]) => <option key={id} value={id}>{config.label}</option>)}
+          </select>
+        </label>
+        <label>
+          <span>First name</span>
+          <input onChange={(event) => setValue('firstName', event.target.value)} value={form.firstName} />
+        </label>
+        <label>
+          <span>Last name</span>
+          <input onChange={(event) => setValue('lastName', event.target.value)} value={form.lastName} />
+        </label>
+        <label>
+          <span>Work email</span>
+          <input inputMode="email" onChange={(event) => setValue('email', event.target.value)} value={form.email} />
+        </label>
+        <label>
+          <span>Mobile number</span>
+          <input inputMode="tel" onChange={(event) => setValue('mobile', event.target.value)} value={form.mobile} />
+        </label>
+        <label>
+          <span>{roleConfig.organisationLabel}</span>
+          <input onChange={(event) => setValue('organisationName', event.target.value)} value={form.organisationName} />
+        </label>
+        <label>
+          <span>Position</span>
+          <select onChange={(event) => setValue('position', event.target.value)} value={form.position}>
+            <option value="">Select</option>
+            {roleConfig.positionOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+          </select>
+        </label>
+        {error ? <Notice tone="danger" text={error} /> : null}
+        <button className="primary-button" disabled={isSubmitting} type="submit">
+          <Plus size={16} />
+          <span>{isSubmitting ? 'Creating...' : 'Create lead'}</span>
+        </button>
+      </form>
+    </section>
+  )
+}
+
+function InboundLeadsView({ onRefresh, snapshot }) {
+  const [filters, setFilters] = useState({ date: 'all', owner: 'all', role: 'all', source: 'all', status: 'all' })
+  const [query, setQuery] = useState('')
+  const [selectedLeadId, setSelectedLeadId] = useState('')
+  const [showAddLead, setShowAddLead] = useState(false)
+  const leads = snapshot?.leads || []
+  const owners = snapshot?.owners || []
+  const activities = snapshot?.activities || []
+  const selectedLead = leads.find((lead) => lead.id === selectedLeadId) || leads[0] || null
+  const visibleLeads = leads.filter((lead) => {
+    const search = normalizeToken([lead.fullName, lead.organisationName, lead.email, lead.mobile].join(' '))
+    const createdAt = new Date(lead.created_at || 0).getTime()
+    const now = Date.now()
+    const inDateRange =
+      filters.date === 'all' ||
+      (filters.date === '7d' && createdAt >= now - 7 * 86_400_000) ||
+      (filters.date === '30d' && createdAt >= now - 30 * 86_400_000) ||
+      (filters.date === 'month' && new Date(lead.created_at || 0).getMonth() === new Date().getMonth() && new Date(lead.created_at || 0).getFullYear() === new Date().getFullYear())
+    return (
+      (filters.source === 'all' || lead.source === filters.source) &&
+      (filters.role === 'all' || lead.roleType === filters.role) &&
+      (filters.owner === 'all' || (filters.owner === 'unassigned' ? !lead.ownerId : lead.ownerId === filters.owner)) &&
+      (filters.status === 'all' || lead.status === filters.status) &&
+      inDateRange &&
+      (!query || search.includes(normalizeToken(query)))
+    )
+  })
+
+  useEffect(() => {
+    if (!leads.length) {
+      setSelectedLeadId('')
+      return
+    }
+    if (!leads.some((lead) => lead.id === selectedLeadId)) setSelectedLeadId(leads[0].id)
+  }, [leads, selectedLeadId])
+
+  function setFilter(key, value) {
+    setFilters((current) => ({ ...current, [key]: value }))
+  }
+
+  function exportCsv() {
+    const csv = buildInboundCsv(visibleLeads)
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `arch9-inbound-leads-${new Date().toISOString().slice(0, 10)}.csv`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
+  return (
+    <div className="view-stack inbound-workspace">
+      <section className="inbound-actions-row">
+        <div className="inbound-search">
+          <Search size={18} />
+          <input onChange={(event) => setQuery(event.target.value)} placeholder="Search name, organisation, email or mobile..." value={query} />
+        </div>
+        <button className="secondary-button compact" onClick={exportCsv} type="button">
+          <Download size={16} />
+          <span>Export</span>
+        </button>
+        <button className="primary-button compact" onClick={() => setShowAddLead(true)} type="button">
+          <Plus size={16} />
+          <span>Add Lead</span>
+        </button>
+      </section>
+
+      <section className="inbound-filters">
+        <select onChange={(event) => setFilter('source', event.target.value)} value={filters.source}>
+          <option value="all">All Sources</option>
+          {SOURCE_OPTIONS.map((source) => <option key={source.id} value={source.id}>{source.label}</option>)}
+        </select>
+        <select onChange={(event) => setFilter('role', event.target.value)} value={filters.role}>
+          <option value="all">All Roles</option>
+          {Object.entries(ROLE_CONFIGS).map(([id, config]) => <option key={id} value={id}>{config.shortLabel}</option>)}
+        </select>
+        <select onChange={(event) => setFilter('owner', event.target.value)} value={filters.owner}>
+          <option value="all">All Owners</option>
+          <option value="unassigned">Unassigned</option>
+          {owners.map((owner) => <option key={owner.id} value={owner.id}>{owner.full_name || owner.email}</option>)}
+        </select>
+        <select onChange={(event) => setFilter('status', event.target.value)} value={filters.status}>
+          <option value="all">All Statuses</option>
+          {INBOUND_STATUSES.map((status) => <option key={status.id} value={status.id}>{status.label}</option>)}
+        </select>
+        <select onChange={(event) => setFilter('date', event.target.value)} value={filters.date}>
+          <option value="all">Date range</option>
+          <option value="7d">Last 7 days</option>
+          <option value="30d">Last 30 days</option>
+          <option value="month">This month</option>
+        </select>
+        <button className="secondary-button compact" type="button">
+          <Filter size={16} />
+          <span>Filters</span>
+        </button>
+      </section>
+
+      <PipelineSummary activeStatus={filters.status} leads={leads} onSelect={(status) => setFilter('status', status)} />
+
+      {showAddLead ? <AddInboundLeadPanel onCancel={() => setShowAddLead(false)} onCreated={async () => {
+        setShowAddLead(false)
+        await onRefresh?.()
+      }} /> : null}
+
+      <section className="inbound-layout">
+        <InboundLeadTable leads={visibleLeads} onSelect={(lead) => setSelectedLeadId(lead.id)} selectedLeadId={selectedLead?.id} />
+        <InboundLeadDetail activities={activities} lead={selectedLead} onRefresh={onRefresh} owners={owners} />
+      </section>
+    </div>
+  )
+}
+
 function SettingsView({ access, profile }) {
   const configStatus = getSupabaseConfigStatus()
   const rows = [
@@ -2193,6 +3325,7 @@ export default function App() {
   const [access, setAccess] = useState({ allowed: false, level: '', roles: [] })
   const [authError, setAuthError] = useState('')
   const [dashboard, setDashboard] = useState(EMPTY_DASHBOARD)
+  const [inbound, setInbound] = useState(EMPTY_INBOUND)
   const [profile, setProfile] = useState(null)
   const [rangeId, setRangeId] = useState('30d')
   const [session, setSession] = useState(null)
@@ -2209,9 +3342,10 @@ export default function App() {
   async function refreshData(nextRange = rangeId) {
     if (!session?.user || !access.allowed) return
     setIsLoading(true)
-    const [dashboardResult, supportResult] = await Promise.all([
+    const [dashboardResult, supportResult, inboundResult] = await Promise.all([
       loadDashboardSnapshot(nextRange),
       loadSupportSnapshot(nextRange),
+      loadInboundLeadsSnapshot(),
     ])
 
     setDashboard({
@@ -2228,6 +3362,14 @@ export default function App() {
       warnings: [
         ...((supportResult.data || {}).warnings || []),
         ...(supportResult.error ? [{ message: supportResult.error, type: 'support_rpc' }] : []),
+      ],
+    })
+    setInbound({
+      ...EMPTY_INBOUND,
+      ...(inboundResult.data || {}),
+      warnings: [
+        ...((inboundResult.data || {}).warnings || []),
+        ...(inboundResult.error ? [{ message: inboundResult.error, type: 'inbound_rpc' }] : []),
       ],
     })
     setIsLoading(false)
@@ -2294,6 +3436,7 @@ export default function App() {
       if (!session?.user) {
         setAccess({ allowed: false, level: '', roles: [] })
         setDashboard(EMPTY_DASHBOARD)
+        setInbound(EMPTY_INBOUND)
         setProfile(null)
         setSupport(EMPTY_SUPPORT)
         return
@@ -2360,6 +3503,10 @@ export default function App() {
     )
   }
 
+  if (pathname === '/join' || pathname === '/join/') {
+    return <PublicIntakePage />
+  }
+
   if (!session) {
     return <LoginScreen authError={authError} onMagicLink={handleMagicLink} onSignIn={handleSignIn} />
   }
@@ -2389,6 +3536,7 @@ export default function App() {
           setRangeId={setRangeId}
         />
         {view === 'dashboard' ? <DashboardView isLoading={isLoading} snapshot={dashboard} support={support} /> : null}
+        {view === 'inboundLeads' ? <InboundLeadsView onRefresh={() => refreshData()} snapshot={inbound} /> : null}
         {['organisations', 'transactions', 'users', 'reports'].includes(view) ? (
           <AdminWorkspaceView snapshot={dashboard} type={view} />
         ) : null}

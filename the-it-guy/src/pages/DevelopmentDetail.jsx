@@ -23,7 +23,6 @@ import {
   PieChart,
   Plus,
   Receipt,
-  RefreshCw,
   Search,
   ShieldCheck,
   Trash2,
@@ -2106,6 +2105,118 @@ function normalizeBankLabel(value) {
   return normalized || 'Unknown'
 }
 
+function firstTextValue(...values) {
+  for (const value of values) {
+    const normalized = String(value || '').trim()
+    if (normalized) return normalized
+  }
+  return ''
+}
+
+function getAgencyInitials(name = '') {
+  const initials = String(name || '')
+    .split(/\s+/)
+    .map((part) => part[0])
+    .filter(Boolean)
+    .join('')
+    .slice(0, 2)
+    .toUpperCase()
+
+  return initials || 'AG'
+}
+
+function resolveResponsibleAgency(row = {}, currentWorkspace = {}) {
+  if (!row?.transaction?.id) {
+    return null
+  }
+
+  const responsibleAgency = row?.responsibleAgency || row?.transaction?.responsibleAgency || {}
+  const transactionOrganisationId = firstTextValue(
+    row?.transaction?.organisation_id,
+    row?.transaction?.organisationId,
+  )
+  const workspaceOrganisationId = firstTextValue(
+    currentWorkspace?.id,
+    currentWorkspace?.organisationId,
+    currentWorkspace?.organisation_id,
+    currentWorkspace?.raw?.organisation_id,
+  )
+  const canUseWorkspaceBranding = !transactionOrganisationId || transactionOrganisationId === workspaceOrganisationId
+  const workspaceBranding = canUseWorkspaceBranding ? currentWorkspace : {}
+
+  const name = firstTextValue(
+    responsibleAgency?.displayName,
+    responsibleAgency?.display_name,
+    responsibleAgency?.name,
+    row?.transaction?.organisationName,
+    row?.transaction?.organisation_name,
+    row?.transaction?.agencyName,
+    row?.transaction?.agency_name,
+    workspaceBranding?.displayName,
+    workspaceBranding?.display_name,
+    workspaceBranding?.name,
+    workspaceBranding?.raw?.display_name,
+    workspaceBranding?.raw?.name,
+    'Responsible agency',
+  )
+  const logoUrl = firstTextValue(
+    responsibleAgency?.logoUrl,
+    responsibleAgency?.logo_url,
+    responsibleAgency?.logoIconUrl,
+    responsibleAgency?.logo_icon_url,
+    row?.transaction?.organisationLogoUrl,
+    row?.transaction?.organisation_logo_url,
+    row?.transaction?.agencyLogoUrl,
+    row?.transaction?.agency_logo_url,
+    workspaceBranding?.logoUrl,
+    workspaceBranding?.logo_url,
+    workspaceBranding?.logoIconUrl,
+    workspaceBranding?.logo_icon_url,
+    workspaceBranding?.raw?.logo_url,
+  )
+
+  return {
+    id: transactionOrganisationId || responsibleAgency?.id || workspaceOrganisationId || '',
+    name,
+    logoUrl,
+  }
+}
+
+function ResponsibleAgencyBadge({ agency }) {
+  const [logoFailed, setLogoFailed] = useState(false)
+  const name = firstTextValue(agency?.name, 'Responsible agency')
+  const logoUrl = firstTextValue(agency?.logoUrl)
+
+  if (!agency) {
+    return (
+      <span
+        className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-dashed border-[#d8e2ee] bg-[#f8fafc] text-xs font-semibold text-[#94a3b8]"
+        title="No transaction agency yet"
+      >
+        -
+      </span>
+    )
+  }
+
+  return (
+    <span
+      className="inline-flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl border border-[#dbe5ef] bg-white text-xs font-semibold text-[#24445f] shadow-sm"
+      title={name}
+    >
+      {logoUrl && !logoFailed ? (
+        <img
+          src={logoUrl}
+          alt={`${name} logo`}
+          className="h-full w-full object-contain p-1.5"
+          onError={() => setLogoFailed(true)}
+        />
+      ) : (
+        <span>{getAgencyInitials(name)}</span>
+      )}
+    </span>
+  )
+}
+
 function DevelopmentDetail() {
   const navigate = useNavigate()
   const { developmentId } = useParams()
@@ -2869,12 +2980,13 @@ function DevelopmentDetail() {
           ...row,
           mainStageKey,
           isManualUnitStatus,
+          responsibleAgency: resolveResponsibleAgency(row, currentWorkspace),
           progressPercent: isManualUnitStatus ? getDevelopmentTrackerProgressPercent(mainStageKey) : getTransactionProgressPercent(row),
           buyerDisplayName: row?.buyer?.name || (isManualUnitStatus ? 'External / direct sale' : 'No buyer assigned'),
           buyerEmail: row?.buyer?.email || (isManualUnitStatus ? 'Manual stock update' : 'No email'),
         }
       })
-  }, [rows, transactionSearch, transactionStageFilter])
+  }, [currentWorkspace, rows, transactionSearch, transactionStageFilter])
   const assignedAgentKeys = useMemo(
     () => new Set(agentAssignments.map((member) => buildAgentAssignmentKey(member))),
     [agentAssignments],
@@ -5724,16 +5836,7 @@ function DevelopmentDetail() {
           <div className="absolute inset-0 bg-[linear-gradient(0deg,rgba(4,18,15,0.62)_0%,rgba(4,18,15,0.28)_46%,rgba(4,18,15,0.08)_100%)]" aria-hidden />
 
           <div className="relative z-10 flex min-h-[360px] flex-col justify-between gap-8 p-5 sm:p-7 lg:p-8">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <Button
-                variant="secondary"
-                onClick={loadData}
-                disabled={loading}
-                className="border-white/20 bg-black/25 text-white shadow-[0_12px_28px_rgba(0,0,0,0.18)] backdrop-blur-md hover:border-white/35 hover:bg-black/35"
-              >
-                <RefreshCw size={14} />
-                Refresh
-              </Button>
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <Button
                 variant="secondary"
                 onClick={() => navigate('/developments')}
@@ -5742,31 +5845,8 @@ function DevelopmentDetail() {
                 <ArrowLeft size={14} />
                 Back to developments
               </Button>
-            </div>
 
-            <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-3">
-                  <h1 className="max-w-[920px] text-[2.55rem] font-semibold leading-[1.04] tracking-[-0.035em] text-white drop-shadow-[0_8px_22px_rgba(0,0,0,0.35)] sm:text-[2.9rem] lg:text-[3.15rem]">
-                    {data.development.name}
-                  </h1>
-                  <span className="inline-flex rounded-full border border-[#b8f1cd]/40 bg-[#17764f]/80 px-3 py-1 text-xs font-semibold text-white shadow-[0_10px_24px_rgba(0,0,0,0.18)] backdrop-blur">
-                    {toTitleLabel(detailsForm.status || 'active')} Development
-                  </span>
-                </div>
-                <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm font-semibold text-white/88">
-                  <span className="inline-flex min-w-0 items-center gap-2">
-                    <MapPin size={16} className="shrink-0 text-white/80" />
-                    <span className="truncate">{locationLine || 'Location pending'}</span>
-                  </span>
-                  <span className="hidden h-1 w-1 rounded-full bg-white/45 sm:inline-flex" aria-hidden />
-                  <span>{formatNumber(overviewSalesProgress.totalUnits)} Units</span>
-                  <span className="hidden h-1 w-1 rounded-full bg-white/45 sm:inline-flex" aria-hidden />
-                  <span>{formatPercent(overviewSalesProgress.sellThroughPercent)} Sold Through</span>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-3 xl:justify-end">
+              <div className="flex flex-wrap items-center gap-3 sm:justify-end">
                 {canManageDevelopment ? (
                   <Button
                     variant="secondary"
@@ -5794,6 +5874,27 @@ function DevelopmentDetail() {
                   <Upload size={15} />
                   Upload Asset
                 </Button>
+              </div>
+            </div>
+
+            <div className="mb-10 min-w-0 lg:mb-12">
+              <div className="flex flex-wrap items-center gap-3">
+                <h1 className="max-w-[920px] text-[2.55rem] font-semibold leading-[1.04] tracking-[-0.035em] text-white drop-shadow-[0_8px_22px_rgba(0,0,0,0.35)] sm:text-[2.9rem] lg:text-[3.15rem]">
+                  {data.development.name}
+                </h1>
+                <span className="inline-flex rounded-full border border-[#b8f1cd]/40 bg-[#17764f]/80 px-3 py-1 text-xs font-semibold text-white shadow-[0_10px_24px_rgba(0,0,0,0.18)] backdrop-blur">
+                  {toTitleLabel(detailsForm.status || 'active')} Development
+                </span>
+              </div>
+              <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm font-semibold text-white/88">
+                <span className="inline-flex min-w-0 items-center gap-2">
+                  <MapPin size={16} className="shrink-0 text-white/80" />
+                  <span className="truncate">{locationLine || 'Location pending'}</span>
+                </span>
+                <span className="hidden h-1 w-1 rounded-full bg-white/45 sm:inline-flex" aria-hidden />
+                <span>{formatNumber(overviewSalesProgress.totalUnits)} Units</span>
+                <span className="hidden h-1 w-1 rounded-full bg-white/45 sm:inline-flex" aria-hidden />
+                <span>{formatPercent(overviewSalesProgress.sellThroughPercent)} Sold Through</span>
               </div>
             </div>
           </div>
@@ -8838,15 +8939,16 @@ function DevelopmentDetail() {
                 <div className="h-[520px] overflow-y-auto overflow-x-hidden">
                   <table className="w-full table-fixed divide-y divide-[#e8eef5]">
                     <colgroup>
-                      <col className="w-[18%]" />
-                      <col className="w-[24%]" />
+                      <col className="w-[15%]" />
+                      <col className="w-[9%]" />
                       <col className="w-[22%]" />
                       <col className="w-[22%]" />
-                      <col className="w-[14%]" />
+                      <col className="w-[22%]" />
+                      <col className="w-[10%]" />
                     </colgroup>
                     <thead className="bg-[#f8fafc]">
                       <tr>
-                        {['Unit', 'Progress', 'Buyer Name', 'Email', 'Stage'].map((heading) => (
+                        {['Unit', 'Agency', 'Progress', 'Buyer Name', 'Email', 'Stage'].map((heading) => (
                           <th key={heading} className="sticky top-0 z-10 bg-[#f8fafc] px-4 py-3 text-left text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">
                             {heading}
                           </th>
@@ -8854,54 +8956,59 @@ function DevelopmentDetail() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#edf2f7] bg-white">
-                      {transactionRows.map((row) => (
-                        <tr
-                          key={row.transaction?.id || row.unit?.id}
-                          className="h-[64px] cursor-pointer align-middle hover:bg-[#f8fbff]"
-                          onClick={() => {
-                            if (row.transaction?.id) {
-                              openDevelopmentTransactionWorkspace(row)
-                              return
-                            }
-                            openDevelopmentTransactionWizard({ unitId: row.unit?.id })
-                          }}
-                        >
-                          <td className="px-4 py-3 align-middle">
-                            <strong className="block w-full truncate whitespace-nowrap text-left text-sm font-semibold leading-6 text-[#22384c]" title={`Unit ${row.unit?.unit_number || '—'}`}>
-                              {`Unit ${row.unit?.unit_number || '—'}`}
-                            </strong>
-                          </td>
-                          <td className="px-4 py-3 align-middle">
-                            <div className="flex items-center gap-2.5 whitespace-nowrap">
-                              <div className="h-2.5 min-w-0 flex-1 overflow-hidden rounded-full bg-[#e7edf5]">
-                                <span
-                                  className={`block h-full rounded-full ${getTransactionProgressToneClass(row.mainStageKey)}`}
-                                  style={{ width: `${Math.max(0, row.progressPercent || 0)}%` }}
-                                />
+                      {transactionRows.map((row) => {
+                        const canOpenTransaction = Boolean(row.transaction?.id)
+
+                        return (
+                          <tr
+                            key={row.transaction?.id || row.unit?.id}
+                            className={`h-[64px] align-middle ${canOpenTransaction ? 'cursor-pointer hover:bg-[#f8fbff]' : ''}`}
+                            onClick={() => {
+                              if (canOpenTransaction) {
+                                openDevelopmentTransactionWorkspace(row)
+                              }
+                            }}
+                          >
+                            <td className="px-4 py-3 align-middle">
+                              <strong className="block w-full truncate whitespace-nowrap text-left text-sm font-semibold leading-6 text-[#22384c]" title={`Unit ${row.unit?.unit_number || '—'}`}>
+                                {`Unit ${row.unit?.unit_number || '—'}`}
+                              </strong>
+                            </td>
+                            <td className="px-4 py-3 align-middle">
+                              <ResponsibleAgencyBadge agency={row.responsibleAgency} />
+                            </td>
+                            <td className="px-4 py-3 align-middle">
+                              <div className="flex items-center gap-2.5 whitespace-nowrap">
+                                <div className="h-2.5 min-w-0 flex-1 overflow-hidden rounded-full bg-[#e7edf5]">
+                                  <span
+                                    className={`block h-full rounded-full ${getTransactionProgressToneClass(row.mainStageKey)}`}
+                                    style={{ width: `${Math.max(0, row.progressPercent || 0)}%` }}
+                                  />
+                                </div>
+                                <span className="w-10 text-right text-xs font-semibold text-[#5f748c]">{row.progressPercent}%</span>
                               </div>
-                              <span className="w-10 text-right text-xs font-semibold text-[#5f748c]">{row.progressPercent}%</span>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 align-middle">
-                            <strong className="block truncate whitespace-nowrap text-sm font-semibold leading-6 text-[#1f3145]" title={row.buyerDisplayName}>
-                              {row.buyerDisplayName}
-                            </strong>
-                          </td>
-                          <td className="px-4 py-3 align-middle">
-                            <span className="block truncate whitespace-nowrap text-sm leading-6 text-[#556a80]" title={row.buyerEmail}>
-                              {row.buyerEmail}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 align-middle">
-                            <span
-                              className={`inline-flex max-w-full overflow-hidden text-ellipsis whitespace-nowrap rounded-full border px-3 py-1 text-xs font-semibold ${getTransactionStagePillClassName(row.mainStageKey)}`}
-                              title={row.transaction?.stage || row.unit?.status || 'Available'}
-                            >
-                              {toTitleLabel(row.transaction?.stage || row.unit?.status || 'available')}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
+                            </td>
+                            <td className="px-4 py-3 align-middle">
+                              <strong className="block truncate whitespace-nowrap text-sm font-semibold leading-6 text-[#1f3145]" title={row.buyerDisplayName}>
+                                {row.buyerDisplayName}
+                              </strong>
+                            </td>
+                            <td className="px-4 py-3 align-middle">
+                              <span className="block truncate whitespace-nowrap text-sm leading-6 text-[#556a80]" title={row.buyerEmail}>
+                                {row.buyerEmail}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 align-middle">
+                              <span
+                                className={`inline-flex max-w-full overflow-hidden text-ellipsis whitespace-nowrap rounded-full border px-3 py-1 text-xs font-semibold ${getTransactionStagePillClassName(row.mainStageKey)}`}
+                                title={row.transaction?.stage || row.unit?.status || 'Available'}
+                              >
+                                {toTitleLabel(row.transaction?.stage || row.unit?.status || 'available')}
+                              </span>
+                            </td>
+                          </tr>
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>
