@@ -40,8 +40,8 @@ assert.match(
 
 assert.match(
   pipelineSource,
-  /await loadTransactionApiActions\(\)/,
-  'AgencyPipelinePage transaction API call sites should await the deferred loader',
+  /createDeferredAction\(loadTransactionApiActions,\s*['"]addTransactionDiscussionComment['"]\)/,
+  'AgencyPipelinePage transaction API call sites should use cached deferred actions',
 )
 
 assert.doesNotMatch(

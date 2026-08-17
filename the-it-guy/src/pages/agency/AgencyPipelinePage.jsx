@@ -202,196 +202,74 @@ const PIPELINE_MANDATE_SIGNING_EMAIL_TIMEOUT_MS = 20000
 const LegalDocumentWorkspace = lazy(() => import('../../components/documents/LegalDocumentWorkspace'))
 const LeadActivityWorkspace = lazy(() => import('../../components/lead-activity/LeadActivityWorkspace'))
 const KingstonsSellerAppointmentsWorkspace = lazy(() => import('../../components/appointments/KingstonsSellerAppointmentsWorkspace'))
+function createDeferredAction(loadModule, actionName) {
+  return async (...args) => {
+    const module = await loadModule()
+    return module[actionName](...args)
+  }
+}
 let transactionApiActionsPromise = null
 function loadTransactionApiActions() {
   if (!transactionApiActionsPromise) {
-    transactionApiActionsPromise = import('../../lib/api').then((api) => ({
-      addTransactionDiscussionComment: api.addTransactionDiscussionComment,
-      finalizeCanonicalPhysicalSignedOtpWorkflow: api.finalizeCanonicalPhysicalSignedOtpWorkflow,
-      saveTransactionRoleplayerSelections: api.saveTransactionRoleplayerSelections,
-    }))
+    transactionApiActionsPromise = import('../../lib/api')
   }
   return transactionApiActionsPromise
 }
+const addTransactionDiscussionComment = createDeferredAction(loadTransactionApiActions, 'addTransactionDiscussionComment')
+const finalizeCanonicalPhysicalSignedOtpWorkflow = createDeferredAction(loadTransactionApiActions, 'finalizeCanonicalPhysicalSignedOtpWorkflow')
+const saveTransactionRoleplayerSelections = createDeferredAction(loadTransactionApiActions, 'saveTransactionRoleplayerSelections')
 let packetServiceActionsPromise = null
 function loadPacketServiceActions() {
   if (!packetServiceActionsPromise) {
-    packetServiceActionsPromise = import('../../core/documents/packetService').then((service) => ({
-      generatePacketVersion: service.generatePacketVersion,
-      generateSigningLinks: service.generateSigningLinks,
-      prepareSigningFields: service.prepareSigningFields,
-      resetSigningFields: service.resetSigningFields,
-      resolveActiveTemplate: service.resolveActiveTemplate,
-    }))
+    packetServiceActionsPromise = import('../../core/documents/packetService')
   }
   return packetServiceActionsPromise
 }
-async function generatePacketVersion(...args) {
-  const { generatePacketVersion: action } = await loadPacketServiceActions()
-  return action(...args)
-}
-async function generateSigningLinks(...args) {
-  const { generateSigningLinks: action } = await loadPacketServiceActions()
-  return action(...args)
-}
-async function prepareSigningFields(...args) {
-  const { prepareSigningFields: action } = await loadPacketServiceActions()
-  return action(...args)
-}
-async function resetSigningFields(...args) {
-  const { resetSigningFields: action } = await loadPacketServiceActions()
-  return action(...args)
-}
-async function resolveActiveTemplate(...args) {
-  const { resolveActiveTemplate: action } = await loadPacketServiceActions()
-  return action(...args)
-}
+const generatePacketVersion = createDeferredAction(loadPacketServiceActions, 'generatePacketVersion')
+const generateSigningLinks = createDeferredAction(loadPacketServiceActions, 'generateSigningLinks')
+const prepareSigningFields = createDeferredAction(loadPacketServiceActions, 'prepareSigningFields')
+const resetSigningFields = createDeferredAction(loadPacketServiceActions, 'resetSigningFields')
+const resolveActiveTemplate = createDeferredAction(loadPacketServiceActions, 'resolveActiveTemplate')
 let documentPacketActionsPromise = null
 function loadDocumentPacketActions() {
   if (!documentPacketActionsPromise) {
-    documentPacketActionsPromise = import('../../lib/documentPacketsApi').then((api) => ({
-      applySigningFieldLayout: api.applySigningFieldLayout,
-      completeEditableDocumentRenderFreeze: api.completeEditableDocumentRenderFreeze,
-      createEditableDocumentDraftFromTemplate: api.createEditableDocumentDraftFromTemplate,
-      fetchDocumentPacket: api.fetchDocumentPacket,
-      fetchSigningFieldLayout: api.fetchSigningFieldLayout,
-      freezeEditableDocumentRevisionForRender: api.freezeEditableDocumentRevisionForRender,
-      listLegalDocumentJobsForPacket: api.listLegalDocumentJobsForPacket,
-      listDocumentPackets: api.listDocumentPackets,
-      persistGeneratedPdfToTransaction: api.persistGeneratedPdfToTransaction,
-      resolveWorkspaceFinalSignedDocumentAccess: api.resolveWorkspaceFinalSignedDocumentAccess,
-      saveSigningFieldPlacement: api.saveSigningFieldPlacement,
-      verifyFrozenEditableRenderOutput: api.verifyFrozenEditableRenderOutput,
-      verifyServerAttestedNativePdfRender: api.verifyServerAttestedNativePdfRender,
-    }))
+    documentPacketActionsPromise = import('../../lib/documentPacketsApi')
   }
   return documentPacketActionsPromise
 }
-async function applySigningFieldLayout(...args) {
-  const { applySigningFieldLayout: action } = await loadDocumentPacketActions()
-  return action(...args)
-}
-async function completeEditableDocumentRenderFreeze(...args) {
-  const { completeEditableDocumentRenderFreeze: action } = await loadDocumentPacketActions()
-  return action(...args)
-}
-async function createEditableDocumentDraftFromTemplate(...args) {
-  const { createEditableDocumentDraftFromTemplate: action } = await loadDocumentPacketActions()
-  return action(...args)
-}
-async function fetchDocumentPacket(...args) {
-  const { fetchDocumentPacket: action } = await loadDocumentPacketActions()
-  return action(...args)
-}
-async function fetchSigningFieldLayout(...args) {
-  const { fetchSigningFieldLayout: action } = await loadDocumentPacketActions()
-  return action(...args)
-}
-async function freezeEditableDocumentRevisionForRender(...args) {
-  const { freezeEditableDocumentRevisionForRender: action } = await loadDocumentPacketActions()
-  return action(...args)
-}
-async function listLegalDocumentJobsForPacket(...args) {
-  const { listLegalDocumentJobsForPacket: action } = await loadDocumentPacketActions()
-  return action(...args)
-}
-async function listDocumentPackets(...args) {
-  const { listDocumentPackets: action } = await loadDocumentPacketActions()
-  return action(...args)
-}
-async function persistGeneratedPdfToTransaction(...args) {
-  const { persistGeneratedPdfToTransaction: action } = await loadDocumentPacketActions()
-  return action(...args)
-}
-async function resolveWorkspaceFinalSignedDocumentAccess(...args) {
-  const { resolveWorkspaceFinalSignedDocumentAccess: action } = await loadDocumentPacketActions()
-  return action(...args)
-}
-async function saveSigningFieldPlacement(...args) {
-  const { saveSigningFieldPlacement: action } = await loadDocumentPacketActions()
-  return action(...args)
-}
-async function verifyFrozenEditableRenderOutput(...args) {
-  const { verifyFrozenEditableRenderOutput: action } = await loadDocumentPacketActions()
-  return action(...args)
-}
-async function verifyServerAttestedNativePdfRender(...args) {
-  const { verifyServerAttestedNativePdfRender: action } = await loadDocumentPacketActions()
-  return action(...args)
-}
+const applySigningFieldLayout = createDeferredAction(loadDocumentPacketActions, 'applySigningFieldLayout')
+const completeEditableDocumentRenderFreeze = createDeferredAction(loadDocumentPacketActions, 'completeEditableDocumentRenderFreeze')
+const createEditableDocumentDraftFromTemplate = createDeferredAction(loadDocumentPacketActions, 'createEditableDocumentDraftFromTemplate')
+const fetchDocumentPacket = createDeferredAction(loadDocumentPacketActions, 'fetchDocumentPacket')
+const fetchSigningFieldLayout = createDeferredAction(loadDocumentPacketActions, 'fetchSigningFieldLayout')
+const freezeEditableDocumentRevisionForRender = createDeferredAction(loadDocumentPacketActions, 'freezeEditableDocumentRevisionForRender')
+const listLegalDocumentJobsForPacket = createDeferredAction(loadDocumentPacketActions, 'listLegalDocumentJobsForPacket')
+const listDocumentPackets = createDeferredAction(loadDocumentPacketActions, 'listDocumentPackets')
+const persistGeneratedPdfToTransaction = createDeferredAction(loadDocumentPacketActions, 'persistGeneratedPdfToTransaction')
+const resolveWorkspaceFinalSignedDocumentAccess = createDeferredAction(loadDocumentPacketActions, 'resolveWorkspaceFinalSignedDocumentAccess')
+const saveSigningFieldPlacement = createDeferredAction(loadDocumentPacketActions, 'saveSigningFieldPlacement')
+const verifyFrozenEditableRenderOutput = createDeferredAction(loadDocumentPacketActions, 'verifyFrozenEditableRenderOutput')
+const verifyServerAttestedNativePdfRender = createDeferredAction(loadDocumentPacketActions, 'verifyServerAttestedNativePdfRender')
 let privateListingActionsPromise = null
 function loadPrivateListingActions() {
   if (!privateListingActionsPromise) {
-    privateListingActionsPromise = import('../../services/privateListingService').then((service) => ({
-      activatePrivateListing: service.activatePrivateListing,
-      createPrivateListing: service.createPrivateListing,
-      createPrivateListingActivity: service.createPrivateListingActivity,
-      deletePrivateListing: service.deletePrivateListing,
-      ensurePrivateListingDocumentRequirements: service.ensurePrivateListingDocumentRequirements,
-      getOrganisationPrivateListings: service.getOrganisationPrivateListings,
-      getPrivateListing: service.getPrivateListing,
-      getSellerOnboardingByToken: service.getSellerOnboardingByToken,
-      linkPrivateListingDocument: service.linkPrivateListingDocument,
-      markPrivateListingDocumentsPendingTransactionPromotion: service.markPrivateListingDocumentsPendingTransactionPromotion,
-      persistSellerProfileOnboardingFormData: service.persistSellerProfileOnboardingFormData,
-      sendSellerOnboarding: service.sendSellerOnboarding,
-      updatePrivateListing: service.updatePrivateListing,
-    }))
+    privateListingActionsPromise = import('../../services/privateListingService')
   }
   return privateListingActionsPromise
 }
-async function activatePrivateListing(...args) {
-  const { activatePrivateListing: action } = await loadPrivateListingActions()
-  return action(...args)
-}
-async function createPrivateListing(...args) {
-  const { createPrivateListing: action } = await loadPrivateListingActions()
-  return action(...args)
-}
-async function createPrivateListingActivity(...args) {
-  const { createPrivateListingActivity: action } = await loadPrivateListingActions()
-  return action(...args)
-}
-async function deletePrivateListing(...args) {
-  const { deletePrivateListing: action } = await loadPrivateListingActions()
-  return action(...args)
-}
-async function ensurePrivateListingDocumentRequirements(...args) {
-  const { ensurePrivateListingDocumentRequirements: action } = await loadPrivateListingActions()
-  return action(...args)
-}
-async function getOrganisationPrivateListings(...args) {
-  const { getOrganisationPrivateListings: action } = await loadPrivateListingActions()
-  return action(...args)
-}
-async function getPrivateListing(...args) {
-  const { getPrivateListing: action } = await loadPrivateListingActions()
-  return action(...args)
-}
-async function getSellerOnboardingByToken(...args) {
-  const { getSellerOnboardingByToken: action } = await loadPrivateListingActions()
-  return action(...args)
-}
-async function linkPrivateListingDocument(...args) {
-  const { linkPrivateListingDocument: action } = await loadPrivateListingActions()
-  return action(...args)
-}
-async function markPrivateListingDocumentsPendingTransactionPromotion(...args) {
-  const { markPrivateListingDocumentsPendingTransactionPromotion: action } = await loadPrivateListingActions()
-  return action(...args)
-}
-async function persistSellerProfileOnboardingFormData(...args) {
-  const { persistSellerProfileOnboardingFormData: action } = await loadPrivateListingActions()
-  return action(...args)
-}
-async function sendSellerOnboarding(...args) {
-  const { sendSellerOnboarding: action } = await loadPrivateListingActions()
-  return action(...args)
-}
-async function updatePrivateListing(...args) {
-  const { updatePrivateListing: action } = await loadPrivateListingActions()
-  return action(...args)
-}
+const activatePrivateListing = createDeferredAction(loadPrivateListingActions, 'activatePrivateListing')
+const createPrivateListing = createDeferredAction(loadPrivateListingActions, 'createPrivateListing')
+const createPrivateListingActivity = createDeferredAction(loadPrivateListingActions, 'createPrivateListingActivity')
+const deletePrivateListing = createDeferredAction(loadPrivateListingActions, 'deletePrivateListing')
+const ensurePrivateListingDocumentRequirements = createDeferredAction(loadPrivateListingActions, 'ensurePrivateListingDocumentRequirements')
+const getOrganisationPrivateListings = createDeferredAction(loadPrivateListingActions, 'getOrganisationPrivateListings')
+const getPrivateListing = createDeferredAction(loadPrivateListingActions, 'getPrivateListing')
+const getSellerOnboardingByToken = createDeferredAction(loadPrivateListingActions, 'getSellerOnboardingByToken')
+const linkPrivateListingDocument = createDeferredAction(loadPrivateListingActions, 'linkPrivateListingDocument')
+const markPrivateListingDocumentsPendingTransactionPromotion = createDeferredAction(loadPrivateListingActions, 'markPrivateListingDocumentsPendingTransactionPromotion')
+const persistSellerProfileOnboardingFormData = createDeferredAction(loadPrivateListingActions, 'persistSellerProfileOnboardingFormData')
+const sendSellerOnboarding = createDeferredAction(loadPrivateListingActions, 'sendSellerOnboarding')
+const updatePrivateListing = createDeferredAction(loadPrivateListingActions, 'updatePrivateListing')
 const SELLER_PORTAL_ACTIVATION_SOURCES = Object.freeze({
   sellerLead: 'seller_lead',
   existingListing: 'existing_listing',
@@ -402,29 +280,19 @@ const SELLER_PORTAL_ACTIVATION_SOURCES = Object.freeze({
 let sellerPortalActivationActionsPromise = null
 function loadSellerPortalActivationActions() {
   if (!sellerPortalActivationActionsPromise) {
-    sellerPortalActivationActionsPromise = import('../../services/sellerPortalActivationService').then((service) => ({
-      activateSellerPortalForListing: service.activateSellerPortalForListing,
-    }))
+    sellerPortalActivationActionsPromise = import('../../services/sellerPortalActivationService')
   }
   return sellerPortalActivationActionsPromise
 }
-async function activateSellerPortalForListing(...args) {
-  const { activateSellerPortalForListing: action } = await loadSellerPortalActivationActions()
-  return action(...args)
-}
+const activateSellerPortalForListing = createDeferredAction(loadSellerPortalActivationActions, 'activateSellerPortalForListing')
 let leadEmailCaptureActionsPromise = null
 function loadLeadEmailCaptureActions() {
   if (!leadEmailCaptureActionsPromise) {
-    leadEmailCaptureActionsPromise = import('../../services/leadEmailCaptureService').then((service) => ({
-      listInboundLeadEmails: service.listInboundLeadEmails,
-    }))
+    leadEmailCaptureActionsPromise = import('../../services/leadEmailCaptureService')
   }
   return leadEmailCaptureActionsPromise
 }
-async function listInboundLeadEmails(...args) {
-  const { listInboundLeadEmails: action } = await loadLeadEmailCaptureActions()
-  return action(...args)
-}
+const listInboundLeadEmails = createDeferredAction(loadLeadEmailCaptureActions, 'listInboundLeadEmails')
 const UUID_PATTERN = /[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i
 function readPipelineBooleanFlag(value, fallback = false) {
   const text = String(value ?? '').trim().toLowerCase()
