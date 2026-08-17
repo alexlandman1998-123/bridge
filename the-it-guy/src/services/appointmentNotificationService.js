@@ -1,5 +1,4 @@
 import { getEdgeFunctionInvokeError, invokeEdgeFunction, supabase, isSupabaseConfigured } from '../lib/supabaseClient'
-import { createClientPortalNotification } from './clientPortalNotificationsService'
 import { getAppointmentTypeTemplate } from './appointmentTemplateService'
 import { prepareNotificationOutbox } from './notificationOutboxService'
 import { NOTIFICATION_MODE } from './communicationDeliveryService'
@@ -30,6 +29,16 @@ const EMAIL_SUPPORTED_EVENT_TYPES = new Set([
   'appointment_reminder_due',
   'appointment_documents_required',
 ])
+
+let clientPortalNotificationServicePromise = null
+function loadClientPortalNotificationService() {
+  if (!clientPortalNotificationServicePromise) {
+    clientPortalNotificationServicePromise = import('./clientPortalNotificationsService').then((service) => ({
+      createClientPortalNotification: service.createClientPortalNotification,
+    }))
+  }
+  return clientPortalNotificationServicePromise
+}
 
 function normalizeText(value = '') {
   return String(value || '').trim()
@@ -891,6 +900,7 @@ export async function notifyAppointmentParticipants(appointmentId, eventType, op
       if (visibility === 'client_visible' && ['buyer', 'seller'].includes(role) && appointment?.transaction_id) {
         const portalToken = await resolveClientPortalTokenForTransaction(appointment.transaction_id)
         if (portalToken) {
+          const { createClientPortalNotification } = await loadClientPortalNotificationService()
           await createClientPortalNotification({
             token: portalToken,
             clientRole: normalizeClientRole(role),

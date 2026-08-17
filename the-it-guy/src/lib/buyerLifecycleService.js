@@ -3,7 +3,6 @@ import { createTransactionFromLeadOverride, findExistingTransactionForAcceptedOf
 import { resolveTransactionRoutingProfile } from '../services/transactionRoutingProfileService.js'
 import { prepareAgentLegalHandoff } from '../services/agentLegalHandoffService.js'
 import { getListingReadinessSummary } from './privateListingRequirementEngine.js'
-import { updatePrivateListing } from '../services/privateListingService.js'
 import { assertMvpAcceptedOfferConversionReceipt } from '../core/transactions/mvpAcceptedOfferConversionReceipt.js'
 import { mergeResidentialOfferTermsIntoConditions } from '../core/offers/residentialOfferTerms.js'
 import { buildResidentialOfferConditionReviewPatch } from '../core/offers/residentialOfferConditionReview.js'
@@ -12,6 +11,21 @@ import { deriveFinanceManagedBy } from '../core/transactions/financeType.js'
 import { mapOfferFormToBuyerOnboardingForm } from './offerBuyerOnboardingBridge.js'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+let privateListingActionsPromise = null
+function loadPrivateListingActions() {
+  if (!privateListingActionsPromise) {
+    privateListingActionsPromise = import('../services/privateListingService.js').then((service) => ({
+      updatePrivateListing: service.updatePrivateListing,
+    }))
+  }
+  return privateListingActionsPromise
+}
+
+async function updatePrivateListing(...args) {
+  const { updatePrivateListing: action } = await loadPrivateListingActions()
+  return action(...args)
+}
 
 export const BUYER_LEAD_STAGES = [
   'New Lead',

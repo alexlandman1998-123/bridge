@@ -1,12 +1,3 @@
-import {
-  fetchDocumentPacket,
-  getFinalDocumentCompletionStatus,
-  getDocumentGeneratorLaunchChain,
-  getDocumentPacketSigningSummary,
-  getDocumentWorkspaceStatusFast,
-  listDocumentPacketVersions,
-  listDocumentPackets,
-} from '../../lib/documentPacketsApi'
 import { normalizeDocumentLifecycleState } from './documentLifecycle'
 import { resolveSigningOperationalStatus } from './signingOperationalStatus'
 import { buildSigningActivityHistory } from './signingActivityHistory'
@@ -16,6 +7,21 @@ import { findLatestSignableGeneratedVersion, isPilotDocumentFallbackVersion } fr
 const PACKET_STATUS_CACHE_TTL_MS = 1500
 const cachedPacketStatuses = new Map()
 const pendingPacketStatuses = new Map()
+let documentPacketStatusApiPromise = null
+function loadDocumentPacketStatusApi() {
+  if (!documentPacketStatusApiPromise) {
+    documentPacketStatusApiPromise = import('../../lib/documentPacketsApi').then((api) => ({
+      fetchDocumentPacket: api.fetchDocumentPacket,
+      getFinalDocumentCompletionStatus: api.getFinalDocumentCompletionStatus,
+      getDocumentGeneratorLaunchChain: api.getDocumentGeneratorLaunchChain,
+      getDocumentPacketSigningSummary: api.getDocumentPacketSigningSummary,
+      getDocumentWorkspaceStatusFast: api.getDocumentWorkspaceStatusFast,
+      listDocumentPacketVersions: api.listDocumentPacketVersions,
+      listDocumentPackets: api.listDocumentPackets,
+    }))
+  }
+  return documentPacketStatusApiPromise
+}
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -432,6 +438,15 @@ export async function resolveDocumentPacketStatus({
   }
 
   const resolutionPromise = (async () => {
+    const {
+      fetchDocumentPacket,
+      getFinalDocumentCompletionStatus,
+      getDocumentGeneratorLaunchChain,
+      getDocumentPacketSigningSummary,
+      getDocumentWorkspaceStatusFast,
+      listDocumentPacketVersions,
+      listDocumentPackets,
+    } = await loadDocumentPacketStatusApi()
     const normalizedPacketType = normalizeKey(packetType)
     const normalizedPacketId = normalizeText(packetId)
     const normalizedTransactionId = normalizeText(transactionId)

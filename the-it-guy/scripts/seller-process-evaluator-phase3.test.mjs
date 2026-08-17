@@ -171,6 +171,33 @@ function assertLiveSourceDoesNotImportEvaluator(source, label) {
   const evaluation = evaluateSellerProcess({
     ...kingstonsProfile,
     lead: {
+      contactedAt: '2026-08-10T08:00:00.000Z',
+      stage: 'Seller Pack',
+      status: 'Valuation Presented',
+      nextStep: 'Seller Pack',
+    },
+    activities: [
+      { activityType: 'Valuation Presented', activityNote: 'Valuation presentation completed from Next Best Action. Seller process moved to Seller Pack.', outcome: 'valuation_presented' },
+    ],
+    appointments: [
+      { appointmentType: 'seller_valuation', status: 'completed' },
+    ],
+    documents: [
+      { document_type: 'valuation_document', status: 'uploaded', storage_path: 'valuations/valuation.pdf' },
+    ],
+  })
+
+  assert.equal(evaluation.evidence.valuation_presentation_scheduled.satisfied, true)
+  assert.equal(evaluation.evidence.valuation_presented.satisfied, true)
+  assert.equal(evaluation.currentStage.key, 'seller_pack_signed')
+  assert.equal(evaluation.completedStageKeys.includes('valuation_presentation_scheduled'), true)
+  assert.equal(evaluation.completedStageKeys.includes('valuation_presented'), true)
+}
+
+{
+  const evaluation = evaluateSellerProcess({
+    ...kingstonsProfile,
+    lead: {
       stage: 'Contacted',
       rawEnquiryPayload: {
         kingstonsSellerPack: {

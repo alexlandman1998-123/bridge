@@ -431,6 +431,39 @@ function activitySatisfiesValuationAppointmentScheduled(activity = {}) {
   )
 }
 
+function leadHasValuationPresentationScheduledEvidence(lead = {}) {
+  const stage = normalizeKey(lead?.stage || lead?.currentStage || lead?.current_stage)
+  const status = normalizeKey(lead?.status || lead?.currentStatus || lead?.current_status)
+  const nextStep = normalizeKey(lead?.nextStep || lead?.next_step || lead?.nextFollowUp || lead?.next_follow_up)
+  const signals = [stage, status, nextStep].filter(Boolean)
+  return signals.some((signal) =>
+    signal === 'valuation_presentation' ||
+      signal === 'valuation_presentation_scheduled' ||
+      signal === 'valuation_presentation_booked' ||
+      signal === 'valuation_presented' ||
+      signal === 'seller_pack' ||
+      signal === 'seller_pack_signed' ||
+      signal === 'listing_ready'
+  )
+}
+
+function activitySatisfiesValuationPresentationScheduled(activity = {}) {
+  const type = normalizeKey(activity?.activityType || activity?.activity_type || activity?.eventType || activity?.event_type || activity?.type || activity?.title)
+  const status = normalizeKey(activity?.status)
+  if (['cancelled', 'canceled', 'deleted'].includes(status)) return false
+  const signal = [
+    type,
+    normalizeKey(activity?.activityNote || activity?.activity_note || activity?.note || activity?.description),
+    normalizeKey(activity?.outcome),
+  ].filter(Boolean).join('_')
+  return Boolean(
+    signal.includes('valuation_presentation_scheduled') ||
+      signal.includes('valuation_presentation_booked') ||
+      signal.includes('schedule_valuation_presentation') ||
+      (signal.includes('valuation_presentation') && (signal.includes('appointment_created') || signal.includes('scheduled') || signal.includes('sent') || signal.includes('booked')))
+  )
+}
+
 function activitySatisfiesValuationPresented(activity = {}) {
   const type = normalizeKey(activity?.activityType || activity?.activity_type || activity?.eventType || activity?.event_type || activity?.type || activity?.title)
   const status = normalizeKey(activity?.status)
@@ -615,8 +648,18 @@ function evaluateGate(gate = {}, context = {}) {
 
   if (gate.source === 'appointment') {
     const matches = asArray(context.appointments).filter((appointment) => appointmentSatisfiesGate(appointment, gate))
-    const leadFallback = gate.key === 'valuation_appointment_scheduled' && leadHasValuationAppointmentScheduledEvidence(context.lead)
-    const activityFallback = gate.key === 'valuation_appointment_scheduled' && asArray(context.activities).some(activitySatisfiesValuationAppointmentScheduled)
+    const leadFallback = gate.key === 'valuation_appointment_scheduled'
+      ? leadHasValuationAppointmentScheduledEvidence(context.lead)
+      : gate.key === 'valuation_presentation_scheduled'
+        ? leadHasValuationPresentationScheduledEvidence(context.lead) || leadHasValuationPresentedEvidence(context.lead)
+        : false
+    const activityFallback = gate.key === 'valuation_appointment_scheduled'
+      ? asArray(context.activities).some(activitySatisfiesValuationAppointmentScheduled)
+      : gate.key === 'valuation_presentation_scheduled'
+        ? asArray(context.activities).some((activity) =>
+            activitySatisfiesValuationPresentationScheduled(activity) || activitySatisfiesValuationPresented(activity)
+          )
+        : false
     return {
       key: gate.key,
       source: gate.source,

@@ -1,4 +1,4 @@
-import { generateMandateDocumentFromTemplate } from '../../lib/api'
+import { generateMandateDocumentFromTemplate } from '../../lib/generateMandateDocument'
 import { invokeEdgeFunction } from '../../lib/supabaseClient'
 import { validateDocumentGenerationPreflight } from '../../lib/documentGenerationContract'
 import { findLatestSignableGeneratedVersion, isPilotDocumentFallbackVersion } from './pilotDocumentFallback'

@@ -1,6 +1,15 @@
-import { getOrCreateTransactionOnboarding } from './api'
+let onboardingApiPromise = null
+function loadOnboardingApi() {
+  if (!onboardingApiPromise) {
+    onboardingApiPromise = import('./api').then((api) => ({
+      getOrCreateTransactionOnboarding: api.getOrCreateTransactionOnboarding,
+    }))
+  }
+  return onboardingApiPromise
+}
 
 export async function resolveTransactionOnboardingLink({ transactionId, purchaserType = 'individual' }) {
+  const { getOrCreateTransactionOnboarding } = await loadOnboardingApi()
   const onboarding = await getOrCreateTransactionOnboarding({
     transactionId,
     purchaserType,

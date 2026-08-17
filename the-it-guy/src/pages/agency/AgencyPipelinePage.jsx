@@ -1,14 +1,11 @@
 import { AlertTriangle, ArrowLeft, ArrowUpRight, Bath, BedDouble, Bold, Bookmark, Box, Building2, CalendarDays, Car, CheckCircle2, CheckSquare, ChevronDown, ChevronRight, Clock3, Columns3, Copy, Download, ExternalLink, Eye, FileText, Filter, Gauge, Home, ImageIcon, Italic, Link2, List, Lock, Mail, MapPin, MessageCircle, MoreHorizontal, Paperclip, Pencil, Phone, Plus, RefreshCw, Ruler, Search, Send, Settings, ShieldCheck, Smile, Star, Table2, Tag, Trash2, TrendingUp, Upload, UserRound, X, Zap } from 'lucide-react'
-import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, createElement, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import LoadingSkeleton from '../../components/LoadingSkeleton'
 import AddressAutocomplete from '../../components/location/AddressAutocomplete'
 import AreaAutocomplete from '../../components/location/AreaAutocomplete'
 import AreaMultiSelect from '../../components/location/AreaMultiSelect'
 import AppointmentCalendarActions from '../../components/appointments/AppointmentCalendarActions'
-import KingstonsSellerAppointmentsWorkspace from '../../components/appointments/KingstonsSellerAppointmentsWorkspace'
-import LegalDocumentWorkspace from '../../components/documents/LegalDocumentWorkspace'
-import LeadActivityWorkspace from '../../components/lead-activity/LeadActivityWorkspace'
 import Button from '../../components/ui/Button'
 import Field from '../../components/ui/Field'
 import { useWorkspace } from '../../context/WorkspaceContext'
@@ -82,13 +79,10 @@ import {
   updateSellerWorkflowRecordByToken,
 } from '../../lib/agentListingStorage'
 import { createTransactionFromLeadOverride } from '../../lib/transactionLifecycleService'
-import { addTransactionDiscussionComment, finalizeCanonicalPhysicalSignedOtpWorkflow, saveTransactionRoleplayerSelections } from '../../lib/api'
 import { MOCK_DATA_ENABLED } from '../../lib/mockData'
 import { DOCUMENTS_BUCKET_CANDIDATES, assertEdgeFunctionSuccess, invokeEdgeFunction, isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
-import { activatePrivateListing, createPrivateListing, createPrivateListingActivity, deletePrivateListing, ensurePrivateListingDocumentRequirements, getOrganisationPrivateListings, getPrivateListing, getSellerOnboardingByToken, linkPrivateListingDocument, markPrivateListingDocumentsPendingTransactionPromotion, persistSellerProfileOnboardingFormData, sendSellerOnboarding, updatePrivateListing } from '../../services/privateListingService'
 import { allocatePrivateListingTransferAttorneyPreInstruction, getPrivateListingTransferAttorneyAllocation, instructPrivateListingTransferAttorneyAllocation, listPrivateListingTransferAttorneyAllocations } from '../../services/privateListingAttorneyAllocationService'
 import { repairSellerDocumentTransactionContinuity } from '../../services/sellerDocumentTransactionContinuityService'
-import { activateSellerPortalForListing, SELLER_PORTAL_ACTIVATION_SOURCES } from '../../services/sellerPortalActivationService'
 import { buildSellerJourney, getSellerJourneyMetrics } from '../../services/sellerJourneyService'
 import { buildSellerReadinessSummary } from '../../services/sellerReadinessService'
 import { buildSellerDocumentSourceOfTruth } from '../../services/sellerDocumentRequirementsService'
@@ -113,28 +107,11 @@ import {
   getClientAccessPolicyMessage,
   resolveSellerAccessPolicy,
 } from '../../core/clientAccess/clientAccessPolicy'
-import { generatePacketVersion, generateSigningLinks, prepareSigningFields, resetSigningFields, resolveActiveTemplate } from '../../core/documents/packetService'
 import { assessSigningFieldLayout } from '../../core/documents/signingFieldLayout'
 import { findLatestSignableGeneratedVersion } from '../../core/documents/pilotDocumentFallback'
 import { resolveSignableTemplatePolicy } from '../../core/documents/documentGenerationContainment'
 import { formatLegalDocumentGenerationRecovery } from '../../core/documents/legalDocumentGenerationRecovery'
 import { isAmbiguousLegalDocumentGenerationFailure } from '../../core/documents/legalDocumentGenerationReconciliation'
-import {
-  applySigningFieldLayout,
-  completeEditableDocumentRenderFreeze,
-  createEditableDocumentDraftFromTemplate,
-  fetchDocumentPacket,
-  fetchSigningFieldLayout,
-  freezeEditableDocumentRevisionForRender,
-  listLegalDocumentJobsForPacket,
-  listDocumentPackets,
-  persistGeneratedPdfToTransaction,
-  resolveWorkspaceFinalSignedDocumentAccess,
-  saveSigningFieldPlacement,
-  verifyFrozenEditableRenderOutput,
-  verifyServerAttestedNativePdfRender,
-} from '../../lib/documentPacketsApi'
-import { listInboundLeadEmails } from '../../services/leadEmailCaptureService'
 import {
   mapSellerOnboardingToMandateData,
   normalizeSellerOnboardingStatus,
@@ -218,7 +195,236 @@ const PIPELINE_CONTEXT_TIMEOUT_MS = 8000
 const PIPELINE_RECORDS_TIMEOUT_MS = 10000
 const PIPELINE_CRM_RECORDS_TIMEOUT_MS = 10000
 const PIPELINE_APPOINTMENT_RECORDS_TIMEOUT_MS = 15000
+const PIPELINE_APPOINTMENT_ROLLING_PAST_DAYS = 45
+const PIPELINE_APPOINTMENT_ROLLING_FUTURE_DAYS = 180
+const PIPELINE_CALENDAR_RANGE_PADDING_DAYS = 7
 const PIPELINE_MANDATE_SIGNING_EMAIL_TIMEOUT_MS = 20000
+const LegalDocumentWorkspace = lazy(() => import('../../components/documents/LegalDocumentWorkspace'))
+const LeadActivityWorkspace = lazy(() => import('../../components/lead-activity/LeadActivityWorkspace'))
+const KingstonsSellerAppointmentsWorkspace = lazy(() => import('../../components/appointments/KingstonsSellerAppointmentsWorkspace'))
+let transactionApiActionsPromise = null
+function loadTransactionApiActions() {
+  if (!transactionApiActionsPromise) {
+    transactionApiActionsPromise = import('../../lib/api').then((api) => ({
+      addTransactionDiscussionComment: api.addTransactionDiscussionComment,
+      finalizeCanonicalPhysicalSignedOtpWorkflow: api.finalizeCanonicalPhysicalSignedOtpWorkflow,
+      saveTransactionRoleplayerSelections: api.saveTransactionRoleplayerSelections,
+    }))
+  }
+  return transactionApiActionsPromise
+}
+let packetServiceActionsPromise = null
+function loadPacketServiceActions() {
+  if (!packetServiceActionsPromise) {
+    packetServiceActionsPromise = import('../../core/documents/packetService').then((service) => ({
+      generatePacketVersion: service.generatePacketVersion,
+      generateSigningLinks: service.generateSigningLinks,
+      prepareSigningFields: service.prepareSigningFields,
+      resetSigningFields: service.resetSigningFields,
+      resolveActiveTemplate: service.resolveActiveTemplate,
+    }))
+  }
+  return packetServiceActionsPromise
+}
+async function generatePacketVersion(...args) {
+  const { generatePacketVersion: action } = await loadPacketServiceActions()
+  return action(...args)
+}
+async function generateSigningLinks(...args) {
+  const { generateSigningLinks: action } = await loadPacketServiceActions()
+  return action(...args)
+}
+async function prepareSigningFields(...args) {
+  const { prepareSigningFields: action } = await loadPacketServiceActions()
+  return action(...args)
+}
+async function resetSigningFields(...args) {
+  const { resetSigningFields: action } = await loadPacketServiceActions()
+  return action(...args)
+}
+async function resolveActiveTemplate(...args) {
+  const { resolveActiveTemplate: action } = await loadPacketServiceActions()
+  return action(...args)
+}
+let documentPacketActionsPromise = null
+function loadDocumentPacketActions() {
+  if (!documentPacketActionsPromise) {
+    documentPacketActionsPromise = import('../../lib/documentPacketsApi').then((api) => ({
+      applySigningFieldLayout: api.applySigningFieldLayout,
+      completeEditableDocumentRenderFreeze: api.completeEditableDocumentRenderFreeze,
+      createEditableDocumentDraftFromTemplate: api.createEditableDocumentDraftFromTemplate,
+      fetchDocumentPacket: api.fetchDocumentPacket,
+      fetchSigningFieldLayout: api.fetchSigningFieldLayout,
+      freezeEditableDocumentRevisionForRender: api.freezeEditableDocumentRevisionForRender,
+      listLegalDocumentJobsForPacket: api.listLegalDocumentJobsForPacket,
+      listDocumentPackets: api.listDocumentPackets,
+      persistGeneratedPdfToTransaction: api.persistGeneratedPdfToTransaction,
+      resolveWorkspaceFinalSignedDocumentAccess: api.resolveWorkspaceFinalSignedDocumentAccess,
+      saveSigningFieldPlacement: api.saveSigningFieldPlacement,
+      verifyFrozenEditableRenderOutput: api.verifyFrozenEditableRenderOutput,
+      verifyServerAttestedNativePdfRender: api.verifyServerAttestedNativePdfRender,
+    }))
+  }
+  return documentPacketActionsPromise
+}
+async function applySigningFieldLayout(...args) {
+  const { applySigningFieldLayout: action } = await loadDocumentPacketActions()
+  return action(...args)
+}
+async function completeEditableDocumentRenderFreeze(...args) {
+  const { completeEditableDocumentRenderFreeze: action } = await loadDocumentPacketActions()
+  return action(...args)
+}
+async function createEditableDocumentDraftFromTemplate(...args) {
+  const { createEditableDocumentDraftFromTemplate: action } = await loadDocumentPacketActions()
+  return action(...args)
+}
+async function fetchDocumentPacket(...args) {
+  const { fetchDocumentPacket: action } = await loadDocumentPacketActions()
+  return action(...args)
+}
+async function fetchSigningFieldLayout(...args) {
+  const { fetchSigningFieldLayout: action } = await loadDocumentPacketActions()
+  return action(...args)
+}
+async function freezeEditableDocumentRevisionForRender(...args) {
+  const { freezeEditableDocumentRevisionForRender: action } = await loadDocumentPacketActions()
+  return action(...args)
+}
+async function listLegalDocumentJobsForPacket(...args) {
+  const { listLegalDocumentJobsForPacket: action } = await loadDocumentPacketActions()
+  return action(...args)
+}
+async function listDocumentPackets(...args) {
+  const { listDocumentPackets: action } = await loadDocumentPacketActions()
+  return action(...args)
+}
+async function persistGeneratedPdfToTransaction(...args) {
+  const { persistGeneratedPdfToTransaction: action } = await loadDocumentPacketActions()
+  return action(...args)
+}
+async function resolveWorkspaceFinalSignedDocumentAccess(...args) {
+  const { resolveWorkspaceFinalSignedDocumentAccess: action } = await loadDocumentPacketActions()
+  return action(...args)
+}
+async function saveSigningFieldPlacement(...args) {
+  const { saveSigningFieldPlacement: action } = await loadDocumentPacketActions()
+  return action(...args)
+}
+async function verifyFrozenEditableRenderOutput(...args) {
+  const { verifyFrozenEditableRenderOutput: action } = await loadDocumentPacketActions()
+  return action(...args)
+}
+async function verifyServerAttestedNativePdfRender(...args) {
+  const { verifyServerAttestedNativePdfRender: action } = await loadDocumentPacketActions()
+  return action(...args)
+}
+let privateListingActionsPromise = null
+function loadPrivateListingActions() {
+  if (!privateListingActionsPromise) {
+    privateListingActionsPromise = import('../../services/privateListingService').then((service) => ({
+      activatePrivateListing: service.activatePrivateListing,
+      createPrivateListing: service.createPrivateListing,
+      createPrivateListingActivity: service.createPrivateListingActivity,
+      deletePrivateListing: service.deletePrivateListing,
+      ensurePrivateListingDocumentRequirements: service.ensurePrivateListingDocumentRequirements,
+      getOrganisationPrivateListings: service.getOrganisationPrivateListings,
+      getPrivateListing: service.getPrivateListing,
+      getSellerOnboardingByToken: service.getSellerOnboardingByToken,
+      linkPrivateListingDocument: service.linkPrivateListingDocument,
+      markPrivateListingDocumentsPendingTransactionPromotion: service.markPrivateListingDocumentsPendingTransactionPromotion,
+      persistSellerProfileOnboardingFormData: service.persistSellerProfileOnboardingFormData,
+      sendSellerOnboarding: service.sendSellerOnboarding,
+      updatePrivateListing: service.updatePrivateListing,
+    }))
+  }
+  return privateListingActionsPromise
+}
+async function activatePrivateListing(...args) {
+  const { activatePrivateListing: action } = await loadPrivateListingActions()
+  return action(...args)
+}
+async function createPrivateListing(...args) {
+  const { createPrivateListing: action } = await loadPrivateListingActions()
+  return action(...args)
+}
+async function createPrivateListingActivity(...args) {
+  const { createPrivateListingActivity: action } = await loadPrivateListingActions()
+  return action(...args)
+}
+async function deletePrivateListing(...args) {
+  const { deletePrivateListing: action } = await loadPrivateListingActions()
+  return action(...args)
+}
+async function ensurePrivateListingDocumentRequirements(...args) {
+  const { ensurePrivateListingDocumentRequirements: action } = await loadPrivateListingActions()
+  return action(...args)
+}
+async function getOrganisationPrivateListings(...args) {
+  const { getOrganisationPrivateListings: action } = await loadPrivateListingActions()
+  return action(...args)
+}
+async function getPrivateListing(...args) {
+  const { getPrivateListing: action } = await loadPrivateListingActions()
+  return action(...args)
+}
+async function getSellerOnboardingByToken(...args) {
+  const { getSellerOnboardingByToken: action } = await loadPrivateListingActions()
+  return action(...args)
+}
+async function linkPrivateListingDocument(...args) {
+  const { linkPrivateListingDocument: action } = await loadPrivateListingActions()
+  return action(...args)
+}
+async function markPrivateListingDocumentsPendingTransactionPromotion(...args) {
+  const { markPrivateListingDocumentsPendingTransactionPromotion: action } = await loadPrivateListingActions()
+  return action(...args)
+}
+async function persistSellerProfileOnboardingFormData(...args) {
+  const { persistSellerProfileOnboardingFormData: action } = await loadPrivateListingActions()
+  return action(...args)
+}
+async function sendSellerOnboarding(...args) {
+  const { sendSellerOnboarding: action } = await loadPrivateListingActions()
+  return action(...args)
+}
+async function updatePrivateListing(...args) {
+  const { updatePrivateListing: action } = await loadPrivateListingActions()
+  return action(...args)
+}
+const SELLER_PORTAL_ACTIVATION_SOURCES = Object.freeze({
+  sellerLead: 'seller_lead',
+  existingListing: 'existing_listing',
+  manualListing: 'manual_listing',
+  bulkImport: 'bulk_import',
+  agentInvitation: 'agent_invitation',
+})
+let sellerPortalActivationActionsPromise = null
+function loadSellerPortalActivationActions() {
+  if (!sellerPortalActivationActionsPromise) {
+    sellerPortalActivationActionsPromise = import('../../services/sellerPortalActivationService').then((service) => ({
+      activateSellerPortalForListing: service.activateSellerPortalForListing,
+    }))
+  }
+  return sellerPortalActivationActionsPromise
+}
+async function activateSellerPortalForListing(...args) {
+  const { activateSellerPortalForListing: action } = await loadSellerPortalActivationActions()
+  return action(...args)
+}
+let leadEmailCaptureActionsPromise = null
+function loadLeadEmailCaptureActions() {
+  if (!leadEmailCaptureActionsPromise) {
+    leadEmailCaptureActionsPromise = import('../../services/leadEmailCaptureService').then((service) => ({
+      listInboundLeadEmails: service.listInboundLeadEmails,
+    }))
+  }
+  return leadEmailCaptureActionsPromise
+}
+async function listInboundLeadEmails(...args) {
+  const { listInboundLeadEmails: action } = await loadLeadEmailCaptureActions()
+  return action(...args)
+}
 const UUID_PATTERN = /[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i
 function readPipelineBooleanFlag(value, fallback = false) {
   const text = String(value ?? '').trim().toLowerCase()
@@ -788,6 +994,63 @@ function joinKingstonsSellerPackList(value = []) {
     .join('\n')
 }
 
+function splitKingstonsSellerPackOwnerName(value = '') {
+  const parts = normalizeText(value).split(/\s+/).filter(Boolean)
+  if (!parts.length) return { firstName: '', surname: '' }
+  if (parts.length === 1) return { firstName: parts[0], surname: '' }
+  return {
+    firstName: parts.slice(0, -1).join(' '),
+    surname: parts[parts.length - 1],
+  }
+}
+
+function normalizeKingstonsSellerPackOwnerDraft(value = {}, index = 0) {
+  const record = typeof value === 'string' ? { name: value } : asRecord(value)
+  const splitName = splitKingstonsSellerPackOwnerName(
+    firstWorkspaceText(record.name, record.fullName, record.full_name, record.displayName),
+  )
+  const firstName = firstWorkspaceText(record.firstName, record.first_name, record.givenName, record.given_name, splitName.firstName)
+  const surname = firstWorkspaceText(record.surname, record.lastName, record.last_name, record.familyName, record.family_name, splitName.surname)
+  const name = [firstName, surname].map(normalizeText).filter(Boolean).join(' ') ||
+    firstWorkspaceText(record.name, record.fullName, record.full_name, record.displayName)
+  return {
+    id: normalizeText(record.id || record.key) || `owner-${index + 1}`,
+    firstName,
+    surname,
+    email: firstWorkspaceText(record.email, record.emailAddress, record.email_address).toLowerCase(),
+    name,
+  }
+}
+
+function normalizeKingstonsSellerPackOwnerDrafts(value = []) {
+  const rows = Array.isArray(value)
+    ? value
+    : splitKingstonsSellerPackList(value).map((name) => ({ name }))
+  return rows
+    .map((row, index) => normalizeKingstonsSellerPackOwnerDraft(row, index))
+    .filter((row) => row.firstName || row.surname || row.email || row.name)
+}
+
+function buildKingstonsSellerPackOwnerRecords(value = []) {
+  return normalizeKingstonsSellerPackOwnerDrafts(value).map((owner, index) => {
+    const firstName = normalizeText(owner.firstName)
+    const surname = normalizeText(owner.surname)
+    const name = [firstName, surname].filter(Boolean).join(' ') || normalizeText(owner.name)
+    return {
+      id: normalizeKey(owner.id || name || `owner-${index + 1}`) || `owner-${index + 1}`,
+      firstName,
+      first_name: firstName,
+      surname,
+      lastName: surname,
+      last_name: surname,
+      name,
+      fullName: name,
+      full_name: name,
+      email: normalizeText(owner.email).toLowerCase(),
+    }
+  })
+}
+
 function getAgentUploadedBuyerDocuments(row = {}) {
   const rawPayload = parseLeadRawEnquiryPayload(row?.rawEnquiryPayload || row?.raw_enquiry_payload)
   return [
@@ -976,13 +1239,28 @@ function buildKingstonsSellerFicaRoleplayerDocumentRows(lead = {}, contact = {})
 }
 
 function buildKingstonsSellerPackProfileDraft(pack = {}) {
-  const sellerPath = asRecord(pack.legalPath || pack.legal_path || pack.sellerProfile || pack.seller_profile)
+  const sellerPath = asRecord(
+    pack.legalPath ||
+      pack.legal_path ||
+      pack.sellerProfile ||
+      pack.seller_profile ||
+      pack.sellerPackProfile ||
+      pack.seller_pack_profile,
+  )
   const naturalPath = asRecord(sellerPath.natural || sellerPath.person || {})
   const juristicPath = asRecord(sellerPath.juristic || sellerPath.entity || {})
   const companyPath = asRecord(juristicPath.company || {})
   const trustPath = asRecord(juristicPath.trust || {})
   const closeCorporationPath = asRecord(juristicPath.closeCorporation || juristicPath.close_corporation || {})
   const sellerType = normalizeKey(pack.sellerType || pack.ficaSellerType || sellerPath.sellerType || sellerPath.seller_type)
+  const ownerDrafts = normalizeKingstonsSellerPackOwnerDrafts(
+    sellerPath.owners ||
+      pack.owners ||
+      pack.ownerNames ||
+      pack.owner_names ||
+      naturalPath.owners ||
+      [],
+  )
   return {
     sellerType,
     naturalSetup: normalizeKey(firstWorkspaceText(
@@ -992,12 +1270,8 @@ function buildKingstonsSellerPackProfileDraft(pack = {}) {
       naturalPath.maritalSetup,
       naturalPath.maritalRegime,
     )),
-    ownersText: joinKingstonsSellerPackList(
-      sellerPath.owners ||
-        pack.owners ||
-        naturalPath.owners ||
-        [],
-    ),
+    owners: ownerDrafts,
+    ownersText: joinKingstonsSellerPackList(ownerDrafts),
     spouseName: firstWorkspaceText(
       sellerPath.spouse?.name,
       pack.spouseName,
@@ -1100,7 +1374,9 @@ function buildKingstonsSellerPackProfileDraft(pack = {}) {
 function buildKingstonsSellerPackProfilePayload(draft = {}) {
   const sellerType = normalizeKey(draft.sellerType)
   const naturalSetup = normalizeKey(draft.naturalSetup)
-  const owners = buildKingstonsSellerPackPersonRecords(draft.ownersText, 'owner')
+  const owners = buildKingstonsSellerPackOwnerRecords(
+    Array.isArray(draft.owners) && draft.owners.length ? draft.owners : draft.ownersText,
+  )
   const companyDirectors = buildKingstonsSellerPackPersonRecords(draft.companyDirectorsText, 'director')
   const trustTrustees = buildKingstonsSellerPackPersonRecords(draft.trustTrusteesText, 'trustee')
   const closeCorporationMembers = buildKingstonsSellerPackPersonRecords(draft.closeCorporationMembersText, 'member')
@@ -9308,6 +9584,59 @@ function getMonthGridDays(anchorDate) {
   })
 }
 
+function addCalendarDays(date, days) {
+  const next = new Date(date)
+  next.setDate(next.getDate() + days)
+  return next
+}
+
+function getStartOfLocalDay(date) {
+  const next = new Date(date)
+  next.setHours(0, 0, 0, 0)
+  return next
+}
+
+function getEndExclusiveOfLocalDay(date) {
+  const next = getStartOfLocalDay(date)
+  next.setDate(next.getDate() + 1)
+  return next
+}
+
+function getVisibleCalendarDateRange(view = 'week', anchorDate = new Date()) {
+  const days = view === 'month'
+    ? getMonthGridDays(anchorDate)
+    : view === 'three_day'
+      ? getCalendarRangeDays(anchorDate, 3)
+      : view === 'day'
+        ? getCalendarRangeDays(anchorDate, 1)
+        : getWeekDays(anchorDate)
+  const firstDay = days[0] || anchorDate
+  const lastDay = days[days.length - 1] || anchorDate
+  return {
+    from: getStartOfLocalDay(firstDay),
+    to: getEndExclusiveOfLocalDay(lastDay),
+  }
+}
+
+function buildAppointmentReloadRange({
+  isCalendarMode = false,
+  calendarView = 'week',
+  calendarCursorDate = new Date(),
+  now = new Date(),
+} = {}) {
+  if (isCalendarMode) {
+    const visibleRange = getVisibleCalendarDateRange(calendarView, calendarCursorDate)
+    return {
+      from: addCalendarDays(visibleRange.from, -PIPELINE_CALENDAR_RANGE_PADDING_DAYS).toISOString(),
+      to: addCalendarDays(visibleRange.to, PIPELINE_CALENDAR_RANGE_PADDING_DAYS).toISOString(),
+    }
+  }
+  return {
+    from: addCalendarDays(getStartOfLocalDay(now), -PIPELINE_APPOINTMENT_ROLLING_PAST_DAYS).toISOString(),
+    to: addCalendarDays(getEndExclusiveOfLocalDay(now), PIPELINE_APPOINTMENT_ROLLING_FUTURE_DAYS).toISOString(),
+  }
+}
+
 function parseAppointmentDate(appointment) {
   const dateValue = appointment?.date || appointment?.appointmentDate || appointment?.appointment_date
   const timeValue = appointment?.startTime || appointment?.start_time || '00:00'
@@ -9325,6 +9654,52 @@ function parseAppointmentDate(appointment) {
     return dateTimeCandidate
   }
   return null
+}
+
+function isAppointmentWithinReloadRange(appointment, range = {}) {
+  const fromMs = range?.from ? new Date(range.from).getTime() : NaN
+  const toMs = range?.to ? new Date(range.to).getTime() : NaN
+  if (!Number.isFinite(fromMs) && !Number.isFinite(toMs)) return true
+  const parsedDate = parseAppointmentDate(appointment)
+  const value = parsedDate ? parsedDate.getTime() : NaN
+  if (!Number.isFinite(value)) return false
+  if (Number.isFinite(fromMs) && value < fromMs) return false
+  if (Number.isFinite(toMs) && value >= toMs) return false
+  return true
+}
+
+function mergeAppointmentRowsForReload(previousRows = [], nextRows = [], { range = null, organisationId = '' } = {}) {
+  const scopedOrganisationId = normalizeText(organisationId)
+  if (!range?.from && !range?.to) return Array.isArray(nextRows) ? nextRows : []
+
+  const byId = new Map()
+  const rowsWithoutId = []
+  const keepPreviousRow = (row) => {
+    const rowOrganisationId = normalizeText(row?.organisationId || row?.organisation_id)
+    if (scopedOrganisationId && rowOrganisationId && rowOrganisationId !== scopedOrganisationId) return true
+    return !isAppointmentWithinReloadRange(row, range)
+  }
+
+  for (const row of Array.isArray(previousRows) ? previousRows : []) {
+    if (!keepPreviousRow(row)) continue
+    const id = normalizeText(row?.appointmentId || row?.appointment_id || row?.id)
+    if (id) {
+      byId.set(id, row)
+    } else {
+      rowsWithoutId.push(row)
+    }
+  }
+
+  for (const row of Array.isArray(nextRows) ? nextRows : []) {
+    const id = normalizeText(row?.appointmentId || row?.appointment_id || row?.id)
+    if (id) {
+      byId.set(id, row)
+    } else {
+      rowsWithoutId.push(row)
+    }
+  }
+
+  return [...rowsWithoutId, ...Array.from(byId.values())]
 }
 
 function formatCalendarPeriodLabel(view, anchorDate) {
@@ -11014,13 +11389,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const elapsedMs = Number(detail.elapsedMs || 0)
       const source = normalizeText(detail.source)
       const success = detail.success !== false
-      if (success && source !== 'single_flight_join' && elapsedMs < 1000) return
+      if (success && elapsedMs < 1000) return
       recordPipelineTelemetry('supabase_auth_read_observed', {
         methodName: normalizeText(detail.methodName),
         source,
         elapsedMs,
         cacheable: detail.cacheable === true,
         success,
+        joinedCount: Math.max(0, Math.round(Number(detail.joinedCount || 0))),
         errorMessage: success ? '' : normalizeText(detail.errorMessage || 'Supabase auth read failed.'),
       }, success ? 'info' : 'warning')
     }
@@ -11125,6 +11501,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [calendarView, setCalendarView] = useState('week')
   const [calendarCursorDate, setCalendarCursorDate] = useState(() => new Date())
   const [calendarAgentFilter, setCalendarAgentFilter] = useState('all')
+  const appointmentReloadWindowRef = useRef(buildAppointmentReloadRange({ isCalendarMode, calendarView, calendarCursorDate }))
   const principalView = isOverviewMode ? 'reporting' : 'operational'
   const [appointmentModalOpen, setAppointmentModalOpen] = useState(false)
   const [selectedAppointmentId, setSelectedAppointmentId] = useState('')
@@ -11354,6 +11731,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     })
   }, [agentOptions, currentAgent.email, currentAgent.id, isPrincipal])
 
+  useEffect(() => {
+    appointmentReloadWindowRef.current = buildAppointmentReloadRange({
+      isCalendarMode,
+      calendarView,
+      calendarCursorDate,
+    })
+  }, [calendarCursorDate, calendarView, isCalendarMode])
+
   const buildAppointmentDraftForIntegrity = useCallback(() => {
     const selectedAppointmentForDraft = selectedAppointmentId
       ? (records.appointments.find(
@@ -11431,7 +11816,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         applyLocalSnapshot = true,
         deferEmptyLocalSnapshot = false,
         onPrimaryRecordsReady = null,
+        appointmentRange = null,
       } = options && typeof options === 'object' ? options : {}
+      const resolvedAppointmentRange = appointmentRange && typeof appointmentRange === 'object'
+        ? appointmentRange
+        : appointmentReloadWindowRef.current || buildAppointmentReloadRange({ isCalendarMode })
       if (reloadTimerRef.current && typeof window !== 'undefined') {
         window.clearTimeout(reloadTimerRef.current)
         reloadTimerRef.current = null
@@ -11496,7 +11885,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         }
       }
 
-      const applySnapshotRecords = (sourceSnapshot, appointmentRows = sourceSnapshot?.appointments || []) => {
+      const applySnapshotRecords = (
+        sourceSnapshot,
+        appointmentRows = sourceSnapshot?.appointments || [],
+        { preserveAppointmentsOutsideRange = false } = {},
+      ) => {
         const effectiveSnapshot = mergeActiveRouteLeadSnapshot(sourceSnapshot)
         const sourceContacts = Array.isArray(effectiveSnapshot?.contacts) ? effectiveSnapshot.contacts : []
         const sourceLeads = Array.isArray(effectiveSnapshot?.leads) ? effectiveSnapshot.leads : []
@@ -11524,6 +11917,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         const scopedInboundEmails = sourceInboundEmails.filter((row) => scopedLeadIds.has(normalizeLeadIdentityKey(row?.leadId)))
 
         setRecords((previous) => {
+          const nextAppointments = preserveAppointmentsOutsideRange
+            ? mergeAppointmentRowsForReload(previous.appointments, scopedAppointments, {
+                range: resolvedAppointmentRange,
+                organisationId: orgId,
+              })
+            : scopedAppointments
           const previousLeadsById = new Map(
             (Array.isArray(previous?.leads) ? previous.leads : [])
               .map((lead) => [normalizeLeadIdentityKey(lead?.leadId), lead])
@@ -11540,7 +11939,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             leads: reconciledLeads,
             leadActivities: scopedActivities,
             tasks: scopedTasks,
-            appointments: scopedAppointments,
+            appointments: nextAppointments,
             deals: scopedDeals,
             inboundLeadEmails: scopedInboundEmails,
           }
@@ -11692,6 +12091,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             agentId: isPrincipal ? '' : currentAgent.id,
             agentEmail: isPrincipal ? '' : currentAgent.email,
             agentKeys: isPrincipal ? [] : [currentAgent.id, currentAgent.email],
+            from: resolvedAppointmentRange?.from || null,
+            to: resolvedAppointmentRange?.to || null,
           }),
           'Appointment data is taking too long to load.',
           PIPELINE_APPOINTMENT_RECORDS_TIMEOUT_MS,
@@ -11720,7 +12121,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         ...pinnedRouteLinkedListingOptions,
         ...buildListingOptionsFromLeads(mergedSnapshot.leads),
       ]))
-      applySnapshotRecords(mergedSnapshot, appointmentRows)
+      applySnapshotRecords(mergedSnapshot, appointmentRows, { preserveAppointmentsOutsideRange: true })
       markPrimaryRecordsReady()
     },
     [currentAgent, isPrincipal],
@@ -11734,11 +12135,18 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }
       reloadTimerRef.current = window.setTimeout(() => {
         reloadTimerRef.current = null
-        void reloadRecords(orgId)
+        void reloadRecords(orgId).catch((reloadError) => {
+          console.warn('[PIPELINE] scheduled records reload failed.', reloadError)
+        })
       }, delayMs)
     },
     [reloadRecords],
   )
+
+  useEffect(() => {
+    if (!organisationId || !isCalendarMode) return
+    scheduleRecordsReload(organisationId, 0)
+  }, [calendarCursorDate, calendarView, isCalendarMode, organisationId, scheduleRecordsReload])
 
   const reloadCanvassingStore = useCallback(async (orgId = organisationId) => {
     if (!orgId) {
@@ -13125,6 +13533,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const selectedLeadValuationAddress = useMemo(() => {
     if (!selectedLead) return ''
     const rawPayload = parseLeadRawEnquiryPayload(selectedLead?.rawEnquiryPayload || selectedLead?.raw_enquiry_payload)
+    const rawProperty = asRecord(rawPayload.property || rawPayload.propertyDetails || rawPayload.property_details)
     const sellerOnboarding = asRecord(
       selectedLead?.sellerOnboarding ||
         selectedLead?.seller_onboarding ||
@@ -13134,17 +13543,44 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         rawPayload.kingstons_seller_profile,
     )
     const sellerOnboardingForm = asRecord(sellerOnboarding.formData || sellerOnboarding.form_data || sellerOnboarding)
-    return normalizeText(
-      selectedLead?.sellerPropertyAddress ||
-        selectedLead?.formattedAddress ||
-        selectedLead?.formatted_address ||
-        sellerOnboardingForm.propertyAddress ||
-        sellerOnboardingForm.formattedAddress ||
-        sellerOnboardingForm.addressLine1 ||
-        sellerOnboardingForm.streetAddress ||
-        selectedLeadLinkedListing?.propertyAddress ||
-        selectedLeadLinkedListing?.formattedAddress ||
-        resolveListingAddressLabel(selectedLeadLinkedListing),
+    const leadPropertyInterest = normalizeText(selectedLead?.propertyInterest || selectedLead?.property_interest)
+    return firstWorkspaceText(
+      resolveListingAddressLabel(selectedLeadLinkedListing),
+      selectedLeadLinkedListing?.propertyAddress,
+      selectedLeadLinkedListing?.property_address,
+      selectedLeadLinkedListing?.formattedAddress,
+      selectedLeadLinkedListing?.formatted_address,
+      selectedLeadLinkedListing?.address,
+      selectedLeadLinkedListing?.addressLine1,
+      selectedLeadLinkedListing?.address_line_1,
+      selectedLeadLinkedListing?.streetAddress,
+      selectedLeadLinkedListing?.street_address,
+      selectedLead?.sellerPropertyAddress,
+      selectedLead?.seller_property_address,
+      selectedLead?.propertyAddress,
+      selectedLead?.property_address,
+      selectedLead?.formattedAddress,
+      selectedLead?.formatted_address,
+      selectedLead?.streetAddress,
+      selectedLead?.street_address,
+      sellerOnboardingForm.propertyAddress,
+      sellerOnboardingForm.property_address,
+      sellerOnboardingForm.formattedAddress,
+      sellerOnboardingForm.formatted_address,
+      sellerOnboardingForm.addressLine1,
+      sellerOnboardingForm.address_line_1,
+      sellerOnboardingForm.streetAddress,
+      sellerOnboardingForm.street_address,
+      rawPayload.propertyAddress,
+      rawPayload.property_address,
+      rawPayload.sellerPropertyAddress,
+      rawPayload.seller_property_address,
+      rawProperty.propertyAddress,
+      rawProperty.property_address,
+      rawProperty.address,
+      rawProperty.formattedAddress,
+      rawProperty.formatted_address,
+      workspaceTextLooksLikeAddress(leadPropertyInterest) ? leadPropertyInterest : '',
     )
   }, [selectedLead, selectedLeadLinkedListing])
   const selectedKingstonsLinkedListingId = useMemo(() => normalizeText(
@@ -13723,6 +14159,59 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     setRecords((previous) => ({
       ...previous,
       appointments: (Array.isArray(previous.appointments) ? previous.appointments : []).map(applyAppointmentPatch),
+    }))
+  }, [])
+
+  const upsertAppointmentRecords = useCallback((appointments = []) => {
+    const appointmentRows = (Array.isArray(appointments) ? appointments : [appointments])
+      .filter((appointment) => appointment && typeof appointment === 'object')
+      .map((appointment) => {
+        const appointmentId = normalizeText(appointment?.appointmentId || appointment?.appointment_id || appointment?.id)
+        const updatedAt = appointment?.updatedAt || appointment?.updated_at || new Date().toISOString()
+        return appointmentId
+          ? {
+              ...appointment,
+              appointmentId,
+              appointment_id: normalizeText(appointment?.appointment_id || appointmentId) || appointmentId,
+              id: normalizeText(appointment?.id || appointmentId) || appointmentId,
+              updatedAt,
+              updated_at: updatedAt,
+            }
+          : null
+      })
+      .filter(Boolean)
+    if (!appointmentRows.length) return
+
+    const mergeAppointments = (existingRows = []) => {
+      const rows = Array.isArray(existingRows) ? existingRows : []
+      const rowsWithoutId = []
+      const byId = new Map()
+      rows.forEach((row) => {
+        const appointmentId = normalizeText(row?.appointmentId || row?.appointment_id || row?.id)
+        if (appointmentId) {
+          byId.set(appointmentId, row)
+        } else {
+          rowsWithoutId.push(row)
+        }
+      })
+      appointmentRows.forEach((appointment) => {
+        const appointmentId = normalizeText(appointment?.appointmentId || appointment?.appointment_id || appointment?.id)
+        const existing = byId.get(appointmentId)
+        byId.set(appointmentId, existing ? { ...existing, ...appointment } : appointment)
+      })
+      return [...rowsWithoutId, ...Array.from(byId.values())]
+    }
+
+    const routeSnapshot = routeLeadWorkspaceSnapshotRef.current
+    if (routeSnapshot && Array.isArray(routeSnapshot.appointments)) {
+      routeLeadWorkspaceSnapshotRef.current = {
+        ...routeSnapshot,
+        appointments: mergeAppointments(routeSnapshot.appointments),
+      }
+    }
+    setRecords((previous) => ({
+      ...previous,
+      appointments: mergeAppointments(previous.appointments),
     }))
   }, [])
 
@@ -17408,13 +17897,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     return selectedAppointmentTemplate.label || 'Quickly schedule an appointment.'
   }, [selectedAppointment, selectedAppointmentId, selectedAppointmentTemplate.label, selectedLead, selectedLeadContactName, selectedLeadDisplayName, selectedLeadIsSeller])
 
-  const appointmentSchedulerLocation = useMemo(() => {
-    if (normalizeText(appointmentForm.locationType) === 'video_call') {
-      return normalizeText(appointmentForm.meetingUrl) || normalizeText(appointmentForm.location)
-    }
-    return normalizeText(appointmentForm.location) || normalizeText(appointmentForm.meetingUrl)
-  }, [appointmentForm.location, appointmentForm.locationType, appointmentForm.meetingUrl])
-
   const appointmentSchedulerAddressValue = useMemo(() => {
     if (normalizeText(appointmentForm.locationType) === 'video_call') {
       return appointmentForm.meetingUrl || appointmentForm.location || ''
@@ -19325,7 +19807,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         recipientEmail: buyerEmail,
       }))
       setError('')
-      await reloadRecords(organisationId)
+      upsertAppointmentRecords(createdAppointments.map((item) => item.appointment))
+      scheduleRecordsReload(organisationId, 850)
     } catch (createError) {
       if (createError?.code === 'APPOINTMENT_HARD_CONFLICT') {
         setAppointmentSchedulingIntegrity(createError?.schedulingConflicts || null)
@@ -19586,7 +20069,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         setError('')
         setMessage(`${createdRequests.length} seller RSVP request${createdRequests.length === 1 ? '' : 's'} sent.`)
       }
-      await reloadRecords(organisationId)
+      upsertAppointmentRecords(createdRequests.map((item) => item.appointment))
+      scheduleRecordsReload(organisationId, 850)
     } catch (createError) {
       if (createError?.code === 'APPOINTMENT_HARD_CONFLICT') {
         setAppointmentSchedulingIntegrity(createError?.schedulingConflicts || null)
@@ -21445,11 +21929,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       if (createdAppointmentId) {
         setSelectedAppointmentId(createdAppointmentId)
       }
-      try {
-        await reloadRecords(organisationId)
-      } catch (postSaveError) {
-        console.warn('[appointments] post-save refresh failed', postSaveError)
-      }
+      scheduleRecordsReload(organisationId, appointmentCreateRunsInBackground ? 850 : 250)
     } catch (createError) {
       if (createError?.code === 'APPOINTMENT_HARD_CONFLICT') {
         const conflicts = createError?.schedulingConflicts || null
@@ -23613,6 +24093,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         activityDate: new Date().toISOString(),
       }, { actor: currentAgent })
       if (appointmentId) {
+        patchAppointmentRecord(appointmentId, {
+          status: 'completed',
+          statusLabel: 'Completed',
+          outcomeSummary: 'Valuation presentation completed.',
+          nextStep: 'Seller Pack',
+        })
         await addAppointmentOutcomeAsync(
           organisationId,
           appointmentId,
@@ -23634,7 +24120,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setAppointmentModalOpen(false)
       setError('')
       setMessage('Valuation presentation completed. Seller process moved to Seller Pack.')
-      await reloadRecords(organisationId)
+      scheduleRecordsReload(organisationId, 850)
     } catch (completionError) {
       setError(completionError?.message || 'Unable to complete the valuation presentation right now.')
     } finally {
@@ -23921,6 +24407,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
         },
       )
+      patchAppointmentRecord(selectedAppointmentId, {
+        ...updated,
+        participants: Array.isArray(updated?.participants) ? updated.participants : updateParticipants,
+      })
       if (selectedLeadIsSeller && selectedLead?.leadId && normalizeKey(updatePayload.status).includes('complete')) {
         const completedAppointmentType = normalizeKey(updatePayload.appointmentType || updatePayload.appointment_type || updatePayload.title)
         const completedWorkflowStage = normalizeKey(updatePayload.linkedWorkflowStage || updatePayload.linked_workflow_stage)
@@ -23937,6 +24427,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               stage: 'Appointment Completed',
               status: 'Valuation Completed',
             }
+        patchSelectedLeadRecord(completedLeadPatch, selectedLead.leadId)
         await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, completedLeadPatch)
         await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
           agent: currentAgent,
@@ -23956,7 +24447,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         recipientEmail: explicitRecipientEmail,
       }))
       setAppointmentModalOpen(false)
-      await reloadRecords(organisationId)
+      scheduleRecordsReload(organisationId, 850)
     } catch (updateError) {
       if (updateError?.code === 'APPOINTMENT_HARD_CONFLICT') {
         setAppointmentSchedulingIntegrity(updateError?.schedulingConflicts || null)
@@ -25356,8 +25847,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const currentPack = getKingstonsSellerPackState(selectedLead || {})
     const draft = buildKingstonsSellerPackProfileDraft(currentPack)
     const fallbackOwnerName = normalizeText(selectedLeadDisplayName === 'Lead Workspace' ? '' : selectedLeadDisplayName)
-    if (!normalizeText(draft.ownersText) && fallbackOwnerName) {
-      draft.ownersText = fallbackOwnerName
+    if (!normalizeKingstonsSellerPackOwnerDrafts(draft.owners).length && fallbackOwnerName) {
+      draft.owners = [normalizeKingstonsSellerPackOwnerDraft({
+        name: fallbackOwnerName,
+        email: normalizeText(selectedLeadContact?.email || selectedLead?.sellerEmail || selectedLead?.email).toLowerCase(),
+      })]
+      draft.ownersText = joinKingstonsSellerPackList(draft.owners)
     }
     const normalizedInitialStep = normalizeKey(initialStep)
     setKingstonsSellerPackWizardDraft(draft)
@@ -25381,13 +25876,77 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     setKingstonsSellerPackWizardError('')
   }
 
+  function updateKingstonsSellerPackOwnerDraft(index, field, value) {
+    setKingstonsSellerPackWizardDraft((previous) => {
+      const baseDraft = {
+        ...buildKingstonsSellerPackProfileDraft(selectedKingstonsSellerPack),
+        ...(previous || {}),
+      }
+      const owners = normalizeKingstonsSellerPackOwnerDrafts(baseDraft.owners)
+      const safeIndex = Math.max(0, Number(index) || 0)
+      const nextOwners = owners.length ? [...owners] : [normalizeKingstonsSellerPackOwnerDraft({})]
+      nextOwners[safeIndex] = normalizeKingstonsSellerPackOwnerDraft({
+        ...(nextOwners[safeIndex] || {}),
+        [field]: field === 'email' ? normalizeText(value).toLowerCase() : value,
+      }, safeIndex)
+      return {
+        ...baseDraft,
+        owners: nextOwners,
+        ownersText: joinKingstonsSellerPackList(nextOwners),
+      }
+    })
+    setKingstonsSellerPackWizardError('')
+  }
+
+  function addKingstonsSellerPackOwnerDraft() {
+    setKingstonsSellerPackWizardDraft((previous) => {
+      const baseDraft = {
+        ...buildKingstonsSellerPackProfileDraft(selectedKingstonsSellerPack),
+        ...(previous || {}),
+      }
+      const owners = normalizeKingstonsSellerPackOwnerDrafts(baseDraft.owners)
+      const nextOwners = [
+        ...owners,
+        normalizeKingstonsSellerPackOwnerDraft({ id: `owner-${owners.length + 1}` }, owners.length),
+      ]
+      return {
+        ...baseDraft,
+        owners: nextOwners,
+        ownersText: joinKingstonsSellerPackList(nextOwners),
+      }
+    })
+    setKingstonsSellerPackWizardError('')
+  }
+
+  function removeKingstonsSellerPackOwnerDraft(index) {
+    setKingstonsSellerPackWizardDraft((previous) => {
+      const baseDraft = {
+        ...buildKingstonsSellerPackProfileDraft(selectedKingstonsSellerPack),
+        ...(previous || {}),
+      }
+      const owners = normalizeKingstonsSellerPackOwnerDrafts(baseDraft.owners)
+      const nextOwners = owners.filter((_owner, ownerIndex) => ownerIndex !== index)
+      return {
+        ...baseDraft,
+        owners: nextOwners,
+        ownersText: joinKingstonsSellerPackList(nextOwners),
+      }
+    })
+    setKingstonsSellerPackWizardError('')
+  }
+
   function validateKingstonsSellerPackWizardDraft(draft = {}) {
     const sellerType = normalizeKey(draft.sellerType)
     if (!sellerType) return 'Choose whether the seller is a natural person or juristic person.'
     if (sellerType === 'natural') {
       const setup = normalizeKey(draft.naturalSetup)
       if (!setup) return 'Choose the natural person marital setup.'
-      if (!splitKingstonsSellerPackList(draft.ownersText).length) return 'Add at least one registered owner.'
+      const owners = normalizeKingstonsSellerPackOwnerDrafts(Array.isArray(draft.owners) && draft.owners.length ? draft.owners : draft.ownersText)
+      if (!owners.length) return 'Add at least one registered owner.'
+      const incompleteOwnerIndex = owners.findIndex((owner) => !normalizeText(owner.firstName) || !normalizeText(owner.surname) || !normalizeText(owner.email))
+      if (incompleteOwnerIndex >= 0) return `Complete first name, surname and email for owner ${incompleteOwnerIndex + 1}.`
+      const invalidOwnerEmailIndex = owners.findIndex((owner) => !isValidEmail(owner.email))
+      if (invalidOwnerEmailIndex >= 0) return `Enter a valid email for owner ${invalidOwnerEmailIndex + 1}.`
       if (setup === 'in_community' && !normalizeText(draft.spouseName)) return 'Add the spouse name for a married in community seller.'
       if (setup === 'in_community' && !normalizeText(draft.spouseIdNumber)) return 'Add the spouse ID number for a married in community seller.'
       return ''
@@ -25798,6 +26357,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setIsOfferLinkSending(isViewingOnboardingNextStep(normalizedNextStep) && !selectedLeadUsesKingstonsInPersonOtpFlow)
       const persistedLead = await ensureBuyerLeadPersistedForLifecycle(selectedLead, selectedLeadContact)
       const canonicalBuyerLeadId = normalizeText(persistedLead?.leadId || selectedLead.leadId)
+      patchAppointmentRecord(targetAppointment.appointmentId, {
+        status: 'completed',
+        statusLabel: 'Completed',
+        outcomeSummary: outcome,
+        clientFeedback: leadViewingCompletionForm.buyerFeedback,
+        agentNotes: leadViewingCompletionForm.agentNotes,
+        nextStep: nextStepLabel,
+        followUpDate: leadViewingCompletionForm.followUpDate,
+      })
       await addAppointmentOutcomeAsync(
         organisationId,
         targetAppointment.appointmentId,
@@ -25903,7 +26471,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       } else {
         setMessage('Viewing completed and next action captured.')
       }
-      await reloadRecords(organisationId)
+      scheduleRecordsReload(organisationId, 850)
     } catch (completionError) {
       setError(completionError?.message || 'Unable to complete this viewing right now.')
     } finally {
@@ -25913,6 +26481,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   async function handleCancelLeadViewing(appointment) {
     if (!organisationId || !appointment?.appointmentId) return
+    patchAppointmentRecord(appointment.appointmentId, {
+      status: 'cancelled',
+      statusLabel: 'Cancelled',
+      cancellationReason: 'Cancelled from lead appointment workspace.',
+    })
     try {
       const updated = await updateAppointmentAsync(
         organisationId,
@@ -25940,7 +26513,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         )
       }
       setMessage('Viewing cancelled.')
-      await reloadRecords(organisationId)
+      scheduleRecordsReload(organisationId, 850)
     } catch (cancelError) {
       setError(cancelError?.message || 'Unable to cancel this viewing right now.')
     }
@@ -26665,6 +27238,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       : 'Attorney saved as nominated; instruction not requested.'
 
     try {
+      const { addTransactionDiscussionComment } = await loadTransactionApiActions()
       discussionComment = await addTransactionDiscussionComment({
         transactionId: scopedTransactionId,
         authorName: normalizeText(currentAgent.fullName || currentAgent.email) || 'Arch9 Agent',
@@ -27533,6 +28107,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	      let auditTrailResult = null
 	      if (transactionId && otpAttorneyInstructionContext?.roleplayerSelection) {
 	        try {
+            const { saveTransactionRoleplayerSelections } = await loadTransactionApiActions()
 	          attorneyRoleplayerResult = await saveTransactionRoleplayerSelections({
 	            transactionId,
 	            roleplayers: [otpAttorneyInstructionContext.roleplayerSelection],
@@ -27568,6 +28143,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	          console.warn('[AgencyPipelinePage] Buyer OTP transaction snapshot could not be saved.', transactionSnapshotError)
 	        }
 	        try {
+            const { finalizeCanonicalPhysicalSignedOtpWorkflow } = await loadTransactionApiActions()
 	          signedOtpWorkflowResult = await finalizeCanonicalPhysicalSignedOtpWorkflow({
 	            transactionId,
 	            financeType: normalizeText(buyerOfferUploadForm.financeType || selectedLead.financeType || selectedLead.preferredFinanceType),
@@ -28432,12 +29008,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         },
       )
       setMessage('Appointment cancelled.')
-      void reloadRecords(organisationId).catch((reloadError) => {
-        console.warn('[appointments] background reload after cancellation failed', reloadError)
-      })
+      scheduleRecordsReload(organisationId, 850)
     } catch (cancelError) {
       setError(cancelError?.message || 'Unable to cancel appointment right now.')
-      void reloadRecords(organisationId).catch(() => null)
+      scheduleRecordsReload(organisationId, 850)
     }
   }
 
@@ -28511,12 +29085,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         }, { actor: currentAgent })
       }
       setMessage('Appointment marked complete.')
-      void reloadRecords(organisationId).catch((reloadError) => {
-        console.warn('[appointments] background reload after completion failed', reloadError)
-      })
+      scheduleRecordsReload(organisationId, 850)
     } catch (completionError) {
       setError(completionError?.message || 'Unable to complete appointment right now.')
-      void reloadRecords(organisationId).catch(() => null)
+      scheduleRecordsReload(organisationId, 850)
     }
   }
 
@@ -28549,6 +29121,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
         },
       )
+      patchAppointmentRecord(selectedAppointmentId, {
+        ...updated,
+        participants: Array.isArray(updated?.participants) ? updated.participants : participantSeed,
+      })
       setMessage(buildAppointmentSaveFeedback(updated, {
         actionLabel: 'Appointment invite resent',
         requestedInvite: true,
@@ -28556,7 +29132,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         participants: participantSeed,
         recipientEmail,
       }))
-      await reloadRecords(organisationId)
+      scheduleRecordsReload(organisationId, 850)
     } catch (resendError) {
       setError(resendError?.message || 'Unable to resend appointment invite right now.')
     }
@@ -31735,21 +32311,65 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                 </div>
 
                                 <div className="rounded-[16px] border border-[#dbe6f2] bg-white p-4">
-                                  <h5 className="text-sm font-semibold text-[#22364a]">Owners</h5>
-                                  <p className="mt-1 text-sm leading-6 text-[#60758b]">
-                                    Add any additional registered owners here so their FICA requirements can be generated later.
-                                  </p>
-                                  <label className="mt-4 grid gap-2 text-sm font-medium text-[#2a4057]">
-                                    Owner names
-                                    <Field
-                                      as="textarea"
-                                      rows={3}
-                                      className="min-h-[104px] rounded-[12px] px-3 py-3 text-sm font-medium leading-6"
-                                      placeholder="List owners one per line"
-                                      value={kingstonsSellerPackWizardDraft?.ownersText || ''}
-                                      onChange={(event) => updateKingstonsSellerPackWizardDraftField('ownersText', event.target.value)}
-                                    />
-                                  </label>
+                                  <div className="flex flex-wrap items-start justify-between gap-3">
+                                    <div>
+                                      <h5 className="text-sm font-semibold text-[#22364a]">Registered owners</h5>
+                                      <p className="mt-1 text-sm leading-6 text-[#60758b]">
+                                        Capture each owner separately so FICA requirements and follow-ups can be generated correctly.
+                                      </p>
+                                    </div>
+                                    <Button type="button" size="sm" variant="secondary" onClick={addKingstonsSellerPackOwnerDraft}>
+                                      <Plus size={15} />
+                                      Add owner
+                                    </Button>
+                                  </div>
+                                  <div className="mt-4 space-y-3">
+                                    {(normalizeKingstonsSellerPackOwnerDrafts(kingstonsSellerPackWizardDraft?.owners).length
+                                      ? normalizeKingstonsSellerPackOwnerDrafts(kingstonsSellerPackWizardDraft?.owners)
+                                      : [normalizeKingstonsSellerPackOwnerDraft({})]
+                                    ).map((owner, ownerIndex) => (
+                                      <div key={owner.id || `owner-${ownerIndex + 1}`} className="rounded-[14px] border border-[#e0eaf4] bg-[#fbfdff] p-3">
+                                        <div className="mb-3 flex items-center justify-between gap-3">
+                                          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#72859c]">Owner {ownerIndex + 1}</p>
+                                          {ownerIndex > 0 ? (
+                                            <button
+                                              type="button"
+                                              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#dbe6f2] bg-white text-[#60758b] transition hover:border-[#f0c8c5] hover:text-[#9f3028]"
+                                              aria-label={`Remove owner ${ownerIndex + 1}`}
+                                              onClick={() => removeKingstonsSellerPackOwnerDraft(ownerIndex)}
+                                            >
+                                              <X size={15} />
+                                            </button>
+                                          ) : null}
+                                        </div>
+                                        <div className="grid gap-3 md:grid-cols-3">
+                                          <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                                            First name
+                                            <Field
+                                              value={owner.firstName || ''}
+                                              onChange={(event) => updateKingstonsSellerPackOwnerDraft(ownerIndex, 'firstName', event.target.value)}
+                                            />
+                                          </label>
+                                          <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                                            Surname
+                                            <Field
+                                              value={owner.surname || ''}
+                                              onChange={(event) => updateKingstonsSellerPackOwnerDraft(ownerIndex, 'surname', event.target.value)}
+                                            />
+                                          </label>
+                                          <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                                            Email
+                                            <Field
+                                              type="email"
+                                              inputMode="email"
+                                              value={owner.email || ''}
+                                              onChange={(event) => updateKingstonsSellerPackOwnerDraft(ownerIndex, 'email', event.target.value)}
+                                            />
+                                          </label>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
                                 </div>
 
                                 {normalizeKey(kingstonsSellerPackWizardDraft?.naturalSetup) === 'in_community' || normalizeKey(kingstonsSellerPackWizardDraft?.naturalSetup) === 'anc' ? (
@@ -34889,21 +35509,31 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   ) : null}
 
                   {leadWorkspaceTab === 'activity' ? (
-                    <LeadActivityWorkspace
-                      title="Activity"
-                      helperText="Track all interactions, updates and actions related to this lead."
-                      rows={selectedLeadUnifiedTimeline}
-                      filters={LEAD_ACTIVITY_FILTERS}
-                      activeFilter={activityTimelineFilter}
-                      onFilterChange={setActivityTimelineFilter}
-                      searchValue={activityTimelineSearch}
-                      onSearchChange={setActivityTimelineSearch}
-                      onLogActivity={() => openActivityComposer('activity')}
-                      onRowAction={handleLeadActivityRowAction}
-                      roleplayers={selectedLeadActivityRoleplayers}
-                      showHeader={false}
-                      showSidebar={false}
-                    />
+                    <Suspense
+                      fallback={(
+                        <div className="rounded-[20px] border border-[#dce7f2] bg-white p-6 shadow-[0_10px_30px_rgba(31,54,78,0.045)]">
+                          <div className="h-4 w-40 animate-pulse rounded-full bg-slate-200" />
+                          <div className="mt-4 h-24 animate-pulse rounded-[16px] bg-slate-100" />
+                          <p className="mt-4 text-sm font-semibold text-slate-500">Loading activity workspace</p>
+                        </div>
+                      )}
+                    >
+                      <LeadActivityWorkspace
+                        title="Activity"
+                        helperText="Track all interactions, updates and actions related to this lead."
+                        rows={selectedLeadUnifiedTimeline}
+                        filters={LEAD_ACTIVITY_FILTERS}
+                        activeFilter={activityTimelineFilter}
+                        onFilterChange={setActivityTimelineFilter}
+                        searchValue={activityTimelineSearch}
+                        onSearchChange={setActivityTimelineSearch}
+                        onLogActivity={() => openActivityComposer('activity')}
+                        onRowAction={handleLeadActivityRowAction}
+                        roleplayers={selectedLeadActivityRoleplayers}
+                        showHeader={false}
+                        showSidebar={false}
+                      />
+                    </Suspense>
                   ) : null}
                   {showLegacyActivityComposer ? (
                   <div className="space-y-6">
@@ -35330,20 +35960,30 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
                   {leadWorkspaceTab === 'appointments' ? (
                     selectedLeadIsSeller ? (
-                      <KingstonsSellerAppointmentsWorkspace
-                        appointments={selectedLeadAppointments}
-                        currentAgent={currentAgent}
-                        resolveAppointmentListingLabel={resolveAppointmentListingLabel}
-                        getAppointmentTypeLabel={getAppointmentTypeLabel}
-                        formatDateShort={formatDateShort}
-                        formatAppointmentTimeRange={formatAppointmentTimeRange}
-                        getAppointmentStatusTone={getAppointmentStatusTone}
-                        handleViewCalendar={() => navigate('/pipeline/calendar')}
-                        handleOpenAppointmentModal={handleOpenAppointmentModal}
-                        handleScheduleAppointment={handleScheduleSellerAppointment}
-                        handleCancelAppointment={handleCancelAppointment}
-                        handleMarkAppointmentComplete={handleMarkAppointmentComplete}
-                      />
+                      <Suspense
+                        fallback={(
+                          <div className="rounded-[20px] border border-[#dce7f2] bg-white p-6 shadow-[0_10px_30px_rgba(31,54,78,0.045)]">
+                            <div className="h-4 w-52 animate-pulse rounded-full bg-slate-200" />
+                            <div className="mt-4 h-28 animate-pulse rounded-[16px] bg-slate-100" />
+                            <p className="mt-4 text-sm font-semibold text-slate-500">Loading seller appointments workspace</p>
+                          </div>
+                        )}
+                      >
+                        <KingstonsSellerAppointmentsWorkspace
+                          appointments={selectedLeadAppointments}
+                          currentAgent={currentAgent}
+                          resolveAppointmentListingLabel={resolveAppointmentListingLabel}
+                          getAppointmentTypeLabel={getAppointmentTypeLabel}
+                          formatDateShort={formatDateShort}
+                          formatAppointmentTimeRange={formatAppointmentTimeRange}
+                          getAppointmentStatusTone={getAppointmentStatusTone}
+                          handleViewCalendar={() => navigate('/pipeline/calendar')}
+                          handleOpenAppointmentModal={handleOpenAppointmentModal}
+                          handleScheduleAppointment={handleScheduleSellerAppointment}
+                          handleCancelAppointment={handleCancelAppointment}
+                          handleMarkAppointmentComplete={handleMarkAppointmentComplete}
+                        />
+                      </Suspense>
                     ) : (
                   <>
                     <LeadAppointmentsPanel
@@ -37256,13 +37896,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             </section>
           ) : null}
 
-          {appointmentSchedulerLocation ? (
-            <p className="flex items-start gap-2 text-sm text-[#62768e]">
-              <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-[#6b7f93]" />
-              <span className="min-w-0 break-words">{appointmentSchedulerLocation}</span>
-            </p>
-          ) : null}
-
           <section className="grid gap-3">
             <p className="text-sm font-semibold text-[#102033]">When</p>
             <div className="grid gap-3 md:grid-cols-[minmax(0,1.2fr)_minmax(0,0.9fr)_minmax(0,1fr)]">
@@ -37327,7 +37960,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 <MapPin className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#6f839c]" />
                 <Field
                   className="pr-10 pl-10"
-                  placeholder="15 Ocean View Drive, Camps Bay, Cape Town"
+                  placeholder="Property address"
                   value={appointmentSchedulerAddressValue}
                   onChange={(event) => handleAppointmentLocationChange(event.target.value)}
                 />
@@ -38515,44 +39148,63 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         </div>
       </Modal>
 
-      <LegalDocumentWorkspace
-        open={legalWorkspaceOpen}
-        onClose={() => {
-          setLegalWorkspaceOpen(false)
-          setLegalWorkspaceInitialAction('')
-        }}
-        transactionId={selectedLeadLinkedTransactionId}
-        transactionReference={
-          [
-            normalizeText(selectedLead?.propertyInterest || selectedLead?.sellerPropertyAddress),
-            normalizeText(selectedLead?.leadCategory || 'Seller Lead'),
-          ].filter(Boolean).join(' · ') || 'Seller lead document context'
-        }
-        packetType="mandate"
-        packetId={
-          isUuidLike(mandatePacketStatus?.packet?.id) && documentPacketBelongsToLead(mandatePacketStatus?.packet, selectedLead?.leadId)
-            ? normalizeText(mandatePacketStatus.packet.id)
-            : ''
-        }
-        mode={legalWorkspaceMode}
-        initialAction={legalWorkspaceInitialAction}
-        initialStatus={mandatePacketStatus}
-        initialMandateData={selectedLeadMandateReadiness?.mandateData || null}
-        organisationId={organisationId}
-        onGenerate={handleGenerateMandateFromSellerLead}
-        onSend={handleSendMandateToSeller}
-        onEdit={handleGenerateMandateFromSellerLead}
-        onView={handleWorkspaceViewMandate}
-        onViewSigned={handleWorkspaceViewSignedMandate}
-        onRefreshContext={async () => {
-          await refreshSelectedLeadMandateTarget({
-            packetId: normalizeText(mandatePacketStatus?.packet?.id || selectedLeadMandatePacketId),
-            leadId: selectedLeadRecordId,
-            reason: 'phase5_workspace_context_targeted_refresh',
-          })
-        }}
-        autoGenerateEnabled={legalWorkspaceOpen}
-      />
+      {legalWorkspaceOpen ? (
+        <Suspense
+          fallback={(
+            <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/30 px-4 backdrop-blur-sm">
+              <div className="w-full max-w-xl rounded-[24px] border border-white/70 bg-white p-5 shadow-[0_24px_80px_rgba(15,23,42,0.2)]">
+                <div className="h-3 w-28 animate-pulse rounded-full bg-slate-200" />
+                <div className="mt-4 h-7 w-64 max-w-full animate-pulse rounded-2xl bg-slate-200" />
+                <div className="mt-5 space-y-3">
+                  <div className="h-12 animate-pulse rounded-2xl bg-slate-100" />
+                  <div className="h-12 animate-pulse rounded-2xl bg-slate-100" />
+                  <div className="h-12 animate-pulse rounded-2xl bg-slate-100" />
+                </div>
+                <p className="mt-4 text-sm font-semibold text-slate-500">Loading legal document workspace</p>
+              </div>
+            </div>
+          )}
+        >
+          <LegalDocumentWorkspace
+            open={legalWorkspaceOpen}
+            onClose={() => {
+              setLegalWorkspaceOpen(false)
+              setLegalWorkspaceInitialAction('')
+            }}
+            transactionId={selectedLeadLinkedTransactionId}
+            transactionReference={
+              [
+                normalizeText(selectedLead?.propertyInterest || selectedLead?.sellerPropertyAddress),
+                normalizeText(selectedLead?.leadCategory || 'Seller Lead'),
+              ].filter(Boolean).join(' · ') || 'Seller lead document context'
+            }
+            packetType="mandate"
+            packetId={
+              isUuidLike(mandatePacketStatus?.packet?.id) && documentPacketBelongsToLead(mandatePacketStatus?.packet, selectedLead?.leadId)
+                ? normalizeText(mandatePacketStatus.packet.id)
+                : ''
+            }
+            mode={legalWorkspaceMode}
+            initialAction={legalWorkspaceInitialAction}
+            initialStatus={mandatePacketStatus}
+            initialMandateData={selectedLeadMandateReadiness?.mandateData || null}
+            organisationId={organisationId}
+            onGenerate={handleGenerateMandateFromSellerLead}
+            onSend={handleSendMandateToSeller}
+            onEdit={handleGenerateMandateFromSellerLead}
+            onView={handleWorkspaceViewMandate}
+            onViewSigned={handleWorkspaceViewSignedMandate}
+            onRefreshContext={async () => {
+              await refreshSelectedLeadMandateTarget({
+                packetId: normalizeText(mandatePacketStatus?.packet?.id || selectedLeadMandatePacketId),
+                leadId: selectedLeadRecordId,
+                reason: 'phase5_workspace_context_targeted_refresh',
+              })
+            }}
+            autoGenerateEnabled={legalWorkspaceOpen}
+          />
+        </Suspense>
+      ) : null}
     </section>
   )
 }

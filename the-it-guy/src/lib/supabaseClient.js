@@ -108,6 +108,7 @@ const AUTH_READ_LOCK_RETRY_DELAY_MS = 75
 const AUTH_READ_LOCK_RETRY_ATTEMPTS = 2
 const AUTH_READ_OBSERVABILITY_EVENT = 'arch9:auth-read-observability'
 const AUTH_READ_SLOW_THRESHOLD_MS = 1000
+const AUTH_READ_OBSERVABILITY_LOG_COOLDOWN_MS = 30_000
 const AUTH_MUTATION_METHODS = [
   'exchangeCodeForSession',
   'refreshSession',
@@ -123,6 +124,7 @@ const AUTH_MUTATION_METHODS = [
   'updateUser',
   'verifyOtp',
 ]
+const authReadObservabilityWarnedAt = new Map()
 
 function isZeroArgumentAuthRead(args = []) {
   return !Array.isArray(args) || args.length === 0
@@ -167,12 +169,24 @@ function emitAuthReadObservability(detail = {}) {
     cacheable: detail.cacheable === true,
     success: detail.success !== false,
     errorMessage: String(detail.errorMessage || '').trim(),
+    joinedCount: Math.max(0, Math.round(Number(detail.joinedCount || 0))),
   }
   if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function' && typeof CustomEvent === 'function') {
     window.dispatchEvent(new CustomEvent(AUTH_READ_OBSERVABILITY_EVENT, { detail: payload }))
   }
   if (!payload.success || elapsedMs >= AUTH_READ_SLOW_THRESHOLD_MS) {
-    console.warn('[AUTH] auth read observability', payload)
+    const warnKey = [
+      payload.methodName,
+      payload.source,
+      payload.success ? 'slow' : 'failed',
+      payload.success ? '' : payload.errorMessage,
+    ].join(':')
+    const now = Date.now()
+    const lastWarnedAt = Number(authReadObservabilityWarnedAt.get(warnKey) || 0)
+    if (!lastWarnedAt || now - lastWarnedAt >= AUTH_READ_OBSERVABILITY_LOG_COOLDOWN_MS) {
+      authReadObservabilityWarnedAt.set(warnKey, now)
+      console.warn('[AUTH] auth read observability', payload)
+    }
   }
 }
 
@@ -184,11 +198,13 @@ function createSingleFlightAuthRead(auth, methodName, {
   if (typeof originalMethod !== 'function') return null
 
   let inFlight = null
+  let inFlightJoinCount = 0
   let cachedResult = null
   let cachedAt = 0
 
   const clear = () => {
     inFlight = null
+    inFlightJoinCount = 0
     cachedResult = null
     cachedAt = 0
   }
@@ -203,34 +219,12 @@ function createSingleFlightAuthRead(auth, methodName, {
     }
 
     if (cacheable && inFlight) {
-      const joinedAt = getAuthReadNow()
-      inFlight
-        .then(
-          () => {
-            emitAuthReadObservability({
-              methodName,
-              source: 'single_flight_join',
-              elapsedMs: getAuthReadNow() - joinedAt,
-              cacheable: true,
-              success: true,
-            })
-          },
-          (error) => {
-            emitAuthReadObservability({
-              methodName,
-              source: 'single_flight_join',
-              elapsedMs: getAuthReadNow() - joinedAt,
-              cacheable: true,
-              success: false,
-              errorMessage: error?.message || 'Supabase auth read failed.',
-            })
-          },
-        )
-        .catch(() => {})
+      inFlightJoinCount += 1
       return inFlight
     }
 
     const startedAt = getAuthReadNow()
+    if (cacheable) inFlightJoinCount = 0
     const runAuthReadWithLockRecovery = async () => {
       let attempts = 0
       while (true) {
@@ -285,6 +279,7 @@ function createSingleFlightAuthRead(auth, methodName, {
           cacheable,
           success: isSuccessfulAuthRead(result),
           errorMessage: result?.error?.message || '',
+          joinedCount: cacheable ? inFlightJoinCount : 0,
         })
         return result
       })
@@ -296,6 +291,7 @@ function createSingleFlightAuthRead(auth, methodName, {
           cacheable,
           success: false,
           errorMessage: error?.message || 'Supabase auth read failed.',
+          joinedCount: cacheable ? inFlightJoinCount : 0,
         })
         throw error
       })
@@ -303,6 +299,7 @@ function createSingleFlightAuthRead(auth, methodName, {
     if (cacheable) {
       inFlight = request.finally(() => {
         inFlight = null
+        inFlightJoinCount = 0
       })
       return inFlight
     }

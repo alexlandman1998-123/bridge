@@ -37,6 +37,64 @@ assert.equal(isSupabaseAuthLockRecoveryError(new Error('Invalid login credential
 }
 
 {
+  const previousWindow = globalThis.window
+  const previousCustomEvent = globalThis.CustomEvent
+  const events = []
+  let releaseAuthRead
+  const authReadGate = new Promise((resolve) => {
+    releaseAuthRead = resolve
+  })
+  globalThis.CustomEvent = class TestCustomEvent {
+    constructor(type, init = {}) {
+      this.type = type
+      this.detail = init.detail
+    }
+  }
+  globalThis.window = {
+    dispatchEvent(event) {
+      events.push(event)
+      return true
+    },
+  }
+
+  let calls = 0
+  const auth = {
+    async getSession() {
+      calls += 1
+      await authReadGate
+      return { data: { session: { access_token: 'shared-token' } }, error: null }
+    },
+  }
+
+  try {
+    createSingleFlightAuthRead(auth, 'getSession')
+    const firstRead = auth.getSession()
+    const secondRead = auth.getSession()
+    const thirdRead = auth.getSession()
+    releaseAuthRead()
+    const [firstResult, secondResult, thirdResult] = await Promise.all([firstRead, secondRead, thirdRead])
+
+    assert.equal(calls, 1, 'concurrent successful auth reads should share one network request')
+    assert.deepEqual(secondResult, firstResult)
+    assert.deepEqual(thirdResult, firstResult)
+    assert.equal(events.length, 1, 'joined auth reads should emit one aggregated observability event')
+    assert.equal(events[0].detail.source, 'network_single_flight_owner')
+    assert.equal(events[0].detail.joinedCount, 2)
+  } finally {
+    if (previousWindow === undefined) {
+      delete globalThis.window
+    } else {
+      globalThis.window = previousWindow
+    }
+    if (previousCustomEvent === undefined) {
+      delete globalThis.CustomEvent
+    } else {
+      globalThis.CustomEvent = previousCustomEvent
+    }
+  }
+}
+
+{
   let calls = 0
   const auth = {
     async getUser() {

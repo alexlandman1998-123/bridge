@@ -1,7 +1,6 @@
 import { ExternalLink, Funnel, KanbanSquare, Mail, MessageCircle, Plus, Table2, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { createTransactionFromWizard } from '../lib/api'
 import { resolveTransactionOnboardingLink } from '../lib/onboardingLinks'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import Button from '../components/ui/Button'
@@ -11,7 +10,6 @@ import { ViewToggle } from '../components/ui/FilterBar'
 import Modal from '../components/ui/Modal'
 import { useWorkspace } from '../context/WorkspaceContext'
 import AgencyPipelinePage from './agency/AgencyPipelinePage'
-import { fetchDevelopmentOptions, fetchUnitsData } from '../lib/api'
 import {
   buildSellerOnboardingLink,
   createListingDraftFromSellerLead,
@@ -36,6 +34,17 @@ import {
 
 const STORAGE_KEY = 'itg:pipeline-leads:v1'
 const PRIVATE_LISTINGS_STORAGE_KEY = 'itg:agent-private-listings:v1'
+let pipelineApiActionsPromise = null
+function loadPipelineApiActions() {
+  if (!pipelineApiActionsPromise) {
+    pipelineApiActionsPromise = import('../lib/api').then((api) => ({
+      createTransactionFromWizard: api.createTransactionFromWizard,
+      fetchDevelopmentOptions: api.fetchDevelopmentOptions,
+      fetchUnitsData: api.fetchUnitsData,
+    }))
+  }
+  return pipelineApiActionsPromise
+}
 
 const SOURCE_OPTIONS = ['Property24', 'Website', 'Show Day', 'Referral', 'Walk-in', 'Facebook', 'Other']
 const STATUS_OPTIONS = ['Active', 'Not Active', 'Closed', 'Lost', 'Follow Up', 'Negotiating']
@@ -358,6 +367,7 @@ function LegacyPipeline() {
     try {
       setError('')
       setLoading(true)
+      const { fetchDevelopmentOptions } = await loadPipelineApiActions()
       const options = await fetchDevelopmentOptions()
       setDevelopmentOptions(options)
       setPrivateListingOptions(readPrivateListings())
@@ -416,6 +426,7 @@ function LegacyPipeline() {
       }
 
       try {
+        const { fetchUnitsData } = await loadPipelineApiActions()
         const rows = await fetchUnitsData({
           developmentId: form.developmentId,
           stage: 'all',
@@ -438,6 +449,7 @@ function LegacyPipeline() {
       }
 
       try {
+        const { fetchUnitsData } = await loadPipelineApiActions()
         const rows = await fetchUnitsData({
           developmentId: convertForm.developmentId,
           stage: 'all',
@@ -850,6 +862,7 @@ function LegacyPipeline() {
         status: 'projected',
       }
 
+      const { createTransactionFromWizard } = await loadPipelineApiActions()
       const result = await createTransactionFromWizard({
         setup: {
           transactionType: isDevelopment ? 'developer_sale' : 'private_property',

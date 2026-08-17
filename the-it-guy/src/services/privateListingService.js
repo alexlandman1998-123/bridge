@@ -34,19 +34,10 @@ import {
 import { createScopedSupabaseClient, DOCUMENTS_BUCKET_CANDIDATES, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { hasSignedMandateEvidence } from '../core/clientAccess/clientAccessPolicy'
 import { resolveSellerPortalFinalSignedArtifactAccess } from '../core/documents/finalSignedArtifactAccess'
-import {
-  appendDocumentPacketEvent,
-  createEditableDocumentDraftFromTemplate,
-  fetchDocumentPacket,
-  freezeEditableDocumentRevisionForRender,
-  updateDocumentPacketVersion,
-  updateDocumentPacket,
-} from '../lib/documentPacketsApi'
 import { fetchOrganisationSettings } from '../lib/settingsApi'
 import { uploadToStorageCandidateBuckets } from '../lib/storageFallbacks'
 import { mapSellerOnboardingToMandateData } from '../core/documents/mandateDataMapper'
 import { validateMandateGenerationData } from '../core/documents/mandateValidation'
-import { resolveActiveTemplate } from '../core/documents/packetService'
 import {
   normalizeListingSource,
   normalizePropertyCategory,
@@ -70,7 +61,6 @@ import {
 import { areSellerJourneyDocumentsSubmitted, buildSellerJourneyProgressPatch } from './sellerJourneyService.js'
 import { getSellerMandateContinuityDiagnosticsSnapshot } from './sellerMandateContinuityReportService.js'
 import { issueSellerDocumentRequests } from './sellerDocumentRequestOrchestrationService.js'
-import { createClientPortalNotification } from './clientPortalNotificationsService.js'
 import { orchestrateSellerPostMandateDocumentRequest } from './sellerPostMandateDocumentOrchestrationService.js'
 import {
   assertSellerUploadTarget,
@@ -106,6 +96,66 @@ const SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_SKIPPED_EVENT = 'seller_portal_i
 const SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_FAILED_EVENT = 'seller_portal_invite_failed_after_mandate_signed'
 let sellerPortalPayloadRpcUnavailable = false
 let sellerPortalCorePayloadRpcUnavailable = false
+let clientPortalNotificationServicePromise = null
+function loadClientPortalNotificationService() {
+  if (!clientPortalNotificationServicePromise) {
+    clientPortalNotificationServicePromise = import('./clientPortalNotificationsService.js').then((service) => ({
+      createClientPortalNotification: service.createClientPortalNotification,
+    }))
+  }
+  return clientPortalNotificationServicePromise
+}
+let privateListingPacketServicePromise = null
+function loadPrivateListingPacketService() {
+  if (!privateListingPacketServicePromise) {
+    privateListingPacketServicePromise = import('../core/documents/packetService').then((service) => ({
+      resolveActiveTemplate: service.resolveActiveTemplate,
+    }))
+  }
+  return privateListingPacketServicePromise
+}
+async function resolveActiveTemplate(...args) {
+  const { resolveActiveTemplate: action } = await loadPrivateListingPacketService()
+  return action(...args)
+}
+let privateListingDocumentPacketsPromise = null
+function loadPrivateListingDocumentPackets() {
+  if (!privateListingDocumentPacketsPromise) {
+    privateListingDocumentPacketsPromise = import('../lib/documentPacketsApi').then((api) => ({
+      appendDocumentPacketEvent: api.appendDocumentPacketEvent,
+      createEditableDocumentDraftFromTemplate: api.createEditableDocumentDraftFromTemplate,
+      fetchDocumentPacket: api.fetchDocumentPacket,
+      freezeEditableDocumentRevisionForRender: api.freezeEditableDocumentRevisionForRender,
+      updateDocumentPacketVersion: api.updateDocumentPacketVersion,
+      updateDocumentPacket: api.updateDocumentPacket,
+    }))
+  }
+  return privateListingDocumentPacketsPromise
+}
+async function appendDocumentPacketEvent(...args) {
+  const { appendDocumentPacketEvent: action } = await loadPrivateListingDocumentPackets()
+  return action(...args)
+}
+async function createEditableDocumentDraftFromTemplate(...args) {
+  const { createEditableDocumentDraftFromTemplate: action } = await loadPrivateListingDocumentPackets()
+  return action(...args)
+}
+async function fetchDocumentPacket(...args) {
+  const { fetchDocumentPacket: action } = await loadPrivateListingDocumentPackets()
+  return action(...args)
+}
+async function freezeEditableDocumentRevisionForRender(...args) {
+  const { freezeEditableDocumentRevisionForRender: action } = await loadPrivateListingDocumentPackets()
+  return action(...args)
+}
+async function updateDocumentPacketVersion(...args) {
+  const { updateDocumentPacketVersion: action } = await loadPrivateListingDocumentPackets()
+  return action(...args)
+}
+async function updateDocumentPacket(...args) {
+  const { updateDocumentPacket: action } = await loadPrivateListingDocumentPackets()
+  return action(...args)
+}
 const sellerOnboardingProgressQueues = new Map()
 const sellerOnboardingProjectionQueues = new Map()
 const SELLER_PROFILE_CANONICAL_PROTECTED_FORM_DATA_KEYS = new Set([
@@ -4596,10 +4646,15 @@ export async function sendSellerPortalInviteAfterMandateSigned({
           portalLink: invitationLink,
         }
       },
-      createNotification: async ({ notificationPayload }) => createClientPortalNotification(notificationPayload).catch((notificationError) => {
-        console.warn('[Private Listings] seller portal document notification skipped after mandate invite', notificationError)
-        return null
-      }),
+      createNotification: async ({ notificationPayload }) => {
+        try {
+          const { createClientPortalNotification } = await loadClientPortalNotificationService()
+          return await createClientPortalNotification(notificationPayload)
+        } catch (notificationError) {
+          console.warn('[Private Listings] seller portal document notification skipped after mandate invite', notificationError)
+          return null
+        }
+      },
       recordEvent: async ({ eventType, payload }) => {
         const packetEventType = eventType === 'seller_post_mandate_documents_completed'
           ? SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_SENT_EVENT

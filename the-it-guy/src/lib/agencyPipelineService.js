@@ -371,6 +371,7 @@ const DEFAULT_APPOINTMENT_BUSINESS_HOURS = {
 }
 const APPOINTMENT_CREATE_NOTIFICATION_SOFT_TIMEOUT_MS = 6000
 const APPOINTMENT_NOTIFICATION_TIMEOUT_RESULT = '__appointment_notification_still_running__'
+const APPOINTMENT_PARTICIPANT_FETCH_BATCH_SIZE = 100
 
 function stripAppointmentWorkflowDbFields(payload = {}) {
   const clone = { ...payload }
@@ -2004,6 +2005,12 @@ async function listAppointmentsFromSupabase(organisationId, { includeAll = false
     if (scopedListingId) {
       query = query.eq('listing_id', scopedListingId)
     }
+    if (from) {
+      query = query.gte('date_time', from)
+    }
+    if (to) {
+      query = query.lt('date_time', to)
+    }
     return query
   }
 
@@ -2043,36 +2050,43 @@ async function listAppointmentsFromSupabase(organisationId, { includeAll = false
   const participantMap = new Map()
 
   if (appointmentIds.length) {
-    let participantResult = await supabase
-      .from('appointment_participants')
-      .select(
-        'participant_id, appointment_id, organisation_id, user_id, contact_id, name, email, phone, participant_role, is_required, rsvp_status, proposed_new_time, rsvp_comment, rsvp_token, invitation_sent_at, last_invitation_sent_at, responded_at, created_at, updated_at',
-      )
-      .eq('organisation_id', scopedOrganisationId)
-      .in('appointment_id', appointmentIds)
-    if (participantResult.error && isMissingColumnError(participantResult.error)) {
-      participantResult = await supabase
+    const participantRows = []
+    let participantError = null
+    for (let index = 0; index < appointmentIds.length; index += APPOINTMENT_PARTICIPANT_FETCH_BATCH_SIZE) {
+      const appointmentIdBatch = appointmentIds.slice(index, index + APPOINTMENT_PARTICIPANT_FETCH_BATCH_SIZE)
+      let participantResult = await supabase
         .from('appointment_participants')
         .select(
-          'participant_id, appointment_id, organisation_id, name, email, phone, participant_role, rsvp_status, proposed_new_time, responded_at, created_at, updated_at',
+          'participant_id, appointment_id, organisation_id, user_id, contact_id, name, email, phone, participant_role, is_required, rsvp_status, proposed_new_time, rsvp_comment, rsvp_token, invitation_sent_at, last_invitation_sent_at, responded_at, created_at, updated_at',
         )
         .eq('organisation_id', scopedOrganisationId)
-        .in('appointment_id', appointmentIds)
+        .in('appointment_id', appointmentIdBatch)
+      if (participantResult.error && isMissingColumnError(participantResult.error)) {
+        participantResult = await supabase
+          .from('appointment_participants')
+          .select(
+            'participant_id, appointment_id, organisation_id, name, email, phone, participant_role, rsvp_status, proposed_new_time, responded_at, created_at, updated_at',
+          )
+          .eq('organisation_id', scopedOrganisationId)
+          .in('appointment_id', appointmentIdBatch)
+      }
+      if (participantResult.error) {
+        participantError = participantResult.error
+        break
+      }
+      participantRows.push(...(Array.isArray(participantResult.data) ? participantResult.data : []))
     }
-
-    const { data: participantRows, error: participantError } = participantResult
 
     if (participantError) {
       console.warn('[appointments] participant rows could not be loaded; showing appointments without participant detail.', participantError)
-    } else {
-      for (const row of Array.isArray(participantRows) ? participantRows : []) {
-        const mapped = mapDbParticipantRow(row)
-        const key = normalizeText(mapped?.appointmentId)
-        if (!participantMap.has(key)) {
-          participantMap.set(key, [])
-        }
-        participantMap.get(key).push(mapped)
+    }
+    for (const row of participantRows) {
+      const mapped = mapDbParticipantRow(row)
+      const key = normalizeText(mapped?.appointmentId)
+      if (!participantMap.has(key)) {
+        participantMap.set(key, [])
       }
+      participantMap.get(key).push(mapped)
     }
   }
 

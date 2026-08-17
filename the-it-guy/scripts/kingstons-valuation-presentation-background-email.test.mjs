@@ -27,4 +27,34 @@ assert.match(
   'Appointment save feedback should tell users the valuation download email continues in the background.',
 )
 
+assert.doesNotMatch(
+  agencyPipelineSource,
+  /await reloadRecords\(organisationId\)[\s\S]{0,400}\} catch \(postSaveError\) \{/,
+  'Appointment save should not wait for the full pipeline reload after optimistic appointment insertion.',
+)
+
+assert.match(
+  agencyPipelineSource,
+  /scheduleRecordsReload\(organisationId, appointmentCreateRunsInBackground \? 850 : 250\)/,
+  'Appointment save should schedule the full pipeline refresh after returning control to the UI.',
+)
+
+assert.doesNotMatch(
+  agencyPipelineSource,
+  /appointmentSchedulerLocation/,
+  'Appointment modals should not render a duplicate location summary above the address field.',
+)
+
+assert.doesNotMatch(
+  agencyPipelineSource,
+  /15 Ocean View Drive, Camps Bay, Cape Town/,
+  'Appointment address fields should not use a real-looking hard-coded address placeholder.',
+)
+
+assert.match(
+  agencyPipelineSource,
+  /selectedLead\?\.seller_property_address/,
+  'Valuation presentation address seeding should read snake_case seller property addresses from lead records.',
+)
+
 console.log('Kingstons valuation presentation background email scheduling tests passed.')

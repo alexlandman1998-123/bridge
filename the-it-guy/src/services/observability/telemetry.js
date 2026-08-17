@@ -2,6 +2,9 @@ import { isSupabaseConfigured, supabase } from '../../lib/supabaseClient.js'
 import { isBackendDegraded, markBackendDegraded } from './backendDegradation.js'
 
 const SENSITIVE_KEY_PATTERN = /(password|token|secret|key|authorization|cookie|otp|session|email|phone|name)/i
+const TELEMETRY_BACKEND_DEGRADED_TTL_MS = 120_000
+const TELEMETRY_FAILURE_LOG_COOLDOWN_MS = 30_000
+let telemetryFailureLastWarnedAt = 0
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -11,6 +14,32 @@ function isMissingSchemaError(error, token = '') {
   const code = String(error?.code || '').toLowerCase()
   const message = `${error?.message || ''} ${error?.details || ''}`.toLowerCase()
   return code === '42p01' || code === '42703' || code === 'pgrst204' || code === 'pgrst205' || message.includes(token.toLowerCase())
+}
+
+function isTransientTelemetryError(error) {
+  const rawStatus = error?.status ?? error?.statusCode
+  const status = Number(rawStatus)
+  const hasStatus = rawStatus !== undefined && rawStatus !== null && Number.isFinite(status)
+  const code = String(error?.code || error?.name || '').toLowerCase()
+  const message = String(error?.message || error || '').toLowerCase()
+  return (
+    (hasStatus && (status === 0 || status === 408 || status === 429 || status >= 500)) ||
+    code.includes('abort') ||
+    code.includes('network') ||
+    message.includes('failed to fetch') ||
+    message.includes('load failed') ||
+    message.includes('network') ||
+    message.includes('connection') ||
+    message.includes('timeout') ||
+    message.includes('err_connection_closed')
+  )
+}
+
+function warnTelemetryFailureOnce(error) {
+  const now = Date.now()
+  if (telemetryFailureLastWarnedAt && now - telemetryFailureLastWarnedAt < TELEMETRY_FAILURE_LOG_COOLDOWN_MS) return
+  telemetryFailureLastWarnedAt = now
+  console.warn('[TELEMETRY] event write failed; backing off telemetry persistence.', error)
 }
 
 export function redactTelemetryMetadata(metadata = {}) {
@@ -66,12 +95,16 @@ export async function trackTelemetryEvent({
 
     if (result.error) {
       if (isMissingSchemaError(result.error, 'telemetry_events')) return { persisted: false, reason: 'schema_missing' }
+      if (isTransientTelemetryError(result.error)) {
+        markBackendDegraded({ ttlMs: TELEMETRY_BACKEND_DEGRADED_TTL_MS })
+        return { persisted: false, reason: result.error.message || 'backend_degraded' }
+      }
       return { persisted: false, reason: result.error.message || 'write_failed' }
     }
     return { persisted: true, id: result.data?.id || null }
   } catch (error) {
-    markBackendDegraded({ ttlMs: 120_000 })
-    console.warn('[TELEMETRY] event write failed.', error)
+    markBackendDegraded({ ttlMs: TELEMETRY_BACKEND_DEGRADED_TTL_MS })
+    warnTelemetryFailureOnce(error)
     return { persisted: false, reason: 'write_failed' }
   }
 }
