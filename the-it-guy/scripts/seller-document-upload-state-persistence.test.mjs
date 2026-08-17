@@ -4,6 +4,7 @@ import { resolve } from 'node:path'
 
 import {
   buildSellerDocumentRequirementRows,
+  buildSellerDocumentSourceOfTruth,
   documentMatchesSellerRequirement,
 } from '../src/services/sellerDocumentRequirementsService.js'
 
@@ -60,9 +61,44 @@ assert.equal(row?.statusLabel, 'Uploaded')
 assert.equal(row?.uploadedFileName, 'signed-fica.pdf')
 assert.equal(row?.uploadedAt, '2026-08-10T10:00:00.000Z')
 
+const kingstonsValuationOnlySource = buildSellerDocumentSourceOfTruth({
+  listing: {
+    id: 'listing-kingstons-valuation-only',
+    organisationId: 'kingstons',
+    sellerProcessProfile: 'kingstons_residential',
+    lifecycleStatus: 'seller_lead',
+    rawEnquiryPayload: {
+      kingstonsSellerPack: {
+        documents: {
+          valuation_document: {
+            key: 'valuation_document',
+            requirementKey: 'valuation_document',
+            documentType: 'valuation_document',
+            label: 'Formal Valuation Document',
+            title: 'Formal Valuation Document',
+            category: 'property',
+            document_category: 'property',
+            status: 'uploaded',
+            storagePath: 'valuations/formal.pdf',
+            url: 'https://example.test/formal.pdf',
+          },
+        },
+      },
+    },
+  },
+})
+
+const valuationOnlyRows = new Map(kingstonsValuationOnlySource.rows.map((candidate) => [candidate.key, candidate]))
+assert.equal(valuationOnlyRows.get('valuation_document')?.status, 'uploaded')
+assert.equal(valuationOnlyRows.get('valuation_document')?.upload?.filePath, 'valuations/formal.pdf')
+assert.equal(valuationOnlyRows.get('signed_disclosure_form')?.status, 'required')
+assert.equal(valuationOnlyRows.get('signed_disclosure_form')?.hasUpload, false)
+assert.equal(valuationOnlyRows.get('signed_disclosure_form')?.upload, null)
+
 assert.match(agencyPipelineSource, /ensurePrivateListingDocumentRequirements\(/)
 assert.match(agencyPipelineSource, /linkPrivateListingDocument\(linkedListingId/)
 assert.match(agencyPipelineSource, /kingstons_seller_pack_upload_status_sync/)
 assert.match(agencyPipelineSource, /\[canonicalRequirementKey\]: uploadedDocument/)
+assert.match(agencyPipelineSource, /key === KINGSTONS_FORMAL_VALUATION_DOCUMENT\.key/)
 
 console.log('Seller document upload-state persistence regression passed.')

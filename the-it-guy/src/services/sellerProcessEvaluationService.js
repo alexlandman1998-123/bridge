@@ -11,6 +11,7 @@ const DOCUMENT_COMPLETE_STATUSES = new Set(['uploaded', 'under_review', 'approve
 const BLOCKED_APPOINTMENT_STATUSES = new Set(['cancelled', 'canceled', 'declined', 'draft', 'internal_draft'])
 const KINGSTONS_BASELINE_SELLER_PACK_KEYS = new Set(SELLER_BASE_PACK_REQUIRED_KEYS)
 const KINGSTONS_SELLER_PACK_GENERATED_SECTION_KEYS = new Set(['seller_identity_fica', 'authority_documents'])
+const GENERIC_DOCUMENT_MATCH_KEYS = new Set(['property', 'legal', 'seller', 'document', 'documents', 'upload', 'uploaded'])
 
 function normalizeText(value) {
   return String(value ?? '').trim()
@@ -287,7 +288,11 @@ function typeMatches(row = {}, expectedTypes = []) {
   const expected = expectedTypes.map(normalizeKey).filter(Boolean)
   if (!expected.length) return false
   const keys = rowKeys(row)
-  return expected.some((type) => keys.some((key) => key === type || key.includes(type) || type.includes(key)))
+  return expected.some((type) => keys.some((key) =>
+    key === type ||
+      key.includes(type) ||
+      (!GENERIC_DOCUMENT_MATCH_KEYS.has(key) && type.includes(key))
+  ))
 }
 
 function statusAccepted(status = '', acceptedStatuses = []) {

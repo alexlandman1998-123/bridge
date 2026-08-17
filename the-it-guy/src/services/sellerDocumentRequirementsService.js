@@ -1677,17 +1677,23 @@ export function documentMatchesSellerRequirement(document = {}, requirement = {}
 
   const requirementKeyRaw = requirement?.key || requirement?.requirement_key
   const requirementKey = normalizeSellerBasePackKey(requirementKeyRaw) || normalizeDocumentMatchKey(requirementKeyRaw)
+  const basePackRequirementKey = normalizeSellerBasePackKey(requirementKey)
   const documentRequirementKey = normalizeDocumentMatchKey(document?.requirementKey || document?.requirement_key)
   const documentType = normalizeDocumentMatchKey(document?.document_type || document?.documentType)
   const documentCategory = normalizeDocumentMatchKey(document?.category || document?.document_category)
   const documentName = normalizeDocumentMatchKey(document?.document_name || document?.name || document?.file_name)
   return Boolean(
     requirementKey &&
-      [documentRequirementKey, documentType, documentCategory, documentName].some((candidate) =>
-        (isSellerBasePackKey(requirementKey) && normalizeSellerBasePackKey(candidate) === requirementKey) ||
-          candidate === requirementKey ||
-          sellerDocumentKeysOverlap(candidate, requirementKey),
-      ),
+      [documentRequirementKey, documentType, documentCategory, documentName].some((candidate) => {
+        if (!candidate) return false
+        if (basePackRequirementKey) {
+          if (normalizeSellerBasePackKey(candidate) === basePackRequirementKey || candidate === basePackRequirementKey) return true
+          return getSellerBasePackAliases(basePackRequirementKey).some((alias) =>
+            normalizedDocumentKeyContainsAlias(candidate, alias)
+          )
+        }
+        return candidate === requirementKey || sellerDocumentKeysOverlap(candidate, requirementKey)
+      }),
   )
 }
 
@@ -1964,7 +1970,9 @@ export function buildSellerDocumentRequirementRows({ listing = {}, documents = [
 
   const matchedIndexes = new Set()
   const rows = requiredDocuments.map((requirement, index) => {
-    const matchIndex = uploadedDocuments.findIndex((document) => documentMatchesSellerRequirement(document, requirement))
+    const matchIndex = uploadedDocuments.findIndex((document, documentIndex) =>
+      !matchedIndexes.has(documentIndex) && documentMatchesSellerRequirement(document, requirement)
+    )
     const document = matchIndex >= 0 ? uploadedDocuments[matchIndex] : null
     if (matchIndex >= 0) matchedIndexes.add(matchIndex)
     return buildRequirementRow(requirement, document, index)

@@ -2780,6 +2780,16 @@ function getKingstonsSellerPackListingRequirementMeta(documentKey = '', document
   const label = normalizeText(documentRow.label || documentRow.title)
   const section = normalizeKey(documentRow.documentRequirementSection || documentRow.document_requirement_section)
   const group = normalizeKey(documentRow.group || documentRow.requirement_group)
+  if (key === KINGSTONS_FORMAL_VALUATION_DOCUMENT.key || key.includes('formal_valuation') || key.includes('valuation_document')) {
+    return {
+      requirementKey: KINGSTONS_FORMAL_VALUATION_DOCUMENT.key,
+      requirementName: KINGSTONS_FORMAL_VALUATION_DOCUMENT.label,
+      requirementDescription: KINGSTONS_FORMAL_VALUATION_DOCUMENT.description,
+      requirementGroup: 'property',
+      documentType: KINGSTONS_FORMAL_VALUATION_DOCUMENT.key,
+      documentCategory: KINGSTONS_FORMAL_VALUATION_DOCUMENT.category,
+    }
+  }
   if (basePackKey === SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM) {
     return {
       requirementKey: SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM,

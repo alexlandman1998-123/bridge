@@ -94,7 +94,9 @@ function assertLiveSourceDoesNotImportEvaluator(source, label) {
   assert.equal(evaluation.evidence.valuation_document_uploaded.satisfied, true)
   assert.equal(evaluation.evidence.valuation_presentation_scheduled.satisfied, true)
   assert.equal(evaluation.evidence.mandate_signed.satisfied, false)
+  assert.equal(evaluation.evidence.defects_form_signed.satisfied, false)
   assert.equal(evaluation.blockers.some((blocker) => blocker.id === 'missing_mandate_signed'), true)
+  assert.equal(evaluation.blockers.some((blocker) => blocker.id === 'missing_defects_form_signed'), true)
   assert.equal(evaluation.partnerReadiness.every((handoff) => handoff.ready === false), true)
 }
 
