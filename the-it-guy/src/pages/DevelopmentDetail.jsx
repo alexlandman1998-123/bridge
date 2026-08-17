@@ -101,6 +101,8 @@ const DEVELOPMENT_TABS = [
 const DOCUMENT_TYPE_OPTIONS = [
   { value: 'logo', label: 'Development Logo' },
   { value: 'floorplan', label: 'Floorplan' },
+  { value: 'video', label: 'Video' },
+  { value: 'virtual_tour', label: 'Virtual Tour' },
   { value: 'pricing', label: 'Pricing / Sales' },
   { value: 'marketing', label: 'Marketing Asset' },
   { value: 'site_plan', label: 'Site Plan' },
@@ -1009,6 +1011,10 @@ function appendUniqueTextareaValues(value, additions = []) {
   return next.join('\n')
 }
 
+function uniqueTruthyValues(values = []) {
+  return [...new Set((Array.isArray(values) ? values : []).map((item) => String(item || '').trim()).filter(Boolean))]
+}
+
 function normalizeMarketingUnitList(value) {
   return String(value || '')
     .split(/\n|,/)
@@ -1026,6 +1032,18 @@ function serializeMarketingUnitList(values = []) {
 function isLikelyImageUrl(value = '') {
   const normalized = String(value || '').split('?')[0].toLowerCase()
   return /\.(avif|gif|jpe?g|png|svg|webp)$/.test(normalized) || normalized.startsWith('data:image/')
+}
+
+function getAssetFileLabel(value = '', fallback = 'Uploaded file') {
+  const normalized = String(value || '').trim()
+  if (!normalized) return fallback
+  const path = normalized.split('?')[0].split('#')[0]
+  const filename = path.split('/').filter(Boolean).pop() || fallback
+  try {
+    return decodeURIComponent(filename)
+  } catch {
+    return filename
+  }
 }
 
 function parseSellingPointEntries(value) {
@@ -3126,12 +3144,28 @@ function DevelopmentDetail() {
       ),
     [selectedMarketingUnitAssets],
   )
+  const selectedMarketingUnitVideoDocuments = useMemo(
+    () => selectedMarketingUnitAssets.filter((item) => item.type === 'video'),
+    [selectedMarketingUnitAssets],
+  )
+  const selectedMarketingUnitVirtualTourDocuments = useMemo(
+    () => selectedMarketingUnitAssets.filter((item) => item.type === 'virtual_tour'),
+    [selectedMarketingUnitAssets],
+  )
   const marketingLogoDocument = useMemo(
     () => marketingAssetDocuments.find((item) => item.type === 'logo') || null,
     [marketingAssetDocuments],
   )
   const marketingGalleryDocuments = useMemo(
     () => marketingAssetDocuments.filter((item) => ['marketing', 'logo'].includes(item.type)),
+    [marketingAssetDocuments],
+  )
+  const marketingVideoDocuments = useMemo(
+    () => marketingAssetDocuments.filter((item) => item.type === 'video'),
+    [marketingAssetDocuments],
+  )
+  const marketingVirtualTourDocuments = useMemo(
+    () => marketingAssetDocuments.filter((item) => item.type === 'virtual_tour'),
     [marketingAssetDocuments],
   )
   const marketingCoverImageUrl = useMemo(
@@ -4283,7 +4317,7 @@ function DevelopmentDetail() {
     }
   }
 
-  function buildDetailsFormWithUploadedMarketingAssets(uploadedRows = [], documentType = 'marketing') {
+  function buildDetailsFormWithUploadedMarketingAssets(uploadedRows = [], documentType = 'marketing', options = {}) {
     const urls = uploadedRows.map((item) => item?.fileUrl).filter(Boolean)
     const normalizedMarketing = normalizeMarketingContentForm(detailsForm.marketing)
     const nextMediaLibrary = { ...normalizedMarketing.mediaLibrary }
@@ -4304,9 +4338,33 @@ function DevelopmentDetail() {
       }
     } else if (documentType === 'site_plan') {
       nextMediaLibrary.sitePlanUrl = urls[0] || nextMediaLibrary.sitePlanUrl
+    } else if (documentType === 'video') {
+      nextMediaLibrary.videoUrl = urls[0] || nextMediaLibrary.videoUrl
+      if (selectedMarketingFloorplan?.id) {
+        normalizedMarketing.floorplans = normalizedMarketing.floorplans.map((item) =>
+          item.id === selectedMarketingFloorplan.id
+            ? {
+                ...item,
+                videoUrl: urls[0] || item.videoUrl,
+              }
+            : item,
+        )
+      }
+    } else if (documentType === 'virtual_tour') {
+      nextMediaLibrary.virtualTourUrl = urls[0] || nextMediaLibrary.virtualTourUrl
+      if (selectedMarketingFloorplan?.id) {
+        normalizedMarketing.floorplans = normalizedMarketing.floorplans.map((item) =>
+          item.id === selectedMarketingFloorplan.id
+            ? {
+                ...item,
+                virtualTourUrl: urls[0] || item.virtualTourUrl,
+              }
+            : item,
+        )
+      }
     } else {
       nextMediaLibrary.galleryImageUrls = appendUniqueTextareaValues(nextMediaLibrary.galleryImageUrls, urls)
-      if (!nextMediaLibrary.heroImageUrl && urls[0]) {
+      if ((options.setAsHero || !nextMediaLibrary.heroImageUrl) && urls[0]) {
         nextMediaLibrary.heroImageUrl = urls[0]
       }
       if (selectedMarketingFloorplan?.id) {
@@ -4353,7 +4411,7 @@ function DevelopmentDetail() {
         )
       }
 
-      const nextDetailsForm = buildDetailsFormWithUploadedMarketingAssets(uploadedRows, documentType)
+      const nextDetailsForm = buildDetailsFormWithUploadedMarketingAssets(uploadedRows, documentType, options)
       setDetailsForm(nextDetailsForm)
       await saveDevelopmentDetails(data.development.id, buildDevelopmentDetailsPayload(nextDetailsForm))
       setFeedback(options.successMessage || 'Marketing assets uploaded.')
@@ -5331,18 +5389,26 @@ function DevelopmentDetail() {
     const availabilityPercent = selectedMarketingUnitStats.total
       ? Math.round((selectedMarketingUnitStats.available / selectedMarketingUnitStats.total) * 100)
       : 0
-    const selectedUnitImages = [
+    const selectedUnitImages = uniqueTruthyValues([
       ...textareaToList(selectedMarketingFloorplan?.imageUrls),
       ...selectedMarketingUnitImageDocuments.map((item) => item.fileUrl),
-    ]
-    const selectedUnitFloorplans = [
+    ])
+    const selectedUnitFloorplans = uniqueTruthyValues([
       ...textareaToList(selectedMarketingFloorplan?.floorplanUrls),
       ...selectedMarketingUnitFloorplanDocuments.map((item) => item.fileUrl),
-    ]
-    const selectedUnitDocuments = [
+    ])
+    const selectedUnitDocuments = uniqueTruthyValues([
       ...textareaToList(selectedMarketingFloorplan?.documentUrls),
       ...selectedMarketingUnitDocumentAssets.map((item) => item.fileUrl),
-    ]
+    ])
+    const selectedUnitVideos = uniqueTruthyValues([
+      ...[selectedMarketingFloorplan?.videoUrl].filter(Boolean),
+      ...selectedMarketingUnitVideoDocuments.map((item) => item.fileUrl),
+    ])
+    const selectedUnitVirtualTours = uniqueTruthyValues([
+      ...[selectedMarketingFloorplan?.virtualTourUrl].filter(Boolean),
+      ...selectedMarketingUnitVirtualTourDocuments.map((item) => item.fileUrl),
+    ])
 
     return (
       <>
@@ -5465,11 +5531,25 @@ function DevelopmentDetail() {
                   <DetailField label="Listing Heading">
                     <Field value={marketingForm.listingOverview.listingHeading} onChange={(event) => setMarketingField('listingOverview', 'listingHeading', event.target.value)} />
                   </DetailField>
-                  <DetailField label="Cover Image URL">
-                    <Field value={marketingForm.mediaLibrary.heroImageUrl} onChange={(event) => setMarketingField('mediaLibrary', 'heroImageUrl', event.target.value)} />
+                  <DetailField label="Cover Image">
+                    <label className="flex min-h-[84px] cursor-pointer flex-col justify-center rounded-[14px] border border-dashed border-[#cad9e9] bg-white px-4 py-3 text-sm font-semibold text-[#20364c] hover:border-[#9fb8d0] hover:bg-[#f7fbff]">
+                      <span className="inline-flex items-center gap-2">
+                        <ImagePlus size={15} />
+                        {marketingAssetUploading === 'cover-image' ? 'Uploading...' : 'Upload Cover Image'}
+                      </span>
+                      <span className="mt-1 text-xs font-medium text-[#6b7d93]">{marketingForm.mediaLibrary.heroImageUrl ? getAssetFileLabel(marketingForm.mediaLibrary.heroImageUrl, 'Cover image') : 'No cover image uploaded'}</span>
+                      <input type="file" accept="image/*" className="hidden" disabled={Boolean(marketingAssetUploading)} onChange={(event) => void handleMarketingAssetFileUpload(event, 'marketing', { uploadKey: 'cover-image', setAsHero: true, successMessage: 'Cover image uploaded.' })} />
+                    </label>
                   </DetailField>
-                  <DetailField label="Development Logo URL">
-                    <Field value={marketingForm.mediaLibrary.developmentLogoUrl} onChange={(event) => setMarketingField('mediaLibrary', 'developmentLogoUrl', event.target.value)} />
+                  <DetailField label="Development Logo">
+                    <label className="flex min-h-[84px] cursor-pointer flex-col justify-center rounded-[14px] border border-dashed border-[#cad9e9] bg-white px-4 py-3 text-sm font-semibold text-[#20364c] hover:border-[#9fb8d0] hover:bg-[#f7fbff]">
+                      <span className="inline-flex items-center gap-2">
+                        <ImagePlus size={15} />
+                        {marketingAssetUploading === 'development-logo' ? 'Uploading...' : 'Upload Logo'}
+                      </span>
+                      <span className="mt-1 text-xs font-medium text-[#6b7d93]">{marketingForm.mediaLibrary.developmentLogoUrl ? getAssetFileLabel(marketingForm.mediaLibrary.developmentLogoUrl, 'Logo') : 'No logo uploaded'}</span>
+                      <input type="file" accept="image/*" className="hidden" disabled={Boolean(marketingAssetUploading)} onChange={(event) => void handleMarketingAssetFileUpload(event, 'logo', { uploadKey: 'development-logo', successMessage: 'Development logo uploaded.' })} />
+                    </label>
                   </DetailField>
                   <DetailField label="Public Listing URL">
                     <Field value={marketingForm.externalLinks.developmentLandingPageUrl} onChange={(event) => setMarketingField('externalLinks', 'developmentLandingPageUrl', event.target.value)} />
@@ -5671,13 +5751,13 @@ function DevelopmentDetail() {
                 ) : null}
 
                 {marketingUnitTab === 'media' ? (
-                  <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+                  <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
                     <section className="rounded-[16px] border border-[#e2eaf3] bg-[#fbfcfe] p-4">
                       <div className="mb-3 flex items-center justify-between gap-3">
                         <h5 className="text-sm font-semibold text-[#142132]">Images</h5>
                         <label className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-[10px] border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#20364c] hover:bg-[#f8fbff]">
                           <ImagePlus size={13} />
-                          Upload
+                          {marketingAssetUploading === `unit-images-${selectedMarketingFloorplan.id}` ? 'Uploading...' : 'Upload Images'}
                           <input type="file" accept="image/*" multiple className="hidden" disabled={Boolean(marketingAssetUploading)} onChange={(event) => void handleMarketingAssetFileUpload(event, 'marketing', { uploadKey: `unit-images-${selectedMarketingFloorplan.id}`, linkedUnitType: selectedMarketingFloorplan.id, successMessage: 'Unit type images uploaded.' })} />
                         </label>
                       </div>
@@ -5686,7 +5766,8 @@ function DevelopmentDetail() {
                           {selectedUnitImages.slice(0, 6).map((url) => (
                             <article key={url} className="overflow-hidden rounded-[14px] border border-[#e2eaf3] bg-white">
                               {isLikelyImageUrl(url) ? <img src={url} alt="Unit type marketing" className="h-36 w-full object-cover" /> : <div className="flex h-36 items-center justify-center bg-[#edf3f8] text-sm text-[#60758c]">Media file</div>}
-                              <div className="flex justify-end px-3 py-2">
+                              <div className="flex items-center justify-between gap-3 px-3 py-2">
+                                <span className="min-w-0 truncate text-xs font-semibold text-[#526980]">{getAssetFileLabel(url, 'Image')}</span>
                                 <Button type="button" size="sm" variant="secondary" onClick={() => window.open(url, '_blank', 'noopener,noreferrer')}>View</Button>
                               </div>
                             </article>
@@ -5697,16 +5778,38 @@ function DevelopmentDetail() {
                       )}
                     </section>
                     <section className="rounded-[16px] border border-[#e2eaf3] bg-white p-4">
+                      <div className="mb-3">
+                        <h5 className="text-sm font-semibold text-[#142132]">Video & Tour</h5>
+                      </div>
                       <div className="grid gap-3">
-                        <DetailField label="Image URLs">
-                          <Field as="textarea" rows={6} value={selectedMarketingFloorplan.imageUrls} onChange={(event) => setSelectedMarketingFloorplanField('imageUrls', event.target.value)} />
-                        </DetailField>
-                        <DetailField label="Video URL">
-                          <Field value={selectedMarketingFloorplan.videoUrl} onChange={(event) => setSelectedMarketingFloorplanField('videoUrl', event.target.value)} />
-                        </DetailField>
-                        <DetailField label="Virtual Tour URL">
-                          <Field value={selectedMarketingFloorplan.virtualTourUrl} onChange={(event) => setSelectedMarketingFloorplanField('virtualTourUrl', event.target.value)} />
-                        </DetailField>
+                        <label className="flex min-h-[88px] cursor-pointer flex-col justify-center rounded-[14px] border border-dashed border-[#cad9e9] bg-[#fbfdff] px-4 py-3 text-sm font-semibold text-[#20364c] hover:border-[#9fb8d0] hover:bg-[#f7fbff]">
+                          <span className="inline-flex items-center gap-2">
+                            <Upload size={15} />
+                            {marketingAssetUploading === `unit-video-${selectedMarketingFloorplan.id}` ? 'Uploading video...' : 'Upload Video'}
+                          </span>
+                          <span className="mt-1 text-xs font-medium text-[#6b7d93]">{selectedUnitVideos.length ? `${selectedUnitVideos.length} uploaded` : 'No video uploaded'}</span>
+                          <input type="file" accept="video/*" className="hidden" disabled={Boolean(marketingAssetUploading)} onChange={(event) => void handleMarketingAssetFileUpload(event, 'video', { uploadKey: `unit-video-${selectedMarketingFloorplan.id}`, linkedUnitType: selectedMarketingFloorplan.id, successMessage: 'Unit type video uploaded.' })} />
+                        </label>
+                        {selectedUnitVideos.map((url) => (
+                          <article key={url} className="flex items-center justify-between gap-3 rounded-[12px] border border-[#e2eaf3] bg-[#fbfcfe] px-3 py-2.5">
+                            <span className="min-w-0 truncate text-sm font-medium text-[#31475c]">{getAssetFileLabel(url, 'Video')}</span>
+                            <Button type="button" size="sm" variant="secondary" onClick={() => window.open(url, '_blank', 'noopener,noreferrer')}>View</Button>
+                          </article>
+                        ))}
+                        <label className="flex min-h-[88px] cursor-pointer flex-col justify-center rounded-[14px] border border-dashed border-[#cad9e9] bg-[#fbfdff] px-4 py-3 text-sm font-semibold text-[#20364c] hover:border-[#9fb8d0] hover:bg-[#f7fbff]">
+                          <span className="inline-flex items-center gap-2">
+                            <Upload size={15} />
+                            {marketingAssetUploading === `unit-tour-${selectedMarketingFloorplan.id}` ? 'Uploading tour...' : 'Upload Virtual Tour'}
+                          </span>
+                          <span className="mt-1 text-xs font-medium text-[#6b7d93]">{selectedUnitVirtualTours.length ? `${selectedUnitVirtualTours.length} uploaded` : 'No tour uploaded'}</span>
+                          <input type="file" accept="video/*,.zip,.html" className="hidden" disabled={Boolean(marketingAssetUploading)} onChange={(event) => void handleMarketingAssetFileUpload(event, 'virtual_tour', { uploadKey: `unit-tour-${selectedMarketingFloorplan.id}`, linkedUnitType: selectedMarketingFloorplan.id, successMessage: 'Unit type virtual tour uploaded.' })} />
+                        </label>
+                        {selectedUnitVirtualTours.map((url) => (
+                          <article key={url} className="flex items-center justify-between gap-3 rounded-[12px] border border-[#e2eaf3] bg-[#fbfcfe] px-3 py-2.5">
+                            <span className="min-w-0 truncate text-sm font-medium text-[#31475c]">{getAssetFileLabel(url, 'Virtual tour')}</span>
+                            <Button type="button" size="sm" variant="secondary" onClick={() => window.open(url, '_blank', 'noopener,noreferrer')}>View</Button>
+                          </article>
+                        ))}
                       </div>
                     </section>
                   </div>
@@ -5726,16 +5829,19 @@ function DevelopmentDetail() {
                       <div className="grid gap-2">
                         {selectedUnitFloorplans.map((url) => (
                           <article key={url} className="flex items-center justify-between gap-3 rounded-[12px] border border-[#e2eaf3] bg-white px-3 py-2.5">
-                            <span className="min-w-0 truncate text-sm font-medium text-[#31475c]">{url}</span>
+                            <span className="min-w-0 truncate text-sm font-medium text-[#31475c]">{getAssetFileLabel(url, 'Floorplan')}</span>
                             <Button type="button" size="sm" variant="secondary" onClick={() => window.open(url, '_blank', 'noopener,noreferrer')}>View</Button>
                           </article>
                         ))}
                         {!selectedUnitFloorplans.length ? <p className="rounded-[14px] border border-dashed border-[#d8e3ef] bg-white px-4 py-8 text-center text-sm text-[#60758c]">No floorplans uploaded for this unit type.</p> : null}
                       </div>
                     </section>
-                    <DetailField label="Floorplan URLs">
-                      <Field as="textarea" rows={8} value={selectedMarketingFloorplan.floorplanUrls} onChange={(event) => setSelectedMarketingFloorplanField('floorplanUrls', event.target.value)} />
-                    </DetailField>
+                    <section className="rounded-[16px] border border-[#e2eaf3] bg-white p-4">
+                      <h5 className="text-sm font-semibold text-[#142132]">Floorplan Uploads</h5>
+                      <p className="mt-3 rounded-[14px] border border-dashed border-[#d8e3ef] bg-[#fbfdff] px-4 py-8 text-center text-sm text-[#60758c]">
+                        {selectedUnitFloorplans.length ? `${selectedUnitFloorplans.length} floorplan file${selectedUnitFloorplans.length === 1 ? '' : 's'} linked to this unit type.` : 'No floorplans uploaded yet.'}
+                      </p>
+                    </section>
                   </div>
                 ) : null}
 
@@ -5753,16 +5859,19 @@ function DevelopmentDetail() {
                       <div className="grid gap-2">
                         {selectedUnitDocuments.map((url) => (
                           <article key={url} className="flex items-center justify-between gap-3 rounded-[12px] border border-[#e2eaf3] bg-white px-3 py-2.5">
-                            <span className="min-w-0 truncate text-sm font-medium text-[#31475c]">{url}</span>
+                            <span className="min-w-0 truncate text-sm font-medium text-[#31475c]">{getAssetFileLabel(url, 'Document')}</span>
                             <Button type="button" size="sm" variant="secondary" onClick={() => window.open(url, '_blank', 'noopener,noreferrer')}>View</Button>
                           </article>
                         ))}
                         {!selectedUnitDocuments.length ? <p className="rounded-[14px] border border-dashed border-[#d8e3ef] bg-white px-4 py-8 text-center text-sm text-[#60758c]">No documents linked to this unit type.</p> : null}
                       </div>
                     </section>
-                    <DetailField label="Document URLs">
-                      <Field as="textarea" rows={8} value={selectedMarketingFloorplan.documentUrls} onChange={(event) => setSelectedMarketingFloorplanField('documentUrls', event.target.value)} />
-                    </DetailField>
+                    <section className="rounded-[16px] border border-[#e2eaf3] bg-white p-4">
+                      <h5 className="text-sm font-semibold text-[#142132]">Document Uploads</h5>
+                      <p className="mt-3 rounded-[14px] border border-dashed border-[#d8e3ef] bg-[#fbfdff] px-4 py-8 text-center text-sm text-[#60758c]">
+                        {selectedUnitDocuments.length ? `${selectedUnitDocuments.length} document file${selectedUnitDocuments.length === 1 ? '' : 's'} linked to this unit type.` : 'No documents uploaded yet.'}
+                      </p>
+                    </section>
                   </div>
                 ) : null}
 
@@ -7605,19 +7714,46 @@ function DevelopmentDetail() {
                     ))}
                   </div>
 
-                  {marketingForm.mediaLibrary.videoUrl ? (
-                    <div className="mt-4 rounded-[12px] border border-[#e3ebf4] bg-white p-3.5">
-                      <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Video URL</span>
-                      <a
-                        href={marketingForm.mediaLibrary.videoUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="mt-1.5 inline-flex text-sm font-medium text-[#2f6fec] hover:underline"
-                      >
-                        Open external video
-                      </a>
-                    </div>
-                  ) : null}
+                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    {[
+                      {
+                        key: 'video',
+                        title: 'Video',
+                        count: marketingVideoDocuments.length,
+                        uploadKey: 'development-video',
+                        accept: 'video/*',
+                        message: 'Development video uploaded.',
+                      },
+                      {
+                        key: 'virtual_tour',
+                        title: 'Virtual Tour',
+                        count: marketingVirtualTourDocuments.length,
+                        uploadKey: 'development-tour',
+                        accept: 'video/*,.zip,.html',
+                        message: 'Development virtual tour uploaded.',
+                      },
+                    ].map((item) => (
+                      <label key={item.key} className="flex min-h-[92px] cursor-pointer flex-col justify-center rounded-[14px] border border-dashed border-[#cad9e9] bg-white px-4 py-3 text-sm font-semibold text-[#20364c] hover:border-[#9fb8d0] hover:bg-[#f7fbff]">
+                        <span className="inline-flex items-center gap-2">
+                          <Upload size={15} />
+                          {marketingAssetUploading === item.uploadKey ? 'Uploading...' : `Upload ${item.title}`}
+                        </span>
+                        <span className="mt-1 text-xs font-medium text-[#6b7d93]">{item.count ? `${item.count} uploaded` : 'No file uploaded'}</span>
+                        <input
+                          type="file"
+                          accept={item.accept}
+                          className="hidden"
+                          disabled={Boolean(marketingAssetUploading)}
+                          onChange={(event) =>
+                            void handleMarketingAssetFileUpload(event, item.key, {
+                              uploadKey: item.uploadKey,
+                              successMessage: item.message,
+                            })
+                          }
+                        />
+                      </label>
+                    ))}
+                  </div>
                 </section>
               ) : null}
 
@@ -8180,21 +8316,45 @@ function DevelopmentDetail() {
                 </div>
               </div>
 
-              <div className="mt-4 grid gap-4 md:grid-cols-2">
-                <DetailField label="Video Link">
-                  <Field
-                    value={marketingForm.mediaLibrary.videoUrl}
-                    onChange={(event) => setMarketingField('mediaLibrary', 'videoUrl', event.target.value)}
-                    placeholder="https://youtu.be/..."
-                  />
-                </DetailField>
-                <DetailField label="Virtual Tour Link">
-                  <Field
-                    value={marketingForm.mediaLibrary.virtualTourUrl}
-                    onChange={(event) => setMarketingField('mediaLibrary', 'virtualTourUrl', event.target.value)}
-                    placeholder="https://my.matterport.com/..."
-                  />
-                </DetailField>
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                {[
+                  {
+                    key: 'video',
+                    title: 'Video',
+                    count: marketingVideoDocuments.length,
+                    uploadKey: 'development-video',
+                    accept: 'video/*',
+                    message: 'Development video uploaded.',
+                  },
+                  {
+                    key: 'virtual_tour',
+                    title: 'Virtual Tour',
+                    count: marketingVirtualTourDocuments.length,
+                    uploadKey: 'development-tour',
+                    accept: 'video/*,.zip,.html',
+                    message: 'Development virtual tour uploaded.',
+                  },
+                ].map((item) => (
+                  <label key={item.key} className="flex min-h-[92px] cursor-pointer flex-col justify-center rounded-[14px] border border-dashed border-[#cad9e9] bg-white px-4 py-3 text-sm font-semibold text-[#20364c] hover:border-[#9fb8d0] hover:bg-[#f7fbff]">
+                    <span className="inline-flex items-center gap-2">
+                      <Upload size={15} />
+                      {marketingAssetUploading === item.uploadKey ? 'Uploading...' : `Upload ${item.title}`}
+                    </span>
+                    <span className="mt-1 text-xs font-medium text-[#6b7d93]">{item.count ? `${item.count} uploaded` : 'No file uploaded'}</span>
+                    <input
+                      type="file"
+                      accept={item.accept}
+                      className="hidden"
+                      disabled={Boolean(marketingAssetUploading)}
+                      onChange={(event) =>
+                        void handleMarketingAssetFileUpload(event, item.key, {
+                          uploadKey: item.uploadKey,
+                          successMessage: item.message,
+                        })
+                      }
+                    />
+                  </label>
+                ))}
               </div>
             </section>
 
@@ -8352,23 +8512,14 @@ function DevelopmentDetail() {
                       <div>
                         <h4 className="text-sm font-semibold text-[#142132]">Upload Images</h4>
                         <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
-                          Upload files directly or paste image links for this unit type, one per line.
+                          {selectedMarketingUnitImageDocuments.length ? `${selectedMarketingUnitImageDocuments.length} image file${selectedMarketingUnitImageDocuments.length === 1 ? '' : 's'} uploaded.` : 'No images uploaded yet.'}
                         </p>
                       </div>
                       <Upload size={16} className="text-[#607891]" />
                     </div>
-                    <Field
-                      as="textarea"
-                      rows={5}
-                      value={selectedMarketingFloorplan.imageUrls}
-                      onChange={(event) =>
-                        setMarketingFloorplanField(selectedMarketingFloorplan.id, 'imageUrls', event.target.value)
-                      }
-                      placeholder="https://.../unit-type-image.jpg"
-                    />
-                    <label className="mt-3 inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#35546c] hover:border-[#b7c8db] hover:bg-[#f7fbff]">
+                    <label className="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#35546c] hover:border-[#b7c8db] hover:bg-[#f7fbff]">
                       <Upload size={13} />
-                      Upload Images
+                      {marketingAssetUploading === `unit-images-${selectedMarketingFloorplan.id}` ? 'Uploading...' : 'Upload Images'}
                       <input
                         type="file"
                         accept="image/*"
@@ -8391,23 +8542,14 @@ function DevelopmentDetail() {
                       <div>
                         <h4 className="text-sm font-semibold text-[#142132]">Upload Floorplans</h4>
                         <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
-                          Upload files directly or paste floorplan links for this unit type, one per line.
+                          {selectedMarketingUnitFloorplanDocuments.length ? `${selectedMarketingUnitFloorplanDocuments.length} floorplan file${selectedMarketingUnitFloorplanDocuments.length === 1 ? '' : 's'} uploaded.` : 'No floorplans uploaded yet.'}
                         </p>
                       </div>
                       <Upload size={16} className="text-[#607891]" />
                     </div>
-                    <Field
-                      as="textarea"
-                      rows={5}
-                      value={selectedMarketingFloorplan.floorplanUrls}
-                      onChange={(event) =>
-                        setMarketingFloorplanField(selectedMarketingFloorplan.id, 'floorplanUrls', event.target.value)
-                      }
-                      placeholder="https://.../floorplan.pdf"
-                    />
-                    <label className="mt-3 inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#35546c] hover:border-[#b7c8db] hover:bg-[#f7fbff]">
+                    <label className="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#35546c] hover:border-[#b7c8db] hover:bg-[#f7fbff]">
                       <Upload size={13} />
-                      Upload Floorplans
+                      {marketingAssetUploading === `unit-floorplans-${selectedMarketingFloorplan.id}` ? 'Uploading...' : 'Upload Floorplans'}
                       <input
                         type="file"
                         accept=".pdf,image/*"
