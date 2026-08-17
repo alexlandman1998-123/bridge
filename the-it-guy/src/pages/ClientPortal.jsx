@@ -1780,7 +1780,7 @@ function isPortalNavigationItemActive(item = {}, activeSection = 'overview', act
   if (item.hash) {
     return activeSection === sectionKey && activeHash === item.hash
   }
-  return activeSection === item.key && !activeHash
+  return activeSection === sectionKey && !activeHash
 }
 
 function getPortalWorkspaceFromPath(pathname = '') {

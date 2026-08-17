@@ -5995,9 +5995,9 @@ function DevelopmentDetail() {
                   {toTitleLabel(detailsForm.status || 'active')} Development
                 </span>
               </div>
-              <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm font-semibold text-white/88">
+              <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm font-semibold text-white">
                 <span className="inline-flex min-w-0 items-center gap-2">
-                  <MapPin size={16} className="shrink-0 text-white/80" />
+                  <MapPin size={16} className="shrink-0 text-white" />
                   <span className="truncate">{locationLine || 'Location pending'}</span>
                 </span>
                 <span className="hidden h-1 w-1 rounded-full bg-white/45 sm:inline-flex" aria-hidden />
