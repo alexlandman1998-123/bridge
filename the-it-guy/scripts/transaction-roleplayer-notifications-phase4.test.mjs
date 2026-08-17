@@ -27,6 +27,10 @@ const edgeContract = fs.readFileSync(
   path.join(workspaceRoot, 'supabase/functions/send-email/services/notificationAutomationContract.ts'),
   'utf8',
 )
+const partnerInvitationService = fs.readFileSync(
+  path.join(appRoot, 'src/services/transactionPartnerInvitationService.js'),
+  'utf8',
+)
 
 const keys = [
   'transaction_created',
@@ -72,6 +76,16 @@ for (const expectedHandler of [
   'transaction_operations_dispatch',
 ]) {
   assert.ok(handler.includes(expectedHandler), `transaction operations handler missing ${expectedHandler}`)
+}
+
+for (const expectedServiceHook of [
+  'dispatchTransactionPartnerNotification',
+  "type: 'transaction_operations_dispatch'",
+  "eventKind: 'transaction_partner_accepted'",
+  "eventKind: 'transaction_partner_declined'",
+  'queueDue: false',
+]) {
+  assert.ok(partnerInvitationService.includes(expectedServiceHook), `partner invitation service missing ${expectedServiceHook}`)
 }
 
 console.log('transaction roleplayer notifications phase 4 checks passed')

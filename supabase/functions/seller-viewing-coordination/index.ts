@@ -43,6 +43,56 @@ function jsonResponse(status: number, body: JsonRecord) {
   });
 }
 
+function firstText(...values: unknown[]) {
+  for (const value of values) {
+    const text = normalizeText(value, 1000);
+    if (text) return text;
+  }
+  return "";
+}
+
+async function invokeSendEmailFunction(payload: JsonRecord) {
+  const supabaseUrl = normalizeText(Deno.env.get("SUPABASE_URL"), 500);
+  const serviceRoleKey = normalizeText(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"), 5000);
+  if (!supabaseUrl || !serviceRoleKey) return null;
+  const response = await fetch(`${supabaseUrl.replace(/\/+$/, "")}/functions/v1/send-email`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${serviceRoleKey}`,
+      apikey: serviceRoleKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data?.ok === false || data?.error) {
+    throw new Error(normalizeText(data?.error, 500) || `send-email returned HTTP ${response.status}`);
+  }
+  return data as JsonRecord;
+}
+
+async function fetchLeadContact(supabase: ReturnType<typeof createClient<any, "public", any>>, leadId: string) {
+  if (!leadId) return {};
+  const result = await supabase
+    .from("leads")
+    .select("lead_id, email, name, full_name, phone")
+    .eq("lead_id", leadId)
+    .maybeSingle();
+  if (result.error) {
+    console.error("[seller-viewing-coordination] lead contact lookup failed", {
+      code: result.error.code,
+      message: result.error.message,
+    });
+    return {};
+  }
+  return asRecord(result.data);
+}
+
+function appActionLink(leadId: string) {
+  const baseUrl = safeOrigin("");
+  return leadId ? `${baseUrl}/agency/pipeline?lead=${encodeURIComponent(leadId)}` : baseUrl;
+}
+
 async function parseRequest(req: Request) {
   const contentLength = Number(req.headers.get("content-length") || 0);
   if (contentLength > MAX_REQUEST_BYTES) throw new Error("request_too_large");
@@ -410,15 +460,13 @@ Deno.serve(async (req) => {
   const availabilityWindows = normalizeWindows(body.availabilityWindows || body.availability_windows);
   const accessNotes = normalizeText(body.accessNotes || body.access_notes || body.attendeeNotes || body.attendee_notes, 1000);
   const responseNotes = normalizeText(body.responseNotes || body.response_notes, 1200);
-  if (!confirmedPropertyIds.length) {
-    return jsonResponse(400, { error: "Choose at least one property where viewing access can be arranged.", code: "properties_required" });
-  }
-  if (!availabilityWindows.length) {
-    return jsonResponse(400, { error: "Add at least one time window that works for access.", code: "availability_required" });
+  const sellerConfirmedAccess = confirmedPropertyIds.length > 0 && availabilityWindows.length > 0;
+  if (!sellerConfirmedAccess && !responseNotes && !accessNotes) {
+    return jsonResponse(400, { error: "Add a note so the agent knows why access cannot be confirmed yet.", code: "response_note_required" });
   }
 
   const now = new Date().toISOString();
-  const response = { propertyResponses, confirmedPropertyIds, availabilityWindows, accessNotes, responseNotes, submittedAt: now };
+  const response = { propertyResponses, confirmedPropertyIds, availabilityWindows, accessNotes, responseNotes, submittedAt: now, sellerConfirmedAccess };
   const update = await supabase
     .from("seller_viewing_coordination_links")
     .update({ status: "submitted", response, submitted_at: now, updated_at: now })
@@ -435,12 +483,16 @@ Deno.serve(async (req) => {
   const organisationId = normalizeUuid(link.organisation_id);
   const availabilityText = availabilityWindows.join("\n");
   const combinedNotes = [responseNotes, accessNotes ? `Access notes: ${accessNotes}` : ""].filter(Boolean).join("\n");
+  const confirmedTitles = properties
+    .filter((property) => confirmedPropertyIds.includes(normalizeText(property.id, 120)))
+    .map((property) => normalizeText(property.title, 180))
+    .filter(Boolean)
+    .join(", ");
+  const confirmedTitleList = properties
+    .filter((property) => confirmedPropertyIds.includes(normalizeText(property.id, 120)))
+    .map((property) => normalizeText(property.title, 180))
+    .filter(Boolean);
   if (leadId && organisationId) {
-    const confirmedTitles = properties
-      .filter((property) => confirmedPropertyIds.includes(normalizeText(property.id, 120)))
-      .map((property) => normalizeText(property.title, 180))
-      .filter(Boolean)
-      .join(", ");
     const activity = await supabase.from("lead_activities").insert({
       activity_id: crypto.randomUUID(),
       organisation_id: organisationId,
@@ -448,15 +500,104 @@ Deno.serve(async (req) => {
       agent_id: normalizeUuid(link.created_by),
       activity_type: "Seller Viewing Response Captured",
       activity_note: [
-        `${confirmedPropertyIds.length} propert${confirmedPropertyIds.length === 1 ? "y" : "ies"} confirmed for access${confirmedTitles ? `: ${confirmedTitles}` : ""}.`,
-        `Seller availability: ${availabilityText}`,
+        sellerConfirmedAccess
+          ? `${confirmedPropertyIds.length} propert${confirmedPropertyIds.length === 1 ? "y" : "ies"} confirmed for access${confirmedTitles ? `: ${confirmedTitles}` : ""}.`
+          : "Seller could not confirm access from the proposed options.",
+        availabilityText ? `Seller availability: ${availabilityText}` : "",
         combinedNotes ? `Notes: ${combinedNotes}` : "",
       ].filter(Boolean).join("\n"),
       activity_date: now,
-      outcome: "Seller confirmed",
+      outcome: sellerConfirmedAccess ? "Seller confirmed" : "Seller needs follow-up",
     });
     if (activity.error) {
       console.error("[seller-viewing-coordination] lead activity insert failed", { code: activity.error.code, message: activity.error.message });
+    }
+  }
+
+  const leadContact = await fetchLeadContact(supabase, leadId);
+  const agentEmail = normalizeText(link.agent_email, 320).toLowerCase();
+  const buyerEmail = normalizeText(leadContact.email, 320).toLowerCase();
+  const buyerName = firstText(link.buyer_name, leadContact.full_name, leadContact.name);
+  const propertyLabel = confirmedTitleList.length
+    ? confirmedTitleList.join(", ")
+    : properties.map((property) => normalizeText(property.title, 180)).filter(Boolean).join(", ");
+
+  if (agentEmail) {
+    try {
+      await invokeSendEmailFunction({
+        type: "seller_viewing_response_submitted_agent",
+        to: agentEmail,
+        recipientName: normalizeText(link.agent_name, 180),
+        organisationId,
+        organisationName: normalizeText(link.organisation_name, 180),
+        leadId,
+        leadName: buyerName || normalizeText(link.seller_name, 180),
+        leadEmail: buyerEmail,
+        propertyLabel,
+        availabilityWindows: availabilityWindows.length ? availabilityWindows : "No confirmed access times yet.",
+        actionLink: appActionLink(leadId),
+        message: sellerConfirmedAccess
+          ? `${normalizeText(link.seller_name, 180) || "The seller"} confirmed viewing access for ${buyerName || "the buyer"}. Review the seller's availability and confirm the final viewing time with the buyer.`
+          : `${normalizeText(link.seller_name, 180) || "The seller"} could not confirm access from the proposed options. Review the notes and coordinate the next step with the buyer.`,
+        reason: combinedNotes,
+        idempotencyKey: `seller-viewing-response-agent:${link.id}:${now}`,
+        metadata: {
+          source: "seller_viewing_coordination",
+          sellerViewingCoordinationLinkId: link.id,
+          sellerConfirmedAccess,
+          confirmedPropertyIds,
+          availabilityWindows,
+          responseNotes,
+          accessNotes,
+        },
+      });
+    } catch (notifyError) {
+      console.error("[seller-viewing-coordination] agent notification failed", {
+        message: notifyError instanceof Error ? notifyError.message : String(notifyError),
+      });
+    }
+  }
+
+  if (buyerEmail) {
+    try {
+      await invokeSendEmailFunction({
+        type: "buyer_viewing_availability_confirmation",
+        to: buyerEmail,
+        recipientName: buyerName || "there",
+        buyerName,
+        organisationId,
+        organisationName: normalizeText(link.organisation_name, 180),
+        leadId,
+        agentName: normalizeText(link.agent_name, 180),
+        agentEmail,
+        propertyLabels: confirmedTitleList.length ? confirmedTitleList : undefined,
+        availabilityWindows,
+        subject: sellerConfirmedAccess ? "Seller access confirmed for your viewing" : "We are checking new viewing options",
+        title: sellerConfirmedAccess ? "Viewing Access Confirmed" : "Viewing Update",
+        preheader: sellerConfirmedAccess
+          ? "The seller has confirmed access options for your viewing."
+          : "We are coordinating the next viewing options with the seller.",
+        message: sellerConfirmedAccess
+          ? "Good news, the seller has confirmed access options for your viewing."
+          : "Thank you for your patience. The seller could not confirm access from the proposed options, so we are coordinating the next best viewing times.",
+        followUpMessage: sellerConfirmedAccess
+          ? "Your agent will confirm the final appointment time with you shortly."
+          : "Your agent will come back to you shortly with the next available options.",
+        idempotencyKey: `seller-viewing-response-buyer:${link.id}:${now}`,
+        metadata: {
+          source: "seller_viewing_coordination",
+          sellerViewingCoordinationLinkId: link.id,
+          sellerConfirmedAccess,
+          confirmedPropertyIds,
+          availabilityWindows,
+          responseNotes,
+          accessNotes,
+        },
+      });
+    } catch (notifyError) {
+      console.error("[seller-viewing-coordination] buyer notification failed", {
+        message: notifyError instanceof Error ? notifyError.message : String(notifyError),
+      });
     }
   }
 

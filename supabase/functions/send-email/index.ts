@@ -11,6 +11,7 @@ import { handleBuyerOfferLinkEmail } from "./handlers/buyerOfferLink.ts";
 import { handleBuyerOfferSubmittedAgentEmail } from "./handlers/buyerOfferSubmittedAgent.ts";
 import { handleLeadPropertyShareEmail } from "./handlers/leadPropertyShare.ts";
 import { handleBuyerViewingAvailabilityRequestEmail } from "./handlers/viewingAvailabilityRequest.ts";
+import { handleBuyerViewingAvailabilityConfirmationEmail } from "./handlers/buyerViewingAvailabilityConfirmation.ts";
 import { handleSellerViewingAvailabilityRequestEmail } from "./handlers/sellerViewingAvailabilityRequest.ts";
 import { handleLeadAcknowledgementEmail } from "./handlers/leadAcknowledgement.ts";
 import { handleKingstonsValuationDownloadEmail } from "./handlers/kingstonsValuationDownload.ts";
@@ -54,6 +55,7 @@ import type {
   SendBondOriginatorBuyerIntroPayload,
   SendBuyerOfferLinkPayload,
   SendBuyerOfferSubmittedAgentPayload,
+  SendBuyerViewingAvailabilityConfirmationPayload,
   SendBuyerViewingAvailabilityRequestPayload,
   SendClientOnboardingPayload,
   SendClientSellerPortalNotificationPayload,
@@ -180,7 +182,8 @@ Deno.serve(async (req: Request) => {
       console.log("[send-email] routing template", {
         route: "template_preview",
         templateKey: normalizeText(
-          payload.templateKey ?? payload.template_key ?? payload.previewTemplate,
+          payload.templateKey ?? payload.template_key ??
+            payload.previewTemplate,
         ) || null,
       });
       return await handleTemplatePreviewEmail(payload);
@@ -369,10 +372,13 @@ Deno.serve(async (req: Request) => {
     }
 
     if (["seller_mandate_sent", "seller_mandate"].includes(type)) {
-      console.warn("[client-access-policy] retired seller mandate signing request blocked", {
-        functionName: "send-email",
-        type,
-      });
+      console.warn(
+        "[client-access-policy] retired seller mandate signing request blocked",
+        {
+          functionName: "send-email",
+          type,
+        },
+      );
       return jsonResponse(410, {
         success: false,
         error:
@@ -434,6 +440,7 @@ Deno.serve(async (req: Request) => {
         "lead_unassigned",
         "lead_claimed_confirmation",
         "buyer_viewing_times_submitted_agent",
+        "seller_viewing_response_submitted_agent",
         "lead_operations_notification",
       ].includes(type)
     ) {
@@ -535,6 +542,24 @@ Deno.serve(async (req: Request) => {
       return await handleBuyerOfferSubmittedAgentEmail(
         payload as SendBuyerOfferSubmittedAgentPayload,
       );
+    }
+
+    if (
+      [
+        "buyer_viewing_availability_confirmation",
+        "buyer_viewing_times_confirmation",
+        "viewing_availability_confirmation",
+      ].includes(type)
+    ) {
+      console.log("[send-email] routing template", {
+        route: "buyer_viewing_availability_confirmation",
+        recipient: recipient || null,
+        leadId: normalizeText(payload.leadId ?? payload.lead_id) || null,
+      });
+      return await handleBuyerViewingAvailabilityConfirmationEmail({
+        ...(payload as SendBuyerViewingAvailabilityConfirmationPayload),
+        type: "buyer_viewing_availability_confirmation",
+      });
     }
 
     if (["seller_offer_review", "offer_seller_review"].includes(type)) {
@@ -1068,6 +1093,7 @@ Deno.serve(async (req: Request) => {
           "lead_unassigned",
           "lead_claimed_confirmation",
           "buyer_viewing_times_submitted_agent",
+          "seller_viewing_response_submitted_agent",
           "lead_operations_notification",
           "lead_property_share",
           "property_collection",
@@ -1233,9 +1259,11 @@ Deno.serve(async (req: Request) => {
         "lead_unassigned",
         "lead_claimed_confirmation",
         "buyer_viewing_times_submitted_agent",
+        "seller_viewing_response_submitted_agent",
         "lead_operations_notification",
         "lead_property_share",
         "property_collection",
+        "buyer_viewing_availability_confirmation",
         "additional_document_request",
         "document_request",
         "buyer_offer_link",

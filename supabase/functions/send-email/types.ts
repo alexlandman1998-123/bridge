@@ -292,6 +292,7 @@ export type SendLeadOperationsNotificationPayload = {
     | "lead_unassigned"
     | "lead_claimed_confirmation"
     | "buyer_viewing_times_submitted_agent"
+    | "seller_viewing_response_submitted_agent"
     | "lead_operations_notification";
   to: string;
   recipientName?: string;
@@ -329,6 +330,8 @@ export type SendLeadOperationsNotificationPayload = {
   lead_status?: string;
   propertyLabel?: string;
   property_label?: string;
+  availabilityWindows?: string[] | string;
+  availability_windows?: string[] | string;
   budgetLabel?: string;
   budget_label?: string;
   assignedAgentName?: string;
@@ -341,6 +344,43 @@ export type SendLeadOperationsNotificationPayload = {
   previous_agent_email?: string;
   reason?: string;
   source?: string;
+  idempotencyKey?: string;
+  idempotency_key?: string;
+  metadata?: JsonRecord;
+} & DeliveryContextPayload;
+
+export type SendBuyerViewingAvailabilityConfirmationPayload = {
+  type:
+    | "buyer_viewing_availability_confirmation"
+    | "buyer_viewing_times_confirmation"
+    | "viewing_availability_confirmation";
+  to: string;
+  subject?: string;
+  title?: string;
+  preheader?: string;
+  message?: string;
+  followUpMessage?: string;
+  follow_up_message?: string;
+  buyerName?: string;
+  buyer_name?: string;
+  recipientName?: string;
+  recipient_name?: string;
+  agentName?: string;
+  agent_name?: string;
+  agentEmail?: string;
+  agent_email?: string;
+  organisationName?: string;
+  organisation_name?: string;
+  supportEmail?: string;
+  support_email?: string;
+  supportPhone?: string;
+  support_phone?: string;
+  propertyLabels?: string[] | string;
+  property_labels?: string[] | string;
+  availabilityWindows?: string[] | string;
+  availability_windows?: string[] | string;
+  listingId?: string;
+  listing_id?: string;
   idempotencyKey?: string;
   idempotency_key?: string;
   metadata?: JsonRecord;
@@ -1334,6 +1374,8 @@ export type SendSellerOfferReviewPayload = {
   reviewLink?: string;
   expiresAt?: string;
   agentName?: string;
+  agentEmail?: string;
+  agent_email?: string;
   note?: string;
   organisationName?: string;
   supportEmail?: string;

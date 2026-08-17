@@ -448,7 +448,9 @@ export async function handleClientOnboardingEmail(
     normalizeText(Deno.env.get("SUPPORT_PHONE")) ||
     "";
   const transactionData = transaction as Record<string, unknown>;
-  const transactionOrganisationId = normalizeText(transactionData?.organisation_id);
+  const transactionOrganisationId = normalizeText(
+    transactionData?.organisation_id,
+  );
   const developmentContext = await loadDevelopmentBrandContext(
     supabase,
     transactionData?.development_id,
@@ -677,7 +679,10 @@ export async function handleClientOnboardingEmail(
       nowIso,
     });
   } catch (error) {
-    console.error("Buyer targeted onboarding link metadata update failed", error);
+    console.error(
+      "Buyer targeted onboarding link metadata update failed",
+      error,
+    );
     return jsonResponse(500, {
       error: (error as { message?: string })?.message ||
         "Failed to prepare buyer-targeted onboarding link.",
@@ -870,6 +875,7 @@ export async function handleClientOnboardingEmail(
     apiKey: resendApiKey,
     from: sender,
     to: buyerEmail,
+    bcc: assignedAgentEmail,
     subject,
     html,
     text,
@@ -911,11 +917,11 @@ export async function handleClientOnboardingEmail(
   try {
     await markBuyerParticipantDelivery(supabase, {
       participant: buyerParticipant,
-        transactionId: transaction.id,
-        payload,
-        nowIso,
-        targetNonce: buyerTargetNonce,
-      });
+      transactionId: transaction.id,
+      payload,
+      nowIso,
+      targetNonce: buyerTargetNonce,
+    });
   } catch (error) {
     console.error("Buyer participant delivery update failed", error);
     return jsonResponse(500, {

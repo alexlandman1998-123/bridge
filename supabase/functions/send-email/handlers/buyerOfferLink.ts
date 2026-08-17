@@ -61,7 +61,9 @@ export async function handleBuyerOfferLinkEmail(
     normalizeText(Deno.env.get("BRIDGE_SUPPORT_PHONE")) ||
     normalizeText(Deno.env.get("SUPPORT_PHONE"));
   const supabaseUrl = normalizeText(Deno.env.get("SUPABASE_URL"));
-  const serviceRoleKey = normalizeText(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+  const serviceRoleKey = normalizeText(
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"),
+  );
   const supabase = supabaseUrl && serviceRoleKey
     ? createClient(supabaseUrl, serviceRoleKey, {
       auth: { persistSession: false, autoRefreshToken: false },
@@ -113,7 +115,8 @@ export async function handleBuyerOfferLinkEmail(
     }),
   ].join("");
   const html = renderBridgeEmailLayout({
-    preheader: `Your secure offer link from ${branding.organisationName} is ready for ${propertyLabel}.`,
+    preheader:
+      `Your secure offer link from ${branding.organisationName} is ready for ${propertyLabel}.`,
     title: "Offer Link Ready",
     greeting: `Hi ${buyerName},`,
     contentHtml,
@@ -163,6 +166,7 @@ export async function handleBuyerOfferLinkEmail(
     apiKey: resendApiKey,
     from: sender,
     to,
+    bcc: agentEmail,
     subject,
     html,
     text,

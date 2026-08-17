@@ -3,6 +3,8 @@ import {
   ArrowLeft,
   ArrowUpRight,
   Building2,
+  ChevronDown,
+  ChevronUp,
   CheckCircle2,
   CircleDollarSign,
   Copy,
@@ -16,15 +18,20 @@ import {
   Mail,
   LandPlot,
   MapPin,
+  MoreVertical,
   PencilLine,
   PieChart,
   Plus,
   Receipt,
   RefreshCw,
+  Search,
   ShieldCheck,
+  Trash2,
   TrendingUp,
   Upload,
+  UserPlus,
   Users,
+  WalletCards,
   Workflow,
   XCircle,
 } from 'lucide-react'
@@ -73,6 +80,13 @@ const currency = new Intl.NumberFormat('en-ZA', {
   style: 'currency',
   currency: 'ZAR',
   maximumFractionDigits: 0,
+})
+
+const currencyWithCents = new Intl.NumberFormat('en-ZA', {
+  style: 'currency',
+  currency: 'ZAR',
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
 })
 
 const DEVELOPMENT_TABS = [
@@ -244,6 +258,24 @@ const MARKETING_PUBLISH_STATUS_OPTIONS = [
   { value: 'draft', label: 'Draft' },
   { value: 'ready', label: 'Ready' },
   { value: 'live', label: 'Live' },
+]
+
+const MARKETING_UNIT_TABS = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'pricing', label: 'Pricing' },
+  { id: 'media', label: 'Media' },
+  { id: 'floorplans', label: 'Floorplans' },
+  { id: 'documents', label: 'Documents' },
+  { id: 'seo', label: 'SEO & Links' },
+]
+
+const RESERVATION_VAT_TREATMENT_OPTIONS = [
+  { value: 'including_vat', label: 'Including VAT', summaryLabel: 'incl. VAT' },
+  { value: 'excluding_vat', label: 'Excluding VAT', summaryLabel: 'excl. VAT' },
+]
+
+const RESERVATION_DUE_TRIGGER_OPTIONS = [
+  { value: 'on_reservation', label: 'On reservation', summaryLabel: 'after reserving a unit' },
 ]
 
 const DEFAULT_FINANCIALS_FORM = {
@@ -463,6 +495,8 @@ const DEFAULT_RESERVATION_SETTINGS_FORM = {
   enabledByDefault: false,
   defaultDepositAmount: '',
   amountType: 'fixed',
+  vatTreatment: 'including_vat',
+  dueTrigger: 'on_reservation',
   depositTreatment: 'credited_to_purchase_price',
   payableTo: 'developer',
   alterationChargeTreatment: 'included_in_purchase_price',
@@ -542,6 +576,84 @@ function DetailField({ label, className = '', children }) {
   )
 }
 
+function ConfigurationCard({
+  icon: Icon,
+  title,
+  description,
+  summary = null,
+  badge = null,
+  expanded = false,
+  editing = false,
+  canEdit = false,
+  onToggle,
+  onEdit,
+  children,
+  className = '',
+}) {
+  const ChevronIcon = expanded ? ChevronUp : ChevronDown
+
+  return (
+    <section className={`${CARD_SHELL} ${className}`.trim()}>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <button
+          type="button"
+          className="flex min-w-0 flex-1 items-start gap-4 text-left"
+          onClick={onToggle}
+          aria-expanded={expanded}
+        >
+          <span className="mt-0.5 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[12px] border border-[#d7efdf] bg-[#edf9f1] text-[#1c7d45]">
+            {Icon ? <Icon size={19} /> : null}
+          </span>
+          <span className="min-w-0">
+            <span className="block text-[1.02rem] font-semibold tracking-[-0.02em] text-[#142132]">{title}</span>
+            <span className="mt-1 block text-sm leading-6 text-[#6b7d93]">{description}</span>
+          </span>
+        </button>
+
+        <div className="flex min-w-0 flex-col gap-3 lg:min-w-[360px] lg:items-end">
+          {summary ? <div className="min-w-0 text-sm leading-6 text-[#526780] lg:text-right">{summary}</div> : null}
+          <div className="flex flex-wrap items-center gap-2">
+            {badge}
+            {canEdit && !editing ? (
+              <Button type="button" variant="secondary" size="sm" onClick={onEdit}>
+                <PencilLine size={14} />
+                Edit
+              </Button>
+            ) : null}
+            <button
+              type="button"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-[10px] text-[#607891] transition hover:bg-[#f2f6fa] hover:text-[#142132]"
+              onClick={onToggle}
+              aria-label={expanded ? `Collapse ${title}` : `Expand ${title}`}
+            >
+              <ChevronIcon size={17} />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {expanded ? <div className="mt-5 border-t border-[#e6edf5] pt-5">{children}</div> : null}
+    </section>
+  )
+}
+
+function ConfigStatusPill({ tone = 'neutral', children }) {
+  const toneClass =
+    tone === 'success'
+      ? 'border-[#cde8d8] bg-[#eef9f2] text-[#1c7d45]'
+      : tone === 'danger'
+        ? 'border-[#f2c9c3] bg-[#fff5f4] text-[#b42318]'
+        : tone === 'warning'
+          ? 'border-[#f5d7a8] bg-[#fff8eb] text-[#8a5a12]'
+          : 'border-[#dbe7f3] bg-[#f8fbff] text-[#35546c]'
+
+  return (
+    <span className={`inline-flex w-fit items-center rounded-full border px-3 py-1 text-xs font-semibold ${toneClass}`}>
+      {children}
+    </span>
+  )
+}
+
 function normalizeDateInput(value) {
   if (!value) return ''
   return String(value).slice(0, 10)
@@ -567,6 +679,103 @@ function parseEmailRecipients(value) {
 
 function isValidEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim())
+}
+
+function getOptionSummaryLabel(options, value, fallback = 'Not set') {
+  return options.find((item) => item.value === value)?.summaryLabel || options.find((item) => item.value === value)?.label || fallback
+}
+
+function getReservationDepositAmountValue(form = {}) {
+  if (!form.enabledByDefault) return null
+  const amount = Number(form.defaultDepositAmount)
+  return Number.isFinite(amount) && amount > 0 ? amount : null
+}
+
+function getReservationDepositSummary(form = {}) {
+  if (!form.enabledByDefault) return 'No reservation deposit required'
+  const amount = getReservationDepositAmountValue(form)
+  const amountLabel = amount === null
+    ? 'an amount still to be set'
+    : form.amountType === 'percentage'
+      ? `${amount}% of the purchase price`
+      : currencyWithCents.format(amount)
+  const vatLabel = getOptionSummaryLabel(RESERVATION_VAT_TREATMENT_OPTIONS, form.vatTreatment, 'incl. VAT')
+  const dueLabel = getOptionSummaryLabel(RESERVATION_DUE_TRIGGER_OPTIONS, form.dueTrigger, 'after reserving a unit')
+  return `Buyers will be required to pay ${amountLabel} ${vatLabel} ${dueLabel}.`
+}
+
+function validateGeneralDetailsForm(form = {}) {
+  const errors = []
+  if (!String(form.name || '').trim()) {
+    errors.push('Development name is required.')
+  }
+
+  if (form.totalUnitsExpected !== '' && form.totalUnitsExpected !== null && form.totalUnitsExpected !== undefined) {
+    const units = Number(form.totalUnitsExpected)
+    if (!Number.isInteger(units) || units < 0) {
+      errors.push('Expected units must be a valid whole number.')
+    }
+  }
+
+  for (const [value, label] of [
+    [form.launchDate, 'Launch date'],
+    [form.expectedCompletionDate, 'Expected completion date'],
+  ]) {
+    if (value && Number.isNaN(new Date(value).getTime())) {
+      errors.push(`${label} must be a valid date.`)
+    }
+  }
+
+  return errors
+}
+
+function validateSellerDetailsForm(form = {}) {
+  const seller = normalizeSellerDetailsForm(form)
+  const signatory = seller.signatories[0] || {}
+  const errors = []
+
+  if (!String(seller.legalName || '').trim()) {
+    errors.push('Seller legal name is required.')
+  }
+
+  if (['company', 'trust', 'close_corporation'].includes(seller.entityType) && !String(seller.registrationNumber || '').trim()) {
+    errors.push('Registration / trust number is required for this entity type.')
+  }
+
+  if (!String(signatory.fullName || '').trim()) {
+    errors.push('Authorised signatory full name is required.')
+  }
+
+  if (!String(signatory.signingCapacity || signatory.role || '').trim()) {
+    errors.push('Authorised signatory capacity is required.')
+  }
+
+  if (seller.email && !isValidEmail(seller.email)) {
+    errors.push('Seller email must be valid.')
+  }
+
+  if (signatory.email && !isValidEmail(signatory.email)) {
+    errors.push('Authorised signatory email must be valid.')
+  }
+
+  return errors
+}
+
+function validateReservationSettingsForm(form = {}) {
+  if (!form.enabledByDefault) return []
+
+  const errors = []
+  const amount = Number(form.defaultDepositAmount)
+  if (!Number.isFinite(amount) || amount <= 0) {
+    errors.push('Deposit amount must be greater than zero.')
+  }
+  if (!RESERVATION_VAT_TREATMENT_OPTIONS.some((item) => item.value === form.vatTreatment)) {
+    errors.push('VAT treatment is required.')
+  }
+  if (!RESERVATION_DUE_TRIGGER_OPTIONS.some((item) => item.value === form.dueTrigger)) {
+    errors.push('Deposit due trigger is required.')
+  }
+  return errors
 }
 
 function getStakeholderTeamsFromSettings(settings = {}) {
@@ -801,6 +1010,20 @@ function appendUniqueTextareaValues(value, additions = []) {
   return next.join('\n')
 }
 
+function normalizeMarketingUnitList(value) {
+  return String(value || '')
+    .split(/\n|,/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function serializeMarketingUnitList(values = []) {
+  return (Array.isArray(values) ? values : [])
+    .map((item) => String(item || '').trim())
+    .filter(Boolean)
+    .join('\n')
+}
+
 function isLikelyImageUrl(value = '') {
   const normalized = String(value || '').split('?')[0].toLowerCase()
   return /\.(avif|gif|jpe?g|png|svg|webp)$/.test(normalized) || normalized.startsWith('data:image/')
@@ -869,6 +1092,43 @@ function formatMarketingFloorplanPriceSummary(floorplan = {}) {
   return ''
 }
 
+function getMarketingUnitStatus(value) {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (['active', 'live', 'published'].includes(normalized)) return 'active'
+  if (['sold_out', 'sold out'].includes(normalized)) return 'sold_out'
+  if (['coming_soon', 'coming soon'].includes(normalized)) return 'coming_soon'
+  return 'draft'
+}
+
+function getMarketingUnitStatusClassName(value) {
+  const status = getMarketingUnitStatus(value)
+  if (status === 'active') return 'border-[#bde7cd] bg-[#ecfdf3] text-[#166534]'
+  if (status === 'sold_out') return 'border-[#f4c7c3] bg-[#fff1f0] text-[#b42318]'
+  if (status === 'coming_soon') return 'border-[#dbeafe] bg-[#eff6ff] text-[#1d4ed8]'
+  return 'border-[#fde7bc] bg-[#fffbeb] text-[#92400e]'
+}
+
+function normalizeMarketingUnitKey(value) {
+  return String(value || '').trim().toLowerCase()
+}
+
+function getMarketingFloorplanFeatureEntries(floorplan = {}) {
+  const explicitFeatures = normalizeMarketingUnitList(floorplan.keyFeatures || floorplan.features)
+  const generatedFeatures = [
+    floorplan.bedrooms ? `${floorplan.bedrooms} Bedrooms` : '',
+    floorplan.bathrooms ? `${floorplan.bathrooms} Bathrooms` : '',
+    floorplan.garage ? `${floorplan.garage} Parking` : '',
+    floorplan.floorSize ? `${floorplan.floorSize} Internal Size` : '',
+    floorplan.pool ? 'Pool' : '',
+  ].filter(Boolean)
+
+  return [...new Set([...explicitFeatures, ...generatedFeatures])]
+}
+
+function getMarketingFloorplanHighlightEntries(floorplan = {}) {
+  return normalizeMarketingUnitList(floorplan.marketingHighlights || floorplan.highlights)
+}
+
 function buildFloorplanDraftId() {
   return `fp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
 }
@@ -893,6 +1153,18 @@ function createDefaultMarketingFloorplan(index = 1) {
     description: '',
     imageUrls: '',
     floorplanUrls: '',
+    videoUrl: '',
+    virtualTourUrl: '',
+    documentUrls: '',
+    keyFeatures: '',
+    marketingHighlights: '',
+    ctaLabel: 'Enquire Now',
+    secondaryCtaLabel: '',
+    ctaUrl: '',
+    seoTitle: '',
+    seoDescription: '',
+    listingSlug: '',
+    listingStatus: 'draft',
     ratesAndTaxes: '',
     levies: '',
     noTransferDuty: false,
@@ -918,6 +1190,18 @@ function normalizeMarketingFloorplan(input = {}, index = 1) {
     description: text(source.description, source.notes || ''),
     imageUrls: text(source.imageUrls, source.imageUrl || ''),
     floorplanUrls: text(source.floorplanUrls, source.floorplanUrl || source.planUrl || ''),
+    videoUrl: text(source.videoUrl, ''),
+    virtualTourUrl: text(source.virtualTourUrl, ''),
+    documentUrls: text(source.documentUrls, source.documentUrl || ''),
+    keyFeatures: text(source.keyFeatures, source.features || ''),
+    marketingHighlights: text(source.marketingHighlights, source.highlights || ''),
+    ctaLabel: text(source.ctaLabel, 'Enquire Now'),
+    secondaryCtaLabel: text(source.secondaryCtaLabel, ''),
+    ctaUrl: text(source.ctaUrl, ''),
+    seoTitle: text(source.seoTitle, ''),
+    seoDescription: text(source.seoDescription, source.seoMetaDescription || ''),
+    listingSlug: text(source.listingSlug, ''),
+    listingStatus: text(source.listingStatus, source.status || 'draft'),
     ratesAndTaxes: text(source.ratesAndTaxes, ''),
     levies: text(source.levies, ''),
     noTransferDuty: normalizeMarketingBoolean(source.noTransferDuty, false),
@@ -1366,6 +1650,12 @@ function isAvailableDevelopmentUnitStatus(status) {
   return resolveDevelopmentUnitStatusMainStage(status) === 'AVAIL'
 }
 
+function getDevelopmentTrackerProgressPercent(stageKey) {
+  const stageIndex = TRANSACTION_MAIN_STAGE_ORDER.indexOf(stageKey)
+  if (stageIndex <= 0) return 0
+  return Math.round((stageIndex / (TRANSACTION_MAIN_STAGE_ORDER.length - 1)) * 100)
+}
+
 function getDevelopmentUnitStatusPillClassName(status) {
   const stageKey = resolveDevelopmentUnitStatusMainStage(status)
 
@@ -1682,6 +1972,18 @@ function buildReservationSettingsForm(settings = {}) {
       settings?.reservation_deposit_amount_type ||
       settings?.reservationDepositAmountType ||
       'fixed',
+    vatTreatment:
+      settings?.reservation_deposit_vat_treatment ||
+      settings?.reservationDepositVatTreatment ||
+      paymentDetails?.vat_treatment ||
+      paymentDetails?.vatTreatment ||
+      DEFAULT_RESERVATION_SETTINGS_FORM.vatTreatment,
+    dueTrigger:
+      settings?.reservation_deposit_due_trigger ||
+      settings?.reservationDepositDueTrigger ||
+      paymentDetails?.due_trigger ||
+      paymentDetails?.dueTrigger ||
+      DEFAULT_RESERVATION_SETTINGS_FORM.dueTrigger,
     depositTreatment:
       settings?.reservation_deposit_treatment ||
       settings?.reservationDepositTreatment ||
@@ -1813,6 +2115,9 @@ function DevelopmentDetail() {
   const [error, setError] = useState('')
   const [activeTab, setActiveTab] = useState('overview')
   const [marketingEditorSection, setMarketingEditorSection] = useState('overview')
+  const [marketingUnitTab, setMarketingUnitTab] = useState('overview')
+  const [marketingFeatureDraft, setMarketingFeatureDraft] = useState('')
+  const [marketingHighlightDraft, setMarketingHighlightDraft] = useState('')
   const [selectedFloorplanId, setSelectedFloorplanId] = useState('')
   const [detailsForm, setDetailsForm] = useState(DEFAULT_DETAILS_FORM)
   const [developerProfileDefaults, setDeveloperProfileDefaults] = useState(() => normalizeOrganisationDeveloperProfile())
@@ -1845,7 +2150,6 @@ function DevelopmentDetail() {
   const [agentAssignmentsSaving, setAgentAssignmentsSaving] = useState(false)
   const [financialsSaving, setFinancialsSaving] = useState(false)
   const [reservationSettingsSaving, setReservationSettingsSaving] = useState(false)
-  const [isEditingDetailsSection, setIsEditingDetailsSection] = useState(false)
   const [isEditingFinancialsSection, setIsEditingFinancialsSection] = useState(false)
   const [unitSaving, setUnitSaving] = useState(false)
   const [unitStatusSavingId, setUnitStatusSavingId] = useState('')
@@ -1861,6 +2165,13 @@ function DevelopmentDetail() {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [deleteSaving, setDeleteSaving] = useState(false)
   const [feedback, setFeedback] = useState('')
+  const [generalDetailsExpanded, setGeneralDetailsExpanded] = useState(false)
+  const [sellerDetailsExpanded, setSellerDetailsExpanded] = useState(false)
+  const [reservationSettingsExpanded, setReservationSettingsExpanded] = useState(true)
+  const [isEditingGeneralDetails, setIsEditingGeneralDetails] = useState(false)
+  const [isEditingSellerDetails, setIsEditingSellerDetails] = useState(false)
+  const [isEditingReservationSettings, setIsEditingReservationSettings] = useState(false)
+  const [externalAgentModalOpen, setExternalAgentModalOpen] = useState(false)
 
   const canManageDevelopment = can(PERMISSIONS.editDevelopments) || role === 'internal_admin'
   const canCreateTransactions = can(PERMISSIONS.manageDeveloperTransactions) || role === 'attorney'
@@ -2029,8 +2340,14 @@ function DevelopmentDetail() {
     setAgentAssignments(getDevelopmentAgentAssignments(data.settings))
     setSelectedAgentUserId('')
     setManualAgentDraft({ name: '', email: '' })
-    setIsEditingDetailsSection(false)
+    setIsEditingGeneralDetails(false)
+    setIsEditingSellerDetails(false)
+    setIsEditingReservationSettings(false)
     setIsEditingFinancialsSection(false)
+    const nextReservationForm = buildReservationSettingsForm(data.settings)
+    const reservationNeedsSetup =
+      nextReservationForm.enabledByDefault && validateReservationSettingsForm(nextReservationForm).length > 0
+    setReservationSettingsExpanded((previous) => previous || reservationNeedsSetup)
   }, [data])
 
   const rows = useMemo(() => data?.rows || [], [data?.rows])
@@ -2532,7 +2849,8 @@ function DevelopmentDetail() {
           return false
         }
 
-        if (!row?.transaction?.id) {
+        const mainStageKey = resolveDevelopmentTrackerMainStage(row)
+        if (!row?.transaction?.id && (mainStageKey === 'AVAIL' || mainStageKey === 'BLOCKED')) {
           return false
         }
 
@@ -2546,12 +2864,14 @@ function DevelopmentDetail() {
       })
       .map((row) => {
         const mainStageKey = resolveDevelopmentTrackerMainStage(row)
+        const isManualUnitStatus = !row?.transaction?.id
         return {
           ...row,
           mainStageKey,
-          progressPercent: getTransactionProgressPercent(row),
-          buyerDisplayName: row?.buyer?.name || 'No buyer assigned',
-          buyerEmail: row?.buyer?.email || 'No email',
+          isManualUnitStatus,
+          progressPercent: isManualUnitStatus ? getDevelopmentTrackerProgressPercent(mainStageKey) : getTransactionProgressPercent(row),
+          buyerDisplayName: row?.buyer?.name || (isManualUnitStatus ? 'External / direct sale' : 'No buyer assigned'),
+          buyerEmail: row?.buyer?.email || (isManualUnitStatus ? 'Manual stock update' : 'No email'),
         }
       })
   }, [rows, transactionSearch, transactionStageFilter])
@@ -2612,6 +2932,45 @@ function DevelopmentDetail() {
       marketingForm.floorplans[0]
     )
   }, [marketingForm.floorplans, selectedFloorplanId])
+  const marketingUnitTypeStats = useMemo(() => {
+    const stats = new Map()
+    marketingForm.floorplans.forEach((floorplan) => {
+      stats.set(floorplan.id, {
+        total: 0,
+        available: 0,
+        inProgress: 0,
+      })
+    })
+
+    unitRows.forEach((unit) => {
+      const matchedFloorplan = marketingForm.floorplans.find((floorplan) => {
+        const floorplanNameKey = normalizeMarketingUnitKey(floorplan.name)
+        return (
+          normalizeMarketingUnitKey(unit.floorplanName) === floorplanNameKey ||
+          normalizeMarketingUnitKey(unit.unitType) === floorplanNameKey ||
+          normalizeMarketingUnitKey(unit.floorplanId) === normalizeMarketingUnitKey(floorplan.id)
+        )
+      })
+
+      if (!matchedFloorplan) return
+      const currentStats = stats.get(matchedFloorplan.id) || { total: 0, available: 0, inProgress: 0 }
+      const available = !unit.currentTransactionId && isAvailableDevelopmentUnitStatus(unit.status)
+      stats.set(matchedFloorplan.id, {
+        total: currentStats.total + 1,
+        available: currentStats.available + (available ? 1 : 0),
+        inProgress: currentStats.inProgress + (available ? 0 : 1),
+      })
+    })
+
+    return stats
+  }, [marketingForm.floorplans, unitRows])
+  const selectedMarketingUnitStats = useMemo(
+    () =>
+      selectedMarketingFloorplan
+        ? marketingUnitTypeStats.get(selectedMarketingFloorplan.id) || { total: 0, available: 0, inProgress: 0 }
+        : { total: 0, available: 0, inProgress: 0 },
+    [marketingUnitTypeStats, selectedMarketingFloorplan],
+  )
   const marketingAssetDocuments = useMemo(
     () =>
       documents
@@ -2622,9 +2981,38 @@ function DevelopmentDetail() {
           title: item.title || 'Untitled asset',
           description: item.description || '',
           fileUrl: item.fileUrl || '',
+          linkedUnitType: item.linkedUnitType || item.linked_unit_type || '',
         }))
         .filter((item) => item.fileUrl),
     [documents],
+  )
+  const selectedMarketingUnitAssets = useMemo(() => {
+    if (!selectedMarketingFloorplan) return []
+    const selectedKeys = new Set(
+      [selectedMarketingFloorplan.id, selectedMarketingFloorplan.name]
+        .map((value) => normalizeMarketingUnitKey(value))
+        .filter(Boolean),
+    )
+
+    return marketingAssetDocuments.filter((item) => selectedKeys.has(normalizeMarketingUnitKey(item.linkedUnitType)))
+  }, [marketingAssetDocuments, selectedMarketingFloorplan])
+  const selectedMarketingUnitImageDocuments = useMemo(
+    () =>
+      selectedMarketingUnitAssets.filter(
+        (item) => ['marketing', 'logo'].includes(item.type) && isLikelyImageUrl(item.fileUrl),
+      ),
+    [selectedMarketingUnitAssets],
+  )
+  const selectedMarketingUnitFloorplanDocuments = useMemo(
+    () => selectedMarketingUnitAssets.filter((item) => item.type === 'floorplan'),
+    [selectedMarketingUnitAssets],
+  )
+  const selectedMarketingUnitDocumentAssets = useMemo(
+    () =>
+      selectedMarketingUnitAssets.filter((item) =>
+        ['pricing', 'specification', 'legal', 'other', 'site_plan'].includes(item.type),
+      ),
+    [selectedMarketingUnitAssets],
   )
   const marketingLogoDocument = useMemo(
     () => marketingAssetDocuments.find((item) => item.type === 'logo') || null,
@@ -2641,6 +3029,26 @@ function DevelopmentDetail() {
       '',
     [marketingForm.mediaLibrary.heroImageUrl, marketingGalleryDocuments],
   )
+  const developmentHeroImageUrl = useMemo(() => {
+    const explicitDevelopmentCover =
+      data?.development?.primary_image_url ||
+      data?.development?.primaryImageUrl ||
+      data?.development?.cover_image_url ||
+      data?.development?.coverImageUrl ||
+      data?.development?.hero_image_url ||
+      data?.development?.heroImageUrl ||
+      ''
+
+    return String(explicitDevelopmentCover || marketingCoverImageUrl || '').trim()
+  }, [
+    data?.development?.coverImageUrl,
+    data?.development?.cover_image_url,
+    data?.development?.heroImageUrl,
+    data?.development?.hero_image_url,
+    data?.development?.primaryImageUrl,
+    data?.development?.primary_image_url,
+    marketingCoverImageUrl,
+  ])
   const marketingLogoUrl = useMemo(
     () => marketingForm.mediaLibrary.developmentLogoUrl || marketingLogoDocument?.fileUrl || '',
     [marketingForm.mediaLibrary.developmentLogoUrl, marketingLogoDocument],
@@ -2717,10 +3125,29 @@ function DevelopmentDetail() {
   }, [activeTab, marketingEditorSection])
 
   const locationLine = [detailsForm.location, detailsForm.suburb || detailsForm.city || detailsForm.province].filter(Boolean).join(' • ')
-  const detailsFieldClassName = isEditingDetailsSection ? '' : READ_ONLY_FIELD_CLASS
+  const generalDetailsFieldClassName = isEditingGeneralDetails ? '' : READ_ONLY_FIELD_CLASS
+  const sellerDetailsFieldClassName = isEditingSellerDetails ? '' : READ_ONLY_FIELD_CLASS
   const financialFieldClassName = isEditingFinancialsSection ? '' : READ_ONLY_FIELD_CLASS
   const sellerDetailsForm = normalizeSellerDetailsForm(detailsForm.sellerDetails)
   const primarySellerSignatory = sellerDetailsForm.signatories[0] || DEFAULT_SELLER_DETAILS_FORM.signatories[0]
+  const sellerDetailsComplete = validateSellerDetailsForm(sellerDetailsForm).length === 0
+  const reservationDepositAmount = getReservationDepositAmountValue(reservationSettingsForm)
+  const reservationDepositSummary = getReservationDepositSummary(reservationSettingsForm)
+  const reservationDepositConfigured =
+    !reservationSettingsForm.enabledByDefault || validateReservationSettingsForm(reservationSettingsForm).length === 0
+  const generalSummaryLocation = [detailsForm.name || data?.development?.name, detailsForm.suburb || detailsForm.location, detailsForm.city].filter(Boolean).join(' · ')
+  const generalSummaryMeta = [
+    `${formatNumber(detailsForm.totalUnitsExpected || developmentTrackerMetrics.totalUnits || 0)} Units`,
+    toTitleLabel(detailsForm.status || 'active'),
+    `Launch: ${detailsForm.launchDate ? formatDate(detailsForm.launchDate) : 'Not set'}`,
+  ].join(' · ')
+  const sellerSummaryName = sellerDetailsForm.legalName || sellerDetailsForm.tradingName || 'Seller entity not set'
+  const sellerSummaryMeta = [
+    toTitleLabel(sellerDetailsForm.entityType || 'company'),
+    sellerDetailsForm.vatNumber || /vat/i.test(sellerDetailsForm.vatTreatment || '')
+      ? 'VAT Registered'
+      : 'VAT status not set',
+  ].join(' · ')
   const developerProfileHasSellerDefaults = Boolean(
     developerProfileDefaults.legalName ||
       developerProfileDefaults.tradingName ||
@@ -3621,6 +4048,86 @@ function DevelopmentDetail() {
     )
   }
 
+  function setSelectedMarketingFloorplanField(fieldKey, value) {
+    if (!selectedMarketingFloorplan?.id) return
+    setMarketingFloorplanField(selectedMarketingFloorplan.id, fieldKey, value)
+  }
+
+  function addSelectedMarketingListItem(fieldKey, draftValue, setDraftValue) {
+    if (!selectedMarketingFloorplan?.id) return
+    const normalizedValue = String(draftValue || '').trim()
+    if (!normalizedValue) return
+
+    const nextItems = [
+      ...normalizeMarketingUnitList(selectedMarketingFloorplan[fieldKey]),
+      normalizedValue,
+    ]
+    setMarketingFloorplanField(selectedMarketingFloorplan.id, fieldKey, serializeMarketingUnitList([...new Set(nextItems)]))
+    setDraftValue('')
+  }
+
+  function removeSelectedMarketingListItem(fieldKey, value) {
+    if (!selectedMarketingFloorplan?.id) return
+    const nextItems = normalizeMarketingUnitList(selectedMarketingFloorplan[fieldKey]).filter((item) => item !== value)
+    setMarketingFloorplanField(selectedMarketingFloorplan.id, fieldKey, serializeMarketingUnitList(nextItems))
+  }
+
+  function handlePreviewPublicListing() {
+    const previewUrl =
+      selectedMarketingFloorplan?.ctaUrl ||
+      marketingForm.listingConfiguration.ctaUrl ||
+      marketingForm.externalLinks.developmentLandingPageUrl ||
+      marketingForm.externalLinks.externalWebsiteUrl
+
+    if (previewUrl) {
+      window.open(previewUrl, '_blank', 'noopener,noreferrer')
+      return
+    }
+
+    setMarketingUnitTab('seo')
+    setFeedback('Add a public listing URL or CTA link before previewing the listing.')
+  }
+
+  async function handlePublishDevelopmentMarketing() {
+    const normalizedMarketing = normalizeMarketingContentForm(detailsForm.marketing)
+    const nextDetailsForm = {
+      ...detailsForm,
+      marketing: {
+        ...normalizedMarketing,
+        listingOverview: {
+          ...normalizedMarketing.listingOverview,
+          listingStatus: 'active',
+        },
+        listingConfiguration: {
+          ...normalizedMarketing.listingConfiguration,
+          showOnListingWebsite: true,
+          publicVisibility: true,
+          marketingStatus: 'live',
+        },
+        floorplans: normalizedMarketing.floorplans.map((item) =>
+          selectedMarketingFloorplan?.id && item.id === selectedMarketingFloorplan.id
+            ? { ...item, listingStatus: 'active' }
+            : item,
+        ),
+      },
+    }
+
+    try {
+      setDetailsSaving(true)
+      setFeedback('')
+      setError('')
+      setDetailsForm(nextDetailsForm)
+      await saveDevelopmentDetails(data.development.id, buildDevelopmentDetailsPayload(nextDetailsForm))
+      setFeedback('Development marketing published.')
+      window.dispatchEvent(new Event('itg:developments-changed'))
+      await loadData()
+    } catch (saveError) {
+      setError(saveError.message)
+    } finally {
+      setDetailsSaving(false)
+    }
+  }
+
   function setMarketingSellingPointEntries(updater) {
     const current = parseSellingPointEntries(marketingForm.sellingPoints.items)
     const nextEntries = typeof updater === 'function' ? updater(current) : Array.isArray(updater) ? updater : current
@@ -3748,17 +4255,105 @@ function DevelopmentDetail() {
     }
   }
 
-  async function handleDetailsSave(event) {
+  function getCurrentDetailsBaseline() {
+    return data ? buildDetailsForm(data) : detailsForm
+  }
+
+  function buildGeneralDetailsSavePayload() {
+    const baseline = getCurrentDetailsBaseline()
+    return {
+      ...baseline,
+      name: detailsForm.name,
+      code: detailsForm.code,
+      location: detailsForm.location,
+      suburb: detailsForm.suburb,
+      city: detailsForm.city,
+      province: detailsForm.province,
+      country: detailsForm.country,
+      address: detailsForm.address,
+      status: detailsForm.status,
+      developerCompany: detailsForm.developerCompany,
+      totalUnitsExpected: detailsForm.totalUnitsExpected,
+      launchDate: detailsForm.launchDate,
+      expectedCompletionDate: detailsForm.expectedCompletionDate,
+      description: detailsForm.description,
+      handoverEnabled: detailsForm.handoverEnabled,
+      snagTrackingEnabled: detailsForm.snagTrackingEnabled,
+      alterationsEnabled: detailsForm.alterationsEnabled,
+      onboardingEnabled: detailsForm.onboardingEnabled,
+    }
+  }
+
+  function buildSellerDetailsSavePayload() {
+    return {
+      ...getCurrentDetailsBaseline(),
+      sellerDetails: normalizeSellerDetailsForm(detailsForm.sellerDetails),
+    }
+  }
+
+  function handleStartGeneralDetailsEdit() {
+    if (data) setDetailsForm(buildDetailsForm(data))
+    setSellerDetailsExpanded(false)
+    setIsEditingSellerDetails(false)
+    setGeneralDetailsExpanded(true)
+    setIsEditingGeneralDetails(true)
+  }
+
+  function handleStartSellerDetailsEdit() {
+    if (data) setDetailsForm(buildDetailsForm(data))
+    setGeneralDetailsExpanded(false)
+    setIsEditingGeneralDetails(false)
+    setSellerDetailsExpanded(true)
+    setIsEditingSellerDetails(true)
+  }
+
+  async function handleGeneralDetailsSave(event) {
     event.preventDefault()
-    if (!isEditingDetailsSection) {
+    if (!isEditingGeneralDetails) {
       return
     }
+
+    const validationErrors = validateGeneralDetailsForm(detailsForm)
+    if (validationErrors.length) {
+      setError(validationErrors.join(' '))
+      return
+    }
+
     try {
       setDetailsSaving(true)
       setFeedback('')
-      await saveDevelopmentDetails(data.development.id, buildDevelopmentDetailsPayload())
-      setFeedback('Development details updated.')
-      setIsEditingDetailsSection(false)
+      setError('')
+      await saveDevelopmentDetails(data.development.id, buildDevelopmentDetailsPayload(buildGeneralDetailsSavePayload()))
+      setFeedback('General details updated.')
+      setIsEditingGeneralDetails(false)
+      window.dispatchEvent(new Event('itg:developments-changed'))
+      await loadData()
+    } catch (saveError) {
+      setError(saveError.message)
+    } finally {
+      setDetailsSaving(false)
+    }
+  }
+
+  async function handleSellerDetailsSave(event) {
+    event.preventDefault()
+    if (!isEditingSellerDetails) {
+      return
+    }
+
+    const validationErrors = validateSellerDetailsForm(detailsForm.sellerDetails)
+    if (validationErrors.length) {
+      setError(validationErrors.join(' '))
+      return
+    }
+
+    try {
+      setDetailsSaving(true)
+      setFeedback('')
+      setError('')
+      await saveDevelopmentDetails(data.development.id, buildDevelopmentDetailsPayload(buildSellerDetailsSavePayload()))
+      setFeedback('Seller / developer entity updated.')
+      setIsEditingSellerDetails(false)
       window.dispatchEvent(new Event('itg:developments-changed'))
       await loadData()
     } catch (saveError) {
@@ -3856,6 +4451,7 @@ function DevelopmentDetail() {
       ]),
     )
     setManualAgentDraft({ name: '', email: '' })
+    setExternalAgentModalOpen(false)
   }
 
   function handleRemoveAgentAssignment(member) {
@@ -3901,13 +4497,20 @@ function DevelopmentDetail() {
 
   async function handleReservationSettingsSave(event) {
     event.preventDefault()
-    if (!canManageDevelopment) {
+    if (!canManageDevelopment || !isEditingReservationSettings) {
+      return
+    }
+
+    const validationErrors = validateReservationSettingsForm(reservationSettingsForm)
+    if (validationErrors.length) {
+      setError(validationErrors.join(' '))
       return
     }
 
     try {
       setReservationSettingsSaving(true)
       setFeedback('')
+      setError('')
 
       const currentSettings = data?.settings || {}
       const normalizedPaymentReferenceFormat = String(
@@ -3941,7 +4544,9 @@ function DevelopmentDetail() {
           reservationSettingsForm.defaultDepositAmount === ''
             ? null
             : reservationSettingsForm.defaultDepositAmount,
-        reservation_deposit_amount_type: reservationSettingsForm.amountType,
+        reservation_deposit_amount_type: reservationSettingsForm.amountType || 'fixed',
+        reservation_deposit_vat_treatment: reservationSettingsForm.vatTreatment,
+        reservation_deposit_due_trigger: reservationSettingsForm.dueTrigger,
         reservation_deposit_treatment: reservationSettingsForm.depositTreatment,
         reservation_deposit_payable_to: reservationSettingsForm.payableTo,
         default_alteration_charge_treatment: reservationSettingsForm.alterationChargeTreatment,
@@ -3961,10 +4566,13 @@ function DevelopmentDetail() {
           account_type: reservationSettingsForm.accountType,
           payment_reference_format: normalizedPaymentReferenceFormat,
           payment_instructions: reservationSettingsForm.paymentInstructions,
+          vat_treatment: reservationSettingsForm.vatTreatment,
+          due_trigger: reservationSettingsForm.dueTrigger,
         },
       })
 
-      setFeedback('Transaction defaults updated.')
+      setFeedback('Reservation & deposit settings updated.')
+      setIsEditingReservationSettings(false)
       window.dispatchEvent(new Event('itg:developments-changed'))
       await loadData()
     } catch (saveError) {
@@ -3974,11 +4582,25 @@ function DevelopmentDetail() {
     }
   }
 
-  function handleCancelDetailsEdit() {
+  function handleCancelGeneralDetailsEdit() {
     if (data) {
       setDetailsForm(buildDetailsForm(data))
     }
-    setIsEditingDetailsSection(false)
+    setIsEditingGeneralDetails(false)
+  }
+
+  function handleCancelSellerDetailsEdit() {
+    if (data) {
+      setDetailsForm(buildDetailsForm(data))
+    }
+    setIsEditingSellerDetails(false)
+  }
+
+  function handleCancelReservationSettingsEdit() {
+    if (data) {
+      setReservationSettingsForm(buildReservationSettingsForm(data.settings))
+    }
+    setIsEditingReservationSettings(false)
   }
 
   function handleCancelFinancialsEdit() {
@@ -4342,10 +4964,14 @@ function DevelopmentDetail() {
     setUnitModalOpen(true)
   }
 
-  function openDevelopmentTransactionWizard() {
+  function openDevelopmentTransactionWizard(initial = {}) {
     window.dispatchEvent(
       new CustomEvent('itg:open-new-transaction', {
-        detail: { initialDevelopmentId: data?.development?.id || developmentId },
+        detail: {
+          initialDevelopmentId: data?.development?.id || developmentId,
+          initialUnitId: initial?.unitId || initial?.unit?.id || '',
+          initialPropertyMode: 'development',
+        },
       }),
     )
   }
@@ -4577,6 +5203,491 @@ function DevelopmentDetail() {
     }
   }
 
+  function renderEditableMarketingContent() {
+    const selectedUnitStatus = getMarketingUnitStatus(selectedMarketingFloorplan?.listingStatus)
+    const selectedFeatureEntries = selectedMarketingFloorplan
+      ? normalizeMarketingUnitList(selectedMarketingFloorplan.keyFeatures)
+      : []
+    const generatedFeatureEntries = selectedMarketingFloorplan
+      ? getMarketingFloorplanFeatureEntries(selectedMarketingFloorplan).filter(
+          (item) => !selectedFeatureEntries.includes(item),
+        )
+      : []
+    const selectedHighlightEntries = selectedMarketingFloorplan
+      ? getMarketingFloorplanHighlightEntries(selectedMarketingFloorplan)
+      : []
+    const availabilityPercent = selectedMarketingUnitStats.total
+      ? Math.round((selectedMarketingUnitStats.available / selectedMarketingUnitStats.total) * 100)
+      : 0
+    const selectedUnitImages = [
+      ...textareaToList(selectedMarketingFloorplan?.imageUrls),
+      ...selectedMarketingUnitImageDocuments.map((item) => item.fileUrl),
+    ]
+    const selectedUnitFloorplans = [
+      ...textareaToList(selectedMarketingFloorplan?.floorplanUrls),
+      ...selectedMarketingUnitFloorplanDocuments.map((item) => item.fileUrl),
+    ]
+    const selectedUnitDocuments = [
+      ...textareaToList(selectedMarketingFloorplan?.documentUrls),
+      ...selectedMarketingUnitDocumentAssets.map((item) => item.fileUrl),
+    ]
+
+    return (
+      <>
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div>
+            <div className="flex flex-wrap items-center gap-2 text-sm font-semibold text-[#1f7a45]">
+              <span>Developments</span>
+              <span className="text-[#9aa9ba]">/</span>
+              <span className="text-[#4c6076]">{data.development.name || 'Development'}</span>
+              <span className="text-[#9aa9ba]">/</span>
+              <span className="text-[#142132]">Marketing</span>
+            </div>
+            <h3 className="mt-2 text-[1.45rem] font-semibold tracking-[-0.035em] text-[#142132]">Marketing</h3>
+            <p className="mt-1 text-sm leading-6 text-[#60758c]">
+              Manage the public listing content, pricing, media and documents by unit type.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="secondary" onClick={handlePreviewPublicListing}>
+              <ArrowUpRight size={15} />
+              Preview Public Listing
+            </Button>
+            <Button type="button" onClick={() => void handlePublishDevelopmentMarketing()} disabled={detailsSaving}>
+              <ArrowUpRight size={15} />
+              Publish Development
+            </Button>
+            <Button type="button" variant="secondary" onClick={() => setMarketingUnitTab('global')}>
+              <ShieldCheck size={15} />
+              Global Brand Settings
+            </Button>
+          </div>
+        </div>
+
+        <section className="grid overflow-hidden rounded-[18px] border border-[#dfe8f2] bg-white sm:grid-cols-2 xl:grid-cols-4">
+          {[
+            ['Unit Types', marketingForm.floorplans.length ? `${marketingForm.floorplans.length}` : '0', 'Active'],
+            ['Assets', `${marketingAssetDocuments.length}`, 'Total'],
+            ['Floorplans', `${floorplanDocumentOptions.length}`, 'Uploaded'],
+            [
+              'Listing Status',
+              toTitleLabel(marketingReadinessSummary.listingStatus),
+              marketingForm.listingConfiguration.publicVisibility ? 'Visible' : 'Not published',
+            ],
+          ].map(([label, value, sublabel]) => (
+            <article key={label} className="border-b border-[#edf2f7] px-4 py-4 sm:border-r xl:border-b-0">
+              <span className="block text-[0.74rem] font-semibold uppercase tracking-[0.12em] text-[#7c8da3]">{label}</span>
+              <div className="mt-2 flex items-center gap-2">
+                <strong className="text-lg font-semibold text-[#142132]">{value}</strong>
+                <span className="text-sm font-medium text-[#70839a]">{sublabel}</span>
+              </div>
+            </article>
+          ))}
+        </section>
+
+        <section className="grid gap-5 xl:grid-cols-[280px_minmax(0,1fr)]">
+          <aside className="rounded-[18px] border border-[#dfe8f2] bg-[#fbfcfe] p-4">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <h4 className="text-sm font-semibold text-[#142132]">Unit Types</h4>
+                <p className="mt-1 text-xs leading-5 text-[#60758c]">
+                  Select a unit type to manage its marketing content.
+                </p>
+              </div>
+              <Button type="button" size="sm" variant="secondary" onClick={addMarketingFloorplan}>
+                <Plus size={14} />
+                Add
+              </Button>
+            </div>
+
+            <div className="grid gap-2">
+              {marketingForm.floorplans.map((item, index) => {
+                const stats = marketingUnitTypeStats.get(item.id) || { total: 0, available: 0 }
+                const status = getMarketingUnitStatus(item.listingStatus)
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedFloorplanId(item.id)
+                      setMarketingUnitTab('overview')
+                    }}
+                    className={`rounded-[14px] border px-3.5 py-3 text-left transition ${
+                      selectedMarketingFloorplan?.id === item.id && marketingUnitTab !== 'global'
+                        ? 'border-[#25a45a] bg-[#edf9f1] shadow-[0_10px_20px_rgba(31,122,69,0.08)]'
+                        : 'border-[#e1e9f2] bg-white hover:border-[#c9d8e7]'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <strong className="text-sm font-semibold text-[#142132]">{item.name || `Unit Type ${index + 1}`}</strong>
+                      <span className={`rounded-full border px-2 py-0.5 text-[0.66rem] font-semibold ${getMarketingUnitStatusClassName(status)}`}>
+                        {toTitleLabel(status)}
+                      </span>
+                    </div>
+                    <div className="mt-2 flex items-center justify-between gap-2 text-xs text-[#60758c]">
+                      <span>{stats.total ? `${stats.available} of ${stats.total} available` : 'No units matched'}</span>
+                      <span>{formatMarketingFloorplanPriceSummary(item) || 'Price not set'}</span>
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          </aside>
+
+          <section className="rounded-[18px] border border-[#dfe8f2] bg-white p-4 shadow-[0_12px_26px_rgba(15,23,42,0.05)]">
+            {marketingUnitTab === 'global' ? (
+              <div className="space-y-4">
+                <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#e8eef5] pb-4">
+                  <div>
+                    <h4 className="text-lg font-semibold tracking-[-0.025em] text-[#142132]">Global Brand Settings</h4>
+                    <p className="mt-1 text-sm text-[#60758c]">Shared development-level listing identity and publishing controls.</p>
+                  </div>
+                  <Button type="button" variant="secondary" onClick={() => setMarketingUnitTab('overview')}>
+                    Back to Unit Type
+                  </Button>
+                </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <DetailField label="Listing Title">
+                    <Field value={marketingForm.listingOverview.listingTitle} onChange={(event) => setMarketingField('listingOverview', 'listingTitle', event.target.value)} />
+                  </DetailField>
+                  <DetailField label="Listing Heading">
+                    <Field value={marketingForm.listingOverview.listingHeading} onChange={(event) => setMarketingField('listingOverview', 'listingHeading', event.target.value)} />
+                  </DetailField>
+                  <DetailField label="Cover Image URL">
+                    <Field value={marketingForm.mediaLibrary.heroImageUrl} onChange={(event) => setMarketingField('mediaLibrary', 'heroImageUrl', event.target.value)} />
+                  </DetailField>
+                  <DetailField label="Development Logo URL">
+                    <Field value={marketingForm.mediaLibrary.developmentLogoUrl} onChange={(event) => setMarketingField('mediaLibrary', 'developmentLogoUrl', event.target.value)} />
+                  </DetailField>
+                  <DetailField label="Public Listing URL">
+                    <Field value={marketingForm.externalLinks.developmentLandingPageUrl} onChange={(event) => setMarketingField('externalLinks', 'developmentLandingPageUrl', event.target.value)} />
+                  </DetailField>
+                  <DetailField label="Marketing Status">
+                    <Field as="select" value={marketingForm.listingConfiguration.marketingStatus} onChange={(event) => setMarketingField('listingConfiguration', 'marketingStatus', event.target.value)}>
+                      {MARKETING_PUBLISH_STATUS_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </Field>
+                  </DetailField>
+                  <DetailField label="SEO Title">
+                    <Field value={marketingForm.listingOverview.seoTitle} onChange={(event) => setMarketingField('listingOverview', 'seoTitle', event.target.value)} />
+                  </DetailField>
+                  <DetailField label="SEO Meta Description">
+                    <Field value={marketingForm.listingOverview.seoMetaDescription} onChange={(event) => setMarketingField('listingOverview', 'seoMetaDescription', event.target.value)} />
+                  </DetailField>
+                </div>
+              </div>
+            ) : selectedMarketingFloorplan ? (
+              <div className="space-y-5">
+                <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#e8eef5] pb-4">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h4 className="text-lg font-semibold tracking-[-0.025em] text-[#142132]">
+                        {selectedMarketingFloorplan.name || 'Untitled Unit Type'}
+                      </h4>
+                      <span className={`rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${getMarketingUnitStatusClassName(selectedUnitStatus)}`}>
+                        {toTitleLabel(selectedUnitStatus)}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-sm text-[#60758c]">
+                      {selectedMarketingUnitStats.total
+                        ? `${selectedMarketingUnitStats.available} of ${selectedMarketingUnitStats.total} units available`
+                        : 'No inventory currently matched to this unit type'}
+                    </p>
+                  </div>
+                  <Button type="button" variant="secondary" onClick={() => removeMarketingFloorplan(selectedMarketingFloorplan.id)}>
+                    <Trash2 size={15} />
+                    Remove Unit Type
+                  </Button>
+                </div>
+
+                <div className="flex gap-2 overflow-x-auto border-b border-[#e8eef5] pb-2">
+                  {MARKETING_UNIT_TABS.map((tab) => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setMarketingUnitTab(tab.id)}
+                      className={`min-h-10 rounded-[10px] px-4 text-sm font-semibold transition ${
+                        marketingUnitTab === tab.id
+                          ? 'bg-[#1f7a45] text-white shadow-[0_8px_16px_rgba(31,122,69,0.16)]'
+                          : 'bg-[#f7f9fc] text-[#526980] hover:bg-[#eef4fa]'
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+
+                {marketingUnitTab === 'overview' ? (
+                  <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+                    <div className="space-y-5">
+                      <section className="rounded-[16px] border border-[#e2eaf3] bg-[#fbfcfe] p-4">
+                        <div className="mb-3">
+                          <h5 className="text-sm font-semibold text-[#142132]">Description</h5>
+                          <p className="mt-1 text-xs text-[#60758c]">This description appears on the public listing for this unit type.</p>
+                        </div>
+                        <Field as="textarea" rows={7} value={selectedMarketingFloorplan.description} onChange={(event) => setSelectedMarketingFloorplanField('description', event.target.value)} />
+                      </section>
+
+                      <section className="rounded-[16px] border border-[#e2eaf3] bg-white p-4">
+                        <h5 className="text-sm font-semibold text-[#142132]">Key Features</h5>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {selectedFeatureEntries.map((feature) => (
+                            <button key={feature} type="button" onClick={() => removeSelectedMarketingListItem('keyFeatures', feature)} className="rounded-full border border-[#d9e5f0] bg-[#f8fbff] px-3 py-1.5 text-xs font-semibold text-[#38526b] hover:border-[#f4c7c3] hover:bg-[#fff1f0]">
+                              {feature} x
+                            </button>
+                          ))}
+                          {generatedFeatureEntries.map((feature) => (
+                            <span key={feature} className="rounded-full border border-[#d9e5f0] bg-[#f8fbff] px-3 py-1.5 text-xs font-semibold text-[#38526b]">{feature}</span>
+                          ))}
+                        </div>
+                        <div className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                          <Field value={marketingFeatureDraft} onChange={(event) => setMarketingFeatureDraft(event.target.value)} placeholder="Add a feature..." />
+                          <Button type="button" variant="secondary" onClick={() => addSelectedMarketingListItem('keyFeatures', marketingFeatureDraft, setMarketingFeatureDraft)}>
+                            <Plus size={14} />
+                            Add Feature
+                          </Button>
+                        </div>
+                      </section>
+
+                      <section className="rounded-[16px] border border-[#e2eaf3] bg-white p-4">
+                        <h5 className="text-sm font-semibold text-[#142132]">Marketing Highlights</h5>
+                        <div className="mt-3 grid gap-2">
+                          {selectedHighlightEntries.map((highlight) => (
+                            <button key={highlight} type="button" onClick={() => removeSelectedMarketingListItem('marketingHighlights', highlight)} className="flex items-center gap-2 rounded-[12px] border border-[#e3ebf4] bg-[#fbfcfe] px-3 py-2 text-left text-sm text-[#31475c] hover:border-[#f4c7c3] hover:bg-[#fff7f7]">
+                              <CheckCircle2 size={15} className="text-[#1f7a45]" />
+                              <span className="min-w-0 flex-1">{highlight}</span>
+                              <span className="text-[#9aa9ba]">x</span>
+                            </button>
+                          ))}
+                          {!selectedHighlightEntries.length ? (
+                            <p className="rounded-[12px] border border-dashed border-[#d8e3ef] px-3 py-4 text-sm text-[#60758c]">No highlights added yet.</p>
+                          ) : null}
+                        </div>
+                        <div className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                          <Field value={marketingHighlightDraft} onChange={(event) => setMarketingHighlightDraft(event.target.value)} placeholder="Add a highlight..." />
+                          <Button type="button" variant="secondary" onClick={() => addSelectedMarketingListItem('marketingHighlights', marketingHighlightDraft, setMarketingHighlightDraft)}>
+                            <Plus size={14} />
+                            Add Highlight
+                          </Button>
+                        </div>
+                      </section>
+                    </div>
+
+                    <div className="space-y-5">
+                      <section className="rounded-[16px] border border-[#e2eaf3] bg-white p-4">
+                        <div className="mb-3 flex items-center justify-between">
+                          <h5 className="text-sm font-semibold text-[#142132]">Quick Details</h5>
+                          <PencilLine size={15} className="text-[#60758c]" />
+                        </div>
+                        <div className="grid gap-3">
+                          {[
+                            ['Internal Size', 'floorSize'],
+                            ['Erf / Balcony Size', 'erfSize'],
+                            ['Bedrooms', 'bedrooms'],
+                            ['Bathrooms', 'bathrooms'],
+                            ['Parking', 'garage'],
+                          ].map(([label, key]) => (
+                            <DetailField key={key} label={label}>
+                              <Field value={selectedMarketingFloorplan[key]} onChange={(event) => setSelectedMarketingFloorplanField(key, event.target.value)} />
+                            </DetailField>
+                          ))}
+                        </div>
+                      </section>
+
+                      <section className="rounded-[16px] border border-[#e2eaf3] bg-white p-4">
+                        <h5 className="text-sm font-semibold text-[#142132]">Availability</h5>
+                        <div className="mt-3 flex items-center justify-between text-sm text-[#60758c]">
+                          <span>{selectedMarketingUnitStats.available} of {selectedMarketingUnitStats.total} units available</span>
+                          <strong className="text-[#142132]">{availabilityPercent}%</strong>
+                        </div>
+                        <div className="mt-3 h-2 rounded-full bg-[#e8eef5]">
+                          <span className="block h-full rounded-full bg-[#1f7a45]" style={{ width: `${availabilityPercent}%` }} />
+                        </div>
+                      </section>
+
+                      <section className="rounded-[16px] border border-[#e2eaf3] bg-white p-4">
+                        <h5 className="text-sm font-semibold text-[#142132]">Call To Action</h5>
+                        <div className="mt-3 grid gap-3">
+                          <DetailField label="Primary action">
+                            <Field value={selectedMarketingFloorplan.ctaLabel} onChange={(event) => setSelectedMarketingFloorplanField('ctaLabel', event.target.value)} />
+                          </DetailField>
+                          <DetailField label="Secondary action">
+                            <Field value={selectedMarketingFloorplan.secondaryCtaLabel} onChange={(event) => setSelectedMarketingFloorplanField('secondaryCtaLabel', event.target.value)} />
+                          </DetailField>
+                        </div>
+                      </section>
+
+                      <section className="rounded-[16px] border border-[#e2eaf3] bg-white p-4">
+                        <h5 className="text-sm font-semibold text-[#142132]">Status</h5>
+                        <Field as="select" className="mt-3" value={selectedUnitStatus} onChange={(event) => setSelectedMarketingFloorplanField('listingStatus', event.target.value)}>
+                          {MARKETING_LISTING_STATUS_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                          ))}
+                        </Field>
+                      </section>
+                    </div>
+                  </div>
+                ) : null}
+
+                {marketingUnitTab === 'pricing' ? (
+                  <div className="grid gap-4 md:grid-cols-2">
+                    {[
+                      ['Unit Type Name', 'name'],
+                      ['Price From', 'priceFrom'],
+                      ['Price To', 'priceTo'],
+                      ['Levies', 'levies'],
+                      ['Rates & Taxes', 'ratesAndTaxes'],
+                    ].map(([label, key]) => (
+                      <DetailField key={key} label={label}>
+                        <Field value={selectedMarketingFloorplan[key]} onChange={(event) => setSelectedMarketingFloorplanField(key, event.target.value)} />
+                      </DetailField>
+                    ))}
+                    <DetailField label="No Transfer Duty">
+                      <Field as="select" value={selectedMarketingFloorplan.noTransferDuty ? 'yes' : 'no'} onChange={(event) => setSelectedMarketingFloorplanField('noTransferDuty', event.target.value === 'yes')}>
+                        <option value="yes">Yes</option>
+                        <option value="no">No</option>
+                      </Field>
+                    </DetailField>
+                    <DetailField label="Customisation Options">
+                      <Field as="select" value={selectedMarketingFloorplan.customisationOptions ? 'yes' : 'no'} onChange={(event) => setSelectedMarketingFloorplanField('customisationOptions', event.target.value === 'yes')}>
+                        <option value="yes">Yes</option>
+                        <option value="no">No</option>
+                      </Field>
+                    </DetailField>
+                  </div>
+                ) : null}
+
+                {marketingUnitTab === 'media' ? (
+                  <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+                    <section className="rounded-[16px] border border-[#e2eaf3] bg-[#fbfcfe] p-4">
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <h5 className="text-sm font-semibold text-[#142132]">Images</h5>
+                        <label className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-[10px] border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#20364c] hover:bg-[#f8fbff]">
+                          <ImagePlus size={13} />
+                          Upload
+                          <input type="file" accept="image/*" multiple className="hidden" disabled={Boolean(marketingAssetUploading)} onChange={(event) => void handleMarketingAssetFileUpload(event, 'marketing', { uploadKey: `unit-images-${selectedMarketingFloorplan.id}`, linkedUnitType: selectedMarketingFloorplan.id, successMessage: 'Unit type images uploaded.' })} />
+                        </label>
+                      </div>
+                      {selectedUnitImages.length ? (
+                        <div className="grid gap-3 md:grid-cols-2">
+                          {selectedUnitImages.slice(0, 6).map((url) => (
+                            <article key={url} className="overflow-hidden rounded-[14px] border border-[#e2eaf3] bg-white">
+                              {isLikelyImageUrl(url) ? <img src={url} alt="Unit type marketing" className="h-36 w-full object-cover" /> : <div className="flex h-36 items-center justify-center bg-[#edf3f8] text-sm text-[#60758c]">Media file</div>}
+                              <div className="flex justify-end px-3 py-2">
+                                <Button type="button" size="sm" variant="secondary" onClick={() => window.open(url, '_blank', 'noopener,noreferrer')}>View</Button>
+                              </div>
+                            </article>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="rounded-[14px] border border-dashed border-[#d8e3ef] bg-white px-4 py-8 text-center text-sm text-[#60758c]">No images uploaded for this unit type.</p>
+                      )}
+                    </section>
+                    <section className="rounded-[16px] border border-[#e2eaf3] bg-white p-4">
+                      <div className="grid gap-3">
+                        <DetailField label="Image URLs">
+                          <Field as="textarea" rows={6} value={selectedMarketingFloorplan.imageUrls} onChange={(event) => setSelectedMarketingFloorplanField('imageUrls', event.target.value)} />
+                        </DetailField>
+                        <DetailField label="Video URL">
+                          <Field value={selectedMarketingFloorplan.videoUrl} onChange={(event) => setSelectedMarketingFloorplanField('videoUrl', event.target.value)} />
+                        </DetailField>
+                        <DetailField label="Virtual Tour URL">
+                          <Field value={selectedMarketingFloorplan.virtualTourUrl} onChange={(event) => setSelectedMarketingFloorplanField('virtualTourUrl', event.target.value)} />
+                        </DetailField>
+                      </div>
+                    </section>
+                  </div>
+                ) : null}
+
+                {marketingUnitTab === 'floorplans' ? (
+                  <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+                    <section className="rounded-[16px] border border-[#e2eaf3] bg-[#fbfcfe] p-4">
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <h5 className="text-sm font-semibold text-[#142132]">Uploaded Floorplans</h5>
+                        <label className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-[10px] border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#20364c] hover:bg-[#f8fbff]">
+                          <Upload size={13} />
+                          Upload
+                          <input type="file" accept=".pdf,image/*" multiple className="hidden" disabled={Boolean(marketingAssetUploading)} onChange={(event) => void handleMarketingAssetFileUpload(event, 'floorplan', { uploadKey: `unit-floorplans-${selectedMarketingFloorplan.id}`, linkedUnitType: selectedMarketingFloorplan.id, successMessage: 'Unit type floorplans uploaded.' })} />
+                        </label>
+                      </div>
+                      <div className="grid gap-2">
+                        {selectedUnitFloorplans.map((url) => (
+                          <article key={url} className="flex items-center justify-between gap-3 rounded-[12px] border border-[#e2eaf3] bg-white px-3 py-2.5">
+                            <span className="min-w-0 truncate text-sm font-medium text-[#31475c]">{url}</span>
+                            <Button type="button" size="sm" variant="secondary" onClick={() => window.open(url, '_blank', 'noopener,noreferrer')}>View</Button>
+                          </article>
+                        ))}
+                        {!selectedUnitFloorplans.length ? <p className="rounded-[14px] border border-dashed border-[#d8e3ef] bg-white px-4 py-8 text-center text-sm text-[#60758c]">No floorplans uploaded for this unit type.</p> : null}
+                      </div>
+                    </section>
+                    <DetailField label="Floorplan URLs">
+                      <Field as="textarea" rows={8} value={selectedMarketingFloorplan.floorplanUrls} onChange={(event) => setSelectedMarketingFloorplanField('floorplanUrls', event.target.value)} />
+                    </DetailField>
+                  </div>
+                ) : null}
+
+                {marketingUnitTab === 'documents' ? (
+                  <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+                    <section className="rounded-[16px] border border-[#e2eaf3] bg-[#fbfcfe] p-4">
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <h5 className="text-sm font-semibold text-[#142132]">Documents</h5>
+                        <label className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-[10px] border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#20364c] hover:bg-[#f8fbff]">
+                          <Upload size={13} />
+                          Upload
+                          <input type="file" multiple className="hidden" disabled={Boolean(marketingAssetUploading)} onChange={(event) => void handleMarketingAssetFileUpload(event, 'other', { uploadKey: `unit-documents-${selectedMarketingFloorplan.id}`, linkedUnitType: selectedMarketingFloorplan.id, successMessage: 'Unit type documents uploaded.' })} />
+                        </label>
+                      </div>
+                      <div className="grid gap-2">
+                        {selectedUnitDocuments.map((url) => (
+                          <article key={url} className="flex items-center justify-between gap-3 rounded-[12px] border border-[#e2eaf3] bg-white px-3 py-2.5">
+                            <span className="min-w-0 truncate text-sm font-medium text-[#31475c]">{url}</span>
+                            <Button type="button" size="sm" variant="secondary" onClick={() => window.open(url, '_blank', 'noopener,noreferrer')}>View</Button>
+                          </article>
+                        ))}
+                        {!selectedUnitDocuments.length ? <p className="rounded-[14px] border border-dashed border-[#d8e3ef] bg-white px-4 py-8 text-center text-sm text-[#60758c]">No documents linked to this unit type.</p> : null}
+                      </div>
+                    </section>
+                    <DetailField label="Document URLs">
+                      <Field as="textarea" rows={8} value={selectedMarketingFloorplan.documentUrls} onChange={(event) => setSelectedMarketingFloorplanField('documentUrls', event.target.value)} />
+                    </DetailField>
+                  </div>
+                ) : null}
+
+                {marketingUnitTab === 'seo' ? (
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <DetailField label="SEO Title">
+                      <Field value={selectedMarketingFloorplan.seoTitle} onChange={(event) => setSelectedMarketingFloorplanField('seoTitle', event.target.value)} />
+                    </DetailField>
+                    <DetailField label="Listing Slug">
+                      <Field value={selectedMarketingFloorplan.listingSlug} onChange={(event) => setSelectedMarketingFloorplanField('listingSlug', event.target.value)} />
+                    </DetailField>
+                    <DetailField label="CTA URL">
+                      <Field value={selectedMarketingFloorplan.ctaUrl} onChange={(event) => setSelectedMarketingFloorplanField('ctaUrl', event.target.value)} />
+                    </DetailField>
+                    <DetailField label="SEO Meta Description" className="md:col-span-2">
+                      <Field as="textarea" rows={5} value={selectedMarketingFloorplan.seoDescription} onChange={(event) => setSelectedMarketingFloorplanField('seoDescription', event.target.value)} />
+                    </DetailField>
+                  </div>
+                ) : null}
+              </div>
+            ) : (
+              <div className="rounded-[16px] border border-dashed border-[#d8e3ef] bg-[#fbfdff] px-4 py-10 text-center text-sm text-[#60758c]">
+                Add a unit type to start configuring marketing content.
+              </div>
+            )}
+          </section>
+        </section>
+
+        <div className="flex items-center justify-end border-t border-[#e6edf5] pt-4">
+          <Button type="submit" disabled={detailsSaving}>
+            {detailsSaving ? 'Saving...' : 'Save Marketing Content'}
+          </Button>
+        </div>
+      </>
+    )
+  }
+
   if (!isSupabaseConfigured) {
     return <p className="rounded-[16px] border border-[#f3d2cc] bg-[#fef3f2] px-5 py-4 text-sm text-[#b42318]">Supabase is not configured for this workspace.</p>
   }
@@ -4592,72 +5703,115 @@ function DevelopmentDetail() {
   return (
     <section className="min-w-0 max-w-full overflow-x-hidden">
       <div className="flex min-w-0 flex-col">
-      <section className="flex flex-wrap items-center justify-between gap-3">
-        <Button variant="secondary" onClick={loadData} disabled={loading}>
-          <RefreshCw size={14} />
-          Refresh
-        </Button>
-        <Button onClick={() => navigate('/developments')}>
-          <ArrowLeft size={14} />
-          Back to developments
-        </Button>
-      </section>
-
       {error ? <p className="mt-4 rounded-[16px] border border-[#f3d2cc] bg-[#fef3f2] px-5 py-4 text-sm text-[#b42318]">{error}</p> : null}
       {feedback ? <p className="mt-4 rounded-[16px] border border-[#d6ece0] bg-[#edfdf3] px-5 py-4 text-sm text-[#1c7d45]">{feedback}</p> : null}
 
       <section className="mt-6">
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-3">
-                <h1 className="text-[2.25rem] font-semibold tracking-[-0.035em] text-[#08172d] sm:text-[2.5rem]">{data.development.name}</h1>
-                <span className="inline-flex rounded-full border border-[#cfe8d8] bg-[#edf9f1] px-3 py-1 text-xs font-semibold text-[#09833d]">
-                  {toTitleLabel(detailsForm.status || 'active')} Development
-                </span>
-              </div>
-              <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm font-medium text-[#5d7087]">
-                <span className="inline-flex items-center gap-2">
-                  <MapPin size={15} className="text-[#607891]" />
-                  {locationLine || 'Location pending'}
-                </span>
-                <span>{formatNumber(overviewSalesProgress.totalUnits)} Units</span>
-                <span>{formatPercent(overviewSalesProgress.sellThroughPercent)} Sold Through</span>
-              </div>
-            </div>
+        <div className="relative min-h-[360px] overflow-hidden rounded-[28px] border border-[#203c35]/40 bg-[#0b211d] shadow-[0_28px_70px_rgba(15,23,42,0.22)]">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_20%,rgba(40,134,86,0.45),transparent_34%),linear-gradient(135deg,#0b211d_0%,#142f32_52%,#071316_100%)]" aria-hidden />
+          {developmentHeroImageUrl ? (
+            <img
+              src={developmentHeroImageUrl}
+              alt=""
+              className="absolute inset-0 h-full w-full object-cover"
+              loading="eager"
+              onError={(event) => {
+                event.currentTarget.style.display = 'none'
+              }}
+            />
+          ) : null}
+          <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(4,18,15,0.78)_0%,rgba(4,18,15,0.50)_54%,rgba(4,18,15,0.34)_100%)]" aria-hidden />
+          <div className="absolute inset-0 bg-[linear-gradient(0deg,rgba(4,18,15,0.62)_0%,rgba(4,18,15,0.28)_46%,rgba(4,18,15,0.08)_100%)]" aria-hidden />
 
-            <div className="flex flex-wrap items-center gap-2 md:justify-end xl:justify-end">
-              {canManageDevelopment ? (
-                <Button variant="secondary" onClick={() => setActiveTab('configuration')}>
-                  <PencilLine size={15} />
-                  Edit Development
-                </Button>
-              ) : null}
-              {canCreateTransactions ? (
-                <Button onClick={openDevelopmentTransactionWizard}>
-                  <Plus size={15} />
-                  Add Transaction
-                </Button>
-              ) : null}
-              <Button variant="secondary" onClick={() => setActiveTab('marketing')}>
-                <Upload size={15} />
-                Upload Asset
+          <div className="relative z-10 flex min-h-[360px] flex-col justify-between gap-8 p-5 sm:p-7 lg:p-8">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <Button
+                variant="secondary"
+                onClick={loadData}
+                disabled={loading}
+                className="border-white/20 bg-black/25 text-white shadow-[0_12px_28px_rgba(0,0,0,0.18)] backdrop-blur-md hover:border-white/35 hover:bg-black/35"
+              >
+                <RefreshCw size={14} />
+                Refresh
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => navigate('/developments')}
+                className="border-white/20 bg-black/25 text-white shadow-[0_12px_28px_rgba(0,0,0,0.18)] backdrop-blur-md hover:border-white/35 hover:bg-black/35"
+              >
+                <ArrowLeft size={14} />
+                Back to developments
               </Button>
             </div>
+
+            <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-3">
+                  <h1 className="max-w-[920px] text-[2.55rem] font-semibold leading-[1.04] tracking-[-0.035em] text-white drop-shadow-[0_8px_22px_rgba(0,0,0,0.35)] sm:text-[2.9rem] lg:text-[3.15rem]">
+                    {data.development.name}
+                  </h1>
+                  <span className="inline-flex rounded-full border border-[#b8f1cd]/40 bg-[#17764f]/80 px-3 py-1 text-xs font-semibold text-white shadow-[0_10px_24px_rgba(0,0,0,0.18)] backdrop-blur">
+                    {toTitleLabel(detailsForm.status || 'active')} Development
+                  </span>
+                </div>
+                <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm font-semibold text-white/88">
+                  <span className="inline-flex min-w-0 items-center gap-2">
+                    <MapPin size={16} className="shrink-0 text-white/80" />
+                    <span className="truncate">{locationLine || 'Location pending'}</span>
+                  </span>
+                  <span className="hidden h-1 w-1 rounded-full bg-white/45 sm:inline-flex" aria-hidden />
+                  <span>{formatNumber(overviewSalesProgress.totalUnits)} Units</span>
+                  <span className="hidden h-1 w-1 rounded-full bg-white/45 sm:inline-flex" aria-hidden />
+                  <span>{formatPercent(overviewSalesProgress.sellThroughPercent)} Sold Through</span>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3 xl:justify-end">
+                {canManageDevelopment ? (
+                  <Button
+                    variant="secondary"
+                    onClick={() => setActiveTab('configuration')}
+                    className="border-white/85 bg-white text-[#142132] shadow-[0_14px_30px_rgba(0,0,0,0.18)] hover:bg-[#f8fafc]"
+                  >
+                    <PencilLine size={15} />
+                    Edit Development
+                  </Button>
+                ) : null}
+                {canCreateTransactions ? (
+                  <Button
+                    onClick={openDevelopmentTransactionWizard}
+                    className="bg-[#17764f] text-white shadow-[0_16px_34px_rgba(14,103,68,0.35)] hover:bg-[#0f6c43]"
+                  >
+                    <Plus size={15} />
+                    Add Transaction
+                  </Button>
+                ) : null}
+                <Button
+                  variant="secondary"
+                  onClick={() => setActiveTab('marketing')}
+                  className="border-white/85 bg-white text-[#142132] shadow-[0_14px_30px_rgba(0,0,0,0.18)] hover:bg-[#f8fafc]"
+                >
+                  <Upload size={15} />
+                  Upload Asset
+                </Button>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
-      <section className="mt-6">
-        <div className="grid gap-3 lg:grid-cols-5">
+      <section className="relative z-20 -mt-12 px-0 sm:px-4">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
           {summaryItems.map((item) => {
             const Icon = item.icon
             return (
               <article
                 key={item.label}
-                className="rounded-[18px] border border-[#dde4ee] bg-white px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)]"
+                className="rounded-[20px] border border-[#dde4ee] bg-white px-5 py-5 shadow-[0_18px_42px_rgba(15,23,42,0.12)]"
               >
                 <div className="mb-3 flex items-start justify-between gap-3">
                   {Icon ? (
-                    <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[#eaf7ef] text-[#159447]">
+                    <span className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[#d7efdf] bg-[#eaf7ef] text-[#159447]">
                       <Icon size={18} aria-hidden="true" />
                     </span>
                   ) : null}
@@ -5165,544 +6319,493 @@ function DevelopmentDetail() {
         <section className="mt-4 grid gap-4">
           <div className={`grid gap-4 ${activeTab === 'performance' && canManageDevelopment ? 'xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]' : ''}`}>
             {activeTab === 'configuration' ? (
-            <form className={CARD_SHELL} onSubmit={handleDetailsSave}>
-              <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">General Details</h3>
-                  <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">Master development information inherited by downstream units and transactions.</p>
-                </div>
-                {!isEditingDetailsSection ? (
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => setIsEditingDetailsSection(true)}
-                    className="shrink-0"
-                  >
-                    <PencilLine size={14} />
-                    Edit Section
-                  </Button>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <Button type="button" variant="ghost" size="sm" onClick={handleCancelDetailsEdit}>
-                      Cancel
-                    </Button>
-                    <Button type="submit" size="sm" disabled={detailsSaving}>
-                      {detailsSaving ? 'Saving…' : 'Save Changes'}
-                    </Button>
-                  </div>
-                )}
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-2">
-                <DetailField label="Development Name">
-                  <Field
-                    value={detailsForm.name}
-                    disabled={!isEditingDetailsSection}
-                    className={detailsFieldClassName}
-                    onChange={(event) => setDetailsForm((previous) => ({ ...previous, name: event.target.value }))}
-                  />
-                </DetailField>
-                <DetailField label="Development Code">
-                  <Field
-                    value={detailsForm.code}
-                    disabled={!isEditingDetailsSection}
-                    className={detailsFieldClassName}
-                    onChange={(event) => setDetailsForm((previous) => ({ ...previous, code: event.target.value }))}
-                  />
-                </DetailField>
-                <DetailField label="Location">
-                  <Field
-                    value={detailsForm.location}
-                    disabled={!isEditingDetailsSection}
-                    className={detailsFieldClassName}
-                    onChange={(event) => setDetailsForm((previous) => ({ ...previous, location: event.target.value }))}
-                  />
-                </DetailField>
-                <DetailField label="Suburb">
-                  <Field
-                    value={detailsForm.suburb}
-                    disabled={!isEditingDetailsSection}
-                    className={detailsFieldClassName}
-                    onChange={(event) => setDetailsForm((previous) => ({ ...previous, suburb: event.target.value }))}
-                  />
-                </DetailField>
-                <DetailField label="City">
-                  <Field
-                    value={detailsForm.city}
-                    disabled={!isEditingDetailsSection}
-                    className={detailsFieldClassName}
-                    onChange={(event) => setDetailsForm((previous) => ({ ...previous, city: event.target.value }))}
-                  />
-                </DetailField>
-                <DetailField label="Province">
-                  <Field
-                    value={detailsForm.province}
-                    disabled={!isEditingDetailsSection}
-                    className={detailsFieldClassName}
-                    onChange={(event) => setDetailsForm((previous) => ({ ...previous, province: event.target.value }))}
-                  />
-                </DetailField>
-                <DetailField label="Country">
-                  <Field
-                    value={detailsForm.country}
-                    disabled={!isEditingDetailsSection}
-                    className={detailsFieldClassName}
-                    onChange={(event) => setDetailsForm((previous) => ({ ...previous, country: event.target.value }))}
-                  />
-                </DetailField>
-                <DetailField label="Developer Company">
-                  <Field
-                    value={detailsForm.developerCompany}
-                    disabled={!isEditingDetailsSection}
-                    className={detailsFieldClassName}
-                    onChange={(event) => setDetailsForm((previous) => ({ ...previous, developerCompany: event.target.value }))}
-                  />
-                </DetailField>
-                <DetailField label="Status">
-                  <Field
-                    as="select"
-                    value={detailsForm.status}
-                    disabled={!isEditingDetailsSection}
-                    className={detailsFieldClassName}
-                    onChange={(event) => setDetailsForm((previous) => ({ ...previous, status: event.target.value }))}
-                  >
-                    {DEVELOPMENT_STATUS_OPTIONS.map((item) => (
-                      <option key={item.value} value={item.value}>
-                        {item.label}
-                      </option>
-                    ))}
-                  </Field>
-                </DetailField>
-                <DetailField label="Expected Units">
-                  <Field
-                    type="number"
-                    min="0"
-                    value={detailsForm.totalUnitsExpected}
-                    disabled={!isEditingDetailsSection}
-                    className={detailsFieldClassName}
-                    onChange={(event) => setDetailsForm((previous) => ({ ...previous, totalUnitsExpected: event.target.value }))}
-                  />
-                </DetailField>
-                <DetailField label="Launch Date">
-                  <Field
-                    type="date"
-                    value={detailsForm.launchDate}
-                    disabled={!isEditingDetailsSection}
-                    className={detailsFieldClassName}
-                    onChange={(event) => setDetailsForm((previous) => ({ ...previous, launchDate: event.target.value }))}
-                  />
-                </DetailField>
-                <DetailField label="Expected Completion">
-                  <Field
-                    type="date"
-                    value={detailsForm.expectedCompletionDate}
-                    disabled={!isEditingDetailsSection}
-                    className={detailsFieldClassName}
-                    onChange={(event) => setDetailsForm((previous) => ({ ...previous, expectedCompletionDate: event.target.value }))}
-                  />
-                </DetailField>
-                <DetailField label="Address" className="md:col-span-2">
-                  <Field
-                    value={detailsForm.address}
-                    disabled={!isEditingDetailsSection}
-                    className={detailsFieldClassName}
-                    onChange={(event) => setDetailsForm((previous) => ({ ...previous, address: event.target.value }))}
-                  />
-                </DetailField>
-                <DetailField label="Description" className="md:col-span-2">
-                  <Field
-                    as="textarea"
-                    rows={4}
-                    value={detailsForm.description}
-                    disabled={!isEditingDetailsSection}
-                    className={detailsFieldClassName}
-                    onChange={(event) => setDetailsForm((previous) => ({ ...previous, description: event.target.value }))}
-                  />
-                </DetailField>
-              </div>
-
-              {canManageDevelopment ? (
-                <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                  {[
-                    ['Handover Enabled', 'Enable unit handover after registration.', detailsForm.handoverEnabled, 'handoverEnabled'],
-                    ['Snag Tracking', 'Allow snag logging and post-handover support.', detailsForm.snagTrackingEnabled, 'snagTrackingEnabled'],
-                    ['Alterations', 'Enable owner alteration requests for this project.', detailsForm.alterationsEnabled, 'alterationsEnabled'],
-                    ['Client Onboarding', 'Enable transaction onboarding by default.', detailsForm.onboardingEnabled, 'onboardingEnabled'],
-                  ].map(([title, copy, checked, key]) => (
-                    <label key={key} className="flex items-start justify-between gap-4 rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4">
-                      <div className="min-w-0">
-                        <strong className="block text-sm font-semibold text-[#142132]">{title}</strong>
-                        <span className="mt-1 block text-xs leading-5 text-[#6b7d93]">{copy}</span>
-                      </div>
-                      {isEditingDetailsSection ? (
-                        <input
-                          type="checkbox"
-                          className="mt-1 h-4 w-4 rounded border-[#c7d6e5] text-[#35546c] focus:ring-[#35546c]"
-                          checked={Boolean(checked)}
-                          onChange={(event) => setDetailsForm((previous) => ({ ...previous, [key]: event.target.checked }))}
-                        />
-                      ) : (
-                        <span
-                          className={`inline-flex shrink-0 items-center rounded-full border px-3 py-1 text-xs font-semibold ${
-                            checked
-                              ? 'border-[#cde8d8] bg-[#eef9f2] text-[#1c7d45]'
-                              : 'border-[#dce5ef] bg-[#f7f9fc] text-[#6b7d93]'
-                          }`}
-                        >
-                          {checked ? 'Enabled' : 'Disabled'}
-                        </span>
-                      )}
-                    </label>
-                  ))}
-                </div>
-              ) : null}
-
-              <section className="mt-5 rounded-[20px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
-                <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="grid gap-4">
+                <div className="flex flex-col gap-3 rounded-[22px] border border-[#dde4ee] bg-white px-5 py-4 shadow-[0_12px_28px_rgba(15,23,42,0.06)] lg:flex-row lg:items-center lg:justify-between">
                   <div>
-                    <h4 className="text-[1rem] font-semibold tracking-[-0.025em] text-[#142132]">Seller Details</h4>
-                    <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
-                      Legal seller and authorised signatory details used by OTP and mandate documents.
-                    </p>
-                    {isEditingDetailsSection ? (
-                      <p className="mt-1 text-xs font-medium text-[#7b8ca2]">
-                        {developerProfileHasSellerDefaults
-                          ? 'Organisation defaults are available from Settings.'
-                          : 'Add Developer Profile defaults in Settings to prefill this faster.'}
-                      </p>
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#1f7a45]">Configuration</p>
+                    <h3 className="mt-1 text-[1.18rem] font-semibold tracking-[-0.03em] text-[#142132]">Project settings</h3>
+                    <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Manage development-wide details, deposit rules, and team access.</p>
+                  </div>
+                  <Button type="button" variant="secondary" size="sm" className="w-fit" onClick={() => setActiveTab('transactions')}>
+                    <Workflow size={14} />
+                    Preview Buyer Journey
+                  </Button>
+                </div>
+
+                <ConfigurationCard
+                  icon={Building2}
+                  title="General Details"
+                  description="Basic development information and key dates."
+                  expanded={generalDetailsExpanded}
+                  editing={isEditingGeneralDetails}
+                  canEdit={canManageDevelopment}
+                  onToggle={() => setGeneralDetailsExpanded((previous) => !previous)}
+                  onEdit={handleStartGeneralDetailsEdit}
+                  summary={(
+                    <div className="grid gap-1">
+                      <strong className="truncate font-semibold text-[#142132]">{generalSummaryLocation || 'Development details not set'}</strong>
+                      <span>{generalSummaryMeta}</span>
+                    </div>
+                  )}
+                  badge={<ConfigStatusPill tone="success">{toTitleLabel(detailsForm.status || 'active')}</ConfigStatusPill>}
+                >
+                  <form className="grid gap-5" onSubmit={handleGeneralDetailsSave}>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <DetailField label="Development Name">
+                        <Field value={detailsForm.name} disabled={!isEditingGeneralDetails} className={generalDetailsFieldClassName} onChange={(event) => setDetailsForm((previous) => ({ ...previous, name: event.target.value }))} />
+                      </DetailField>
+                      <DetailField label="Development Code">
+                        <Field value={detailsForm.code} disabled={!isEditingGeneralDetails} className={generalDetailsFieldClassName} onChange={(event) => setDetailsForm((previous) => ({ ...previous, code: event.target.value }))} />
+                      </DetailField>
+                      <DetailField label="Location">
+                        <Field value={detailsForm.location} disabled={!isEditingGeneralDetails} className={generalDetailsFieldClassName} onChange={(event) => setDetailsForm((previous) => ({ ...previous, location: event.target.value }))} />
+                      </DetailField>
+                      <DetailField label="Suburb">
+                        <Field value={detailsForm.suburb} disabled={!isEditingGeneralDetails} className={generalDetailsFieldClassName} onChange={(event) => setDetailsForm((previous) => ({ ...previous, suburb: event.target.value }))} />
+                      </DetailField>
+                      <DetailField label="City">
+                        <Field value={detailsForm.city} disabled={!isEditingGeneralDetails} className={generalDetailsFieldClassName} onChange={(event) => setDetailsForm((previous) => ({ ...previous, city: event.target.value }))} />
+                      </DetailField>
+                      <DetailField label="Province">
+                        <Field value={detailsForm.province} disabled={!isEditingGeneralDetails} className={generalDetailsFieldClassName} onChange={(event) => setDetailsForm((previous) => ({ ...previous, province: event.target.value }))} />
+                      </DetailField>
+                      <DetailField label="Country">
+                        <Field value={detailsForm.country} disabled={!isEditingGeneralDetails} className={generalDetailsFieldClassName} onChange={(event) => setDetailsForm((previous) => ({ ...previous, country: event.target.value }))} />
+                      </DetailField>
+                      <DetailField label="Developer Company">
+                        <Field value={detailsForm.developerCompany} disabled={!isEditingGeneralDetails} className={generalDetailsFieldClassName} onChange={(event) => setDetailsForm((previous) => ({ ...previous, developerCompany: event.target.value }))} />
+                      </DetailField>
+                      <DetailField label="Status">
+                        <Field as="select" value={detailsForm.status} disabled={!isEditingGeneralDetails} className={generalDetailsFieldClassName} onChange={(event) => setDetailsForm((previous) => ({ ...previous, status: event.target.value }))}>
+                          {DEVELOPMENT_STATUS_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                        </Field>
+                      </DetailField>
+                      <DetailField label="Expected Units">
+                        <Field type="number" min="0" value={detailsForm.totalUnitsExpected} disabled={!isEditingGeneralDetails} className={generalDetailsFieldClassName} onChange={(event) => setDetailsForm((previous) => ({ ...previous, totalUnitsExpected: event.target.value }))} />
+                      </DetailField>
+                      <DetailField label="Launch Date">
+                        <Field type="date" value={detailsForm.launchDate} disabled={!isEditingGeneralDetails} className={generalDetailsFieldClassName} onChange={(event) => setDetailsForm((previous) => ({ ...previous, launchDate: event.target.value }))} />
+                      </DetailField>
+                      <DetailField label="Expected Completion">
+                        <Field type="date" value={detailsForm.expectedCompletionDate} disabled={!isEditingGeneralDetails} className={generalDetailsFieldClassName} onChange={(event) => setDetailsForm((previous) => ({ ...previous, expectedCompletionDate: event.target.value }))} />
+                      </DetailField>
+                      <DetailField label="Address" className="md:col-span-2">
+                        <Field value={detailsForm.address} disabled={!isEditingGeneralDetails} className={generalDetailsFieldClassName} onChange={(event) => setDetailsForm((previous) => ({ ...previous, address: event.target.value }))} />
+                      </DetailField>
+                      <DetailField label="Description" className="md:col-span-2">
+                        <Field as="textarea" rows={4} value={detailsForm.description} disabled={!isEditingGeneralDetails} className={generalDetailsFieldClassName} onChange={(event) => setDetailsForm((previous) => ({ ...previous, description: event.target.value }))} />
+                      </DetailField>
+                    </div>
+
+                    {canManageDevelopment ? (
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        {[
+                          ['Handover Enabled', 'Enable unit handover after registration.', detailsForm.handoverEnabled, 'handoverEnabled'],
+                          ['Snag Tracking', 'Allow snag logging and post-handover support.', detailsForm.snagTrackingEnabled, 'snagTrackingEnabled'],
+                          ['Alterations', 'Enable owner alteration requests for this project.', detailsForm.alterationsEnabled, 'alterationsEnabled'],
+                          ['Client Onboarding', 'Enable transaction onboarding by default.', detailsForm.onboardingEnabled, 'onboardingEnabled'],
+                        ].map(([title, copy, checked, key]) => (
+                          <label key={key} className="flex items-start justify-between gap-4 rounded-[16px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4">
+                            <span className="min-w-0">
+                              <strong className="block text-sm font-semibold text-[#142132]">{title}</strong>
+                              <span className="mt-1 block text-xs leading-5 text-[#6b7d93]">{copy}</span>
+                            </span>
+                            {isEditingGeneralDetails ? (
+                              <input type="checkbox" className="mt-1 h-4 w-4 rounded border-[#c7d6e5] text-[#35546c] focus:ring-[#35546c]" checked={Boolean(checked)} onChange={(event) => setDetailsForm((previous) => ({ ...previous, [key]: event.target.checked }))} />
+                            ) : (
+                              <ConfigStatusPill tone={checked ? 'success' : 'neutral'}>{checked ? 'Enabled' : 'Disabled'}</ConfigStatusPill>
+                            )}
+                          </label>
+                        ))}
+                      </div>
+                    ) : null}
+
+                    <div className="flex flex-col gap-3 border-t border-[#e6edf5] pt-4 sm:flex-row sm:items-center sm:justify-between">
+                      <span className="text-xs font-medium text-[#7b8ca2]">{isEditingGeneralDetails ? 'Save updates only this section.' : 'Viewing mode. Use Edit to change this section.'}</span>
+                      {isEditingGeneralDetails ? (
+                        <div className="flex items-center gap-2">
+                          <Button type="button" variant="ghost" size="sm" onClick={handleCancelGeneralDetailsEdit}>Cancel</Button>
+                          <Button type="submit" size="sm" disabled={detailsSaving}>{detailsSaving ? 'Saving...' : 'Save Changes'}</Button>
+                        </div>
+                      ) : null}
+                    </div>
+                  </form>
+                </ConfigurationCard>
+
+                <ConfigurationCard
+                  icon={UserPlus}
+                  title="Seller / Developer Entity"
+                  description="Legal entity and authorised signatory details."
+                  expanded={sellerDetailsExpanded}
+                  editing={isEditingSellerDetails}
+                  canEdit={canManageDevelopment}
+                  onToggle={() => setSellerDetailsExpanded((previous) => !previous)}
+                  onEdit={handleStartSellerDetailsEdit}
+                  summary={(
+                    <div className="grid gap-1">
+                      <strong className="truncate font-semibold text-[#142132]">{sellerSummaryName}</strong>
+                      <span>{sellerSummaryMeta}</span>
+                    </div>
+                  )}
+                  badge={<ConfigStatusPill tone={sellerDetailsComplete ? 'success' : 'danger'}>{sellerDetailsComplete ? 'All details complete' : 'Missing Details'}</ConfigStatusPill>}
+                >
+                  <form className="grid gap-5" onSubmit={handleSellerDetailsSave}>
+                    {isEditingSellerDetails ? (
+                      <div className="flex flex-col gap-2 rounded-[16px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                        <p className="text-xs font-medium text-[#7b8ca2]">{developerProfileHasSellerDefaults ? 'Organisation defaults are available from Settings.' : 'Add Developer Profile defaults in Settings to prefill this faster.'}</p>
+                        <Button type="button" variant="secondary" size="sm" onClick={handleUseDeveloperCompanyAsSeller}>Use Developer Profile</Button>
+                      </div>
+                    ) : null}
+
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <DetailField label="Seller Entity Type">
+                        <Field as="select" value={sellerDetailsForm.entityType} disabled={!isEditingSellerDetails} className={sellerDetailsFieldClassName} onChange={(event) => setSellerDetailsField('entityType', event.target.value)}>
+                          <option value="company">Company</option>
+                          <option value="individual">Individual</option>
+                          <option value="trust">Trust</option>
+                          <option value="close_corporation">Close Corporation</option>
+                          <option value="other">Other</option>
+                        </Field>
+                      </DetailField>
+                      <DetailField label="Seller Legal Name"><Field value={sellerDetailsForm.legalName} disabled={!isEditingSellerDetails} className={sellerDetailsFieldClassName} onChange={(event) => setSellerDetailsField('legalName', event.target.value)} placeholder="e.g. Junoah Estate (Pty) Ltd" /></DetailField>
+                      <DetailField label="Trading Name"><Field value={sellerDetailsForm.tradingName} disabled={!isEditingSellerDetails} className={sellerDetailsFieldClassName} onChange={(event) => setSellerDetailsField('tradingName', event.target.value)} /></DetailField>
+                      <DetailField label="Registration / Trust Number"><Field value={sellerDetailsForm.registrationNumber} disabled={!isEditingSellerDetails} className={sellerDetailsFieldClassName} onChange={(event) => setSellerDetailsField('registrationNumber', event.target.value)} /></DetailField>
+                      <DetailField label="VAT Number"><Field value={sellerDetailsForm.vatNumber} disabled={!isEditingSellerDetails} className={sellerDetailsFieldClassName} onChange={(event) => setSellerDetailsField('vatNumber', event.target.value)} /></DetailField>
+                      <DetailField label="VAT Treatment"><Field value={sellerDetailsForm.vatTreatment} disabled={!isEditingSellerDetails} className={sellerDetailsFieldClassName} onChange={(event) => setSellerDetailsField('vatTreatment', event.target.value)} placeholder="e.g. VAT inclusive" /></DetailField>
+                      <DetailField label="Registered Address" className="md:col-span-2"><Field value={sellerDetailsForm.registeredAddress} disabled={!isEditingSellerDetails} className={sellerDetailsFieldClassName} onChange={(event) => setSellerDetailsField('registeredAddress', event.target.value)} /></DetailField>
+                      <DetailField label="Postal Address" className="md:col-span-2"><Field value={sellerDetailsForm.postalAddress} disabled={!isEditingSellerDetails} className={sellerDetailsFieldClassName} onChange={(event) => setSellerDetailsField('postalAddress', event.target.value)} /></DetailField>
+                      <DetailField label="Seller Email"><Field type="email" value={sellerDetailsForm.email} disabled={!isEditingSellerDetails} className={sellerDetailsFieldClassName} onChange={(event) => setSellerDetailsField('email', event.target.value)} /></DetailField>
+                      <DetailField label="Seller Phone"><Field value={sellerDetailsForm.phone} disabled={!isEditingSellerDetails} className={sellerDetailsFieldClassName} onChange={(event) => setSellerDetailsField('phone', event.target.value)} /></DetailField>
+                    </div>
+
+                    <div className="rounded-[18px] border border-[#dde4ee] bg-white p-4">
+                      <h5 className="text-sm font-semibold text-[#142132]">Authorised Signatory</h5>
+                      <div className="mt-4 grid gap-4 md:grid-cols-2">
+                        <DetailField label="Full Name"><Field value={primarySellerSignatory.fullName} disabled={!isEditingSellerDetails} className={sellerDetailsFieldClassName} onChange={(event) => setSellerSignatoryField('fullName', event.target.value)} /></DetailField>
+                        <DetailField label="Capacity / Role"><Field value={primarySellerSignatory.signingCapacity} disabled={!isEditingSellerDetails} className={sellerDetailsFieldClassName} onChange={(event) => setSellerSignatoryField('signingCapacity', event.target.value)} placeholder="e.g. Director" /></DetailField>
+                        <DetailField label="ID Number"><Field value={primarySellerSignatory.idNumber} disabled={!isEditingSellerDetails} className={sellerDetailsFieldClassName} onChange={(event) => setSellerSignatoryField('idNumber', event.target.value)} /></DetailField>
+                        <DetailField label="Email"><Field type="email" value={primarySellerSignatory.email} disabled={!isEditingSellerDetails} className={sellerDetailsFieldClassName} onChange={(event) => setSellerSignatoryField('email', event.target.value)} /></DetailField>
+                        <DetailField label="Phone"><Field value={primarySellerSignatory.phone} disabled={!isEditingSellerDetails} className={sellerDetailsFieldClassName} onChange={(event) => setSellerSignatoryField('phone', event.target.value)} /></DetailField>
+                        <DetailField label="Internal Notes"><Field value={sellerDetailsForm.notes} disabled={!isEditingSellerDetails} className={sellerDetailsFieldClassName} onChange={(event) => setSellerDetailsField('notes', event.target.value)} /></DetailField>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-3 border-t border-[#e6edf5] pt-4 sm:flex-row sm:items-center sm:justify-between">
+                      <span className="text-xs font-medium text-[#7b8ca2]">{isEditingSellerDetails ? 'Save updates only the legal entity details.' : 'Viewing mode. Use Edit to change this section.'}</span>
+                      {isEditingSellerDetails ? (
+                        <div className="flex items-center gap-2">
+                          <Button type="button" variant="ghost" size="sm" onClick={handleCancelSellerDetailsEdit}>Cancel</Button>
+                          <Button type="submit" size="sm" disabled={detailsSaving}>{detailsSaving ? 'Saving...' : 'Save Changes'}</Button>
+                        </div>
+                      ) : null}
+                    </div>
+                  </form>
+                </ConfigurationCard>
+
+                <ConfigurationCard
+                  icon={WalletCards}
+                  title="Reservation & Deposit"
+                  description="Configure reservation deposit requirements for buyers in this development."
+                  expanded={reservationSettingsExpanded}
+                  editing={isEditingReservationSettings}
+                  canEdit={canManageDevelopment}
+                  onToggle={() => setReservationSettingsExpanded((previous) => !previous)}
+                  onEdit={() => {
+                    setReservationSettingsExpanded(true)
+                    setIsEditingReservationSettings(true)
+                  }}
+                  summary={(
+                    <div className="grid gap-1">
+                      <strong className="font-semibold text-[#142132]">{reservationDepositSummary}</strong>
+                      <span>{reservationSettingsForm.enabledByDefault ? `${getOptionSummaryLabel(RESERVATION_VAT_TREATMENT_OPTIONS, reservationSettingsForm.vatTreatment)} • ${getOptionSummaryLabel(RESERVATION_DUE_TRIGGER_OPTIONS, reservationSettingsForm.dueTrigger)}` : 'No active deposit milestone'}</span>
+                    </div>
+                  )}
+                  badge={<ConfigStatusPill tone={reservationSettingsForm.enabledByDefault ? (reservationDepositConfigured ? 'success' : 'warning') : 'neutral'}>{reservationSettingsForm.enabledByDefault ? (reservationDepositConfigured ? 'Deposit Required' : 'Incomplete') : 'No Deposit'}</ConfigStatusPill>}
+                >
+                  <form className="grid gap-5" onSubmit={handleReservationSettingsSave}>
+                    <div className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
+                      <label className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <span>
+                          <span className="block text-sm font-semibold text-[#142132]">Reservation deposit required?</span>
+                          <span className="mt-1 block text-xs leading-5 text-[#6b7d93]">Controls whether the buyer journey includes an active Reservation Deposit milestone.</span>
+                        </span>
+                        <span className="inline-flex items-center gap-3 text-sm font-semibold text-[#142132]">
+                          <input type="checkbox" className="sr-only" checked={Boolean(reservationSettingsForm.enabledByDefault)} disabled={!isEditingReservationSettings || reservationSettingsSaving} onChange={(event) => setReservationSettingsForm((previous) => ({ ...previous, enabledByDefault: event.target.checked }))} />
+                          <span className={`inline-flex h-6 w-11 items-center rounded-full p-0.5 transition ${reservationSettingsForm.enabledByDefault ? 'bg-[#1f7a43]' : 'bg-[#cbd7e4]'}`} aria-hidden>
+                            <span className={`h-5 w-5 rounded-full bg-white shadow transition ${reservationSettingsForm.enabledByDefault ? 'translate-x-5' : 'translate-x-0'}`} />
+                          </span>
+                          {reservationSettingsForm.enabledByDefault ? 'Yes' : 'No'}
+                        </span>
+                      </label>
+                    </div>
+
+                    {!reservationSettingsForm.enabledByDefault ? (
+                      <div className="rounded-[16px] border border-[#e4ebf3] bg-[#f8fafc] px-4 py-4 text-sm font-medium text-[#6b7d93]">No reservation deposit required.</div>
+                    ) : (
+                      <>
+                        <div className="grid gap-4 md:grid-cols-4">
+                          <DetailField label="Deposit Amount">
+                            <Field type="number" min="0" step="0.01" value={reservationSettingsForm.defaultDepositAmount} disabled={!isEditingReservationSettings || reservationSettingsSaving} className={!isEditingReservationSettings ? READ_ONLY_FIELD_CLASS : ''} onChange={(event) => setReservationSettingsForm((previous) => ({ ...previous, defaultDepositAmount: event.target.value }))} placeholder="10000.00" />
+                            {reservationDepositAmount > 0 ? (
+                              <span className="mt-1 block text-xs text-[#7b8ca2]">
+                                {reservationSettingsForm.amountType === 'percentage' ? `${reservationDepositAmount}%` : currencyWithCents.format(reservationDepositAmount)}
+                              </span>
+                            ) : null}
+                          </DetailField>
+                          <DetailField label="Deposit Amount Type">
+                            <Field as="select" value={reservationSettingsForm.amountType} disabled={!isEditingReservationSettings || reservationSettingsSaving} className={!isEditingReservationSettings ? READ_ONLY_FIELD_CLASS : ''} onChange={(event) => setReservationSettingsForm((previous) => ({ ...previous, amountType: event.target.value }))}>
+                              <option value="fixed">Fixed rand amount</option>
+                              <option value="percentage">Percentage of purchase price</option>
+                            </Field>
+                          </DetailField>
+                          <DetailField label="VAT Treatment">
+                            <Field as="select" value={reservationSettingsForm.vatTreatment} disabled={!isEditingReservationSettings || reservationSettingsSaving} className={!isEditingReservationSettings ? READ_ONLY_FIELD_CLASS : ''} onChange={(event) => setReservationSettingsForm((previous) => ({ ...previous, vatTreatment: event.target.value }))}>
+                              {RESERVATION_VAT_TREATMENT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                            </Field>
+                          </DetailField>
+                          <DetailField label="When is the deposit due?">
+                            <Field as="select" value={reservationSettingsForm.dueTrigger} disabled={!isEditingReservationSettings || reservationSettingsSaving} className={!isEditingReservationSettings ? READ_ONLY_FIELD_CLASS : ''} onChange={(event) => setReservationSettingsForm((previous) => ({ ...previous, dueTrigger: event.target.value }))}>
+                              {RESERVATION_DUE_TRIGGER_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                            </Field>
+                          </DetailField>
+                        </div>
+
+                        <div className="rounded-[14px] border border-[#cfe8d8] bg-[#edf9f1] px-4 py-3 text-sm font-semibold text-[#1f7a43]">
+                          {reservationDepositSummary}
+                        </div>
+
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <DetailField label="Deposit Treatment">
+                            <Field as="select" value={reservationSettingsForm.depositTreatment} disabled={!isEditingReservationSettings || reservationSettingsSaving} className={!isEditingReservationSettings ? READ_ONLY_FIELD_CLASS : ''} onChange={(event) => setReservationSettingsForm((previous) => ({ ...previous, depositTreatment: event.target.value }))}>
+                              <option value="credited_to_purchase_price">Deduct from purchase price</option>
+                              <option value="separate_invoice">Invoice separately</option>
+                              <option value="refundable_hold">Refundable holding deposit</option>
+                            </Field>
+                          </DetailField>
+                          <DetailField label="Payable To">
+                            <Field as="select" value={reservationSettingsForm.payableTo} disabled={!isEditingReservationSettings || reservationSettingsSaving} className={!isEditingReservationSettings ? READ_ONLY_FIELD_CLASS : ''} onChange={(event) => setReservationSettingsForm((previous) => ({ ...previous, payableTo: event.target.value }))}>
+                              <option value="developer">Developer</option>
+                              <option value="agency_trust">Agency trust account</option>
+                              <option value="attorney_trust">Attorney trust account</option>
+                            </Field>
+                          </DetailField>
+                          <DetailField label="Payment Reference Format" className="md:col-span-2">
+                            <Field value={reservationSettingsForm.paymentReferenceFormat} disabled={!isEditingReservationSettings || reservationSettingsSaving} className={!isEditingReservationSettings ? READ_ONLY_FIELD_CLASS : ''} onChange={(event) => setReservationSettingsForm((previous) => ({ ...previous, paymentReferenceFormat: event.target.value }))} placeholder="RES-{UNIT}-{TXN}" />
+                          </DetailField>
+                        </div>
+
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <DetailField label="Account Holder Name"><Field value={reservationSettingsForm.accountHolderName} disabled={!isEditingReservationSettings || reservationSettingsSaving} className={!isEditingReservationSettings ? READ_ONLY_FIELD_CLASS : ''} onChange={(event) => setReservationSettingsForm((previous) => ({ ...previous, accountHolderName: event.target.value }))} /></DetailField>
+                          <DetailField label="Bank Name"><Field value={reservationSettingsForm.bankName} disabled={!isEditingReservationSettings || reservationSettingsSaving} className={!isEditingReservationSettings ? READ_ONLY_FIELD_CLASS : ''} onChange={(event) => setReservationSettingsForm((previous) => ({ ...previous, bankName: event.target.value }))} /></DetailField>
+                          <DetailField label="Account Number"><Field value={reservationSettingsForm.accountNumber} disabled={!isEditingReservationSettings || reservationSettingsSaving} className={!isEditingReservationSettings ? READ_ONLY_FIELD_CLASS : ''} onChange={(event) => setReservationSettingsForm((previous) => ({ ...previous, accountNumber: event.target.value }))} /></DetailField>
+                          <DetailField label="Branch Code"><Field value={reservationSettingsForm.branchCode} disabled={!isEditingReservationSettings || reservationSettingsSaving} className={!isEditingReservationSettings ? READ_ONLY_FIELD_CLASS : ''} onChange={(event) => setReservationSettingsForm((previous) => ({ ...previous, branchCode: event.target.value }))} /></DetailField>
+                          <DetailField label="Account Type" className="md:col-span-2"><Field value={reservationSettingsForm.accountType} disabled={!isEditingReservationSettings || reservationSettingsSaving} className={!isEditingReservationSettings ? READ_ONLY_FIELD_CLASS : ''} onChange={(event) => setReservationSettingsForm((previous) => ({ ...previous, accountType: event.target.value }))} placeholder="Savings / Current" /></DetailField>
+                          <DetailField label="Additional Payment Instructions" className="md:col-span-2"><Field as="textarea" rows={3} value={reservationSettingsForm.paymentInstructions} disabled={!isEditingReservationSettings || reservationSettingsSaving} className={!isEditingReservationSettings ? READ_ONLY_FIELD_CLASS : ''} onChange={(event) => setReservationSettingsForm((previous) => ({ ...previous, paymentInstructions: event.target.value }))} /></DetailField>
+                        </div>
+                      </>
+                    )}
+
+                    <section className="rounded-[18px] border border-[#dde4ee] bg-white p-4">
+                      <h4 className="text-sm font-semibold text-[#142132]">Transaction Defaults</h4>
+                      <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Defaults proposed when a new development transaction starts.</p>
+                      <div className="mt-4 grid gap-4 md:grid-cols-3">
+                        <DetailField label="Alteration Cost Treatment">
+                          <Field as="select" value={reservationSettingsForm.alterationChargeTreatment} disabled={!isEditingReservationSettings || reservationSettingsSaving} className={!isEditingReservationSettings ? READ_ONLY_FIELD_CLASS : ''} onChange={(event) => setReservationSettingsForm((previous) => ({ ...previous, alterationChargeTreatment: event.target.value }))}>
+                            <option value="included_in_purchase_price">Include in purchase price</option>
+                            <option value="separate_invoice">Invoice separately</option>
+                            <option value="no_charge">No charge by default</option>
+                          </Field>
+                        </DetailField>
+                        <DetailField label="Default Transfer Attorney">
+                          <Field as="select" value={reservationSettingsForm.defaultTransferAttorneySource} disabled={!isEditingReservationSettings || reservationSettingsSaving} className={!isEditingReservationSettings ? READ_ONLY_FIELD_CLASS : ''} onChange={(event) => setReservationSettingsForm((previous) => ({ ...previous, defaultTransferAttorneySource: event.target.value }))}>
+                            <option value="first_conveyancer">Use first conveyancer in team</option>
+                            <option value="none">Do not auto-assign</option>
+                          </Field>
+                        </DetailField>
+                        <DetailField label="Default Bond Originator">
+                          <Field as="select" value={reservationSettingsForm.defaultBondOriginatorSource} disabled={!isEditingReservationSettings || reservationSettingsSaving} className={!isEditingReservationSettings ? READ_ONLY_FIELD_CLASS : ''} onChange={(event) => setReservationSettingsForm((previous) => ({ ...previous, defaultBondOriginatorSource: event.target.value }))}>
+                            <option value="first_bond_originator">Use first bond originator in team</option>
+                            <option value="none">Do not auto-assign</option>
+                          </Field>
+                        </DetailField>
+                      </div>
+                      <h5 className="mt-5 text-sm font-semibold text-[#142132]">Role Player Assignment Defaults</h5>
+                      <div className="mt-3 grid gap-3 lg:grid-cols-3">
+                        <label className="flex cursor-pointer items-start justify-between gap-4 rounded-[14px] border border-[#dbe4ef] bg-[#fbfcfe] p-4 text-sm">
+                          <span>
+                            <strong className="block font-semibold text-[#142132]">Buyer may use own bond originator</strong>
+                            <span className="mt-1.5 block leading-5 text-[#6b7d93]">Allow buyers to nominate an originator during onboarding.</span>
+                          </span>
+                          <input
+                            type="checkbox"
+                            checked={Boolean(reservationSettingsForm.buyerAppointedBondOriginatorAllowed)}
+                            disabled={!isEditingReservationSettings || reservationSettingsSaving}
+                            onChange={(event) =>
+                              setReservationSettingsForm((previous) => ({
+                                ...previous,
+                                buyerAppointedBondOriginatorAllowed: event.target.checked,
+                                buyerAppointedBondOriginatorRequiresApproval:
+                                  event.target.checked && previous.buyerAppointedBondOriginatorRequiresApproval,
+                              }))
+                            }
+                          />
+                        </label>
+                        <label className="flex cursor-pointer items-start justify-between gap-4 rounded-[14px] border border-[#dbe4ef] bg-[#fbfcfe] p-4 text-sm">
+                          <span>
+                            <strong className="block font-semibold text-[#142132]">Approve buyer-appointed originators</strong>
+                            <span className="mt-1.5 block leading-5 text-[#6b7d93]">Keep buyer nominations pending until the agent or developer approves.</span>
+                          </span>
+                          <input
+                            type="checkbox"
+                            checked={Boolean(reservationSettingsForm.buyerAppointedBondOriginatorRequiresApproval)}
+                            disabled={
+                              !isEditingReservationSettings ||
+                              reservationSettingsSaving ||
+                              !reservationSettingsForm.buyerAppointedBondOriginatorAllowed
+                            }
+                            onChange={(event) =>
+                              setReservationSettingsForm((previous) => ({
+                                ...previous,
+                                buyerAppointedBondOriginatorRequiresApproval: event.target.checked,
+                              }))
+                            }
+                          />
+                        </label>
+                        <label className="flex cursor-pointer items-start justify-between gap-4 rounded-[14px] border border-[#dbe4ef] bg-[#fbfcfe] p-4 text-sm">
+                          <span>
+                            <strong className="block font-semibold text-[#142132]">Auto-invite selected bond originator</strong>
+                            <span className="mt-1.5 block leading-5 text-[#6b7d93]">Send an invite once a transaction has a selected originator.</span>
+                          </span>
+                          <input
+                            type="checkbox"
+                            checked={Boolean(reservationSettingsForm.autoInviteSelectedBondOriginator)}
+                            disabled={!isEditingReservationSettings || reservationSettingsSaving}
+                            onChange={(event) =>
+                              setReservationSettingsForm((previous) => ({
+                                ...previous,
+                                autoInviteSelectedBondOriginator: event.target.checked,
+                              }))
+                            }
+                          />
+                        </label>
+                      </div>
+                    </section>
+
+                    <div className="flex flex-col gap-3 border-t border-[#e6edf5] pt-4 sm:flex-row sm:items-center sm:justify-between">
+                      <span className="text-xs font-medium text-[#7b8ca2]">{isEditingReservationSettings ? 'Save updates only reservation and transaction defaults.' : 'Viewing mode. Use Edit to change this section.'}</span>
+                      {isEditingReservationSettings ? (
+                        <div className="flex items-center gap-2">
+                          <Button type="button" variant="ghost" size="sm" onClick={handleCancelReservationSettingsEdit}>Cancel</Button>
+                          <Button type="submit" size="sm" disabled={!canManageDevelopment || reservationSettingsSaving}>{reservationSettingsSaving ? 'Saving...' : 'Save Changes'}</Button>
+                        </div>
+                      ) : null}
+                    </div>
+                  </form>
+                </ConfigurationCard>
+
+                <form className={CARD_SHELL} onSubmit={handleAgentAssignmentsSave}>
+                  <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex items-start gap-4">
+                        <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[12px] border border-[#d7efdf] bg-[#edf9f1] text-[#1c7d45]"><Users size={19} /></span>
+                        <div>
+                          <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Development Team Access</h3>
+                          <p className="mt-1.5 max-w-[760px] text-sm leading-6 text-[#6b7d93]">Choose which agents can access and work on this development.</p>
+                        </div>
+                      </div>
+                    </div>
+                    <ConfigStatusPill tone="success">{agentAssignments.length} team member{agentAssignments.length === 1 ? '' : 's'}</ConfigStatusPill>
+                  </div>
+
+                  {!canManageDevelopment ? (
+                    <div className="mb-4 rounded-[14px] border border-[#e4ebf3] bg-[#f8fafc] px-4 py-3 text-sm text-[#6b7d93]">You can view the assigned agents for this development, but you need development management access to change them.</div>
+                  ) : null}
+
+                  <div className="grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(360px,1.05fr)]">
+                    <section className="rounded-[18px] border border-[#dde6f1] bg-[#fbfcfe] p-4">
+                      <h4 className="text-sm font-semibold text-[#142132]">Add team member</h4>
+                      <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
+                        <div className="relative">
+                          <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#8aa0b6]" />
+                          <Field as="select" className="pl-9" value={selectedAgentUserId} disabled={!canManageDevelopment || organisationUsersLoading || agentAssignmentsSaving} onChange={(event) => setSelectedAgentUserId(event.target.value)}>
+                            <option value="">{organisationUsersLoading ? 'Loading organisation users...' : 'Search organisation users...'}</option>
+                            {assignableAgentOptions.map((member) => {
+                              const optionKey = buildAgentAssignmentKey(member)
+                              return <option key={optionKey} value={optionKey}>{member.name || member.email}{member.email ? ` - ${member.email}` : ''}</option>
+                            })}
+                          </Field>
+                        </div>
+                        <Button type="button" variant="secondary" disabled={!canManageDevelopment || !selectedAgentUserId || agentAssignmentsSaving} onClick={handleAddSelectedAgentAssignment}>
+                          <Plus size={15} />
+                          Add
+                        </Button>
+                      </div>
+                      <Button type="button" variant="ghost" className="mt-4 w-fit" disabled={!canManageDevelopment || agentAssignmentsSaving} onClick={() => setExternalAgentModalOpen(true)}>
+                        <UserPlus size={15} />
+                        Add external agent
+                      </Button>
+                    </section>
+
+                    <section className="rounded-[18px] border border-[#dde6f1] bg-white p-4">
+                      <h4 className="text-sm font-semibold text-[#142132]">Assigned Team</h4>
+                      <div className="mt-3 grid gap-2">
+                        {agentAssignments.length ? (
+                          agentAssignments.map((member) => {
+                            const memberName = member.name || member.email || 'Assigned team member'
+                            const memberEmail = member.email || 'No email captured'
+                            const initials = String(memberName).split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase() || 'A'
+                            return (
+                              <article key={buildAgentAssignmentKey(member)} className="flex items-center justify-between gap-3 rounded-[14px] border border-[#e3ebf4] bg-[#fbfcfe] px-3 py-3">
+                                <div className="flex min-w-0 items-center gap-3">
+                                  <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#0f1b2d] text-sm font-semibold text-white">{initials}</span>
+                                  <span className="min-w-0">
+                                    <strong className="block truncate text-sm font-semibold text-[#142132]">{memberName}</strong>
+                                    <span className="mt-1 block truncate text-xs text-[#6b7d93]">{memberEmail}</span>
+                                  </span>
+                                </div>
+                                <div className="flex shrink-0 items-center gap-2">
+                                  <ConfigStatusPill tone="success">{toTitleLabel(member.role || 'Agent')}</ConfigStatusPill>
+                                  {member.source === 'manual' ? <ConfigStatusPill>External</ConfigStatusPill> : null}
+                                  {canManageDevelopment ? (
+                                    <Button type="button" variant="ghost" size="sm" className="px-2" disabled={agentAssignmentsSaving} onClick={() => handleRemoveAgentAssignment(member)} title="Remove from development">
+                                      <MoreVertical size={15} />
+                                    </Button>
+                                  ) : null}
+                                </div>
+                              </article>
+                            )
+                          })
+                        ) : (
+                          <div className="rounded-[14px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-4 py-5 text-sm text-[#6b7d93]">No team members have been assigned to this development yet.</div>
+                        )}
+                      </div>
+                    </section>
+                  </div>
+
+                  <div className="mt-5 flex flex-col gap-3 border-t border-[#e6edf5] pt-4 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="max-w-[760px] text-xs leading-5 text-[#7b8ca2]">Saving updates the development team and syncs the matching participant records used by workspace access and development transactions.</p>
+                    <Button type="submit" disabled={!canManageDevelopment || agentAssignmentsSaving}>{agentAssignmentsSaving ? 'Saving...' : 'Save Team Access'}</Button>
+                  </div>
+                </form>
+
+                <section className="rounded-[22px] border border-[#f3cbc6] bg-[#fffafa] p-5 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex items-start gap-4">
+                      <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[12px] border border-[#ffd6d1] bg-[#fff2f1] text-[#b42318]"><Trash2 size={18} /></span>
+                      <div>
+                        <h3 className="text-[1.05rem] font-semibold tracking-[-0.025em] text-[#142132]">Danger Zone</h3>
+                        <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">Irreversible actions for this development.</p>
+                      </div>
+                    </div>
+                    {canManageDevelopment ? (
+                      <Button type="button" variant="secondary" className="border-[#f3b8b0] bg-white text-[#b42318] hover:bg-[#fff4f2]" onClick={() => setDeleteConfirmOpen(true)}>
+                        <Trash2 size={15} />
+                        Delete Development
+                      </Button>
                     ) : null}
                   </div>
-                  {isEditingDetailsSection ? (
-                    <Button type="button" variant="secondary" size="sm" onClick={handleUseDeveloperCompanyAsSeller}>
-                      Use Developer Profile
-                    </Button>
-                  ) : (
-                    <span
-                      className={[
-                        'inline-flex w-fit rounded-full border px-3 py-1 text-xs font-semibold',
-                        sellerDetailsForm.legalName && primarySellerSignatory.fullName
-                          ? 'border-[#cde8d8] bg-[#eef9f2] text-[#1c7d45]'
-                          : 'border-[#f2c9c3] bg-[#fff5f4] text-[#b42318]',
-                      ].join(' ')}
-                    >
-                      {sellerDetailsForm.legalName && primarySellerSignatory.fullName ? 'Configured' : 'Missing Details'}
-                    </span>
-                  )}
-                </div>
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  <DetailField label="Seller Entity Type">
-                    <Field
-                      as="select"
-                      value={sellerDetailsForm.entityType}
-                      disabled={!isEditingDetailsSection}
-                      className={detailsFieldClassName}
-                      onChange={(event) => setSellerDetailsField('entityType', event.target.value)}
-                    >
-                      <option value="company">Company</option>
-                      <option value="individual">Individual</option>
-                      <option value="trust">Trust</option>
-                      <option value="close_corporation">Close Corporation</option>
-                      <option value="other">Other</option>
-                    </Field>
-                  </DetailField>
-                  <DetailField label="Seller Legal Name">
-                    <Field
-                      value={sellerDetailsForm.legalName}
-                      disabled={!isEditingDetailsSection}
-                      className={detailsFieldClassName}
-                      onChange={(event) => setSellerDetailsField('legalName', event.target.value)}
-                      placeholder="e.g. Junoah Estate (Pty) Ltd"
-                    />
-                  </DetailField>
-                  <DetailField label="Trading Name">
-                    <Field
-                      value={sellerDetailsForm.tradingName}
-                      disabled={!isEditingDetailsSection}
-                      className={detailsFieldClassName}
-                      onChange={(event) => setSellerDetailsField('tradingName', event.target.value)}
-                    />
-                  </DetailField>
-                  <DetailField label="Registration / Trust Number">
-                    <Field
-                      value={sellerDetailsForm.registrationNumber}
-                      disabled={!isEditingDetailsSection}
-                      className={detailsFieldClassName}
-                      onChange={(event) => setSellerDetailsField('registrationNumber', event.target.value)}
-                    />
-                  </DetailField>
-                  <DetailField label="VAT Number">
-                    <Field
-                      value={sellerDetailsForm.vatNumber}
-                      disabled={!isEditingDetailsSection}
-                      className={detailsFieldClassName}
-                      onChange={(event) => setSellerDetailsField('vatNumber', event.target.value)}
-                    />
-                  </DetailField>
-                  <DetailField label="VAT Treatment">
-                    <Field
-                      value={sellerDetailsForm.vatTreatment}
-                      disabled={!isEditingDetailsSection}
-                      className={detailsFieldClassName}
-                      onChange={(event) => setSellerDetailsField('vatTreatment', event.target.value)}
-                      placeholder="e.g. VAT inclusive"
-                    />
-                  </DetailField>
-                  <DetailField label="Registered Address" className="md:col-span-2">
-                    <Field
-                      value={sellerDetailsForm.registeredAddress}
-                      disabled={!isEditingDetailsSection}
-                      className={detailsFieldClassName}
-                      onChange={(event) => setSellerDetailsField('registeredAddress', event.target.value)}
-                    />
-                  </DetailField>
-                  <DetailField label="Postal Address" className="md:col-span-2">
-                    <Field
-                      value={sellerDetailsForm.postalAddress}
-                      disabled={!isEditingDetailsSection}
-                      className={detailsFieldClassName}
-                      onChange={(event) => setSellerDetailsField('postalAddress', event.target.value)}
-                    />
-                  </DetailField>
-                  <DetailField label="Seller Email">
-                    <Field
-                      type="email"
-                      value={sellerDetailsForm.email}
-                      disabled={!isEditingDetailsSection}
-                      className={detailsFieldClassName}
-                      onChange={(event) => setSellerDetailsField('email', event.target.value)}
-                    />
-                  </DetailField>
-                  <DetailField label="Seller Phone">
-                    <Field
-                      value={sellerDetailsForm.phone}
-                      disabled={!isEditingDetailsSection}
-                      className={detailsFieldClassName}
-                      onChange={(event) => setSellerDetailsField('phone', event.target.value)}
-                    />
-                  </DetailField>
-                </div>
-
-                <div className="mt-5 rounded-[18px] border border-[#dde4ee] bg-white p-4">
-                  <h5 className="text-sm font-semibold text-[#142132]">Authorised Signatory</h5>
-                  <div className="mt-4 grid gap-4 md:grid-cols-2">
-                    <DetailField label="Full Name">
-                      <Field
-                        value={primarySellerSignatory.fullName}
-                        disabled={!isEditingDetailsSection}
-                        className={detailsFieldClassName}
-                        onChange={(event) => setSellerSignatoryField('fullName', event.target.value)}
-                      />
-                    </DetailField>
-                    <DetailField label="Capacity / Role">
-                      <Field
-                        value={primarySellerSignatory.signingCapacity}
-                        disabled={!isEditingDetailsSection}
-                        className={detailsFieldClassName}
-                        onChange={(event) => setSellerSignatoryField('signingCapacity', event.target.value)}
-                        placeholder="e.g. Director"
-                      />
-                    </DetailField>
-                    <DetailField label="ID Number">
-                      <Field
-                        value={primarySellerSignatory.idNumber}
-                        disabled={!isEditingDetailsSection}
-                        className={detailsFieldClassName}
-                        onChange={(event) => setSellerSignatoryField('idNumber', event.target.value)}
-                      />
-                    </DetailField>
-                    <DetailField label="Email">
-                      <Field
-                        type="email"
-                        value={primarySellerSignatory.email}
-                        disabled={!isEditingDetailsSection}
-                        className={detailsFieldClassName}
-                        onChange={(event) => setSellerSignatoryField('email', event.target.value)}
-                      />
-                    </DetailField>
-                    <DetailField label="Phone">
-                      <Field
-                        value={primarySellerSignatory.phone}
-                        disabled={!isEditingDetailsSection}
-                        className={detailsFieldClassName}
-                        onChange={(event) => setSellerSignatoryField('phone', event.target.value)}
-                      />
-                    </DetailField>
-                    <DetailField label="Internal Notes">
-                      <Field
-                        value={sellerDetailsForm.notes}
-                        disabled={!isEditingDetailsSection}
-                        className={detailsFieldClassName}
-                        onChange={(event) => setSellerDetailsField('notes', event.target.value)}
-                      />
-                    </DetailField>
-                  </div>
-                </div>
-              </section>
-
-              {!isEditingDetailsSection ? (
-                <div className="mt-5 flex flex-col gap-3 border-t border-[#e6edf5] pt-4 sm:flex-row sm:items-center sm:justify-between">
-                  <span className="text-xs font-medium text-[#7b8ca2]">Viewing mode. Use the pencil icon to edit this section.</span>
-                  {canManageDevelopment ? (
-                    <Button type="button" variant="ghost" className="w-fit px-0 text-[#b42318] hover:bg-transparent" onClick={() => setDeleteConfirmOpen(true)}>
-                      Delete Development
-                    </Button>
-                  ) : null}
-                </div>
-              ) : null}
-            </form>
-            ) : null}
-
-            {activeTab === 'configuration' ? (
-            <form className={CARD_SHELL} onSubmit={handleAgentAssignmentsSave}>
-              <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                <div className="min-w-0">
-                  <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Internal Agent Access</h3>
-                  <p className="mt-1.5 max-w-[760px] text-sm leading-6 text-[#6b7d93]">
-                    Add the agency agents who should work this development, see it in the development workspace, and receive protected buyer lead handovers.
-                  </p>
-                </div>
-                <span className="inline-flex w-fit items-center gap-2 rounded-full border border-[#dbe7f3] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#35546c]">
-                  <ShieldCheck size={13} />
-                  {agentAssignments.length} assigned
-                </span>
-              </div>
-
-              {!canManageDevelopment ? (
-                <div className="mb-4 rounded-[14px] border border-[#e4ebf3] bg-[#f8fafc] px-4 py-3 text-sm text-[#6b7d93]">
-                  You can view the assigned agents for this development, but you need development management access to change them.
-                </div>
-              ) : null}
-
-              <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.8fr)]">
-                <section className="rounded-[18px] border border-[#dde6f1] bg-[#fbfcfe] p-4">
-                  <div className="mb-4">
-                    <h4 className="text-sm font-semibold text-[#142132]">Add Internal Agent</h4>
-                    <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
-                      Pick from organisation users first. Use manual details only when the agent has not been added as a user yet.
-                    </p>
-                  </div>
-
-                  <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
-                    <Field
-                      as="select"
-                      value={selectedAgentUserId}
-                      disabled={!canManageDevelopment || organisationUsersLoading || agentAssignmentsSaving}
-                      onChange={(event) => setSelectedAgentUserId(event.target.value)}
-                    >
-                      <option value="">
-                        {organisationUsersLoading ? 'Loading agents…' : 'Select an internal agent'}
-                      </option>
-                      {assignableAgentOptions.map((member) => {
-                        const optionKey = buildAgentAssignmentKey(member)
-                        return (
-                          <option key={optionKey} value={optionKey}>
-                            {member.name || member.email}
-                            {member.email ? ` — ${member.email}` : ''}
-                          </option>
-                        )
-                      })}
-                    </Field>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      disabled={!canManageDevelopment || !selectedAgentUserId || agentAssignmentsSaving}
-                      onClick={handleAddSelectedAgentAssignment}
-                    >
-                      <Plus size={15} />
-                      Add Agent
-                    </Button>
-                  </div>
-
-                  <div className="mt-4 grid gap-3 border-t border-[#e6edf5] pt-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
-                    <Field
-                      value={manualAgentDraft.name}
-                      disabled={!canManageDevelopment || agentAssignmentsSaving}
-                      onChange={(event) =>
-                        setManualAgentDraft((previous) => ({ ...previous, name: event.target.value }))
-                      }
-                      placeholder="Agent name"
-                    />
-                    <Field
-                      type="email"
-                      value={manualAgentDraft.email}
-                      disabled={!canManageDevelopment || agentAssignmentsSaving}
-                      onChange={(event) =>
-                        setManualAgentDraft((previous) => ({ ...previous, email: event.target.value }))
-                      }
-                      placeholder="agent@email.co.za"
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      disabled={
-                        !canManageDevelopment ||
-                        agentAssignmentsSaving ||
-                        (!manualAgentDraft.name.trim() && !manualAgentDraft.email.trim())
-                      }
-                      onClick={handleAddManualAgentAssignment}
-                    >
-                      <Plus size={15} />
-                      Add Manual
-                    </Button>
-                  </div>
-                </section>
-
-                <section className="rounded-[18px] border border-[#dde6f1] bg-white p-4">
-                  <h4 className="text-sm font-semibold text-[#142132]">Assigned Agents</h4>
-                  <div className="mt-3 grid gap-2">
-                    {agentAssignments.length ? (
-                      agentAssignments.map((member) => (
-                        <article
-                          key={buildAgentAssignmentKey(member)}
-                          className="flex items-center justify-between gap-3 rounded-[14px] border border-[#e3ebf4] bg-[#fbfcfe] px-3 py-3"
-                        >
-                          <div className="min-w-0">
-                            <strong className="block truncate text-sm font-semibold text-[#142132]">
-                              {member.name || member.email || 'Assigned agent'}
-                            </strong>
-                            <span className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-[#6b7d93]">
-                              <Mail size={12} className="shrink-0" />
-                              <span className="truncate">{member.email || 'No email captured'}</span>
-                            </span>
-                          </div>
-                          {canManageDevelopment ? (
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              className="shrink-0 px-2"
-                              disabled={agentAssignmentsSaving}
-                              onClick={() => handleRemoveAgentAssignment(member)}
-                              title="Remove assigned agent"
-                            >
-                              <XCircle size={15} />
-                            </Button>
-                          ) : null}
-                        </article>
-                      ))
-                    ) : (
-                      <div className="rounded-[14px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-4 py-5 text-sm text-[#6b7d93]">
-                        No internal agents have been assigned to this development yet.
-                      </div>
-                    )}
-                  </div>
                 </section>
               </div>
-
-              <div className="mt-5 flex flex-col gap-3 border-t border-[#e6edf5] pt-4 sm:flex-row sm:items-center sm:justify-between">
-                <p className="max-w-[760px] text-xs leading-5 text-[#7b8ca2]">
-                  Saving updates the development team and syncs the matching participant records used by workspace access and development transactions.
-                </p>
-                <Button
-                  type="submit"
-                  disabled={!canManageDevelopment || agentAssignmentsSaving}
-                >
-                  {agentAssignmentsSaving ? 'Saving…' : 'Save Agent Access'}
-                </Button>
-              </div>
-            </form>
             ) : null}
 
             {activeTab === 'performance' && canManageDevelopment ? (
@@ -6534,6 +7637,11 @@ function DevelopmentDetail() {
               ) : null}
             </section>
           ) : (
+            <>
+              <form className={`${CARD_SHELL} space-y-5`} onSubmit={handleMarketingSave}>
+                {renderEditableMarketingContent()}
+              </form>
+              {false ? (
           <form className={`${CARD_SHELL} space-y-5`} onSubmit={handleMarketingSave}>
             <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
               <div>
@@ -7339,6 +8447,8 @@ function DevelopmentDetail() {
               </Button>
             </div>
           </form>
+              ) : null}
+            </>
           )}
         </section>
       ) : null}
@@ -7749,7 +8859,11 @@ function DevelopmentDetail() {
                           key={row.transaction?.id || row.unit?.id}
                           className="h-[64px] cursor-pointer align-middle hover:bg-[#f8fbff]"
                           onClick={() => {
-                            openDevelopmentTransactionWorkspace(row)
+                            if (row.transaction?.id) {
+                              openDevelopmentTransactionWorkspace(row)
+                              return
+                            }
+                            openDevelopmentTransactionWizard({ unitId: row.unit?.id })
                           }}
                         >
                           <td className="px-4 py-3 align-middle">
@@ -7800,434 +8914,6 @@ function DevelopmentDetail() {
                 </div>
               </div>
             )}
-          </section>
-
-          <section className={`${CARD_SHELL} mt-4`}>
-            <form onSubmit={handleReservationSettingsSave}>
-              <div className="flex flex-col gap-4 border-b border-[#e6edf5] pb-5 lg:flex-row lg:items-start lg:justify-between">
-                <div className="min-w-0">
-                  <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">
-                    Transaction Defaults
-                  </h3>
-                  <p className="mt-1.5 max-w-[760px] text-sm leading-6 text-[#6b7d93]">
-                    Set the default reservation deposit, alteration cost, and role-player assignment rules for new transactions in this development.
-                  </p>
-                </div>
-
-                <div className="flex w-full flex-col items-start gap-2 lg:w-auto lg:items-end">
-                  <label className="inline-flex cursor-pointer items-center gap-3 rounded-[12px] border border-[#dbe4ef] bg-[#f8fbff] px-3.5 py-2 text-sm font-semibold text-[#35546c]">
-                    <input
-                      type="checkbox"
-                      checked={Boolean(reservationSettingsForm.enabledByDefault)}
-                      disabled={!canManageDevelopment || reservationSettingsSaving}
-                      onChange={(event) =>
-                        setReservationSettingsForm((previous) => ({
-                          ...previous,
-                          enabledByDefault: event.target.checked,
-                        }))
-                      }
-                    />
-                    Enable Reservation Deposits for this Development
-                  </label>
-                  <span
-                    className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${
-                      reservationSettingsForm.enabledByDefault
-                        ? 'border-[#cfe8d8] bg-[#edf9f1] text-[#1f7a43]'
-                        : 'border-[#e2e8f0] bg-[#f8fafc] text-[#64748b]'
-                    }`}
-                  >
-                    {reservationSettingsForm.enabledByDefault ? 'Enabled' : 'Disabled'}
-                  </span>
-                </div>
-              </div>
-
-              {!reservationSettingsForm.enabledByDefault ? (
-                <div className="mt-4 rounded-[14px] border border-[#e4ebf3] bg-[#f8fafc] px-4 py-3 text-sm text-[#6b7d93]">
-                  Reservation deposits are currently disabled for this development. Deposit amounts and payment details stay locked, but alteration and role-player defaults can still be edited.
-                </div>
-              ) : null}
-
-              <div className="mt-5 grid gap-4 md:grid-cols-2">
-                <DetailField label="Default Deposit Amount">
-                  <Field
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={reservationSettingsForm.defaultDepositAmount}
-                    disabled={
-                      !canManageDevelopment ||
-                      !reservationSettingsForm.enabledByDefault ||
-                      reservationSettingsSaving
-                    }
-                    className={
-                      !reservationSettingsForm.enabledByDefault ? READ_ONLY_FIELD_CLASS : ''
-                    }
-                    onChange={(event) =>
-                      setReservationSettingsForm((previous) => ({
-                        ...previous,
-                        defaultDepositAmount: event.target.value,
-                      }))
-                    }
-                    placeholder="0.00"
-                  />
-                </DetailField>
-                <DetailField label="Payment Reference Format">
-                  <div className="grid gap-2">
-                    <Field
-                      value={reservationSettingsForm.paymentReferenceFormat}
-                      disabled={
-                        !canManageDevelopment ||
-                        !reservationSettingsForm.enabledByDefault ||
-                        reservationSettingsSaving
-                      }
-                      className={
-                        !reservationSettingsForm.enabledByDefault ? READ_ONLY_FIELD_CLASS : ''
-                      }
-                      onChange={(event) =>
-                        setReservationSettingsForm((previous) => ({
-                          ...previous,
-                          paymentReferenceFormat: event.target.value,
-                        }))
-                      }
-                      placeholder="RES-{UNIT}-{TXN}"
-                    />
-                    <p className="text-xs text-[#7b8ca2]">
-                      Available placeholders: {'{UNIT}'}, {'{BUYER}'}, {'{TXN}'}
-                    </p>
-                  </div>
-                </DetailField>
-                <DetailField label="Deposit Amount Type">
-                  <Field
-                    as="select"
-                    value={reservationSettingsForm.amountType}
-                    disabled={
-                      !canManageDevelopment ||
-                      !reservationSettingsForm.enabledByDefault ||
-                      reservationSettingsSaving
-                    }
-                    className={
-                      !reservationSettingsForm.enabledByDefault ? READ_ONLY_FIELD_CLASS : ''
-                    }
-                    onChange={(event) =>
-                      setReservationSettingsForm((previous) => ({
-                        ...previous,
-                        amountType: event.target.value,
-                      }))
-                    }
-                  >
-                    <option value="fixed">Fixed rand amount</option>
-                    <option value="percentage">Percentage of purchase price</option>
-                  </Field>
-                </DetailField>
-                <DetailField label="Deposit Treatment">
-                  <Field
-                    as="select"
-                    value={reservationSettingsForm.depositTreatment}
-                    disabled={
-                      !canManageDevelopment ||
-                      !reservationSettingsForm.enabledByDefault ||
-                      reservationSettingsSaving
-                    }
-                    className={
-                      !reservationSettingsForm.enabledByDefault ? READ_ONLY_FIELD_CLASS : ''
-                    }
-                    onChange={(event) =>
-                      setReservationSettingsForm((previous) => ({
-                        ...previous,
-                        depositTreatment: event.target.value,
-                      }))
-                    }
-                  >
-                    <option value="credited_to_purchase_price">Deduct from purchase price</option>
-                    <option value="separate_invoice">Invoice separately</option>
-                    <option value="refundable_hold">Refundable holding deposit</option>
-                  </Field>
-                </DetailField>
-                <DetailField label="Payable To">
-                  <Field
-                    as="select"
-                    value={reservationSettingsForm.payableTo}
-                    disabled={
-                      !canManageDevelopment ||
-                      !reservationSettingsForm.enabledByDefault ||
-                      reservationSettingsSaving
-                    }
-                    className={
-                      !reservationSettingsForm.enabledByDefault ? READ_ONLY_FIELD_CLASS : ''
-                    }
-                    onChange={(event) =>
-                      setReservationSettingsForm((previous) => ({
-                        ...previous,
-                        payableTo: event.target.value,
-                      }))
-                    }
-                  >
-                    <option value="developer">Developer</option>
-                    <option value="agency_trust">Agency trust account</option>
-                    <option value="attorney_trust">Attorney trust account</option>
-                  </Field>
-                </DetailField>
-                <DetailField label="Alteration Cost Treatment">
-                  <Field
-                    as="select"
-                    value={reservationSettingsForm.alterationChargeTreatment}
-                    disabled={!canManageDevelopment || reservationSettingsSaving}
-                    onChange={(event) =>
-                      setReservationSettingsForm((previous) => ({
-                        ...previous,
-                        alterationChargeTreatment: event.target.value,
-                      }))
-                    }
-                  >
-                    <option value="included_in_purchase_price">Include in purchase price</option>
-                    <option value="separate_invoice">Invoice separately</option>
-                    <option value="no_charge">No charge by default</option>
-                  </Field>
-                </DetailField>
-              </div>
-
-              <section className="mt-5 rounded-[18px] border border-[#dde4ee] bg-[#f8fbff] p-4">
-                <div className="mb-4">
-                  <h4 className="text-sm font-semibold text-[#142132]">Role Player Assignment Defaults</h4>
-                  <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
-                    These defaults decide who is proposed when a new development transaction starts. Buyer-appointed bond originators can still be routed through approval.
-                  </p>
-                </div>
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  <DetailField label="Default Transfer Attorney">
-                    <Field
-                      as="select"
-                      value={reservationSettingsForm.defaultTransferAttorneySource}
-                      disabled={!canManageDevelopment || reservationSettingsSaving}
-                      onChange={(event) =>
-                        setReservationSettingsForm((previous) => ({
-                          ...previous,
-                          defaultTransferAttorneySource: event.target.value,
-                        }))
-                      }
-                    >
-                      <option value="first_conveyancer">Use first conveyancer in team</option>
-                      <option value="none">Do not auto-assign</option>
-                    </Field>
-                  </DetailField>
-                  <DetailField label="Default Bond Originator">
-                    <Field
-                      as="select"
-                      value={reservationSettingsForm.defaultBondOriginatorSource}
-                      disabled={!canManageDevelopment || reservationSettingsSaving}
-                      onChange={(event) =>
-                        setReservationSettingsForm((previous) => ({
-                          ...previous,
-                          defaultBondOriginatorSource: event.target.value,
-                        }))
-                      }
-                    >
-                      <option value="first_bond_originator">Use first bond originator in team</option>
-                      <option value="none">Do not auto-assign</option>
-                    </Field>
-                  </DetailField>
-                </div>
-
-                <div className="mt-4 grid gap-3 lg:grid-cols-3">
-                  <label className="flex cursor-pointer items-start justify-between gap-4 rounded-[14px] border border-[#dbe4ef] bg-white p-4 text-sm">
-                    <span>
-                      <strong className="block font-semibold text-[#142132]">Buyer may use own bond originator</strong>
-                      <span className="mt-1.5 block leading-5 text-[#6b7d93]">Allow buyers to nominate an originator during onboarding.</span>
-                    </span>
-                    <input
-                      type="checkbox"
-                      checked={Boolean(reservationSettingsForm.buyerAppointedBondOriginatorAllowed)}
-                      disabled={!canManageDevelopment || reservationSettingsSaving}
-                      onChange={(event) =>
-                        setReservationSettingsForm((previous) => ({
-                          ...previous,
-                          buyerAppointedBondOriginatorAllowed: event.target.checked,
-                          buyerAppointedBondOriginatorRequiresApproval:
-                            event.target.checked &&
-                            previous.buyerAppointedBondOriginatorRequiresApproval,
-                        }))
-                      }
-                    />
-                  </label>
-                  <label className="flex cursor-pointer items-start justify-between gap-4 rounded-[14px] border border-[#dbe4ef] bg-white p-4 text-sm">
-                    <span>
-                      <strong className="block font-semibold text-[#142132]">Approve buyer-appointed originators</strong>
-                      <span className="mt-1.5 block leading-5 text-[#6b7d93]">Keep buyer nominations pending until the agent or developer approves.</span>
-                    </span>
-                    <input
-                      type="checkbox"
-                      checked={Boolean(
-                        reservationSettingsForm.buyerAppointedBondOriginatorRequiresApproval,
-                      )}
-                      disabled={
-                        !canManageDevelopment ||
-                        reservationSettingsSaving ||
-                        !reservationSettingsForm.buyerAppointedBondOriginatorAllowed
-                      }
-                      onChange={(event) =>
-                        setReservationSettingsForm((previous) => ({
-                          ...previous,
-                          buyerAppointedBondOriginatorRequiresApproval: event.target.checked,
-                        }))
-                      }
-                    />
-                  </label>
-                  <label className="flex cursor-pointer items-start justify-between gap-4 rounded-[14px] border border-[#dbe4ef] bg-white p-4 text-sm">
-                    <span>
-                      <strong className="block font-semibold text-[#142132]">Auto-invite selected bond originator</strong>
-                      <span className="mt-1.5 block leading-5 text-[#6b7d93]">Send an invite once a transaction has a selected originator.</span>
-                    </span>
-                    <input
-                      type="checkbox"
-                      checked={Boolean(reservationSettingsForm.autoInviteSelectedBondOriginator)}
-                      disabled={!canManageDevelopment || reservationSettingsSaving}
-                      onChange={(event) =>
-                        setReservationSettingsForm((previous) => ({
-                          ...previous,
-                          autoInviteSelectedBondOriginator: event.target.checked,
-                        }))
-                      }
-                    />
-                  </label>
-                </div>
-              </section>
-
-              <div className="mt-5 grid gap-4 md:grid-cols-2">
-                <DetailField label="Account Holder Name">
-                  <Field
-                    value={reservationSettingsForm.accountHolderName}
-                    disabled={
-                      !canManageDevelopment ||
-                      !reservationSettingsForm.enabledByDefault ||
-                      reservationSettingsSaving
-                    }
-                    className={
-                      !reservationSettingsForm.enabledByDefault ? READ_ONLY_FIELD_CLASS : ''
-                    }
-                    onChange={(event) =>
-                      setReservationSettingsForm((previous) => ({
-                        ...previous,
-                        accountHolderName: event.target.value,
-                      }))
-                    }
-                  />
-                </DetailField>
-                <DetailField label="Bank Name">
-                  <Field
-                    value={reservationSettingsForm.bankName}
-                    disabled={
-                      !canManageDevelopment ||
-                      !reservationSettingsForm.enabledByDefault ||
-                      reservationSettingsSaving
-                    }
-                    className={
-                      !reservationSettingsForm.enabledByDefault ? READ_ONLY_FIELD_CLASS : ''
-                    }
-                    onChange={(event) =>
-                      setReservationSettingsForm((previous) => ({
-                        ...previous,
-                        bankName: event.target.value,
-                      }))
-                    }
-                  />
-                </DetailField>
-                <DetailField label="Account Number">
-                  <Field
-                    value={reservationSettingsForm.accountNumber}
-                    disabled={
-                      !canManageDevelopment ||
-                      !reservationSettingsForm.enabledByDefault ||
-                      reservationSettingsSaving
-                    }
-                    className={
-                      !reservationSettingsForm.enabledByDefault ? READ_ONLY_FIELD_CLASS : ''
-                    }
-                    onChange={(event) =>
-                      setReservationSettingsForm((previous) => ({
-                        ...previous,
-                        accountNumber: event.target.value,
-                      }))
-                    }
-                  />
-                </DetailField>
-                <DetailField label="Branch Code">
-                  <Field
-                    value={reservationSettingsForm.branchCode}
-                    disabled={
-                      !canManageDevelopment ||
-                      !reservationSettingsForm.enabledByDefault ||
-                      reservationSettingsSaving
-                    }
-                    className={
-                      !reservationSettingsForm.enabledByDefault ? READ_ONLY_FIELD_CLASS : ''
-                    }
-                    onChange={(event) =>
-                      setReservationSettingsForm((previous) => ({
-                        ...previous,
-                        branchCode: event.target.value,
-                      }))
-                    }
-                  />
-                </DetailField>
-                <DetailField label="Account Type" className="md:col-span-2">
-                  <Field
-                    value={reservationSettingsForm.accountType}
-                    disabled={
-                      !canManageDevelopment ||
-                      !reservationSettingsForm.enabledByDefault ||
-                      reservationSettingsSaving
-                    }
-                    className={
-                      !reservationSettingsForm.enabledByDefault ? READ_ONLY_FIELD_CLASS : ''
-                    }
-                    onChange={(event) =>
-                      setReservationSettingsForm((previous) => ({
-                        ...previous,
-                        accountType: event.target.value,
-                      }))
-                    }
-                    placeholder="Savings / Current"
-                  />
-                </DetailField>
-              </div>
-
-              <div className="mt-5">
-                <DetailField label="Additional Payment Instructions">
-                  <Field
-                    as="textarea"
-                    rows={4}
-                    value={reservationSettingsForm.paymentInstructions}
-                    disabled={
-                      !canManageDevelopment ||
-                      !reservationSettingsForm.enabledByDefault ||
-                      reservationSettingsSaving
-                    }
-                    className={!reservationSettingsForm.enabledByDefault ? READ_ONLY_FIELD_CLASS : ''}
-                    onChange={(event) =>
-                      setReservationSettingsForm((previous) => ({
-                        ...previous,
-                        paymentInstructions: event.target.value,
-                      }))
-                    }
-                  />
-                </DetailField>
-              </div>
-
-              <div className="mt-5 flex flex-col gap-3 border-t border-[#e6edf5] pt-4 sm:flex-row sm:items-center sm:justify-between">
-                <p className="max-w-[760px] text-xs leading-5 text-[#7b8ca2]">
-                  These settings are used as the default values when creating new transactions for this development. Individual transactions can still override them if needed.
-                </p>
-                <Button
-                  type="submit"
-                  disabled={!canManageDevelopment || reservationSettingsSaving}
-                >
-                  {reservationSettingsSaving
-                    ? 'Saving…'
-                    : 'Save Transaction Defaults'}
-                </Button>
-              </div>
-            </form>
           </section>
         </section>
       ) : null}
@@ -8460,6 +9146,64 @@ function DevelopmentDetail() {
             </Button>
             <Button type="submit" disabled={emailSending || !selectedDocumentForEmail?.fileUrl}>
               {emailSending ? 'Opening email…' : 'Send via Email'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        open={externalAgentModalOpen}
+        onClose={agentAssignmentsSaving ? undefined : () => setExternalAgentModalOpen(false)}
+        title="Add External Agent"
+        subtitle="Add a manual team member when they are not an organisation user yet."
+        className="max-w-[520px]"
+      >
+        <form
+          className="space-y-4"
+          onSubmit={(event) => {
+            event.preventDefault()
+            handleAddManualAgentAssignment()
+          }}
+        >
+          <DetailField label="Name">
+            <Field
+              value={manualAgentDraft.name}
+              disabled={!canManageDevelopment || agentAssignmentsSaving}
+              onChange={(event) =>
+                setManualAgentDraft((previous) => ({ ...previous, name: event.target.value }))
+              }
+              placeholder="Agent name"
+            />
+          </DetailField>
+          <DetailField label="Email">
+            <Field
+              type="email"
+              value={manualAgentDraft.email}
+              disabled={!canManageDevelopment || agentAssignmentsSaving}
+              onChange={(event) =>
+                setManualAgentDraft((previous) => ({ ...previous, email: event.target.value }))
+              }
+              placeholder="agent@email.co.za"
+            />
+          </DetailField>
+          <div className="flex flex-col-reverse gap-3 border-t border-[#e6edf5] pt-4 sm:flex-row sm:justify-end">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setExternalAgentModalOpen(false)}
+              disabled={agentAssignmentsSaving}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={
+                !canManageDevelopment ||
+                agentAssignmentsSaving ||
+                (!manualAgentDraft.name.trim() && !manualAgentDraft.email.trim())
+              }
+            >
+              Add external agent
             </Button>
           </div>
         </form>

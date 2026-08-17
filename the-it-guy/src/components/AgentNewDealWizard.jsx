@@ -703,7 +703,15 @@ function buildCompletenessSnapshot({ form, listing = null, propertyMode = PROPER
   }
 }
 
-function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialPrivateListingId = '', onSaved }) {
+function AgentNewDealWizard({
+  open,
+  onClose,
+  initialDevelopmentId = '',
+  initialPrivateListingId = '',
+  initialUnitId = '',
+  initialPropertyMode = '',
+  onSaved,
+}) {
   const navigate = useNavigate()
   const { profile, agencyWorkflowMode, currentMembership, workspace } = useWorkspace()
   const [activeStep, setActiveStep] = useState('property')
@@ -751,10 +759,10 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
     cancellation_attorney: '',
   })
   const [form, setForm] = useState({
-    propertyMode: PROPERTY_MODE_PRIVATE,
+    propertyMode: initialPropertyMode === PROPERTY_MODE_DEVELOPMENT || initialUnitId ? PROPERTY_MODE_DEVELOPMENT : PROPERTY_MODE_PRIVATE,
     privateListingId: '',
     developmentId: initialDevelopmentId || '',
-    unitId: '',
+    unitId: initialUnitId || '',
     financeType: 'unknown',
     hasExistingBondToCancel: false,
     importPropertyAddress: '',
@@ -891,10 +899,14 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
     setIsLoadingPropertyOptions(true)
     setForm((previous) => ({
       ...previous,
-      propertyMode: initialPrivateListingId ? PROPERTY_MODE_PRIVATE : previous.propertyMode,
+      propertyMode: initialPrivateListingId
+        ? PROPERTY_MODE_PRIVATE
+        : initialPropertyMode === PROPERTY_MODE_DEVELOPMENT || initialUnitId
+          ? PROPERTY_MODE_DEVELOPMENT
+          : previous.propertyMode,
       privateListingId: initialPrivateListingId || '',
       developmentId: initialPrivateListingId ? '' : initialDevelopmentId || previous.developmentId,
-      unitId: '',
+      unitId: initialPrivateListingId ? '' : initialUnitId || '',
     }))
     const localListings = mergeListings(readAgentPrivateListings())
     setPrivateListings(localListings)
@@ -1031,7 +1043,19 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
       setLoading(false)
       setPreferredPartnersLoading(false)
     })()
-  }, [agencyWorkflowMode, currentMembership, loadPropertyPickerListings, open, profile, initialDevelopmentId, initialPrivateListingId, workspace?.id, workspace?.type])
+  }, [
+    agencyWorkflowMode,
+    currentMembership,
+    loadPropertyPickerListings,
+    open,
+    profile,
+    initialDevelopmentId,
+    initialPrivateListingId,
+    initialPropertyMode,
+    initialUnitId,
+    workspace?.id,
+    workspace?.type,
+  ])
 
   useEffect(() => {
     if (!open || form.propertyMode !== PROPERTY_MODE_DEVELOPMENT || !form.developmentId || !isSupabaseConfigured) {
@@ -1043,12 +1067,13 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
       try {
         const rows = await fetchUnitsForTransactionSetup(form.developmentId)
         const available = rows.filter((unit) => String(unit?.status || '').trim().toLowerCase() === 'available' && !unit?.activeTransaction)
-        setDevelopmentUnits(available)
+        const selected = rows.find((unit) => String(unit?.id) === String(form.unitId))
+        setDevelopmentUnits(selected && !available.some((unit) => String(unit.id) === String(selected.id)) ? [selected, ...available] : available)
       } catch (error) {
         setSaveError(error?.message || 'Unable to load development units.')
       }
     })()
-  }, [open, form.propertyMode, form.developmentId])
+  }, [open, form.propertyMode, form.developmentId, form.unitId])
 
   const selectedPrivateListing = useMemo(
     () =>

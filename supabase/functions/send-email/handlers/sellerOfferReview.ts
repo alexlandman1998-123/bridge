@@ -41,6 +41,7 @@ export async function handleSellerOfferReviewEmail(
   const buyerName = normalizeText(payload.buyerName) || "the buyer";
   const offerAmount = normalizeText(payload.offerAmount);
   const agentName = normalizeText(payload.agentName);
+  const agentEmail = normalizeText(payload.agentEmail || payload.agent_email);
   const expiresAt = normalizeText(payload.expiresAt);
   const note = normalizeText(payload.note);
   const organisationName = normalizeText(payload.organisationName) ||
@@ -144,6 +145,7 @@ export async function handleSellerOfferReviewEmail(
     apiKey: resendApiKey,
     from: sender,
     to,
+    bcc: agentEmail,
     subject,
     html,
     text,

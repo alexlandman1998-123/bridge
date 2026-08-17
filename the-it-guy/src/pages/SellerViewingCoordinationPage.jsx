@@ -93,11 +93,12 @@ function SellerViewingCoordinationPage() {
       }))
       .filter((item) => item.propertyId)
 
-    if (!responses.some((item) => item.canHostViewing)) {
-      setErrorMessage('Choose at least one property where viewing access can be arranged.')
+    const hasConfirmedAccess = responses.some((item) => item.canHostViewing)
+    if (!hasConfirmedAccess && !normalizeText(responseNotes) && !normalizeText(accessNotes)) {
+      setErrorMessage('Add a note so the agent knows why access cannot be confirmed yet.')
       return
     }
-    if (!windows.length) {
+    if (hasConfirmedAccess && !windows.length) {
       setErrorMessage('Add at least one access time that works.')
       return
     }

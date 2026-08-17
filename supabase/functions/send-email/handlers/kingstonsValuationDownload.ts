@@ -109,6 +109,7 @@ export async function handleKingstonsValuationDownloadEmail(
     apiKey: resendApiKey,
     from: sender,
     to,
+    bcc: normalizeEmail(payload.agentEmail || payload.agent_email),
     subject: normalizeText(payload.subject) ||
       buildKingstonsValuationDownloadSubject(),
     html: buildKingstonsValuationDownloadEmailHtml(content),

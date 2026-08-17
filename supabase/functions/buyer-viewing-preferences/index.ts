@@ -346,15 +346,20 @@ async function resolveOrganisationBranding(
     organisationQuery.error &&
     !isMissingTableError(organisationQuery.error, "organisations")
   ) {
-    console.warn("[buyer-viewing-preferences] organisation branding lookup failed", {
-      code: organisationQuery.error.code,
-      message: organisationQuery.error.message,
-    });
+    console.warn(
+      "[buyer-viewing-preferences] organisation branding lookup failed",
+      {
+        code: organisationQuery.error.code,
+        message: organisationQuery.error.message,
+      },
+    );
   }
 
   let brandingQuery = await client
     .from("organisation_branding")
-    .select("organisation_display_name, logo_light_url, logo_dark_url, logo_icon_url, primary_brand_color, secondary_brand_color, accent_brand_color")
+    .select(
+      "organisation_display_name, logo_light_url, logo_dark_url, logo_icon_url, primary_brand_color, secondary_brand_color, accent_brand_color",
+    )
     .eq("organisation_id", organisationId)
     .maybeSingle();
   if (
@@ -367,7 +372,9 @@ async function resolveOrganisationBranding(
   ) {
     brandingQuery = await client
       .from("organisation_branding")
-      .select("logo_light_url, logo_dark_url, primary_color, secondary_color, metadata_json")
+      .select(
+        "logo_light_url, logo_dark_url, primary_color, secondary_color, metadata_json",
+      )
       .eq("organisation_id", organisationId)
       .maybeSingle();
   }
@@ -377,10 +384,13 @@ async function resolveOrganisationBranding(
     brandingQuery.error &&
     !isMissingTableError(brandingQuery.error, "organisation_branding")
   ) {
-    console.warn("[buyer-viewing-preferences] organisation_branding lookup failed", {
-      code: brandingQuery.error.code,
-      message: brandingQuery.error.message,
-    });
+    console.warn(
+      "[buyer-viewing-preferences] organisation_branding lookup failed",
+      {
+        code: brandingQuery.error.code,
+        message: brandingQuery.error.message,
+      },
+    );
   }
 
   const settingsQuery = await client
@@ -395,10 +405,13 @@ async function resolveOrganisationBranding(
     !isMissingTableError(settingsQuery.error, "organisation_settings") &&
     !isMissingColumnError(settingsQuery.error, "settings_json")
   ) {
-    console.warn("[buyer-viewing-preferences] organisation_settings lookup failed", {
-      code: settingsQuery.error.code,
-      message: settingsQuery.error.message,
-    });
+    console.warn(
+      "[buyer-viewing-preferences] organisation_settings lookup failed",
+      {
+        code: settingsQuery.error.code,
+        message: settingsQuery.error.message,
+      },
+    );
   }
 
   const records = collectBrandingRecords([branding, settings, organisation]);
@@ -915,8 +928,8 @@ Deno.serve(async (req) => {
     organisationLogoDarkUrl: branding.organisationLogoDarkUrl || "",
     organisationLogoIconUrl: branding.organisationLogoIconUrl || "",
     organisationBrandPrimaryColor: branding.organisationBrandPrimaryColor || "",
-    organisationBrandSecondaryColor:
-      branding.organisationBrandSecondaryColor || "",
+    organisationBrandSecondaryColor: branding.organisationBrandSecondaryColor ||
+      "",
     buyerName: link.buyer_name || "",
     agentName: link.agent_name || "",
     agentEmail: link.agent_email || "",
@@ -1044,6 +1057,13 @@ Deno.serve(async (req) => {
   const organisationId = normalizeUuid(link.organisation_id);
   const selectedPropertyIds = Array.from(allowedIds);
   const availabilityText = availabilityWindows.join("\n");
+  const confirmedTitleList = properties
+    .filter((property) =>
+      confirmedPropertyIds.includes(normalizeText(property.id, 120))
+    )
+    .map((property) => normalizeText(property.title, 180))
+    .filter(Boolean);
+  const confirmedTitles = confirmedTitleList.join(", ");
   const combinedNotes = [
     responseNotes,
     attendeeNotes ? `Attendees: ${attendeeNotes}` : "",
@@ -1080,13 +1100,6 @@ Deno.serve(async (req) => {
         .eq("lead_id", leadId);
     }
 
-    const confirmedTitles = properties
-      .filter((property) =>
-        confirmedPropertyIds.includes(normalizeText(property.id, 120))
-      )
-      .map((property) => normalizeText(property.title, 180))
-      .filter(Boolean)
-      .join(", ");
     const activity = await supabase.from("lead_activities").insert({
       activity_id: crypto.randomUUID(),
       organisation_id: organisationId,
@@ -1127,6 +1140,7 @@ Deno.serve(async (req) => {
           leadCategory: "Buyer",
           leadStatus: "Buyer confirmed viewing times",
           propertyLabel: confirmedTitles,
+          availabilityWindows,
           assignedAgentName: normalizeText(link.agent_name, 180),
           assignedAgentEmail: agentEmail,
           message: [
@@ -1156,6 +1170,41 @@ Deno.serve(async (req) => {
             : String(notifyError),
         });
       }
+    }
+  }
+
+  const buyerEmail = normalizeText(link.contact_email, 320).toLowerCase();
+  if (buyerEmail) {
+    try {
+      await invokeSendEmailFunction({
+        type: "buyer_viewing_availability_confirmation",
+        to: buyerEmail,
+        recipientName: normalizeText(link.buyer_name, 180) || "there",
+        buyerName: normalizeText(link.buyer_name, 180),
+        organisationId,
+        organisationName: normalizeText(link.organisation_name, 180) ||
+          branding.organisationName,
+        leadId,
+        agentName: normalizeText(link.agent_name, 180),
+        agentEmail: normalizeText(link.agent_email, 320).toLowerCase(),
+        propertyLabels: confirmedTitleList,
+        availabilityWindows,
+        idempotencyKey: `buyer-viewing-times-confirmation:${link.id}:${now}`,
+        metadata: {
+          source: "buyer_viewing_preferences",
+          preferenceLinkId: link.id,
+          confirmedPropertyIds,
+          availabilityWindows,
+          availabilitySlots,
+          timezone,
+        },
+      });
+    } catch (notifyError) {
+      console.error("[buyer-viewing-preferences] buyer confirmation failed", {
+        message: notifyError instanceof Error
+          ? notifyError.message
+          : String(notifyError),
+      });
     }
   }
 

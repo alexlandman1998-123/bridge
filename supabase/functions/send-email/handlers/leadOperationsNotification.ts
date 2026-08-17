@@ -43,6 +43,10 @@ const EVENT_LABELS: Record<string, { title: string; subject: string }> = {
     title: "Buyer Viewing Times Submitted",
     subject: "Buyer submitted viewing times",
   },
+  seller_viewing_response_submitted_agent: {
+    title: "Seller Viewing Response Submitted",
+    subject: "Seller submitted viewing access",
+  },
 };
 
 function envEnabled(value: string | undefined, fallback = true) {
@@ -63,6 +67,15 @@ function firstText(...values: unknown[]) {
     if (text) return text;
   }
   return "";
+}
+
+function normalizeListText(value: unknown) {
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeText(item)).filter(Boolean).join(
+      "\n",
+    );
+  }
+  return normalizeText(value);
 }
 
 function normalizeEventKind(payload: SendLeadOperationsNotificationPayload) {
@@ -115,6 +128,11 @@ function defaultMessage({
       leadName || "A buyer"
     } submitted three preferred viewing times. Review the options and send the best times to the seller for access confirmation.`;
   }
+  if (eventKind === "seller_viewing_response_submitted_agent") {
+    return `${
+      leadName || "A seller"
+    } submitted viewing access details. Review the availability and confirm the viewing with the buyer.`;
+  }
   return `${
     leadName || "A lead"
   } has been assigned to you. Please review the lead and continue the next action.`;
@@ -133,6 +151,7 @@ export function buildLeadOperationsNotificationEmail({
   leadCategory,
   leadStatus,
   propertyLabel,
+  availabilityWindows,
   budgetLabel,
   assignedAgentName,
   assignedAgentEmail,
@@ -153,6 +172,7 @@ export function buildLeadOperationsNotificationEmail({
   leadCategory?: string;
   leadStatus?: string;
   propertyLabel?: string;
+  availabilityWindows?: string;
   budgetLabel?: string;
   assignedAgentName?: string;
   assignedAgentEmail?: string;
@@ -169,6 +189,7 @@ export function buildLeadOperationsNotificationEmail({
     { label: "Category", value: leadCategory || "" },
     { label: "Status", value: leadStatus || "" },
     { label: "Property", value: propertyLabel || "" },
+    { label: "Client Availability", value: availabilityWindows || "" },
     { label: "Budget", value: budgetLabel || "" },
     {
       label: "Assigned Agent",
@@ -213,6 +234,7 @@ export function buildLeadOperationsNotificationEmail({
     leadPhone ? `Phone: ${leadPhone}` : "",
     leadSource ? `Source: ${leadSource}` : "",
     propertyLabel ? `Property: ${propertyLabel}` : "",
+    availabilityWindows ? `Client availability:\n${availabilityWindows}` : "",
     budgetLabel ? `Budget: ${budgetLabel}` : "",
     assignedAgentName || assignedAgentEmail
       ? `Assigned agent: ${assignedAgentName || assignedAgentEmail}`
@@ -355,6 +377,11 @@ export async function handleLeadOperationsNotificationEmail(
       payload.propertyLabel,
       payload.property_label,
       metadata.propertyLabel,
+    ),
+    availabilityWindows: normalizeListText(
+      payload.availabilityWindows ||
+        payload.availability_windows ||
+        metadata.availabilityWindows,
     ),
     budgetLabel: firstText(
       payload.budgetLabel,

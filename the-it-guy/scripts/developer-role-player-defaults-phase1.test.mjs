@@ -39,12 +39,12 @@ assert(
 )
 
 for (const requiredModalCopy of [
-  'Default Transfer Attorney',
-  'Default Bond Originator',
+  'Transfer Attorney',
+  'Bond Originator',
   'Buyer may use own bond originator',
   'Approve buyer-appointed originators',
   'Auto-invite selected bond originator',
-  'Role players:',
+  'Transaction Behaviour',
 ]) {
   assert(
     files.addDevelopmentModal.includes(requiredModalCopy),
@@ -53,14 +53,14 @@ for (const requiredModalCopy of [
 }
 
 for (const requiredDetailCopy of [
-  'Transaction Defaults',
+  'Reservation & Deposit',
   'Role Player Assignment Defaults',
   'Default Transfer Attorney',
   'Default Bond Originator',
   'Buyer may use own bond originator',
   'Approve buyer-appointed originators',
   'Auto-invite selected bond originator',
-  'Save Transaction Defaults',
+  'Save updates only reservation and transaction defaults.',
 ]) {
   assert(
     files.developmentDetail.includes(requiredDetailCopy),
@@ -71,8 +71,8 @@ for (const requiredDetailCopy of [
 assert(
   files.developmentDetail.includes('rolePlayerDefaults') &&
     files.developmentDetail.includes('stakeholderTeams: {') &&
-    files.developmentDetail.includes('Transaction defaults updated.'),
-  'DevelopmentDetail should save role-player defaults with transaction default feedback',
+    files.developmentDetail.includes('Reservation & deposit settings updated.'),
+  'DevelopmentDetail should save role-player defaults with reservation and deposit feedback',
 )
 
 console.log('Developer role-player defaults Phase 1 contract passed.')

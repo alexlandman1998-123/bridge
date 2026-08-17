@@ -19,8 +19,14 @@ assert.match(
 
 assert.match(
   developmentDetailSource,
-  /Internal Agent Access/,
-  'Development configuration should expose an Internal Agent Access panel.',
+  /Development Team Access/,
+  'Development configuration should expose a Development Team Access panel.',
+)
+
+assert.match(
+  developmentDetailSource,
+  /Add external agent/,
+  'Development team access should move manual agent capture behind an external-agent action.',
 )
 
 assert.match(

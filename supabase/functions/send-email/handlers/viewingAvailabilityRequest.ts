@@ -164,6 +164,7 @@ export async function handleBuyerViewingAvailabilityRequestEmail(
     apiKey: resendApiKey,
     from: sender,
     to,
+    bcc: agentEmail,
     subject,
     html,
     text,

@@ -34,18 +34,23 @@ assert(
 assert(
   files.addDevelopmentModal.includes('Transaction Defaults') &&
     files.addDevelopmentModal.includes('Reservation deposit applies') &&
-    files.addDevelopmentModal.includes('Deduct from purchase price') &&
-    files.addDevelopmentModal.includes('Include in purchase price'),
+    files.addDevelopmentModal.includes('Amount Type') &&
+    files.addDevelopmentModal.includes('Deposit treatment and alteration cost treatment are set on each transaction'),
   'AddDevelopmentModal should ask the practical transaction default questions',
 )
 
 for (const stateKey of [
   'reservationDepositAmountType',
-  'reservationDepositTreatment',
   'reservationDepositPayableTo',
-  'defaultAlterationChargeTreatment',
 ]) {
   assert(files.addDevelopmentModal.includes(stateKey), `AddDevelopmentModal should manage ${stateKey}`)
+}
+
+for (const stateKey of [
+  'reservationSettingsForm.depositTreatment',
+  'reservationSettingsForm.alterationChargeTreatment',
+]) {
+  assert(files.developmentDetail.includes(stateKey), `DevelopmentDetail should manage ${stateKey}`)
 }
 
 assert(

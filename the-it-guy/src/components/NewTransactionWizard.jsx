@@ -91,13 +91,13 @@ function todayIso() {
   return new Date().toISOString().slice(0, 10)
 }
 
-function createInitialForm(initialDevelopmentId = '') {
+function createInitialForm(initialDevelopmentId = '', initialUnitId = '') {
   return {
     setup: {
       transactionType: 'developer_sale',
       propertyType: '',
       developmentId: initialDevelopmentId || '',
-      unitId: '',
+      unitId: initialUnitId || '',
       propertyAddressLine1: '',
       propertyAddressLine2: '',
       suburb: '',
@@ -534,11 +534,11 @@ function BooleanField({ label, value, onChange, error }) {
   )
 }
 
-function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSaved }) {
+function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initialUnitId = '', onSaved }) {
   const navigate = useNavigate()
   const { role, workspace, workspaceType, profile, currentMembership } = useWorkspace()
   const { organisation } = useOrganisation()
-  const [form, setForm] = useState(createInitialForm(initialDevelopmentId))
+  const [form, setForm] = useState(createInitialForm(initialDevelopmentId, initialUnitId))
   const [developments, setDevelopments] = useState([])
   const [units, setUnits] = useState([])
   const [partnerSnapshot, setPartnerSnapshot] = useState(null)
@@ -585,7 +585,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
 
     setErrors({})
     setSaveError('')
-    setForm(createInitialForm(initialDevelopmentId))
+    setForm(createInitialForm(initialDevelopmentId, initialUnitId))
     setCreatedTransaction(null)
     setReservationDecisionTouched(false)
     setPartnerInvitationModes(createInitialPartnerInvitationModes())
@@ -630,7 +630,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
     }
 
     void loadDevelopments()
-  }, [open, initialDevelopmentId])
+  }, [open, initialDevelopmentId, initialUnitId])
 
   useEffect(() => {
     if (!open) return
@@ -823,7 +823,14 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
     () => units.find((unit) => unit.id === form.setup.unitId) || null,
     [units, form.setup.unitId],
   )
-  const availableUnits = useMemo(() => units.filter((unit) => isUnitAvailableForTransaction(unit)), [units])
+  const availableUnits = useMemo(() => {
+    const available = units.filter((unit) => isUnitAvailableForTransaction(unit))
+    const selected = units.find((unit) => unit.id === form.setup.unitId)
+    if (selected && !available.some((unit) => unit.id === selected.id)) {
+      return [selected, ...available]
+    }
+    return available
+  }, [form.setup.unitId, units])
   const canChooseTransactionType = ['attorney', 'agent', 'developer', 'internal_admin'].includes(role)
   const isPrivateMatter = isPrivateTransactionType(form.setup.transactionType)
 

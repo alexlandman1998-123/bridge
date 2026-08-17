@@ -5,6 +5,8 @@ const pageSource = await fs.readFile(new URL('../src/pages/agency/AgencyPipeline
 const sendEmailIndexSource = await fs.readFile(new URL('../../supabase/functions/send-email/index.ts', import.meta.url), 'utf8')
 const sendEmailTypesSource = await fs.readFile(new URL('../../supabase/functions/send-email/types.ts', import.meta.url), 'utf8')
 const handlerSource = await fs.readFile(new URL('../../supabase/functions/send-email/handlers/viewingAvailabilityRequest.ts', import.meta.url), 'utf8')
+const confirmationHandlerSource = await fs.readFile(new URL('../../supabase/functions/send-email/handlers/buyerViewingAvailabilityConfirmation.ts', import.meta.url), 'utf8')
+const preferenceFunctionSource = await fs.readFile(new URL('../../supabase/functions/buyer-viewing-preferences/index.ts', import.meta.url), 'utf8')
 const templateSource = await fs.readFile(new URL('../../supabase/functions/send-email/content/viewingAvailabilityRequest.ts', import.meta.url), 'utf8')
 const templateTestSource = await fs.readFile(new URL('../../supabase/functions/send-email/content/brandedTemplates.test.ts', import.meta.url), 'utf8')
 
@@ -47,9 +49,18 @@ assert.doesNotMatch(pageSource, /return ordered\.slice\(0,\s*4\)/, 'planner shou
 
 assert.match(sendEmailIndexSource, /handleBuyerViewingAvailabilityRequestEmail/, 'send-email router should import the buyer viewing handler')
 assert.match(sendEmailIndexSource, /buyer_viewing_availability_request/, 'send-email router should route the buyer viewing template')
+assert.match(sendEmailIndexSource, /handleBuyerViewingAvailabilityConfirmationEmail/, 'send-email router should import the buyer viewing confirmation handler')
+assert.match(sendEmailIndexSource, /buyer_viewing_availability_confirmation/, 'send-email router should route the buyer viewing confirmation template')
 assert.match(sendEmailTypesSource, /SendBuyerViewingAvailabilityRequestPayload/, 'send-email types should define the buyer viewing payload')
+assert.match(sendEmailTypesSource, /SendBuyerViewingAvailabilityConfirmationPayload/, 'send-email types should define the buyer viewing confirmation payload')
 assert.match(sendEmailTypesSource, /ViewingAvailabilityRequestPropertyPayload/, 'send-email types should define property payloads')
 assert.match(sendEmailTypesSource, /agentAvatarUrl\?: string/, 'send-email types should define the buyer viewing agent avatar URL')
+
+assert.match(preferenceFunctionSource, /type: "buyer_viewing_times_submitted_agent"/, 'buyer preference submit should notify the agent')
+assert.match(preferenceFunctionSource, /availabilityWindows,/, 'buyer preference submit should pass client availability to notifications')
+assert.match(preferenceFunctionSource, /type: "buyer_viewing_availability_confirmation"/, 'buyer preference submit should confirm receipt to the buyer')
+assert.match(confirmationHandlerSource, /Thank you! We have your preferred viewing times/, 'buyer confirmation should include warm thank-you copy')
+assert.match(confirmationHandlerSource, /confirming the options with the seller and will confirm shortly/, 'buyer confirmation should explain seller confirmation is in progress')
 
 for (const contract of [
   /prepareEmailDelivery/,

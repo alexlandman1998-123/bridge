@@ -1,7 +1,42 @@
+import { assessControlledTestRecipient } from "../utils/controlledTestRecipient.ts";
+
+function normalizeEmailAddress(value: unknown) {
+  const text = String(value ?? "").trim().toLowerCase();
+  const match = text.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i);
+  return match?.[0] || "";
+}
+
+export function normalizeEmailRecipients(
+  recipients: string | string[] | undefined,
+  excludedRecipients: Array<string | undefined> = [],
+) {
+  const excluded = new Set(
+    excludedRecipients.map((recipient) => normalizeEmailAddress(recipient))
+      .filter(Boolean),
+  );
+  const values = Array.isArray(recipients) ? recipients : [recipients];
+  const normalized: string[] = [];
+  const seen = new Set<string>();
+
+  for (const value of values) {
+    const email = normalizeEmailAddress(value);
+    const recipientSafety = assessControlledTestRecipient({ email });
+    if (
+      !email || excluded.has(email) || seen.has(email) ||
+      recipientSafety.suppressed
+    ) continue;
+    seen.add(email);
+    normalized.push(email);
+  }
+
+  return normalized;
+}
+
 export async function sendViaResendApi({
   apiKey,
   from,
   to,
+  bcc,
   subject,
   html,
   text,
@@ -13,6 +48,7 @@ export async function sendViaResendApi({
   apiKey: string;
   from: string;
   to: string;
+  bcc?: string | string[];
   subject: string;
   html: string;
   text?: string;
@@ -25,6 +61,7 @@ export async function sendViaResendApi({
     content_type?: string;
   }>;
 }) {
+  const bccRecipients = normalizeEmailRecipients(bcc, [to]);
   const controller = timeoutMs > 0 ? new AbortController() : null;
   const timeoutId = controller
     ? setTimeout(() => controller.abort("resend_request_timeout"), timeoutMs)
@@ -42,6 +79,7 @@ export async function sendViaResendApi({
       body: JSON.stringify({
         from,
         to,
+        bcc: bccRecipients.length ? bccRecipients : undefined,
         subject,
         html,
         text,
@@ -58,8 +96,8 @@ export async function sendViaResendApi({
         message: error instanceof DOMException && error.name === "AbortError"
           ? `Resend request timed out after ${timeoutMs}ms.`
           : error instanceof Error
-            ? error.message
-            : "Resend request failed before a response was returned.",
+          ? error.message
+          : "Resend request failed before a response was returned.",
       },
     };
   } finally {
@@ -67,7 +105,8 @@ export async function sendViaResendApi({
   }
 
   const data = await response.json().catch(() => ({
-    message: `Resend returned a non-JSON response with status ${response.status}.`,
+    message:
+      `Resend returned a non-JSON response with status ${response.status}.`,
   }));
 
   if (!response.ok) {

@@ -274,6 +274,7 @@ export async function handleAppointmentEmail(
     apiKey: resendApiKey,
     from: sender,
     to,
+    bcc: normalizeText(payload.agentEmail || payload.organizerEmail),
     subject,
     html,
     text,

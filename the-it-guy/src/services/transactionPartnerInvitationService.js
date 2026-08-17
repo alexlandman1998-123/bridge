@@ -65,6 +65,30 @@ function normalizeText(value) {
   return String(value || '').trim()
 }
 
+async function dispatchTransactionPartnerNotification({ transactionId, eventKind } = {}) {
+  const safeTransactionId = normalizeText(transactionId)
+  if (!safeTransactionId) return null
+  try {
+    const { data, error } = await invokeEdgeFunction('send-email', {
+      body: {
+        type: 'transaction_operations_dispatch',
+        transactionId: safeTransactionId,
+        eventKind: normalizeText(eventKind),
+        queueDue: false,
+        limit: 10,
+      },
+    })
+    if (error) {
+      console.warn('[transactionPartnerInvitationService] partner notification dispatch skipped', error)
+      return { sent: false, error }
+    }
+    return data || { sent: true }
+  } catch (error) {
+    console.warn('[transactionPartnerInvitationService] partner notification dispatch failed', error)
+    return { sent: false, error }
+  }
+}
+
 function sanitizePostgrestSearchTerm(value) {
   return normalizeText(value).replace(/[%,()]/g, ' ').replace(/\s+/g, ' ').trim()
 }
@@ -987,6 +1011,10 @@ export async function acceptTransactionPartnerInvitation({ token, profile = {}, 
   if (!result.data?.success) {
     throw buildInvitationAcceptanceError(result.data)
   }
+  await dispatchTransactionPartnerNotification({
+    transactionId: result.data.transactionId || result.data.transaction_id,
+    eventKind: 'transaction_partner_accepted',
+  })
   return result.data
 }
 
@@ -995,6 +1023,10 @@ export async function declineTransactionPartnerInvitation(token) {
   const result = await client.rpc('bridge_decline_transaction_partner_invitation', { p_token: normalizeText(token) })
   if (result.error) throw result.error
   if (!result.data?.success) throw new Error(result.data?.code || 'Unable to decline this invitation.')
+  await dispatchTransactionPartnerNotification({
+    transactionId: result.data.transactionId || result.data.transaction_id,
+    eventKind: 'transaction_partner_declined',
+  })
   return result.data
 }
 

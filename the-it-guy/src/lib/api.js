@@ -566,6 +566,8 @@ const DEFAULT_DEVELOPMENT_SETTINGS = {
   reservation_deposit_enabled_by_default: false,
   reservation_deposit_amount: null,
   reservation_deposit_amount_type: 'fixed',
+  reservation_deposit_vat_treatment: 'including_vat',
+  reservation_deposit_due_trigger: 'on_reservation',
   reservation_deposit_treatment: 'credited_to_purchase_price',
   reservation_deposit_payable_to: 'developer',
   reservation_deposit_payment_details: {
@@ -576,6 +578,8 @@ const DEFAULT_DEVELOPMENT_SETTINGS = {
     account_type: '',
     payment_reference_format: '',
     payment_instructions: '',
+    vat_treatment: 'including_vat',
+    due_trigger: 'on_reservation',
   },
   reservation_deposit_notification_recipients: [],
   default_alteration_charge_treatment: 'included_in_purchase_price',
@@ -4141,6 +4145,22 @@ function normalizeDevelopmentSettingsRow(row) {
   }
 
   const rawReservationDetails = row?.reservation_deposit_payment_details || row?.reservationDepositPaymentDetails || {}
+  const reservationDepositVatTreatment = normalizeDevelopmentSettingChoice(
+    row?.reservation_deposit_vat_treatment ??
+      row?.reservationDepositVatTreatment ??
+      rawReservationDetails.vat_treatment ??
+      rawReservationDetails.vatTreatment,
+    ['including_vat', 'excluding_vat'],
+    DEFAULT_DEVELOPMENT_SETTINGS.reservation_deposit_vat_treatment,
+  )
+  const reservationDepositDueTrigger = normalizeDevelopmentSettingChoice(
+    row?.reservation_deposit_due_trigger ??
+      row?.reservationDepositDueTrigger ??
+      rawReservationDetails.due_trigger ??
+      rawReservationDetails.dueTrigger,
+    ['on_reservation'],
+    DEFAULT_DEVELOPMENT_SETTINGS.reservation_deposit_due_trigger,
+  )
   const reservationDepositPaymentDetails = {
     account_holder_name: normalizeTextValue(
       rawReservationDetails.account_holder_name || rawReservationDetails.accountHolderName,
@@ -4155,6 +4175,8 @@ function normalizeDevelopmentSettingsRow(row) {
     payment_instructions: normalizeTextValue(
       rawReservationDetails.payment_instructions || rawReservationDetails.paymentInstructions,
     ),
+    vat_treatment: reservationDepositVatTreatment,
+    due_trigger: reservationDepositDueTrigger,
   }
   const reservationDepositNotificationRecipients = Array.isArray(
     row?.reservation_deposit_notification_recipients || row?.reservationDepositNotificationRecipients,
@@ -4197,6 +4219,8 @@ function normalizeDevelopmentSettingsRow(row) {
     reservation_deposit_enabled_by_default: reservationDepositEnabledByDefault,
     reservation_deposit_amount: reservationDepositAmount,
     reservation_deposit_amount_type: reservationDepositAmountType,
+    reservation_deposit_vat_treatment: reservationDepositVatTreatment,
+    reservation_deposit_due_trigger: reservationDepositDueTrigger,
     reservation_deposit_treatment: reservationDepositTreatment,
     reservation_deposit_payable_to: reservationDepositPayableTo,
     reservation_deposit_payment_details: reservationDepositPaymentDetails,
@@ -4206,6 +4230,8 @@ function normalizeDevelopmentSettingsRow(row) {
     reservationDepositEnabledByDefault: reservationDepositEnabledByDefault,
     reservationDepositAmount: reservationDepositAmount,
     reservationDepositAmountType: reservationDepositAmountType,
+    reservationDepositVatTreatment: reservationDepositVatTreatment,
+    reservationDepositDueTrigger: reservationDepositDueTrigger,
     reservationDepositTreatment: reservationDepositTreatment,
     reservationDepositPayableTo: reservationDepositPayableTo,
     reservationDepositPaymentDetails: reservationDepositPaymentDetails,
@@ -4871,7 +4897,17 @@ export async function updateDevelopmentSettings(developmentId, settings) {
     }).reservation_deposit_payable_to,
     reservation_deposit_payment_details: normalizeDevelopmentSettingsRow({
       reservation_deposit_payment_details:
-        settings.reservation_deposit_payment_details || settings.reservationDepositPaymentDetails,
+        {
+          ...(settings.reservation_deposit_payment_details || settings.reservationDepositPaymentDetails || {}),
+          vat_treatment:
+            settings.reservation_deposit_vat_treatment ||
+            settings.reservationDepositVatTreatment ||
+            settings.vatTreatment,
+          due_trigger:
+            settings.reservation_deposit_due_trigger ||
+            settings.reservationDepositDueTrigger ||
+            settings.dueTrigger,
+        },
     }).reservation_deposit_payment_details,
     reservation_deposit_notification_recipients: normalizeDevelopmentSettingsRow({
       reservation_deposit_notification_recipients:
@@ -17562,7 +17598,7 @@ export async function fetchDevelopmentOptions({ developmentIds = [], organisatio
       const settingsQuery = await client
         .from('development_settings')
         .select(
-          'development_id, reservation_deposit_enabled_by_default, reservation_deposit_amount, reservation_deposit_amount_type, reservation_deposit_treatment, reservation_deposit_payable_to, default_alteration_charge_treatment, stakeholder_teams',
+          'development_id, reservation_deposit_enabled_by_default, reservation_deposit_amount, reservation_deposit_amount_type, reservation_deposit_treatment, reservation_deposit_payable_to, reservation_deposit_payment_details, default_alteration_charge_treatment, stakeholder_teams',
         )
         .in('development_id', scopedIds)
 
@@ -17589,6 +17625,8 @@ export async function fetchDevelopmentOptions({ developmentIds = [], organisatio
           reservation_deposit_enabled_by_default: Boolean(setting?.reservation_deposit_enabled_by_default),
           reservation_deposit_amount: normalizeOptionalNumber(setting?.reservation_deposit_amount),
           reservation_deposit_amount_type: normalizedSetting.reservation_deposit_amount_type,
+          reservation_deposit_vat_treatment: normalizedSetting.reservation_deposit_vat_treatment,
+          reservation_deposit_due_trigger: normalizedSetting.reservation_deposit_due_trigger,
           reservation_deposit_treatment: normalizedSetting.reservation_deposit_treatment,
           reservation_deposit_payable_to: normalizedSetting.reservation_deposit_payable_to,
           default_alteration_charge_treatment: normalizedSetting.default_alteration_charge_treatment,
@@ -17660,7 +17698,7 @@ export async function fetchDevelopmentOptions({ developmentIds = [], organisatio
       const settingsQuery = await client
         .from('development_settings')
         .select(
-          'development_id, reservation_deposit_enabled_by_default, reservation_deposit_amount, reservation_deposit_amount_type, reservation_deposit_treatment, reservation_deposit_payable_to, default_alteration_charge_treatment, stakeholder_teams',
+          'development_id, reservation_deposit_enabled_by_default, reservation_deposit_amount, reservation_deposit_amount_type, reservation_deposit_treatment, reservation_deposit_payable_to, reservation_deposit_payment_details, default_alteration_charge_treatment, stakeholder_teams',
         )
         .in('development_id', developmentIds)
 
@@ -17687,6 +17725,8 @@ export async function fetchDevelopmentOptions({ developmentIds = [], organisatio
           reservation_deposit_enabled_by_default: Boolean(setting?.reservation_deposit_enabled_by_default),
           reservation_deposit_amount: normalizeOptionalNumber(setting?.reservation_deposit_amount),
           reservation_deposit_amount_type: normalizedSetting.reservation_deposit_amount_type,
+          reservation_deposit_vat_treatment: normalizedSetting.reservation_deposit_vat_treatment,
+          reservation_deposit_due_trigger: normalizedSetting.reservation_deposit_due_trigger,
           reservation_deposit_treatment: normalizedSetting.reservation_deposit_treatment,
           reservation_deposit_payable_to: normalizedSetting.reservation_deposit_payable_to,
           default_alteration_charge_treatment: normalizedSetting.default_alteration_charge_treatment,

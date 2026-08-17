@@ -45,16 +45,17 @@ assert.ok(
 )
 
 assert.ok(
-  detailSource.includes('if (!row?.transaction?.id) {') &&
-    detailSource.includes('return false') &&
-    detailSource.includes("buyerDisplayName: row?.buyer?.name || 'No buyer assigned'"),
-  'development transaction tab should only show rows backed by real transaction records',
+  detailSource.includes('function getDevelopmentTrackerProgressPercent(stageKey)') &&
+    detailSource.includes("mainStageKey === 'AVAIL' || mainStageKey === 'BLOCKED'") &&
+    detailSource.includes('const isManualUnitStatus = !row?.transaction?.id') &&
+    detailSource.includes("buyerDisplayName: row?.buyer?.name || (isManualUnitStatus ? 'External / direct sale' : 'No buyer assigned'"),
+  'development transaction tab should include manual in-progress unit rows while excluding available stock',
 )
 
 assert.ok(
-  !detailSource.includes('row.isManualUnitStatus') &&
-    !detailSource.includes("buyerDisplayName: row?.buyer?.name || (isManualUnitStatus ? 'External / direct sale'"),
-  'transaction row clicks should not fall back to the stock-master unit drawer',
+  detailSource.includes('openDevelopmentTransactionWizard({ unitId: row.unit?.id })') &&
+    !detailSource.includes('openUnitModal(unit || row.unit)'),
+  'manual development transaction rows should open transaction setup, not the stock-master unit drawer',
 )
 
 assert.ok(

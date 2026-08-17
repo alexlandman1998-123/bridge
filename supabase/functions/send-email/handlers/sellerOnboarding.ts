@@ -607,7 +607,8 @@ export async function handleSellerOnboardingEmail(
     },
   });
   senderOrganisationName = branding.organisationName;
-  senderOrganisationLogoUrl = branding.logoDarkUrl || branding.logoUrl || branding.logoLightUrl || branding.logoIconUrl ||
+  senderOrganisationLogoUrl = branding.logoDarkUrl || branding.logoUrl ||
+    branding.logoLightUrl || branding.logoIconUrl ||
     senderOrganisationLogoUrl;
   supportEmail = branding.supportEmail || supportEmail;
   supportPhone = branding.supportPhone || supportPhone;
@@ -704,6 +705,7 @@ export async function handleSellerOnboardingEmail(
     apiKey: resendApiKey,
     from: sender,
     to,
+    bcc: agentEmail,
     subject,
     html,
     text,

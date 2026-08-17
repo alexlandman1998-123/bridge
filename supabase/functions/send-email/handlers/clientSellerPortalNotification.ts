@@ -411,6 +411,11 @@ function contentFromPayload(
   const subject = firstText(payload.subject, metadata.subject) ||
     labels.subject;
   const title = firstText(payload.title, metadata.title) || labels.title;
+  const agentEmail = firstText(
+    payload.agentEmail,
+    payload.agent_email,
+    metadata.agentEmail,
+  );
   const email = buildClientSellerPortalNotificationEmail({
     eventKind,
     recipientName: firstText(
@@ -457,11 +462,7 @@ function contentFromPayload(
       payload.agent_name,
       metadata.agentName,
     ),
-    agentEmail: firstText(
-      payload.agentEmail,
-      payload.agent_email,
-      metadata.agentEmail,
-    ),
+    agentEmail,
     portalLabel: firstText(
       payload.portalLabel,
       payload.portal_label,
@@ -481,7 +482,7 @@ function contentFromPayload(
     ),
     branding,
   });
-  return { ...email, eventKind, subject, messagePreview: message };
+  return { ...email, eventKind, subject, messagePreview: message, agentEmail };
 }
 
 function payloadFromEvent(event: Record<string, unknown>) {
@@ -650,6 +651,7 @@ async function dispatchQueuedEvents(
         branding.fromName || branding.organisationName,
       ),
       to: normalizeText(event.recipient_email).toLowerCase(),
+      bcc: content.agentEmail,
       subject: content.subject,
       html: content.html,
       text: content.text,
@@ -769,6 +771,7 @@ export async function handleClientSellerPortalNotificationEmail(
       branding.fromName || branding.organisationName,
     ),
     to: recipientEmail,
+    bcc: content.agentEmail,
     subject: content.subject,
     html: content.html,
     text: content.text,

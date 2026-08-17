@@ -44,10 +44,35 @@ assert.ok(
   newTransactionWizard.indexOf('if (createdTransaction.transactionId)') < newTransactionWizard.indexOf('if (createdTransaction.unitId)'),
   'NewTransactionWizard success action must prefer transactionId before unitId.',
 )
+assert.ok(
+  newTransactionWizard.includes("function createInitialForm(initialDevelopmentId = '', initialUnitId = '')") &&
+    newTransactionWizard.includes('unitId: initialUnitId ||') &&
+    newTransactionWizard.includes('const selected = units.find((unit) => unit.id === form.setup.unitId)'),
+  'NewTransactionWizard should preserve a preselected development unit, including manual OTP units.',
+)
 assert.match(
   newTransactionWizard,
   /navigate\(`\/transactions\$\{query\}`\)/,
   'Agent fallback search should open the transactions route, not units.',
+)
+
+const appSource = readSource('src/App.jsx')
+assert.ok(
+  appSource.includes('const [wizardInitialUnitId, setWizardInitialUnitId]') &&
+    appSource.includes('const requestedUnitId = event?.detail?.initialUnitId') &&
+    appSource.includes('const requestedPropertyMode = event?.detail?.initialPropertyMode') &&
+    appSource.includes('initialUnitId={wizardInitialUnitId}'),
+  'App should pass the initial development unit id into transaction wizards.',
+)
+
+const agentNewDealWizard = readSource('src/components/AgentNewDealWizard.jsx')
+assert.ok(
+  agentNewDealWizard.includes("initialUnitId = ''") &&
+    agentNewDealWizard.includes("initialPropertyMode = ''") &&
+    agentNewDealWizard.includes('initialPropertyMode === PROPERTY_MODE_DEVELOPMENT || initialUnitId') &&
+    agentNewDealWizard.includes('? PROPERTY_MODE_DEVELOPMENT') &&
+    agentNewDealWizard.includes('const selected = rows.find((unit) => String(unit?.id) === String(form.unitId))'),
+  'AgentNewDealWizard should open in development mode with the preselected unit.',
 )
 
 for (const sourcePath of ['src/pages/Units.jsx', 'src/pages/DevelopmentDetail.jsx', 'src/pages/Dashboard.jsx']) {

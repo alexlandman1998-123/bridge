@@ -450,6 +450,8 @@ function AppLayout({ onLogout, session = null, user }) {
   const [wizardOpen, setWizardOpen] = useState(false)
   const [wizardInitialDevelopmentId, setWizardInitialDevelopmentId] = useState('')
   const [wizardInitialListingId, setWizardInitialListingId] = useState('')
+  const [wizardInitialUnitId, setWizardInitialUnitId] = useState('')
+  const [wizardInitialPropertyMode, setWizardInitialPropertyMode] = useState('')
   const [developmentModalOpen, setDevelopmentModalOpen] = useState(false)
   const isLegalWorkspaceRoute =
     /^\/transactions\/[^/]+\/legal\/[^/]+/.test(location.pathname) ||
@@ -584,8 +586,12 @@ function AppLayout({ onLogout, session = null, user }) {
     function openNewTransaction(event) {
       const requestedDevelopmentId = event?.detail?.initialDevelopmentId
       const requestedListingId = event?.detail?.listingId
+      const requestedUnitId = event?.detail?.initialUnitId
+      const requestedPropertyMode = event?.detail?.initialPropertyMode
       setWizardInitialDevelopmentId(requestedDevelopmentId ?? defaultDevelopmentId)
       setWizardInitialListingId(requestedListingId || '')
+      setWizardInitialUnitId(requestedUnitId || '')
+      setWizardInitialPropertyMode(requestedPropertyMode || '')
       setWizardOpen(true)
     }
 
@@ -630,6 +636,8 @@ function AppLayout({ onLogout, session = null, user }) {
   function handleOpenNewTransaction(initialDevelopmentId = defaultDevelopmentId) {
     setWizardInitialDevelopmentId(initialDevelopmentId)
     setWizardInitialListingId('')
+    setWizardInitialUnitId('')
+    setWizardInitialPropertyMode('')
     setWizardOpen(true)
   }
 
@@ -637,6 +645,8 @@ function AppLayout({ onLogout, session = null, user }) {
     setWizardOpen(false)
     setWizardInitialDevelopmentId(defaultDevelopmentId)
     setWizardInitialListingId('')
+    setWizardInitialUnitId('')
+    setWizardInitialPropertyMode('')
   }
 
   const sessionTimeoutWarning = sessionWarningOpen ? (
@@ -721,14 +731,17 @@ function AppLayout({ onLogout, session = null, user }) {
             <AgentNewDealWizard
               open={wizardOpen}
               onClose={handleCloseNewTransaction}
-	              initialDevelopmentId={wizardInitialDevelopmentId}
-	              initialPrivateListingId={wizardInitialListingId}
-	            />
+              initialDevelopmentId={wizardInitialDevelopmentId}
+              initialPrivateListingId={wizardInitialListingId}
+              initialUnitId={wizardInitialUnitId}
+              initialPropertyMode={wizardInitialPropertyMode}
+            />
           ) : (
             <NewTransactionWizard
               open={wizardOpen}
               onClose={handleCloseNewTransaction}
               initialDevelopmentId={wizardInitialDevelopmentId}
+              initialUnitId={wizardInitialUnitId}
             />
           )}
         </Suspense>

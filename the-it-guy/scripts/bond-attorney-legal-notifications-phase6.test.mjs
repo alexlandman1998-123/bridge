@@ -27,6 +27,10 @@ const edgeContract = fs.readFileSync(
   path.join(workspaceRoot, 'supabase/functions/send-email/services/notificationAutomationContract.ts'),
   'utf8',
 )
+const legalJobRunner = fs.readFileSync(
+  path.join(workspaceRoot, 'supabase/functions/legal-document-job-runner/index.ts'),
+  'utf8',
+)
 
 const keys = [
   'bond_application_submitted',
@@ -87,6 +91,16 @@ for (const expectedHandler of [
   'bond_attorney_legal_dispatch',
 ]) {
   assert.ok(handler.includes(expectedHandler), `bond/attorney/legal handler missing ${expectedHandler}`)
+}
+
+for (const expectedRunnerHook of [
+  'dispatchLegalNotificationEvents',
+  'bond_attorney_legal_dispatch',
+  'legal_signing_dispatch_failed',
+  'LEGAL_DOCUMENT_JOB_SEND_FAILED',
+  'LEGAL_DOCUMENT_JOB_SEND_UNCONFIRMED',
+]) {
+  assert.ok(legalJobRunner.includes(expectedRunnerHook), `legal document job runner missing ${expectedRunnerHook}`)
 }
 
 console.log('bond, attorney and legal workflow notifications phase 6 checks passed')

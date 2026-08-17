@@ -765,6 +765,58 @@ async function callSigningEmailFunction({
   }
 }
 
+async function dispatchLegalNotificationEvents({
+  supabaseUrl,
+  serviceRoleKey,
+  transactionId,
+  requestId,
+}: {
+  supabaseUrl: string;
+  serviceRoleKey: string;
+  transactionId: string;
+  requestId: string;
+}) {
+  if (!supabaseUrl || !serviceRoleKey || !transactionId) return null;
+  const timeout = timeoutSignal(SEND_EMAIL_TIMEOUT_MS);
+  try {
+    const response = await fetch(`${supabaseUrl.replace(/\/$/, "")}/functions/v1/send-email`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${serviceRoleKey}`,
+        "Content-Type": "application/json",
+        "x-request-id": requestId,
+      },
+      body: JSON.stringify({
+        type: "bond_attorney_legal_dispatch",
+        transactionId,
+        eventKind: "legal_signing_dispatch_failed",
+        queueDue: false,
+        limit: 10,
+      }),
+      signal: timeout.signal,
+    });
+    const body = asRecord(await response.json().catch(() => ({})));
+    if (!response.ok || body.error) {
+      console.error("[legal-document-job-runner] legal notification dispatch failed", {
+        status: response.status,
+        error: normalizeText(body.error) || normalizeText(body.message),
+        requestId,
+        transactionId,
+      });
+    }
+    return body;
+  } catch (error) {
+    console.error("[legal-document-job-runner] legal notification dispatch failed", {
+      message: normalizeErrorMessage(error, "Legal notification dispatch failed."),
+      requestId,
+      transactionId,
+    });
+    return null;
+  } finally {
+    timeout.clear();
+  }
+}
+
 async function callGenerateMandateFunction({
   supabaseUrl,
   serviceRoleKey,
@@ -2246,6 +2298,12 @@ async function runSendForSignatureJob({
         jobDisplayType,
       },
     });
+    await dispatchLegalNotificationEvents({
+      supabaseUrl,
+      serviceRoleKey,
+      transactionId: normalizeText(packet.transaction_id),
+      requestId,
+    });
     return {
       ok: false,
       status: emailResult.status,
@@ -2327,6 +2385,12 @@ async function runSendForSignatureJob({
         jobDisplayType,
         phase7BackgroundPrepareSend: Boolean(preparedSigningLink),
       },
+    });
+    await dispatchLegalNotificationEvents({
+      supabaseUrl,
+      serviceRoleKey,
+      transactionId: normalizeText(packet.transaction_id),
+      requestId,
     });
     return {
       ok: false,
