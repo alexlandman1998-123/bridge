@@ -2918,7 +2918,6 @@ function PostSigningAmendmentPanel({
   onReasonChange = null,
   onSummaryChange = null,
   onRecord = null,
-  onOpenBuilder = null,
 } = {}) {
   const documentLabel = normalizeText(packetType).toLowerCase() === 'otp' ? 'OTP' : 'Mandate'
   const hasActiveRequest = Boolean(activeRequest?.reason || activeRequest?.summary)
@@ -2936,9 +2935,6 @@ function PostSigningAmendmentPanel({
           {disabled && disabledReason ? <p className="mt-2 text-xs font-semibold text-[#9b5f13]">{disabledReason}</p> : null}
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button type="button" size="sm" variant="secondary" onClick={() => onOpenBuilder?.()} disabled={busy}>
-            Open Document Builder
-          </Button>
           {!hasActiveRequest ? (
             <Button type="button" size="sm" onClick={() => onToggle?.(!open)} disabled={busy || disabled}>
               {open ? 'Cancel Request' : 'Record Amendment Need'}
@@ -3834,13 +3830,6 @@ function MandateRoutePanel({ routing = null, className = '' }) {
         <div className="mt-4 rounded-[18px] border border-[#f4dfbf] bg-[#fff8ed] px-4 py-3 text-sm text-[#795315]">
           <p className="font-semibold text-[#7a4d10]">Route-specific template missing</p>
           <p className="mt-1 leading-5">{routing.warningMessage}</p>
-          <a
-            href="/settings/legal-templates"
-            className="mt-3 inline-flex items-center gap-2 rounded-full border border-[#f1d4a5] bg-white px-3 py-2 text-xs font-semibold text-[#7a4d10]"
-          >
-            Open Legal Templates
-            <ChevronRight size={13} />
-          </a>
         </div>
       ) : (
         <p className="mt-4 rounded-[18px] border border-[#d9eee4] bg-[#effaf4] px-4 py-3 text-sm font-semibold text-[#23784d]">
@@ -5954,24 +5943,6 @@ export default function LegalDocumentWorkspace({
     }
   }
 
-  function handleOpenDocumentBuilderForAmendment() {
-    if (typeof window === 'undefined') return
-    const resolvedPacketId = normalizeText(
-      activePostSigningAmendmentRequest?.originalPacketId ||
-        statusState?.packet?.id ||
-        packetId,
-    )
-    const params = new URLSearchParams()
-    if (resolvedPacketId) params.set('startAddendumFor', resolvedPacketId)
-    params.set('packetType', normalizeKey(packetType) || 'otp')
-    const summary = normalizeText(activePostSigningAmendmentRequest?.summary || postSigningAmendmentSummary)
-    const reason = normalizeText(activePostSigningAmendmentRequest?.reason || postSigningAmendmentReason)
-    if (summary) params.set('changeSummary', summary)
-    if (reason) params.set('amendmentReason', reason)
-    params.set('source', 'post_signing_amendment_request')
-    window.location.assign(`/settings/legal-templates?${params.toString()}`)
-  }
-
   async function handleRecordPostSigningAmendmentRequest() {
     if (postSigningAmendmentBusy || actionBusyRef.current) return
     const reason = normalizeText(postSigningAmendmentReason)
@@ -6059,7 +6030,7 @@ export default function LegalDocumentWorkspace({
       setPostSigningAmendmentOpen(false)
       setPostSigningAmendmentReason('')
       setPostSigningAmendmentSummary('')
-      setActionFeedback('Amendment request recorded. Create an addendum in Document Builder and link it to this original document.')
+      setActionFeedback('Amendment request recorded.')
       await refreshWorkspaceData()
     } catch (error) {
       setLoadError(toFriendlyWorkspaceError(error, 'Unable to record the amendment request right now.'))
@@ -8972,15 +8943,11 @@ export default function LegalDocumentWorkspace({
                           type="button"
                           onClick={() => {
                             setHeaderMenuOpen(false)
-                            if (activePostSigningAmendmentRequest) {
-                              handleOpenDocumentBuilderForAmendment()
-                            } else {
-                              setPostSigningAmendmentOpen(true)
-                            }
+                            setPostSigningAmendmentOpen(true)
                           }}
                           className="flex w-full items-center justify-between rounded-[14px] px-3 py-2.5 text-left text-sm font-medium text-[#102033] transition hover:bg-[#f8fbff]"
                         >
-                          {activePostSigningAmendmentRequest ? 'Open addendum builder' : 'Record amendment need'}
+                          {activePostSigningAmendmentRequest ? 'Review amendment request' : 'Record amendment need'}
                           <ChevronRight size={14} className="text-[#8a99ad]" />
                         </button>
                       ) : null}
@@ -9130,7 +9097,6 @@ export default function LegalDocumentWorkspace({
                 onReasonChange={setPostSigningAmendmentReason}
                 onSummaryChange={setPostSigningAmendmentSummary}
                 onRecord={handleRecordPostSigningAmendmentRequest}
-                onOpenBuilder={handleOpenDocumentBuilderForAmendment}
               />
             ) : null}
 

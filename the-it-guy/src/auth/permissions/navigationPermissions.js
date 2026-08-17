@@ -34,7 +34,6 @@ export const navPermissionByKey = Object.freeze({
   agency_agents: PERMISSIONS.manageUsers,
   agency_partners: PERMISSIONS.partnersViewNetwork,
   agency_analytics: PERMISSIONS.viewReports,
-  agency_legal_templates: PERMISSIONS.manageWorkspaceSettings,
   agents: PERMISSIONS.manageUsers,
   agents_directory: PERMISSIONS.manageUsers,
   agents_reporting: PERMISSIONS.viewReports,

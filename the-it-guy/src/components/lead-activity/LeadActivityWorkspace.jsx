@@ -330,7 +330,7 @@ export default function LeadActivityWorkspace({
                                             {presentation.label}
                                           </span>
                                         </div>
-                                        <p className="mt-1 text-sm leading-6 text-[#60758b]">
+                                        <p className="mt-1 max-h-56 overflow-y-auto overscroll-contain whitespace-pre-wrap break-words text-sm leading-6 text-[#60758b] [overflow-wrap:anywhere]">
                                           {row.description || row.sourceLabel || 'No note captured.'}
                                         </p>
                                         <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-semibold text-[#7b8fa5]">

@@ -338,9 +338,6 @@ const SettingsPreferredPartnersPage = lazy(() => import('./pages/settings/Settin
 const SettingsPartnerProspectsPage = lazy(() => import('./pages/settings/SettingsPartnerProspectsPage'))
 const SettingsPartnerRoutingRulesPage = lazy(() => import('./pages/settings/SettingsPartnerRoutingRulesPage'))
 const SettingsSigningTemplatesPage = lazy(() => import('./pages/settings/SettingsSigningTemplatesPage'))
-const LegalDocumentEditorRoute = lazy(() => import('./pages/settings/LegalDocumentEditorRoute'))
-const LegalDocumentOverviewPage = lazy(() => import('./pages/settings/LegalDocumentOverviewPage'))
-const LegalDocumentPreviewPage = lazy(() => import('./pages/settings/LegalDocumentPreviewPage'))
 const SettingsUsersPage = lazy(() => import('./pages/settings/SettingsUsersPage'))
 const SettingsWorkflowsPage = lazy(() => import('./pages/settings/SettingsWorkflowsPage'))
 const SignerPortal = lazy(() => import('./pages/SignerPortal'))
@@ -2958,57 +2955,17 @@ function AppRoutes() {
                   element={
                     <OrganisationSettingsManageRoute>
                       <RoleRoute allowedRoles={['developer', 'agent']}>
-                        <Navigate to="/settings/legal-templates" replace />
+                        <Navigate to="/settings" replace />
                       </RoleRoute>
                     </OrganisationSettingsManageRoute>
                   }
                 />
                 <Route
-                  path="legal-templates/:documentKey/edit/:editorScope"
+                  path="legal-templates/*"
                   element={
                     <OrganisationSettingsManageRoute>
                       <RoleRoute allowedRoles={['developer', 'agent']}>
-                        <LegalDocumentEditorRoute />
-                      </RoleRoute>
-                    </OrganisationSettingsManageRoute>
-                  }
-                />
-                <Route
-                  path="legal-templates/:documentKey/edit"
-                  element={
-                    <OrganisationSettingsManageRoute>
-                      <RoleRoute allowedRoles={['developer', 'agent']}>
-                        <LegalDocumentEditorRoute />
-                      </RoleRoute>
-                    </OrganisationSettingsManageRoute>
-                  }
-                />
-                <Route
-                  path="legal-templates/:documentKey/preview"
-                  element={
-                    <OrganisationSettingsManageRoute>
-                      <RoleRoute allowedRoles={['developer', 'agent']}>
-                        <LegalDocumentPreviewPage />
-                      </RoleRoute>
-                    </OrganisationSettingsManageRoute>
-                  }
-                />
-                <Route
-                  path="legal-templates/:documentKey"
-                  element={
-                    <OrganisationSettingsManageRoute>
-                      <RoleRoute allowedRoles={['developer', 'agent']}>
-                        <LegalDocumentOverviewPage />
-                      </RoleRoute>
-                    </OrganisationSettingsManageRoute>
-                  }
-                />
-                <Route
-                  path="legal-templates"
-                  element={
-                    <OrganisationSettingsManageRoute>
-                      <RoleRoute allowedRoles={['developer', 'agent']}>
-                        <SettingsSigningTemplatesPage />
+                        <Navigate to="/settings" replace />
                       </RoleRoute>
                     </OrganisationSettingsManageRoute>
                   }

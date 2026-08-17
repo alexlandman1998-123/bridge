@@ -34,8 +34,7 @@ assert.ok(
 
 assert.ok(
   detailSource.includes('async function handleUnitStatusQuickChange(unit, nextStatus)') &&
-    detailSource.includes('await saveDevelopmentUnit({') &&
-    detailSource.includes('status: nextStatusValue,'),
+    detailSource.includes('await saveDevelopmentUnit(buildUnitQuickSavePayload(unit, { status: nextStatusValue }))'),
   'unit table should save quick status changes directly onto the stock row',
 )
 

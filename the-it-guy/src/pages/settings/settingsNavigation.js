@@ -1,7 +1,6 @@
 import {
   Building2,
   CreditCard,
-  FileText,
   History,
   Mail,
   Megaphone,
@@ -68,15 +67,6 @@ export const SETTINGS_NAV_GROUPS = [
         roles: ['developer', 'agent'],
         permission: PERMISSIONS.manageWorkspaceSettings,
         keywords: 'public intake buyer seller social media link enquiries crm lead capture agency website instagram facebook qr',
-      },
-      {
-        to: '/settings/legal-templates',
-        label: 'Legal Templates',
-        description: 'Manage, save, preview, and publish the legal templates used for documents.',
-        icon: FileText,
-        roles: ['developer', 'agent'],
-        permission: PERMISSIONS.manageWorkspaceSettings,
-        keywords: 'legal templates document builder signing documents contracts mandate otp publish save wording clauses',
       },
       {
         to: '/settings/communications/templates',

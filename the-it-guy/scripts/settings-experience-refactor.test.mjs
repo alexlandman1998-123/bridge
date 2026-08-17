@@ -51,8 +51,8 @@ assert.match(
 
 assert.match(
   app,
-  /<Route path="\/settings" element=\{<ClientAwareSettingsLayout \/>}>[\s\S]*path="legal-templates"[\s\S]*<SettingsSigningTemplatesPage \/>[\s\S]*<\/Route>/,
-  'Settings legal templates should render inside the shared SettingsLayout.',
+  /path="legal-templates\/\*"[\s\S]*<Navigate to="\/settings" replace \/>/,
+  'Hidden settings legal templates URLs should redirect back to Settings.',
 )
 
 assert.match(

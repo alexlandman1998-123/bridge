@@ -24,7 +24,6 @@ for (const [needle, message] of [
   ['function PostSigningAmendmentPanel', 'workspace should expose a post-signing amendment panel'],
   ['Need to change this', 'panel should directly address post-signing change needs'],
   ['Record Amendment Need', 'panel should expose an explicit amendment request action'],
-  ['Open Document Builder', 'panel should send agents to the existing addendum builder flow'],
   ['postSigningAmendmentRequests', 'workspace should persist amendment requests in packet source context'],
   ['post_signing_amendment_requests', 'workspace should persist snake-case amendment request metadata for compatibility'],
   ['post_signing_amendment_requested', 'workspace should append a post-signing amendment audit event'],
@@ -32,10 +31,16 @@ for (const [needle, message] of [
   ['originalRecordMutated: false', 'audit payload should state the signed original was not mutated'],
   ['downstreamWorkflowRetriggered: false', 'audit payload should state downstream handoff was not retriggered'],
   ['This document is still editable; use the controlled change flow before signing.', 'workspace should keep Phase C as the editable-document route'],
-  ['window.location.assign(`/settings/legal-templates?${params.toString()}`)', 'workspace should route amendment work to Document Builder with handoff parameters'],
+  ['Amendment request recorded.', 'workspace should record amendment work without linking agents to the hidden legal template builder'],
 ]) {
   assertIncludes(workspace, needle, message)
 }
+
+assert.doesNotMatch(
+  workspace,
+  /settings\/legal-templates|Open Document Builder|Open addendum builder/,
+  'workspace should not expose the hidden legal template builder to agents',
+)
 
 for (const [needle, message] of [
   ['post_signing_amendment_requested', 'packet API should humanize post-signing amendment events'],

@@ -5407,7 +5407,8 @@ function resolveCanvassingProspectCategory(prospect = {}) {
 }
 
 function buildLeadContactFallback(lead = {}) {
-  const explicitName = normalizeText(lead?.name || lead?.buyerName)
+  const requestedByName = resolveLeadRequestedByName(lead)
+  const explicitName = normalizeText(lead?.name || lead?.buyerName || requestedByName)
   const explicitParts = explicitName.split(/\s+/).filter(Boolean)
   const firstName = normalizeText(
     lead?.sellerName ||
@@ -5437,6 +5438,104 @@ function buildLeadContactFallback(lead = {}) {
 function isGenericLeadPersonName(value = '') {
   const normalized = normalizeKey(value).replace(/\s+/g, ' ')
   return !normalized || ['lead', 'contact', 'buyer', 'seller', 'unnamed lead', 'unnamed'].includes(normalized)
+}
+
+function sanitizeLeadRequestedByCandidate(value = '') {
+  const text = normalizeText(value)
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/\s*<[^>]+>\s*/g, ' ')
+    .replace(/\s*\([^)]*mailto:[^)]+\)\s*/gi, ' ')
+    .replace(/\bmailto:/gi, '')
+    .replace(/https?:\/\/\S+/gi, ' ')
+    .replace(/[<>]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (!text) return ''
+  const firstLine = normalizeText(text.split(/\r?\n/)[0])
+  const candidate = firstLine.replace(/\s+\b(?:legend|fieldset|label)\b\s*$/i, '').trim()
+  const candidateKey = normalizeKey(candidate)
+  if (!candidate || candidate.length > 90) return ''
+  if (isGenericLeadPersonName(candidate)) return ''
+  if (/@/.test(candidate) || /property\s*24|support|no[\s-]?reply|automated|request<|approve request|decline/i.test(candidate)) return ''
+  if (candidateKey.split(/\s+/).filter(Boolean).length > 6) return ''
+  return candidate
+}
+
+function getLeadRequestedByFromRecord(record = null) {
+  if (!isPlainObject(record)) return ''
+  const requestedKeys = new Set([
+    'requestedby',
+    'requestedbyname',
+    'requester',
+    'requestername',
+    'requestor',
+    'requestorname',
+    'requestedfrom',
+  ])
+  for (const [key, value] of Object.entries(record)) {
+    if (!requestedKeys.has(normalizeKey(key))) continue
+    const candidate = sanitizeLeadRequestedByCandidate(value)
+    if (candidate) return candidate
+  }
+  return ''
+}
+
+function getLeadRequestedByFromText(value = '') {
+  const text = normalizeText(value)
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(?:p|div|li|tr|h\d)>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\r/g, '\n')
+  if (!text) return ''
+  const match = text.match(/(?:^|\n)\s*requested\s*by(?:\s+name)?\s*(?::|-|\n)\s*([^\n\r]+)/i)
+  return sanitizeLeadRequestedByCandidate(match?.[1] || '')
+}
+
+function resolveLeadRequestedByName(lead = {}) {
+  const rawPayload = parseLeadRawEnquiryPayload(lead?.rawEnquiryPayload || lead?.raw_enquiry_payload)
+  const payloads = [
+    lead,
+    rawPayload,
+    asRecord(rawPayload.parser?.matchedFields),
+    asRecord(rawPayload.parser?.matched_fields),
+    asRecord(rawPayload.matchedFields),
+    asRecord(rawPayload.matched_fields),
+    asRecord(rawPayload.leadCaptureRepair?.repairedFields),
+    asRecord(rawPayload.lead_capture_repair?.repaired_fields),
+    asRecord(rawPayload.inboundEmail),
+    asRecord(rawPayload.inbound_email),
+    asRecord(rawPayload.raw),
+  ]
+  for (const payload of payloads) {
+    const candidate = getLeadRequestedByFromRecord(payload)
+    if (candidate) return candidate
+  }
+  const textCandidates = [
+    rawPayload.body,
+    rawPayload.textBody,
+    rawPayload.text_body,
+    rawPayload.htmlBody,
+    rawPayload.html_body,
+    rawPayload.message,
+    rawPayload.notes,
+    rawPayload.inboundEmail?.body,
+    rawPayload.inboundEmail?.textBody,
+    rawPayload.inboundEmail?.text_body,
+    rawPayload.inboundEmail?.htmlBody,
+    rawPayload.inboundEmail?.html_body,
+    rawPayload.inbound_email?.body,
+    rawPayload.inbound_email?.textBody,
+    rawPayload.inbound_email?.text_body,
+    rawPayload.inbound_email?.htmlBody,
+    rawPayload.inbound_email?.html_body,
+    lead?.notes,
+  ]
+  for (const value of textCandidates) {
+    const candidate = getLeadRequestedByFromText(value)
+    if (candidate) return candidate
+  }
+  return ''
 }
 
 function formatContactName(contact = null) {
@@ -5478,6 +5577,9 @@ function resolveLeadDisplayName(lead = {}, contact = null, prospect = null, fall
 
   const leadName = normalizeText(lead?.name || lead?.buyerName || [lead?.sellerName, lead?.sellerSurname].filter(Boolean).join(' '))
   if (!isGenericLeadPersonName(leadName)) return leadName
+
+  const requestedByName = resolveLeadRequestedByName(lead)
+  if (!isGenericLeadPersonName(requestedByName)) return requestedByName
 
   const prospectName = [prospect?.firstName, prospect?.lastName].map(normalizeText).filter(Boolean).join(' ').trim()
   if (!isGenericLeadPersonName(prospectName)) return prospectName
@@ -31711,9 +31813,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                     <div className="mt-4 flex flex-1 flex-col border-t border-[#edf3f8]">
                                       {qualificationQuestionRows.map((row, rowIndex) => {
                                         const isMissing = row.value === 'Not captured'
+                                        const shouldScrollValue = row.wide && !isMissing
                                         const QualificationIcon = buyerQualificationIconByLabel[row.label] || Columns3
                                         return (
-                                          <div key={row.label} className={`grid flex-1 grid-cols-[36px_minmax(0,1fr)] gap-x-3 gap-y-2 border-b border-[#edf3f8] py-1.5 last:border-b-0 sm:grid-cols-[36px_minmax(150px,0.42fr)_minmax(0,1fr)] sm:items-center ${rowIndex === 0 ? 'pt-2.5' : ''}`}>
+                                          <div key={row.label} className={`grid flex-1 grid-cols-[36px_minmax(0,1fr)] gap-x-3 gap-y-2 border-b border-[#edf3f8] py-1.5 last:border-b-0 sm:grid-cols-[36px_minmax(150px,0.42fr)_minmax(0,1fr)] ${row.wide ? 'sm:items-start' : 'sm:items-center'} ${rowIndex === 0 ? 'pt-2.5' : ''}`}>
                                             <span className="grid h-8 w-8 place-items-center rounded-[10px] bg-[#eef5fb] text-[#1d65a6]">
                                               <QualificationIcon className="h-4 w-4" />
                                             </span>
@@ -31721,7 +31824,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                               <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#536f8f]">{row.label}</span>
                                             </span>
                                             <span className="col-start-2 min-w-0 self-center sm:col-start-auto">
-                                              <span className={`block whitespace-pre-line text-sm leading-5 tracking-normal ${isMissing ? 'font-medium text-[#9aa9b8]' : 'font-semibold text-[#102033]'}`}>{row.value}</span>
+                                              <span className={`block text-sm leading-5 tracking-normal ${shouldScrollValue ? 'max-h-[18rem] overflow-y-auto overscroll-contain rounded-[12px] border border-[#e4edf6] bg-[#fbfdff] p-3 whitespace-pre-wrap break-words [overflow-wrap:anywhere]' : 'whitespace-pre-line'} ${isMissing ? 'font-medium text-[#9aa9b8]' : 'font-semibold text-[#102033]'}`}>{row.value}</span>
                                             </span>
                                           </div>
                                         )
@@ -34362,7 +34465,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                           </div>
                                         </div>
                                         {note ? (
-                                          <p className="mt-3 text-[15px] leading-6 text-[#4f6680]">"{note}"</p>
+                                          <p className="mt-3 max-h-56 overflow-y-auto overscroll-contain whitespace-pre-wrap break-words text-[15px] leading-6 text-[#4f6680] [overflow-wrap:anywhere]">"{note}"</p>
                                         ) : (
                                           <p className="mt-3 text-sm text-[#8aa0b7]">No note captured.</p>
                                         )}

@@ -18594,7 +18594,7 @@ export async function fetchDevelopmentDetail(developmentId) {
   let developmentQuery = await client
     .from('developments')
     .select(
-      'id, name, planned_units, code, location, address, formatted_address, street_address, suburb, city, province, country, postal_code, latitude, longitude, google_place_id, description, status, developer_company, total_units_expected, launch_date, expected_completion_date, assigned_attorney_id, handover_enabled, snag_tracking_enabled, alterations_enabled, onboarding_enabled',
+      'id, organisation_id, name, planned_units, code, location, address, formatted_address, street_address, suburb, city, province, country, postal_code, latitude, longitude, google_place_id, description, status, developer_company, total_units_expected, launch_date, expected_completion_date, assigned_attorney_id, handover_enabled, snag_tracking_enabled, alterations_enabled, onboarding_enabled',
     )
     .eq('id', developmentId)
     .maybeSingle()
@@ -18608,7 +18608,8 @@ export async function fetchDevelopmentDetail(developmentId) {
       isMissingColumnError(developmentQuery.error, 'postal_code') ||
       isMissingColumnError(developmentQuery.error, 'latitude') ||
       isMissingColumnError(developmentQuery.error, 'longitude') ||
-      isMissingColumnError(developmentQuery.error, 'google_place_id'))
+      isMissingColumnError(developmentQuery.error, 'google_place_id') ||
+      isMissingColumnError(developmentQuery.error, 'organisation_id'))
   ) {
     developmentQuery = await client
       .from('developments')
@@ -18884,6 +18885,67 @@ export async function saveDevelopmentDocument({
   }
 
   return normalizeDevelopmentDocumentRow(data)
+}
+
+export async function uploadDevelopmentDocumentAsset({
+  developmentId,
+  file,
+  documentType = 'marketing',
+  title = '',
+  description = '',
+  linkedUnitId = null,
+  linkedUnitType = '',
+} = {}) {
+  const client = requireClient()
+
+  if (!developmentId) {
+    throw new Error('Development is required.')
+  }
+
+  const selectedFile = typeof File !== 'undefined' && file instanceof File ? file : file || null
+  if (!selectedFile) {
+    throw new Error('Select a valid file before uploading.')
+  }
+
+  const safeType = String(documentType || 'marketing')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '') || 'marketing'
+  const safeName = String(selectedFile.name || 'development-asset')
+    .trim()
+    .replace(/[^a-zA-Z0-9._-]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '') || 'development-asset'
+  const objectId =
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+  const filePath = `developments/${developmentId}/${safeType}/${objectId}-${safeName}`
+  const uploadedBucket = await uploadToDocumentsBucket(client, filePath, selectedFile, {
+    upsert: true,
+    cacheControl: '3600',
+    contentType: selectedFile.type || 'application/octet-stream',
+  })
+  const signedUrl = await getSignedUrl(filePath, {
+    client,
+    fileBucket: uploadedBucket,
+    expiresInSeconds: 60 * 60 * 24 * 30,
+  })
+  const { data: publicUrlData } = client.storage.from(uploadedBucket).getPublicUrl(filePath)
+  const publicUrl = normalizeTextValue(publicUrlData?.publicUrl)
+  const fileUrl = signedUrl || publicUrl || ''
+
+  return saveDevelopmentDocument({
+    developmentId,
+    documentType: safeType,
+    title: title || selectedFile.name || 'Development asset',
+    description,
+    fileUrl,
+    linkedUnitId,
+    linkedUnitType,
+  })
 }
 
 export async function deleteDevelopmentDocument(documentId) {
@@ -19319,6 +19381,48 @@ export async function saveDevelopmentUnit(input = {}) {
   }
 
   return normalizeDevelopmentUnitRow(data)
+}
+
+export async function updateDevelopmentTransactionSalesPrice(transactionId, salesPrice) {
+  const client = requireClient()
+  const normalizedTransactionId = normalizeTextValue(transactionId)
+  if (!normalizedTransactionId) {
+    throw new Error('Transaction is required.')
+  }
+
+  const normalizedPrice = normalizeOptionalNumber(salesPrice)
+  const payload = {
+    sales_price: normalizedPrice,
+    purchase_price: normalizedPrice,
+    updated_at: new Date().toISOString(),
+  }
+
+  let result = await client.from('transactions').update(payload).eq('id', normalizedTransactionId)
+
+  if (
+    result.error &&
+    (isMissingColumnError(result.error, 'sales_price') ||
+      isMissingColumnError(result.error, 'purchase_price') ||
+      isMissingColumnError(result.error, 'updated_at'))
+  ) {
+    const fallbackPayload = { ...payload }
+    if (isMissingColumnError(result.error, 'sales_price')) {
+      delete fallbackPayload.sales_price
+    }
+    if (isMissingColumnError(result.error, 'purchase_price')) {
+      delete fallbackPayload.purchase_price
+    }
+    if (isMissingColumnError(result.error, 'updated_at')) {
+      delete fallbackPayload.updated_at
+    }
+    result = await client.from('transactions').update(fallbackPayload).eq('id', normalizedTransactionId)
+  }
+
+  if (result.error) {
+    throw result.error
+  }
+
+  return true
 }
 
 export async function bulkUpdateUnitLifecycle(entries = [], input = {}) {

@@ -6,6 +6,7 @@ import { dirname, resolve } from 'node:path'
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const detailSource = readFileSync(resolve(root, 'src/pages/DevelopmentDetail.jsx'), 'utf8')
 const headerSource = readFileSync(resolve(root, 'src/components/HeaderBar.jsx'), 'utf8')
+const apiSource = readFileSync(resolve(root, 'src/lib/api.js'), 'utf8')
 
 assert.match(
   headerSource,
@@ -46,6 +47,36 @@ assert.ok(
 assert.ok(
   detailSource.includes("setMarketingFloorplanField(selectedMarketingFloorplan.id, 'floorplanUrls'"),
   'unit type editor should save unit-specific floorplan links',
+)
+
+assert.ok(
+  detailSource.includes("handleMarketingAssetFileUpload(event, 'marketing'"),
+  'marketing tab should upload gallery images directly from the marketing workspace',
+)
+
+assert.ok(
+  detailSource.includes("handleMarketingAssetFileUpload(event, 'floorplan'"),
+  'marketing tab should upload floorplans directly from the marketing workspace',
+)
+
+assert.ok(
+  detailSource.includes("handleMarketingAssetFileUpload(event, 'logo'"),
+  'marketing tab should upload a development logo for future collateral',
+)
+
+assert.ok(
+  !detailSource.includes('Manage Image Uploads') && !detailSource.includes('Manage Floorplan Uploads'),
+  'marketing media controls should not route users into the documents workflow',
+)
+
+assert.ok(
+  apiSource.includes('export async function uploadDevelopmentDocumentAsset'),
+  'development assets should have a file upload helper that creates development document rows',
+)
+
+assert.ok(
+  apiSource.includes('developments/${developmentId}/${safeType}/'),
+  'development upload helper should store files under a development-specific path',
 )
 
 assert.ok(

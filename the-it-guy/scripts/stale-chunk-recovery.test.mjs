@@ -35,6 +35,16 @@ assert.match(
 )
 assert.match(
   boundarySource,
+  /method:\s*'GET'[\s\S]*Range:\s*'bytes=0-0'/,
+  'Stale chunk recovery must fall back to a ranged GET when HEAD probes are unreliable.',
+)
+assert.match(
+  boundarySource,
+  /STALE_CHUNK_FORCE_RELOAD_AFTER_PROBE_ATTEMPT/,
+  'Stale chunk recovery must force a fresh shell reload after repeated failed current-release probes.',
+)
+assert.match(
+  boundarySource,
   /this\.recoverFromStaleChunk\(\{\s*force:\s*false\s*\}\)/,
   'Manual refresh must reset once, then continue through the normal bounded recovery sequence.',
 )

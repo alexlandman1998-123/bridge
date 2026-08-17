@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { reportError } from '../services/observability/errorTracking'
 
 const STALE_CHUNK_AUTO_RELOAD_LIMIT = 6
+const STALE_CHUNK_FORCE_RELOAD_AFTER_PROBE_ATTEMPT = 3
 const STALE_CHUNK_RELOAD_MARKER_TTL_MS = 10 * 60 * 1000
 const STALE_CHUNK_RETRY_DELAYS_MS = [250, 1500, 4000, 8000, 15000, 30000]
 
@@ -119,21 +120,43 @@ async function fetchLatestReleaseManifest() {
   }
 }
 
-async function isAssetReachable(assetUrl) {
-  if (!assetUrl || typeof fetch !== 'function') return true
+async function probeAssetReachability(assetUrl, options = {}) {
+  const { method = 'HEAD', headers } = options
 
   try {
     const url = new URL(assetUrl)
     url.searchParams.set('stale_chunk_probe', String(Date.now()))
     const response = await fetch(url.toString(), {
-      method: 'HEAD',
+      method,
       cache: 'no-store',
+      ...(headers ? { headers } : {}),
     })
     const contentType = String(response.headers.get('content-type') || '').toLowerCase()
     return response.ok && (contentType.includes('javascript') || contentType.includes('ecmascript'))
   } catch {
     return false
   }
+}
+
+async function isAssetReachable(assetUrl) {
+  if (!assetUrl || typeof fetch !== 'function') return true
+
+  if (await probeAssetReachability(assetUrl, { method: 'HEAD' })) return true
+
+  return probeAssetReachability(assetUrl, {
+    method: 'GET',
+    headers: { Range: 'bytes=0-0' },
+  })
+}
+
+async function reloadWithFreshAppShell() {
+  await clearClientAssetCaches()
+  const url = buildCacheBustedUrl()
+  if (url) {
+    window.location.replace(url)
+    return
+  }
+  window.location.reload()
 }
 
 async function shouldWaitForCurrentReleaseAsset(assetUrl) {
@@ -268,13 +291,12 @@ class AppErrorBoundary extends Component {
     if (this.unmounted) return
 
     if (assetReady) {
-      await clearClientAssetCaches()
-      const url = buildCacheBustedUrl()
-      if (url) {
-        window.location.replace(url)
-        return
-      }
-      window.location.reload()
+      await reloadWithFreshAppShell()
+      return
+    }
+
+    if (!force && attemptNumber >= STALE_CHUNK_FORCE_RELOAD_AFTER_PROBE_ATTEMPT) {
+      await reloadWithFreshAppShell()
       return
     }
 

@@ -719,7 +719,7 @@ export function buildLeadCaptureRepairDraft(item = {}) {
   return {
     organisationId: normalizeText(item.organisationId || item.raw?.organisationId || item.raw?.organisation_id),
     source: normalizeLeadSource(repairedPayload.source || item.source || matchedFields.source || item.raw?.source || 'Other'),
-    name: normalizeText(repairedPayload.name || getMatchedField(matchedFields, ['name', 'fullName', 'contactName']) || item.raw?.fromName || rawInbound.fromName),
+    name: normalizeText(repairedPayload.name || getMatchedField(matchedFields, ['name', 'fullName', 'contactName', 'requestedBy', 'requestedByName', 'requesterName']) || item.raw?.fromName || rawInbound.fromName),
     email: normalizeCaptureEmail(repairedPayload.email || getMatchedField(matchedFields, ['email', 'emailAddress']) || item.fromEmail || rawInbound.fromEmail),
     phone: normalizeText(repairedPayload.phone || getMatchedField(matchedFields, ['phone', 'mobile', 'cellphone'])),
     message: normalizeText(repairedPayload.message || getMatchedField(matchedFields, ['message', 'notes', 'comment']) || item.raw?.payload?.message || rawInbound.textBody || rawInbound.body || item.subject),
@@ -909,6 +909,10 @@ const KNOWN_LEAD_EMAIL_LABELS = [
   'contact name',
   'customer',
   'customer name',
+  'requested by name',
+  'requested by',
+  'requester name',
+  'requester',
   'enquiry by',
   'enquired by',
   'enquirer',
@@ -991,7 +995,7 @@ function extractPhone(text = '') {
 }
 
 function extractName(text = '', fromName = '') {
-  const labelled = readLabelValue(text, ['name', 'full name', 'contact name', 'customer', 'customer name', 'enquiry by', 'enquired by', 'enquirer', 'sender'])
+  const labelled = readLabelValue(text, ['name', 'full name', 'contact name', 'customer', 'customer name', 'requested by name', 'requested by', 'requester name', 'requester', 'enquiry by', 'enquired by', 'enquirer', 'sender'])
   const candidate = labelled || fromName
   return normalizeText(candidate)
     .replace(/\s*<[^>]+>\s*/g, '')
@@ -1159,7 +1163,7 @@ function parseProperty24Email(context = {}) {
     parserName: 'property24_email',
     source: 'Property24',
     fields: {
-      name: readLabelValue(body, ['enquiry by', 'enquired by', 'name', 'contact name', 'customer name']) || extractName(body, context.fromName),
+      name: readLabelValue(body, ['requested by name', 'requested by', 'requester name', 'requester', 'enquiry by', 'enquired by', 'name', 'contact name', 'customer name']) || extractName(body, context.fromName),
       email: normalizeCaptureEmail(readLabelValue(body, ['email', 'email address'])),
       phone: (readLabelValue(body, ['telephone', 'phone', 'mobile', 'contact number']) || extractPhone(body)).replace(/[^\d+]/g, ''),
       listingReference: extractListingReference(`${context.subject}\n${body}`),

@@ -7,9 +7,12 @@ import {
   CircleDollarSign,
   Copy,
   Download,
+  EyeOff,
+  FileText,
   FolderKanban,
   HandCoins,
   Home,
+  ImagePlus,
   Mail,
   LandPlot,
   MapPin,
@@ -21,6 +24,7 @@ import {
   ShieldCheck,
   TrendingUp,
   Upload,
+  Users,
   Workflow,
   XCircle,
 } from 'lucide-react'
@@ -55,11 +59,15 @@ import {
   saveDevelopmentDocument,
   saveDevelopmentFinancials,
   saveDevelopmentUnit,
+  uploadDevelopmentDocumentAsset,
+  updateDevelopmentTransactionSalesPrice,
   updateTransactionLifecycleStage,
   updateDevelopmentSettings,
+  upsertTransactionHandover,
 } from '../lib/api'
 import { fetchOrganisationSettings, listOrganisationUsers, normalizeOrganisationDeveloperProfile } from '../lib/settingsApi'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
+import { listDeveloperLeadIntake } from '../services/developerLeadService'
 
 const currency = new Intl.NumberFormat('en-ZA', {
   style: 'currency',
@@ -70,14 +78,15 @@ const currency = new Intl.NumberFormat('en-ZA', {
 const DEVELOPMENT_TABS = [
   { id: 'overview', label: 'Overview' },
   { id: 'units', label: 'Units' },
+  { id: 'leads', label: 'Leads' },
   { id: 'transactions', label: 'Transactions' },
   { id: 'performance', label: 'Performance' },
   { id: 'marketing', label: 'Marketing' },
-  { id: 'documents', label: 'Documents' },
   { id: 'configuration', label: 'Configuration' },
 ]
 
 const DOCUMENT_TYPE_OPTIONS = [
+  { value: 'logo', label: 'Development Logo' },
   { value: 'floorplan', label: 'Floorplan' },
   { value: 'pricing', label: 'Pricing / Sales' },
   { value: 'marketing', label: 'Marketing Asset' },
@@ -509,10 +518,20 @@ const DEVELOPMENT_UNIT_STATUS_LOOKUP = new Map(
   ]),
 )
 
+const DEVELOPMENT_LEAD_FUNNEL_STAGES = [
+  { key: 'new', label: 'Captured', statuses: ['new', 'captured'] },
+  { key: 'contacted', label: 'Contacted', statuses: ['contacted', 'qualified'] },
+  { key: 'viewing', label: 'Viewing', statuses: ['viewing', 'reserved', 'onboarding_sent', 'onboarding_submitted'] },
+  { key: 'otp', label: 'OTP', statuses: ['otp'] },
+  { key: 'converted', label: 'Converted', statuses: ['converted'] },
+]
+
 const CARD_SHELL =
   'rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.06)]'
 const READ_ONLY_FIELD_CLASS =
   'border-[#e3eaf3] bg-[#f8fafd] text-[#1f3347] shadow-none focus:border-[#e3eaf3] focus:ring-0'
+const UNIT_QUICK_FIELD_CLASS =
+  'h-10 w-full rounded-[10px] border border-transparent bg-transparent px-3 py-2 text-sm font-semibold text-[#142132] outline-none transition hover:border-[#dbe5ef] hover:bg-[#fbfcfe] focus:border-[#1f7a45] focus:bg-white focus:ring-2 focus:ring-[#dcefe4]'
 
 function DetailField({ label, className = '', children }) {
   return (
@@ -766,6 +785,25 @@ function textareaToList(value) {
     .split('\n')
     .map((item) => item.trim())
     .filter(Boolean)
+}
+
+function appendUniqueTextareaValues(value, additions = []) {
+  const existing = textareaToList(value)
+  const next = [...existing]
+  additions
+    .map((item) => String(item || '').trim())
+    .filter(Boolean)
+    .forEach((item) => {
+      if (!next.includes(item)) {
+        next.push(item)
+      }
+    })
+  return next.join('\n')
+}
+
+function isLikelyImageUrl(value = '') {
+  const normalized = String(value || '').split('?')[0].toLowerCase()
+  return /\.(avif|gif|jpe?g|png|svg|webp)$/.test(normalized) || normalized.startsWith('data:image/')
 }
 
 function parseSellingPointEntries(value) {
@@ -1212,6 +1250,14 @@ function normalizeUnitStatusKey(value) {
     .toLowerCase()
 }
 
+function normalizeDevelopmentLeadText(value) {
+  return String(value || '').trim()
+}
+
+function normalizeDevelopmentLeadKey(value) {
+  return normalizeDevelopmentLeadText(value).toLowerCase()
+}
+
 function normalizeDeveloperFinancialChoice(value, allowedValues, fallback) {
   const normalized = String(value || '').trim().toLowerCase()
   return allowedValues.includes(normalized) ? normalized : fallback
@@ -1348,6 +1394,99 @@ function getDevelopmentUnitStatusPillClassName(status) {
   return 'border-[#e2e8f0] bg-[#f8fafc] text-[#64748b]'
 }
 
+function developmentLeadBelongsToDevelopment(lead = {}, developmentId = '') {
+  const targetDevelopmentId = normalizeDevelopmentLeadText(developmentId)
+  if (!targetDevelopmentId) return false
+  if (normalizeDevelopmentLeadText(lead.primaryDevelopmentId) === targetDevelopmentId) return true
+  if ((lead.interestedDevelopmentIds || []).some((item) => normalizeDevelopmentLeadText(item) === targetDevelopmentId)) return true
+  return (lead.interests || []).some((interest) => normalizeDevelopmentLeadText(interest?.developmentId) === targetDevelopmentId)
+}
+
+function getDevelopmentLeadStagePresentation(status = 'new') {
+  const normalized = normalizeDevelopmentLeadKey(status || 'new')
+  if (normalized === 'converted') return { label: 'Converted', className: 'border-[#b7e4c7] bg-[#f1fbf4] text-[#166534]' }
+  if (normalized === 'otp') return { label: 'OTP', className: 'border-[#bfdbfe] bg-[#eff6ff] text-[#1d4ed8]' }
+  if (['onboarding_sent', 'onboarding_submitted'].includes(normalized)) return { label: toTitleLabel(normalized), className: 'border-[#bfdbfe] bg-[#eff6ff] text-[#1d4ed8]' }
+  if (['viewing', 'reserved'].includes(normalized)) return { label: toTitleLabel(normalized), className: 'border-[#d7e5f5] bg-[#f8fbff] text-[#35546c]' }
+  if (normalized === 'qualified') return { label: 'Qualified', className: 'border-[#b7e4c7] bg-[#f1fbf4] text-[#166534]' }
+  if (normalized === 'contacted') return { label: 'Contacted', className: 'border-[#f5d7a8] bg-[#fff8eb] text-[#8a5a12]' }
+  if (normalized === 'lost') return { label: 'Lost', className: 'border-[#f7d6d8] bg-[#fff5f5] text-[#b42318]' }
+  return { label: 'Captured', className: 'border-[#e2e8f0] bg-[#f8fafc] text-[#64748b]' }
+}
+
+function buildDevelopmentLeadAccessKeys(profile = {}, organisationUsers = []) {
+  const keys = new Set([
+    profile?.id,
+    profile?.email,
+  ].map(normalizeDevelopmentLeadKey).filter(Boolean))
+  const profileEmail = normalizeDevelopmentLeadKey(profile?.email)
+  const profileId = normalizeDevelopmentLeadKey(profile?.id)
+
+  organisationUsers.forEach((user) => {
+    const userKeys = [
+      user?.id,
+      user?.userId,
+      user?.user_id,
+      user?.email,
+    ].map(normalizeDevelopmentLeadKey).filter(Boolean)
+    if (userKeys.includes(profileEmail) || userKeys.includes(profileId)) {
+      userKeys.forEach((key) => keys.add(key))
+    }
+  })
+
+  return keys
+}
+
+function canOpenDevelopmentLead(lead = {}, accessKeys = new Set()) {
+  const assignedKeys = [
+    lead.assignedAgentId,
+    lead.sourceAgentUserId,
+    lead.assignedAgentEmail,
+  ].map(normalizeDevelopmentLeadKey).filter(Boolean)
+  return Boolean(normalizeDevelopmentLeadText(lead.sourceLeadId) && assignedKeys.some((key) => accessKeys.has(key)))
+}
+
+function getDevelopmentLeadDisplayName(lead = {}, canViewDetails = false) {
+  if (canViewDetails) {
+    return normalizeDevelopmentLeadText(lead.buyerFullName) || normalizeDevelopmentLeadText(lead.protectedSummary) || 'Buyer lead'
+  }
+  return normalizeDevelopmentLeadText(lead.protectedSummary) || normalizeDevelopmentLeadText(lead.publicReference) || 'Protected buyer lead'
+}
+
+function getDevelopmentLeadContactLine(lead = {}, canViewDetails = false) {
+  if (!canViewDetails) return 'Contact hidden'
+  return normalizeDevelopmentLeadText(lead.buyerEmail || lead.buyerPhone) || 'No contact captured'
+}
+
+function formatDevelopmentLeadBudget(lead = {}) {
+  const min = Number(lead.budgetMin || 0)
+  const max = Number(lead.budgetMax || 0)
+  if (min > 0 && max > 0) return `${currency.format(min)} - ${currency.format(max)}`
+  if (max > 0) return `Up to ${currency.format(max)}`
+  if (min > 0) return `From ${currency.format(min)}`
+  return 'Budget pending'
+}
+
+function getDevelopmentLeadAssignedLabel(lead = {}, organisationUsers = []) {
+  const assignedId = normalizeDevelopmentLeadKey(lead.assignedAgentId || lead.sourceAgentUserId)
+  const assignedUser = organisationUsers.find((user) =>
+    [
+      user?.id,
+      user?.userId,
+      user?.user_id,
+      user?.email,
+    ].map(normalizeDevelopmentLeadKey).includes(assignedId),
+  )
+  if (assignedUser) {
+    return normalizeDevelopmentLeadText(
+      assignedUser.fullName ||
+        [assignedUser.firstName, assignedUser.lastName].filter(Boolean).join(' ') ||
+        assignedUser.email,
+    ) || 'Assigned agent'
+  }
+  return normalizeDevelopmentLeadText(lead.assignedAgentEmail) || (assignedId ? 'Assigned agent' : 'Unassigned')
+}
+
 function getTransactionMonetaryValue(row = {}) {
   const numeric = Number(
     row?.transaction?.sales_price ??
@@ -1390,12 +1529,6 @@ function getTransactionStagePillClassName(stageKey) {
   return 'border-[#f7d6d8] bg-[#fff5f5] text-[#b42318]'
 }
 
-function getPhasePillClassName(phase) {
-  return phase
-    ? 'border border-[#dbe7f3] bg-[#f8fbff] text-[#35546c]'
-    : 'border border-[#e2e8f0] bg-[#f8fafc] text-[#64748b]'
-}
-
 function getHandoverPillClassName(status) {
   if (status === 'completed') {
     return 'border border-[#b7e4c7] bg-[#f1fbf4] text-[#166534]'
@@ -1433,25 +1566,6 @@ function getSnagSummaryLabel(snags = {}) {
   }
 
   return `${openCount} open`
-}
-
-function resolveUnitStructureLabel(unit = {}, structureMode = 'none') {
-  const phase = String(unit?.phase || '').trim()
-  const block = String(unit?.block || '').trim()
-
-  if (structureMode === 'phase_and_block') {
-    return [phase, block].filter(Boolean).join(' / ') || 'Not set'
-  }
-
-  if (structureMode === 'phase') {
-    return phase || 'Not set'
-  }
-
-  if (structureMode === 'block') {
-    return block || 'Not set'
-  }
-
-  return ''
 }
 
 function normalizeSellerDetailsForm(value = {}) {
@@ -1695,7 +1809,7 @@ function normalizeBankLabel(value) {
 function DevelopmentDetail() {
   const navigate = useNavigate()
   const { developmentId } = useParams()
-  const { role, can } = useWorkspace()
+  const { role, can, profile, currentWorkspace } = useWorkspace()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -1709,6 +1823,9 @@ function DevelopmentDetail() {
   const [agentAssignments, setAgentAssignments] = useState([])
   const [selectedAgentUserId, setSelectedAgentUserId] = useState('')
   const [manualAgentDraft, setManualAgentDraft] = useState({ name: '', email: '' })
+  const [developmentLeads, setDevelopmentLeads] = useState([])
+  const [developmentLeadsLoading, setDevelopmentLeadsLoading] = useState(false)
+  const [developmentLeadsError, setDevelopmentLeadsError] = useState('')
   const [financialsForm, setFinancialsForm] = useState(DEFAULT_FINANCIALS_FORM)
   const [reservationSettingsForm, setReservationSettingsForm] = useState(
     DEFAULT_RESERVATION_SETTINGS_FORM,
@@ -1734,9 +1851,11 @@ function DevelopmentDetail() {
   const [isEditingFinancialsSection, setIsEditingFinancialsSection] = useState(false)
   const [unitSaving, setUnitSaving] = useState(false)
   const [unitStatusSavingId, setUnitStatusSavingId] = useState('')
+  const [unitQuickSavingKey, setUnitQuickSavingKey] = useState('')
   const [bulkUnitSaving, setBulkUnitSaving] = useState(false)
   const [documentSaving, setDocumentSaving] = useState(false)
   const [documentDownloadingId, setDocumentDownloadingId] = useState('')
+  const [marketingAssetUploading, setMarketingAssetUploading] = useState('')
   const [emailComposeOpen, setEmailComposeOpen] = useState(false)
   const [emailSending, setEmailSending] = useState(false)
   const [selectedDocumentForEmail, setSelectedDocumentForEmail] = useState(null)
@@ -1849,6 +1968,45 @@ function DevelopmentDetail() {
   }, [])
 
   useEffect(() => {
+    let active = true
+
+    async function loadDevelopmentLeads() {
+      const developmentOwnerOrgId = normalizeDevelopmentLeadText(
+        data?.development?.organisation_id || data?.development?.organisationId,
+      )
+      const developerOrgId = developmentOwnerOrgId || normalizeDevelopmentLeadText(currentWorkspace?.id)
+      if (!isSupabaseConfigured || !data?.development?.id || !developerOrgId || !developmentId) {
+        setDevelopmentLeads([])
+        setDevelopmentLeadsLoading(false)
+        return
+      }
+
+      try {
+        setDevelopmentLeadsLoading(true)
+        setDevelopmentLeadsError('')
+        const leadRows = await listDeveloperLeadIntake({ developerOrgId, status: 'all', source: 'all' })
+        if (active) {
+          setDevelopmentLeads((leadRows || []).filter((lead) => developmentLeadBelongsToDevelopment(lead, developmentId)))
+        }
+      } catch (leadError) {
+        if (active) {
+          setDevelopmentLeads([])
+          setDevelopmentLeadsError(leadError?.message || 'Development leads could not be loaded.')
+        }
+      } finally {
+        if (active) {
+          setDevelopmentLeadsLoading(false)
+        }
+      }
+    }
+
+    void loadDevelopmentLeads()
+    return () => {
+      active = false
+    }
+  }, [currentWorkspace?.id, data?.development?.id, data?.development?.organisation_id, data?.development?.organisationId, developmentId])
+
+  useEffect(() => {
     function refreshDevelopment() {
       void loadData()
     }
@@ -1880,6 +2038,39 @@ function DevelopmentDetail() {
   const rows = useMemo(() => data?.rows || [], [data?.rows])
   const documents = useMemo(() => data?.documents || [], [data?.documents])
   const alterations = useMemo(() => data?.alterations || [], [data?.alterations])
+  const developmentLeadAccessKeys = useMemo(
+    () => buildDevelopmentLeadAccessKeys(profile, organisationUsers),
+    [organisationUsers, profile],
+  )
+  const developmentLeadRows = useMemo(
+    () =>
+      [...developmentLeads].sort(
+        (left, right) => new Date(right?.updatedAt || right?.createdAt || 0) - new Date(left?.updatedAt || left?.createdAt || 0),
+      ),
+    [developmentLeads],
+  )
+  const developmentLeadFunnelItems = useMemo(() => {
+    const counts = new Map(DEVELOPMENT_LEAD_FUNNEL_STAGES.map((stage) => [stage.key, 0]))
+    let protectedCount = 0
+
+    developmentLeadRows.forEach((lead) => {
+      const status = normalizeDevelopmentLeadKey(lead?.leadStatus || 'new')
+      const stage = DEVELOPMENT_LEAD_FUNNEL_STAGES.find((item) => item.statuses.includes(status)) || DEVELOPMENT_LEAD_FUNNEL_STAGES[0]
+      counts.set(stage.key, Number(counts.get(stage.key) || 0) + 1)
+      if (!canOpenDevelopmentLead(lead, developmentLeadAccessKeys)) {
+        protectedCount += 1
+      }
+    })
+
+    return {
+      total: developmentLeadRows.length,
+      protectedCount,
+      items: DEVELOPMENT_LEAD_FUNNEL_STAGES.map((stage) => ({
+        ...stage,
+        count: Number(counts.get(stage.key) || 0),
+      })),
+    }
+  }, [developmentLeadAccessKeys, developmentLeadRows])
   const bondEligibleRows = useMemo(
     () => rows.filter((row) => ['bond', 'combination'].includes(String(row?.transaction?.finance_type || '').toLowerCase())),
     [rows],
@@ -2442,12 +2633,35 @@ function DevelopmentDetail() {
         .filter((item) => item.fileUrl),
     [documents],
   )
+  const marketingLogoDocument = useMemo(
+    () => marketingAssetDocuments.find((item) => item.type === 'logo') || null,
+    [marketingAssetDocuments],
+  )
+  const marketingGalleryDocuments = useMemo(
+    () => marketingAssetDocuments.filter((item) => ['marketing', 'logo'].includes(item.type)),
+    [marketingAssetDocuments],
+  )
+  const marketingCoverImageUrl = useMemo(
+    () =>
+      marketingForm.mediaLibrary.heroImageUrl ||
+      marketingGalleryDocuments.find((item) => item.type === 'marketing' && isLikelyImageUrl(item.fileUrl))?.fileUrl ||
+      '',
+    [marketingForm.mediaLibrary.heroImageUrl, marketingGalleryDocuments],
+  )
+  const marketingLogoUrl = useMemo(
+    () => marketingForm.mediaLibrary.developmentLogoUrl || marketingLogoDocument?.fileUrl || '',
+    [marketingForm.mediaLibrary.developmentLogoUrl, marketingLogoDocument],
+  )
+  const floorplanDocumentOptions = useMemo(
+    () => marketingAssetDocuments.filter((item) => item.type === 'floorplan'),
+    [marketingAssetDocuments],
+  )
   const marketingAssetGroups = useMemo(
     () => [
       {
         key: 'gallery',
         title: 'Gallery & Branding',
-        items: marketingAssetDocuments.filter((item) => ['marketing'].includes(item.type)),
+        items: marketingAssetDocuments.filter((item) => ['marketing', 'logo'].includes(item.type)),
       },
       {
         key: 'plans',
@@ -3436,24 +3650,108 @@ function DevelopmentDetail() {
     setMarketingSellingPointEntries((previous) => previous.filter((_, currentIndex) => currentIndex !== index))
   }
 
-  function buildDevelopmentDetailsPayload() {
-    const marketingLegacyPayload = getMarketingLegacyPayload(detailsForm.marketing)
+  function buildDevelopmentDetailsPayload(sourceDetailsForm = detailsForm) {
+    const marketingLegacyPayload = getMarketingLegacyPayload(sourceDetailsForm.marketing)
     const marketingOverview = marketingLegacyPayload.marketingContent.listingOverview
 
     return {
-      ...detailsForm,
-      location: marketingOverview.locationLabel || detailsForm.location,
-      address: marketingOverview.address || detailsForm.address,
-      suburb: marketingOverview.suburb || detailsForm.suburb,
-      city: marketingOverview.city || detailsForm.city,
-      province: marketingOverview.province || detailsForm.province,
-      description: marketingLegacyPayload.description || detailsForm.description,
+      ...sourceDetailsForm,
+      location: marketingOverview.locationLabel || sourceDetailsForm.location,
+      address: marketingOverview.address || sourceDetailsForm.address,
+      suburb: marketingOverview.suburb || sourceDetailsForm.suburb,
+      city: marketingOverview.city || sourceDetailsForm.city,
+      province: marketingOverview.province || sourceDetailsForm.province,
+      description: marketingLegacyPayload.description || sourceDetailsForm.description,
       plans: marketingLegacyPayload.plans,
       sitePlans: marketingLegacyPayload.sitePlans,
       imageLinks: marketingLegacyPayload.imageLinks,
       supportingDocuments: marketingLegacyPayload.supportingDocuments,
       marketingContent: marketingLegacyPayload.marketingContent,
-      sellerDetails: normalizeSellerDetailsForm(detailsForm.sellerDetails),
+      sellerDetails: normalizeSellerDetailsForm(sourceDetailsForm.sellerDetails),
+    }
+  }
+
+  function buildDetailsFormWithUploadedMarketingAssets(uploadedRows = [], documentType = 'marketing') {
+    const urls = uploadedRows.map((item) => item?.fileUrl).filter(Boolean)
+    const normalizedMarketing = normalizeMarketingContentForm(detailsForm.marketing)
+    const nextMediaLibrary = { ...normalizedMarketing.mediaLibrary }
+
+    if (documentType === 'logo') {
+      nextMediaLibrary.developmentLogoUrl = urls[0] || nextMediaLibrary.developmentLogoUrl
+    } else if (documentType === 'floorplan') {
+      nextMediaLibrary.floorplanUrls = appendUniqueTextareaValues(nextMediaLibrary.floorplanUrls, urls)
+      if (selectedMarketingFloorplan?.id) {
+        normalizedMarketing.floorplans = normalizedMarketing.floorplans.map((item) =>
+          item.id === selectedMarketingFloorplan.id
+            ? {
+                ...item,
+                floorplanUrls: appendUniqueTextareaValues(item.floorplanUrls, urls),
+              }
+            : item,
+        )
+      }
+    } else if (documentType === 'site_plan') {
+      nextMediaLibrary.sitePlanUrl = urls[0] || nextMediaLibrary.sitePlanUrl
+    } else {
+      nextMediaLibrary.galleryImageUrls = appendUniqueTextareaValues(nextMediaLibrary.galleryImageUrls, urls)
+      if (!nextMediaLibrary.heroImageUrl && urls[0]) {
+        nextMediaLibrary.heroImageUrl = urls[0]
+      }
+      if (selectedMarketingFloorplan?.id) {
+        normalizedMarketing.floorplans = normalizedMarketing.floorplans.map((item) =>
+          item.id === selectedMarketingFloorplan.id
+            ? {
+                ...item,
+                imageUrls: appendUniqueTextareaValues(item.imageUrls, urls),
+              }
+            : item,
+        )
+      }
+    }
+
+    return {
+      ...detailsForm,
+      marketing: {
+        ...normalizedMarketing,
+        mediaLibrary: nextMediaLibrary,
+      },
+    }
+  }
+
+  async function handleMarketingAssetFileUpload(event, documentType, options = {}) {
+    const files = Array.from(event.target.files || [])
+    if (!files.length) return
+
+    const uploadKey = options.uploadKey || documentType
+    try {
+      setMarketingAssetUploading(uploadKey)
+      setError('')
+      setFeedback('')
+      const uploadedRows = []
+      for (const file of files) {
+        uploadedRows.push(
+          await uploadDevelopmentDocumentAsset({
+            developmentId: data.development.id,
+            file,
+            documentType,
+            title: options.title || file.name,
+            description: options.description || '',
+            linkedUnitType: options.linkedUnitType || selectedMarketingFloorplan?.id || '',
+          }),
+        )
+      }
+
+      const nextDetailsForm = buildDetailsFormWithUploadedMarketingAssets(uploadedRows, documentType)
+      setDetailsForm(nextDetailsForm)
+      await saveDevelopmentDetails(data.development.id, buildDevelopmentDetailsPayload(nextDetailsForm))
+      setFeedback(options.successMessage || 'Marketing assets uploaded.')
+      window.dispatchEvent(new Event('itg:developments-changed'))
+      await loadData()
+    } catch (uploadError) {
+      setError(uploadError.message)
+    } finally {
+      setMarketingAssetUploading('')
+      event.target.value = ''
     }
   }
 
@@ -3884,6 +4182,134 @@ function DevelopmentDetail() {
     }
   }
 
+  function buildUnitQuickSavePayload(unit, patch = {}) {
+    const merged = { ...buildUnitForm(unit), ...patch }
+    return {
+      ...merged,
+      id: unit.id,
+      developmentId: data.development.id,
+      unitNumber: merged.unitNumber,
+      unitLabel: merged.unitLabel || '',
+      block: merged.block || '',
+      unitType: merged.unitType || '',
+      bedrooms: merged.bedrooms === '' ? null : merged.bedrooms ?? null,
+      bathrooms: merged.bathrooms === '' ? null : merged.bathrooms ?? null,
+      parkingCount: merged.parkingCount === '' ? null : merged.parkingCount ?? null,
+      sizeSqm: merged.sizeSqm === '' ? null : merged.sizeSqm ?? null,
+      floorplanId: merged.floorplanId || null,
+      notes: merged.notes || '',
+      phase: merged.phase ?? '',
+      status: merged.status || 'Available',
+      listPrice: merged.listPrice === '' ? 0 : merged.listPrice ?? unit.price ?? 0,
+      currentPrice: merged.currentPrice === '' ? null : merged.currentPrice ?? unit.salesPrice ?? null,
+      vatApplicable: merged.vatApplicable === '' ? null : merged.vatApplicable ?? null,
+    }
+  }
+
+  async function handleUnitQuickSave(unit, patch, { field = 'unit', feedbackLabel = 'Unit updated.' } = {}) {
+    const saveKey = `${unit.id}:${field}`
+    const nextUnitNumber = Object.prototype.hasOwnProperty.call(patch, 'unitNumber')
+      ? String(patch.unitNumber || '').trim()
+      : String(unit.unitNumber || '').trim()
+
+    if (!nextUnitNumber) {
+      setError('Unit number is required.')
+      return
+    }
+
+    const duplicateUnitNumber = unitRows.some(
+      (candidate) =>
+        candidate.id !== unit.id &&
+        String(candidate.unitNumber || '').trim().toLowerCase() === nextUnitNumber.toLowerCase(),
+    )
+    if (duplicateUnitNumber) {
+      setError(`Unit ${nextUnitNumber} already exists in this development.`)
+      return
+    }
+
+    try {
+      setUnitSaving(true)
+      setUnitQuickSavingKey(saveKey)
+      setFeedback('')
+      setError('')
+
+      const unitPatch = { ...patch }
+      if (Object.prototype.hasOwnProperty.call(unitPatch, 'salesPrice')) {
+        const parsedSalesPrice = Number(unitPatch.salesPrice)
+        const nextSalesPrice = unitPatch.salesPrice === '' || !Number.isFinite(parsedSalesPrice) ? null : parsedSalesPrice
+        unitPatch.listPrice = nextSalesPrice ?? 0
+        unitPatch.currentPrice = nextSalesPrice
+        delete unitPatch.salesPrice
+        if (unit.currentTransactionId) {
+          await updateDevelopmentTransactionSalesPrice(unit.currentTransactionId, nextSalesPrice)
+        }
+      }
+
+      const nextStatusValue = Object.prototype.hasOwnProperty.call(unitPatch, 'status')
+        ? getDevelopmentUnitStatusOption(unitPatch.status).value || 'Available'
+        : unit.status || 'Available'
+      unitPatch.status = nextStatusValue
+
+      await saveDevelopmentUnit(buildUnitQuickSavePayload(unit, unitPatch))
+
+      const statusOption = getDevelopmentUnitStatusOption(nextStatusValue)
+      if (
+        Object.prototype.hasOwnProperty.call(patch, 'status') &&
+        unit.currentTransactionId &&
+        statusOption.lifecycleStage
+      ) {
+        await updateTransactionLifecycleStage(unit.currentTransactionId, statusOption.lifecycleStage, {
+          completed: Boolean(statusOption.completed),
+          status: statusOption.completed ? 'completed' : 'active',
+          source: 'development_unit_status_quick_update',
+          note: `Unit ${unit.unitNumber} marked ${nextStatusValue} from the development stock table.`,
+        })
+      }
+
+      setFeedback(feedbackLabel)
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      window.dispatchEvent(new Event('itg:developments-changed'))
+      await loadData()
+    } catch (saveError) {
+      setError(saveError.message)
+    } finally {
+      setUnitSaving(false)
+      setUnitQuickSavingKey('')
+    }
+  }
+
+  async function handleUnitHandoverDateQuickChange(unit, nextDate) {
+    if (!unit.currentTransactionId) {
+      setError('Handover dates can only be set after a transaction is linked to the unit.')
+      return
+    }
+
+    const saveKey = `${unit.id}:handoverDate`
+    try {
+      setUnitSaving(true)
+      setUnitQuickSavingKey(saveKey)
+      setFeedback('')
+      setError('')
+      await upsertTransactionHandover({
+        transactionId: unit.currentTransactionId,
+        handover: {
+          ...(unit.handover || {}),
+          handoverDate: nextDate || '',
+          status: unit.handover?.status || 'in_progress',
+        },
+      })
+      setFeedback(`Unit ${unit.unitNumber} handover date updated.`)
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      window.dispatchEvent(new Event('itg:developments-changed'))
+      await loadData()
+    } catch (saveError) {
+      setError(saveError.message)
+    } finally {
+      setUnitSaving(false)
+      setUnitQuickSavingKey('')
+    }
+  }
+
   async function handleUnitStatusQuickChange(unit, nextStatus) {
     const statusOption = getDevelopmentUnitStatusOption(nextStatus)
     const nextStatusValue = statusOption.value || 'Available'
@@ -3891,28 +4317,10 @@ function DevelopmentDetail() {
     try {
       setUnitSaving(true)
       setUnitStatusSavingId(unit.id)
+      setUnitQuickSavingKey(`${unit.id}:status`)
       setFeedback('')
       setError('')
-      await saveDevelopmentUnit({
-        ...buildUnitForm(unit),
-        id: unit.id,
-        developmentId: data.development.id,
-        unitNumber: unit.unitNumber,
-        unitLabel: unit.unitLabel || '',
-        block: unit.block || '',
-        unitType: unit.unitType || '',
-        bedrooms: unit.bedrooms ?? null,
-        bathrooms: unit.bathrooms ?? null,
-        parkingCount: unit.parkingCount ?? null,
-        sizeSqm: unit.sizeSqm ?? null,
-        floorplanId: unit.floorplanId || null,
-        notes: unit.notes || '',
-        phase: unit.phase ?? '',
-        status: nextStatusValue,
-        listPrice: unit.listPrice === '' ? 0 : unit.listPrice ?? unit.price ?? 0,
-        currentPrice: unit.currentPrice === '' ? null : unit.currentPrice ?? unit.salesPrice ?? null,
-        vatApplicable: unit.vatApplicable ?? null,
-      })
+      await saveDevelopmentUnit(buildUnitQuickSavePayload(unit, { status: nextStatusValue }))
 
       if (unit.currentTransactionId && statusOption.lifecycleStage) {
         await updateTransactionLifecycleStage(unit.currentTransactionId, statusOption.lifecycleStage, {
@@ -3932,6 +4340,7 @@ function DevelopmentDetail() {
     } finally {
       setUnitSaving(false)
       setUnitStatusSavingId('')
+      setUnitQuickSavingKey('')
     }
   }
 
@@ -4236,7 +4645,7 @@ function DevelopmentDetail() {
                   Add Transaction
                 </Button>
               ) : null}
-              <Button variant="secondary" onClick={() => setActiveTab('documents')}>
+              <Button variant="secondary" onClick={() => setActiveTab('marketing')}>
                 <Upload size={15} />
                 Upload Asset
               </Button>
@@ -4737,7 +5146,7 @@ function DevelopmentDetail() {
                   <Workflow size={15} />
                   Live Transactions
                 </Button>
-                <Button variant="ghost" onClick={() => setActiveTab('documents')}>
+                <Button variant="ghost" onClick={() => setActiveTab('marketing')}>
                   <FolderKanban size={15} />
                   Floorplans & Assets
                 </Button>
@@ -6140,10 +6549,27 @@ function DevelopmentDetail() {
                   Manage the public listing content by unit type, with clear pricing, descriptions, images, and floorplans.
                 </p>
               </div>
-              <Button type="button" variant="secondary" onClick={() => setActiveTab('documents')}>
+              <label className={`inline-flex h-11 cursor-pointer items-center justify-center gap-2 rounded-[10px] border px-4 text-sm font-semibold transition ${
+                marketingAssetUploading
+                  ? 'border-[#dbe6f2] bg-[#f5f8fb] text-[#9aa9ba]'
+                  : 'border-[#dbe6f2] bg-white text-[#20364c] shadow-[0_8px_16px_rgba(21,38,59,0.06)] hover:border-[#b9cadb] hover:bg-[#f8fbff]'
+              }`}>
                 <Upload size={15} />
-                Upload Assets
-              </Button>
+                Upload Images
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  disabled={Boolean(marketingAssetUploading)}
+                  onChange={(event) =>
+                    void handleMarketingAssetFileUpload(event, 'marketing', {
+                      uploadKey: 'gallery',
+                      successMessage: 'Marketing images uploaded.',
+                    })
+                  }
+                />
+              </label>
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -6269,6 +6695,302 @@ function DevelopmentDetail() {
                     value={marketingForm.listingOverview.address}
                     onChange={(event) => setMarketingField('listingOverview', 'address', event.target.value)}
                     placeholder="254 Outeniqua Street"
+                  />
+                </DetailField>
+              </div>
+            </section>
+
+            <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
+              <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <h4 className="text-sm font-semibold text-[#142132]">Listing Media</h4>
+                  <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
+                    Upload images, floorplans, video links, tour links, and the development logo from this tab.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <label className={`inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-[10px] border px-3 text-xs font-semibold transition ${
+                    marketingAssetUploading
+                      ? 'border-[#dbe6f2] bg-[#f5f8fb] text-[#9aa9ba]'
+                      : 'border-[#1f7a45] bg-[#1f7a45] text-white shadow-[0_8px_14px_rgba(31,122,69,0.16)] hover:bg-[#176339]'
+                  }`}>
+                    <ImagePlus size={14} />
+                    Upload Images
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      className="hidden"
+                      disabled={Boolean(marketingAssetUploading)}
+                      onChange={(event) =>
+                        void handleMarketingAssetFileUpload(event, 'marketing', {
+                          uploadKey: 'gallery',
+                          successMessage: 'Marketing images uploaded.',
+                        })
+                      }
+                    />
+                  </label>
+                  <label className={`inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-[10px] border px-3 text-xs font-semibold transition ${
+                    marketingAssetUploading
+                      ? 'border-[#dbe6f2] bg-[#f5f8fb] text-[#9aa9ba]'
+                      : 'border-[#dbe6f2] bg-white text-[#20364c] hover:border-[#b9cadb] hover:bg-[#f8fbff]'
+                  }`}>
+                    <FileText size={14} />
+                    Upload Floorplans
+                    <input
+                      type="file"
+                      accept=".pdf,image/*"
+                      multiple
+                      className="hidden"
+                      disabled={Boolean(marketingAssetUploading)}
+                      onChange={(event) =>
+                        void handleMarketingAssetFileUpload(event, 'floorplan', {
+                          uploadKey: 'floorplan',
+                          successMessage: 'Floorplans uploaded.',
+                        })
+                      }
+                    />
+                  </label>
+                  <label className={`inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-[10px] border px-3 text-xs font-semibold transition ${
+                    marketingAssetUploading
+                      ? 'border-[#dbe6f2] bg-[#f5f8fb] text-[#9aa9ba]'
+                      : 'border-[#dbe6f2] bg-white text-[#20364c] hover:border-[#b9cadb] hover:bg-[#f8fbff]'
+                  }`}>
+                    <Upload size={14} />
+                    Upload Logo
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                      className="hidden"
+                      disabled={Boolean(marketingAssetUploading)}
+                      onChange={(event) =>
+                        void handleMarketingAssetFileUpload(event, 'logo', {
+                          uploadKey: 'logo',
+                          title: `${data.development.name || 'Development'} logo`,
+                          successMessage: 'Development logo uploaded.',
+                        })
+                      }
+                    />
+                  </label>
+                </div>
+              </div>
+
+              <div className="grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+                <div className="grid gap-4">
+                  <article className="rounded-[16px] border border-[#dbe6f2] bg-white p-3">
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <h5 className="text-sm font-semibold text-[#20364c]">Main Cover Image</h5>
+                      {marketingCoverImageUrl ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => window.open(marketingCoverImageUrl, '_blank', 'noopener,noreferrer')}
+                        >
+                          View
+                        </Button>
+                      ) : null}
+                    </div>
+                    {marketingCoverImageUrl && isLikelyImageUrl(marketingCoverImageUrl) ? (
+                      <img
+                        src={marketingCoverImageUrl}
+                        alt={`${data.development.name || 'Development'} cover`}
+                        className="h-[220px] w-full rounded-[14px] object-cover"
+                      />
+                    ) : (
+                      <label className="flex h-[220px] cursor-pointer flex-col items-center justify-center rounded-[14px] border border-dashed border-[#cbd9e8] bg-[#f8fbff] text-center text-sm font-semibold text-[#587089]">
+                        <ImagePlus size={24} className="mb-2" />
+                        Add cover image
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          disabled={Boolean(marketingAssetUploading)}
+                          onChange={(event) =>
+                            void handleMarketingAssetFileUpload(event, 'marketing', {
+                              uploadKey: 'cover',
+                              successMessage: 'Cover image uploaded.',
+                            })
+                          }
+                        />
+                      </label>
+                    )}
+                  </article>
+
+                  <article className="rounded-[16px] border border-[#dbe6f2] bg-white p-3">
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <h5 className="text-sm font-semibold text-[#20364c]">Development Logo</h5>
+                      <span className="text-xs font-semibold text-[#7b8ca2]">
+                        {marketingLogoUrl ? 'Saved' : 'Not uploaded'}
+                      </span>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-[170px_minmax(0,1fr)] sm:items-center">
+                      <div className="flex h-24 items-center justify-center rounded-[14px] border border-dashed border-[#cbd9e8] bg-[#f8fbff] p-3">
+                        {marketingLogoUrl ? (
+                          <img src={marketingLogoUrl} alt={`${data.development.name || 'Development'} logo`} className="max-h-full max-w-full object-contain" />
+                        ) : (
+                          <span className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Logo</span>
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm leading-6 text-[#5c7289]">
+                          Store the development logo for listing artwork and future marketing collateral.
+                        </p>
+                        <label className="mt-3 inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-[10px] border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#20364c] hover:border-[#b9cadb] hover:bg-[#f8fbff]">
+                          <Upload size={13} />
+                          {marketingLogoUrl ? 'Replace Logo' : 'Upload Logo'}
+                          <input
+                            type="file"
+                            accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                            className="hidden"
+                            disabled={Boolean(marketingAssetUploading)}
+                            onChange={(event) =>
+                              void handleMarketingAssetFileUpload(event, 'logo', {
+                                uploadKey: 'logo',
+                                title: `${data.development.name || 'Development'} logo`,
+                                successMessage: 'Development logo uploaded.',
+                              })
+                            }
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  </article>
+                </div>
+
+                <div className="grid gap-4">
+                  <article className="rounded-[16px] border border-[#dbe6f2] bg-white p-3">
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <h5 className="text-sm font-semibold text-[#20364c]">Gallery Images ({marketingGalleryDocuments.filter((item) => item.type === 'marketing').length})</h5>
+                      <label className="inline-flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-[9px] border border-[#dbe6f2] bg-white px-2.5 text-xs font-semibold text-[#20364c] hover:border-[#b9cadb] hover:bg-[#f8fbff]">
+                        <ImagePlus size={13} />
+                        Add More
+                        <input
+                          type="file"
+                          accept="image/*"
+                          multiple
+                          className="hidden"
+                          disabled={Boolean(marketingAssetUploading)}
+                          onChange={(event) =>
+                            void handleMarketingAssetFileUpload(event, 'marketing', {
+                              uploadKey: 'gallery',
+                              successMessage: 'Marketing images uploaded.',
+                            })
+                          }
+                        />
+                      </label>
+                    </div>
+                    {marketingGalleryDocuments.filter((item) => item.type === 'marketing').length ? (
+                      <div className="grid gap-3 md:grid-cols-2">
+                        {marketingGalleryDocuments
+                          .filter((item) => item.type === 'marketing')
+                          .slice(0, 4)
+                          .map((item) => (
+                            <article key={item.id} className="overflow-hidden rounded-[14px] border border-[#e3ebf4] bg-[#fbfcfe]">
+                              {isLikelyImageUrl(item.fileUrl) ? (
+                                <img src={item.fileUrl} alt={item.title} className="h-28 w-full object-cover" />
+                              ) : (
+                                <div className="flex h-28 items-center justify-center bg-[#eef4fa] text-xs font-semibold text-[#6b7d93]">
+                                  Media file
+                                </div>
+                              )}
+                              <div className="flex items-center justify-between gap-3 px-3 py-2">
+                                <span className="min-w-0 truncate text-xs font-semibold text-[#20364c]">{item.title}</span>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="secondary"
+                                  onClick={() => window.open(item.fileUrl, '_blank', 'noopener,noreferrer')}
+                                >
+                                  View
+                                </Button>
+                              </div>
+                            </article>
+                          ))}
+                      </div>
+                    ) : (
+                      <label className="flex min-h-[150px] cursor-pointer flex-col items-center justify-center rounded-[14px] border border-dashed border-[#cbd9e8] bg-[#f8fbff] text-center text-sm font-semibold text-[#587089]">
+                        <ImagePlus size={24} className="mb-2" />
+                        Add gallery images
+                        <input
+                          type="file"
+                          accept="image/*"
+                          multiple
+                          className="hidden"
+                          disabled={Boolean(marketingAssetUploading)}
+                          onChange={(event) =>
+                            void handleMarketingAssetFileUpload(event, 'marketing', {
+                              uploadKey: 'gallery',
+                              successMessage: 'Marketing images uploaded.',
+                            })
+                          }
+                        />
+                      </label>
+                    )}
+                  </article>
+
+                  <article className="rounded-[16px] border border-[#dbe6f2] bg-white p-3">
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <h5 className="text-sm font-semibold text-[#20364c]">Floorplans ({floorplanDocumentOptions.length})</h5>
+                      <label className="inline-flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-[9px] border border-[#dbe6f2] bg-white px-2.5 text-xs font-semibold text-[#20364c] hover:border-[#b9cadb] hover:bg-[#f8fbff]">
+                        <FileText size={13} />
+                        Upload Floorplan
+                        <input
+                          type="file"
+                          accept=".pdf,image/*"
+                          multiple
+                          className="hidden"
+                          disabled={Boolean(marketingAssetUploading)}
+                          onChange={(event) =>
+                            void handleMarketingAssetFileUpload(event, 'floorplan', {
+                              uploadKey: 'floorplan',
+                              successMessage: 'Floorplans uploaded.',
+                            })
+                          }
+                        />
+                      </label>
+                    </div>
+                    {floorplanDocumentOptions.length ? (
+                      <div className="grid gap-2">
+                        {floorplanDocumentOptions.slice(0, 4).map((item) => (
+                          <div key={item.id} className="flex items-center justify-between gap-3 rounded-[12px] border border-[#e3ebf4] bg-[#fbfcfe] px-3 py-2.5">
+                            <div className="min-w-0">
+                              <strong className="block truncate text-sm text-[#20364c]">{item.title}</strong>
+                              <span className="block truncate text-xs text-[#6b7d93]">{item.description || 'Floorplan asset'}</span>
+                            </div>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => window.open(item.fileUrl, '_blank', 'noopener,noreferrer')}
+                            >
+                              View
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="rounded-[12px] border border-dashed border-[#cbd9e8] bg-[#f8fbff] px-4 py-5 text-sm text-[#6b7d93]">
+                        No floorplans uploaded yet.
+                      </div>
+                    )}
+                  </article>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-4 md:grid-cols-2">
+                <DetailField label="Video Link">
+                  <Field
+                    value={marketingForm.mediaLibrary.videoUrl}
+                    onChange={(event) => setMarketingField('mediaLibrary', 'videoUrl', event.target.value)}
+                    placeholder="https://youtu.be/..."
+                  />
+                </DetailField>
+                <DetailField label="Virtual Tour Link">
+                  <Field
+                    value={marketingForm.mediaLibrary.virtualTourUrl}
+                    onChange={(event) => setMarketingField('mediaLibrary', 'virtualTourUrl', event.target.value)}
+                    placeholder="https://my.matterport.com/..."
                   />
                 </DetailField>
               </div>
@@ -6428,7 +7150,7 @@ function DevelopmentDetail() {
                       <div>
                         <h4 className="text-sm font-semibold text-[#142132]">Upload Images</h4>
                         <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
-                          Add image links for this unit type, one per line, or use assets from Documents.
+                          Upload files directly or paste image links for this unit type, one per line.
                         </p>
                       </div>
                       <Upload size={16} className="text-[#607891]" />
@@ -6442,10 +7164,24 @@ function DevelopmentDetail() {
                       }
                       placeholder="https://.../unit-type-image.jpg"
                     />
-                    <Button type="button" size="sm" variant="secondary" className="mt-3" onClick={() => setActiveTab('documents')}>
+                    <label className="mt-3 inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#35546c] hover:border-[#b7c8db] hover:bg-[#f7fbff]">
                       <Upload size={13} />
-                      Manage Image Uploads
-                    </Button>
+                      Upload Images
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        className="hidden"
+                        disabled={Boolean(marketingAssetUploading)}
+                        onChange={(event) =>
+                          void handleMarketingAssetFileUpload(event, 'marketing', {
+                            uploadKey: `unit-images-${selectedMarketingFloorplan.id}`,
+                            linkedUnitType: selectedMarketingFloorplan.id,
+                            successMessage: 'Unit type images uploaded.',
+                          })
+                        }
+                      />
+                    </label>
                   </section>
 
                   <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
@@ -6453,7 +7189,7 @@ function DevelopmentDetail() {
                       <div>
                         <h4 className="text-sm font-semibold text-[#142132]">Upload Floorplans</h4>
                         <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
-                          Add floorplan links for this unit type, one per line, or upload them in Documents.
+                          Upload files directly or paste floorplan links for this unit type, one per line.
                         </p>
                       </div>
                       <Upload size={16} className="text-[#607891]" />
@@ -6467,10 +7203,24 @@ function DevelopmentDetail() {
                       }
                       placeholder="https://.../floorplan.pdf"
                     />
-                    <Button type="button" size="sm" variant="secondary" className="mt-3" onClick={() => setActiveTab('documents')}>
+                    <label className="mt-3 inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#35546c] hover:border-[#b7c8db] hover:bg-[#f7fbff]">
                       <Upload size={13} />
-                      Manage Floorplan Uploads
-                    </Button>
+                      Upload Floorplans
+                      <input
+                        type="file"
+                        accept=".pdf,image/*"
+                        multiple
+                        className="hidden"
+                        disabled={Boolean(marketingAssetUploading)}
+                        onChange={(event) =>
+                          void handleMarketingAssetFileUpload(event, 'floorplan', {
+                            uploadKey: `unit-floorplans-${selectedMarketingFloorplan.id}`,
+                            linkedUnitType: selectedMarketingFloorplan.id,
+                            successMessage: 'Unit type floorplans uploaded.',
+                          })
+                        }
+                      />
+                    </label>
                   </section>
                 </div>
               </section>
@@ -6649,8 +7399,8 @@ function DevelopmentDetail() {
                     <thead className="bg-[#f8fafc]">
                       <tr>
                         {[
+                          'Block',
                           'Unit Number',
-                          ...(unitStructureConfig.mode === 'none' ? [] : [unitStructureConfig.label]),
                           'Purchaser',
                           'Status',
                           'Sales Price',
@@ -6665,16 +7415,62 @@ function DevelopmentDetail() {
                     </thead>
                     <tbody className="divide-y divide-[#edf2f7] bg-white">
                       {filteredUnits.map((unit) => (
-                        <tr key={unit.id} className="cursor-pointer transition hover:bg-[#f8fbff]" onClick={() => openUnitModal(unit)}>
-                          <td className="px-5 py-4 text-sm font-semibold text-[#142132]">{unit.unitNumber}</td>
-                          {unitStructureConfig.mode !== 'none' ? (
-                            <td className="px-5 py-4">
-                              <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${getPhasePillClassName(resolveUnitStructureLabel(unit, unitStructureConfig.mode))}`}>
-                                {resolveUnitStructureLabel(unit, unitStructureConfig.mode)}
-                              </span>
-                            </td>
-                          ) : null}
-                          <td className="px-5 py-4 text-sm text-[#44576d]">{unit.buyerName || 'No purchaser assigned'}</td>
+                        <tr key={unit.id} className="transition hover:bg-[#f8fbff]">
+                          <td className="px-5 py-4 align-middle">
+                            <input
+                              className={`${UNIT_QUICK_FIELD_CLASS} max-w-[120px]`}
+                              defaultValue={unit.block || ''}
+                              placeholder="Block"
+                              disabled={unitQuickSavingKey === `${unit.id}:block`}
+                              aria-label={`Update block for unit ${unit.unitNumber}`}
+                              onClick={(event) => event.stopPropagation()}
+                              onBlur={(event) => {
+                                const nextBlock = event.target.value.trim()
+                                if (nextBlock === String(unit.block || '').trim()) return
+                                void handleUnitQuickSave(unit, { block: nextBlock }, {
+                                  field: 'block',
+                                  feedbackLabel: `Unit ${unit.unitNumber} block updated.`,
+                                })
+                              }}
+                            />
+                          </td>
+                          <td className="px-5 py-4 align-middle">
+                            <input
+                              className={`${UNIT_QUICK_FIELD_CLASS} max-w-[150px]`}
+                              defaultValue={unit.unitNumber || ''}
+                              placeholder="Unit number"
+                              disabled={unitQuickSavingKey === `${unit.id}:unitNumber`}
+                              aria-label={`Update unit number for ${unit.unitNumber || 'unit'}`}
+                              onClick={(event) => event.stopPropagation()}
+                              onBlur={(event) => {
+                                const nextUnitNumber = event.target.value.trim()
+                                if (nextUnitNumber === String(unit.unitNumber || '').trim()) return
+                                void handleUnitQuickSave(unit, { unitNumber: nextUnitNumber, unitLabel: nextUnitNumber }, {
+                                  field: 'unitNumber',
+                                  feedbackLabel: `Unit ${unit.unitNumber} number updated.`,
+                                })
+                              }}
+                            />
+                          </td>
+                          <td className="px-5 py-4 text-sm text-[#44576d]">
+                            {unit.currentTransactionId ? (
+                              <button
+                                type="button"
+                                className="max-w-[220px] truncate text-left text-sm font-semibold text-[#1f4f76] hover:text-[#0f6c43]"
+                                title={unit.buyerName || 'Open linked transaction'}
+                                onClick={() => openDevelopmentTransactionWorkspace({
+                                  transactionId: unit.currentTransactionId,
+                                  unitId: unit.id,
+                                  unitNumber: unit.unitNumber,
+                                  title: unit.buyerName || `Unit ${unit.unitNumber}`,
+                                })}
+                              >
+                                {unit.buyerName || 'Open linked transaction'}
+                              </button>
+                            ) : (
+                              <span>No purchaser assigned</span>
+                            )}
+                          </td>
                           <td className="px-5 py-4" onClick={(event) => event.stopPropagation()}>
                             <div className="grid min-w-[180px] gap-1.5">
                               <Field
@@ -6701,11 +7497,65 @@ function DevelopmentDetail() {
                               ) : null}
                             </div>
                           </td>
-                          <td className="px-5 py-4 text-sm text-[#44576d]">
-                            {Number.isFinite(Number(unit.salesPrice)) ? currency.format(Number(unit.salesPrice)) : 'Not set'}
+                          <td className="px-5 py-4 align-middle">
+                            <input
+                              className={`${UNIT_QUICK_FIELD_CLASS} max-w-[150px] font-medium text-[#44576d]`}
+                              type="number"
+                              min="0"
+                              step="1"
+                              defaultValue={Number.isFinite(Number(unit.salesPrice)) ? Number(unit.salesPrice) : ''}
+                              placeholder="0"
+                              disabled={unitQuickSavingKey === `${unit.id}:salesPrice`}
+                              aria-label={`Update sales price for unit ${unit.unitNumber}`}
+                              onClick={(event) => event.stopPropagation()}
+                              onBlur={(event) => {
+                                const nextValue = event.target.value
+                                const currentValue = Number.isFinite(Number(unit.salesPrice)) ? String(Number(unit.salesPrice)) : ''
+                                if (String(nextValue || '') === currentValue) return
+                                void handleUnitQuickSave(unit, { salesPrice: nextValue }, {
+                                  field: 'salesPrice',
+                                  feedbackLabel: `Unit ${unit.unitNumber} sales price updated.`,
+                                })
+                              }}
+                            />
                           </td>
-                          <td className="px-5 py-4 text-sm text-[#44576d]">{formatDate(unit.handover?.handoverDate || null)}</td>
-                          <td className="px-5 py-4 text-sm text-[#44576d]">{unit.floorplanName || 'No floorplan assigned'}</td>
+                          <td className="px-5 py-4 align-middle">
+                            <input
+                              className={`${UNIT_QUICK_FIELD_CLASS} max-w-[160px] font-medium text-[#44576d]`}
+                              type="date"
+                              defaultValue={normalizeDateInput(unit.handover?.handoverDate || '')}
+                              disabled={!unit.currentTransactionId || unitQuickSavingKey === `${unit.id}:handoverDate`}
+                              aria-label={`Update handover date for unit ${unit.unitNumber}`}
+                              title={unit.currentTransactionId ? 'Update handover date' : 'Handover date is available once a transaction is linked'}
+                              onClick={(event) => event.stopPropagation()}
+                              onChange={(event) => {
+                                void handleUnitHandoverDateQuickChange(unit, event.target.value)
+                              }}
+                            />
+                          </td>
+                          <td className="px-5 py-4 align-middle">
+                            <Field
+                              as="select"
+                              className="h-10 min-w-[190px] rounded-[10px] border border-transparent bg-transparent px-3 py-2 text-sm font-medium text-[#44576d] hover:border-[#dbe5ef] hover:bg-[#fbfcfe] focus:border-[#1f7a45] focus:bg-white"
+                              value={unit.floorplanId || ''}
+                              disabled={unitQuickSavingKey === `${unit.id}:floorplanId`}
+                              aria-label={`Update floorplan for unit ${unit.unitNumber}`}
+                              onClick={(event) => event.stopPropagation()}
+                              onChange={(event) => {
+                                void handleUnitQuickSave(unit, { floorplanId: event.target.value || null }, {
+                                  field: 'floorplanId',
+                                  feedbackLabel: `Unit ${unit.unitNumber} floorplan updated.`,
+                                })
+                              }}
+                            >
+                              <option value="">No floorplan assigned</option>
+                              {floorplanDocumentOptions.map((item) => (
+                                <option key={item.id} value={item.id}>
+                                  {item.title}
+                                </option>
+                              ))}
+                            </Field>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -6721,6 +7571,135 @@ function DevelopmentDetail() {
                 </div>
               </div>
             )}
+          </section>
+        </section>
+      ) : null}
+
+      {activeTab === 'leads' ? (
+        <section className="mt-4">
+          <section className={CARD_SHELL}>
+            <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Development Leads</h3>
+                <p className="mt-1.5 max-w-[760px] text-sm leading-6 text-[#6b7d93]">
+                  Buyer leads allocated to this development. Contact details and buyer lead access are only available to the receiving agent.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <span className="inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-3 py-1.5 text-xs font-semibold text-[#35546c]">
+                  <Users size={13} />
+                  {formatNumber(developmentLeadFunnelItems.total)} leads
+                </span>
+                {developmentLeadFunnelItems.protectedCount ? (
+                  <span className="inline-flex items-center gap-2 rounded-full border border-[#e2e8f0] bg-white px-3 py-1.5 text-xs font-semibold text-[#64748b]">
+                    <EyeOff size={13} />
+                    {formatNumber(developmentLeadFunnelItems.protectedCount)} protected
+                  </span>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-5">
+              {developmentLeadFunnelItems.items.map((stage) => (
+                <article key={stage.key} className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4">
+                  <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">
+                    {stage.label}
+                  </span>
+                  <strong className="mt-2 block text-2xl font-semibold tracking-[-0.03em] text-[#142132]">
+                    {formatNumber(stage.count)}
+                  </strong>
+                </article>
+              ))}
+            </div>
+
+            {developmentLeadsLoading ? (
+              <div className="mt-5 rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] px-5 py-8 text-center">
+                <p className="text-sm text-[#6b7d93]">Loading development leads...</p>
+              </div>
+            ) : null}
+
+            {developmentLeadsError ? (
+              <p className="mt-5 rounded-[16px] border border-[#f3d2cc] bg-[#fef3f2] px-5 py-4 text-sm text-[#b42318]">
+                {developmentLeadsError}
+              </p>
+            ) : null}
+
+            {!developmentLeadsLoading && !developmentLeadRows.length ? (
+              <div className="mt-5 rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-8 text-center">
+                <p className="text-sm text-[#6b7d93]">No buyer leads allocated to this development yet.</p>
+              </div>
+            ) : null}
+
+            {developmentLeadRows.length ? (
+              <div className="mt-5 overflow-hidden rounded-[18px] border border-[#e3ebf4] bg-white">
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-[#e8eef5]">
+                    <thead className="bg-[#f8fafc]">
+                      <tr>
+                        {['Lead', 'Interest', 'Assigned To', 'Stage', 'Last Activity', 'Access'].map((heading) => (
+                          <th key={heading} className="px-5 py-3 text-left text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">
+                            {heading}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#edf2f7] bg-white">
+                      {developmentLeadRows.map((lead) => {
+                        const sourceLeadId = normalizeDevelopmentLeadText(lead.sourceLeadId)
+                        const canOpenLead = canOpenDevelopmentLead(lead, developmentLeadAccessKeys)
+                        const stage = getDevelopmentLeadStagePresentation(lead.leadStatus)
+                        const displayName = getDevelopmentLeadDisplayName(lead, canOpenLead)
+                        const contactLine = getDevelopmentLeadContactLine(lead, canOpenLead)
+                        const assignedLabel = getDevelopmentLeadAssignedLabel(lead, organisationUsers)
+                        return (
+                          <tr
+                            key={lead.developerLeadId || lead.sourceLeadId || `${displayName}-${lead.createdAt}`}
+                            className={`transition ${canOpenLead ? 'cursor-pointer hover:bg-[#f8fbff]' : 'bg-white'}`}
+                            onClick={() => {
+                              if (!canOpenLead || !sourceLeadId) return
+                              navigate(`/pipeline/leads/${encodeURIComponent(sourceLeadId)}`)
+                            }}
+                          >
+                            <td className="px-5 py-4 align-top">
+                              <strong className="block text-sm font-semibold text-[#142132]">{displayName}</strong>
+                              <span className="mt-1 block text-xs text-[#6b7d93]">{contactLine}</span>
+                            </td>
+                            <td className="px-5 py-4 align-top">
+                              <span className="block text-sm font-semibold text-[#30485f]">{formatDevelopmentLeadBudget(lead)}</span>
+                              <span className="mt-1 block text-xs text-[#6b7d93]">
+                                {normalizeDevelopmentLeadText(lead.unitTypeInterest) || 'Unit interest pending'}
+                              </span>
+                            </td>
+                            <td className="px-5 py-4 align-top text-sm text-[#44576d]">{assignedLabel}</td>
+                            <td className="px-5 py-4 align-top">
+                              <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${stage.className}`}>
+                                {stage.label}
+                              </span>
+                            </td>
+                            <td className="px-5 py-4 align-top text-sm text-[#44576d]">
+                              {formatDate(lead.updatedAt || lead.createdAt)}
+                            </td>
+                            <td className="px-5 py-4 align-top">
+                              {canOpenLead ? (
+                                <span className="inline-flex items-center gap-1.5 rounded-full border border-[#cfe8d8] bg-[#edf9f1] px-3 py-1 text-xs font-semibold text-[#1f7a43]">
+                                  Open buyer lead
+                                  <ArrowUpRight size={12} />
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1.5 rounded-full border border-[#e2e8f0] bg-[#f8fafc] px-3 py-1 text-xs font-semibold text-[#64748b]">
+                                  <EyeOff size={12} />
+                                  {sourceLeadId ? 'Protected' : 'No buyer lead link'}
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : null}
           </section>
         </section>
       ) : null}

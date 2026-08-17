@@ -83,7 +83,6 @@ const ICON_BY_KEY = {
   agency_roles: ShieldUser,
   agency_activity: FileText,
   agency_analytics: FileText,
-  agency_legal_templates: FileText,
   teams: ShieldUser,
   teams_consultants: Users,
   teams_processors: ShieldUser,
