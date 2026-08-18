@@ -1088,6 +1088,10 @@ function normalizeMarketingBoolean(value, fallback = false) {
   return fallback
 }
 
+function firstDefinedMarketingValue(...values) {
+  return values.find((value) => value !== undefined && value !== null && String(value).trim() !== '')
+}
+
 function parseMarketingAmount(value) {
   if (value === null || value === undefined) return null
   const numeric = Number(String(value).replace(/[^0-9.-]+/g, ''))
@@ -1191,38 +1195,38 @@ function createDefaultMarketingFloorplan(index = 1) {
 
 function normalizeMarketingFloorplan(input = {}, index = 1) {
   const source = input && typeof input === 'object' ? input : {}
-  const text = (value, fallback = '') => String(value ?? fallback ?? '')
+  const text = (...values) => String(firstDefinedMarketingValue(...values, '') ?? '')
   return {
-    id: text(source.id, buildFloorplanDraftId()),
-    name: text(source.name, `Option ${index}`),
-    erfSize: text(source.erfSize, ''),
-    floorSize: text(source.floorSize, ''),
-    bedrooms: text(source.bedrooms, ''),
-    bathrooms: text(source.bathrooms, ''),
-    garage: text(source.garage, ''),
-    pool: text(source.pool, ''),
-    price: text(source.price, ''),
-    priceFrom: text(source.priceFrom, source.minPrice || source.price || ''),
-    priceTo: text(source.priceTo, source.maxPrice || source.price || ''),
-    description: text(source.description, source.notes || ''),
-    imageUrls: text(source.imageUrls, source.imageUrl || ''),
-    floorplanUrls: text(source.floorplanUrls, source.floorplanUrl || source.planUrl || ''),
-    videoUrl: text(source.videoUrl, ''),
-    virtualTourUrl: text(source.virtualTourUrl, ''),
-    documentUrls: text(source.documentUrls, source.documentUrl || ''),
-    keyFeatures: text(source.keyFeatures, source.features || ''),
-    marketingHighlights: text(source.marketingHighlights, source.highlights || ''),
-    ctaLabel: text(source.ctaLabel, 'Enquire Now'),
-    secondaryCtaLabel: text(source.secondaryCtaLabel, ''),
-    ctaUrl: text(source.ctaUrl, ''),
-    seoTitle: text(source.seoTitle, ''),
-    seoDescription: text(source.seoDescription, source.seoMetaDescription || ''),
-    listingSlug: text(source.listingSlug, ''),
-    listingStatus: text(source.listingStatus, source.status || 'draft'),
-    ratesAndTaxes: text(source.ratesAndTaxes, ''),
-    levies: text(source.levies, ''),
-    noTransferDuty: normalizeMarketingBoolean(source.noTransferDuty, false),
-    customisationOptions: normalizeMarketingBoolean(source.customisationOptions, false),
+    id: text(source.id, source.floorplanId, source.floorplan_id, source.unitTypeId, source.unit_type_id, buildFloorplanDraftId()),
+    name: text(source.name, source.title, source.unitType, source.unit_type, `Option ${index}`),
+    erfSize: text(source.erfSize, source.erf_size),
+    floorSize: text(source.floorSize, source.floor_size),
+    bedrooms: text(source.bedrooms),
+    bathrooms: text(source.bathrooms),
+    garage: text(source.garage, source.parking, source.parkingCount, source.parking_count),
+    pool: text(source.pool),
+    price: text(source.price),
+    priceFrom: text(source.priceFrom, source.price_from, source.minPrice, source.min_price, source.price),
+    priceTo: text(source.priceTo, source.price_to, source.maxPrice, source.max_price, source.price),
+    description: text(source.description, source.notes),
+    imageUrls: text(source.imageUrls, source.image_urls, source.imageUrl, source.image_url),
+    floorplanUrls: text(source.floorplanUrls, source.floorplan_urls, source.floorplanUrl, source.floorplan_url, source.planUrl, source.plan_url),
+    videoUrl: text(source.videoUrl, source.video_url),
+    virtualTourUrl: text(source.virtualTourUrl, source.virtual_tour_url),
+    documentUrls: text(source.documentUrls, source.document_urls, source.documentUrl, source.document_url),
+    keyFeatures: text(source.keyFeatures, source.key_features, source.features),
+    marketingHighlights: text(source.marketingHighlights, source.marketing_highlights, source.highlights),
+    ctaLabel: text(source.ctaLabel, source.cta_label, 'Enquire Now'),
+    secondaryCtaLabel: text(source.secondaryCtaLabel, source.secondary_cta_label),
+    ctaUrl: text(source.ctaUrl, source.cta_url),
+    seoTitle: text(source.seoTitle, source.seo_title),
+    seoDescription: text(source.seoDescription, source.seo_description, source.seoMetaDescription, source.seo_meta_description),
+    listingSlug: text(source.listingSlug, source.listing_slug),
+    listingStatus: text(source.listingStatus, source.listing_status, source.status, 'draft'),
+    ratesAndTaxes: text(source.ratesAndTaxes, source.rates_and_taxes),
+    levies: text(source.levies),
+    noTransferDuty: normalizeMarketingBoolean(firstDefinedMarketingValue(source.noTransferDuty, source.no_transfer_duty), false),
+    customisationOptions: normalizeMarketingBoolean(firstDefinedMarketingValue(source.customisationOptions, source.customisation_options), false),
   }
 }
 
@@ -1249,51 +1253,63 @@ function normalizeMarketingContentForm(input = null) {
   const defaults = DEFAULT_DETAILS_FORM.marketing
   const text = (value, fallback = '') => String(value ?? fallback ?? '')
   const bool = (value, fallback = false) => normalizeMarketingBoolean(value, fallback)
+  const listingOverviewSource = source?.listingOverview || source?.listing_overview || {}
+  const sellingPointsSource = source?.sellingPoints || source?.selling_points || {}
+  const keySellingPointsSource = source?.keySellingPoints || source?.key_selling_points || {}
+  const mediaLibrarySource = source?.mediaLibrary || source?.media_library || {}
+  const downloadsSource = source?.downloads || {}
+  const externalLinksSource = source?.externalLinks || source?.external_links || {}
+  const listingConfigurationSource = source?.listingConfiguration || source?.listing_configuration || {}
+  const floorplansSource = Array.isArray(source?.floorplans)
+    ? source.floorplans
+    : Array.isArray(source?.unitTypes)
+      ? source.unitTypes
+      : Array.isArray(source?.unit_types)
+        ? source.unit_types
+        : []
 
   return {
     listingOverview: {
-      listingTitle: text(source?.listingOverview?.listingTitle, defaults.listingOverview.listingTitle),
+      listingTitle: text(listingOverviewSource.listingTitle, defaults.listingOverview.listingTitle),
       listingHeading: text(
-        source?.listingOverview?.listingHeading,
-        source?.listingOverview?.shortTitle || defaults.listingOverview.listingHeading,
+        listingOverviewSource.listingHeading,
+        listingOverviewSource.shortTitle || defaults.listingOverview.listingHeading,
       ),
-      ownershipType: text(source?.listingOverview?.ownershipType, defaults.listingOverview.ownershipType),
-      locationLabel: text(source?.listingOverview?.locationLabel, defaults.listingOverview.locationLabel),
-      address: text(source?.listingOverview?.address, defaults.listingOverview.address),
-      suburb: text(source?.listingOverview?.suburb, defaults.listingOverview.suburb),
-      city: text(source?.listingOverview?.city, defaults.listingOverview.city),
-      province: text(source?.listingOverview?.province, defaults.listingOverview.province),
-      priceRange: text(source?.listingOverview?.priceRange, defaults.listingOverview.priceRange),
-      listingStatus: text(source?.listingOverview?.listingStatus, defaults.listingOverview.listingStatus || 'draft'),
-      listingDescription: text(source?.listingOverview?.listingDescription, defaults.listingOverview.listingDescription),
+      ownershipType: text(listingOverviewSource.ownershipType, defaults.listingOverview.ownershipType),
+      locationLabel: text(listingOverviewSource.locationLabel, defaults.listingOverview.locationLabel),
+      address: text(listingOverviewSource.address, defaults.listingOverview.address),
+      suburb: text(listingOverviewSource.suburb, defaults.listingOverview.suburb),
+      city: text(listingOverviewSource.city, defaults.listingOverview.city),
+      province: text(listingOverviewSource.province, defaults.listingOverview.province),
+      priceRange: text(listingOverviewSource.priceRange, defaults.listingOverview.priceRange),
+      listingStatus: text(listingOverviewSource.listingStatus, defaults.listingOverview.listingStatus || 'draft'),
+      listingDescription: text(listingOverviewSource.listingDescription, defaults.listingOverview.listingDescription),
       developmentChecklist: bool(
-        source?.listingOverview?.developmentChecklist,
+        listingOverviewSource.developmentChecklist,
         defaults.listingOverview.developmentChecklist,
       ),
-      fibreReady: bool(source?.listingOverview?.fibreReady, defaults.listingOverview.fibreReady),
-      borehole: bool(source?.listingOverview?.borehole, defaults.listingOverview.borehole),
+      fibreReady: bool(listingOverviewSource.fibreReady, defaults.listingOverview.fibreReady),
+      borehole: bool(listingOverviewSource.borehole, defaults.listingOverview.borehole),
       backupBatteryInverter: bool(
-        source?.listingOverview?.backupBatteryInverter,
+        listingOverviewSource.backupBatteryInverter,
         defaults.listingOverview.backupBatteryInverter,
       ),
-      gasGeyser: bool(source?.listingOverview?.gasGeyser, defaults.listingOverview.gasGeyser),
-      solarGeyser: bool(source?.listingOverview?.solarGeyser, defaults.listingOverview.solarGeyser),
-      solarPanels: bool(source?.listingOverview?.solarPanels, defaults.listingOverview.solarPanels),
-      waterTanks: bool(source?.listingOverview?.waterTanks, defaults.listingOverview.waterTanks),
-      petsAllowed: bool(source?.listingOverview?.petsAllowed, defaults.listingOverview.petsAllowed),
+      gasGeyser: bool(listingOverviewSource.gasGeyser, defaults.listingOverview.gasGeyser),
+      solarGeyser: bool(listingOverviewSource.solarGeyser, defaults.listingOverview.solarGeyser),
+      solarPanels: bool(listingOverviewSource.solarPanels, defaults.listingOverview.solarPanels),
+      waterTanks: bool(listingOverviewSource.waterTanks, defaults.listingOverview.waterTanks),
+      petsAllowed: bool(listingOverviewSource.petsAllowed, defaults.listingOverview.petsAllowed),
       notes: text(
-        source?.listingOverview?.notes,
-        source?.listingOverview?.shortDescription || defaults.listingOverview.notes,
+        listingOverviewSource.notes,
+        listingOverviewSource.shortDescription || defaults.listingOverview.notes,
       ),
-      seoTitle: text(source?.listingOverview?.seoTitle, defaults.listingOverview.seoTitle),
+      seoTitle: text(listingOverviewSource.seoTitle, defaults.listingOverview.seoTitle),
       seoMetaDescription: text(
-        source?.listingOverview?.seoMetaDescription,
+        listingOverviewSource.seoMetaDescription,
         defaults.listingOverview.seoMetaDescription,
       ),
     },
-    floorplans: Array.isArray(source?.floorplans)
-      ? source.floorplans.map((item, index) => normalizeMarketingFloorplan(item, index + 1))
-      : [],
+    floorplans: floorplansSource.map((item, index) => normalizeMarketingFloorplan(item, index + 1)),
     agencies: Array.isArray(source?.agencies)
       ? source.agencies.map((item, index) => normalizeMarketingAgency(item, index + 1))
       : Array.isArray(source?.agencyDirectory?.agencies)
@@ -1301,76 +1317,76 @@ function normalizeMarketingContentForm(input = null) {
         : [],
     sellingPoints: {
       items: text(
-        source?.sellingPoints?.items,
-        source?.keySellingPoints?.keyHighlights || defaults.sellingPoints.items,
+        sellingPointsSource.items,
+        keySellingPointsSource.keyHighlights || defaults.sellingPoints.items,
       ),
     },
     keySellingPoints: {
-      keyHighlights: text(source?.keySellingPoints?.keyHighlights, defaults.keySellingPoints.keyHighlights),
+      keyHighlights: text(keySellingPointsSource.keyHighlights, defaults.keySellingPoints.keyHighlights),
       lifestyleSellingPoints: text(
-        source?.keySellingPoints?.lifestyleSellingPoints,
+        keySellingPointsSource.lifestyleSellingPoints,
         defaults.keySellingPoints.lifestyleSellingPoints,
       ),
-      buyerAppealNotes: text(source?.keySellingPoints?.buyerAppealNotes, defaults.keySellingPoints.buyerAppealNotes),
+      buyerAppealNotes: text(keySellingPointsSource.buyerAppealNotes, defaults.keySellingPoints.buyerAppealNotes),
       nearbyAmenitiesSummary: text(
-        source?.keySellingPoints?.nearbyAmenitiesSummary,
+        keySellingPointsSource.nearbyAmenitiesSummary,
         defaults.keySellingPoints.nearbyAmenitiesSummary,
       ),
       securityEstateFeatures: text(
-        source?.keySellingPoints?.securityEstateFeatures,
+        keySellingPointsSource.securityEstateFeatures,
         defaults.keySellingPoints.securityEstateFeatures,
       ),
       whyThisDevelopment: text(
-        source?.keySellingPoints?.whyThisDevelopment,
+        keySellingPointsSource.whyThisDevelopment,
         defaults.keySellingPoints.whyThisDevelopment,
       ),
     },
     mediaLibrary: {
-      heroImageUrl: text(source?.mediaLibrary?.heroImageUrl, defaults.mediaLibrary.heroImageUrl),
-      galleryImageUrls: text(source?.mediaLibrary?.galleryImageUrls, defaults.mediaLibrary.galleryImageUrls),
-      developmentLogoUrl: text(source?.mediaLibrary?.developmentLogoUrl, defaults.mediaLibrary.developmentLogoUrl),
-      sitePlanUrl: text(source?.mediaLibrary?.sitePlanUrl, defaults.mediaLibrary.sitePlanUrl),
-      masterplanUrl: text(source?.mediaLibrary?.masterplanUrl, defaults.mediaLibrary.masterplanUrl),
-      floorplanUrls: text(source?.mediaLibrary?.floorplanUrls, defaults.mediaLibrary.floorplanUrls),
-      videoUrl: text(source?.mediaLibrary?.videoUrl, defaults.mediaLibrary.videoUrl),
-      virtualTourUrl: text(source?.mediaLibrary?.virtualTourUrl, defaults.mediaLibrary.virtualTourUrl),
+      heroImageUrl: text(mediaLibrarySource.heroImageUrl, mediaLibrarySource.hero_image_url || defaults.mediaLibrary.heroImageUrl),
+      galleryImageUrls: text(mediaLibrarySource.galleryImageUrls, mediaLibrarySource.gallery_image_urls || defaults.mediaLibrary.galleryImageUrls),
+      developmentLogoUrl: text(mediaLibrarySource.developmentLogoUrl, mediaLibrarySource.development_logo_url || defaults.mediaLibrary.developmentLogoUrl),
+      sitePlanUrl: text(mediaLibrarySource.sitePlanUrl, mediaLibrarySource.site_plan_url || defaults.mediaLibrary.sitePlanUrl),
+      masterplanUrl: text(mediaLibrarySource.masterplanUrl, mediaLibrarySource.masterplan_url || defaults.mediaLibrary.masterplanUrl),
+      floorplanUrls: text(mediaLibrarySource.floorplanUrls, mediaLibrarySource.floorplan_urls || defaults.mediaLibrary.floorplanUrls),
+      videoUrl: text(mediaLibrarySource.videoUrl, mediaLibrarySource.video_url || defaults.mediaLibrary.videoUrl),
+      virtualTourUrl: text(mediaLibrarySource.virtualTourUrl, mediaLibrarySource.virtual_tour_url || defaults.mediaLibrary.virtualTourUrl),
     },
     downloads: {
-      brochureUrl: text(source?.downloads?.brochureUrl, defaults.downloads.brochureUrl),
-      pricingSheetUrl: text(source?.downloads?.pricingSheetUrl, defaults.downloads.pricingSheetUrl),
-      specSheetUrl: text(source?.downloads?.specSheetUrl, defaults.downloads.specSheetUrl),
-      salesPackUrl: text(source?.downloads?.salesPackUrl, defaults.downloads.salesPackUrl),
-      investmentPackUrl: text(source?.downloads?.investmentPackUrl, defaults.downloads.investmentPackUrl),
-      termsPdfUrl: text(source?.downloads?.termsPdfUrl, defaults.downloads.termsPdfUrl),
-      applicationFormUrl: text(source?.downloads?.applicationFormUrl, defaults.downloads.applicationFormUrl),
+      brochureUrl: text(downloadsSource.brochureUrl, defaults.downloads.brochureUrl),
+      pricingSheetUrl: text(downloadsSource.pricingSheetUrl, defaults.downloads.pricingSheetUrl),
+      specSheetUrl: text(downloadsSource.specSheetUrl, defaults.downloads.specSheetUrl),
+      salesPackUrl: text(downloadsSource.salesPackUrl, defaults.downloads.salesPackUrl),
+      investmentPackUrl: text(downloadsSource.investmentPackUrl, defaults.downloads.investmentPackUrl),
+      termsPdfUrl: text(downloadsSource.termsPdfUrl, defaults.downloads.termsPdfUrl),
+      applicationFormUrl: text(downloadsSource.applicationFormUrl, defaults.downloads.applicationFormUrl),
     },
     externalLinks: {
       developmentLandingPageUrl: text(
-        source?.externalLinks?.developmentLandingPageUrl,
+        externalLinksSource.developmentLandingPageUrl,
         defaults.externalLinks.developmentLandingPageUrl,
       ),
-      googleMapsUrl: text(source?.externalLinks?.googleMapsUrl, defaults.externalLinks.googleMapsUrl),
-      externalWebsiteUrl: text(source?.externalLinks?.externalWebsiteUrl, defaults.externalLinks.externalWebsiteUrl),
-      salesPortalUrl: text(source?.externalLinks?.salesPortalUrl, defaults.externalLinks.salesPortalUrl),
-      whatsappEnquiryUrl: text(source?.externalLinks?.whatsappEnquiryUrl, defaults.externalLinks.whatsappEnquiryUrl),
-      bookingViewingUrl: text(source?.externalLinks?.bookingViewingUrl, defaults.externalLinks.bookingViewingUrl),
+      googleMapsUrl: text(externalLinksSource.googleMapsUrl, defaults.externalLinks.googleMapsUrl),
+      externalWebsiteUrl: text(externalLinksSource.externalWebsiteUrl, defaults.externalLinks.externalWebsiteUrl),
+      salesPortalUrl: text(externalLinksSource.salesPortalUrl, defaults.externalLinks.salesPortalUrl),
+      whatsappEnquiryUrl: text(externalLinksSource.whatsappEnquiryUrl, defaults.externalLinks.whatsappEnquiryUrl),
+      bookingViewingUrl: text(externalLinksSource.bookingViewingUrl, defaults.externalLinks.bookingViewingUrl),
     },
     listingConfiguration: {
       showOnListingWebsite: bool(
-        source?.listingConfiguration?.showOnListingWebsite,
+        listingConfigurationSource.showOnListingWebsite,
         defaults.listingConfiguration.showOnListingWebsite,
       ),
       featuredDevelopment: bool(
-        source?.listingConfiguration?.featuredDevelopment,
+        listingConfigurationSource.featuredDevelopment,
         defaults.listingConfiguration.featuredDevelopment,
       ),
-      displayOrder: text(source?.listingConfiguration?.displayOrder, defaults.listingConfiguration.displayOrder),
-      listingSlug: text(source?.listingConfiguration?.listingSlug, defaults.listingConfiguration.listingSlug),
-      ctaLabel: text(source?.listingConfiguration?.ctaLabel, defaults.listingConfiguration.ctaLabel),
-      ctaUrl: text(source?.listingConfiguration?.ctaUrl, defaults.listingConfiguration.ctaUrl),
-      marketingStatus: text(source?.listingConfiguration?.marketingStatus, defaults.listingConfiguration.marketingStatus),
+      displayOrder: text(listingConfigurationSource.displayOrder, defaults.listingConfiguration.displayOrder),
+      listingSlug: text(listingConfigurationSource.listingSlug, defaults.listingConfiguration.listingSlug),
+      ctaLabel: text(listingConfigurationSource.ctaLabel, defaults.listingConfiguration.ctaLabel),
+      ctaUrl: text(listingConfigurationSource.ctaUrl, defaults.listingConfiguration.ctaUrl),
+      marketingStatus: text(listingConfigurationSource.marketingStatus, defaults.listingConfiguration.marketingStatus),
       publicVisibility: bool(
-        source?.listingConfiguration?.publicVisibility,
+        listingConfigurationSource.publicVisibility,
         defaults.listingConfiguration.publicVisibility,
       ),
     },
@@ -3123,9 +3139,20 @@ function DevelopmentDetail() {
         .map((value) => normalizeMarketingUnitKey(value))
         .filter(Boolean),
     )
+    const knownUnitKeys = new Set(
+      marketingForm.floorplans
+        .flatMap((item) => [item.id, item.name])
+        .map((value) => normalizeMarketingUnitKey(value))
+        .filter(Boolean),
+    )
+    const shouldRecoverUnmatchedAssets = marketingForm.floorplans.length === 1
 
-    return marketingAssetDocuments.filter((item) => selectedKeys.has(normalizeMarketingUnitKey(item.linkedUnitType)))
-  }, [marketingAssetDocuments, selectedMarketingFloorplan])
+    return marketingAssetDocuments.filter((item) => {
+      const linkedUnitKey = normalizeMarketingUnitKey(item.linkedUnitType)
+      if (selectedKeys.has(linkedUnitKey)) return true
+      return shouldRecoverUnmatchedAssets && (!linkedUnitKey || !knownUnitKeys.has(linkedUnitKey))
+    })
+  }, [marketingAssetDocuments, marketingForm.floorplans, selectedMarketingFloorplan])
   const selectedMarketingUnitImageDocuments = useMemo(
     () =>
       selectedMarketingUnitAssets.filter(
@@ -4771,6 +4798,21 @@ function DevelopmentDetail() {
       setReservationSettingsForm(buildReservationSettingsForm(data.settings))
     }
     setIsEditingReservationSettings(false)
+  }
+
+  function handleReservationDepositRequiredChange(event) {
+    const enabledByDefault = event.target.checked
+    setReservationSettingsForm((previous) => ({ ...previous, enabledByDefault }))
+
+    if (!enabledByDefault) return
+
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        document
+          .getElementById('reservation-deposit-configuration-fields')
+          ?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+      })
+    })
   }
 
   function handleCancelFinancialsEdit() {
@@ -6740,7 +6782,7 @@ function DevelopmentDetail() {
                           <span className="mt-1 block text-xs leading-5 text-[#6b7d93]">Controls whether the buyer journey includes an active Reservation Deposit milestone.</span>
                         </span>
                         <span className="inline-flex items-center gap-3 text-sm font-semibold text-[#142132]">
-                          <input type="checkbox" className="sr-only" checked={Boolean(reservationSettingsForm.enabledByDefault)} disabled={!isEditingReservationSettings || reservationSettingsSaving} onChange={(event) => setReservationSettingsForm((previous) => ({ ...previous, enabledByDefault: event.target.checked }))} />
+                          <input type="checkbox" className="sr-only" checked={Boolean(reservationSettingsForm.enabledByDefault)} disabled={!isEditingReservationSettings || reservationSettingsSaving} onChange={handleReservationDepositRequiredChange} />
                           <span className={`inline-flex h-6 w-11 items-center rounded-full p-0.5 transition ${reservationSettingsForm.enabledByDefault ? 'bg-[#1f7a43]' : 'bg-[#cbd7e4]'}`} aria-hidden>
                             <span className={`h-5 w-5 rounded-full bg-white shadow transition ${reservationSettingsForm.enabledByDefault ? 'translate-x-5' : 'translate-x-0'}`} />
                           </span>
@@ -6753,7 +6795,7 @@ function DevelopmentDetail() {
                       <div className="rounded-[16px] border border-[#e4ebf3] bg-[#f8fafc] px-4 py-4 text-sm font-medium text-[#6b7d93]">No reservation deposit required.</div>
                     ) : (
                       <>
-                        <div className="grid gap-4 md:grid-cols-4">
+                        <div id="reservation-deposit-configuration-fields" className="scroll-mt-28 grid gap-4 md:grid-cols-4">
                           <DetailField label="Deposit Amount">
                             <Field type="number" min="0" step="0.01" value={reservationSettingsForm.defaultDepositAmount} disabled={!isEditingReservationSettings || reservationSettingsSaving} className={!isEditingReservationSettings ? READ_ONLY_FIELD_CLASS : ''} onChange={(event) => setReservationSettingsForm((previous) => ({ ...previous, defaultDepositAmount: event.target.value }))} placeholder="10000.00" />
                             {reservationDepositAmount > 0 ? (

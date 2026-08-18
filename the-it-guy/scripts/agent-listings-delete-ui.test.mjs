@@ -4,10 +4,12 @@ import path from 'node:path'
 const root = process.cwd()
 const sourcePath = path.join(root, 'src/pages/AgentListings.jsx')
 const storagePath = path.join(root, 'src/lib/agentListingStorage.js')
+const servicePath = path.join(root, 'src/services/privateListingService.js')
 const packagePath = path.join(root, 'package.json')
 
 const source = fs.readFileSync(sourcePath, 'utf8')
 const storageSource = fs.readFileSync(storagePath, 'utf8')
+const serviceSource = fs.readFileSync(servicePath, 'utf8')
 const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8'))
 
 function assert(condition, message) {
@@ -37,8 +39,8 @@ assert(
 )
 
 assert(
-  source.includes('const remoteListingId = listingIdentityKeys.find((value) => isUuidLike(value)) ||'),
-  'handleDeleteListing should choose a UUID identity for remote Supabase deletion.',
+  source.includes('const remoteListingId = getRemotePrivateListingId(card?.listingRecord || card) || listingIdentityKeys.find((value) => isUuidLike(value)) ||'),
+  'handleDeleteListing should prefer the typed private listing id and fall back to a UUID identity for remote Supabase deletion.',
 )
 
 assert(
@@ -58,6 +60,11 @@ assert(
     storageSource.includes("addListingDeleteIdentity(ids, 'ref', record.listingReference || record.listing_reference || record.listingCode || record.listing_code)") &&
     storageSource.includes("addListingDeleteIdentity(ids, 'place', record.googlePlaceId || record.google_place_id || record.placeId || record.place_id)"),
   'local listing storage should use the same non-UUID tombstone identities.',
+)
+
+assert(
+  serviceSource.includes('isMissingTableError(error, tableName) || isMissingColumnError(error, columnName) || isPermissionDeniedError(error)'),
+  'private listing related-row cleanup should skip inaccessible child tables so the parent listing can still be archived or deleted.',
 )
 
 assert(

@@ -806,45 +806,138 @@ button.queue-item:hover,
 
 .public-intake-shell {
   background:
-    radial-gradient(circle at top left, rgba(37, 99, 235, 0.08), transparent 28rem),
-    linear-gradient(180deg, #f7f9fc 0%, #ffffff 100%);
-  color: #0b1736;
+    radial-gradient(circle at 12% 14%, rgba(66, 211, 176, 0.16), transparent 22rem),
+    linear-gradient(180deg, #fbf6eb 0%, #fffdf8 56%, #fbf6eb 100%);
+  color: #04372d;
   display: grid;
-  gap: 24px;
+  gap: 0;
   min-height: 100vh;
-  padding: 28px;
+  padding: 0 18px 28px;
   place-items: start center;
 }
 
 .intake-hero {
-  align-items: center;
-  display: flex;
-  gap: 28px;
-  justify-content: space-between;
-  max-width: 1040px;
+  background:
+    radial-gradient(circle at 82% 28%, rgba(89, 218, 179, 0.22), transparent 13rem),
+    radial-gradient(circle at 10% 8%, rgba(245, 230, 199, 0.12), transparent 16rem),
+    linear-gradient(135deg, #002d25 0%, #003f34 52%, #062c27 100%);
+  border-radius: 0 0 48% 48% / 0 0 9% 9%;
+  box-shadow: 0 26px 70px rgba(0, 45, 37, 0.22);
+  color: #fff8eb;
+  display: grid;
+  gap: 24px;
+  max-width: 920px;
+  min-height: 300px;
+  overflow: hidden;
+  padding: max(28px, env(safe-area-inset-top)) 34px 66px;
+  position: relative;
   width: 100%;
 }
 
 .intake-brand {
-  display: grid;
-  gap: 6px;
-}
-
-.intake-brand span {
   align-items: center;
-  background: #071842;
-  border-radius: 8px;
-  color: #ffffff;
-  display: inline-flex;
-  font-weight: 800;
-  height: 42px;
-  justify-content: center;
-  width: 42px;
+  display: flex;
+  min-height: 72px;
+  position: relative;
+  z-index: 2;
 }
 
-.intake-brand strong {
-  font-size: 1.1rem;
-  text-transform: uppercase;
+.intake-brand img {
+  display: block;
+  filter: drop-shadow(0 14px 24px rgba(0, 0, 0, 0.2));
+  height: auto;
+  max-width: min(220px, 72vw);
+  width: 220px;
+}
+
+.intake-hero-copy {
+  display: grid;
+  gap: 14px;
+  max-width: 620px;
+  position: relative;
+  z-index: 2;
+}
+
+.intake-hero-copy h1 {
+  color: #fffaf1;
+  font-size: clamp(2.55rem, 8vw, 4.75rem);
+  letter-spacing: 0;
+  line-height: 0.98;
+  margin: 0;
+}
+
+.intake-hero-copy p {
+  color: rgba(255, 250, 241, 0.9);
+  font-size: clamp(1.08rem, 3vw, 1.65rem);
+  line-height: 1.38;
+  margin: 0;
+}
+
+.intake-hero-copy .intake-hero-subtitle {
+  color: #f7dfaa;
+  font-weight: 750;
+}
+
+.intake-network {
+  inset: 0;
+  opacity: 0.62;
+  pointer-events: none;
+  position: absolute;
+}
+
+.intake-network::before,
+.intake-network::after {
+  border: 2px solid rgba(247, 223, 170, 0.26);
+  border-left-color: transparent;
+  border-radius: 999px;
+  content: "";
+  position: absolute;
+}
+
+.intake-network::before {
+  height: 210px;
+  right: -32px;
+  top: 36px;
+  transform: rotate(18deg);
+  width: 280px;
+}
+
+.intake-network::after {
+  bottom: 42px;
+  height: 140px;
+  right: 72px;
+  transform: rotate(-12deg);
+  width: 230px;
+}
+
+.intake-network span {
+  background: #f7dfaa;
+  border-radius: 999px;
+  box-shadow: 0 0 0 10px rgba(247, 223, 170, 0.13);
+  height: 9px;
+  position: absolute;
+  width: 9px;
+}
+
+.intake-network span:nth-child(1) {
+  right: 72px;
+  top: 82px;
+}
+
+.intake-network span:nth-child(2) {
+  right: 170px;
+  top: 192px;
+}
+
+.intake-network span:nth-child(3) {
+  background: #55d9b4;
+  bottom: 86px;
+  right: 42px;
+}
+
+.intake-network span:nth-child(4) {
+  bottom: 42px;
+  right: 244px;
 }
 
 .intake-progress {
@@ -856,7 +949,7 @@ button.queue-item:hover,
 
 .intake-progress div {
   align-items: center;
-  color: #667085;
+  color: rgba(255, 248, 235, 0.72);
   display: flex;
   gap: 8px;
 }
@@ -872,9 +965,9 @@ button.queue-item:hover,
 
 .intake-progress span {
   align-items: center;
-  background: #e8edf7;
+  background: rgba(255, 248, 235, 0.16);
   border-radius: 999px;
-  color: #071842;
+  color: #fff8eb;
   display: inline-flex;
   font-size: 0.82rem;
   font-weight: 800;
@@ -884,8 +977,8 @@ button.queue-item:hover,
 }
 
 .intake-progress .active span {
-  background: #071842;
-  color: #ffffff;
+  background: #fff8eb;
+  color: #003f32;
 }
 
 .intake-progress strong {
@@ -894,15 +987,25 @@ button.queue-item:hover,
 
 .intake-card {
   background: rgba(255, 255, 255, 0.94);
-  border: 1px solid #d9e1ee;
-  border-radius: 8px;
-  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.1);
+  border: 1px solid rgba(0, 63, 50, 0.1);
+  border-radius: 24px;
+  box-shadow: 0 24px 70px rgba(0, 45, 37, 0.1);
   display: grid;
   gap: 22px;
   max-width: 620px;
   min-height: 560px;
   padding: 28px;
+  transform: translateY(-28px);
   width: 100%;
+}
+
+.role-selection-card {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  max-width: 920px;
+  min-height: auto;
+  padding: 34px 0 0;
 }
 
 .intake-step-meta {
@@ -926,7 +1029,7 @@ button.queue-item:hover,
 }
 
 .intake-step-meta b {
-  background: #1457d9;
+  background: #003f32;
   display: block;
   height: 100%;
 }
@@ -938,7 +1041,7 @@ button.queue-item:hover,
 
 .intake-stack h1,
 .confirmation-content h1 {
-  color: #0b1736;
+  color: #04372d;
   font-size: 1.55rem;
   letter-spacing: 0;
   line-height: 1.18;
@@ -947,53 +1050,142 @@ button.queue-item:hover,
 
 .intake-stack p,
 .confirmation-content p {
-  color: #344054;
+  color: #31433e;
   line-height: 1.45;
   margin: 0;
 }
 
+.role-selection-stack h1 {
+  font-size: clamp(2.2rem, 5vw, 3.35rem);
+  line-height: 1;
+}
+
 .role-card-grid {
   display: grid;
-  gap: 12px;
+  gap: 20px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .role-card-grid button,
 .intake-check-grid button {
   background: #ffffff;
-  border: 1px solid #d9e1ee;
-  border-radius: 8px;
-  color: #0b1736;
+  border: 1px solid rgba(0, 63, 50, 0.14);
+  border-radius: 20px;
+  color: #04372d;
 }
 
 .role-card-grid button {
   display: grid;
-  gap: 9px;
-  min-height: 142px;
-  padding: 18px;
+  gap: 13px;
+  min-height: 188px;
+  padding: 26px;
+  position: relative;
+  box-shadow: 0 16px 36px rgba(0, 45, 37, 0.08);
   text-align: left;
 }
 
 .role-card-grid button svg {
-  color: #1457d9;
+  color: currentColor;
+}
+
+.role-card-grid .role-icon-badge svg {
+  color: #f7dfaa;
+}
+
+.role-icon-badge {
+  align-items: center;
+  background:
+    radial-gradient(circle at 24% 18%, rgba(85, 217, 180, 0.34), transparent 42%),
+    linear-gradient(135deg, #003f32 0%, #002d25 100%);
+  border-radius: 999px;
+  color: #f7dfaa;
+  display: inline-flex;
+  height: 58px;
+  justify-content: center;
+  width: 58px;
+}
+
+.role-card-check {
+  background: #003f32;
+  border-radius: 999px;
+  color: #fff8eb;
+  padding: 2px;
+  position: absolute;
+  right: 20px;
+  top: 20px;
 }
 
 .role-card-grid button strong {
-  font-size: 0.95rem;
+  font-size: 1.42rem;
+  letter-spacing: -0.01em;
 }
 
 .role-card-grid button span {
-  color: #475467;
-  font-size: 0.8rem;
-  line-height: 1.35;
+  color: #33443f;
+  font-size: 1rem;
+  line-height: 1.38;
+}
+
+.role-card-grid button em {
+  background: rgba(0, 63, 50, 0.1);
+  border-radius: 999px;
+  color: #005444;
+  display: inline-flex;
+  font-size: 0.88rem;
+  font-style: normal;
+  font-weight: 650;
+  justify-self: start;
+  padding: 7px 12px;
 }
 
 .role-card-grid button.selected,
 .role-card-grid button:hover,
 .intake-check-grid button.selected,
 .intake-check-grid button:hover {
-  background: #f3f7ff;
-  border-color: #1457d9;
+  background: #f0f7ef;
+  border-color: #003f32;
+}
+
+.role-card-grid button:focus-visible,
+.intake-check-grid button:focus-visible,
+.intake-actions button:focus-visible {
+  outline: 3px solid rgba(85, 217, 180, 0.42);
+  outline-offset: 3px;
+}
+
+.intake-personality-strip {
+  align-items: center;
+  background:
+    radial-gradient(circle at left, rgba(85, 217, 180, 0.15), transparent 16rem),
+    rgba(240, 247, 239, 0.82);
+  border: 1px solid rgba(0, 63, 50, 0.08);
+  border-radius: 20px;
+  display: flex;
+  gap: 18px;
+  padding: 18px 22px;
+}
+
+.intake-personality-strip > span {
+  align-items: center;
+  background:
+    radial-gradient(circle at 24% 18%, rgba(85, 217, 180, 0.34), transparent 42%),
+    linear-gradient(135deg, #003f32 0%, #002d25 100%);
+  border-radius: 999px;
+  color: #86e8c6;
+  display: inline-flex;
+  flex: 0 0 58px;
+  height: 58px;
+  justify-content: center;
+  width: 58px;
+}
+
+.intake-personality-strip p {
+  color: #102c26;
+  font-size: 1.08rem;
+}
+
+.intake-personality-strip strong {
+  display: block;
 }
 
 .intake-field-grid {
@@ -1050,7 +1242,7 @@ button.queue-item:hover,
 }
 
 .intake-check-grid button svg {
-  color: #1457d9;
+  color: #006b4d;
   flex: 0 0 auto;
 }
 
@@ -1083,6 +1275,18 @@ button.queue-item:hover,
   min-width: 112px;
 }
 
+.role-selection-card .intake-actions {
+  justify-content: stretch;
+}
+
+.role-selection-card .intake-actions .primary-button {
+  border-radius: 18px;
+  box-shadow: 0 18px 34px rgba(0, 45, 37, 0.22);
+  font-size: 1.12rem;
+  min-height: 64px;
+  width: 100%;
+}
+
 .primary-button:disabled,
 .secondary-button:disabled {
   cursor: not-allowed;
@@ -1090,7 +1294,7 @@ button.queue-item:hover,
 }
 
 .confirmation-card {
-  background: #071842;
+  background: #003f32;
   color: #ffffff;
 }
 
@@ -2195,7 +2399,39 @@ button:disabled {
   }
 
   .public-intake-shell {
-    padding: 18px;
+    padding: 0 14px 24px;
+  }
+
+  .intake-hero {
+    border-radius: 0 0 46% 46% / 0 0 6% 6%;
+    gap: 18px;
+    min-height: 282px;
+    padding: max(22px, env(safe-area-inset-top)) 22px 54px;
+  }
+
+  .intake-brand {
+    min-height: 56px;
+  }
+
+  .intake-brand img {
+    width: min(180px, 62vw);
+  }
+
+  .intake-network::before {
+    right: -120px;
+    top: 32px;
+  }
+
+  .intake-network::after {
+    right: -18px;
+  }
+
+  .intake-hero-copy h1 {
+    font-size: clamp(2.35rem, 13vw, 3.4rem);
+  }
+
+  .intake-hero-copy p {
+    font-size: 1.08rem;
   }
 
   .intake-progress {
@@ -2210,9 +2446,67 @@ button:disabled {
   .intake-card {
     min-height: auto;
     padding: 20px;
+    transform: translateY(-22px);
   }
 
-  .role-card-grid,
+  .role-selection-card {
+    padding: 26px 0 0;
+  }
+
+  .role-selection-stack {
+    gap: 18px;
+  }
+
+  .role-selection-stack h1 {
+    font-size: 2.25rem;
+  }
+
+  .role-card-grid {
+    gap: 14px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .role-card-grid button {
+    border-radius: 18px;
+    gap: 10px;
+    min-height: 168px;
+    padding: 16px;
+  }
+
+  .role-icon-badge,
+  .intake-personality-strip > span {
+    height: 48px;
+    width: 48px;
+  }
+
+  .role-card-check {
+    right: 14px;
+    top: 14px;
+  }
+
+  .role-card-grid button strong {
+    font-size: 1.08rem;
+  }
+
+  .role-card-grid button span {
+    font-size: 0.86rem;
+  }
+
+  .role-card-grid button em {
+    font-size: 0.75rem;
+    padding: 6px 10px;
+  }
+
+  .intake-personality-strip {
+    border-radius: 18px;
+    gap: 14px;
+    padding: 16px;
+  }
+
+  .intake-personality-strip p {
+    font-size: 0.98rem;
+  }
+
   .intake-field-grid,
   .intake-check-grid,
   .intake-check-grid.two-col,

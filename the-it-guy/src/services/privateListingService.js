@@ -1504,7 +1504,7 @@ function isMissingPrivateListingActivityError(error) {
 }
 
 function isRecoverableDeleteSchemaError(error, tableName = '', columnName = '') {
-  return isMissingTableError(error, tableName) || isMissingColumnError(error, columnName)
+  return isMissingTableError(error, tableName) || isMissingColumnError(error, columnName) || isPermissionDeniedError(error)
 }
 
 async function deleteRowsByColumn(client, tableName, columnName, value) {

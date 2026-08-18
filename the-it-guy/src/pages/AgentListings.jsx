@@ -3859,7 +3859,7 @@ function AgentListings({ initialTab = null } = {}) {
       card?.id,
     ].map((value) => String(value || '').trim()).filter(Boolean)))
     const listingId = listingIdentityKeys[0] || ''
-    const remoteListingId = getRemotePrivateListingId(card?.listingRecord || card)
+    const remoteListingId = getRemotePrivateListingId(card?.listingRecord || card) || listingIdentityKeys.find((value) => isUuidLike(value)) || ''
     if (!listingId) {
       setError('Unable to delete this listing because it is missing a listing id.')
       return

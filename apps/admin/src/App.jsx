@@ -175,6 +175,27 @@ const ROLE_CONFIGS = {
   },
 }
 
+const INTAKE_ROLE_ORDER = ['agency', 'developer', 'bond_originator', 'attorney']
+
+const ROLE_LANDING_DETAILS = {
+  agency: {
+    copy: 'Connect agents, listings, buyers and transactions.',
+    tag: 'Estate agencies',
+  },
+  developer: {
+    copy: 'Manage sales, reservations and buyer progress.',
+    tag: 'New developments',
+  },
+  bond_originator: {
+    copy: 'Track applications, documents and milestones.',
+    tag: 'Finance teams',
+  },
+  attorney: {
+    copy: 'Receive cleaner instructions and keep matters moving.',
+    tag: 'Transfer teams',
+  },
+}
+
 const NAV_ICONS = {
   dashboard: Home,
   inboundLeads: Target,
@@ -188,6 +209,57 @@ const NAV_ICONS = {
 }
 
 const ARCH9_LISTING_PIPELINE_FEE = 1500
+
+const MOCK_ORGANISATION_NAMES = new Set([
+  'alex_bond',
+  'alexagency',
+  'bond_runtime_personal_originator',
+  'bond_runtime_test_company',
+  'bridge9_realty',
+  'canonical_qa_attorney_firm',
+  'dalawyer_lawyers',
+  'meyer_partners_conveyancers',
+  'northside_bond_attorneys',
+])
+
+const ACTIVE_ADMIN_STATUSES = new Set([
+  'accepted',
+  'active',
+  'approved',
+  'enabled',
+  'joined',
+  'live',
+])
+
+const INACTIVE_ADMIN_STATUSES = new Set([
+  'archived',
+  'cancelled',
+  'canceled',
+  'deleted',
+  'disabled',
+  'false',
+  'inactive',
+  'invited',
+  'pending',
+  'removed',
+  'suspended',
+])
+
+const AGENT_MODULE_ROLE_TOKENS = new Set([
+  'admin',
+  'agency',
+  'agent',
+  'broker',
+  'commercial_broker',
+  'consultant',
+  'estate_agent',
+  'manager',
+  'member',
+  'principal',
+  'property_practitioner',
+  'real_estate',
+  'realtor',
+])
 
 const EMPTY_DASHBOARD = {
   attention: [],
@@ -387,6 +459,12 @@ function normalizeDashboardToken(value = '') {
   return String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_')
 }
 
+function normalizeAdminIdentity(value = '') {
+  return normalizeDashboardToken(String(value || '').replace(/&/g, 'and').replace(/[^a-zA-Z0-9]+/g, ' '))
+    .replace(/(^|_)and(_|$)/g, '_')
+    .replace(/^_+|_+$/g, '')
+}
+
 function collectDashboardTokens(row = {}, keys = []) {
   return keys.map((key) => normalizeDashboardToken(row?.[key])).filter(Boolean).join(' ')
 }
@@ -403,10 +481,63 @@ function isInactiveDashboardStatus(value = '') {
   return /(^|_)(inactive|archived|deleted|suspended|disabled|false|invited|pending)(_|$)/.test(normalizeDashboardToken(value))
 }
 
-function isAgentModulePerson(row = {}) {
-  const status = firstDashboardValue(row, ['status', 'membership_status', 'profile_status', 'is_active'], 'active')
-  if (isInactiveDashboardStatus(status)) return false
+function getAdminOrganisationId(row = {}) {
+  return firstDashboardValue(row, ['organisationId', 'organisation_id', 'organizationId', 'organization_id', 'agencyId', 'agency_id', 'companyId', 'company_id'])
+}
 
+function getAdminOrganisationName(row = {}) {
+  return firstDashboardValue(row, [
+    'name',
+    'tradingName',
+    'trading_name',
+    'displayName',
+    'display_name',
+    'organisationName',
+    'organisation_name',
+    'organizationName',
+    'organization_name',
+    'companyName',
+    'company_name',
+  ])
+}
+
+function isMockAdminOrganisation(row = {}) {
+  const names = [
+    getAdminOrganisationName(row),
+    row?.name,
+    row?.tradingName,
+    row?.trading_name,
+    row?.organisationName,
+    row?.organisation_name,
+    row?.organizationName,
+    row?.organization_name,
+    row?.companyName,
+    row?.company_name,
+  ].map(normalizeAdminIdentity).filter(Boolean)
+
+  return names.some((name) => MOCK_ORGANISATION_NAMES.has(name))
+}
+
+function isAdminTestEmail(value = '') {
+  const email = normalizeText(value).toLowerCase()
+  return Boolean(email && (email.endsWith('.test') || email.includes('enterprise-pentest-')))
+}
+
+function isAdminTestPerson(row = {}) {
+  const email = firstDashboardValue(row, ['email', 'email_address', 'userEmail', 'user_email'])
+  if (isAdminTestEmail(email)) return true
+  const name = normalizeAdminIdentity(firstDashboardValue(row, ['full_name', 'fullName', 'name', 'display_name', 'displayName']))
+  return name.includes('enterprise_pentest') || name.includes('canonical_qa')
+}
+
+function isActiveAdminStatus(value = '', fallback = 'active') {
+  const status = normalizeDashboardToken(value || fallback)
+  if (INACTIVE_ADMIN_STATUSES.has(status)) return false
+  if (ACTIVE_ADMIN_STATUSES.has(status)) return true
+  return !isInactiveDashboardStatus(status)
+}
+
+function adminRoleMatchesAgentModule(row = {}) {
   const tokens = collectDashboardTokens(row, [
     'role',
     'app_role',
@@ -418,9 +549,30 @@ function isAgentModulePerson(row = {}) {
     'commercial_role',
     'module_context',
     'workspace_kind',
-  ])
+  ]).split('_').filter(Boolean)
 
-  return /(^|_)(agent|agency|principal|broker|consultant|manager|admin|property_practitioner|estate_agent|realtor|real_estate)(_|$)/.test(tokens)
+  return tokens.some((token) => AGENT_MODULE_ROLE_TOKENS.has(token)) ||
+    /(^|_)(agent|agency|principal|broker|consultant|manager|admin|member|property_practitioner|estate_agent|realtor|real_estate)(_|$)/.test(
+      collectDashboardTokens(row, [
+        'role',
+        'app_role',
+        'system_role',
+        'workspace_role',
+        'organisation_role',
+        'organization_role',
+        'portal_role',
+        'commercial_role',
+        'module_context',
+        'workspace_kind',
+      ]),
+    )
+}
+
+function isAgentModulePerson(row = {}) {
+  const status = firstDashboardValue(row, ['status', 'membership_status', 'profile_status', 'is_active'], 'active')
+  if (!isActiveAdminStatus(status)) return false
+  if (isAdminTestPerson(row)) return false
+  return adminRoleMatchesAgentModule(row)
 }
 
 function isActiveListingRow(row = {}) {
@@ -449,14 +601,16 @@ function isActiveListingRow(row = {}) {
 
 function mapDirectAgent(row = {}, fallbackRole = 'agent_module') {
   const id = firstDashboardValue(row, ['user_id', 'profile_id', 'id', 'email'])
+  const fullName = firstDashboardValue(row, ['full_name', 'fullName', 'name', 'display_name', 'displayName'])
+  const memberName = [row?.first_name || row?.firstName, row?.last_name || row?.lastName].map(normalizeText).filter(Boolean).join(' ')
   return {
     id,
-    name: firstDashboardValue(row, ['full_name', 'name', 'display_name', 'email'], 'Agent module user'),
+    name: fullName || memberName || firstDashboardValue(row, ['email'], 'Agent module user'),
     email: firstDashboardValue(row, ['email', 'email_address']),
     phone: firstDashboardValue(row, ['phone', 'mobile', 'cellphone']),
     role: firstDashboardValue(row, ['workspace_role', 'organisation_role', 'organization_role', 'role', 'commercial_role'], fallbackRole),
     status: firstDashboardValue(row, ['status', 'membership_status', 'profile_status'], 'active'),
-    organisationId: firstDashboardValue(row, ['organisation_id', 'organization_id', 'agency_id', 'company_id']),
+    organisationId: getAdminOrganisationId(row),
     createdAt: firstDashboardValue(row, ['created_at', 'inserted_at']),
     updatedAt: firstDashboardValue(row, ['last_active_at', 'updated_at', 'created_at']),
   }
@@ -470,11 +624,129 @@ function mapDirectListing(row = {}) {
     location: firstDashboardValue(row, ['location', 'suburb', 'city', 'area']),
     address: firstDashboardValue(row, ['address', 'property_address', 'address_line_1']),
     status: firstDashboardValue(row, ['listing_status', 'status', 'bridge_listing_status'], 'active'),
-    organisationId: firstDashboardValue(row, ['organisation_id', 'organization_id', 'agency_id', 'company_id']),
+    organisationId: getAdminOrganisationId(row),
     agentId: firstDashboardValue(row, ['assigned_agent_id', 'agent_id', 'assigned_user_id', 'owner_user_id']),
     price: Number(firstDashboardValue(row, ['price', 'asking_price', 'listing_price', 'purchase_price'], 0)) || 0,
     createdAt: firstDashboardValue(row, ['created_at', 'inserted_at']),
     updatedAt: firstDashboardValue(row, ['updated_at', 'last_activity_at', 'created_at']),
+  }
+}
+
+function mapDirectOrganisation(row = {}) {
+  return {
+    id: firstDashboardValue(row, ['id', 'organisation_id', 'organization_id']),
+    name: getAdminOrganisationName(row) || 'Organisation',
+    tradingName: firstDashboardValue(row, ['trading_name', 'tradingName', 'display_name', 'displayName']),
+    status: firstDashboardValue(row, ['status', 'organisation_status', 'organization_status', 'is_active'], 'active'),
+    ownerId: firstDashboardValue(row, ['owner_id', 'account_owner_id', 'created_by']),
+    createdAt: firstDashboardValue(row, ['created_at', 'inserted_at']),
+    updatedAt: firstDashboardValue(row, ['updated_at', 'last_activity_at', 'created_at']),
+  }
+}
+
+function isActiveOrganisationRow(row = {}) {
+  return !isMockAdminOrganisation(row) && isActiveAdminStatus(firstDashboardValue(row, ['status', 'organisation_status', 'organization_status', 'is_active'], 'active'))
+}
+
+function getProfileKey(row = {}) {
+  return firstDashboardValue(row, ['id', 'user_id', 'profile_id', 'email']).toLowerCase()
+}
+
+function mergeAgentRows(membership = {}, profile = {}) {
+  return {
+    ...profile,
+    ...membership,
+    full_name: firstDashboardValue(profile, ['full_name', 'fullName', 'name', 'display_name', 'displayName']),
+    email: firstDashboardValue(membership, ['email', 'email_address'], firstDashboardValue(profile, ['email', 'email_address'])),
+    phone: firstDashboardValue(membership, ['phone', 'mobile', 'cellphone'], firstDashboardValue(profile, ['phone', 'mobile', 'cellphone'])),
+  }
+}
+
+function isTerminalTransactionRow(row = {}) {
+  const tokens = collectDashboardTokens(row, ['status', 'workflow_status', 'lifecycle_state', 'matter_status', 'stage', 'transaction_stage', 'matter_stage'])
+  return /(^|_)(cancelled|canceled|closed|complete|completed|lost|deleted|archived|registered)(_|$)/.test(tokens)
+}
+
+function isActiveTransactionRow(row = {}) {
+  return !isTerminalTransactionRow(row)
+}
+
+function mapDirectTransaction(row = {}) {
+  const status = collectDashboardTokens(row, ['status', 'workflow_status', 'lifecycle_state', 'matter_status'])
+  const stage = collectDashboardTokens(row, ['stage', 'transaction_stage', 'matter_stage', 'onboarding_status', 'current_stage', 'current_main_stage', 'stage_key'])
+  return {
+    id: firstDashboardValue(row, ['id']),
+    reference: firstDashboardValue(row, ['reference', 'matter_number', 'transaction_reference', 'id'], 'Transaction'),
+    organisationId: getAdminOrganisationId(row),
+    agentId: firstDashboardValue(row, ['assigned_agent_id', 'agent_id', 'assigned_user_id', 'owner_user_id']),
+    buyer: firstDashboardValue(row, ['buyer_name', 'buyer_full_name', 'buyer']),
+    seller: firstDashboardValue(row, ['seller_name', 'seller_full_name', 'seller']),
+    stage: stage || status || 'active',
+    status: status || 'active',
+    revenue: Number(firstDashboardValue(row, ['arch9_revenue_amount', 'platform_fee_amount', 'platform_fee', 'transaction_fee', 'fee_amount', 'revenue_amount'], 0)) || 0,
+    revenueMissing: !['arch9_revenue_amount', 'platform_fee_amount', 'platform_fee', 'transaction_fee', 'fee_amount', 'revenue_amount'].some((key) => normalizeText(row?.[key])),
+    lastActivityAt: firstDashboardValue(row, ['last_activity_at', 'updated_at', 'created_at']),
+  }
+}
+
+function sanitizeDashboardRows(rows = [], mockOrganisationIds = new Set()) {
+  return (Array.isArray(rows) ? rows : []).filter((row) => {
+    const organisationId = getAdminOrganisationId(row)
+    if (organisationId && mockOrganisationIds.has(organisationId)) return false
+    if (isAdminTestPerson(row)) return false
+    return true
+  })
+}
+
+function sanitizeAdminDashboardSnapshot(snapshot = EMPTY_DASHBOARD) {
+  const drilldowns = snapshot?.drilldowns || {}
+  const sourceOrganisations = drilldowns.activeOrganisations || []
+  const sourceAgents = drilldowns.activeAgents || []
+  const sourceListings = drilldowns.activeListings || []
+  const sourceActiveTransactions = snapshot?.activeTransactions || drilldowns.activeTransactions || []
+  const sourcePipeline = snapshot?.pipeline || []
+  const sourceRegistered = snapshot?.registered || []
+  const sourceAttention = snapshot?.attention || []
+  const activeOrganisations = sourceOrganisations.filter(isActiveOrganisationRow)
+  const mockOrganisationIds = new Set(
+    sourceOrganisations
+      .filter(isMockAdminOrganisation)
+      .map((row) => firstDashboardValue(row, ['id', 'organisationId', 'organisation_id']))
+      .filter(Boolean),
+  )
+  const activeAgents = sanitizeDashboardRows(sourceAgents, mockOrganisationIds)
+  const activeListings = sanitizeDashboardRows(sourceListings, mockOrganisationIds)
+  const activeTransactions = sanitizeDashboardRows(sourceActiveTransactions, mockOrganisationIds)
+  const pipeline = sanitizeDashboardRows(sourcePipeline, mockOrganisationIds)
+  const registered = sanitizeDashboardRows(sourceRegistered, mockOrganisationIds)
+  const attention = sanitizeDashboardRows(sourceAttention, mockOrganisationIds)
+  const filteredCount = (sourceRows, filteredRows, fallback) => (
+    sourceRows.length ? filteredRows.length : Number(fallback) || 0
+  )
+
+  return {
+    ...snapshot,
+    activeTransactions,
+    attention,
+    drilldowns: {
+      ...drilldowns,
+      activeAgents,
+      activeListings,
+      activeOrganisations,
+      activeTransactions,
+    },
+    kpis: {
+      ...(snapshot?.kpis || {}),
+      activeAgents: filteredCount(sourceAgents, activeAgents, snapshot?.kpis?.activeAgents),
+      activeListings: filteredCount(sourceListings, activeListings, snapshot?.kpis?.activeListings),
+      activeOrganisations: filteredCount(sourceOrganisations, activeOrganisations, snapshot?.kpis?.activeOrganisations),
+      activeTransactions: filteredCount(sourceActiveTransactions, activeTransactions, snapshot?.kpis?.activeTransactions),
+      sellerSignedBuyerSigned: filteredCount(sourcePipeline, pipeline, snapshot?.kpis?.sellerSignedBuyerSigned),
+      registeredThisMonth: filteredCount(sourceRegistered, registered, snapshot?.kpis?.registeredThisMonth),
+      stalledTransactions: filteredCount(sourceAttention, attention, snapshot?.kpis?.stalledTransactions),
+    },
+    pipeline,
+    registered,
   }
 }
 
@@ -490,20 +762,60 @@ async function fetchAdminRows(table, select = '*') {
 }
 
 async function enhanceDashboardSnapshotWithDirectData(snapshot = EMPTY_DASHBOARD) {
-  const [profilesResult, orgUsersResult, listingsResult] = await Promise.all([
+  const [organisationsResult, profilesResult, orgUsersResult, listingsResult, transactionsResult] = await Promise.all([
+    fetchAdminRows('organisations'),
     fetchAdminRows('profiles'),
     fetchAdminRows('organisation_users'),
     fetchAdminRows('private_listings'),
+    fetchAdminRows('transactions'),
   ])
 
+  const profileById = new Map()
+  const profileByEmail = new Map()
+  for (const profile of profilesResult.rows) {
+    const profileId = getProfileKey(profile)
+    const email = normalizeText(profile?.email || profile?.email_address).toLowerCase()
+    if (profileId) profileById.set(profileId, profile)
+    if (email) profileByEmail.set(email, profile)
+  }
+
+  const activeOrganisations = organisationsResult.rows
+    .filter(isActiveOrganisationRow)
+    .map(mapDirectOrganisation)
+  const mockOrganisationIds = new Set(
+    organisationsResult.rows
+      .filter(isMockAdminOrganisation)
+      .map((row) => firstDashboardValue(row, ['id', 'organisation_id', 'organization_id']))
+      .filter(Boolean),
+  )
+
   const agentMap = new Map()
-  for (const row of [...profilesResult.rows, ...orgUsersResult.rows]) {
+  for (const membership of orgUsersResult.rows) {
+    const organisationId = getAdminOrganisationId(membership)
+    if (organisationId && mockOrganisationIds.has(organisationId)) continue
+    const profile = profileById.get(firstDashboardValue(membership, ['user_id', 'profile_id']).toLowerCase()) ||
+      profileByEmail.get(normalizeText(membership?.email || membership?.email_address).toLowerCase()) ||
+      {}
+    const row = mergeAgentRows(membership, profile)
     if (!isAgentModulePerson(row)) continue
     const agent = mapDirectAgent(row)
     if (agent.id && !agentMap.has(agent.id)) agentMap.set(agent.id, agent)
   }
 
-  const activeListings = listingsResult.rows.filter(isActiveListingRow).map(mapDirectListing)
+  for (const profile of profilesResult.rows) {
+    const organisationId = getAdminOrganisationId(profile)
+    if (organisationId && mockOrganisationIds.has(organisationId)) continue
+    if (!isAgentModulePerson(profile)) continue
+    const agent = mapDirectAgent(profile)
+    if (agent.id && !agentMap.has(agent.id)) agentMap.set(agent.id, agent)
+  }
+
+  const activeListings = listingsResult.rows
+    .filter((row) => {
+      const organisationId = getAdminOrganisationId(row)
+      return (!organisationId || !mockOrganisationIds.has(organisationId)) && isActiveListingRow(row)
+    })
+    .map(mapDirectListing)
   for (const listing of activeListings) {
     if (listing.agentId && !agentMap.has(listing.agentId)) {
       agentMap.set(listing.agentId, {
@@ -520,25 +832,36 @@ async function enhanceDashboardSnapshotWithDirectData(snapshot = EMPTY_DASHBOARD
     }
   }
 
+  const activeTransactions = transactionsResult.rows
+    .filter((row) => {
+      const organisationId = getAdminOrganisationId(row)
+      return (!organisationId || !mockOrganisationIds.has(organisationId)) && isActiveTransactionRow(row)
+    })
+    .map(mapDirectTransaction)
   const directAgents = Array.from(agentMap.values())
-  const warnings = [profilesResult.warning, orgUsersResult.warning, listingsResult.warning]
+  const warnings = [organisationsResult.warning, profilesResult.warning, orgUsersResult.warning, listingsResult.warning, transactionsResult.warning]
     .filter(Boolean)
     .map((message) => ({ message, type: 'admin_direct_data' }))
 
-  return {
+  return sanitizeAdminDashboardSnapshot({
     ...snapshot,
+    activeTransactions: activeTransactions.length ? activeTransactions : snapshot?.activeTransactions || [],
     drilldowns: {
       ...(snapshot?.drilldowns || {}),
+      activeOrganisations: activeOrganisations.length ? activeOrganisations : snapshot?.drilldowns?.activeOrganisations || [],
       activeAgents: directAgents.length ? directAgents : snapshot?.drilldowns?.activeAgents || [],
       activeListings: activeListings.length ? activeListings : snapshot?.drilldowns?.activeListings || [],
+      activeTransactions: activeTransactions.length ? activeTransactions : snapshot?.drilldowns?.activeTransactions || [],
     },
     kpis: {
       ...(snapshot?.kpis || {}),
-      activeAgents: Math.max(Number(snapshot?.kpis?.activeAgents) || 0, directAgents.length),
-      activeListings: Math.max(Number(snapshot?.kpis?.activeListings) || 0, activeListings.length),
+      activeOrganisations: activeOrganisations.length || Number(snapshot?.kpis?.activeOrganisations) || 0,
+      activeAgents: directAgents.length || Number(snapshot?.kpis?.activeAgents) || 0,
+      activeListings: activeListings.length || Number(snapshot?.kpis?.activeListings) || 0,
+      activeTransactions: activeTransactions.length || Number(snapshot?.kpis?.activeTransactions) || 0,
     },
     warnings: [...(snapshot?.warnings || []), ...warnings],
-  }
+  })
 }
 
 function getOrgKey(row = {}) {
@@ -870,7 +1193,7 @@ function getDashboardDrilldowns(snapshot = EMPTY_DASHBOARD, support = EMPTY_SUPP
   const pipelineRows = snapshot?.pipeline || []
   const registeredRows = snapshot?.registered || []
   const attentionRows = snapshot?.attention || []
-  const activeTransactionRows = pipelineRows
+  const activeTransactionRows = snapshot?.activeTransactions || drilldowns.activeTransactions || []
   const missingRevenueRows = [...pipelineRows, ...registeredRows].filter((row) => row.revenueMissing)
   const supportItems = buildSupportItems(support, snapshot)
 
@@ -905,7 +1228,7 @@ function getDashboardDrilldowns(snapshot = EMPTY_DASHBOARD, support = EMPTY_SUPP
     },
     activeTransactions: {
       empty: 'No seller/buyer signed active transactions yet.',
-      meta: `${formatCount(kpis.sellerSignedBuyerSigned || activeTransactionRows.length)} signed`,
+      meta: `${formatCount(kpis.activeTransactions || activeTransactionRows.length)} open`,
       rows: activeTransactionRows,
       title: 'Active Transactions',
       type: 'transactions',
@@ -1161,6 +1484,7 @@ function PublicIntakePage() {
   }))
   const roleConfig = form.roleType ? getRoleConfig(form.roleType) : null
   const selectedRoleConfig = roleConfig || ROLE_CONFIGS.agency
+  const selectedRoleLabel = roleConfig?.shortLabel || ''
   const isConfirmation = step === 4
 
   function setValue(key, value) {
@@ -1251,32 +1575,52 @@ function PublicIntakePage() {
     <main className="public-intake-shell">
       <section className="intake-hero">
         <div className="intake-brand">
-          <span>A9</span>
-          <strong>Arch9 Intake Journey</strong>
+          <img alt="Arch9" src="/arch9-logo.png" />
         </div>
-        <IntakeProgress step={step} />
+        {step === 0 ? (
+          <>
+            <div className="intake-network" aria-hidden="true">
+              <span />
+              <span />
+              <span />
+              <span />
+            </div>
+            <div className="intake-hero-copy">
+              <h1>Welcome to Arch9.</h1>
+              <p className="intake-hero-subtitle">The property transaction, finally connected.</p>
+              <p>Tell us where you fit in and we'll route you into the right journey.</p>
+            </div>
+          </>
+        ) : (
+          <IntakeProgress step={step} />
+        )}
       </section>
 
-      <section className={`intake-card${isConfirmation ? ' confirmation-card' : ''}`}>
+      <section className={`intake-card${step === 0 ? ' role-selection-card' : ''}${isConfirmation ? ' confirmation-card' : ''}`}>
         {!isConfirmation ? (
           <>
-            <div className="intake-step-meta">
-              <span>Step {step + 1} of 5</span>
-              <div><b style={{ width: `${((step + 1) / 5) * 100}%` }} /></div>
-            </div>
+            {step > 0 ? (
+              <div className="intake-step-meta">
+                <span>Step {step + 1} of 5</span>
+                <div><b style={{ width: `${((step + 1) / 5) * 100}%` }} /></div>
+              </div>
+            ) : null}
 
             {step === 0 ? (
-              <div className="intake-stack">
+              <div className="intake-stack role-selection-stack">
                 <div>
-                  <h1>Let's get you connected.</h1>
-                  <p>Tell us where you fit into the property journey and we'll take it from there.</p>
+                  <h1>Where do you fit in?</h1>
                 </div>
                 <div className="role-card-grid">
-                  {Object.entries(ROLE_CONFIGS).map(([roleType, config]) => {
+                  {INTAKE_ROLE_ORDER.map((roleType) => {
+                    const config = ROLE_CONFIGS[roleType]
                     const Icon = config.icon
+                    const details = ROLE_LANDING_DETAILS[roleType]
+                    const isSelected = form.roleType === roleType
                     return (
                       <button
-                        className={form.roleType === roleType ? 'selected' : ''}
+                        aria-pressed={isSelected}
+                        className={isSelected ? 'selected' : ''}
                         key={roleType}
                         onClick={() => {
                           setForm((current) => ({
@@ -1290,12 +1634,18 @@ function PublicIntakePage() {
                         }}
                         type="button"
                       >
-                        <Icon size={24} />
+                        {isSelected ? <CheckCircle2 className="role-card-check" size={20} /> : null}
+                        <span className="role-icon-badge"><Icon size={24} /></span>
                         <strong>{config.shortLabel}</strong>
-                        <span>{config.intro}</span>
+                        <span>{details.copy}</span>
+                        <em>{details.tag}</em>
                       </button>
                     )
                   })}
+                </div>
+                <div className="intake-personality-strip">
+                  <span><UsersRound size={24} /></span>
+                  <p><strong>You handle the relationship.</strong> Arch9 keeps the transaction connected.</p>
                 </div>
               </div>
             ) : null}
@@ -1396,11 +1746,20 @@ function PublicIntakePage() {
             {error ? <Notice tone="danger" text={error} /> : null}
 
             <div className="intake-actions">
-              <button className="secondary-button" disabled={step === 0 || isSubmitting} onClick={() => setStep(Math.max(0, step - 1))} type="button">
-                Back
-              </button>
+              {step > 0 ? (
+                <button className="secondary-button" disabled={isSubmitting} onClick={() => setStep(Math.max(0, step - 1))} type="button">
+                  Back
+                </button>
+              ) : null}
               <button className="primary-button" disabled={!validateStep() || isSubmitting} onClick={continueFlow} type="button">
-                <span>{isSubmitting ? 'Sending...' : step === 3 ? 'Submit' : 'Continue'}</span>
+                <span>
+                  {isSubmitting
+                    ? 'Sending...'
+                    : step === 0
+                      ? selectedRoleLabel ? `Continue as ${selectedRoleLabel}` : 'Choose a role to continue'
+                      : step === 3 ? 'Submit' : 'Continue'}
+                </span>
+                {step === 0 ? <ChevronRight size={20} /> : null}
               </button>
             </div>
           </>
@@ -1785,7 +2144,7 @@ function DashboardView({ isLoading, snapshot, support }) {
   const listingRows = snapshot?.drilldowns?.activeListings || []
   const organisationRows = snapshot?.drilldowns?.activeOrganisations || []
   const agentRows = snapshot?.drilldowns?.activeAgents || []
-  const activeTransactionRows = pipelineRows
+  const activeTransactionRows = snapshot?.activeTransactions || snapshot?.drilldowns?.activeTransactions || []
   const liveRows = (activeTransactionRows.length ? activeTransactionRows : [...pipelineRows, ...attentionRows]).slice(0, 5)
   const totalInventorySample = listingRows.reduce((total, row) => total + (Number(row.price) || 0), 0)
   const listingPipelineRevenue = (Number(kpis.activeListings) || 0) * ARCH9_LISTING_PIPELINE_FEE
@@ -1807,7 +2166,7 @@ function DashboardView({ isLoading, snapshot, support }) {
     { otp: 0, registered: registeredRows.length, stalled: kpis.stalledTransactions || attentionRows.length, transfer: 0 },
   )
   const pipelineCount = kpis.sellerSignedBuyerSigned || pipelineRows.length
-  const activeTransactionCount = pipelineCount
+  const activeTransactionCount = kpis.activeTransactions || activeTransactionRows.length
   const feeContext =
     pipelineCount && kpis.pipelineRevenue
       ? `${formatCount(pipelineCount)} signed transactions`
@@ -1819,7 +2178,7 @@ function DashboardView({ isLoading, snapshot, support }) {
       icon: Building2,
       label: 'Organisations',
       meta: organisationRows.length ? `Across ${formatCount(uniqueCount(organisationRows.map((row) => row.status || 'active')))} status group` : '',
-      context: 'Enabled workspaces',
+      context: 'Active organisations, excluding test workspaces',
       value: formatCount(kpis.activeOrganisations),
     },
     {
@@ -1827,7 +2186,7 @@ function DashboardView({ isLoading, snapshot, support }) {
       icon: UserRoundCheck,
       label: 'Agents',
       meta: agentRows.length ? `Across ${formatCount(uniqueCount(agentRows.map((row) => row.organisationId)))} organisations` : '',
-      context: 'Associated active agent users',
+      context: 'Active organisation users and assigned agents',
       value: formatCount(kpis.activeAgents),
     },
     {
@@ -1835,7 +2194,7 @@ function DashboardView({ isLoading, snapshot, support }) {
       icon: Home,
       label: 'Active Listings',
       meta: totalInventorySample ? `${formatShortMoney(totalInventorySample)} sampled inventory` : '',
-      context: 'Live listing base',
+      context: 'Live listing base, test orgs removed',
       value: formatCount(kpis.activeListings),
     },
     {
@@ -1851,7 +2210,7 @@ function DashboardView({ isLoading, snapshot, support }) {
       icon: ListChecks,
       label: 'Active Transactions',
       meta: pipelineCount ? `${formatCount(pipelineCount)} signed pipeline` : '',
-      context: 'Seller + buyer signed, not registered',
+      context: 'Open, not completed or registered',
       value: formatCount(activeTransactionCount),
     },
   ]

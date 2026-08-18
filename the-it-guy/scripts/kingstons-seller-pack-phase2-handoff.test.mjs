@@ -45,18 +45,48 @@ assertIncludes(
 )
 assertIncludes(
   agencyPage,
-  "requirementKey: 'property_condition_disclosure'",
-  'Signed Defect Form must map to the canonical property condition disclosure requirement.',
+  'requirementKey: SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM',
+  'Signed Defect Form must map to the canonical signed disclosure requirement.',
 )
 assertIncludes(
   agencyPage,
-  "requirementKey: 'signed_fica_form'",
-  'Signed FICA Form must create/link a dedicated listing requirement.',
+  "documentCategory: 'property_condition_disclosure'",
+  'Signed Defect Form must preserve the property condition disclosure category for listing requirements.',
+)
+assertIncludes(
+  agencyPage,
+  'requirementKey: SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION',
+  'Signed FICA Declaration must create/link a dedicated listing requirement.',
+)
+assertIncludes(
+  agencyPage,
+  "documentCategory: 'fica'",
+  'Signed FICA Declaration must preserve the FICA category for listing requirements.',
 )
 assertIncludes(
   agencyPage,
   'sellerPackSyncResult = await syncKingstonsSellerPackToListing(createdListingId, selectedLead, kingstonsListingHandoffPayload)',
   'Create listing must run Seller Pack handoff immediately after listing creation with the listing handoff payload.',
+)
+assertIncludes(
+  agencyPage,
+  "const failures = results.filter((row) => row.status === 'failed')",
+  'Seller Pack handoff must allow generated seller portal request rows that do not have uploaded files yet.',
+)
+assertIncludes(
+  agencyPage,
+  'selectedLeadValuationAddress',
+  'Seller lead listing creation should be able to fall back to the valuation appointment address.',
+)
+assertIncludes(
+  agencyPage,
+  'Listing created, Seller Pack linked, and Seller Portal link sent.',
+  'Kingstons listing creation should send the seller portal link after the Seller Pack handoff.',
+)
+assertIncludes(
+  agencyPage,
+  'if (!sellerPackSyncError && isValidEmail(sellerEmail))',
+  'Seller Portal auto-send must wait until Seller Pack handoff succeeds.',
 )
 assertIncludes(
   agencyPage,

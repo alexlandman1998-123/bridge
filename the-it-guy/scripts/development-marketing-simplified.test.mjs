@@ -40,13 +40,13 @@ assert.ok(
 )
 
 assert.ok(
-  detailSource.includes("setMarketingFloorplanField(selectedMarketingFloorplan.id, 'imageUrls'"),
-  'unit type editor should save unit-specific image links',
+  detailSource.includes('imageUrls: appendUniqueTextareaValues(item.imageUrls, urls)'),
+  'unit type uploads should save unit-specific image links',
 )
 
 assert.ok(
-  detailSource.includes("setMarketingFloorplanField(selectedMarketingFloorplan.id, 'floorplanUrls'"),
-  'unit type editor should save unit-specific floorplan links',
+  detailSource.includes('floorplanUrls: appendUniqueTextareaValues(item.floorplanUrls, urls)'),
+  'unit type uploads should save unit-specific floorplan links',
 )
 
 assert.ok(
@@ -72,6 +72,26 @@ assert.ok(
 assert.ok(
   apiSource.includes('export async function uploadDevelopmentDocumentAsset'),
   'development assets should have a file upload helper that creates development document rows',
+)
+
+assert.ok(
+  apiSource.includes('floorplans: floorplansSource.map') &&
+    apiSource.includes('source.unit_types') &&
+    apiSource.includes('normalizeMarketingFloorplanValue'),
+  'development marketing content normalization should preserve saved unit types and legacy snake_case unit data',
+)
+
+assert.ok(
+  detailSource.includes('shouldRecoverUnmatchedAssets') &&
+    detailSource.includes('!knownUnitKeys.has(linkedUnitKey)') &&
+    detailSource.includes('source.floorplan_id'),
+  'development media tab should recover previously uploaded assets when a single unit type has a regenerated id',
+)
+
+assert.ok(
+  detailSource.includes('handleReservationDepositRequiredChange') &&
+    detailSource.includes('reservation-deposit-configuration-fields'),
+  'reservation deposit toggle should keep the expanded deposit fields in view',
 )
 
 assert.ok(

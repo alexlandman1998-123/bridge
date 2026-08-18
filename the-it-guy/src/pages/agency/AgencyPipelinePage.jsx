@@ -2795,8 +2795,12 @@ function buildKingstonsSellerPackDocumentRows(lead = {}, {
 
 function summarizeKingstonsSellerPack(documentRows = []) {
   const rows = Array.isArray(documentRows) ? documentRows : []
-  const total = rows.length
-  const missingRows = rows.filter((row) => !isKingstonsSellerPackDocumentUploaded(row))
+  const completionRows = rows.filter((row) => {
+    const key = normalizeKey(row.key || row.requirementKey || row.requirement_key || row.documentType || row.document_type)
+    return Boolean(normalizeSellerBasePackKey(key))
+  })
+  const total = completionRows.length
+  const missingRows = completionRows.filter((row) => !isKingstonsSellerPackDocumentUploaded(row))
   const completed = total - missingRows.length
   const ficaRow = rows.find((row) =>
     row.requiresSellerType ||
@@ -2819,7 +2823,9 @@ function summarizeKingstonsSellerPack(documentRows = []) {
     sellerTypeCaptured,
     sellerTypeLabel: getKingstonsFicaSellerTypeLabel(sellerType),
     complete: documentsComplete && sellerTypeCaptured,
-    requiredLabels: rows.map((row) => row.label).filter(Boolean),
+    supportingTotal: Math.max(rows.length - completionRows.length, 0),
+    supportingOutstanding: rows.filter((row) => !completionRows.includes(row) && !isKingstonsSellerPackDocumentUploaded(row)).length,
+    requiredLabels: completionRows.map((row) => row.label).filter(Boolean),
     missingLabels,
   }
 }
@@ -13439,6 +13445,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       sellerOnboardingForm.address_line_1,
       sellerOnboardingForm.streetAddress,
       sellerOnboardingForm.street_address,
+      selectedLeadLinkedAppointment?.location,
       rawPayload.propertyAddress,
       rawPayload.property_address,
       rawPayload.sellerPropertyAddress,
@@ -13450,7 +13457,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       rawProperty.formatted_address,
       workspaceTextLooksLikeAddress(leadPropertyInterest) ? leadPropertyInterest : '',
     )
-  }, [selectedLead, selectedLeadLinkedListing])
+  }, [selectedLead, selectedLeadLinkedAppointment, selectedLeadLinkedListing])
   const selectedKingstonsLinkedListingId = useMemo(() => normalizeText(
     selectedLeadLinkedListing?.id ||
       selectedLeadLinkedListing?.listingId ||
@@ -23317,7 +23324,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }
     }
 
-    const failures = results.filter((row) => row.status === 'failed' || row.status === 'skipped')
+    const failures = results.filter((row) => row.status === 'failed')
     if (failures.length) {
       throw new Error(`Seller Pack handoff incomplete: ${failures.map((row) => row.key).join(', ')}.`)
     }
@@ -23508,10 +23515,31 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       : hasMandateSigned
         ? 'signed'
         : 'not_started'
+    const sellerLeadPropertyAddress = firstWorkspaceText(
+      selectedLead?.sellerPropertyAddress,
+      selectedLead?.seller_property_address,
+      selectedLead?.propertyAddress,
+      selectedLead?.property_address,
+      selectedLead?.formattedAddress,
+      selectedLead?.formatted_address,
+      selectedLead?.streetAddress,
+      selectedLead?.street_address,
+      selectedLeadValuationAddress,
+      selectedLeadPropertyArea,
+    )
+    const sellerLeadStreetAddress = firstWorkspaceText(
+      selectedLead?.streetAddress,
+      selectedLead?.street_address,
+      selectedLead?.sellerPropertyAddress,
+      selectedLead?.seller_property_address,
+      sellerLeadPropertyAddress,
+    )
     const useDbFirstListingPersistence = Boolean(isSupabaseConfigured && !MOCK_DATA_ENABLED)
     let createdListingId = ''
     let sellerPackSyncResult = null
     let sellerPackSyncError = ''
+    let sellerPortalAutoSent = false
+    let sellerPortalAutoSendError = ''
 
     if (useDbFirstListingPersistence) {
       const created = await createPrivateListing({
@@ -23526,14 +23554,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             : 'not_started',
         mandateStatus: mandateStatusForCreation,
         listingVisibility: 'internal',
-        title: normalizeText(selectedLead?.propertyInterest || selectedLead?.sellerPropertyAddress),
+        title: normalizeText(selectedLead?.propertyInterest || sellerLeadPropertyAddress),
         propertyType: normalizeText(selectedLeadPropertyType) || 'House',
         listingCategory: 'private_sale',
         askingPrice: Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0,
         estimatedValue: Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0,
-        addressLine1: normalizeText(selectedLead?.sellerPropertyAddress || selectedLeadPropertyArea),
-        formattedAddress: normalizeText(selectedLead?.formattedAddress),
-        streetAddress: normalizeText(selectedLead?.streetAddress || selectedLead?.sellerPropertyAddress),
+        addressLine1: sellerLeadStreetAddress,
+        formattedAddress: sellerLeadPropertyAddress,
+        streetAddress: sellerLeadStreetAddress,
         suburb: normalizeText(selectedLead?.suburb || selectedLead?.areaInterest),
         city: normalizeText(selectedLead?.city),
         province: normalizeText(selectedLead?.province),
@@ -23598,18 +23626,18 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           sellerSurname: normalizeText(selectedLeadContact?.lastName),
           sellerEmail: normalizeText(selectedLeadContact?.email),
           sellerPhone: normalizeText(selectedLeadContact?.phone),
-          propertyAddress: normalizeText(selectedLead?.sellerPropertyAddress || selectedLeadPropertyArea),
+          propertyAddress: sellerLeadPropertyAddress,
           propertyType: normalizeText(selectedLeadPropertyType) || 'House',
           estimatedPrice: Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0,
-          listingTitle: normalizeText(selectedLead?.propertyInterest || selectedLead?.sellerPropertyAddress),
+          listingTitle: normalizeText(selectedLead?.propertyInterest || sellerLeadPropertyAddress),
           suburb: normalizeText(selectedLead?.suburb || selectedLead?.areaInterest),
           city: normalizeText(selectedLead?.city),
           province: normalizeText(selectedLead?.province),
           country: normalizeText(selectedLead?.country) || 'South Africa',
           propertyData: {
-            formattedAddress: normalizeText(selectedLead?.formattedAddress),
-            streetAddress: normalizeText(selectedLead?.streetAddress || selectedLead?.sellerPropertyAddress),
-            addressLine1: normalizeText(selectedLead?.streetAddress || selectedLead?.sellerPropertyAddress),
+            formattedAddress: sellerLeadPropertyAddress,
+            streetAddress: sellerLeadStreetAddress,
+            addressLine1: sellerLeadStreetAddress,
             suburb: normalizeText(selectedLead?.suburb || selectedLead?.areaInterest),
             city: normalizeText(selectedLead?.city),
             province: normalizeText(selectedLead?.province),
@@ -23635,9 +23663,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               ? SELLER_ONBOARDING_STATUS.COMPLETED
               : SELLER_ONBOARDING_STATUS.NOT_STARTED,
             formData: {
-              propertyAddress: normalizeText(selectedLead?.sellerPropertyAddress || selectedLeadPropertyArea),
-              formattedAddress: normalizeText(selectedLead?.formattedAddress),
-              streetAddress: normalizeText(selectedLead?.streetAddress || selectedLead?.sellerPropertyAddress),
+              propertyAddress: sellerLeadPropertyAddress,
+              formattedAddress: sellerLeadPropertyAddress,
+              streetAddress: sellerLeadStreetAddress,
               suburb: normalizeText(selectedLead?.suburb || selectedLead?.areaInterest),
               city: normalizeText(selectedLead?.city),
               province: normalizeText(selectedLead?.province),
@@ -23679,6 +23707,39 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         sellerPackSyncError = sellerPackError?.message || 'Seller Pack could not be linked to the listing documents.'
         console.warn('[AgencyPipelinePage] Kingston Seller Pack listing handoff failed.', sellerPackError)
       }
+      const sellerEmail = normalizeText(selectedLeadContact?.email || selectedLead?.sellerEmail || selectedLead?.email)
+      if (!sellerPackSyncError && isValidEmail(sellerEmail)) {
+        try {
+          await activateSellerPortalForListing({
+            listingId: createdListingId,
+            activationSource: SELLER_PORTAL_ACTIVATION_SOURCES.existingListing,
+            sellerContactEmail: sellerEmail,
+            sellerContactPhone: normalizeText(selectedLeadContact?.phone || selectedLead?.sellerPhone || selectedLead?.phone),
+            sellerFirstName: normalizeText(selectedLeadContact?.firstName || selectedLead?.sellerName),
+            sellerSurname: normalizeText(selectedLeadContact?.lastName || selectedLead?.sellerSurname),
+            performedBy: normalizeText(currentAgent?.id || profile?.id),
+            agentName: normalizeText(currentAgent?.fullName || currentAgent?.name || currentAgent?.email),
+            agentEmail: normalizeText(currentAgent?.email),
+            agentPhone: normalizeText(currentAgent?.phone || currentAgent?.mobile || currentAgent?.contactNumber || currentAgent?.contact_number),
+            organisationId,
+            agencyName: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
+            propertyAddress: sellerLeadPropertyAddress,
+          })
+          sellerPortalAutoSent = true
+          await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
+            agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+            activityType: 'Seller Portal Link Sent',
+            activityNote: `Seller Portal link was sent to ${sellerEmail} after listing creation.`,
+            outcome: 'Seller Portal link sent',
+            activityDate: new Date().toISOString(),
+          }, { actor: currentAgent }).catch((activityError) => {
+            console.warn('[Seller Portal] lead activity write skipped after automatic portal send.', activityError)
+          })
+        } catch (portalError) {
+          sellerPortalAutoSendError = portalError?.message || 'Seller Portal link could not be sent after listing creation.'
+          console.warn('[Seller Portal] automatic seller portal activation failed after listing creation.', portalError)
+        }
+      }
     }
 
     await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, {
@@ -23707,15 +23768,19 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     setError('')
     if (sellerPackSyncError) {
       setError(`Seller Pack handoff needs attention. ${sellerPackSyncError}`)
+    } else if (sellerPortalAutoSendError) {
+      setError(`Listing created, but Seller Portal link needs attention. ${sellerPortalAutoSendError}`)
     }
     setMessage(
-      sellerPackSyncResult?.linked === selectedKingstonsSellerPackSummary.total
-        ? 'Listing created and Seller Pack linked to the listing documents.'
+      sellerPortalAutoSent
+        ? 'Listing created, Seller Pack linked, and Seller Portal link sent.'
+        : sellerPackSyncResult?.linked === selectedKingstonsSellerPackSummary.total
+          ? 'Listing created and Seller Pack linked to the listing documents.'
         : useDbFirstListingPersistence
-        ? 'Canonical private listing created and linked to this seller lead.'
-        : hasMandateSigned
-          ? 'Listing handoff created from signed mandate.'
-          : 'Listing draft created. Mandate signature still outstanding (workflow warning).',
+          ? 'Canonical private listing created and linked to this seller lead.'
+          : hasMandateSigned
+            ? 'Listing handoff created from signed mandate.'
+            : 'Listing draft created. Mandate signature still outstanding (workflow warning).',
     )
     await reloadRecords(organisationId)
   }

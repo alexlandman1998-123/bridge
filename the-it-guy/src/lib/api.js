@@ -852,6 +852,11 @@ const DEFAULT_DEVELOPMENT_PROFILE = {
       seoTitle: '',
       seoMetaDescription: '',
     },
+    floorplans: [],
+    agencies: [],
+    sellingPoints: {
+      items: '',
+    },
     keySellingPoints: {
       keyHighlights: '',
       lifestyleSellingPoints: '',
@@ -2167,6 +2172,79 @@ function normalizeMarketingBoolean(value, fallback = false) {
   return fallback
 }
 
+function firstDefinedMarketingValue(...values) {
+  return values.find((value) => value !== undefined && value !== null && String(value).trim() !== '')
+}
+
+function normalizeMarketingFloorplanValue(input = {}, index = 1) {
+  const source = input && typeof input === 'object' && !Array.isArray(input) ? input : {}
+  const text = (...values) => normalizeTextValue(firstDefinedMarketingValue(...values))
+
+  return {
+    id: text(source.id, source.floorplanId, source.floorplan_id, source.unitTypeId, source.unit_type_id),
+    name: text(source.name, source.title, source.unitType, source.unit_type) || `Option ${index}`,
+    erfSize: text(source.erfSize, source.erf_size),
+    floorSize: text(source.floorSize, source.floor_size),
+    bedrooms: text(source.bedrooms),
+    bathrooms: text(source.bathrooms),
+    garage: text(source.garage, source.parking, source.parkingCount, source.parking_count),
+    pool: text(source.pool),
+    price: text(source.price),
+    priceFrom: text(source.priceFrom, source.price_from, source.minPrice, source.min_price, source.price),
+    priceTo: text(source.priceTo, source.price_to, source.maxPrice, source.max_price, source.price),
+    description: text(source.description, source.notes),
+    imageUrls: text(source.imageUrls, source.image_urls, source.imageUrl, source.image_url),
+    floorplanUrls: text(
+      source.floorplanUrls,
+      source.floorplan_urls,
+      source.floorplanUrl,
+      source.floorplan_url,
+      source.planUrl,
+      source.plan_url,
+    ),
+    videoUrl: text(source.videoUrl, source.video_url),
+    virtualTourUrl: text(source.virtualTourUrl, source.virtual_tour_url),
+    documentUrls: text(source.documentUrls, source.document_urls, source.documentUrl, source.document_url),
+    keyFeatures: text(source.keyFeatures, source.key_features, source.features),
+    marketingHighlights: text(source.marketingHighlights, source.marketing_highlights, source.highlights),
+    ctaLabel: text(source.ctaLabel, source.cta_label),
+    secondaryCtaLabel: text(source.secondaryCtaLabel, source.secondary_cta_label),
+    ctaUrl: text(source.ctaUrl, source.cta_url),
+    seoTitle: text(source.seoTitle, source.seo_title),
+    seoDescription: text(source.seoDescription, source.seo_description, source.seoMetaDescription, source.seo_meta_description),
+    listingSlug: text(source.listingSlug, source.listing_slug),
+    listingStatus: text(source.listingStatus, source.listing_status, source.status) || 'draft',
+    ratesAndTaxes: text(source.ratesAndTaxes, source.rates_and_taxes),
+    levies: text(source.levies),
+    noTransferDuty: normalizeMarketingBoolean(
+      firstDefinedMarketingValue(source.noTransferDuty, source.no_transfer_duty),
+      false,
+    ),
+    customisationOptions: normalizeMarketingBoolean(
+      firstDefinedMarketingValue(source.customisationOptions, source.customisation_options),
+      false,
+    ),
+  }
+}
+
+function normalizeMarketingAgencyValue(input = {}, index = 1) {
+  const source = input && typeof input === 'object' && !Array.isArray(input) ? input : {}
+  const text = (...values) => normalizeTextValue(firstDefinedMarketingValue(...values))
+
+  return {
+    id: text(source.id),
+    name: text(source.name),
+    contactName: text(source.contactName, source.contact_name),
+    contactEmail: normalizeEmailAddress(text(source.contactEmail, source.contact_email, source.email)),
+    contactPhone: text(source.contactPhone, source.contact_phone, source.phone),
+    notes: text(source.notes),
+    isPreferred: normalizeMarketingBoolean(
+      firstDefinedMarketingValue(source.isPreferred, source.is_preferred),
+      index === 1,
+    ),
+  }
+}
+
 function normalizeMarketingContent(value) {
   let source = value
 
@@ -2186,27 +2264,61 @@ function normalizeMarketingContent(value) {
   const listingOverviewSource =
     source.listingOverview && typeof source.listingOverview === 'object' && !Array.isArray(source.listingOverview)
       ? source.listingOverview
+      : source.listing_overview && typeof source.listing_overview === 'object' && !Array.isArray(source.listing_overview)
+        ? source.listing_overview
       : {}
   const keySellingPointsSource =
     source.keySellingPoints && typeof source.keySellingPoints === 'object' && !Array.isArray(source.keySellingPoints)
       ? source.keySellingPoints
+      : source.key_selling_points &&
+          typeof source.key_selling_points === 'object' &&
+          !Array.isArray(source.key_selling_points)
+        ? source.key_selling_points
       : {}
+  const sellingPointsSource =
+    source.sellingPoints && typeof source.sellingPoints === 'object' && !Array.isArray(source.sellingPoints)
+      ? source.sellingPoints
+      : source.selling_points && typeof source.selling_points === 'object' && !Array.isArray(source.selling_points)
+        ? source.selling_points
+        : {}
   const mediaLibrarySource =
     source.mediaLibrary && typeof source.mediaLibrary === 'object' && !Array.isArray(source.mediaLibrary)
       ? source.mediaLibrary
+      : source.media_library && typeof source.media_library === 'object' && !Array.isArray(source.media_library)
+        ? source.media_library
       : {}
   const downloadsSource =
     source.downloads && typeof source.downloads === 'object' && !Array.isArray(source.downloads) ? source.downloads : {}
   const externalLinksSource =
     source.externalLinks && typeof source.externalLinks === 'object' && !Array.isArray(source.externalLinks)
       ? source.externalLinks
+      : source.external_links && typeof source.external_links === 'object' && !Array.isArray(source.external_links)
+        ? source.external_links
       : {}
   const listingConfigurationSource =
     source.listingConfiguration &&
     typeof source.listingConfiguration === 'object' &&
     !Array.isArray(source.listingConfiguration)
       ? source.listingConfiguration
+      : source.listing_configuration &&
+          typeof source.listing_configuration === 'object' &&
+          !Array.isArray(source.listing_configuration)
+        ? source.listing_configuration
       : {}
+  const floorplansSource = Array.isArray(source.floorplans)
+    ? source.floorplans
+    : Array.isArray(source.unitTypes)
+      ? source.unitTypes
+      : Array.isArray(source.unit_types)
+        ? source.unit_types
+        : []
+  const agenciesSource = Array.isArray(source.agencies)
+    ? source.agencies
+    : Array.isArray(source.agencyDirectory?.agencies)
+      ? source.agencyDirectory.agencies
+      : Array.isArray(source.agency_directory?.agencies)
+        ? source.agency_directory.agencies
+        : []
 
   return {
     listingOverview: {
@@ -2243,39 +2355,74 @@ function normalizeMarketingContent(value) {
           defaults.listingOverview.seoMetaDescription,
       ),
     },
+    floorplans: floorplansSource.map((item, index) => normalizeMarketingFloorplanValue(item, index + 1)),
+    agencies: agenciesSource.map((item, index) => normalizeMarketingAgencyValue(item, index + 1)),
+    sellingPoints: {
+      items: normalizeTextValue(
+        sellingPointsSource.items ?? source.selling_points_items ?? defaults.sellingPoints?.items ?? '',
+      ),
+    },
     keySellingPoints: {
       keyHighlights: normalizeTextValue(
-        keySellingPointsSource.keyHighlights ?? defaults.keySellingPoints.keyHighlights,
+        keySellingPointsSource.keyHighlights ??
+          keySellingPointsSource.key_highlights ??
+          defaults.keySellingPoints.keyHighlights,
       ),
       lifestyleSellingPoints: normalizeTextValue(
-        keySellingPointsSource.lifestyleSellingPoints ?? defaults.keySellingPoints.lifestyleSellingPoints,
+        keySellingPointsSource.lifestyleSellingPoints ??
+          keySellingPointsSource.lifestyle_selling_points ??
+          defaults.keySellingPoints.lifestyleSellingPoints,
       ),
       buyerAppealNotes: normalizeTextValue(
-        keySellingPointsSource.buyerAppealNotes ?? defaults.keySellingPoints.buyerAppealNotes,
+        keySellingPointsSource.buyerAppealNotes ??
+          keySellingPointsSource.buyer_appeal_notes ??
+          defaults.keySellingPoints.buyerAppealNotes,
       ),
       nearbyAmenitiesSummary: normalizeTextValue(
-        keySellingPointsSource.nearbyAmenitiesSummary ?? defaults.keySellingPoints.nearbyAmenitiesSummary,
+        keySellingPointsSource.nearbyAmenitiesSummary ??
+          keySellingPointsSource.nearby_amenities_summary ??
+          defaults.keySellingPoints.nearbyAmenitiesSummary,
       ),
       securityEstateFeatures: normalizeTextValue(
-        keySellingPointsSource.securityEstateFeatures ?? defaults.keySellingPoints.securityEstateFeatures,
+        keySellingPointsSource.securityEstateFeatures ??
+          keySellingPointsSource.security_estate_features ??
+          defaults.keySellingPoints.securityEstateFeatures,
       ),
       whyThisDevelopment: normalizeTextValue(
-        keySellingPointsSource.whyThisDevelopment ?? defaults.keySellingPoints.whyThisDevelopment,
+        keySellingPointsSource.whyThisDevelopment ??
+          keySellingPointsSource.why_this_development ??
+          defaults.keySellingPoints.whyThisDevelopment,
       ),
     },
     mediaLibrary: {
-      heroImageUrl: normalizeTextValue(mediaLibrarySource.heroImageUrl ?? defaults.mediaLibrary.heroImageUrl),
+      heroImageUrl: normalizeTextValue(
+        mediaLibrarySource.heroImageUrl ?? mediaLibrarySource.hero_image_url ?? defaults.mediaLibrary.heroImageUrl,
+      ),
       galleryImageUrls: normalizeTextValue(
-        mediaLibrarySource.galleryImageUrls ?? defaults.mediaLibrary.galleryImageUrls,
+        mediaLibrarySource.galleryImageUrls ??
+          mediaLibrarySource.gallery_image_urls ??
+          defaults.mediaLibrary.galleryImageUrls,
       ),
       developmentLogoUrl: normalizeTextValue(
-        mediaLibrarySource.developmentLogoUrl ?? defaults.mediaLibrary.developmentLogoUrl,
+        mediaLibrarySource.developmentLogoUrl ??
+          mediaLibrarySource.development_logo_url ??
+          defaults.mediaLibrary.developmentLogoUrl,
       ),
-      sitePlanUrl: normalizeTextValue(mediaLibrarySource.sitePlanUrl ?? defaults.mediaLibrary.sitePlanUrl),
-      masterplanUrl: normalizeTextValue(mediaLibrarySource.masterplanUrl ?? defaults.mediaLibrary.masterplanUrl),
-      floorplanUrls: normalizeTextValue(mediaLibrarySource.floorplanUrls ?? defaults.mediaLibrary.floorplanUrls),
-      videoUrl: normalizeTextValue(mediaLibrarySource.videoUrl ?? defaults.mediaLibrary.videoUrl),
-      virtualTourUrl: normalizeTextValue(mediaLibrarySource.virtualTourUrl ?? defaults.mediaLibrary.virtualTourUrl),
+      sitePlanUrl: normalizeTextValue(
+        mediaLibrarySource.sitePlanUrl ?? mediaLibrarySource.site_plan_url ?? defaults.mediaLibrary.sitePlanUrl,
+      ),
+      masterplanUrl: normalizeTextValue(
+        mediaLibrarySource.masterplanUrl ?? mediaLibrarySource.masterplan_url ?? defaults.mediaLibrary.masterplanUrl,
+      ),
+      floorplanUrls: normalizeTextValue(
+        mediaLibrarySource.floorplanUrls ?? mediaLibrarySource.floorplan_urls ?? defaults.mediaLibrary.floorplanUrls,
+      ),
+      videoUrl: normalizeTextValue(mediaLibrarySource.videoUrl ?? mediaLibrarySource.video_url ?? defaults.mediaLibrary.videoUrl),
+      virtualTourUrl: normalizeTextValue(
+        mediaLibrarySource.virtualTourUrl ??
+          mediaLibrarySource.virtual_tour_url ??
+          defaults.mediaLibrary.virtualTourUrl,
+      ),
     },
     downloads: {
       brochureUrl: normalizeTextValue(downloadsSource.brochureUrl ?? defaults.downloads.brochureUrl),

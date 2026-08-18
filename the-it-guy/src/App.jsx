@@ -44,6 +44,7 @@ const RELEASE_REFRESH_STORAGE_PREFIX = 'arch9:release-refresh'
 const lazyNamed = (loader, exportName) => lazy(() => loader().then((module) => ({ default: module[exportName] })))
 
 const PUBLIC_WEBSITE_HOSTS = new Set(['arch9.co.za', 'www.arch9.co.za'])
+const ARCH9_JOIN_URL = import.meta.env.VITE_ARCH9_JOIN_URL || 'https://admin.arch9.co.za/join'
 
 function resetLockedShellWindowScroll() {
   if (typeof window === 'undefined' || typeof document === 'undefined') return
@@ -81,6 +82,36 @@ function isPublicWebsiteHost() {
 
 function PublicAwareRootRoute() {
   return isPublicWebsiteHost() ? <BridgeLanding /> : <Navigate to="/dashboard" replace />
+}
+
+function buildArch9JoinUrl(search = '') {
+  try {
+    const targetUrl = new URL(ARCH9_JOIN_URL)
+    const sourceParams = new URLSearchParams(search)
+    sourceParams.forEach((value, key) => {
+      targetUrl.searchParams.set(key, value)
+    })
+    return targetUrl.toString()
+  } catch {
+    return `${ARCH9_JOIN_URL}${search || ''}`
+  }
+}
+
+function Arch9JoinRedirect() {
+  const location = useLocation()
+  const targetUrl = buildArch9JoinUrl(location.search)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.location.replace(targetUrl)
+  }, [targetUrl])
+
+  return (
+    <main className="center-shell">
+      <PageSkeleton label="Opening Arch9 join" />
+      <a href={targetUrl}>Continue to Arch9 join</a>
+    </main>
+  )
 }
 
 function getLoadedReleaseId() {
@@ -1491,6 +1522,7 @@ function AppRoutes() {
         <Suspense fallback={<PageSkeleton label="Loading Arch9" />}>
           <Routes>
           <Route path="/" element={<PublicAwareRootRoute />} />
+          <Route path="/join" element={<Arch9JoinRedirect />} />
           <Route path="/buy" element={<BridgeBuyPage />} />
           <Route path="/buy/:slug" element={<BridgeBuyPage />} />
           <Route path="/bridge" element={<BridgeLanding />} />

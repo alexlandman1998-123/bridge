@@ -284,6 +284,10 @@ function isKingstonsSellerPackReadinessDocument(row = {}) {
   )
 }
 
+function isKingstonsBaselineSellerPackDocument(row = {}) {
+  return rowKeys(row).some((key) => KINGSTONS_BASELINE_SELLER_PACK_KEYS.has(normalizeSellerBasePackKey(key) || key))
+}
+
 function typeMatches(row = {}, expectedTypes = []) {
   const expected = expectedTypes.map(normalizeKey).filter(Boolean)
   if (!expected.length) return false
@@ -338,20 +342,22 @@ function evaluateSellerPackReadinessGate(context = {}, gate = {}) {
   const readinessRows = asArray(context.documents)
     .filter(isKingstonsSellerPackReadinessDocument)
     .filter((document) => document?.required !== false && document?.applicable !== false)
-  const completedRows = readinessRows.filter(documentSatisfiesSellerPackReadiness)
-  const ficaContextMissingRows = readinessRows.filter((document) =>
+  const baselineRows = readinessRows.filter(isKingstonsBaselineSellerPackDocument)
+  const completedRows = baselineRows.filter(documentSatisfiesSellerPackReadiness)
+  const ficaContextMissingRows = baselineRows.filter((document) =>
     sellerPackFicaDeclarationRequiresPhysicalContext(document) &&
       !sellerPackFicaDeclarationContextCaptured(document)
   )
-  const presentKeys = new Set(readinessRows.flatMap((row) => rowKeys(row).map((key) => normalizeSellerBasePackKey(key) || key)))
-  const baselinePresent = [...KINGSTONS_BASELINE_SELLER_PACK_KEYS].every((key) => presentKeys.has(key))
+  const presentKeys = new Set(baselineRows.flatMap((row) => rowKeys(row).map((key) => normalizeSellerBasePackKey(key) || key)))
+  const missingBaselineKeys = [...KINGSTONS_BASELINE_SELLER_PACK_KEYS].filter((key) => !presentKeys.has(key))
+  const baselinePresent = missingBaselineKeys.length === 0
   const sellerTypeCaptured = hasKingstonsSellerPackLegalPathCapture(context) ||
     readinessRows.some((document) => isValidKingstonsSellerType(document?.sellerType || document?.seller_type || document?.ficaSellerType || document?.fica_seller_type))
   const complete = Boolean(
     sellerTypeCaptured &&
       baselinePresent &&
-      readinessRows.length >= KINGSTONS_BASELINE_SELLER_PACK_KEYS.size &&
-      completedRows.length === readinessRows.length,
+      baselineRows.length >= KINGSTONS_BASELINE_SELLER_PACK_KEYS.size &&
+      completedRows.length === baselineRows.length,
   )
 
   return {
@@ -359,11 +365,13 @@ function evaluateSellerPackReadinessGate(context = {}, gate = {}) {
     source: gate.source,
     satisfied: complete,
     evidenceCount: completedRows.length,
-    requiredCount: readinessRows.length,
-    missingCount: Math.max(readinessRows.length - completedRows.length, 0) + (sellerTypeCaptured ? 0 : 1),
+    requiredCount: baselineRows.length,
+    supportingRequestCount: Math.max(readinessRows.length - baselineRows.length, 0),
+    missingCount: Math.max(baselineRows.length - completedRows.length, 0) + missingBaselineKeys.length + (sellerTypeCaptured ? 0 : 1),
     contextMissingCount: ficaContextMissingRows.length,
     blockedReasons: [
       ...(ficaContextMissingRows.length ? ['Physical FICA declaration upload is missing seller-context metadata.'] : []),
+      ...(missingBaselineKeys.length ? [`Missing base seller pack documents: ${missingBaselineKeys.join(', ')}.`] : []),
       ...(sellerTypeCaptured ? [] : ['FICA seller type has not been captured.']),
     ],
   }

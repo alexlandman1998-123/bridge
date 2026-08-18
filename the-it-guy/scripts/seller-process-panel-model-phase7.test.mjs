@@ -239,6 +239,63 @@ function assertPartnerReadinessHidesInternalKeys(model) {
 }
 
 {
+  const payload = buildSellerProcessShadowIntegration({
+    organisationSettings: {
+      sellerProcess: {
+        profile: 'kingstons_residential',
+      },
+    },
+    lead: {
+      status: 'seller_pack',
+      rawEnquiryPayload: {
+        kingstonsSellerPack: {
+          sellerType: 'natural',
+          sellerPackDetailsCapturedAt: '2026-08-17T20:54:12.992Z',
+          legalPath: {
+            sellerType: 'natural',
+            owners: [{ id: 'owner-1', name: 'Alexander Landman', email: 'alex@example.test' }],
+          },
+        },
+      },
+    },
+    appointments: [
+      { appointmentType: 'seller_valuation', status: 'completed' },
+      { appointmentType: 'valuation_presentation', status: 'completed' },
+    ],
+    documents: [
+      { documentType: 'valuation_document', status: 'uploaded', file_path: 'valuation.pdf' },
+      { key: 'signed_mandate', documentType: 'signed_mandate', source: 'kingstons_seller_pack', status: 'uploaded', file_path: 'mandate.pdf' },
+      { key: 'signed_disclosure_form', documentType: 'signed_disclosure_form', source: 'kingstons_seller_pack', status: 'uploaded', file_path: 'defects.pdf' },
+      {
+        key: 'signed_fica_declaration',
+        documentType: 'signed_fica_declaration',
+        source: 'kingstons_seller_pack',
+        status: 'uploaded',
+        file_path: 'fica.pdf',
+        sellerType: 'natural',
+        completionRoute: 'physical_upload_with_context',
+        physicalUploadContextRequired: true,
+        ficaDeclarationContext: {
+          sellerType: 'natural',
+          contextCapturedAt: '2026-08-17T20:54:37.706Z',
+        },
+      },
+      { key: 'seller_fica_owner_1_id_or_passport', source: 'kingstons_roleplayer_fica_checklist_v1', requirementLane: 'ownership_driven', documentRequirementSection: 'seller_identity_fica', status: 'required' },
+      { key: 'seller_fica_owner_1_proof_of_address', source: 'kingstons_roleplayer_fica_checklist_v1', requirementLane: 'ownership_driven', documentRequirementSection: 'seller_identity_fica', status: 'required' },
+      { key: 'seller_fica_owner_1_tax_number_confirmation', source: 'kingstons_roleplayer_fica_checklist_v1', requirementLane: 'ownership_driven', documentRequirementSection: 'seller_identity_fica', status: 'required' },
+      { key: 'seller_fica_owner_1_signed_fica_declaration', source: 'kingstons_roleplayer_fica_checklist_v1', requirementLane: 'ownership_driven', documentRequirementSection: 'seller_identity_fica', status: 'required' },
+    ],
+  })
+  const model = buildSellerProcessWorkspacePanelModel({
+    [SELLER_PROCESS_SHADOW_WORKSPACE_KEY]: payload,
+  })
+  assert.equal(model.visible, true)
+  assert.equal(model.currentStageLabel, 'List Property')
+  assert.equal(model.actionCards.find((card) => card.key === 'complete_seller_pack')?.pending, false)
+  assert.equal(model.actionCards.find((card) => card.key === 'prepare_listing')?.pending, true)
+}
+
+{
   assert.equal(
     agentLeadsPageSource.includes('sellerProcessWorkspaceIntegrationService'),
     false,
