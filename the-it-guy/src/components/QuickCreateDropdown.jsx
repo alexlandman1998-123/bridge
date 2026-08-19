@@ -13,7 +13,7 @@ import {
   UsersRound,
   Warehouse,
 } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import AgentAssignmentSelect from './AgentAssignmentSelect'
 import {
@@ -31,6 +31,7 @@ import { createAppointmentAsync } from '../lib/agencyPipelineService'
 import { fetchOrganisationSettings, listOrganisationUsers } from '../lib/settingsApi'
 import { getOrganisationPrivateListings } from '../services/privateListingService'
 import { BUYER_LEAD_OFFER_STATES, assessBuyerLeadOfferReadiness } from '../core/leads/buyerLeadOfferReadiness'
+import useDismissableMenu from '../hooks/useDismissableMenu'
 import Modal from './ui/Modal'
 
 const RESIDENTIAL_QUICK_CREATE_GROUPS = [
@@ -963,6 +964,8 @@ function QuickCreateDropdown({ className = '' }) {
   const [agentOptions, setAgentOptions] = useState([])
   const [agentOptionsLoading, setAgentOptionsLoading] = useState(false)
   const containerRef = useRef(null)
+  const dismissableRefs = useMemo(() => [containerRef], [])
+  const dismissMenu = useCallback(() => setOpen(false), [])
 
   const actor = useMemo(() => {
     const fullName = normalizeText(profile?.fullName || [profile?.firstName, profile?.lastName].filter(Boolean).join(' '))
@@ -985,16 +988,15 @@ function QuickCreateDropdown({ className = '' }) {
     [location.pathname, role],
   )
 
-  useEffect(() => {
-    function onClickOutside(event) {
-      if (containerRef.current && !containerRef.current.contains(event.target)) {
-        setOpen(false)
-      }
-    }
+  useDismissableMenu({
+    open,
+    refs: dismissableRefs,
+    onDismiss: dismissMenu,
+  })
 
-    document.addEventListener('mousedown', onClickOutside)
-    return () => document.removeEventListener('mousedown', onClickOutside)
-  }, [])
+  useEffect(() => {
+    dismissMenu()
+  }, [dismissMenu, location.pathname, location.search])
 
   useEffect(() => {
     function onKeyDown(event) {

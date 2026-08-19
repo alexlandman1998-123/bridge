@@ -13,6 +13,7 @@ import { handleLeadPropertyShareEmail } from "./handlers/leadPropertyShare.ts";
 import { handleBuyerViewingAvailabilityRequestEmail } from "./handlers/viewingAvailabilityRequest.ts";
 import { handleBuyerViewingAvailabilityConfirmationEmail } from "./handlers/buyerViewingAvailabilityConfirmation.ts";
 import { handleSellerViewingAvailabilityRequestEmail } from "./handlers/sellerViewingAvailabilityRequest.ts";
+import { handleArch9IntakeAcknowledgementEmail } from "./handlers/arch9IntakeAcknowledgement.ts";
 import { handleLeadAcknowledgementEmail } from "./handlers/leadAcknowledgement.ts";
 import { handleKingstonsValuationDownloadEmail } from "./handlers/kingstonsValuationDownload.ts";
 import { handleLeadOperationsNotificationEmail } from "./handlers/leadOperationsNotification.ts";
@@ -46,6 +47,7 @@ import { handleTransactionProgressDispatchEmail } from "./handlers/transactionPr
 import { handleNotificationControlsOperation } from "./handlers/notificationControlsOperations.ts";
 import type {
   SendAdditionalDocumentRequestPayload,
+  SendArch9IntakeAcknowledgementPayload,
   SendAppointmentEmailPayload,
   SendArch9LaunchConfirmationPayload,
   SendArch9LaunchInternalNotificationPayload,
@@ -412,6 +414,22 @@ Deno.serve(async (req: Request) => {
       });
       return await handleBuyerOfferLinkEmail(
         payload as SendBuyerOfferLinkPayload,
+      );
+    }
+
+    if (
+      [
+        "arch9_intake_acknowledgement",
+        "arch9_intake_confirmation",
+      ].includes(type)
+    ) {
+      console.log("[send-email] routing template", {
+        route: "arch9_intake_acknowledgement",
+        recipient: recipient || null,
+        leadId: normalizeText(payload.leadId ?? payload.lead_id) || null,
+      });
+      return await handleArch9IntakeAcknowledgementEmail(
+        payload as SendArch9IntakeAcknowledgementPayload,
       );
     }
 

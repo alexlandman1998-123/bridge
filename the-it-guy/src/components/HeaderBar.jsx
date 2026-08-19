@@ -5,6 +5,7 @@ import { useWorkspace } from '../context/WorkspaceContext'
 import { canAccessHQ } from '../auth/hqAccess'
 import { fetchMyNotifications, markAllNotificationsRead, markNotificationRead } from '../lib/api'
 import { canAccessPrincipalExperience } from '../lib/organisationAccess'
+import useDismissableMenu from '../hooks/useDismissableMenu'
 import QuickCreateDropdown from './QuickCreateDropdown'
 
 function getPageTitle(pathname, stateTitle, role) {
@@ -906,6 +907,10 @@ function HeaderBar({ onLogout, user }) {
   const dropdownRef = useRef(null)
   const notificationsRef = useRef(null)
   const notificationBellRef = useRef(null)
+  const avatarDismissRefs = useMemo(() => [dropdownRef], [])
+  const notificationDismissRefs = useMemo(() => [notificationsRef], [])
+  const closeAvatarMenu = useCallback(() => setOpen(false), [])
+  const closeNotifications = useCallback(() => setNotificationsOpen(false), [])
 
   useEffect(() => {
     function handleDashboardHeaderControls(event) {
@@ -947,20 +952,22 @@ function HeaderBar({ onLogout, user }) {
     }
   }, [])
 
+  useDismissableMenu({
+    open,
+    refs: avatarDismissRefs,
+    onDismiss: closeAvatarMenu,
+  })
+
+  useDismissableMenu({
+    open: notificationsOpen,
+    refs: notificationDismissRefs,
+    onDismiss: closeNotifications,
+  })
+
   useEffect(() => {
-    function onClickOutside(event) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-        setOpen(false)
-      }
-
-      if (notificationsRef.current && !notificationsRef.current.contains(event.target)) {
-        setNotificationsOpen(false)
-      }
-    }
-
-    document.addEventListener('mousedown', onClickOutside)
-    return () => document.removeEventListener('mousedown', onClickOutside)
-  }, [])
+    closeAvatarMenu()
+    closeNotifications()
+  }, [closeAvatarMenu, closeNotifications, location.pathname, location.search])
 
   useEffect(() => {
     if (!notificationsOpen) return undefined

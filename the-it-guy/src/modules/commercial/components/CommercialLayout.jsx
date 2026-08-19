@@ -1,7 +1,8 @@
 import { Bell, ChevronDown, Search } from 'lucide-react'
-import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import QuickCreateDropdown from '../../../components/QuickCreateDropdown'
+import useDismissableMenu from '../../../hooks/useDismissableMenu'
 import {
   COMMERCIAL_MOBILE_MORE_NAV_ITEMS,
   COMMERCIAL_MOBILE_PRIMARY_NAV_ITEMS,
@@ -75,6 +76,11 @@ function CommercialLayout({ onLogout = null, user = null }) {
   const [profileOpen, setProfileOpen] = useState(false)
   const profileMenuRef = useRef(null)
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false)
+  const mobileMoreMenuRef = useRef(null)
+  const profileDismissRefs = useMemo(() => [profileMenuRef], [])
+  const mobileMoreDismissRefs = useMemo(() => [mobileMoreMenuRef], [])
+  const closeProfileMenu = useCallback(() => setProfileOpen(false), [])
+  const closeMobileMoreMenu = useCallback(() => setMobileMoreOpen(false), [])
   const mobilePrimaryItems = useMemo(() => COMMERCIAL_MOBILE_PRIMARY_NAV_ITEMS, [])
   const mobileMoreItems = useMemo(() => COMMERCIAL_MOBILE_MORE_NAV_ITEMS, [])
   const visibleMobilePrimaryItems = useMemo(
@@ -140,26 +146,22 @@ function CommercialLayout({ onLogout = null, user = null }) {
     return () => window.cancelAnimationFrame(frameId)
   }, [location.pathname])
 
+  useDismissableMenu({
+    open: profileOpen,
+    refs: profileDismissRefs,
+    onDismiss: closeProfileMenu,
+  })
+
+  useDismissableMenu({
+    open: mobileMoreOpen,
+    refs: mobileMoreDismissRefs,
+    onDismiss: closeMobileMoreMenu,
+  })
+
   useEffect(() => {
-    function handlePointerDown(event) {
-      if (profileMenuRef.current && !profileMenuRef.current.contains(event.target)) {
-        setProfileOpen(false)
-      }
-    }
-
-    function handleEscape(event) {
-      if (event.key === 'Escape') {
-        setProfileOpen(false)
-      }
-    }
-
-    window.addEventListener('pointerdown', handlePointerDown)
-    window.addEventListener('keydown', handleEscape)
-    return () => {
-      window.removeEventListener('pointerdown', handlePointerDown)
-      window.removeEventListener('keydown', handleEscape)
-    }
-  }, [])
+    closeProfileMenu()
+    closeMobileMoreMenu()
+  }, [closeMobileMoreMenu, closeProfileMenu, location.pathname, location.search])
 
   function handleSearchKeyDown(event) {
     if (event.key !== 'Enter') return
@@ -278,7 +280,7 @@ function CommercialLayout({ onLogout = null, user = null }) {
                 </Link>
               )
             })}
-            <div className="relative shrink-0">
+            <div className="relative shrink-0" ref={mobileMoreMenuRef}>
               <button
                 type="button"
                 onClick={() => setMobileMoreOpen((previous) => !previous)}

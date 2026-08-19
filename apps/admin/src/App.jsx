@@ -37,8 +37,8 @@ import {
 import { getSupabaseConfigStatus, isSupabaseConfigured, supabase } from './lib/supabaseClient'
 
 const APP_ENV = import.meta.env || {}
-const ARCH9_BOOKING_URL = APP_ENV.VITE_ARCH9_BOOKING_URL || '/admin'
 const ARCH9_EXPLORE_URL = APP_ENV.VITE_ARCH9_EXPLORE_URL || '/'
+const ARCH9_INTAKE_NOTIFICATION_EMAIL = APP_ENV.VITE_ARCH9_INTAKE_NOTIFICATION_EMAIL || 'alex@arch9.co.za'
 
 const RANGE_OPTIONS = [
   { id: 'today', label: 'Today' },
@@ -942,7 +942,9 @@ function isValidEmail(value = '') {
 
 function isValidSaMobile(value = '') {
   const digits = String(value || '').replace(/\D+/g, '')
-  return /^(0[6-8][0-9]{8}|27[6-8][0-9]{8}|[6-8][0-9]{8})$/.test(digits)
+  if (!digits) return false
+  const normalized = digits.startsWith('27') ? `0${digits.slice(2)}` : digits.length === 9 ? `0${digits}` : digits
+  return /^0[6-8][0-9]{8}$/.test(normalized)
 }
 
 function getLeadScaleLines(lead = {}) {
@@ -1321,6 +1323,73 @@ async function submitInboundLead(payload = {}, idempotencyKey = buildIdempotency
   return { data, error: error?.message || '' }
 }
 
+function buildInboundLeadAdminUrl() {
+  if (typeof window === 'undefined') return 'https://admin.arch9.co.za/admin/inbound-leads'
+  return `${window.location.origin}/admin/inbound-leads`
+}
+
+async function sendInboundLeadEmails(payload = {}, leadId = '', idempotencyKey = '') {
+  if (!supabase?.functions?.invoke) return
+
+  const leadName = [payload.first_name, payload.last_name].filter(Boolean).join(' ')
+  const roleLabel = formatRoleType(payload.role_type)
+  const organisationName = payload.organisation_name || ''
+  const interests = Array.isArray(payload.selected_interests) ? payload.selected_interests : []
+  const adminUrl = buildInboundLeadAdminUrl()
+  const sourceLabel = formatSource(payload.source || payload.utm_source || 'direct')
+  const submittedAt = new Date().toISOString()
+  const notificationPayload = {
+    type: 'lead_operations_notification',
+    eventKind: 'new_enquiry_unassigned_manager',
+    to: ARCH9_INTAKE_NOTIFICATION_EMAIL,
+    recipientName: 'Alex',
+    subject: `New Arch9 intake: ${organisationName || leadName || payload.email}`,
+    title: 'New Arch9 Intake',
+    message: `${leadName || payload.email} submitted the Arch9 intake form as ${roleLabel || 'a new lead'}.`,
+    actionLink: adminUrl,
+    leadId,
+    leadName,
+    leadEmail: payload.email,
+    leadPhone: payload.mobile,
+    leadSource: sourceLabel,
+    leadCategory: roleLabel,
+    leadStatus: 'New',
+    propertyLabel: organisationName,
+    metadata: {
+      actionLink: adminUrl,
+      interests,
+      organisationName,
+      source: payload.source,
+      submittedAt,
+    },
+  }
+  const acknowledgementPayload = {
+    type: 'arch9_intake_acknowledgement',
+    to: payload.email,
+    replyTo: ARCH9_INTAKE_NOTIFICATION_EMAIL,
+    idempotencyKey: idempotencyKey ? `${idempotencyKey}:ack` : undefined,
+    leadId,
+    firstName: payload.first_name,
+    lastName: payload.last_name,
+    recipientName: leadName,
+    organisationName,
+    roleLabel,
+    interests,
+  }
+
+  const results = await Promise.allSettled([
+    supabase.functions.invoke('send-email', { body: notificationPayload }),
+    supabase.functions.invoke('send-email', { body: acknowledgementPayload }),
+  ])
+  results.forEach((result, index) => {
+    if (result.status === 'rejected') {
+      console.warn('[intake] email dispatch failed', { index, error: result.reason })
+      return
+    }
+    if (result.value?.error) console.warn('[intake] email dispatch returned error', { index, error: result.value.error })
+  })
+}
+
 async function loadInboundLeadsSnapshot() {
   if (!supabase) return { data: EMPTY_INBOUND, error: 'Supabase is not configured.' }
   const { data, error } = await supabase.rpc('arch9_admin_inbound_leads_snapshot')
@@ -1484,8 +1553,8 @@ function PublicIntakePage() {
   }))
   const roleConfig = form.roleType ? getRoleConfig(form.roleType) : null
   const selectedRoleConfig = roleConfig || ROLE_CONFIGS.agency
-  const selectedRoleLabel = roleConfig?.shortLabel || ''
   const isConfirmation = step === 4
+  const canContinue = validateStep()
 
   function setValue(key, value) {
     setForm((current) => ({ ...current, [key]: value }))
@@ -1569,32 +1638,32 @@ function PublicIntakePage() {
       return
     }
     setStep(4)
+    void sendInboundLeadEmails(payload, result.data?.lead_id || '', idempotencyKey)
   }
 
   return (
-    <main className="public-intake-shell">
-      <section className="intake-hero">
-        <div className="intake-brand">
-          <img alt="Arch9" src="/arch9-logo.png" />
-        </div>
-        {step === 0 ? (
-          <>
-            <div className="intake-network" aria-hidden="true">
-              <span />
-              <span />
-              <span />
-              <span />
+    <main className={`public-intake-shell${step === 0 ? ' landing-mode' : ' form-mode'}`}>
+      {step === 0 ? (
+        <section className="intake-hero">
+          <div className="intake-network" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+            <span />
+          </div>
+          <div className="intake-hero-top">
+            <div className="intake-mini-brand" aria-label="Arch9">
+              <strong>Arch9</strong>
             </div>
-            <div className="intake-hero-copy">
-              <h1>Welcome to Arch9.</h1>
-              <p className="intake-hero-subtitle">The property transaction, finally connected.</p>
-              <p>Tell us where you fit in and we'll route you into the right journey.</p>
-            </div>
-          </>
-        ) : (
-          <IntakeProgress step={step} />
-        )}
-      </section>
+            <p>The property transaction,<br />finally <span>connected.</span></p>
+          </div>
+          <div className="intake-hero-copy">
+            <h1>Welcome to <span>Arch9.</span></h1>
+            <i aria-hidden="true" />
+            <p>Tell us where you fit in and we'll route you into the right journey.</p>
+          </div>
+        </section>
+      ) : null}
 
       <section className={`intake-card${step === 0 ? ' role-selection-card' : ''}${isConfirmation ? ' confirmation-card' : ''}`}>
         {!isConfirmation ? (
@@ -1608,9 +1677,6 @@ function PublicIntakePage() {
 
             {step === 0 ? (
               <div className="intake-stack role-selection-stack">
-                <div>
-                  <h1>Where do you fit in?</h1>
-                </div>
                 <div className="role-card-grid">
                   {INTAKE_ROLE_ORDER.map((roleType) => {
                     const config = ROLE_CONFIGS[roleType]
@@ -1623,6 +1689,7 @@ function PublicIntakePage() {
                         className={isSelected ? 'selected' : ''}
                         key={roleType}
                         onClick={() => {
+                          setError('')
                           setForm((current) => ({
                             ...current,
                             businessMetrics: {},
@@ -1631,21 +1698,22 @@ function PublicIntakePage() {
                             selectedInterests: [],
                             services: [],
                           }))
+                          setStep(1)
                         }}
                         type="button"
                       >
-                        {isSelected ? <CheckCircle2 className="role-card-check" size={20} /> : null}
                         <span className="role-icon-badge"><Icon size={24} /></span>
                         <strong>{config.shortLabel}</strong>
                         <span>{details.copy}</span>
                         <em>{details.tag}</em>
+                        <ChevronRight className="role-card-arrow" size={20} />
                       </button>
                     )
                   })}
                 </div>
                 <div className="intake-personality-strip">
                   <span><UsersRound size={24} /></span>
-                  <p><strong>You handle the relationship.</strong> Arch9 keeps the transaction connected.</p>
+                  <p><strong>You handle the relationship.</strong> We handle the transaction infrastructure.</p>
                 </div>
               </div>
             ) : null}
@@ -1745,34 +1813,40 @@ function PublicIntakePage() {
 
             {error ? <Notice tone="danger" text={error} /> : null}
 
-            <div className="intake-actions">
-              {step > 0 ? (
+            {step > 0 ? (
+              <div className="intake-actions">
                 <button className="secondary-button" disabled={isSubmitting} onClick={() => setStep(Math.max(0, step - 1))} type="button">
                   Back
                 </button>
-              ) : null}
-              <button className="primary-button" disabled={!validateStep() || isSubmitting} onClick={continueFlow} type="button">
-                <span>
-                  {isSubmitting
-                    ? 'Sending...'
-                    : step === 0
-                      ? selectedRoleLabel ? `Continue as ${selectedRoleLabel}` : 'Choose a role to continue'
-                      : step === 3 ? 'Submit' : 'Continue'}
-                </span>
-                {step === 0 ? <ChevronRight size={20} /> : null}
-              </button>
-            </div>
+                <button
+                  aria-disabled={!canContinue}
+                  className={`primary-button${!canContinue ? ' is-soft-disabled' : ''}`}
+                  disabled={isSubmitting}
+                  onClick={continueFlow}
+                  type="button"
+                >
+                  <span>{isSubmitting ? 'Sending...' : step === 3 ? 'Submit' : 'Continue'}</span>
+                </button>
+              </div>
+            ) : null}
           </>
         ) : (
           <div className="confirmation-content">
-            <CheckCircle2 size={42} />
-            <h1>Welcome to Arch9, {form.firstName}.</h1>
-            <p>We're connecting the property industry - and you're now part of it.</p>
-            <p>We've received your details and someone from Arch9 will be in touch to help you get started.</p>
-            <div className="confirmation-actions">
-              <a className="primary-button" href={ARCH9_BOOKING_URL}>Book an introduction</a>
-              <a className="secondary-button" href={ARCH9_EXPLORE_URL}>Explore Arch9</a>
+            <div className="intake-mini-brand confirmation-mini-brand" aria-label="Arch9">
+              <strong>Arch9</strong>
             </div>
+            <h1>You're in.</h1>
+            <p>Thanks, {form.firstName || 'there'}.<br />We've got your details.</p>
+            <hr />
+            <p>We'll take a look and be in touch shortly to get you connected.</p>
+            <div className="confirmation-actions">
+              <a className="secondary-button" href={ARCH9_EXPLORE_URL}>Explore Arch9 <ChevronRight size={18} /></a>
+            </div>
+            <div className="confirmation-note">
+              <CheckCircle2 size={18} />
+              <span>One less form to fill in today.</span>
+            </div>
+            <div className="confirmation-arc" aria-hidden="true" />
           </div>
         )}
       </section>

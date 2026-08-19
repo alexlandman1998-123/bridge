@@ -226,6 +226,31 @@ export type SendLeadAcknowledgementPayload = {
   custom_response_text?: string;
 };
 
+export type SendArch9IntakeAcknowledgementPayload = {
+  type: "arch9_intake_acknowledgement" | "arch9_intake_confirmation";
+  to: string;
+  subject?: string;
+  replyTo?: string;
+  reply_to?: string;
+  idempotencyKey?: string;
+  idempotency_key?: string;
+  leadId?: string;
+  lead_id?: string;
+  firstName?: string;
+  first_name?: string;
+  lastName?: string;
+  last_name?: string;
+  recipientName?: string;
+  recipient_name?: string;
+  organisationName?: string;
+  organisation_name?: string;
+  roleLabel?: string;
+  role_label?: string;
+  interests?: string[];
+  bookingUrl?: string;
+  booking_url?: string;
+};
+
 export type SendKingstonsValuationDownloadPayload = {
   type:
     | "kingstons_valuation_download"

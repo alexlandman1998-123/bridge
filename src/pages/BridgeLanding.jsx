@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion'
+import { useEffect, useRef, useState } from 'react'
 import {
   Building,
   ClipboardList,
@@ -292,51 +293,104 @@ const TimelineStep = ({ index, title, description, isLast }) => (
   </motion.div>
 )
 
-const Header = () => (
-  <header className="sticky top-0 z-50 border-b border-white/60 bg-white/90 backdrop-blur-md">
-    <div className="mx-auto flex max-w-6xl items-center justify-between gap-6 px-6 py-4 sm:px-8 lg:px-0">
-      <div className="text-xl font-semibold tracking-[0.2em] text-bridge-text">Bridge</div>
+const Header = () => {
+  const [solutionsOpen, setSolutionsOpen] = useState(false)
+  const solutionsRef = useRef(null)
 
-      <nav className="hidden items-center gap-6 text-sm font-semibold tracking-[0.25em] text-bridge-subtle lg:flex">
-        {navLinks.map((link) => (
-          <a key={link.label} className="transition hover:text-bridge-text" href={link.href}>
-            {link.label}
-          </a>
-        ))}
+  useEffect(() => {
+    if (!solutionsOpen) return undefined
 
-        <div className="group relative">
-          <button className="flex items-center gap-2 text-xs uppercase tracking-[0.4em] text-bridge-subtle transition hover:text-bridge-text">
-            Solutions
-            <span className="text-[10px]">▾</span>
-          </button>
+    function closeSolutionsMenu() {
+      setSolutionsOpen(false)
+    }
 
-          <div className="pointer-events-none absolute left-1/2 top-full z-20 -translate-x-1/2 translate-y-4 opacity-0 transition-all duration-200 group-hover:pointer-events-auto group-hover:translate-y-6 group-hover:opacity-100">
-            <div className="w-[240px] rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-soft">
-              <div className="space-y-3">
-                {solutionsMenu.map((item) => (
-                  <a
-                    key={item.label}
-                    className="group block rounded-xl px-3 py-2 text-sm transition hover:bg-slate-50"
-                    href={item.href}
-                  >
-                    <p className="font-semibold text-slate-900 group-hover:text-slate-700">{item.label}</p>
-                    <p className="text-[11px] leading-4 text-slate-500">{item.description}</p>
-                  </a>
-                ))}
+    function handlePointerDown(event) {
+      if (solutionsRef.current && !solutionsRef.current.contains(event.target)) {
+        closeSolutionsMenu()
+      }
+    }
+
+    function handleKeyDown(event) {
+      if (event.key === 'Escape') {
+        closeSolutionsMenu()
+      }
+    }
+
+    document.addEventListener('pointerdown', handlePointerDown, true)
+    document.addEventListener('mousedown', handlePointerDown, true)
+    document.addEventListener('keydown', handleKeyDown, true)
+    window.addEventListener('blur', closeSolutionsMenu)
+
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown, true)
+      document.removeEventListener('mousedown', handlePointerDown, true)
+      document.removeEventListener('keydown', handleKeyDown, true)
+      window.removeEventListener('blur', closeSolutionsMenu)
+    }
+  }, [solutionsOpen])
+
+  return (
+    <header className="sticky top-0 z-50 border-b border-white/60 bg-white/90 backdrop-blur-md">
+      <div className="mx-auto flex max-w-6xl items-center justify-between gap-6 px-6 py-4 sm:px-8 lg:px-0">
+        <div className="text-xl font-semibold tracking-[0.2em] text-bridge-text">Bridge</div>
+
+        <nav className="hidden items-center gap-6 text-sm font-semibold tracking-[0.25em] text-bridge-subtle lg:flex">
+          {navLinks.map((link) => (
+            <a key={link.label} className="transition hover:text-bridge-text" href={link.href}>
+              {link.label}
+            </a>
+          ))}
+
+          <div
+            className="relative"
+            ref={solutionsRef}
+            onMouseEnter={() => setSolutionsOpen(true)}
+            onMouseLeave={() => setSolutionsOpen(false)}
+          >
+            <button
+              className="flex items-center gap-2 text-xs uppercase tracking-[0.4em] text-bridge-subtle transition hover:text-bridge-text"
+              type="button"
+              aria-haspopup="menu"
+              aria-expanded={solutionsOpen}
+              onClick={() => setSolutionsOpen((current) => !current)}
+              onFocus={() => setSolutionsOpen(true)}
+            >
+              Solutions
+              <span className="text-[10px]">▾</span>
+            </button>
+
+            <div className={`absolute left-1/2 top-full z-20 -translate-x-1/2 transition-all duration-200 ${
+              solutionsOpen ? 'pointer-events-auto translate-y-6 opacity-100' : 'pointer-events-none translate-y-4 opacity-0'
+            }`}>
+              <div className="w-[240px] rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-soft">
+                <div className="space-y-3" role="menu">
+                  {solutionsMenu.map((item) => (
+                    <a
+                      key={item.label}
+                      className="group block rounded-xl px-3 py-2 text-sm transition hover:bg-slate-50"
+                      href={item.href}
+                      role="menuitem"
+                      onClick={() => setSolutionsOpen(false)}
+                    >
+                      <p className="font-semibold text-slate-900 group-hover:text-slate-700">{item.label}</p>
+                      <p className="text-[11px] leading-4 text-slate-500">{item.description}</p>
+                    </a>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      </nav>
+        </nav>
 
-      <div className="ml-auto flex items-center gap-3">
-        <CTAButton variant="primary" href="#contact">
-          Book a Demo
-        </CTAButton>
+        <div className="ml-auto flex items-center gap-3">
+          <CTAButton variant="primary" href="#contact">
+            Book a Demo
+          </CTAButton>
+        </div>
       </div>
-    </div>
-  </header>
-)
+    </header>
+  )
+}
 
 const Hero = () => (
   <section className="bg-white">
