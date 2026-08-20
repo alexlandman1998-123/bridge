@@ -2302,6 +2302,7 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransac
   const [error, setError] = useState('')
   const dashboardHasLoadedRef = useRef(false)
   const dashboardLoadSequenceRef = useRef(0)
+  const dashboardRefreshTimerRef = useRef(null)
   const profileCanViewAllTransactions = useMemo(
     () =>
       canAccessPrincipalExperience({
@@ -2440,12 +2441,23 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransac
 
   useEffect(() => {
     function refresh() {
-      void loadDashboard({ forceRefresh: true })
+      if (!dashboardHasLoadedRef.current) return
+      if (dashboardRefreshTimerRef.current) {
+        window.clearTimeout(dashboardRefreshTimerRef.current)
+      }
+      dashboardRefreshTimerRef.current = window.setTimeout(() => {
+        dashboardRefreshTimerRef.current = null
+        void loadDashboard({ forceRefresh: true })
+      }, 350)
     }
     window.addEventListener('itg:transaction-created', refresh)
     window.addEventListener('itg:transaction-updated', refresh)
     window.addEventListener('itg:agency-crm-updated', refresh)
     return () => {
+      if (dashboardRefreshTimerRef.current) {
+        window.clearTimeout(dashboardRefreshTimerRef.current)
+        dashboardRefreshTimerRef.current = null
+      }
       window.removeEventListener('itg:transaction-created', refresh)
       window.removeEventListener('itg:transaction-updated', refresh)
       window.removeEventListener('itg:agency-crm-updated', refresh)

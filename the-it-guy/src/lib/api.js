@@ -29854,17 +29854,6 @@ async function resolveProfileIdentityByUserId(client, userId) {
   }
 }
 
-function isMissingTransactionParticipantRelationshipError(error) {
-  if (!error) return false
-  const code = String(error.code || '').toUpperCase()
-  const message = String(error.message || error.details || error.hint || '').toLowerCase()
-  return (
-    code === 'PGRST200' ||
-    message.includes('could not find a relationship') ||
-    message.includes('relationship between')
-  )
-}
-
 function getDirectParticipantTransactionIds(rows = [], normalizedRole = null) {
   const transactionIds = new Set()
   for (const row of rows || []) {
@@ -29886,25 +29875,20 @@ async function fetchDirectParticipantRowsByIdentity(
   }
 
   const normalizedOrganisationId = normalizeTextValue(organisationId)
-  const runQuery = async ({ includeStatus = true, scoped = Boolean(normalizedOrganisationId) } = {}) => {
+  const runQuery = async ({ includeStatus = true } = {}) => {
     const selectFields = [
       'transaction_id',
       'role_type',
       ...(includeStatus ? ['status', 'removed_at'] : []),
-      ...(scoped ? ['transaction:transactions!inner(organisation_id)'] : []),
     ].join(', ')
-    let query = client
+    return client
       .from('transaction_participants')
       .select(selectFields)
       .eq(identityColumn, identityValue)
-    if (scoped) {
-      query = query.eq('transaction.organisation_id', normalizedOrganisationId)
-    }
-    return query
   }
 
-  const runWithSchemaFallback = async ({ scoped } = {}) => {
-    let query = await runQuery({ scoped })
+  const runWithSchemaFallback = async () => {
+    let query = await runQuery()
     if (query.error && isMissingColumnError(query.error, 'user_id') && identityColumn === 'user_id') {
       return { data: [], error: null }
     }
@@ -29912,33 +29896,19 @@ async function fetchDirectParticipantRowsByIdentity(
       query.error &&
       (isMissingColumnError(query.error, 'status') || isMissingColumnError(query.error, 'removed_at'))
     ) {
-      query = await runQuery({ includeStatus: false, scoped })
+      query = await runQuery({ includeStatus: false })
     }
     return query
   }
 
-  let query = await runWithSchemaFallback({ scoped: Boolean(normalizedOrganisationId) })
-  let requiresOrganisationFilter = false
-
-  // The current schema exposes the transaction FK relation. If an older schema
-  // cache does not, preserve compatibility by using the former identity query
-  // and filtering its IDs against transactions in one bounded follow-up query.
-  if (
-    query.error &&
-    normalizedOrganisationId &&
-    isMissingTransactionParticipantRelationshipError(query.error)
-  ) {
-    query = await runWithSchemaFallback({ scoped: false })
-    requiresOrganisationFilter = !query.error
-  }
-
+  const query = await runWithSchemaFallback()
   if (query.error && !isMissingSchemaError(query.error)) {
     throw query.error
   }
 
   return {
     rows: query.data || [],
-    requiresOrganisationFilter,
+    requiresOrganisationFilter: Boolean(normalizedOrganisationId),
   }
 }
 

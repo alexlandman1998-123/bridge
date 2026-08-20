@@ -1,4 +1,4 @@
-import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react'
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import AttorneyTransfersTable from '../components/AttorneyTransfersTable'
 import AgentTransactionsTable from '../components/AgentTransactionsTable'
@@ -650,6 +650,7 @@ function Units() {
   const [unitsViewMode, setUnitsViewMode] = useState(role === 'client' ? 'cards' : 'list')
   const [attorneyListTab, setAttorneyListTab] = useState('all')
   const [organisationMembershipRole, setOrganisationMembershipRole] = useState('viewer')
+  const latestLoadRequestRef = useRef(0)
   const isAgentRole = role === 'agent'
   const isBondRole = role === 'bond_originator'
   const isAttorneyRole = role === 'attorney'
@@ -1010,6 +1011,9 @@ function Units() {
   }, [rows])
 
   const loadData = useCallback(async () => {
+    const requestId = latestLoadRequestRef.current + 1
+    latestLoadRequestRef.current = requestId
+    const isLatestRequest = () => latestLoadRequestRef.current === requestId
     const timer = createPerfTimer('ui.units.loadData', {
       role,
       workspaceId: workspace.id,
@@ -1313,6 +1317,11 @@ function Units() {
         activeRows: activeRows.length,
       })
 
+      if (!isLatestRequest()) {
+        timer.end({ skipped: 'stale_load', renderedRows: 0 })
+        return
+      }
+
       if (isDeveloperWorkspaceRole) {
         const workspaceRows = activeRows.map((row) => enrichWorkspaceRow(row))
 
@@ -1328,12 +1337,16 @@ function Units() {
       setDevelopmentOptions(options)
       timer.end({ renderedRows: isDeveloperWorkspaceRole ? activeRows.length : normalizedRows.length })
     } catch (loadError) {
-      setError(loadError.message)
+      if (isLatestRequest()) {
+        setError(loadError.message)
+      }
       timer.end({
         error: loadError?.message || 'load_failed',
       })
     } finally {
-      setLoading(false)
+      if (isLatestRequest()) {
+        setLoading(false)
+      }
     }
   }, [deferredSearch, developerOrganisationId, filters, isAgentRole, isPrincipalAgentView, isAttorneyRole, isBondRole, isDeveloperWorkspaceRole, participantScopedRole, profile, role, workspace.id])
 

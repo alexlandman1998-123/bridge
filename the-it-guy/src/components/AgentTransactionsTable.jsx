@@ -454,7 +454,7 @@ function AgentTransactionsTable({
         </div>
       ) : null}
 
-      {loading ? (
+      {loading && !hasAnyRows ? (
         <LoadingSkeleton lines={6} className="rounded-[18px] border border-borderDefault bg-surface" />
       ) : filteredRows.length === 0 ? (
         <div className={`agent-transactions-empty-state ${hasAnyRows ? 'is-filtered' : 'is-first-run'}`.trim()}>

@@ -1786,6 +1786,7 @@ async function getPrincipalDashboardDataUncached({
   })
   const packetIds = new Set(documentPackets.map((packet) => normalizeText(packet.id)).filter(Boolean))
   const packetEvents = allPacketEvents.filter((event) => selectedBranchId === ALL_BRANCHES_ID || packetIds.has(normalizeText(event.packet_id)))
+  const selectedScopeAlreadyCovered = selectedBranchId === ALL_BRANCHES_ID
   const [
     enrichedOrganisationUsers,
     documentRequests,
@@ -1805,8 +1806,12 @@ async function getPrincipalDashboardDataUncached({
       'id, transaction_id, role_type, selection_source, preferred_partner_id, partner_relationship_id, organisation_id, partner_name, contact_person, email_address, phone_number, status, assignment_status, removed_at, snapshot_json, created_at, updated_at',
       'id, transaction_id, role_type, selection_source, partner_name, contact_person, email_address, phone_number, snapshot_json, created_at, updated_at',
     ], [...transactionIds], { order: 'updated_at', limit: 3000, tolerateServerErrors: true, sourceHealth }),
-    () => safeSelectByIds('document_packets', 'id, organisation_id, transaction_id, lead_id, packet_type, title, status, sent_at, completed_at, created_at, updated_at', [...transactionIds], { order: 'updated_at', limit: 1000, tolerateServerErrors: true, sourceHealth }),
-    () => safeSelectByIds('transaction_commissions', 'id, organisation_id, transaction_id, assigned_agent_id, assigned_agent_email, gross_commission_amount, agency_commission_amount, agent_commission_amount, status, created_at, updated_at', [...transactionIds], { order: 'updated_at', limit: 1200, tolerateServerErrors: true, sourceHealth }),
+    () => selectedScopeAlreadyCovered
+      ? []
+      : safeSelectByIds('document_packets', 'id, organisation_id, transaction_id, lead_id, packet_type, title, status, sent_at, completed_at, created_at, updated_at', [...transactionIds], { order: 'updated_at', limit: 1000, tolerateServerErrors: true, sourceHealth }),
+    () => selectedScopeAlreadyCovered
+      ? []
+      : safeSelectByIds('transaction_commissions', 'id, organisation_id, transaction_id, assigned_agent_id, assigned_agent_email, gross_commission_amount, agency_commission_amount, agent_commission_amount, status, created_at, updated_at', [...transactionIds], { order: 'updated_at', limit: 1200, tolerateServerErrors: true, sourceHealth }),
   ])
   const organisationUsers = enrichedOrganisationUsers.filter((row) => isScopedToBranch(row, selectedBranchId, 'branch_id'))
   const effectiveDocumentPackets = dedupeRowsById([...documentPackets, ...linkedDocumentPackets])

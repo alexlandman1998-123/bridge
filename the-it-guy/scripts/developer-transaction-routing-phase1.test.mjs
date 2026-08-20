@@ -23,6 +23,19 @@ assert.deepEqual(
 
 assert.deepEqual(
   resolveTransactionWorkspaceRoute({
+    developmentId: 'dev-123',
+    transactionId: 'tx-123',
+    transactionReference: 'TRX-006',
+  }),
+  {
+    kind: 'transaction',
+    path: '/developments/dev-123/transactions/tx-123',
+    state: { headerTitle: 'TRX-006', developmentId: 'dev-123' },
+  },
+)
+
+assert.deepEqual(
+  resolveTransactionWorkspaceRoute({
     unitId: 'unit-123',
     unitNumber: '006',
   }),
@@ -57,6 +70,11 @@ assert.match(
 )
 
 const appSource = readSource('src/App.jsx')
+assert.match(
+  appSource,
+  /path="\/developments\/:developmentId\/transactions\/:transactionId"/,
+  'Development transaction rows should open the transaction workspace inside the development route.',
+)
 assert.ok(
   appSource.includes('const [wizardInitialUnitId, setWizardInitialUnitId]') &&
     appSource.includes('const requestedUnitId = event?.detail?.initialUnitId') &&

@@ -3452,6 +3452,8 @@ function BuyerMobilePortal({
   activeSection,
   developmentName,
   unitLabel,
+  propertyImageUrl = '',
+  propertyImageAlt = '',
   buyerInitial,
   purchasePriceLabel,
   heroStatusBadge,
@@ -4030,7 +4032,14 @@ function BuyerMobilePortal({
         {isOverviewSection ? (
           <>
             <section className="relative mt-5 min-h-[252px] overflow-hidden rounded-[20px] border border-white/70 bg-[#062b2b] bg-[linear-gradient(135deg,#062b2b_0%,#123a54_64%,#315c7d_100%)] p-5 text-white shadow-[0_18px_42px_rgba(15,23,42,0.15)]">
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_86%_18%,rgba(255,255,255,0.2),transparent_26%),linear-gradient(180deg,rgba(5,28,34,0)_48%,rgba(5,28,34,0.68)_100%)]" aria-hidden="true" />
+              {propertyImageUrl ? (
+                <img
+                  src={propertyImageUrl}
+                  alt={propertyImageAlt || `${developmentName} ${unitLabel}`.trim() || 'Property'}
+                  className="absolute inset-0 h-full w-full object-cover"
+                />
+              ) : null}
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_86%_18%,rgba(255,255,255,0.2),transparent_26%),linear-gradient(180deg,rgba(5,28,34,0.88)_0%,rgba(5,28,34,0.72)_48%,rgba(5,28,34,0.86)_100%)]" aria-hidden="true" />
               <div className="relative flex min-h-[212px] flex-col">
                 <p className="text-sm font-medium text-[#a5d8a7]">Your purchase</p>
                 <div className="mt-4 flex items-start justify-between gap-3">
@@ -11749,6 +11758,11 @@ function ClientPortal() {
     activeSellingContext,
     formData: sellerOnboardingFormData,
   })
+  const buyerPropertyImageUrl = resolveSellerPropertyImageUrl({
+    portal,
+    activeSellingContext,
+    formData: portal?.onboardingFormData?.formData || {},
+  })
   const sellerAgentAvatarUrl = resolveSellerAgentAvatarUrl({ portal, activeSellingContext })
   const sellerListingUrl = sellerVisibleListingLinks[0]?.url || ''
   const sellerMarketingChannels = buildSellerMarketingChannels(sellerVisibleListingLinks, sellerAgencyLogoUrl)
@@ -12581,6 +12595,8 @@ function ClientPortal() {
             activeSection={activeSection}
             developmentName={developmentName}
             unitLabel={unitLabel}
+            propertyImageUrl={buyerPropertyImageUrl}
+            propertyImageAlt={`${developmentName} ${unitLabel}`.trim()}
             buyerName={buyerName}
             buyerInitial={buyerInitial}
             purchasePriceLabel={purchasePriceLabel}

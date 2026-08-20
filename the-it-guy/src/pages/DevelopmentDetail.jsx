@@ -1615,6 +1615,16 @@ function buildTransactionReference(transactionId) {
   return normalized ? `TRX-${normalized}` : 'Pending'
 }
 
+function getDevelopmentRecordTransactionId(record = {}) {
+  return (
+    record?.transactionId ||
+    record?.currentTransactionId ||
+    record?.transaction_id ||
+    record?.transaction?.id ||
+    null
+  )
+}
+
 function getDocTypeLabel(value) {
   return DOCUMENT_TYPE_OPTIONS.find((item) => item.value === value)?.label || toTitleLabel(value || 'other')
 }
@@ -2323,8 +2333,14 @@ function DevelopmentDetail() {
   const canEditMarketing = canManageDevelopment || role === 'agent'
   const openDevelopmentTransactionWorkspace = useCallback(
     (record = {}) => {
+      const transactionId = getDevelopmentRecordTransactionId(record)
       const route = resolveTransactionWorkspaceRoute({
-        transactionId: record?.transactionId || record?.transaction?.id,
+        transactionId,
+        developmentId:
+          record?.developmentId ||
+          record?.development?.id ||
+          record?.unit?.development_id ||
+          data?.development?.id,
         unitId: record?.unitId || record?.unit?.id,
         unitNumber: record?.unitNumber || record?.unit?.unit_number,
         transactionReference: record?.transactionReference || record?.reference || record?.transaction?.transaction_reference,
@@ -2338,7 +2354,7 @@ function DevelopmentDetail() {
 
       navigate(route.path, route.state ? { state: route.state } : undefined)
     },
-    [navigate],
+    [data?.development?.id, navigate],
   )
 
   const loadData = useCallback(async () => {
@@ -4802,6 +4818,8 @@ function DevelopmentDetail() {
 
   function handleReservationDepositRequiredChange(event) {
     const enabledByDefault = event.target.checked
+    setIsEditingReservationSettings(true)
+    setReservationSettingsExpanded(true)
     setReservationSettingsForm((previous) => ({ ...previous, enabledByDefault }))
 
     if (!enabledByDefault) return
@@ -6782,7 +6800,7 @@ function DevelopmentDetail() {
                           <span className="mt-1 block text-xs leading-5 text-[#6b7d93]">Controls whether the buyer journey includes an active Reservation Deposit milestone.</span>
                         </span>
                         <span className="inline-flex items-center gap-3 text-sm font-semibold text-[#142132]">
-                          <input type="checkbox" className="sr-only" checked={Boolean(reservationSettingsForm.enabledByDefault)} disabled={!isEditingReservationSettings || reservationSettingsSaving} onChange={handleReservationDepositRequiredChange} />
+                          <input type="checkbox" className="sr-only" checked={Boolean(reservationSettingsForm.enabledByDefault)} disabled={!canManageDevelopment || reservationSettingsSaving} onChange={handleReservationDepositRequiredChange} />
                           <span className={`inline-flex h-6 w-11 items-center rounded-full p-0.5 transition ${reservationSettingsForm.enabledByDefault ? 'bg-[#1f7a43]' : 'bg-[#cbd7e4]'}`} aria-hidden>
                             <span className={`h-5 w-5 rounded-full bg-white shadow transition ${reservationSettingsForm.enabledByDefault ? 'translate-x-5' : 'translate-x-0'}`} />
                           </span>
@@ -6943,7 +6961,7 @@ function DevelopmentDetail() {
                       </div>
                     </section>
 
-                    <div className="flex flex-col gap-3 border-t border-[#e6edf5] pt-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="sticky bottom-0 z-20 -mx-1 flex flex-col gap-3 border-t border-[#e6edf5] bg-white/95 px-1 py-4 backdrop-blur sm:flex-row sm:items-center sm:justify-between">
                       <span className="text-xs font-medium text-[#7b8ca2]">{isEditingReservationSettings ? 'Save updates only reservation and transaction defaults.' : 'Viewing mode. Use Edit to change this section.'}</span>
                       {isEditingReservationSettings ? (
                         <div className="flex items-center gap-2">
@@ -9141,7 +9159,7 @@ function DevelopmentDetail() {
                     </thead>
                     <tbody className="divide-y divide-[#edf2f7] bg-white">
                       {transactionRows.map((row) => {
-                        const canOpenTransaction = Boolean(row.transaction?.id)
+                        const canOpenTransaction = Boolean(getDevelopmentRecordTransactionId(row) || row.unit?.id)
 
                         return (
                           <tr

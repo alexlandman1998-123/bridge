@@ -30,6 +30,13 @@ const DEMO_PROPERTY_ADDRESS = {
   formatted: '2 Pine Avenue, Unit 4, Sea Point, Cape Town, Western Cape, 8005',
 }
 
+const DEMO_PROPERTY_IMAGE_URL = '/brand/agency-intake-buy.webp'
+const DEMO_PROPERTY_GALLERY = [
+  '/brand/agency-intake-buy.webp',
+  '/brand/agency-intake-sell.webp',
+  '/brand/agency-intake-contact.webp',
+]
+
 export function isBuyerOnboardingDemoToken(token = '') {
   return String(token || '').trim() === BUYER_ONBOARDING_DEMO_TOKEN
 }
@@ -253,6 +260,9 @@ function getDemoBuyerPortalSeed(token = BUYER_PORTAL_DEMO_TOKEN) {
   const unit = {
     ...(buyerPayload.unit || {}),
     price: 2850000,
+    heroImageUrl: DEMO_PROPERTY_IMAGE_URL,
+    imageUrl: DEMO_PROPERTY_IMAGE_URL,
+    images: DEMO_PROPERTY_GALLERY,
     development: {
       ...(buyerPayload.unit?.development || {}),
       name: 'Pine Avenue Apartments',
@@ -269,6 +279,17 @@ function getDemoBuyerPortalSeed(token = BUYER_PORTAL_DEMO_TOKEN) {
       id: 'demo-buyer-listing',
       title: '2 Pine Avenue, Unit 4',
       address: DEMO_PROPERTY_ADDRESS.formatted,
+      heroImageUrl: DEMO_PROPERTY_IMAGE_URL,
+      coverImageUrl: DEMO_PROPERTY_IMAGE_URL,
+      imageUrl: DEMO_PROPERTY_IMAGE_URL,
+      images: DEMO_PROPERTY_GALLERY,
+      galleryImages: DEMO_PROPERTY_GALLERY,
+      agencyName: DEMO_BRAND.agencyName,
+      organisationName: DEMO_BRAND.organisationName,
+      agencyLogoUrl: DEMO_BRAND.logoUrl,
+      agencyLogoDarkUrl: DEMO_BRAND.logoDarkUrl,
+      agencyLogoLightUrl: DEMO_BRAND.logoLightUrl,
+      branding: DEMO_BRAND,
       seller: {
         name: 'Thabo Mokoena',
         email: 'thabo.demo@arch9.co.za',
@@ -617,6 +638,9 @@ function getDemoSellerPortalSeed(token = SELLER_PORTAL_DEMO_TOKEN) {
       unit_label: 'Unit 4',
       price: 2850000,
       status: 'Active Listing',
+      heroImageUrl: DEMO_PROPERTY_IMAGE_URL,
+      imageUrl: DEMO_PROPERTY_IMAGE_URL,
+      images: DEMO_PROPERTY_GALLERY,
       development: {
         id: 'demo-seller-development',
         name: 'Pine Avenue Apartments',
@@ -632,6 +656,11 @@ function getDemoSellerPortalSeed(token = SELLER_PORTAL_DEMO_TOKEN) {
       agencyLogoUrl: DEMO_BRAND.logoUrl,
       agencyLogoDarkUrl: DEMO_BRAND.logoDarkUrl,
       agencyLogoLightUrl: DEMO_BRAND.logoLightUrl,
+      heroImageUrl: DEMO_PROPERTY_IMAGE_URL,
+      coverImageUrl: DEMO_PROPERTY_IMAGE_URL,
+      imageUrl: DEMO_PROPERTY_IMAGE_URL,
+      images: DEMO_PROPERTY_GALLERY,
+      galleryImages: DEMO_PROPERTY_GALLERY,
       branding: DEMO_BRAND,
       seller: {
         name: 'Thabo Mokoena',

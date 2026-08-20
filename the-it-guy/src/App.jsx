@@ -2090,6 +2090,16 @@ function AppRoutes() {
                 }
               />
               <Route
+                path="/developments/:developmentId/transactions/:transactionId"
+                element={
+                  <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
+                    <AppErrorBoundary scope="development-transaction-workspace" title="Transaction workspace failed to load">
+                      <AttorneyTransactionDetail />
+                    </AppErrorBoundary>
+                  </RoleRoute>
+                }
+              />
+              <Route
                 path="/developer/partners"
                 element={
                   <RoleRoute allowedRoles={['developer']}>
