@@ -6674,6 +6674,17 @@ function AgentListingDetail() {
   const property24LeadImportCounts = getProperty24LeadImportCounts(property24LeadImport)
   const property24StatusLabel = getProperty24StatusLabel(property24StatusCheck)
   const property24StatusCheckedAt = getProperty24StatusCheckedAt(property24StatusCheck)
+  const property24HasReference = Boolean(property24Reference)
+  const property24CanSubmit = property24Preview?.preview?.canSubmit ?? property24Preview?.report?.preview?.canSubmit ?? null
+  const property24HasPreviewBlockers = property24PreviewCounts.dataBlockers > 0 || property24PreviewCounts.technicalBlockers > 0
+  const property24PrimaryActionLabel = property24HasReference ? 'Update Existing Listing' : 'Publish New Listing'
+  const property24NextStep = property24HasPreviewBlockers
+    ? 'Fix the preview blockers before sending this listing to Property24.'
+    : property24CanSubmit === true && !property24HasReference
+      ? 'Preview passed. This is ready for the first ExDev publish.'
+      : property24HasReference
+        ? 'This listing already has a Property24 reference. Future publishes update the same listing.'
+        : 'Start with Preview. Arch9 will save the listing first, then check Property24 readiness.'
 
   useEffect(() => {
     setArch9LiveChecking(false)
@@ -12200,6 +12211,17 @@ function AgentListingDetail() {
                     <p className="mt-1 max-w-3xl text-sm leading-6 text-[#607387]">
                       Publish this listing through the saved agency setup and mapped Property24 agent.
                     </p>
+                    <div className="mt-3 rounded-[16px] border border-[#dfe8f2] bg-[#f8fbfd] px-4 py-3">
+                      <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Current Property24 action</p>
+                          <p className="mt-1 text-sm font-semibold text-[#243d56]">{property24PrimaryActionLabel}</p>
+                        </div>
+                        <div className="max-w-2xl text-sm leading-5 text-[#607387]">
+                          {property24NextStep}
+                        </div>
+                      </div>
+                    </div>
                     <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold text-[#607387]">
                       <span className="rounded-full border border-[#dbe6f2] bg-[#f8fbfd] px-3 py-1.5">
                         Reference: {property24Reference || 'Not assigned yet'}
@@ -12221,76 +12243,102 @@ function AgentListingDetail() {
                       ) : null}
                     </div>
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Field
-                      as="select"
-                      value={property24StatusUpdate}
-                      onChange={(event) => setProperty24StatusUpdate(event.target.value)}
-                      disabled={Boolean(property24Action)}
-                      className="min-h-9 min-w-[130px] text-sm"
-                    >
-                      {PROPERTY24_STATUS_UPDATE_OPTIONS.map((status) => (
-                        <option key={status} value={status}>{status}</option>
-                      ))}
-                    </Field>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="secondary"
-                      onClick={updateProperty24ListingStatus}
-                      disabled={Boolean(property24Action)}
-                    >
-                      {property24Action === 'status-update' ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
-                      Update Status
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="secondary"
-                      onClick={refreshProperty24ListingStatus}
-                      disabled={Boolean(property24Action)}
-                    >
-                      {property24Action === 'status' ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
-                      Refresh Status
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="secondary"
-                      onClick={previewProperty24Listing}
-                      disabled={Boolean(property24Action)}
-                    >
-                      {property24Action === 'preview' ? <Loader2 size={15} className="animate-spin" /> : <Eye size={15} />}
-                      Preview
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={publishProperty24Listing}
-                      disabled={Boolean(property24Action)}
-                    >
-                      {property24Action === 'publish' ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
-                      Publish
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => pullProperty24ListingLeads({ applyLeads: false })}
-                      disabled={Boolean(property24Action)}
-                    >
-                      {property24Action === 'lead-preview' ? <Loader2 size={15} className="animate-spin" /> : <MessageSquare size={15} />}
-                      Check Leads
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={() => pullProperty24ListingLeads({ applyLeads: true })}
-                      disabled={Boolean(property24Action)}
-                    >
-                      {property24Action === 'lead-import' ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
-                      Import Leads
-                    </Button>
+                  <div className="grid w-full gap-3 lg:w-[340px]">
+                    <div className="rounded-[16px] border border-[#e1e9f2] bg-[#fbfdff] p-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">1. Check</p>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        className="mt-2 w-full justify-center"
+                        onClick={previewProperty24Listing}
+                        disabled={Boolean(property24Action)}
+                      >
+                        {property24Action === 'preview' ? <Loader2 size={15} className="animate-spin" /> : <Eye size={15} />}
+                        Preview Readiness
+                      </Button>
+                    </div>
+
+                    <div className="rounded-[16px] border border-[#e1e9f2] bg-[#fbfdff] p-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">2. Send</p>
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="mt-2 w-full justify-center"
+                        onClick={publishProperty24Listing}
+                        disabled={Boolean(property24Action) || property24HasPreviewBlockers}
+                      >
+                        {property24Action === 'publish' ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+                        {property24PrimaryActionLabel}
+                      </Button>
+                    </div>
+
+                    <div className="rounded-[16px] border border-[#e1e9f2] bg-[#fbfdff] p-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">3. Confirm status</p>
+                      <div className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] lg:grid-cols-1">
+                        <Field
+                          as="select"
+                          value={property24StatusUpdate}
+                          onChange={(event) => setProperty24StatusUpdate(event.target.value)}
+                          disabled={Boolean(property24Action)}
+                          className="min-h-9 text-sm"
+                        >
+                          {PROPERTY24_STATUS_UPDATE_OPTIONS.map((status) => (
+                            <option key={status} value={status}>{status}</option>
+                          ))}
+                        </Field>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="secondary"
+                            onClick={updateProperty24ListingStatus}
+                            disabled={Boolean(property24Action) || !property24HasReference}
+                          >
+                            {property24Action === 'status-update' ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+                            Update Status
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="secondary"
+                            onClick={refreshProperty24ListingStatus}
+                            disabled={Boolean(property24Action) || !property24HasReference}
+                          >
+                            {property24Action === 'status' ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
+                            Refresh Status
+                          </Button>
+                        </div>
+                      </div>
+                      {!property24HasReference ? (
+                        <p className="mt-2 text-xs leading-5 text-[#8a5b13]">Status actions unlock after Property24 returns a listing reference.</p>
+                      ) : null}
+                    </div>
+
+                    <div className="rounded-[16px] border border-[#e1e9f2] bg-[#fbfdff] p-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">4. Leads</p>
+                      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => pullProperty24ListingLeads({ applyLeads: false })}
+                          disabled={Boolean(property24Action) || !property24HasReference}
+                        >
+                          {property24Action === 'lead-preview' ? <Loader2 size={15} className="animate-spin" /> : <MessageSquare size={15} />}
+                          Check Leads
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={() => pullProperty24ListingLeads({ applyLeads: true })}
+                          disabled={Boolean(property24Action) || !property24HasReference}
+                        >
+                          {property24Action === 'lead-import' ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
+                          Import Leads
+                        </Button>
+                      </div>
+                    </div>
                   </div>
                 </div>
 

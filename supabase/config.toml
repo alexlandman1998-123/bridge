@@ -97,6 +97,12 @@ verify_jwt = true
 import_map = "./functions/send-whatsapp/deno.json"
 entrypoint = "./functions/send-whatsapp/index.ts"
 
+[functions.whatsapp-webhook]
+enabled = true
+verify_jwt = false
+import_map = "./functions/whatsapp-webhook/deno.json"
+entrypoint = "./functions/whatsapp-webhook/index.ts"
+
 [functions.resend-webhook]
 enabled = true
 verify_jwt = false
