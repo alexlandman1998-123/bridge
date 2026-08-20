@@ -11,6 +11,7 @@ import {
   ExternalLink,
   FileText,
   FolderKanban,
+  Globe,
   HandCoins,
   Home,
   ImagePlus,
@@ -1762,6 +1763,27 @@ function formatDateTime(value) {
   return parsed.toLocaleString('en-ZA')
 }
 
+function formatRelativeTime(value) {
+  if (!value) return 'Not synced yet'
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return 'Not synced yet'
+  const diffMs = Date.now() - parsed.getTime()
+  if (diffMs < 0) return formatDateTime(value)
+  const minute = 60 * 1000
+  const hour = 60 * minute
+  const day = 24 * hour
+  if (diffMs < minute) return 'Just now'
+  if (diffMs < hour) {
+    const minutes = Math.max(1, Math.round(diffMs / minute))
+    return `${minutes} min ago`
+  }
+  if (diffMs < day) {
+    const hours = Math.max(1, Math.round(diffMs / hour))
+    return `${hours} hr${hours === 1 ? '' : 's'} ago`
+  }
+  return formatDate(value)
+}
+
 function formatStatusLabel(value) {
   const normalized = String(value || '').trim().toLowerCase()
   if (!normalized) return 'Requested'
@@ -1925,6 +1947,93 @@ function StatusPill({ status = '', label = '' }) {
     <span className={`inline-flex shrink-0 items-center rounded-full border px-2.5 py-1 text-[0.7rem] font-semibold ${className}`}>
       {label || (done ? 'Done' : pending ? 'Pending' : 'Missing')}
     </span>
+  )
+}
+
+function MarketingSummaryItem({ icon = Info, value, label, actionLabel = '', onAction, tone = 'default' }) {
+  const Icon = icon
+  const toneClass = tone === 'success'
+    ? 'bg-[#ecfaf1] text-[#1f7d44]'
+    : tone === 'attention'
+      ? 'bg-[#fff8ec] text-[#9a5b13]'
+      : 'bg-[#eef5fb] text-[#1f4f78]'
+  return (
+    <div className="flex min-w-0 flex-1 items-center gap-3 border-b border-[#e5edf6] px-4 py-4 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0">
+      <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-full ${toneClass}`}>
+        <Icon size={19} />
+      </span>
+      <div className="min-w-0">
+        <p className="break-words text-xl font-semibold leading-6 text-[#142132]">{value}</p>
+        <p className="mt-1 text-xs font-semibold text-[#2d445e]">{label}</p>
+        {actionLabel ? (
+          <button
+            type="button"
+            onClick={onAction}
+            className="mt-1 text-xs font-semibold text-[#1f4f78] hover:text-[#143a5b]"
+          >
+            {actionLabel}
+          </button>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+function DistributionChannel({
+  icon = ExternalLink,
+  name,
+  subtitle = '',
+  reference = '',
+  status = 'pending',
+  statusLabel = '',
+  lastSynced = '',
+  primaryAction = null,
+  secondaryAction = null,
+  menuActions = [],
+}) {
+  const Icon = icon
+  const statusKey = normalizeKey(status || statusLabel)
+  const live = ['live', 'published', 'active', 'done', 'complete'].includes(statusKey)
+  const attention = ['draft', 'pending', 'not_published', 'not_added', 'missing'].includes(statusKey)
+  const dotClass = live ? 'bg-[#1f9d64]' : attention ? 'bg-[#8aa0b6]' : 'bg-[#d99321]'
+  return (
+    <div className="grid gap-3 border-b border-[#edf2f7] px-4 py-4 last:border-b-0 lg:grid-cols-[minmax(0,1.6fr)_minmax(170px,0.9fr)_auto] lg:items-center">
+      <div className="flex min-w-0 items-start gap-3">
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[12px] border border-[#dbe6f2] bg-white text-[#1f4f78]">
+          <Icon size={18} />
+        </span>
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-[#142132]">{name}</p>
+          {subtitle ? <p className="mt-0.5 break-words text-xs leading-5 text-[#607387]">{subtitle}</p> : null}
+          {reference ? (
+            <span className="mt-1 inline-flex max-w-full rounded-full border border-[#dbe6f2] bg-[#f8fbfd] px-2 py-0.5 text-[0.68rem] font-semibold text-[#607387]">
+              <span className="truncate">{reference}</span>
+            </span>
+          ) : null}
+        </div>
+      </div>
+      <div className="min-w-0">
+        <p className="inline-flex items-center gap-2 text-sm font-semibold text-[#243d56]">
+          <span className={`h-2 w-2 rounded-full ${dotClass}`} />
+          {statusLabel || formatStatusLabel(status)}
+        </p>
+        {lastSynced ? <p className="mt-1 text-xs text-[#607387]">{lastSynced}</p> : null}
+      </div>
+      <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+        {primaryAction}
+        {secondaryAction}
+        {menuActions.length ? (
+          <details className="relative">
+            <summary className="grid h-9 w-9 cursor-pointer list-none place-items-center rounded-lg border border-[#dbe6f2] bg-white text-[#35546c] transition hover:border-[#b7c8db] hover:bg-[#f7fbff] [&::-webkit-details-marker]:hidden">
+              <MoreVertical size={15} />
+            </summary>
+            <div className="absolute right-0 z-30 mt-2 w-56 overflow-hidden rounded-[16px] border border-[#dbe6f2] bg-white p-1.5 shadow-[0_18px_34px_rgba(15,23,42,0.14)]">
+              {menuActions.map((action) => action)}
+            </div>
+          </details>
+        ) : null}
+      </div>
+    </div>
   )
 }
 
@@ -2971,6 +3080,10 @@ function AgentListingDetail() {
   const [sellerReviewDeliveryModeByOfferId, setSellerReviewDeliveryModeByOfferId] = useState({})
   const [marketingDraft, setMarketingDraft] = useState(() => buildPropertyDraft(null))
   const [externalLinkDraft, setExternalLinkDraft] = useState(() => createExternalLinkDraft())
+  const [readinessChecklistOpen, setReadinessChecklistOpen] = useState(false)
+  const [property24ManageOpen, setProperty24ManageOpen] = useState(false)
+  const [externalLinkPanelOpen, setExternalLinkPanelOpen] = useState(false)
+  const [externalLinkEditingId, setExternalLinkEditingId] = useState('')
   const [sellerWorkspaceTab, setSellerWorkspaceTab] = useState(() => getSellerWorkspaceTabFromSearch(typeof window !== 'undefined' ? window.location.search : '') || 'overview')
   const [commissionDraft, setCommissionDraft] = useState({
     percentage: '',
@@ -6685,6 +6798,60 @@ function AgentListingDetail() {
       : property24HasReference
         ? 'This listing already has a Property24 reference. Future publishes update the same listing.'
         : 'Start with Preview. Arch9 will save the listing first, then check Property24 readiness.'
+  const externalListingLinks = useMemo(
+    () => normalizeExternalListingLinks(marketingDraft.externalLinks),
+    [marketingDraft.externalLinks],
+  )
+  const privatePropertyStatusKey = normalizeKey(marketingDraft.privatePropertyStatus || listingRecord?.privatePropertyStatus)
+  const privatePropertyHasChannel = Boolean(marketingDraft.privatePropertyListingUrl || marketingDraft.privatePropertyReference || (privatePropertyStatusKey && privatePropertyStatusKey !== 'not_published'))
+  const agencyWebsiteLink = externalListingLinks.find((link) => normalizeKey(link.platform).includes('agency')) || null
+  const property24LastSyncedAt = firstDraftValue(
+    property24StatusCheckedAt,
+    listingRecord?.property24LastSyncedAt,
+    listingRecord?.property24_last_synced_at,
+    listingRecord?.property24UpdatedAt,
+    listingRecord?.property24_updated_at,
+    listingRecord?.updatedAt,
+    listingRecord?.updated_at,
+  )
+  const marketingLastSyncedAt = firstDraftValue(
+    property24LastSyncedAt,
+    listingRecord?.publicationData?.updatedAt,
+    listingRecord?.publicationData?.updated_at,
+    listingRecord?.updatedAt,
+    listingRecord?.updated_at,
+  )
+  const liveChannelCount = useMemo(() => {
+    const isLive = (value) => ['published', 'live', 'active'].includes(normalizeKey(value))
+    const liveChannels = new Set()
+    if (property24Published) liveChannels.add('property24')
+    if (arch9IsPublished) liveChannels.add('arch9')
+    if (privatePropertyHasChannel && isLive(marketingDraft.privatePropertyStatus)) liveChannels.add('private_property')
+    externalListingLinks.forEach((link) => {
+      if (!isLive(link.status)) return
+      const platformKey = normalizeKey(link.platform)
+      if (platformKey.includes('property24')) liveChannels.add('property24')
+      else if (platformKey.includes('private')) liveChannels.add('private_property')
+      else if (platformKey.includes('agency')) liveChannels.add('agency_website')
+      else liveChannels.add(platformKey || link.id)
+    })
+    return liveChannels.size
+  }, [arch9IsPublished, externalListingLinks, marketingDraft.privatePropertyStatus, privatePropertyHasChannel, property24Published])
+  const incompleteReadinessItems = listingReadinessItems.filter((item) => !item.complete)
+  const marketingSellingPoints = [
+    ...marketingDraft.selectedFeatures,
+    ...marketingDraft.amenities,
+    marketingDraft.petFriendly ? 'Pet Friendly' : '',
+    marketingDraft.fibreReady ? 'Fibre Ready' : '',
+    marketingDraft.securityFeatures ? 'Security' : '',
+  ].filter(Boolean)
+  const marketingMediaBadges = [
+    { key: 'photos', label: `${marketingDraft.galleryImages.length} photo${marketingDraft.galleryImages.length === 1 ? '' : 's'}`, complete: marketingDraft.galleryImages.length > 0 },
+    { key: 'cover', label: coverImage?.url ? 'Cover selected' : 'Cover missing', complete: Boolean(coverImage?.url) },
+    { key: 'floorplan', label: marketingDraft.floorplans.length ? `${marketingDraft.floorplans.length} floor plan${marketingDraft.floorplans.length === 1 ? '' : 's'}` : 'Floor plan missing', complete: marketingDraft.floorplans.length > 0 },
+    { key: 'video', label: marketingDraft.videoLink ? 'Video added' : 'Video not added', complete: Boolean(marketingDraft.videoLink) },
+    { key: 'tour', label: marketingDraft.virtualTourLink ? 'Virtual tour added' : 'Virtual tour not added', complete: Boolean(marketingDraft.virtualTourLink) },
+  ]
 
   useEffect(() => {
     setArch9LiveChecking(false)
@@ -8320,7 +8487,21 @@ function AgentListingDetail() {
     }))
   }
 
-  async function addExternalListingLink(event) {
+  function openExternalLinkPanel(link = null, platform = '') {
+    const normalizedLink = link ? normalizeExternalListingLinks([link])[0] : null
+    setExternalLinkDraft(normalizedLink || { ...createExternalLinkDraft(), platform: platform || createExternalLinkDraft().platform })
+    setExternalLinkEditingId(normalizedLink?.id || '')
+    setDetailError('')
+    setExternalLinkPanelOpen(true)
+  }
+
+  function closeExternalLinkPanel() {
+    setExternalLinkPanelOpen(false)
+    setExternalLinkEditingId('')
+    setExternalLinkDraft(createExternalLinkDraft())
+  }
+
+  async function submitExternalListingLink(event) {
     event.preventDefault()
     const url = String(externalLinkDraft.url || '').trim()
     if (!url) {
@@ -8328,7 +8509,7 @@ function AgentListingDetail() {
       return
     }
     const nextLink = {
-      id: generateId('external-link'),
+      id: externalLinkEditingId || generateId('external-link'),
       ...externalLinkDraft,
       url,
       visibleToSeller: isExternalLinkSellerVisible(externalLinkDraft.status),
@@ -8337,10 +8518,18 @@ function AgentListingDetail() {
     await applyMarketingDraftAndPersist(
       (previous) => ({
         ...previous,
-        externalLinks: normalizeExternalListingLinks([...(previous.externalLinks || []), nextLink]),
+        externalLinks: externalLinkEditingId
+          ? normalizeExternalListingLinks(previous.externalLinks).map((link) => (String(link.id) === String(externalLinkEditingId) ? nextLink : link))
+          : normalizeExternalListingLinks([...(previous.externalLinks || []), nextLink]),
       }),
-      { message: 'External listing link added.' },
+      { message: externalLinkEditingId ? 'External listing link updated.' : 'External listing link added.' },
     )
+    setExternalLinkEditingId('')
+    setExternalLinkPanelOpen(false)
+  }
+
+  async function addExternalListingLink(event) {
+    await submitExternalListingLink(event)
   }
 
   async function removeExternalListingLink(linkId) {
@@ -8538,6 +8727,485 @@ function AgentListingDetail() {
   const sellerProfileBuilderShowsForeign = sellerProfileBuilderBranch.startsWith('foreign_')
   const sellerProfileBuilderShowsMultipleOwners = sellerProfileBuilderBranch === 'multiple_owners'
   const sellerProfileBuilderShowsSpouse = sellerProfileBuilderBranch === 'married'
+
+  function renderProperty24ManagePanel() {
+    return (
+      <Modal
+        open={property24ManageOpen}
+        onClose={() => setProperty24ManageOpen(false)}
+        title="Manage Property24"
+        subtitle="Use the existing Property24 publishing actions for this listing."
+        className="max-w-5xl"
+      >
+        <div className="grid gap-5">
+          <section className="grid gap-3 md:grid-cols-3">
+            <InfoTile icon={Building2} label="Status" value={property24Published ? 'Live' : formatStatusLabel(property24StatusKey || 'not_published')} status={property24Published ? 'live' : property24StatusKey || 'pending'} />
+            <InfoTile icon={Link2} label="Property24 reference" value={property24Reference || 'Not assigned'} />
+            <InfoTile icon={RefreshCw} label="Last synced" value={formatRelativeTime(property24LastSyncedAt)} />
+          </section>
+
+          <section className="rounded-[18px] border border-[#e1e9f2] bg-[#fbfdff] p-4">
+            <p className="text-sm font-semibold text-[#142132]">Listing data status</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {[
+                ['Price', Number(marketingDraft.price || listingRecord?.askingPrice || 0) > 0],
+                ['Description', Boolean(marketingDraft.description.trim())],
+                ['Photos', marketingDraft.galleryImages.length > 0],
+                ['Features', marketingDraft.selectedFeatures.length > 0 || marketingDraft.amenities.length > 0],
+                ['Agent', Boolean(listingActor.name || listingActor.email)],
+              ].map(([label, complete]) => (
+                <CompletionBadge key={label} complete={Boolean(complete)} label={`${label} ${complete ? 'ready' : 'missing'}`} />
+              ))}
+            </div>
+            <p className="mt-3 text-sm leading-6 text-[#607387]">{property24NextStep}</p>
+          </section>
+
+          <section className="grid gap-3 lg:grid-cols-4">
+            <div className="rounded-[16px] border border-[#e1e9f2] bg-white p-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">1. Check</p>
+              <Button type="button" size="sm" variant="secondary" className="mt-2 w-full justify-center" onClick={previewProperty24Listing} disabled={Boolean(property24Action)}>
+                {property24Action === 'preview' ? <Loader2 size={15} className="animate-spin" /> : <Eye size={15} />}
+                Preview Readiness
+              </Button>
+            </div>
+            <div className="rounded-[16px] border border-[#e1e9f2] bg-white p-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">2. Send</p>
+              <Button type="button" size="sm" className="mt-2 w-full justify-center" onClick={publishProperty24Listing} disabled={Boolean(property24Action) || property24HasPreviewBlockers}>
+                {property24Action === 'publish' ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+                {property24PrimaryActionLabel}
+              </Button>
+            </div>
+            <div className="rounded-[16px] border border-[#e1e9f2] bg-white p-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">3. Status</p>
+              <Field as="select" value={property24StatusUpdate} onChange={(event) => setProperty24StatusUpdate(event.target.value)} disabled={Boolean(property24Action)} className="mt-2 min-h-9 text-sm">
+                {PROPERTY24_STATUS_UPDATE_OPTIONS.map((status) => <option key={status} value={status}>{status}</option>)}
+              </Field>
+              <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
+                <Button type="button" size="sm" variant="secondary" onClick={updateProperty24ListingStatus} disabled={Boolean(property24Action) || !property24HasReference}>
+                  {property24Action === 'status-update' ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+                  Update Status
+                </Button>
+                <Button type="button" size="sm" variant="secondary" onClick={refreshProperty24ListingStatus} disabled={Boolean(property24Action) || !property24HasReference}>
+                  {property24Action === 'status' ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
+                  Refresh Status
+                </Button>
+              </div>
+              {!property24HasReference ? <p className="mt-2 text-xs leading-5 text-[#8a5b13]">Status actions unlock after Property24 returns a listing reference.</p> : null}
+            </div>
+            <div className="rounded-[16px] border border-[#e1e9f2] bg-white p-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">4. Leads</p>
+              <div className="mt-2 grid gap-2">
+                <Button type="button" size="sm" variant="secondary" onClick={() => pullProperty24ListingLeads({ applyLeads: false })} disabled={Boolean(property24Action) || !property24HasReference}>
+                  {property24Action === 'lead-preview' ? <Loader2 size={15} className="animate-spin" /> : <MessageSquare size={15} />}
+                  Check Leads
+                </Button>
+                <Button type="button" size="sm" onClick={() => pullProperty24ListingLeads({ applyLeads: true })} disabled={Boolean(property24Action) || !property24HasReference}>
+                  {property24Action === 'lead-import' ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
+                  Import Leads
+                </Button>
+              </div>
+            </div>
+          </section>
+
+          {property24Preview ? (
+            <section className="grid gap-3 md:grid-cols-4">
+              <InfoTile label="Preview status" value={formatStatusLabel(property24Preview.status || 'preview')} />
+              <InfoTile label="Data blockers" value={property24PreviewCounts.dataBlockers} status={property24PreviewCounts.dataBlockers ? 'missing' : 'complete'} />
+              <InfoTile label="Images loaded" value={property24PreviewCounts.imagesLoaded} status={property24PreviewCounts.imagesLoaded ? 'complete' : 'pending'} />
+              <InfoTile label="Image errors" value={property24PreviewCounts.imagesFailed} status={property24PreviewCounts.imagesFailed ? 'missing' : 'complete'} />
+            </section>
+          ) : null}
+
+          {property24LeadImport ? (
+            <section className="grid gap-3 md:grid-cols-5">
+              <InfoTile label="Leads found" value={property24LeadImportCounts.received} />
+              <InfoTile label="Imported" value={property24LeadImportCounts.imported} status="complete" />
+              <InfoTile label="Already in Arch9" value={property24LeadImportCounts.alreadyImported} />
+              <InfoTile label="Needs review" value={property24LeadImportCounts.needsReview} status={property24LeadImportCounts.needsReview ? 'missing' : 'complete'} />
+              <InfoTile label="Failed" value={property24LeadImportCounts.failed} status={property24LeadImportCounts.failed ? 'missing' : 'complete'} />
+            </section>
+          ) : null}
+        </div>
+      </Modal>
+    )
+  }
+
+  function renderExternalLinkPanel() {
+    return (
+      <Modal
+        open={externalLinkPanelOpen}
+        onClose={closeExternalLinkPanel}
+        title={externalLinkEditingId ? 'Edit Channel' : 'Add Channel'}
+        subtitle="Track a manually published listing using the existing external link fields."
+        className="max-w-4xl"
+        footer={(
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button type="button" variant="secondary" onClick={closeExternalLinkPanel}>Cancel</Button>
+            <Button type="submit" form="external-listing-link-form">
+              <Plus size={15} />
+              {externalLinkEditingId ? 'Save Channel' : 'Add Channel'}
+            </Button>
+          </div>
+        )}
+      >
+        <form id="external-listing-link-form" onSubmit={addExternalListingLink} className="grid gap-4 md:grid-cols-2">
+          <label className="grid gap-2">
+            <span className="text-sm font-semibold text-[#2d445e]">Platform</span>
+            <Field as="select" value={externalLinkDraft.platform} onChange={(event) => setExternalLinkDraft((previous) => ({ ...previous, platform: event.target.value }))}>
+              {EXTERNAL_LINK_PLATFORM_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+            </Field>
+          </label>
+          <label className="grid gap-2">
+            <span className="text-sm font-semibold text-[#2d445e]">Listing URL</span>
+            <Field value={externalLinkDraft.url} onChange={(event) => setExternalLinkDraft((previous) => ({ ...previous, url: event.target.value }))} placeholder="https://..." />
+          </label>
+          <label className="grid gap-2">
+            <span className="text-sm font-semibold text-[#2d445e]">Status</span>
+            <Field as="select" value={externalLinkDraft.status} onChange={(event) => setExternalLinkDraft((previous) => ({ ...previous, status: event.target.value }))}>
+              {EXTERNAL_LINK_STATUS_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+            </Field>
+          </label>
+          <label className="grid gap-2">
+            <span className="text-sm font-semibold text-[#2d445e]">Published Date</span>
+            <Field type="date" value={externalLinkDraft.publishedAt} onChange={(event) => setExternalLinkDraft((previous) => ({ ...previous, publishedAt: event.target.value }))} />
+          </label>
+          <label className="grid gap-2">
+            <span className="text-sm font-semibold text-[#2d445e]">Last Checked</span>
+            <Field type="date" value={externalLinkDraft.lastCheckedAt} onChange={(event) => setExternalLinkDraft((previous) => ({ ...previous, lastCheckedAt: event.target.value }))} />
+          </label>
+          <label className="grid gap-2 md:col-span-2">
+            <span className="text-sm font-semibold text-[#2d445e]">Notes</span>
+            <Field as="textarea" rows={3} value={externalLinkDraft.notes} onChange={(event) => setExternalLinkDraft((previous) => ({ ...previous, notes: event.target.value }))} placeholder="Notes or publishing metadata" />
+          </label>
+        </form>
+      </Modal>
+    )
+  }
+
+  function renderMarketingConsole() {
+    return (
+      <section className="space-y-5">
+        <section className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <div>
+            <h2 className="text-xl font-semibold text-[#142132]">Marketing</h2>
+            <p className="mt-1 text-sm text-[#607387]">Manage how this property appears and where it is published.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <a href={arch9PublicListingUrl || `${ARCH9_PUBLIC_SITE_ORIGIN}/buy`} target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-4 text-sm font-semibold text-[#2d445e] transition hover:border-[#b7c8db] hover:bg-[#f7fbff]">
+              <Eye size={15} />
+              Preview Listing
+            </a>
+            <Button type="button" onClick={() => saveMarketingDraft(marketingDraft, { successMessage: 'Marketing changes saved and synced.' })}>
+              <Send size={15} />
+              Publish Changes
+            </Button>
+          </div>
+        </section>
+
+        <section className="overflow-hidden rounded-[22px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
+          <div className="grid sm:grid-cols-3">
+            <MarketingSummaryItem icon={CheckCircle2} value={`${listingReadinessPercent}%`} label="Listing readiness" actionLabel="View checklist" onAction={() => setReadinessChecklistOpen(true)} tone={listingReadinessPercent >= 80 ? 'success' : 'attention'} />
+            <MarketingSummaryItem icon={ExternalLink} value={liveChannelCount} label="Channels live" actionLabel="View channels" onAction={() => document.getElementById('listing-distribution-channels')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} tone={liveChannelCount ? 'success' : 'default'} />
+            <MarketingSummaryItem icon={RefreshCw} value={formatRelativeTime(marketingLastSyncedAt)} label="Last synced" tone="default" />
+          </div>
+          {!mandateWorkspace.isSigned || incompleteReadinessItems.length ? (
+            <div className="border-t border-[#edf2f7] bg-[#fffaf0] px-4 py-3 text-sm text-[#8a5b13]">
+              <button type="button" onClick={() => setReadinessChecklistOpen(true)} className="inline-flex items-center gap-2 font-semibold">
+                <CircleAlert size={15} />
+                Listing readiness requires attention
+              </button>
+              <span className="ml-2">{incompleteReadinessItems[0]?.label || 'Mandate not signed'}</span>
+            </div>
+          ) : null}
+        </section>
+
+        <section className="grid items-stretch gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.8fr)]">
+          <article className="flex h-full flex-col rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-base font-semibold text-[#142132]">Listing Content</h3>
+                <p className="mt-1 text-sm text-[#607387]">Marketing-facing copy buyers will see.</p>
+              </div>
+              <Button type="button" size="sm" variant="secondary" onClick={() => setActiveTab('property_details')}>
+                Edit property details
+                <ChevronRight size={15} />
+              </Button>
+            </div>
+            <div className="mt-5 grid gap-4">
+              <label className="grid gap-2">
+                <span className="text-sm font-semibold text-[#2d445e]">Headline</span>
+                <Field value={marketingDraft.headline} onChange={(event) => updateMarketingDraft('headline', event.target.value)} placeholder="Modern family home in secure estate" />
+              </label>
+              <label className="grid gap-2">
+                <span className="text-sm font-semibold text-[#2d445e]">Description</span>
+                <Field as="textarea" rows={5} value={marketingDraft.description} onChange={(event) => updateMarketingDraft('description', event.target.value)} placeholder="Public-facing listing description." />
+              </label>
+              <div>
+                <p className="text-sm font-semibold text-[#2d445e]">Selling Points</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {marketingSellingPoints.length ? marketingSellingPoints.slice(0, 10).map((point) => (
+                    <span key={point} className="rounded-full border border-[#dbe6f2] bg-[#f8fbfd] px-3 py-1.5 text-xs font-semibold text-[#2d445e]">{point}</span>
+                  )) : (
+                    <span className="rounded-full border border-[#f1dfb8] bg-[#fff8e8] px-3 py-1.5 text-xs font-semibold text-[#8a641d]">No selling points selected</span>
+                  )}
+                  <details className="relative">
+                    <summary className="inline-flex min-h-8 cursor-pointer list-none items-center gap-1 rounded-full border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#1f4f78] [&::-webkit-details-marker]:hidden">
+                      <Plus size={13} />
+                      Add
+                    </summary>
+                    <div className="absolute left-0 z-30 mt-2 grid w-[280px] gap-3 rounded-[16px] border border-[#dbe6f2] bg-white p-3 shadow-[0_18px_34px_rgba(15,23,42,0.14)]">
+                      <div className="flex flex-wrap gap-2">
+                        {[...FEATURE_OPTIONS, ...AMENITY_OPTIONS].map((item) => {
+                          const active = marketingDraft.selectedFeatures.includes(item) || marketingDraft.amenities.includes(item)
+                          const toggle = FEATURE_OPTIONS.includes(item) ? toggleFeature : toggleAmenity
+                          return (
+                            <button key={item} type="button" onClick={() => toggle(item)} className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${active ? 'border-[#1f4f78] bg-[#eef5fb] text-[#1f4f78]' : 'border-[#dbe6f2] bg-white text-[#47627c]'}`}>
+                              {item}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  </details>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <article className="rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div>
+                <h3 className="text-base font-semibold text-[#142132]">Media</h3>
+                <p className="mt-1 text-sm text-[#607387]">Control what buyers see across your marketing channels.</p>
+              </div>
+              <label className="inline-flex min-h-9 cursor-pointer items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#35546c] hover:border-[#b7c8db] hover:bg-[#f7fbff]">
+                <Pencil size={15} />
+                Edit Media
+                <input type="file" accept="image/*" multiple className="hidden" onChange={handleGalleryUpload} disabled={gallerySaving} />
+              </label>
+            </div>
+            <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(220px,1.2fr)_minmax(0,1fr)]">
+              <div className="min-h-[220px] overflow-hidden rounded-[18px] border border-[#dce6f2] bg-[#eef4fa]">
+                {coverImage ? getImageBlock(coverImage.url, coverImage.name) : (
+                  <div className="grid h-full min-h-[220px] place-items-center text-sm font-semibold text-[#6b7d93]">No cover image</div>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+                {marketingDraft.galleryImages.map((image, index) => {
+                  const isCover = String(image.id) === String(marketingDraft.coverImageId)
+                  return (
+                    <div key={image.id} className={`overflow-hidden rounded-[14px] border bg-white ${isCover ? 'border-[#1f4f78]' : 'border-[#dce6f2]'}`}>
+                      <button type="button" onClick={() => setCoverImage(image.id)} disabled={isCover || gallerySaving} className="relative block min-h-[88px] w-full overflow-hidden bg-[#eef4fa] disabled:cursor-default">
+                        {getImageBlock(image.url, image.name)}
+                        {isCover ? <span className="absolute left-2 top-2 rounded-full bg-[#123955] px-2 py-1 text-[0.62rem] font-semibold text-white">Cover</span> : null}
+                      </button>
+                      <div className="flex items-center justify-between gap-1 p-1.5">
+                        <button type="button" onClick={() => setCoverImage(image.id)} disabled={isCover || gallerySaving} className="rounded px-1.5 py-1 text-[0.65rem] font-semibold text-[#1f4f78] disabled:text-[#9aa9b8]">Cover</button>
+                        <div className="flex gap-1">
+                          <button type="button" onClick={() => moveGalleryImage(image.id, 'left')} disabled={index === 0 || gallerySaving} className="grid h-7 w-7 place-items-center rounded border border-[#dbe6f2] text-[#607387] disabled:opacity-40" aria-label={`Move ${image.name} left`}><ChevronLeft size={13} /></button>
+                          <button type="button" onClick={() => moveGalleryImage(image.id, 'right')} disabled={index === marketingDraft.galleryImages.length - 1 || gallerySaving} className="grid h-7 w-7 place-items-center rounded border border-[#dbe6f2] text-[#607387] disabled:opacity-40" aria-label={`Move ${image.name} right`}><ChevronRight size={13} /></button>
+                          <button type="button" onClick={() => removeGalleryImage(image.id)} disabled={gallerySaving} className="grid h-7 w-7 place-items-center rounded border border-[#f1c8c8] text-[#b42318] disabled:opacity-40" aria-label={`Remove ${image.name}`}><Trash2 size={13} /></button>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+                <label className="grid min-h-[88px] cursor-pointer place-items-center rounded-[14px] border border-dashed border-[#c9d8e8] bg-[#fbfdff] text-center text-xs font-semibold text-[#5f7894] hover:bg-[#f7fbff]">
+                  <span className="grid justify-items-center gap-1">
+                    <ImagePlus size={18} />
+                    Add Photos
+                  </span>
+                  <input type="file" accept="image/*" multiple className="hidden" onChange={handleGalleryUpload} disabled={gallerySaving} />
+                </label>
+              </div>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {marketingMediaBadges.map((badge) => <CompletionBadge key={badge.key} complete={badge.complete} label={badge.label} />)}
+            </div>
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <label className="grid gap-2">
+                <span className="text-sm font-semibold text-[#2d445e]">Video Link</span>
+                <Field value={marketingDraft.videoLink} onChange={(event) => updateMarketingDraft('videoLink', event.target.value)} placeholder="https://youtu.be/..." />
+              </label>
+              <label className="grid gap-2">
+                <span className="text-sm font-semibold text-[#2d445e]">Virtual Tour Link</span>
+                <Field value={marketingDraft.virtualTourLink} onChange={(event) => updateMarketingDraft('virtualTourLink', event.target.value)} placeholder="https://my.matterport.com/..." />
+              </label>
+              <label className="inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#35546c] hover:border-[#b7c8db] hover:bg-[#f7fbff] md:col-span-2">
+                <FileText size={15} />
+                Upload Floor Plan
+                <input type="file" accept=".pdf,image/*" multiple className="hidden" onChange={handleFloorplanUpload} disabled={gallerySaving} />
+              </label>
+              {marketingDraft.floorplans.length ? (
+                <div className="grid gap-2 md:col-span-2">
+                  {marketingDraft.floorplans.map((plan) => (
+                    <div key={plan.id} className="flex items-center justify-between gap-3 rounded-[14px] border border-[#dce6f2] bg-[#fbfdff] px-3 py-2">
+                      <span className="truncate text-sm font-semibold text-[#243d56]">{plan.label || plan.name}</span>
+                      <button type="button" onClick={() => removeFloorplan(plan.id)} className="text-[#6b7d93] hover:text-[#142132]" aria-label={`Remove ${plan.label || plan.name}`}>
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          </article>
+        </section>
+
+        <article id="listing-distribution-channels" className="overflow-hidden rounded-[22px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
+          <div className="flex flex-col gap-3 border-b border-[#edf2f7] p-5 md:flex-row md:items-start md:justify-between">
+            <div>
+              <h3 className="text-base font-semibold text-[#142132]">Where this listing appears</h3>
+              <p className="mt-1 text-sm text-[#607387]">Distribute your listing to the right platforms and websites.</p>
+            </div>
+            <Button type="button" size="sm" variant="secondary" onClick={() => openExternalLinkPanel()}>
+              <Plus size={15} />
+              Add Channel
+            </Button>
+          </div>
+
+          <DistributionChannel
+            icon={Building2}
+            name="Property24"
+            subtitle="Published via Arch9"
+            reference={property24Reference ? `Ref: ${property24Reference}` : 'Ref: Not assigned yet'}
+            status={property24Published ? 'live' : property24StatusKey || 'not_published'}
+            statusLabel={property24Published ? 'Live' : formatStatusLabel(property24StatusKey || 'not_published')}
+            lastSynced={property24LastSyncedAt ? `Last synced: ${formatRelativeTime(property24LastSyncedAt)}` : 'Last synced: Not checked yet'}
+            primaryAction={marketingDraft.property24ListingUrl ? (
+              <a href={marketingDraft.property24ListingUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#35546c] hover:bg-[#f7fbff]">
+                <Eye size={15} />
+                View
+              </a>
+            ) : null}
+            secondaryAction={(
+              <Button type="button" size="sm" variant="secondary" onClick={() => setProperty24ManageOpen(true)}>
+                <SlidersHorizontal size={15} />
+                Manage
+              </Button>
+            )}
+            menuActions={[
+              <button key="preview" type="button" onClick={previewProperty24Listing} disabled={Boolean(property24Action)} className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] hover:bg-[#f7fbff] disabled:opacity-50"><Eye size={15} />Preview</button>,
+              <button key="refresh" type="button" onClick={refreshProperty24ListingStatus} disabled={Boolean(property24Action) || !property24HasReference} className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] hover:bg-[#f7fbff] disabled:opacity-50"><RefreshCw size={15} />Sync / Refresh</button>,
+            ]}
+          />
+
+          {privatePropertyHasChannel ? (
+            <DistributionChannel
+              icon={Home}
+              name="Private Property"
+              subtitle={marketingDraft.privatePropertyListingUrl || 'Manual channel record'}
+              reference={marketingDraft.privatePropertyReference ? `Ref: ${marketingDraft.privatePropertyReference}` : ''}
+              status={privatePropertyStatusKey || 'not_published'}
+              statusLabel={['published', 'live', 'active'].includes(privatePropertyStatusKey) ? 'Live' : formatStatusLabel(privatePropertyStatusKey || 'not_published')}
+              lastSynced={marketingDraft.privatePropertyListingUrl ? 'Managed as an external link' : 'Not published'}
+              primaryAction={marketingDraft.privatePropertyListingUrl ? <a href={marketingDraft.privatePropertyListingUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#35546c] hover:bg-[#f7fbff]"><Eye size={15} />View</a> : null}
+              secondaryAction={<Button type="button" size="sm" variant="secondary" onClick={() => openExternalLinkPanel(null, 'Private Property')}>Manage</Button>}
+            />
+          ) : null}
+
+          {agencyWebsiteLink ? (
+            <DistributionChannel
+              icon={Globe}
+              name="Agency Website"
+              subtitle={agencyWebsiteLink.url}
+              status={agencyWebsiteLink.status}
+              statusLabel={isExternalLinkSellerVisible(agencyWebsiteLink.status) ? 'Live' : formatStatusLabel(agencyWebsiteLink.status)}
+              lastSynced={agencyWebsiteLink.lastCheckedAt ? `Last checked: ${formatDate(agencyWebsiteLink.lastCheckedAt)}` : 'Manual channel'}
+              primaryAction={<a href={agencyWebsiteLink.url} target="_blank" rel="noreferrer" className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#35546c] hover:bg-[#f7fbff]"><Eye size={15} />View</a>}
+              secondaryAction={<Button type="button" size="sm" variant="secondary" onClick={() => openExternalLinkPanel(agencyWebsiteLink)}>Edit</Button>}
+            />
+          ) : null}
+
+          <DistributionChannel
+            icon={Link2}
+            name="Arch9 Listing Page"
+            subtitle="Arch9 public listing"
+            reference={arch9PublicListingUrl}
+            status={arch9IsPublished ? 'live' : marketingDraft.bridgeListingStatus || 'not_published'}
+            statusLabel={arch9IsPublished ? 'Live' : formatStatusLabel(marketingDraft.bridgeListingStatus || 'not_published')}
+            lastSynced={marketingLastSyncedAt ? `Last synced: ${formatRelativeTime(marketingLastSyncedAt)}` : 'Last synced: Not saved yet'}
+            primaryAction={<a href={arch9PublicListingUrl || `${ARCH9_PUBLIC_SITE_ORIGIN}/buy`} target="_blank" rel="noreferrer" className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#35546c] hover:bg-[#f7fbff]"><Eye size={15} />Preview</a>}
+            secondaryAction={<Button type="button" size="sm" variant="secondary" onClick={copyArch9PublicListingUrl} disabled={!arch9PublicListingUrl}><Copy size={15} />Copy Link</Button>}
+            menuActions={[
+              arch9IsPublished
+                ? <button key="pause" type="button" onClick={pauseArch9BuyPublication} disabled={publicationSaving} className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] hover:bg-[#f7fbff] disabled:opacity-50"><ExternalLink size={15} />Pause public listing</button>
+                : <button key="publish" type="button" onClick={publishToArch9Buy} disabled={publicationSaving || !arch9CanPublish} className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] hover:bg-[#f7fbff] disabled:opacity-50"><ExternalLink size={15} />Publish public listing</button>,
+              <button key="check" type="button" onClick={() => verifyArch9PublicListing()} disabled={!arch9PublicListingUrl || arch9LiveChecking} className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] hover:bg-[#f7fbff] disabled:opacity-50"><CheckCircle2 size={15} />Check live status</button>,
+            ]}
+          />
+
+          {externalListingLinks.filter((link) => link.id !== agencyWebsiteLink?.id).map((link) => (
+            <DistributionChannel
+              key={link.id}
+              icon={ExternalLink}
+              name={link.platform || 'Other Channels'}
+              subtitle={link.url || 'Add a manually published listing'}
+              status={link.status}
+              statusLabel={isExternalLinkSellerVisible(link.status) ? 'Live' : formatStatusLabel(link.status)}
+              lastSynced={link.publishedAt ? `Published ${formatDate(link.publishedAt)}` : link.lastCheckedAt ? `Last checked: ${formatDate(link.lastCheckedAt)}` : 'Manual channel'}
+              primaryAction={link.url ? <a href={link.url} target="_blank" rel="noreferrer" className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#35546c] hover:bg-[#f7fbff]"><Eye size={15} />View</a> : null}
+              secondaryAction={<Button type="button" size="sm" variant="secondary" onClick={() => openExternalLinkPanel(link)}>Edit</Button>}
+              menuActions={[
+                <button key="remove" type="button" onClick={() => removeExternalListingLink(link.id)} className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#b42318] hover:bg-[#fff5f5]"><Trash2 size={15} />Remove</button>,
+              ]}
+            />
+          ))}
+
+          {!externalListingLinks.length ? (
+            <div className="grid gap-3 px-4 py-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+              <div className="flex items-center gap-3">
+                <span className="grid h-10 w-10 place-items-center rounded-[12px] border border-dashed border-[#c9d8e8] text-[#607387]"><Plus size={17} /></span>
+                <div>
+                  <p className="text-sm font-semibold text-[#142132]">Other Channels</p>
+                  <p className="text-xs text-[#607387]">Add a manually published listing.</p>
+                </div>
+              </div>
+              <Button type="button" size="sm" variant="secondary" onClick={() => openExternalLinkPanel()}>
+                <Plus size={15} />
+                Add Channel
+              </Button>
+            </div>
+          ) : null}
+        </article>
+
+        <Modal
+          open={readinessChecklistOpen}
+          onClose={() => setReadinessChecklistOpen(false)}
+          title="Listing Readiness"
+          subtitle={`${listingReadinessCompleted} of ${listingReadinessItems.length} completed`}
+          className="max-w-3xl"
+        >
+          <div className="h-2 overflow-hidden rounded-full bg-[#e5edf6]">
+            <div className="h-full rounded-full bg-[#2f8f6b]" style={{ width: `${listingReadinessPercent}%` }} />
+          </div>
+          <div className="mt-5 grid gap-3">
+            {listingReadinessItems.map((item) => (
+              <div key={item.key} className="flex items-center justify-between gap-3 rounded-[14px] border border-[#e1e9f2] bg-[#fbfdff] px-3 py-2 text-sm">
+                <span className="inline-flex min-w-0 items-center gap-2 text-[#425970]">
+                  <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full ${item.complete ? 'bg-[#ecfaf1] text-[#1f7d44]' : 'bg-[#fff8ec] text-[#9a5b13]'}`}>
+                    {item.complete ? <CheckCircle2 size={14} /> : <CircleAlert size={14} />}
+                  </span>
+                  <span className="truncate font-semibold">{item.label}</span>
+                </span>
+                <StatusPill status={item.complete ? 'complete' : 'missing'} label={item.complete ? 'Ready' : 'Needs attention'} />
+              </div>
+            ))}
+          </div>
+          {!mandateWorkspace.isSigned ? (
+            <div className="mt-5 rounded-[16px] border border-[#f1dfb8] bg-[#fff8e8] p-4">
+              <p className="text-sm font-semibold text-[#8a641d]">Mandate not signed</p>
+              <p className="mt-1 text-sm leading-6 text-[#8a641d]">Capture or send the mandate before this becomes active agency stock.</p>
+              <Button type="button" size="sm" variant="secondary" className="mt-3" onClick={() => openSellerWorkspaceSection('seller')}>Open mandate workflow</Button>
+            </div>
+          ) : null}
+        </Modal>
+
+        {renderProperty24ManagePanel()}
+        {renderExternalLinkPanel()}
+      </section>
+    )
+  }
 
   if (loading || listingId.startsWith('development-')) {
     return (
@@ -11875,603 +12543,7 @@ function AgentListingDetail() {
             </section>
           ) : null}
 
-          {sellerWorkspaceTab === 'marketing' ? (
-            <section className="space-y-5">
-              <section className="grid items-stretch gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
-                <article className="flex h-full flex-col rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
-                  <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                    <div>
-                      <h3 className="text-base font-semibold text-[#142132]">Listing Site Data</h3>
-                      <p className="mt-1 text-sm text-[#607387]">Canonical data for the future Arch9 listing site.</p>
-                    </div>
-                    <div className="flex flex-wrap justify-end gap-2">
-                      <Button size="sm" variant="secondary" onClick={() => saveMarketingDraft()}>
-                        <FileText size={15} />
-                        Save Listing Data
-                      </Button>
-                      <details className="group relative">
-                        <summary className="inline-flex min-h-9 cursor-pointer list-none items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#35546c] transition hover:border-[#b7c8db] hover:bg-[#f7fbff] [&::-webkit-details-marker]:hidden">
-                          <MoreVertical size={15} />
-                          Actions
-                        </summary>
-                        <div className="absolute right-0 z-30 mt-2 w-56 overflow-hidden rounded-[16px] border border-[#dbe6f2] bg-white p-1.5 shadow-[0_18px_34px_rgba(15,23,42,0.14)]">
-                          <a
-                            href={arch9PublicListingUrl || `${ARCH9_PUBLIC_SITE_ORIGIN}/buy`}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="flex min-h-10 items-center gap-2 rounded-[12px] px-3 text-sm font-semibold text-[#243d56] transition hover:bg-[#f7fbff]"
-                          >
-                            <Eye size={15} />
-                            Preview listing
-                          </a>
-                          <button
-                            type="button"
-                            onClick={copyArch9PublicListingUrl}
-                            disabled={!arch9PublicListingUrl}
-                            className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] transition hover:bg-[#f7fbff] disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            <Copy size={15} />
-                            Copy public link
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => verifyArch9PublicListing()}
-                            disabled={!arch9PublicListingUrl || arch9LiveChecking}
-                            className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] transition hover:bg-[#f7fbff] disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            {arch9LiveChecking ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
-                            Check live status
-                          </button>
-                          <div className="my-1 h-px bg-[#eef3f8]" />
-                          {arch9IsPublished ? (
-                            <button
-                              type="button"
-                              onClick={pauseArch9BuyPublication}
-                              disabled={publicationSaving}
-                              className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] transition hover:bg-[#f7fbff] disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              {publicationSaving ? <Loader2 size={15} className="animate-spin" /> : <ExternalLink size={15} />}
-                              Pause public listing
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={publishToArch9Buy}
-                              disabled={publicationSaving || !arch9CanPublish}
-                              className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] transition hover:bg-[#f7fbff] disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              {publicationSaving ? <Loader2 size={15} className="animate-spin" /> : <ExternalLink size={15} />}
-                              Publish public listing
-                            </button>
-                          )}
-                        </div>
-                      </details>
-                    </div>
-                  </div>
-
-                  <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                    <label className="grid gap-2 xl:col-span-2">
-                      <span className="text-sm font-semibold text-[#2d445e]">Listing Title</span>
-                      <Field value={marketingDraft.headline} onChange={(event) => updateMarketingDraft('headline', event.target.value)} placeholder="Modern family home in secure estate" />
-                    </label>
-                    <label className="grid gap-2">
-                      <span className="text-sm font-semibold text-[#2d445e]">Listing Status</span>
-                      <Field as="select" value={marketingDraft.publicationStatus} onChange={(event) => updateMarketingDraft('publicationStatus', event.target.value)}>
-                        {PUBLICATION_STATUS_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
-                      </Field>
-                    </label>
-                    <div className="md:col-span-2">
-                      <AddressAutocomplete
-                        label="Property Address"
-                        value={buildAddressAutocompleteValueFromDraft(marketingDraft)}
-                        onChange={(nextAddress) => setMarketingDraft((previous) => mergeAddressIntoMarketingDraft(previous, nextAddress))}
-                        placeholder="12 Main Road Bedfordview"
-                        description="Used for future listing search, area pages, maps, analytics, and recommendations."
-                      />
-                    </div>
-                    <label className="grid gap-2">
-                      <span className="text-sm font-semibold text-[#2d445e]">Suburb</span>
-                      <Field value={marketingDraft.suburb} onChange={(event) => updateMarketingDraft('suburb', event.target.value)} />
-                    </label>
-                    <label className="grid gap-2">
-                      <span className="text-sm font-semibold text-[#2d445e]">City</span>
-                      <Field value={marketingDraft.city} onChange={(event) => updateMarketingDraft('city', event.target.value)} />
-                    </label>
-                    <label className="grid gap-2">
-                      <span className="text-sm font-semibold text-[#2d445e]">Province</span>
-                      <Field value={marketingDraft.province} onChange={(event) => updateMarketingDraft('province', event.target.value)} />
-                    </label>
-                    <label className="grid gap-2">
-                      <span className="text-sm font-semibold text-[#2d445e]">Postal Code</span>
-                      <Field value={marketingDraft.postalCode} onChange={(event) => updateMarketingDraft('postalCode', event.target.value)} />
-                    </label>
-                    <label className="grid gap-2">
-                      <span className="text-sm font-semibold text-[#2d445e]">Property Type</span>
-                      <Field as="select" value={marketingDraft.propertyType} onChange={(event) => updateMarketingDraft('propertyType', event.target.value)}>
-                        {PROPERTY_TYPE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
-                      </Field>
-                    </label>
-                    <label className="grid gap-2">
-                      <span className="text-sm font-semibold text-[#2d445e]">Listing Type</span>
-                      <Field as="select" value={marketingDraft.listingType} onChange={(event) => updateMarketingDraft('listingType', event.target.value)}>
-                        {LISTING_TYPE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
-                      </Field>
-                    </label>
-                    <label className="grid gap-2">
-                      <span className="text-sm font-semibold text-[#2d445e]">Asking Price</span>
-                      <Field type="number" min="0" step="1000" value={marketingDraft.price} onChange={(event) => updateMarketingDraft('price', event.target.value)} />
-                    </label>
-                    {[
-                      ['bedrooms', 'Bedrooms'],
-                      ['bathrooms', 'Bathrooms'],
-                      ['garages', 'Garages'],
-                      ['parkingBays', 'Parking Bays'],
-                      ['floorSize', 'Floor Size (m²)'],
-                      ['erfSize', 'Erf / Stand Size (m²)'],
-                      ['ratesTaxes', 'Rates and Taxes'],
-                      ['levies', 'Levies'],
-                    ].map(([key, label]) => (
-                      <label key={key} className="grid gap-2">
-                        <span className="text-sm font-semibold text-[#2d445e]">{label}</span>
-                        <Field type={['ratesTaxes', 'levies'].includes(key) ? 'text' : 'number'} min="0" value={marketingDraft[key]} onChange={(event) => updateMarketingDraft(key, event.target.value)} />
-                      </label>
-                    ))}
-                    <label className="grid gap-2 xl:col-span-3">
-                      <span className="text-sm font-semibold text-[#2d445e]">Description</span>
-                      <Field as="textarea" rows={5} value={marketingDraft.description} onChange={(event) => updateMarketingDraft('description', event.target.value)} placeholder="Public-facing listing description." />
-                    </label>
-                  </div>
-
-                  <div className="mt-5 grid gap-4 lg:grid-cols-2">
-                    <div>
-                      <p className="text-sm font-semibold text-[#2d445e]">Key Features</p>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {FEATURE_OPTIONS.map((feature) => {
-                          const active = marketingDraft.selectedFeatures.includes(feature)
-                          return (
-                            <button
-                              key={feature}
-                              type="button"
-                              onClick={() => toggleFeature(feature)}
-                              className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${active ? 'border-[#1f4f78] bg-[#eef5fb] text-[#1f4f78]' : 'border-[#dbe6f2] bg-white text-[#47627c] hover:bg-[#f7fbff]'}`}
-                            >
-                              {feature}
-                            </button>
-                          )
-                        })}
-                      </div>
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-[#2d445e]">Amenities</p>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {AMENITY_OPTIONS.map((amenity) => {
-                          const active = marketingDraft.amenities.includes(amenity)
-                          return (
-                            <button
-                              key={amenity}
-                              type="button"
-                              onClick={() => toggleAmenity(amenity)}
-                              className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${active ? 'border-[#1f4f78] bg-[#eef5fb] text-[#1f4f78]' : 'border-[#dbe6f2] bg-white text-[#47627c] hover:bg-[#f7fbff]'}`}
-                            >
-                              {amenity}
-                            </button>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="mt-5 grid gap-4 md:grid-cols-3">
-                    <label className="inline-flex items-center gap-2 rounded-[14px] border border-[#dbe6f2] bg-[#fbfdff] px-3 py-3 text-sm font-semibold text-[#2d445e]">
-                      <input type="checkbox" checked={marketingDraft.petFriendly} onChange={(event) => updateMarketingDraft('petFriendly', event.target.checked)} />
-                      Pet friendly
-                    </label>
-                    <label className="inline-flex items-center gap-2 rounded-[14px] border border-[#dbe6f2] bg-[#fbfdff] px-3 py-3 text-sm font-semibold text-[#2d445e]">
-                      <input type="checkbox" checked={marketingDraft.fibreReady} onChange={(event) => updateMarketingDraft('fibreReady', event.target.checked)} />
-                      Fibre ready
-                    </label>
-                    <label className="grid gap-2">
-                      <span className="text-sm font-semibold text-[#2d445e]">Security Features</span>
-                      <Field value={marketingDraft.securityFeatures} onChange={(event) => updateMarketingDraft('securityFeatures', event.target.value)} placeholder="Alarm, beams, estate access" />
-                    </label>
-                  </div>
-
-                  <div className={`mt-5 flex flex-wrap items-center gap-2 rounded-[16px] border p-3 text-sm font-semibold ${
-                    mandateWorkspace.isSigned
-                      ? 'border-[#d8eddf] bg-[#f2fbf5] text-[#1f7d44]'
-                      : 'border-[#f2dfbf] bg-[#fff8ea] text-[#8a5b16]'
-                  }`}>
-                    {mandateWorkspace.isSigned ? <CheckCircle2 size={16} /> : <CircleAlert size={16} />}
-                    <span>
-                      {mandateWorkspace.isSigned
-                        ? 'Mandate signed. This is tracked as active agency stock; external portal links can be added when available.'
-                        : 'Mandate not signed yet. Capture or send the mandate before this becomes active agency stock.'}
-                    </span>
-                  </div>
-                </article>
-
-                <aside className="flex h-full flex-col rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
-                  <h3 className="text-base font-semibold text-[#142132]">Listing Readiness</h3>
-                  <p className="mt-1 text-sm text-[#607387]">{listingReadinessCompleted} of {listingReadinessItems.length} completed</p>
-                  <div className="mt-4 h-2 overflow-hidden rounded-full bg-[#e5edf6]">
-                    <div className="h-full rounded-full bg-[#2f8f6b]" style={{ width: `${listingReadinessPercent}%` }} />
-                  </div>
-                  <div className="mt-5 space-y-3">
-                    {listingReadinessItems.map((item) => (
-                      <div key={item.key} className="flex items-center justify-between gap-3 text-sm">
-                        <span className="inline-flex min-w-0 items-center gap-2 text-[#425970]">
-                          <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-full ${item.complete ? 'bg-[#ecfaf1] text-[#1f7d44]' : 'bg-[#f4f7fb] text-[#8aa0b6]'}`}>
-                            {item.complete ? <CheckCircle2 size={13} /> : <span className="h-2 w-2 rounded-full bg-current" />}
-                          </span>
-                          <span className="truncate">{item.label}</span>
-                        </span>
-                        {item.complete ? <CheckCircle2 size={15} className="shrink-0 text-[#1f7d44]" /> : <CircleAlert size={15} className="shrink-0 text-[#9a5b13]" />}
-                      </div>
-                    ))}
-                  </div>
-                </aside>
-              </section>
-
-              <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
-                <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                  <div>
-                    <h3 className="text-base font-semibold text-[#142132]">Listing Media</h3>
-                    <p className="mt-1 text-sm text-[#607387]">Images, floor plans, video, and tour assets for the listing site.</p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <label className="inline-flex min-h-9 cursor-pointer items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#35546c] hover:border-[#b7c8db] hover:bg-[#f7fbff]">
-                      <Upload size={15} />
-                      Upload Images
-                      <input type="file" accept="image/*" multiple className="hidden" onChange={handleGalleryUpload} disabled={gallerySaving} />
-                    </label>
-                    <label className="inline-flex min-h-9 cursor-pointer items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#35546c] hover:border-[#b7c8db] hover:bg-[#f7fbff]">
-                      <FileText size={15} />
-                      Upload Floor Plan
-                      <input type="file" accept=".pdf,image/*" multiple className="hidden" onChange={handleFloorplanUpload} disabled={gallerySaving} />
-                    </label>
-                  </div>
-                </div>
-
-                <div className="mt-5 grid gap-5 lg:grid-cols-[260px_minmax(0,1fr)]">
-                  <div>
-                    <p className="text-sm font-semibold text-[#2d445e]">Main Cover Image</p>
-                    <div className="mt-2 h-44 overflow-hidden rounded-[18px] border border-[#dce6f2] bg-[#eef4fa]">
-                      {coverImage ? getImageBlock(coverImage.url, coverImage.name) : (
-                        <div className="grid h-full place-items-center text-sm font-semibold text-[#6b7d93]">
-                          No cover image
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-[#2d445e]">Gallery Images ({marketingDraft.galleryImages.length})</p>
-                    <div className="mt-2 grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
-                      {marketingDraft.galleryImages.map((image, index) => {
-                        const isCover = String(image.id) === String(marketingDraft.coverImageId)
-                        return (
-                          <div key={image.id} className="group overflow-hidden rounded-[16px] border border-[#dce6f2] bg-white">
-                            <div className="relative h-28 bg-[#eef4fa]">
-                              {getImageBlock(image.url, image.name)}
-                              {isCover ? <span className="absolute left-2 top-2 rounded-full bg-[#123955] px-2 py-1 text-[0.65rem] font-semibold text-white">Cover</span> : null}
-                              <button type="button" onClick={() => removeGalleryImage(image.id)} className="absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-full bg-white/95 text-[#6b7d93] shadow-sm hover:text-[#142132]">
-                                <Trash2 size={14} />
-                              </button>
-                            </div>
-                            <div className="flex items-center justify-between gap-2 p-2">
-                              <button type="button" onClick={() => setCoverImage(image.id)} disabled={isCover || gallerySaving} className="text-xs font-semibold text-[#1f4f78] disabled:text-[#9aa9b8]">Set cover</button>
-                              <div className="flex gap-1">
-                                <button type="button" onClick={() => moveGalleryImage(image.id, 'left')} disabled={index === 0 || gallerySaving} className="rounded border border-[#dbe6f2] p-1 text-[#607387] disabled:opacity-40"><ChevronLeft size={14} /></button>
-                                <button type="button" onClick={() => moveGalleryImage(image.id, 'right')} disabled={index === marketingDraft.galleryImages.length - 1 || gallerySaving} className="rounded border border-[#dbe6f2] p-1 text-[#607387] disabled:opacity-40"><ChevronRight size={14} /></button>
-                              </div>
-                            </div>
-                          </div>
-                        )
-                      })}
-                      <label className="grid min-h-[150px] cursor-pointer place-items-center rounded-[16px] border border-dashed border-[#c9d8e8] bg-[#fbfdff] text-center text-sm font-semibold text-[#5f7894] hover:bg-[#f7fbff]">
-                        <span className="grid gap-2 justify-items-center">
-                          <ImagePlus size={20} />
-                          Add More
-                        </span>
-                        <input type="file" accept="image/*" multiple className="hidden" onChange={handleGalleryUpload} disabled={gallerySaving} />
-                      </label>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-5 grid gap-4 md:grid-cols-3">
-                  <div>
-                    <p className="text-sm font-semibold text-[#2d445e]">Floor Plan</p>
-                    <div className="mt-2 space-y-2">
-                      {marketingDraft.floorplans.length ? marketingDraft.floorplans.map((plan) => (
-                        <div key={plan.id} className="flex items-center justify-between gap-3 rounded-[14px] border border-[#dce6f2] bg-[#fbfdff] px-3 py-2">
-                          <span className="truncate text-sm font-semibold text-[#243d56]">{plan.label || plan.name}</span>
-                          <button type="button" onClick={() => removeFloorplan(plan.id)} className="text-[#6b7d93] hover:text-[#142132]"><Trash2 size={15} /></button>
-                        </div>
-                      )) : <p className="rounded-[14px] border border-dashed border-[#d3deea] bg-[#fbfcfe] px-3 py-2 text-sm text-[#607387]">No floor plan uploaded.</p>}
-                    </div>
-                  </div>
-                  <label className="grid gap-2">
-                    <span className="text-sm font-semibold text-[#2d445e]">Video Link</span>
-                    <Field value={marketingDraft.videoLink} onChange={(event) => updateMarketingDraft('videoLink', event.target.value)} placeholder="https://youtu.be/..." />
-                  </label>
-                  <label className="grid gap-2">
-                    <span className="text-sm font-semibold text-[#2d445e]">Virtual Tour Link</span>
-                    <Field value={marketingDraft.virtualTourLink} onChange={(event) => updateMarketingDraft('virtualTourLink', event.target.value)} placeholder="https://my.matterport.com/..." />
-                  </label>
-                </div>
-              </article>
-
-              <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="text-base font-semibold text-[#142132]">Property24 Syndication</h3>
-                      <StatusPill status={property24Published ? 'done' : property24StatusKey || 'pending'} label={property24Published ? 'Published' : formatStatusLabel(property24StatusKey || 'not_published')} />
-                    </div>
-                    <p className="mt-1 max-w-3xl text-sm leading-6 text-[#607387]">
-                      Publish this listing through the saved agency setup and mapped Property24 agent.
-                    </p>
-                    <div className="mt-3 rounded-[16px] border border-[#dfe8f2] bg-[#f8fbfd] px-4 py-3">
-                      <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-                        <div>
-                          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Current Property24 action</p>
-                          <p className="mt-1 text-sm font-semibold text-[#243d56]">{property24PrimaryActionLabel}</p>
-                        </div>
-                        <div className="max-w-2xl text-sm leading-5 text-[#607387]">
-                          {property24NextStep}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold text-[#607387]">
-                      <span className="rounded-full border border-[#dbe6f2] bg-[#f8fbfd] px-3 py-1.5">
-                        Reference: {property24Reference || 'Not assigned yet'}
-                      </span>
-                      {property24Preview?.mapping?.source ? (
-                        <span className="rounded-full border border-[#dbe6f2] bg-[#f8fbfd] px-3 py-1.5">
-                          Agent mapping: {property24Preview.mapping.source === 'none' ? 'Needs setup' : 'Resolved'}
-                        </span>
-                      ) : null}
-                      {property24StatusCheck ? (
-                        <span className={`rounded-full border px-3 py-1.5 ${property24StatusCheck?.status?.portalCheck?.isOnPortal ? 'border-[#b9e0c8] bg-[#f1fbf5] text-[#1f7d44]' : 'border-[#f1d5a8] bg-[#fff9ed] text-[#9a5b13]'}`}>
-                          {property24StatusLabel}
-                        </span>
-                      ) : null}
-                      {property24StatusCheckedAt ? (
-                        <span className="rounded-full border border-[#dbe6f2] bg-[#f8fbfd] px-3 py-1.5">
-                          Last checked: {formatDateTime(property24StatusCheckedAt)}
-                        </span>
-                      ) : null}
-                    </div>
-                  </div>
-                  <div className="grid w-full gap-3 lg:w-[340px]">
-                    <div className="rounded-[16px] border border-[#e1e9f2] bg-[#fbfdff] p-3">
-                      <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">1. Check</p>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="secondary"
-                        className="mt-2 w-full justify-center"
-                        onClick={previewProperty24Listing}
-                        disabled={Boolean(property24Action)}
-                      >
-                        {property24Action === 'preview' ? <Loader2 size={15} className="animate-spin" /> : <Eye size={15} />}
-                        Preview Readiness
-                      </Button>
-                    </div>
-
-                    <div className="rounded-[16px] border border-[#e1e9f2] bg-[#fbfdff] p-3">
-                      <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">2. Send</p>
-                      <Button
-                        type="button"
-                        size="sm"
-                        className="mt-2 w-full justify-center"
-                        onClick={publishProperty24Listing}
-                        disabled={Boolean(property24Action) || property24HasPreviewBlockers}
-                      >
-                        {property24Action === 'publish' ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
-                        {property24PrimaryActionLabel}
-                      </Button>
-                    </div>
-
-                    <div className="rounded-[16px] border border-[#e1e9f2] bg-[#fbfdff] p-3">
-                      <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">3. Confirm status</p>
-                      <div className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] lg:grid-cols-1">
-                        <Field
-                          as="select"
-                          value={property24StatusUpdate}
-                          onChange={(event) => setProperty24StatusUpdate(event.target.value)}
-                          disabled={Boolean(property24Action)}
-                          className="min-h-9 text-sm"
-                        >
-                          {PROPERTY24_STATUS_UPDATE_OPTIONS.map((status) => (
-                            <option key={status} value={status}>{status}</option>
-                          ))}
-                        </Field>
-                        <div className="grid gap-2 sm:grid-cols-2">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="secondary"
-                            onClick={updateProperty24ListingStatus}
-                            disabled={Boolean(property24Action) || !property24HasReference}
-                          >
-                            {property24Action === 'status-update' ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
-                            Update Status
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="secondary"
-                            onClick={refreshProperty24ListingStatus}
-                            disabled={Boolean(property24Action) || !property24HasReference}
-                          >
-                            {property24Action === 'status' ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
-                            Refresh Status
-                          </Button>
-                        </div>
-                      </div>
-                      {!property24HasReference ? (
-                        <p className="mt-2 text-xs leading-5 text-[#8a5b13]">Status actions unlock after Property24 returns a listing reference.</p>
-                      ) : null}
-                    </div>
-
-                    <div className="rounded-[16px] border border-[#e1e9f2] bg-[#fbfdff] p-3">
-                      <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">4. Leads</p>
-                      <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => pullProperty24ListingLeads({ applyLeads: false })}
-                          disabled={Boolean(property24Action) || !property24HasReference}
-                        >
-                          {property24Action === 'lead-preview' ? <Loader2 size={15} className="animate-spin" /> : <MessageSquare size={15} />}
-                          Check Leads
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          onClick={() => pullProperty24ListingLeads({ applyLeads: true })}
-                          disabled={Boolean(property24Action) || !property24HasReference}
-                        >
-                          {property24Action === 'lead-import' ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
-                          Import Leads
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {property24Preview ? (
-                  <div className="mt-5 grid gap-3 md:grid-cols-4">
-                    <div className="rounded-[16px] border border-[#e1e9f2] bg-[#fbfdff] px-4 py-3">
-                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Status</p>
-                      <p className="mt-1 text-sm font-semibold text-[#243d56]">{formatStatusLabel(property24Preview.status || 'preview')}</p>
-                    </div>
-                    <div className="rounded-[16px] border border-[#e1e9f2] bg-[#fbfdff] px-4 py-3">
-                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Data Blockers</p>
-                      <p className="mt-1 text-sm font-semibold text-[#243d56]">{property24PreviewCounts.dataBlockers}</p>
-                    </div>
-                    <div className="rounded-[16px] border border-[#e1e9f2] bg-[#fbfdff] px-4 py-3">
-                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Images Loaded</p>
-                      <p className="mt-1 text-sm font-semibold text-[#243d56]">{property24PreviewCounts.imagesLoaded}</p>
-                    </div>
-                    <div className="rounded-[16px] border border-[#e1e9f2] bg-[#fbfdff] px-4 py-3">
-                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Image Errors</p>
-                      <p className="mt-1 text-sm font-semibold text-[#243d56]">{property24PreviewCounts.imagesFailed}</p>
-                    </div>
-                  </div>
-                ) : null}
-
-                {property24LeadImport ? (
-                  <div className="mt-5 grid gap-3 md:grid-cols-5">
-                    <div className="rounded-[16px] border border-[#e1e9f2] bg-[#fbfdff] px-4 py-3">
-                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Leads Found</p>
-                      <p className="mt-1 text-sm font-semibold text-[#243d56]">{property24LeadImportCounts.received}</p>
-                    </div>
-                    <div className="rounded-[16px] border border-[#e1e9f2] bg-[#fbfdff] px-4 py-3">
-                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Imported</p>
-                      <p className="mt-1 text-sm font-semibold text-[#1f7d44]">{property24LeadImportCounts.imported}</p>
-                    </div>
-                    <div className="rounded-[16px] border border-[#e1e9f2] bg-[#fbfdff] px-4 py-3">
-                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Already In Arch9</p>
-                      <p className="mt-1 text-sm font-semibold text-[#243d56]">{property24LeadImportCounts.alreadyImported}</p>
-                    </div>
-                    <div className="rounded-[16px] border border-[#e1e9f2] bg-[#fbfdff] px-4 py-3">
-                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Needs Review</p>
-                      <p className="mt-1 text-sm font-semibold text-[#9a5b13]">{property24LeadImportCounts.needsReview}</p>
-                    </div>
-                    <div className="rounded-[16px] border border-[#e1e9f2] bg-[#fbfdff] px-4 py-3">
-                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Failed</p>
-                      <p className="mt-1 text-sm font-semibold text-[#b42318]">{property24LeadImportCounts.failed}</p>
-                    </div>
-                  </div>
-                ) : null}
-              </article>
-
-              <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
-                <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                  <div>
-                    <h3 className="text-base font-semibold text-[#142132]">External Listing Links</h3>
-                    <p className="mt-1 text-sm text-[#607387]">Track where the property has been published. Live links are visible to the seller.</p>
-                  </div>
-                  <Button size="sm" onClick={saveMarketingDraft}>Save Link Changes</Button>
-                </div>
-
-                <form onSubmit={addExternalListingLink} className="mt-5 grid min-w-0 gap-3 rounded-[18px] border border-[#e1e9f2] bg-[#fbfdff] p-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-[minmax(150px,0.9fr)_minmax(220px,1.4fr)_minmax(130px,0.8fr)_minmax(140px,0.8fr)_minmax(140px,0.8fr)_minmax(160px,1fr)]">
-                  <Field as="select" value={externalLinkDraft.platform} onChange={(event) => setExternalLinkDraft((previous) => ({ ...previous, platform: event.target.value }))}>
-                    {EXTERNAL_LINK_PLATFORM_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
-                  </Field>
-                  <Field value={externalLinkDraft.url} onChange={(event) => setExternalLinkDraft((previous) => ({ ...previous, url: event.target.value }))} placeholder="https://..." />
-                  <Field as="select" value={externalLinkDraft.status} onChange={(event) => setExternalLinkDraft((previous) => ({ ...previous, status: event.target.value }))}>
-                    {EXTERNAL_LINK_STATUS_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
-                  </Field>
-                  <Field type="date" value={externalLinkDraft.publishedAt} onChange={(event) => setExternalLinkDraft((previous) => ({ ...previous, publishedAt: event.target.value }))} />
-                  <Field type="date" value={externalLinkDraft.lastCheckedAt} onChange={(event) => setExternalLinkDraft((previous) => ({ ...previous, lastCheckedAt: event.target.value }))} />
-                  <Field value={externalLinkDraft.notes} onChange={(event) => setExternalLinkDraft((previous) => ({ ...previous, notes: event.target.value }))} placeholder="Notes" />
-                  <div className="flex justify-end sm:col-span-2 xl:col-span-3 2xl:col-span-6">
-                    <Button type="submit" size="sm">
-                      <Plus size={15} />
-                      Add Listing Link
-                    </Button>
-                  </div>
-                </form>
-
-                <div className="mt-5 overflow-x-auto">
-                  <table className="w-full min-w-[980px] text-left text-sm">
-                    <thead className="text-[0.66rem] uppercase tracking-[0.1em] text-[#7b8ca2]">
-                      <tr className="border-b border-[#e5edf6]">
-                        <th className="px-3 py-3">Platform</th>
-                        <th className="px-3 py-3">Listing URL</th>
-                        <th className="px-3 py-3">Status</th>
-                        <th className="px-3 py-3">Published</th>
-                        <th className="px-3 py-3">Last Checked</th>
-                        <th className="px-3 py-3">Visible</th>
-                        <th className="px-3 py-3 text-right">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-[#edf2f7]">
-                      {normalizeExternalListingLinks(marketingDraft.externalLinks).map((link) => (
-                        <tr key={link.id} className="align-top">
-                          <td className="px-3 py-3">
-                            <Field as="select" value={link.platform} onChange={(event) => updateExternalListingLink(link.id, 'platform', event.target.value)}>
-                              {EXTERNAL_LINK_PLATFORM_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
-                            </Field>
-                          </td>
-                          <td className="px-3 py-3"><Field value={link.url} onChange={(event) => updateExternalListingLink(link.id, 'url', event.target.value)} /></td>
-                          <td className="px-3 py-3">
-                            <Field as="select" value={link.status} onChange={(event) => updateExternalListingLink(link.id, 'status', event.target.value)}>
-                              {EXTERNAL_LINK_STATUS_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
-                            </Field>
-                          </td>
-                          <td className="px-3 py-3"><Field type="date" value={link.publishedAt} onChange={(event) => updateExternalListingLink(link.id, 'publishedAt', event.target.value)} /></td>
-                          <td className="px-3 py-3"><Field type="date" value={link.lastCheckedAt} onChange={(event) => updateExternalListingLink(link.id, 'lastCheckedAt', event.target.value)} /></td>
-                          <td className="px-3 py-3"><StatusPill status={link.visibleToSeller ? 'done' : 'pending'} label={link.visibleToSeller ? 'Seller' : 'Internal'} /></td>
-                          <td className="px-3 py-3">
-                            <div className="flex justify-end gap-2">
-                              {link.url ? (
-                                <a href={link.url} target="_blank" rel="noreferrer" className="grid h-9 w-9 place-items-center rounded-lg border border-[#dbe6f2] text-[#1f4f78]" aria-label={`Open ${link.platform}`}>
-                                  <ExternalLink size={15} />
-                                </a>
-                              ) : null}
-                              <button type="button" onClick={() => removeExternalListingLink(link.id)} className="grid h-9 w-9 place-items-center rounded-lg border border-[#f1c8c8] text-[#b42318]" aria-label={`Remove ${link.platform}`}>
-                                <Trash2 size={15} />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                      {!normalizeExternalListingLinks(marketingDraft.externalLinks).length ? (
-                        <tr>
-                          <td colSpan={7} className="px-3 py-8 text-center text-sm text-[#607387]">No external listing links captured yet.</td>
-                        </tr>
-                      ) : null}
-                    </tbody>
-                  </table>
-                </div>
-              </article>
-            </section>
-          ) : null}
+          {sellerWorkspaceTab === 'marketing' ? renderMarketingConsole() : null}
 
           {sellerWorkspaceTab === 'documents' ? (
             <section className="space-y-5">

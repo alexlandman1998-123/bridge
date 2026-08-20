@@ -1923,6 +1923,256 @@ async function invokeSendEmailFunction({
   return data as JsonRecord;
 }
 
+async function invokeSendWhatsappFunction({
+  supabaseUrl,
+  serviceRoleKey,
+  payload,
+}: {
+  supabaseUrl: string;
+  serviceRoleKey: string;
+  payload: JsonRecord;
+}) {
+  const response = await fetch(
+    `${supabaseUrl.replace(/\/+$/, "")}/functions/v1/send-whatsapp`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${serviceRoleKey}`,
+        apikey: serviceRoleKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    },
+  );
+  const data = await response.json().catch(() => ({}));
+  return {
+    status: response.status,
+    data: data as JsonRecord,
+    ok: response.ok && !(data as JsonRecord)?.error,
+  };
+}
+
+async function prepareLeadCreatedWhatsappOutbox(
+  client: SupabaseClientLike,
+  {
+    organisationId,
+    branchId,
+    leadId,
+    listingId,
+    assignedAgentId,
+    subject,
+    messagePreview,
+    dedupeKey,
+    payload,
+    metadata,
+  }: {
+    organisationId: string;
+    branchId?: string;
+    leadId: string;
+    listingId?: string;
+    assignedAgentId?: string;
+    subject: string;
+    messagePreview?: string;
+    dedupeKey: string;
+    payload: JsonRecord;
+    metadata: JsonRecord;
+  },
+) {
+  if (!isUuidLike(organisationId) || !normalizeText(dedupeKey)) return null;
+  const existing = await client
+    .from("notification_events")
+    .select("*")
+    .eq("organisation_id", organisationId)
+    .eq("dedupe_key", dedupeKey)
+    .limit(1)
+    .maybeSingle();
+  if (existing.error) {
+    if (isMissingTableError(existing.error, "notification_events")) return null;
+    throw existing.error;
+  }
+  if (existing.data) {
+    const existingStatus = normalizeLower(existing.data.status);
+    if (existingStatus === "failed") {
+      const updated = await client
+        .from("notification_events")
+        .update({
+          status: "queued",
+          queued_at: new Date().toISOString(),
+          error_message: null,
+          payload_json: payload,
+          metadata_json: metadata,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", existing.data.id)
+        .select("*")
+        .single();
+      if (updated.error) throw updated.error;
+      return { ...(updated.data as JsonRecord), retryingFailedEvent: true };
+    }
+    return { ...(existing.data as JsonRecord), alreadyPrepared: true };
+  }
+
+  const inserted = await client
+    .from("notification_events")
+    .insert({
+      organisation_id: organisationId,
+      branch_id: isUuidLike(branchId) ? branchId : null,
+      assigned_user_id: isUuidLike(assignedAgentId) ? assignedAgentId : null,
+      lead_id: isUuidLike(leadId) ? leadId : null,
+      listing_id: isUuidLike(listingId) ? listingId : null,
+      event_key: "lead.created",
+      category: "notification",
+      trigger_type: "system_event",
+      channel: "whatsapp",
+      status: "queued",
+      recipient_role: "lead",
+      subject,
+      message_preview: normalizeText(messagePreview).slice(0, 320) || null,
+      provider: "send-whatsapp",
+      source: "inbound_lead_email",
+      dedupe_key: dedupeKey,
+      payload_json: payload,
+      metadata_json: metadata,
+      queued_at: new Date().toISOString(),
+    })
+    .select("*")
+    .single();
+  if (inserted.error) {
+    if (isMissingTableError(inserted.error, "notification_events")) return null;
+    if (isUniqueViolationError(inserted.error)) return null;
+    throw inserted.error;
+  }
+  return inserted.data as JsonRecord;
+}
+
+async function dispatchLeadCreatedWhatsappNotification({
+  client,
+  supabaseUrl,
+  serviceRoleKey,
+  canonical,
+  inboundEmailId,
+  leadId,
+  organisation,
+}: {
+  client: SupabaseClientLike;
+  supabaseUrl: string;
+  serviceRoleKey: string;
+  canonical: JsonRecord;
+  inboundEmailId: string;
+  leadId: string;
+  organisation: JsonRecord | null;
+}) {
+  const organisationId = normalizeText(canonical.organisationId);
+  const recipient = normalizeText(canonical.phone);
+  if (!isUuidLike(leadId) || !recipient) {
+    return {
+      status: "skipped",
+      reason: "Lead identifier or phone number is missing.",
+    };
+  }
+
+  const listingId = normalizeText(canonical.listingId);
+  const assignedAgentId = normalizeText(canonical.assignedAgentId);
+  const member = assignedAgentId
+    ? await fetchSingleById(client, "organisation_users", "user_id", assignedAgentId)
+    : null;
+  const profile = assignedAgentId
+    ? await fetchSingleById(client, "profiles", "id", assignedAgentId)
+    : null;
+  const agentName = pickText(
+    memberDisplayName(profile || member, "Agent"),
+    pickText(organisation?.name, "Team"),
+  );
+  const organisationName = pickText(
+    organisation?.name,
+    organisation?.display_name,
+    organisation?.legal_name,
+    "Arch9",
+  );
+
+  const propertyLabel = pickText(
+    canonical.enquiredPropertyTitle,
+    canonical.propertyInterest,
+    canonical.enquiredPropertyAddress,
+    "your property",
+  );
+  const dedupeKey = `lead-created:${organisationId}:${leadId}`;
+  const outbox = await prepareLeadCreatedWhatsappOutbox(client, {
+    organisationId,
+    branchId: normalizeText(canonical.branchId),
+    leadId,
+    listingId,
+    assignedAgentId,
+    subject: "Lead enquiry received",
+    messagePreview: `Lead enquiry from ${
+      firstNameFrom(canonical.name) || "a lead"
+    } for ${propertyLabel}.`,
+    dedupeKey,
+    payload: {
+      canonical,
+      inboundEmailId,
+      propertyLabel,
+    },
+    metadata: {
+      inboundEmailId,
+      leadId,
+      templateHint: "lead_created",
+      eventKey: "lead.created",
+      recipient,
+      organisationName,
+    },
+  });
+  if (!outbox) {
+    return {
+      status: "skipped",
+      reason: "Notification event table unavailable.",
+      reasonCode: "NOTIFICATION_EVENT_UNAVAILABLE",
+    };
+  }
+  if (outbox.alreadyPrepared) {
+    return {
+      status: "skipped",
+      statusCode: "DUPLICATE",
+      notificationEventId: normalizeText(outbox.id),
+      reason: "Lead-created WhatsApp notification already prepared.",
+      reasonCode: "NOTIFICATION_ALREADY_PREPARED",
+    };
+  }
+  const sendResult = await invokeSendWhatsappFunction({
+    supabaseUrl,
+    serviceRoleKey,
+    payload: {
+      organisationId,
+      branchId: normalizeText(canonical.branchId),
+      leadId,
+      relatedEntityType: "lead",
+      relatedEntityId: leadId,
+      to: recipient,
+      eventKey: "lead.created",
+      templateKey: "lead_created",
+      recipientRole: "lead",
+      requestId: inboundEmailId,
+      notificationEventId: normalizeText(outbox.id),
+      variables: {
+        buyer_name: firstNameFrom(canonical.name) || "there",
+        property_name: propertyLabel,
+        agent_name: agentName,
+        organisation_name: organisationName,
+      },
+      message: "",
+    },
+  });
+  return {
+    status: sendResult.ok ? "sent" : "failed",
+    statusCode: sendResult.status,
+    notificationEventId: normalizeText(outbox.id),
+    data: sendResult.data,
+    reason: sendResult.ok ? "Queued for WhatsApp delivery." : normalizeText(
+      sendResult.data?.error || sendResult.data?.message,
+    ),
+  };
+}
+
 async function createAutomaticBuyerViewingPreferenceLink({
   client,
   organisationId,
@@ -2626,6 +2876,7 @@ Deno.serve(async (req) => {
 
       let acknowledgement: JsonRecord | null = null;
       let leadOperationsNotification: JsonRecord | null = null;
+      let leadWhatsappNotification: JsonRecord | null = null;
       if (result.status === "processed") {
         try {
           leadOperationsNotification = await dispatchLeadOperationsNotification(
@@ -2648,6 +2899,35 @@ Deno.serve(async (req) => {
             reason: leadOpsError instanceof Error
               ? leadOpsError.message
               : "Lead operations notification failed.",
+          };
+        }
+        try {
+          leadWhatsappNotification = await dispatchLeadCreatedWhatsappNotification(
+            {
+              client,
+              supabaseUrl,
+              serviceRoleKey,
+              canonical,
+              inboundEmailId: normalizeText(inboundEmail.email_id),
+              leadId: normalizeText(result.leadId),
+              organisation: await fetchSingleById(
+                client,
+                "organisations",
+                "id",
+                normalizeText(canonical.organisationId),
+              ),
+            },
+          );
+        } catch (leadWhatsappError) {
+          console.warn(
+            "[inbound-lead-email] lead whatsapp notification failed without rolling back lead ingestion",
+            leadWhatsappError,
+          );
+          leadWhatsappNotification = {
+            status: "failed",
+            reason: leadWhatsappError instanceof Error
+              ? leadWhatsappError.message
+              : "Lead WhatsApp notification failed.",
           };
         }
         try {
@@ -2682,6 +2962,7 @@ Deno.serve(async (req) => {
         contactId: result.contactId,
         acknowledgement,
         leadOperationsNotification,
+        leadWhatsappNotification,
       });
     } catch (error) {
       const reason = error instanceof Error

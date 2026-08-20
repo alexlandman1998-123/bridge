@@ -771,9 +771,11 @@ function sanitizeAdminDashboardSnapshot(snapshot = EMPTY_DASHBOARD) {
   const pipeline = sanitizeDashboardRows(sourcePipeline, mockOrganisationIds)
   const registered = sanitizeDashboardRows(sourceRegistered, mockOrganisationIds)
   const attention = sanitizeDashboardRows(sourceAttention, mockOrganisationIds)
-  const filteredCount = (sourceRows, filteredRows, fallback) => (
-    sourceRows.length ? filteredRows.length : Number(fallback) || 0
-  )
+  const filteredCount = (sourceRows, filteredRows, fallback) => {
+    const fallbackCount = Number(fallback) || 0
+    if (!sourceRows.length) return fallbackCount
+    return Math.max(filteredRows.length, fallbackCount)
+  }
 
   return {
     ...snapshot,
@@ -932,17 +934,17 @@ async function enhanceDashboardSnapshotWithDirectData(snapshot = EMPTY_DASHBOARD
     activeTransactions: activeTransactions.length ? activeTransactions : snapshot?.activeTransactions || [],
     drilldowns: {
       ...(snapshot?.drilldowns || {}),
-      activeOrganisations: activeOrganisations.length ? activeOrganisations : snapshot?.drilldowns?.activeOrganisations || [],
-      activeAgents: directAgents.length ? directAgents : snapshot?.drilldowns?.activeAgents || [],
-      activeListings: activeListings.length ? activeListings : snapshot?.drilldowns?.activeListings || [],
-      activeTransactions: activeTransactions.length ? activeTransactions : snapshot?.drilldowns?.activeTransactions || [],
+      activeOrganisations: (snapshot?.drilldowns?.activeOrganisations || []).length ? snapshot.drilldowns.activeOrganisations : activeOrganisations,
+      activeAgents: (snapshot?.drilldowns?.activeAgents || []).length ? snapshot.drilldowns.activeAgents : directAgents,
+      activeListings: (snapshot?.drilldowns?.activeListings || []).length ? snapshot.drilldowns.activeListings : activeListings,
+      activeTransactions: (snapshot?.drilldowns?.activeTransactions || []).length ? snapshot.drilldowns.activeTransactions : activeTransactions,
     },
     kpis: {
       ...(snapshot?.kpis || {}),
-      activeOrganisations: activeOrganisations.length || Number(snapshot?.kpis?.activeOrganisations) || 0,
-      activeAgents: directAgents.length || Number(snapshot?.kpis?.activeAgents) || 0,
-      activeListings: activeListings.length || Number(snapshot?.kpis?.activeListings) || 0,
-      activeTransactions: activeTransactions.length || Number(snapshot?.kpis?.activeTransactions) || 0,
+      activeOrganisations: Number(snapshot?.kpis?.activeOrganisations) || activeOrganisations.length || 0,
+      activeAgents: Number(snapshot?.kpis?.activeAgents) || directAgents.length || 0,
+      activeListings: Number(snapshot?.kpis?.activeListings) || activeListings.length || 0,
+      activeTransactions: Number(snapshot?.kpis?.activeTransactions) || activeTransactions.length || 0,
     },
     warnings: [...(snapshot?.warnings || []), ...warnings],
   })

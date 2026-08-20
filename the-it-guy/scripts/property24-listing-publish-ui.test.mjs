@@ -7,7 +7,8 @@ function read(path) {
 
 const listingDetail = read('src/pages/AgentListingDetail.jsx')
 
-assert.match(listingDetail, /Property24 Syndication/)
+assert.match(listingDetail, /Where this listing appears/)
+assert.match(listingDetail, /Manage Property24/)
 assert.match(listingDetail, /previewProperty24Listing/)
 assert.match(listingDetail, /publishProperty24Listing/)
 assert.match(listingDetail, /refreshProperty24ListingStatus/)
@@ -17,7 +18,7 @@ assert.match(listingDetail, /Refresh Status/)
 assert.match(listingDetail, /Update Status/)
 assert.match(listingDetail, /Check Leads/)
 assert.match(listingDetail, /Import Leads/)
-assert.match(listingDetail, /Current Property24 action/)
+assert.match(listingDetail, /Listing data status/)
 assert.match(listingDetail, /Preview Readiness/)
 assert.match(listingDetail, /Publish New Listing/)
 assert.match(listingDetail, /Update Existing Listing/)
