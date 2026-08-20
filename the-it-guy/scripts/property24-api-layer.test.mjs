@@ -94,7 +94,7 @@ const unauthorized = await createProperty24ApiResponse({
   method: 'GET',
   url: '/api/property24/listings/abc/status',
   headers: { authorization: 'Bearer wrong' },
-  env: baseEnv,
+  env: { ...baseEnv, SUPABASE_URL: '', SUPABASE_SERVICE_ROLE_KEY: '' },
 })
 assert.equal(unauthorized.status, 401)
 
@@ -115,6 +115,7 @@ const previewResponse = await createProperty24ApiResponse({
   env: baseEnv,
   dependencies: {
     createSupabase: () => ({ type: 'supabase' }),
+    resolvePublishConfig: async ({ config }) => config,
     buildSubmitPlan: async (args) => {
       buildSubmitPlanArgs = args
       return fakePreview
@@ -134,6 +135,10 @@ const blockedPublish = await createProperty24ApiResponse({
   url: '/api/property24/listings/listing-123/publish',
   headers: authHeaders,
   env: { ...baseEnv, PROPERTY24_SYNDICATION_ENABLED: 'false' },
+  dependencies: {
+    createSupabase: () => ({ type: 'supabase' }),
+    resolvePublishConfig: async ({ config }) => config,
+  },
 })
 assert.equal(blockedPublish.status, 400)
 assert.ok(blockedPublish.body.missingConfiguration.includes('PROPERTY24_SYNDICATION_ENABLED=true'))
@@ -149,6 +154,7 @@ const publishResponse = await createProperty24ApiResponse({
   dependencies: {
     createSupabase: () => ({ type: 'supabase' }),
     createProperty24: () => ({ type: 'property24' }),
+    resolvePublishConfig: async ({ config }) => config,
     buildSubmitPlan: async () => fakePreview,
     applyPublish: async (args) => {
       applyPublishArgs = args
@@ -205,6 +211,7 @@ const statusUpdateResponse = await createProperty24ApiResponse({
   dependencies: {
     createSupabase: () => ({ type: 'supabase' }),
     createProperty24: () => ({ type: 'property24' }),
+    resolvePublishConfig: async ({ config }) => config,
     applyStatusUpdate: async (args) => {
       statusUpdateArgs = args
       return {

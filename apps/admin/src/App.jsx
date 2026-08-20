@@ -599,6 +599,33 @@ function isActiveListingRow(row = {}) {
   return hasActiveSignal && !hasTerminalSignal
 }
 
+function isActiveDevelopmentRow(row = {}) {
+  const status = firstDashboardValue(row, ['status', 'development_status', 'is_active'], 'active')
+  const normalized = normalizeDashboardToken(status)
+  if (/(^|_)(inactive|archived|withdrawn|deleted|disabled|cancelled|canceled|complete|completed|sold_out)(_|$)/.test(normalized)) return false
+  return isActiveAdminStatus(status)
+}
+
+function isActiveUnitListingRow(row = {}) {
+  const tokens = collectDashboardTokens(row, [
+    'status',
+    'unit_status',
+    'sales_status',
+    'availability_status',
+    'listing_status',
+    'publication_status',
+    'marketing_status',
+  ])
+  const hasTerminalSignal = /(^|_)(sold|registered|transferred|archived|withdrawn|deleted|disabled|unavailable|cancelled|canceled)(_|$)/.test(tokens)
+  if (hasTerminalSignal) return false
+
+  const hasActiveSignal =
+    !tokens ||
+    /(available|active|live|listed|published|launched|reserved|under_offer|pending_sale|sale_pending|in_progress)/.test(tokens)
+
+  return hasActiveSignal
+}
+
 function mapDirectAgent(row = {}, fallbackRole = 'agent_module') {
   const id = firstDashboardValue(row, ['user_id', 'profile_id', 'id', 'email'])
   const fullName = firstDashboardValue(row, ['full_name', 'fullName', 'name', 'display_name', 'displayName'])
@@ -619,6 +646,7 @@ function mapDirectAgent(row = {}, fallbackRole = 'agent_module') {
 function mapDirectListing(row = {}) {
   return {
     id: firstDashboardValue(row, ['id', 'listing_id', 'reference']),
+    unitId: firstDashboardValue(row, ['unit_id', 'unitId']),
     reference: firstDashboardValue(row, ['reference', 'listing_reference', 'code', 'id'], 'Listing'),
     title: firstDashboardValue(row, ['title', 'property_title', 'name', 'reference'], 'Listing'),
     location: firstDashboardValue(row, ['location', 'suburb', 'city', 'area']),
@@ -629,6 +657,29 @@ function mapDirectListing(row = {}) {
     price: Number(firstDashboardValue(row, ['price', 'asking_price', 'listing_price', 'purchase_price'], 0)) || 0,
     createdAt: firstDashboardValue(row, ['created_at', 'inserted_at']),
     updatedAt: firstDashboardValue(row, ['updated_at', 'last_activity_at', 'created_at']),
+  }
+}
+
+function mapUnitAsListing(row = {}, development = {}) {
+  const unitNumber = firstDashboardValue(row, ['unit_number', 'unitNumber', 'unit_label', 'unitLabel'])
+  const developmentName = getAdminOrganisationName(development) || firstDashboardValue(development, ['developmentName', 'development_name'])
+  const title = [developmentName, unitNumber ? `Unit ${unitNumber}` : 'Unit'].filter(Boolean).join(' - ')
+
+  return {
+    id: firstDashboardValue(row, ['id']),
+    unitId: firstDashboardValue(row, ['id', 'unit_id', 'unitId']),
+    reference: unitNumber || firstDashboardValue(row, ['reference', 'code', 'id'], 'Unit'),
+    title,
+    location: firstDashboardValue(development, ['location', 'suburb', 'city', 'area']),
+    address: firstDashboardValue(development, ['address', 'property_address', 'address_line_1']),
+    status: firstDashboardValue(row, ['status', 'unit_status', 'sales_status', 'availability_status'], 'available'),
+    organisationId: getAdminOrganisationId(row) || getAdminOrganisationId(development),
+    agentId: firstDashboardValue(row, ['assigned_agent_id', 'agent_id', 'assigned_user_id', 'owner_user_id']),
+    price: Number(firstDashboardValue(row, ['current_price', 'currentPrice', 'list_price', 'listPrice', 'price'], 0)) || 0,
+    createdAt: firstDashboardValue(row, ['created_at', 'inserted_at']),
+    updatedAt: firstDashboardValue(row, ['updated_at', 'last_activity_at', 'created_at']),
+    source: 'unit',
+    developmentId: firstDashboardValue(row, ['development_id', 'developmentId']),
   }
 }
 
@@ -762,12 +813,14 @@ async function fetchAdminRows(table, select = '*') {
 }
 
 async function enhanceDashboardSnapshotWithDirectData(snapshot = EMPTY_DASHBOARD) {
-  const [organisationsResult, profilesResult, orgUsersResult, listingsResult, transactionsResult] = await Promise.all([
+  const [organisationsResult, profilesResult, orgUsersResult, listingsResult, transactionsResult, developmentsResult, unitsResult] = await Promise.all([
     fetchAdminRows('organisations'),
     fetchAdminRows('profiles'),
     fetchAdminRows('organisation_users'),
     fetchAdminRows('private_listings'),
     fetchAdminRows('transactions'),
+    fetchAdminRows('developments'),
+    fetchAdminRows('units'),
   ])
 
   const profileById = new Map()
@@ -788,6 +841,11 @@ async function enhanceDashboardSnapshotWithDirectData(snapshot = EMPTY_DASHBOARD
       .map((row) => firstDashboardValue(row, ['id', 'organisation_id', 'organization_id']))
       .filter(Boolean),
   )
+  const developmentById = new Map()
+  for (const development of developmentsResult.rows) {
+    const developmentId = firstDashboardValue(development, ['id', 'development_id', 'developmentId'])
+    if (developmentId) developmentById.set(developmentId, development)
+  }
 
   const agentMap = new Map()
   for (const membership of orgUsersResult.rows) {
@@ -810,12 +868,30 @@ async function enhanceDashboardSnapshotWithDirectData(snapshot = EMPTY_DASHBOARD
     if (agent.id && !agentMap.has(agent.id)) agentMap.set(agent.id, agent)
   }
 
-  const activeListings = listingsResult.rows
+  const privateListingRows = listingsResult.rows
     .filter((row) => {
       const organisationId = getAdminOrganisationId(row)
       return (!organisationId || !mockOrganisationIds.has(organisationId)) && isActiveListingRow(row)
     })
     .map(mapDirectListing)
+  const listedUnitIds = new Set(
+    privateListingRows
+      .map((listing) => listing.unitId)
+      .filter(Boolean),
+  )
+  const unitListingRows = unitsResult.rows
+    .filter((row) => {
+      const developmentId = firstDashboardValue(row, ['development_id', 'developmentId'])
+      const development = developmentById.get(developmentId) || {}
+      const organisationId = getAdminOrganisationId(row) || getAdminOrganisationId(development)
+      const unitId = firstDashboardValue(row, ['id', 'unit_id', 'unitId'])
+      if (unitId && listedUnitIds.has(unitId)) return false
+      if (organisationId && mockOrganisationIds.has(organisationId)) return false
+      if (developmentId && developmentById.has(developmentId) && !isActiveDevelopmentRow(development)) return false
+      return isActiveUnitListingRow(row)
+    })
+    .map((row) => mapUnitAsListing(row, developmentById.get(firstDashboardValue(row, ['development_id', 'developmentId'])) || {}))
+  const activeListings = [...privateListingRows, ...unitListingRows]
   for (const listing of activeListings) {
     if (listing.agentId && !agentMap.has(listing.agentId)) {
       agentMap.set(listing.agentId, {
@@ -839,7 +915,15 @@ async function enhanceDashboardSnapshotWithDirectData(snapshot = EMPTY_DASHBOARD
     })
     .map(mapDirectTransaction)
   const directAgents = Array.from(agentMap.values())
-  const warnings = [organisationsResult.warning, profilesResult.warning, orgUsersResult.warning, listingsResult.warning, transactionsResult.warning]
+  const warnings = [
+    organisationsResult.warning,
+    profilesResult.warning,
+    orgUsersResult.warning,
+    listingsResult.warning,
+    transactionsResult.warning,
+    developmentsResult.warning,
+    unitsResult.warning,
+  ]
     .filter(Boolean)
     .map((message) => ({ message, type: 'admin_direct_data' }))
 
@@ -1984,6 +2068,7 @@ function Sidebar({ access, activeView, onNavigate, onSignOut, profile }) {
 }
 
 function Topbar({ activeView, generatedAt, isLoading, onRefresh, rangeId, setRangeId }) {
+  const isDashboard = activeView === 'dashboard'
   const title =
     activeView === 'support'
       ? 'Support Queue'
@@ -2017,18 +2102,14 @@ function Topbar({ activeView, generatedAt, isLoading, onRefresh, rangeId, setRan
             : 'Existing admin data, filtered into a focused workspace.'
 
   return (
-    <header className="topbar">
-      <div>
-        <p className="eyebrow">Arch9 Admin</p>
-        <h1>{title}</h1>
-        <span>{subtitle}</span>
-        {activeView === 'dashboard' ? (
-          <div className="freshness-line">
-            <span aria-hidden="true" />
-            <strong>{isLoading ? 'Refreshing dashboard' : formatUpdatedStamp(generatedAt)}</strong>
-          </div>
-        ) : null}
-      </div>
+    <header className={`topbar${isDashboard ? ' dashboard-topbar' : ''}`}>
+      {!isDashboard ? (
+        <div>
+          <p className="eyebrow">Arch9 Admin</p>
+          <h1>{title}</h1>
+          <span>{subtitle}</span>
+        </div>
+      ) : null}
       <div className="topbar-actions">
         <label className="range-select">
           <CalendarDays size={16} />
@@ -2215,15 +2296,9 @@ function DashboardView({ isLoading, snapshot, support }) {
   const missingRevenue = countMissingRevenue([...pipelineRows, ...registeredRows], warnings)
   const drilldowns = useMemo(() => getDashboardDrilldowns(snapshot, support), [snapshot, support])
   const selectedDrilldown = drilldowns[drilldownKey]
-  const listingRows = snapshot?.drilldowns?.activeListings || []
-  const organisationRows = snapshot?.drilldowns?.activeOrganisations || []
-  const agentRows = snapshot?.drilldowns?.activeAgents || []
   const activeTransactionRows = snapshot?.activeTransactions || snapshot?.drilldowns?.activeTransactions || []
-  const liveRows = (activeTransactionRows.length ? activeTransactionRows : [...pipelineRows, ...attentionRows]).slice(0, 5)
-  const totalInventorySample = listingRows.reduce((total, row) => total + (Number(row.price) || 0), 0)
   const listingPipelineRevenue = (Number(kpis.activeListings) || 0) * ARCH9_LISTING_PIPELINE_FEE
   const organisationActivity = useMemo(() => buildOrganisationActivity(snapshot), [snapshot])
-  const attentionItems = useMemo(() => buildNeedsAttention(snapshot, support), [snapshot, support])
   const activitySeries = useMemo(
     () => buildActivitySeries([...pipelineRows, ...registeredRows], snapshot?.range || {}),
     [pipelineRows, registeredRows, snapshot?.range],
@@ -2251,40 +2326,30 @@ function DashboardView({ isLoading, snapshot, support }) {
       drilldown: 'activeOrganisations',
       icon: Building2,
       label: 'Organisations',
-      meta: organisationRows.length ? `Across ${formatCount(uniqueCount(organisationRows.map((row) => row.status || 'active')))} status group` : '',
-      context: 'Active organisations, excluding test workspaces',
       value: formatCount(kpis.activeOrganisations),
     },
     {
       drilldown: 'activeAgents',
       icon: UserRoundCheck,
       label: 'Agents',
-      meta: agentRows.length ? `Across ${formatCount(uniqueCount(agentRows.map((row) => row.organisationId)))} organisations` : '',
-      context: 'Active organisation users and assigned agents',
       value: formatCount(kpis.activeAgents),
     },
     {
       drilldown: 'activeListings',
       icon: Home,
       label: 'Active Listings',
-      meta: totalInventorySample ? `${formatShortMoney(totalInventorySample)} sampled inventory` : '',
-      context: 'Live listing base, test orgs removed',
       value: formatCount(kpis.activeListings),
     },
     {
       drilldown: 'activeListings',
       icon: CircleDollarSign,
       label: 'Listing Pipeline',
-      meta: `${formatCount(kpis.activeListings)} listings x R1,500`,
-      context: 'Projected Arch9 fee potential',
       value: formatMoney(listingPipelineRevenue),
     },
     {
       drilldown: 'activeTransactions',
       icon: ListChecks,
       label: 'Active Transactions',
-      meta: pipelineCount ? `${formatCount(pipelineCount)} signed pipeline` : '',
-      context: 'Open, not completed or registered',
       value: formatCount(activeTransactionCount),
     },
   ]
@@ -2336,8 +2401,6 @@ function DashboardView({ isLoading, snapshot, support }) {
           onSelect={() => setDrilldownKey('activeOrganisations')}
           rows={organisationActivity}
         />
-        <NeedsAttentionCard items={attentionItems} onSelect={setDrilldownKey} />
-        <LiveTransactionPipelineCard rows={liveRows} />
       </section>
     </div>
   )
@@ -2398,7 +2461,6 @@ function TransactionActivityCard({ activitySeries = [], isLoading = false, onSel
               </div>
               <span>{stage.label}</span>
               <strong>{formatCount(stage.value)}</strong>
-              <small>{stage.key === 'stalled' ? 'Exception queue' : 'Current snapshot'}</small>
               {index < stages.length - 1 ? <ChevronRight className="stage-arrow" size={18} /> : null}
             </button>
           )
@@ -3765,6 +3827,7 @@ export default function App() {
   const [support, setSupport] = useState(EMPTY_SUPPORT)
   const [isBooting, setIsBooting] = useState(true)
   const [isLoading, setIsLoading] = useState(false)
+  const [isResolvingAccess, setIsResolvingAccess] = useState(false)
   const [pathname, setPathname] = useState(() => (typeof window === 'undefined' ? '/admin' : window.location.pathname))
 
   const allowedViews = useMemo(
@@ -3867,6 +3930,7 @@ export default function App() {
 
     async function resolveAccess() {
       if (!session?.user) {
+        setIsResolvingAccess(false)
         setAccess({ allowed: false, level: '', roles: [] })
         setDashboard(EMPTY_DASHBOARD)
         setInbound(EMPTY_INBOUND)
@@ -3875,13 +3939,18 @@ export default function App() {
         return
       }
 
-      const nextProfile = await loadAdminProfile(session.user.id)
-      if (cancelled) return
+      setIsResolvingAccess(true)
+      try {
+        const nextProfile = await loadAdminProfile(session.user.id)
+        if (cancelled) return
 
-      const nextAccess = resolveAdminAccess({ profile: nextProfile, user: session.user })
-      setAccess(nextAccess)
-      setProfile(nextProfile || { email: session.user.email })
-      if (typeof window !== 'undefined') setPathname(window.location.pathname)
+        const nextAccess = resolveAdminAccess({ profile: nextProfile, user: session.user })
+        setAccess(nextAccess)
+        setProfile(nextProfile || { email: session.user.email })
+        if (typeof window !== 'undefined') setPathname(window.location.pathname)
+      } finally {
+        if (!cancelled) setIsResolvingAccess(false)
+      }
     }
 
     resolveAccess()
@@ -3942,6 +4011,14 @@ export default function App() {
 
   if (!session) {
     return <LoginScreen authError={authError} onMagicLink={handleMagicLink} onSignIn={handleSignIn} />
+  }
+
+  if (isResolvingAccess || (!profile && !access.allowed)) {
+    return (
+      <main className="center-shell">
+        <Loader2 className="spin" size={26} />
+      </main>
+    )
   }
 
   if (!access.allowed) {

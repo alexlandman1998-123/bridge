@@ -25,6 +25,7 @@ import {
   Download,
   Link2,
   MessageSquare,
+  RefreshCw,
   Send,
   ShieldCheck,
   Search,
@@ -412,8 +413,10 @@ const AMENITY_OPTIONS = ['Security Estate', 'Clubhouse', 'Kids Play Area', 'Walk
 const EXTERNAL_LINK_PLATFORM_OPTIONS = ['Property24', 'Private Property', 'Agency Website', 'Facebook Marketplace', 'Instagram', 'Gumtree', 'Other']
 const EXTERNAL_LINK_STATUS_OPTIONS = ['Draft', 'Live', 'Removed', 'Expired']
 const PORTAL_STATUS_OPTIONS = ['not_published', 'draft', 'published', 'paused', 'removed']
+const PROPERTY24_STATUS_UPDATE_OPTIONS = ['Active', 'Pending', 'Sold', 'Withdrawn']
 const ARCH9_PUBLIC_SITE_ORIGIN = 'https://www.arch9.co.za'
 const ARCH9_PUBLIC_LISTINGS_API_PATH = '/api/public/listings'
+const PROPERTY24_LISTING_API_BASE_PATH = '/api/property24/listings'
 const SELLER_PACK_TRANSACTION_REQUIREMENT_KEYS = [
   SELLER_BASE_PACK_KEYS.SIGNED_MANDATE,
   SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM,
@@ -889,6 +892,77 @@ function getArch9PublicationBlockers(draft = {}, coverImage = null) {
     blockers.push('Only active market listings can be published.')
   }
   return blockers
+}
+
+function formatProperty24Blocker(value = '') {
+  return String(value || '')
+    .replace(/^missing_/, 'missing ')
+    .replace(/^listing_/, 'listing ')
+    .replace(/_/g, ' ')
+    .replace(/\bproperty24\b/g, 'Property24')
+}
+
+function getProperty24ApiMessage(payload = {}, fallback = 'Property24 request failed.') {
+  const missing = Array.isArray(payload?.missingConfiguration) ? payload.missingConfiguration : []
+  if (missing.length) return `Property24 setup is incomplete: ${missing.join(', ')}.`
+  const dataBlockers = payload?.preview?.dataBlockers || payload?.report?.preview?.dataBlockers || []
+  const technicalBlockers = payload?.preview?.technicalBlockers || payload?.report?.preview?.technicalBlockers || []
+  const blockers = [...dataBlockers, ...technicalBlockers].map(formatProperty24Blocker)
+  if (blockers.length) return `Property24 cannot publish yet: ${blockers.join(', ')}.`
+  return String(payload?.message || payload?.error || fallback)
+}
+
+function getProperty24ListingNumberFromResponse(payload = {}) {
+  const values = [
+    payload?.report?.databaseWrite?.listingNumber,
+    payload?.report?.databaseWrite?.listing_number,
+    payload?.report?.property24Response?.data?.listingNumber,
+    payload?.report?.property24Response?.data?.ListingNumber,
+    payload?.report?.property24Response?.data,
+    payload?.report?.preview?.summary?.listingNumber,
+    payload?.preview?.summary?.listingNumber,
+  ]
+  for (const value of values) {
+    if (value && typeof value !== 'object') return String(value).trim()
+  }
+  return ''
+}
+
+function getProperty24ReadinessCounts(payload = {}) {
+  const preview = payload?.preview || payload?.report?.preview || {}
+  return {
+    dataBlockers: Array.isArray(preview.dataBlockers) ? preview.dataBlockers.length : 0,
+    technicalBlockers: Array.isArray(preview.technicalBlockers) ? preview.technicalBlockers.length : 0,
+    imagesLoaded: Number(preview.imageByteLoad?.summary?.loaded || 0) || 0,
+    imagesFailed: Number(preview.imageByteLoad?.summary?.failed || 0) || 0,
+  }
+}
+
+function getProperty24StatusLabel(statusResult = {}) {
+  const portalCheck = statusResult?.status?.portalCheck
+  if (portalCheck) return portalCheck.isOnPortal ? 'Live on Property24' : 'Not live on Property24'
+  const syncStatus = statusResult?.status?.sync?.external_status || statusResult?.status?.listing?.property24_status || ''
+  return syncStatus ? formatStatusLabel(syncStatus) : 'Not checked yet'
+}
+
+function getProperty24StatusCheckedAt(statusResult = {}) {
+  return statusResult?.status?.sync?.last_checked_at ||
+    statusResult?.status?.sync?.lastCheckedAt ||
+    statusResult?.status?.listing?.updated_at ||
+    ''
+}
+
+function getProperty24LeadImportCounts(payload = {}) {
+  const leads = payload?.leads || payload || {}
+  const summary = leads.summary || {}
+  const importSummary = leads.import?.summary || {}
+  return {
+    received: Number(importSummary.receivedCount ?? summary.receivedCount ?? summary.count ?? 0) || 0,
+    imported: Number(importSummary.importedCount ?? 0) || 0,
+    alreadyImported: Number(importSummary.alreadyImportedCount ?? 0) || 0,
+    needsReview: Number(importSummary.needsReviewCount ?? summary.needsReviewCount ?? 0) || 0,
+    failed: Number(importSummary.failedCount ?? 0) || 0,
+  }
 }
 
 function formatCurrency(value) {
@@ -2857,6 +2931,11 @@ function AgentListingDetail() {
   const [gallerySaving, setGallerySaving] = useState(false)
   const [publicationSaving, setPublicationSaving] = useState(false)
   const [arch9LiveChecking, setArch9LiveChecking] = useState(false)
+  const [property24Action, setProperty24Action] = useState('')
+  const [property24Preview, setProperty24Preview] = useState(null)
+  const [property24StatusCheck, setProperty24StatusCheck] = useState(null)
+  const [property24LeadImport, setProperty24LeadImport] = useState(null)
+  const [property24StatusUpdate, setProperty24StatusUpdate] = useState(PROPERTY24_STATUS_UPDATE_OPTIONS[0])
   const [openingSellerDocumentKey, setOpeningSellerDocumentKey] = useState('')
   const [sellerDocumentWorkflowAction, setSellerDocumentWorkflowAction] = useState('')
   const [activeListingDocumentTab, setActiveListingDocumentTab] = useState('property')
@@ -3789,6 +3868,226 @@ function AgentListingDetail() {
       }
     } finally {
       setPublicationSaving(false)
+    }
+  }
+
+  async function callProperty24ListingAction(action, body = {}, options = {}) {
+    if (!listingRecord?.id) throw new Error('Open a saved listing before using Property24.')
+    if (!isSupabaseConfigured || !supabase) throw new Error('Sign in before using Property24 publishing.')
+    const sessionResult = await supabase.auth.getSession()
+    const accessToken = sessionResult.data?.session?.access_token
+    if (!accessToken) throw new Error('Sign in again before using Property24 publishing.')
+    const method = String(options.method || 'POST').toUpperCase()
+    const query = options.query instanceof URLSearchParams ? `?${options.query.toString()}` : ''
+    const requestOptions = {
+      method,
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    }
+    if (method !== 'GET') {
+      requestOptions.headers['Content-Type'] = 'application/json'
+      requestOptions.body = JSON.stringify({
+        maxImages: 20,
+        photosChanged: true,
+        ...body,
+      })
+    }
+    const response = await fetch(`${PROPERTY24_LISTING_API_BASE_PATH}/${encodeURIComponent(listingRecord.id)}/${action}${query}`, requestOptions)
+    const payload = await response.json().catch(() => ({}))
+    if (!response.ok) {
+      throw new Error(getProperty24ApiMessage(payload, options.fallbackMessage || 'Property24 request failed.'))
+    }
+    return payload
+  }
+
+  async function previewProperty24Listing() {
+    setProperty24Action('preview')
+    setProperty24Preview(null)
+    setDetailError('')
+    setDetailMessage('Checking Property24 readiness...')
+    try {
+      const saveResult = await saveMarketingDraft(marketingDraft, {
+        successMessage: '',
+      })
+      if (saveResult?.ok === false) throw saveResult.error || new Error('Save the listing before checking Property24 readiness.')
+      const payload = await callProperty24ListingAction('preview', {}, { fallbackMessage: 'Property24 preview failed.' })
+      setProperty24Preview(payload)
+      const counts = getProperty24ReadinessCounts(payload)
+      setDetailError('')
+      setDetailMessage(
+        counts.dataBlockers || counts.technicalBlockers
+          ? getProperty24ApiMessage(payload, 'Property24 readiness has blockers.')
+          : `Property24 preview is ready. ${counts.imagesLoaded} image${counts.imagesLoaded === 1 ? '' : 's'} loaded.`,
+      )
+      return payload
+    } catch (error) {
+      setDetailMessage('')
+      setDetailError(error?.message || 'Property24 preview failed.')
+      return null
+    } finally {
+      setProperty24Action('')
+    }
+  }
+
+  async function publishProperty24Listing() {
+    setProperty24Action('publish')
+    setDetailError('')
+    setDetailMessage('Publishing to Property24...')
+    try {
+      const saveResult = await saveMarketingDraft(marketingDraft, {
+        successMessage: '',
+      })
+      if (saveResult?.ok === false) throw saveResult.error || new Error('Save the listing before publishing to Property24.')
+      const payload = await callProperty24ListingAction('publish', {}, { fallbackMessage: 'Property24 publish failed.' })
+      setProperty24Preview(payload)
+      const listingNumber = getProperty24ListingNumberFromResponse(payload)
+      setMarketingDraft((previous) => ({
+        ...previous,
+        property24Reference: listingNumber || previous.property24Reference,
+        property24Status: 'published',
+      }))
+      await loadListingData()
+      setDetailError('')
+      setDetailMessage(listingNumber ? `Published to Property24. Listing number ${listingNumber}.` : 'Published to Property24.')
+      return payload
+    } catch (error) {
+      setDetailMessage('')
+      setDetailError(error?.message || 'Property24 publish failed.')
+      return null
+    } finally {
+      setProperty24Action('')
+    }
+  }
+
+  async function refreshProperty24ListingStatus() {
+    setProperty24Action('status')
+    setDetailError('')
+    setDetailMessage('Checking Property24 live status...')
+    try {
+      const query = new URLSearchParams({ refresh: 'true' })
+      const payload = await callProperty24ListingAction('status', {}, {
+        method: 'GET',
+        query,
+        fallbackMessage: 'Property24 status check failed.',
+      })
+      setProperty24StatusCheck(payload)
+      const portalCheck = payload?.status?.portalCheck
+      const databaseStatus = portalCheck?.databaseWrite?.property24Status
+      const listingNumber = payload?.status?.listingNumber || portalCheck?.databaseWrite?.listingNumber
+      setMarketingDraft((previous) => ({
+        ...previous,
+        property24Reference: listingNumber ? String(listingNumber) : previous.property24Reference,
+        property24Status: databaseStatus || previous.property24Status,
+      }))
+      await loadListingData()
+      setDetailError('')
+      setDetailMessage(portalCheck?.isOnPortal ? 'Property24 confirms this listing is live.' : 'Property24 does not currently show this listing as live.')
+      return payload
+    } catch (error) {
+      setDetailMessage('')
+      setDetailError(error?.message || 'Property24 status check failed.')
+      return null
+    } finally {
+      setProperty24Action('')
+    }
+  }
+
+  async function updateProperty24ListingStatus() {
+    const nextStatus = String(property24StatusUpdate || '').trim()
+    if (!nextStatus) return null
+    setProperty24Action('status-update')
+    setDetailError('')
+    setDetailMessage(`Updating Property24 status to ${nextStatus}...`)
+    try {
+      const payload = await callProperty24ListingAction('status-update', {
+        status: nextStatus,
+        listingNumber: property24Reference || undefined,
+      }, {
+        fallbackMessage: 'Property24 status update failed.',
+      })
+      const databaseStatus = payload?.report?.databaseWrite?.property24Status
+      const listingNumber = payload?.report?.databaseWrite?.listingNumber || payload?.report?.listingNumber
+      setMarketingDraft((previous) => ({
+        ...previous,
+        property24Reference: listingNumber ? String(listingNumber) : previous.property24Reference,
+        property24Status: databaseStatus || previous.property24Status,
+      }))
+      setProperty24StatusCheck({
+        route: 'listingStatus',
+        status: {
+          listingNumber: listingNumber || property24Reference || null,
+          listing: {
+            property24_status: databaseStatus || marketingDraft.property24Status,
+            updated_at: payload?.report?.generatedAt || new Date().toISOString(),
+          },
+          portalCheck: payload?.report?.portalCheck
+            ? {
+                ...payload.report.portalCheck,
+                isOnPortal: Boolean(payload.report.portalCheck?.data),
+                databaseWrite: payload.report.databaseWrite || null,
+              }
+            : null,
+        },
+      })
+      await loadListingData()
+      setDetailError('')
+      setDetailMessage(`Property24 status update sent: ${nextStatus}.`)
+      return payload
+    } catch (error) {
+      setDetailMessage('')
+      setDetailError(error?.message || 'Property24 status update failed.')
+      return null
+    } finally {
+      setProperty24Action('')
+    }
+  }
+
+  async function pullProperty24ListingLeads({ applyLeads = false } = {}) {
+    setProperty24Action(applyLeads ? 'lead-import' : 'lead-preview')
+    setDetailError('')
+    setDetailMessage(applyLeads ? 'Importing Property24 leads...' : 'Checking Property24 leads...')
+    try {
+      const query = new URLSearchParams()
+      if (applyLeads) query.set('applyLeads', 'true')
+      const payload = await callProperty24ListingAction('leads', {}, {
+        method: 'GET',
+        query,
+        fallbackMessage: applyLeads ? 'Property24 lead import failed.' : 'Property24 lead check failed.',
+      })
+      setProperty24LeadImport(payload)
+      const counts = getProperty24LeadImportCounts(payload)
+      if (applyLeads) {
+        await Promise.all([
+          refreshInterestedLeads(),
+          listAgencyCrmLeadContacts(listingOrganisationId, { includeLocalFallback: false })
+            .then((snapshot) => setPipelineLeads(mapAgencyLeadSelectionRows(snapshot)))
+            .catch(() => null),
+        ])
+        window.dispatchEvent(new Event('itg:agency-crm-updated'))
+        setDetailMessage(
+          counts.imported
+            ? `Imported ${counts.imported} Property24 lead${counts.imported === 1 ? '' : 's'}.`
+            : counts.alreadyImported
+              ? 'No new Property24 leads. Existing enquiries were already imported.'
+              : counts.received
+                ? 'Property24 leads checked. Some need review before import.'
+                : 'No Property24 leads found for this listing yet.',
+        )
+      } else {
+        setDetailMessage(
+          counts.received
+            ? `Found ${counts.received} Property24 lead${counts.received === 1 ? '' : 's'} for this listing.`
+            : 'No Property24 leads found for this listing yet.',
+        )
+      }
+      return payload
+    } catch (error) {
+      setDetailMessage('')
+      setDetailError(error?.message || (applyLeads ? 'Property24 lead import failed.' : 'Property24 lead check failed.'))
+      return null
+    } finally {
+      setProperty24Action('')
     }
   }
 
@@ -6368,6 +6667,13 @@ function AgentListingDetail() {
   )
   const arch9CanPublish = arch9PublicationBlockers.length === 0
   const arch9IsPublished = normalizeKey(marketingDraft.publicationStatus) === 'published' && normalizeKey(marketingDraft.bridgeListingStatus) === 'published'
+  const property24StatusKey = normalizeKey(marketingDraft.property24Status || listingRecord?.property24Status || listingRecord?.property24_status)
+  const property24Reference = String(marketingDraft.property24Reference || listingRecord?.property24Reference || listingRecord?.property24_reference || '').trim()
+  const property24Published = ['published', 'live', 'active'].includes(property24StatusKey)
+  const property24PreviewCounts = getProperty24ReadinessCounts(property24Preview)
+  const property24LeadImportCounts = getProperty24LeadImportCounts(property24LeadImport)
+  const property24StatusLabel = getProperty24StatusLabel(property24StatusCheck)
+  const property24StatusCheckedAt = getProperty24StatusCheckedAt(property24StatusCheck)
 
   useEffect(() => {
     setArch9LiveChecking(false)
@@ -11882,6 +12188,157 @@ function AgentListingDetail() {
                     <Field value={marketingDraft.virtualTourLink} onChange={(event) => updateMarketingDraft('virtualTourLink', event.target.value)} placeholder="https://my.matterport.com/..." />
                   </label>
                 </div>
+              </article>
+
+              <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-base font-semibold text-[#142132]">Property24 Syndication</h3>
+                      <StatusPill status={property24Published ? 'done' : property24StatusKey || 'pending'} label={property24Published ? 'Published' : formatStatusLabel(property24StatusKey || 'not_published')} />
+                    </div>
+                    <p className="mt-1 max-w-3xl text-sm leading-6 text-[#607387]">
+                      Publish this listing through the saved agency setup and mapped Property24 agent.
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold text-[#607387]">
+                      <span className="rounded-full border border-[#dbe6f2] bg-[#f8fbfd] px-3 py-1.5">
+                        Reference: {property24Reference || 'Not assigned yet'}
+                      </span>
+                      {property24Preview?.mapping?.source ? (
+                        <span className="rounded-full border border-[#dbe6f2] bg-[#f8fbfd] px-3 py-1.5">
+                          Agent mapping: {property24Preview.mapping.source === 'none' ? 'Needs setup' : 'Resolved'}
+                        </span>
+                      ) : null}
+                      {property24StatusCheck ? (
+                        <span className={`rounded-full border px-3 py-1.5 ${property24StatusCheck?.status?.portalCheck?.isOnPortal ? 'border-[#b9e0c8] bg-[#f1fbf5] text-[#1f7d44]' : 'border-[#f1d5a8] bg-[#fff9ed] text-[#9a5b13]'}`}>
+                          {property24StatusLabel}
+                        </span>
+                      ) : null}
+                      {property24StatusCheckedAt ? (
+                        <span className="rounded-full border border-[#dbe6f2] bg-[#f8fbfd] px-3 py-1.5">
+                          Last checked: {formatDateTime(property24StatusCheckedAt)}
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Field
+                      as="select"
+                      value={property24StatusUpdate}
+                      onChange={(event) => setProperty24StatusUpdate(event.target.value)}
+                      disabled={Boolean(property24Action)}
+                      className="min-h-9 min-w-[130px] text-sm"
+                    >
+                      {PROPERTY24_STATUS_UPDATE_OPTIONS.map((status) => (
+                        <option key={status} value={status}>{status}</option>
+                      ))}
+                    </Field>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      onClick={updateProperty24ListingStatus}
+                      disabled={Boolean(property24Action)}
+                    >
+                      {property24Action === 'status-update' ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+                      Update Status
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      onClick={refreshProperty24ListingStatus}
+                      disabled={Boolean(property24Action)}
+                    >
+                      {property24Action === 'status' ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
+                      Refresh Status
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      onClick={previewProperty24Listing}
+                      disabled={Boolean(property24Action)}
+                    >
+                      {property24Action === 'preview' ? <Loader2 size={15} className="animate-spin" /> : <Eye size={15} />}
+                      Preview
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={publishProperty24Listing}
+                      disabled={Boolean(property24Action)}
+                    >
+                      {property24Action === 'publish' ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+                      Publish
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => pullProperty24ListingLeads({ applyLeads: false })}
+                      disabled={Boolean(property24Action)}
+                    >
+                      {property24Action === 'lead-preview' ? <Loader2 size={15} className="animate-spin" /> : <MessageSquare size={15} />}
+                      Check Leads
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => pullProperty24ListingLeads({ applyLeads: true })}
+                      disabled={Boolean(property24Action)}
+                    >
+                      {property24Action === 'lead-import' ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
+                      Import Leads
+                    </Button>
+                  </div>
+                </div>
+
+                {property24Preview ? (
+                  <div className="mt-5 grid gap-3 md:grid-cols-4">
+                    <div className="rounded-[16px] border border-[#e1e9f2] bg-[#fbfdff] px-4 py-3">
+                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Status</p>
+                      <p className="mt-1 text-sm font-semibold text-[#243d56]">{formatStatusLabel(property24Preview.status || 'preview')}</p>
+                    </div>
+                    <div className="rounded-[16px] border border-[#e1e9f2] bg-[#fbfdff] px-4 py-3">
+                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Data Blockers</p>
+                      <p className="mt-1 text-sm font-semibold text-[#243d56]">{property24PreviewCounts.dataBlockers}</p>
+                    </div>
+                    <div className="rounded-[16px] border border-[#e1e9f2] bg-[#fbfdff] px-4 py-3">
+                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Images Loaded</p>
+                      <p className="mt-1 text-sm font-semibold text-[#243d56]">{property24PreviewCounts.imagesLoaded}</p>
+                    </div>
+                    <div className="rounded-[16px] border border-[#e1e9f2] bg-[#fbfdff] px-4 py-3">
+                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Image Errors</p>
+                      <p className="mt-1 text-sm font-semibold text-[#243d56]">{property24PreviewCounts.imagesFailed}</p>
+                    </div>
+                  </div>
+                ) : null}
+
+                {property24LeadImport ? (
+                  <div className="mt-5 grid gap-3 md:grid-cols-5">
+                    <div className="rounded-[16px] border border-[#e1e9f2] bg-[#fbfdff] px-4 py-3">
+                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Leads Found</p>
+                      <p className="mt-1 text-sm font-semibold text-[#243d56]">{property24LeadImportCounts.received}</p>
+                    </div>
+                    <div className="rounded-[16px] border border-[#e1e9f2] bg-[#fbfdff] px-4 py-3">
+                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Imported</p>
+                      <p className="mt-1 text-sm font-semibold text-[#1f7d44]">{property24LeadImportCounts.imported}</p>
+                    </div>
+                    <div className="rounded-[16px] border border-[#e1e9f2] bg-[#fbfdff] px-4 py-3">
+                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Already In Arch9</p>
+                      <p className="mt-1 text-sm font-semibold text-[#243d56]">{property24LeadImportCounts.alreadyImported}</p>
+                    </div>
+                    <div className="rounded-[16px] border border-[#e1e9f2] bg-[#fbfdff] px-4 py-3">
+                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Needs Review</p>
+                      <p className="mt-1 text-sm font-semibold text-[#9a5b13]">{property24LeadImportCounts.needsReview}</p>
+                    </div>
+                    <div className="rounded-[16px] border border-[#e1e9f2] bg-[#fbfdff] px-4 py-3">
+                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Failed</p>
+                      <p className="mt-1 text-sm font-semibold text-[#b42318]">{property24LeadImportCounts.failed}</p>
+                    </div>
+                  </div>
+                ) : null}
               </article>
 
               <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">

@@ -1,11 +1,17 @@
 import {
+  Activity,
   CheckCircle2,
   CircleAlert,
+  Clock3,
+  KeyRound,
+  Link2,
   PlugZap,
   Plus,
   RefreshCw,
   Save,
+  Settings2,
   Trash2,
+  UserPlus,
   Wand2,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
@@ -38,6 +44,7 @@ const LABEL_CLASS = 'text-[0.78rem] font-semibold text-[#43566d]'
 const FIELD_CLASS = 'grid gap-1.5'
 const SECONDARY_BUTTON_CLASS = 'inline-flex min-h-10 items-center justify-center gap-2 rounded-[10px] border border-[#d9e3ef] bg-white px-4 text-sm font-semibold text-[#24364b] transition hover:bg-[#f7fafc] disabled:cursor-not-allowed disabled:opacity-60'
 const PRIMARY_BUTTON_CLASS = 'inline-flex min-h-10 items-center justify-center gap-2 rounded-[10px] border border-[#0f7f4f] bg-[#0f7f4f] px-4 text-sm font-semibold text-white shadow-[0_8px_16px_rgba(15,127,79,0.2)] transition hover:bg-[#0d6f45] disabled:cursor-not-allowed disabled:border-[#cbd8e5] disabled:bg-[#eef2f6] disabled:text-[#8391a2] disabled:shadow-none'
+const MUTED_PANEL_CLASS = 'rounded-[14px] border border-[#dfe8f1] bg-[#f9fbfe] px-4 py-3'
 
 function normalizeEmail(value = '') {
   return normalizeProperty24SettingsText(value).toLowerCase()
@@ -102,6 +109,11 @@ function createMappingLookup(mappings = []) {
   )
 }
 
+function findProperty24AgentById(agents = [], agentId = '') {
+  const normalizedAgentId = normalizeProperty24SettingsText(agentId)
+  return agents.find((agent) => normalizeProperty24SettingsText(agent.property24AgentId) === normalizedAgentId) || null
+}
+
 function StatusPill({ ready, label }) {
   return (
     <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${
@@ -115,6 +127,45 @@ function StatusPill({ ready, label }) {
   )
 }
 
+function SetupStep({ ready, title, description }) {
+  return (
+    <div className={`rounded-[14px] border px-4 py-3 ${
+      ready
+        ? 'border-[#ccead8] bg-[#f2fbf5]'
+        : 'border-[#e2eaf2] bg-white'
+    }`}>
+      <div className="flex items-start gap-3">
+        <span className={`mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${
+          ready ? 'bg-[#1f7a45] text-white' : 'bg-[#eef3f7] text-[#6b7d93]'
+        }`}>
+          {ready ? <CheckCircle2 className="h-4 w-4" /> : <CircleAlert className="h-4 w-4" />}
+        </span>
+        <span className="min-w-0">
+          <span className="block text-sm font-semibold text-[#17233a]">{title}</span>
+          <span className="mt-1 block text-sm leading-5 text-[#6b7d93]">{description}</span>
+        </span>
+      </div>
+    </div>
+  )
+}
+
+function ConnectionToggle({ checked, onChange }) {
+  return (
+    <button
+      type="button"
+      className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-[10px] border px-4 text-sm font-semibold transition ${
+        checked
+          ? 'border-[#0f7f4f] bg-[#0f7f4f] text-white shadow-[0_8px_16px_rgba(15,127,79,0.2)] hover:bg-[#0d6f45]'
+          : 'border-[#d9e3ef] bg-white text-[#24364b] hover:bg-[#f7fafc]'
+      }`}
+      onClick={() => onChange(!checked)}
+    >
+      <PlugZap className="h-4 w-4" />
+      {checked ? 'Property24 enabled' : 'Enable Property24'}
+    </button>
+  )
+}
+
 function Field({ label, children }) {
   return (
     <label className={FIELD_CLASS}>
@@ -124,14 +175,47 @@ function Field({ label, children }) {
   )
 }
 
+function formatHealthDate(value = '') {
+  if (!value) return 'Not yet'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'Not yet'
+  return new Intl.DateTimeFormat('en-ZA', {
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
+}
+
+function getHealthTone(status = '') {
+  const normalized = String(status || '').toUpperCase()
+  if (normalized === 'OK') return 'border-[#ccead8] bg-[#f2fbf5] text-[#1f7a45]'
+  if (normalized === 'BLOCKED') return 'border-[#f3c7c7] bg-[#fff5f5] text-[#b42318]'
+  return 'border-[#f3d9a8] bg-[#fff8ec] text-[#a16207]'
+}
+
+function HealthMetric({ label, value }) {
+  return (
+    <div className="rounded-[12px] border border-[#e3ebf3] bg-white px-4 py-3">
+      <p className="text-xs font-semibold uppercase text-[#6b7d93]">{label}</p>
+      <p className="mt-1 text-xl font-semibold text-[#17233a]">{value}</p>
+    </div>
+  )
+}
+
 export default function SettingsProperty24Page() {
   const { refreshOrganisation } = useOrganisation()
   const { currentWorkspace } = useWorkspace()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [syncing, setSyncing] = useState(false)
+  const [healthLoading, setHealthLoading] = useState(false)
+  const [creatingAgentKey, setCreatingAgentKey] = useState('')
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [healthError, setHealthError] = useState('')
+  const [property24Health, setProperty24Health] = useState(null)
+  const [advancedOpen, setAdvancedOpen] = useState(false)
   const [context, setContext] = useState(null)
   const [users, setUsers] = useState([])
   const [settings, setSettings] = useState(() => normalizeProperty24Settings())
@@ -153,6 +237,10 @@ export default function SettingsProperty24Page() {
         setUsers(organisationUsers)
         setSettings(nextSettings)
         setSavedSettings(nextSettings)
+        void loadProperty24Health({
+          organisationId: organisationContext.organisation?.id,
+          settingsSnapshot: nextSettings,
+        })
       } catch (loadError) {
         if (!cancelled) setError(loadError.message || 'Unable to load Property24 settings.')
       } finally {
@@ -176,6 +264,9 @@ export default function SettingsProperty24Page() {
   )
   const dirty = JSON.stringify(settings) !== JSON.stringify(savedSettings)
   const workspaceName = currentWorkspace?.name || context?.organisation?.displayName || context?.organisation?.name || 'Organisation'
+  const serverCredentialsReady = true
+  const healthSummary = property24Health?.summary || {}
+  const healthChecks = property24Health?.checks || []
 
   function updateSettings(patch) {
     setSuccess('')
@@ -217,6 +308,132 @@ export default function SettingsProperty24Page() {
       return toMappingPatch(candidate, next)
     })
     updateSettings({ agentMappings: nextMappings })
+  }
+
+  function chooseProperty24Agent(agent, property24AgentId) {
+    const property24Agent = findProperty24AgentById(settings.property24Agents, property24AgentId)
+    updateMapping(agent, {
+      property24AgentId,
+      property24Name: property24Agent?.fullName || '',
+      property24Email: property24Agent?.email || '',
+      sourceReference: property24Agent?.sourceReference || '',
+      matchMethod: property24Agent ? 'manual' : 'none',
+      matchStatus: property24Agent ? 'mapped' : 'unmapped',
+      confidence: property24Agent ? 1 : 0,
+    })
+  }
+
+  function acceptSuggestedMapping(agent, mapping = {}) {
+    updateMapping(agent, {
+      ...mapping,
+      matchMethod: mapping.matchMethod === 'none' ? 'manual' : mapping.matchMethod,
+      matchStatus: 'mapped',
+      confidence: 1,
+    })
+  }
+
+  async function loadProperty24Health({ organisationId = context?.organisation?.id, settingsSnapshot = settings } = {}) {
+    if (!organisationId) return
+    setHealthLoading(true)
+    setHealthError('')
+    try {
+      const sessionResult = await supabase.auth.getSession()
+      const accessToken = sessionResult.data?.session?.access_token
+      if (!accessToken) throw new Error('Sign in again before checking Property24 health.')
+      const response = await fetch('/api/property24/settings/health', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          organisationId,
+          settings: settingsSnapshot,
+        }),
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(payload.message || 'Property24 health check failed.')
+      setProperty24Health(payload.health || null)
+    } catch (loadHealthError) {
+      setHealthError(loadHealthError.message || 'Property24 health check failed.')
+    } finally {
+      setHealthLoading(false)
+    }
+  }
+
+  async function createProperty24Agent(agent, mapping = {}) {
+    if (!settings.agencyId || !context?.organisation?.id) {
+      setError('Add the Property24 agency ID before creating agents.')
+      return
+    }
+    const agentKey = agent.userId || agent.id || agent.email
+    setCreatingAgentKey(agentKey)
+    setError('')
+    setSuccess('')
+    try {
+      const sessionResult = await supabase.auth.getSession()
+      const accessToken = sessionResult.data?.session?.access_token
+      if (!accessToken) throw new Error('Sign in again before creating a Property24 agent.')
+      const response = await fetch('/api/property24/settings/agents-create', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          organisationId: context.organisation.id,
+          agencyId: settings.agencyId,
+          sourceReference: mapping.sourceReference,
+          agent: {
+            firstName: agent.firstName,
+            lastName: agent.lastName,
+            fullName: agent.fullName,
+            email: agent.email,
+            mobile: agent.mobile || agent.phone,
+            phone: agent.phone,
+            jobTitle: agent.jobTitle || 'Agent',
+          },
+        }),
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        if (Array.isArray(payload.missingFields) && payload.missingFields.length) {
+          throw new Error(`Cannot create Property24 agent yet. Missing: ${payload.missingFields.join(', ')}.`)
+        }
+        throw new Error(payload.message || 'Property24 agent creation failed.')
+      }
+      const createdAgent = normalizeProperty24AgentRow(payload.agent || {
+        property24AgentId: payload.property24AgentId,
+        fullName: agent.fullName,
+        email: agent.email,
+        mobile: agent.mobile || agent.phone,
+        sourceReference: mapping.sourceReference,
+      })
+      updateSettings({
+        property24Agents: [...settings.property24Agents, createdAgent],
+        agentMappings: agentCandidates.map((candidate) => {
+          const candidateKey = candidate.userId || candidate.id || candidate.email
+          const existing = mappingLookup.get(candidateKey) || mappingLookup.get(normalizeEmail(candidate.email)) || {}
+          if (candidateKey !== agentKey) return toMappingPatch(candidate, existing)
+          return toMappingPatch(candidate, {
+            ...existing,
+            property24AgentId: createdAgent.property24AgentId,
+            property24Name: createdAgent.fullName,
+            property24Email: createdAgent.email,
+            sourceReference: createdAgent.sourceReference || mapping.sourceReference,
+            matchMethod: 'created',
+            matchStatus: 'mapped',
+            confidence: 1,
+          })
+        }),
+        lastAgentSyncAt: new Date().toISOString(),
+      })
+      setSuccess(`Created Property24 agent for ${agent.fullName || agent.email}.`)
+    } catch (createError) {
+      setError(createError.message || 'Property24 agent creation failed.')
+    } finally {
+      setCreatingAgentKey('')
+    }
   }
 
   async function syncProperty24Agents() {
@@ -299,6 +516,7 @@ export default function SettingsProperty24Page() {
       setSavedSettings(nextProperty24)
       setSuccess('Property24 settings saved.')
       await refreshOrganisation?.({ forceRefresh: true })
+      void loadProperty24Health({ settingsSnapshot: nextProperty24 })
     } catch (saveError) {
       setError(saveError.message || 'Unable to save Property24 settings.')
     } finally {
@@ -338,27 +556,31 @@ export default function SettingsProperty24Page() {
       {error ? <SettingsBanner>{error}</SettingsBanner> : null}
       {success ? <SettingsBanner tone="success">{success}</SettingsBanner> : null}
 
-      <SettingsSectionCard title="Agency Account" description="Property24 identifies the publishing agency from this account setup.">
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <label className="flex min-h-[44px] items-center gap-3 rounded-[12px] border border-[#d8e3ee] bg-white px-3.5">
-            <input
-              type="checkbox"
-              className="h-4 w-4 rounded border-[#c8d4e2] text-[#0f7f4f] focus:ring-[#0f7f4f]"
-              checked={settings.enabled}
-              onChange={(event) => updateSettings({ enabled: event.target.checked })}
-            />
-            <span className="text-sm font-semibold text-[#24364b]">Enabled</span>
-          </label>
-          <Field label="Environment">
-            <select
-              className={INPUT_CLASS}
-              value={settings.environment}
-              onChange={(event) => updateSettings({ environment: event.target.value })}
-            >
-              <option value="exdev">ExDev</option>
-              <option value="production">Production</option>
-            </select>
-          </Field>
+      <SettingsSectionCard title="Connection Setup" description="Connect the agency once, then map the agents who can publish listings.">
+        <div className="grid gap-3 lg:grid-cols-4">
+          <SetupStep
+            ready={settings.enabled}
+            title="Connection"
+            description={settings.enabled ? 'Property24 publishing is enabled.' : 'Turn Property24 on for this agency.'}
+          />
+          <SetupStep
+            ready={Boolean(settings.agencyId)}
+            title="Agency ID"
+            description={settings.agencyId ? `Agency ${settings.agencyId} is saved here.` : 'Enter the Property24 agency number.'}
+          />
+          <SetupStep
+            ready={serverCredentialsReady}
+            title="Credentials"
+            description="Managed securely on the server."
+          />
+          <SetupStep
+            ready={readiness.mappingsReady}
+            title="Agent Mapping"
+            description={`${readiness.mappedCount}/${readiness.candidateCount} publishing agents mapped.`}
+          />
+        </div>
+
+        <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
           <Field label="Property24 Agency ID">
             <input
               className={INPUT_CLASS}
@@ -367,17 +589,122 @@ export default function SettingsProperty24Page() {
               placeholder="31382"
             />
           </Field>
-          <Field label="Source Prefix">
-            <input
-              className={INPUT_CLASS}
-              value={settings.sourceReferencePrefix}
-              onChange={(event) => updateSettings({ sourceReferencePrefix: event.target.value })}
-              placeholder="ARCH9"
-            />
-          </Field>
+          <ConnectionToggle checked={settings.enabled} onChange={(enabled) => updateSettings({ enabled })} />
         </div>
-        <div className="mt-4 rounded-[12px] border border-[#dfe8f1] bg-[#f9fbfe] px-4 py-3 text-sm leading-6 text-[#52657b]">
-          Credentials mode: <span className="font-semibold text-[#26384e]">server environment</span>. Property24 passwords are not stored in this settings screen.
+
+        <div className={`${MUTED_PANEL_CLASS} mt-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between`}>
+          <div className="flex items-start gap-3">
+            <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-[#0f7f4f]">
+              <KeyRound className="h-4 w-4" />
+            </span>
+            <div>
+              <p className="text-sm font-semibold text-[#24364b]">Property24 login details stay server-side</p>
+              <p className="mt-1 text-sm leading-5 text-[#6b7d93]">Principals only manage the agency number and agent links here.</p>
+            </div>
+          </div>
+          <StatusPill ready={serverCredentialsReady} label="Server managed" />
+        </div>
+
+        <div className="mt-4">
+          <button
+            type="button"
+            className={SECONDARY_BUTTON_CLASS}
+            onClick={() => setAdvancedOpen((open) => !open)}
+          >
+            <Settings2 className="h-4 w-4" />
+            {advancedOpen ? 'Hide advanced settings' : 'Advanced settings'}
+          </button>
+          {advancedOpen ? (
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <Field label="Environment">
+                <select
+                  className={INPUT_CLASS}
+                  value={settings.environment}
+                  onChange={(event) => updateSettings({ environment: event.target.value })}
+                >
+                  <option value="exdev">ExDev</option>
+                  <option value="production">Production</option>
+                </select>
+              </Field>
+              <Field label="Source Reference Prefix">
+                <input
+                  className={INPUT_CLASS}
+                  value={settings.sourceReferencePrefix}
+                  onChange={(event) => updateSettings({ sourceReferencePrefix: event.target.value })}
+                  placeholder="ARCH9"
+                />
+              </Field>
+            </div>
+          ) : null}
+        </div>
+      </SettingsSectionCard>
+
+      <SettingsSectionCard
+        title="Operational Health"
+        description="Live readiness, listing tracking, and lead import checks for this Property24 connection."
+        actions={
+          <button
+            type="button"
+            className={SECONDARY_BUTTON_CLASS}
+            onClick={() => loadProperty24Health()}
+            disabled={healthLoading}
+          >
+            <RefreshCw className={`h-4 w-4 ${healthLoading ? 'animate-spin' : ''}`} />
+            {healthLoading ? 'Checking...' : 'Refresh'}
+          </button>
+        }
+      >
+        {healthError ? <SettingsBanner>{healthError}</SettingsBanner> : null}
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+          <div className={`${MUTED_PANEL_CLASS} flex flex-col justify-between gap-4`}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-[#24364b]">Property24 status</p>
+                <p className="mt-1 text-sm leading-5 text-[#6b7d93]">
+                  {property24Health ? `Last checked ${formatHealthDate(property24Health.generatedAt)}` : 'Run a health check after saving setup.'}
+                </p>
+              </div>
+              <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${getHealthTone(property24Health?.status)}`}>
+                {property24Health?.status === 'OK' ? <CheckCircle2 className="h-3.5 w-3.5" /> : <CircleAlert className="h-3.5 w-3.5" />}
+                {property24Health?.status || 'Not checked'}
+              </span>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <HealthMetric label="Listings tracked" value={healthSummary.trackedListingCount ?? 0} />
+              <HealthMetric label="On portal" value={healthSummary.onPortalListingCount ?? 0} />
+              <HealthMetric label="Leads imported" value={healthSummary.processedLeadImportCount ?? 0} />
+              <HealthMetric label="Needs review" value={(healthSummary.failedLeadImportCount || 0) + (healthSummary.failedListingSyncCount || 0)} />
+            </div>
+            <div className="flex flex-wrap gap-3 text-sm text-[#6b7d93]">
+              <span className="inline-flex items-center gap-2">
+                <Clock3 className="h-4 w-4" />
+                Latest lead: {formatHealthDate(healthSummary.latestLeadImportAt)}
+              </span>
+              <span className="inline-flex items-center gap-2">
+                <Activity className="h-4 w-4" />
+                Latest listing sync: {formatHealthDate(healthSummary.latestListingSyncAt)}
+              </span>
+            </div>
+          </div>
+
+          <div className="grid gap-2">
+            {healthChecks.length ? healthChecks.map((check) => (
+              <div key={check.key} className="flex items-start gap-3 rounded-[12px] border border-[#e3ebf3] bg-white px-4 py-3">
+                <span className={`mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${getHealthTone(check.status)}`}>
+                  {check.status === 'ok' ? <CheckCircle2 className="h-3.5 w-3.5" /> : <CircleAlert className="h-3.5 w-3.5" />}
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-sm font-semibold text-[#17233a]">{check.label}</span>
+                  <span className="mt-1 block text-sm leading-5 text-[#6b7d93]">{check.detail}</span>
+                </span>
+              </div>
+            )) : (
+              <SettingsEmptyState
+                title="No health report yet"
+                description="Refresh the health check once the agency setup has been saved."
+              />
+            )}
+          </div>
         </div>
       </SettingsSectionCard>
 
@@ -422,47 +749,112 @@ export default function SettingsProperty24Page() {
         </div>
       </SettingsSectionCard>
 
-      <SettingsSectionCard title="Agent Mapping" description="Every Arch9 agent who publishes listings needs one Property24 agent ID.">
-        <div className="overflow-hidden rounded-[14px] border border-[#dfe7ee]">
-          <div className="grid grid-cols-[1.2fr_1fr_1fr_1fr] gap-0 bg-[#f7fafc] px-4 py-3 text-xs font-semibold uppercase text-[#6b7d93]">
-            <span>Arch9 Agent</span>
-            <span>Property24 Agent ID</span>
-            <span>Source Reference</span>
-            <span>Status</span>
+      <SettingsSectionCard title="Agent Mapping" description="Review each publishing agent before listings can go live on Property24.">
+        {agentCandidates.length ? (
+          <div className="grid gap-3">
+            {agentCandidates.map((agent) => {
+              const agentKey = agent.userId || agent.id || agent.email
+              const mapping = mappingLookup.get(agentKey) || mappingLookup.get(normalizeEmail(agent.email)) || toMappingPatch(agent)
+              const mapped = Boolean(mapping.property24AgentId)
+              const matchedAgent = findProperty24AgentById(settings.property24Agents, mapping.property24AgentId)
+              const matchLabel = mapped
+                ? mapping.matchMethod === 'email'
+                  ? 'Matched by email'
+                  : mapping.matchMethod === 'source_reference'
+                    ? 'Matched by source reference'
+                    : mapping.matchMethod === 'created'
+                      ? 'Created from Arch9'
+                      : 'Manually selected'
+                : 'Needs review'
+              const creating = creatingAgentKey === agentKey
+
+              return (
+                <article key={agentKey} className="rounded-[14px] border border-[#dfe7ee] bg-white p-4">
+                  <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_44px_minmax(0,1fr)] lg:items-center">
+                    <div className="min-w-0 rounded-[12px] border border-[#e8eef5] bg-[#f9fbfe] p-4">
+                      <p className="text-xs font-semibold uppercase text-[#6b7d93]">Arch9 Agent</p>
+                      <p className="mt-1 truncate text-base font-semibold text-[#17233a]">{agent.fullName || agent.email}</p>
+                      <p className="mt-1 truncate text-sm text-[#6b7d93]">{agent.email || 'No email saved'}</p>
+                      <p className="mt-1 truncate text-xs text-[#8a98a8]">{agent.mobile || agent.phone || 'No mobile number saved'}</p>
+                    </div>
+
+                    <div className="hidden justify-center lg:flex">
+                      <span className={`inline-flex h-9 w-9 items-center justify-center rounded-full ${
+                        mapped ? 'bg-[#e9f8ef] text-[#1f7a45]' : 'bg-[#fff8ec] text-[#a16207]'
+                      }`}>
+                        <Link2 className="h-4 w-4" />
+                      </span>
+                    </div>
+
+                    <div className="min-w-0 rounded-[12px] border border-[#e8eef5] p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold uppercase text-[#6b7d93]">Property24 Agent</p>
+                          <p className="mt-1 truncate text-base font-semibold text-[#17233a]">
+                            {matchedAgent?.fullName || mapping.property24Name || (mapped ? `Agent ${mapping.property24AgentId}` : 'Not linked yet')}
+                          </p>
+                          <p className="mt-1 truncate text-sm text-[#6b7d93]">
+                            {matchedAgent?.email || mapping.property24Email || 'Choose or create an agent'}
+                          </p>
+                        </div>
+                        <StatusPill ready={mapped} label={matchLabel} />
+                      </div>
+
+                      <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                        <Field label="Choose Property24 Agent">
+                          <select
+                            className={INPUT_CLASS}
+                            value={mapping.property24AgentId}
+                            onChange={(event) => chooseProperty24Agent(agent, event.target.value)}
+                          >
+                            <option value="">Select agent</option>
+                            {settings.property24Agents.map((property24Agent) => (
+                              <option key={property24Agent.rowId || property24Agent.property24AgentId} value={property24Agent.property24AgentId}>
+                                {property24Agent.fullName || property24Agent.email || property24Agent.property24AgentId}
+                              </option>
+                            ))}
+                          </select>
+                        </Field>
+                        <Field label="Source Reference">
+                          <input
+                            className={INPUT_CLASS}
+                            value={mapping.sourceReference}
+                            onChange={(event) => updateMapping(agent, { sourceReference: event.target.value, matchMethod: 'manual' })}
+                            placeholder={`${settings.sourceReferencePrefix}-${agent.userId || agent.id || 'agent'}`}
+                          />
+                        </Field>
+                      </div>
+
+                      <div className="mt-4 flex flex-wrap justify-end gap-2">
+                        <button
+                          type="button"
+                          className={SECONDARY_BUTTON_CLASS}
+                          onClick={() => acceptSuggestedMapping(agent, mapping)}
+                          disabled={!mapped}
+                        >
+                          <CheckCircle2 className="h-4 w-4" /> Accept match
+                        </button>
+                        <button
+                          type="button"
+                          className={SECONDARY_BUTTON_CLASS}
+                          onClick={() => createProperty24Agent(agent, mapping)}
+                          disabled={creating || !settings.agencyId || mapped}
+                        >
+                          <UserPlus className="h-4 w-4" /> {creating ? 'Creating...' : 'Create Property24 agent'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </article>
+              )
+            })}
           </div>
-          {agentCandidates.length ? agentCandidates.map((agent) => {
-            const agentKey = agent.userId || agent.id || agent.email
-            const mapping = mappingLookup.get(agentKey) || mappingLookup.get(normalizeEmail(agent.email)) || toMappingPatch(agent)
-            const mapped = Boolean(mapping.property24AgentId)
-            return (
-              <div key={agentKey} className="grid grid-cols-[1.2fr_1fr_1fr_1fr] gap-3 border-t border-[#edf2f7] bg-white px-4 py-3">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-[#17233a]">{agent.fullName || agent.email}</p>
-                  <p className="truncate text-xs text-[#6b7d93]">{agent.email}</p>
-                </div>
-                <input
-                  className={INPUT_CLASS}
-                  value={mapping.property24AgentId}
-                  onChange={(event) => updateMapping(agent, { property24AgentId: event.target.value, matchMethod: 'manual' })}
-                  placeholder="Property24 ID"
-                />
-                <input
-                  className={INPUT_CLASS}
-                  value={mapping.sourceReference}
-                  onChange={(event) => updateMapping(agent, { sourceReference: event.target.value, matchMethod: 'manual' })}
-                  placeholder={`${settings.sourceReferencePrefix}-${agent.userId || agent.id || 'agent'}`}
-                />
-                <div className="flex items-center">
-                  <StatusPill ready={mapped} label={mapped ? `Mapped${mapping.matchMethod ? ` by ${mapping.matchMethod}` : ''}` : 'Needs mapping'} />
-                </div>
-              </div>
-            )
-          }) : (
-            <div className="bg-white px-4 py-8 text-center text-sm text-[#6b7d93]">
-              No Arch9 agents found for this organisation.
-            </div>
-          )}
-        </div>
+        ) : (
+          <SettingsEmptyState
+            title="No publishing agents found"
+            description="Add agents to this organisation before mapping them to Property24."
+          />
+        )}
       </SettingsSectionCard>
 
       <SettingsStickySaveBar

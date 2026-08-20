@@ -2,6 +2,7 @@ import { AlertTriangle, ArrowLeft, ArrowUpRight, Bath, BedDouble, Bold, Bookmark
 import { Suspense, createElement, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import LoadingSkeleton from '../../components/LoadingSkeleton'
+import JourneyStageOverrideActions from '../../components/journey/JourneyStageOverrideActions'
 import AddressAutocomplete from '../../components/location/AddressAutocomplete'
 import AreaAutocomplete from '../../components/location/AreaAutocomplete'
 import AreaMultiSelect from '../../components/location/AreaMultiSelect'
@@ -93,6 +94,7 @@ import {
 } from '../../services/sellerProcessProfileService'
 import { buildKingstonsDigitalSigningDecision } from '../../core/kingstons/digitalSigningDecision'
 import { buildSellerProcessWorkspacePanelModel } from '../../services/sellerProcessWorkspacePanelService'
+import { fetchJourneyStageOverrides } from '../../services/journeyStageOverrideService'
 import { resolveLeadNextStep } from '../../services/leadNextActionService'
 import { buildAppointmentSaveFeedback } from '../../services/appointmentSaveFeedbackService'
 import { notifyAppointmentParticipants } from '../../services/appointmentNotificationService'
@@ -130,6 +132,8 @@ import {
 } from '../../core/documents/packetStatusResolver'
 import { getAppointmentTypeLabel, getAppointmentTypeOptions } from '../../lib/appointmentTypeDefinitions'
 import { readViewingRequests } from '../../lib/viewingWorkflow'
+import { JOURNEY_ENTITY_TYPES } from '../../core/journey/journeyStagePolicy'
+import { applyJourneyStageOverrides } from '../../core/journey/journeyStageOverrideState'
 import {
   applyAppointmentTemplate,
   getAppointmentTemplateInstructions,
@@ -11316,6 +11320,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [isLeadCreating, setIsLeadCreating] = useState(false)
   const [selectedAgentId, setSelectedAgentId] = useState('')
   const [selectedLeadId, setSelectedLeadId] = useState('')
+  const [selectedLeadJourneyOverrides, setSelectedLeadJourneyOverrides] = useState([])
   const [routeLeadHydrationNotice, setRouteLeadHydrationNotice] = useState('')
   const [routeLeadHydrationStatus, setRouteLeadHydrationStatus] = useState('idle')
   const [leadActionsMenuOpen, setLeadActionsMenuOpen] = useState(false)
@@ -13989,9 +13994,37 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       selectedLead?.lead_id ||
       (isLeadWorkspaceRoute ? routeLeadId : selectedLeadId),
   )
+  const selectedLeadJourneyEntityType = selectedLeadIsSeller ? JOURNEY_ENTITY_TYPES.sellerLead : JOURNEY_ENTITY_TYPES.buyerLead
   const selectedLeadMandatePacketId = normalizeText(selectedLead?.mandatePacketId || selectedLead?.mandate_packet_id || selectedLead?.mandatePacket?.id)
   const selectedLeadPropertyArea = normalizeText(selectedLead?.sellerPropertyAddress || selectedLead?.areaInterest)
   const selectedLeadPropertyType = normalizeText(selectedLead?.propertyInterest)
+
+  const loadSelectedLeadJourneyOverrides = useCallback(async () => {
+    if (!organisationId || !selectedLeadRecordId || !isSupabaseConfigured) {
+      setSelectedLeadJourneyOverrides([])
+      return
+    }
+    try {
+      const rows = await fetchJourneyStageOverrides({
+        organisationId,
+        entityType: selectedLeadJourneyEntityType,
+        entityId: selectedLeadRecordId,
+      })
+      setSelectedLeadJourneyOverrides(rows)
+    } catch (overrideError) {
+      console.warn('[journey-overrides] unable to load selected lead overrides', overrideError)
+      setSelectedLeadJourneyOverrides([])
+    }
+  }, [organisationId, selectedLeadJourneyEntityType, selectedLeadRecordId])
+
+  useEffect(() => {
+    void loadSelectedLeadJourneyOverrides()
+  }, [loadSelectedLeadJourneyOverrides])
+
+  const handleSelectedLeadJourneyOverrideCreated = useCallback(async () => {
+    setMessage('Journey override saved.')
+    await loadSelectedLeadJourneyOverrides()
+  }, [loadSelectedLeadJourneyOverrides])
 
   const patchSelectedLeadRecord = useCallback((patch = {}, leadId = selectedLeadRecordId) => {
     const resolvedLeadId = normalizeLeadIdentityKey(leadId)
@@ -16059,7 +16092,20 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     () => buildKingstonsPipelineRailSteps(selectedSellerProcessPanelModel || {}),
     [selectedSellerProcessPanelModel],
   )
-  const selectedSellerJourneyRailSteps = selectedLeadHasKingstonsSellerProcess ? selectedKingstonsRailSteps : selectedSellerJourney.steps
+  const selectedSellerJourneyRailSteps = useMemo(
+    () =>
+      applyJourneyStageOverrides({
+        entityType: JOURNEY_ENTITY_TYPES.sellerLead,
+        stages: selectedLeadHasKingstonsSellerProcess ? selectedKingstonsRailSteps : selectedSellerJourney.steps,
+        overrides: selectedLeadJourneyOverrides,
+      }),
+    [
+      selectedKingstonsRailSteps,
+      selectedLeadHasKingstonsSellerProcess,
+      selectedLeadJourneyOverrides,
+      selectedSellerJourney.steps,
+    ],
+  )
   const defaultSellerJourneyRailStyle = {
     gridTemplateColumns: `repeat(${Math.max(selectedSellerJourney.steps.length, 1)}, minmax(140px, 1fr))`,
   }
@@ -17535,12 +17581,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         : [offerStage, transactionSetupStage]),
       { key: 'transaction', label: 'Transaction', detail: transactionDone ? 'Created' : 'Not started', done: transactionDone },
     ]
-    const firstIncompleteIndex = rawStages.findIndex((stage) => !stage.done)
-    const currentIndex = firstIncompleteIndex >= 0 ? firstIncompleteIndex : rawStages.length - 1
-    return rawStages.map((stage, index) => ({
-      ...stage,
-      state: stage.done ? 'completed' : index === currentIndex ? 'current' : 'future',
-    }))
+    return applyJourneyStageOverrides({
+      entityType: JOURNEY_ENTITY_TYPES.buyerLead,
+      stages: rawStages,
+      overrides: selectedLeadJourneyOverrides,
+    })
   }, [
 	    selectedLead,
 	    selectedLeadAcceptedOffer,
@@ -17557,12 +17602,18 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLeadOfferSummary.total,
     selectedLeadUsesKingstonsInPersonOtpFlow,
     selectedLeadViewingAppointments,
+    selectedLeadJourneyOverrides,
   ])
 
   useEffect(() => {
     const currentStage = selectedLeadBuyerJourneyStages.find((stage) => stage.state === 'current') || selectedLeadBuyerJourneyStages[selectedLeadBuyerJourneyStages.length - 1]
     if (currentStage?.key) setBuyerJourneyActionStage(currentStage.key)
   }, [selectedLead?.leadId, selectedLeadBuyerJourneyStages])
+
+  const selectedBuyerJourneyActionStage = useMemo(
+    () => selectedLeadBuyerJourneyStages.find((stage) => stage.key === buyerJourneyActionStage) || null,
+    [buyerJourneyActionStage, selectedLeadBuyerJourneyStages],
+  )
 
   const buyerOverviewQualification = useMemo(() => {
     const stageKey = normalizeText(selectedLeadEffectiveLifecycleStage || selectedLead?.stage).toLowerCase()
@@ -31629,6 +31680,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           </h3>
                         </div>
                         <div className="flex flex-wrap gap-2">
+                          <JourneyStageOverrideActions
+                            organisationId={organisationId}
+                            entityType={JOURNEY_ENTITY_TYPES.buyerLead}
+                            entityId={selectedLeadRecordId}
+                            stage={selectedBuyerJourneyActionStage}
+                            onCreated={handleSelectedLeadJourneyOverrideCreated}
+                            onError={setError}
+                          />
                           {buyerJourneyActionStage === 'contacted' ? (
                             <>
                               <Button type="button" size="sm" onClick={() => void handleBuyerJourneyMarkContactedAndQualify()}>Mark contacted</Button>
@@ -31889,6 +31948,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                   {isCurrent ? (
                                     <span className="mt-2 rounded-full bg-[#dff4e8] px-2.5 py-1 text-[0.64rem] font-bold uppercase tracking-[0.1em] text-[#0f7b4e]">Live</span>
                                   ) : null}
+                                  <div className="mt-2 flex justify-center">
+                                    <JourneyStageOverrideActions
+                                      organisationId={organisationId}
+                                      entityType={JOURNEY_ENTITY_TYPES.sellerLead}
+                                      entityId={selectedLeadRecordId}
+                                      stage={step}
+                                      onCreated={handleSelectedLeadJourneyOverrideCreated}
+                                      onError={setError}
+                                    />
+                                  </div>
                                 </div>
                               </li>
                             )

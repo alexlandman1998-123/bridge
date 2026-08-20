@@ -26,6 +26,7 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import JourneyStageOverrideActions from '../components/journey/JourneyStageOverrideActions'
 import {
   DEVELOPER_LEAD_PHASE16_CONTRACT,
   buildDeveloperLeadLaunchReadiness,
@@ -60,10 +61,13 @@ import { listOrganisationUsers } from '../lib/settingsApi'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 import { useWorkspace } from '../context/WorkspaceContext'
 import Button from '../components/ui/Button'
+import { JOURNEY_ENTITY_TYPES } from '../core/journey/journeyStagePolicy.js'
+import { applyJourneyStageOverrides } from '../core/journey/journeyStageOverrideState.js'
 import {
   DEVELOPER_LEAD_PHASE18_CONTRACT,
   convertDeveloperLeadToTransactionAndSendOnboarding,
 } from '../services/developerLeadConversionService'
+import { fetchJourneyStageOverrides } from '../services/journeyStageOverrideService.js'
 import {
   DEVELOPER_LEAD_PHASE11_CONTRACT,
   DEVELOPER_LEAD_PHASE12_CONTRACT,
@@ -737,7 +741,7 @@ function getLeadStagePresentation(status = 'new') {
   return { label: 'Captured', className: 'border-[#e4ebf4] bg-[#f8fafc] text-[#52677f]', Icon: ClipboardList }
 }
 
-function buildDeveloperLeadJourneyStages(lead = {}) {
+function buildDeveloperLeadJourneyStages(lead = {}, overrides = []) {
   const status = normalizeLower(lead.leadStatus || 'new')
   const handoff = buildDeveloperLeadTransactionHandoff(lead)
   const statusRank = {
@@ -765,9 +769,14 @@ function buildDeveloperLeadJourneyStages(lead = {}) {
     { key: 'otp', label: 'OTP', detail: 'Upload signed OTP', rank: 6 },
   ]
 
-  return steps.map((step) => {
+  const staged = steps.map((step) => {
     const state = step.rank < activeRank ? 'completed' : step.rank === activeRank ? 'current' : 'upcoming'
     return { ...step, state }
+  })
+  return applyJourneyStageOverrides({
+    entityType: JOURNEY_ENTITY_TYPES.developerLead,
+    stages: staged,
+    overrides,
   })
 }
 
@@ -1456,6 +1465,8 @@ function DeveloperLeadWorkspacePanel({
   lead,
   developments,
   agents,
+  organisationId,
+  journeyOverrides = [],
   handoverSubmitting,
   converting,
   copying,
@@ -1466,6 +1477,8 @@ function DeveloperLeadWorkspacePanel({
   onConvertLead,
   onCopyLeadOnboarding,
   onUpdateLeadSetup,
+  onJourneyOverrideCreated,
+  onJourneyOverrideError,
 }) {
   const [activeTab, setActiveTab] = useState('overview')
   const [selectedJourneyStage, setSelectedJourneyStage] = useState('captured')
@@ -1531,7 +1544,7 @@ function DeveloperLeadWorkspacePanel({
     : lead.buyerEmail || lead.buyerPhone || 'Capture buyer contact details before onboarding.'
   const blockers = handoff.blockers || []
   const warnings = handoff.warnings || []
-  const journeyStages = buildDeveloperLeadJourneyStages(lead)
+  const journeyStages = buildDeveloperLeadJourneyStages(lead, journeyOverrides)
   const selectedStage = journeyStages.find((stage) => stage.key === selectedJourneyStage) || journeyStages.find((stage) => stage.state === 'current') || journeyStages[0]
   const nextManualStatus = getNextManualLeadStatus(lead)
   const selectedStageCompletion = getStageCompletionStatus(selectedStage?.key, lead)
@@ -1758,6 +1771,14 @@ function DeveloperLeadWorkspacePanel({
                 <h3 className="mt-1 text-base font-semibold text-[#18324b]">{selectedStage?.label || 'Lead captured'}</h3>
               </div>
               <div className="flex flex-wrap gap-2">
+                <JourneyStageOverrideActions
+                  organisationId={organisationId}
+                  entityType={JOURNEY_ENTITY_TYPES.developerLead}
+                  entityId={lead.developerLeadId}
+                  stage={selectedStage}
+                  onCreated={onJourneyOverrideCreated}
+                  onError={onJourneyOverrideError}
+                />
                 {renderStageCompletionAction(selectedStageCompletion, { compact: true })}
                 {selectedStage?.key === 'captured' || selectedStage?.key === 'contacted' ? (
                   <>
@@ -2159,6 +2180,7 @@ export default function DeveloperLeadsPage() {
   const [copyingLeadId, setCopyingLeadId] = useState('')
   const [setupUpdatingLeadId, setSetupUpdatingLeadId] = useState('')
   const [convertedOnboardingUrl, setConvertedOnboardingUrl] = useState('')
+  const [selectedLeadJourneyOverrides, setSelectedLeadJourneyOverrides] = useState([])
 
   const loadData = useCallback(async () => {
     if (!isSupabaseConfigured || !developerOrgId) {
@@ -2272,6 +2294,34 @@ export default function DeveloperLeadsPage() {
     if (!selectedKey) return null
     return leads.find((lead) => normalizeText(lead.developerLeadId) === selectedKey) || null
   }, [leads, routeDeveloperLeadId])
+
+  const loadSelectedLeadJourneyOverrides = useCallback(async () => {
+    const entityId = normalizeText(selectedLead?.developerLeadId)
+    if (!developerOrgId || !entityId || !isSupabaseConfigured) {
+      setSelectedLeadJourneyOverrides([])
+      return
+    }
+    try {
+      const rows = await fetchJourneyStageOverrides({
+        organisationId: developerOrgId,
+        entityType: JOURNEY_ENTITY_TYPES.developerLead,
+        entityId,
+      })
+      setSelectedLeadJourneyOverrides(rows)
+    } catch (overrideError) {
+      console.warn('[journey-overrides] unable to load developer lead overrides', overrideError)
+      setSelectedLeadJourneyOverrides([])
+    }
+  }, [developerOrgId, selectedLead?.developerLeadId])
+
+  useEffect(() => {
+    void loadSelectedLeadJourneyOverrides()
+  }, [loadSelectedLeadJourneyOverrides])
+
+  const handleJourneyOverrideCreated = useCallback(async () => {
+    setMessage('Journey override saved.')
+    await loadSelectedLeadJourneyOverrides()
+  }, [loadSelectedLeadJourneyOverrides])
 
   const readiness = useMemo(() => buildDeveloperLeadLaunchReadiness({
     leads,
@@ -2470,6 +2520,8 @@ export default function DeveloperLeadsPage() {
               lead={selectedLead}
               developments={developments}
               agents={agents}
+              organisationId={developerOrgId}
+              journeyOverrides={selectedLeadJourneyOverrides}
               handoverSubmitting={handoverSubmittingId === selectedLead.developerLeadId}
               converting={convertingLeadId === selectedLead.developerLeadId}
               copying={copyingLeadId === selectedLead.developerLeadId}
@@ -2480,6 +2532,8 @@ export default function DeveloperLeadsPage() {
               onConvertLead={handleConvertLead}
               onCopyLeadOnboarding={handleCopyLeadOnboarding}
               onUpdateLeadSetup={handleUpdateLeadSetup}
+              onJourneyOverrideCreated={handleJourneyOverrideCreated}
+              onJourneyOverrideError={setError}
             />
           </>
         ) : routeDeveloperLeadId && !loading ? (

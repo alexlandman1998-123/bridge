@@ -86,6 +86,8 @@ import {
   TRANSACTION_LIFECYCLE_STAGE_ORDER,
   USE_TRANSACTION_ROLLUP_OVERVIEW,
 } from '../core/transactions/transactionLifecycle'
+import { JOURNEY_ENTITY_TYPES } from '../core/journey/journeyStagePolicy.js'
+import { applyJourneyStageOverrides } from '../core/journey/journeyStageOverrideState.js'
 import { resolveTransactionBuyerAccessPolicy } from '../core/transactions/transactionBuyersPolicy'
 import { useWorkspace } from '../context/WorkspaceContext'
 import useAttorneyPermissions from '../hooks/useAttorneyPermissions'
@@ -147,6 +149,7 @@ import { fetchPartnersSnapshot, getPartnerAssignmentOptions } from '../lib/partn
 import { listUserPreferredPartnerRoutingRules } from '../lib/settingsApi'
 import { MAIN_STAGE_LABELS, getMainStageFromDetailedStage } from '../lib/stages'
 import { resendTransactionProgressNotification } from '../services/transactionSharedProgressService'
+import { fetchJourneyStageOverrides } from '../services/journeyStageOverrideService.js'
 import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { getFinanceReadiness } from '../services/bondFinanceReadinessService'
 import { getPrivateListingTransferAttorneyAllocation } from '../services/privateListingAttorneyAllocationService'
@@ -14637,6 +14640,7 @@ function AttorneyTransactionDetail() {
   const [data, setData] = useState(() => initialTransactionShell)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [journeyStageOverrides, setJourneyStageOverrides] = useState([])
   const [matterAccessChecked, setMatterAccessChecked] = useState(workspaceRole !== 'attorney')
   const [matterAccessAllowed, setMatterAccessAllowed] = useState(workspaceRole !== 'attorney')
   const [matterAccessKey, setMatterAccessKey] = useState(() => (workspaceRole !== 'attorney' ? currentMatterAccessKey : ''))
@@ -15201,6 +15205,27 @@ function AttorneyTransactionDetail() {
     currentMembership?.organisation_id ||
     transaction?.organisation_id ||
     ''
+  const loadJourneyStageOverrides = useCallback(async () => {
+    if (!transactionId || !workspaceOrganisationId || !isSupabaseConfigured) {
+      setJourneyStageOverrides([])
+      return
+    }
+    try {
+      const rows = await fetchJourneyStageOverrides({
+        organisationId: workspaceOrganisationId,
+        entityType: JOURNEY_ENTITY_TYPES.transaction,
+        entityId: transactionId,
+      })
+      setJourneyStageOverrides(rows)
+    } catch (overrideError) {
+      console.warn('[journey-overrides] unable to load transaction overrides', overrideError)
+      setJourneyStageOverrides([])
+    }
+  }, [transactionId, workspaceOrganisationId])
+
+  useEffect(() => {
+    void loadJourneyStageOverrides()
+  }, [loadJourneyStageOverrides])
   const partnerAccessContext = useMemo(
     () => ({
       organisationId: workspaceOrganisationId,
@@ -18495,14 +18520,25 @@ function AttorneyTransactionDetail() {
   )
   const agentOverviewJourneyStages = useMemo(
     () =>
-      buildAgentJourneyStages({
-        transaction,
-        lifecycleProgress: displayedLifecycleProgress,
-        transferStageKey,
-        transferStageLabel,
-        lifecycleState,
+      applyJourneyStageOverrides({
+        entityType: JOURNEY_ENTITY_TYPES.transaction,
+        stages: buildAgentJourneyStages({
+          transaction,
+          lifecycleProgress: displayedLifecycleProgress,
+          transferStageKey,
+          transferStageLabel,
+          lifecycleState,
+        }),
+        overrides: journeyStageOverrides,
       }),
-    [displayedLifecycleProgress, lifecycleState, transaction, transferStageKey, transferStageLabel],
+    [
+      displayedLifecycleProgress,
+      journeyStageOverrides,
+      lifecycleState,
+      transaction,
+      transferStageKey,
+      transferStageLabel,
+    ],
   )
   const agentOverviewJourneyReason = useMemo(
     () =>

@@ -180,6 +180,10 @@ button.queue-item {
   justify-content: space-between;
 }
 
+.dashboard-topbar {
+  justify-content: flex-end;
+}
+
 .topbar h1 {
   font-size: 2.1rem;
   font-weight: 650;
@@ -1857,7 +1861,7 @@ dd {
   display: grid;
   gap: 10px;
   grid-template-columns: minmax(0, 1fr);
-  min-height: 132px;
+  min-height: 112px;
   overflow: hidden;
   padding: 16px;
 }
@@ -1922,14 +1926,14 @@ dd {
   align-items: stretch;
   display: grid;
   gap: 14px;
-  grid-template-columns: minmax(420px, 1fr) minmax(420px, 1fr);
+  grid-template-columns: 1fr;
 }
 
 .dashboard-bottom-row {
   align-items: stretch;
   display: grid;
   gap: 14px;
-  grid-template-columns: minmax(280px, 0.9fr) minmax(250px, 0.65fr) minmax(420px, 1.35fr);
+  grid-template-columns: 1fr;
 }
 
 .dashboard-card {
