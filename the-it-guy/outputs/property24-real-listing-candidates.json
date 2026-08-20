@@ -1,0 +1,74 @@
+{
+  "phase": "property24-real-listing-candidates",
+  "generatedAt": "2026-08-20T10:08:32.018Z",
+  "safety": {
+    "property24ApiCalled": false,
+    "databaseWritten": false,
+    "listingPublished": false
+  },
+  "status": "FOUND",
+  "count": 5,
+  "candidates": [
+    {
+      "id": "e4240ae9-a8bb-425e-92cb-f58bc8c3e85a",
+      "listingReference": "PRV-202607191427-ZKXK",
+      "title": "House - TEST Suburb",
+      "suburb": "TEST Suburb",
+      "city": "TEST City",
+      "province": "TEST Province",
+      "propertyType": "House",
+      "askingPrice": 1000000,
+      "listingStatus": "seller_lead",
+      "updatedAt": "2026-07-19T14:27:43.881062+00:00"
+    },
+    {
+      "id": "90e03e4b-f763-4a7f-89ce-b9e69cecf585",
+      "listingReference": "PRV-202607161936-TOX7",
+      "title": "House",
+      "suburb": "Lynnwood",
+      "city": "",
+      "province": "",
+      "propertyType": "House",
+      "askingPrice": 0,
+      "listingStatus": "seller_lead",
+      "updatedAt": "2026-07-16T19:36:12.235246+00:00"
+    },
+    {
+      "id": "0db84f18-7ae7-467b-bf52-8db83a545ffb",
+      "listingReference": "PRV-202607130739-6FA9",
+      "title": "House",
+      "suburb": "Lynnwood",
+      "city": "Pretoria",
+      "province": "Gauteng",
+      "propertyType": "House",
+      "askingPrice": 2000000,
+      "listingStatus": "active",
+      "updatedAt": "2026-07-13T13:27:51.92+00:00"
+    },
+    {
+      "id": "0e85cebc-9e6f-4a8f-8031-debf6b8025f0",
+      "listingReference": "PRV-202607070658-DH2U",
+      "title": "House",
+      "suburb": "Bartlett AH",
+      "city": "",
+      "province": "",
+      "propertyType": "House",
+      "askingPrice": 0,
+      "listingStatus": "onboarding_completed",
+      "updatedAt": "2026-07-07T09:11:07.56213+00:00"
+    },
+    {
+      "id": "04c47943-0691-4dda-84d7-7a5251db5636",
+      "listingReference": "PRV-202607012037-ZC4A",
+      "title": "117 Ridge Road",
+      "suburb": "",
+      "city": "",
+      "province": "",
+      "propertyType": "House",
+      "askingPrice": 100000,
+      "listingStatus": "onboarding_sent",
+      "updatedAt": "2026-07-05T12:14:12.902846+00:00"
+    }
+  ],
+  "nextStep": "Pick one candidate id and pass it as --listing-id to generate the Property24 preview."
+}

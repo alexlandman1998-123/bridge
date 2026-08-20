@@ -1,0 +1,93 @@
+{
+  "phase": "property24-syndication-phase3-mock-preview",
+  "generatedAt": "2026-08-20T09:58:30.555Z",
+  "safety": {
+    "property24ApiCalled": false,
+    "databaseWritten": false,
+    "listingPublished": false
+  },
+  "status": "PREVIEW_READY",
+  "canPreview": true,
+  "canSubmit": false,
+  "dataBlockers": [],
+  "technicalBlockers": [
+    "listing_image_bytes_not_loaded_for_property24_submit"
+  ],
+  "summary": {
+    "agencyId": 31382,
+    "contactAgentIds": [
+      77959
+    ],
+    "agentSourceReference": "ARCH9-AGENT-001",
+    "listingNumber": null,
+    "listingType": "Sale",
+    "status": "NewListing",
+    "price": 2450000,
+    "isPOA": false,
+    "expiryDate": "2026-12-31T00:00:00.000Z",
+    "propertyTypeId": 4,
+    "suburbId": 5864,
+    "imageCount": 1,
+    "photoPayloadCount": 0,
+    "descriptionPresent": true
+  },
+  "previewPayload": {
+    "agencyId": 31382,
+    "contactAgentIds": [
+      77959
+    ],
+    "listingType": "Sale",
+    "status": "NewListing",
+    "price": 2450000,
+    "isPOA": false,
+    "listingVisibility": "Public",
+    "expiryDate": "2026-12-31T00:00:00.000Z",
+    "description": "Modern test home with a clean Property24 preview payload. This is not published.",
+    "descriptionHeader": "Property24 ExDev Test House",
+    "photos": [
+      {
+        "sourceUrl": "https://www.arch9.co.za/mock-property24-preview.jpg",
+        "mimeContentType": "image/jpeg",
+        "caption": "Front view",
+        "isFloorPlan": false,
+        "bytesLoaded": false
+      }
+    ],
+    "propertyInfo": {
+      "showLocation": false,
+      "suburbId": 5864,
+      "streetNumber": "",
+      "streetName": "12 Preview Road",
+      "sourceReference": "ARCH9-MOCK-LISTING-001",
+      "erf": {
+        "size": 500,
+        "areaUnit": "SquareMetres"
+      },
+      "floorArea": {
+        "size": 180,
+        "areaUnit": "SquareMetres"
+      },
+      "municipalRatesAndTaxes": {
+        "amount": 1300,
+        "unit": "TotalPrice"
+      },
+      "propertyTypeId": 4
+    },
+    "propertyFeatures": {
+      "bedrooms": 3,
+      "bathrooms": {
+        "bathrooms": 2
+      },
+      "garages": 2,
+      "parking": {
+        "open": 1
+      },
+      "garden": false,
+      "pool": false,
+      "flatlet": false,
+      "petsAllowed": "DontKnow",
+      "furnishedStatus": "No"
+    }
+  },
+  "nextStep": "Use a real Arch9 listing next, then load actual image bytes before any ExDev publish."
+}

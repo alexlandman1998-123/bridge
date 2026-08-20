@@ -9,6 +9,7 @@ import { createBuyerOfferBrandingResponse } from './server/services/buyerOfferBr
 import { createPublicAgentCardEventsResponse } from './server/services/publicAgentCardEventsApi.js'
 import { createPublicAgencyIntakeResponse } from './server/services/publicAgencyIntakeApi.js'
 import { createPublicListingsResponse } from './server/services/publicListingsApi.js'
+import { createProperty24ApiResponse } from './server/property24/api.js'
 
 function documentTitleFallbackPlugin() {
   const fallbackDocumentTitle = 'Arch9 | Platform'
@@ -202,6 +203,18 @@ function missionControlApiPlugin() {
         for await (const chunk of request) chunks.push(chunk)
         const body = chunks.length ? Buffer.concat(chunks).toString('utf8') : null
         const payload = await createPublicAgentCardEventsResponse({
+          method: request.method,
+          url: request.url,
+          headers: request.headers,
+          body,
+        })
+        writeNodeJsonResponse(response, payload)
+      })
+      server.middlewares.use('/api/property24', async (request, response) => {
+        const chunks = []
+        for await (const chunk of request) chunks.push(chunk)
+        const body = chunks.length ? Buffer.concat(chunks).toString('utf8') : null
+        const payload = await createProperty24ApiResponse({
           method: request.method,
           url: request.url,
           headers: request.headers,

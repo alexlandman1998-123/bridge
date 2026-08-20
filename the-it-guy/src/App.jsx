@@ -392,6 +392,7 @@ const SettingsOrganisationPage = lazy(() => import('./pages/settings/SettingsOrg
 const SettingsPreferredPartnersPage = lazy(() => import('./pages/settings/SettingsPreferredPartnersPage'))
 const SettingsPartnerProspectsPage = lazy(() => import('./pages/settings/SettingsPartnerProspectsPage'))
 const SettingsPartnerRoutingRulesPage = lazy(() => import('./pages/settings/SettingsPartnerRoutingRulesPage'))
+const SettingsProperty24Page = lazy(() => import('./pages/settings/SettingsProperty24Page'))
 const SettingsSigningTemplatesPage = lazy(() => import('./pages/settings/SettingsSigningTemplatesPage'))
 const SettingsUsersPage = lazy(() => import('./pages/settings/SettingsUsersPage'))
 const SettingsWorkflowsPage = lazy(() => import('./pages/settings/SettingsWorkflowsPage'))
@@ -3010,6 +3011,16 @@ function AppRoutes() {
                     <RoleRoute allowedRoles={['agent']}>
                       <SettingsLeadCapturePage />
                     </RoleRoute>
+                  }
+                />
+                <Route
+                  path="property24"
+                  element={
+                    <OrganisationSettingsManageRoute>
+                      <RoleRoute allowedRoles={['agent']}>
+                        <SettingsProperty24Page />
+                      </RoleRoute>
+                    </OrganisationSettingsManageRoute>
                   }
                 />
                 <Route

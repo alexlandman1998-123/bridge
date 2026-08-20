@@ -1,0 +1,134 @@
+{
+  "phase": "property24-phase5-reconciliation",
+  "generatedAt": "2026-08-20T12:22:36.851Z",
+  "environment": "exdev",
+  "agencyId": "31382",
+  "mode": "REPORT_ONLY",
+  "safety": {
+    "property24ApiCalled": true,
+    "databaseWritten": false,
+    "listingPublished": false,
+    "leadsCreated": false
+  },
+  "reconciliation": {
+    "generatedAt": "2026-08-20T12:22:36.851Z",
+    "environment": "exdev",
+    "agencyId": "31382",
+    "property24": {
+      "httpStatus": 200,
+      "durationMs": 231,
+      "summary": {
+        "type": "array",
+        "count": 1,
+        "sample": [
+          {
+            "listingNumber": 100314793,
+            "status": "Active"
+          }
+        ]
+      }
+    },
+    "summary": {
+      "localCount": 1,
+      "remoteCount": 1,
+      "matchedCount": 1,
+      "missingOnProperty24Count": 0,
+      "unexpectedOnProperty24Count": 0,
+      "statusDriftCount": 0
+    },
+    "matched": [
+      {
+        "listingNumber": 100314793,
+        "local": {
+          "id": "3eba8d4a-ea95-4724-ab20-34e9e903617c",
+          "listingId": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+          "agencyId": 31382,
+          "listingNumber": 100314793,
+          "externalStatus": "on_portal",
+          "externalStatusKey": "on_portal",
+          "isOnPortal": true,
+          "lastSuccessfulSyncAt": "2026-08-20T12:22:31.754+00:00",
+          "lastCheckedAt": "2026-08-20T12:22:31.754+00:00",
+          "listing": {
+            "id": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+            "organisationId": "ec19d0a6-bcba-4eef-aa72-9972de88204d",
+            "title": "Beautiful 3 bed house in Garsfontein",
+            "status": "listing_review",
+            "property24Status": "published",
+            "property24Reference": "100314793"
+          }
+        },
+        "remote": {
+          "listingNumber": 100314793,
+          "status": "Active",
+          "statusKey": "active",
+          "syncStatusKey": "on_portal",
+          "isOnPortal": null,
+          "updatedAt": null
+        }
+      }
+    ],
+    "missingOnProperty24": [],
+    "unexpectedOnProperty24": [],
+    "statusDrift": []
+  },
+  "updates": {
+    "generatedAt": "2026-08-20T12:22:36.851Z",
+    "environment": "exdev",
+    "agencyId": "31382",
+    "fromDate": "2026-08-19T12:22:36.851Z",
+    "property24": {
+      "httpStatus": 200,
+      "durationMs": 111,
+      "summary": {
+        "type": "object",
+        "keys": [
+          "listings",
+          "nextRequestDate"
+        ],
+        "sample": {}
+      }
+    },
+    "summary": {
+      "updateCount": 1,
+      "matchedCount": 1,
+      "unmatchedCount": 0
+    },
+    "updates": [
+      {
+        "listingNumber": 100314793,
+        "status": null,
+        "statusKey": "",
+        "syncStatusKey": "on_portal",
+        "isOnPortal": true,
+        "updatedAt": null,
+        "listingId": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+        "knownToArch9": true,
+        "localStatus": "on_portal",
+        "localIsOnPortal": true
+      }
+    ]
+  },
+  "portalVisibility": {
+    "generatedAt": "2026-08-20T12:22:36.851Z",
+    "environment": "exdev",
+    "agencyId": "31382",
+    "summary": {
+      "checkedCount": 1,
+      "driftCount": 0,
+      "failedCount": 0
+    },
+    "checks": [
+      {
+        "listingNumber": 100314793,
+        "listingId": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+        "localIsOnPortal": true,
+        "remoteIsOnPortal": true,
+        "drift": false,
+        "httpStatus": 200,
+        "durationMs": 69
+      }
+    ]
+  },
+  "status": "OK"
+}

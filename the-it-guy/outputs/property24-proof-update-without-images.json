@@ -1,0 +1,362 @@
+{
+  "phase": "property24-publish-listing",
+  "generatedAt": "2026-08-20T12:37:41.009Z",
+  "mode": "APPLY",
+  "status": "SUBMITTED",
+  "safety": {
+    "property24ApiCalled": true,
+    "databaseWritten": true,
+    "listingPublished": true
+  },
+  "listingId": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+  "preview": {
+    "canSubmit": true,
+    "dataBlockers": [],
+    "technicalBlockers": [],
+    "summary": {
+      "agencyId": 31382,
+      "contactAgentIds": [
+        77959
+      ],
+      "agentSourceReference": "ARCH9-AGENT-001",
+      "listingNumber": 100314793,
+      "listingType": "Sale",
+      "status": "Active",
+      "price": 1234567,
+      "isPOA": false,
+      "expiryDate": "2026-12-31T00:00:00.000Z",
+      "propertyTypeId": 4,
+      "suburbId": 140,
+      "imageCount": 4,
+      "photoPayloadCount": null,
+      "descriptionPresent": true
+    },
+    "imageByteLoad": {
+      "summary": {
+        "requested": 4,
+        "loaded": 4,
+        "failed": 0,
+        "convertedToJpeg": 4,
+        "skipped": 0
+      },
+      "results": [
+        {
+          "index": 0,
+          "status": "LOADED",
+          "sourceUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/sign/documents/private-listings/f35d8916-2ae9-4364-b364-fc279e260fa7/gallery/1787222013076-Screenshot-2025-10-20-at-10.19.54.png",
+          "mimeContentType": "image/jpeg",
+          "byteLength": 353653,
+          "convertedToJpeg": true,
+          "originalMimeContentType": "image/png",
+          "originalByteLength": 3289214,
+          "source": "url"
+        },
+        {
+          "index": 1,
+          "status": "LOADED",
+          "sourceUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/sign/documents/private-listings/f35d8916-2ae9-4364-b364-fc279e260fa7/gallery/1787222013081-Screenshot-2025-10-20-at-10.20.04.png",
+          "mimeContentType": "image/jpeg",
+          "byteLength": 292522,
+          "convertedToJpeg": true,
+          "originalMimeContentType": "image/png",
+          "originalByteLength": 2848811,
+          "source": "url"
+        },
+        {
+          "index": 2,
+          "status": "LOADED",
+          "sourceUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/sign/documents/private-listings/f35d8916-2ae9-4364-b364-fc279e260fa7/gallery/1787222013082-Screenshot-2025-10-20-at-10.20.12.png",
+          "mimeContentType": "image/jpeg",
+          "byteLength": 331249,
+          "convertedToJpeg": true,
+          "originalMimeContentType": "image/png",
+          "originalByteLength": 2991516,
+          "source": "url"
+        },
+        {
+          "index": 3,
+          "status": "LOADED",
+          "sourceUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/sign/documents/private-listings/f35d8916-2ae9-4364-b364-fc279e260fa7/gallery/1787222013082-Screenshot-2025-10-20-at-10.20.24.png",
+          "mimeContentType": "image/jpeg",
+          "byteLength": 314437,
+          "convertedToJpeg": true,
+          "originalMimeContentType": "image/png",
+          "originalByteLength": 2782791,
+          "source": "url"
+        }
+      ]
+    }
+  },
+  "redactedPayload": {
+    "agencyId": 31382,
+    "contactAgentIds": [
+      77959
+    ],
+    "listingNumber": 100314793,
+    "listingType": "Sale",
+    "status": "Active",
+    "price": 1234567,
+    "isPOA": false,
+    "listingVisibility": "Public",
+    "expiryDate": "2026-12-31T00:00:00.000Z",
+    "description": "This is an ExDev integration test listing. Do not publish publicly. Agent: your test/training use\nWelcome to Junoah Estate, a secure, single-storey residential development in the sought-after suburb of Bartlett, Boksburg. Built for modern families and working professionals, it combines comfort, clean design, and everyday convenience in a safe, community-focused setting.\n\nEach home offers three well-sized bedrooms, two full bathrooms, and open-plan living areas that lead out to a private garden with a built-in braai — ideal for entertaining or unwinding at home. The kitchen is fitted with a gas stove and designed for practical, everyday use. Every unit also includes a double garage and quality finishes throughout.\n\nOptional extras such as backup inverter systems and air conditioning allow you to tailor your home to your needs, with added peace of mind during load-shedding. The estate is fully enclosed and features 24-hour security, access control, and electric fencing.\n\nResidents can enjoy a private park within the estate — a quiet, green space for children, families, and relaxed outdoor living. Junoah Estate is also conveniently located close to leading schools, shopping centres, and main transport routes.",
+    "descriptionHeader": "Beautiful 3 bed house in Garsfontein",
+    "photos": null,
+    "propertyInfo": {
+      "showLocation": false,
+      "suburbId": 140,
+      "streetNumber": "",
+      "streetName": "694 Cicely Street",
+      "sourceReference": "PRV-202608201031-U8YM",
+      "erf": {
+        "size": 150,
+        "areaUnit": "SquareMetres"
+      },
+      "floorArea": {
+        "size": 100,
+        "areaUnit": "SquareMetres"
+      },
+      "municipalRatesAndTaxes": {
+        "amount": 100,
+        "unit": "TotalPrice"
+      },
+      "monthlyLevy": {
+        "amount": 100,
+        "unit": "TotalPrice"
+      },
+      "propertyTypeId": 4
+    },
+    "propertyFeatures": {
+      "bedrooms": 3,
+      "bathrooms": {
+        "bathrooms": 2
+      },
+      "garages": 2,
+      "parking": {
+        "open": 2
+      },
+      "garden": false,
+      "pool": false,
+      "flatlet": false,
+      "petsAllowed": "DontKnow",
+      "furnishedStatus": "No"
+    }
+  },
+  "property24Response": {
+    "httpStatus": 200,
+    "durationMs": 369,
+    "summary": {
+      "type": "object",
+      "keys": [
+        "isOnPortal",
+        "listingNumber",
+        "reasons"
+      ],
+      "sample": {
+        "listingNumber": 100314793
+      }
+    },
+    "data": {
+      "isOnPortal": true,
+      "listingNumber": 100314793,
+      "reasons": []
+    }
+  },
+  "portalCheck": {
+    "httpStatus": 200,
+    "durationMs": 104,
+    "summary": {
+      "type": "boolean",
+      "value": true
+    },
+    "data": true
+  },
+  "databaseWrite": {
+    "table": "property24_listing_syncs",
+    "privateListingId": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+    "listingNumber": 100314793,
+    "property24Status": "published",
+    "property24Reference": "100314793"
+  },
+  "syncAttempt": {
+    "id": "4034bd0f-3341-4282-b072-2f115d06f5d9",
+    "private_listing_id": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+    "environment": "exdev",
+    "agency_id": 31382,
+    "listing_number": 100314793,
+    "action": "update",
+    "status": "succeeded",
+    "idempotency_key": "property24:exdev:update:f35d8916-2ae9-4364-b364-fc279e260fa7::63661a51d9b1e8249ebf140ade9eaf4a5295ebac409a5ffe1c258f6c2555734d",
+    "payload_hash": "63661a51d9b1e8249ebf140ade9eaf4a5295ebac409a5ffe1c258f6c2555734d",
+    "image_payload_hash": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+    "request_payload_summary": {
+      "action": "update",
+      "preview": {
+        "summary": {
+          "isPOA": false,
+          "price": 1234567,
+          "status": "Active",
+          "agencyId": 31382,
+          "suburbId": 140,
+          "expiryDate": "2026-12-31T00:00:00.000Z",
+          "imageCount": 4,
+          "listingType": "Sale",
+          "listingNumber": 100314793,
+          "propertyTypeId": 4,
+          "contactAgentIds": [
+            77959
+          ],
+          "photoPayloadCount": null,
+          "descriptionPresent": true,
+          "agentSourceReference": "ARCH9-AGENT-001"
+        },
+        "canSubmit": true,
+        "dataBlockers": [],
+        "imageByteLoad": {
+          "results": [
+            {
+              "index": 0,
+              "source": "url",
+              "status": "LOADED",
+              "sourceUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/sign/documents/private-listings/f35d8916-2ae9-4364-b364-fc279e260fa7/gallery/1787222013076-Screenshot-2025-10-20-at-10.19.54.png",
+              "byteLength": 353653,
+              "convertedToJpeg": true,
+              "mimeContentType": "image/jpeg",
+              "originalByteLength": 3289214,
+              "originalMimeContentType": "image/png"
+            },
+            {
+              "index": 1,
+              "source": "url",
+              "status": "LOADED",
+              "sourceUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/sign/documents/private-listings/f35d8916-2ae9-4364-b364-fc279e260fa7/gallery/1787222013081-Screenshot-2025-10-20-at-10.20.04.png",
+              "byteLength": 292522,
+              "convertedToJpeg": true,
+              "mimeContentType": "image/jpeg",
+              "originalByteLength": 2848811,
+              "originalMimeContentType": "image/png"
+            },
+            {
+              "index": 2,
+              "source": "url",
+              "status": "LOADED",
+              "sourceUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/sign/documents/private-listings/f35d8916-2ae9-4364-b364-fc279e260fa7/gallery/1787222013082-Screenshot-2025-10-20-at-10.20.12.png",
+              "byteLength": 331249,
+              "convertedToJpeg": true,
+              "mimeContentType": "image/jpeg",
+              "originalByteLength": 2991516,
+              "originalMimeContentType": "image/png"
+            },
+            {
+              "index": 3,
+              "source": "url",
+              "status": "LOADED",
+              "sourceUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/sign/documents/private-listings/f35d8916-2ae9-4364-b364-fc279e260fa7/gallery/1787222013082-Screenshot-2025-10-20-at-10.20.24.png",
+              "byteLength": 314437,
+              "convertedToJpeg": true,
+              "mimeContentType": "image/jpeg",
+              "originalByteLength": 2782791,
+              "originalMimeContentType": "image/png"
+            }
+          ],
+          "summary": {
+            "failed": 0,
+            "loaded": 4,
+            "skipped": 0,
+            "requested": 4,
+            "convertedToJpeg": 4
+          }
+        },
+        "technicalBlockers": []
+      },
+      "redactedPayload": {
+        "isPOA": false,
+        "price": 1234567,
+        "photos": null,
+        "status": "Active",
+        "agencyId": 31382,
+        "expiryDate": "2026-12-31T00:00:00.000Z",
+        "description": "This is an ExDev integration test listing. Do not publish publicly. Agent: your test/training use\nWelcome to Junoah Estate, a secure, single-storey residential development in the sought-after suburb of Bartlett, Boksburg. Built for modern families and working professionals, it combines comfort, clean design, and everyday convenience in a safe, community-focused setting.\n\nEach home offers three well-sized bedrooms, two full bathrooms, and open-plan living areas that lead out to a private garden with a built-in braai — ideal for entertaining or unwinding at home. The kitchen is fitted with a gas stove and designed for practical, everyday use. Every unit also includes a double garage and quality finishes throughout.\n\nOptional extras such as backup inverter systems and air conditioning allow you to tailor your home to your needs, with added peace of mind during load-shedding. The estate is fully enclosed and features 24-hour security, access control, and electric fencing.\n\nResidents can enjoy a private park within the estate — a quiet, green space for children, families, and relaxed outdoor living. Junoah Estate is also conveniently located close to leading schools, shopping centres, and main transport routes.",
+        "listingType": "Sale",
+        "propertyInfo": {
+          "erf": {
+            "size": 150,
+            "areaUnit": "SquareMetres"
+          },
+          "suburbId": 140,
+          "floorArea": {
+            "size": 100,
+            "areaUnit": "SquareMetres"
+          },
+          "streetName": "694 Cicely Street",
+          "monthlyLevy": {
+            "unit": "TotalPrice",
+            "amount": 100
+          },
+          "showLocation": false,
+          "streetNumber": "",
+          "propertyTypeId": 4,
+          "sourceReference": "PRV-202608201031-U8YM",
+          "municipalRatesAndTaxes": {
+            "unit": "TotalPrice",
+            "amount": 100
+          }
+        },
+        "listingNumber": 100314793,
+        "contactAgentIds": [
+          77959
+        ],
+        "propertyFeatures": {
+          "pool": false,
+          "garden": false,
+          "flatlet": false,
+          "garages": 2,
+          "parking": {
+            "open": 2
+          },
+          "bedrooms": 3,
+          "bathrooms": {
+            "bathrooms": 2
+          },
+          "petsAllowed": "DontKnow",
+          "furnishedStatus": "No"
+        },
+        "descriptionHeader": "Beautiful 3 bed house in Garsfontein",
+        "listingVisibility": "Public"
+      }
+    },
+    "response_summary": {
+      "portalCheck": {
+        "type": "boolean",
+        "value": true
+      },
+      "databaseWrite": {
+        "table": "property24_listing_syncs",
+        "listingNumber": 100314793,
+        "privateListingId": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+        "property24Status": "published",
+        "property24Reference": "100314793"
+      },
+      "property24Response": {
+        "keys": [
+          "isOnPortal",
+          "listingNumber",
+          "reasons"
+        ],
+        "type": "object",
+        "sample": {
+          "listingNumber": 100314793
+        }
+      }
+    },
+    "error_summary": {},
+    "property24_http_status": 200,
+    "duration_ms": 369,
+    "retry_count": 0,
+    "actor_user_id": null,
+    "started_at": "2026-08-20T12:37:41.01+00:00",
+    "finished_at": "2026-08-20T12:37:42.65+00:00",
+    "created_at": "2026-08-20T12:37:05.045838+00:00",
+    "updated_at": "2026-08-20T12:37:42.928309+00:00"
+  }
+}

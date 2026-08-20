@@ -1,0 +1,61 @@
+{
+  "phase": "property24-status-update",
+  "generatedAt": "2026-08-20T12:23:15.841Z",
+  "status": "SUBMITTED",
+  "listingId": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+  "listingNumber": "100314793",
+  "listingStatus": "Active",
+  "property24Response": {
+    "httpStatus": 200,
+    "durationMs": 298,
+    "summary": {
+      "type": "string",
+      "value": ""
+    },
+    "data": ""
+  },
+  "portalCheck": {
+    "httpStatus": 200,
+    "durationMs": 228,
+    "summary": {
+      "type": "boolean",
+      "value": true
+    },
+    "data": true
+  },
+  "databaseWrite": {
+    "table": "property24_listing_syncs",
+    "listingNumber": 100314793,
+    "property24Status": "published",
+    "property24Reference": "100314793",
+    "syncWarning": {
+      "code": "property24_listing_sync_hash_columns_missing",
+      "message": "property24_listing_syncs hash columns are not available; sync record was written without payload hashes."
+    }
+  },
+  "syncAttempt": {
+    "private_listing_id": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+    "environment": "exdev",
+    "agency_id": 31382,
+    "listing_number": 100314793,
+    "action": "status_update",
+    "status": "skipped",
+    "idempotency_key": "property24:exdev:status_update:f35d8916-2ae9-4364-b364-fc279e260fa7:Active:4aebcf9d8d9e5bdfb9974dac2e060681d8f09398055e58784f6f550261b7ceb2",
+    "payload_hash": "4aebcf9d8d9e5bdfb9974dac2e060681d8f09398055e58784f6f550261b7ceb2",
+    "image_payload_hash": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+    "request_payload_summary": {
+      "listingNumber": "100314793",
+      "listingStatus": "Active"
+    },
+    "response_summary": {},
+    "error_summary": {},
+    "actor_user_id": null,
+    "started_at": "2026-08-20T12:23:14.026Z",
+    "finished_at": null,
+    "id": null,
+    "warning": {
+      "code": "property24_sync_attempts_missing",
+      "message": "property24_sync_attempts table is not available; external write continued without attempt persistence."
+    }
+  }
+}

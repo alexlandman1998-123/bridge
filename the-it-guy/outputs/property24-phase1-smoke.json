@@ -1,0 +1,224 @@
+{
+  "phase": "property24-syndication-phase1",
+  "generatedAt": "2026-08-20T09:27:05.637Z",
+  "environment": "exdev",
+  "baseUrl": "https://api.exdev.property24-test.com",
+  "agencyId": "31382",
+  "credentialsConfigured": true,
+  "summary": {
+    "status": "PASS",
+    "passCount": 10,
+    "blockedCount": 0
+  },
+  "checks": [
+    {
+      "name": "unauthenticated echo endpoint reachable",
+      "status": "PASS",
+      "httpStatus": 200,
+      "durationMs": 357,
+      "summary": {
+        "type": "string",
+        "value": "The message has been received."
+      }
+    },
+    {
+      "name": "authenticated echo accepts Basic Auth",
+      "status": "PASS",
+      "httpStatus": 200,
+      "durationMs": 77,
+      "summary": {
+        "type": "string",
+        "value": "Arch9 Property24 authenticated smoke test"
+      }
+    },
+    {
+      "name": "fetch agencies visible to credential",
+      "status": "PASS",
+      "httpStatus": 200,
+      "durationMs": 111,
+      "summary": {
+        "type": "array",
+        "count": 0,
+        "sample": []
+      }
+    },
+    {
+      "name": "fetch agency 31382",
+      "status": "PASS",
+      "httpStatus": 200,
+      "durationMs": 65,
+      "summary": {
+        "type": "object",
+        "keys": [
+          "aboutUs",
+          "businessAddress",
+          "countryId",
+          "emailAddress",
+          "id",
+          "name",
+          "postalAddress",
+          "status"
+        ],
+        "sample": {
+          "id": 31382,
+          "name": "Exdev ARCH9",
+          "emailAddress": "alex@arch9.co.za",
+          "status": "Active",
+          "countryId": 1
+        }
+      }
+    },
+    {
+      "name": "fetch agency 31382 agents",
+      "status": "PASS",
+      "httpStatus": 200,
+      "durationMs": 59,
+      "summary": {
+        "type": "array",
+        "count": 1,
+        "sample": [
+          {
+            "id": 77959,
+            "agencyId": 31382,
+            "firstname": "Alex",
+            "lastname": "Landman",
+            "emailAddress": "alex@arch9.co.za",
+            "sourceReference": "ARCH9-AGENT-001",
+            "status": "Active",
+            "countryId": 1
+          }
+        ]
+      }
+    },
+    {
+      "name": "fetch countries",
+      "status": "PASS",
+      "httpStatus": 200,
+      "durationMs": 127,
+      "summary": {
+        "type": "array",
+        "count": 11,
+        "sample": [
+          {
+            "id": 2,
+            "name": "Botswana"
+          },
+          {
+            "id": 12,
+            "name": "Indonesia"
+          },
+          {
+            "id": 11,
+            "name": "Kenya"
+          }
+        ]
+      }
+    },
+    {
+      "name": "fetch provinces",
+      "status": "PASS",
+      "httpStatus": 200,
+      "durationMs": 53,
+      "summary": {
+        "type": "array",
+        "count": 9,
+        "sample": [
+          {
+            "id": 7,
+            "name": "Eastern Cape",
+            "countryId": 1
+          },
+          {
+            "id": 3,
+            "name": "Free State",
+            "countryId": 1
+          },
+          {
+            "id": 1,
+            "name": "Gauteng",
+            "countryId": 1
+          }
+        ]
+      }
+    },
+    {
+      "name": "fetch property types",
+      "status": "PASS",
+      "httpStatus": 200,
+      "durationMs": 55,
+      "summary": {
+        "type": "array",
+        "count": 7,
+        "sample": [
+          {
+            "id": 4,
+            "description": "House"
+          },
+          {
+            "id": 5,
+            "description": "Apartment / Flat"
+          },
+          {
+            "id": 6,
+            "description": "Townhouse"
+          }
+        ]
+      }
+    },
+    {
+      "name": "fetch listing types",
+      "status": "PASS",
+      "httpStatus": 200,
+      "durationMs": 116,
+      "summary": {
+        "type": "array",
+        "count": 2,
+        "sample": [
+          {
+            "name": "Rental",
+            "description": "To Rent",
+            "countryId": 1
+          },
+          {
+            "name": "Sale",
+            "description": "For Sale",
+            "countryId": 1
+          }
+        ]
+      }
+    },
+    {
+      "name": "fetch cities for province 1",
+      "status": "PASS",
+      "httpStatus": 200,
+      "durationMs": 70,
+      "summary": {
+        "type": "array",
+        "count": 61,
+        "sample": [
+          {
+            "id": 2462,
+            "name": "Akasia",
+            "provinceId": 1
+          },
+          {
+            "id": 4,
+            "name": "Akasia",
+            "provinceId": 1
+          },
+          {
+            "id": 19,
+            "name": "Alberton",
+            "provinceId": 1
+          }
+        ]
+      }
+    },
+    {
+      "name": "fetch suburbs",
+      "status": "SKIPPED",
+      "reason": "Set PROPERTY24_DEFAULT_CITY_ID or pass --city-id=<id> to avoid fetching every suburb."
+    }
+  ],
+  "nextPhase": "Phase 2: map Arch9 fields/agents/suburbs/property types to Property24 requirements."
+}

@@ -1,0 +1,41 @@
+{
+  "phase": "property24-suburb-lookup",
+  "generatedAt": "2026-08-20T10:47:21.012Z",
+  "baseUrl": "https://api.exdev.property24-test.com",
+  "query": {
+    "countryName": "South Africa",
+    "provinceName": "Gauteng",
+    "cityName": "Pretoria",
+    "suburbName": "Garsfontein"
+  },
+  "summary": {
+    "status": "FOUND",
+    "found": true,
+    "suburbId": 140
+  },
+  "httpStatus": 200,
+  "durationMs": 1419,
+  "responseSummary": {
+    "type": "object",
+    "keys": [
+      "found",
+      "suburb"
+    ],
+    "sample": {}
+  },
+  "suburb": {
+    "id": 140,
+    "name": "Garsfontein",
+    "countryName": "South Africa",
+    "countryId": 1,
+    "provinceName": "Gauteng",
+    "provinceId": 1,
+    "cityName": "Pretoria",
+    "cityId": 1,
+    "alternateNames": [],
+    "geoPoint": {
+      "longitude": 28.3003,
+      "latitude": -25.795891
+    }
+  }
+}

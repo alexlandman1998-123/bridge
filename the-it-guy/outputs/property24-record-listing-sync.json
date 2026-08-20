@@ -1,0 +1,14 @@
+{
+  "phase": "property24-record-listing-sync",
+  "generatedAt": "2026-08-20T11:14:56.749Z",
+  "status": "RECORDED",
+  "listingId": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+  "databaseWrite": {
+    "table": "property24_listing_syncs",
+    "privateListingId": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+    "listingNumber": 100314793,
+    "isOnPortal": true,
+    "property24Status": "published",
+    "property24Reference": "100314793"
+  }
+}

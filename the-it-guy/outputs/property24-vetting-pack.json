@@ -1,0 +1,2603 @@
+{
+  "phase": "property24-phase6-vetting-pack",
+  "generatedAt": "2026-08-20T12:38:30.334Z",
+  "status": "READY_FOR_VETTING",
+  "environment": "exdev",
+  "listingId": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+  "listingNumber": "100314793",
+  "summary": {
+    "passCount": 12,
+    "manualCount": 0,
+    "blockerCount": 0,
+    "evidenceCount": 12
+  },
+  "safety": {
+    "property24ApiCalled": false,
+    "databaseWritten": false,
+    "listingPublished": false,
+    "credentialsRedacted": true,
+    "imageBytesRedacted": true
+  },
+  "evidence": [
+    {
+      "id": "authenticated_echo",
+      "label": "Authenticated echo test",
+      "status": "PASS",
+      "summary": {
+        "name": "unauthenticated echo endpoint reachable",
+        "status": "PASS",
+        "httpStatus": 200,
+        "durationMs": 357,
+        "summary": {
+          "type": "string",
+          "value": "The message has been received."
+        },
+        "reason": null
+      },
+      "evidence": [
+        "outputs/property24-phase1-smoke.json"
+      ],
+      "nextStep": ""
+    },
+    {
+      "id": "agency_agent_fetch",
+      "label": "Agency and agent fetch",
+      "status": "PASS",
+      "summary": {
+        "agency": {
+          "name": "fetch agency 31382",
+          "status": "PASS",
+          "httpStatus": 200,
+          "durationMs": 65,
+          "summary": {
+            "type": "object",
+            "keys": [
+              "aboutUs",
+              "businessAddress",
+              "countryId",
+              "emailAddress",
+              "id",
+              "name",
+              "postalAddress",
+              "status"
+            ],
+            "sample": {
+              "id": 31382,
+              "name": "Exdev ARCH9",
+              "emailAddress": "alex@arch9.co.za",
+              "status": "Active",
+              "countryId": 1
+            }
+          },
+          "reason": null
+        },
+        "agents": {
+          "name": "fetch agency 31382 agents",
+          "status": "PASS",
+          "httpStatus": 200,
+          "durationMs": 59,
+          "summary": {
+            "type": "array",
+            "count": 1,
+            "sample": [
+              {
+                "id": 77959,
+                "agencyId": 31382,
+                "firstname": "Alex",
+                "lastname": "Landman",
+                "emailAddress": "alex@arch9.co.za",
+                "sourceReference": "ARCH9-AGENT-001",
+                "status": "Active",
+                "countryId": 1
+              }
+            ]
+          },
+          "reason": null
+        }
+      },
+      "evidence": [
+        "outputs/property24-phase1-smoke.json"
+      ],
+      "nextStep": ""
+    },
+    {
+      "id": "catalog_fetch_mapping",
+      "label": "Catalog fetch and mapping",
+      "status": "PASS",
+      "summary": {
+        "catalogChecks": [
+          {
+            "name": "fetch countries",
+            "status": "PASS",
+            "httpStatus": 200,
+            "durationMs": 127,
+            "summary": {
+              "type": "array",
+              "count": 11,
+              "sample": [
+                {
+                  "id": 2,
+                  "name": "Botswana"
+                },
+                {
+                  "id": 12,
+                  "name": "Indonesia"
+                },
+                {
+                  "id": 11,
+                  "name": "Kenya"
+                }
+              ]
+            },
+            "reason": null
+          },
+          {
+            "name": "fetch provinces",
+            "status": "PASS",
+            "httpStatus": 200,
+            "durationMs": 53,
+            "summary": {
+              "type": "array",
+              "count": 9,
+              "sample": [
+                {
+                  "id": 7,
+                  "name": "Eastern Cape",
+                  "countryId": 1
+                },
+                {
+                  "id": 3,
+                  "name": "Free State",
+                  "countryId": 1
+                },
+                {
+                  "id": 1,
+                  "name": "Gauteng",
+                  "countryId": 1
+                }
+              ]
+            },
+            "reason": null
+          },
+          {
+            "name": "fetch property types",
+            "status": "PASS",
+            "httpStatus": 200,
+            "durationMs": 55,
+            "summary": {
+              "type": "array",
+              "count": 7,
+              "sample": [
+                {
+                  "id": 4,
+                  "description": "House"
+                },
+                {
+                  "id": 5,
+                  "description": "Apartment / Flat"
+                },
+                {
+                  "id": 6,
+                  "description": "Townhouse"
+                }
+              ]
+            },
+            "reason": null
+          },
+          {
+            "name": "fetch listing types",
+            "status": "PASS",
+            "httpStatus": 200,
+            "durationMs": 116,
+            "summary": {
+              "type": "array",
+              "count": 2,
+              "sample": [
+                {
+                  "name": "Rental",
+                  "description": "To Rent",
+                  "countryId": 1
+                },
+                {
+                  "name": "Sale",
+                  "description": "For Sale",
+                  "countryId": 1
+                }
+              ]
+            },
+            "reason": null
+          }
+        ],
+        "previewSummary": {
+          "agencyId": 31382,
+          "contactAgentIds": [
+            77959
+          ],
+          "agentSourceReference": "ARCH9-AGENT-001",
+          "listingNumber": null,
+          "listingType": "Sale",
+          "status": "NewListing",
+          "price": 1234567,
+          "isPOA": false,
+          "expiryDate": "2026-12-31T00:00:00.000Z",
+          "propertyTypeId": 4,
+          "suburbId": 140,
+          "imageCount": 4,
+          "photoPayloadCount": 4,
+          "descriptionPresent": true
+        }
+      },
+      "evidence": [
+        "outputs/property24-phase1-smoke.json",
+        "outputs/property24-real-listing-preview.json"
+      ],
+      "nextStep": ""
+    },
+    {
+      "id": "create_listing_with_image",
+      "label": "Create listing with image",
+      "status": "PASS",
+      "summary": {
+        "listingId": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+        "listingNumber": "100314793",
+        "imageByteLoad": {
+          "requested": 4,
+          "loaded": 4,
+          "failed": 0,
+          "convertedToJpeg": 4,
+          "skipped": 0
+        },
+        "reconciliation": {
+          "localCount": 1,
+          "remoteCount": 1,
+          "matchedCount": 1,
+          "missingOnProperty24Count": 0,
+          "unexpectedOnProperty24Count": 0,
+          "statusDriftCount": 0
+        }
+      },
+      "evidence": [
+        "outputs/property24-publish-listing.json",
+        "outputs/property24-record-listing-sync.json",
+        "outputs/property24-reconciliation.json"
+      ],
+      "nextStep": ""
+    },
+    {
+      "id": "update_text_without_images",
+      "label": "Update price/description without resending images",
+      "status": "PASS",
+      "summary": {
+        "httpStatus": 200,
+        "portalVisible": true,
+        "photosPayload": "photos:null",
+        "command": "npm run property24:publish-listing -- --listing-id=f35d8916-2ae9-4364-b364-fc279e260fa7 --listing-number=100314793 --photos-unchanged --apply"
+      },
+      "evidence": [
+        "outputs/property24-proof-update-without-images.json",
+        "outputs/property24-publish-listing.json"
+      ],
+      "nextStep": ""
+    },
+    {
+      "id": "update_images",
+      "label": "Update listing images",
+      "status": "PASS",
+      "summary": {
+        "httpStatus": 200,
+        "portalVisible": true,
+        "photoCount": 4,
+        "imageByteLoad": {
+          "requested": 4,
+          "loaded": 4,
+          "failed": 0,
+          "convertedToJpeg": 4,
+          "skipped": 0
+        },
+        "command": "npm run property24:publish-listing -- --listing-id=f35d8916-2ae9-4364-b364-fc279e260fa7 --listing-number=100314793 --apply"
+      },
+      "evidence": [
+        "outputs/property24-proof-update-with-images.json",
+        "outputs/property24-publish-listing.json"
+      ],
+      "nextStep": ""
+    },
+    {
+      "id": "status_withdrawn_back_to_market_pending_sold",
+      "label": "Status changes",
+      "status": "PASS",
+      "summary": {
+        "latestStatusEvidence": "Active",
+        "proofs": {
+          "Withdrawn": {
+            "submitted": true,
+            "httpStatus": 200,
+            "portalVisible": false
+          },
+          "Active": {
+            "submitted": true,
+            "httpStatus": 200,
+            "portalVisible": true
+          },
+          "Pending": {
+            "submitted": true,
+            "httpStatus": 200,
+            "portalVisible": true
+          },
+          "Sold": {
+            "submitted": true,
+            "httpStatus": 200,
+            "portalVisible": false
+          },
+          "FinalActive": {
+            "submitted": true,
+            "httpStatus": 200,
+            "portalVisible": true
+          }
+        },
+        "commands": [
+          "npm run property24:status-update -- --listing-id=f35d8916-2ae9-4364-b364-fc279e260fa7 --listing-number=100314793 --status=Withdrawn --apply",
+          "npm run property24:status-update -- --listing-id=f35d8916-2ae9-4364-b364-fc279e260fa7 --listing-number=100314793 --status=Active --apply",
+          "npm run property24:status-update -- --listing-id=f35d8916-2ae9-4364-b364-fc279e260fa7 --listing-number=100314793 --status=Pending --apply",
+          "npm run property24:status-update -- --listing-id=f35d8916-2ae9-4364-b364-fc279e260fa7 --listing-number=100314793 --status=Sold --apply"
+        ]
+      },
+      "evidence": [
+        "outputs/property24-proof-status-withdrawn.json",
+        "outputs/property24-proof-status-active.json",
+        "outputs/property24-proof-status-pending.json",
+        "outputs/property24-proof-status-sold.json",
+        "outputs/property24-proof-status-final-active.json",
+        "outputs/property24-status-update.json"
+      ],
+      "nextStep": ""
+    },
+    {
+      "id": "portal_visibility",
+      "label": "Check is-on-portal",
+      "status": "PASS",
+      "summary": {
+        "reconciliation": {
+          "localCount": 1,
+          "remoteCount": 1,
+          "matchedCount": 1,
+          "missingOnProperty24Count": 0,
+          "unexpectedOnProperty24Count": 0,
+          "statusDriftCount": 0
+        },
+        "updates": {
+          "updateCount": 1,
+          "matchedCount": 1,
+          "unmatchedCount": 0
+        }
+      },
+      "evidence": [
+        "outputs/property24-reconciliation.json"
+      ],
+      "nextStep": ""
+    },
+    {
+      "id": "reconciliation_result",
+      "label": "Reconciliation result",
+      "status": "PASS",
+      "summary": {
+        "status": "OK",
+        "reconciliation": {
+          "localCount": 1,
+          "remoteCount": 1,
+          "matchedCount": 1,
+          "missingOnProperty24Count": 0,
+          "unexpectedOnProperty24Count": 0,
+          "statusDriftCount": 0
+        },
+        "updates": {
+          "updateCount": 1,
+          "matchedCount": 1,
+          "unmatchedCount": 0
+        }
+      },
+      "evidence": [
+        "outputs/property24-reconciliation.json"
+      ],
+      "nextStep": ""
+    },
+    {
+      "id": "invalid_listing_error_handling",
+      "label": "Invalid listing blocker handling",
+      "status": "PASS",
+      "summary": {
+        "canPreview": false,
+        "canSubmit": false,
+        "dataBlockers": [
+          "missing_property24_agent_id",
+          "missing_agent_source_reference",
+          "missing_description",
+          "missing_expiry_date",
+          "missing_property24_suburb_id",
+          "missing_property24_property_type_id",
+          "missing_price_or_poa",
+          "missing_listing_image"
+        ],
+        "technicalBlockers": []
+      },
+      "evidence": [
+        "server/services/property24ListingMapper.js"
+      ],
+      "nextStep": ""
+    },
+    {
+      "id": "retry_idempotency",
+      "label": "Retry/idempotency behavior",
+      "status": "PASS",
+      "summary": {
+        "publishAttemptStatus": "succeeded",
+        "statusAttemptStatus": "succeeded",
+        "note": "Controlled publish/status workflows write idempotency keys to property24_sync_attempts."
+      },
+      "evidence": [
+        "server/property24/workflowService.js",
+        "sql/20260820_property24_sync_attempts.sql"
+      ],
+      "nextStep": "Show property24_sync_attempts during vetting after a live ExDev apply run."
+    },
+    {
+      "id": "redacted_audit_log",
+      "label": "Redacted audit log",
+      "status": "PASS",
+      "summary": {
+        "hasRedactedPayload": true,
+        "hasDatabaseWriteSummary": true,
+        "rawImageBytesIncluded": false
+      },
+      "evidence": [
+        "outputs/property24-publish-listing.json",
+        "outputs/property24-record-listing-sync.json"
+      ],
+      "nextStep": ""
+    }
+  ],
+  "suggestedCommands": {
+    "safeEvidence": [
+      "npm run property24:phase1",
+      "npm run property24:preview-listing -- --listing-id=f35d8916-2ae9-4364-b364-fc279e260fa7 --load-image-bytes",
+      "npm run property24:reconcile",
+      "npm run property24:vetting-pack"
+    ],
+    "manualExDevEvidence": [
+      "npm run property24:publish-listing -- --listing-id=f35d8916-2ae9-4364-b364-fc279e260fa7 --apply",
+      "npm run property24:publish-listing -- --listing-id=f35d8916-2ae9-4364-b364-fc279e260fa7 --listing-number=100314793 --photos-unchanged --apply",
+      "npm run property24:publish-listing -- --listing-id=f35d8916-2ae9-4364-b364-fc279e260fa7 --listing-number=100314793 --apply",
+      "npm run property24:status-update -- --listing-id=f35d8916-2ae9-4364-b364-fc279e260fa7 --listing-number=100314793 --status=Withdrawn --apply",
+      "npm run property24:status-update -- --listing-id=f35d8916-2ae9-4364-b364-fc279e260fa7 --listing-number=100314793 --status=Active --apply",
+      "npm run property24:status-update -- --listing-id=f35d8916-2ae9-4364-b364-fc279e260fa7 --listing-number=100314793 --status=Pending --apply",
+      "npm run property24:status-update -- --listing-id=f35d8916-2ae9-4364-b364-fc279e260fa7 --listing-number=100314793 --status=Sold --apply"
+    ]
+  },
+  "operationalNotes": [
+    "Credentials are read from server-side environment files only and are not written to the evidence pack.",
+    "Image bytes are redacted from reports; evidence only keeps counts, MIME types, and approximate byte lengths.",
+    "Existing Property24 listingNumber values are stored and reused for updates.",
+    "Photo updates can be minimized with photosChanged=false, which sends photos:null for unchanged images.",
+    "Status-only changes use the dedicated Property24 status endpoint.",
+    "Reconciliation is report-only and can run on a schedule without publishing listings or creating leads.",
+    "Failed readiness checks expose blocker codes before Property24 is called."
+  ],
+  "redactedReports": {
+    "phase1": {
+      "phase": "property24-syndication-phase1",
+      "generatedAt": "2026-08-20T09:27:05.637Z",
+      "environment": "exdev",
+      "baseUrl": "https://api.exdev.property24-test.com",
+      "agencyId": "31382",
+      "credentialsConfigured": true,
+      "summary": {
+        "status": "PASS",
+        "passCount": 10,
+        "blockedCount": 0
+      },
+      "checks": [
+        {
+          "name": "unauthenticated echo endpoint reachable",
+          "status": "PASS",
+          "httpStatus": 200,
+          "durationMs": 357,
+          "summary": {
+            "type": "string",
+            "value": "The message has been received."
+          }
+        },
+        {
+          "name": "authenticated echo accepts Basic Auth",
+          "status": "PASS",
+          "httpStatus": 200,
+          "durationMs": 77,
+          "summary": {
+            "type": "string",
+            "value": "Arch9 Property24 authenticated smoke test"
+          }
+        },
+        {
+          "name": "fetch agencies visible to credential",
+          "status": "PASS",
+          "httpStatus": 200,
+          "durationMs": 111,
+          "summary": {
+            "type": "array",
+            "count": 0,
+            "sample": []
+          }
+        },
+        {
+          "name": "fetch agency 31382",
+          "status": "PASS",
+          "httpStatus": 200,
+          "durationMs": 65,
+          "summary": {
+            "type": "object",
+            "keys": [
+              "aboutUs",
+              "businessAddress",
+              "countryId",
+              "emailAddress",
+              "id",
+              "name",
+              "postalAddress",
+              "status"
+            ],
+            "sample": {
+              "id": 31382,
+              "name": "Exdev ARCH9",
+              "emailAddress": "alex@arch9.co.za",
+              "status": "Active",
+              "countryId": 1
+            }
+          }
+        },
+        {
+          "name": "fetch agency 31382 agents",
+          "status": "PASS",
+          "httpStatus": 200,
+          "durationMs": 59,
+          "summary": {
+            "type": "array",
+            "count": 1,
+            "sample": [
+              {
+                "id": 77959,
+                "agencyId": 31382,
+                "firstname": "Alex",
+                "lastname": "Landman",
+                "emailAddress": "alex@arch9.co.za",
+                "sourceReference": "ARCH9-AGENT-001",
+                "status": "Active",
+                "countryId": 1
+              }
+            ]
+          }
+        },
+        {
+          "name": "fetch countries",
+          "status": "PASS",
+          "httpStatus": 200,
+          "durationMs": 127,
+          "summary": {
+            "type": "array",
+            "count": 11,
+            "sample": [
+              {
+                "id": 2,
+                "name": "Botswana"
+              },
+              {
+                "id": 12,
+                "name": "Indonesia"
+              },
+              {
+                "id": 11,
+                "name": "Kenya"
+              }
+            ]
+          }
+        },
+        {
+          "name": "fetch provinces",
+          "status": "PASS",
+          "httpStatus": 200,
+          "durationMs": 53,
+          "summary": {
+            "type": "array",
+            "count": 9,
+            "sample": [
+              {
+                "id": 7,
+                "name": "Eastern Cape",
+                "countryId": 1
+              },
+              {
+                "id": 3,
+                "name": "Free State",
+                "countryId": 1
+              },
+              {
+                "id": 1,
+                "name": "Gauteng",
+                "countryId": 1
+              }
+            ]
+          }
+        },
+        {
+          "name": "fetch property types",
+          "status": "PASS",
+          "httpStatus": 200,
+          "durationMs": 55,
+          "summary": {
+            "type": "array",
+            "count": 7,
+            "sample": [
+              {
+                "id": 4,
+                "description": "House"
+              },
+              {
+                "id": 5,
+                "description": "Apartment / Flat"
+              },
+              {
+                "id": 6,
+                "description": "Townhouse"
+              }
+            ]
+          }
+        },
+        {
+          "name": "fetch listing types",
+          "status": "PASS",
+          "httpStatus": 200,
+          "durationMs": 116,
+          "summary": {
+            "type": "array",
+            "count": 2,
+            "sample": [
+              {
+                "name": "Rental",
+                "description": "To Rent",
+                "countryId": 1
+              },
+              {
+                "name": "Sale",
+                "description": "For Sale",
+                "countryId": 1
+              }
+            ]
+          }
+        },
+        {
+          "name": "fetch cities for province 1",
+          "status": "PASS",
+          "httpStatus": 200,
+          "durationMs": 70,
+          "summary": {
+            "type": "array",
+            "count": 61,
+            "sample": [
+              {
+                "id": 2462,
+                "name": "Akasia",
+                "provinceId": 1
+              },
+              {
+                "id": 4,
+                "name": "Akasia",
+                "provinceId": 1
+              },
+              {
+                "id": 19,
+                "name": "Alberton",
+                "provinceId": 1
+              }
+            ]
+          }
+        },
+        {
+          "name": "fetch suburbs",
+          "status": "SKIPPED",
+          "reason": "Set PROPERTY24_DEFAULT_CITY_ID or pass --city-id=<id> to avoid fetching every suburb."
+        }
+      ],
+      "nextPhase": "Phase 2: map Arch9 fields/agents/suburbs/property types to Property24 requirements."
+    },
+    "preview": {
+      "phase": "property24-real-listing-preview",
+      "generatedAt": "2026-08-20T10:50:53.157Z",
+      "safety": {
+        "property24ApiCalled": false,
+        "databaseWritten": false,
+        "listingPublished": false
+      },
+      "status": "PREVIEW_READY",
+      "canPreview": true,
+      "canSubmit": true,
+      "dataBlockers": [],
+      "technicalBlockers": [],
+      "summary": {
+        "agencyId": 31382,
+        "contactAgentIds": [
+          77959
+        ],
+        "agentSourceReference": "ARCH9-AGENT-001",
+        "listingNumber": null,
+        "listingType": "Sale",
+        "status": "NewListing",
+        "price": 1234567,
+        "isPOA": false,
+        "expiryDate": "2026-12-31T00:00:00.000Z",
+        "propertyTypeId": 4,
+        "suburbId": 140,
+        "imageCount": 4,
+        "photoPayloadCount": 4,
+        "descriptionPresent": true
+      },
+      "source": {
+        "privateListingId": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+        "listingReference": "PRV-202608201031-U8YM",
+        "publicationFound": true,
+        "mediaRows": 4,
+        "existingProperty24ListingNumber": null
+      },
+      "imageByteLoad": {
+        "summary": {
+          "requested": 4,
+          "loaded": 4,
+          "failed": 0,
+          "skipped": 0
+        },
+        "results": [
+          {
+            "index": 0,
+            "status": "LOADED",
+            "sourceUrl": "[REDACTED_SIGNED_STORAGE_URL]",
+            "mimeContentType": "image/png",
+            "byteLength": 3289214,
+            "source": "url"
+          },
+          {
+            "index": 1,
+            "status": "LOADED",
+            "sourceUrl": "[REDACTED_SIGNED_STORAGE_URL]",
+            "mimeContentType": "image/png",
+            "byteLength": 2848811,
+            "source": "url"
+          },
+          {
+            "index": 2,
+            "status": "LOADED",
+            "sourceUrl": "[REDACTED_SIGNED_STORAGE_URL]",
+            "mimeContentType": "image/png",
+            "byteLength": 2991516,
+            "source": "url"
+          },
+          {
+            "index": 3,
+            "status": "LOADED",
+            "sourceUrl": "[REDACTED_SIGNED_STORAGE_URL]",
+            "mimeContentType": "image/png",
+            "byteLength": 2782791,
+            "source": "url"
+          }
+        ]
+      },
+      "previewPayload": {
+        "agencyId": 31382,
+        "contactAgentIds": [
+          77959
+        ],
+        "listingType": "Sale",
+        "status": "NewListing",
+        "price": 1234567,
+        "isPOA": false,
+        "listingVisibility": "Public",
+        "expiryDate": "2026-12-31T00:00:00.000Z",
+        "description": "This is an ExDev integration test listing. Do not publish publicly. Agent: your test/training use\nWelcome to Junoah Estate, a secure, single-storey residential development in the sought-after suburb of Bartlett, Boksburg. Built for modern families and working professionals, it combines comfort, clean design, and everyday convenience in a safe, community-focused setting.\n\nEach home offers three well-sized bedrooms, two full bathrooms, and open-plan living areas that lead out to a private garden with a built-in braai — ideal for entertaining or unwinding at home. The kitchen is fitted with a gas stove and designed for practical, everyday use. Every unit also includes a double garage and quality finishes throughout.\n\nOptional extras such as backup inverter systems and air conditioning allow you to tailor your home to your needs, with added peace of mind during load-shedding. The estate is fully enclosed and features 24-hour security, access control, and electric fencing.\n\nResidents can enjoy a private park within the estate — a quiet, green space for children, families, and relaxed outdoor living. Junoah Estate is also conveniently located close to leading schools, shopping centres, and main transport routes.",
+        "descriptionHeader": "Beautiful 3 bed house in Garsfontein",
+        "photos": [
+          {
+            "sourceUrl": "[REDACTED_SIGNED_STORAGE_URL]",
+            "mimeContentType": "image/png",
+            "caption": "Screenshot 2025-10-20 at 10.19.54.png",
+            "isFloorPlan": false,
+            "bytesLoaded": true
+          },
+          {
+            "sourceUrl": "[REDACTED_SIGNED_STORAGE_URL]",
+            "mimeContentType": "image/png",
+            "caption": "Screenshot 2025-10-20 at 10.20.04.png",
+            "isFloorPlan": false,
+            "bytesLoaded": true
+          },
+          {
+            "sourceUrl": "[REDACTED_SIGNED_STORAGE_URL]",
+            "mimeContentType": "image/png",
+            "caption": "Screenshot 2025-10-20 at 10.20.12.png",
+            "isFloorPlan": false,
+            "bytesLoaded": true
+          },
+          {
+            "sourceUrl": "[REDACTED_SIGNED_STORAGE_URL]",
+            "mimeContentType": "image/png",
+            "caption": "Screenshot 2025-10-20 at 10.20.24.png",
+            "isFloorPlan": false,
+            "bytesLoaded": true
+          }
+        ],
+        "propertyInfo": {
+          "showLocation": false,
+          "suburbId": 140,
+          "streetNumber": "",
+          "streetName": "694 Cicely Street",
+          "sourceReference": "PRV-202608201031-U8YM",
+          "erf": {
+            "size": 150,
+            "areaUnit": "SquareMetres"
+          },
+          "floorArea": {
+            "size": 100,
+            "areaUnit": "SquareMetres"
+          },
+          "municipalRatesAndTaxes": {
+            "amount": 100,
+            "unit": "TotalPrice"
+          },
+          "monthlyLevy": {
+            "amount": 100,
+            "unit": "TotalPrice"
+          },
+          "propertyTypeId": 4
+        },
+        "propertyFeatures": {
+          "bedrooms": 3,
+          "bathrooms": {
+            "bathrooms": 2
+          },
+          "garages": 2,
+          "parking": {
+            "open": 2
+          },
+          "garden": false,
+          "pool": false,
+          "flatlet": false,
+          "petsAllowed": "DontKnow",
+          "furnishedStatus": "No"
+        }
+      },
+      "nextStep": "Load actual image bytes before a real ExDev publish."
+    },
+    "publish": {
+      "phase": "property24-publish-listing",
+      "generatedAt": "2026-08-20T12:38:06.948Z",
+      "mode": "APPLY",
+      "status": "SUBMITTED",
+      "safety": {
+        "property24ApiCalled": true,
+        "databaseWritten": true,
+        "listingPublished": true
+      },
+      "listingId": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+      "preview": {
+        "canSubmit": true,
+        "dataBlockers": [],
+        "technicalBlockers": [],
+        "summary": {
+          "agencyId": 31382,
+          "contactAgentIds": [
+            77959
+          ],
+          "agentSourceReference": "ARCH9-AGENT-001",
+          "listingNumber": 100314793,
+          "listingType": "Sale",
+          "status": "Active",
+          "price": 1234567,
+          "isPOA": false,
+          "expiryDate": "2026-12-31T00:00:00.000Z",
+          "propertyTypeId": 4,
+          "suburbId": 140,
+          "imageCount": 4,
+          "photoPayloadCount": 4,
+          "descriptionPresent": true
+        },
+        "imageByteLoad": {
+          "summary": {
+            "requested": 4,
+            "loaded": 4,
+            "failed": 0,
+            "convertedToJpeg": 4,
+            "skipped": 0
+          },
+          "results": [
+            {
+              "index": 0,
+              "status": "LOADED",
+              "sourceUrl": "[REDACTED_SIGNED_STORAGE_URL]",
+              "mimeContentType": "image/jpeg",
+              "byteLength": 353653,
+              "convertedToJpeg": true,
+              "originalMimeContentType": "image/png",
+              "originalByteLength": 3289214,
+              "source": "url"
+            },
+            {
+              "index": 1,
+              "status": "LOADED",
+              "sourceUrl": "[REDACTED_SIGNED_STORAGE_URL]",
+              "mimeContentType": "image/jpeg",
+              "byteLength": 292522,
+              "convertedToJpeg": true,
+              "originalMimeContentType": "image/png",
+              "originalByteLength": 2848811,
+              "source": "url"
+            },
+            {
+              "index": 2,
+              "status": "LOADED",
+              "sourceUrl": "[REDACTED_SIGNED_STORAGE_URL]",
+              "mimeContentType": "image/jpeg",
+              "byteLength": 331249,
+              "convertedToJpeg": true,
+              "originalMimeContentType": "image/png",
+              "originalByteLength": 2991516,
+              "source": "url"
+            },
+            {
+              "index": 3,
+              "status": "LOADED",
+              "sourceUrl": "[REDACTED_SIGNED_STORAGE_URL]",
+              "mimeContentType": "image/jpeg",
+              "byteLength": 314437,
+              "convertedToJpeg": true,
+              "originalMimeContentType": "image/png",
+              "originalByteLength": 2782791,
+              "source": "url"
+            }
+          ]
+        }
+      },
+      "redactedPayload": {
+        "agencyId": 31382,
+        "contactAgentIds": [
+          77959
+        ],
+        "listingNumber": 100314793,
+        "listingType": "Sale",
+        "status": "Active",
+        "price": 1234567,
+        "isPOA": false,
+        "listingVisibility": "Public",
+        "expiryDate": "2026-12-31T00:00:00.000Z",
+        "description": "This is an ExDev integration test listing. Do not publish publicly. Agent: your test/training use\nWelcome to Junoah Estate, a secure, single-storey residential development in the sought-after suburb of Bartlett, Boksburg. Built for modern families and working professionals, it combines comfort, clean design, and everyday convenience in a safe, community-focused setting.\n\nEach home offers three well-sized bedrooms, two full bathrooms, and open-plan living areas that lead out to a private garden with a built-in braai — ideal for entertaining or unwinding at home. The kitchen is fitted with a gas stove and designed for practical, everyday use. Every unit also includes a double garage and quality finishes throughout.\n\nOptional extras such as backup inverter systems and air conditioning allow you to tailor your home to your needs, with added peace of mind during load-shedding. The estate is fully enclosed and features 24-hour security, access control, and electric fencing.\n\nResidents can enjoy a private park within the estate — a quiet, green space for children, families, and relaxed outdoor living. Junoah Estate is also conveniently located close to leading schools, shopping centres, and main transport routes.",
+        "descriptionHeader": "Beautiful 3 bed house in Garsfontein",
+        "photos": [
+          {
+            "mimeContentType": "image/jpeg",
+            "caption": "Screenshot 2025-10-20 at 10.19.54.png",
+            "isFloorPlan": false,
+            "bytesLoaded": true,
+            "byteLengthApprox": 353655
+          },
+          {
+            "mimeContentType": "image/jpeg",
+            "caption": "Screenshot 2025-10-20 at 10.20.04.png",
+            "isFloorPlan": false,
+            "bytesLoaded": true,
+            "byteLengthApprox": 292524
+          },
+          {
+            "mimeContentType": "image/jpeg",
+            "caption": "Screenshot 2025-10-20 at 10.20.12.png",
+            "isFloorPlan": false,
+            "bytesLoaded": true,
+            "byteLengthApprox": 331251
+          },
+          {
+            "mimeContentType": "image/jpeg",
+            "caption": "Screenshot 2025-10-20 at 10.20.24.png",
+            "isFloorPlan": false,
+            "bytesLoaded": true,
+            "byteLengthApprox": 314439
+          }
+        ],
+        "propertyInfo": {
+          "showLocation": false,
+          "suburbId": 140,
+          "streetNumber": "",
+          "streetName": "694 Cicely Street",
+          "sourceReference": "PRV-202608201031-U8YM",
+          "erf": {
+            "size": 150,
+            "areaUnit": "SquareMetres"
+          },
+          "floorArea": {
+            "size": 100,
+            "areaUnit": "SquareMetres"
+          },
+          "municipalRatesAndTaxes": {
+            "amount": 100,
+            "unit": "TotalPrice"
+          },
+          "monthlyLevy": {
+            "amount": 100,
+            "unit": "TotalPrice"
+          },
+          "propertyTypeId": 4
+        },
+        "propertyFeatures": {
+          "bedrooms": 3,
+          "bathrooms": {
+            "bathrooms": 2
+          },
+          "garages": 2,
+          "parking": {
+            "open": 2
+          },
+          "garden": false,
+          "pool": false,
+          "flatlet": false,
+          "petsAllowed": "DontKnow",
+          "furnishedStatus": "No"
+        }
+      },
+      "property24Response": {
+        "httpStatus": 200,
+        "durationMs": 2257,
+        "summary": {
+          "type": "object",
+          "keys": [
+            "isOnPortal",
+            "listingNumber",
+            "reasons"
+          ],
+          "sample": {
+            "listingNumber": 100314793
+          }
+        },
+        "data": {
+          "isOnPortal": true,
+          "listingNumber": 100314793,
+          "reasons": []
+        }
+      },
+      "portalCheck": {
+        "httpStatus": 200,
+        "durationMs": 104,
+        "summary": {
+          "type": "boolean",
+          "value": true
+        },
+        "data": true
+      },
+      "databaseWrite": {
+        "table": "property24_listing_syncs",
+        "privateListingId": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+        "listingNumber": 100314793,
+        "property24Status": "published",
+        "property24Reference": "100314793"
+      },
+      "syncAttempt": {
+        "id": "b1ae6190-62c8-41bc-a6dd-96172676bf0e",
+        "private_listing_id": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+        "environment": "exdev",
+        "agency_id": 31382,
+        "listing_number": 100314793,
+        "action": "update",
+        "status": "succeeded",
+        "idempotency_key": "property24:exdev:update:f35d8916-2ae9-4364-b364-fc279e260fa7::29fe8e2c6c6533c9f4c2aa6dfb8af6bb20e346c84e4fd1e1a1a5b808d9ac5929",
+        "payload_hash": "29fe8e2c6c6533c9f4c2aa6dfb8af6bb20e346c84e4fd1e1a1a5b808d9ac5929",
+        "image_payload_hash": "0da042e989a31ced70ea217f706876c603776c0a906379262e6a0a0c1b10eb14",
+        "request_payload_summary": {
+          "action": "update",
+          "preview": {
+            "summary": {
+              "isPOA": false,
+              "price": 1234567,
+              "status": "Active",
+              "agencyId": 31382,
+              "suburbId": 140,
+              "expiryDate": "2026-12-31T00:00:00.000Z",
+              "imageCount": 4,
+              "listingType": "Sale",
+              "listingNumber": 100314793,
+              "propertyTypeId": 4,
+              "contactAgentIds": [
+                77959
+              ],
+              "photoPayloadCount": 4,
+              "descriptionPresent": true,
+              "agentSourceReference": "ARCH9-AGENT-001"
+            },
+            "canSubmit": true,
+            "dataBlockers": [],
+            "imageByteLoad": {
+              "results": [
+                {
+                  "index": 0,
+                  "source": "url",
+                  "status": "LOADED",
+                  "sourceUrl": "[REDACTED_SIGNED_STORAGE_URL]",
+                  "byteLength": 353653,
+                  "convertedToJpeg": true,
+                  "mimeContentType": "image/jpeg",
+                  "originalByteLength": 3289214,
+                  "originalMimeContentType": "image/png"
+                },
+                {
+                  "index": 1,
+                  "source": "url",
+                  "status": "LOADED",
+                  "sourceUrl": "[REDACTED_SIGNED_STORAGE_URL]",
+                  "byteLength": 292522,
+                  "convertedToJpeg": true,
+                  "mimeContentType": "image/jpeg",
+                  "originalByteLength": 2848811,
+                  "originalMimeContentType": "image/png"
+                },
+                {
+                  "index": 2,
+                  "source": "url",
+                  "status": "LOADED",
+                  "sourceUrl": "[REDACTED_SIGNED_STORAGE_URL]",
+                  "byteLength": 331249,
+                  "convertedToJpeg": true,
+                  "mimeContentType": "image/jpeg",
+                  "originalByteLength": 2991516,
+                  "originalMimeContentType": "image/png"
+                },
+                {
+                  "index": 3,
+                  "source": "url",
+                  "status": "LOADED",
+                  "sourceUrl": "[REDACTED_SIGNED_STORAGE_URL]",
+                  "byteLength": 314437,
+                  "convertedToJpeg": true,
+                  "mimeContentType": "image/jpeg",
+                  "originalByteLength": 2782791,
+                  "originalMimeContentType": "image/png"
+                }
+              ],
+              "summary": {
+                "failed": 0,
+                "loaded": 4,
+                "skipped": 0,
+                "requested": 4,
+                "convertedToJpeg": 4
+              }
+            },
+            "technicalBlockers": []
+          },
+          "redactedPayload": {
+            "isPOA": false,
+            "price": 1234567,
+            "photos": [
+              {
+                "caption": "Screenshot 2025-10-20 at 10.19.54.png",
+                "bytesLoaded": true,
+                "isFloorPlan": false,
+                "mimeContentType": "image/jpeg",
+                "byteLengthApprox": 353655
+              },
+              {
+                "caption": "Screenshot 2025-10-20 at 10.20.04.png",
+                "bytesLoaded": true,
+                "isFloorPlan": false,
+                "mimeContentType": "image/jpeg",
+                "byteLengthApprox": 292524
+              },
+              {
+                "caption": "Screenshot 2025-10-20 at 10.20.12.png",
+                "bytesLoaded": true,
+                "isFloorPlan": false,
+                "mimeContentType": "image/jpeg",
+                "byteLengthApprox": 331251
+              },
+              {
+                "caption": "Screenshot 2025-10-20 at 10.20.24.png",
+                "bytesLoaded": true,
+                "isFloorPlan": false,
+                "mimeContentType": "image/jpeg",
+                "byteLengthApprox": 314439
+              }
+            ],
+            "status": "Active",
+            "agencyId": 31382,
+            "expiryDate": "2026-12-31T00:00:00.000Z",
+            "description": "This is an ExDev integration test listing. Do not publish publicly. Agent: your test/training use\nWelcome to Junoah Estate, a secure, single-storey residential development in the sought-after suburb of Bartlett, Boksburg. Built for modern families and working professionals, it combines comfort, clean design, and everyday convenience in a safe, community-focused setting.\n\nEach home offers three well-sized bedrooms, two full bathrooms, and open-plan living areas that lead out to a private garden with a built-in braai — ideal for entertaining or unwinding at home. The kitchen is fitted with a gas stove and designed for practical, everyday use. Every unit also includes a double garage and quality finishes throughout.\n\nOptional extras such as backup inverter systems and air conditioning allow you to tailor your home to your needs, with added peace of mind during load-shedding. The estate is fully enclosed and features 24-hour security, access control, and electric fencing.\n\nResidents can enjoy a private park within the estate — a quiet, green space for children, families, and relaxed outdoor living. Junoah Estate is also conveniently located close to leading schools, shopping centres, and main transport routes.",
+            "listingType": "Sale",
+            "propertyInfo": {
+              "erf": {
+                "size": 150,
+                "areaUnit": "SquareMetres"
+              },
+              "suburbId": 140,
+              "floorArea": {
+                "size": 100,
+                "areaUnit": "SquareMetres"
+              },
+              "streetName": "694 Cicely Street",
+              "monthlyLevy": {
+                "unit": "TotalPrice",
+                "amount": 100
+              },
+              "showLocation": false,
+              "streetNumber": "",
+              "propertyTypeId": 4,
+              "sourceReference": "PRV-202608201031-U8YM",
+              "municipalRatesAndTaxes": {
+                "unit": "TotalPrice",
+                "amount": 100
+              }
+            },
+            "listingNumber": 100314793,
+            "contactAgentIds": [
+              77959
+            ],
+            "propertyFeatures": {
+              "pool": false,
+              "garden": false,
+              "flatlet": false,
+              "garages": 2,
+              "parking": {
+                "open": 2
+              },
+              "bedrooms": 3,
+              "bathrooms": {
+                "bathrooms": 2
+              },
+              "petsAllowed": "DontKnow",
+              "furnishedStatus": "No"
+            },
+            "descriptionHeader": "Beautiful 3 bed house in Garsfontein",
+            "listingVisibility": "Public"
+          }
+        },
+        "response_summary": {
+          "portalCheck": {
+            "type": "boolean",
+            "value": true
+          },
+          "databaseWrite": {
+            "table": "property24_listing_syncs",
+            "listingNumber": 100314793,
+            "privateListingId": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+            "property24Status": "published",
+            "property24Reference": "100314793"
+          },
+          "property24Response": {
+            "keys": [
+              "isOnPortal",
+              "listingNumber",
+              "reasons"
+            ],
+            "type": "object",
+            "sample": {
+              "listingNumber": 100314793
+            }
+          }
+        },
+        "error_summary": {},
+        "property24_http_status": 200,
+        "duration_ms": 2257,
+        "retry_count": 0,
+        "actor_user_id": null,
+        "started_at": "2026-08-20T12:38:06.957+00:00",
+        "finished_at": "2026-08-20T12:38:10.252+00:00",
+        "created_at": "2026-08-20T12:37:53.168853+00:00",
+        "updated_at": "2026-08-20T12:38:10.519699+00:00"
+      }
+    },
+    "recordSync": {
+      "phase": "property24-record-listing-sync",
+      "generatedAt": "2026-08-20T11:14:56.749Z",
+      "status": "RECORDED",
+      "listingId": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+      "databaseWrite": {
+        "table": "property24_listing_syncs",
+        "privateListingId": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+        "listingNumber": 100314793,
+        "isOnPortal": true,
+        "property24Status": "published",
+        "property24Reference": "100314793"
+      }
+    },
+    "reconciliation": {
+      "phase": "property24-phase5-reconciliation",
+      "generatedAt": "2026-08-20T12:38:23.730Z",
+      "environment": "exdev",
+      "agencyId": "31382",
+      "mode": "REPORT_ONLY",
+      "safety": {
+        "property24ApiCalled": true,
+        "databaseWritten": false,
+        "listingPublished": false,
+        "leadsCreated": false
+      },
+      "reconciliation": {
+        "generatedAt": "2026-08-20T12:38:23.730Z",
+        "environment": "exdev",
+        "agencyId": "31382",
+        "property24": {
+          "httpStatus": 200,
+          "durationMs": 226,
+          "summary": {
+            "type": "array",
+            "count": 1,
+            "sample": [
+              {
+                "listingNumber": 100314793,
+                "status": "Active"
+              }
+            ]
+          }
+        },
+        "summary": {
+          "localCount": 1,
+          "remoteCount": 1,
+          "matchedCount": 1,
+          "missingOnProperty24Count": 0,
+          "unexpectedOnProperty24Count": 0,
+          "statusDriftCount": 0
+        },
+        "matched": [
+          {
+            "listingNumber": 100314793,
+            "local": {
+              "id": "3eba8d4a-ea95-4724-ab20-34e9e903617c",
+              "listingId": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+              "agencyId": 31382,
+              "listingNumber": 100314793,
+              "externalStatus": "on_portal",
+              "externalStatusKey": "on_portal",
+              "isOnPortal": true,
+              "lastSuccessfulSyncAt": "2026-08-20T12:38:18.245+00:00",
+              "lastCheckedAt": "2026-08-20T12:38:18.245+00:00",
+              "listing": {
+                "id": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+                "organisationId": "ec19d0a6-bcba-4eef-aa72-9972de88204d",
+                "title": "Beautiful 3 bed house in Garsfontein",
+                "status": "listing_review",
+                "property24Status": "published",
+                "property24Reference": "100314793"
+              }
+            },
+            "remote": {
+              "listingNumber": 100314793,
+              "status": "Active",
+              "statusKey": "active",
+              "syncStatusKey": "on_portal",
+              "isOnPortal": null,
+              "updatedAt": null
+            }
+          }
+        ],
+        "missingOnProperty24": [],
+        "unexpectedOnProperty24": [],
+        "statusDrift": []
+      },
+      "updates": {
+        "generatedAt": "2026-08-20T12:38:23.730Z",
+        "environment": "exdev",
+        "agencyId": "31382",
+        "fromDate": "2026-08-19T12:38:23.730Z",
+        "property24": {
+          "httpStatus": 200,
+          "durationMs": 176,
+          "summary": {
+            "type": "object",
+            "keys": [
+              "listings",
+              "nextRequestDate"
+            ],
+            "sample": {}
+          }
+        },
+        "summary": {
+          "updateCount": 1,
+          "matchedCount": 1,
+          "unmatchedCount": 0
+        },
+        "updates": [
+          {
+            "listingNumber": 100314793,
+            "status": null,
+            "statusKey": "",
+            "syncStatusKey": "on_portal",
+            "isOnPortal": true,
+            "updatedAt": null,
+            "listingId": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+            "knownToArch9": true,
+            "localStatus": "on_portal",
+            "localIsOnPortal": true
+          }
+        ]
+      },
+      "portalVisibility": {
+        "generatedAt": "2026-08-20T12:38:23.730Z",
+        "environment": "exdev",
+        "agencyId": "31382",
+        "summary": {
+          "checkedCount": 1,
+          "driftCount": 0,
+          "failedCount": 0
+        },
+        "checks": [
+          {
+            "listingNumber": 100314793,
+            "listingId": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+            "localIsOnPortal": true,
+            "remoteIsOnPortal": true,
+            "drift": false,
+            "httpStatus": 200,
+            "durationMs": 66
+          }
+        ]
+      },
+      "status": "OK"
+    },
+    "statusUpdate": {
+      "phase": "property24-status-update",
+      "generatedAt": "2026-08-20T12:38:19.235Z",
+      "status": "SUBMITTED",
+      "listingId": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+      "listingNumber": "100314793",
+      "listingStatus": "Active",
+      "property24Response": {
+        "httpStatus": 200,
+        "durationMs": 553,
+        "summary": {
+          "type": "string",
+          "value": ""
+        },
+        "data": ""
+      },
+      "portalCheck": {
+        "httpStatus": 200,
+        "durationMs": 235,
+        "summary": {
+          "type": "boolean",
+          "value": true
+        },
+        "data": true
+      },
+      "databaseWrite": {
+        "table": "property24_listing_syncs",
+        "listingNumber": 100314793,
+        "property24Status": "published",
+        "property24Reference": "100314793"
+      },
+      "syncAttempt": {
+        "id": "624f629b-a44d-4246-a56c-aea980301c0a",
+        "private_listing_id": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+        "environment": "exdev",
+        "agency_id": 31382,
+        "listing_number": 100314793,
+        "action": "status_update",
+        "status": "succeeded",
+        "idempotency_key": "property24:exdev:status_update:f35d8916-2ae9-4364-b364-fc279e260fa7:Active:4aebcf9d8d9e5bdfb9974dac2e060681d8f09398055e58784f6f550261b7ceb2",
+        "payload_hash": "4aebcf9d8d9e5bdfb9974dac2e060681d8f09398055e58784f6f550261b7ceb2",
+        "image_payload_hash": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+        "request_payload_summary": {
+          "listingNumber": "100314793",
+          "listingStatus": "Active"
+        },
+        "response_summary": {
+          "portalCheck": {
+            "type": "boolean",
+            "value": true
+          },
+          "databaseWrite": {
+            "listingNumber": 100314793,
+            "property24Status": "published",
+            "property24Reference": "100314793"
+          },
+          "property24Response": {
+            "type": "string",
+            "value": ""
+          }
+        },
+        "error_summary": {},
+        "property24_http_status": 200,
+        "duration_ms": 553,
+        "retry_count": 0,
+        "actor_user_id": null,
+        "started_at": "2026-08-20T12:38:16.995+00:00",
+        "finished_at": "2026-08-20T12:38:19.019+00:00",
+        "created_at": "2026-08-20T12:38:17.412901+00:00",
+        "updated_at": "2026-08-20T12:38:19.278297+00:00"
+      }
+    },
+    "proofUpdateWithoutImages": {
+      "phase": "property24-publish-listing",
+      "generatedAt": "2026-08-20T12:37:41.009Z",
+      "mode": "APPLY",
+      "status": "SUBMITTED",
+      "safety": {
+        "property24ApiCalled": true,
+        "databaseWritten": true,
+        "listingPublished": true
+      },
+      "listingId": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+      "preview": {
+        "canSubmit": true,
+        "dataBlockers": [],
+        "technicalBlockers": [],
+        "summary": {
+          "agencyId": 31382,
+          "contactAgentIds": [
+            77959
+          ],
+          "agentSourceReference": "ARCH9-AGENT-001",
+          "listingNumber": 100314793,
+          "listingType": "Sale",
+          "status": "Active",
+          "price": 1234567,
+          "isPOA": false,
+          "expiryDate": "2026-12-31T00:00:00.000Z",
+          "propertyTypeId": 4,
+          "suburbId": 140,
+          "imageCount": 4,
+          "photoPayloadCount": null,
+          "descriptionPresent": true
+        },
+        "imageByteLoad": {
+          "summary": {
+            "requested": 4,
+            "loaded": 4,
+            "failed": 0,
+            "convertedToJpeg": 4,
+            "skipped": 0
+          },
+          "results": [
+            {
+              "index": 0,
+              "status": "LOADED",
+              "sourceUrl": "[REDACTED_SIGNED_STORAGE_URL]",
+              "mimeContentType": "image/jpeg",
+              "byteLength": 353653,
+              "convertedToJpeg": true,
+              "originalMimeContentType": "image/png",
+              "originalByteLength": 3289214,
+              "source": "url"
+            },
+            {
+              "index": 1,
+              "status": "LOADED",
+              "sourceUrl": "[REDACTED_SIGNED_STORAGE_URL]",
+              "mimeContentType": "image/jpeg",
+              "byteLength": 292522,
+              "convertedToJpeg": true,
+              "originalMimeContentType": "image/png",
+              "originalByteLength": 2848811,
+              "source": "url"
+            },
+            {
+              "index": 2,
+              "status": "LOADED",
+              "sourceUrl": "[REDACTED_SIGNED_STORAGE_URL]",
+              "mimeContentType": "image/jpeg",
+              "byteLength": 331249,
+              "convertedToJpeg": true,
+              "originalMimeContentType": "image/png",
+              "originalByteLength": 2991516,
+              "source": "url"
+            },
+            {
+              "index": 3,
+              "status": "LOADED",
+              "sourceUrl": "[REDACTED_SIGNED_STORAGE_URL]",
+              "mimeContentType": "image/jpeg",
+              "byteLength": 314437,
+              "convertedToJpeg": true,
+              "originalMimeContentType": "image/png",
+              "originalByteLength": 2782791,
+              "source": "url"
+            }
+          ]
+        }
+      },
+      "redactedPayload": {
+        "agencyId": 31382,
+        "contactAgentIds": [
+          77959
+        ],
+        "listingNumber": 100314793,
+        "listingType": "Sale",
+        "status": "Active",
+        "price": 1234567,
+        "isPOA": false,
+        "listingVisibility": "Public",
+        "expiryDate": "2026-12-31T00:00:00.000Z",
+        "description": "This is an ExDev integration test listing. Do not publish publicly. Agent: your test/training use\nWelcome to Junoah Estate, a secure, single-storey residential development in the sought-after suburb of Bartlett, Boksburg. Built for modern families and working professionals, it combines comfort, clean design, and everyday convenience in a safe, community-focused setting.\n\nEach home offers three well-sized bedrooms, two full bathrooms, and open-plan living areas that lead out to a private garden with a built-in braai — ideal for entertaining or unwinding at home. The kitchen is fitted with a gas stove and designed for practical, everyday use. Every unit also includes a double garage and quality finishes throughout.\n\nOptional extras such as backup inverter systems and air conditioning allow you to tailor your home to your needs, with added peace of mind during load-shedding. The estate is fully enclosed and features 24-hour security, access control, and electric fencing.\n\nResidents can enjoy a private park within the estate — a quiet, green space for children, families, and relaxed outdoor living. Junoah Estate is also conveniently located close to leading schools, shopping centres, and main transport routes.",
+        "descriptionHeader": "Beautiful 3 bed house in Garsfontein",
+        "photos": null,
+        "propertyInfo": {
+          "showLocation": false,
+          "suburbId": 140,
+          "streetNumber": "",
+          "streetName": "694 Cicely Street",
+          "sourceReference": "PRV-202608201031-U8YM",
+          "erf": {
+            "size": 150,
+            "areaUnit": "SquareMetres"
+          },
+          "floorArea": {
+            "size": 100,
+            "areaUnit": "SquareMetres"
+          },
+          "municipalRatesAndTaxes": {
+            "amount": 100,
+            "unit": "TotalPrice"
+          },
+          "monthlyLevy": {
+            "amount": 100,
+            "unit": "TotalPrice"
+          },
+          "propertyTypeId": 4
+        },
+        "propertyFeatures": {
+          "bedrooms": 3,
+          "bathrooms": {
+            "bathrooms": 2
+          },
+          "garages": 2,
+          "parking": {
+            "open": 2
+          },
+          "garden": false,
+          "pool": false,
+          "flatlet": false,
+          "petsAllowed": "DontKnow",
+          "furnishedStatus": "No"
+        }
+      },
+      "property24Response": {
+        "httpStatus": 200,
+        "durationMs": 369,
+        "summary": {
+          "type": "object",
+          "keys": [
+            "isOnPortal",
+            "listingNumber",
+            "reasons"
+          ],
+          "sample": {
+            "listingNumber": 100314793
+          }
+        },
+        "data": {
+          "isOnPortal": true,
+          "listingNumber": 100314793,
+          "reasons": []
+        }
+      },
+      "portalCheck": {
+        "httpStatus": 200,
+        "durationMs": 104,
+        "summary": {
+          "type": "boolean",
+          "value": true
+        },
+        "data": true
+      },
+      "databaseWrite": {
+        "table": "property24_listing_syncs",
+        "privateListingId": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+        "listingNumber": 100314793,
+        "property24Status": "published",
+        "property24Reference": "100314793"
+      },
+      "syncAttempt": {
+        "id": "4034bd0f-3341-4282-b072-2f115d06f5d9",
+        "private_listing_id": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+        "environment": "exdev",
+        "agency_id": 31382,
+        "listing_number": 100314793,
+        "action": "update",
+        "status": "succeeded",
+        "idempotency_key": "property24:exdev:update:f35d8916-2ae9-4364-b364-fc279e260fa7::63661a51d9b1e8249ebf140ade9eaf4a5295ebac409a5ffe1c258f6c2555734d",
+        "payload_hash": "63661a51d9b1e8249ebf140ade9eaf4a5295ebac409a5ffe1c258f6c2555734d",
+        "image_payload_hash": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+        "request_payload_summary": {
+          "action": "update",
+          "preview": {
+            "summary": {
+              "isPOA": false,
+              "price": 1234567,
+              "status": "Active",
+              "agencyId": 31382,
+              "suburbId": 140,
+              "expiryDate": "2026-12-31T00:00:00.000Z",
+              "imageCount": 4,
+              "listingType": "Sale",
+              "listingNumber": 100314793,
+              "propertyTypeId": 4,
+              "contactAgentIds": [
+                77959
+              ],
+              "photoPayloadCount": null,
+              "descriptionPresent": true,
+              "agentSourceReference": "ARCH9-AGENT-001"
+            },
+            "canSubmit": true,
+            "dataBlockers": [],
+            "imageByteLoad": {
+              "results": [
+                {
+                  "index": 0,
+                  "source": "url",
+                  "status": "LOADED",
+                  "sourceUrl": "[REDACTED_SIGNED_STORAGE_URL]",
+                  "byteLength": 353653,
+                  "convertedToJpeg": true,
+                  "mimeContentType": "image/jpeg",
+                  "originalByteLength": 3289214,
+                  "originalMimeContentType": "image/png"
+                },
+                {
+                  "index": 1,
+                  "source": "url",
+                  "status": "LOADED",
+                  "sourceUrl": "[REDACTED_SIGNED_STORAGE_URL]",
+                  "byteLength": 292522,
+                  "convertedToJpeg": true,
+                  "mimeContentType": "image/jpeg",
+                  "originalByteLength": 2848811,
+                  "originalMimeContentType": "image/png"
+                },
+                {
+                  "index": 2,
+                  "source": "url",
+                  "status": "LOADED",
+                  "sourceUrl": "[REDACTED_SIGNED_STORAGE_URL]",
+                  "byteLength": 331249,
+                  "convertedToJpeg": true,
+                  "mimeContentType": "image/jpeg",
+                  "originalByteLength": 2991516,
+                  "originalMimeContentType": "image/png"
+                },
+                {
+                  "index": 3,
+                  "source": "url",
+                  "status": "LOADED",
+                  "sourceUrl": "[REDACTED_SIGNED_STORAGE_URL]",
+                  "byteLength": 314437,
+                  "convertedToJpeg": true,
+                  "mimeContentType": "image/jpeg",
+                  "originalByteLength": 2782791,
+                  "originalMimeContentType": "image/png"
+                }
+              ],
+              "summary": {
+                "failed": 0,
+                "loaded": 4,
+                "skipped": 0,
+                "requested": 4,
+                "convertedToJpeg": 4
+              }
+            },
+            "technicalBlockers": []
+          },
+          "redactedPayload": {
+            "isPOA": false,
+            "price": 1234567,
+            "photos": null,
+            "status": "Active",
+            "agencyId": 31382,
+            "expiryDate": "2026-12-31T00:00:00.000Z",
+            "description": "This is an ExDev integration test listing. Do not publish publicly. Agent: your test/training use\nWelcome to Junoah Estate, a secure, single-storey residential development in the sought-after suburb of Bartlett, Boksburg. Built for modern families and working professionals, it combines comfort, clean design, and everyday convenience in a safe, community-focused setting.\n\nEach home offers three well-sized bedrooms, two full bathrooms, and open-plan living areas that lead out to a private garden with a built-in braai — ideal for entertaining or unwinding at home. The kitchen is fitted with a gas stove and designed for practical, everyday use. Every unit also includes a double garage and quality finishes throughout.\n\nOptional extras such as backup inverter systems and air conditioning allow you to tailor your home to your needs, with added peace of mind during load-shedding. The estate is fully enclosed and features 24-hour security, access control, and electric fencing.\n\nResidents can enjoy a private park within the estate — a quiet, green space for children, families, and relaxed outdoor living. Junoah Estate is also conveniently located close to leading schools, shopping centres, and main transport routes.",
+            "listingType": "Sale",
+            "propertyInfo": {
+              "erf": {
+                "size": 150,
+                "areaUnit": "SquareMetres"
+              },
+              "suburbId": 140,
+              "floorArea": {
+                "size": 100,
+                "areaUnit": "SquareMetres"
+              },
+              "streetName": "694 Cicely Street",
+              "monthlyLevy": {
+                "unit": "TotalPrice",
+                "amount": 100
+              },
+              "showLocation": false,
+              "streetNumber": "",
+              "propertyTypeId": 4,
+              "sourceReference": "PRV-202608201031-U8YM",
+              "municipalRatesAndTaxes": {
+                "unit": "TotalPrice",
+                "amount": 100
+              }
+            },
+            "listingNumber": 100314793,
+            "contactAgentIds": [
+              77959
+            ],
+            "propertyFeatures": {
+              "pool": false,
+              "garden": false,
+              "flatlet": false,
+              "garages": 2,
+              "parking": {
+                "open": 2
+              },
+              "bedrooms": 3,
+              "bathrooms": {
+                "bathrooms": 2
+              },
+              "petsAllowed": "DontKnow",
+              "furnishedStatus": "No"
+            },
+            "descriptionHeader": "Beautiful 3 bed house in Garsfontein",
+            "listingVisibility": "Public"
+          }
+        },
+        "response_summary": {
+          "portalCheck": {
+            "type": "boolean",
+            "value": true
+          },
+          "databaseWrite": {
+            "table": "property24_listing_syncs",
+            "listingNumber": 100314793,
+            "privateListingId": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+            "property24Status": "published",
+            "property24Reference": "100314793"
+          },
+          "property24Response": {
+            "keys": [
+              "isOnPortal",
+              "listingNumber",
+              "reasons"
+            ],
+            "type": "object",
+            "sample": {
+              "listingNumber": 100314793
+            }
+          }
+        },
+        "error_summary": {},
+        "property24_http_status": 200,
+        "duration_ms": 369,
+        "retry_count": 0,
+        "actor_user_id": null,
+        "started_at": "2026-08-20T12:37:41.01+00:00",
+        "finished_at": "2026-08-20T12:37:42.65+00:00",
+        "created_at": "2026-08-20T12:37:05.045838+00:00",
+        "updated_at": "2026-08-20T12:37:42.928309+00:00"
+      }
+    },
+    "proofUpdateWithImages": {
+      "phase": "property24-publish-listing",
+      "generatedAt": "2026-08-20T12:37:52.888Z",
+      "mode": "APPLY",
+      "status": "SUBMITTED",
+      "safety": {
+        "property24ApiCalled": true,
+        "databaseWritten": true,
+        "listingPublished": true
+      },
+      "listingId": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+      "preview": {
+        "canSubmit": true,
+        "dataBlockers": [],
+        "technicalBlockers": [],
+        "summary": {
+          "agencyId": 31382,
+          "contactAgentIds": [
+            77959
+          ],
+          "agentSourceReference": "ARCH9-AGENT-001",
+          "listingNumber": 100314793,
+          "listingType": "Sale",
+          "status": "Active",
+          "price": 1234567,
+          "isPOA": false,
+          "expiryDate": "2026-12-31T00:00:00.000Z",
+          "propertyTypeId": 4,
+          "suburbId": 140,
+          "imageCount": 4,
+          "photoPayloadCount": 4,
+          "descriptionPresent": true
+        },
+        "imageByteLoad": {
+          "summary": {
+            "requested": 4,
+            "loaded": 4,
+            "failed": 0,
+            "convertedToJpeg": 4,
+            "skipped": 0
+          },
+          "results": [
+            {
+              "index": 0,
+              "status": "LOADED",
+              "sourceUrl": "[REDACTED_SIGNED_STORAGE_URL]",
+              "mimeContentType": "image/jpeg",
+              "byteLength": 353653,
+              "convertedToJpeg": true,
+              "originalMimeContentType": "image/png",
+              "originalByteLength": 3289214,
+              "source": "url"
+            },
+            {
+              "index": 1,
+              "status": "LOADED",
+              "sourceUrl": "[REDACTED_SIGNED_STORAGE_URL]",
+              "mimeContentType": "image/jpeg",
+              "byteLength": 292522,
+              "convertedToJpeg": true,
+              "originalMimeContentType": "image/png",
+              "originalByteLength": 2848811,
+              "source": "url"
+            },
+            {
+              "index": 2,
+              "status": "LOADED",
+              "sourceUrl": "[REDACTED_SIGNED_STORAGE_URL]",
+              "mimeContentType": "image/jpeg",
+              "byteLength": 331249,
+              "convertedToJpeg": true,
+              "originalMimeContentType": "image/png",
+              "originalByteLength": 2991516,
+              "source": "url"
+            },
+            {
+              "index": 3,
+              "status": "LOADED",
+              "sourceUrl": "[REDACTED_SIGNED_STORAGE_URL]",
+              "mimeContentType": "image/jpeg",
+              "byteLength": 314437,
+              "convertedToJpeg": true,
+              "originalMimeContentType": "image/png",
+              "originalByteLength": 2782791,
+              "source": "url"
+            }
+          ]
+        }
+      },
+      "redactedPayload": {
+        "agencyId": 31382,
+        "contactAgentIds": [
+          77959
+        ],
+        "listingNumber": 100314793,
+        "listingType": "Sale",
+        "status": "Active",
+        "price": 1234567,
+        "isPOA": false,
+        "listingVisibility": "Public",
+        "expiryDate": "2026-12-31T00:00:00.000Z",
+        "description": "This is an ExDev integration test listing. Do not publish publicly. Agent: your test/training use\nWelcome to Junoah Estate, a secure, single-storey residential development in the sought-after suburb of Bartlett, Boksburg. Built for modern families and working professionals, it combines comfort, clean design, and everyday convenience in a safe, community-focused setting.\n\nEach home offers three well-sized bedrooms, two full bathrooms, and open-plan living areas that lead out to a private garden with a built-in braai — ideal for entertaining or unwinding at home. The kitchen is fitted with a gas stove and designed for practical, everyday use. Every unit also includes a double garage and quality finishes throughout.\n\nOptional extras such as backup inverter systems and air conditioning allow you to tailor your home to your needs, with added peace of mind during load-shedding. The estate is fully enclosed and features 24-hour security, access control, and electric fencing.\n\nResidents can enjoy a private park within the estate — a quiet, green space for children, families, and relaxed outdoor living. Junoah Estate is also conveniently located close to leading schools, shopping centres, and main transport routes.",
+        "descriptionHeader": "Beautiful 3 bed house in Garsfontein",
+        "photos": [
+          {
+            "mimeContentType": "image/jpeg",
+            "caption": "Screenshot 2025-10-20 at 10.19.54.png",
+            "isFloorPlan": false,
+            "bytesLoaded": true,
+            "byteLengthApprox": 353655
+          },
+          {
+            "mimeContentType": "image/jpeg",
+            "caption": "Screenshot 2025-10-20 at 10.20.04.png",
+            "isFloorPlan": false,
+            "bytesLoaded": true,
+            "byteLengthApprox": 292524
+          },
+          {
+            "mimeContentType": "image/jpeg",
+            "caption": "Screenshot 2025-10-20 at 10.20.12.png",
+            "isFloorPlan": false,
+            "bytesLoaded": true,
+            "byteLengthApprox": 331251
+          },
+          {
+            "mimeContentType": "image/jpeg",
+            "caption": "Screenshot 2025-10-20 at 10.20.24.png",
+            "isFloorPlan": false,
+            "bytesLoaded": true,
+            "byteLengthApprox": 314439
+          }
+        ],
+        "propertyInfo": {
+          "showLocation": false,
+          "suburbId": 140,
+          "streetNumber": "",
+          "streetName": "694 Cicely Street",
+          "sourceReference": "PRV-202608201031-U8YM",
+          "erf": {
+            "size": 150,
+            "areaUnit": "SquareMetres"
+          },
+          "floorArea": {
+            "size": 100,
+            "areaUnit": "SquareMetres"
+          },
+          "municipalRatesAndTaxes": {
+            "amount": 100,
+            "unit": "TotalPrice"
+          },
+          "monthlyLevy": {
+            "amount": 100,
+            "unit": "TotalPrice"
+          },
+          "propertyTypeId": 4
+        },
+        "propertyFeatures": {
+          "bedrooms": 3,
+          "bathrooms": {
+            "bathrooms": 2
+          },
+          "garages": 2,
+          "parking": {
+            "open": 2
+          },
+          "garden": false,
+          "pool": false,
+          "flatlet": false,
+          "petsAllowed": "DontKnow",
+          "furnishedStatus": "No"
+        }
+      },
+      "property24Response": {
+        "httpStatus": 200,
+        "durationMs": 2197,
+        "summary": {
+          "type": "object",
+          "keys": [
+            "isOnPortal",
+            "listingNumber",
+            "reasons"
+          ],
+          "sample": {
+            "listingNumber": 100314793
+          }
+        },
+        "data": {
+          "isOnPortal": true,
+          "listingNumber": 100314793,
+          "reasons": []
+        }
+      },
+      "portalCheck": {
+        "httpStatus": 200,
+        "durationMs": 92,
+        "summary": {
+          "type": "boolean",
+          "value": true
+        },
+        "data": true
+      },
+      "databaseWrite": {
+        "table": "property24_listing_syncs",
+        "privateListingId": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+        "listingNumber": 100314793,
+        "property24Status": "published",
+        "property24Reference": "100314793"
+      },
+      "syncAttempt": {
+        "id": "b1ae6190-62c8-41bc-a6dd-96172676bf0e",
+        "private_listing_id": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+        "environment": "exdev",
+        "agency_id": 31382,
+        "listing_number": 100314793,
+        "action": "update",
+        "status": "succeeded",
+        "idempotency_key": "property24:exdev:update:f35d8916-2ae9-4364-b364-fc279e260fa7::29fe8e2c6c6533c9f4c2aa6dfb8af6bb20e346c84e4fd1e1a1a5b808d9ac5929",
+        "payload_hash": "29fe8e2c6c6533c9f4c2aa6dfb8af6bb20e346c84e4fd1e1a1a5b808d9ac5929",
+        "image_payload_hash": "0da042e989a31ced70ea217f706876c603776c0a906379262e6a0a0c1b10eb14",
+        "request_payload_summary": {
+          "action": "update",
+          "preview": {
+            "summary": {
+              "isPOA": false,
+              "price": 1234567,
+              "status": "Active",
+              "agencyId": 31382,
+              "suburbId": 140,
+              "expiryDate": "2026-12-31T00:00:00.000Z",
+              "imageCount": 4,
+              "listingType": "Sale",
+              "listingNumber": 100314793,
+              "propertyTypeId": 4,
+              "contactAgentIds": [
+                77959
+              ],
+              "photoPayloadCount": 4,
+              "descriptionPresent": true,
+              "agentSourceReference": "ARCH9-AGENT-001"
+            },
+            "canSubmit": true,
+            "dataBlockers": [],
+            "imageByteLoad": {
+              "results": [
+                {
+                  "index": 0,
+                  "source": "url",
+                  "status": "LOADED",
+                  "sourceUrl": "[REDACTED_SIGNED_STORAGE_URL]",
+                  "byteLength": 353653,
+                  "convertedToJpeg": true,
+                  "mimeContentType": "image/jpeg",
+                  "originalByteLength": 3289214,
+                  "originalMimeContentType": "image/png"
+                },
+                {
+                  "index": 1,
+                  "source": "url",
+                  "status": "LOADED",
+                  "sourceUrl": "[REDACTED_SIGNED_STORAGE_URL]",
+                  "byteLength": 292522,
+                  "convertedToJpeg": true,
+                  "mimeContentType": "image/jpeg",
+                  "originalByteLength": 2848811,
+                  "originalMimeContentType": "image/png"
+                },
+                {
+                  "index": 2,
+                  "source": "url",
+                  "status": "LOADED",
+                  "sourceUrl": "[REDACTED_SIGNED_STORAGE_URL]",
+                  "byteLength": 331249,
+                  "convertedToJpeg": true,
+                  "mimeContentType": "image/jpeg",
+                  "originalByteLength": 2991516,
+                  "originalMimeContentType": "image/png"
+                },
+                {
+                  "index": 3,
+                  "source": "url",
+                  "status": "LOADED",
+                  "sourceUrl": "[REDACTED_SIGNED_STORAGE_URL]",
+                  "byteLength": 314437,
+                  "convertedToJpeg": true,
+                  "mimeContentType": "image/jpeg",
+                  "originalByteLength": 2782791,
+                  "originalMimeContentType": "image/png"
+                }
+              ],
+              "summary": {
+                "failed": 0,
+                "loaded": 4,
+                "skipped": 0,
+                "requested": 4,
+                "convertedToJpeg": 4
+              }
+            },
+            "technicalBlockers": []
+          },
+          "redactedPayload": {
+            "isPOA": false,
+            "price": 1234567,
+            "photos": [
+              {
+                "caption": "Screenshot 2025-10-20 at 10.19.54.png",
+                "bytesLoaded": true,
+                "isFloorPlan": false,
+                "mimeContentType": "image/jpeg",
+                "byteLengthApprox": 353655
+              },
+              {
+                "caption": "Screenshot 2025-10-20 at 10.20.04.png",
+                "bytesLoaded": true,
+                "isFloorPlan": false,
+                "mimeContentType": "image/jpeg",
+                "byteLengthApprox": 292524
+              },
+              {
+                "caption": "Screenshot 2025-10-20 at 10.20.12.png",
+                "bytesLoaded": true,
+                "isFloorPlan": false,
+                "mimeContentType": "image/jpeg",
+                "byteLengthApprox": 331251
+              },
+              {
+                "caption": "Screenshot 2025-10-20 at 10.20.24.png",
+                "bytesLoaded": true,
+                "isFloorPlan": false,
+                "mimeContentType": "image/jpeg",
+                "byteLengthApprox": 314439
+              }
+            ],
+            "status": "Active",
+            "agencyId": 31382,
+            "expiryDate": "2026-12-31T00:00:00.000Z",
+            "description": "This is an ExDev integration test listing. Do not publish publicly. Agent: your test/training use\nWelcome to Junoah Estate, a secure, single-storey residential development in the sought-after suburb of Bartlett, Boksburg. Built for modern families and working professionals, it combines comfort, clean design, and everyday convenience in a safe, community-focused setting.\n\nEach home offers three well-sized bedrooms, two full bathrooms, and open-plan living areas that lead out to a private garden with a built-in braai — ideal for entertaining or unwinding at home. The kitchen is fitted with a gas stove and designed for practical, everyday use. Every unit also includes a double garage and quality finishes throughout.\n\nOptional extras such as backup inverter systems and air conditioning allow you to tailor your home to your needs, with added peace of mind during load-shedding. The estate is fully enclosed and features 24-hour security, access control, and electric fencing.\n\nResidents can enjoy a private park within the estate — a quiet, green space for children, families, and relaxed outdoor living. Junoah Estate is also conveniently located close to leading schools, shopping centres, and main transport routes.",
+            "listingType": "Sale",
+            "propertyInfo": {
+              "erf": {
+                "size": 150,
+                "areaUnit": "SquareMetres"
+              },
+              "suburbId": 140,
+              "floorArea": {
+                "size": 100,
+                "areaUnit": "SquareMetres"
+              },
+              "streetName": "694 Cicely Street",
+              "monthlyLevy": {
+                "unit": "TotalPrice",
+                "amount": 100
+              },
+              "showLocation": false,
+              "streetNumber": "",
+              "propertyTypeId": 4,
+              "sourceReference": "PRV-202608201031-U8YM",
+              "municipalRatesAndTaxes": {
+                "unit": "TotalPrice",
+                "amount": 100
+              }
+            },
+            "listingNumber": 100314793,
+            "contactAgentIds": [
+              77959
+            ],
+            "propertyFeatures": {
+              "pool": false,
+              "garden": false,
+              "flatlet": false,
+              "garages": 2,
+              "parking": {
+                "open": 2
+              },
+              "bedrooms": 3,
+              "bathrooms": {
+                "bathrooms": 2
+              },
+              "petsAllowed": "DontKnow",
+              "furnishedStatus": "No"
+            },
+            "descriptionHeader": "Beautiful 3 bed house in Garsfontein",
+            "listingVisibility": "Public"
+          }
+        },
+        "response_summary": {
+          "portalCheck": {
+            "type": "boolean",
+            "value": true
+          },
+          "databaseWrite": {
+            "table": "property24_listing_syncs",
+            "listingNumber": 100314793,
+            "privateListingId": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+            "property24Status": "published",
+            "property24Reference": "100314793"
+          },
+          "property24Response": {
+            "keys": [
+              "isOnPortal",
+              "listingNumber",
+              "reasons"
+            ],
+            "type": "object",
+            "sample": {
+              "listingNumber": 100314793
+            }
+          }
+        },
+        "error_summary": {},
+        "property24_http_status": 200,
+        "duration_ms": 2197,
+        "retry_count": 0,
+        "actor_user_id": null,
+        "started_at": "2026-08-20T12:37:52.896+00:00",
+        "finished_at": "2026-08-20T12:37:56.44+00:00",
+        "created_at": "2026-08-20T12:37:53.168853+00:00",
+        "updated_at": "2026-08-20T12:37:56.697837+00:00"
+      }
+    },
+    "proofStatusWithdrawn": {
+      "phase": "property24-status-update",
+      "generatedAt": "2026-08-20T12:22:17.214Z",
+      "status": "SUBMITTED",
+      "listingId": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+      "listingNumber": "100314793",
+      "listingStatus": "Withdrawn",
+      "property24Response": {
+        "httpStatus": 200,
+        "durationMs": 375,
+        "summary": {
+          "type": "string",
+          "value": ""
+        },
+        "data": ""
+      },
+      "portalCheck": {
+        "httpStatus": 200,
+        "durationMs": 173,
+        "summary": {
+          "type": "boolean",
+          "value": false
+        },
+        "data": false
+      },
+      "databaseWrite": {
+        "table": "property24_listing_syncs",
+        "listingNumber": 100314793,
+        "property24Status": "removed",
+        "property24Reference": "100314793",
+        "syncWarning": {
+          "code": "property24_listing_sync_hash_columns_missing",
+          "message": "property24_listing_syncs hash columns are not available; sync record was written without payload hashes."
+        }
+      },
+      "syncAttempt": {
+        "private_listing_id": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+        "environment": "exdev",
+        "agency_id": 31382,
+        "listing_number": 100314793,
+        "action": "status_update",
+        "status": "skipped",
+        "idempotency_key": "property24:exdev:status_update:f35d8916-2ae9-4364-b364-fc279e260fa7:Withdrawn:70d43311f80a35ccfd316c1b6c31576acadc51af6ca816796a1090e652b3da32",
+        "payload_hash": "70d43311f80a35ccfd316c1b6c31576acadc51af6ca816796a1090e652b3da32",
+        "image_payload_hash": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+        "request_payload_summary": {
+          "listingNumber": "100314793",
+          "listingStatus": "Withdrawn"
+        },
+        "response_summary": {},
+        "error_summary": {},
+        "actor_user_id": null,
+        "started_at": "2026-08-20T12:22:15.309Z",
+        "finished_at": null,
+        "id": null,
+        "warning": {
+          "code": "property24_sync_attempts_missing",
+          "message": "property24_sync_attempts table is not available; external write continued without attempt persistence."
+        }
+      }
+    },
+    "proofStatusActive": {
+      "phase": "property24-status-update",
+      "generatedAt": "2026-08-20T12:22:32.676Z",
+      "status": "SUBMITTED",
+      "listingId": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+      "listingNumber": "100314793",
+      "listingStatus": "Active",
+      "property24Response": {
+        "httpStatus": 200,
+        "durationMs": 339,
+        "summary": {
+          "type": "string",
+          "value": ""
+        },
+        "data": ""
+      },
+      "portalCheck": {
+        "httpStatus": 200,
+        "durationMs": 281,
+        "summary": {
+          "type": "boolean",
+          "value": true
+        },
+        "data": true
+      },
+      "databaseWrite": {
+        "table": "property24_listing_syncs",
+        "listingNumber": 100314793,
+        "property24Status": "published",
+        "property24Reference": "100314793",
+        "syncWarning": {
+          "code": "property24_listing_sync_hash_columns_missing",
+          "message": "property24_listing_syncs hash columns are not available; sync record was written without payload hashes."
+        }
+      },
+      "syncAttempt": {
+        "private_listing_id": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+        "environment": "exdev",
+        "agency_id": 31382,
+        "listing_number": 100314793,
+        "action": "status_update",
+        "status": "skipped",
+        "idempotency_key": "property24:exdev:status_update:f35d8916-2ae9-4364-b364-fc279e260fa7:Active:4aebcf9d8d9e5bdfb9974dac2e060681d8f09398055e58784f6f550261b7ceb2",
+        "payload_hash": "4aebcf9d8d9e5bdfb9974dac2e060681d8f09398055e58784f6f550261b7ceb2",
+        "image_payload_hash": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+        "request_payload_summary": {
+          "listingNumber": "100314793",
+          "listingStatus": "Active"
+        },
+        "response_summary": {},
+        "error_summary": {},
+        "actor_user_id": null,
+        "started_at": "2026-08-20T12:22:30.596Z",
+        "finished_at": null,
+        "id": null,
+        "warning": {
+          "code": "property24_sync_attempts_missing",
+          "message": "property24_sync_attempts table is not available; external write continued without attempt persistence."
+        }
+      }
+    },
+    "proofStatusPending": {
+      "phase": "property24-status-update",
+      "generatedAt": "2026-08-20T12:22:44.740Z",
+      "status": "SUBMITTED",
+      "listingId": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+      "listingNumber": "100314793",
+      "listingStatus": "Pending",
+      "property24Response": {
+        "httpStatus": 200,
+        "durationMs": 328,
+        "summary": {
+          "type": "string",
+          "value": ""
+        },
+        "data": ""
+      },
+      "portalCheck": {
+        "httpStatus": 200,
+        "durationMs": 390,
+        "summary": {
+          "type": "boolean",
+          "value": true
+        },
+        "data": true
+      },
+      "databaseWrite": {
+        "table": "property24_listing_syncs",
+        "listingNumber": 100314793,
+        "property24Status": "published",
+        "property24Reference": "100314793",
+        "syncWarning": {
+          "code": "property24_listing_sync_hash_columns_missing",
+          "message": "property24_listing_syncs hash columns are not available; sync record was written without payload hashes."
+        }
+      },
+      "syncAttempt": {
+        "private_listing_id": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+        "environment": "exdev",
+        "agency_id": 31382,
+        "listing_number": 100314793,
+        "action": "status_update",
+        "status": "skipped",
+        "idempotency_key": "property24:exdev:status_update:f35d8916-2ae9-4364-b364-fc279e260fa7:Pending:3fdba374eb83872e25f96eb374524fa4beb5f2d879e87b991aab55312a57e7e9",
+        "payload_hash": "3fdba374eb83872e25f96eb374524fa4beb5f2d879e87b991aab55312a57e7e9",
+        "image_payload_hash": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+        "request_payload_summary": {
+          "listingNumber": "100314793",
+          "listingStatus": "Pending"
+        },
+        "response_summary": {},
+        "error_summary": {},
+        "actor_user_id": null,
+        "started_at": "2026-08-20T12:22:42.681Z",
+        "finished_at": null,
+        "id": null,
+        "warning": {
+          "code": "property24_sync_attempts_missing",
+          "message": "property24_sync_attempts table is not available; external write continued without attempt persistence."
+        }
+      }
+    },
+    "proofStatusSold": {
+      "phase": "property24-status-update",
+      "generatedAt": "2026-08-20T12:22:56.705Z",
+      "status": "SUBMITTED",
+      "listingId": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+      "listingNumber": "100314793",
+      "listingStatus": "Sold",
+      "property24Response": {
+        "httpStatus": 200,
+        "durationMs": 575,
+        "summary": {
+          "type": "string",
+          "value": ""
+        },
+        "data": ""
+      },
+      "portalCheck": {
+        "httpStatus": 200,
+        "durationMs": 323,
+        "summary": {
+          "type": "boolean",
+          "value": false
+        },
+        "data": false
+      },
+      "databaseWrite": {
+        "table": "property24_listing_syncs",
+        "listingNumber": 100314793,
+        "property24Status": "draft",
+        "property24Reference": "100314793",
+        "syncWarning": {
+          "code": "property24_listing_sync_hash_columns_missing",
+          "message": "property24_listing_syncs hash columns are not available; sync record was written without payload hashes."
+        }
+      },
+      "syncAttempt": {
+        "private_listing_id": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+        "environment": "exdev",
+        "agency_id": 31382,
+        "listing_number": 100314793,
+        "action": "status_update",
+        "status": "skipped",
+        "idempotency_key": "property24:exdev:status_update:f35d8916-2ae9-4364-b364-fc279e260fa7:Sold:2c200ba1756adf2cc48b94895496ef14252785814f6cb56cbbd8ab9e55877901",
+        "payload_hash": "2c200ba1756adf2cc48b94895496ef14252785814f6cb56cbbd8ab9e55877901",
+        "image_payload_hash": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+        "request_payload_summary": {
+          "listingNumber": "100314793",
+          "listingStatus": "Sold"
+        },
+        "response_summary": {},
+        "error_summary": {},
+        "actor_user_id": null,
+        "started_at": "2026-08-20T12:22:54.416Z",
+        "finished_at": null,
+        "id": null,
+        "warning": {
+          "code": "property24_sync_attempts_missing",
+          "message": "property24_sync_attempts table is not available; external write continued without attempt persistence."
+        }
+      }
+    },
+    "proofStatusFinalActive": {
+      "phase": "property24-status-update",
+      "generatedAt": "2026-08-20T12:23:15.841Z",
+      "status": "SUBMITTED",
+      "listingId": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+      "listingNumber": "100314793",
+      "listingStatus": "Active",
+      "property24Response": {
+        "httpStatus": 200,
+        "durationMs": 298,
+        "summary": {
+          "type": "string",
+          "value": ""
+        },
+        "data": ""
+      },
+      "portalCheck": {
+        "httpStatus": 200,
+        "durationMs": 228,
+        "summary": {
+          "type": "boolean",
+          "value": true
+        },
+        "data": true
+      },
+      "databaseWrite": {
+        "table": "property24_listing_syncs",
+        "listingNumber": 100314793,
+        "property24Status": "published",
+        "property24Reference": "100314793",
+        "syncWarning": {
+          "code": "property24_listing_sync_hash_columns_missing",
+          "message": "property24_listing_syncs hash columns are not available; sync record was written without payload hashes."
+        }
+      },
+      "syncAttempt": {
+        "private_listing_id": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+        "environment": "exdev",
+        "agency_id": 31382,
+        "listing_number": 100314793,
+        "action": "status_update",
+        "status": "skipped",
+        "idempotency_key": "property24:exdev:status_update:f35d8916-2ae9-4364-b364-fc279e260fa7:Active:4aebcf9d8d9e5bdfb9974dac2e060681d8f09398055e58784f6f550261b7ceb2",
+        "payload_hash": "4aebcf9d8d9e5bdfb9974dac2e060681d8f09398055e58784f6f550261b7ceb2",
+        "image_payload_hash": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+        "request_payload_summary": {
+          "listingNumber": "100314793",
+          "listingStatus": "Active"
+        },
+        "response_summary": {},
+        "error_summary": {},
+        "actor_user_id": null,
+        "started_at": "2026-08-20T12:23:14.026Z",
+        "finished_at": null,
+        "id": null,
+        "warning": {
+          "code": "property24_sync_attempts_missing",
+          "message": "property24_sync_attempts table is not available; external write continued without attempt persistence."
+        }
+      }
+    }
+  }
+}

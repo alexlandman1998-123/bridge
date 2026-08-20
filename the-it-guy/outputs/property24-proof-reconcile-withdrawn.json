@@ -1,0 +1,118 @@
+{
+  "phase": "property24-phase5-reconciliation",
+  "generatedAt": "2026-08-20T12:22:20.678Z",
+  "environment": "exdev",
+  "agencyId": "31382",
+  "mode": "REPORT_ONLY",
+  "safety": {
+    "property24ApiCalled": true,
+    "databaseWritten": false,
+    "listingPublished": false,
+    "leadsCreated": false
+  },
+  "reconciliation": {
+    "generatedAt": "2026-08-20T12:22:20.678Z",
+    "environment": "exdev",
+    "agencyId": "31382",
+    "property24": {
+      "httpStatus": 200,
+      "durationMs": 322,
+      "summary": {
+        "type": "array",
+        "count": 0,
+        "sample": []
+      }
+    },
+    "summary": {
+      "localCount": 1,
+      "remoteCount": 0,
+      "matchedCount": 0,
+      "missingOnProperty24Count": 1,
+      "unexpectedOnProperty24Count": 0,
+      "statusDriftCount": 0
+    },
+    "matched": [],
+    "missingOnProperty24": [
+      {
+        "id": "3eba8d4a-ea95-4724-ab20-34e9e903617c",
+        "listingId": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+        "agencyId": 31382,
+        "listingNumber": 100314793,
+        "externalStatus": "removed",
+        "externalStatusKey": "removed",
+        "isOnPortal": false,
+        "lastSuccessfulSyncAt": "2026-08-20T12:22:16.261+00:00",
+        "lastCheckedAt": "2026-08-20T12:22:16.261+00:00",
+        "listing": {
+          "id": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+          "organisationId": "ec19d0a6-bcba-4eef-aa72-9972de88204d",
+          "title": "Beautiful 3 bed house in Garsfontein",
+          "status": "listing_review",
+          "property24Status": "removed",
+          "property24Reference": "100314793"
+        }
+      }
+    ],
+    "unexpectedOnProperty24": [],
+    "statusDrift": []
+  },
+  "updates": {
+    "generatedAt": "2026-08-20T12:22:20.678Z",
+    "environment": "exdev",
+    "agencyId": "31382",
+    "fromDate": "2026-08-19T12:22:20.678Z",
+    "property24": {
+      "httpStatus": 200,
+      "durationMs": 67,
+      "summary": {
+        "type": "object",
+        "keys": [
+          "listings",
+          "nextRequestDate"
+        ],
+        "sample": {}
+      }
+    },
+    "summary": {
+      "updateCount": 1,
+      "matchedCount": 1,
+      "unmatchedCount": 0
+    },
+    "updates": [
+      {
+        "listingNumber": 100314793,
+        "status": null,
+        "statusKey": "",
+        "syncStatusKey": "not_on_portal",
+        "isOnPortal": false,
+        "updatedAt": null,
+        "listingId": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+        "knownToArch9": true,
+        "localStatus": "removed",
+        "localIsOnPortal": false
+      }
+    ]
+  },
+  "portalVisibility": {
+    "generatedAt": "2026-08-20T12:22:20.678Z",
+    "environment": "exdev",
+    "agencyId": "31382",
+    "summary": {
+      "checkedCount": 1,
+      "driftCount": 0,
+      "failedCount": 0
+    },
+    "checks": [
+      {
+        "listingNumber": 100314793,
+        "listingId": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+        "localIsOnPortal": false,
+        "remoteIsOnPortal": false,
+        "drift": false,
+        "httpStatus": 200,
+        "durationMs": 100
+      }
+    ]
+  },
+  "status": "NEEDS_REVIEW"
+}
