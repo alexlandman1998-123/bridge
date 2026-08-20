@@ -98,6 +98,8 @@ const DEVELOPMENT_TABS = [
   { id: 'configuration', label: 'Configuration' },
 ]
 
+const DEVELOPMENT_PRIMARY_TABS = DEVELOPMENT_TABS.filter((tab) => tab.id !== 'transactions')
+
 const DOCUMENT_TYPE_OPTIONS = [
   { value: 'logo', label: 'Development Logo' },
   { value: 'floorplan', label: 'Floorplan' },
@@ -5982,7 +5984,7 @@ function DevelopmentDetail() {
   }
 
   return (
-    <section className="min-w-0 max-w-full overflow-x-hidden">
+    <section className="min-w-0 max-w-full overflow-x-hidden pb-12 lg:pb-16">
       <div className="flex min-w-0 flex-col">
       {error ? <p className="mt-4 rounded-[16px] border border-[#f3d2cc] bg-[#fef3f2] px-5 py-4 text-sm text-[#b42318]">{error}</p> : null}
       {feedback ? <p className="mt-4 rounded-[16px] border border-[#d6ece0] bg-[#edfdf3] px-5 py-4 text-sm text-[#1c7d45]">{feedback}</p> : null}
@@ -6099,8 +6101,8 @@ function DevelopmentDetail() {
       </section>
 
       <section className="mt-4 rounded-[24px] border border-[#dde4ee] bg-white p-3 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-        <div className="grid gap-2 md:grid-cols-4 xl:grid-cols-7" role="tablist" aria-label="Development workspace tabs">
-          {DEVELOPMENT_TABS.map((tab) => {
+        <div className="grid gap-2 md:grid-cols-3 xl:grid-cols-6" role="tablist" aria-label="Development workspace tabs">
+          {DEVELOPMENT_PRIMARY_TABS.map((tab) => {
             const isActive = activeTab === tab.id
             return (
               <button

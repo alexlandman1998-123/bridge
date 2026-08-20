@@ -6,6 +6,10 @@ function normalizeKey(value) {
   return normalizeText(value).toLowerCase().replace(/[\s-]+/g, '_')
 }
 
+function toRecord(value) {
+  return value && typeof value === 'object' ? value : {}
+}
+
 function toTitleLabel(value) {
   return normalizeText(value)
     .replaceAll('_', ' ')
@@ -46,13 +50,15 @@ function action({
   }
 }
 
-function inferActionQueue({
-  transaction = {},
-  relationshipSummary = null,
-  operationsSummary = null,
-  mandateProfile = null,
-  onboardingStatus = '',
-} = {}) {
+function inferActionQueue(input = {}) {
+  const {
+    transaction: rawTransaction = {},
+    relationshipSummary = null,
+    operationsSummary = null,
+    mandateProfile = null,
+    onboardingStatus = '',
+  } = input || {}
+  const transaction = toRecord(rawTransaction)
   const queue = []
   const missingRequiredRows = Array.isArray(relationshipSummary?.missingRequiredRows)
     ? relationshipSummary.missingRequiredRows
@@ -159,13 +165,15 @@ function inferActionQueue({
   return queue
 }
 
-export function buildDeveloperTransactionReadinessProfile({
-  transaction = {},
-  relationshipSummary = null,
-  operationsSummary = null,
-  mandateProfile = null,
-  onboardingStatus = '',
-} = {}) {
+export function buildDeveloperTransactionReadinessProfile(input = {}) {
+  const {
+    transaction: rawTransaction = {},
+    relationshipSummary = null,
+    operationsSummary = null,
+    mandateProfile = null,
+    onboardingStatus = '',
+  } = input || {}
+  const transaction = toRecord(rawTransaction)
   if (!relationshipSummary?.relationshipProfile?.isDeveloperSale && !operationsSummary?.isDeveloperSale) {
     return null
   }
@@ -228,7 +236,12 @@ function isDeveloperSaleRow(row = {}) {
   )
 }
 
-function buildRelationshipSummaryFromRow({ row = {}, transaction = {}, unit = {}, buyer = {} } = {}) {
+function buildRelationshipSummaryFromRow(input = {}) {
+  const { row: rawRow = {}, transaction: rawTransaction = {}, unit: rawUnit = {}, buyer: rawBuyer = {} } = input || {}
+  const row = toRecord(rawRow)
+  const transaction = toRecord(rawTransaction)
+  const unit = toRecord(rawUnit)
+  const buyer = toRecord(rawBuyer)
   const developmentName = normalizeText(row?.development?.name || unit?.development?.name || transaction.developer_name || transaction.developer)
   const buyerName = normalizeText(buyer?.name || row?.buyerName || transaction.buyer_name)
   const assignedAgent = normalizeText(transaction.assigned_agent || row?.assignedAgent || row?.agent)
@@ -261,7 +274,10 @@ function buildRelationshipSummaryFromRow({ row = {}, transaction = {}, unit = {}
   }
 }
 
-function buildMandateProfileFromRow({ relationshipSummary = null, transaction = {}, row = {} } = {}) {
+function buildMandateProfileFromRow(input = {}) {
+  const { relationshipSummary = null, transaction: rawTransaction = {}, row: rawRow = {} } = input || {}
+  const transaction = toRecord(rawTransaction)
+  const row = toRecord(rawRow)
   const developerAgentMandateRequired = Boolean(relationshipSummary?.relationshipProfile?.developerAgentMandateRequired)
   const developerName = normalizeText(row?.development?.name || row?.unit?.development?.name || transaction.developer_name || transaction.developer)
   const agentName = normalizeText(transaction.assigned_agent || row?.assignedAgent || row?.agent)
@@ -296,7 +312,10 @@ function buildMandateProfileFromRow({ relationshipSummary = null, transaction = 
   }
 }
 
-function buildOperationsSummaryFromRow({ row = {}, transaction = {} } = {}) {
+function buildOperationsSummaryFromRow(input = {}) {
+  const { row: rawRow = {}, transaction: rawTransaction = {} } = input || {}
+  const row = toRecord(rawRow)
+  const transaction = toRecord(rawTransaction)
   const handover = row?.handover || {}
   const snagSummary = row?.snagSummary || row?.snags || {}
   const openSnagCount = Number(snagSummary.openCount || snagSummary.open_count || 0)

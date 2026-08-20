@@ -485,6 +485,59 @@ function normalizeText(value) {
   return String(value || '').trim()
 }
 
+function resolveDevelopmentWorkspaceAssignedAgent(settings = {}) {
+  const teams = settings?.stakeholderTeams || settings?.stakeholder_teams || {}
+  const defaults = teams?.rolePlayerDefaults || teams?.role_player_defaults || {}
+  const agents = Array.isArray(teams?.agents) ? teams.agents : []
+  const preferredKey = normalizeText(
+    defaults.defaultAgentRelationshipId ||
+      defaults.default_agent_relationship_id ||
+      defaults.defaultAgentPreferredPartnerId ||
+      defaults.default_agent_preferred_partner_id,
+  ).toLowerCase()
+  const selectedAgent =
+    agents.find((agent) => {
+      const keys = [
+        agent?.id,
+        agent?.organisationUserId,
+        agent?.organisation_user_id,
+        agent?.userId,
+        agent?.user_id,
+        agent?.email,
+        agent?.contactEmail,
+      ]
+        .map((value) => normalizeText(value).toLowerCase())
+        .filter(Boolean)
+      return preferredKey && keys.includes(preferredKey)
+    }) ||
+    agents.find((agent) => {
+      const status = normalizeText(agent?.status || agent?.membershipStatus || agent?.membership_status || 'active').toLowerCase()
+      return !status || ['active', 'accepted', 'invited', 'pending'].includes(status)
+    }) ||
+    null
+  const fullName = [
+    selectedAgent?.firstName || selectedAgent?.first_name,
+    selectedAgent?.lastName || selectedAgent?.last_name,
+  ]
+    .map(normalizeText)
+    .filter(Boolean)
+    .join(' ')
+  const name = normalizeText(
+    selectedAgent?.name ||
+      selectedAgent?.contactName ||
+      selectedAgent?.fullName ||
+      selectedAgent?.full_name ||
+      fullName ||
+      defaults.defaultAgentName ||
+      defaults.default_agent_name ||
+      selectedAgent?.email ||
+      selectedAgent?.contactEmail,
+  )
+  const email = normalizeText(selectedAgent?.email || selectedAgent?.contactEmail).toLowerCase()
+
+  return { name, email }
+}
+
 function normalizeDevelopmentSellerSnapshot(value = {}) {
   const source = value && typeof value === 'object' ? value : {}
   const signatory =
@@ -3305,14 +3358,15 @@ function UnitDetail() {
       const activePortalLink = (data?.clientPortalLinks || []).find((link) => link.is_active && link.token) || null
       setClientPortalLink(activePortalLink)
 
+      const fallbackAssignedAgent = resolveDevelopmentWorkspaceAssignedAgent(data?.developmentSettings)
       if (data?.transaction) {
         setStageForm({
           main_stage: data.mainStage || 'AVAIL',
           finance_type: normalizeFinanceType(data.transaction.finance_type || 'cash'),
           purchaser_type: data.transaction.purchaser_type || data.purchaserType || 'individual',
           finance_managed_by: data.transaction.finance_managed_by || 'bond_originator',
-          assigned_agent: data.transaction.assigned_agent || '',
-          assigned_agent_email: data.transaction.assigned_agent_email || '',
+          assigned_agent: data.transaction.assigned_agent || fallbackAssignedAgent.name || '',
+          assigned_agent_email: data.transaction.assigned_agent_email || fallbackAssignedAgent.email || '',
           attorney: data.transaction.attorney || '',
           assigned_attorney_email: data.transaction.assigned_attorney_email || '',
           bond_originator: data.transaction.bond_originator || '',
@@ -3325,6 +3379,8 @@ function UnitDetail() {
           ...previous,
           main_stage: data.mainStage || 'AVAIL',
           purchaser_type: data.purchaserType || 'individual',
+          assigned_agent: previous.assigned_agent || fallbackAssignedAgent.name || '',
+          assigned_agent_email: previous.assigned_agent_email || fallbackAssignedAgent.email || '',
         }))
         setActingRole(data.activeViewerRole || 'developer')
       }
@@ -6967,6 +7023,7 @@ function UnitDetail() {
   const developmentModuleState = developmentSettings?.enabledModules || {}
   const developmentTeams = developmentSettings?.stakeholderTeams || {}
   const agentOptions = developmentTeams.agents || []
+  const defaultDevelopmentAssignedAgent = resolveDevelopmentWorkspaceAssignedAgent(developmentSettings)
   const conveyancerOptions = developmentTeams.conveyancers || []
   const bondOriginatorOptions = developmentTeams.bondOriginators || []
   const attorneyAccessInherited = Boolean(attorneyParticipant?.accessInherited)
@@ -7027,6 +7084,7 @@ function UnitDetail() {
     stageForm.assigned_agent ||
     transaction?.assigned_agent ||
     transactionParticipants?.find((item) => item.roleType === 'agent')?.participantName ||
+    defaultDevelopmentAssignedAgent.name ||
     'Not assigned'
   const transferAttorneyDisplayName =
     stageForm.attorney ||
@@ -8267,7 +8325,7 @@ function UnitDetail() {
         {[
           { role: 'Developer', name: sellerDisplayName, detail: unit?.development?.organisation_name || unit?.development?.name || '', icon: Building2, active: true },
           { role: 'Buyer / Purchaser', name: buyer?.name || 'Not assigned', detail: buyer?.email || purchaserEmailForOtp, icon: UserRound, active: Boolean(buyer?.name || buyer?.email) },
-          { role: 'Selling Agent', name: assignedAgentDisplayName, detail: stageForm.assigned_agent_email || transaction?.assigned_agent_email || '', icon: UserRound, active: assignedAgentDisplayName !== 'Not assigned' },
+          { role: 'Selling Agent', name: assignedAgentDisplayName, detail: stageForm.assigned_agent_email || transaction?.assigned_agent_email || defaultDevelopmentAssignedAgent.email || '', icon: UserRound, active: assignedAgentDisplayName !== 'Not assigned' },
           { role: 'Transfer Attorney', name: transferAttorneyDisplayName, detail: stageForm.assigned_attorney_email || transaction?.assigned_attorney_email || transferAttorneyStatusLabel, icon: Scale, active: transferAttorneyDisplayName !== 'Not assigned' },
           isBondOrHybridFinance
             ? isOriginatorManagedFinance

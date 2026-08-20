@@ -6,6 +6,10 @@ function normalizeKey(value) {
   return normalizeText(value).toLowerCase().replace(/[\s-]+/g, '_')
 }
 
+function toRecord(value) {
+  return value && typeof value === 'object' ? value : {}
+}
+
 function toTitleLabel(value) {
   return normalizeText(value)
     .replaceAll('_', ' ')
@@ -93,14 +97,18 @@ function resolveTone(status) {
   return 'neutral'
 }
 
-export function buildDeveloperTransactionOperationsSummary({
-  transaction = {},
-  handover = {},
-  documents = [],
-  clientIssues = [],
-  developmentSettings = {},
-  onboardingStatus = 'Not Started',
-} = {}) {
+export function buildDeveloperTransactionOperationsSummary(input = {}) {
+  const {
+    transaction: rawTransaction = {},
+    handover: rawHandover = {},
+    documents = [],
+    clientIssues = [],
+    developmentSettings: rawDevelopmentSettings = {},
+    onboardingStatus = 'Not Started',
+  } = input || {}
+  const transaction = toRecord(rawTransaction)
+  const handover = toRecord(rawHandover)
+  const developmentSettings = toRecord(rawDevelopmentSettings)
   const isDeveloperSale = ['developer_sale', 'development', 'developer'].includes(
     normalizeKey(transaction.transaction_type || transaction.transactionType || transaction.type || 'developer_sale'),
   )

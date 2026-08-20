@@ -611,6 +611,58 @@ const DEFAULT_DEVELOPMENT_SETTINGS = {
   },
 }
 
+function resolveDevelopmentSettingsAssignedAgent(settings = {}) {
+  const teams = settings?.stakeholderTeams || settings?.stakeholder_teams || {}
+  const defaults = teams?.rolePlayerDefaults || teams?.role_player_defaults || {}
+  const agents = Array.isArray(teams?.agents) ? teams.agents : []
+  const preferredKey = String(
+    defaults.defaultAgentRelationshipId ||
+      defaults.default_agent_relationship_id ||
+      defaults.defaultAgentPreferredPartnerId ||
+      defaults.default_agent_preferred_partner_id ||
+      '',
+  )
+    .trim()
+    .toLowerCase()
+  const selectedAgent =
+    agents.find((agent) => {
+      const keys = [
+        agent?.id,
+        agent?.organisationUserId,
+        agent?.organisation_user_id,
+        agent?.userId,
+        agent?.user_id,
+        agent?.email,
+        agent?.contactEmail,
+      ]
+        .map((value) => String(value || '').trim().toLowerCase())
+        .filter(Boolean)
+      return preferredKey && keys.includes(preferredKey)
+    }) ||
+    agents.find((agent) => {
+      const status = String(agent?.status || agent?.membershipStatus || agent?.membership_status || 'active').toLowerCase()
+      return !status || ['active', 'accepted', 'invited', 'pending'].includes(status)
+    }) ||
+    null
+  const firstName = normalizeTextValue(selectedAgent?.firstName || selectedAgent?.first_name)
+  const lastName = normalizeTextValue(selectedAgent?.lastName || selectedAgent?.last_name)
+  const fullName = [firstName, lastName].filter(Boolean).join(' ')
+  const defaultName = normalizeTextValue(defaults.defaultAgentName || defaults.default_agent_name)
+  const name = normalizeTextValue(
+    selectedAgent?.name ||
+      selectedAgent?.contactName ||
+      selectedAgent?.fullName ||
+      selectedAgent?.full_name ||
+      fullName ||
+      defaultName ||
+      selectedAgent?.email ||
+      selectedAgent?.contactEmail,
+  )
+  const email = normalizeTextValue(selectedAgent?.email || selectedAgent?.contactEmail).toLowerCase()
+
+  return { name, email }
+}
+
 const DEVELOPMENT_TEAM_ROLE_MAP = {
   agents: {
     roleType: 'agent',
@@ -10686,36 +10738,63 @@ async function resolveActiveProfileContext(client) {
   try {
     const { data, error } = await client.auth.getSession()
     if (error) {
-      return { userId: null, role: null, email: null, firmId: null, firmRole: null }
+      return { userId: null, role: null, email: null, fullName: null, firmId: null, firmRole: null }
     }
 
     const user = data?.session?.user
     if (!user?.id) {
-      return { userId: null, role: null, email: null, firmId: null, firmRole: null }
+      return { userId: null, role: null, email: null, fullName: null, firmId: null, firmRole: null }
     }
 
-    const profileQuery = await client
+    const userMetadata = user.user_metadata && typeof user.user_metadata === 'object' ? user.user_metadata : {}
+    const metadataName =
+      normalizeTextValue(userMetadata.full_name) ||
+      normalizeTextValue(userMetadata.name) ||
+      [userMetadata.first_name, userMetadata.last_name].map(normalizeTextValue).filter(Boolean).join(' ')
+
+    let profileQuery = await client
       .from('profiles')
-      .select('id, role, firm_id, firm_role')
+      .select('id, role, firm_id, firm_role, full_name, first_name, last_name, name')
       .eq('id', user.id)
       .limit(1)
       .maybeSingle()
+    if (
+      profileQuery.error &&
+      (isMissingColumnError(profileQuery.error, 'full_name') ||
+        isMissingColumnError(profileQuery.error, 'first_name') ||
+        isMissingColumnError(profileQuery.error, 'last_name') ||
+        isMissingColumnError(profileQuery.error, 'name'))
+    ) {
+      profileQuery = await client
+        .from('profiles')
+        .select('id, role, firm_id, firm_role')
+        .eq('id', user.id)
+        .limit(1)
+        .maybeSingle()
+    }
     if (profileQuery.error) {
       if (isMissingSchemaError(profileQuery.error)) {
-        return { userId: user.id, role: null, email: user.email || null, firmId: null, firmRole: null }
+        return { userId: user.id, role: null, email: user.email || null, fullName: metadataName || null, firmId: null, firmRole: null }
       }
-      return { userId: user.id, role: null, email: user.email || null, firmId: null, firmRole: null }
+      return { userId: user.id, role: null, email: user.email || null, fullName: metadataName || null, firmId: null, firmRole: null }
     }
+
+    const profileName =
+      normalizeTextValue(profileQuery.data?.full_name) ||
+      normalizeTextValue(profileQuery.data?.name) ||
+      [profileQuery.data?.first_name, profileQuery.data?.last_name].map(normalizeTextValue).filter(Boolean).join(' ') ||
+      metadataName
 
     return {
       userId: user.id,
       role: normalizeRoleType(profileQuery.data?.role || 'developer'),
       email: user.email || null,
+      fullName: profileName || null,
       firmId: profileQuery.data?.firm_id || null,
       firmRole: normalizeFirmRole(profileQuery.data?.firm_role || 'attorney'),
     }
   } catch {
-    return { userId: null, role: null, email: null, firmId: null, firmRole: null }
+    return { userId: null, role: null, email: null, fullName: null, firmId: null, firmRole: null }
   }
 }
 
@@ -19839,7 +19918,7 @@ async function fetchActiveTransactionsForUnitIds(client, unitIds) {
     .from('transactions')
     .select(
       selectWithoutKnownMissingColumns(
-        'id, organisation_id, unit_id, buyer_id, finance_type, purchaser_type, stage, current_main_stage, current_sub_stage_summary, risk_status, sales_price, purchase_price, cash_amount, bond_amount, deposit_amount, bank, attorney, bond_originator, next_action, comment, owner_user_id, access_level, lifecycle_state, attorney_stage, operational_state, waiting_on_role, registration_date, title_deed_number, registered_at, completed_at, archived_at, cancelled_at, last_meaningful_activity_at, final_report_generated_at, updated_at, created_at',
+        'id, organisation_id, unit_id, buyer_id, finance_type, purchaser_type, stage, current_main_stage, current_sub_stage_summary, risk_status, sales_price, purchase_price, cash_amount, bond_amount, deposit_amount, bank, assigned_agent, assigned_agent_email, attorney, bond_originator, next_action, comment, owner_user_id, access_level, lifecycle_state, attorney_stage, operational_state, waiting_on_role, registration_date, title_deed_number, registered_at, completed_at, archived_at, cancelled_at, last_meaningful_activity_at, final_report_generated_at, updated_at, created_at',
       ),
     )
     .in('unit_id', unitIds)
@@ -19860,6 +19939,8 @@ async function fetchActiveTransactionsForUnitIds(client, unitIds) {
     !isMissingColumnError(withActiveFlag.error, 'bond_amount') &&
     !isMissingColumnError(withActiveFlag.error, 'deposit_amount') &&
     !isMissingColumnError(withActiveFlag.error, 'bank') &&
+    !isMissingColumnError(withActiveFlag.error, 'assigned_agent') &&
+    !isMissingColumnError(withActiveFlag.error, 'assigned_agent_email') &&
     !isMissingColumnError(withActiveFlag.error, 'owner_user_id') &&
     !isMissingColumnError(withActiveFlag.error, 'access_level') &&
     !isMissingColumnError(withActiveFlag.error, 'current_main_stage') &&
@@ -19892,6 +19973,8 @@ async function fetchActiveTransactionsForUnitIds(client, unitIds) {
     'bond_amount',
     'deposit_amount',
     'bank',
+    'assigned_agent',
+    'assigned_agent_email',
     'owner_user_id',
     'access_level',
     'current_main_stage',
@@ -19916,7 +19999,7 @@ async function fetchActiveTransactionsForUnitIds(client, unitIds) {
     .from('transactions')
     .select(
       selectWithoutKnownMissingColumns(
-        'id, organisation_id, unit_id, buyer_id, finance_type, purchaser_type, stage, current_main_stage, current_sub_stage_summary, sales_price, purchase_price, cash_amount, bond_amount, deposit_amount, bank, attorney, bond_originator, next_action, comment, owner_user_id, access_level, lifecycle_state, attorney_stage, operational_state, waiting_on_role, registration_date, title_deed_number, registered_at, completed_at, archived_at, cancelled_at, last_meaningful_activity_at, final_report_generated_at, updated_at, created_at',
+        'id, organisation_id, unit_id, buyer_id, finance_type, purchaser_type, stage, current_main_stage, current_sub_stage_summary, sales_price, purchase_price, cash_amount, bond_amount, deposit_amount, bank, assigned_agent, assigned_agent_email, attorney, bond_originator, next_action, comment, owner_user_id, access_level, lifecycle_state, attorney_stage, operational_state, waiting_on_role, registration_date, title_deed_number, registered_at, completed_at, archived_at, cancelled_at, last_meaningful_activity_at, final_report_generated_at, updated_at, created_at',
       ),
     )
     .in('unit_id', unitIds)
@@ -19931,6 +20014,8 @@ async function fetchActiveTransactionsForUnitIds(client, unitIds) {
       isMissingColumnError(fallbackQuery.error, 'bond_amount') ||
       isMissingColumnError(fallbackQuery.error, 'deposit_amount') ||
       isMissingColumnError(fallbackQuery.error, 'bank') ||
+      isMissingColumnError(fallbackQuery.error, 'assigned_agent') ||
+      isMissingColumnError(fallbackQuery.error, 'assigned_agent_email') ||
       isMissingColumnError(fallbackQuery.error, 'owner_user_id') ||
       isMissingColumnError(fallbackQuery.error, 'access_level') ||
       isMissingColumnError(fallbackQuery.error, 'current_main_stage') ||
@@ -19958,6 +20043,8 @@ async function fetchActiveTransactionsForUnitIds(client, unitIds) {
       'bond_amount',
       'deposit_amount',
       'bank',
+      'assigned_agent',
+      'assigned_agent_email',
       'owner_user_id',
       'access_level',
       'current_main_stage',
@@ -19981,7 +20068,7 @@ async function fetchActiveTransactionsForUnitIds(client, unitIds) {
       .from('transactions')
       .select(
         selectWithoutKnownMissingColumns(
-          'id, organisation_id, unit_id, buyer_id, finance_type, stage, attorney, bond_originator, next_action, updated_at, created_at',
+          'id, organisation_id, unit_id, buyer_id, finance_type, stage, assigned_agent, assigned_agent_email, attorney, bond_originator, next_action, updated_at, created_at',
         ),
       )
       .in('unit_id', unitIds)
@@ -28307,12 +28394,6 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
   const actorProfile = await resolveActiveProfileContext(client)
   const actorRole = normalizeRoleType(actorProfile.role || 'agent')
   const allowIncomplete = Boolean(options?.allowIncomplete)
-  const actorName =
-    actorRole === 'attorney'
-      ? finance?.attorney?.trim() || 'Attorney Team'
-      : actorRole === 'bond_originator'
-        ? finance?.bondOriginator?.trim() || 'Bond Team'
-        : setup?.assignedAgent?.trim() || 'Sales Team'
 
   const transactionType = normalizeStoredTransactionType(setup?.transactionType, 'developer_sale')
   const propertyType = normalizeTransactionPropertyType(setup?.propertyType)
@@ -28396,6 +28477,29 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       developmentSettings = DEFAULT_DEVELOPMENT_SETTINGS
     }
   }
+
+  const developmentAssignedAgent =
+    transactionType === 'developer_sale' ? resolveDevelopmentSettingsAssignedAgent(developmentSettings) : { name: '', email: '' }
+  const activeActorAgentName = ['developer', 'agent'].includes(actorRole)
+    ? normalizeTextValue(actorProfile.fullName || actorProfile.email)
+    : ''
+  const activeActorAgentEmail = ['developer', 'agent'].includes(actorRole)
+    ? normalizeTextValue(actorProfile.email).toLowerCase()
+    : ''
+  const resolvedAssignedAgent =
+    normalizeTextValue(setup.assignedAgent) ||
+    normalizeTextValue(developmentAssignedAgent.name) ||
+    activeActorAgentName
+  const resolvedAssignedAgentEmail =
+    normalizeTextValue(setup.assignedAgentEmail).toLowerCase() ||
+    normalizeTextValue(developmentAssignedAgent.email).toLowerCase() ||
+    activeActorAgentEmail
+  const actorName =
+    actorRole === 'attorney'
+      ? finance?.attorney?.trim() || 'Attorney Team'
+      : actorRole === 'bond_originator'
+        ? finance?.bondOriginator?.trim() || 'Bond Team'
+        : resolvedAssignedAgent || 'Sales Team'
 
   const resolvedDetailedStage = status.stage || 'Reserved'
   const resolvedMainStage = normalizeMainStage(status.mainStage, resolvedDetailedStage)
@@ -28578,8 +28682,8 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     agent_commission_amount: snapshotAgentCommissionAmount,
     agency_commission_amount: snapshotAgencyCommissionAmount,
     sale_date: setup.saleDate || null,
-    assigned_agent: setup.assignedAgent || null,
-    assigned_agent_email: normalizeNullableText(setup.assignedAgentEmail)?.toLowerCase() || null,
+    assigned_agent: resolvedAssignedAgent || null,
+    assigned_agent_email: resolvedAssignedAgentEmail || null,
     expected_transfer_date: finance.expectedTransferDate || null,
     assigned_attorney_email: normalizeNullableText(finance.attorneyEmail)?.toLowerCase() || null,
     assigned_bond_originator_email: normalizeNullableText(finance.bondOriginatorEmail)?.toLowerCase() || null,
@@ -28622,8 +28726,8 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     finance_managed_by: normalizeFinanceManagedBy(setup.financeManagedBy),
     stage: resolvedDetailedStage,
     current_main_stage: resolvedMainStage,
-    assigned_agent: setup.assignedAgent || null,
-    assigned_agent_email: normalizeNullableText(setup.assignedAgentEmail)?.toLowerCase() || null,
+    assigned_agent: resolvedAssignedAgent || null,
+    assigned_agent_email: resolvedAssignedAgentEmail || null,
     attorney: finance.attorney || null,
     assigned_attorney_email: normalizeNullableText(finance.attorneyEmail)?.toLowerCase() || null,
     bond_originator: finance.bondOriginator || null,

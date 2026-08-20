@@ -8,6 +8,10 @@ function normalizeKey(value) {
   return normalizeText(value).toLowerCase().replace(/[\s-]+/g, '_')
 }
 
+function toRecord(value) {
+  return value && typeof value === 'object' ? value : {}
+}
+
 function findRow(rows = [], id = '') {
   return (Array.isArray(rows) ? rows : []).find((row) => normalizeKey(row?.id) === normalizeKey(id)) || null
 }
@@ -63,14 +67,18 @@ function normalizeSellerDetails(value = {}) {
   }
 }
 
-export function buildDeveloperTransactionMandateProfile({
-  transaction = {},
-  unit = {},
-  buyer = {},
-  rolePlayers = [],
-  transactionParticipants = [],
-  relationshipSummary = null,
-} = {}) {
+export function buildDeveloperTransactionMandateProfile(input = {}) {
+  const {
+    transaction: rawTransaction = {},
+    unit: rawUnit = {},
+    buyer: rawBuyer = {},
+    rolePlayers = [],
+    transactionParticipants = [],
+    relationshipSummary = null,
+  } = input || {}
+  const transaction = toRecord(rawTransaction)
+  const unit = toRecord(rawUnit)
+  const buyer = toRecord(rawBuyer)
   const summary =
     relationshipSummary ||
     buildDeveloperTransactionRelationshipSummary({
@@ -137,13 +145,19 @@ export function buildDeveloperTransactionMandateProfile({
   }
 }
 
-export function buildDeveloperAgentMandatePacketContext({
-  mandateProfile = {},
-  transaction = {},
-  unit = {},
-  buyer = {},
-  sellerDetails = {},
-} = {}) {
+export function buildDeveloperAgentMandatePacketContext(input = {}) {
+  const {
+    mandateProfile: rawMandateProfile = {},
+    transaction: rawTransaction = {},
+    unit: rawUnit = {},
+    buyer: rawBuyer = {},
+    sellerDetails: rawSellerDetails = {},
+  } = input || {}
+  const mandateProfile = toRecord(rawMandateProfile)
+  const transaction = toRecord(rawTransaction)
+  const unit = toRecord(rawUnit)
+  const buyer = toRecord(rawBuyer)
+  const sellerDetails = toRecord(rawSellerDetails)
   const developerSigner = (mandateProfile.requiredSigners || []).find((signer) => signer.role === 'developer_contact') || null
   const agentSigner = (mandateProfile.requiredSigners || []).find((signer) => signer.role === 'agent') || null
   const sellerSnapshot = normalizeSellerDetails(

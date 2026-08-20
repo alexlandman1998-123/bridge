@@ -6,6 +6,10 @@ function normalizeKey(value) {
   return normalizeText(value).toLowerCase().replace(/[\s-]+/g, '_')
 }
 
+function toRecord(value) {
+  return value && typeof value === 'object' ? value : {}
+}
+
 export const DEVELOPER_TRANSACTION_ROLE_TYPES = Object.freeze([
   'developer_contact',
   'agent',
@@ -134,13 +138,17 @@ function normalizeRoleplayerDisplay(row = {}) {
   }
 }
 
-export function buildDeveloperTransactionRelationshipSummary({
-  transaction = {},
-  unit = {},
-  buyer = {},
-  rolePlayers = [],
-  transactionParticipants = [],
-} = {}) {
+export function buildDeveloperTransactionRelationshipSummary(input = {}) {
+  const {
+    transaction: rawTransaction = {},
+    unit: rawUnit = {},
+    buyer: rawBuyer = {},
+    rolePlayers = [],
+    transactionParticipants = [],
+  } = input || {}
+  const transaction = toRecord(rawTransaction)
+  const unit = toRecord(rawUnit)
+  const buyer = toRecord(rawBuyer)
   const allRoleRows = [...(Array.isArray(rolePlayers) ? rolePlayers : []), ...(Array.isArray(transactionParticipants) ? transactionParticipants : [])]
     .map(normalizeRoleplayerDisplay)
     .filter((row) => row.roleType)
