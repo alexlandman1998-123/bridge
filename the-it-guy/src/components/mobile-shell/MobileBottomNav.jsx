@@ -103,8 +103,8 @@ export default function MobileBottomNav() {
       ) : null}
 
       {!createSheetOpen ? (
-        <nav className="fixed inset-x-0 bottom-0 z-40 px-3 pb-[max(0.625rem,env(safe-area-inset-bottom))] pt-2" aria-label="Mobile navigation" data-mobile-bottom-nav>
-          <div className="mx-auto grid max-w-[520px] grid-cols-5 items-end gap-1 rounded-[24px] border border-[#dfe7ef]/80 bg-white/92 px-2 py-1.5 shadow-[0_-10px_28px_rgba(15,23,42,0.10)] backdrop-blur-xl">
+        <nav className="fixed inset-x-0 bottom-0 z-40 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3" aria-label="Mobile navigation" data-mobile-bottom-nav>
+          <div className="mx-auto grid max-w-[520px] grid-cols-5 items-end gap-1 rounded-[34px] border border-[#dfe7ef]/80 bg-white/94 px-4 py-3 shadow-[0_-18px_46px_rgba(15,23,42,0.13)] backdrop-blur-xl">
             {items.map((item) => {
               const Icon = ICONS[item.key] || LayoutGrid
               if (item.key === 'create') {
@@ -112,12 +112,12 @@ export default function MobileBottomNav() {
                   <button
                     key={item.key}
                     type="button"
-                    className="-mt-6 flex flex-col items-center justify-center gap-1 text-[10px] font-semibold text-[#1f7a5a]"
+                    className="-mt-8 flex flex-col items-center justify-center gap-1 text-[10px] font-semibold text-[#1f8b65]"
                     onClick={() => setCreateOpen(true)}
                     aria-label="Open create menu"
                   >
-                    <span className="flex h-14 w-14 items-center justify-center rounded-full border-[4px] border-[#f6f8fb] bg-[#1f7a5a] text-white shadow-[0_12px_24px_rgba(31,122,90,0.26)]">
-                      <Plus className="h-6 w-6" />
+                    <span className="flex h-[70px] w-[70px] items-center justify-center rounded-full border-[6px] border-[#f6f8fb] bg-[#1f8b65] text-white shadow-[0_16px_30px_rgba(31,139,101,0.28)]">
+                      <Plus className="h-9 w-9" />
                     </span>
                     <span className="sr-only">Create</span>
                   </button>
@@ -129,12 +129,12 @@ export default function MobileBottomNav() {
                   to={item.to}
                   className={({ isActive }) =>
                     [
-                      'flex min-h-[50px] flex-col items-center justify-center gap-1 rounded-[18px] px-0.5 text-[10px] font-semibold transition',
-                      isActive ? 'bg-[#e8f6ef] text-[#1f7a5a]' : 'text-[#60758d] active:bg-[#f1f5f9]',
+                      'flex min-h-[66px] flex-col items-center justify-center gap-1.5 rounded-[24px] px-1 text-[12px] font-bold transition',
+                      isActive ? 'bg-[#e5f6ed] text-[#1f8b65]' : 'text-[#60758d] active:bg-[#f1f5f9]',
                     ].join(' ')
                   }
                 >
-                  <Icon className="h-5 w-5" />
+                  <Icon className="h-7 w-7" />
                   <span className="max-w-full">{item.label}</span>
                 </NavLink>
               )
