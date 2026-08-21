@@ -1330,6 +1330,7 @@
     "migrate:transaction-workflow-model": "node server/scripts/migrateTransactionWorkflowModel.js",
     "auth:staging-internal": "node scripts/create-staging-internal-auth-state.mjs",
     "auth:staging-agency": "node scripts/create-staging-agency-auth-state.mjs",
+    "seed:agency-demo-listing-images": "node scripts/seed-agency-demo-listing-images.mjs",
     "seed:agency-demo-transactions": "node scripts/seed-agency-demo-transactions.mjs",
     "test:seller-document-assurance-p0-4": "node scripts/seller-document-satisfaction-assurance-p0-4.test.mjs",
     "test:seller-document-operations-p0-5": "node scripts/seller-document-operational-readiness-p0-5.test.mjs",
