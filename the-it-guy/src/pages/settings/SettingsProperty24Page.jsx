@@ -50,6 +50,31 @@ function normalizeEmail(value = '') {
   return normalizeProperty24SettingsText(value).toLowerCase()
 }
 
+function formatProperty24ApiError(payload = {}, fallback = 'Property24 agent creation failed.') {
+  if (Array.isArray(payload.missingFields) && payload.missingFields.length) {
+    return `Cannot create Property24 agent yet. Missing: ${payload.missingFields.join(', ')}.`
+  }
+
+  const response = payload.response || {}
+  const sample = response.sample || {}
+  const details = [
+    payload.message,
+    sample.message,
+    sample.Message,
+    sample.error,
+    sample.Error,
+    sample.description,
+    sample.Description,
+    Array.isArray(sample.errors) ? sample.errors.join(', ') : '',
+    Array.isArray(sample.Errors) ? sample.Errors.join(', ') : '',
+    response.value,
+  ].map(normalizeProperty24SettingsText).filter(Boolean)
+
+  const uniqueDetails = [...new Set(details)]
+  if (uniqueDetails.length) return uniqueDetails.join(' ')
+  return fallback
+}
+
 function createBlankProperty24Agent() {
   return normalizeProperty24AgentRow({
     rowId: `manual-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -397,10 +422,7 @@ export default function SettingsProperty24Page() {
       })
       const payload = await response.json().catch(() => ({}))
       if (!response.ok) {
-        if (Array.isArray(payload.missingFields) && payload.missingFields.length) {
-          throw new Error(`Cannot create Property24 agent yet. Missing: ${payload.missingFields.join(', ')}.`)
-        }
-        throw new Error(payload.message || 'Property24 agent creation failed.')
+        throw new Error(formatProperty24ApiError(payload))
       }
       const createdAgent = normalizeProperty24AgentRow(payload.agent || {
         property24AgentId: payload.property24AgentId,
