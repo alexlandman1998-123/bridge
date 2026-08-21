@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
 import {
   createSuggestedProperty24AgentMappings,
   normalizeProperty24Settings,
@@ -74,5 +75,20 @@ const ready = summarizeProperty24SettingsReadiness({ settings: readySettings, ar
 assert.equal(ready.accountReady, true)
 assert.equal(ready.mappingsReady, true)
 assert.equal(ready.ready, true)
+
+const settingsPageSource = fs.readFileSync(new URL('../src/pages/settings/SettingsProperty24Page.jsx', import.meta.url), 'utf8')
+assert.match(settingsPageSource, /updateWorkflowSettings\(\{\s*property24:\s*nextProperty24\s*\}\)/s)
+assert.doesNotMatch(settingsPageSource, /updateOrganisationSettings/)
+assert.match(settingsPageSource, /sample\.errorMessage/)
+assert.match(settingsPageSource, /invalidFields/)
+
+const property24ClientSource = fs.readFileSync(new URL('../server/services/property24Client.js', import.meta.url), 'utf8')
+assert.match(property24ClientSource, /'errorMessage'/)
+assert.match(property24ClientSource, /'errors'/)
+
+const createAgentSource = fs.readFileSync(new URL('../api/property24/settings/agents-create.js', import.meta.url), 'utf8')
+assert.match(createAgentSource, /invalid_agent_fields/)
+assert.match(createAgentSource, /!email\.endsWith\('\.test'\)/)
+assert.match(createAgentSource, /normalizeAgentMobile/)
 
 console.log('Property24 settings UI contract passed')

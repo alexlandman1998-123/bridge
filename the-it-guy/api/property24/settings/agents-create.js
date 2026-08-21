@@ -143,6 +143,21 @@ function createProperty24FromEnv(env = {}) {
   })
 }
 
+function normalizeAgentMobile(value = '') {
+  return normalizeProperty24Text(value).replace(/[\s()-]/g, '')
+}
+
+function isValidAgentEmail(value = '') {
+  const email = normalizeProperty24Text(value).toLowerCase()
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return false
+  return !email.endsWith('.test')
+}
+
+function isValidAgentMobile(value = '') {
+  const mobile = normalizeProperty24Text(value)
+  return /^\+?\d{10,15}$/.test(mobile)
+}
+
 function buildAgentPayload({ body = {}, env = {} } = {}) {
   const agent = body.agent && typeof body.agent === 'object' ? body.agent : {}
   const fullName = normalizeProperty24Text(agent.fullName || agent.name)
@@ -156,7 +171,7 @@ function buildAgentPayload({ body = {}, env = {} } = {}) {
     published: true,
     agencyId: Number(body.agencyId || env.PROPERTY24_DEFAULT_AGENCY_ID),
     sourceReference: normalizeProperty24Text(body.sourceReference || agent.sourceReference),
-    mobileNumber: normalizeProperty24Text(agent.mobile || agent.phone || agent.phoneNumber),
+    mobileNumber: normalizeAgentMobile(agent.mobile || agent.phone || agent.phoneNumber),
     emailAddress: normalizeProperty24Text(agent.email),
     countryId: Number(body.countryId || env.PROPERTY24_DEFAULT_COUNTRY_ID || 1),
     status: 'Active',
@@ -172,7 +187,11 @@ function buildAgentPayload({ body = {}, env = {} } = {}) {
   if (!Number.isInteger(payload.agencyId)) missing.push('agencyId')
   if (!Number.isInteger(payload.countryId)) missing.push('countryId')
 
-  return { payload, missing }
+  const invalid = []
+  if (payload.emailAddress && !isValidAgentEmail(payload.emailAddress)) invalid.push('agent.email')
+  if (payload.mobileNumber && !isValidAgentMobile(payload.mobileNumber)) invalid.push('agent.mobile')
+
+  return { payload, missing, invalid }
 }
 
 export default async function handler(request, response) {
@@ -210,11 +229,19 @@ export default async function handler(request, response) {
       return
     }
 
-    const { payload, missing } = buildAgentPayload({ body, env })
+    const { payload, missing, invalid } = buildAgentPayload({ body, env })
     if (missing.length) {
       writeNodeJsonResponse(response, buildResponse(400, {
         error: 'missing_agent_fields',
         missingFields: missing,
+      }))
+      return
+    }
+    if (invalid.length) {
+      writeNodeJsonResponse(response, buildResponse(400, {
+        error: 'invalid_agent_fields',
+        invalidFields: invalid,
+        message: 'Use a real agent email address and a mobile number with 10 to 15 digits before creating a Property24 agent.',
       }))
       return
     }

@@ -21,7 +21,7 @@ import { supabase } from '../../lib/supabaseClient'
 import {
   fetchOrganisationSettings,
   listOrganisationUsers,
-  updateOrganisationSettings,
+  updateWorkflowSettings,
 } from '../../lib/settingsApi'
 import {
   createSuggestedProperty24AgentMappings,
@@ -54,13 +54,19 @@ function formatProperty24ApiError(payload = {}, fallback = 'Property24 agent cre
   if (Array.isArray(payload.missingFields) && payload.missingFields.length) {
     return `Cannot create Property24 agent yet. Missing: ${payload.missingFields.join(', ')}.`
   }
+  if (Array.isArray(payload.invalidFields) && payload.invalidFields.length) {
+    return `Cannot create Property24 agent yet. Check: ${payload.invalidFields.join(', ')}. ${payload.message || ''}`.trim()
+  }
 
   const response = payload.response || {}
   const sample = response.sample || {}
   const details = [
     payload.message,
+    payload.errorMessage,
     sample.message,
     sample.Message,
+    sample.errorMessage,
+    sample.ErrorMessage,
     sample.error,
     sample.Error,
     sample.description,
@@ -80,33 +86,6 @@ function createBlankProperty24Agent() {
     rowId: `manual-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     status: 'active',
   })
-}
-
-function buildOrganisationPayload(context = {}, settingsJson = {}) {
-  const organisation = context.organisation || {}
-  return {
-    name: organisation.name || organisation.displayName || 'Organisation',
-    displayName: organisation.displayName || organisation.name || '',
-    logoUrl: organisation.logoUrl || organisation.logo_url || '',
-    companyEmail: organisation.companyEmail || organisation.company_email || '',
-    companyPhone: organisation.companyPhone || organisation.company_phone || '',
-    website: organisation.website || '',
-    addressLine1: organisation.addressLine1 || organisation.address_line_1 || organisation.address || '',
-    addressLine2: organisation.addressLine2 || organisation.address_line_2 || '',
-    formattedAddress: organisation.formattedAddress || organisation.formatted_address || '',
-    suburb: organisation.suburb || '',
-    city: organisation.city || '',
-    province: organisation.province || '',
-    postalCode: organisation.postalCode || organisation.postal_code || '',
-    country: organisation.country || 'South Africa',
-    latitude: organisation.latitude ?? null,
-    longitude: organisation.longitude ?? null,
-    googlePlaceId: organisation.googlePlaceId || organisation.google_place_id || '',
-    supportEmail: organisation.supportEmail || organisation.support_email || '',
-    supportPhone: organisation.supportPhone || organisation.support_phone || '',
-    primaryContactPerson: organisation.primaryContactPerson || organisation.primary_contact_person || '',
-    settingsJson,
-  }
 }
 
 function toMappingPatch(agent = {}, mapping = {}) {
@@ -527,12 +506,11 @@ export default function SettingsProperty24Page() {
         ...organisationSettings,
         property24: nextProperty24,
       }
-      const result = await updateOrganisationSettings(buildOrganisationPayload(context, nextSettingsJson))
       const nextContext = {
         ...context,
-        ...result,
         organisationSettings: nextSettingsJson,
       }
+      await updateWorkflowSettings({ property24: nextProperty24 })
       setContext(nextContext)
       setSettings(nextProperty24)
       setSavedSettings(nextProperty24)

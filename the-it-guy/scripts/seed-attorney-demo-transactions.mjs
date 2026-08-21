@@ -754,6 +754,38 @@ async function upsertRows(table, rows, definitions, options = {}) {
   return safeRows.length
 }
 
+async function clearDemoPacketArtifacts(seedKey) {
+  const packetQuery = await supabase
+    .from('document_packets')
+    .select('id')
+    .contains('source_context_json', { seedKey })
+
+  if (packetQuery.error) {
+    throw new Error(`Failed to inspect existing demo packets: ${packetQuery.error.message}`)
+  }
+
+  const packetIds = (packetQuery.data || []).map((row) => row.id).filter(Boolean)
+  if (!packetIds.length) return { packetCount: 0, packetVersionCount: 0 }
+
+  const versionDelete = await supabase
+    .from('document_packet_versions')
+    .delete()
+    .in('packet_id', packetIds)
+  if (versionDelete.error) {
+    throw new Error(`Failed to clear existing demo packet versions: ${versionDelete.error.message}`)
+  }
+
+  const packetDelete = await supabase
+    .from('document_packets')
+    .delete()
+    .in('id', packetIds)
+  if (packetDelete.error) {
+    throw new Error(`Failed to clear existing demo packets: ${packetDelete.error.message}`)
+  }
+
+  return { packetCount: packetIds.length, packetVersionCount: packetIds.length }
+}
+
 async function fetchTargetContext() {
   const profileResult = await supabase
     .from('profiles')
@@ -826,6 +858,7 @@ function buildRows({ context }) {
   const rows = {
     buyers: [],
     transactions: [],
+    legalRoleAppointments: [],
     assignments: [],
     participants: [],
     rolePlayers: [],
@@ -956,6 +989,46 @@ function buildRows({ context }) {
         showcase: true,
       },
     })
+
+    for (const lane of scenario.lanes) {
+      const meta = laneMeta(lane.laneKey)
+      if (!['bond_attorney', 'cancellation_attorney'].includes(meta.attorneyRole)) continue
+
+      // Staging enforces that bond/cancellation staff can only be assigned after
+      // the appointed firm has an accepted legal-role appointment row.
+      rows.legalRoleAppointments.push({
+        id: stableUuid(`legal-role-appointment:${scenario.slug}:${lane.laneKey}`),
+        transaction_id: transactionId,
+        role_type: meta.attorneyRole,
+        appointing_bank: scenario.bank || 'Demo Bank',
+        appointment_reference: `${scenario.reference}-${lane.laneKey.toUpperCase()}`,
+        appointed_firm_name: context.firm.name,
+        appointed_contact_name: attorneyName,
+        appointed_email: attorneyEmail,
+        appointed_phone: null,
+        appointment_source: scenario.bank ? 'bank_integration' : 'legacy_manual',
+        evidence_confirmed: true,
+        evidence_document_id: null,
+        coordination_state: 'active',
+        invitation_id: null,
+        captured_by: userId,
+        captured_at: transactionCreatedAt,
+        updated_at: nowIso,
+        accepted_organisation_id: organisationId,
+        accepted_firm_id: firmId,
+        accepted_by: userId,
+        accepted_at: nowIso,
+        staff_assignment_status: 'staff_assigned',
+        instruction_issuer: scenario.bank ? 'bank' : null,
+        instruction_reference: scenario.reference,
+        instruction_source: scenario.bank ? 'bank_integration' : 'legacy_manual',
+        instruction_evidence_document_id: null,
+        instruction_issued_at: transactionCreatedAt,
+        instruction_confirmed_by: userId,
+        instruction_confirmed_at: nowIso,
+        instruction_decision_note: 'Seeded demo appointment so staged bank-appointed staff assignments can be shown.',
+      })
+    }
 
     rows.events.push(
       eventRow(transactionId, 'TransactionDemoSeeded', userId, 'internal', {
@@ -1271,18 +1344,19 @@ function buildRows({ context }) {
         organisation_id: organisationId,
         packet_type: packet.packetType,
         title: packet.title,
-        status: packet.status,
+        status: 'generated',
         transaction_id: transactionId,
         unit_id: null,
         created_by: userId,
-        current_version_number: 1,
+        current_version_number: 0,
         source_context_json: {
           seedKey: SEED_KEY,
           scenario: scenario.slug,
           reference: scenario.reference,
+          targetStatus: packet.status,
         },
-        sent_at: packet.status === 'completed' ? isoDays(-7, 10) : isoDays(-1, 10),
-        completed_at: packet.status === 'completed' ? isoDays(-3, 15) : null,
+        sent_at: null,
+        completed_at: null,
         created_at: isoDays(-9, 10),
         updated_at: nowIso,
       })
@@ -1324,6 +1398,7 @@ function buildRows({ context }) {
       transactions: rows.transactions.length,
       workflowLanes: rows.subprocesses.length,
       workflowSteps: rows.steps.length,
+      legalRoleAppointments: rows.legalRoleAppointments.length,
       documentRequests: rows.requests.length,
       documents: rows.documents.length,
       laneUpdates: rows.updates.length,
@@ -1463,6 +1538,7 @@ async function main() {
   const counts = {}
   counts.buyers = await upsertRows('buyers', rows.buyers, definitions)
   counts.transactions = await upsertRows('transactions', rows.transactions, definitions)
+  counts.legalRoleAppointments = await upsertRows('transaction_legal_role_appointments', rows.legalRoleAppointments, definitions)
   counts.assignments = await upsertRows('transaction_attorney_assignments', rows.assignments, definitions)
   counts.participants = await upsertRows('transaction_participants', rows.participants, definitions)
   counts.rolePlayers = await upsertRows('transaction_role_players', rows.rolePlayers, definitions)
@@ -1475,6 +1551,9 @@ async function main() {
   counts.updates = await upsertRows('transaction_attorney_lane_updates', rows.updates, definitions)
   counts.blockers = await upsertRows('attorney_workflow_blockers', rows.blockers, definitions)
   counts.appointments = await upsertRows('appointments', rows.appointments, definitions, { onConflict: 'appointment_id' })
+  const clearedPackets = await clearDemoPacketArtifacts(SEED_KEY)
+  counts.clearedDemoPackets = clearedPackets.packetCount
+  counts.clearedDemoPacketVersions = clearedPackets.packetVersionCount
   counts.packets = await upsertRows('document_packets', rows.packets, definitions)
   counts.packetVersions = await upsertRows('document_packet_versions', rows.packetVersions, definitions)
   counts.manifest = await upsertRows('demo_seed_manifests', rows.manifest, definitions, { onConflict: 'environment,demo_key' })

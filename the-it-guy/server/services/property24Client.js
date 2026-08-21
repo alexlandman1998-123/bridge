@@ -79,6 +79,8 @@ function summarizeProperty24Record(record = {}) {
     'firstname',
     'lastname',
     'description',
+    'errorMessage',
+    'errors',
     'emailAddress',
     'sourceReference',
     'status',
