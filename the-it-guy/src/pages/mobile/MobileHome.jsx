@@ -146,10 +146,10 @@ function Sparkline({ id = 'default', color = SPARKLINE_TONES.default }) {
   const lastY = height - 5 - ((lastPoint - min) / range) * (height - 11)
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="mt-auto h-10 w-full overflow-visible" aria-hidden="true" preserveAspectRatio="none">
-      <path d={`${path} L${width} ${height} L0 ${height} Z`} fill={`url(#mobile-home-spark-${id})`} opacity="0.45" />
-      <path d={path} fill="none" stroke={color} strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx={lastX} cy={lastY} r="3.2" fill={color} />
+    <svg viewBox={`0 0 ${width} ${height}`} className="mt-auto h-8 w-full overflow-visible" aria-hidden="true" preserveAspectRatio="none">
+      <path d={`${path} L${width} ${height} L0 ${height} Z`} fill={`url(#mobile-home-spark-${id})`} opacity="0.34" />
+      <path d={path} fill="none" stroke={color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx={lastX} cy={lastY} r="2.7" fill={color} />
       <defs>
         <linearGradient id={`mobile-home-spark-${id}`} x1="0" x2="0" y1="0" y2="1">
           <stop offset="0%" stopColor={color} stopOpacity="0.18" />
@@ -165,19 +165,19 @@ function KpiCard({ card }) {
   const taskCount = card.key === 'tasks' ? Number(card.value || 0) : 0
   const sparkColor = SPARKLINE_TONES[card.key] || SPARKLINE_TONES.default
   return (
-    <div className="flex min-h-[176px] flex-col rounded-[26px] border border-[#dce5ef] bg-white px-5 py-5 shadow-[0_18px_40px_rgba(15,23,42,0.07)]">
+    <div className="flex min-h-[148px] flex-col rounded-[22px] border border-[#dce5ef] bg-white px-4 py-4 shadow-[0_14px_32px_rgba(15,23,42,0.055)]">
       <div className="flex items-center justify-between gap-3">
-        <span className={`flex h-12 w-12 items-center justify-center rounded-[18px] ${CARD_TONES[card.tone] || CARD_TONES.blue}`}>
-          <Icon className="h-[21px] w-[21px]" />
+        <span className={`flex h-10 w-10 items-center justify-center rounded-[15px] ${CARD_TONES[card.tone] || CARD_TONES.blue}`}>
+          <Icon className="h-[18px] w-[18px]" strokeWidth={1.75} />
         </span>
         {card.key === 'tasks' ? (
-          <span className={`rounded-full px-4 py-2 text-[13px] font-bold ${taskCount > 0 ? 'bg-[#fff1e7] text-[#b45309]' : 'bg-[#e4f5ec] text-[#1f8b65]'}`}>
+          <span className={`rounded-full px-3 py-1.5 text-[12px] font-semibold ${taskCount > 0 ? 'bg-[#fff1e7] text-[#b45309]' : 'bg-[#e4f5ec] text-[#1f8b65]'}`}>
             {taskCount > 0 ? 'Due' : 'Clear'}
           </span>
         ) : null}
       </div>
-      <strong className="mt-7 block truncate text-[32px] font-bold leading-none tracking-[-0.04em] text-[#10243a]">{formatMetric(card.value)}</strong>
-      <p className="mt-3 line-clamp-2 text-[13px] font-bold uppercase leading-5 tracking-[0.02em] text-[#60758d]">{card.label}</p>
+      <strong className="mt-6 block truncate text-[26px] font-semibold leading-none tracking-[-0.04em] text-[#10243a]">{formatMetric(card.value)}</strong>
+      <p className="mt-2 line-clamp-2 text-[11px] font-semibold uppercase leading-4 tracking-[0.035em] text-[#60758d]">{card.label}</p>
       <Sparkline id={card.key} color={sparkColor} />
     </div>
   )
@@ -194,54 +194,53 @@ function AgencyCommandCard({ snapshot, priority, onOpen }) {
   const ringOffset = circumference - (healthScore / 100) * circumference
 
   return (
-    <section className="relative overflow-hidden rounded-[30px] bg-[#061f1f] p-5 text-white shadow-[0_24px_54px_rgba(15,23,42,0.20)] min-[430px]:p-7">
+    <section className="relative overflow-hidden rounded-[26px] bg-[#061f1f] p-4 text-white shadow-[0_18px_42px_rgba(15,23,42,0.16)] min-[430px]:p-5">
       <span className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_18%,rgba(126,230,181,0.22),transparent_32%),linear-gradient(120deg,#0b3633_0%,#062323_48%,#041d22_100%)]" />
-      <span className="pointer-events-none absolute -right-20 -top-12 h-80 w-80 rounded-full border border-white/8 bg-white/[0.025]" />
-      <span className="pointer-events-none absolute bottom-[-7rem] right-[-5rem] h-72 w-72 rounded-full border border-white/6 bg-white/[0.025]" />
+      <span className="pointer-events-none absolute -right-16 -top-16 h-52 w-52 rounded-full border border-white/[0.06]" />
       <div className="relative flex items-start justify-between gap-3 min-[430px]:gap-5">
         <div className="min-w-0">
-          <p className="text-[13px] font-bold uppercase tracking-[0.13em] text-[#9fe0bd] min-[430px]:text-[14px] min-[430px]:tracking-[0.14em]">Agency Command</p>
-          <h1 className="mt-5 text-[32px] font-bold leading-[1.04] tracking-[-0.06em] text-white min-[430px]:mt-6 min-[430px]:text-[37px]">{pipelineValue} Pipeline</h1>
-          <p className="mt-4 text-[15px] leading-6 text-[#d7e4ed] min-[430px]:mt-5 min-[430px]:text-[17px]">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#9fe0bd] min-[430px]:text-[12px]">Agency Command</p>
+          <h1 className="mt-4 text-[27px] font-semibold leading-[1.08] tracking-[-0.055em] text-white min-[430px]:text-[31px]">{pipelineValue} Pipeline</h1>
+          <p className="mt-3 text-[13px] leading-5 text-[#d7e4ed] min-[430px]:text-[14px]">
             {activeTransactions} active transactions · {mandates} mandates · {atRisk} at risk
           </p>
         </div>
-        <div className="relative flex h-[88px] w-[88px] shrink-0 items-center justify-center min-[430px]:h-[116px] min-[430px]:w-[116px]">
+        <div className="relative flex h-[76px] w-[76px] shrink-0 items-center justify-center min-[430px]:h-[88px] min-[430px]:w-[88px]">
           <svg viewBox="0 0 104 104" className="absolute inset-0 h-full w-full -rotate-90" aria-hidden="true">
-            <circle cx="52" cy="52" r="43" fill="none" stroke="rgba(159,224,189,0.22)" strokeWidth="10" />
+            <circle cx="52" cy="52" r="43" fill="none" stroke="rgba(159,224,189,0.22)" strokeWidth="8" />
             <circle
               cx="52"
               cy="52"
               r="43"
               fill="none"
               stroke="#9fe0bd"
-              strokeWidth="10"
+              strokeWidth="8"
               strokeLinecap="round"
               strokeDasharray={circumference}
               strokeDashoffset={ringOffset}
             />
           </svg>
           <span className="relative flex flex-col items-center justify-center text-center">
-            <span className="text-[30px] font-bold leading-none tracking-[-0.04em] min-[430px]:text-[38px]">{healthScore}</span>
-            <span className="mt-1.5 text-[10px] font-bold uppercase tracking-[0.04em] text-[#b9ecd0] min-[430px]:mt-2 min-[430px]:text-[12px]">Health</span>
+            <span className="text-[25px] font-semibold leading-none tracking-[-0.04em] min-[430px]:text-[30px]">{healthScore}</span>
+            <span className="mt-1 text-[9px] font-semibold uppercase tracking-[0.05em] text-[#b9ecd0] min-[430px]:text-[10px]">Health</span>
           </span>
         </div>
       </div>
 
       <button
         type="button"
-        className="relative mt-6 grid w-full grid-cols-[52px_1fr] items-center gap-4 rounded-[24px] border border-white/12 bg-white/[0.10] p-4 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition active:bg-white/[0.14] min-[430px]:mt-8 min-[430px]:grid-cols-[64px_1fr_auto] min-[430px]:gap-4 min-[430px]:rounded-[26px] min-[430px]:p-5"
+        className="relative mt-5 grid w-full grid-cols-[44px_1fr] items-center gap-3 rounded-[22px] border border-white/12 bg-white/[0.095] p-3 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition active:bg-white/[0.14] min-[430px]:grid-cols-[50px_1fr_auto] min-[430px]:gap-4 min-[430px]:p-4"
         onClick={() => onOpen(action.to)}
       >
-        <span className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-[18px] bg-white text-[#1f8b65] shadow-[0_12px_26px_rgba(0,0,0,0.16)] min-[430px]:h-16 min-[430px]:w-16 min-[430px]:rounded-[21px]">
-          <Target className="h-7 w-7 min-[430px]:h-[31px] min-[430px]:w-[31px]" />
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[15px] bg-white text-[#1f8b65] shadow-[0_10px_22px_rgba(0,0,0,0.14)] min-[430px]:h-[50px] min-[430px]:w-[50px] min-[430px]:rounded-[17px]">
+          <Target className="h-[22px] w-[22px] min-[430px]:h-6 min-[430px]:w-6" strokeWidth={1.8} />
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block text-[12px] font-bold uppercase tracking-[0.08em] text-[#9fe0bd] min-[430px]:text-[13px]">{action.eyebrow}</span>
-          <span className="mt-2 block line-clamp-2 text-[17px] font-bold leading-6 text-white min-[430px]:mt-3 min-[430px]:text-[20px] min-[430px]:leading-7">{action.title}</span>
-          <span className="mt-1.5 block line-clamp-1 text-[13px] leading-5 text-[#c4d4df] min-[430px]:mt-2 min-[430px]:line-clamp-2 min-[430px]:text-[15px]">{action.body}</span>
+          <span className="block text-[10px] font-semibold uppercase tracking-[0.1em] text-[#9fe0bd] min-[430px]:text-[11px]">{action.eyebrow}</span>
+          <span className="mt-1.5 block line-clamp-2 text-[15px] font-semibold leading-5 text-white min-[430px]:text-[16px] min-[430px]:leading-[1.35]">{action.title}</span>
+          <span className="mt-1 block line-clamp-1 text-[12px] leading-4 text-[#c4d4df] min-[430px]:line-clamp-2 min-[430px]:text-[13px]">{action.body}</span>
         </span>
-        <span className="col-start-2 w-fit shrink-0 rounded-[18px] bg-white/10 px-4 py-2 text-center text-[13px] font-bold leading-5 text-[#d7e4ed] min-[430px]:col-start-auto min-[430px]:px-4 min-[430px]:py-3 min-[430px]:text-[14px]">{action.meta}</span>
+        <span className="col-start-2 w-fit shrink-0 rounded-[15px] bg-white/10 px-3 py-1.5 text-center text-[12px] font-semibold leading-4 text-[#d7e4ed] min-[430px]:col-start-auto min-[430px]:text-[13px]">{action.meta}</span>
       </button>
     </section>
   )
@@ -260,25 +259,25 @@ function CommandActions({ actions = [], onAction }) {
   const dashboardActions = getDashboardQuickActions(actions)
   return (
     <section>
-      <h2 className="mb-4 text-[20px] font-bold tracking-[-0.03em] text-[#10243a]">Quick actions</h2>
-      <div className="grid grid-cols-2 gap-4">
+      <h2 className="mb-3 text-[17px] font-semibold tracking-[-0.03em] text-[#10243a]">Quick actions</h2>
+      <div className="grid grid-cols-2 gap-3">
         {dashboardActions.map((action) => {
           const Icon = action.icon || ArrowUpRight
           return (
             <button
               key={action.key}
               type="button"
-              className="flex min-h-[82px] items-center gap-4 rounded-[26px] border border-[#dce5ef] bg-white px-4 text-left shadow-[0_18px_40px_rgba(15,23,42,0.07)] active:bg-[#f8fafc]"
+              className="flex min-h-[72px] items-center gap-3 rounded-[22px] border border-[#dce5ef] bg-white px-3.5 text-left shadow-[0_14px_32px_rgba(15,23,42,0.055)] active:bg-[#f8fafc]"
               onClick={() => onAction(action)}
             >
-              <span className="flex h-[54px] w-[54px] shrink-0 items-center justify-center rounded-[20px] bg-[#e5f6ed] text-[#1f8b65]">
-                <Icon className="h-7 w-7" />
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[16px] bg-[#e5f6ed] text-[#1f8b65]">
+                <Icon className="h-[21px] w-[21px]" strokeWidth={1.8} />
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-[17px] font-bold tracking-[-0.03em] text-[#10243a]">{action.label}</span>
-                <span className="mt-1 block truncate text-[14px] font-semibold text-[#60758d]">{action.body}</span>
+                <span className="block truncate text-[15px] font-semibold tracking-[-0.03em] text-[#10243a]">{action.label}</span>
+                <span className="mt-0.5 block truncate text-[12px] font-medium text-[#60758d]">{action.body}</span>
               </span>
-              <ChevronRight className="h-6 w-6 shrink-0 text-[#7f8fa3]" />
+              <ChevronRight className="h-5 w-5 shrink-0 text-[#7f8fa3]" strokeWidth={1.8} />
             </button>
           )
         })}
@@ -404,7 +403,7 @@ export default function MobileHome() {
   if (state.error) return <MobileErrorState title="We couldn't load your dashboard." body={state.error} onRetry={load} />
 
   return (
-    <div className="space-y-7" data-mobile-home>
+    <div className="space-y-5" data-mobile-home>
       {showUnsupportedNotice ? (
         <MobileCard>
           <h2 className="text-[17px] font-semibold text-[#10243a]">That page is not available on mobile yet.</h2>
@@ -412,11 +411,11 @@ export default function MobileHome() {
         </MobileCard>
       ) : null}
 
-      <section className="pt-4">
+      <section className="pt-3">
         <AgencyCommandCard snapshot={snapshot} priority={priority} onOpen={handlePriorityOpen} />
       </section>
 
-      <section className="grid grid-cols-2 gap-4">
+      <section className="grid grid-cols-2 gap-3">
         {snapshot.summaryCards.map((card) => <KpiCard key={card.key} card={card} />)}
       </section>
 
