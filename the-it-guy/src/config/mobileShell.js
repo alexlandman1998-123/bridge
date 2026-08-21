@@ -16,12 +16,12 @@ const MOBILE_NAV_ITEMS = Object.freeze({
 })
 
 const MOBILE_NAV_BY_CATEGORY = Object.freeze({
-  agent: ['home', 'transactions', 'create', 'activity', 'more'],
-  principal: ['home', 'transactions', 'create', 'activity', 'more'],
-  attorney: ['home', 'transactions', 'create', 'activity', 'more'],
-  bond_originator: ['home', 'transactions', 'create', 'activity', 'more'],
-  commercial: ['home', 'transactions', 'create', 'activity', 'more'],
-  default: ['home', 'transactions', 'create', 'activity', 'more'],
+  agent: ['home', 'transactions', 'create', 'leads', 'more'],
+  principal: ['home', 'transactions', 'create', 'leads', 'more'],
+  attorney: ['home', 'transactions', 'create', 'leads', 'more'],
+  bond_originator: ['home', 'transactions', 'create', 'leads', 'more'],
+  commercial: ['home', 'transactions', 'create', 'leads', 'more'],
+  default: ['home', 'transactions', 'create', 'leads', 'more'],
 })
 
 const PRINCIPAL_ROLE_MARKERS = new Set([

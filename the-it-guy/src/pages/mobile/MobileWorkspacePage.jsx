@@ -568,20 +568,31 @@ export default function MobileWorkspacePage({ workspaceType }) {
       <MobileCard>
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-[18px] font-semibold text-[#10243a]">Progress Tracker</h2>
+            <h2 className="text-[18px] font-semibold text-[#10243a]">{workspace.module === 'lead' ? 'Buyer Journey' : 'Progress Tracker'}</h2>
             <p className="mt-1 text-[13px] leading-5 text-[#60758d]">{displayStatus} is the active stage.</p>
           </div>
           <span className="rounded-full px-3 py-1 text-[12px] font-semibold" style={{ backgroundColor: accent.soft, color: accent.color }}>{completedStages + 1}/{workspace.stages.length}</span>
         </div>
-        <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
+        <div className="mt-5 space-y-0">
           {workspace.stages.map((stage, index) => {
             const state = stageState(workspace.stages, displayStatus || workspace.currentStage, index)
+            const isLast = index === workspace.stages.length - 1
             return (
-              <div key={stage} className="flex min-w-[86px] flex-col items-center gap-2">
-                <span className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold ${state === 'complete' ? 'bg-[#1f7a5a] text-white' : state === 'current' ? 'bg-[#10243a] text-white shadow-[0_8px_18px_rgba(16,36,58,0.18)]' : 'bg-[#edf3f8] text-[#94a3b8]'}`}>
-                  {state === 'complete' ? <Check className="h-4 w-4" /> : index + 1}
+              <div key={stage} className="grid grid-cols-[42px_1fr] gap-3">
+                <span className="relative flex justify-center">
+                  <span className={`z-10 flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold ${state === 'complete' ? 'bg-[#1f7a5a] text-white' : state === 'current' ? 'bg-[#10243a] text-white shadow-[0_8px_18px_rgba(16,36,58,0.18)]' : 'bg-[#edf3f8] text-[#94a3b8]'}`}>
+                    {state === 'complete' ? <Check className="h-4 w-4" /> : index + 1}
+                  </span>
+                  {!isLast ? <span className={`absolute bottom-0 top-10 w-0.5 ${state === 'complete' ? 'bg-[#1f7a5a]' : 'bg-[#d7e0ea]'}`} /> : null}
                 </span>
-                <span className={`text-center text-[11px] font-semibold ${state === 'future' ? 'text-[#94a3b8]' : 'text-[#10243a]'}`}>{stage}</span>
+                <span className={`pb-5 ${isLast ? 'pb-0' : ''}`}>
+                  <span className={`block rounded-[20px] border p-3 ${state === 'current' ? 'border-[#10243a] bg-[#f8fafc]' : state === 'complete' ? 'border-[#d9eadf] bg-[#f5fbf7]' : 'border-[#e4ebf2] bg-white'}`}>
+                    <span className={`block text-[14px] font-semibold ${state === 'future' ? 'text-[#94a3b8]' : 'text-[#10243a]'}`}>{stage}</span>
+                    <span className="mt-1 block text-[12px] leading-5 text-[#60758d]">
+                      {state === 'complete' ? 'Completed' : state === 'current' ? 'Active now' : 'Upcoming'}
+                    </span>
+                  </span>
+                </span>
               </div>
             )
           })}
