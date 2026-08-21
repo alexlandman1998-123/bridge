@@ -194,19 +194,19 @@ function AgencyCommandCard({ snapshot, priority, onOpen }) {
   const ringOffset = circumference - (healthScore / 100) * circumference
 
   return (
-    <section className="relative overflow-hidden rounded-[30px] bg-[#061f1f] p-7 text-white shadow-[0_24px_54px_rgba(15,23,42,0.20)]">
+    <section className="relative overflow-hidden rounded-[30px] bg-[#061f1f] p-5 text-white shadow-[0_24px_54px_rgba(15,23,42,0.20)] min-[430px]:p-7">
       <span className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_18%,rgba(126,230,181,0.22),transparent_32%),linear-gradient(120deg,#0b3633_0%,#062323_48%,#041d22_100%)]" />
       <span className="pointer-events-none absolute -right-20 -top-12 h-80 w-80 rounded-full border border-white/8 bg-white/[0.025]" />
       <span className="pointer-events-none absolute bottom-[-7rem] right-[-5rem] h-72 w-72 rounded-full border border-white/6 bg-white/[0.025]" />
-      <div className="relative flex items-start justify-between gap-5">
+      <div className="relative flex items-start justify-between gap-3 min-[430px]:gap-5">
         <div className="min-w-0">
-          <p className="text-[14px] font-bold uppercase tracking-[0.14em] text-[#9fe0bd]">Agency Command</p>
-          <h1 className="mt-6 text-[37px] font-bold leading-[1.04] tracking-[-0.06em] text-white">{pipelineValue} Pipeline</h1>
-          <p className="mt-5 text-[17px] leading-6 text-[#d7e4ed]">
+          <p className="text-[13px] font-bold uppercase tracking-[0.13em] text-[#9fe0bd] min-[430px]:text-[14px] min-[430px]:tracking-[0.14em]">Agency Command</p>
+          <h1 className="mt-5 text-[32px] font-bold leading-[1.04] tracking-[-0.06em] text-white min-[430px]:mt-6 min-[430px]:text-[37px]">{pipelineValue} Pipeline</h1>
+          <p className="mt-4 text-[15px] leading-6 text-[#d7e4ed] min-[430px]:mt-5 min-[430px]:text-[17px]">
             {activeTransactions} active transactions · {mandates} mandates · {atRisk} at risk
           </p>
         </div>
-        <div className="relative flex h-[116px] w-[116px] shrink-0 items-center justify-center">
+        <div className="relative flex h-[88px] w-[88px] shrink-0 items-center justify-center min-[430px]:h-[116px] min-[430px]:w-[116px]">
           <svg viewBox="0 0 104 104" className="absolute inset-0 h-full w-full -rotate-90" aria-hidden="true">
             <circle cx="52" cy="52" r="43" fill="none" stroke="rgba(159,224,189,0.22)" strokeWidth="10" />
             <circle
@@ -222,26 +222,26 @@ function AgencyCommandCard({ snapshot, priority, onOpen }) {
             />
           </svg>
           <span className="relative flex flex-col items-center justify-center text-center">
-            <span className="text-[38px] font-bold leading-none tracking-[-0.04em]">{healthScore}</span>
-            <span className="mt-2 text-[12px] font-bold uppercase tracking-[0.04em] text-[#b9ecd0]">Health</span>
+            <span className="text-[30px] font-bold leading-none tracking-[-0.04em] min-[430px]:text-[38px]">{healthScore}</span>
+            <span className="mt-1.5 text-[10px] font-bold uppercase tracking-[0.04em] text-[#b9ecd0] min-[430px]:mt-2 min-[430px]:text-[12px]">Health</span>
           </span>
         </div>
       </div>
 
       <button
         type="button"
-        className="relative mt-8 flex w-full items-center gap-4 rounded-[26px] border border-white/12 bg-white/[0.10] p-5 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition active:bg-white/[0.14]"
+        className="relative mt-6 grid w-full grid-cols-[52px_1fr] items-center gap-4 rounded-[24px] border border-white/12 bg-white/[0.10] p-4 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition active:bg-white/[0.14] min-[430px]:mt-8 min-[430px]:grid-cols-[64px_1fr_auto] min-[430px]:gap-4 min-[430px]:rounded-[26px] min-[430px]:p-5"
         onClick={() => onOpen(action.to)}
       >
-        <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-[21px] bg-white text-[#1f8b65] shadow-[0_12px_26px_rgba(0,0,0,0.16)]">
-          <Target className="h-[31px] w-[31px]" />
+        <span className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-[18px] bg-white text-[#1f8b65] shadow-[0_12px_26px_rgba(0,0,0,0.16)] min-[430px]:h-16 min-[430px]:w-16 min-[430px]:rounded-[21px]">
+          <Target className="h-7 w-7 min-[430px]:h-[31px] min-[430px]:w-[31px]" />
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block text-[13px] font-bold uppercase tracking-[0.08em] text-[#9fe0bd]">{action.eyebrow}</span>
-          <span className="mt-3 block line-clamp-2 text-[20px] font-bold leading-7 text-white">{action.title}</span>
-          <span className="mt-2 block line-clamp-2 text-[15px] leading-5 text-[#c4d4df]">{action.body}</span>
+          <span className="block text-[12px] font-bold uppercase tracking-[0.08em] text-[#9fe0bd] min-[430px]:text-[13px]">{action.eyebrow}</span>
+          <span className="mt-2 block line-clamp-2 text-[17px] font-bold leading-6 text-white min-[430px]:mt-3 min-[430px]:text-[20px] min-[430px]:leading-7">{action.title}</span>
+          <span className="mt-1.5 block line-clamp-1 text-[13px] leading-5 text-[#c4d4df] min-[430px]:mt-2 min-[430px]:line-clamp-2 min-[430px]:text-[15px]">{action.body}</span>
         </span>
-        <span className="shrink-0 rounded-[18px] bg-white/10 px-4 py-3 text-center text-[14px] font-bold leading-5 text-[#d7e4ed]">{action.meta}</span>
+        <span className="col-start-2 w-fit shrink-0 rounded-[18px] bg-white/10 px-4 py-2 text-center text-[13px] font-bold leading-5 text-[#d7e4ed] min-[430px]:col-start-auto min-[430px]:px-4 min-[430px]:py-3 min-[430px]:text-[14px]">{action.meta}</span>
       </button>
     </section>
   )
@@ -412,7 +412,7 @@ export default function MobileHome() {
         </MobileCard>
       ) : null}
 
-      <section className="pt-5">
+      <section className="pt-4">
         <AgencyCommandCard snapshot={snapshot} priority={priority} onOpen={handlePriorityOpen} />
       </section>
 
