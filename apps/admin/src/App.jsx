@@ -1014,9 +1014,11 @@ function normalizeInboundLead(row = {}) {
   return {
     ...row,
     businessMetrics,
+    convertedAt: row.converted_at || row.convertedAt || '',
     fullName: [row.first_name || row.firstName, row.last_name || row.lastName].filter(Boolean).join(' '),
     id: row.id,
     organisationName: row.organisation_name || row.organisationName || '',
+    notes: row.notes || '',
     ownerId: row.owner_id || row.ownerId || '',
     ownerLabel: row.owner_name || row.owner_email || '',
     roleType: row.role_type || row.roleType || 'agency',
@@ -1024,6 +1026,8 @@ function normalizeInboundLead(row = {}) {
     services: row.services || [],
     source: row.source || 'other',
     status: row.status || 'new',
+    createdAt: row.created_at || row.createdAt || '',
+    updatedAt: row.updated_at || row.updatedAt || '',
     utmCampaign: row.utm_campaign || row.utmCampaign || '',
     utmContent: row.utm_content || row.utmContent || '',
     utmMedium: row.utm_medium || row.utmMedium || '',
@@ -1108,6 +1112,70 @@ function buildInboundCsv(leads = []) {
   return [headers, ...rows]
     .map((row) => row.map((value) => `"${String(value || '').replace(/"/g, '""')}"`).join(','))
     .join('\n')
+}
+
+function getLeadJourneyTone(status = '') {
+  if (status === 'live') return 'success'
+  if (status === 'not_proceeding') return 'danger'
+  if (['demo_booked', 'trial_setup', 'onboarding'].includes(status)) return 'accent'
+  if (status === 'contacted') return 'warm'
+  return 'neutral'
+}
+
+function buildLeadJourneySteps(lead = {}, activities = []) {
+  const sortedActivities = [...activities]
+    .filter((activity) => activity.inbound_lead_id === lead.id || activity.inboundLeadId === lead.id)
+    .sort((left, right) => new Date(right.created_at || 0) - new Date(left.created_at || 0))
+  const latestActivity = sortedActivities[0] || null
+  const interests = (lead.selectedInterests || []).slice(0, 3)
+  const scaleLines = getLeadScaleLines(lead)
+
+  return [
+    {
+      id: 'capture',
+      label: 'Capture',
+      value: formatDateTime(lead.created_at || lead.createdAt),
+      detail: [formatSource(lead.source), lead.utmSource ? `UTM ${lead.utmSource}` : ''].filter(Boolean).join(' · ') || 'Platform entry point',
+      tone: 'accent',
+    },
+    {
+      id: 'profile',
+      label: 'Profile',
+      value: [lead.fullName, lead.position].filter(Boolean).join(' · ') || 'Lead profile',
+      detail: lead.organisationName || 'Organisation not captured yet',
+      tone: 'neutral',
+    },
+    {
+      id: 'fit',
+      label: 'Fit',
+      value: formatRoleType(lead.roleType),
+      detail: scaleLines.join(' · ') || 'No scale signals captured yet',
+      tone: interests.length ? 'success' : 'neutral',
+    },
+    {
+      id: 'ownership',
+      label: 'Ownership',
+      value: lead.ownerLabel || 'Unassigned',
+      detail: formatInboundStatus(lead.status),
+      tone: getLeadJourneyTone(lead.status),
+    },
+    {
+      id: 'engagement',
+      label: 'Latest touch',
+      value: latestActivity ? normalizeStageLabel(latestActivity.event_type || latestActivity.eventType) : 'No activity yet',
+      detail: latestActivity
+        ? `${formatDateTime(latestActivity.created_at)}${latestActivity.actor_name || latestActivity.actor_email ? ` · ${latestActivity.actor_name || latestActivity.actor_email}` : ''}`
+        : 'Add a note or log activity to continue the journey.',
+      tone: latestActivity ? 'success' : 'neutral',
+    },
+    {
+      id: 'outcome',
+      label: 'Outcome',
+      value: lead.status === 'live' ? 'Live' : 'In progress',
+      detail: lead.status === 'live' ? 'Converted to a live platform lead.' : 'Waiting for conversion.',
+      tone: lead.status === 'live' ? 'success' : lead.status === 'not_proceeding' ? 'danger' : 'neutral',
+    },
+  ]
 }
 
 
@@ -2104,7 +2172,7 @@ function Topbar({ activeView, generatedAt, isLoading, onRefresh, rangeId, setRan
     activeView === 'support'
       ? 'Support Queue'
       : activeView === 'inboundLeads'
-        ? 'Inbound Leads'
+        ? 'Leads'
       : activeView === 'search'
         ? 'Search'
         : activeView === 'settings'
@@ -2125,7 +2193,7 @@ function Topbar({ activeView, generatedAt, isLoading, onRefresh, rangeId, setRan
       : activeView === 'support'
         ? 'Open support work and operational exceptions.'
         : activeView === 'inboundLeads'
-          ? 'Manage and convert inbound Arch9 enquiries.'
+          ? 'Manage and convert platform leads.'
         : activeView === 'search'
           ? 'Find organisations, users, and transactions.'
           : activeView === 'settings'
@@ -2317,7 +2385,7 @@ function SupportBrief({ onSelect, support }) {
   )
 }
 
-function DashboardView({ isLoading, snapshot, support }) {
+function DashboardView({ inboundSnapshot, isLoading, snapshot, support, onOpenLeads }) {
   const [drilldownKey, setDrilldownKey] = useState('pipeline')
   const kpis = snapshot?.kpis || EMPTY_DASHBOARD.kpis
   const warnings = snapshot?.warnings || []
@@ -2329,7 +2397,6 @@ function DashboardView({ isLoading, snapshot, support }) {
   const selectedDrilldown = drilldowns[drilldownKey]
   const activeTransactionRows = snapshot?.activeTransactions || snapshot?.drilldowns?.activeTransactions || []
   const listingPipelineRevenue = (Number(kpis.activeListings) || 0) * ARCH9_LISTING_PIPELINE_FEE
-  const organisationActivity = useMemo(() => buildOrganisationActivity(snapshot), [snapshot])
   const activitySeries = useMemo(
     () => buildActivitySeries([...pipelineRows, ...registeredRows], snapshot?.range || {}),
     [pipelineRows, registeredRows, snapshot?.range],
@@ -2385,6 +2452,10 @@ function DashboardView({ isLoading, snapshot, support }) {
     },
   ]
 
+  const leads = (inboundSnapshot?.leads || [])
+    .slice()
+    .sort((left, right) => new Date(right.created_at || right.createdAt || 0) - new Date(left.created_at || left.createdAt || 0))
+
   return (
     <div className="view-stack operating-dashboard">
       <section className="metric-grid platform-kpis" aria-label="Platform KPIs">
@@ -2428,9 +2499,9 @@ function DashboardView({ isLoading, snapshot, support }) {
       </section>
 
       <section className="dashboard-bottom-row">
-        <OrganisationActivityCard
-          onSelect={() => setDrilldownKey('activeOrganisations')}
-          rows={organisationActivity}
+        <LeadsSnapshotCard
+          leads={leads}
+          onOpenLeads={onOpenLeads}
         />
       </section>
     </div>
@@ -2558,33 +2629,76 @@ function RevenuePerformanceCard({ feeContext, missingRevenue = 0, onSelect, pipe
   )
 }
 
-function OrganisationActivityCard({ onSelect, rows = [] }) {
+function LeadsSnapshotCard({ leads = [], onOpenLeads }) {
   return (
-    <section className="dashboard-card organisation-activity-card">
+    <section className="dashboard-card leads-card">
       <div className="panel-title">
-        <h2>Organisation Activity</h2>
-        <button className="text-button" onClick={onSelect} type="button">View all</button>
-      </div>
-      <div className="org-table compact-table">
-        <div className="compact-table-head">
-          <span>Organisation</span>
-          <span>Agents</span>
-          <span>Listings</span>
-          <span>Tx</span>
+        <div>
+          <h2>Leads</h2>
+          <span>{formatCount(leads.length)} captured leads</span>
         </div>
-        {rows.length ? rows.map((row) => (
-          <button className="compact-table-row" key={row.id || row.name} onClick={onSelect} type="button">
-            <span className="org-name-cell">
-              <b>{getInitials(row.name)}</b>
-              <strong>{row.name}</strong>
-            </span>
-            <span>{formatCount(row.agents)}</span>
-            <span>{formatCount(row.listings)}</span>
-            <span className="trend-value">+{formatCount(row.transactions)}</span>
-          </button>
-        )) : <p className="empty-state">Organisation activity will appear once the dashboard RPC returns rows.</p>}
+        <button className="text-button" onClick={onOpenLeads} type="button">View leads</button>
+      </div>
+      <div className="lead-preview-list">
+        {leads.length ? leads.slice(0, 4).map((lead) => {
+          const interests = (lead.selectedInterests || []).slice(0, 2)
+          const scale = getLeadScaleLines(lead)
+          return (
+            <button className="lead-preview-row" key={lead.id} onClick={onOpenLeads} type="button">
+              <div className="lead-preview-main">
+                <div className="lead-preview-heading">
+                  <span className="lead-preview-initials">{getInitials(lead.fullName)}</span>
+                  <div>
+                    <strong>{lead.fullName || 'Untitled lead'}</strong>
+                    <small>{lead.organisationName || lead.position || 'No organisation captured'}</small>
+                  </div>
+                </div>
+                <div className="lead-preview-tags">
+                  <span className={`status-badge ${lead.status}`}>{formatInboundStatus(lead.status)}</span>
+                  <span>{formatSource(lead.source)}</span>
+                  <span>{formatDate(lead.created_at || lead.createdAt)}</span>
+                </div>
+              </div>
+              <div className="lead-preview-side">
+                {scale.slice(0, 2).map((item) => <span key={item}>{item}</span>)}
+                {interests.length ? <small>{interests.join(' · ')}</small> : <small>No interests yet</small>}
+              </div>
+            </button>
+          )
+        }) : <p className="empty-state">Platform leads will appear here once the inbound RPC returns rows.</p>}
       </div>
     </section>
+  )
+}
+
+function LeadJourney({ lead = {}, activities = [] }) {
+  const steps = buildLeadJourneySteps(lead, activities)
+
+  return (
+    <div className="lead-journey">
+      <div className="panel-title compact">
+        <div>
+          <h3>Buyer Journey</h3>
+          <span>Vertical view for mobile</span>
+        </div>
+        <span className={`status-badge ${lead.status}`}>{formatInboundStatus(lead.status)}</span>
+      </div>
+      <div className="journey-stack">
+        {steps.map((step) => (
+          <article className={`journey-step ${step.tone}`} key={step.id}>
+            <div className="journey-rail" aria-hidden="true">
+              <span className="journey-dot" />
+              <span className="journey-line" />
+            </div>
+            <div className="journey-copy">
+              <small>{step.label}</small>
+              <strong>{step.value}</strong>
+              <span>{step.detail}</span>
+            </div>
+          </article>
+        ))}
+      </div>
+    </div>
   )
 }
 
@@ -3337,36 +3451,77 @@ function InboundLeadTable({ leads = [], onSelect, selectedLeadId = '' }) {
       </div>
       <div className="table-shell">
         {leads.length ? (
-          <table className="inbound-leads-table">
-            <thead>
-              <tr>
-                <th>Lead</th>
-                <th>Role</th>
-                <th>Organisation</th>
-                <th>Contact details</th>
-                <th>Source</th>
-                <th>Size / Volume</th>
-                <th>Top interests</th>
-                <th>Status</th>
-                <th>Owner</th>
-                <th>Created</th>
-              </tr>
-            </thead>
-            <tbody>
+          <>
+            <table className="inbound-leads-table desktop-leads-table">
+              <thead>
+                <tr>
+                  <th>Lead</th>
+                  <th>Role</th>
+                  <th>Organisation</th>
+                  <th>Contact details</th>
+                  <th>Source</th>
+                  <th>Size / Volume</th>
+                  <th>Top interests</th>
+                  <th>Status</th>
+                  <th>Owner</th>
+                  <th>Created</th>
+                </tr>
+              </thead>
+              <tbody>
+                {leads.map((lead) => {
+                  const scale = getLeadScaleLines(lead)
+                  const interests = lead.selectedInterests || []
+                  return (
+                    <tr
+                      className={selectedLeadId === lead.id ? 'selected-row' : ''}
+                      key={lead.id}
+                      onClick={() => onSelect(lead)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') onSelect(lead)
+                      }}
+                      tabIndex={0}
+                    >
+                      <td>
+                        <div className="lead-name-cell">
+                          <b>{getInitials(lead.fullName)}</b>
+                          <span>
+                            <strong>{lead.fullName}</strong>
+                            <small>{lead.position || 'No position'}</small>
+                          </span>
+                        </div>
+                      </td>
+                      <td><span className={`role-pill ${lead.roleType}`}>{formatRoleType(lead.roleType)}</span></td>
+                      <td>{lead.organisationName}</td>
+                      <td>
+                        <strong>{lead.email}</strong>
+                        <span>{lead.mobile}</span>
+                      </td>
+                      <td>{formatSource(lead.source)}</td>
+                      <td>{scale.length ? scale.map((item) => <span key={item}>{item}</span>) : 'No scale yet'}</td>
+                      <td>
+                        {interests.slice(0, 3).map((interest) => <span key={interest}>{interest}</span>)}
+                        {interests.length > 3 ? <small>+{interests.length - 3} more</small> : null}
+                      </td>
+                      <td><span className={`status-badge ${lead.status}`}>{formatInboundStatus(lead.status)}</span></td>
+                      <td>{lead.ownerLabel || '-'}</td>
+                      <td>{formatDate(lead.created_at || lead.createdAt)}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+            <div className="mobile-leads-list" aria-label="Inbound leads">
               {leads.map((lead) => {
                 const scale = getLeadScaleLines(lead)
                 const interests = lead.selectedInterests || []
                 return (
-                  <tr
-                    className={selectedLeadId === lead.id ? 'selected-row' : ''}
+                  <button
+                    className={`mobile-lead-card ${selectedLeadId === lead.id ? 'selected-row' : ''}`}
                     key={lead.id}
                     onClick={() => onSelect(lead)}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter' || event.key === ' ') onSelect(lead)
-                    }}
-                    tabIndex={0}
+                    type="button"
                   >
-                    <td>
+                    <div className="mobile-lead-card-head">
                       <div className="lead-name-cell">
                         <b>{getInitials(lead.fullName)}</b>
                         <span>
@@ -3374,27 +3529,40 @@ function InboundLeadTable({ leads = [], onSelect, selectedLeadId = '' }) {
                           <small>{lead.position || 'No position'}</small>
                         </span>
                       </div>
-                    </td>
-                    <td><span className={`role-pill ${lead.roleType}`}>{formatRoleType(lead.roleType)}</span></td>
-                    <td>{lead.organisationName}</td>
-                    <td>
-                      <strong>{lead.email}</strong>
-                      <span>{lead.mobile}</span>
-                    </td>
-                    <td>{formatSource(lead.source)}</td>
-                    <td>{scale.length ? scale.map((item) => <span key={item}>{item}</span>) : 'No scale yet'}</td>
-                    <td>
-                      {interests.slice(0, 3).map((interest) => <span key={interest}>{interest}</span>)}
-                      {interests.length > 3 ? <small>+{interests.length - 3} more</small> : null}
-                    </td>
-                    <td><span className={`status-badge ${lead.status}`}>{formatInboundStatus(lead.status)}</span></td>
-                    <td>{lead.ownerLabel || '-'}</td>
-                    <td>{formatDate(lead.created_at)}</td>
-                  </tr>
+                      <span className={`status-badge ${lead.status}`}>{formatInboundStatus(lead.status)}</span>
+                    </div>
+                    <div className="mobile-lead-card-grid">
+                      <div>
+                        <span>Organisation</span>
+                        <strong>{lead.organisationName || 'Not captured'}</strong>
+                      </div>
+                      <div>
+                        <span>Contact</span>
+                        <strong>{lead.email}</strong>
+                        <small>{lead.mobile}</small>
+                      </div>
+                      <div>
+                        <span>Source</span>
+                        <strong>{formatSource(lead.source)}</strong>
+                      </div>
+                      <div>
+                        <span>Owner</span>
+                        <strong>{lead.ownerLabel || 'Unassigned'}</strong>
+                      </div>
+                    </div>
+                    <div className="mobile-lead-card-foot">
+                      <div className="mobile-lead-lines">
+                        {scale.length ? scale.map((item) => <span key={item}>{item}</span>) : <span>No scale yet</span>}
+                      </div>
+                      <div className="chip-list mobile-chip-list">
+                        {interests.slice(0, 3).map((interest) => <span key={interest}>{interest}</span>)}
+                      </div>
+                    </div>
+                  </button>
                 )
               })}
-            </tbody>
-          </table>
+            </div>
+          </>
         ) : (
           <p className="empty-state">No inbound leads match the current filters.</p>
         )}
@@ -3574,18 +3742,7 @@ function InboundLeadDetail({ activities = [], lead, onRefresh, owners = [] }) {
         </button>
       </form>
 
-      <div className="lead-detail-section">
-        <h3>Activity</h3>
-        <div className="activity-list">
-          {leadActivities.length ? leadActivities.map((activity) => (
-            <article key={activity.id}>
-              <strong>{normalizeStageLabel(activity.event_type || activity.eventType)}</strong>
-              <span>{activity.note || 'No note'}</span>
-              <small>{formatDateTime(activity.created_at)} {activity.actor_name || activity.actor_email ? `by ${activity.actor_name || activity.actor_email}` : ''}</small>
-            </article>
-          )) : <p className="empty-state">No activity has been logged yet.</p>}
-        </div>
-      </div>
+      <LeadJourney activities={leadActivities} lead={lead} />
     </section>
   )
 }
@@ -4076,7 +4233,7 @@ export default function App() {
           rangeId={rangeId}
           setRangeId={setRangeId}
         />
-        {view === 'dashboard' ? <DashboardView isLoading={isLoading} snapshot={dashboard} support={support} /> : null}
+        {view === 'dashboard' ? <DashboardView inboundSnapshot={inbound} isLoading={isLoading} onOpenLeads={() => navigate('inboundLeads')} snapshot={dashboard} support={support} /> : null}
         {view === 'inboundLeads' ? <InboundLeadsView onRefresh={() => refreshData()} snapshot={inbound} /> : null}
         {['organisations', 'transactions', 'users', 'reports'].includes(view) ? (
           <AdminWorkspaceView snapshot={dashboard} type={view} />

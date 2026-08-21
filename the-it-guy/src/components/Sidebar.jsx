@@ -27,7 +27,7 @@ import {
   Workflow,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import { NavLink, useLocation } from 'react-router-dom'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useOrganisation } from '../context/OrganisationContext'
 import { useWorkspace } from '../context/WorkspaceContext'
 import useAttorneyModuleSettings from '../hooks/useAttorneyModuleSettings'
@@ -313,6 +313,7 @@ function Sidebar() {
   const { branding, loading: organisationLoading, membershipRole: organisationMembershipRole } = useOrganisation()
   const attorneyModuleState = useAttorneyModuleSettings({ enabled: role === 'attorney' })
   const location = useLocation()
+  const navigate = useNavigate()
   const inferredRoleWorkspaceType = inferWorkspaceTypeFromAppRole(role)
   const navWorkspaceType =
     inferredRoleWorkspaceType && workspaceContext.currentWorkspace?.type !== inferredRoleWorkspaceType
@@ -461,12 +462,15 @@ function Sidebar() {
       <div key={item.label} className="space-y-1">
         <button
           type="button"
-          onClick={() =>
+          onClick={() => {
+            if (item.to) {
+              navigate(item.to)
+            }
             setExpandedMenus((previous) => ({
               ...previous,
-              [item.key]: !(previous[item.key] ?? isParentActive),
+              [item.key]: item.to ? true : !(previous[item.key] ?? isParentActive),
             }))
-          }
+          }}
           className={`ui-sidebar-link w-full justify-between ${menuExpanded ? 'ui-sidebar-link-open' : ''}`.trim()}
           aria-expanded={menuExpanded}
         >

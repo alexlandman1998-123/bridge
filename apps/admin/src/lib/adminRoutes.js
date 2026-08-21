@@ -2,7 +2,7 @@ import { ADMIN_LEVELS } from './adminAccess.js'
 
 export const ADMIN_NAV_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', levels: [ADMIN_LEVELS.EXECUTIVE] },
-  { id: 'inboundLeads', label: 'Inbound Leads', levels: [ADMIN_LEVELS.EXECUTIVE, ADMIN_LEVELS.CUSTOMER_SUPPORT] },
+  { id: 'inboundLeads', label: 'Leads', levels: [ADMIN_LEVELS.EXECUTIVE, ADMIN_LEVELS.CUSTOMER_SUPPORT] },
   { id: 'organisations', label: 'Organisations', levels: [ADMIN_LEVELS.EXECUTIVE] },
   { id: 'transactions', label: 'Transactions', levels: [ADMIN_LEVELS.EXECUTIVE] },
   { id: 'users', label: 'Users', levels: [ADMIN_LEVELS.EXECUTIVE] },
