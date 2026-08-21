@@ -6,6 +6,8 @@ import { deriveOnboardingSetupState } from '../lib/onboardingRouting'
 import { DEFAULT_APP_ROLE, normalizeAppRole } from '../lib/appRoleMetadata'
 import { can, canAll, canAny, createPermissionResolver, getPermissionScope } from '../auth/permissions/permissionResolver'
 import { completeOnboarding } from '../services/onboarding/onboardingEngine'
+import { BUSINESS_WORKSPACES, normalizeBusinessWorkspace, resolveBusinessWorkspaceState } from '../lib/businessWorkspaceAccess'
+import { getFeatureFlags } from '../lib/envValidation'
 import {
   isOrganisationOwnerMembership,
   resolveActiveOrganisationMembership,
@@ -19,6 +21,7 @@ const WorkspaceContext =
     ? (globalThis[WORKSPACE_CONTEXT_GLOBAL_KEY] ||= createContext(null))
     : createContext(null)
 const AGENCY_WORKFLOW_MODE_STORAGE_KEY = 'itg:agency-workflow-mode:v1'
+const BUSINESS_WORKSPACE_STORAGE_KEY = 'arch9:business-workspace:v1'
 const DEFAULT_AGENCY_WORKFLOW_MODE = 'agent'
 const UNRESOLVED_WORKSPACE = { id: '', name: 'Workspace setup required', type: '' }
 const EMPTY_PROFILE_PATCH = {}
@@ -88,8 +91,31 @@ function resolveWorkspaceStatus(authState) {
   return 'active_user'
 }
 
+function readStoredBusinessWorkspace(storageKey = '') {
+  if (typeof window === 'undefined' || !storageKey) return BUSINESS_WORKSPACES.sales
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(BUSINESS_WORKSPACE_STORAGE_KEY) || '{}')
+    if (stored?.key !== storageKey) return BUSINESS_WORKSPACES.sales
+    return normalizeBusinessWorkspace(stored?.workspace, BUSINESS_WORKSPACES.sales)
+  } catch {
+    return BUSINESS_WORKSPACES.sales
+  }
+}
+
+function writeStoredBusinessWorkspace(storageKey = '', workspace = BUSINESS_WORKSPACES.sales) {
+  if (typeof window === 'undefined' || !storageKey) return
+  window.localStorage.setItem(
+    BUSINESS_WORKSPACE_STORAGE_KEY,
+    JSON.stringify({
+      key: storageKey,
+      workspace: normalizeBusinessWorkspace(workspace, BUSINESS_WORKSPACES.sales),
+    }),
+  )
+}
+
 export function WorkspaceProvider({ children }) {
   const { authState, selectWorkspace } = useAuthSession()
+  const featureFlags = getFeatureFlags()
   const rawProfile = authState.profile || null
   const [profilePatchState, setProfilePatchState] = useState({ userId: '', patch: {} })
   const activeProfilePatch = profilePatchState.userId === rawProfile?.id ? profilePatchState.patch : EMPTY_PROFILE_PATCH
@@ -179,6 +205,67 @@ export function WorkspaceProvider({ children }) {
   const isOrganisationOwner = isOrganisationOwnerMembership(organisationMembership)
   const isAgentBaseRole = baseRole === 'agent'
   const [agencyWorkflowMode, setAgencyWorkflowModeState] = useState(DEFAULT_AGENCY_WORKFLOW_MODE)
+  const [businessWorkspacePreferenceState, setBusinessWorkspacePreferenceState] = useState({
+    key: '',
+    workspace: BUSINESS_WORKSPACES.sales,
+  })
+  const businessWorkspaceStorageKey = useMemo(() => {
+    if (!featureFlags.salesRentalsWorkspaceSplitEnabled || !userId || !workspace.id || workspace.id === 'all' || !isAgentBaseRole) return ''
+    return `${userId}:${workspace.id}`
+  }, [featureFlags.salesRentalsWorkspaceSplitEnabled, isAgentBaseRole, userId, workspace.id])
+  const businessWorkspacePreference =
+    businessWorkspacePreferenceState.key === businessWorkspaceStorageKey
+      ? businessWorkspacePreferenceState.workspace
+      : BUSINESS_WORKSPACES.sales
+  const businessWorkspaceState = useMemo(
+    () => resolveBusinessWorkspaceState({
+      enabled: featureFlags.salesRentalsWorkspaceSplitEnabled,
+      appRole: baseRole,
+      workspaceType: authState.workspaceType || authState.currentWorkspace?.type,
+      currentMembership: authState.currentMembership,
+      membershipRole: organisationMembershipRole,
+      preferredWorkspace: businessWorkspacePreference,
+    }),
+    [
+      authState.currentMembership,
+      authState.currentWorkspace?.type,
+      authState.workspaceType,
+      baseRole,
+      businessWorkspacePreference,
+      featureFlags.salesRentalsWorkspaceSplitEnabled,
+      organisationMembershipRole,
+    ],
+  )
+
+  useEffect(() => {
+    if (!businessWorkspaceStorageKey) {
+      setBusinessWorkspacePreferenceState((previous) =>
+        previous.key || previous.workspace !== BUSINESS_WORKSPACES.sales
+          ? { key: '', workspace: BUSINESS_WORKSPACES.sales }
+          : previous,
+      )
+      return
+    }
+    setBusinessWorkspacePreferenceState((previous) => {
+      if (previous.key === businessWorkspaceStorageKey) return previous
+      return {
+        key: businessWorkspaceStorageKey,
+        workspace: readStoredBusinessWorkspace(businessWorkspaceStorageKey),
+      }
+    })
+  }, [businessWorkspaceStorageKey])
+
+  useEffect(() => {
+    if (!businessWorkspaceStorageKey || businessWorkspacePreferenceState.key !== businessWorkspaceStorageKey) return
+    if (businessWorkspacePreferenceState.workspace !== businessWorkspaceState.currentId) {
+      setBusinessWorkspacePreferenceState({
+        key: businessWorkspaceStorageKey,
+        workspace: businessWorkspaceState.currentId,
+      })
+      return
+    }
+    writeStoredBusinessWorkspace(businessWorkspaceStorageKey, businessWorkspaceState.currentId)
+  }, [businessWorkspacePreferenceState, businessWorkspaceState.currentId, businessWorkspaceStorageKey])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -216,6 +303,26 @@ export function WorkspaceProvider({ children }) {
       )
     },
     [baseRole],
+  )
+
+  const setBusinessWorkspace = useCallback(
+    (nextWorkspace) => {
+      if (!businessWorkspaceStorageKey || !featureFlags.salesRentalsWorkspaceSplitEnabled || baseRole !== 'agent') return
+      setBusinessWorkspacePreferenceState((previous) => {
+        const previousWorkspace = previous.key === businessWorkspaceStorageKey ? previous.workspace : businessWorkspaceState.currentId
+        const requested = typeof nextWorkspace === 'function' ? nextWorkspace(previousWorkspace) : nextWorkspace
+        const normalized = normalizeBusinessWorkspace(requested, previousWorkspace)
+        const next = businessWorkspaceState.availableIds.includes(normalized) ? normalized : businessWorkspaceState.currentId
+        return { key: businessWorkspaceStorageKey, workspace: next }
+      })
+    },
+    [
+      baseRole,
+      businessWorkspaceState.availableIds,
+      businessWorkspaceState.currentId,
+      businessWorkspaceStorageKey,
+      featureFlags.salesRentalsWorkspaceSplitEnabled,
+    ],
   )
 
   const refreshProfile = useCallback(async () => {
@@ -290,6 +397,13 @@ export function WorkspaceProvider({ children }) {
       baseRole,
       agencyWorkflowMode,
       setAgencyWorkflowMode,
+      businessWorkspace: businessWorkspaceState.current,
+      businessWorkspaceId: businessWorkspaceState.currentId,
+      availableBusinessWorkspaces: businessWorkspaceState.available,
+      availableBusinessWorkspaceIds: businessWorkspaceState.availableIds,
+      businessWorkspaceSplitEnabled: businessWorkspaceState.enabled,
+      showBusinessWorkspaceSwitcher: businessWorkspaceState.showSwitcher,
+      setBusinessWorkspace,
       profile,
       signupIntent,
       onboardingState,
@@ -351,6 +465,12 @@ export function WorkspaceProvider({ children }) {
       authState.workspaceRole,
       authState.workspaceType,
       baseRole,
+      businessWorkspaceState.available,
+      businessWorkspaceState.availableIds,
+      businessWorkspaceState.current,
+      businessWorkspaceState.currentId,
+      businessWorkspaceState.enabled,
+      businessWorkspaceState.showSwitcher,
       onboardingCompleted,
       permissionContext,
       permissionResolver,
@@ -361,6 +481,7 @@ export function WorkspaceProvider({ children }) {
       retryWorkspaceBootstrap,
       role,
       saveProfileDraft,
+      setBusinessWorkspace,
       setAgencyWorkflowMode,
       setWorkspace,
       setupState,

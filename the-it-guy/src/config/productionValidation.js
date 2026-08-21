@@ -26,6 +26,12 @@ export function isProductionEnvironment() {
   return getDeploymentEnvironment() === 'production'
 }
 
+export function isStagingLikeEnvironment() {
+  const environment = getDeploymentEnvironment()
+  const vercelEnvironment = normalize(import.meta.env.VERCEL_ENV || import.meta.env.VERCEL_TARGET_ENV).toLowerCase()
+  return ['staging', 'preview'].includes(environment) || ['staging', 'preview'].includes(vercelEnvironment)
+}
+
 export function isDemoLikeEnvironment() {
   return ['demo', 'staging', 'preview', 'local', 'development', 'test'].includes(getDeploymentEnvironment())
 }

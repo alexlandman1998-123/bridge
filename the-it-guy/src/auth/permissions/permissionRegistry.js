@@ -532,6 +532,13 @@ export const routePermissionRules = Object.freeze([
   { prefix: '/pipeline/leads', appRole: APP_ROLES.agent, workspaceType: WORKSPACE_TYPES.agency, permission: PERMISSIONS.viewLeads },
   { prefix: '/pipeline/enquiries', appRole: APP_ROLES.agent, workspaceType: WORKSPACE_TYPES.agency, permission: PERMISSIONS.viewLeads },
   { prefix: '/pipeline/overview', appRole: APP_ROLES.agent, workspaceType: WORKSPACE_TYPES.agency, permission: PERMISSIONS.viewLeads },
+  { prefix: '/agent/rentals/dashboard', appRole: APP_ROLES.agent, workspaceType: WORKSPACE_TYPES.agency, permission: PERMISSIONS.viewAgencyDashboard },
+  { prefix: '/agent/rentals/tenancies', appRole: APP_ROLES.agent, workspaceType: WORKSPACE_TYPES.agency, permission: PERMISSIONS.viewTransactions },
+  { prefix: '/agent/rentals/pipeline/calendar', appRole: APP_ROLES.agent, workspaceType: WORKSPACE_TYPES.agency, permission: PERMISSIONS.manageAppointments },
+  { prefix: '/agent/rentals/pipeline/applications', appRole: APP_ROLES.agent, workspaceType: WORKSPACE_TYPES.agency, permission: PERMISSIONS.viewLeads },
+  { prefix: '/agent/rentals/pipeline/leads', appRole: APP_ROLES.agent, workspaceType: WORKSPACE_TYPES.agency, permission: PERMISSIONS.viewLeads },
+  { prefix: '/agent/rentals/listings', appRole: APP_ROLES.agent, workspaceType: WORKSPACE_TYPES.agency, permission: PERMISSIONS.viewListings },
+  { prefix: '/agent/rentals', appRole: APP_ROLES.agent, workspaceType: WORKSPACE_TYPES.agency, permission: PERMISSIONS.viewAgencyDashboard },
   { prefix: '/listings', appRole: APP_ROLES.agent, workspaceType: WORKSPACE_TYPES.agency, permission: PERMISSIONS.viewListings },
   { prefix: '/agent/listings', appRole: APP_ROLES.agent, workspaceType: WORKSPACE_TYPES.agency, permission: PERMISSIONS.viewListings },
   {

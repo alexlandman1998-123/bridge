@@ -9,6 +9,14 @@ const unitsAsListingsMigration = await readFile(
   new URL('../supabase/migrations/20260820174624_admin_dashboard_units_as_listings.sql', import.meta.url),
   'utf8',
 )
+const removeExternalInventoryMigration = await readFile(
+  new URL('../supabase/migrations/20260820192857_remove_admin_external_inventory_counts.sql', import.meta.url),
+  'utf8',
+)
+const exactActiveListingTokensMigration = await readFile(
+  new URL('../supabase/migrations/20260820193436_admin_dashboard_exact_active_listing_tokens.sql', import.meta.url),
+  'utf8',
+)
 const adminApp = await readFile(new URL('../apps/admin/src/App.jsx', import.meta.url), 'utf8')
 
 assert.match(migration, /^begin;/)
@@ -34,6 +42,8 @@ assert.match(adminApp, /fetchAdminRows\('units'\)/)
 assert.match(adminApp, /function isActiveUnitListingRow/)
 assert.match(adminApp, /const activeListings = \[\.\.\.privateListingRows, \.\.\.unitListingRows\]/)
 assert.match(adminApp, /sanitizeAdminDashboardSnapshot/)
+assert.match(adminApp, /function hasAnyDashboardToken/)
+assert.doesNotMatch(adminApp, /mandate_signed\|listing_active\|active_market\|under_offer\|transaction_created\|published/)
 
 assert.match(unitsAsListingsMigration, /^begin;/)
 assert.match(unitsAsListingsMigration, /commit;\s*$/)
@@ -41,5 +51,23 @@ assert.match(unitsAsListingsMigration, /v_units jsonb := ''\[\]''::jsonb/)
 assert.match(unitsAsListingsMigration, /public\.units/)
 assert.match(unitsAsListingsMigration, /development units as listing inventory/)
 assert.match(unitsAsListingsMigration, /notify pgrst, 'reload schema'/)
+
+assert.match(removeExternalInventoryMigration, /^begin;/)
+assert.match(removeExternalInventoryMigration, /commit;\s*$/)
+assert.match(removeExternalInventoryMigration, /drop table if exists public\.arch9_admin_external_inventory_snapshots/)
+assert.match(removeExternalInventoryMigration, /v_external_inventory_snapshots jsonb := ''\[\]''::jsonb/)
+assert.match(removeExternalInventoryMigration, /external inventory loop not found/)
+assert.match(removeExternalInventoryMigration, /Arch9 database tables only/)
+assert.match(removeExternalInventoryMigration, /revoke all on function public\.arch9_admin_dashboard_snapshot\(timestamptz, timestamptz\) from public, anon/)
+assert.match(removeExternalInventoryMigration, /notify pgrst, 'reload schema'/)
+
+assert.match(exactActiveListingTokensMigration, /^begin;/)
+assert.match(exactActiveListingTokensMigration, /commit;\s*$/)
+assert.match(exactActiveListingTokensMigration, /create or replace function public\.arch9_admin_json_token_in/)
+assert.match(exactActiveListingTokensMigration, /not_published is not counted as published/)
+assert.match(exactActiveListingTokensMigration, /public\.arch9_admin_json_token_in\(v_row/)
+assert.match(exactActiveListingTokensMigration, /grant execute on function public\.arch9_admin_json_token_in\(jsonb, text\[\], text\[\]\) to authenticated/)
+assert.match(exactActiveListingTokensMigration, /revoke all on function public\.arch9_admin_dashboard_snapshot\(timestamptz, timestamptz\) from public, anon/)
+assert.match(exactActiveListingTokensMigration, /notify pgrst, 'reload schema'/)
 
 console.log('admin dashboard operational counts contract checks passed')

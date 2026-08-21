@@ -31,6 +31,7 @@ import {
   hasCommercialAccessMarker,
   isCommercialProfessionalMember,
 } from './lib/commercialAccess'
+import { BUSINESS_WORKSPACES } from './lib/businessWorkspaceAccess'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 
 const INACTIVITY_TIMEOUT_MINUTES = 15
@@ -234,6 +235,9 @@ const Auth = lazy(() => import('./pages/Auth'))
 const AuthCallback = lazy(() => import('./pages/AuthCallback'))
 const ResetPassword = lazy(() => import('./pages/ResetPassword'))
 const Arch9LaunchConcierge = lazy(() => import('./pages/Arch9LaunchConcierge'))
+const RentalApplicationsPage = lazy(() => import('./pages/rentals/RentalApplicationsPage'))
+const RentalListingsPage = lazy(() => import('./pages/rentals/RentalListingsPage'))
+const RentalTenanciesPage = lazy(() => import('./pages/rentals/RentalTenanciesPage'))
 const BridgeAgentsPage = lazyNamed(() => import('./pages/BridgeLanding'), 'BridgeAgentsPage')
 const BridgeAboutPage = lazyNamed(() => import('./pages/BridgeLanding'), 'BridgeAboutPage')
 const BridgeBuyPage = lazyNamed(() => import('./pages/BridgeLanding'), 'BridgeBuyPage')
@@ -393,6 +397,8 @@ const SettingsPreferredPartnersPage = lazy(() => import('./pages/settings/Settin
 const SettingsPartnerProspectsPage = lazy(() => import('./pages/settings/SettingsPartnerProspectsPage'))
 const SettingsPartnerRoutingRulesPage = lazy(() => import('./pages/settings/SettingsPartnerRoutingRulesPage'))
 const SettingsProperty24Page = lazy(() => import('./pages/settings/SettingsProperty24Page'))
+const SettingsPrivatePropertyPage = lazy(() => import('./pages/settings/SettingsPrivatePropertyPage'))
+const SettingsSyndicationPage = lazy(() => import('./pages/settings/SettingsSyndicationPage'))
 const SettingsSigningTemplatesPage = lazy(() => import('./pages/settings/SettingsSigningTemplatesPage'))
 const SettingsUsersPage = lazy(() => import('./pages/settings/SettingsUsersPage'))
 const SettingsWorkflowsPage = lazy(() => import('./pages/settings/SettingsWorkflowsPage'))
@@ -1173,6 +1179,51 @@ function RoleRoute({ allowedRoles, requiredPermission = '', requiredWorkspaceTyp
   }
 
   return children
+}
+
+function RentalWorkspaceGuard({ children }) {
+  const {
+    availableBusinessWorkspaceIds = [],
+    businessWorkspaceId,
+    businessWorkspaceSplitEnabled,
+    setBusinessWorkspace,
+  } = useWorkspace()
+  const hasRentalAccess = availableBusinessWorkspaceIds.includes(BUSINESS_WORKSPACES.rentals)
+  const isRentalWorkspace = businessWorkspaceId === BUSINESS_WORKSPACES.rentals
+
+  useEffect(() => {
+    if (!businessWorkspaceSplitEnabled || !hasRentalAccess || isRentalWorkspace) return
+    setBusinessWorkspace?.(BUSINESS_WORKSPACES.rentals)
+  }, [businessWorkspaceSplitEnabled, hasRentalAccess, isRentalWorkspace, setBusinessWorkspace])
+
+  if (!businessWorkspaceSplitEnabled) {
+    return <AccessDenied message="Rentals workspace navigation is only enabled in staging or preview." />
+  }
+
+  if (!hasRentalAccess) {
+    return <AccessDenied message="Your Arch9 access is not enabled for Rentals." />
+  }
+
+  if (!isRentalWorkspace) {
+    return (
+      <section className="auth-loading-screen">
+        <div className="auth-loading-card">
+          <h2>Opening Rentals workspace…</h2>
+          <p>Preparing the rental navigation context.</p>
+        </div>
+      </section>
+    )
+  }
+
+  return children
+}
+
+function RentalWorkspacePlaceholder({ title, description }) {
+  return (
+    <RentalWorkspaceGuard>
+      <PlaceholderPage title={title} description={description} />
+    </RentalWorkspaceGuard>
+  )
 }
 
 function AttorneyFirmRoute({ children, requireFirm = true }) {
@@ -2570,6 +2621,85 @@ function AppRoutes() {
                 }
               />
               <Route
+                path="/agent/rentals"
+                element={
+                  <RoleRoute allowedRoles={['agent']}>
+                    <Navigate to="/agent/rentals/dashboard" replace />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/agent/rentals/dashboard"
+                element={
+                  <RoleRoute allowedRoles={['agent']}>
+                    <RentalWorkspacePlaceholder
+                      title="Rentals Dashboard"
+                      description="Rental lead, listing, application, and lease activity will land here as the module is phased in."
+                    />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/agent/rentals/tenancies"
+                element={
+                  <RoleRoute allowedRoles={['agent']}>
+                    <RentalWorkspaceGuard>
+                      <RentalTenanciesPage />
+                    </RentalWorkspaceGuard>
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/agent/rentals/pipeline/leads"
+                element={
+                  <RoleRoute allowedRoles={['agent']}>
+                    <RentalWorkspacePlaceholder
+                      title="Rental Leads"
+                      description="Landlord and tenant lead intake will be separated from seller and buyer sales leads here."
+                    />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/agent/rentals/pipeline"
+                element={
+                  <RoleRoute allowedRoles={['agent']}>
+                    <Navigate to="/agent/rentals/pipeline/leads" replace />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/agent/rentals/pipeline/applications"
+                element={
+                  <RoleRoute allowedRoles={['agent']}>
+                    <RentalWorkspaceGuard>
+                      <RentalApplicationsPage />
+                    </RentalWorkspaceGuard>
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/agent/rentals/pipeline/calendar"
+                element={
+                  <RoleRoute allowedRoles={['agent']}>
+                    <RentalWorkspacePlaceholder
+                      title="Rental Calendar"
+                      description="Rental inspections, viewings, applicant follow-ups, and lease appointments will be coordinated here."
+                    />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/agent/rentals/listings"
+                element={
+                  <RoleRoute allowedRoles={['agent']}>
+                    <RentalWorkspaceGuard>
+                      <RentalListingsPage />
+                    </RentalWorkspaceGuard>
+                  </RoleRoute>
+                }
+              />
+              <Route
                 path="/pipeline/leads"
                 element={
                   <RoleRoute allowedRoles={['agent']}>
@@ -3014,7 +3144,17 @@ function AppRoutes() {
                   }
                 />
                 <Route
-                  path="property24"
+                  path="syndication"
+                  element={
+                    <OrganisationSettingsManageRoute>
+                      <RoleRoute allowedRoles={['agent']}>
+                        <SettingsSyndicationPage />
+                      </RoleRoute>
+                    </OrganisationSettingsManageRoute>
+                  }
+                />
+                <Route
+                  path="syndication/property24"
                   element={
                     <OrganisationSettingsManageRoute>
                       <RoleRoute allowedRoles={['agent']}>
@@ -3023,6 +3163,17 @@ function AppRoutes() {
                     </OrganisationSettingsManageRoute>
                   }
                 />
+                <Route
+                  path="syndication/private-property"
+                  element={
+                    <OrganisationSettingsManageRoute>
+                      <RoleRoute allowedRoles={['agent']}>
+                        <SettingsPrivatePropertyPage />
+                      </RoleRoute>
+                    </OrganisationSettingsManageRoute>
+                  }
+                />
+                <Route path="property24" element={<Navigate to="/settings/syndication/property24" replace />} />
                 <Route
                   path="commission"
                   element={

@@ -8,6 +8,8 @@ const landing = await readFile(new URL('../src/pages/settings/SettingsLanding.js
 const navigation = await readFile(new URL('../src/pages/settings/settingsNavigation.js', import.meta.url), 'utf8')
 const premiumSaaS = await readFile(new URL('../src/styles/premiumSaaS.css', import.meta.url), 'utf8')
 const packageJson = await readFile(new URL('../package.json', import.meta.url), 'utf8')
+const syndication = await readFile(new URL('../src/pages/settings/SettingsSyndicationPage.jsx', import.meta.url), 'utf8')
+const privateProperty = await readFile(new URL('../src/pages/settings/SettingsPrivatePropertyPage.jsx', import.meta.url), 'utf8')
 
 await access(new URL('../src/pages/settings/SettingsLanding.jsx', import.meta.url))
 
@@ -33,9 +35,23 @@ for (const group of ['YOUR ACCOUNT', 'ORGANISATION', 'PLATFORM MANAGEMENT']) {
   assert.match(navigation + landing, new RegExp(group), `Settings dashboard should include ${group}.`)
 }
 
-for (const route of ['/settings/profile', '/settings/security', '/settings/organisation', '/settings/branding', '/settings/roles', '/settings/activity', '/settings/billing']) {
+for (const route of [
+  '/settings/profile',
+  '/settings/security',
+  '/settings/organisation',
+  '/settings/branding',
+  '/settings/roles',
+  '/settings/activity',
+  '/settings/billing',
+  '/settings/syndication',
+]) {
   assert.match(navigation + app, new RegExp(route.replaceAll('/', '\\/')), `Settings route ${route} should be wired into the workspace.`)
 }
+
+assert.match(app, /path="syndication"[\s\S]*<SettingsSyndicationPage \/>/, 'The syndication hub must be wired to its route.')
+assert.match(app, /path="syndication\/property24"/, 'The Property24 setup page must be nested under syndication.')
+assert.match(app, /path="syndication\/private-property"/, 'The Private Property setup page must be nested under syndication.')
+assert.match(app, /path="property24"[\s\S]*Navigate to="\/settings\/syndication\/property24"/, 'The legacy Property24 route should redirect to the syndication setup page.')
 
 assert.match(
   app,
@@ -66,6 +82,15 @@ assert.match(
   /<h1>Settings<\/h1>[\s\S]*settings-dashboard-card[\s\S]*settings-dashboard-chip/,
   'Settings dashboard should render a minimal Settings header and grouped navigation cards with status chips.',
 )
+
+assert.match(
+  syndication,
+  /lead-sources\/property24\.png[\s\S]*lead-sources\/private-property\.jpeg/,
+  'The syndication hub should surface both portal logos as entry points.',
+)
+
+assert.match(privateProperty, /Save Private Property/, 'The Private Property setup page should expose its own save flow.')
+assert.match(privateProperty, /Private Property settings saved\./, 'The Private Property setup page should expose its own save success copy.')
 
 assert.match(
   navigation,

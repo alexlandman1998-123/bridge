@@ -26,6 +26,9 @@ const [app, navigation, account, organisation, commission, users, billing, leadC
   read('src/lib/settingsApi.js'),
 ])
 
+assert.match(navigation, /label: 'Syndication'/, 'Syndication should replace the old Property24 entry on the settings dashboard.')
+assert.match(navigation, /to: '\/settings\/syndication'/, 'Syndication should link to the new settings hub.')
+
 for (const removedRoute of ['integrations', 'api', 'audit-log', 'help']) {
   assert.doesNotMatch(app, new RegExp(`path=["']${removedRoute}["']`), `${removedRoute} must not be routable`)
   assert.doesNotMatch(navigation, new RegExp(`/settings/${removedRoute}`), `${removedRoute} must not be advertised`)
@@ -39,6 +42,24 @@ for (const item of SETTINGS_NAV_GROUPS.flatMap((group) => group.items)) {
   assert.ok(item.description, `${item.to} must describe a real functional area`)
 }
 await vite.close()
+
+for (const route of [
+  '/settings/profile',
+  '/settings/security',
+  '/settings/organisation',
+  '/settings/branding',
+  '/settings/roles',
+  '/settings/activity',
+  '/settings/billing',
+  '/settings/syndication',
+]) {
+  assert.match(navigation + app, new RegExp(route.replaceAll('/', '\\/')), `Settings route ${route} should be wired into the workspace.`)
+}
+
+assert.match(app, /path="syndication"[\s\S]*<SettingsSyndicationPage \/>/, 'The syndication hub must be wired to its route.')
+assert.match(app, /path="syndication\/property24"/, 'The Property24 setup page must be nested under syndication.')
+assert.match(app, /path="syndication\/private-property"/, 'The Private Property setup page must be nested under syndication.')
+assert.match(app, /path="property24"[\s\S]*Navigate to="\/settings\/syndication\/property24"/, 'The legacy Property24 route should redirect to the syndication setup page.')
 
 const functionalContracts = [
   [account, ['updateAccountSettings(', 'changePassword('], 'account'],

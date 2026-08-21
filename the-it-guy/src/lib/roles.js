@@ -8,6 +8,7 @@ import {
   isInternalAppRole,
   normalizeAppRole,
 } from './appRoleMetadata'
+import { BUSINESS_WORKSPACES, normalizeBusinessWorkspace } from './businessWorkspaceAccess'
 
 export {
   APP_ROLE_LABELS,
@@ -72,6 +73,51 @@ function createAgentPipelineNav() {
       { key: 'pipeline_calendar', label: 'Calendar', to: '/pipeline/calendar', activeMatch: ['/pipeline/calendar', '/calendar'] },
     ],
   }
+}
+
+function createAgentRentalsPipelineNav() {
+  return {
+    key: 'rental_pipeline',
+    label: 'Pipeline',
+    to: '/agent/rentals/pipeline/leads',
+    activeMatch: ['/agent/rentals/pipeline', '/agent/rentals/pipeline/leads', '/agent/rentals/pipeline/applications', '/agent/rentals/pipeline/calendar'],
+    children: [
+      { key: 'rental_pipeline_leads', label: 'Leads', to: '/agent/rentals/pipeline/leads' },
+      { key: 'rental_pipeline_applications', label: 'Applications', to: '/agent/rentals/pipeline/applications' },
+      { key: 'rental_pipeline_calendar', label: 'Calendar', to: '/agent/rentals/pipeline/calendar' },
+    ],
+  }
+}
+
+function createAgentRentalsNavItems({ canManageOrganisation = false, isBranchManager = false } = {}) {
+  return [
+    { key: 'rental_dashboard', label: 'Dashboard', to: '/agent/rentals/dashboard', activeMatch: ['/agent/rentals/dashboard'] },
+    { key: 'rental_tenancies', label: 'Tenancies', to: '/agent/rentals/tenancies', activeMatch: ['/agent/rentals/tenancies'] },
+    createAgentRentalsPipelineNav(),
+    {
+      key: 'rental_listings',
+      label: 'Listings',
+      to: '/agent/rentals/listings',
+      activeMatch: ['/agent/rentals/listings'],
+    },
+    ...(canManageOrganisation
+      ? [{
+          key: 'rental_agency',
+          label: 'Organisation',
+          to: '/agency/branches',
+          navSection: 'secondary',
+          activeMatch: ['/agency/branches', '/agency/agents', '/agency/commission', '/agency/partners', '/partners'],
+          children: [
+            { key: 'rental_agency_branches', label: 'Branches', to: '/agency/branches' },
+            ...(!isBranchManager ? [{ key: 'rental_agency_people', label: 'Agents', to: '/agency/agents' }] : []),
+            ...(!isBranchManager ? [{ key: 'rental_agency_partners', label: 'Partners', to: '/agency/partners', activeMatch: ['/agency/partners', '/partners'] }] : []),
+            ...(!isBranchManager ? [{ key: 'rental_agency_commission', label: 'Commission', to: '/agency/commission' }] : []),
+          ],
+        }]
+      : []),
+    { key: 'rental_clients', label: 'Clients', to: '/clients', navSection: 'secondary' },
+    { key: 'rental_reports', label: 'Reports', to: '/reports', navSection: 'secondary' },
+  ]
 }
 
 export const APP_NAV_BY_ROLE = {
@@ -409,7 +455,7 @@ export function canManageAgentOrganisations({ role, baseRole = null, profile = n
   return hasAgentLeadershipSignals(profile)
 }
 
-export function getRoleNavItems(role, { baseRole = null, profile = null, membershipRole = null, currentMembership = null } = {}) {
+export function getRoleNavItems(role, { baseRole = null, profile = null, membershipRole = null, currentMembership = null, businessWorkspace = BUSINESS_WORKSPACES.sales } = {}) {
   const items = getNavItemsForRole(role)
   const hqContext = { profile, membershipRole, currentMembership }
   const normalizedRole = normalizeAppRole(role || baseRole || '')
@@ -491,6 +537,14 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
   }
 
   const normalizedMembershipRole = normalizeMembershipRole(membershipRole || profile?.workspaceRole || profile?.workspace_role || profile?.organisationRole || profile?.organisation_role)
+  const businessWorkspaceId = normalizeBusinessWorkspace(businessWorkspace, BUSINESS_WORKSPACES.sales)
+  const canManageOrganisation = canManageAgentOrganisations({ role, baseRole, profile, membershipRole })
+  const isBranchManager = normalizedMembershipRole === 'branch_manager'
+
+  if (businessWorkspaceId === BUSINESS_WORKSPACES.rentals) {
+    return withHQNavItem(createAgentRentalsNavItems({ canManageOrganisation, isBranchManager }), hqContext)
+  }
+
   if (SUPPORT_MEMBERSHIP_ROLES.has(normalizedMembershipRole)) {
     return withHQNavItem([
       { key: 'assistant_dashboard', label: 'Dashboard', to: '/assistant/dashboard' },
@@ -502,11 +556,9 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
     ], hqContext)
   }
 
-  const canManageOrganisation = canManageAgentOrganisations({ role, baseRole, profile, membershipRole })
   if (!canManageOrganisation) {
     return withHQNavItem(items, hqContext)
   }
-  const isBranchManager = normalizedMembershipRole === 'branch_manager'
 
   return withHQNavItem([
     { key: 'dashboard', label: 'Dashboard', to: '/dashboard' },

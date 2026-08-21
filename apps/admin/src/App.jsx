@@ -469,6 +469,15 @@ function collectDashboardTokens(row = {}, keys = []) {
   return keys.map((key) => normalizeDashboardToken(row?.[key])).filter(Boolean).join(' ')
 }
 
+function dashboardTokenSet(row = {}, keys = []) {
+  return new Set(keys.map((key) => normalizeDashboardToken(row?.[key])).filter(Boolean))
+}
+
+function hasAnyDashboardToken(row = {}, keys = [], acceptedTokens = []) {
+  const tokens = dashboardTokenSet(row, keys)
+  return acceptedTokens.some((token) => tokens.has(token))
+}
+
 function firstDashboardValue(row = {}, keys = [], fallback = '') {
   for (const key of keys) {
     const value = normalizeText(row?.[key])
@@ -576,7 +585,7 @@ function isAgentModulePerson(row = {}) {
 }
 
 function isActiveListingRow(row = {}) {
-  const tokens = collectDashboardTokens(row, [
+  const listingStatusKeys = [
     'listing_status',
     'status',
     'publication_status',
@@ -586,14 +595,34 @@ function isActiveListingRow(row = {}) {
     'property24_status',
     'private_property_status',
     'mandate_status',
-  ])
+    'listing_source',
+    'stock_source',
+  ]
+  const tokens = collectDashboardTokens(row, listingStatusKeys)
   const isFlaggedActive = ['is_active', 'active'].some((key) => {
     const value = normalizeDashboardToken(row?.[key])
     return ['true', 't', 'yes', 'y', '1', 'active', 'live', 'published'].includes(value)
   })
   const hasActiveSignal =
     isFlaggedActive ||
-    /(mandate_signed|listing_active|active_market|under_offer|transaction_created|published|live|active|signed_external_pending_upload|signed_uploaded|uploaded_signed|current_listing)/.test(tokens)
+    hasAnyDashboardToken(row, listingStatusKeys, [
+      'mandate_signed',
+      'listing_active',
+      'active_market',
+      'under_offer',
+      'transaction_created',
+      'published',
+      'live',
+      'active',
+      'signed_external_pending_upload',
+      'signed_uploaded',
+      'uploaded_signed',
+      'current_listing',
+      'current_listing_import',
+      'bulk_current_listing',
+      'imported_current_listing',
+      'imported_existing_listing',
+    ])
   const hasTerminalSignal = /(^|_)(inactive|archived|withdrawn|deleted|disabled|registered|sold|sold_archived)(_|$)/.test(tokens)
 
   return hasActiveSignal && !hasTerminalSignal

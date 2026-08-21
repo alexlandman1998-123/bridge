@@ -46,6 +46,20 @@ const ICON_BY_KEY = {
   listings: Building2,
   listings_private: Building2,
   listings_developments: Building2,
+  rental_dashboard: LayoutDashboard,
+  rental_tenancies: KeyRound,
+  rental_pipeline: KanbanSquare,
+  rental_pipeline_leads: Users,
+  rental_pipeline_applications: ClipboardList,
+  rental_pipeline_calendar: CalendarDays,
+  rental_listings: Building2,
+  rental_agency: BriefcaseBusiness,
+  rental_agency_branches: Building2,
+  rental_agency_people: BriefcaseBusiness,
+  rental_agency_partners: Handshake,
+  rental_agency_commission: Wallet,
+  rental_clients: Users,
+  rental_reports: FileBarChart2,
   agents: BriefcaseBusiness,
   transactions: SwitchCamera,
   transfers: SwitchCamera,
@@ -261,6 +275,38 @@ function isParentNavActive(item, location) {
   )
 }
 
+function BusinessWorkspaceSwitcher({
+  currentWorkspace = null,
+  workspaces = [],
+  onChange,
+  visible = false,
+}) {
+  if (!visible || !Array.isArray(workspaces) || workspaces.length < 2) return null
+  const currentId = currentWorkspace?.id || 'sales'
+
+  return (
+    <div className="ui-business-workspace-switcher" aria-label="Business workspace">
+      <div className="ui-business-workspace-options" role="tablist" aria-label="Sales and Rentals">
+        {workspaces.map((workspace) => {
+          const active = workspace.id === currentId
+          return (
+            <button
+              key={workspace.id}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              className={`ui-business-workspace-option ${active ? 'ui-business-workspace-option-active' : ''}`.trim()}
+              onClick={() => onChange?.(workspace.id)}
+            >
+              <span className="ui-business-workspace-option-label">{workspace.label}</span>
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 function Sidebar() {
   const workspaceContext = useWorkspace()
   const { workspace, setWorkspace, allWorkspace, role, baseRole, profile } = workspaceContext
@@ -307,13 +353,19 @@ function Sidebar() {
   }), [navCurrentMembership, navWorkspaceType, role, workspace.id, workspace.name, workspaceContext])
   const roleNavItems = useMemo(
     () => {
-      const items = getRoleNavItems(role, { baseRole, profile, membershipRole, currentMembership: navCurrentMembership })
+      const items = getRoleNavItems(role, {
+        baseRole,
+        profile,
+        membershipRole,
+        currentMembership: navCurrentMembership,
+        businessWorkspace: workspaceContext.businessWorkspaceId,
+      })
       const moduleFilteredItems = role === 'attorney'
         ? filterAttorneyModuleNavigationItems(items, attorneyModuleState.modules)
         : items
       return filterNavigationItems(moduleFilteredItems, navPermissionContext)
     },
-    [attorneyModuleState.modules, baseRole, membershipRole, navCurrentMembership, navPermissionContext, profile, role],
+    [attorneyModuleState.modules, baseRole, membershipRole, navCurrentMembership, navPermissionContext, profile, role, workspaceContext.businessWorkspaceId],
   )
   const isIntelligencePath =
     location.pathname.startsWith('/attorney/intelligence') ||
@@ -349,6 +401,7 @@ function Sidebar() {
     () => {
       if (role === 'attorney') return roleNavItems.filter((item) => !ATTORNEY_SECONDARY_KEYS.has(item.key))
       if (role === 'bond_originator') return roleNavItems.filter((item) => item.navSection !== 'secondary')
+      if (role === 'agent') return roleNavItems.filter((item) => item.navSection !== 'secondary')
       return roleNavItems
     },
     [role, roleNavItems],
@@ -357,6 +410,7 @@ function Sidebar() {
     () => {
       if (role === 'attorney') return [...roleNavItems.filter((item) => ATTORNEY_SECONDARY_KEYS.has(item.key)), ...secondaryItems]
       if (role === 'bond_originator') return roleSecondaryNavItems.length ? roleSecondaryNavItems : secondaryItems
+      if (role === 'agent') return roleSecondaryNavItems.length ? [...roleSecondaryNavItems, ...secondaryItems] : secondaryItems
       return secondaryItems
     },
     [role, roleNavItems, roleSecondaryNavItems, secondaryItems],
@@ -539,6 +593,12 @@ function Sidebar() {
               <p className="ui-sidebar-brand-copy">{BRIDGE_BRAND_SUBTITLE}</p>
             </>
           )}
+          <BusinessWorkspaceSwitcher
+            currentWorkspace={workspaceContext.businessWorkspace}
+            workspaces={workspaceContext.availableBusinessWorkspaces}
+            visible={workspaceContext.showBusinessWorkspaceSwitcher}
+            onChange={workspaceContext.setBusinessWorkspace}
+          />
         </div>
       </div>
 

@@ -29,6 +29,10 @@ function getStatusForItem(item, { branding, currentWorkspace, profile }) {
       : { tone: 'warning', label: 'Logo not configured' }
   }
 
+  if (item.label === 'Syndication') {
+    return { tone: 'neutral', label: 'Property24 + Private Property' }
+  }
+
   return item.status || null
 }
 

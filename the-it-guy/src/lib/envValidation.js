@@ -1,4 +1,4 @@
-import { getRequiredProductionEnvVars, getUnsafeProductionFlags, isProductionEnvironment, validateProductionConfiguration } from '../config/productionValidation'
+import { getRequiredProductionEnvVars, getUnsafeProductionFlags, isProductionEnvironment, isStagingLikeEnvironment, validateProductionConfiguration } from '../config/productionValidation'
 import {
   resolveGuidedBondApplicationChangeRequestsFlag,
   resolveBondApplicationBankAdaptersFlag,
@@ -101,6 +101,17 @@ export function getFeatureFlags() {
     enableInviteOnboarding: asBoolean(import.meta.env.VITE_FEATURE_INVITE_ONBOARDING, true),
     enableNativeMandateRenderer: asBoolean(import.meta.env.VITE_FEATURE_NATIVE_MANDATE_RENDERER, false),
     enableNativeOtpRenderer: asBoolean(import.meta.env.VITE_FEATURE_NATIVE_OTP_RENDERER, false),
+    salesRentalsWorkspaceSplitEnabled: Boolean(
+      asBoolean(import.meta.env.VITE_SALES_RENTALS_WORKSPACE_SPLIT_ENABLED, false) &&
+        isStagingLikeEnvironment() &&
+        !isProductionEnvironment() &&
+        !isProductionSupabaseProject(),
+    ),
+    rentalsEnabled: asBoolean(import.meta.env.VITE_RENTALS_ENABLED, false),
+    rentalApplicationsEnabled: asBoolean(import.meta.env.VITE_RENTAL_APPLICATIONS_ENABLED, false),
+    rentalLeasesEnabled: asBoolean(import.meta.env.VITE_RENTAL_LEASES_ENABLED, false),
+    rentalManagementEnabled: asBoolean(import.meta.env.VITE_RENTAL_MANAGEMENT_ENABLED, false),
+    property24RentalsEnabled: asBoolean(import.meta.env.VITE_PROPERTY24_RENTALS_ENABLED, false),
     guidedBondApplicationV2: resolveGuidedBondApplicationV2Flag({ env: import.meta.env }).enabled,
     guidedBondApplicationParticipantsV1: resolveGuidedBondApplicationParticipantsFlag({ env: import.meta.env }).enabled,
     guidedBondApplicationSuretiesV1: resolveGuidedBondApplicationSuretiesFlag({ env: import.meta.env }).enabled,

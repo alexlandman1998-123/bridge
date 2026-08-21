@@ -1979,8 +1979,26 @@ function MarketingSummaryItem({ icon = Info, value, label, actionLabel = '', onA
   )
 }
 
+function PlatformLogo({ src = '', icon = ExternalLink, label = '' }) {
+  const Icon = icon
+  if (src) {
+    return (
+      <span className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-[10px] border border-[#dbe6f2] bg-white">
+        <img src={src} alt={`${label} logo`} className="max-h-7 max-w-8 object-contain" />
+      </span>
+    )
+  }
+
+  return (
+    <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[10px] border border-[#dbe6f2] bg-white text-[#1f4f78]">
+      <Icon size={18} />
+    </span>
+  )
+}
+
 function DistributionChannel({
   icon = ExternalLink,
+  logoSrc = '',
   name,
   subtitle = '',
   reference = '',
@@ -1997,14 +2015,12 @@ function DistributionChannel({
   const attention = ['draft', 'pending', 'not_published', 'not_added', 'missing'].includes(statusKey)
   const dotClass = live ? 'bg-[#1f9d64]' : attention ? 'bg-[#8aa0b6]' : 'bg-[#d99321]'
   return (
-    <div className="grid gap-3 border-b border-[#edf2f7] px-4 py-4 last:border-b-0 lg:grid-cols-[minmax(0,1.6fr)_minmax(170px,0.9fr)_auto] lg:items-center">
-      <div className="flex min-w-0 items-start gap-3">
-        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[12px] border border-[#dbe6f2] bg-white text-[#1f4f78]">
-          <Icon size={18} />
-        </span>
+    <div className="grid gap-3 border-b border-[#edf2f7] px-4 py-3 last:border-b-0 md:grid-cols-[minmax(260px,1fr)_minmax(160px,210px)_auto] md:items-center">
+      <div className="flex min-w-0 items-center gap-3">
+        <PlatformLogo src={logoSrc} icon={Icon} label={name} />
         <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-[#142132]">{name}</p>
-          {subtitle ? <p className="mt-0.5 break-words text-xs leading-5 text-[#607387]">{subtitle}</p> : null}
+          <p className="truncate text-sm font-semibold leading-5 text-[#142132]">{name}</p>
+          {subtitle ? <p className="truncate text-xs leading-5 text-[#607387]">{subtitle}</p> : null}
           {reference ? (
             <span className="mt-1 inline-flex max-w-full rounded-full border border-[#dbe6f2] bg-[#f8fbfd] px-2 py-0.5 text-[0.68rem] font-semibold text-[#607387]">
               <span className="truncate">{reference}</span>
@@ -2012,14 +2028,14 @@ function DistributionChannel({
           ) : null}
         </div>
       </div>
-      <div className="min-w-0">
+      <div className="min-w-0 md:justify-self-start">
         <p className="inline-flex items-center gap-2 text-sm font-semibold text-[#243d56]">
           <span className={`h-2 w-2 rounded-full ${dotClass}`} />
           {statusLabel || formatStatusLabel(status)}
         </p>
         {lastSynced ? <p className="mt-1 text-xs text-[#607387]">{lastSynced}</p> : null}
       </div>
-      <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+      <div className="flex flex-wrap items-center gap-2 md:justify-end">
         {primaryAction}
         {secondaryAction}
         {menuActions.length ? (
@@ -3084,6 +3100,7 @@ function AgentListingDetail() {
   const [property24ManageOpen, setProperty24ManageOpen] = useState(false)
   const [externalLinkPanelOpen, setExternalLinkPanelOpen] = useState(false)
   const [externalLinkEditingId, setExternalLinkEditingId] = useState('')
+  const [propertyDetailsReturnTarget, setPropertyDetailsReturnTarget] = useState('')
   const [sellerWorkspaceTab, setSellerWorkspaceTab] = useState(() => getSellerWorkspaceTabFromSearch(typeof window !== 'undefined' ? window.location.search : '') || 'overview')
   const [commissionDraft, setCommissionDraft] = useState({
     percentage: '',
@@ -3143,6 +3160,7 @@ function AgentListingDetail() {
   useEffect(() => {
     const requestedTab = getSellerWorkspaceTabFromSearch(location.search)
     if (!requestedTab) return
+    setPropertyDetailsReturnTarget('')
     setActiveTab('seller')
     setSellerWorkspaceTab(requestedTab)
   }, [location.search])
@@ -4752,6 +4770,7 @@ function AgentListingDetail() {
   function openSellerWorkspaceSection(tab, message = '') {
     const normalizedTab = tab === 'offers' ? 'leads' : tab === 'listing' ? 'marketing' : tab
     if (!SELLER_WORKSPACE_TABS.some((item) => item.key === normalizedTab)) return
+    setPropertyDetailsReturnTarget('')
     setActiveTab('seller')
     setSellerWorkspaceTab((currentTab) => (currentTab === normalizedTab ? currentTab : normalizedTab))
     setDetailError('')
@@ -4761,6 +4780,21 @@ function AgentListingDetail() {
       nextUrl.searchParams.set('tab', normalizedTab)
       window.history.replaceState(window.history.state, '', `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`)
     }
+  }
+
+  function openPropertyDetailsFromMarketing() {
+    setPropertyDetailsReturnTarget('marketing')
+    setActiveTab('property_details')
+    setDetailError('')
+  }
+
+  function openDetailTab(tab) {
+    setPropertyDetailsReturnTarget('')
+    setActiveTab(tab)
+  }
+
+  function returnToMarketingConsole() {
+    openSellerWorkspaceSection('marketing')
   }
 
   function handleExportListingLeads() {
@@ -6804,6 +6838,7 @@ function AgentListingDetail() {
   )
   const privatePropertyStatusKey = normalizeKey(marketingDraft.privatePropertyStatus || listingRecord?.privatePropertyStatus)
   const privatePropertyHasChannel = Boolean(marketingDraft.privatePropertyListingUrl || marketingDraft.privatePropertyReference || (privatePropertyStatusKey && privatePropertyStatusKey !== 'not_published'))
+  const privatePropertyLink = externalListingLinks.find((link) => normalizeKey(link.platform).includes('private')) || null
   const agencyWebsiteLink = externalListingLinks.find((link) => normalizeKey(link.platform).includes('agency')) || null
   const property24LastSyncedAt = firstDraftValue(
     property24StatusCheckedAt,
@@ -6825,7 +6860,6 @@ function AgentListingDetail() {
     const isLive = (value) => ['published', 'live', 'active'].includes(normalizeKey(value))
     const liveChannels = new Set()
     if (property24Published) liveChannels.add('property24')
-    if (arch9IsPublished) liveChannels.add('arch9')
     if (privatePropertyHasChannel && isLive(marketingDraft.privatePropertyStatus)) liveChannels.add('private_property')
     externalListingLinks.forEach((link) => {
       if (!isLive(link.status)) return
@@ -6836,7 +6870,7 @@ function AgentListingDetail() {
       else liveChannels.add(platformKey || link.id)
     })
     return liveChannels.size
-  }, [arch9IsPublished, externalListingLinks, marketingDraft.privatePropertyStatus, privatePropertyHasChannel, property24Published])
+  }, [externalListingLinks, marketingDraft.privatePropertyStatus, privatePropertyHasChannel, property24Published])
   const incompleteReadinessItems = listingReadinessItems.filter((item) => !item.complete)
   const marketingSellingPoints = [
     ...marketingDraft.selectedFeatures,
@@ -8883,25 +8917,27 @@ function AgentListingDetail() {
   }
 
   function renderMarketingConsole() {
+    const privatePropertyUrl = marketingDraft.privatePropertyListingUrl || privatePropertyLink?.url || ''
+    const privatePropertyReference = marketingDraft.privatePropertyReference || privatePropertyLink?.reference || ''
+    const privatePropertyDistributionStatus = privatePropertyStatusKey || normalizeKey(privatePropertyLink?.status || 'not_published')
+    const privatePropertyLive = ['published', 'live', 'active'].includes(privatePropertyDistributionStatus)
+    const visibleExternalListingLinks = externalListingLinks.filter((link) => {
+      const platformKey = normalizeKey(link.platform)
+      return link.id !== agencyWebsiteLink?.id && link.id !== privatePropertyLink?.id && !platformKey.includes('private')
+    })
+
     return (
       <section className="space-y-5">
-        <section className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-          <div>
-            <h2 className="text-xl font-semibold text-[#142132]">Marketing</h2>
-            <p className="mt-1 text-sm text-[#607387]">Manage how this property appears and where it is published.</p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <a href={arch9PublicListingUrl || `${ARCH9_PUBLIC_SITE_ORIGIN}/buy`} target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-4 text-sm font-semibold text-[#2d445e] transition hover:border-[#b7c8db] hover:bg-[#f7fbff]">
-              <Eye size={15} />
-              Preview Listing
-            </a>
-            <Button type="button" onClick={() => saveMarketingDraft(marketingDraft, { successMessage: 'Marketing changes saved and synced.' })}>
-              <Send size={15} />
-              Publish Changes
-            </Button>
-          </div>
-        </section>
-
+        <div className="flex flex-wrap justify-end gap-2">
+          <a href={arch9PublicListingUrl || `${ARCH9_PUBLIC_SITE_ORIGIN}/buy`} target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-4 text-sm font-semibold text-[#2d445e] transition hover:border-[#b7c8db] hover:bg-[#f7fbff]">
+            <Eye size={15} />
+            Preview Listing
+          </a>
+          <Button type="button" onClick={() => saveMarketingDraft(marketingDraft, { successMessage: 'Marketing changes saved and synced.' })}>
+            <Send size={15} />
+            Publish Changes
+          </Button>
+        </div>
         <section className="overflow-hidden rounded-[22px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
           <div className="grid sm:grid-cols-3">
             <MarketingSummaryItem icon={CheckCircle2} value={`${listingReadinessPercent}%`} label="Listing readiness" actionLabel="View checklist" onAction={() => setReadinessChecklistOpen(true)} tone={listingReadinessPercent >= 80 ? 'success' : 'attention'} />
@@ -8909,12 +8945,14 @@ function AgentListingDetail() {
             <MarketingSummaryItem icon={RefreshCw} value={formatRelativeTime(marketingLastSyncedAt)} label="Last synced" tone="default" />
           </div>
           {!mandateWorkspace.isSigned || incompleteReadinessItems.length ? (
-            <div className="border-t border-[#edf2f7] bg-[#fffaf0] px-4 py-3 text-sm text-[#8a5b13]">
-              <button type="button" onClick={() => setReadinessChecklistOpen(true)} className="inline-flex items-center gap-2 font-semibold">
+            <div className="flex flex-col gap-2 border-t border-[#edf2f7] bg-[#fffaf0] px-4 py-3 text-sm text-[#8a5b13] sm:flex-row sm:items-center sm:justify-between">
+              <button type="button" onClick={() => setReadinessChecklistOpen(true)} className="inline-flex min-w-0 items-center gap-2 font-semibold">
                 <CircleAlert size={15} />
                 Listing readiness requires attention
               </button>
-              <span className="ml-2">{incompleteReadinessItems[0]?.label || 'Mandate not signed'}</span>
+              <span className="inline-flex min-w-0 rounded-full border border-[#f1dfb8] bg-white px-3 py-1 text-xs font-semibold text-[#8a5b13]">
+                <span className="truncate">{incompleteReadinessItems[0]?.label || 'Mandate not signed'}</span>
+              </span>
             </div>
           ) : null}
         </section>
@@ -8926,7 +8964,7 @@ function AgentListingDetail() {
                 <h3 className="text-base font-semibold text-[#142132]">Listing Content</h3>
                 <p className="mt-1 text-sm text-[#607387]">Marketing-facing copy buyers will see.</p>
               </div>
-              <Button type="button" size="sm" variant="secondary" onClick={() => setActiveTab('property_details')}>
+              <Button type="button" size="sm" variant="secondary" onClick={openPropertyDetailsFromMarketing}>
                 Edit property details
                 <ChevronRight size={15} />
               </Button>
@@ -8984,23 +9022,21 @@ function AgentListingDetail() {
                 <input type="file" accept="image/*" multiple className="hidden" onChange={handleGalleryUpload} disabled={gallerySaving} />
               </label>
             </div>
-            <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(220px,1.2fr)_minmax(0,1fr)]">
-              <div className="min-h-[220px] overflow-hidden rounded-[18px] border border-[#dce6f2] bg-[#eef4fa]">
-                {coverImage ? getImageBlock(coverImage.url, coverImage.name) : (
-                  <div className="grid h-full min-h-[220px] place-items-center text-sm font-semibold text-[#6b7d93]">No cover image</div>
-                )}
-              </div>
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
-                {marketingDraft.galleryImages.map((image, index) => {
+            <div className="mt-5 overflow-x-auto pb-2">
+              <div className="flex min-w-max gap-3">
+                {marketingDraft.galleryImages.length ? marketingDraft.galleryImages.map((image, index) => {
                   const isCover = String(image.id) === String(marketingDraft.coverImageId)
+                  const tileClass = index === 0
+                    ? 'w-[440px] max-w-[68vw]'
+                    : 'w-[170px]'
                   return (
-                    <div key={image.id} className={`overflow-hidden rounded-[14px] border bg-white ${isCover ? 'border-[#1f4f78]' : 'border-[#dce6f2]'}`}>
-                      <button type="button" onClick={() => setCoverImage(image.id)} disabled={isCover || gallerySaving} className="relative block min-h-[88px] w-full overflow-hidden bg-[#eef4fa] disabled:cursor-default">
+                    <div key={image.id} className={`shrink-0 overflow-hidden rounded-[14px] border bg-white ${tileClass} ${isCover ? 'border-[#1f4f78]' : 'border-[#dce6f2]'}`}>
+                      <button type="button" onClick={() => setCoverImage(image.id)} disabled={isCover || gallerySaving} className="relative block h-[184px] w-full overflow-hidden bg-[#eef4fa] disabled:cursor-default">
                         {getImageBlock(image.url, image.name)}
                         {isCover ? <span className="absolute left-2 top-2 rounded-full bg-[#123955] px-2 py-1 text-[0.62rem] font-semibold text-white">Cover</span> : null}
                       </button>
-                      <div className="flex items-center justify-between gap-1 p-1.5">
-                        <button type="button" onClick={() => setCoverImage(image.id)} disabled={isCover || gallerySaving} className="rounded px-1.5 py-1 text-[0.65rem] font-semibold text-[#1f4f78] disabled:text-[#9aa9b8]">Cover</button>
+                      <div className="flex h-11 items-center justify-between gap-2 border-t border-[#edf2f7] px-2">
+                        <button type="button" onClick={() => setCoverImage(image.id)} disabled={isCover || gallerySaving} className="truncate rounded px-1.5 py-1 text-xs font-semibold text-[#1f4f78] disabled:text-[#9aa9b8]">Cover</button>
                         <div className="flex gap-1">
                           <button type="button" onClick={() => moveGalleryImage(image.id, 'left')} disabled={index === 0 || gallerySaving} className="grid h-7 w-7 place-items-center rounded border border-[#dbe6f2] text-[#607387] disabled:opacity-40" aria-label={`Move ${image.name} left`}><ChevronLeft size={13} /></button>
                           <button type="button" onClick={() => moveGalleryImage(image.id, 'right')} disabled={index === marketingDraft.galleryImages.length - 1 || gallerySaving} className="grid h-7 w-7 place-items-center rounded border border-[#dbe6f2] text-[#607387] disabled:opacity-40" aria-label={`Move ${image.name} right`}><ChevronRight size={13} /></button>
@@ -9009,8 +9045,10 @@ function AgentListingDetail() {
                       </div>
                     </div>
                   )
-                })}
-                <label className="grid min-h-[88px] cursor-pointer place-items-center rounded-[14px] border border-dashed border-[#c9d8e8] bg-[#fbfdff] text-center text-xs font-semibold text-[#5f7894] hover:bg-[#f7fbff]">
+                }) : (
+                  <div className="grid h-[229px] w-[440px] max-w-[68vw] shrink-0 place-items-center rounded-[14px] border border-[#dce6f2] bg-[#eef4fa] text-sm font-semibold text-[#6b7d93]">No photos added</div>
+                )}
+                <label className="grid h-[229px] w-[150px] shrink-0 cursor-pointer place-items-center rounded-[14px] border border-dashed border-[#c9d8e8] bg-[#fbfdff] text-center text-xs font-semibold text-[#5f7894] hover:bg-[#f7fbff]">
                   <span className="grid justify-items-center gap-1">
                     <ImagePlus size={18} />
                     Add Photos
@@ -9066,6 +9104,7 @@ function AgentListingDetail() {
 
           <DistributionChannel
             icon={Building2}
+            logoSrc="/lead-sources/property24.png"
             name="Property24"
             subtitle="Published via Arch9"
             reference={property24Reference ? `Ref: ${property24Reference}` : 'Ref: Not assigned yet'}
@@ -9075,9 +9114,9 @@ function AgentListingDetail() {
             primaryAction={marketingDraft.property24ListingUrl ? (
               <a href={marketingDraft.property24ListingUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#35546c] hover:bg-[#f7fbff]">
                 <Eye size={15} />
-                View
+                View Live Listing
               </a>
-            ) : null}
+            ) : <Button type="button" size="sm" variant="secondary" disabled><Eye size={15} />View Live Listing</Button>}
             secondaryAction={(
               <Button type="button" size="sm" variant="secondary" onClick={() => setProperty24ManageOpen(true)}>
                 <SlidersHorizontal size={15} />
@@ -9090,19 +9129,18 @@ function AgentListingDetail() {
             ]}
           />
 
-          {privatePropertyHasChannel ? (
-            <DistributionChannel
-              icon={Home}
-              name="Private Property"
-              subtitle={marketingDraft.privatePropertyListingUrl || 'Manual channel record'}
-              reference={marketingDraft.privatePropertyReference ? `Ref: ${marketingDraft.privatePropertyReference}` : ''}
-              status={privatePropertyStatusKey || 'not_published'}
-              statusLabel={['published', 'live', 'active'].includes(privatePropertyStatusKey) ? 'Live' : formatStatusLabel(privatePropertyStatusKey || 'not_published')}
-              lastSynced={marketingDraft.privatePropertyListingUrl ? 'Managed as an external link' : 'Not published'}
-              primaryAction={marketingDraft.privatePropertyListingUrl ? <a href={marketingDraft.privatePropertyListingUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#35546c] hover:bg-[#f7fbff]"><Eye size={15} />View</a> : null}
-              secondaryAction={<Button type="button" size="sm" variant="secondary" onClick={() => openExternalLinkPanel(null, 'Private Property')}>Manage</Button>}
-            />
-          ) : null}
+          <DistributionChannel
+            icon={Home}
+            logoSrc="/lead-sources/private-property.jpeg"
+            name="Private Property"
+            subtitle={privatePropertyUrl || 'Portal listing channel'}
+            reference={privatePropertyReference ? `Ref: ${privatePropertyReference}` : ''}
+            status={privatePropertyDistributionStatus}
+            statusLabel={privatePropertyLive ? 'Live' : formatStatusLabel(privatePropertyDistributionStatus || 'not_published')}
+            lastSynced={privatePropertyUrl ? 'Managed as an external link' : 'Not published'}
+            primaryAction={privatePropertyUrl ? <a href={privatePropertyUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#35546c] hover:bg-[#f7fbff]"><Eye size={15} />View Live Listing</a> : <Button type="button" size="sm" variant="secondary" disabled><Eye size={15} />View Live Listing</Button>}
+            secondaryAction={<Button type="button" size="sm" variant="secondary" onClick={() => openExternalLinkPanel(privatePropertyLink, 'Private Property')}>Manage</Button>}
+          />
 
           {agencyWebsiteLink ? (
             <DistributionChannel
@@ -9112,30 +9150,12 @@ function AgentListingDetail() {
               status={agencyWebsiteLink.status}
               statusLabel={isExternalLinkSellerVisible(agencyWebsiteLink.status) ? 'Live' : formatStatusLabel(agencyWebsiteLink.status)}
               lastSynced={agencyWebsiteLink.lastCheckedAt ? `Last checked: ${formatDate(agencyWebsiteLink.lastCheckedAt)}` : 'Manual channel'}
-              primaryAction={<a href={agencyWebsiteLink.url} target="_blank" rel="noreferrer" className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#35546c] hover:bg-[#f7fbff]"><Eye size={15} />View</a>}
+              primaryAction={<a href={agencyWebsiteLink.url} target="_blank" rel="noreferrer" className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#35546c] hover:bg-[#f7fbff]"><Eye size={15} />View Live Listing</a>}
               secondaryAction={<Button type="button" size="sm" variant="secondary" onClick={() => openExternalLinkPanel(agencyWebsiteLink)}>Edit</Button>}
             />
           ) : null}
 
-          <DistributionChannel
-            icon={Link2}
-            name="Arch9 Listing Page"
-            subtitle="Arch9 public listing"
-            reference={arch9PublicListingUrl}
-            status={arch9IsPublished ? 'live' : marketingDraft.bridgeListingStatus || 'not_published'}
-            statusLabel={arch9IsPublished ? 'Live' : formatStatusLabel(marketingDraft.bridgeListingStatus || 'not_published')}
-            lastSynced={marketingLastSyncedAt ? `Last synced: ${formatRelativeTime(marketingLastSyncedAt)}` : 'Last synced: Not saved yet'}
-            primaryAction={<a href={arch9PublicListingUrl || `${ARCH9_PUBLIC_SITE_ORIGIN}/buy`} target="_blank" rel="noreferrer" className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#35546c] hover:bg-[#f7fbff]"><Eye size={15} />Preview</a>}
-            secondaryAction={<Button type="button" size="sm" variant="secondary" onClick={copyArch9PublicListingUrl} disabled={!arch9PublicListingUrl}><Copy size={15} />Copy Link</Button>}
-            menuActions={[
-              arch9IsPublished
-                ? <button key="pause" type="button" onClick={pauseArch9BuyPublication} disabled={publicationSaving} className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] hover:bg-[#f7fbff] disabled:opacity-50"><ExternalLink size={15} />Pause public listing</button>
-                : <button key="publish" type="button" onClick={publishToArch9Buy} disabled={publicationSaving || !arch9CanPublish} className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] hover:bg-[#f7fbff] disabled:opacity-50"><ExternalLink size={15} />Publish public listing</button>,
-              <button key="check" type="button" onClick={() => verifyArch9PublicListing()} disabled={!arch9PublicListingUrl || arch9LiveChecking} className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] hover:bg-[#f7fbff] disabled:opacity-50"><CheckCircle2 size={15} />Check live status</button>,
-            ]}
-          />
-
-          {externalListingLinks.filter((link) => link.id !== agencyWebsiteLink?.id).map((link) => (
+          {visibleExternalListingLinks.map((link) => (
             <DistributionChannel
               key={link.id}
               icon={ExternalLink}
@@ -9144,7 +9164,7 @@ function AgentListingDetail() {
               status={link.status}
               statusLabel={isExternalLinkSellerVisible(link.status) ? 'Live' : formatStatusLabel(link.status)}
               lastSynced={link.publishedAt ? `Published ${formatDate(link.publishedAt)}` : link.lastCheckedAt ? `Last checked: ${formatDate(link.lastCheckedAt)}` : 'Manual channel'}
-              primaryAction={link.url ? <a href={link.url} target="_blank" rel="noreferrer" className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#35546c] hover:bg-[#f7fbff]"><Eye size={15} />View</a> : null}
+              primaryAction={link.url ? <a href={link.url} target="_blank" rel="noreferrer" className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#35546c] hover:bg-[#f7fbff]"><Eye size={15} />View Live Listing</a> : <Button type="button" size="sm" variant="secondary" disabled><Eye size={15} />View Live Listing</Button>}
               secondaryAction={<Button type="button" size="sm" variant="secondary" onClick={() => openExternalLinkPanel(link)}>Edit</Button>}
               menuActions={[
                 <button key="remove" type="button" onClick={() => removeExternalListingLink(link.id)} className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#b42318] hover:bg-[#fff5f5]"><Trash2 size={15} />Remove</button>,
@@ -9152,7 +9172,7 @@ function AgentListingDetail() {
             />
           ))}
 
-          {!externalListingLinks.length ? (
+          {!visibleExternalListingLinks.length ? (
             <div className="grid gap-3 px-4 py-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
               <div className="flex items-center gap-3">
                 <span className="grid h-10 w-10 place-items-center rounded-[12px] border border-dashed border-[#c9d8e8] text-[#607387]"><Plus size={17} /></span>
@@ -9716,11 +9736,17 @@ function AgentListingDetail() {
                   <p className="mt-3 text-[1.45rem] font-semibold text-[#1f4f78]">{formatCurrency(listingRecord.askingPrice)}</p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
+                  {activeTab === 'property_details' && propertyDetailsReturnTarget === 'marketing' ? (
+                    <Button type="button" variant="secondary" onClick={returnToMarketingConsole}>
+                      <ArrowLeft size={15} />
+                      Back to Marketing
+                    </Button>
+                  ) : null}
                   <Button variant="secondary" onClick={handleDeleteListing} disabled={deletingListing}>
                     {deletingListing ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
                     Delete Listing
                   </Button>
-                  <Button variant="secondary" onClick={() => setActiveTab('property_details')}>
+                  <Button variant="secondary" onClick={() => openDetailTab('property_details')}>
                     Edit Listing
                   </Button>
                   <Button
@@ -9757,7 +9783,7 @@ function AgentListingDetail() {
                   <button
                     key={tab.key}
                     type="button"
-                    onClick={() => setActiveTab(tab.key)}
+                    onClick={() => openDetailTab(tab.key)}
                     className={`min-h-[56px] rounded-[16px] border px-2.5 py-2.5 text-center transition xl:px-2 ${
                       active
                         ? 'border-[#1f4f78] bg-[#2b5577] text-white shadow-[0_18px_32px_rgba(31,79,120,0.24)]'

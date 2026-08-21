@@ -1034,6 +1034,64 @@
     margin-top: 0.85rem;
   }
 
+  .ui-business-workspace-switcher {
+    margin-top: 0.8rem;
+  }
+
+  .ui-business-workspace-options {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.24rem;
+    border: 1px solid #dfe8f1;
+    border-radius: 12px;
+    background: #f6f9fc;
+    padding: 0.24rem;
+  }
+
+  .ui-business-workspace-option {
+    display: inline-flex;
+    min-height: 34px;
+    min-width: 0;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid transparent;
+    border-radius: 9px;
+    background: transparent;
+    color: #607086;
+    cursor: pointer;
+    font: inherit;
+    padding: 0.42rem 0.5rem;
+    transition: background 150ms ease, border-color 150ms ease, color 150ms ease, box-shadow 150ms ease;
+  }
+
+  .ui-business-workspace-option:hover {
+    color: #213c58;
+    background: rgba(255, 255, 255, 0.72);
+  }
+
+  .ui-business-workspace-option:focus-visible {
+    outline: 3px solid rgba(47, 128, 237, 0.12);
+    outline-offset: 2px;
+  }
+
+  .ui-business-workspace-option-active {
+    border-color: #d4e1ec;
+    background: #fff;
+    color: #17324b;
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.055);
+    font-weight: 700;
+  }
+
+  .ui-business-workspace-option-label {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.82rem;
+    line-height: 1;
+  }
+
   .ui-workspace-switcher-heading,
   .ui-workspace-switcher-menu-heading {
     @apply block text-[0.64rem] font-semibold uppercase tracking-[0.18em];
@@ -3937,6 +3995,7 @@
   body.sidebar-compact .ui-sidebar-brand-copy,
   body.sidebar-compact .ui-sidebar-brand-org-title,
   body.sidebar-compact .ui-sidebar-brand-powered,
+  body.sidebar-compact .ui-business-workspace-switcher,
   body.sidebar-compact .ui-sidebar-workspace,
   body.sidebar-compact .ui-sidebar-link span {
     display: none;

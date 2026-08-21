@@ -39,6 +39,15 @@ function asArray(value) {
   return []
 }
 
+function isMissingColumnError(error, columnName = '') {
+  if (!error) return false
+  const message = normalizeProperty24Text(error.message || error.details || error.hint).toLowerCase()
+  const normalizedColumn = normalizeProperty24Text(columnName).toLowerCase()
+  const missingColumnByCode = error.code === '42703' || error.code === 'PGRST204' || error.code === 'PGRST116'
+  if (!normalizedColumn) return missingColumnByCode
+  return missingColumnByCode && message.includes(normalizedColumn)
+}
+
 function getProperty24RecordId(record = {}, keys = []) {
   for (const key of keys) {
     const value = record?.[key]
@@ -372,16 +381,27 @@ export async function fetchArch9AgentCandidates({ supabase, organisationId } = {
   if (!supabase) throw new Error('Supabase client is required.')
   if (!organisationId) throw new Error('organisationId is required.')
 
-  const [usersResult, profilesResult] = await Promise.all([
-    supabase
+  let usersResult = await supabase
+    .from('organisation_users')
+    .select('user_id, organisation_id, first_name, last_name, email, phone_number, role, workspace_role, organisation_role, status')
+    .eq('organisation_id', organisationId)
+    .eq('status', 'active')
+  if (isMissingColumnError(usersResult.error, 'phone_number')) {
+    usersResult = await supabase
       .from('organisation_users')
-      .select('user_id, organisation_id, first_name, last_name, email, phone_number, role, workspace_role, organisation_role, status')
+      .select('user_id, organisation_id, first_name, last_name, email, role, workspace_role, organisation_role, status')
       .eq('organisation_id', organisationId)
-      .eq('status', 'active'),
-    supabase
+      .eq('status', 'active')
+  }
+
+  let profilesResult = await supabase
+    .from('profiles')
+    .select('id, full_name, first_name, last_name, email, phone_number, role, status')
+  if (isMissingColumnError(profilesResult.error, 'phone_number')) {
+    profilesResult = await supabase
       .from('profiles')
-      .select('id, full_name, first_name, last_name, email, phone_number, role, status'),
-  ])
+      .select('id, full_name, first_name, last_name, email, role, status')
+  }
   if (usersResult.error) throw usersResult.error
   if (profilesResult.error && profilesResult.error.code !== '42P01') throw profilesResult.error
 
