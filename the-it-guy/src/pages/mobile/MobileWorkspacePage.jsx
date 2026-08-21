@@ -1,10 +1,8 @@
 import {
-  AlertTriangle,
   ArrowUpRight,
   Bath,
   BedDouble,
   Building2,
-  CalendarDays,
   Camera,
   Check,
   ChevronRight,
@@ -15,7 +13,6 @@ import {
   FileUp,
   Home,
   Image as ImageIcon,
-  ListChecks,
   Mail,
   MapPin,
   MessageCircle,
@@ -28,15 +25,14 @@ import {
   X,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import { useParams } from 'react-router-dom'
-import { MobileFieldModePanel, MobileOfflineDraftPanel, MobileSmartActionBar, MobileUploadSheet, MobileWorkspaceInsightCards } from '../../components/mobile-shell/MobileProductivity'
+import { useLocation, useParams } from 'react-router-dom'
+import { MobileOfflineDraftPanel, MobileUploadSheet } from '../../components/mobile-shell/MobileProductivity'
 import { MobileCard, MobileEmptyState, MobileLoadingState } from '../../components/mobile-shell/MobileShellStates'
 import { trackMobileMetric } from '../../services/observability/monitoring'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import {
   addOfflineDraft,
   getMobileInboxThreads,
-  getSmartActionsForWorkspace,
 } from '../../services/mobileProductivityService'
 import {
   getMobileApplicationWorkspace,
@@ -56,12 +52,6 @@ const LOADERS = {
   deal: getMobileDealWorkspace,
   commercialLead: getMobileCommercialLeadWorkspace,
   listing: getMobileListingWorkspace,
-}
-
-const TONE_CLASSES = {
-  red: 'border-[#f3d4d1] bg-[#fff8f7] text-[#b42318]',
-  amber: 'border-[#f2dfbd] bg-[#fffaf1] text-[#b7791f]',
-  green: 'border-[#d9eadf] bg-[#f5fbf7] text-[#1f7a5a]',
 }
 
 const TONE_DOTS = {
@@ -106,6 +96,113 @@ function formatMoney(value = 0) {
     currency: 'ZAR',
     maximumFractionDigits: 0,
   }).format(number)
+}
+
+function firstText(...values) {
+  return values.map((value) => String(value ?? '').trim()).find(Boolean) || ''
+}
+
+function isPlaceholderTitle(value = '') {
+  const normalized = String(value || '').trim().toLowerCase()
+  return [
+    'residential lead',
+    'commercial lead',
+    'residential transaction',
+    'mobile transaction workspace',
+    'lead contact',
+    'buyer pending',
+  ].includes(normalized)
+}
+
+function getHeaderValue(workspace = {}, labelPattern) {
+  const item = (workspace.header || []).find((entry) => labelPattern.test(String(entry.label || '')))
+  return firstText(item?.value)
+}
+
+function getParticipantByRole(workspace = {}, roles = []) {
+  const roleMatchers = roles.map((role) => String(role || '').toLowerCase())
+  return (workspace.participants || []).find((participant) => {
+    const role = String(participant.role || '').toLowerCase()
+    return roleMatchers.some((matcher) => role.includes(matcher))
+  }) || null
+}
+
+function getWorkspaceRouteState(locationState = {}) {
+  return {
+    item: locationState?.mobileWorkspaceItem && typeof locationState.mobileWorkspaceItem === 'object'
+      ? locationState.mobileWorkspaceItem
+      : {},
+    display: locationState?.mobileWorkspaceDisplay && typeof locationState.mobileWorkspaceDisplay === 'object'
+      ? locationState.mobileWorkspaceDisplay
+      : {},
+  }
+}
+
+function getWorkspaceAddress(workspace = {}, routeState = {}) {
+  const visualProperty = workspace.visualContext?.property || {}
+  const routeItem = routeState.item || {}
+  const routeDisplay = routeState.display || {}
+  return firstText(
+    routeDisplay.property,
+    routeItem.title,
+    routeItem.enquiredPropertyAddress,
+    routeItem.sellerPropertyAddress,
+    routeItem.formattedAddress,
+    routeItem.streetAddress,
+    routeItem.propertyInterest,
+    visualProperty.address,
+    workspace.title,
+  )
+}
+
+function getWorkspacePrimaryName(workspace = {}, routeState = {}) {
+  const routeItem = routeState.item || {}
+  const routeDisplay = routeState.display || {}
+  const buyerParticipant = getParticipantByRole(workspace, ['buyer', 'lead'])
+  const leadHeaderName = getHeaderValue(workspace, /lead name/i)
+  const candidate = workspace.module === 'transaction'
+    ? firstText(routeItem.eyebrow, routeItem.buyerName, routeItem.buyer_name, buyerParticipant?.name, workspace.title)
+    : firstText(routeDisplay.title, routeItem.name, routeItem.fullName, routeItem.email, leadHeaderName, buyerParticipant?.name, workspace.title)
+  if (!isPlaceholderTitle(candidate)) return candidate
+  return workspace.module === 'transaction' ? firstText(getWorkspaceAddress(workspace, routeState), 'Transaction') : 'Lead'
+}
+
+function personalizeWorkspace(rawWorkspace = {}, locationState = {}) {
+  const routeState = getWorkspaceRouteState(locationState)
+  const address = getWorkspaceAddress(rawWorkspace, routeState)
+  const primaryName = getWorkspacePrimaryName(rawWorkspace, routeState)
+  const visualContext = rawWorkspace.visualContext || buildFallbackVisualContext(rawWorkspace, rawWorkspace.status)
+  const property = visualContext.property || {}
+  const transaction = visualContext.transaction || {}
+  const participants = (rawWorkspace.participants || []).map((participant) => {
+    const role = String(participant.role || '').toLowerCase()
+    if ((rawWorkspace.module === 'lead' || rawWorkspace.module === 'commercial_lead') && role.includes('lead')) {
+      return { ...participant, role: 'Buyer', name: primaryName }
+    }
+    if (rawWorkspace.module === 'transaction' && role.includes('buyer') && !isPlaceholderTitle(primaryName)) {
+      return { ...participant, name: primaryName }
+    }
+    return participant
+  })
+
+  return {
+    ...rawWorkspace,
+    title: primaryName,
+    moduleLabel: address,
+    participants,
+    visualContext: {
+      ...visualContext,
+      transaction: {
+        ...transaction,
+        reference: transaction.reference || rawWorkspace.reference,
+        owner: transaction.owner || rawWorkspace.owner,
+      },
+      property: {
+        ...property,
+        address: address || property.address,
+      },
+    },
+  }
 }
 
 function buildFallbackVisualContext(workspace = {}, displayStatus = '') {
@@ -280,6 +377,54 @@ function SectionHeader({ title, action = '', onAction = null }) {
   )
 }
 
+function MobilePrimaryPersonCard({ participant = null, accent, workspace = {}, onContactAction }) {
+  if (!participant) return null
+
+  const phone = firstText(participant.phone)
+  const email = firstText(participant.email)
+  const whatsapp = phone.replace(/\D/g, '')
+  const actions = [
+    { label: 'Call', icon: Phone, type: 'call', href: phone ? `tel:${phone}` : '' },
+    { label: 'WhatsApp', icon: MessageCircle, type: 'whatsapp', href: whatsapp ? `https://wa.me/${whatsapp}` : '' },
+    { label: 'Email', icon: Mail, type: 'email', href: email ? `mailto:${email}` : '' },
+  ]
+
+  return (
+    <MobileCard data-mobile-primary-contact>
+      <div className="flex items-start gap-3">
+        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[18px]" style={{ backgroundColor: accent.soft, color: accent.color }}>
+          <UserRound className="h-5 w-5" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.04em]" style={{ color: accent.color }}>Buyer</p>
+          <h2 className="mt-1 truncate text-[22px] font-semibold text-[#10243a]">{participant.name}</h2>
+          <p className="mt-1 truncate text-[13px] leading-5 text-[#60758d]">{participant.role || 'Buyer'} · {participant.organisation || workspace.owner || 'Contact details'}</p>
+        </div>
+      </div>
+      <div className="mt-4 grid grid-cols-3 gap-2">
+        {actions.map((item) => {
+          const Icon = item.icon
+          return (
+            <a
+              key={item.type}
+              href={item.href || '#'}
+              className="flex min-h-12 items-center justify-center gap-2 rounded-2xl text-[13px] font-semibold"
+              style={{ backgroundColor: accent.soft, color: accent.color }}
+              onClick={(event) => {
+                if (!item.href) event.preventDefault()
+                onContactAction?.(item.type, participant)
+              }}
+            >
+              <Icon className="h-4 w-4" />
+              {item.label}
+            </a>
+          )
+        })}
+      </div>
+    </MobileCard>
+  )
+}
+
 function trackWorkspaceEvent(eventName, workspaceContext, workspace, metadata = {}) {
   void trackMobileMetric(eventName, {
     userId: workspaceContext.profile?.id || '',
@@ -295,10 +440,12 @@ function trackWorkspaceEvent(eventName, workspaceContext, workspace, metadata = 
 
 export default function MobileWorkspacePage({ workspaceType }) {
   const params = useParams()
+  const location = useLocation()
   const workspaceContext = useWorkspace()
   const workspaceId = params.workspaceId || params.id || ''
   const loader = useMemo(() => LOADERS[workspaceType] || getMobileTransactionWorkspace, [workspaceType])
-  const workspace = useMemo(() => loader(workspaceId), [loader, workspaceId])
+  const rawWorkspace = useMemo(() => loader(workspaceId), [loader, workspaceId])
+  const workspace = useMemo(() => personalizeWorkspace(rawWorkspace, location.state), [location.state, rawWorkspace])
   const workspaceKey = `${workspace.module}:${workspaceId}`
   const [taskOverrides, setTaskOverrides] = useState({})
   const [noteOverrides, setNoteOverrides] = useState({})
@@ -311,7 +458,6 @@ export default function MobileWorkspacePage({ workspaceType }) {
   const documents = useMemo(() => documentOverrides[workspaceKey] || workspace.documents || [], [documentOverrides, workspace.documents, workspaceKey])
   const activity = useMemo(() => activityOverrides[workspaceKey] || workspace.activity || [], [activityOverrides, workspace.activity, workspaceKey])
   const displayStatus = statusOverrides[workspaceKey] || workspace.status
-  const smartActions = useMemo(() => getSmartActionsForWorkspace({ ...workspace, tasks, status: displayStatus, currentStage: displayStatus }, workspaceContext), [displayStatus, tasks, workspace, workspaceContext])
   const communicationThread = useMemo(() => {
     const threads = getMobileInboxThreads()
     return threads.find((thread) => thread.module === workspace.module) || threads[0] || {
@@ -324,6 +470,9 @@ export default function MobileWorkspacePage({ workspaceType }) {
   const [contact, setContact] = useState(null)
   const accent = getAccent(workspace)
   const primaryAction = workspace.priorityActions?.[0] || null
+  const primaryPerson = useMemo(() => (
+    getParticipantByRole(workspace, workspace.module === 'transaction' ? ['buyer'] : ['buyer', 'lead']) || workspace.participants?.[0] || null
+  ), [workspace])
   const outstandingDocuments = getOutstandingDocuments(documents)
   const completedStages = workspace.stages.filter((stage, index) => stageState(workspace.stages, displayStatus || workspace.currentStage, index) === 'complete').length
   const progressPercent = workspace.stages.length ? Math.round(((completedStages + 1) / workspace.stages.length) * 100) : 0
@@ -373,78 +522,6 @@ export default function MobileWorkspacePage({ workspaceType }) {
       addOfflineDraft({ type: 'Status Change', title: nextStage, module: workspace.module, workspaceId })
     }
     trackWorkspaceEvent('status_updated', workspaceContext, workspace, { action, nextStage })
-  }
-
-  function handleSmartAction(action) {
-    if (action.type === 'upload') {
-      setUploadOpen(true)
-      return
-    }
-    if (action.type === 'contact') {
-      setContact(workspace.participants[0] || null)
-      trackWorkspaceEvent('workspace_action_used', workspaceContext, workspace, { action: action.label })
-      return
-    }
-    if (action.type === 'task' && tasks[0]) {
-      handleCompleteTask(tasks[0].id)
-      return
-    }
-    if (action.type === 'status' || action.type === 'request_document' || action.type === 'onboarding') {
-      handleStatusUpdate(action.label)
-      return
-    }
-    trackWorkspaceEvent('workspace_action_used', workspaceContext, workspace, { action: action.label })
-  }
-
-  function handleCommandBriefAction(action = '') {
-    const normalized = String(action || '').toLowerCase()
-    if (normalized.includes('document') || normalized.includes('scanner')) {
-      setUploadOpen(true)
-      return
-    }
-    if (normalized.includes('task')) {
-      if (tasks[0]) handleCompleteTask(tasks[0].id)
-      return
-    }
-    if (normalized.includes('status') || normalized.includes('handoff')) {
-      handleStatusUpdate(action)
-      return
-    }
-    if (normalized.includes('priority')) {
-      document.querySelector('[data-mobile-priority-actions]')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      return
-    }
-    trackWorkspaceEvent('mobile_command_brief_action', workspaceContext, workspace, { action })
-  }
-
-  function handleLiveRoomUpdate(update) {
-    if (!update) return
-    setActivityOverrides((current) => ({
-      ...current,
-      [workspaceKey]: [
-        { id: `live-room-${Date.now()}`, title: 'Shared Update Prepared', body: update.text, time: 'Now', actor: workspaceContext.profile?.fullName || 'You', tone: 'blue' },
-        ...(current[workspaceKey] || workspace.activity || []),
-      ],
-    }))
-    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-      addOfflineDraft({ type: 'Shared Update', title: update.label, module: workspace.module, workspaceId, payload: update })
-    }
-    trackWorkspaceEvent('mobile_live_room_update_prepared', workspaceContext, workspace, { templateId: update.id, templateLabel: update.label })
-  }
-
-  function handleHandoffApproval(review) {
-    if (!review) return
-    setActivityOverrides((current) => ({
-      ...current,
-      [workspaceKey]: [
-        { id: `handoff-${Date.now()}`, title: 'Mobile Handoff Reviewed', body: `${review.certificate} · ${review.score}`, time: 'Now', actor: workspaceContext.profile?.fullName || 'You', tone: review.score >= 86 ? 'green' : 'amber' },
-        ...(current[workspaceKey] || workspace.activity || []),
-      ],
-    }))
-    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-      addOfflineDraft({ type: 'Handoff Review', title: review.certificate, module: workspace.module, workspaceId, payload: { score: review.score } })
-    }
-    trackWorkspaceEvent('mobile_handoff_review_approved', workspaceContext, workspace, { score: review.score, certificate: review.certificate })
   }
 
   function handleUploaded(record) {
@@ -531,31 +608,12 @@ export default function MobileWorkspacePage({ workspaceType }) {
         </div>
       </section>
 
-      <section className="grid grid-cols-3 gap-2">
-        {workspace.header.map((item) => (
-          <MobileCard key={item.label} className="p-3">
-            <p className="text-[11px] font-semibold uppercase text-[#60758d]">{item.label}</p>
-            <p className="mt-2 text-[15px] font-semibold text-[#10243a]">{item.label.toLowerCase().includes('stage') || item.label.toLowerCase().includes('milestone') ? displayStatus : item.value}</p>
-          </MobileCard>
-        ))}
-      </section>
-
-      <section className="grid grid-cols-3 gap-2">
-        {[
-          { label: 'Open Tasks', value: tasks.length, icon: ListChecks },
-          { label: 'Docs Due', value: outstandingDocuments, icon: FileText },
-          { label: 'Contacts', value: workspace.participants.length, icon: ContactRound },
-        ].map((item) => {
-          const Icon = item.icon
-          return (
-            <div key={item.label} className="rounded-[22px] border border-white/80 bg-white p-3 shadow-[0_10px_24px_rgba(15,23,42,0.055)]">
-              <span className="flex h-9 w-9 items-center justify-center rounded-2xl" style={{ backgroundColor: accent.soft, color: accent.color }}><Icon className="h-4 w-4" /></span>
-              <p className="mt-3 text-[22px] font-semibold text-[#10243a]">{item.value}</p>
-              <p className="mt-1 text-[11px] font-semibold text-[#60758d]">{item.label}</p>
-            </div>
-          )
-        })}
-      </section>
+      <MobilePrimaryPersonCard
+        participant={primaryPerson}
+        accent={accent}
+        workspace={workspace}
+        onContactAction={handleContactAction}
+      />
 
       <MobileVisualContextCards
         workspace={workspace}
@@ -598,73 +656,6 @@ export default function MobileWorkspacePage({ workspaceType }) {
           })}
         </div>
       </MobileCard>
-
-      <MobileFieldModePanel
-        workspace={workspace}
-        tasks={tasks}
-        documents={documents}
-        priorityActions={workspace.priorityActions}
-        onOpenDocuments={() => setUploadOpen(true)}
-      />
-
-      <MobileWorkspaceInsightCards
-        workspace={workspace}
-        tasks={tasks}
-        documents={documents}
-        priorityActions={workspace.priorityActions}
-        activity={activity}
-        communicationThread={communicationThread}
-        onCommandAction={handleCommandBriefAction}
-        onSendUpdate={handleLiveRoomUpdate}
-        onApproveHandoff={handleHandoffApproval}
-      />
-
-      <MobileSmartActionBar actions={smartActions} onAction={handleSmartAction} />
-
-      <section data-mobile-priority-actions>
-        <SectionHeader title="Priority Actions" action={workspace.priorityActions.length ? `${workspace.priorityActions.length} open` : ''} />
-        {workspace.priorityActions.length ? (
-          <div className="space-y-3">
-            {workspace.priorityActions.slice(0, 5).map((item) => (
-              <div key={item.id} className={`rounded-[24px] border p-4 ${TONE_CLASSES[item.tone] || TONE_CLASSES.amber}`}>
-                <div className="flex items-start gap-3">
-                  <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${TONE_DOTS[item.tone] || TONE_DOTS.amber}`} />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[15px] font-semibold">{item.title}</p>
-                    <p className="mt-1 text-[14px] leading-5 opacity-80">{item.body}</p>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <span className="inline-flex min-h-8 items-center gap-1 rounded-full bg-white/70 px-3 text-[12px] font-semibold"><UserRound className="h-3.5 w-3.5" /> {item.owner || workspace.owner || 'Owner'}</span>
-                      <span className="inline-flex min-h-8 items-center gap-1 rounded-full bg-white/70 px-3 text-[12px] font-semibold"><CalendarDays className="h-3.5 w-3.5" /> {item.due || workspace.sla || 'Due today'}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : <MobileEmptyState title="No urgent actions." body="Everything looks clear for now." />}
-      </section>
-
-      {workspace.contactActions ? (
-        <MobileCard>
-          <h2 className="text-[18px] font-semibold text-[#10243a]">Contact Actions</h2>
-          <p className="mt-1 text-[13px] leading-5 text-[#60758d]">Reach the primary contact without leaving the workspace.</p>
-          <div className="mt-3 grid grid-cols-3 gap-2">
-            {[
-              { label: 'Call', icon: Phone, type: 'call' },
-              { label: 'WhatsApp', icon: MessageCircle, type: 'whatsapp' },
-              { label: 'Email', icon: Mail, type: 'email' },
-            ].map((item) => {
-              const Icon = item.icon
-              return (
-                <button key={item.label} type="button" className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-[#e8f6ef] text-[13px] font-semibold text-[#1f7a5a]" onClick={() => handleContactAction(item.type, workspace.participants[0])}>
-                  <Icon className="h-4 w-4" />
-                  {item.label}
-                </button>
-              )
-            })}
-          </div>
-        </MobileCard>
-      ) : null}
 
       <section>
         <SectionHeader title="Role Players" action="Tap for details" />

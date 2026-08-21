@@ -1,9 +1,9 @@
-import { BriefcaseBusiness, ChevronRight, Plus, Upload, UsersRound } from 'lucide-react'
+import { BriefcaseBusiness, ChevronRight, Upload } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import MobileCreateSheet, { MobileDraftCard } from '../../components/mobile-shell/MobileCreateSheet'
 import { isMobileCreateType, mobileDraftMatchesModule } from '../../components/mobile-shell/mobileCreateConfig'
-import { MobileCard, MobileEmptyState, MobileErrorState, MobileFilterChips, MobileLoadingState, MobileSearchBar } from '../../components/mobile-shell/MobileShellStates'
+import { MobileCard, MobileEmptyState, MobileErrorState, MobileLoadingState, MobileSearchBar } from '../../components/mobile-shell/MobileShellStates'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { useOptionalOrganisation } from '../../context/OrganisationContext'
 import { getMobileDashboardSnapshot, getMobileDashboardSnapshotAsync } from '../../services/mobileDashboardService'
@@ -24,8 +24,6 @@ const MODULE_COPY = {
     search: 'Search leads or filter by source',
     emptyTitle: 'No leads yet.',
     emptyBody: 'New leads will appear here once they are captured.',
-    actionLabel: 'New Lead',
-    actionIcon: Plus,
   },
   documents: {
     title: 'Documents',
@@ -85,9 +83,6 @@ const MODULE_COPY = {
   },
 }
 
-const TRANSACTION_FILTERS = ['All', 'Lead', 'OTP', 'Finance', 'Transfer', 'Registration', 'Closed', 'At Risk']
-const LEAD_FILTERS = ['All', 'New', 'Contacted', 'Qualified', 'Viewing', 'Offer', 'Overdue']
-
 function normalizeText(value) {
   return String(value ?? '').trim()
 }
@@ -134,6 +129,17 @@ function formatLeadAge(value) {
   if (days === 0) return 'Today'
   if (days === 1) return '1 day'
   return `${days} days`
+}
+
+function getPlatformLogo(source = '') {
+  const normalized = normalizeText(source).toLowerCase().replace(/[^a-z0-9]+/g, '')
+  if (normalized.includes('property24') || normalized === 'p24') {
+    return { src: '/lead-sources/property24.png', alt: 'Property24' }
+  }
+  if (normalized.includes('privateproperty')) {
+    return { src: '/lead-sources/private-property.jpeg', alt: 'Private Property' }
+  }
+  return null
 }
 
 function TransactionThumb({ title = '' }) {
@@ -216,6 +222,7 @@ function getLeadDisplay(row = {}) {
 
 function MobileLeadCard({ item, onOpen }) {
   const display = getLeadDisplay(item)
+  const platformLogo = getPlatformLogo(display.source)
   return (
     <button
       type="button"
@@ -225,11 +232,14 @@ function MobileLeadCard({ item, onOpen }) {
       <span className="block bg-[linear-gradient(135deg,#fff6e5_0%,#f8fafc_45%,#e8f6ef_100%)] px-4 py-3">
         <span className="flex items-start justify-between gap-3">
           <span className="min-w-0">
-            <span className="block text-[11px] font-semibold uppercase tracking-[0.04em] text-[#7c5a12]">{display.source}</span>
             <span className="mt-1 block truncate text-[18px] font-semibold text-[#10243a]">{display.title}</span>
           </span>
-          <span className={`shrink-0 rounded-full px-3 py-1 text-[12px] font-semibold ${display.isOverdue ? 'bg-[#fff1f0] text-[#b42318]' : 'bg-white text-[#1f7a5a]'}`}>
-            {display.isOverdue ? 'Overdue' : display.stage}
+          <span className="flex h-10 w-16 shrink-0 items-center justify-center rounded-2xl border border-white/80 bg-white px-2 shadow-[0_8px_18px_rgba(15,23,42,0.06)]">
+            {platformLogo ? (
+              <img src={platformLogo.src} alt={platformLogo.alt} className="max-h-7 max-w-full object-contain" loading="lazy" />
+            ) : (
+              <span className="text-[11px] font-bold uppercase text-[#1f7a5a]">{display.source.slice(0, 2) || 'PL'}</span>
+            )}
           </span>
         </span>
       </span>
@@ -260,11 +270,10 @@ function MobileLeadCard({ item, onOpen }) {
 }
 
 function GenericModuleCard({ copy }) {
-  const Icon = copy.actionLabel?.includes('Lead') ? UsersRound : BriefcaseBusiness
   return (
     <MobileCard surface="dark">
       <span className="flex h-12 w-12 items-center justify-center rounded-[18px] bg-white/12 text-[#9fe0bd]">
-        <Icon className="h-5 w-5" />
+        <BriefcaseBusiness className="h-5 w-5" />
       </span>
       <h2 className="mt-5 text-[24px] font-semibold text-white">{copy.title}</h2>
       <p className="mt-2 text-[15px] leading-7 text-[#dce8f2]">{copy.intro}</p>
@@ -279,8 +288,6 @@ export default function MobileModulePage({ moduleKey }) {
   const [searchParams, setSearchParams] = useSearchParams()
   const copy = MODULE_COPY[moduleKey] || MODULE_COPY.transactions
   const ActionIcon = copy.actionIcon
-  const [query, setQuery] = useState('')
-  const [filter, setFilter] = useState('All')
   const [drafts, setDrafts] = useState(() => getOfflineDrafts())
   const [state, setState] = useState(() => ({
     loading: moduleKey === 'transactions' || moduleKey === 'leads',
@@ -342,40 +349,23 @@ export default function MobileModulePage({ moduleKey }) {
   }, [moduleKey, organisationContext, workspace])
 
   const rows = useMemo(() => {
-    const source = state.snapshot?.activeWork || []
-    const normalizedQuery = query.trim().toLowerCase()
-    const normalizedFilter = filter.toLowerCase()
-    return source.filter((item) => {
-      const haystack = `${item.title} ${item.eyebrow} ${item.stage} ${item.status}`.toLowerCase()
-      const matchesQuery = !normalizedQuery || haystack.includes(normalizedQuery)
-      const matchesFilter = filter === 'All' || haystack.includes(normalizedFilter) || (filter === 'At Risk' && haystack.includes('overdue'))
-      return matchesQuery && matchesFilter
-    })
-  }, [filter, query, state.snapshot?.activeWork])
+    return state.snapshot?.activeWork || []
+  }, [state.snapshot?.activeWork])
   const pendingDrafts = useMemo(() => (
     drafts.filter((draft) => mobileDraftMatchesModule(draft, moduleKey))
   ), [drafts, moduleKey])
   const leadRows = useMemo(() => {
-    const source = state.leads || []
-    const normalizedQuery = query.trim().toLowerCase()
-    const normalizedFilter = filter.toLowerCase()
-    return source.filter((item) => {
-      const display = getLeadDisplay(item)
-      const haystack = `${display.title} ${display.property} ${display.stage} ${display.source} ${display.assignedAgent} ${display.nextAction}`.toLowerCase()
-      const matchesQuery = !normalizedQuery || haystack.includes(normalizedQuery)
-      const matchesFilter = filter === 'All' ||
-        haystack.includes(normalizedFilter) ||
-        (filter === 'Overdue' && display.isOverdue)
-      return matchesQuery && matchesFilter
-    })
-  }, [filter, query, state.leads])
+    return state.leads || []
+  }, [state.leads])
 
   function openTransaction(item) {
-    navigate(item.to || '/mobile/transaction/unknown')
+    navigate(item.to || '/mobile/transaction/unknown', { state: { mobileWorkspaceItem: item } })
   }
 
   function openLead(item) {
-    navigate(`/mobile/lead/${encodeURIComponent(item.id || item.leadId || item.lead_id || 'unknown')}`)
+    navigate(`/mobile/lead/${encodeURIComponent(item.id || item.leadId || item.lead_id || 'unknown')}`, {
+      state: { mobileWorkspaceItem: item, mobileWorkspaceDisplay: getLeadDisplay(item) },
+    })
   }
 
   function clearCreateIntent() {
@@ -402,11 +392,7 @@ export default function MobileModulePage({ moduleKey }) {
       <div className="space-y-6">
         <section className="pt-2">
           <h1 className="text-[34px] font-bold leading-tight text-[#10243a]">Transactions</h1>
-          <p className="mt-2 text-[16px] leading-7 text-[#60758d]">Track live deals and the next field action.</p>
         </section>
-
-        <MobileSearchBar placeholder="Search transactions..." value={query} onChange={setQuery} />
-        <MobileFilterChips items={TRANSACTION_FILTERS} active={filter} onChange={setFilter} />
 
         <section className="space-y-3">
           {pendingDrafts.map((draft) => <MobileDraftCard key={draft.id} draft={draft} />)}
@@ -438,36 +424,9 @@ export default function MobileModulePage({ moduleKey }) {
   if (moduleKey === 'leads') {
     return (
       <div className="space-y-6">
-        <section className="flex items-start justify-between gap-3 pt-2">
-          <div className="min-w-0">
-            <h1 className="text-[34px] font-bold leading-tight text-[#10243a]">Leads</h1>
-            <p className="mt-2 text-[16px] leading-7 text-[#60758d]">Platform leads in a mobile CRM table. Tap any row for the vertical buyer journey.</p>
-          </div>
-          <button
-            type="button"
-            className="inline-flex min-h-12 shrink-0 items-center gap-2 rounded-full bg-[#1f7a5a] px-4 text-sm font-semibold text-white shadow-[0_10px_22px_rgba(31,122,90,0.24)]"
-            onClick={openModuleCreate}
-          >
-            <Plus className="h-4 w-4" />
-            New
-          </button>
+        <section className="pt-2">
+          <h1 className="text-[34px] font-bold leading-tight text-[#10243a]">Leads</h1>
         </section>
-
-        <MobileSearchBar placeholder="Search leads, source, agent..." value={query} onChange={setQuery} />
-        <MobileFilterChips items={LEAD_FILTERS} active={filter} onChange={setFilter} />
-
-        <MobileCard surface="dark">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-[12px] font-semibold uppercase tracking-[0.04em] text-[#9fe0bd]">Lead Command</p>
-              <h2 className="mt-2 text-[28px] font-semibold text-white">{state.leads.length} platform leads</h2>
-              <p className="mt-2 text-[14px] leading-6 text-[#dce8f2]">Sorted for field follow-up with journey context one tap away.</p>
-            </div>
-            <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[22px] bg-white/12 text-[#9fe0bd]">
-              <UsersRound className="h-6 w-6" />
-            </span>
-          </div>
-        </MobileCard>
 
         <section className="space-y-3">
           {pendingDrafts.map((draft) => <MobileDraftCard key={draft.id} draft={draft} />)}
@@ -478,20 +437,10 @@ export default function MobileModulePage({ moduleKey }) {
               <MobileEmptyState
                 title={state.leads.length ? 'No matching leads.' : copy.emptyTitle}
                 body={state.leads.length ? 'Try another source, stage, or search term.' : copy.emptyBody}
-                actionLabel="New Lead"
-                onAction={() => navigate('/mobile/leads?create=lead')}
               />
             )
           )}
         </section>
-
-        <MobileCreateSheet
-          open={createOpen}
-          type={createType}
-          route="/mobile/leads"
-          onClose={clearCreateIntent}
-          onSaved={handleDraftSaved}
-        />
       </div>
     )
   }
