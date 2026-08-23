@@ -52,7 +52,7 @@ function buildListing(payload, extra = {}) {
   }
 }
 
-test('direct listing operational summary stays declaration-only and upload-free', () => {
+test('direct listing operational summary allows creation but requires post-create compliance actions', () => {
   const payload = buildDirectListingIntakePayload({
     sellerType: 'company',
     sellerName: 'Casey',
@@ -74,12 +74,20 @@ test('direct listing operational summary stays declaration-only and upload-free'
   assert.equal(summary.hasIntake, true)
   assert.equal(summary.declarationOnly, true)
   assert.equal(summary.uploadsRequired, false)
+  assert.equal(summary.creationBlocked, false)
+  assert.equal(summary.creationUploadsRequired, false)
+  assert.equal(summary.postCreateActionsRequired, true)
   assert.equal(summary.sellerTypeLabel, 'Company')
   assert.equal(summary.propertyStructureLabel, 'Sectional Title')
   assert.equal(summary.readiness.percent, 100)
   assert.equal(summary.portalInvite.label, 'Prepared')
   assert.ok(summary.declarations.some((row) => row.key === 'property_condition_disclosure' && row.held === false))
+  assert.ok(summary.followUpActions.some((action) => action.key === 'mandate' && action.complete === true))
+  assert.ok(summary.followUpActions.some((action) => action.key === 'fica_form' && action.complete === true))
+  assert.ok(summary.followUpActions.some((action) => action.key === 'property_condition_disclosure' && action.complete === false))
+  assert.ok(summary.followUpActions.some((action) => action.key === 'seller_portal' && action.complete === false))
   assert.ok(summary.attentionItems.some((item) => item.includes('Property Condition Disclosure')))
+  assert.ok(summary.attentionItems.some((item) => item.includes('Seller portal link')))
 })
 
 test('direct listing operational summary exposes readiness and invite retry flags', () => {
@@ -114,6 +122,8 @@ test('direct listing operational summary exposes readiness and invite retry flag
 
   assert.equal(summary.readiness.missing, 2)
   assert.equal(summary.portalInvite.label, 'Requested')
+  assert.equal(summary.creationBlocked, false)
+  assert.ok(summary.followUpActions.some((action) => action.key === 'seller_portal' && action.complete === false))
   assert.ok(summary.attentionItems.some((item) => item.includes('2 intake facts missing')))
   assert.ok(summary.attentionItems.some((item) => item.includes('send-email unavailable')))
 })
@@ -122,6 +132,7 @@ test('AgentListingDetail renders the Phase 7 operational audit panel', () => {
   assert.match(agentListingDetailSource, /buildDirectListingOperationalSummary/)
   assert.match(agentListingDetailSource, /directListingOperationalSummary/)
   assert.match(agentListingDetailSource, /data-testid="direct-listing-operational-audit"/)
-  assert.match(agentListingDetailSource, /Declarations are audit flags only and do not require uploads/)
-  assert.match(agentListingDetailSource, /Upload[s]? not required/)
+  assert.match(agentListingDetailSource, /Listing creation is allowed/)
+  assert.match(agentListingDetailSource, /Post-create Checklist/)
+  assert.match(agentListingDetailSource, /Post-create actions required/)
 })

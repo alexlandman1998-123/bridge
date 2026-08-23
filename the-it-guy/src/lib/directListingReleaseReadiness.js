@@ -232,11 +232,15 @@ function evaluateDirectListingReleaseRow(listing = {}) {
       portalFormData.email,
   )
   const operationalAuditReady = Boolean(summary.hasIntake && summary.declarationOnly && summary.uploadsRequired === false)
+  const creationBlocked = summary.creationBlocked === true
+  const postCreateActionsVisible = Array.isArray(summary.followUpActions) && summary.followUpActions.length >= 4
   const blockers = [
     !summary.hasIntake && 'Direct listing intake not detected',
+    creationBlocked && 'Direct listing creation is blocked',
     !uploadFree && 'Direct listing requires uploads or evidence',
     !portalReady && 'Seller Portal mapping incomplete',
     !operationalAuditReady && 'Operational audit summary incomplete',
+    !postCreateActionsVisible && 'Post-create compliance actions hidden',
     kingstons && !uploadFree && 'Kingstons direct listing would be upload-gated',
   ].filter(Boolean)
 
@@ -246,6 +250,9 @@ function evaluateDirectListingReleaseRow(listing = {}) {
     kingstons,
     ready: blockers.length === 0,
     uploadFree,
+    creationBlocked,
+    postCreateActionsVisible,
+    postCreateActionsRequired: summary.postCreateActionsRequired === true,
     portalReady,
     operationalAuditReady,
     declarationOnly: summary.declarationOnly === true,
@@ -279,6 +286,7 @@ export function buildDirectListingReleaseReadinessReport({ listings = null } = {
       uploadFree: rows.filter((row) => row.uploadFree).length,
       portalReady: rows.filter((row) => row.portalReady).length,
       operationalAuditReady: rows.filter((row) => row.operationalAuditReady).length,
+      postCreateActionsVisible: rows.filter((row) => row.postCreateActionsVisible).length,
     },
     rows,
     blockers,
@@ -286,6 +294,8 @@ export function buildDirectListingReleaseReadinessReport({ listings = null } = {
       directListingWithoutLeadProcess: rows.every((row) => row.ready || row.blockers.every((blocker) => !blocker.includes('lead'))),
       declarationOnly: rows.every((row) => row.declarationOnly),
       uploadsRequired: false,
+      creationBlocked: rows.some((row) => row.creationBlocked),
+      postCreateActionsVisible: rows.every((row) => row.postCreateActionsVisible),
       sellerPortalReadsDirectFormat: rows.every((row) => row.portalReady),
       kingstonsSafe: kingstonsRows.every((row) => row.ready && row.uploadFree),
     },

@@ -6,7 +6,12 @@ import { deriveOnboardingSetupState } from '../lib/onboardingRouting'
 import { DEFAULT_APP_ROLE, normalizeAppRole } from '../lib/appRoleMetadata'
 import { can, canAll, canAny, createPermissionResolver, getPermissionScope } from '../auth/permissions/permissionResolver'
 import { completeOnboarding } from '../services/onboarding/onboardingEngine'
-import { BUSINESS_WORKSPACES, normalizeBusinessWorkspace, resolveBusinessWorkspaceState } from '../lib/businessWorkspaceAccess'
+import {
+  BUSINESS_WORKSPACES,
+  normalizeBusinessWorkspace,
+  resolveBusinessWorkspaceRolloutAccess,
+  resolveBusinessWorkspaceState,
+} from '../lib/businessWorkspaceAccess'
 import { getFeatureFlags } from '../lib/envValidation'
 import {
   isOrganisationOwnerMembership,
@@ -209,17 +214,40 @@ export function WorkspaceProvider({ children }) {
     key: '',
     workspace: BUSINESS_WORKSPACES.sales,
   })
+  const businessWorkspaceRolloutAccess = useMemo(
+    () => resolveBusinessWorkspaceRolloutAccess({
+      enabled: featureFlags.salesRentalsWorkspaceSplitEnabled,
+      requiresAllowlist: featureFlags.salesRentalsWorkspaceSplitRequiresAllowlist,
+      allowedWorkspaceIdentifiers: featureFlags.salesRentalsWorkspaceAllowlist,
+      allowedUserIdentifiers: featureFlags.salesRentalsUserAllowlist,
+      currentWorkspace: authState.currentWorkspace,
+      currentMembership: authState.currentMembership,
+      profile,
+      user: authState.user,
+    }),
+    [
+      authState.currentMembership,
+      authState.currentWorkspace,
+      authState.user,
+      featureFlags.salesRentalsUserAllowlist,
+      featureFlags.salesRentalsWorkspaceAllowlist,
+      featureFlags.salesRentalsWorkspaceSplitEnabled,
+      featureFlags.salesRentalsWorkspaceSplitRequiresAllowlist,
+      profile,
+    ],
+  )
+  const businessWorkspaceSplitEnabled = businessWorkspaceRolloutAccess.enabled
   const businessWorkspaceStorageKey = useMemo(() => {
-    if (!featureFlags.salesRentalsWorkspaceSplitEnabled || !userId || !workspace.id || workspace.id === 'all' || !isAgentBaseRole) return ''
+    if (!businessWorkspaceSplitEnabled || !userId || !workspace.id || workspace.id === 'all' || !isAgentBaseRole) return ''
     return `${userId}:${workspace.id}`
-  }, [featureFlags.salesRentalsWorkspaceSplitEnabled, isAgentBaseRole, userId, workspace.id])
+  }, [businessWorkspaceSplitEnabled, isAgentBaseRole, userId, workspace.id])
   const businessWorkspacePreference =
     businessWorkspacePreferenceState.key === businessWorkspaceStorageKey
       ? businessWorkspacePreferenceState.workspace
       : BUSINESS_WORKSPACES.sales
   const businessWorkspaceState = useMemo(
     () => resolveBusinessWorkspaceState({
-      enabled: featureFlags.salesRentalsWorkspaceSplitEnabled,
+      enabled: businessWorkspaceSplitEnabled,
       appRole: baseRole,
       workspaceType: authState.workspaceType || authState.currentWorkspace?.type,
       currentMembership: authState.currentMembership,
@@ -232,7 +260,7 @@ export function WorkspaceProvider({ children }) {
       authState.workspaceType,
       baseRole,
       businessWorkspacePreference,
-      featureFlags.salesRentalsWorkspaceSplitEnabled,
+      businessWorkspaceSplitEnabled,
       organisationMembershipRole,
     ],
   )
@@ -307,7 +335,7 @@ export function WorkspaceProvider({ children }) {
 
   const setBusinessWorkspace = useCallback(
     (nextWorkspace) => {
-      if (!businessWorkspaceStorageKey || !featureFlags.salesRentalsWorkspaceSplitEnabled || baseRole !== 'agent') return
+      if (!businessWorkspaceStorageKey || !businessWorkspaceSplitEnabled || baseRole !== 'agent') return
       setBusinessWorkspacePreferenceState((previous) => {
         const previousWorkspace = previous.key === businessWorkspaceStorageKey ? previous.workspace : businessWorkspaceState.currentId
         const requested = typeof nextWorkspace === 'function' ? nextWorkspace(previousWorkspace) : nextWorkspace
@@ -321,7 +349,7 @@ export function WorkspaceProvider({ children }) {
       businessWorkspaceState.availableIds,
       businessWorkspaceState.currentId,
       businessWorkspaceStorageKey,
-      featureFlags.salesRentalsWorkspaceSplitEnabled,
+      businessWorkspaceSplitEnabled,
     ],
   )
 

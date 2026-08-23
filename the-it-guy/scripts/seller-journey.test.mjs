@@ -5,6 +5,7 @@ import {
   getSellerJourneyMetrics,
   getSellerJourneyStage,
 } from '../src/services/sellerJourneyService.js'
+import { buildDirectListingIntakePayload } from '../src/lib/directListingIntakeModel.js'
 
 const baseLead = {
   leadId: 'lead-1',
@@ -181,6 +182,51 @@ function assertJourneyStepStates(journey, currentKey, completedKeys = []) {
 }
 
 {
+  const directListingPayload = buildDirectListingIntakePayload({
+    sellerType: 'individual',
+    sellerName: 'Dina',
+    sellerSurname: 'Direct',
+    sellerEmail: 'dina@example.com',
+    sellerPhone: '+27 82 222 3333',
+    propertyAddress: '14 Direct Listing Road',
+    propertyStructureType: 'full_title',
+    hasSignedMandate: false,
+    hasSignedPropertyConditionDisclosure: false,
+    hasSignedFicaForm: false,
+    sellerPortalInviteRequested: true,
+  })
+  const journey = buildSellerJourney({
+    lead: {
+      ...baseLead,
+      listingId: 'listing-direct-created',
+    },
+    listing: {
+      id: 'listing-direct-created',
+      originatingCrmLeadId: 'lead-1',
+      listingStatus: 'seller_lead',
+      listingVisibility: 'internal',
+      mandateStatus: 'not_started',
+      directListingIntake: directListingPayload,
+      sellerOnboarding: {
+        status: 'not_started',
+        formData: directListingPayload.sellerOnboardingFormData,
+      },
+    },
+  })
+  assert.equal(journey.stage.key, 'listing_created')
+  assert.equal(journey.listingCreated, true)
+  assert.equal(journey.listingLive, false)
+  assert.equal(journey.mandateStatus, 'not_started')
+  assert.equal(journey.kpis.find((item) => item.key === 'listing').value, 'Draft')
+  assert.equal(journey.steps.find((step) => step.key === 'listing_created').state, 'current')
+  assert.equal(journey.steps.find((step) => step.key === 'listing_created').completed, true)
+  assert.equal(journey.steps.find((step) => step.key === 'listing_live').state, 'upcoming')
+  assert.equal(journey.actions.find((item) => item.id === 'create_listing').enabled, false)
+  assert.equal(journey.actions.find((item) => item.id === 'open_listing').enabled, true)
+  assert.equal(journey.actions.find((item) => item.id === 'activate_listing').enabled, false)
+}
+
+{
   const journey = buildSellerJourney({
     lead: {
       ...baseLead,
@@ -342,7 +388,7 @@ function assertJourneyStepStates(journey, currentKey, completedKeys = []) {
   assert.equal(journey.documents.find((item) => item.label === 'Title Deed').status, 'Uploaded')
   assert.equal(journey.workspaceKpis.find((item) => item.key === 'current_stage').value, 'Listing Live')
   assert.equal(journey.workspaceKpis.find((item) => item.key === 'seller_portal').value, 'Not opened')
-  assert.equal(journey.documentsOutstanding, 5)
+  assert.equal(journey.documentsOutstanding, 6)
   assert.equal(journey.actions.find((item) => item.id === 'open_listing').enabled, true)
 }
 

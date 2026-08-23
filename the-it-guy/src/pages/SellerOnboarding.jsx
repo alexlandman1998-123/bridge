@@ -4646,7 +4646,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                 <div>
                   <p className="text-sm font-semibold text-[#243b53]">Your agent has already captured the listing basics.</p>
                   <p className="mt-1 text-xs leading-5 text-[#60748b]">
-                    Confirm or complete the details below. Document uploads are not required from this declaration summary.
+                    Confirm or complete the details below. If mandate, FICA or disclosure documents are still outstanding, upload them here so the listing can move toward activation or publish.
                   </p>
                 </div>
               </div>

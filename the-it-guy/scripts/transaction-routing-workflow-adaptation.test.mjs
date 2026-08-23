@@ -75,6 +75,26 @@ function assertIncludes(values, expected, message) {
 
 {
   const transaction = transactionWithProfile({
+    id: 'new-development-missing-private-seller',
+    finance_type: 'cash',
+    transaction_type: 'developer_sale',
+    property_type: 'sectional title unit',
+    buyer_entity_type: 'individual',
+    development_id: 'dev-1',
+    vat_treatment: 'vat',
+  })
+  const facts = resolveTransactionFacts(transaction)
+  const requirements = resolveLegalDocumentRequirements(transaction)
+  const developerSalePack = requirements.requirements.find((row) => row.id === 'developer_sale_pack')
+
+  assert.equal(facts.transactionType, 'development_sale')
+  assert.equal(facts.sellerEntityType, 'developer')
+  assert.equal(facts.missingFields.includes('seller_entity_type'), false)
+  assert.equal(developerSalePack?.requiredFrom, 'developer')
+}
+
+{
+  const transaction = transactionWithProfile({
     id: 'bond-sectional-title',
     finance_type: 'bond',
     transaction_type: 'private_sale',

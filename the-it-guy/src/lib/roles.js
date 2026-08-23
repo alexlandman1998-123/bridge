@@ -125,6 +125,7 @@ export const APP_NAV_BY_ROLE = {
   developer: [
     { key: 'dashboard', label: 'Dashboard', to: '/dashboard' },
     { key: 'transactions', label: 'Transactions', to: '/transactions', activeMatch: ['/transactions', '/units'] },
+    { key: 'developments', label: 'Developments', to: '/developments', activeMatch: ['/developments'] },
     {
       key: 'developer_pipeline',
       label: 'Pipeline',
@@ -136,7 +137,6 @@ export const APP_NAV_BY_ROLE = {
         { key: 'pipeline_calendar', label: 'Calendar', to: '/pipeline/calendar', activeMatch: ['/pipeline/calendar', '/calendar'], icon: CalendarDays },
       ],
     },
-    { key: 'developments', label: 'Listings', to: '/developments', activeMatch: ['/developments'] },
     {
       key: 'developer_organisation',
       label: 'Organisation',

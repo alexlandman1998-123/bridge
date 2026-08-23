@@ -1,4 +1,8 @@
 import { resolveDeveloperTransactionRelationshipProfile } from './developerTransactionRelationshipProfile.js'
+import {
+  isDeveloperSaleTransactionType,
+  resolveTransactionSaleProfile,
+} from './transactionSaleProfile.js'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -9,28 +13,23 @@ function normalizeKey(value) {
 }
 
 export function isDeveloperSaleTransaction(transaction = {}, unit = {}) {
+  const saleProfile = resolveTransactionSaleProfile({ transaction, unit })
   const normalizedType = normalizeKey(transaction?.transaction_type || transaction?.transactionType || transaction?.type)
 
   if (normalizedType === 'private' || normalizedType === 'private_property') {
     return false
   }
 
-  if (['development', 'developer', 'developer_sale'].includes(normalizedType)) {
+  if (isDeveloperSaleTransactionType(normalizedType)) {
     return true
   }
 
-  return Boolean(
-    transaction?.development_id ||
-      transaction?.developmentId ||
-      transaction?.development?.id ||
-      unit?.development_id ||
-      unit?.developmentId ||
-      unit?.development?.id,
-  )
+  return saleProfile.isDeveloperSale
 }
 
 export function resolveTransactionWorkspaceProfile({ transaction = {}, unit = {}, workspaceRole = 'developer' } = {}) {
-  const isDeveloperSale = isDeveloperSaleTransaction(transaction, unit)
+  const saleProfile = resolveTransactionSaleProfile({ transaction, unit })
+  const isDeveloperSale = saleProfile.isDeveloperSale
   const normalizedRole = normalizeKey(workspaceRole || 'developer')
 
   if (isDeveloperSale) {
@@ -42,7 +41,10 @@ export function resolveTransactionWorkspaceProfile({ transaction = {}, unit = {}
 
     return {
       key: 'developer_sale',
-      transactionType: 'developer_sale',
+      transactionType: saleProfile.transactionType,
+      routingTransactionType: saleProfile.routingTransactionType,
+      saleChannel: saleProfile.saleChannel,
+      sellerPartyType: saleProfile.sellerPartyType,
       relationshipMode: 'developer_buyer',
       relationshipProfile,
       isDeveloperSale: true,
@@ -75,7 +77,7 @@ export function resolveTransactionWorkspaceProfile({ transaction = {}, unit = {}
         snags: 'snags_alterations',
         tasks: 'workflows',
         transfer: 'workflows',
-        ...(normalizedRole === 'agent' ? { bond: 'financials' } : {}),
+        ...(normalizedRole === 'agent' ? { bond: 'financials', cancellation: 'transfer' } : {}),
       },
       features: {
         hasPrivateSeller: false,
@@ -87,7 +89,10 @@ export function resolveTransactionWorkspaceProfile({ transaction = {}, unit = {}
 
   return {
     key: 'private_property',
-    transactionType: 'private_property',
+    transactionType: saleProfile.transactionType,
+    routingTransactionType: saleProfile.routingTransactionType,
+    saleChannel: saleProfile.saleChannel,
+    sellerPartyType: saleProfile.sellerPartyType,
     relationshipMode: 'seller_buyer',
     isDeveloperSale: false,
     isPrivateProperty: true,

@@ -7,6 +7,10 @@ function normalize(value) {
   return String(value || '').trim()
 }
 
+function isDevelopmentSaleTransactionType(value) {
+  return ['development_sale', 'developer_sale', 'development'].includes(String(value || '').trim().toLowerCase())
+}
+
 export function buildMvpTransactionParticipantBootstrap({
   routingProfile = {},
   buyer = {},
@@ -15,7 +19,7 @@ export function buildMvpTransactionParticipantBootstrap({
   controlledTestRoleSet = null,
 } = {}) {
   const rolePlan = routingProfile.launchRolePlan || resolveMvpLaunchRolePlan(routingProfile)
-  const developmentSale = routingProfile.transactionType === 'development_sale'
+  const developmentSale = isDevelopmentSaleTransactionType(routingProfile.transactionType)
   const baseParticipants = [
     {
       roleKey: 'buyer', roleType: 'buyer', legalRole: 'none', transactionRole: 'buyer',

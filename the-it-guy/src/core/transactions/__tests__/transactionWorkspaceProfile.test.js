@@ -33,6 +33,10 @@ test('developer sale profile uses developer-buyer relationship labels', () => {
   })
 
   assert.equal(profile.key, 'developer_sale')
+  assert.equal(profile.transactionType, 'developer_sale')
+  assert.equal(profile.routingTransactionType, 'development_sale')
+  assert.equal(profile.saleChannel, 'developer_direct')
+  assert.equal(profile.sellerPartyType, 'developer')
   assert.equal(profile.relationshipMode, 'developer_buyer')
   assert.equal(profile.features.hasPrivateSeller, false)
   assert.equal(profile.labels.seller, 'Developer')
@@ -46,6 +50,8 @@ test('private property profile preserves seller-buyer relationship labels', () =
   })
 
   assert.equal(profile.key, 'private_property')
+  assert.equal(profile.transactionType, 'private_property')
+  assert.equal(profile.sellerPartyType, 'private_seller')
   assert.equal(profile.relationshipMode, 'seller_buyer')
   assert.equal(profile.features.hasPrivateSeller, true)
   assert.equal(profile.labels.seller, 'Seller')

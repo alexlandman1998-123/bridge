@@ -1109,6 +1109,28 @@ export type SendCommercialLandlordOnboardingPayload = {
   completionPercentage?: number;
 };
 
+export type SendAgencyOnboardingPayload = {
+  type: "agency_onboarding";
+  to: string;
+  recipientName?: string;
+  agencyName?: string;
+  legalEntityName?: string;
+  principalName?: string;
+  principalEmail?: string;
+  principalPhone?: string;
+  secureLink?: string;
+  onboardingLink?: string;
+  actionLink?: string;
+  messageKind?:
+    | "initial_request"
+    | "reminder"
+    | "link_replaced"
+    | "submission_confirmation"
+    | string;
+  planName?: string;
+  planSummary?: string;
+};
+
 export type SendSellerOnboardingSubmittedPayload = {
   type: "seller_onboarding_submitted";
   to?: string;

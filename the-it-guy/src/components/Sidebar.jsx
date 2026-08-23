@@ -463,12 +463,13 @@ function Sidebar() {
         <button
           type="button"
           onClick={() => {
-            if (item.to) {
+            const nextExpanded = !menuExpanded
+            if (item.to && nextExpanded) {
               navigate(item.to)
             }
             setExpandedMenus((previous) => ({
               ...previous,
-              [item.key]: item.to ? true : !(previous[item.key] ?? isParentActive),
+              [item.key]: nextExpanded,
             }))
           }}
           className={`ui-sidebar-link w-full justify-between ${menuExpanded ? 'ui-sidebar-link-open' : ''}`.trim()}

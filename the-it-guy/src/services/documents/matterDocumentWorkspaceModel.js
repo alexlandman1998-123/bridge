@@ -486,11 +486,12 @@ export function getAttorneyCategoryForRequiredDocument(requirement = {}) {
   const groupKey = String(requirement?.groupKey || requirement?.group || '').trim().toLowerCase()
   const key = String(requirement?.key || '').trim().toLowerCase()
   const visibleSection = String(requirement?.visibleSection || '').trim().toLowerCase()
+  const expectedFromRole = String(requirement?.expectedFromRole || requirement?.requiredFromRole || requirement?.required_from_role || '').trim().toLowerCase()
   if (visibleSection === 'finance_documents' || groupKey === 'finance') {
     return 'Internal Working Documents'
   }
   if (groupKey.includes('buyer') || key.startsWith('buyer_')) return 'Buyer FICA / Compliance'
-  if (groupKey.includes('seller') || key.startsWith('seller_')) return 'Seller FICA / Compliance'
+  if (groupKey.includes('seller') || groupKey.includes('developer') || key.startsWith('seller_') || key.startsWith('developer_') || expectedFromRole === 'developer') return 'Seller FICA / Compliance'
   if (key.includes('guarantee')) return 'Guarantees'
   if (key.includes('clearance') || key.includes('rates') || key.includes('levy')) return 'Clearance Documents'
   if (key.includes('lodgement')) return 'Lodgement Documents'
@@ -504,7 +505,7 @@ export function getAttorneyCategoryForRequiredDocument(requirement = {}) {
 export function inferLibraryCategoryFromTokens(tokens = '') {
   const normalized = String(tokens || '').toLowerCase()
   if (normalized.includes('buyer')) return 'buyer'
-  if (normalized.includes('seller')) return 'seller'
+  if (normalized.includes('seller') || normalized.includes('developer')) return 'seller'
   if (normalized.includes('bond cancellation') || normalized.includes('cancellation')) return 'cancellation'
   if (normalized.includes('bond') || normalized.includes('bank') || normalized.includes('guarantee')) return 'bond'
   if (normalized.includes('finance') || normalized.includes('proof of funds') || normalized.includes('payslip') || normalized.includes('statement')) return 'finance'
@@ -524,7 +525,7 @@ export function resolveDocumentLibraryCategory(document = {}) {
   const group = String(requirement?.groupKey || requirement?.group || '').toLowerCase()
   if (source === 'generated' || rawCategory === 'generated' || documentType.includes('generated')) return 'generated'
   if (rawCategory.includes('buyer') || group.includes('buyer') || name.includes('buyer')) return 'buyer'
-  if (rawCategory.includes('seller') || group.includes('seller') || name.includes('seller')) return 'seller'
+  if (rawCategory.includes('seller') || rawCategory.includes('developer') || group.includes('seller') || group.includes('developer') || name.includes('seller') || name.includes('developer')) return 'seller'
   if (visibleSection === 'finance_documents' || group === 'finance') return 'finance'
   if (rawCategory.includes('guarantee') || rawCategory.includes('bond') || documentType.includes('bond')) return 'bond'
   if (rawCategory.includes('clearance') || documentType.includes('cancellation') || name.includes('cancellation')) return 'cancellation'

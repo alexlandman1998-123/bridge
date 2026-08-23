@@ -21,6 +21,15 @@ function asBoolean(value, fallback = false) {
   return ['1', 'true', 'yes', 'on', 'enabled'].includes(normalized)
 }
 
+function asList(...values) {
+  return values
+    .flatMap((value) => normalize(value).split(/[,;\n]/g))
+    .map((value) => normalize(value))
+    .filter(Boolean)
+}
+
+const ARCH9_PRODUCTION_SUPABASE_PROJECT_REF = 'isdowlnollckzvltkasn'
+
 export function getUnsafeEnvironmentFlags() {
   const unsafeFlags = getUnsafeProductionFlags()
   return {
@@ -37,8 +46,10 @@ export function getUnsafeEnvironmentFlags() {
 function isProductionSupabaseProject() {
   const currentUrl = normalize(import.meta.env.VITE_SUPABASE_URL)
   const productionUrl = normalize(import.meta.env.VITE_PRODUCTION_SUPABASE_URL)
-  if (!currentUrl || !productionUrl) return false
-  return currentUrl.replace(/\/+$/, '') === productionUrl.replace(/\/+$/, '')
+  const productionProjectRef = normalize(import.meta.env.VITE_PRODUCTION_SUPABASE_PROJECT_REF) || ARCH9_PRODUCTION_SUPABASE_PROJECT_REF
+  if (!currentUrl) return false
+  if (productionUrl && currentUrl.replace(/\/+$/, '') === productionUrl.replace(/\/+$/, '')) return true
+  return Boolean(productionProjectRef && currentUrl.includes(`//${productionProjectRef}.supabase.co`))
 }
 
 export function isUnsafeFallbackAllowed() {
@@ -91,6 +102,28 @@ export function getRuntimeEnvValidation() {
 
 export function getFeatureFlags() {
   const unsafeFlags = getUnsafeEnvironmentFlags()
+  const salesRentalsSplitRequested = asBoolean(import.meta.env.VITE_SALES_RENTALS_WORKSPACE_SPLIT_ENABLED, false)
+  const salesRentalsWorkspaceAllowlist = asList(
+    import.meta.env.VITE_SALES_RENTALS_WORKSPACE_ALLOWLIST,
+    import.meta.env.VITE_SALES_RENTALS_WORKSPACE_IDS,
+  )
+  const salesRentalsUserAllowlist = asList(
+    import.meta.env.VITE_SALES_RENTALS_USER_ALLOWLIST,
+    import.meta.env.VITE_SALES_RENTALS_USER_EMAILS,
+  )
+  const salesRentalsProductionRolloutEnabled = Boolean(
+    salesRentalsSplitRequested &&
+      isProductionEnvironment() &&
+      isProductionSupabaseProject() &&
+      asBoolean(import.meta.env.VITE_SALES_RENTALS_PRODUCTION_ROLLOUT_ENABLED, false) &&
+      (salesRentalsWorkspaceAllowlist.length > 0 || salesRentalsUserAllowlist.length > 0),
+  )
+  const salesRentalsStagingEnabled = Boolean(
+    salesRentalsSplitRequested &&
+      isStagingLikeEnvironment() &&
+      !isProductionEnvironment() &&
+      !isProductionSupabaseProject(),
+  )
   return {
     enableClientPortalAlterations: asBoolean(import.meta.env.VITE_FEATURE_CLIENT_PORTAL_ALTERATIONS, true),
     enableServiceReviews: asBoolean(import.meta.env.VITE_FEATURE_SERVICE_REVIEWS, true),
@@ -101,12 +134,10 @@ export function getFeatureFlags() {
     enableInviteOnboarding: asBoolean(import.meta.env.VITE_FEATURE_INVITE_ONBOARDING, true),
     enableNativeMandateRenderer: asBoolean(import.meta.env.VITE_FEATURE_NATIVE_MANDATE_RENDERER, false),
     enableNativeOtpRenderer: asBoolean(import.meta.env.VITE_FEATURE_NATIVE_OTP_RENDERER, false),
-    salesRentalsWorkspaceSplitEnabled: Boolean(
-      asBoolean(import.meta.env.VITE_SALES_RENTALS_WORKSPACE_SPLIT_ENABLED, false) &&
-        isStagingLikeEnvironment() &&
-        !isProductionEnvironment() &&
-        !isProductionSupabaseProject(),
-    ),
+    salesRentalsWorkspaceSplitEnabled: salesRentalsStagingEnabled || salesRentalsProductionRolloutEnabled,
+    salesRentalsWorkspaceSplitRequiresAllowlist: salesRentalsProductionRolloutEnabled,
+    salesRentalsWorkspaceAllowlist,
+    salesRentalsUserAllowlist,
     rentalsEnabled: asBoolean(import.meta.env.VITE_RENTALS_ENABLED, false),
     rentalApplicationsEnabled: asBoolean(import.meta.env.VITE_RENTAL_APPLICATIONS_ENABLED, false),
     rentalLeasesEnabled: asBoolean(import.meta.env.VITE_RENTAL_LEASES_ENABLED, false),

@@ -203,6 +203,23 @@ const ACTION_DEFINITIONS = Object.freeze({
       return null
     },
   },
+  REQUEST_DEVELOPER_DOCUMENTS: {
+    label: 'Request developer documents',
+    groupKey: 'documents',
+    executionMode: 'external',
+    workflowKey: 'sales_otp',
+    stepKey: 'supporting_docs_complete',
+    ownerRole: 'developer',
+    allowedRoles: ['agent', 'developer', 'attorney', 'internal_admin'],
+    stages: ['SALES_OTP'],
+    hiddenWhen: (state = {}) => !isDevelopmentSale(state),
+    reason(state = {}) {
+      if (!isDevelopmentSale(state)) {
+        return 'Developer documents apply only to new development transactions.'
+      }
+      return null
+    },
+  },
   MOVE_TO_FINANCE: {
     label: 'Move to Finance',
     groupKey: 'stage',

@@ -32,6 +32,7 @@ const brandedHandlerFiles = [
   "clientOnboarding.ts",
   "commercialEnterpriseNotification.ts",
   "commercialAccessNotification.ts",
+  "agencyOnboarding.ts",
   "commercialLandlordOnboarding.ts",
   "leadAcknowledgement.ts",
   "leadOperationsNotification.ts",

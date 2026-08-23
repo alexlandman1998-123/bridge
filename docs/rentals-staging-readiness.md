@@ -23,13 +23,25 @@ npm run staging:safety
 These flags default to `false` in code and `.env.example`:
 
 - `VITE_SALES_RENTALS_WORKSPACE_SPLIT_ENABLED`
+- `VITE_SALES_RENTALS_PRODUCTION_ROLLOUT_ENABLED`
+- `VITE_SALES_RENTALS_WORKSPACE_ALLOWLIST`
+- `VITE_SALES_RENTALS_USER_ALLOWLIST`
 - `VITE_RENTALS_ENABLED`
 - `VITE_RENTAL_APPLICATIONS_ENABLED`
 - `VITE_RENTAL_LEASES_ENABLED`
 - `VITE_RENTAL_MANAGEMENT_ENABLED`
 - `VITE_PROPERTY24_RENTALS_ENABLED`
 
-`VITE_SALES_RENTALS_WORKSPACE_SPLIT_ENABLED` is the Phase 2 shell flag. It may be enabled for a controlled staging or preview proof only; runtime code still disables it in production and against the production Supabase project.
+`VITE_SALES_RENTALS_WORKSPACE_SPLIT_ENABLED` is the Phase 2 shell flag. It may be enabled for a controlled staging or preview proof.
+
+Production private beta is allowed only when all of these are true:
+
+- `VITE_SALES_RENTALS_WORKSPACE_SPLIT_ENABLED=true`
+- `VITE_SALES_RENTALS_PRODUCTION_ROLLOUT_ENABLED=true`
+- at least one of `VITE_SALES_RENTALS_WORKSPACE_ALLOWLIST` or `VITE_SALES_RENTALS_USER_ALLOWLIST` is populated
+- the signed-in workspace or user matches the allowlist
+
+Prefer workspace UUIDs in `VITE_SALES_RENTALS_WORKSPACE_ALLOWLIST`; slugs/names such as `produktive` are accepted only as an operational fallback.
 
 Do not enable the deeper Rentals workflow flags until the staging workflow has seeded agencies, departments, agents, landlords, tenants, listings, applications, and lease shell records.
 
@@ -39,13 +51,13 @@ For the first Rentals build, production promotion requires:
 
 - staging env points at the non-production Supabase project
 - Vercel preview/staging env does not point at production Supabase
-- Rentals flags remain off until the first controlled staging proof
+- Rentals remains hidden in production except for an explicit workspace/user private-beta allowlist
 - migrations are applied and verified in staging before production
 - pilot agency enablement is feature-flagged, not global
 
 ## Implemented Shell Phases
 
-- Phase 2 adds the staging-only Sales/Rentals workspace selector and `businessWorkspace` context.
+- Phase 2 adds the gated Sales/Rentals workspace selector and `businessWorkspace` context.
 - Phase 3 adds Rentals navigation under `/agent/rentals/*` with guarded placeholder routes. Sales routes remain unchanged.
 - Phase 4 replaces `/agent/rentals/listings` with the first rental listing capture workflow. It creates guarded rental private-listing drafts, stores rental-specific facts in canonical JSON/notes, and syncs a Property24 publication draft with `listingType: Rental`.
 - Phase 5 replaces `/agent/rentals/pipeline/applications` with the first tenant application capture workflow. It records tenant details, documents, affordability, references, credit status, and landlord approval as guarded rental application activity against rental listings.

@@ -75,6 +75,7 @@ import {
   isBondFinanceType,
   normalizeFinanceType,
 } from '../core/transactions/financeType'
+import { resolveTransactionSaleProfile } from '../core/transactions/transactionSaleProfile.js'
 import { buildBuyerOnboardingCompletionHook } from '../core/transactions/buyerOnboardingCompletionHook.js'
 import {
   buildBuyerOnboardingCompletionParticipantPatch,
@@ -7926,6 +7927,80 @@ function normalizeChecklistTraceRole(value = '') {
     .join(' ')
 }
 
+function getTransactionSellerPartyRequirementMeta(transaction = {}) {
+  const saleProfile = resolveTransactionSaleProfile({ transaction })
+  if (saleProfile.isDeveloperSale) {
+    return {
+      isDeveloperSale: true,
+      partyRole: 'developer',
+      partyLabel: 'Developer',
+      documentsLabel: 'Developer Documents',
+      onboardingWorkflow: 'OTP / Developer onboarding',
+      deferredReason: 'Developer requirements are deferred until OTP is active.',
+      unknownEntityReason: 'Developer entity type is not captured yet.',
+      inactiveReason: 'Developer requirements are deferred until the developer workflow is active.',
+      noActiveReason: 'No developer requirements apply at this stage.',
+      triggeringCondition: 'developer-side requirements are active for this development sale stage',
+    }
+  }
+  return {
+    isDeveloperSale: false,
+    partyRole: 'seller',
+    partyLabel: 'Seller',
+    documentsLabel: 'Seller Documents',
+    onboardingWorkflow: 'OTP / Seller onboarding',
+    deferredReason: 'Seller requirements are deferred until OTP is active.',
+    unknownEntityReason: 'Seller type is not captured yet.',
+    inactiveReason: 'Seller requirements are deferred until the seller workflow is active.',
+    noActiveReason: 'No seller requirements apply at this stage.',
+    triggeringCondition: 'seller-side requirements are active for this transaction stage',
+  }
+}
+
+function isSellerPartyRequirement(row = {}, partyMeta = getTransactionSellerPartyRequirementMeta()) {
+  const key = String(row?.document_key || row?.key || row?.id || '').trim().toLowerCase()
+  const groupKey = String(row?.group_key || row?.groupKey || row?.group || '').trim().toLowerCase()
+  const expectedFromRole = String(row?.required_from_role || row?.expectedFromRole || row?.requiredFrom || '').trim().toLowerCase()
+  const appliesTo = String(row?.appliesTo || row?.applies_to || '').trim().toLowerCase()
+  const category = String(row?.category || row?.documentCategory || row?.document_category || '').trim().toLowerCase()
+
+  if (
+    groupKey.includes('seller') ||
+    key === 'seller_fica' ||
+    key.startsWith('seller_') ||
+    (expectedFromRole === 'seller' && !groupKey.includes('cancellation'))
+  ) {
+    return true
+  }
+
+  if (!partyMeta.isDeveloperSale) return false
+  return (
+    expectedFromRole === 'developer' ||
+    appliesTo === 'developer' ||
+    category === 'development_documents' ||
+    key.startsWith('developer_') ||
+    ['unit_schedule', 'building_plans', 'occupation_certificate', 'hoa_body_corporate_rules', 'sectional_title_documents', 'nhbrc_compliance_documents'].includes(key)
+  )
+}
+
+function relabelDeveloperRequirement(requirement = {}, partyMeta = getTransactionSellerPartyRequirementMeta()) {
+  if (!partyMeta.isDeveloperSale) return requirement
+  const sellerToDeveloper = (value = '') => String(value || '').replace(/\b[Ss]eller\b/g, (match) => (match === 'seller' ? 'developer' : 'Developer'))
+  const requiredFrom = String(requirement.requiredFrom || requirement.required_from_role || '').trim().toLowerCase()
+  const appliesTo = String(requirement.appliesTo || requirement.applies_to || '').trim().toLowerCase()
+
+  return {
+    ...requirement,
+    label: sellerToDeveloper(requirement.label),
+    description: sellerToDeveloper(requirement.description),
+    reason: requirement.reason
+      ? sellerToDeveloper(requirement.reason)
+      : partyMeta.triggeringCondition,
+    requiredFrom: requiredFrom === 'seller' ? partyMeta.partyRole : requirement.requiredFrom,
+    appliesTo: appliesTo === 'seller' ? partyMeta.partyRole : requirement.appliesTo,
+  }
+}
+
 function buildRequirementDocumentReference(row = {}, context = {}) {
   return resolveCrossModuleDocumentReference(
     row.canonicalDocumentKey ||
@@ -7979,6 +8054,7 @@ function getRequirementWorkflowMetadata(row = {}, context = {}) {
   const mainStageIndex = getMainStageIndex(mainStage)
   const financeVisible = mainStageIndex >= getMainStageIndex('FIN')
   const preCollectionAllowed = FINANCE_PRE_COLLECTION_DOCUMENT_KEYS.has(key)
+  const sellerPartyMeta = getTransactionSellerPartyRequirementMeta(context?.transaction)
 
   let owningWorkflow = 'Transaction Documents'
   let visibleSection = 'transfer_documents'
@@ -7996,13 +8072,8 @@ function getRequirementWorkflowMetadata(row = {}, context = {}) {
     owningWorkflow = 'Transfer of Property'
     visibleSection = 'transfer_documents'
     blockingStage = 'ATTY'
-  } else if (
-    groupKey.includes('seller') ||
-    key === 'seller_fica' ||
-    key.startsWith('seller_') ||
-    (expectedFromRole === 'seller' && !groupKey.includes('cancellation'))
-  ) {
-    owningWorkflow = 'OTP / Seller onboarding'
+  } else if (isSellerPartyRequirement(row, sellerPartyMeta)) {
+    owningWorkflow = sellerPartyMeta.onboardingWorkflow
     visibleSection = 'seller_documents'
     blockingStage = 'OTP'
   } else if (groupKey.includes('cancellation') || key.includes('cancellation')) {
@@ -8052,8 +8123,8 @@ function inferRequirementTriggeringCondition(row = {}, context = {}) {
   if (key === 'passport_copy') return 'buyer persona resolved as foreign purchaser'
   if (key === 'source_of_funds') return 'foreign purchaser or cash-source compliance path'
   if (key.includes('cancellation')) return 'seller_has_existing_bond = true'
-  if (key === 'seller_fica' || key.startsWith('seller_'))
-    return 'seller-side requirements are active for this transaction stage'
+  if (key === 'seller_fica' || key.startsWith('seller_') || key.startsWith('developer_'))
+    return getTransactionSellerPartyRequirementMeta(context?.transaction).triggeringCondition
   if (key === 'transfer_documents') return 'transaction entered transfer workflow document set'
   if (key === 'otp' || key === 'information_sheet') return 'base buyer onboarding requirements'
   return 'legacy requirement generator'
@@ -9010,10 +9081,11 @@ function mergeLiveRequirementRows(expectedRows = [], persistedRows = [], context
 }
 
 function buildSupplementalAttorneyRequirementRows({ transaction = null, currentMainStage = 'AVAIL' } = {}) {
+  const sellerPartyMeta = getTransactionSellerPartyRequirementMeta(transaction)
   if (!transaction?.id) {
     return {
       rows: [],
-      sellerEmptyReason: 'Seller details are not captured yet.',
+      sellerEmptyReason: `${sellerPartyMeta.partyLabel} details are not captured yet.`,
     }
   }
 
@@ -9022,14 +9094,14 @@ function buildSupplementalAttorneyRequirementRows({ transaction = null, currentM
   if (mainStageIndex < getMainStageIndex('OTP')) {
     return {
       rows: [],
-      sellerEmptyReason: 'Seller requirements are deferred until OTP is active.',
+      sellerEmptyReason: sellerPartyMeta.deferredReason,
     }
   }
 
   const resolved = resolveLegalDocumentRequirements(transaction || {})
   const facts = resolved?.facts || {}
-  if (facts.sellerEntityType === 'unknown') {
-    return { rows: [], sellerEmptyReason: 'Seller type is not captured yet.' }
+  if (!sellerPartyMeta.isDeveloperSale && facts.sellerEntityType === 'unknown') {
+    return { rows: [], sellerEmptyReason: sellerPartyMeta.unknownEntityReason }
   }
 
   const rows = (resolved?.requirements || [])
@@ -9045,25 +9117,21 @@ function buildSupplementalAttorneyRequirementRows({ transaction = null, currentM
       if (requirement.category === 'property_compliance' || requirement.laneKey === 'transfer') {
         return mainStageIndex >= getMainStageIndex('ATTY')
       }
-      return (
-        requirement.requiredFrom === 'seller' ||
-        requirement.appliesTo === 'seller' ||
-        requirement.id === 'seller_fica' ||
-        String(requirement.id || '').startsWith('seller_')
-      )
+      return isSellerPartyRequirement(requirement, sellerPartyMeta)
     })
     .map((requirement, index) => {
+      const displayRequirement = relabelDeveloperRequirement(requirement, sellerPartyMeta)
       let groupKey = 'seller_documents'
-      let owningWorkflow = 'OTP / Seller onboarding'
+      let owningWorkflow = sellerPartyMeta.onboardingWorkflow
       let visibleSection = 'seller_documents'
       let blockingStage = 'OTP'
 
-      if (requirement.laneKey === 'cancellation' && requirement.id !== 'existing_bond_account_details') {
+      if (displayRequirement.laneKey === 'cancellation' && displayRequirement.id !== 'existing_bond_account_details') {
         groupKey = 'cancellation_documents'
         owningWorkflow = 'Bond Cancellation'
         visibleSection = 'transfer_documents'
         blockingStage = 'ATTY'
-      } else if (requirement.category === 'property_compliance' || requirement.laneKey === 'transfer') {
+      } else if (displayRequirement.category === 'property_compliance' || displayRequirement.laneKey === 'transfer') {
         groupKey = 'transfer'
         owningWorkflow = 'Transfer of Property'
         visibleSection = 'transfer_documents'
@@ -9072,31 +9140,35 @@ function buildSupplementalAttorneyRequirementRows({ transaction = null, currentM
 
       return withRequirementTraceMetadata(
         {
-          id: `supplemental:${transaction.id}:${requirement.id}`,
+          id: `supplemental:${transaction.id}:${displayRequirement.id}`,
           transactionId: transaction.id,
-          key: requirement.id,
-          label: requirement.label,
+          key: displayRequirement.id,
+          label: displayRequirement.label,
           groupKey,
           groupLabel:
             visibleSection === 'seller_documents'
-              ? 'Seller Documents'
+              ? sellerPartyMeta.documentsLabel
               : visibleSection === 'finance_documents'
                 ? 'Finance'
                 : 'Transfer / Attorney',
           group:
             visibleSection === 'seller_documents'
-              ? 'Seller Documents'
+              ? sellerPartyMeta.documentsLabel
               : visibleSection === 'finance_documents'
                 ? 'Finance'
                 : 'Transfer / Attorney',
-          description: requirement.description || requirement.reason || '',
-          requirementLevel: requirement.required === false ? 'optional' : 'required',
-          isRequired: requirement.required !== false,
+          description: displayRequirement.description || displayRequirement.reason || '',
+          requirementLevel: displayRequirement.required === false ? 'optional' : 'required',
+          isRequired: displayRequirement.required !== false,
           isUploaded: false,
           isEnabled: true,
-          status: requirement.required === false ? 'not_required' : 'missing',
-          expectedFromRole: requirement.requiredFrom || 'seller',
-          visibilityScope: requirement.visibilityDefault === 'client_visible' ? 'client' : 'shared',
+          status: displayRequirement.required === false ? 'not_required' : 'missing',
+          expectedFromRole: displayRequirement.requiredFrom || sellerPartyMeta.partyRole,
+          visibilityScope: sellerPartyMeta.isDeveloperSale
+            ? 'shared'
+            : displayRequirement.visibilityDefault === 'client_visible'
+              ? 'client'
+              : 'shared',
           allowMultiple: false,
           uploadedDocumentId: null,
           uploadedAt: null,
@@ -9110,11 +9182,11 @@ function buildSupplementalAttorneyRequirementRows({ transaction = null, currentM
           visibleSection,
           blockingStage,
           preCollectionAllowed: false,
-          isBlocking: requirement.required !== false,
+          isBlocking: displayRequirement.required !== false,
           sourceEngine: 'attorney_document_requirements_resolver',
           sourceRuleOrLegacyPath:
             '/src/services/attorneyWorkflow/attorneyDocumentRequirementsResolver.js#resolveLegalDocumentRequirements',
-          triggeringCondition: requirement.reason || 'Attorney workflow requirement',
+          triggeringCondition: displayRequirement.reason || 'Attorney workflow requirement',
           currentMainStageAtGeneration: mainStage,
           lastRecalculatedAt: transaction?.updated_at || transaction?.created_at || null,
           createdAt: transaction?.created_at || null,
@@ -9130,7 +9202,7 @@ function buildSupplementalAttorneyRequirementRows({ transaction = null, currentM
 
   return {
     rows,
-    sellerEmptyReason: rows.length ? '' : 'Seller requirements are deferred until the seller workflow is active.',
+    sellerEmptyReason: rows.length ? '' : sellerPartyMeta.inactiveReason,
   }
 }
 
@@ -9153,11 +9225,12 @@ function buildDocumentChecklistInsights({ transaction = null, checklist = [] } =
         : 'Finance type is still unknown.'
   }
 
-  let sellerEmptyReason = 'No seller requirements apply at this stage.'
+  const sellerPartyMeta = getTransactionSellerPartyRequirementMeta(transaction)
+  let sellerEmptyReason = sellerPartyMeta.noActiveReason
   if (getMainStageIndex(currentMainStage) < getMainStageIndex('OTP')) {
-    sellerEmptyReason = 'Seller requirements are deferred until OTP is active.'
-  } else if (facts.sellerEntityType === 'unknown') {
-    sellerEmptyReason = 'Seller type is not captured yet.'
+    sellerEmptyReason = sellerPartyMeta.deferredReason
+  } else if (!sellerPartyMeta.isDeveloperSale && facts.sellerEntityType === 'unknown') {
+    sellerEmptyReason = sellerPartyMeta.unknownEntityReason
   }
 
   let transferEmptyReason = 'No transfer or attorney requirements are active yet.'
@@ -28656,7 +28729,16 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
   const actorRole = normalizeRoleType(actorProfile.role || 'agent')
   const allowIncomplete = Boolean(options?.allowIncomplete)
 
-  const transactionType = normalizeStoredTransactionType(setup?.transactionType, 'developer_sale')
+  const sourceContext = options?.sourceContext && typeof options.sourceContext === 'object' ? options.sourceContext : {}
+  const saleProfile = resolveTransactionSaleProfile({
+    setup: {
+      ...setup,
+      transactionType: setup?.transactionType || setup?.transaction_type || 'developer_sale',
+    },
+    sourceContext,
+    transaction: setup,
+  })
+  const transactionType = saleProfile.transactionType || normalizeStoredTransactionType(setup?.transactionType, 'developer_sale')
   const propertyType = normalizeTransactionPropertyType(setup?.propertyType)
 
   if (transactionType === 'developer_sale' && (!setup?.developmentId || !setup?.unitId)) {
@@ -28679,7 +28761,6 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     throw new Error('Buyer full name is required.')
   }
 
-  const sourceContext = options?.sourceContext && typeof options.sourceContext === 'object' ? options.sourceContext : {}
   const linkedPrivateListingId = transactionType === 'private_property'
     ? normalizeNullableUuid(
       sourceContext.listingId ||
@@ -28892,6 +28973,8 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     unit_id: transactionType === 'developer_sale' ? setup.unitId : null,
     buyer_id: buyer?.id || null,
     transaction_type: transactionType,
+    sale_channel: saleProfile.saleChannel,
+    seller_party_type: saleProfile.sellerPartyType,
     property_type: transactionType === 'private_property' ? propertyType : null,
     property_address_line_1: normalizeNullableText(setup.propertyAddressLine1),
     property_address_line_2: normalizeNullableText(setup.propertyAddressLine2),
@@ -28970,6 +29053,8 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     unit_id: transactionType === 'developer_sale' ? setup.unitId : null,
     buyer_id: buyer?.id || null,
     transaction_type: transactionType,
+    sale_channel: saleProfile.saleChannel,
+    seller_party_type: saleProfile.sellerPartyType,
     property_type: transactionType === 'private_property' ? propertyType : null,
     property_address_line_1: normalizeNullableText(setup.propertyAddressLine1),
     property_address_line_2: normalizeNullableText(setup.propertyAddressLine2),
@@ -29129,6 +29214,8 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       isMissingColumnError(transactionResult.error, 'current_main_stage') ||
       isMissingColumnError(transactionResult.error, 'comment') ||
       isMissingColumnError(transactionResult.error, 'owner_user_id') ||
+      isMissingColumnError(transactionResult.error, 'sale_channel') ||
+      isMissingColumnError(transactionResult.error, 'seller_party_type') ||
       isMissingColumnError(transactionResult.error, 'access_level'))
   ) {
     const fallbackPayload = {
@@ -29183,6 +29270,8 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     delete fallbackPayload.agent_commission_amount
     delete fallbackPayload.agency_commission_amount
     delete fallbackPayload.owner_user_id
+    delete fallbackPayload.sale_channel
+    delete fallbackPayload.seller_party_type
     delete fallbackPayload.access_level
     if (isMissingColumnError(transactionResult.error, 'organisation_id')) {
       delete fallbackPayload.organisation_id
@@ -29288,6 +29377,8 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
         isMissingColumnError(transactionResult.error, 'current_main_stage') ||
         isMissingColumnError(transactionResult.error, 'comment') ||
         isMissingColumnError(transactionResult.error, 'owner_user_id') ||
+        isMissingColumnError(transactionResult.error, 'sale_channel') ||
+        isMissingColumnError(transactionResult.error, 'seller_party_type') ||
         isMissingColumnError(transactionResult.error, 'access_level'))
     ) {
       const fallbackPayload = {
@@ -29342,6 +29433,8 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       delete fallbackPayload.agent_commission_amount
       delete fallbackPayload.agency_commission_amount
       delete fallbackPayload.owner_user_id
+      delete fallbackPayload.sale_channel
+      delete fallbackPayload.seller_party_type
       delete fallbackPayload.access_level
       if (isMissingColumnError(transactionResult.error, 'organisation_id')) {
         delete fallbackPayload.organisation_id
@@ -29401,6 +29494,8 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
         isMissingColumnError(transactionResult.error, 'current_main_stage') ||
         isMissingColumnError(transactionResult.error, 'comment') ||
         isMissingColumnError(transactionResult.error, 'owner_user_id') ||
+        isMissingColumnError(transactionResult.error, 'sale_channel') ||
+        isMissingColumnError(transactionResult.error, 'seller_party_type') ||
         isMissingColumnError(transactionResult.error, 'access_level'))
     ) {
       const fallbackPayload = {
@@ -29454,6 +29549,8 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       delete fallbackPayload.agent_commission_amount
       delete fallbackPayload.agency_commission_amount
       delete fallbackPayload.owner_user_id
+      delete fallbackPayload.sale_channel
+      delete fallbackPayload.seller_party_type
       delete fallbackPayload.access_level
       if (isMissingColumnError(transactionResult.error, 'organisation_id')) {
         delete fallbackPayload.organisation_id
@@ -29532,6 +29629,9 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       developmentId: setup.developmentId || null,
       listingId: linkedPrivateListingId,
       transactionType,
+      routingTransactionType: saleProfile.routingTransactionType,
+      saleChannel: saleProfile.saleChannel,
+      sellerPartyType: saleProfile.sellerPartyType,
       propertyType: transactionPayload.property_type || null,
       propertyAddressLine1: transactionPayload.property_address_line_1 || null,
       originPath: options?.creationOrigin || null,

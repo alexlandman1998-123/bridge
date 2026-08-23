@@ -155,6 +155,10 @@ function roleRequirement(key, requiredBy, { requiredAtCreation = false, reason =
   }
 }
 
+function isDevelopmentSaleTransactionType(value) {
+  return ['development_sale', 'developer_sale', 'development'].includes(String(value || '').trim().toLowerCase())
+}
+
 export function getMvpLaunchRoleDefinition(roleKey = '') {
   return MVP_LAUNCH_ROLE_CATALOG[String(roleKey || '').trim()] || null
 }
@@ -163,7 +167,7 @@ export function resolveMvpLaunchRolePlan(profile = {}) {
   const financeType = String(profile.financeType || '').trim().toLowerCase()
   const buyerEntityType = String(profile.buyerEntityType || '').trim().toLowerCase()
   const sellerEntityType = String(profile.sellerEntityType || '').trim().toLowerCase()
-  const isDevelopmentSale = profile.transactionType === 'development_sale'
+  const isDevelopmentSale = isDevelopmentSaleTransactionType(profile.transactionType)
   const buyerCount = Number(profile.buyerCount || profile.additionalBuyerCount || 0)
   const hasBondComponent = financeType === 'bond' || financeType === 'hybrid'
   const roles = [

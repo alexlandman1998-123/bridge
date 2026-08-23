@@ -111,6 +111,14 @@ function normalizePartnerType(value = 'all') {
   return PARTNER_TYPES.some((item) => item.key === normalized) ? normalized : 'all'
 }
 
+function normalizeDeveloperPartnerPageType(value = '') {
+  const normalized = normalizeLower(value)
+  if (['attorney', 'attorney_firm', 'conveyancer', 'transfer_attorney'].includes(normalized)) return 'transfer_attorney'
+  if (['bond', 'bond_originator'].includes(normalized)) return 'bond_originator'
+  if (['agent', 'agency', 'agency_network', 'estate_agency', 'selling_agent'].includes(normalized)) return 'agency'
+  return normalized || 'agency'
+}
+
 function isValidEmail(value = '') {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizeText(value).toLowerCase())
 }
@@ -227,10 +235,11 @@ function RowActionButton({ children, onClick, disabled = false, variant = 'secon
 }
 
 function PartnerRow({ relationship, busyKey = '', onAccept, onGenerateAgreement, onSendInvite, onWaiveAgreement }) {
+  const isInvitationRow = relationship.rowType === 'invitation'
   const hasOpenAgreement = Boolean(relationship.activeAgreement)
-  const canAccept = relationship.status === 'invited'
-  const canGenerate = ['accepted', 'agreement_pending'].includes(relationship.status) && !hasOpenAgreement
-  const canWaive = ['accepted', 'agreement_pending'].includes(relationship.status) && relationship.agreementStatus !== 'waived'
+  const canAccept = !isInvitationRow && relationship.status === 'invited'
+  const canGenerate = !isInvitationRow && ['accepted', 'agreement_pending'].includes(relationship.status) && !hasOpenAgreement
+  const canWaive = !isInvitationRow && ['accepted', 'agreement_pending'].includes(relationship.status) && relationship.agreementStatus !== 'waived'
 
   return (
     <div className="grid gap-4 border-b border-[#e5edf6] px-4 py-4 last:border-b-0 xl:grid-cols-[minmax(260px,1.2fr)_150px_150px_190px_120px_minmax(180px,auto)] xl:items-center">
@@ -253,6 +262,11 @@ function PartnerRow({ relationship, busyKey = '', onAccept, onGenerateAgreement,
       </div>
       <p className="text-sm text-[#60758d]">{formatDate(relationship.updatedAt || relationship.invitedAt)}</p>
       <div className="flex flex-wrap gap-2 xl:justify-end">
+        {isInvitationRow ? (
+          <span className="inline-flex h-9 items-center rounded-[8px] border border-dashed border-[#d8e2ef] bg-[#fbfcfe] px-3 text-xs font-semibold text-[#52677f]">
+            Pending invite record
+          </span>
+        ) : null}
         {canAccept ? (
           <RowActionButton
             disabled={busyKey === `send:${relationship.id}`}
@@ -758,6 +772,7 @@ function DeveloperPartnersPage() {
   const [snapshot, setSnapshot] = useState({
     schemaReady: true,
     relationships: [],
+    invitations: [],
     agreements: [],
     terms: [],
     defaults: [],
@@ -896,9 +911,48 @@ function DeveloperPartnersPage() {
     return new Map(snapshot.relationships.map((relationship) => [relationship.id, relationship]))
   }, [snapshot.relationships])
 
+  const pendingInviteRows = useMemo(() => {
+    const currentOrganisationId = normalizeText(snapshot.accessContext?.organisationId || workspaceId)
+
+    return (snapshot.invitations || [])
+      .map((invitation) => {
+        const senderIsCurrentOrganisation = normalizeText(invitation.fromOrganisationId) === currentOrganisationId
+        const partnerName = senderIsCurrentOrganisation
+          ? invitation.toOrganisationName || invitation.invitedEmail
+          : invitation.fromOrganisationName || invitation.invitedEmail
+        const partnerType = normalizeDeveloperPartnerPageType(
+          senderIsCurrentOrganisation ? invitation.toWorkspaceType : invitation.fromWorkspaceType,
+        )
+        return {
+          id: `invite:${invitation.id}`,
+          rowType: 'invitation',
+          invitationId: invitation.id,
+          partnerOrganisationId: senderIsCurrentOrganisation ? invitation.toOrganisationId : invitation.fromOrganisationId,
+          partnerOrganisation: null,
+          partnerName: normalizeText(partnerName) || invitation.invitedEmail || 'Pending invite',
+          partnerInvitationEmail: normalizeText(invitation.invitedEmail || invitation.recipientContactEmail),
+          partnerType,
+          partnerTypeLabel: TYPE_META[partnerType]?.label || 'Partner',
+          status: 'invited',
+          agreementStatus: 'not_started',
+          scopeType: normalizeText(invitation.scopeType || invitation.scope_type) || 'organisation',
+          scopeId: normalizeText(invitation.scopeId || invitation.scope_id),
+          scopeName: normalizeText(invitation.scopeName || invitation.scope_name),
+          invitedAt: invitation.createdAt || invitation.created_at || null,
+          updatedAt: invitation.respondedAt || invitation.responded_at || invitation.createdAt || invitation.created_at || null,
+          createdAt: invitation.createdAt || invitation.created_at || null,
+        }
+      })
+      .filter((row) => Boolean(row.id))
+  }, [snapshot.accessContext?.organisationId, snapshot.invitations, workspaceId])
+
+  const combinedPartnerRows = useMemo(() => {
+    return [...snapshot.relationships, ...pendingInviteRows]
+  }, [pendingInviteRows, snapshot.relationships])
+
   const filteredRelationships = useMemo(() => {
     const query = normalizeLower(searchTerm)
-    return snapshot.relationships.filter((relationship) => {
+    return combinedPartnerRows.filter((relationship) => {
       if (typeFilter !== 'all' && relationship.partnerType !== typeFilter) return false
       if (!query) return true
       return [
@@ -909,7 +963,7 @@ function DeveloperPartnersPage() {
         getScopeLabel(relationship),
       ].some((value) => normalizeLower(value).includes(query))
     })
-  }, [searchTerm, snapshot.relationships, typeFilter])
+  }, [combinedPartnerRows, searchTerm, typeFilter])
 
   const visibleRelationships = useMemo(() => {
     if (activeTab === 'pending') return filteredRelationships.filter((relationship) => relationship.status === 'invited')
@@ -937,6 +991,10 @@ function DeveloperPartnersPage() {
   }, [activeTab, relationshipsById, searchTerm, snapshot.agreements, typeFilter])
 
   const headerCounts = snapshot.metrics.byPartnerType || {}
+  const displayMetrics = useMemo(() => ({
+    ...snapshot.metrics,
+    pendingInvites: filteredRelationships.filter((relationship) => relationship.status === 'invited').length,
+  }), [filteredRelationships, snapshot.metrics])
 
   const handleTypeFilterChange = useCallback((nextType) => {
     const normalizedType = normalizePartnerType(nextType)
@@ -1007,11 +1065,11 @@ function DeveloperPartnersPage() {
         ) : null}
 
         <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-          <MetricCard label="Total Partners" value={formatNumber(snapshot.metrics.total)} subtext="Relationship records" icon={Building2} />
-          <MetricCard label="Active" value={formatNumber(snapshot.metrics.active)} subtext="Accepted or active" icon={CheckCircle2} />
-          <MetricCard label="Pending Invites" value={formatNumber(snapshot.metrics.pendingInvites)} subtext="Awaiting response" icon={Clock3} />
-          <MetricCard label="Active Agreements" value={formatNumber(snapshot.metrics.activeAgreements)} subtext="Signed or active" icon={FileText} />
-          <MetricCard label="Agreements Pending" value={formatNumber(snapshot.metrics.agreementPending)} subtext="Need mandate/SLA action" icon={ShieldCheck} />
+          <MetricCard label="Total Partners" value={formatNumber(displayMetrics.total)} subtext="Relationship records" icon={Building2} />
+          <MetricCard label="Active" value={formatNumber(displayMetrics.active)} subtext="Accepted or active" icon={CheckCircle2} />
+          <MetricCard label="Pending Invites" value={formatNumber(displayMetrics.pendingInvites)} subtext="Awaiting response" icon={Clock3} />
+          <MetricCard label="Active Agreements" value={formatNumber(displayMetrics.activeAgreements)} subtext="Signed or active" icon={FileText} />
+          <MetricCard label="Agreements Pending" value={formatNumber(displayMetrics.agreementPending)} subtext="Need mandate/SLA action" icon={ShieldCheck} />
         </section>
 
         <section className="rounded-[8px] border border-[#dde7f2] bg-white shadow-[0_12px_34px_rgba(15,23,42,0.05)]">

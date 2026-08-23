@@ -244,6 +244,27 @@ assert.deepEqual(
   'general filter should include generated/internal matter records through canonical category mapping',
 )
 
+const developerRequirementModel = buildMatterDocumentWorkspaceModel({
+  transaction: { ...transaction, transaction_type: 'developer_sale', development_id: 'dev-1' },
+  documents: [],
+  requiredDocumentChecklist: [
+    {
+      id: 'req-developer-pack',
+      canonicalRequirementInstanceId: 'cri-developer-pack',
+      key: 'developer_sale_pack',
+      label: 'Developer Sale Pack',
+      groupKey: 'seller_documents',
+      groupLabel: 'Developer Documents',
+      visibleSection: 'seller_documents',
+      status: 'missing',
+      expectedFromRole: 'developer',
+    },
+  ],
+})
+assert.equal(developerRequirementModel.requiredRows[0].category, 'seller')
+assert.equal(developerRequirementModel.requiredRows[0].canonicalCategory, 'seller')
+assert.equal(developerRequirementModel.categorySummaries.find((row) => row.key === 'seller')?.requiredCount, 1)
+
 const scopedRequirements = [
   {
     id: 'req-transfer-pack',

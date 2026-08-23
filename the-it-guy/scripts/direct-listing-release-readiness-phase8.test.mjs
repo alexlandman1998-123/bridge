@@ -36,6 +36,8 @@ test('Phase 8 release report passes seeded global and Kingstons scenarios', () =
   assert.equal(report.globalContract.uploadsRequired, false)
   assert.equal(report.globalContract.sellerPortalReadsDirectFormat, true)
   assert.equal(report.globalContract.kingstonsSafe, true)
+  assert.equal(report.globalContract.creationBlocked, false)
+  assert.equal(report.globalContract.postCreateActionsVisible, true)
 })
 
 test('Phase 8 release report blocks any upload-gated direct listing regression', () => {
@@ -91,7 +93,8 @@ test('Phase 8 static contract keeps Quick Add, Seller Portal, and audit wiring c
   assert.match(agentListingsSource, /uploadsRequired: false/)
   assert.match(agentListingsSource, /SELLER_PORTAL_ACTIVATION_SOURCES\.manualListing/)
   assert.match(sellerOnboardingSource, /buildSellerPortalFormDataFromDirectListing/)
-  assert.match(sellerOnboardingSource, /Document uploads are not required from this declaration summary/)
+  assert.match(sellerOnboardingSource, /upload them here so the listing can move toward activation or publish/)
   assert.match(agentListingDetailSource, /buildDirectListingOperationalSummary/)
-  assert.match(agentListingDetailSource, /Declarations are audit flags only and do not require uploads/)
+  assert.match(agentListingDetailSource, /Listing creation is allowed/)
+  assert.match(agentListingDetailSource, /Post-create Checklist/)
 })

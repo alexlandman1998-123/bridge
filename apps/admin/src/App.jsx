@@ -7,6 +7,7 @@ import {
   ChevronRight,
   CircleDollarSign,
   Clock3,
+  Copy,
   Download,
   FileText,
   Filter,
@@ -195,6 +196,39 @@ const ROLE_LANDING_DETAILS = {
     tag: 'Transfer teams',
   },
 }
+
+const AGENCY_ONBOARDING_STATUS_OPTIONS = [
+  { id: 'not_started', label: 'Awaiting submission' },
+  { id: 'sent', label: 'Link sent' },
+  { id: 'opened', label: 'Opened' },
+  { id: 'in_progress', label: 'Onboarding in progress' },
+  { id: 'submitted', label: 'Submitted' },
+  { id: 'approved', label: 'Approved' },
+  { id: 'active', label: 'Active' },
+  { id: 'expired', label: 'Expired' },
+  { id: 'cancelled', label: 'Cancelled' },
+]
+
+const AGENCY_ONBOARDING_STEP_KEYS = ['agency_details', 'principal', 'setup', 'agreement']
+const AGENCY_ONBOARDING_STEP_LABELS = ['Agency details', 'Principal', 'Agency setup', 'Agreement']
+const AGENCY_ONBOARDING_AGREEMENT_ID = 'arch9-agency-services-agreement'
+const AGENCY_ONBOARDING_AGREEMENT_VERSION = '2026.08-v1'
+const AGENCY_ONBOARDING_AGREEMENT_TITLE = 'Arch9 Agency Services Agreement'
+const AGENCY_ONBOARDING_AGREEMENT_PARAGRAPHS = [
+  'This agreement confirms that the person completing onboarding is authorised to act for the agency and to provide information on its behalf.',
+  'Arch9 may use the information supplied during onboarding to configure the agency workspace, route communications, and support the agency setup process.',
+  'The agency confirms that the information provided is accurate to the best of its knowledge and agrees to keep Arch9 informed of material changes.',
+  'Electronic acceptance of this agreement carries the same effect as a handwritten signature for the purpose of internal Arch9 onboarding records.',
+]
+const AGENCY_ONBOARDING_AGREEMENT_TEXT = [
+  AGENCY_ONBOARDING_AGREEMENT_TITLE,
+  '',
+  ...AGENCY_ONBOARDING_AGREEMENT_PARAGRAPHS.map((paragraph, index) => `${index + 1}. ${paragraph}`),
+].join('\n')
+const AGENCY_ONBOARDING_PLAN_KEYS = ['plan_name', 'planName', 'package_name', 'packageName', 'plan_summary', 'planSummary']
+const AGENCY_ONBOARDING_ADDRESS_KEYS = ['address', 'addressLine1', 'address_line_1', 'main_office_address', 'mainOfficeAddress']
+const AGENCY_ONBOARDING_AGENT_RANGE_OPTIONS = ['1-5', '6-10', '11-20', '21-50', '50+']
+const AGENCY_ONBOARDING_BRANCH_OPTIONS = ['1', '2', '3', '4', '5+']
 
 const NAV_ICONS = {
   dashboard: Home,
@@ -1008,13 +1042,120 @@ function formatSource(source = '') {
   return SOURCE_OPTIONS.find((item) => item.id === source)?.label || normalizeStageLabel(source)
 }
 
+function formatAgencyOnboardingStatus(status = '') {
+  return AGENCY_ONBOARDING_STATUS_OPTIONS.find((item) => item.id === status)?.label || normalizeStageLabel(status)
+}
+
+function getAgencyOnboardingTone(status = '') {
+  if (['approved', 'active'].includes(status)) return 'success'
+  if (['submitted'].includes(status)) return 'accent'
+  if (['opened', 'in_progress', 'sent'].includes(status)) return 'warm'
+  if (['expired', 'cancelled'].includes(status)) return 'danger'
+  return 'neutral'
+}
+
+function getAgencyOnboardingStepIndex(currentStep = '') {
+  const step = normalizeText(currentStep)
+  const index = AGENCY_ONBOARDING_STEP_KEYS.indexOf(step)
+  return index >= 0 ? index : 0
+}
+
+function buildAgencyOnboardingUrl(token = '') {
+  if (!token) return ''
+  if (typeof window === 'undefined') return `/onboarding/agency/${token}`
+  return `${window.location.origin}/onboarding/agency/${encodeURIComponent(token)}`
+}
+
+function buildAgencyOnboardingPath(token = '') {
+  return token ? `/onboarding/agency/${encodeURIComponent(token)}` : ''
+}
+
+function formatAgencyOnboardingStep(step = '') {
+  return AGENCY_ONBOARDING_STEP_LABELS[getAgencyOnboardingStepIndex(step)] || normalizeStageLabel(step)
+}
+
+function getAgencyOnboardingTokenFromPath(pathname = '') {
+  const match = String(pathname || '').match(/^\/onboarding\/agency\/([^/?#]+)/)
+  return match ? decodeURIComponent(match[1] || '') : ''
+}
+
+function getAgencyPlanInfo(lead = {}) {
+  const values = [
+    lead.agencyOnboarding?.planName,
+    lead.agencyOnboarding?.packageName,
+    lead.agencyOnboarding?.formData?.plan_name,
+    lead.agencyOnboarding?.formData?.planName,
+    lead.agencyOnboarding?.formData?.package_name,
+    lead.agencyOnboarding?.formData?.packageName,
+    lead.agencyOnboarding?.formData?.plan_summary,
+    lead.agencyOnboarding?.formData?.planSummary,
+    lead.source_payload?.plan_name,
+    lead.source_payload?.package_name,
+    lead.source_payload?.plan_summary,
+  ]
+  const planName = values.find((value) => normalizeText(value))
+  const summary = normalizeText(
+    lead.agencyOnboarding?.formData?.plan_summary ||
+      lead.agencyOnboarding?.formData?.planSummary ||
+      lead.source_payload?.plan_summary ||
+      lead.source_payload?.planSummary ||
+      '',
+  )
+  return {
+    hasPlan: Boolean(normalizeText(planName)),
+    name: normalizeText(planName),
+    summary,
+  }
+}
+
 function normalizeInboundLead(row = {}) {
   const businessMetrics = row.business_metrics || row.businessMetrics || {}
   const selectedInterests = row.selected_interests || row.selectedInterests || []
+  const agencyOnboardingFormData = row.agency_onboarding_form_data || row.agencyOnboardingFormData || {}
+  const agencyOnboarding = {
+    activatedAt: row.agency_onboarding_activated_at || row.agencyOnboardingActivatedAt || '',
+    agreementAcceptedAt: row.agency_onboarding_agreement_accepted_at || row.agencyOnboardingAgreementAcceptedAt || '',
+    agreementAcceptedByEmail: row.agency_onboarding_agreement_accepted_by_email || row.agencyOnboardingAgreementAcceptedByEmail || '',
+    agreementAcceptedByName: row.agency_onboarding_agreement_accepted_by_name || row.agencyOnboardingAgreementAcceptedByName || '',
+    agreementAuditJson: row.agency_onboarding_agreement_audit_json || row.agencyOnboardingAgreementAuditJson || {},
+    agreementId: row.agency_onboarding_agreement_id || row.agencyOnboardingAgreementId || '',
+    agreementSnapshotJson: row.agency_onboarding_agreement_snapshot_json || row.agencyOnboardingAgreementSnapshotJson || {},
+    agreementText: row.agency_onboarding_agreement_text || row.agencyOnboardingAgreementText || '',
+    agreementVersion: row.agency_onboarding_agreement_version || row.agencyOnboardingAgreementVersion || '',
+    approvedAt: row.agency_onboarding_approved_at || row.agencyOnboardingApprovedAt || '',
+    cancelledAt: row.agency_onboarding_cancelled_at || row.agencyOnboardingCancelledAt || '',
+    contactEmail: row.agency_onboarding_contact_email || row.agencyOnboardingContactEmail || '',
+    contactFirstName: row.agency_onboarding_contact_first_name || row.agencyOnboardingContactFirstName || '',
+    contactLastName: row.agency_onboarding_contact_last_name || row.agencyOnboardingContactLastName || '',
+    contactPhone: row.agency_onboarding_contact_phone || row.agencyOnboardingContactPhone || '',
+    contactPosition: row.agency_onboarding_contact_position || row.agencyOnboardingContactPosition || '',
+    currentStep: row.agency_onboarding_current_step || row.agencyOnboardingCurrentStep || 'agency_details',
+    expiresAt: row.agency_onboarding_expires_at || row.agencyOnboardingExpiresAt || '',
+    firstOpenedAt: row.agency_onboarding_first_opened_at || row.agencyOnboardingFirstOpenedAt || '',
+    formData: agencyOnboardingFormData,
+    lastOpenedAt: row.agency_onboarding_last_opened_at || row.agencyOnboardingLastOpenedAt || '',
+    leadId: row.id,
+    linkCreatedAt: row.agency_onboarding_link_created_at || row.agencyOnboardingLinkCreatedAt || '',
+    linkSentAt: row.agency_onboarding_link_sent_at || row.agencyOnboardingLinkSentAt || '',
+    startedAt: row.agency_onboarding_started_at || row.agencyOnboardingStartedAt || '',
+    status: row.agency_onboarding_status || row.agencyOnboardingStatus || 'not_started',
+    submittedAt: row.agency_onboarding_submitted_at || row.agencyOnboardingSubmittedAt || '',
+    token: row.agency_onboarding_token || row.agencyOnboardingToken || '',
+  }
   return {
     ...row,
     businessMetrics,
     convertedAt: row.converted_at || row.convertedAt || '',
+    agencyOnboarding,
+    agencyOnboardingToken: agencyOnboarding.token,
+    agencyOnboardingStatus: agencyOnboarding.status,
+    agencyOnboardingCurrentStep: agencyOnboarding.currentStep,
+    agencyOnboardingFormData: agencyOnboarding.formData,
+    agencyOnboardingContactFirstName: agencyOnboarding.contactFirstName,
+    agencyOnboardingContactLastName: agencyOnboarding.contactLastName,
+    agencyOnboardingContactEmail: agencyOnboarding.contactEmail,
+    agencyOnboardingContactPhone: agencyOnboarding.contactPhone,
+    agencyOnboardingContactPosition: agencyOnboarding.contactPosition,
     fullName: [row.first_name || row.firstName, row.last_name || row.lastName].filter(Boolean).join(' '),
     id: row.id,
     organisationName: row.organisation_name || row.organisationName || '',
@@ -1028,6 +1169,22 @@ function normalizeInboundLead(row = {}) {
     status: row.status || 'new',
     createdAt: row.created_at || row.createdAt || '',
     updatedAt: row.updated_at || row.updatedAt || '',
+    agencyOnboardingAgreementAcceptedAt: agencyOnboarding.agreementAcceptedAt,
+    agencyOnboardingAgreementAcceptedByEmail: agencyOnboarding.agreementAcceptedByEmail,
+    agencyOnboardingAgreementAcceptedByName: agencyOnboarding.agreementAcceptedByName,
+    agencyOnboardingAgreementId: agencyOnboarding.agreementId,
+    agencyOnboardingAgreementText: agencyOnboarding.agreementText,
+    agencyOnboardingAgreementVersion: agencyOnboarding.agreementVersion,
+    agencyOnboardingActivatedAt: agencyOnboarding.activatedAt,
+    agencyOnboardingApprovedAt: agencyOnboarding.approvedAt,
+    agencyOnboardingCancelledAt: agencyOnboarding.cancelledAt,
+    agencyOnboardingExpiresAt: agencyOnboarding.expiresAt,
+    agencyOnboardingFirstOpenedAt: agencyOnboarding.firstOpenedAt,
+    agencyOnboardingLastOpenedAt: agencyOnboarding.lastOpenedAt,
+    agencyOnboardingLinkCreatedAt: agencyOnboarding.linkCreatedAt,
+    agencyOnboardingLinkSentAt: agencyOnboarding.linkSentAt,
+    agencyOnboardingStartedAt: agencyOnboarding.startedAt,
+    agencyOnboardingSubmittedAt: agencyOnboarding.submittedAt,
     utmCampaign: row.utm_campaign || row.utmCampaign || '',
     utmContent: row.utm_content || row.utmContent || '',
     utmMedium: row.utm_medium || row.utmMedium || '',
@@ -1506,6 +1663,76 @@ async function submitInboundLead(payload = {}, idempotencyKey = buildIdempotency
   return { data, error: error?.message || '' }
 }
 
+async function startAgencyOnboarding(leadId, patch = {}) {
+  if (!supabase) return { data: null, error: 'Supabase is not configured.' }
+  const { data, error } = await supabase.rpc('arch9_admin_start_agency_onboarding', {
+    p_lead_id: leadId,
+    p_patch: patch,
+  })
+  return { data: data ? normalizeInboundLead(data) : null, error: error?.message || '' }
+}
+
+async function sendAgencyOnboardingLink(leadId, patch = {}) {
+  if (!supabase) return { data: null, error: 'Supabase is not configured.' }
+  const { data, error } = await supabase.rpc('arch9_admin_send_agency_onboarding_link', {
+    p_lead_id: leadId,
+    p_patch: patch,
+  })
+  return { data: data ? normalizeInboundLead(data) : null, error: error?.message || '' }
+}
+
+async function replaceAgencyOnboardingLink(leadId) {
+  if (!supabase) return { data: null, error: 'Supabase is not configured.' }
+  const { data, error } = await supabase.rpc('arch9_admin_replace_agency_onboarding_link', {
+    p_lead_id: leadId,
+  })
+  return { data: data ? normalizeInboundLead(data) : null, error: error?.message || '' }
+}
+
+async function updateAgencyOnboardingStatus(leadId, status) {
+  if (!supabase) return { data: null, error: 'Supabase is not configured.' }
+  const { data, error } = await supabase.rpc('arch9_admin_update_agency_onboarding_status', {
+    p_lead_id: leadId,
+    p_status: status,
+  })
+  return { data: data ? normalizeInboundLead(data) : null, error: error?.message || '' }
+}
+
+async function activateAgencyOnboarding(leadId) {
+  if (!supabase) return { data: null, error: 'Supabase is not configured.' }
+  const { data, error } = await supabase.rpc('arch9_admin_activate_agency_onboarding', {
+    p_lead_id: leadId,
+  })
+  return { data: data ? normalizeInboundLead(data) : null, error: error?.message || '' }
+}
+
+async function loadAgencyOnboardingState(token) {
+  if (!supabase) return { data: null, error: 'Supabase is not configured.' }
+  const { data, error } = await supabase.rpc('arch9_agency_onboarding_public_state', {
+    p_token: token,
+  })
+  return { data: data ? normalizeInboundLead(data) : null, error: error?.message || '' }
+}
+
+async function saveAgencyOnboardingProgress(token, payload = {}, currentStep = '') {
+  if (!supabase) return { data: null, error: 'Supabase is not configured.' }
+  const { data, error } = await supabase.rpc('arch9_agency_onboarding_save', {
+    p_current_step: currentStep || null,
+    p_payload: payload,
+    p_token: token,
+  })
+  return { data: data ? normalizeInboundLead(data) : null, error: error?.message || '' }
+}
+
+async function submitAgencyOnboarding(token, payload = {}) {
+  if (!supabase) return { data: null, error: 'Supabase is not configured.' }
+  const { data, error } = await supabase.rpc('arch9_agency_onboarding_submit', {
+    p_payload: payload,
+    p_token: token,
+  })
+  return { data: data ? normalizeInboundLead(data) : null, error: error?.message || '' }
+}
+
 function buildInboundLeadAdminUrl() {
   if (typeof window === 'undefined') return 'https://admin.arch9.co.za/admin/inbound-leads'
   return `${window.location.origin}/admin/inbound-leads`
@@ -1571,6 +1798,42 @@ async function sendInboundLeadEmails(payload = {}, leadId = '', idempotencyKey =
     }
     if (result.value?.error) console.warn('[intake] email dispatch returned error', { index, error: result.value.error })
   })
+}
+
+async function sendAgencyOnboardingEmail(lead = {}) {
+  if (!supabase?.functions?.invoke) return { error: 'Supabase functions are not configured.' }
+
+  const onboarding = lead.agencyOnboarding || {}
+  const token = onboarding.token || ''
+  const recipientEmail =
+    normalizeText(onboarding.contactEmail) ||
+    normalizeText(lead.email) ||
+    normalizeText(lead.source_payload?.email)
+  const recipientName =
+    normalizeText(
+      [onboarding.contactFirstName, onboarding.contactLastName].filter(Boolean).join(' '),
+    ) ||
+    normalizeText(lead.fullName) ||
+    normalizeText(lead.organisationName)
+  const payload = {
+    type: 'agency_onboarding',
+    to: recipientEmail,
+    recipientName,
+    agencyName: lead.organisationName || onboarding.formData?.agencyName || recipientName,
+    legalEntityName: onboarding.formData?.legalEntityName || lead.organisationName || '',
+    principalName: recipientName,
+    principalEmail: recipientEmail,
+    principalPhone: onboarding.contactPhone || lead.mobile || '',
+    secureLink: buildAgencyOnboardingUrl(token),
+    onboardingLink: buildAgencyOnboardingUrl(token),
+    actionLink: buildAgencyOnboardingUrl(token),
+    messageKind: onboarding.status === 'sent' ? 'reminder' : 'initial_request',
+    planName: onboarding.formData?.planName || onboarding.formData?.plan_name || '',
+    planSummary: onboarding.formData?.planSummary || onboarding.formData?.plan_summary || '',
+  }
+
+  const { error } = await supabase.functions.invoke('send-email', { body: payload })
+  return { error: error?.message || '' }
 }
 
 async function loadInboundLeadsSnapshot() {
@@ -1680,8 +1943,7 @@ async function searchAdminData(term = '') {
   }
 }
 
-function IntakeProgress({ step }) {
-  const labels = ['Choose your role', 'About you', 'Business', 'Interests', 'Confirmation']
+function IntakeProgress({ step, labels = ['Choose your role', 'About you', 'Business', 'Interests', 'Confirmation'] }) {
   return (
     <div className="intake-progress" aria-label="Intake progress">
       {labels.map((label, index) => (
@@ -1712,6 +1974,281 @@ function IntakeField({ field, metrics, onChange }) {
       )}
     </label>
   )
+}
+
+function buildAgencyOnboardingDefaultForm(lead = {}) {
+  const formData = lead.agencyOnboarding?.formData || {}
+  const principalName = [lead.agencyOnboarding?.contactFirstName, lead.agencyOnboarding?.contactLastName]
+    .filter(Boolean)
+    .join(' ')
+  return {
+    agencyName: normalizeText(
+      formData.agency_name ||
+        formData.agencyName ||
+        lead.organisationName ||
+        '',
+    ),
+    legalEntityName: normalizeText(formData.legal_entity_name || formData.legalEntityName || ''),
+    companyRegistrationNumber: normalizeText(formData.company_registration_number || formData.companyRegistrationNumber || ''),
+    ffcNumber: normalizeText(formData.ffc_number || formData.ffcNumber || ''),
+    vatNumber: normalizeText(formData.vat_number || formData.vatNumber || ''),
+    physicalAddress: normalizeText(
+      formData.physical_address ||
+        formData.physicalAddress ||
+        formData.address ||
+        lead.address ||
+        '',
+    ),
+    principalFirstName: normalizeText(formData.principal_first_name || formData.principalFirstName || lead.agencyOnboarding?.contactFirstName || ''),
+    principalSurname: normalizeText(formData.principal_last_name || formData.principalSurname || lead.agencyOnboarding?.contactLastName || ''),
+    principalPosition: normalizeText(formData.principal_position || formData.principalPosition || lead.agencyOnboarding?.contactPosition || ''),
+    principalEmail: normalizeText(formData.principal_email || formData.principalEmail || lead.agencyOnboarding?.contactEmail || ''),
+    principalMobile: normalizeText(formData.principal_phone || formData.principalPhone || lead.agencyOnboarding?.contactPhone || ''),
+    authorisedConfirmation: Boolean(formData.authorised_confirmation || formData.authorisedConfirmation),
+    agentCountRange: normalizeText(formData.agent_count_range || formData.agentCountRange || ''),
+    branchCount: normalizeText(formData.branch_count || formData.branchCount || ''),
+    planName: normalizeText(
+      formData.plan_name ||
+        formData.planName ||
+        formData.package_name ||
+        formData.packageName ||
+        lead.source_payload?.plan_name ||
+        lead.source_payload?.package_name ||
+        '',
+    ),
+    planSummary: normalizeText(formData.plan_summary || formData.planSummary || lead.source_payload?.plan_summary || ''),
+    agreementAccepted: Boolean(formData.agreement_accepted || formData.agreementAccepted),
+    agreementAuthorityConfirmed: Boolean(formData.agreement_authority_confirmed || formData.agreementAuthorityConfirmed),
+    agreementFullName: normalizeText(
+      formData.agreement_full_name ||
+        formData.agreementFullName ||
+        principalName ||
+        '',
+    ),
+    agreementId: lead.agencyOnboarding?.agreementId || AGENCY_ONBOARDING_AGREEMENT_ID,
+    agreementPosition: normalizeText(formData.agreement_position || formData.agreementPosition || lead.agencyOnboarding?.contactPosition || ''),
+    agreementText: lead.agencyOnboarding?.agreementText || AGENCY_ONBOARDING_AGREEMENT_TEXT,
+    agreementVersion: lead.agencyOnboarding?.agreementVersion || AGENCY_ONBOARDING_AGREEMENT_VERSION,
+    currentStep: lead.agencyOnboarding?.currentStep || 'agency_details',
+    termsAccepted: Boolean(formData.terms_accepted || formData.termsAccepted),
+  }
+}
+
+function buildAgencyOnboardingPayload(form = {}, extras = {}) {
+  const { includeAgreementSnapshot, ...restExtras } = extras
+  const agencyName = normalizeText(form.agencyName)
+  const legalEntityName = normalizeText(form.legalEntityName)
+  const principalFirstName = normalizeText(form.principalFirstName)
+  const principalSurname = normalizeText(form.principalSurname)
+  const principalEmail = normalizeText(form.principalEmail)
+  const principalMobile = normalizeText(form.principalMobile)
+  const principalPosition = normalizeText(form.principalPosition)
+  const agreementFullName = normalizeText(form.agreementFullName || [principalFirstName, principalSurname].filter(Boolean).join(' '))
+  const agreementPosition = normalizeText(form.agreementPosition || principalPosition)
+  const planName = normalizeText(form.planName)
+  const planSummary = normalizeText(form.planSummary)
+  const address = normalizeText(form.physicalAddress)
+  const payload = {
+    agreement_authority_confirmed: Boolean(form.agreementAuthorityConfirmed),
+    agreement_full_name: agreementFullName,
+    agreement_id: form.agreementId || AGENCY_ONBOARDING_AGREEMENT_ID,
+    agreement_position: agreementPosition,
+    agreement_text: form.agreementText || AGENCY_ONBOARDING_AGREEMENT_TEXT,
+    agreement_version: form.agreementVersion || AGENCY_ONBOARDING_AGREEMENT_VERSION,
+    agency_name: agencyName,
+    agent_count_range: normalizeText(form.agentCountRange),
+    branch_count: normalizeText(form.branchCount),
+    company_registration_number: normalizeText(form.companyRegistrationNumber),
+    contact_email: principalEmail,
+    contact_first_name: principalFirstName,
+    contact_last_name: principalSurname,
+    contact_phone: principalMobile,
+    contact_position: principalPosition,
+    current_step: extras.currentStep || form.currentStep || 'agency_details',
+    ffc_number: normalizeText(form.ffcNumber),
+    form_data: {
+      agencyName,
+      legalEntityName,
+      companyRegistrationNumber: normalizeText(form.companyRegistrationNumber),
+      ffcNumber: normalizeText(form.ffcNumber),
+      vatNumber: normalizeText(form.vatNumber),
+      physicalAddress: address,
+      principalFirstName,
+      principalSurname,
+      principalPosition,
+      principalEmail,
+      principalMobile,
+      authorisedConfirmation: Boolean(form.authorisedConfirmation),
+      agentCountRange: normalizeText(form.agentCountRange),
+      branchCount: normalizeText(form.branchCount),
+      planName,
+      planSummary,
+      agreementAuthorityConfirmed: Boolean(form.agreementAuthorityConfirmed),
+      agreementFullName,
+      agreementId: form.agreementId || AGENCY_ONBOARDING_AGREEMENT_ID,
+      agreementPosition,
+      agreementText: form.agreementText || AGENCY_ONBOARDING_AGREEMENT_TEXT,
+      agreementVersion: form.agreementVersion || AGENCY_ONBOARDING_AGREEMENT_VERSION,
+      agreementAccepted: Boolean(form.agreementAccepted),
+      termsAccepted: Boolean(form.termsAccepted),
+    },
+    legal_entity_name: legalEntityName,
+    plan_name: planName,
+    plan_summary: planSummary,
+    principal_email: principalEmail,
+    principal_first_name: principalFirstName,
+    principal_last_name: principalSurname,
+    principal_mobile: principalMobile,
+    principal_name: agreementFullName,
+    principal_phone: principalMobile,
+    principal_position: principalPosition,
+    terms_accepted: Boolean(form.termsAccepted),
+    timezone: typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone || '' : '',
+    user_agent: typeof navigator !== 'undefined' ? navigator.userAgent || '' : '',
+    vat_number: normalizeText(form.vatNumber),
+    ...restExtras,
+  }
+  if (includeAgreementSnapshot !== false) {
+    payload.agreement_snapshot = {
+      agreement_id: form.agreementId || AGENCY_ONBOARDING_AGREEMENT_ID,
+      agreement_text: form.agreementText || AGENCY_ONBOARDING_AGREEMENT_TEXT,
+      agreement_version: form.agreementVersion || AGENCY_ONBOARDING_AGREEMENT_VERSION,
+      accepted_by_email: principalEmail,
+      accepted_by_name: agreementFullName,
+      accepted_at: new Date().toISOString(),
+      accepted_by_position: agreementPosition,
+      onboarding_id: extras.onboardingId || null,
+    }
+  }
+  return payload
+}
+
+function getAgencyOnboardingResumeStep(lead = {}) {
+  const status = lead.agencyOnboarding?.status || 'not_started'
+  if (['submitted', 'approved', 'active'].includes(status)) return 5
+  const hasSavedProgress = Boolean(
+    lead.agencyOnboarding?.startedAt ||
+      lead.agencyOnboarding?.submittedAt ||
+      lead.agencyOnboarding?.firstOpenedAt ||
+      lead.agencyOnboarding?.lastOpenedAt ||
+      normalizeText(lead.agencyOnboarding?.contactEmail) ||
+      normalizeText(lead.agencyOnboarding?.formData?.agencyName) ||
+      normalizeText(lead.agencyOnboarding?.formData?.legalEntityName),
+  )
+  if (!hasSavedProgress && status === 'not_started') return 0
+  return Math.min(4, AGENCY_ONBOARDING_STEP_KEYS.indexOf(lead.agencyOnboarding?.currentStep || 'agency_details') + 1)
+}
+
+function buildAgencyOnboardingJourneySteps(lead = {}) {
+  const onboarding = lead.agencyOnboarding || {}
+  const status = onboarding.status || 'not_started'
+  const agencyName = normalizeText(onboarding.formData?.agencyName || onboarding.formData?.agency_name || lead.organisationName || 'Agency')
+  const principalName = normalizeText(
+    onboarding.contactFirstName || onboarding.contactLastName
+      ? [onboarding.contactFirstName, onboarding.contactLastName].filter(Boolean).join(' ')
+      : onboarding.formData?.principalFirstName || onboarding.formData?.principalSurname || '',
+  )
+  const planInfo = getAgencyPlanInfo(lead)
+  return [
+    {
+      id: 'created',
+      label: 'Link created',
+      value: formatDateTime(onboarding.linkCreatedAt),
+      detail: onboarding.token ? 'Secure token generated for this lead.' : 'Waiting for onboarding start.',
+      tone: onboarding.linkCreatedAt ? 'accent' : 'neutral',
+    },
+    {
+      id: 'sent',
+      label: 'Link sent',
+      value: formatDateTime(onboarding.linkSentAt),
+      detail: onboarding.contactEmail || principalName || 'No recipient yet',
+      tone: onboarding.linkSentAt ? 'success' : 'neutral',
+    },
+    {
+      id: 'opened',
+      label: 'First opened',
+      value: formatDateTime(onboarding.firstOpenedAt),
+      detail: onboarding.lastOpenedAt ? `Last opened ${formatDateTime(onboarding.lastOpenedAt)}` : 'Awaiting first open.',
+      tone: onboarding.firstOpenedAt ? 'success' : 'neutral',
+    },
+    {
+      id: 'started',
+      label: 'Started',
+      value: formatDateTime(onboarding.startedAt),
+      detail: onboarding.currentStep ? `Current step: ${formatAgencyOnboardingStep(onboarding.currentStep)}` : 'No saved progress yet.',
+      tone: onboarding.startedAt || status === 'in_progress' ? 'accent' : 'neutral',
+    },
+    {
+      id: 'submitted',
+      label: 'Submitted',
+      value: formatDateTime(onboarding.submittedAt),
+      detail: agencyName,
+      tone: onboarding.submittedAt || ['submitted', 'approved', 'active'].includes(status) ? 'success' : 'neutral',
+    },
+    {
+      id: 'agreement',
+      label: 'Agreement',
+      value: formatDateTime(onboarding.agreementAcceptedAt),
+      detail: principalName || planInfo.name || 'Awaiting acceptance.',
+      tone: onboarding.agreementAcceptedAt ? 'success' : 'neutral',
+    },
+    {
+      id: 'approved',
+      label: 'Approved',
+      value: formatDateTime(onboarding.approvedAt),
+      detail: formatAgencyOnboardingStatus(status),
+      tone: ['approved', 'active'].includes(status) ? 'success' : 'neutral',
+    },
+    {
+      id: 'active',
+      label: 'Active',
+      value: formatDateTime(onboarding.activatedAt),
+      detail: 'Organisation is ready for access.',
+      tone: status === 'active' ? 'success' : 'neutral',
+    },
+  ]
+}
+
+function buildAgencyOnboardingAdminPatch(lead = {}) {
+  const defaults = buildAgencyOnboardingDefaultForm(lead)
+  return {
+    agency_name: defaults.agencyName,
+    agreement_id: defaults.agreementId,
+    agreement_text: defaults.agreementText,
+    agreement_version: defaults.agreementVersion,
+    company_registration_number: defaults.companyRegistrationNumber,
+    contact_email: defaults.principalEmail || lead.email || '',
+    contact_first_name: defaults.principalFirstName,
+    contact_last_name: defaults.principalSurname,
+    contact_phone: defaults.principalMobile,
+    contact_position: defaults.principalPosition,
+    current_step: lead.agencyOnboarding?.currentStep || 'agency_details',
+    ffc_number: defaults.ffcNumber,
+    form_data: {
+      agencyName: defaults.agencyName,
+      agentCountRange: defaults.agentCountRange,
+      branchCount: defaults.branchCount,
+      companyRegistrationNumber: defaults.companyRegistrationNumber,
+      ffcNumber: defaults.ffcNumber,
+      legalEntityName: defaults.legalEntityName,
+      physicalAddress: defaults.physicalAddress,
+      planName: defaults.planName,
+      planSummary: defaults.planSummary,
+      principalEmail: defaults.principalEmail,
+      principalFirstName: defaults.principalFirstName,
+      principalMobile: defaults.principalMobile,
+      principalPosition: defaults.principalPosition,
+      principalSurname: defaults.principalSurname,
+      vatNumber: defaults.vatNumber,
+    },
+    legal_entity_name: defaults.legalEntityName,
+    principal_email: defaults.principalEmail || lead.email || '',
+    principal_first_name: defaults.principalFirstName,
+    principal_last_name: defaults.principalSurname,
+    principal_mobile: defaults.principalMobile,
+    principal_position: defaults.principalPosition,
+    vat_number: defaults.vatNumber,
+  }
 }
 
 function PublicIntakePage() {
@@ -2031,6 +2568,438 @@ function PublicIntakePage() {
             </div>
             <div className="confirmation-arc" aria-hidden="true" />
           </div>
+        )}
+      </section>
+    </main>
+  )
+}
+
+function AgencyOnboardingPage() {
+  const [token] = useState(() =>
+    getAgencyOnboardingTokenFromPath(typeof window === 'undefined' ? '' : window.location.pathname),
+  )
+  const [lead, setLead] = useState(null)
+  const [form, setForm] = useState(() => buildAgencyOnboardingDefaultForm())
+  const [step, setStep] = useState(0)
+  const [isLoading, setIsLoading] = useState(true)
+  const [isSaving, setIsSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
+  const [isComplete, setIsComplete] = useState(false)
+
+  const stepLabels = [...AGENCY_ONBOARDING_STEP_LABELS, 'Complete']
+  const onboarding = lead?.agencyOnboarding || {}
+  const planInfo = getAgencyPlanInfo(lead || {})
+  const agencyName = normalizeText(form.agencyName || onboarding.formData?.agencyName || lead?.organisationName)
+  const principalName = normalizeText([form.principalFirstName, form.principalSurname].filter(Boolean).join(' ')) ||
+    normalizeText([onboarding.contactFirstName, onboarding.contactLastName].filter(Boolean).join(' '))
+  const onboardingSummary = [
+    ['Status', formatAgencyOnboardingStatus(onboarding.status || (isComplete ? 'submitted' : 'not_started'))],
+    ['Current step', isComplete ? 'Complete' : formatAgencyOnboardingStep(onboarding.currentStep || AGENCY_ONBOARDING_STEP_KEYS[Math.min(step, 3)])],
+    ['Agency', agencyName || 'Not captured'],
+    ['Principal', principalName || 'Not captured'],
+    ['Plan', planInfo.name || 'No plan captured'],
+    ['Opened', formatDateTime(onboarding.lastOpenedAt || onboarding.firstOpenedAt)],
+  ]
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function load() {
+      if (!token) {
+        setError('This agency onboarding link is missing its secure token.')
+        setIsLoading(false)
+        return
+      }
+
+      setIsLoading(true)
+      const result = await loadAgencyOnboardingState(token)
+      if (cancelled) return
+
+      if (result.error || !result.data) {
+        setLead(null)
+        setError(result.error || 'This agency onboarding link is invalid or has expired.')
+        setIsLoading(false)
+        return
+      }
+
+      const nextLead = result.data
+      const onboardingState = nextLead.agencyOnboarding || {}
+      const resumeStep = getAgencyOnboardingResumeStep(nextLead)
+      setLead(nextLead)
+      setForm(buildAgencyOnboardingDefaultForm(nextLead))
+      setStep(Math.min(4, Math.max(0, resumeStep - 1)))
+      setIsComplete(['submitted', 'approved', 'active'].includes(onboardingState.status))
+      setError('')
+      setSuccess(onboardingState.status === 'submitted' ? 'This onboarding has already been submitted.' : '')
+      setIsLoading(false)
+    }
+
+    load()
+    return () => {
+      cancelled = true
+    }
+  }, [token])
+
+  function setValue(key, value) {
+    setForm((current) => ({ ...current, [key]: value }))
+  }
+
+  function validateStep(targetStep = step) {
+    if (targetStep === 0) {
+      return Boolean(
+        normalizeText(form.agencyName) &&
+          normalizeText(form.legalEntityName) &&
+          normalizeText(form.companyRegistrationNumber) &&
+          normalizeText(form.physicalAddress),
+      )
+    }
+    if (targetStep === 1) {
+      return Boolean(
+        normalizeText(form.principalFirstName) &&
+          normalizeText(form.principalSurname) &&
+          isValidEmail(form.principalEmail) &&
+          isValidSaMobile(form.principalMobile) &&
+          normalizeText(form.principalPosition),
+      )
+    }
+    if (targetStep === 2) {
+      return Boolean(normalizeText(form.agentCountRange) && normalizeText(form.branchCount))
+    }
+    if (targetStep === 3) {
+      return Boolean(
+        normalizeText(form.agreementFullName) &&
+          normalizeText(form.agreementPosition) &&
+          form.agreementAuthorityConfirmed &&
+          form.agreementAccepted,
+      )
+    }
+    return true
+  }
+
+  async function persistProgress(nextStep = step) {
+    if (!token) return null
+    setError('')
+    setSuccess('')
+    setIsSaving(true)
+    const currentStep = AGENCY_ONBOARDING_STEP_KEYS[Math.min(nextStep, AGENCY_ONBOARDING_STEP_KEYS.length - 1)] || 'agency_details'
+    const payload = buildAgencyOnboardingPayload({
+      ...form,
+      currentStep,
+    }, { currentStep, includeAgreementSnapshot: false })
+    const result = await saveAgencyOnboardingProgress(token, payload, currentStep)
+    setIsSaving(false)
+
+    if (result.error || !result.data) {
+      setError(result.error || 'We could not save this onboarding draft.')
+      return null
+    }
+
+    setLead(result.data)
+    setForm(buildAgencyOnboardingDefaultForm(result.data))
+    setSuccess('Progress saved.')
+    return result.data
+  }
+
+  async function continueFlow() {
+    if (!validateStep()) {
+      setError('Please complete the highlighted step before continuing.')
+      return
+    }
+
+    if (step < 3) {
+      const savedLead = await persistProgress(step)
+      if (!savedLead) return
+      setStep(step + 1)
+      return
+    }
+
+    setError('')
+    setSuccess('')
+    setIsSaving(true)
+    const payload = buildAgencyOnboardingPayload(form, {
+      currentStep: 'complete',
+      onboardingId: lead?.id || '',
+      referrer: typeof document !== 'undefined' ? document.referrer || '' : '',
+    })
+    const result = await submitAgencyOnboarding(token, payload)
+    setIsSaving(false)
+
+    if (result.error || !result.data) {
+      setError(result.error || 'We could not submit this onboarding yet.')
+      return
+    }
+
+    setLead(result.data)
+    setForm(buildAgencyOnboardingDefaultForm(result.data))
+    setStep(4)
+    setIsComplete(true)
+    setSuccess('Your agency onboarding has been submitted.')
+  }
+
+  async function goBack() {
+    if (step <= 0) return
+    await persistProgress(step)
+    setStep((current) => Math.max(0, current - 1))
+  }
+
+  async function copyLink() {
+    if (!token || typeof navigator === 'undefined' || !navigator.clipboard?.writeText) return
+    await navigator.clipboard.writeText(buildAgencyOnboardingUrl(token))
+    setSuccess('Onboarding link copied.')
+  }
+
+  if (isLoading) {
+    return (
+      <main className="center-shell">
+        <Loader2 className="spin" size={26} />
+      </main>
+    )
+  }
+
+  if (!token) {
+    return (
+      <main className="public-intake-shell">
+        <section className="intake-card confirmation-card">
+          <Notice tone="danger" text={error || 'This agency onboarding link is missing its secure token.'} />
+        </section>
+      </main>
+    )
+  }
+
+  const statusTone = getAgencyOnboardingTone(onboarding.status || (isComplete ? 'submitted' : 'not_started'))
+  const progressStep = isComplete ? 4 : step
+
+  return (
+    <main className={`public-intake-shell${progressStep === 0 ? ' landing-mode' : ' form-mode'}`}>
+      <section className="intake-hero">
+        <div className="intake-network" aria-hidden="true">
+          <span />
+          <span />
+          <span />
+          <span />
+        </div>
+        <div className="intake-hero-top">
+          <div className="intake-mini-brand" aria-label="Arch9">
+            <strong>Arch9</strong>
+          </div>
+          <p>Agency onboarding,<br />kept <span>secure.</span></p>
+        </div>
+        <div className="intake-hero-copy">
+          <h1>Complete your <span>agency setup.</span></h1>
+          <i aria-hidden="true" />
+          <p>We’ll capture the information Arch9 needs to activate your agency and send your team the right access.</p>
+        </div>
+      </section>
+
+      <section className={`intake-card${progressStep === 0 ? ' role-selection-card' : ''}${isComplete ? ' confirmation-card' : ''}`}>
+        {isComplete ? (
+          <div className="confirmation-content">
+            <div className="intake-mini-brand confirmation-mini-brand" aria-label="Arch9">
+              <strong>Arch9</strong>
+            </div>
+            <h1>Submission received.</h1>
+            <p>Thanks, {principalName || agencyName || 'there'}.<br />Your agency onboarding has been received and queued for review.</p>
+            {success ? <Notice tone="success" text={success} /> : null}
+            <div className="lead-detail-section" id="agency-onboarding-summary">
+              <h3>Submission summary</h3>
+              <dl>
+                {onboardingSummary.map(([label, value]) => (
+                  <div key={label}>
+                    <dt>{label}</dt>
+                    <dd>{value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+            {onboarding.agreementText ? (
+              <div className="lead-detail-section" id="agency-onboarding-agreement">
+                <h3>Agreement snapshot</h3>
+                <pre className="agreement-text">{onboarding.agreementText}</pre>
+              </div>
+            ) : null}
+            <div className="confirmation-actions">
+              <a className="secondary-button" href={ARCH9_EXPLORE_URL}>Return to Arch9 <ChevronRight size={18} /></a>
+            </div>
+            <div className="confirmation-note">
+              <CheckCircle2 size={18} />
+              <span>Reference your secure link if we need to revisit the draft.</span>
+            </div>
+            <div className="confirmation-arc" aria-hidden="true" />
+          </div>
+        ) : (
+          <>
+            <IntakeProgress labels={stepLabels} step={progressStep} />
+
+            <div className="intake-stack">
+              <div className="lead-detail-section">
+                <h3>Agency onboarding status</h3>
+                <dl>
+                  {onboardingSummary.map(([label, value]) => (
+                    <div key={label}>
+                      <dt>{label}</dt>
+                      <dd>{value}</dd>
+                    </div>
+                  ))}
+                </dl>
+                {planInfo.summary ? <p className={`status-badge ${statusTone}`}>{planInfo.summary}</p> : null}
+              </div>
+
+              {progressStep === 0 ? (
+                <div>
+                  <h1>Tell us about the agency.</h1>
+                  <p>We’ll use this to create the agency record and activate the onboarding journey.</p>
+                </div>
+              ) : null}
+
+              {step === 0 ? (
+                <div className="intake-field-grid">
+                  <label className="intake-field wide">
+                    <span>Agency name</span>
+                    <input onChange={(event) => setValue('agencyName', event.target.value)} value={form.agencyName} />
+                  </label>
+                  <label className="intake-field wide">
+                    <span>Legal entity name</span>
+                    <input onChange={(event) => setValue('legalEntityName', event.target.value)} value={form.legalEntityName} />
+                  </label>
+                  <label className="intake-field">
+                    <span>Company registration number</span>
+                    <input onChange={(event) => setValue('companyRegistrationNumber', event.target.value)} value={form.companyRegistrationNumber} />
+                  </label>
+                  <label className="intake-field">
+                    <span>FFC number <small>optional</small></span>
+                    <input onChange={(event) => setValue('ffcNumber', event.target.value)} value={form.ffcNumber} />
+                  </label>
+                  <label className="intake-field">
+                    <span>VAT number <small>optional</small></span>
+                    <input onChange={(event) => setValue('vatNumber', event.target.value)} value={form.vatNumber} />
+                  </label>
+                  <label className="intake-field wide">
+                    <span>Physical address</span>
+                    <input onChange={(event) => setValue('physicalAddress', event.target.value)} value={form.physicalAddress} />
+                  </label>
+                </div>
+              ) : null}
+
+              {step === 1 ? (
+                <div className="intake-field-grid">
+                  <label className="intake-field">
+                    <span>Principal first name</span>
+                    <input autoComplete="given-name" onChange={(event) => setValue('principalFirstName', event.target.value)} value={form.principalFirstName} />
+                  </label>
+                  <label className="intake-field">
+                    <span>Principal surname</span>
+                    <input autoComplete="family-name" onChange={(event) => setValue('principalSurname', event.target.value)} value={form.principalSurname} />
+                  </label>
+                  <label className="intake-field wide">
+                    <span>Work email</span>
+                    <input autoComplete="email" inputMode="email" onChange={(event) => setValue('principalEmail', event.target.value)} value={form.principalEmail} />
+                  </label>
+                  <label className="intake-field wide">
+                    <span>Mobile number</span>
+                    <input autoComplete="tel" inputMode="tel" onChange={(event) => setValue('principalMobile', event.target.value)} placeholder="082 123 4567" value={form.principalMobile} />
+                  </label>
+                  <label className="intake-field wide">
+                    <span>Position</span>
+                    <select onChange={(event) => setValue('principalPosition', event.target.value)} value={form.principalPosition}>
+                      <option value="">Select</option>
+                      {['Principal', 'Director / Owner', 'Manager', 'Agent', 'Administrator', 'Other'].map((option) => (
+                        <option key={option} value={option}>{option}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              ) : null}
+
+              {step === 2 ? (
+                <div className="intake-field-grid">
+                  <label className="intake-field">
+                    <span>Approximate number of agents</span>
+                    <select onChange={(event) => setValue('agentCountRange', event.target.value)} value={form.agentCountRange}>
+                      <option value="">Select</option>
+                      {AGENCY_ONBOARDING_AGENT_RANGE_OPTIONS.map((option) => (
+                        <option key={option} value={option}>{option}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="intake-field">
+                    <span>Branch count</span>
+                    <select onChange={(event) => setValue('branchCount', event.target.value)} value={form.branchCount}>
+                      <option value="">Select</option>
+                      {AGENCY_ONBOARDING_BRANCH_OPTIONS.map((option) => (
+                        <option key={option} value={option}>{option}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="intake-field wide">
+                    <span>Plan name <small>optional</small></span>
+                    <input onChange={(event) => setValue('planName', event.target.value)} value={form.planName} />
+                  </label>
+                  <label className="intake-field wide">
+                    <span>Plan summary <small>optional</small></span>
+                    <textarea onChange={(event) => setValue('planSummary', event.target.value)} rows={3} value={form.planSummary} />
+                  </label>
+                </div>
+              ) : null}
+
+              {step === 3 ? (
+                <div className="intake-stack">
+                  <div>
+                    <h1>Sign the agency services agreement.</h1>
+                    <p>Please confirm your authority and sign the secure agreement below.</p>
+                  </div>
+                  <div className="lead-detail-section" id="agency-onboarding-agreement">
+                    <h3>{AGENCY_ONBOARDING_AGREEMENT_TITLE}</h3>
+                    <pre className="agreement-text">{form.agreementText || AGENCY_ONBOARDING_AGREEMENT_TEXT}</pre>
+                  </div>
+                  <div className="intake-field-grid">
+                    <label className="intake-field wide">
+                      <span>Full legal name</span>
+                      <input onChange={(event) => setValue('agreementFullName', event.target.value)} value={form.agreementFullName} />
+                    </label>
+                    <label className="intake-field wide">
+                      <span>Position / title</span>
+                      <input onChange={(event) => setValue('agreementPosition', event.target.value)} value={form.agreementPosition} />
+                    </label>
+                  </div>
+                  <div className="intake-check-grid two-col">
+                    <button className={form.agreementAuthorityConfirmed ? 'selected' : ''} onClick={() => setValue('agreementAuthorityConfirmed', !form.agreementAuthorityConfirmed)} type="button">
+                      <CheckCircle2 size={16} />
+                      <span>I confirm I am authorised to sign for this agency.</span>
+                    </button>
+                    <button className={form.agreementAccepted ? 'selected' : ''} onClick={() => setValue('agreementAccepted', !form.agreementAccepted)} type="button">
+                      <CheckCircle2 size={16} />
+                      <span>I accept the Arch9 Agency Services Agreement.</span>
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+
+              {error ? <Notice tone="danger" text={error} /> : null}
+              {success ? <Notice tone="success" text={success} /> : null}
+
+              <div className="intake-actions">
+                {step > 0 ? (
+                  <button className="secondary-button" disabled={isSaving} onClick={goBack} type="button">
+                    Back
+                  </button>
+                ) : (
+                  <button className="secondary-button" disabled={isSaving} onClick={copyLink} type="button">
+                    Copy Link
+                  </button>
+                )}
+                <button
+                  aria-disabled={!validateStep()}
+                  className={`primary-button${!validateStep() ? ' is-soft-disabled' : ''}`}
+                  disabled={isSaving}
+                  onClick={continueFlow}
+                  type="button"
+                >
+                  <span>{isSaving ? 'Saving...' : step === 3 ? 'Submit onboarding' : 'Continue'}</span>
+                </button>
+              </div>
+            </div>
+          </>
         )}
       </section>
     </main>
@@ -2672,16 +3641,17 @@ function LeadsSnapshotCard({ leads = [], onOpenLeads }) {
 }
 
 function LeadJourney({ lead = {}, activities = [] }) {
-  const steps = buildLeadJourneySteps(lead, activities)
+  const isAgencyLead = lead.roleType === 'agency' || Boolean(lead.agencyOnboarding?.token)
+  const steps = isAgencyLead ? buildAgencyOnboardingJourneySteps(lead) : buildLeadJourneySteps(lead, activities)
 
   return (
     <div className="lead-journey">
       <div className="panel-title compact">
         <div>
-          <h3>Buyer Journey</h3>
+          <h3>{isAgencyLead ? 'Agency Journey' : 'Buyer Journey'}</h3>
           <span>Vertical view for mobile</span>
         </div>
-        <span className={`status-badge ${lead.status}`}>{formatInboundStatus(lead.status)}</span>
+        <span className={`status-badge ${lead.status}`}>{isAgencyLead ? formatAgencyOnboardingStatus(lead.agencyOnboarding?.status || 'not_started') : formatInboundStatus(lead.status)}</span>
       </div>
       <div className="journey-stack">
         {steps.map((step) => (
@@ -2699,6 +3669,214 @@ function LeadJourney({ lead = {}, activities = [] }) {
         ))}
       </div>
     </div>
+  )
+}
+
+function AgencyOnboardingSection({ lead, onRefresh }) {
+  const [error, setError] = useState('')
+  const [isBusy, setIsBusy] = useState(false)
+  const onboarding = lead.agencyOnboarding || {}
+  const status = onboarding.status || 'not_started'
+  const token = onboarding.token || ''
+  const onboardingUrl = buildAgencyOnboardingUrl(token)
+  const planInfo = getAgencyPlanInfo(lead)
+  const agencyName = normalizeText(onboarding.formData?.agencyName || lead.organisationName || '')
+  const principalName = normalizeText(
+    [onboarding.contactFirstName, onboarding.contactLastName].filter(Boolean).join(' '),
+  ) || normalizeText([lead.firstName, lead.lastName].filter(Boolean).join(' '))
+  const agreementRows = [
+    ['Status', formatAgencyOnboardingStatus(status)],
+    ['Current step', formatAgencyOnboardingStep(onboarding.currentStep || 'agency_details')],
+    ['Link', onboardingUrl || 'Not generated'],
+    ['Created', formatDateTime(onboarding.linkCreatedAt)],
+    ['Sent', formatDateTime(onboarding.linkSentAt)],
+    ['Opened', formatDateTime(onboarding.lastOpenedAt || onboarding.firstOpenedAt)],
+    ['Started', formatDateTime(onboarding.startedAt)],
+    ['Submitted', formatDateTime(onboarding.submittedAt)],
+    ['Agreement accepted', formatDateTime(onboarding.agreementAcceptedAt)],
+    ['Approved', formatDateTime(onboarding.approvedAt)],
+    ['Activated', formatDateTime(onboarding.activatedAt)],
+    ['Cancelled', formatDateTime(onboarding.cancelledAt)],
+    ['Expires', formatDateTime(onboarding.expiresAt)],
+  ]
+  const mutationLocked = isBusy || ['active', 'expired', 'cancelled'].includes(status)
+
+  async function refreshLead(result) {
+    if (result?.data) {
+      await onRefresh?.()
+      return result.data
+    }
+    await onRefresh?.()
+    return null
+  }
+
+  async function startOnboarding() {
+    setError('')
+    setIsBusy(true)
+    const result = await startAgencyOnboarding(lead.id, buildAgencyOnboardingAdminPatch(lead))
+    setIsBusy(false)
+    if (result.error || !result.data) {
+      setError(result.error || 'Unable to start agency onboarding.')
+      return
+    }
+    await refreshLead(result)
+  }
+
+  async function sendOnboardingLink() {
+    setError('')
+    setIsBusy(true)
+    const sendResult = await sendAgencyOnboardingLink(lead.id, buildAgencyOnboardingAdminPatch(lead))
+    if (sendResult.error || !sendResult.data) {
+      setIsBusy(false)
+      setError(sendResult.error || 'Unable to prepare the onboarding link.')
+      return
+    }
+
+    const emailResult = await sendAgencyOnboardingEmail(sendResult.data)
+    setIsBusy(false)
+    if (emailResult.error) {
+      setError(emailResult.error || 'Onboarding link created, but the email could not be sent.')
+      await refreshLead(sendResult)
+      return
+    }
+
+    await refreshLead(sendResult)
+  }
+
+  async function replaceLink() {
+    setError('')
+    setIsBusy(true)
+    const result = await replaceAgencyOnboardingLink(lead.id)
+    setIsBusy(false)
+    if (result.error || !result.data) {
+      setError(result.error || 'Unable to replace the onboarding link.')
+      return
+    }
+    await refreshLead(result)
+  }
+
+  async function cancelOnboarding() {
+    setError('')
+    setIsBusy(true)
+    const result = await updateAgencyOnboardingStatus(lead.id, 'cancelled')
+    setIsBusy(false)
+    if (result.error || !result.data) {
+      setError(result.error || 'Unable to cancel the onboarding.')
+      return
+    }
+    await refreshLead(result)
+  }
+
+  async function activateOnboarding() {
+    setError('')
+    setIsBusy(true)
+    const result = await activateAgencyOnboarding(lead.id)
+    setIsBusy(false)
+    if (result.error || !result.data) {
+      setError(result.error || 'Unable to activate the agency.')
+      return
+    }
+    await refreshLead(result)
+  }
+
+  async function copyLink() {
+    if (!onboardingUrl || typeof navigator === 'undefined' || !navigator.clipboard?.writeText) return
+    await navigator.clipboard.writeText(onboardingUrl)
+  }
+
+  function openLink() {
+    if (!onboardingUrl || typeof window === 'undefined') return
+    window.open(onboardingUrl, '_blank', 'noopener,noreferrer')
+  }
+
+  function viewSection(id) {
+    if (typeof document === 'undefined') return
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  const isSubmitted = ['submitted', 'approved', 'active'].includes(status)
+
+  return (
+    <section className="lead-detail-section" id="agency-onboarding-summary">
+      <h3>Agency Onboarding</h3>
+      {error ? <Notice tone="danger" text={error} /> : null}
+      <dl>
+        {agreementRows.map(([label, value]) => (
+          <div key={label}>
+            <dt>{label}</dt>
+            <dd>{value}</dd>
+          </div>
+        ))}
+        <div>
+          <dt>Agency</dt>
+          <dd>{agencyName || 'Not captured'}</dd>
+        </div>
+        <div>
+          <dt>Principal</dt>
+          <dd>{principalName || 'Not captured'}</dd>
+        </div>
+        <div>
+          <dt>Plan</dt>
+          <dd>{planInfo.name || 'No plan captured'}</dd>
+        </div>
+      </dl>
+
+      {onboarding.agreementText ? (
+        <div className="lead-detail-section" id="agency-onboarding-agreement">
+          <h4>Agreement</h4>
+          <pre className="agreement-text">{onboarding.agreementText}</pre>
+        </div>
+      ) : null}
+
+      <div className="lead-workspace-controls">
+        {!token ? (
+          <button className="secondary-button" disabled={mutationLocked} onClick={startOnboarding} type="button">
+            <Plus size={16} />
+            <span>Start Agency Onboarding</span>
+          </button>
+        ) : null}
+        <button className="secondary-button" disabled={!token || mutationLocked} onClick={sendOnboardingLink} type="button">
+          <RefreshCw size={16} />
+          <span>Send Onboarding Link</span>
+        </button>
+        <button className="secondary-button" disabled={!token} onClick={copyLink} type="button">
+          <Copy size={16} />
+          <span>Copy Onboarding Link</span>
+        </button>
+        <button className="secondary-button" disabled={!token} onClick={openLink} type="button">
+          <Search size={16} />
+          <span>Open Onboarding Page</span>
+        </button>
+        <button className="secondary-button" disabled={!token || mutationLocked} onClick={replaceLink} type="button">
+          <RefreshCw size={16} />
+          <span>Replace Link</span>
+        </button>
+        <button className="secondary-button" disabled={!token || mutationLocked} onClick={cancelOnboarding} type="button">
+          <X size={16} />
+          <span>Cancel Onboarding</span>
+        </button>
+        {isSubmitted ? (
+          <>
+            <button className="secondary-button" onClick={() => viewSection('agency-onboarding-summary')} type="button">
+              <ListChecks size={16} />
+              <span>View Submission</span>
+            </button>
+            <button className="secondary-button" onClick={() => viewSection('agency-onboarding-agreement')} type="button">
+              <NotebookPen size={16} />
+              <span>View Agreement</span>
+            </button>
+            <button className="secondary-button" onClick={() => window.open(pathForView('organisations'), '_blank', 'noopener,noreferrer')} type="button">
+              <Building2 size={16} />
+              <span>Open Agency</span>
+            </button>
+            <button className="primary-button compact" disabled={mutationLocked || status === 'active'} onClick={activateOnboarding} type="button">
+              <CheckCircle2 size={16} />
+              <span>{status === 'active' ? 'Agency Active' : 'Activate Agency'}</span>
+            </button>
+          </>
+        ) : null}
+      </div>
+    </section>
   )
 }
 
@@ -3612,6 +4790,7 @@ function InboundLeadDetail({ activities = [], lead, onRefresh, owners = [] }) {
     ['Landing page', lead.landing_url || 'Not captured'],
     ['Referrer', lead.referrer || 'Not captured'],
   ]
+  const isAgencyLead = lead.roleType === 'agency' || Boolean(lead.agencyOnboarding?.token)
 
   async function savePatch(patch) {
     setError('')
@@ -3730,6 +4909,8 @@ function InboundLeadDetail({ activities = [], lead, onRefresh, owners = [] }) {
           ))}
         </dl>
       </div>
+
+      {isAgencyLead ? <AgencyOnboardingSection lead={lead} onRefresh={onRefresh} /> : null}
 
       <form className="lead-note-form" onSubmit={submitNote}>
         <label>
@@ -4195,6 +5376,10 @@ export default function App() {
 
   if (pathname === '/join' || pathname === '/join/') {
     return <PublicIntakePage />
+  }
+
+  if (pathname === '/onboarding/agency' || pathname === '/onboarding/agency/' || pathname.startsWith('/onboarding/agency/')) {
+    return <AgencyOnboardingPage />
   }
 
   if (!session) {

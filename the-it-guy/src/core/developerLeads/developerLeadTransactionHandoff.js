@@ -1,3 +1,5 @@
+import { resolveTransactionSaleProfile } from '../transactions/transactionSaleProfile.js'
+
 export const DEVELOPER_LEAD_PHASE17_CONTRACT = 'developer-leads-phase17-transaction-handoff-v1'
 
 const TRANSACTION_READY_STATUSES = Object.freeze(['qualified', 'viewing', 'reserved'])
@@ -54,6 +56,22 @@ export function buildDeveloperLeadTransactionHandoff(lead = {}, {
   allowEarlyLeadStatus = false,
 } = {}) {
   const leadStatus = normalizeLower(lead.leadStatus || 'new')
+  const saleProfile = resolveTransactionSaleProfile({
+    setup: {
+      transactionType: 'developer_sale',
+      developmentId: lead.primaryDevelopmentId,
+      unitId: lead.preferredUnitId,
+      assignedAgentId: lead.assignedAgentId,
+    },
+    lead,
+    sourceContext: {
+      leadOwner: lead.leadOwner,
+      ownershipModel: lead.ownershipModel,
+      sellingModel: lead.sellingModel,
+      sourceAgencyOrgId: lead.sourceAgencyOrgId,
+      assignedAgentId: lead.assignedAgentId,
+    },
+  })
   const readyStatuses = allowEarlyLeadStatus ? EARLY_ONBOARDING_LINK_STATUSES : TRANSACTION_READY_STATUSES
   const blockers = []
   const warnings = []
@@ -106,6 +124,8 @@ export function buildDeveloperLeadTransactionHandoff(lead = {}, {
   const handoff = {
     setup: {
       transactionType: 'developer_sale',
+      saleChannel: saleProfile.saleChannel,
+      sellerPartyType: saleProfile.sellerPartyType,
       developmentId: normalizeText(lead.primaryDevelopmentId),
       unitId: normalizeText(lead.preferredUnitId),
       buyerName: normalizeText(lead.buyerFullName),
@@ -135,6 +155,10 @@ export function buildDeveloperLeadTransactionHandoff(lead = {}, {
         sourceAgencyOrgId: normalizeText(lead.sourceAgencyOrgId),
         sourceAgentUserId: normalizeText(lead.sourceAgentUserId),
         assignedAgentId: normalizeText(lead.assignedAgentId),
+        ownershipModel: normalizeText(lead.ownershipModel),
+        sellingModel: normalizeText(lead.sellingModel),
+        saleChannel: saleProfile.saleChannel,
+        sellerPartyType: saleProfile.sellerPartyType,
       },
     },
   }

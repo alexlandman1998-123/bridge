@@ -1197,7 +1197,7 @@ function RentalWorkspaceGuard({ children }) {
   }, [businessWorkspaceSplitEnabled, hasRentalAccess, isRentalWorkspace, setBusinessWorkspace])
 
   if (!businessWorkspaceSplitEnabled) {
-    return <AccessDenied message="Rentals workspace navigation is only enabled in staging or preview." />
+    return <AccessDenied message="Rentals workspace navigation is not enabled for this workspace." />
   }
 
   if (!hasRentalAccess) {

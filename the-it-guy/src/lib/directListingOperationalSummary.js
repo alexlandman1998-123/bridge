@@ -114,17 +114,89 @@ function buildDeclarationRows(portalFormData = {}) {
   }))
 }
 
+function findDeclarationRow(declarations = [], key = '') {
+  const normalizedKey = normalizeKey(key)
+  return declarations.find((row) => normalizeKey(row?.key || row?.label) === normalizedKey) || null
+}
+
+function buildDocumentFollowUpAction({
+  declarations,
+  key,
+  label,
+  requiredDetail,
+  reportedDetail,
+}) {
+  const declaration = findDeclarationRow(declarations, key)
+  const complete = declaration?.held === true
+  return {
+    key,
+    label,
+    complete,
+    status: complete ? 'reported_held' : 'required',
+    statusLabel: complete ? 'Reported held' : 'Required after listing',
+    detail: complete ? reportedDetail : requiredDetail,
+    attentionLabel: complete ? '' : `${label}: required after listing creation`,
+    declarationStatusLabel: declaration?.statusLabel || 'Not captured',
+  }
+}
+
+function buildFollowUpActions({ declarations = [], portalInvite = {} } = {}) {
+  const portalComplete = Boolean(portalInvite.sent || portalInvite.activated)
+  return [
+    buildDocumentFollowUpAction({
+      declarations,
+      key: 'mandate',
+      label: 'Mandate',
+      requiredDetail: 'Update the mandate record and get the signed mandate into the seller document pack.',
+      reportedDetail: 'Quick Add says the mandate is held. Verify it is attached before activation or publish.',
+    }),
+    buildDocumentFollowUpAction({
+      declarations,
+      key: 'fica_form',
+      label: 'FICA documents',
+      requiredDetail: 'Collect and upload the seller FICA documents through the seller portal or document centre.',
+      reportedDetail: 'Quick Add says FICA is held. Verify the approved documents before activation or publish.',
+    }),
+    buildDocumentFollowUpAction({
+      declarations,
+      key: 'property_condition_disclosure',
+      label: 'Disclosure form',
+      requiredDetail: 'Collect and upload the signed property condition disclosure form.',
+      reportedDetail: 'Quick Add says the disclosure is held. Verify it is attached before activation or publish.',
+    }),
+    {
+      key: 'seller_portal',
+      label: 'Seller portal link',
+      complete: portalComplete,
+      status: portalComplete ? 'sent' : portalInvite.prepared ? 'prepared' : 'required',
+      statusLabel: portalComplete ? 'Sent' : portalInvite.prepared ? 'Prepared, not sent' : 'Required after listing',
+      detail: portalComplete
+        ? 'The seller portal invitation has been sent or activated.'
+        : 'Send the seller portal link so the seller can upload the mandate, FICA docs and disclosure form.',
+      attentionLabel: portalComplete ? '' : 'Seller portal link: send to seller for uploads',
+      declarationStatusLabel: portalInvite.label || 'Not requested',
+    },
+  ]
+}
+
 export function buildDirectListingOperationalSummary(listing = {}) {
   const hasIntake = hasDirectListingPortalIntake(listing)
   if (!hasIntake) {
+    const portalInvite = getPortalInviteSummary(listing, {})
+    const followUpActions = buildFollowUpActions({ declarations: [], portalInvite })
     return {
       hasIntake: false,
       title: 'No direct listing intake',
       declarationOnly: true,
       uploadsRequired: false,
+      creationBlocked: false,
+      creationUploadsRequired: false,
+      postCreateActionsRequired: followUpActions.some((action) => !action.complete),
       readiness: buildReadinessSummary({}),
       declarations: [],
-      portalInvite: getPortalInviteSummary(listing, {}),
+      portalInvite,
+      followUpActions,
+      attentionItems: followUpActions.map((action) => action.attentionLabel).filter(Boolean),
     }
   }
 
@@ -139,6 +211,16 @@ export function buildDirectListingOperationalSummary(listing = {}) {
   })
   const sellerType = portalFormData.directListingSellerLegalType || portalFormData.sellerLegalType || portalFormData.ownershipType
   const propertyStructureType = portalFormData.propertyStructureType || listing?.propertyStructureType || listing?.property_structure_type
+  const followUpActions = buildFollowUpActions({ declarations, portalInvite })
+  const attentionItems = [
+    readiness.missing ? `${readiness.missing} intake fact${readiness.missing === 1 ? '' : 's'} missing` : '',
+    ...declarations
+      .filter((row) => row.held !== true)
+      .map((row) => `${row.label}: ${row.statusLabel}`),
+    ...followUpActions.map((action) => action.attentionLabel),
+    portalInvite.requested && !portalInvite.sent && !portalInvite.activated ? 'Seller portal invite not sent yet' : '',
+    portalInvite.error ? `Seller portal invite error: ${portalInvite.error}` : '',
+  ].filter(Boolean)
 
   return {
     hasIntake: true,
@@ -149,6 +231,9 @@ export function buildDirectListingOperationalSummary(listing = {}) {
     capturedBy: intake.capturedBy || intake.captured_by || '',
     declarationOnly: true,
     uploadsRequired: false,
+    creationBlocked: false,
+    creationUploadsRequired: false,
+    postCreateActionsRequired: followUpActions.some((action) => !action.complete),
     sellerType,
     sellerTypeLabel: humanize(sellerType),
     ownerModelLabel: [portalFormData.ownerEntityType, portalFormData.ownerStructureType].filter(Boolean).map(humanize).join(' / '),
@@ -165,14 +250,8 @@ export function buildDirectListingOperationalSummary(listing = {}) {
     declarations,
     readiness,
     portalInvite,
-    attentionItems: [
-      readiness.missing ? `${readiness.missing} intake fact${readiness.missing === 1 ? '' : 's'} missing` : '',
-      ...declarations
-        .filter((row) => row.held !== true)
-        .map((row) => `${row.label}: ${row.statusLabel}`),
-      portalInvite.requested && !portalInvite.sent && !portalInvite.activated ? 'Seller portal invite not sent yet' : '',
-      portalInvite.error ? `Seller portal invite error: ${portalInvite.error}` : '',
-    ].filter(Boolean),
+    followUpActions,
+    attentionItems: [...new Set(attentionItems)],
   }
 }
 

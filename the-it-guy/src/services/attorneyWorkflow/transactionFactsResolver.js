@@ -30,7 +30,7 @@ const NATURAL_PERSON_PURCHASER_VALUES = new Set([
   'non_resident',
 ])
 
-const DEVELOPMENT_TRANSACTION_VALUES = new Set(['development', 'development_sale', 'new_development', 'off_plan'])
+const DEVELOPMENT_TRANSACTION_VALUES = new Set(['development', 'development_sale', 'new_development', 'off_plan', 'developer_sale'])
 const PRIVATE_TRANSACTION_VALUES = new Set(['private', 'private_sale', 'resale', 'seller_owned', 'sale'])
 const COMMERCIAL_PROPERTY_VALUES = new Set(['commercial', 'industrial', 'retail', 'agricultural', 'office', 'warehouse'])
 
@@ -363,7 +363,11 @@ export function resolveTransactionFacts(transaction = {}) {
   const financeType = normalizeFinanceType(financeRaw)
   const transactionType = normalizeTransactionType(transactionTypeRaw, transaction)
   const buyerEntityType = normalizeEntityType(buyerEntityRaw)
-  const sellerEntityType = normalizeEntityType(sellerEntityRaw)
+  const normalizedSellerEntityType = normalizeEntityType(sellerEntityRaw)
+  const sellerEntityType =
+    transactionType === 'development_sale' && normalizedSellerEntityType === 'unknown'
+      ? 'developer'
+      : normalizedSellerEntityType
   const propertyType = normalizeKey(transaction?.property_type || transaction?.propertyType || transaction?.unit?.property_type)
   const propertyTenure = normalizePropertyTenure(propertyTenureRaw || propertyType, transaction)
   const vatTreatment = normalizeVatTreatment(vatTreatmentRaw)

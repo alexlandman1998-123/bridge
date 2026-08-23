@@ -6473,6 +6473,8 @@ function AgentListingDetail() {
     () => buildDirectListingOperationalSummary(listingRecord),
     [listingRecord],
   )
+  const directListingPostCreateActions = directListingOperationalSummary.followUpActions || []
+  const directListingOutstandingPostCreateActions = directListingPostCreateActions.filter((action) => !action.complete)
   const activeSellerSectionEditor = SELLER_PROFILE_SECTION_BY_KEY.get(sellerSectionEditorKey) || null
   const sellerProfileRequirementPreview = useMemo(
     () => listingRecord
@@ -12370,12 +12372,16 @@ function AgentListingDetail() {
                       <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#6b7d93]">Direct Listing Intake</p>
                       <h3 className="mt-1 text-base font-semibold text-[#142132]">Agent-captured listing facts</h3>
                       <p className="mt-1 text-sm leading-6 text-[#607387]">
-                        This record was added without the lead process. Declarations are audit flags only and do not require uploads.
+                        This record was added without the lead process. Listing creation is allowed, but mandate, FICA, disclosure and seller portal follow-up still need to be closed before activation or publish.
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      <span className="inline-flex rounded-full border border-[#d8eddf] bg-[#ecfaf1] px-3 py-1 text-xs font-semibold text-[#1f7d44]">
-                        Declaration-only
+                      <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${
+                        directListingOutstandingPostCreateActions.length
+                          ? 'border-[#f2dfbd] bg-[#fff9ec] text-[#9a5b13]'
+                          : 'border-[#d8eddf] bg-[#ecfaf1] text-[#1f7d44]'
+                      }`}>
+                        {directListingOutstandingPostCreateActions.length ? 'Post-create actions required' : 'Post-create actions clear'}
                       </span>
                       <span className="inline-flex rounded-full border border-[#dbe6f2] bg-white px-3 py-1 text-xs font-semibold text-[#35546c]">
                         {directListingOperationalSummary.portalInvite.label}
@@ -12391,31 +12397,71 @@ function AgentListingDetail() {
                   </div>
 
                   <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-                    <div className="rounded-[18px] border border-[#dce6f2] bg-white p-4">
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                        <div>
-                          <h4 className="text-sm font-semibold text-[#142132]">Declaration Summary</h4>
-                          <p className="mt-1 text-xs text-[#607387]">These are yes/no declarations from Quick Add, not uploaded evidence.</p>
-                        </div>
-                        <span className="rounded-full border border-[#dbe6f2] bg-[#fbfdff] px-2.5 py-1 text-[0.68rem] font-semibold text-[#35546c]">
-                          Uploads not required
-                        </span>
-                      </div>
-                      <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                        {directListingOperationalSummary.declarations.map((row) => (
-                          <div key={row.key} className="rounded-[14px] border border-[#e1e9f2] bg-[#fbfdff] px-3 py-3">
-                            <p className="text-xs font-semibold text-[#2d445e]">{row.label}</p>
-                            <p className={`mt-1 text-xs font-semibold ${
-                              row.held === true
-                                ? 'text-[#1f7d44]'
-                                : row.held === false
-                                  ? 'text-[#9a5b13]'
-                                  : 'text-[#607387]'
-                            }`}>
-                              {row.statusLabel}
-                            </p>
+                    <div className="grid gap-4">
+                      <div className="rounded-[18px] border border-[#dce6f2] bg-white p-4">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                          <div>
+                            <h4 className="text-sm font-semibold text-[#142132]">Declaration Summary</h4>
+                            <p className="mt-1 text-xs text-[#607387]">These are yes/no declarations from Quick Add. They do not block listing creation, but they do not replace the signed documents.</p>
                           </div>
-                        ))}
+                          <span className="rounded-full border border-[#dbe6f2] bg-[#fbfdff] px-2.5 py-1 text-[0.68rem] font-semibold text-[#35546c]">
+                            Not required for creation
+                          </span>
+                        </div>
+                        <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                          {directListingOperationalSummary.declarations.map((row) => (
+                            <div key={row.key} className="rounded-[14px] border border-[#e1e9f2] bg-[#fbfdff] px-3 py-3">
+                              <p className="text-xs font-semibold text-[#2d445e]">{row.label}</p>
+                              <p className={`mt-1 text-xs font-semibold ${
+                                row.held === true
+                                  ? 'text-[#1f7d44]'
+                                  : row.held === false
+                                    ? 'text-[#9a5b13]'
+                                    : 'text-[#607387]'
+                              }`}>
+                                {row.statusLabel}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="rounded-[18px] border border-[#dce6f2] bg-white p-4">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                          <div>
+                            <h4 className="text-sm font-semibold text-[#142132]">Post-create Checklist</h4>
+                            <p className="mt-1 text-xs leading-5 text-[#607387]">Create the listing now, then close these items before activation or publish.</p>
+                          </div>
+                          <span className={`rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${
+                            directListingOutstandingPostCreateActions.length
+                              ? 'border-[#f2dfbd] bg-[#fff9ec] text-[#9a5b13]'
+                              : 'border-[#d8eddf] bg-[#ecfaf1] text-[#1f7d44]'
+                          }`}>
+                            {directListingOutstandingPostCreateActions.length} outstanding
+                          </span>
+                        </div>
+                        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                          {directListingPostCreateActions.map((action) => (
+                            <div key={action.key} className={`rounded-[14px] border px-3 py-3 ${
+                              action.complete
+                                ? 'border-[#d8eddf] bg-[#ecfaf1]'
+                                : 'border-[#f2dfbd] bg-[#fff9ec]'
+                            }`}>
+                              <div className="flex items-start gap-2">
+                                {action.complete ? (
+                                  <CheckCircle2 size={15} className="mt-0.5 shrink-0 text-[#1f7d44]" />
+                                ) : (
+                                  <CircleAlert size={15} className="mt-0.5 shrink-0 text-[#9a5b13]" />
+                                )}
+                                <div className="min-w-0">
+                                  <p className={`text-xs font-semibold ${action.complete ? 'text-[#1f7d44]' : 'text-[#7a5a17]'}`}>{action.label}</p>
+                                  <p className={`mt-1 text-[0.68rem] font-semibold ${action.complete ? 'text-[#1f7d44]' : 'text-[#9a5b13]'}`}>{action.statusLabel}</p>
+                                </div>
+                              </div>
+                              <p className="mt-2 text-xs leading-5 text-[#607387]">{action.detail}</p>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     </div>
 
@@ -12430,7 +12476,7 @@ function AgentListingDetail() {
                         )) : (
                           <div className="flex items-start gap-2 rounded-[12px] border border-[#d8eddf] bg-[#ecfaf1] px-3 py-2">
                             <CheckCircle2 size={14} className="mt-0.5 shrink-0 text-[#1f7d44]" />
-                            <p className="text-xs font-semibold leading-5 text-[#1f7d44]">Direct listing intake has no outstanding audit flags.</p>
+                            <p className="text-xs font-semibold leading-5 text-[#1f7d44]">Direct listing intake has no outstanding post-create actions.</p>
                           </div>
                         )}
                       </div>

@@ -125,5 +125,5 @@ test('SellerOnboarding applies the direct listing bridge and shows declaration s
   assert.match(sellerOnboardingSource, /hasDirectListingPortalIntake/)
   assert.match(sellerOnboardingSource, /\.\.\.buildSellerPortalFormDataFromDirectListing\(listing\)/)
   assert.match(sellerOnboardingSource, /directListingComplianceSummary/)
-  assert.match(sellerOnboardingSource, /Document uploads are not required from this declaration summary/)
+  assert.match(sellerOnboardingSource, /upload them here so the listing can move toward activation or publish/)
 })

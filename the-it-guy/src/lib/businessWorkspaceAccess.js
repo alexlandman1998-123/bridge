@@ -78,6 +78,22 @@ function normalizeKey(value = '') {
   return normalizeText(value).toLowerCase().replace(/[\s-]+/g, '_')
 }
 
+function normalizeIdentifier(value = '') {
+  return normalizeText(value).toLowerCase()
+}
+
+function addIdentifier(target, value) {
+  const normalized = normalizeIdentifier(value)
+  if (!normalized) return
+  target.add(normalized)
+  target.add(normalizeKey(normalized))
+}
+
+function addIdentifiersFromObject(target, value = {}, keys = []) {
+  if (!value || typeof value !== 'object') return
+  keys.forEach((key) => addIdentifier(target, value[key]))
+}
+
 function asObject(value) {
   if (!value) return {}
   if (typeof value === 'object' && !Array.isArray(value)) return value
@@ -164,6 +180,103 @@ function mergeWorkspaceSets(...sets) {
     for (const value of set || []) workspaces.add(value)
   }
   return workspaces
+}
+
+function hasIdentifierMatch(allowed = [], candidates = []) {
+  const allowedSet = new Set()
+  allowed.forEach((value) => addIdentifier(allowedSet, value))
+  if (!allowedSet.size) return false
+  return candidates.some((candidate) => allowedSet.has(candidate))
+}
+
+export function collectBusinessWorkspaceRolloutIdentifiers({
+  currentWorkspace = null,
+  currentMembership = null,
+  profile = null,
+  user = null,
+} = {}) {
+  const workspaceIdentifiers = new Set()
+  const userIdentifiers = new Set()
+  const workspaceKeys = [
+    'id',
+    'workspaceId',
+    'workspace_id',
+    'organisationId',
+    'organisation_id',
+    'organizationId',
+    'organization_id',
+    'firmId',
+    'firm_id',
+    'slug',
+    'workspaceSlug',
+    'workspace_slug',
+    'organisationSlug',
+    'organisation_slug',
+    'organizationSlug',
+    'organization_slug',
+    'name',
+    'workspaceName',
+    'workspace_name',
+    'organisationName',
+    'organisation_name',
+    'organizationName',
+    'organization_name',
+    'companyName',
+    'company_name',
+    'tradingName',
+    'trading_name',
+  ]
+  const userKeys = ['id', 'userId', 'user_id', 'email', 'emailAddress', 'email_address']
+
+  addIdentifiersFromObject(workspaceIdentifiers, currentWorkspace, workspaceKeys)
+  addIdentifiersFromObject(workspaceIdentifiers, currentWorkspace?.raw, workspaceKeys)
+  addIdentifiersFromObject(workspaceIdentifiers, currentMembership, workspaceKeys)
+  addIdentifiersFromObject(workspaceIdentifiers, currentMembership?.workspace, workspaceKeys)
+  addIdentifiersFromObject(workspaceIdentifiers, currentMembership?.organisation, workspaceKeys)
+  addIdentifiersFromObject(workspaceIdentifiers, currentMembership?.organization, workspaceKeys)
+  addIdentifiersFromObject(workspaceIdentifiers, currentMembership?.raw, workspaceKeys)
+  addIdentifiersFromObject(workspaceIdentifiers, currentMembership?.raw?.workspace, workspaceKeys)
+  addIdentifiersFromObject(workspaceIdentifiers, currentMembership?.raw?.organisation, workspaceKeys)
+  addIdentifiersFromObject(workspaceIdentifiers, currentMembership?.raw?.organization, workspaceKeys)
+
+  addIdentifiersFromObject(userIdentifiers, user, userKeys)
+  addIdentifiersFromObject(userIdentifiers, profile, userKeys)
+  addIdentifiersFromObject(userIdentifiers, currentMembership, userKeys)
+  addIdentifiersFromObject(userIdentifiers, currentMembership?.raw, userKeys)
+
+  return {
+    workspaceIdentifiers: Array.from(workspaceIdentifiers),
+    userIdentifiers: Array.from(userIdentifiers),
+  }
+}
+
+export function resolveBusinessWorkspaceRolloutAccess({
+  enabled = false,
+  requiresAllowlist = false,
+  allowedWorkspaceIdentifiers = [],
+  allowedUserIdentifiers = [],
+  currentWorkspace = null,
+  currentMembership = null,
+  profile = null,
+  user = null,
+} = {}) {
+  if (!enabled) return { enabled: false, reason: 'feature_disabled' }
+  if (!requiresAllowlist) return { enabled: true, reason: 'allowlist_not_required' }
+
+  const identifiers = collectBusinessWorkspaceRolloutIdentifiers({
+    currentWorkspace,
+    currentMembership,
+    profile,
+    user,
+  })
+  const workspaceAllowed = hasIdentifierMatch(allowedWorkspaceIdentifiers, identifiers.workspaceIdentifiers)
+  const userAllowed = hasIdentifierMatch(allowedUserIdentifiers, identifiers.userIdentifiers)
+
+  return {
+    enabled: workspaceAllowed || userAllowed,
+    reason: workspaceAllowed ? 'workspace_allowlisted' : userAllowed ? 'user_allowlisted' : 'allowlist_miss',
+    ...identifiers,
+  }
 }
 
 export function resolveAvailableBusinessWorkspaces({

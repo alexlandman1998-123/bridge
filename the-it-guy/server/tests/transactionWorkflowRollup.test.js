@@ -102,6 +102,34 @@ try {
     ['buyer_onboarding_complete'],
   )
 
+  const developmentDocumentRequestRollup = await resolveTransactionRollup(
+    'tx-dev-docs',
+    {
+      context: buildBaseContext({
+        transaction: {
+          id: 'tx-dev-docs',
+          development_id: 'dev-1',
+          transaction_type: 'development_sale',
+          finance_type: 'cash',
+          seller_onboarding_status: '',
+          current_main_stage: 'OTP',
+          stage: 'Awaiting OTP',
+        },
+        documents: [
+          { id: 'doc-dev-buyer-fica-pending', document_type: 'buyer_id_document', status: 'completed' },
+        ],
+      }),
+    },
+  )
+
+  const developmentActionKeys = developmentDocumentRequestRollup.availableActions.map((action) => action.actionKey)
+  assert.equal(developmentActionKeys.includes('REQUEST_DEVELOPER_DOCUMENTS'), true)
+  assert.equal(developmentActionKeys.includes('REQUEST_SELLER_DETAILS'), false)
+  assert.equal(
+    developmentDocumentRequestRollup.availableActions.find((action) => action.actionKey === 'REQUEST_DEVELOPER_DOCUMENTS')?.label,
+    'Request developer documents',
+  )
+
   const transferRollup = await resolveTransactionRollup(
     'tx-2',
     {

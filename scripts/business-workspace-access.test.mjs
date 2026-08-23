@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   BUSINESS_WORKSPACES,
   resolveAvailableBusinessWorkspaces,
+  resolveBusinessWorkspaceRolloutAccess,
   resolveBusinessWorkspaceState,
 } from '../the-it-guy/src/lib/businessWorkspaceAccess.js'
 
@@ -93,5 +94,51 @@ const invalidPreferred = resolveBusinessWorkspaceState({
 })
 assert.equal(invalidPreferred.currentId, BUSINESS_WORKSPACES.rentals)
 assert.equal(invalidPreferred.showSwitcher, false)
+
+assert.equal(
+  resolveBusinessWorkspaceRolloutAccess({
+    enabled: true,
+    requiresAllowlist: false,
+  }).enabled,
+  true,
+  'staging and preview rollout should not require a workspace allowlist',
+)
+
+const produktiveWorkspaceAllowed = resolveBusinessWorkspaceRolloutAccess({
+  enabled: true,
+  requiresAllowlist: true,
+  allowedWorkspaceIdentifiers: ['produktive'],
+  currentWorkspace: { id: 'workspace-123', name: 'Produktive' },
+  currentMembership: { role: 'principal' },
+})
+assert.equal(produktiveWorkspaceAllowed.enabled, true)
+assert.equal(produktiveWorkspaceAllowed.reason, 'workspace_allowlisted')
+
+const workspaceUuidAllowed = resolveBusinessWorkspaceRolloutAccess({
+  enabled: true,
+  requiresAllowlist: true,
+  allowedWorkspaceIdentifiers: ['9d6c96f1-1358-44b4-8a46-3f927fc83c4b'],
+  currentWorkspace: { id: '9d6c96f1-1358-44b4-8a46-3f927fc83c4b', name: 'Another Agency' },
+})
+assert.equal(workspaceUuidAllowed.enabled, true)
+
+const userAllowed = resolveBusinessWorkspaceRolloutAccess({
+  enabled: true,
+  requiresAllowlist: true,
+  allowedUserIdentifiers: ['alex@arch9.co.za'],
+  user: { id: 'user-1', email: 'alex@arch9.co.za' },
+  currentWorkspace: { id: 'workspace-456', name: 'Other Agency' },
+})
+assert.equal(userAllowed.enabled, true)
+assert.equal(userAllowed.reason, 'user_allowlisted')
+
+const allowlistMiss = resolveBusinessWorkspaceRolloutAccess({
+  enabled: true,
+  requiresAllowlist: true,
+  allowedWorkspaceIdentifiers: ['produktive'],
+  currentWorkspace: { id: 'workspace-456', name: 'Other Agency' },
+})
+assert.equal(allowlistMiss.enabled, false)
+assert.equal(allowlistMiss.reason, 'allowlist_miss')
 
 console.log('business workspace access tests passed')

@@ -28,6 +28,7 @@ import { handleBondIntakeNotificationEmail } from "./handlers/bondIntakeNotifica
 import { handleBondOriginatorBuyerIntroEmail } from "./handlers/bondOriginatorBuyerIntro.ts";
 import { handleCommercialAccessNotificationEmail } from "./handlers/commercialAccessNotification.ts";
 import { handleCommercialLandlordOnboardingEmail } from "./handlers/commercialLandlordOnboarding.ts";
+import { handleAgencyOnboardingEmail } from "./handlers/agencyOnboarding.ts";
 import { handleOfferDecisionNotificationEmail } from "./handlers/offerDecisionNotification.ts";
 import { handleOrganisationPartnerInvitationEmail } from "./handlers/organisationPartnerInvitation.ts";
 import { handleSellerOfferReviewEmail } from "./handlers/sellerOfferReview.ts";
@@ -52,6 +53,7 @@ import type {
   SendArch9LaunchConfirmationPayload,
   SendArch9LaunchInternalNotificationPayload,
   SendAttorneyQuotePayload,
+  SendAgencyOnboardingPayload,
   SendBondAttorneyLegalNotificationPayload,
   SendBondIntakeNotificationPayload,
   SendBondOriginatorBuyerIntroPayload,
@@ -653,6 +655,16 @@ Deno.serve(async (req: Request) => {
         ...(payload as SendCommercialAccessNotificationPayload),
         type: "commercial_access_notification",
       });
+    }
+
+    if (["agency_onboarding"].includes(type)) {
+      console.log("[send-email] routing template", {
+        route: "agency_onboarding",
+        recipient: recipient || null,
+      });
+      return await handleAgencyOnboardingEmail(
+        payload as SendAgencyOnboardingPayload,
+      );
     }
 
     if (

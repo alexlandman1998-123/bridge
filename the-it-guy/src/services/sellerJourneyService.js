@@ -8,6 +8,7 @@ import {
   buildSellerDocumentRequirementRows,
   normalizeSellerDocumentRequirementStatus,
 } from './sellerDocumentRequirementsService.js'
+import { hasDirectListingPortalIntake } from '../lib/directListingSellerPortalBridge.js'
 
 function normalizeText(value) {
   return String(value ?? '').trim()
@@ -496,6 +497,7 @@ function hasListingShell({ lead = {}, listing = {} } = {}) {
 
 function hasListingCreated({ lead = {}, listing = {}, mandateStatus = '' } = {}) {
   if (!hasListingShell({ lead, listing })) return false
+  if (hasDirectListingPortalIntake(listing)) return true
   return mandateStatus === 'signed'
 }
 

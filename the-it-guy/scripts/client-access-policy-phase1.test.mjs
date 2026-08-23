@@ -154,6 +154,25 @@ test('seller portal still requires a seller email after signed mandate upload', 
   assert.equal(policy.actions.activatePortal.reason, CLIENT_ACCESS_REASONS.sellerEmailRequired)
 })
 
+test('developer sales cannot activate the private seller portal', () => {
+  const policy = resolveSellerAccessPolicy({
+    transactionId: 'txn-dev-portal',
+    transaction_type: 'developer_sale',
+    seller_party_type: 'developer',
+    sellerEmail: 'developer@example.com',
+    mandateStatus: 'signed_uploaded',
+  })
+
+  assert.equal(policy.isDeveloperSale, true)
+  assert.equal(policy.sellerPartyType, 'developer')
+  assert.equal(policy.actions.activatePortal.enabled, false)
+  assert.equal(policy.actions.activatePortal.reason, CLIENT_ACCESS_REASONS.developerSellerPortalNotApplicable)
+  assert.equal(policy.actions.uploadSignedMandate.enabled, false)
+  assert.equal(policy.actions.uploadSignedMandate.reason, CLIENT_ACCESS_REASONS.developerSellerPortalNotApplicable)
+  assert.equal(policy.actions.sendMandateSigningLink.enabled, false)
+  assert.equal(policy.actions.sendMandateSigningLink.reason, CLIENT_ACCESS_REASONS.developerSellerPortalNotApplicable)
+})
+
 test('combined policy exposes buyer and seller decisions from one canonical entry point', () => {
   const policy = resolveClientAccessPolicy({
     buyer: {

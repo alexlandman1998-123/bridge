@@ -4,6 +4,7 @@ import {
   normalizeAttorneyFirmRole,
   normalizeAttorneyInvitationStatus,
 } from '../lib/attorneyPermissions'
+import { invokeEdgeFunction, isSupabaseConfigured } from '../lib/supabaseClient'
 import { createInvite } from './inviteService'
 import {
   createInviteToken,
@@ -26,6 +27,78 @@ function isMissingInviteRpcError(error) {
   const code = String(error.code || '').toLowerCase()
   const message = `${error.message || ''} ${error.details || ''} ${error.hint || ''}`.toLowerCase()
   return code === '42p01' || code === '42883' || code === 'pgrst202' || message.includes('bridge_create_invite') || message.includes('bridge_accept_invite')
+}
+
+function buildAttorneyInviteLink(token, baseUrl = '') {
+  const safeToken = normalizeText(token)
+  if (!safeToken) return ''
+  const origin = normalizeText(baseUrl) || (typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'https://app.arch9.co.za')
+  return `${origin}/invite/${encodeURIComponent(safeToken)}`
+}
+
+function resolveInviterName(actor = {}) {
+  return normalizeText(actor?.user_metadata?.full_name || actor?.user_metadata?.name || actor?.email || 'your firm admin')
+}
+
+function isDuplicatePendingInviteError(error) {
+  if (!error) return false
+  const code = String(error.code || '').toLowerCase()
+  const message = `${error.message || ''} ${error.details || ''} ${error.hint || ''}`.toLowerCase()
+  return code === '23505' || message.includes('duplicate key') || message.includes('attorney_firm_invitations_firm_email_pending_unique_idx')
+}
+
+async function resolveAttorneyFirmName(client, firmId) {
+  const query = await client
+    .from('attorney_firms')
+    .select('id, name')
+    .eq('id', firmId)
+    .maybeSingle()
+
+  if (query.error) {
+    if (isMissingTableError(query.error, 'attorney_firms') || isPermissionDeniedError(query.error)) {
+      return ''
+    }
+    throw query.error
+  }
+
+  return normalizeText(query.data?.name)
+}
+
+async function sendAttorneyInviteEmail({
+  email,
+  inviteLink,
+  organisationId,
+  organisationName,
+  inviterName,
+  role,
+}) {
+  if (!isSupabaseConfigured) {
+    throw new Error('Email sending is unavailable because Supabase is not configured.')
+  }
+
+  const response = await invokeEdgeFunction('send-email', {
+    body: {
+      type: 'workspace_invite',
+      to: email,
+      inviteLink,
+      inviteeName: email,
+      inviterName: inviterName || 'your firm admin',
+      organisationId,
+      organisationName: organisationName || 'your firm',
+      workspaceRole: role,
+    },
+  })
+
+  const sendError = response?.error || response?.data?.error
+  if (sendError) {
+    throw new Error(
+      typeof sendError === 'string'
+        ? sendError
+        : sendError?.message || 'Invite was created, but the email could not be sent.',
+    )
+  }
+
+  return response?.data || null
 }
 
 function assertRole(value) {
@@ -72,6 +145,8 @@ export async function inviteAttorneyFirmMember({
     throw new Error('Invitation email is required and must be valid.')
   }
 
+  const firmName = await resolveAttorneyFirmName(client, normalizedFirmId).catch(() => '')
+  const inviterName = resolveInviterName(actor)
   const token = createInviteToken('attorney-invite')
   const payload = {
     firm_id: normalizedFirmId,
@@ -96,7 +171,26 @@ export async function inviteAttorneyFirmMember({
     if (isMissingTableError(query.error, 'attorney_firm_invitations')) {
       throw new Error('Invitations are temporarily unavailable. You can continue setup and invite team members later.')
     }
-    throw query.error
+    if (!isDuplicatePendingInviteError(query.error)) {
+      throw query.error
+    }
+
+    const existingQuery = await client
+      .from('attorney_firm_invitations')
+      .select('id, firm_id, email, role, professional_role, practice_qualifications, department_id, invited_by, token, status, expires_at, accepted_at, created_at, updated_at')
+      .eq('firm_id', normalizedFirmId)
+      .eq('email', normalizedEmail)
+      .eq('status', 'pending')
+      .maybeSingle()
+
+    if (existingQuery.error) {
+      throw existingQuery.error
+    }
+    if (!existingQuery.data?.id) {
+      throw query.error
+    }
+
+    query.data = existingQuery.data
   }
 
   try {
@@ -119,6 +213,20 @@ export async function inviteAttorneyFirmMember({
     if (!isMissingInviteRpcError(canonicalError)) {
       console.warn('[INVITES] canonical attorney firm invite mirror failed', canonicalError)
     }
+  }
+
+  const inviteLink = buildAttorneyInviteLink(query.data.token)
+  try {
+    await sendAttorneyInviteEmail({
+      email: query.data.email,
+      inviteLink,
+      organisationId: query.data.firm_id,
+      organisationName: firmName,
+      inviterName,
+      role: query.data.role,
+    })
+  } catch (emailError) {
+    throw new Error(emailError?.message || 'Invite was created, but the email could not be sent.')
   }
 
   return mapInvitationRow(query.data)

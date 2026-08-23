@@ -4,6 +4,7 @@ export const MVP_SUPPORTED_TRANSACTION_TYPES = Object.freeze([
   'resale',
   'private_sale',
   'development_sale',
+  'developer_sale',
 ])
 
 export const MVP_SUPPORTED_FINANCE_TYPES = Object.freeze([
@@ -102,7 +103,7 @@ export function evaluateMvpLaunchScope(profile = {}) {
     issues,
   })
 
-  if (transactionType !== 'development_sale' && normalizeValue(profile.sellerEntityType) === 'developer') {
+  if (!['development_sale', 'developer_sale'].includes(transactionType) && normalizeValue(profile.sellerEntityType) === 'developer') {
     issues.push(
       issue({
         field: 'sellerEntityType',

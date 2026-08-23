@@ -1151,7 +1151,10 @@ function HeaderBar({ onLogout, user }) {
       location.pathname.startsWith('/pipeline/')
     )
   const settingsHideTitle = location.pathname === '/settings' || location.pathname.startsWith('/settings/')
-  const hideTitle = !title || developerHideTitle || attorneyHideTitle || bondHideTitle || clientHideTitle || agentHideTitle || settingsHideTitle
+  const isTransactionWorkspaceRoute =
+    /^\/transactions\/[^/]+(?:\/transfer\/[^/]+)?$/.test(location.pathname) ||
+    /^\/developments\/[^/]+\/transactions\/[^/]+$/.test(location.pathname)
+  const hideTitle = !title || developerHideTitle || attorneyHideTitle || bondHideTitle || clientHideTitle || agentHideTitle || settingsHideTitle || isTransactionWorkspaceRoute
   const isClientRole = role === 'client'
   const hideSearchInHeader = role === 'attorney' && (location.pathname === '/dashboard' || location.pathname === '/')
   const developerDashboardHeaderOnly = role === 'developer' && (location.pathname === '/dashboard' || location.pathname === '/')
@@ -1452,7 +1455,6 @@ function HeaderBar({ onLogout, user }) {
     return (
       <header className="no-print ui-shell-header ui-shell-header-no-title ui-shell-header-developer-dashboard">
         <div className="ui-shell-actions ui-shell-actions-developer-dashboard">
-          {!hideQuickCreateInHeader ? <QuickCreateDropdown /> : null}
           <div className="ui-shell-search ui-shell-search-developer-dashboard min-h-[44px]" aria-label="Search">
             <Search size={17} className="shrink-0 text-textSoft" />
             <input
@@ -1461,6 +1463,7 @@ function HeaderBar({ onLogout, user }) {
               placeholder="Search unit, buyer, stage..."
             />
           </div>
+          {!hideQuickCreateInHeader ? <QuickCreateDropdown /> : null}
           {notificationsControl}
           {avatarControl}
         </div>

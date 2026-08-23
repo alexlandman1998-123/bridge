@@ -1,3 +1,5 @@
+import { resolveTransactionSaleProfile } from '../transactions/transactionSaleProfile.js'
+
 export const CLIENT_ACCESS_POLICY_VERSION = 'client_access_policy_phase1_v1'
 
 export const CLIENT_ACCESS_ROLES = Object.freeze({
@@ -30,6 +32,7 @@ export const CLIENT_ACCESS_REASONS = Object.freeze({
   sellerEmailRequired: 'seller_email_required',
   sellerSignedMandateRequired: 'seller_signed_mandate_required',
   sellerPortalReady: 'seller_portal_ready',
+  developerSellerPortalNotApplicable: 'developer_seller_portal_not_applicable',
   sellerMandateSigningLinksRetired: 'seller_mandate_signing_links_retired',
 })
 
@@ -48,6 +51,7 @@ export const CLIENT_ACCESS_REASON_MESSAGES = Object.freeze({
   [CLIENT_ACCESS_REASONS.sellerEmailRequired]: 'Add a valid seller email before sending the Seller Portal invitation.',
   [CLIENT_ACCESS_REASONS.sellerSignedMandateRequired]: 'Upload the signed mandate before activating the Seller Portal.',
   [CLIENT_ACCESS_REASONS.sellerPortalReady]: 'Signed mandate uploaded. Seller Portal invitation is ready to send.',
+  [CLIENT_ACCESS_REASONS.developerSellerPortalNotApplicable]: 'Developer sale documents are collected through the transaction workspace, not the private seller portal.',
   [CLIENT_ACCESS_REASONS.sellerMandateSigningLinksRetired]: 'Mandate signing links are retired. Upload the signed mandate manually instead.',
 })
 
@@ -301,6 +305,18 @@ function sellerEmail(context = {}) {
   )
 }
 
+function resolveSellerSaleProfile(context = {}) {
+  return resolveTransactionSaleProfile({
+    transaction: {
+      ...(context.transaction || {}),
+      ...context,
+    },
+    setup: context.setup || context.transactionSetup || context.transaction_setup || {},
+    sourceContext: context.sourceContext || context.source_context || context.lead || {},
+    unit: context.unit || context.propertyUnit || context.property_unit || {},
+  })
+}
+
 function isKingstonsBuyer(context = {}) {
   return Boolean(
     booleanish(context.isKingstons) ||
@@ -478,10 +494,14 @@ export function resolveSellerAccessPolicy(context = {}) {
   const hasContext = Boolean(sellerContextId(context))
   const hasSellerEmail = Boolean(sellerEmail(context))
   const signedMandateUploaded = hasSignedMandateEvidence(context)
+  const saleProfile = resolveSellerSaleProfile(context)
+  const isDeveloperSale = saleProfile.isDeveloperSale === true
 
   let activatePortal
   if (!hasContext) {
     activatePortal = action(CLIENT_ACCESS_ACTIONS.activateSellerPortal, false, CLIENT_ACCESS_REASONS.transactionRequired, 'Activate seller portal')
+  } else if (isDeveloperSale) {
+    activatePortal = action(CLIENT_ACCESS_ACTIONS.activateSellerPortal, false, CLIENT_ACCESS_REASONS.developerSellerPortalNotApplicable, 'Activate seller portal')
   } else if (!signedMandateUploaded) {
     activatePortal = action(CLIENT_ACCESS_ACTIONS.activateSellerPortal, false, CLIENT_ACCESS_REASONS.sellerSignedMandateRequired, 'Activate seller portal')
   } else if (!hasSellerEmail) {
@@ -492,21 +512,26 @@ export function resolveSellerAccessPolicy(context = {}) {
 
   const uploadSignedMandate = action(
     CLIENT_ACCESS_ACTIONS.uploadSignedMandate,
-    Boolean(hasContext && !signedMandateUploaded),
-    signedMandateUploaded ? CLIENT_ACCESS_REASONS.signedMandateAlreadyUploaded : CLIENT_ACCESS_REASONS.signedMandateUploadReady,
+    Boolean(hasContext && !signedMandateUploaded && !isDeveloperSale),
+    isDeveloperSale
+      ? CLIENT_ACCESS_REASONS.developerSellerPortalNotApplicable
+      : signedMandateUploaded ? CLIENT_ACCESS_REASONS.signedMandateAlreadyUploaded : CLIENT_ACCESS_REASONS.signedMandateUploadReady,
     'Upload signed mandate',
   )
 
   const sendMandateSigningLink = action(
     CLIENT_ACCESS_ACTIONS.sendMandateSigningLink,
     false,
-    CLIENT_ACCESS_REASONS.sellerMandateSigningLinksRetired,
+    isDeveloperSale ? CLIENT_ACCESS_REASONS.developerSellerPortalNotApplicable : CLIENT_ACCESS_REASONS.sellerMandateSigningLinksRetired,
     'Send mandate signing link',
   )
 
   return Object.freeze({
     version: CLIENT_ACCESS_POLICY_VERSION,
     role: CLIENT_ACCESS_ROLES.seller,
+    isDeveloperSale,
+    sellerPartyType: saleProfile.sellerPartyType,
+    saleChannel: saleProfile.saleChannel,
     signedMandateUploaded,
     actions: Object.freeze({
       uploadSignedMandate,
