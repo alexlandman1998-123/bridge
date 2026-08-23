@@ -1550,6 +1550,32 @@ function getDevelopmentImage(row = {}) {
   return ''
 }
 
+function getDevelopmentIdentity(row = {}) {
+  return String(
+    row?.development?.id ||
+      row?.development?.development_id ||
+      row?.developmentId ||
+      row?.development_id ||
+      row?.unit?.development_id ||
+      row?.transaction?.development_id ||
+      row?.transaction?.developmentId ||
+      row?.id ||
+      row?.name ||
+      '',
+  ).trim()
+}
+
+function getDevelopmentName(row = {}) {
+  return String(
+    row?.development?.name ||
+      row?.developmentName ||
+      row?.development_name ||
+      row?.name ||
+      row?.title ||
+      'Development',
+  ).trim()
+}
+
 function isToday(value) {
   const date = new Date(value || 0)
   if (Number.isNaN(date.getTime())) return false
@@ -1567,6 +1593,7 @@ function buildDeveloperSparkline(seedValue = 0, length = 8) {
 
 function buildDeveloperCommandCenterModel({ rows = [], overview = {}, profile = {}, organisation = {} } = {}) {
   const safeRows = Array.isArray(rows) ? rows : []
+  const overviewDevelopmentSummaries = Array.isArray(overview?.developmentSummaries) ? overview.developmentSummaries : []
   const portfolio = selectPortfolioMetrics(safeRows, {
     totalDevelopmentsOverride: Number(overview?.metrics?.totalDevelopments || 0) || null,
   })
@@ -1574,7 +1601,7 @@ function buildDeveloperCommandCenterModel({ rows = [], overview = {}, profile = 
   const developmentPerformance = selectDevelopmentPerformance(safeRows)
   const rowsByDevelopmentId = new Map()
   for (const row of safeRows) {
-    const developmentId = row?.development?.id || row?.unit?.development_id || row?.development?.name || ''
+    const developmentId = getDevelopmentIdentity(row)
     if (developmentId && !rowsByDevelopmentId.has(developmentId)) rowsByDevelopmentId.set(developmentId, row)
   }
 
@@ -1628,14 +1655,59 @@ function buildDeveloperCommandCenterModel({ rows = [], overview = {}, profile = 
     })
   }
 
-  const developments = developmentPerformance.slice(0, 8).map((development) => {
-    const sourceRow = rowsByDevelopmentId.get(development.id) || rowsByDevelopmentId.get(development.name) || {}
-    return {
-      ...development,
-      imageUrl: getDevelopmentImage(sourceRow),
-      href: development.id ? `/developments/${development.id}` : '/developments',
+  const developmentsById = new Map()
+  const addDevelopmentCard = (development = {}, fallbackRow = {}) => {
+    const developmentId = getDevelopmentIdentity(development) || getDevelopmentIdentity(fallbackRow)
+    if (!developmentId) return
+    const sourceRow = rowsByDevelopmentId.get(developmentId) || fallbackRow || {}
+    const current = developmentsById.get(developmentId) || {
+      id: developmentId,
+      name: getDevelopmentName(development) || getDevelopmentName(sourceRow),
+      totalUnits: 0,
+      unitsSold: 0,
+      unitsAvailable: 0,
+      unitsInProgress: 0,
+      unitsRegistered: 0,
+      revenueSecured: 0,
+      pipelineValue: 0,
+      sellThroughPercent: 0,
+      unitsInProgressPercent: 0,
+      imageUrl: '',
+      href: developmentId ? `/developments/${developmentId}` : '/developments',
+      lastActivity: null,
     }
-  })
+
+    current.name = getDevelopmentName(development) || current.name
+    current.totalUnits = Math.max(current.totalUnits || 0, Number(development.totalUnits ?? development.total_units ?? 0) || 0)
+    current.unitsSold = Math.max(current.unitsSold || 0, Number(development.unitsSold ?? development.units_sold ?? 0) || 0)
+    current.unitsAvailable = Math.max(current.unitsAvailable || 0, Number(development.unitsAvailable ?? development.units_available ?? 0) || 0)
+    current.unitsInProgress = Math.max(current.unitsInProgress || 0, Number(development.unitsInProgress ?? development.units_in_progress ?? 0) || 0)
+    current.unitsRegistered = Math.max(current.unitsRegistered || 0, Number(development.unitsRegistered ?? development.units_registered ?? 0) || 0)
+    current.revenueSecured = Math.max(current.revenueSecured || 0, Number(development.revenueSecured ?? development.revenue_secured ?? 0) || 0)
+    current.pipelineValue = Math.max(current.pipelineValue || 0, Number(development.pipelineValue ?? development.pipeline_value ?? 0) || 0)
+    current.sellThroughPercent = Math.max(current.sellThroughPercent || 0, Number(development.sellThroughPercent ?? development.sell_through_percent ?? 0) || 0)
+    current.imageUrl = current.imageUrl || getDevelopmentImage(sourceRow)
+    current.href = developmentId ? `/developments/${developmentId}` : current.href
+    current.lastActivity = development.lastActivity || development.last_activity || current.lastActivity
+
+    if (!current.totalUnits && Number.isFinite(Number(development.totalRows))) {
+      current.totalUnits = Number(development.totalRows)
+    }
+
+    developmentsById.set(developmentId, current)
+  }
+
+  developmentPerformance.forEach((development) => addDevelopmentCard(development, rowsByDevelopmentId.get(development.id) || {}))
+  overviewDevelopmentSummaries.forEach((development) => addDevelopmentCard(development, rowsByDevelopmentId.get(getDevelopmentIdentity(development)) || {}))
+
+  const developments = [...developmentsById.values()]
+    .sort((left, right) => Number(right.sellThroughPercent || 0) - Number(left.sellThroughPercent || 0) || String(left.name || '').localeCompare(String(right.name || ''), undefined, { sensitivity: 'base' }))
+    .slice(0, 8)
+    .map((development) => ({
+      ...development,
+      href: development.id ? `/developments/${development.id}` : '/developments',
+      imageUrl: development.imageUrl || getDevelopmentImage(rowsByDevelopmentId.get(development.id) || {}),
+    }))
 
   const recentActivity = [...safeRows]
     .filter((row) => row?.transaction || row?.unit)
@@ -1754,46 +1826,8 @@ function DeveloperSparkline({ points = [], tone = 'blue' }) {
 function DeveloperLandingCommandCenter({ model, onNavigate = () => {} }) {
   if (!model) return null
 
-  const hasCommercialHealthData =
-    Number(model.summary?.developments || 0) > 0 ||
-    Number(model.summary?.activeTransactions || 0) > 0 ||
-    model.recentActivity.length > 0
-
   return (
     <section className="developer-command-page">
-      <article className="developer-command-hero">
-        <div className="developer-command-hero-copy">
-          <div>
-            <h1>{model.greeting}, {model.greetingName}</h1>
-            <p>
-              {model.organisationName} is tracking {formatKpiCount(model.summary.developments)} developments and {formatKpiCount(model.summary.activeTransactions)} active transactions.
-              {' '}{formatKpiCount(model.summary.attentionCount)} item{model.summary.attentionCount === 1 ? '' : 's'} require your attention today.
-            </p>
-          </div>
-          <div className="developer-command-focus">
-            <p>Today's Focus</p>
-            <div>
-              {model.focus.map((item) => {
-                const Icon = item.icon
-                return (
-                  <article key={item.key}>
-                    <span className={`developer-command-focus-icon is-${item.tone}`}><Icon size={16} /></span>
-                    <strong>{formatKpiCount(item.value)}</strong>
-                    <span>{item.label}</span>
-                  </article>
-                )
-              })}
-            </div>
-          </div>
-        </div>
-        <div className="developer-command-hero-actions">
-          <button type="button" className="developer-command-export" onClick={() => onNavigate('/reports')}>
-            <Download size={16} />
-            <span>Export Report</span>
-          </button>
-        </div>
-      </article>
-
       <div className="developer-command-kpis">
         {model.kpis.map((item) => {
           const Icon = item.icon
@@ -1872,86 +1906,6 @@ function DeveloperLandingCommandCenter({ model, onNavigate = () => {} }) {
             </div>
           ) : (
             <div className="developer-command-empty">Development performance appears once developments have linked units.</div>
-          )}
-        </article>
-      </div>
-
-      <div className="developer-command-snapshot-grid">
-        {[
-          { key: 'sales', title: 'Sales Snapshot', items: model.snapshots.sales },
-          { key: 'revenue', title: 'Revenue Snapshot', items: model.snapshots.revenue },
-        ].map((snapshot) => (
-          <article key={snapshot.key} className="developer-command-card developer-command-snapshot-card">
-            <header className="developer-command-card-header">
-              <h2>{snapshot.title}</h2>
-            </header>
-            <div className="developer-command-snapshot-items">
-              {snapshot.items.map((item) => {
-                const Icon = item.icon
-                return (
-                  <div key={item.key}>
-                    <span className={`developer-command-snapshot-icon is-${item.tone}`}><Icon size={16} /></span>
-                    <p>{item.label}</p>
-                    <strong>{item.value}</strong>
-                  </div>
-                )
-              })}
-            </div>
-          </article>
-        ))}
-      </div>
-
-      <div className="developer-command-secondary-grid">
-        <article className="developer-command-card">
-          <header className="developer-command-card-header">
-            <div>
-              <h2>Recent Activity</h2>
-              <span>Latest movement across units</span>
-            </div>
-            <button type="button" onClick={() => onNavigate('/transactions')}>View all</button>
-          </header>
-          {model.recentActivity.length ? (
-            <div className="developer-command-activity-list">
-              {model.recentActivity.map((item) => (
-                <article key={item.id}>
-                  <span className={`developer-command-activity-dot is-${item.tone}`} />
-                  <p>{item.title}</p>
-                  <time>{item.time}</time>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <div className="developer-command-empty">No recent activity to show.</div>
-          )}
-        </article>
-
-        <article className="developer-command-card developer-command-health-card">
-          <header className="developer-command-card-header">
-            <div>
-              <h2>Commercial Health</h2>
-              <span>Portfolio operating signal</span>
-            </div>
-            <button type="button" onClick={() => onNavigate('/reports')}>View details</button>
-          </header>
-          {hasCommercialHealthData ? (
-            <div className="developer-command-health-body">
-              <div className="developer-command-health-score" style={{ '--health-score': `${model.commercialHealth.score}%` }}>
-                <div>
-                  <strong>{model.commercialHealth.score}</strong>
-                  <span>{model.commercialHealth.label}</span>
-                </div>
-              </div>
-              <div className="developer-command-health-list">
-                {model.commercialHealth.bullets.map((item) => (
-                  <p key={item.key}>
-                    <span className={`developer-command-health-dot is-${item.tone}`} />
-                    {item.label}
-                  </p>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <div className="developer-command-empty">No health data available yet.</div>
           )}
         </article>
       </div>

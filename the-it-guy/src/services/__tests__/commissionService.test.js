@@ -237,6 +237,48 @@ assert.equal(summary.companyTargetPeriod, 'quarterly')
 assert.equal(summary.companyTargetAmount, 120000)
 assert.equal(summary.companyContributionAmount, 40000)
 
+const inactiveStructureSummary = buildAgentCommissionSummary({
+  agent: { id: 'agent-2', userId: 'agent-2', email: 'ben@example.test' },
+  structures: [
+    {
+      id: 'structure-active',
+      name: 'Active Default',
+      listingCommissionType: 'percentage',
+      listingCommissionPercentage: 6,
+      agentSplitPercentage: 60,
+      agencySplitPercentage: 40,
+      isDefault: true,
+      isActive: true,
+    },
+    {
+      id: 'structure-inactive',
+      name: 'Archived Premium',
+      listingCommissionType: 'fixed',
+      listingCommissionAmount: 25000,
+      agentSplitPercentage: 75,
+      agencySplitPercentage: 25,
+      isDefault: false,
+      isActive: false,
+    },
+  ],
+  profiles: [
+    {
+      id: 'profile-2',
+      user_id: 'agent-2',
+      email_address: 'ben@example.test',
+      commission_structure_id: 'structure-inactive',
+      override_agent_split_percentage: null,
+      effective_from: '2026-07-02',
+    },
+  ],
+  levels: [{ id: 'standard', name: 'Standard', agentPercentage: 60, agencyPercentage: 40, isDefault: true, isActive: true }],
+  companyContributionTracker: quarterlyCompanyContribution,
+})
+
+assert.equal(inactiveStructureSummary.commissionStructureName, 'Archived Premium')
+assert.equal(inactiveStructureSummary.agentSplitPercentage, 75)
+assert.equal(inactiveStructureSummary.companySplitPercentage, 25)
+
 await server.close()
 
 console.log('commissionService tests passed')

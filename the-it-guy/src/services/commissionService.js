@@ -1159,6 +1159,7 @@ export function buildAgentCommissionSummary({
   const userId = normalizeText(agent.userId || agent.user_id || agent.id)
   const userEmail = normalizeText(agent.email || agent.email_address).toLowerCase()
   const profile = findCommissionProfileForIdentity(profiles, { organisationUserId, userId, userEmail })
+  const allStructures = Array.isArray(structures) ? structures : []
   const activeStructures = (structures || []).filter((structure) => structure?.isActive !== false)
   const defaultStructure = activeStructures.find((structure) => structure?.isDefault) || activeStructures[0] || null
   const explicitStructureId = normalizeText(
@@ -1167,7 +1168,7 @@ export function buildAgentCommissionSummary({
       agent.commissionStructureId ||
       agent.commission_structure_id,
   )
-  const appliedStructure = findById(activeStructures, explicitStructureId) || defaultStructure
+  const appliedStructure = findById(allStructures, explicitStructureId) || defaultStructure
   const activeLevels = (levels || []).filter((level) => level?.isActive !== false)
   const defaultLevel = activeLevels.find((level) => level?.isDefault) || activeLevels[0] || normalizeCommissionLevel(DEFAULT_COMMISSION_LEVELS[0])
   const explicitLevelId = normalizeText(profile?.commission_level_id || profile?.commissionLevelId || agent.commissionLevelId || agent.commission_level_id)
@@ -1175,7 +1176,7 @@ export function buildAgentCommissionSummary({
   const overrideSplit = nullableNumber(profile?.override_agent_split_percentage ?? profile?.overrideAgentSplitPercentage ?? agent.overrideAgentSplitPercentage)
   const structureSplit = nullableNumber(appliedStructure?.agentSplitPercentage ?? appliedStructure?.agent_split_percentage)
   const levelSplit = nullableNumber(appliedLevel?.agentPercentage ?? appliedLevel?.agent_percentage)
-  const agentSplitPercentage = normalizePercentage(overrideSplit ?? levelSplit ?? structureSplit, 60)
+  const agentSplitPercentage = normalizePercentage(overrideSplit ?? structureSplit ?? levelSplit, 60)
   const companySplitPercentage = normalizePercentage(100 - agentSplitPercentage, 40)
   const listingCommission = formatListingCommission(appliedStructure)
   const tracker = companyContributionTracker || buildCommissionTrackerFromRows({

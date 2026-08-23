@@ -25,6 +25,7 @@ import {
 } from '../../lib/settingsApi'
 import {
   createSuggestedProperty24AgentMappings,
+  createSuggestedProperty24SourceReference,
   normalizeProperty24AgentRow,
   normalizeProperty24Settings,
   normalizeProperty24SettingsText,
@@ -153,7 +154,7 @@ function SetupStep({ ready, title, description }) {
   )
 }
 
-function ConnectionToggle({ checked, onChange }) {
+function ConnectionToggle({ checked, onChange, disabled = false, saving = false }) {
   return (
     <button
       type="button"
@@ -162,10 +163,11 @@ function ConnectionToggle({ checked, onChange }) {
           ? 'border-[#0f7f4f] bg-[#0f7f4f] text-white shadow-[0_8px_16px_rgba(15,127,79,0.2)] hover:bg-[#0d6f45]'
           : 'border-[#d9e3ef] bg-white text-[#24364b] hover:bg-[#f7fafc]'
       }`}
+      disabled={disabled}
       onClick={() => onChange(!checked)}
     >
-      <PlugZap className="h-4 w-4" />
-      {checked ? 'Property24 enabled' : 'Enable Property24'}
+      <PlugZap className={`h-4 w-4 ${saving ? 'animate-pulse' : ''}`} />
+      {saving ? 'Saving...' : checked ? 'Property24 enabled' : 'Enable Property24'}
     </button>
   )
 }
@@ -176,6 +178,38 @@ function Field({ label, children }) {
       <span className={LABEL_CLASS}>{label}</span>
       {children}
     </label>
+  )
+}
+
+function SourceReferenceInput({ value, placeholder, onCommit }) {
+  const [draft, setDraft] = useState(value || '')
+
+  useEffect(() => {
+    setDraft(value || '')
+  }, [value])
+
+  function commitDraft() {
+    const normalizedDraft = normalizeProperty24SettingsText(draft)
+    if (normalizedDraft !== normalizeProperty24SettingsText(value)) {
+      onCommit(normalizedDraft)
+    }
+  }
+
+  return (
+    <input
+      className={INPUT_CLASS}
+      value={draft}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={commitDraft}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault()
+          commitDraft()
+          event.currentTarget.blur()
+        }
+      }}
+      placeholder={placeholder}
+    />
   )
 }
 
@@ -293,30 +327,50 @@ export default function SettingsProperty24Page() {
     updateSettings({ property24Agents: [...settings.property24Agents, createBlankProperty24Agent()] })
   }
 
-  function applySuggestedMappings(nextProperty24Agents = settings.property24Agents) {
+  async function applySuggestedMappings(nextProperty24Agents = settings.property24Agents) {
     const suggested = createSuggestedProperty24AgentMappings({
       arch9Agents: agentCandidates,
       property24Agents: nextProperty24Agents,
       existingMappings: settings.agentMappings,
       sourceReferencePrefix: settings.sourceReferencePrefix,
     })
-    updateSettings({ property24Agents: nextProperty24Agents, agentMappings: suggested })
+    await persistProperty24Settings({
+      ...settings,
+      property24Agents: nextProperty24Agents,
+      agentMappings: suggested,
+    }, 'Auto-matched and saved Property24 agents.')
   }
 
-  function updateMapping(agent, patch) {
+  function createNextMappingsForAgent(agent, patch) {
     const agentKey = agent.userId || agent.id || agent.email
-    const nextMappings = agentCandidates.map((candidate) => {
+    return agentCandidates.map((candidate) => {
       const candidateKey = candidate.userId || candidate.id || candidate.email
       const existing = mappingLookup.get(candidateKey) || mappingLookup.get(normalizeEmail(candidate.email)) || {}
       const next = candidateKey === agentKey ? { ...existing, ...patch } : existing
       return toMappingPatch(candidate, next)
     })
+  }
+
+  function updateMapping(agent, patch) {
+    const nextMappings = createNextMappingsForAgent(agent, patch)
     updateSettings({ agentMappings: nextMappings })
   }
 
-  function chooseProperty24Agent(agent, property24AgentId) {
+  function getMappingSourceReference(agent, mapping = {}) {
+    return mapping.sourceReference || createSuggestedProperty24SourceReference(agent, settings.sourceReferencePrefix)
+  }
+
+  async function persistMapping(agent, patch, successMessage) {
+    const nextMappings = createNextMappingsForAgent(agent, patch)
+    await persistProperty24Settings({
+      ...settings,
+      agentMappings: nextMappings,
+    }, successMessage)
+  }
+
+  async function chooseProperty24Agent(agent, property24AgentId) {
     const property24Agent = findProperty24AgentById(settings.property24Agents, property24AgentId)
-    updateMapping(agent, {
+    const patch = {
       property24AgentId,
       property24Name: property24Agent?.fullName || '',
       property24Email: property24Agent?.email || '',
@@ -324,16 +378,17 @@ export default function SettingsProperty24Page() {
       matchMethod: property24Agent ? 'manual' : 'none',
       matchStatus: property24Agent ? 'mapped' : 'unmapped',
       confidence: property24Agent ? 1 : 0,
-    })
+    }
+    await persistMapping(agent, patch, property24Agent ? 'Agent match saved.' : 'Agent match cleared.')
   }
 
-  function acceptSuggestedMapping(agent, mapping = {}) {
-    updateMapping(agent, {
+  async function acceptSuggestedMapping(agent, mapping = {}) {
+    await persistMapping(agent, {
       ...mapping,
       matchMethod: mapping.matchMethod === 'none' ? 'manual' : mapping.matchMethod,
       matchStatus: 'mapped',
       confidence: 1,
-    })
+    }, 'Agent match accepted and saved.')
   }
 
   async function loadProperty24Health({ organisationId = context?.organisation?.id, settingsSnapshot = settings } = {}) {
@@ -371,6 +426,7 @@ export default function SettingsProperty24Page() {
       return
     }
     const agentKey = agent.userId || agent.id || agent.email
+    const sourceReference = getMappingSourceReference(agent, mapping)
     setCreatingAgentKey(agentKey)
     setError('')
     setSuccess('')
@@ -387,7 +443,7 @@ export default function SettingsProperty24Page() {
         body: JSON.stringify({
           organisationId: context.organisation.id,
           agencyId: settings.agencyId,
-          sourceReference: mapping.sourceReference,
+          sourceReference,
           agent: {
             firstName: agent.firstName,
             lastName: agent.lastName,
@@ -408,9 +464,10 @@ export default function SettingsProperty24Page() {
         fullName: agent.fullName,
         email: agent.email,
         mobile: agent.mobile || agent.phone,
-        sourceReference: mapping.sourceReference,
+        sourceReference,
       })
-      updateSettings({
+      const nextSettings = {
+        ...settings,
         property24Agents: [...settings.property24Agents, createdAgent],
         agentMappings: agentCandidates.map((candidate) => {
           const candidateKey = candidate.userId || candidate.id || candidate.email
@@ -421,15 +478,15 @@ export default function SettingsProperty24Page() {
             property24AgentId: createdAgent.property24AgentId,
             property24Name: createdAgent.fullName,
             property24Email: createdAgent.email,
-            sourceReference: createdAgent.sourceReference || mapping.sourceReference,
+            sourceReference: createdAgent.sourceReference || sourceReference,
             matchMethod: 'created',
             matchStatus: 'mapped',
             confidence: 1,
           })
         }),
         lastAgentSyncAt: new Date().toISOString(),
-      })
-      setSuccess(`Created Property24 agent for ${agent.fullName || agent.email}.`)
+      }
+      await persistProperty24Settings(nextSettings, `Created and saved Property24 agent for ${agent.fullName || agent.email}.`)
     } catch (createError) {
       setError(createError.message || 'Property24 agent creation failed.')
     } finally {
@@ -481,12 +538,13 @@ export default function SettingsProperty24Page() {
         matchMethod: 'none',
         matchStatus: row.status || 'unmapped',
       }))
-      updateSettings({
+      const nextSettings = {
+        ...settings,
         property24Agents: nextAgents,
         agentMappings: [...nextMappings, ...reviewMappings],
         lastAgentSyncAt: payload.generatedAt || new Date().toISOString(),
-      })
-      setSuccess(`Synced ${nextAgents.length} Property24 agents.`)
+      }
+      await persistProperty24Settings(nextSettings, `Synced and saved ${nextAgents.length} Property24 agents.`)
     } catch (syncError) {
       setError(syncError.message || 'Property24 agent sync failed.')
     } finally {
@@ -494,14 +552,14 @@ export default function SettingsProperty24Page() {
     }
   }
 
-  async function saveSettings() {
+  async function persistProperty24Settings(nextSettings, successMessage = 'Property24 settings saved.') {
     if (!context) return
     setSaving(true)
     setError('')
     setSuccess('')
     try {
       const organisationSettings = context.organisationSettings || {}
-      const nextProperty24 = normalizeProperty24Settings(settings)
+      const nextProperty24 = normalizeProperty24Settings(nextSettings)
       const nextSettingsJson = {
         ...organisationSettings,
         property24: nextProperty24,
@@ -514,14 +572,36 @@ export default function SettingsProperty24Page() {
       setContext(nextContext)
       setSettings(nextProperty24)
       setSavedSettings(nextProperty24)
-      setSuccess('Property24 settings saved.')
+      setSuccess(successMessage)
       await refreshOrganisation?.({ forceRefresh: true })
       void loadProperty24Health({ settingsSnapshot: nextProperty24 })
+      return nextProperty24
     } catch (saveError) {
       setError(saveError.message || 'Unable to save Property24 settings.')
+      return null
     } finally {
       setSaving(false)
     }
+  }
+
+  async function saveSettings() {
+    await persistProperty24Settings(settings)
+  }
+
+  async function saveConnectionSetup(nextEnabled = settings.enabled) {
+    const nextProperty24 = normalizeProperty24Settings({
+      ...settings,
+      enabled: nextEnabled,
+      agencyId: settings.agencyId,
+    })
+    if (nextEnabled && !nextProperty24.agencyId) {
+      setError('Enter the Property24 agency ID before enabling Property24.')
+      return
+    }
+    await persistProperty24Settings(
+      nextProperty24,
+      nextEnabled ? 'Property24 connection saved and enabled.' : 'Property24 connection saved.',
+    )
   }
 
   if (loading) return <SettingsLoadingState label="Loading Property24 settings..." />
@@ -556,7 +636,7 @@ export default function SettingsProperty24Page() {
       {error ? <SettingsBanner>{error}</SettingsBanner> : null}
       {success ? <SettingsBanner tone="success">{success}</SettingsBanner> : null}
 
-      <SettingsSectionCard title="Connection Setup" description="Connect the agency once, then map the agents who can publish listings.">
+      <SettingsSectionCard title="Connection Setup" description="Enter the agency ID once. Arch9 keeps the Property24 login and technical references in the background.">
         <div className="grid gap-3 lg:grid-cols-4">
           <SetupStep
             ready={settings.enabled}
@@ -589,7 +669,23 @@ export default function SettingsProperty24Page() {
               placeholder="31382"
             />
           </Field>
-          <ConnectionToggle checked={settings.enabled} onChange={(enabled) => updateSettings({ enabled })} />
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              className={PRIMARY_BUTTON_CLASS}
+              onClick={() => saveConnectionSetup(settings.enabled)}
+              disabled={saving || !settings.agencyId}
+            >
+              <Save className="h-4 w-4" />
+              {saving ? 'Saving...' : 'Save connection'}
+            </button>
+            <ConnectionToggle
+              checked={settings.enabled}
+              disabled={saving || (!settings.enabled && !settings.agencyId)}
+              saving={saving}
+              onChange={(enabled) => saveConnectionSetup(enabled)}
+            />
+          </div>
         </div>
 
         <div className={`${MUTED_PANEL_CLASS} mt-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between`}>
@@ -708,48 +804,63 @@ export default function SettingsProperty24Page() {
         </div>
       </SettingsSectionCard>
 
+      {advancedOpen ? (
+        <SettingsSectionCard
+          title="Advanced: Property24 Agent Records"
+          description="Only use this if Property24 support gives you specific agent records to check."
+          actions={
+            <div className="flex flex-wrap gap-2">
+              <button type="button" className={SECONDARY_BUTTON_CLASS} onClick={addProperty24Agent}>
+                <Plus className="h-4 w-4" /> Add
+              </button>
+              <button type="button" className={SECONDARY_BUTTON_CLASS} onClick={() => applySuggestedMappings()}>
+                <Wand2 className="h-4 w-4" /> Auto-match
+              </button>
+              <button type="button" className={PRIMARY_BUTTON_CLASS} onClick={syncProperty24Agents} disabled={syncing || saving || !settings.agencyId}>
+                <RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} /> {syncing ? 'Syncing...' : 'Sync agents'}
+              </button>
+            </div>
+          }
+        >
+          <div className="overflow-hidden rounded-[14px] border border-[#dfe7ee]">
+            <div className="grid grid-cols-[1fr_1fr_1fr_44px] gap-0 bg-[#f7fafc] px-4 py-3 text-xs font-semibold uppercase text-[#6b7d93]">
+              <span>Agent ID</span>
+              <span>Name</span>
+              <span>Email</span>
+              <span />
+            </div>
+            {settings.property24Agents.length ? settings.property24Agents.map((agent, index) => (
+              <div key={agent.rowId || index} className="grid grid-cols-[1fr_1fr_1fr_44px] gap-3 border-t border-[#edf2f7] bg-white px-4 py-3">
+                <input className={INPUT_CLASS} value={agent.property24AgentId} onChange={(event) => updateProperty24Agent(index, { property24AgentId: event.target.value })} />
+                <input className={INPUT_CLASS} value={agent.fullName} onChange={(event) => updateProperty24Agent(index, { fullName: event.target.value })} />
+                <input className={INPUT_CLASS} value={agent.email} onChange={(event) => updateProperty24Agent(index, { email: event.target.value })} />
+                <button type="button" className="inline-flex h-11 w-11 items-center justify-center rounded-[10px] border border-[#ead1d1] text-[#b42318] transition hover:bg-[#fff5f5]" onClick={() => removeProperty24Agent(index)} aria-label="Remove Property24 agent">
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+            )) : (
+              <div className="bg-white px-4 py-8 text-center text-sm text-[#6b7d93]">
+                No Property24 agents synced yet.
+              </div>
+            )}
+          </div>
+        </SettingsSectionCard>
+      ) : null}
+
       <SettingsSectionCard
-        title="Property24 Agents"
-        description="Agents fetched from Property24 are used to match Arch9 users by email or source reference."
+        title="Agent Mapping"
+        description="Sync agents first, then review anything Arch9 could not match automatically."
         actions={
           <div className="flex flex-wrap gap-2">
-            <button type="button" className={SECONDARY_BUTTON_CLASS} onClick={addProperty24Agent}>
-              <Plus className="h-4 w-4" /> Add
-            </button>
             <button type="button" className={SECONDARY_BUTTON_CLASS} onClick={() => applySuggestedMappings()}>
               <Wand2 className="h-4 w-4" /> Auto-match
             </button>
-            <button type="button" className={PRIMARY_BUTTON_CLASS} onClick={syncProperty24Agents} disabled={syncing || !settings.agencyId}>
+            <button type="button" className={PRIMARY_BUTTON_CLASS} onClick={syncProperty24Agents} disabled={syncing || saving || !settings.agencyId}>
               <RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} /> {syncing ? 'Syncing...' : 'Sync agents'}
             </button>
           </div>
         }
       >
-        <div className="overflow-hidden rounded-[14px] border border-[#dfe7ee]">
-          <div className="grid grid-cols-[1fr_1fr_1fr_44px] gap-0 bg-[#f7fafc] px-4 py-3 text-xs font-semibold uppercase text-[#6b7d93]">
-            <span>Agent ID</span>
-            <span>Name</span>
-            <span>Email</span>
-            <span />
-          </div>
-          {settings.property24Agents.length ? settings.property24Agents.map((agent, index) => (
-            <div key={agent.rowId || index} className="grid grid-cols-[1fr_1fr_1fr_44px] gap-3 border-t border-[#edf2f7] bg-white px-4 py-3">
-              <input className={INPUT_CLASS} value={agent.property24AgentId} onChange={(event) => updateProperty24Agent(index, { property24AgentId: event.target.value })} />
-              <input className={INPUT_CLASS} value={agent.fullName} onChange={(event) => updateProperty24Agent(index, { fullName: event.target.value })} />
-              <input className={INPUT_CLASS} value={agent.email} onChange={(event) => updateProperty24Agent(index, { email: event.target.value })} />
-              <button type="button" className="inline-flex h-11 w-11 items-center justify-center rounded-[10px] border border-[#ead1d1] text-[#b42318] transition hover:bg-[#fff5f5]" onClick={() => removeProperty24Agent(index)} aria-label="Remove Property24 agent">
-                <Trash2 className="h-4 w-4" />
-              </button>
-            </div>
-          )) : (
-            <div className="bg-white px-4 py-8 text-center text-sm text-[#6b7d93]">
-              No Property24 agents synced yet.
-            </div>
-          )}
-        </div>
-      </SettingsSectionCard>
-
-      <SettingsSectionCard title="Agent Mapping" description="Review each publishing agent before listings can go live on Property24.">
         {agentCandidates.length ? (
           <div className="grid gap-3">
             {agentCandidates.map((agent) => {
@@ -800,7 +911,7 @@ export default function SettingsProperty24Page() {
                         <StatusPill ready={mapped} label={matchLabel} />
                       </div>
 
-                      <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                      <div className={`mt-4 grid gap-3 ${advancedOpen ? 'md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]' : ''}`}>
                         <Field label="Choose Property24 Agent">
                           <select
                             className={INPUT_CLASS}
@@ -815,14 +926,15 @@ export default function SettingsProperty24Page() {
                             ))}
                           </select>
                         </Field>
-                        <Field label="Source Reference">
-                          <input
-                            className={INPUT_CLASS}
-                            value={mapping.sourceReference}
-                            onChange={(event) => updateMapping(agent, { sourceReference: event.target.value, matchMethod: 'manual' })}
-                            placeholder={`${settings.sourceReferencePrefix}-${agent.userId || agent.id || 'agent'}`}
-                          />
-                        </Field>
+                        {advancedOpen ? (
+                          <Field label="Source Reference">
+                            <SourceReferenceInput
+                              value={mapping.sourceReference}
+                              onCommit={(sourceReference) => updateMapping(agent, { sourceReference, matchMethod: 'manual' })}
+                              placeholder={createSuggestedProperty24SourceReference(agent, settings.sourceReferencePrefix)}
+                            />
+                          </Field>
+                        ) : null}
                       </div>
 
                       <div className="mt-4 flex flex-wrap justify-end gap-2">

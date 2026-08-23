@@ -1,3 +1,4 @@
+import { Building2, CalendarDays, Handshake, KanbanSquare, Users } from 'lucide-react'
 import { SHOW_INTELLIGENCE_BETA } from './featureFlags'
 import { canAccessHQ } from '../auth/hqAccess'
 import {
@@ -123,32 +124,32 @@ function createAgentRentalsNavItems({ canManageOrganisation = false, isBranchMan
 export const APP_NAV_BY_ROLE = {
   developer: [
     { key: 'dashboard', label: 'Dashboard', to: '/dashboard' },
-    { key: 'developments', label: 'Developments', to: '/developments' },
-    { key: 'developer_leads', label: 'Leads', to: '/developer/leads', activeMatch: ['/developer/leads'] },
-    { key: 'developer_partners', label: 'Partners', to: '/developer/partners', activeMatch: ['/developer/partners'] },
-    { key: 'transactions', label: 'Transactions', to: '/units' },
-    { key: 'developer_pipeline', label: 'Pipeline', to: '/developer/leads?view=pipeline' },
-    { key: 'developer_snags', label: 'Snags', to: '/snags' },
+    { key: 'transactions', label: 'Transactions', to: '/transactions', activeMatch: ['/transactions', '/units'] },
+    {
+      key: 'developer_pipeline',
+      label: 'Pipeline',
+      to: '/developer/leads?view=pipeline',
+      activeMatch: ['/developer/leads', '/pipeline/calendar', '/calendar'],
+      icon: KanbanSquare,
+      children: [
+        { key: 'developer_leads', label: 'Leads', to: '/developer/leads', icon: Users },
+        { key: 'pipeline_calendar', label: 'Calendar', to: '/pipeline/calendar', activeMatch: ['/pipeline/calendar', '/calendar'], icon: CalendarDays },
+      ],
+    },
+    { key: 'developments', label: 'Listings', to: '/developments', activeMatch: ['/developments'] },
+    {
+      key: 'developer_organisation',
+      label: 'Organisation',
+      to: '/developer/partners?type=all',
+      activeMatch: ['/developer/partners'],
+      icon: Handshake,
+      children: [
+        { key: 'developer_partners', label: 'Partners', to: '/developer/partners?type=all', icon: Handshake },
+        { key: 'developer_agencies', label: 'Agencies', to: '/developer/partners?type=agency', icon: Building2 },
+      ],
+    },
     { key: 'clients', label: 'Clients', to: '/clients' },
     { key: 'reports', label: 'Reports', to: '/reports' },
-    ...(SHOW_INTELLIGENCE_BETA
-      ? [
-          {
-            key: 'intelligence_beta',
-            label: 'Intelligence (Beta)',
-            to: '/developer/intelligence/dashboard',
-            children: [
-              { key: 'dev_intelligence_dashboard', label: 'Dashboard', to: '/developer/intelligence/dashboard' },
-              { key: 'dev_intelligence_opportunity', label: 'Opportunity Engine', to: '/developer/intelligence/opportunity' },
-              { key: 'dev_intelligence_feasibility', label: 'Feasibility Tool', to: '/developer/intelligence/feasibility' },
-              { key: 'dev_intelligence_market_demand', label: 'Market Demand', to: '/developer/intelligence/market-demand' },
-              { key: 'dev_intelligence_pricing', label: 'Pricing Simulator', to: '/developer/intelligence/pricing' },
-              { key: 'dev_intelligence_portfolio', label: 'Portfolio Performance', to: '/developer/intelligence/portfolio' },
-              { key: 'dev_intelligence_growth', label: 'Growth Network', to: '/developer/intelligence/growth' },
-            ],
-          },
-        ]
-      : []),
   ],
   agent: [
     { key: 'dashboard', label: 'Dashboard', to: '/dashboard' },

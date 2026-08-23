@@ -4226,10 +4226,16 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
   const [permissionsError, setPermissionsError] = useState('')
 
   const effectiveActiveTab = AGENT_WORKSPACE_TABS.some((tab) => tab.key === activeTab) ? activeTab : 'overview'
-  const activeCommissionStructures = commissionStructures.filter((structure) => structure?.isActive)
-  const defaultCommissionStructure = activeCommissionStructures.find((structure) => structure?.isDefault) || null
+  const commissionStructureOptions = commissionStructures.filter(Boolean)
+  const activeCommissionStructures = commissionStructureOptions.filter((structure) => structure?.isActive)
+  const defaultCommissionStructure =
+    activeCommissionStructures.find((structure) => structure?.isDefault) ||
+    commissionStructureOptions.find((structure) => structure?.isDefault) ||
+    activeCommissionStructures[0] ||
+    commissionStructureOptions[0] ||
+    null
   const selectedCommissionStructure =
-    activeCommissionStructures.find((structure) => normalizeAgentRecordId(structure.id) === normalizeAgentRecordId(commissionForm.commissionStructureId)) ||
+    commissionStructureOptions.find((structure) => normalizeAgentRecordId(structure.id) === normalizeAgentRecordId(commissionForm.commissionStructureId)) ||
     (!commissionForm.commissionStructureId ? defaultCommissionStructure : null)
   const fallbackCommissionSummary = useMemo(
     () => agent.commissionSummary || buildAgentCommissionSummary({ agent, structures: commissionStructures }),
@@ -5273,7 +5279,7 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
               <Button
                 type="button"
                 onClick={handleSaveCommissionAssignment}
-                disabled={!canManageSettings || commissionSaving || commissionSummaryLoading || !activeCommissionStructures.length}
+                disabled={!canManageSettings || commissionSaving || commissionSummaryLoading || !commissionStructureOptions.length}
               >
                 {commissionSaving ? 'Saving…' : 'Save Commission'}
               </Button>
@@ -5316,15 +5322,24 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
               </div>
             ) : null}
 
-            {!activeCommissionStructures.length ? (
+            {!commissionStructureOptions.length ? (
               <div className="rounded-2xl border border-[#e3ebf5] bg-[#fbfcfe] p-5">
-                <h3 className="text-base font-semibold text-[#10243a]">No active commission levels</h3>
+                <h3 className="text-base font-semibold text-[#10243a]">No commission structures available</h3>
                 <p className="mt-2 text-sm leading-6 text-[#60758d]">
-                  Add an active commission level before assigning a plan to this agent. Once a level exists, this same panel will save the plan, split, effective date and target here.
+                  Create a sales commission structure in Settings before assigning a plan to this agent. Once one exists, this same panel will save the plan, split, effective date and target here.
                 </p>
+                <Button type="button" variant="secondary" className="mt-4" onClick={() => navigate('/settings/commission-structures')}>
+                  Manage commission structures
+                </Button>
               </div>
             ) : (
               <>
+                {!activeCommissionStructures.length ? (
+                  <div className="rounded-2xl border border-[#f0dfc2] bg-[#fffbf3] px-4 py-3 text-sm leading-6 font-medium text-[#7a5a16]">
+                    No active commission structures are published yet. You can still assign an existing structure below, or activate one in Settings.
+                  </div>
+                ) : null}
+
                 <div className="grid gap-4 sm:grid-cols-2">
                   <label className="grid gap-1.5 sm:col-span-2">
                     <span className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#6f839a]">Sales Commission Structure</span>
@@ -5335,11 +5350,13 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
                       onChange={(event) => updateCommissionForm('commissionStructureId', event.target.value)}
                     >
                       <option value="">
-                        {defaultCommissionStructure ? `Use default (${defaultCommissionStructure.name})` : 'Use default / unassigned'}
+                        {defaultCommissionStructure
+                          ? `Use default (${defaultCommissionStructure.name}${defaultCommissionStructure.isActive === false ? ' - inactive' : ''})`
+                          : 'Use default / unassigned'}
                       </option>
-                      {activeCommissionStructures.map((structure) => (
+                      {commissionStructureOptions.map((structure) => (
                         <option key={structure.id} value={structure.id}>
-                          {structure.name} ({formatPercent(structure.agentSplitPercentage)} agent / {formatPercent(structure.agencySplitPercentage)} agency)
+                          {structure.name} ({formatPercent(structure.agentSplitPercentage)} agent / {formatPercent(structure.agencySplitPercentage)} agency{structure.isActive === false ? ' · inactive' : ''})
                         </option>
                       ))}
                     </Field>
@@ -5417,6 +5434,11 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
                     {selectedCommissionStructure?.isDefault ? (
                       <span className="rounded-full border border-[#d7e6f7] bg-[#eef6ff] px-3 py-1 text-xs font-semibold text-[#1769d1]">
                         Default
+                      </span>
+                    ) : null}
+                    {selectedCommissionStructure && selectedCommissionStructure.isActive === false ? (
+                      <span className="rounded-full border border-[#f0dfc2] bg-[#fffbf3] px-3 py-1 text-xs font-semibold text-[#7a5a16]">
+                        Inactive
                       </span>
                     ) : null}
                   </div>

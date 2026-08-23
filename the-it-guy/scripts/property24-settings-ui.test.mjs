@@ -81,6 +81,13 @@ assert.match(settingsPageSource, /updateWorkflowSettings\(\{\s*property24:\s*nex
 assert.doesNotMatch(settingsPageSource, /updateOrganisationSettings/)
 assert.match(settingsPageSource, /sample\.errorMessage/)
 assert.match(settingsPageSource, /invalidFields/)
+assert.match(settingsPageSource, /async function persistProperty24Settings/)
+assert.match(settingsPageSource, /Save connection/)
+assert.match(settingsPageSource, /Advanced: Property24 Agent Records/)
+assert.match(settingsPageSource, /function SourceReferenceInput/)
+assert.match(settingsPageSource, /onBlur=\{commitDraft\}/)
+assert.match(settingsPageSource, /Synced and saved/)
+assert.match(settingsPageSource, /Created and saved/)
 
 const property24ClientSource = fs.readFileSync(new URL('../server/services/property24Client.js', import.meta.url), 'utf8')
 assert.match(property24ClientSource, /'errorMessage'/)

@@ -15,6 +15,7 @@ import {
   Users,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useWorkspace } from '../context/WorkspaceContext'
 import {
   acceptDeveloperPartnerRelationship,
@@ -103,6 +104,11 @@ function normalizeText(value = '') {
 
 function normalizeLower(value = '') {
   return normalizeText(value).toLowerCase()
+}
+
+function normalizePartnerType(value = 'all') {
+  const normalized = normalizeLower(value)
+  return PARTNER_TYPES.some((item) => item.key === normalized) ? normalized : 'all'
 }
 
 function isValidEmail(value = '') {
@@ -740,8 +746,9 @@ function AddDeveloperPartnerModal({ open, workspaceId, onClose, onCreated }) {
 function DeveloperPartnersPage() {
   const { currentWorkspace, workspace } = useWorkspace()
   const workspaceId = normalizeText(currentWorkspace?.id || workspace?.id)
+  const [searchParams, setSearchParams] = useSearchParams()
   const [activeTab, setActiveTab] = useState('directory')
-  const [typeFilter, setTypeFilter] = useState('all')
+  const [typeFilter, setTypeFilter] = useState(() => normalizePartnerType(searchParams.get('type') || 'all'))
   const [searchTerm, setSearchTerm] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -763,6 +770,18 @@ function DeveloperPartnersPage() {
       byPartnerType: { agency: 0, transfer_attorney: 0, bond_originator: 0 },
     },
   })
+
+  useEffect(() => {
+    const currentTypeParam = searchParams.get('type')
+    const nextType = normalizePartnerType(currentTypeParam || 'all')
+    if (currentTypeParam !== nextType) {
+      const nextParams = new URLSearchParams(searchParams)
+      nextParams.set('type', nextType)
+      setSearchParams(nextParams, { replace: true })
+      return
+    }
+    setTypeFilter((current) => (current === nextType ? current : nextType))
+  }, [searchParams, setSearchParams])
 
   const loadWorkspace = useCallback(async () => {
     if (!isSupabaseConfigured || !workspaceId || workspaceId === 'all') {
@@ -919,6 +938,14 @@ function DeveloperPartnersPage() {
 
   const headerCounts = snapshot.metrics.byPartnerType || {}
 
+  const handleTypeFilterChange = useCallback((nextType) => {
+    const normalizedType = normalizePartnerType(nextType)
+    setTypeFilter(normalizedType)
+    const nextParams = new URLSearchParams(searchParams)
+    nextParams.set('type', normalizedType)
+    setSearchParams(nextParams, { replace: true })
+  }, [searchParams, setSearchParams])
+
   return (
     <div className="min-h-full bg-[#f6f8fb] px-4 py-5 text-[#10243a] sm:px-6 lg:px-8">
       <div className="mx-auto flex max-w-[1480px] flex-col gap-5">
@@ -1015,7 +1042,7 @@ function DeveloperPartnersPage() {
               </label>
               <select
                 value={typeFilter}
-                onChange={(event) => setTypeFilter(event.target.value)}
+                onChange={(event) => handleTypeFilterChange(event.target.value)}
                 className="h-11 rounded-[8px] border border-[#d8e2ef] bg-white px-3 text-sm font-semibold text-[#10243a] outline-none transition focus:border-[#0f8f4c] focus:ring-4 focus:ring-[#0f8f4c]/10"
               >
                 {PARTNER_TYPES.map((option) => (
