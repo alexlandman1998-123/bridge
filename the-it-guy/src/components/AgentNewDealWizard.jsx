@@ -27,6 +27,7 @@ import { getBuyerLeadOptions, mapAgencyLeadSelectionRows } from '../lib/agencyLe
 import { getAgentPrivateListingSummaries, getAgentPrivateListings } from '../services/privateListingService'
 import { inferPartnerRoutingRoleTypesForTransaction, resolvePartnerRoutingForTransaction } from '../services/universalPartnerRoutingService'
 import { activateAnchorOnSpace } from '../lib/keyboardActivation'
+import { getPurchaserTypeLabel } from '../lib/purchaserPersonas'
 import Button from './ui/Button'
 import Modal from './ui/Modal'
 
@@ -73,6 +74,44 @@ const FINANCE_TYPE_OPTIONS = [
   { value: 'cash', label: 'Cash' },
   { value: 'bond', label: 'Bond' },
   { value: 'combination', label: 'Combination' },
+]
+const FINANCE_MANAGED_BY_OPTIONS = [
+  { value: 'client', label: 'Buyer arranging own finance' },
+  { value: 'bond_originator', label: 'Use connected bond originator' },
+]
+const SIGNED_OTP_STATUS_OPTIONS = [
+  {
+    value: 'uploaded',
+    label: 'Signed OTP uploaded',
+    caption: 'The signed OTP is already in the file pack or available for review.',
+  },
+  {
+    value: 'pending_upload',
+    label: 'Signed OTP to upload',
+    caption: 'The signed OTP exists, but must be uploaded after creation.',
+  },
+  {
+    value: 'not_signed',
+    label: 'OTP not signed yet',
+    caption: 'Create the workspace and use onboarding/OTP signing as the next action.',
+  },
+]
+const BUYER_TYPE_OPTIONS = [
+  { value: 'individual', label: 'Natural person', caption: 'An individual buyer purchasing in their own name.' },
+  { value: 'married_coc', label: 'Married in community', caption: 'A natural-person purchase where both spouses are bound.' },
+  { value: 'married_anc', label: 'Married ANC', caption: 'A natural-person purchase married out of community.' },
+  { value: 'company', label: 'Company / CC', caption: 'A company, close corporation, or Pty Ltd purchasing.' },
+  { value: 'trust', label: 'Trust', caption: 'A trust purchasing through trustees or authorised signatories.' },
+  { value: 'foreign_purchaser', label: 'Foreign purchaser', caption: 'A foreign national or non-resident individual.' },
+]
+const BUYER_PARTY_ROLE_OPTIONS = [
+  { value: 'co_purchaser', label: 'Co-purchaser' },
+  { value: 'spouse', label: 'Spouse' },
+  { value: 'authorised_representative', label: 'Authorised representative' },
+  { value: 'director', label: 'Director / member' },
+  { value: 'trustee', label: 'Trustee' },
+  { value: 'surety', label: 'Surety' },
+  { value: 'other', label: 'Other' },
 ]
 const CORE_ROUTING_ROLE_TYPES = ['transfer_attorney', 'bond_originator', 'cancellation_attorney']
 const ROLE_FIELD_TO_ROLE_KEY = Object.freeze({
@@ -173,6 +212,57 @@ function getPartnerTypeLabel(value = '') {
   if (normalized.includes('bond') || normalized.includes('originator')) return 'Bond Originator'
   if (normalized.includes('agency')) return 'Agency'
   return 'Partner'
+}
+
+function getDefaultBuyerPartyRole(purchaserType) {
+  if (purchaserType === 'trust') return 'trustee'
+  if (purchaserType === 'company') return 'authorised_representative'
+  if (purchaserType === 'married_coc') return 'spouse'
+  return 'co_purchaser'
+}
+
+function createBuyerPartyDraft(purchaserType = 'individual') {
+  return {
+    id: `party-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    role: getDefaultBuyerPartyRole(purchaserType),
+    name: '',
+    email: '',
+    phone: '',
+    identityNumber: '',
+    signatory: true,
+  }
+}
+
+function getBuyerPartyRoleLabel(value) {
+  return BUYER_PARTY_ROLE_OPTIONS.find((option) => option.value === value)?.label || 'Additional party'
+}
+
+function getBuyerCaptureLabels(purchaserType) {
+  if (purchaserType === 'company') {
+    return {
+      firstName: 'Registered Entity Name',
+      lastName: 'Authorised Representative',
+      email: 'Representative Email',
+      phone: 'Representative Phone',
+      hint: 'Phase 3 stores the primary company/CC buyer against the current buyer fields. Phase 4 will split full party records.',
+    }
+  }
+  if (purchaserType === 'trust') {
+    return {
+      firstName: 'Trust Name',
+      lastName: 'Authorised Trustee',
+      email: 'Trustee Email',
+      phone: 'Trustee Phone',
+      hint: 'Phase 3 stores the primary trust buyer against the current buyer fields. Phase 4 will split trustees and additional parties.',
+    }
+  }
+  return {
+    firstName: 'Name',
+    lastName: 'Surname',
+    email: 'Email',
+    phone: 'Phone',
+    hint: '',
+  }
 }
 
 function getListingStatus(listing) {
@@ -585,6 +675,10 @@ function getOriginLabel(propertyMode) {
   return 'Created via active listing'
 }
 
+function getOptionLabel(options, value, fallback = 'Not set') {
+  return options.find((option) => option.value === value)?.label || fallback
+}
+
 function fieldClass() {
   return 'w-full rounded-[14px] border border-[#dde4ee] bg-white px-4 py-3 text-sm text-[#162334] shadow-[0_10px_24px_rgba(15,23,42,0.06)] outline-none transition duration-150 ease-out placeholder:text-slate-400 focus:border-[rgba(29,78,216,0.35)] focus:ring-4 focus:ring-[rgba(29,78,216,0.1)]'
 }
@@ -759,11 +853,17 @@ function AgentNewDealWizard({
     cancellation_attorney: '',
   })
   const [form, setForm] = useState({
-    propertyMode: initialPropertyMode === PROPERTY_MODE_DEVELOPMENT || initialUnitId ? PROPERTY_MODE_DEVELOPMENT : PROPERTY_MODE_PRIVATE,
+    propertyMode: PROPERTY_MODE_PRIVATE,
     privateListingId: '',
     developmentId: initialDevelopmentId || '',
     unitId: initialUnitId || '',
+    purchaserType: 'individual',
+    buyerParties: [],
     financeType: 'unknown',
+    financeManagedBy: 'client',
+    cashAmount: '',
+    bondAmount: '',
+    depositAmount: '',
     hasExistingBondToCancel: false,
     importPropertyAddress: '',
     importSuburb: '',
@@ -775,6 +875,8 @@ function AgentNewDealWizard({
     importCurrentStage: 'Offer Accepted',
     importMandateUploaded: false,
     importOtpUploaded: false,
+    signedOtpStatus: 'pending_upload',
+    handoffNotes: '',
     importCommissionStructure: '',
     importProperty24Link: '',
     importNotes: '',
@@ -899,14 +1001,10 @@ function AgentNewDealWizard({
     setIsLoadingPropertyOptions(true)
     setForm((previous) => ({
       ...previous,
-      propertyMode: initialPrivateListingId
-        ? PROPERTY_MODE_PRIVATE
-        : initialPropertyMode === PROPERTY_MODE_DEVELOPMENT || initialUnitId
-          ? PROPERTY_MODE_DEVELOPMENT
-          : previous.propertyMode,
+      propertyMode: PROPERTY_MODE_PRIVATE,
       privateListingId: initialPrivateListingId || '',
-      developmentId: initialPrivateListingId ? '' : initialDevelopmentId || previous.developmentId,
-      unitId: initialPrivateListingId ? '' : initialUnitId || '',
+      developmentId: '',
+      unitId: '',
     }))
     const localListings = mergeListings(readAgentPrivateListings())
     setPrivateListings(localListings)
@@ -1106,6 +1204,15 @@ function AgentNewDealWizard({
       }),
     [form.propertyMode, selectedPrivateListing, selectedUnit],
   )
+  const buyerCaptureLabels = getBuyerCaptureLabels(form.purchaserType)
+  const purchaserTypeLabel = getPurchaserTypeLabel(form.purchaserType)
+  const buyerPartyCount = buildBuyerPartiesForPayload().length
+  const effectiveSignedOtpStatus = form.importOtpUploaded ? 'uploaded' : form.signedOtpStatus
+  const signedOtpStatusLabel = getOptionLabel(SIGNED_OTP_STATUS_OPTIONS, effectiveSignedOtpStatus, 'Signed OTP to upload')
+  const normalizedWizardFinanceType = normalizeFinanceTypeForApi(form.financeType)
+  const isWizardBondFinance = normalizedWizardFinanceType === 'bond' || normalizedWizardFinanceType === 'combination'
+  const includesWizardCashFinance = normalizedWizardFinanceType === 'cash' || normalizedWizardFinanceType === 'combination'
+  const shouldUseBondOriginator = isWizardBondFinance && form.financeManagedBy === 'bond_originator'
   const activePreferredPartners = useMemo(
     () => (preferredPartners || []).filter((item) => item?.isActive),
     [preferredPartners],
@@ -1378,10 +1485,26 @@ function AgentNewDealWizard({
         next.transferPartnerMode = PARTNER_MODE_BUYER
         changed = true
       }
-      if (defaultBondOriginatorPartner && !previous.bondOriginatorPreferredPartnerId && previous.bondOriginatorMode === PARTNER_MODE_NONE) {
+      if (
+        shouldUseBondOriginator &&
+        defaultBondOriginatorPartner &&
+        !previous.bondOriginatorPreferredPartnerId &&
+        previous.bondOriginatorMode === PARTNER_MODE_NONE
+      ) {
         next.bondOriginatorPreferredPartnerId = defaultBondOriginatorPartner.id
         next.bondOriginatorPreferredPartnerPersonId = defaultBondOriginatorPartner.userId || ''
         next.bondOriginatorMode = PARTNER_MODE_AGENCY
+        changed = true
+      }
+      if (!shouldUseBondOriginator && previous.bondOriginatorMode !== PARTNER_MODE_NONE) {
+        next.bondOriginatorMode = PARTNER_MODE_NONE
+        next.bondOriginatorPreferredPartnerId = ''
+        next.bondOriginatorPreferredPartnerPersonId = ''
+        next.bondOriginatorBuyerCompanyName = ''
+        next.bondOriginatorBuyerContactPerson = ''
+        next.bondOriginatorBuyerEmail = ''
+        next.bondOriginatorBuyerPhone = ''
+        next.bondOriginatorBuyerNotes = ''
         changed = true
       }
       if (
@@ -1397,7 +1520,7 @@ function AgentNewDealWizard({
       }
       return changed ? next : previous
     })
-  }, [activePreferredPartners, form.hasExistingBondToCancel, open])
+  }, [activePreferredPartners, form.hasExistingBondToCancel, open, shouldUseBondOriginator])
 
   useEffect(() => {
     if (selectedLead) {
@@ -1651,6 +1774,26 @@ function AgentNewDealWizard({
         const partner = findPartnerById(activePreferredPartners, value)
         next.bondOriginatorPreferredPartnerPersonId = partner?.userId || ''
       }
+      if (key === 'importOtpUploaded' && value) {
+        next.signedOtpStatus = 'uploaded'
+      }
+      if (key === 'signedOtpStatus' && value !== 'uploaded' && next.importOtpUploaded) {
+        next.importOtpUploaded = false
+      }
+      if (key === 'financeManagedBy') {
+        if (value !== 'bond_originator') {
+          next.bondOriginatorMode = PARTNER_MODE_NONE
+          next.bondOriginatorPreferredPartnerId = ''
+          next.bondOriginatorPreferredPartnerPersonId = ''
+          next.bondOriginatorBuyerCompanyName = ''
+          next.bondOriginatorBuyerContactPerson = ''
+          next.bondOriginatorBuyerEmail = ''
+          next.bondOriginatorBuyerPhone = ''
+          next.bondOriginatorBuyerNotes = ''
+        } else if (next.bondOriginatorMode === PARTNER_MODE_NONE) {
+          next.bondOriginatorMode = PARTNER_MODE_AGENCY
+        }
+      }
       if (key === 'cancellationAttorneyPreferredPartnerId') {
         const partner = findPartnerById(activePreferredPartners, value)
         next.cancellationAttorneyPreferredPartnerPersonId = partner?.userId || ''
@@ -1664,6 +1807,119 @@ function AgentNewDealWizard({
     if (roleKey) {
       setRoleSelectionTouched((previous) => ({ ...previous, [roleKey]: true }))
       setRoutingRecommendationChoices((previous) => ({ ...previous, [roleKey]: 'manual' }))
+    }
+  }
+
+  function handlePurchaserTypeChange(value) {
+    setForm((previous) => ({
+      ...previous,
+      purchaserType: value,
+      buyerParties:
+        previous.buyerParties.length || !['married_coc', 'company', 'trust'].includes(value)
+          ? previous.buyerParties
+          : [createBuyerPartyDraft(value)],
+    }))
+  }
+
+  function handleFinanceTypeChange(value) {
+    const normalized = normalizeFinanceTypeForApi(value)
+    const nextIsBondFinance = normalized === 'bond' || normalized === 'combination'
+    setForm((previous) => ({
+      ...previous,
+      financeType: value,
+      financeManagedBy: nextIsBondFinance ? previous.financeManagedBy || 'bond_originator' : 'client',
+      bondAmount: nextIsBondFinance ? previous.bondAmount : '',
+      bondOriginatorMode: nextIsBondFinance ? previous.bondOriginatorMode : PARTNER_MODE_NONE,
+    }))
+  }
+
+  function addBuyerParty() {
+    setForm((previous) => ({
+      ...previous,
+      buyerParties: [...previous.buyerParties, createBuyerPartyDraft(previous.purchaserType)],
+    }))
+  }
+
+  function updateBuyerParty(index, field, value) {
+    setForm((previous) => ({
+      ...previous,
+      buyerParties: previous.buyerParties.map((party, partyIndex) =>
+        partyIndex === index ? { ...party, [field]: value } : party,
+      ),
+    }))
+  }
+
+  function removeBuyerParty(index) {
+    setForm((previous) => ({
+      ...previous,
+      buyerParties: previous.buyerParties.filter((_, partyIndex) => partyIndex !== index),
+    }))
+  }
+
+  function buildBuyerPartiesForPayload() {
+    const primaryName = [form.clientName, form.clientSurname].filter(Boolean).join(' ').trim()
+    const parties = []
+
+    if (primaryName || form.clientEmail || form.clientPhone) {
+      parties.push({
+        role: 'primary_purchaser',
+        purchaserType: form.purchaserType,
+        name: primaryName,
+        firstName: form.clientName,
+        lastName: form.clientSurname,
+        email: form.clientEmail,
+        phone: form.clientPhone,
+        signatory: true,
+        primary: true,
+      })
+    }
+
+    form.buyerParties.forEach((party) => {
+      if (![party.name, party.email, party.phone, party.identityNumber].some((value) => String(value || '').trim())) {
+        return
+      }
+      parties.push({
+        role: party.role || getDefaultBuyerPartyRole(form.purchaserType),
+        purchaserType: form.purchaserType,
+        name: party.name,
+        email: party.email,
+        phone: party.phone,
+        identityNumber: party.identityNumber,
+        signatory: Boolean(party.signatory),
+        primary: false,
+      })
+    })
+
+    return parties
+  }
+
+  function buildHandoffChecklist() {
+    const transferPartnerCaptured = Boolean(
+      form.transferPreferredPartnerId ||
+        form.transferBuyerCompanyName ||
+        form.transferBuyerContactPerson,
+    )
+    const bondOriginatorCaptured =
+      !shouldUseBondOriginator ||
+      Boolean(
+        form.bondOriginatorPreferredPartnerId ||
+          form.bondOriginatorBuyerCompanyName ||
+          form.bondOriginatorBuyerContactPerson,
+      )
+    const cancellationAttorneyCaptured =
+      !cancellationAttorneyRequired ||
+      Boolean(
+        form.cancellationAttorneyPreferredPartnerId ||
+          form.cancellationAttorneyBuyerCompanyName ||
+          form.cancellationAttorneyBuyerContactPerson,
+      )
+
+    return {
+      signedOtpStatus: effectiveSignedOtpStatus,
+      buyerPartiesCaptured: buildBuyerPartiesForPayload().length > 0,
+      financeCaptured: Boolean(normalizeFinanceTypeForApi(form.financeType)),
+      partnersCaptured: Boolean(transferPartnerCaptured && bondOriginatorCaptured && cancellationAttorneyCaptured),
+      notes: form.handoffNotes,
     }
   }
 
@@ -1703,10 +1959,10 @@ function AgentNewDealWizard({
     }
 
     if (stepKey === 'client') {
-      if (!String(form.clientName || '').trim()) nextErrors.clientName = 'Client name is required.'
-      if (!String(form.clientSurname || '').trim()) nextErrors.clientSurname = 'Client surname is required.'
-      if (!String(form.clientEmail || '').trim()) nextErrors.clientEmail = 'Client email is required.'
-      if (!String(form.clientPhone || '').trim()) nextErrors.clientPhone = 'Client phone is required.'
+      if (!String(form.clientName || '').trim()) nextErrors.clientName = `${buyerCaptureLabels.firstName} is required.`
+      if (!String(form.clientSurname || '').trim()) nextErrors.clientSurname = `${buyerCaptureLabels.lastName} is required.`
+      if (!String(form.clientEmail || '').trim()) nextErrors.clientEmail = `${buyerCaptureLabels.email} is required.`
+      if (!String(form.clientPhone || '').trim()) nextErrors.clientPhone = `${buyerCaptureLabels.phone} is required.`
     }
 
     if (stepKey === 'attorney') {
@@ -1735,7 +1991,7 @@ function AgentNewDealWizard({
       }
 
       if (
-        normalizeFinanceTypeForApi(form.financeType)
+        shouldUseBondOriginator
         && bondOriginatorRecommendation?.required
         && bondOriginatorChoice !== 'confirm'
         && form.bondOriginatorMode === PARTNER_MODE_AGENCY
@@ -1744,7 +2000,7 @@ function AgentNewDealWizard({
         nextErrors.bondOriginatorPreferredPartnerId = 'Select a bond originator partner or change mode.'
       }
 
-      if (bondOriginatorChoice !== 'confirm' && form.bondOriginatorMode === PARTNER_MODE_BUYER) {
+      if (shouldUseBondOriginator && bondOriginatorChoice !== 'confirm' && form.bondOriginatorMode === PARTNER_MODE_BUYER) {
         if (!String(form.bondOriginatorBuyerCompanyName || '').trim()) nextErrors.bondOriginatorBuyerCompanyName = 'Company name is required.'
         if (!String(form.bondOriginatorBuyerContactPerson || '').trim()) nextErrors.bondOriginatorBuyerContactPerson = 'Contact person is required.'
       }
@@ -1848,6 +2104,8 @@ function AgentNewDealWizard({
     const buyerName = `${form.clientName} ${form.clientSurname}`.trim()
     const propertyMode = form.propertyMode
     const financeType = normalizeFinanceTypeForApi(form.financeType)
+    const bondFinance = financeType === 'bond' || financeType === 'combination'
+    const financeManagedBy = bondFinance ? form.financeManagedBy || 'bond_originator' : 'client'
     const listingSeller = getListingSeller(privateListing)
     const importAddressParts = [
       normalizeText(form.importPropertyAddress),
@@ -1901,7 +2159,9 @@ function AgentNewDealWizard({
           }
 
     const bondOriginatorSelection =
-      form.bondOriginatorMode === PARTNER_MODE_AGENCY
+      !shouldUseBondOriginator
+        ? null
+        : form.bondOriginatorMode === PARTNER_MODE_AGENCY
         ? {
             mode: PARTNER_MODE_AGENCY,
             partnerId: selectedBondOriginatorPartner?.id || null,
@@ -2054,7 +2314,10 @@ function AgentNewDealWizard({
     }
 
     const transferAttorneyDisplay = resolveRolePlayerDisplay('transfer_attorney', transferSelection)
-    const bondOriginatorDisplay = resolveRolePlayerDisplay('bond_originator', bondOriginatorSelection)
+    const bondOriginatorDisplay =
+      financeManagedBy === 'bond_originator'
+        ? resolveRolePlayerDisplay('bond_originator', bondOriginatorSelection)
+        : { label: '', email: '' }
     const cancellationAttorneyDisplay = resolveRolePlayerDisplay('cancellation_attorney', cancellationAttorneySelection)
     const transferAttorneyLabel = transferAttorneyDisplay.label
     const bondOriginatorLabel = bondOriginatorDisplay.label
@@ -2069,6 +2332,7 @@ function AgentNewDealWizard({
       : hasExternallyAppointedRolePlayer
         ? 'Externally appointed role player captured. Validate assignment while onboarding proceeds.'
         : 'Finance details and bond requirements will be captured during client onboarding.'
+    const handoffChecklist = buildHandoffChecklist()
 
     try {
       setSaving(true)
@@ -2111,19 +2375,23 @@ function AgentNewDealWizard({
           buyerName: `${String(form.clientName || '').trim()} ${String(form.clientSurname || '').trim()}`.trim(),
           buyerPhone: form.clientPhone,
           buyerEmail: form.clientEmail,
+          buyerParties: buildBuyerPartiesForPayload(),
           sellerName: propertyMode === PROPERTY_MODE_IMPORT ? form.importSellerName : propertyMode === PROPERTY_MODE_PRIVATE ? listingSeller.name : '',
           sellerPhone: propertyMode === PROPERTY_MODE_IMPORT ? form.importSellerPhone : propertyMode === PROPERTY_MODE_PRIVATE ? listingSeller.phone : '',
           sellerEmail: propertyMode === PROPERTY_MODE_IMPORT ? form.importSellerEmail : propertyMode === PROPERTY_MODE_PRIVATE ? listingSeller.email : '',
           salesPrice: inheritedDealTerms?.salePrice,
           financeType,
-          purchaserType: 'individual',
+          purchaserType: form.purchaserType,
           saleDate: form.saleDate || todayIso(),
           assignedAgent: String(profile?.fullName || profile?.name || profile?.email || 'Agent').trim(),
           assignedAgentUserId: String(profile?.id || '').trim(),
           assignedAgentEmail: String(profile?.email || '').trim(),
-          financeManagedBy: findResolvedRolePlayer('bond_originator') ? 'bond_originator' : 'internal',
+          financeManagedBy,
         },
         finance: {
+          cashAmount: form.cashAmount,
+          bondAmount: form.bondAmount,
+          depositAmount: form.depositAmount,
           reservationRequired: Boolean(form.reservationRequired),
           reservationAmount: form.reservationRequired ? form.reservationAmount : '',
           reservationAmountType: form.reservationRequired ? form.reservationAmountType : 'fixed',
@@ -2162,6 +2430,7 @@ function AgentNewDealWizard({
           allowIncomplete: true,
           deferFinanceType: !financeType,
           creationOrigin,
+          handoffChecklist,
           sourceContext: {
             originLabel: getOriginLabel(propertyMode),
             branchId: normalizeText(currentMembership?.branchId || currentMembership?.branch_id),
@@ -2180,7 +2449,7 @@ function AgentNewDealWizard({
           completeness,
           canonicalStructure: CANONICAL_TRANSACTION_STRUCTURE,
           rolePlayers: [
-            ...resolvedRolePlayers,
+            ...resolvedRolePlayers.filter((item) => item.roleType !== 'bond_originator' || financeManagedBy === 'bond_originator'),
           ],
           disableAutoPartnerRouting: true,
           commissionSnapshot: resolvedCommissionSnapshot,
@@ -2226,6 +2495,7 @@ function AgentNewDealWizard({
         onboardingUrl: result?.onboardingToken ? `${window.location.origin}/client/onboarding/${result.onboardingToken}` : '',
         attorneyChangeRequested: transferSelection.mode === PARTNER_MODE_BUYER,
         externalRolePlayerCaptured: hasExternallyAppointedRolePlayer,
+        handoffChecklist,
       })
       window.dispatchEvent(new Event('itg:listings-updated'))
       window.dispatchEvent(new Event('itg:transaction-created'))
@@ -2288,7 +2558,7 @@ function AgentNewDealWizard({
               index={index}
               title={
                 stepKey === 'property'
-                  ? 'Select Property'
+                  ? 'Select Listing'
                   : stepKey === 'client'
                     ? 'Client Details'
                     : stepKey === 'attorney'
@@ -2304,21 +2574,13 @@ function AgentNewDealWizard({
           <>
             {activeStep === 'property' ? (
               <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_32px_rgba(15,23,42,0.05)]">
-                <div className="mb-5 flex flex-wrap gap-3">
-                  {[
-                    { key: PROPERTY_MODE_PRIVATE, label: 'Existing Listing' },
-                    { key: PROPERTY_MODE_DEVELOPMENT, label: 'Development Unit' },
-                    { key: PROPERTY_MODE_IMPORT, label: 'Import Deal' },
-                  ].map((item) => (
-                    <button
-                      key={item.key}
-                      type="button"
-                      onClick={() => updatePropertyMode(item.key)}
-                      className={`rounded-full border px-4 py-2 text-sm font-semibold ${form.propertyMode === item.key ? 'border-[#1f4f78] bg-[#2b5577] text-white' : 'border-[#dbe6f2] bg-white text-[#47627c]'}`}
-                    >
-                      {item.label}
-                    </button>
-                  ))}
+                <div className="mb-5 rounded-[18px] border border-[#d8e5f2] bg-[#f7fbff] px-4 py-3">
+                  <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#52708d]">
+                    Agent sale
+                  </span>
+                  <p className="mt-1 text-sm leading-6 text-[#48627f]">
+                    Select the active listing that already has a signed OTP. Development stock is handled inside the developer transaction flow.
+                  </p>
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-2">
@@ -2475,7 +2737,7 @@ function AgentNewDealWizard({
                   )}
                   <div className="mt-4 grid gap-4 md:grid-cols-2">
                     <Field label="Finance Route">
-                      <select className={fieldClass()} value={form.financeType} onChange={(event) => updateField('financeType', event.target.value)}>
+                      <select className={fieldClass()} value={form.financeType} onChange={(event) => handleFinanceTypeChange(event.target.value)}>
                         {FINANCE_TYPE_OPTIONS.map((option) => (
                           <option key={option.value} value={option.value}>{option.label}</option>
                         ))}
@@ -2489,6 +2751,56 @@ function AgentNewDealWizard({
                       />
                       Seller has existing bond to cancel
                     </label>
+                    {includesWizardCashFinance ? (
+                      <Field label={normalizedWizardFinanceType === 'combination' ? 'Cash Portion' : 'Cash Amount'}>
+                        <input
+                          className={fieldClass()}
+                          type="number"
+                          min="0"
+                          step="1000"
+                          value={form.cashAmount}
+                          onChange={(event) => updateField('cashAmount', event.target.value)}
+                          placeholder="Amount buyer will settle in cash"
+                        />
+                      </Field>
+                    ) : null}
+                    {isWizardBondFinance ? (
+                      <Field label={normalizedWizardFinanceType === 'combination' ? 'Bond Portion' : 'Bond Amount'}>
+                        <input
+                          className={fieldClass()}
+                          type="number"
+                          min="0"
+                          step="1000"
+                          value={form.bondAmount}
+                          onChange={(event) => updateField('bondAmount', event.target.value)}
+                          placeholder="Expected bond amount"
+                        />
+                      </Field>
+                    ) : null}
+                    <Field label="Deposit Amount">
+                      <input
+                        className={fieldClass()}
+                        type="number"
+                        min="0"
+                        step="1000"
+                        value={form.depositAmount}
+                        onChange={(event) => updateField('depositAmount', event.target.value)}
+                        placeholder="OTP deposit amount, if applicable"
+                      />
+                    </Field>
+                    {isWizardBondFinance ? (
+                      <Field label="Bond Route">
+                        <select className={fieldClass()} value={form.financeManagedBy} onChange={(event) => updateField('financeManagedBy', event.target.value)}>
+                          {FINANCE_MANAGED_BY_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                          ))}
+                        </select>
+                      </Field>
+                    ) : (
+                      <div className="rounded-[14px] border border-[#d8eadf] bg-[#eef8f2] px-4 py-3 text-sm leading-6 text-[#355e49] md:col-span-2">
+                        Cash route selected. No bond-originator partner will be routed unless this changes to Bond or Combination.
+                      </div>
+                    )}
                   </div>
                 </div>
               </section>
@@ -2507,18 +2819,120 @@ function AgentNewDealWizard({
                       ))}
                     </select>
                   </Field>
-                  <Field label="Name" error={errors.clientName}>
+
+                  <div className="md:col-span-2">
+                    <span className="mb-2 block text-sm font-medium text-[#233247]">Buyer Type</span>
+                    <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                      {BUYER_TYPE_OPTIONS.map((option) => {
+                        const selected = form.purchaserType === option.value
+                        return (
+                          <button
+                            key={option.value}
+                            type="button"
+                            className={`rounded-[16px] border px-4 py-3 text-left transition ${
+                              selected
+                                ? 'border-[#1f4f78] bg-[#edf4fb] shadow-[0_10px_24px_rgba(31,79,120,0.08)]'
+                                : 'border-[#dde4ee] bg-white hover:border-[#cbd8e6] hover:bg-[#fbfdff]'
+                            }`}
+                            onClick={() => handlePurchaserTypeChange(option.value)}
+                          >
+                            <strong className="block text-sm font-semibold text-[#22374d]">{option.label}</strong>
+                            <span className="mt-1 block text-xs leading-5 text-[#60758d]">{option.caption}</span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                    {buyerCaptureLabels.hint ? (
+                      <p className="mt-3 rounded-[14px] border border-[#d8e5f2] bg-[#f8fbff] px-3 py-2 text-xs leading-5 text-[#60758d]">
+                        {buyerCaptureLabels.hint}
+                      </p>
+                    ) : null}
+                  </div>
+
+                  <Field label={buyerCaptureLabels.firstName} error={errors.clientName}>
                     <input className={fieldClass()} value={form.clientName} onChange={(event) => updateField('clientName', event.target.value)} />
                   </Field>
-                  <Field label="Surname" error={errors.clientSurname}>
+                  <Field label={buyerCaptureLabels.lastName} error={errors.clientSurname}>
                     <input className={fieldClass()} value={form.clientSurname} onChange={(event) => updateField('clientSurname', event.target.value)} />
                   </Field>
-                  <Field label="Email" error={errors.clientEmail}>
+                  <Field label={buyerCaptureLabels.email} error={errors.clientEmail}>
                     <input className={fieldClass()} type="email" value={form.clientEmail} onChange={(event) => updateField('clientEmail', event.target.value)} />
                   </Field>
-                  <Field label="Phone" error={errors.clientPhone}>
+                  <Field label={buyerCaptureLabels.phone} error={errors.clientPhone}>
                     <input className={fieldClass()} value={form.clientPhone} onChange={(event) => updateField('clientPhone', event.target.value)} />
                   </Field>
+
+                  <div className="md:col-span-2 rounded-[18px] border border-[#dce5ef] bg-[#fbfdff] p-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7b8ba5]">
+                          Additional Purchaser Parties
+                        </span>
+                        <p className="mt-1 text-sm leading-6 text-[#60758d]">
+                          Add every spouse, co-purchaser, trustee, director, or representative named in the signed OTP.
+                        </p>
+                      </div>
+                      <Button type="button" variant="secondary" onClick={addBuyerParty}>
+                        Add Party
+                      </Button>
+                    </div>
+
+                    {form.buyerParties.length ? (
+                      <div className="mt-4 space-y-3">
+                        {form.buyerParties.map((party, index) => (
+                          <div key={party.id || index} className="rounded-[16px] border border-[#e1eaf3] bg-white p-4">
+                            <div className="mb-3 flex items-center justify-between gap-3">
+                              <strong className="text-sm font-semibold text-[#22374d]">
+                                {getBuyerPartyRoleLabel(party.role)} {index + 1}
+                              </strong>
+                              <button
+                                type="button"
+                                className="text-sm font-semibold text-[#9b2c2c] hover:text-[#7f1d1d]"
+                                onClick={() => removeBuyerParty(index)}
+                              >
+                                Remove
+                              </button>
+                            </div>
+                            <div className="grid gap-3 md:grid-cols-2">
+                              <Field label="Role">
+                                <select className={fieldClass()} value={party.role} onChange={(event) => updateBuyerParty(index, 'role', event.target.value)}>
+                                  {BUYER_PARTY_ROLE_OPTIONS.map((option) => (
+                                    <option key={option.value} value={option.value}>
+                                      {option.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              </Field>
+                              <Field label="Full Name / Entity Contact">
+                                <input className={fieldClass()} value={party.name} onChange={(event) => updateBuyerParty(index, 'name', event.target.value)} />
+                              </Field>
+                              <Field label="Email">
+                                <input className={fieldClass()} type="email" value={party.email} onChange={(event) => updateBuyerParty(index, 'email', event.target.value)} />
+                              </Field>
+                              <Field label="Phone">
+                                <input className={fieldClass()} value={party.phone} onChange={(event) => updateBuyerParty(index, 'phone', event.target.value)} />
+                              </Field>
+                              <Field label="ID / Registration Number">
+                                <input className={fieldClass()} value={party.identityNumber} onChange={(event) => updateBuyerParty(index, 'identityNumber', event.target.value)} />
+                              </Field>
+                              <label className="mt-7 flex items-center gap-2 text-sm font-semibold text-[#40546b]">
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(party.signatory)}
+                                  onChange={(event) => updateBuyerParty(index, 'signatory', event.target.checked)}
+                                />
+                                Signatory / needs documents
+                              </label>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-4 rounded-[14px] border border-dashed border-[#d6e1ee] bg-white px-3 py-3 text-sm text-[#60758d]">
+                        No additional purchaser parties added yet.
+                      </p>
+                    )}
+                  </div>
                 </div>
               </section>
             ) : null}
@@ -2650,6 +3064,7 @@ function AgentNewDealWizard({
                     )}
                   </article>
 
+                  {shouldUseBondOriginator ? (
                   <article className="rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
                     <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                       <strong className="text-sm text-[#22374d]">Bond Originator</strong>
@@ -2748,6 +3163,24 @@ function AgentNewDealWizard({
                       </div>
                     ) : null}
                   </article>
+                  ) : (
+                    <article className="rounded-[18px] border border-[#d8eadf] bg-[#eef8f2] p-4">
+                      <strong className="text-sm text-[#0f5132]">Bond Originator Not Required</strong>
+                      <p className="mt-2 text-sm leading-6 text-[#355e49]">
+                        The finance route is not connected-originator managed, so this transaction will not assign or invite a bond originator.
+                      </p>
+                      <button
+                        type="button"
+                        className="mt-3 rounded-full border border-[#b9dcc8] bg-white px-3 py-1.5 text-xs font-semibold text-[#147a52]"
+                        onClick={() => {
+                          if (!isWizardBondFinance) handleFinanceTypeChange('bond')
+                          updateField('financeManagedBy', 'bond_originator')
+                        }}
+                      >
+                        Route to bond originator instead
+                      </button>
+                    </article>
+                  )}
 
                   {cancellationAttorneyRequired ? (
                     <article className="rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
@@ -2983,12 +3416,67 @@ function AgentNewDealWizard({
                         {FINANCE_TYPE_OPTIONS.find((option) => option.value === form.financeType)?.label || 'Not confirmed yet'}
                       </p>
                       <p className="mt-1 text-[#5f748c]">
+                        {isWizardBondFinance
+                          ? `${FINANCE_MANAGED_BY_OPTIONS.find((option) => option.value === form.financeManagedBy)?.label || 'Bond route not set'}${form.bondAmount ? ` • Bond ${formatCurrency(form.bondAmount)}` : ''}`
+                          : includesWizardCashFinance && form.cashAmount
+                            ? `Cash ${formatCurrency(form.cashAmount)}`
+                            : 'Finance amounts not captured yet.'}
+                      </p>
+                      <p className="mt-1 text-[#5f748c]">
+                        {form.depositAmount ? `Deposit ${formatCurrency(form.depositAmount)} • ` : ''}
                         {form.hasExistingBondToCancel ? 'Seller has an existing bond to cancel.' : 'No existing seller bond cancellation captured.'}
                       </p>
                     </div>
                     <div className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Signed OTP Handoff</p>
+                          <p className="mt-1 text-sm text-[#5f748c]">
+                            Set the first transaction action based on the OTP state.
+                          </p>
+                        </div>
+                        <span className="rounded-full border border-[#dce6f2] bg-white px-3 py-1 text-xs font-semibold text-[#47627c]">
+                          {signedOtpStatusLabel}
+                        </span>
+                      </div>
+                      <div className="mt-4 grid gap-2 md:grid-cols-3">
+                        {SIGNED_OTP_STATUS_OPTIONS.map((option) => {
+                          const selected = effectiveSignedOtpStatus === option.value
+                          return (
+                            <button
+                              key={option.value}
+                              type="button"
+                              className={`rounded-[14px] border px-3 py-3 text-left transition ${
+                                selected
+                                  ? 'border-[#142132] bg-white shadow-[0_10px_24px_rgba(15,23,42,0.08)]'
+                                  : 'border-[#dce6f2] bg-white/70 hover:border-[#c9d8e8]'
+                              }`}
+                              onClick={() => updateField('signedOtpStatus', option.value)}
+                            >
+                              <strong className="block text-sm font-semibold text-[#22374d]">{option.label}</strong>
+                              <span className="mt-1 block text-xs leading-5 text-[#60758d]">{option.caption}</span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                      <div className="mt-4">
+                        <Field label="Handoff Notes" hint="Optional context for the transaction team." fullWidth>
+                          <textarea
+                            className={fieldClass()}
+                            rows={3}
+                            value={form.handoffNotes}
+                            onChange={(event) => updateField('handoffNotes', event.target.value)}
+                            placeholder="Example: OTP signed at show house; upload received scan after creation."
+                          />
+                        </Field>
+                      </div>
+                    </div>
+                    <div className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">
                       <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Client</p>
                       <p className="mt-2 font-semibold text-[#22374d]">{`${form.clientName} ${form.clientSurname}`.trim()}</p>
+                      <p className="mt-1 font-medium text-[#5f748c]">
+                        {purchaserTypeLabel}{buyerPartyCount > 1 ? ` • ${buyerPartyCount} parties` : ''}
+                      </p>
                       <p className="mt-1">{form.clientEmail} • {form.clientPhone}</p>
                     </div>
                     <div className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">
@@ -3005,12 +3493,17 @@ function AgentNewDealWizard({
                     <div className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">
                       <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Bond Originator</p>
                       <p className="mt-2 font-semibold text-[#22374d]">
-                        {form.bondOriginatorMode === PARTNER_MODE_NONE
+                        {!shouldUseBondOriginator
+                          ? 'Not required for this finance route'
+                          : form.bondOriginatorMode === PARTNER_MODE_NONE
                           ? 'Not assigned yet'
                           : form.bondOriginatorMode === PARTNER_MODE_AGENCY
                             ? selectedBondOriginatorPartner?.companyName || selectedBondOriginatorPartner?.contactPerson || 'Pending selection'
                             : form.bondOriginatorBuyerCompanyName || form.bondOriginatorBuyerContactPerson || 'Buyer-appointed partner pending'}
                       </p>
+                      {!shouldUseBondOriginator ? (
+                        <p className="mt-1 text-[#5f748c]">No originator assignment or invitation will be created.</p>
+                      ) : null}
                     </div>
                     {cancellationAttorneyRequired ? (
                       <div className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">
@@ -3049,6 +3542,11 @@ function AgentNewDealWizard({
                     {[
                       'Transaction will be created and linked to the selected property.',
                       `${getOriginLabel(form.propertyMode)} will be logged on the activity timeline.`,
+                      effectiveSignedOtpStatus === 'uploaded'
+                        ? 'The first action will be to review the signed OTP and confirm the handoff pack.'
+                        : effectiveSignedOtpStatus === 'pending_upload'
+                          ? 'The first action will be to upload the signed OTP to transaction documents.'
+                          : 'The first action will be to complete OTP signing before partner handoff.',
                       'Completeness follow-ups will be captured without blocking creation.',
                       'Assigned role players will be notified.',
                       form.propertyMode === PROPERTY_MODE_PRIVATE
@@ -3085,6 +3583,69 @@ function AgentNewDealWizard({
                 ) : null}
                 {!createdDeal.attorneyChangeRequested && createdDeal.externalRolePlayerCaptured ? (
                   <p className="text-sm text-[#9a5b13]">Externally appointed role player recorded and saved against this transaction setup.</p>
+                ) : null}
+                {createdDeal.handoffChecklist?.signedOtpStatus ? (
+                  <p className="text-sm text-[#607387]">
+                    Signed OTP handoff: {getOptionLabel(SIGNED_OTP_STATUS_OPTIONS, createdDeal.handoffChecklist.signedOtpStatus)}.
+                  </p>
+                ) : null}
+                {createdDeal.setupHealth ? (
+                  <section className="mt-4 rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Setup Health</p>
+                        <p className="mt-1 text-sm font-semibold text-[#142132]">{createdDeal.setupHealth.label}</p>
+                      </div>
+                      <span
+                        className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+                          createdDeal.setupHealth.status === 'ready'
+                            ? 'border-[#bfe7cf] bg-[#eefbf3] text-[#157347]'
+                            : createdDeal.setupHealth.status === 'needs_attention'
+                              ? 'border-[#f5d7a8] bg-[#fff8eb] text-[#a15c00]'
+                              : 'border-[#cdddf0] bg-white text-[#315f89]'
+                        }`}
+                      >
+                        {createdDeal.setupHealth.completeCount || 0} complete · {createdDeal.setupHealth.actionRequiredCount || 0} next actions
+                      </span>
+                    </div>
+                    <div className="mt-3 grid gap-2 md:grid-cols-2">
+                      {(createdDeal.setupHealth.checks || []).map((check) => (
+                        <div key={check.key} className="rounded-[14px] border border-[#e5edf6] bg-white px-3 py-2">
+                          <div className="flex items-center justify-between gap-3">
+                            <strong className="text-sm text-[#142132]">{check.label}</strong>
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-[0.68rem] font-semibold uppercase tracking-[0.08em] ${
+                                check.status === 'complete'
+                                  ? 'bg-[#eefbf3] text-[#157347]'
+                                  : check.status === 'needs_attention'
+                                    ? 'bg-[#fff8eb] text-[#a15c00]'
+                                    : 'bg-[#f1f6fc] text-[#315f89]'
+                              }`}
+                            >
+                              {check.status.replaceAll('_', ' ')}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-xs leading-5 text-[#60758d]">{check.detail}</p>
+                        </div>
+                      ))}
+                    </div>
+                    {createdDeal.setupHealth.auditEventLogged === false ? (
+                      <p className="mt-3 text-xs font-medium text-[#8a5a12]">Audit event could not be confirmed, but the transaction was still created.</p>
+                    ) : null}
+                  </section>
+                ) : null}
+                {createdDeal.setupWarnings?.length ? (
+                  <section className="mt-4 rounded-[18px] border border-[#f5d7a8] bg-[#fff8eb] px-4 py-3 text-sm leading-6 text-[#8a5a12]">
+                    <strong className="block text-xs uppercase tracking-[0.18em] text-[#a15c00]">Setup Needs Attention</strong>
+                    <div className="mt-2 space-y-1">
+                      {createdDeal.setupWarnings.map((warning) => (
+                        <p key={`${warning.area}:${warning.code || warning.message}`}>
+                          {warning.area ? `${warning.area.replaceAll('_', ' ')}: ` : ''}
+                          {warning.message}
+                        </p>
+                      ))}
+                    </div>
+                  </section>
                 ) : null}
               </div>
             </div>

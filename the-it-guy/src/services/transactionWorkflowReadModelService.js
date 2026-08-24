@@ -33,6 +33,7 @@ import { buildMvpParticipantRoster } from '../core/transactions/mvpParticipantRo
 import { buildMvpDocumentRoster } from '../core/transactions/mvpDocumentRoster.js'
 import { assessMvpTestDataProtection } from '../core/transactions/mvpTestDataProtection.js'
 import { buildMvpTransactionAuditRecovery } from '../core/transactions/mvpTransactionAuditRecovery.js'
+import { extractNewTransactionSetupHealthFromEvents } from '../core/transactions/newTransactionSetupHealth.js'
 import { getTransactionSharedProgress } from './transactionSharedProgressService.js'
 
 const READ_MODEL_WARNING_PREFIX = '[workflow-read-model]'
@@ -1065,6 +1066,7 @@ export async function getTransactionWorkflowReadModel(transactionId, options = {
     documentRequests,
     events,
   })
+  const setupHealth = extractNewTransactionSetupHealthFromEvents(events)
 
   const { nextInternalActions, nextClientActions } = buildNextActions({ blockers })
   const mvpTruth = buildMvpTransactionTruth({
@@ -1129,6 +1131,8 @@ export async function getTransactionWorkflowReadModel(transactionId, options = {
     nextInternalActions,
     nextClientActions,
     sharedProgress,
+    setupHealth,
+    newTransactionSetupHealth: setupHealth,
     warnings,
     coordination,
     mvpTruth,

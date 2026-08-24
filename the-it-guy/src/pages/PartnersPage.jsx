@@ -3264,19 +3264,37 @@ export default function PartnersPage() {
       setError('')
       setMessage('')
       setInvitationAction({ id: invitation.id, type: 'resend' })
-      await resendPartnerInvitation({
+      const resendResult = await resendPartnerInvitation({
         invitationId: invitation.id,
         organisationId,
         workspaceType: resolvedWorkspaceType,
       })
+      const invitationUrl = resendResult?.invitationUrl || resendResult?.invitationLink || resendResult?.inviteUrl || ''
+      let copied = false
+      if (invitationUrl && typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        try {
+          await navigator.clipboard.writeText(invitationUrl)
+          copied = true
+        } catch (copyError) {
+          console.warn('[PartnersPage] partner invite link copy failed', copyError)
+        }
+      }
       await recordWorkspaceAuditEvent('partner_invite_resent', {
         userId: profile?.id || '',
         workspaceId: organisationId,
         targetType: 'partner_invitation',
         targetId: invitation.id,
-        metadata: { recipientEmail: invitation.invitedEmail || invitation.recipientContactEmail || '' },
+        metadata: {
+          recipientEmail: invitation.invitedEmail || invitation.recipientContactEmail || '',
+          missingExternalEmail: resendResult?.missingExternalEmail === true,
+          invitationLinkCopied: copied,
+        },
       })
-      setMessage('Partner invitation resent.')
+      setMessage(
+        resendResult?.missingExternalEmail
+          ? `This organisation invite has no external email. Invite link ${copied ? 'copied.' : 'is ready to copy from the invite.'}`
+          : `Partner invitation resent${copied ? ' and link copied.' : '.'}`,
+      )
       await loadSnapshot()
     } catch (resendError) {
       setError(resendError?.message || 'Unable to resend partner invitation.')

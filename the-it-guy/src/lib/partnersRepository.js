@@ -831,6 +831,17 @@ function buildPartnerInvitationLink(invitationId = '') {
   return url.toString()
 }
 
+function buildPartnerInvitationManagementResult(invitation = {}, emailResult = {}) {
+  const invitationUrl = buildPartnerInvitationLink(invitation.id)
+  return {
+    ...(emailResult && typeof emailResult === 'object' ? emailResult : {}),
+    invitationUrl,
+    invitationLink: invitationUrl,
+    inviteUrl: invitationUrl,
+    missingExternalEmail: emailResult?.sent === false && emailResult?.reason === 'missing_external_email',
+  }
+}
+
 function isMissingPartnerInvitationFunctionError(error = null) {
   const status = Number(error?.status || error?.details?.status || 0)
   const code = normalizeLower(error?.code || '')
@@ -1524,9 +1535,9 @@ export async function resendPartnerInvitation({
 
   const result = await sendPartnerInvitationEmail(invitation)
   if (result?.sent === false) {
-    throw new Error('This invitation does not have an external email address to resend.')
+    return buildPartnerInvitationManagementResult(invitation, result)
   }
-  return result
+  return buildPartnerInvitationManagementResult(invitation, result)
 }
 
 export async function revokePartnerInvitation({

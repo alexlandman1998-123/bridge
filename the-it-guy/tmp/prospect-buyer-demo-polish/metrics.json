@@ -1,0 +1,90 @@
+[
+  {
+    "section": "overview",
+    "bodyScrollWidth": 1600,
+    "viewportWidth": 1600,
+    "aside": {
+      "x": 0,
+      "y": 0,
+      "w": 300,
+      "h": 1000,
+      "right": 300,
+      "bottom": 1000
+    },
+    "hero": {
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0,
+      "right": 0,
+      "bottom": 0
+    },
+    "heroText": "rgb(255, 255, 255)"
+  },
+  {
+    "section": "documents",
+    "bodyScrollWidth": 1600,
+    "viewportWidth": 1600,
+    "aside": {
+      "x": 0,
+      "y": 0,
+      "w": 300,
+      "h": 1000,
+      "right": 300,
+      "bottom": 1000
+    },
+    "hero": {
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0,
+      "right": 0,
+      "bottom": 0
+    },
+    "heroText": "rgb(255, 255, 255)"
+  },
+  {
+    "section": "finance",
+    "bodyScrollWidth": 1600,
+    "viewportWidth": 1600,
+    "aside": {
+      "x": 0,
+      "y": 0,
+      "w": 300,
+      "h": 1000,
+      "right": 300,
+      "bottom": 1000
+    },
+    "hero": {
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0,
+      "right": 0,
+      "bottom": 0
+    },
+    "heroText": "rgb(255, 255, 255)"
+  },
+  {
+    "section": "team",
+    "bodyScrollWidth": 1600,
+    "viewportWidth": 1600,
+    "aside": {
+      "x": 0,
+      "y": 0,
+      "w": 300,
+      "h": 1000,
+      "right": 300,
+      "bottom": 1000
+    },
+    "hero": {
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0,
+      "right": 0,
+      "bottom": 0
+    },
+    "heroText": "rgb(255, 255, 255)"
+  }
+]

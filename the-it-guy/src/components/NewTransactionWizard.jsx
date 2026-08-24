@@ -48,10 +48,18 @@ import {
 } from '../services/transactionPartnerInvitationService'
 import { listTransactionPartnerConnectionOptions } from '../services/partnerNetworkService'
 import { resolveTransactionWorkspaceRoute } from '../core/transactions/transactionWorkspaceRouting'
+import { getPurchaserTypeLabel } from '../lib/purchaserPersonas'
 import Button from './ui/Button'
 import Modal from './ui/Modal'
 
-const PROGRESS_STEPS = ['Transaction Setup', 'Onboarding Link', 'Confirm & Create']
+const WIZARD_STEPS = [
+  { key: 'source', label: 'Source', helper: 'Development and unit' },
+  { key: 'buyer', label: 'Buyer', helper: 'Primary purchaser' },
+  { key: 'deal', label: 'Deal', helper: 'OTP facts' },
+  { key: 'finance', label: 'Finance', helper: 'Funding route' },
+  { key: 'partners', label: 'Partners', helper: 'Attorney and originator' },
+  { key: 'review', label: 'Review', helper: 'Create safely' },
+]
 
 const RESERVATION_AMOUNT_TYPE_OPTIONS = [
   { value: 'fixed', label: 'Fixed rand amount' },
@@ -75,6 +83,99 @@ const ALTERATION_CHARGE_TREATMENT_OPTIONS = [
   { value: 'separate_invoice', label: 'Invoice separately' },
   { value: 'no_charge', label: 'No charge by default' },
 ]
+
+const FINANCE_TYPE_OPTIONS = [
+  { value: 'cash', label: 'Cash', caption: 'Buyer is settling without bond finance.' },
+  { value: 'bond', label: 'Bond', caption: 'Buyer needs a home loan for the purchase.' },
+  { value: 'hybrid', label: 'Hybrid', caption: 'Buyer is using cash plus bond finance.' },
+]
+
+const FINANCE_MANAGED_BY_OPTIONS = [
+  { value: 'client', label: 'Buyer arranging own finance', caption: 'Track finance, but do not route to a bond originator.' },
+  { value: 'bond_originator', label: 'Use connected bond originator', caption: 'Route the buyer into the bond-originator partner lane.' },
+]
+
+const RESERVATION_STATUS_OPTIONS = [
+  { value: 'pending', label: 'Not paid yet' },
+  { value: 'paid', label: 'Paid, needs verification' },
+  { value: 'verified', label: 'Paid and verified' },
+]
+
+const SIGNED_OTP_STATUS_OPTIONS = [
+  { value: 'uploaded', label: 'Signed OTP uploaded', caption: 'The signed OTP is already in the file pack or available for review.' },
+  { value: 'pending_upload', label: 'Signed OTP to upload', caption: 'The signed OTP exists, but must be uploaded after creation.' },
+  { value: 'not_signed', label: 'OTP not signed yet', caption: 'Create the workspace and use onboarding/OTP signing as the next action.' },
+]
+
+const BUYER_TYPE_OPTIONS = [
+  { value: 'individual', label: 'Natural person', caption: 'An individual buyer purchasing in their own name.' },
+  { value: 'married_coc', label: 'Married in community', caption: 'A natural-person purchase where both spouses are bound.' },
+  { value: 'married_anc', label: 'Married ANC', caption: 'A natural-person purchase married out of community.' },
+  { value: 'company', label: 'Company / CC', caption: 'A company, close corporation, or Pty Ltd purchasing.' },
+  { value: 'trust', label: 'Trust', caption: 'A trust purchasing through trustees or authorised signatories.' },
+  { value: 'foreign_purchaser', label: 'Foreign purchaser', caption: 'A foreign national or non-resident individual.' },
+]
+
+const BUYER_PARTY_ROLE_OPTIONS = [
+  { value: 'co_purchaser', label: 'Co-purchaser' },
+  { value: 'spouse', label: 'Spouse' },
+  { value: 'authorised_representative', label: 'Authorised representative' },
+  { value: 'director', label: 'Director / member' },
+  { value: 'trustee', label: 'Trustee' },
+  { value: 'surety', label: 'Surety' },
+  { value: 'other', label: 'Other' },
+]
+
+function getDefaultBuyerPartyRole(purchaserType) {
+  if (purchaserType === 'trust') return 'trustee'
+  if (purchaserType === 'company') return 'authorised_representative'
+  if (purchaserType === 'married_coc') return 'spouse'
+  return 'co_purchaser'
+}
+
+function createBuyerPartyDraft(purchaserType = 'individual') {
+  return {
+    id: `party-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    role: getDefaultBuyerPartyRole(purchaserType),
+    name: '',
+    email: '',
+    phone: '',
+    identityNumber: '',
+    signatory: true,
+  }
+}
+
+function getBuyerPartyRoleLabel(value) {
+  return BUYER_PARTY_ROLE_OPTIONS.find((option) => option.value === value)?.label || 'Additional party'
+}
+
+function getBuyerCaptureLabels(purchaserType) {
+  if (purchaserType === 'company') {
+    return {
+      firstName: 'Registered Entity Name',
+      lastName: 'Authorised Representative',
+      email: 'Representative Email',
+      phone: 'Representative Phone',
+      hint: 'Phase 3 stores the primary company/CC buyer against the current buyer fields. Phase 4 will split full party records.',
+    }
+  }
+  if (purchaserType === 'trust') {
+    return {
+      firstName: 'Trust Name',
+      lastName: 'Authorised Trustee',
+      email: 'Trustee Email',
+      phone: 'Trustee Phone',
+      hint: 'Phase 3 stores the primary trust buyer against the current buyer fields. Phase 4 will split trustees and additional parties.',
+    }
+  }
+  return {
+    firstName: 'Client Name',
+    lastName: 'Client Surname',
+    email: 'Client Email',
+    phone: 'Client Phone',
+    hint: '',
+  }
+}
 
 function getOptionLabel(options, value, fallback = 'Not set') {
   return options.find((option) => option.value === value)?.label || fallback
@@ -110,6 +211,7 @@ function createInitialForm(initialDevelopmentId = '', initialUnitId = '') {
       buyerLastName: '',
       buyerPhone: '',
       buyerEmail: '',
+      buyerParties: [],
       sellerName: '',
       sellerPhone: '',
       sellerEmail: '',
@@ -121,6 +223,8 @@ function createInitialForm(initialDevelopmentId = '', initialUnitId = '') {
       agentInvolved: false,
       assignedAgent: '',
       assignedAgentEmail: '',
+      signedOtpStatus: 'pending_upload',
+      handoffNotes: '',
     },
     finance: {
       proofOfFundsReceived: false,
@@ -538,7 +642,10 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
   const navigate = useNavigate()
   const { role, workspace, workspaceType, profile, currentMembership } = useWorkspace()
   const { organisation } = useOrganisation()
+  const workspaceKind = String(organisation?.type || workspaceType || role || '').toLowerCase()
+  const isDeveloperTransactionWorkspace = role === 'developer' || ['developer', 'development'].includes(workspaceKind)
   const [form, setForm] = useState(createInitialForm(initialDevelopmentId, initialUnitId))
+  const [activeStep, setActiveStep] = useState(WIZARD_STEPS[0].key)
   const [developments, setDevelopments] = useState([])
   const [units, setUnits] = useState([])
   const [partnerSnapshot, setPartnerSnapshot] = useState(null)
@@ -586,6 +693,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
     setErrors({})
     setSaveError('')
     setForm(createInitialForm(initialDevelopmentId, initialUnitId))
+    setActiveStep(WIZARD_STEPS[0].key)
     setCreatedTransaction(null)
     setReservationDecisionTouched(false)
     setPartnerInvitationModes(createInitialPartnerInvitationModes())
@@ -631,6 +739,31 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
 
     void loadDevelopments()
   }, [open, initialDevelopmentId, initialUnitId])
+
+  useEffect(() => {
+    if (!open || !isDeveloperTransactionWorkspace) return
+    setForm((previous) => {
+      if (previous.setup.transactionType === 'developer_sale') return previous
+      return {
+        ...previous,
+        setup: {
+          ...previous.setup,
+          transactionType: 'developer_sale',
+          propertyType: '',
+          propertyAddressLine1: '',
+          propertyAddressLine2: '',
+          suburb: '',
+          city: '',
+          province: '',
+          postalCode: '',
+          propertyDescription: '',
+          sellerName: '',
+          sellerPhone: '',
+          sellerEmail: '',
+        },
+      }
+    })
+  }, [isDeveloperTransactionWorkspace, open])
 
   useEffect(() => {
     if (!open) return
@@ -831,7 +964,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
     }
     return available
   }, [form.setup.unitId, units])
-  const canChooseTransactionType = ['attorney', 'agent', 'developer', 'internal_admin'].includes(role)
+  const canChooseTransactionType = !isDeveloperTransactionWorkspace && ['attorney', 'internal_admin'].includes(role)
   const isPrivateMatter = isPrivateTransactionType(form.setup.transactionType)
 
   const selectedDevelopment = useMemo(
@@ -1214,6 +1347,14 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
     [form.setup.buyerFirstName, form.setup.buyerLastName].filter(Boolean).join(' '),
     'Not added yet',
   )
+  const buyerCaptureLabels = getBuyerCaptureLabels(form.setup.purchaserType)
+  const purchaserTypeLabel = getPurchaserTypeLabel(form.setup.purchaserType)
+  const buyerPartyCount = buildBuyerPartiesForPayload().length
+  const financeType = form.setup.financeType || 'cash'
+  const isBondFinance = financeType === 'bond' || financeType === 'hybrid'
+  const includesCashFinance = financeType === 'cash' || financeType === 'hybrid'
+  const shouldShowBondOriginatorPartner = isBondFinance && form.setup.financeManagedBy === 'bond_originator'
+  const signedOtpStatusLabel = getOptionLabel(SIGNED_OTP_STATUS_OPTIONS, form.setup.signedOtpStatus, 'Signed OTP to upload')
   const propertySummaryLabel = isPrivateMatter
     ? pickFirstValue(form.setup.propertyAddressLine1, form.setup.propertyDescription, 'Private property')
     : pickFirstValue(selectedDevelopment?.name, 'Not selected')
@@ -1241,6 +1382,16 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
       ? toMoney(form.setup.salesPrice)
       : '-'
   const buyerContactSummary = pickFirstValue(form.setup.buyerEmail, form.setup.buyerPhone, 'Contact not added')
+  const financeTypeSummary = getOptionLabel(
+    FINANCE_TYPE_OPTIONS,
+    form.setup.financeType,
+    'Cash',
+  )
+  const financeManagedBySummary = getOptionLabel(
+    FINANCE_MANAGED_BY_OPTIONS,
+    form.setup.financeManagedBy,
+    'Connected bond originator',
+  )
   const transferAttorneySummary = pickFirstValue(
     partnerInvitationModes.transfer_attorney === 'invite' ? partnerInvitationDrafts.transfer_attorney.companyName : '',
     selectedAttorneyPartner?.companyName,
@@ -1354,12 +1505,120 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
     })
   }
 
+  function handlePurchaserTypeChange(value) {
+    setForm((previous) => ({
+      ...previous,
+      setup: {
+        ...previous.setup,
+        purchaserType: value,
+        buyerParties:
+          previous.setup.buyerParties.length || !['married_coc', 'company', 'trust'].includes(value)
+            ? previous.setup.buyerParties
+            : [createBuyerPartyDraft(value)],
+      },
+    }))
+  }
+
+  function addBuyerParty() {
+    setForm((previous) => ({
+      ...previous,
+      setup: {
+        ...previous.setup,
+        buyerParties: [...previous.setup.buyerParties, createBuyerPartyDraft(previous.setup.purchaserType)],
+      },
+    }))
+  }
+
+  function updateBuyerParty(index, field, value) {
+    setForm((previous) => ({
+      ...previous,
+      setup: {
+        ...previous.setup,
+        buyerParties: previous.setup.buyerParties.map((party, partyIndex) =>
+          partyIndex === index ? { ...party, [field]: value } : party,
+        ),
+      },
+    }))
+  }
+
+  function removeBuyerParty(index) {
+    setForm((previous) => ({
+      ...previous,
+      setup: {
+        ...previous.setup,
+        buyerParties: previous.setup.buyerParties.filter((_, partyIndex) => partyIndex !== index),
+      },
+    }))
+  }
+
+  function buildBuyerPartiesForPayload() {
+    const primaryName = [form.setup.buyerFirstName, form.setup.buyerLastName].filter(Boolean).join(' ').trim()
+    const parties = []
+
+    if (primaryName || form.setup.buyerEmail || form.setup.buyerPhone) {
+      parties.push({
+        role: 'primary_purchaser',
+        purchaserType: form.setup.purchaserType,
+        name: primaryName,
+        firstName: form.setup.buyerFirstName,
+        lastName: form.setup.buyerLastName,
+        email: form.setup.buyerEmail,
+        phone: form.setup.buyerPhone,
+        signatory: true,
+        primary: true,
+      })
+    }
+
+    form.setup.buyerParties.forEach((party) => {
+      if (![party.name, party.email, party.phone, party.identityNumber].some((value) => String(value || '').trim())) {
+        return
+      }
+      parties.push({
+        role: party.role || getDefaultBuyerPartyRole(form.setup.purchaserType),
+        purchaserType: form.setup.purchaserType,
+        name: party.name,
+        email: party.email,
+        phone: party.phone,
+        identityNumber: party.identityNumber,
+        signatory: Boolean(party.signatory),
+        primary: false,
+      })
+    })
+
+    return parties
+  }
+
+  function buildHandoffChecklist() {
+    return {
+      signedOtpStatus: form.setup.signedOtpStatus,
+      buyerPartiesCaptured: buildBuyerPartiesForPayload().length > 0,
+      financeCaptured: Boolean(form.setup.financeType),
+      partnersCaptured: Boolean(transferAttorneySummary !== '-' || (shouldShowBondOriginatorPartner && bondOriginatorSummary !== '-')),
+      notes: form.setup.handoffNotes,
+    }
+  }
+
   function setFinanceField(field, value) {
     setForm((previous) => ({
       ...previous,
       finance: {
         ...previous.finance,
         [field]: value,
+      },
+    }))
+  }
+
+  function setFinanceType(value) {
+    setForm((previous) => ({
+      ...previous,
+      setup: {
+        ...previous.setup,
+        financeType: value,
+        financeManagedBy: value === 'cash' ? 'client' : previous.setup.financeManagedBy || 'bond_originator',
+      },
+      finance: {
+        ...previous.finance,
+        bondAmount: value === 'cash' ? '' : previous.finance.bondAmount,
       },
     }))
   }
@@ -1524,11 +1783,13 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
     }))
   }
 
-  function validateStep(targetStep, options = {}) {
+  function validateStep(targetStep = 'all', options = {}) {
     const nextErrors = {}
     const allowIncomplete = options.allowIncomplete ?? Boolean(form.setup.allowIncomplete)
+    const stepKey = typeof targetStep === 'string' ? targetStep : 'all'
+    const shouldValidate = (key) => stepKey === 'all' || stepKey === 'review' || stepKey === key
 
-    if (targetStep === 0) {
+    if (shouldValidate('source')) {
       if (isPrivateMatter) {
         if (!form.setup.propertyType) {
           nextErrors.propertyType = 'Select a property category.'
@@ -1548,16 +1809,36 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
           nextErrors.unitId = 'Select a unit.'
         }
       }
+    }
 
+    if (shouldValidate('buyer')) {
       if (!allowIncomplete) {
         if (!form.setup.buyerFirstName.trim()) {
-          nextErrors.buyerFirstName = 'Client first name is required.'
+          nextErrors.buyerFirstName = `${buyerCaptureLabels.firstName} is required.`
         }
 
         if (!form.setup.buyerLastName.trim()) {
-          nextErrors.buyerLastName = 'Client surname is required.'
+          nextErrors.buyerLastName = `${buyerCaptureLabels.lastName} is required.`
         }
+      }
 
+      if (!allowIncomplete && !form.setup.buyerEmail.trim()) {
+        nextErrors.buyerEmail = `${buyerCaptureLabels.email} is required.`
+      } else if (form.setup.buyerEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.setup.buyerEmail)) {
+        nextErrors.buyerEmail = 'Enter a valid email address.'
+      }
+
+      if (!allowIncomplete && !form.setup.buyerPhone.trim()) {
+        nextErrors.buyerPhone = `${buyerCaptureLabels.phone} is required.`
+      }
+
+      if (isPrivateMatter && form.setup.sellerEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.setup.sellerEmail)) {
+        nextErrors.sellerEmail = 'Enter a valid seller email address.'
+      }
+    }
+
+    if (shouldValidate('deal')) {
+      if (!allowIncomplete) {
         const price = Number(form.setup.salesPrice)
         if (!form.setup.salesPrice || Number.isNaN(price) || price <= 0) {
           nextErrors.salesPrice = 'Enter a valid sales price.'
@@ -1576,24 +1857,12 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
         }
       }
 
-      if (!allowIncomplete && !form.setup.buyerEmail.trim()) {
-        nextErrors.buyerEmail = 'Client email is required.'
-      } else if (form.setup.buyerEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.setup.buyerEmail)) {
-        nextErrors.buyerEmail = 'Enter a valid email address.'
-      }
-
-      if (!allowIncomplete && !form.setup.buyerPhone.trim()) {
-        nextErrors.buyerPhone = 'Client phone is required.'
-      }
-
-      if (isPrivateMatter && form.setup.sellerEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.setup.sellerEmail)) {
-        nextErrors.sellerEmail = 'Enter a valid seller email address.'
-      }
-
       if (form.setup.agentInvolved && form.setup.assignedAgentEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.setup.assignedAgentEmail)) {
         nextErrors.assignedAgentEmail = 'Enter a valid agent email address.'
       }
+    }
 
+    if (shouldValidate('partners')) {
       for (const draft of getActivePartnerInvitationDrafts(partnerInvitationModes, partnerInvitationDrafts)) {
         const validation = validateTransactionPartnerInvitationDraft(draft)
         Object.entries(validation.errors).forEach(([field, message]) => {
@@ -1624,7 +1893,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
   async function handleSave(options = {}) {
     const allowIncomplete = options.allowIncomplete ?? Boolean(form.setup.allowIncomplete)
 
-    if (!validateStep(0, { allowIncomplete })) {
+    if (!validateStep('all', { allowIncomplete })) {
       return
     }
 
@@ -1632,8 +1901,11 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
       setSaveError('')
       setSaving(true)
       const buyerName = `${form.setup.buyerFirstName} ${form.setup.buyerLastName}`.trim()
+      const shouldRouteBondOriginator = shouldShowBondOriginatorPartner
       const activePartnerInvitations = getActivePartnerInvitationDrafts(partnerInvitationModes, partnerInvitationDrafts)
-      const activePartnerProspects = ['transfer_attorney', 'bond_originator']
+        .filter((draft) => draft.roleType !== 'bond_originator' || shouldRouteBondOriginator)
+      const activePartnerProspects = ['transfer_attorney', shouldRouteBondOriginator ? 'bond_originator' : null]
+        .filter(Boolean)
         .map((roleType) => ({
           roleType,
           prospect: partnerInvitationModes[roleType] === 'existing' ? selectedPartnerProspects[roleType] : null,
@@ -1662,6 +1934,11 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
       } else if (prospectBondOriginator) {
         financeForSave.bondOriginator = prospectBondOriginator.companyName
         financeForSave.bondOriginatorEmail = prospectBondOriginator.email || ''
+        financeForSave.bondOriginatorPartnerRelationshipId = ''
+      }
+      if (!shouldRouteBondOriginator) {
+        financeForSave.bondOriginator = ''
+        financeForSave.bondOriginatorEmail = ''
         financeForSave.bondOriginatorPartnerRelationshipId = ''
       }
       const selectedAttorneyWasDevelopmentDefault =
@@ -1713,6 +1990,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
               'development_default',
             )
       const shouldAutoInviteDevelopmentDefaultBondOriginator =
+        shouldRouteBondOriginator &&
         Boolean(
           developmentRolePlayerDefaults.autoInviteSelectedBondOriginator ||
             developmentRolePlayerDefaults.auto_invite_selected_bond_originator,
@@ -1743,6 +2021,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
           ...form.setup,
           allowIncomplete,
           buyerName,
+          buyerParties: buildBuyerPartiesForPayload(),
         },
         finance: financeForSave,
         status: {
@@ -1753,9 +2032,10 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
           allowIncomplete,
           hierarchyScope,
           sourceContext,
+          handoffChecklist: buildHandoffChecklist(),
           rolePlayers: [
             transferAttorneyRolePlayerSelection,
-            bondOriginatorRolePlayerSelection,
+            shouldRouteBondOriginator ? bondOriginatorRolePlayerSelection : null,
           ].filter(Boolean),
         },
       })
@@ -1898,6 +2178,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
         partnerProspects: partnerProspectResults,
         partnerInvitationWarnings,
         setupWarnings: Array.isArray(result.setupWarnings) ? result.setupWarnings : [],
+        handoffChecklist: buildHandoffChecklist(),
       })
 
       // Do not block transaction creation UX on post-create email automation.
@@ -2139,10 +2420,32 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
     return null
   }
 
+  const activeStepIndex = Math.max(0, WIZARD_STEPS.findIndex((step) => step.key === activeStep))
+  const activeStepMeta = WIZARD_STEPS[activeStepIndex] || WIZARD_STEPS[0]
+  const isFirstStep = activeStepIndex === 0
+  const isReviewStep = activeStep === 'review'
+
+  function goBack() {
+    if (isFirstStep) {
+      onClose()
+      return
+    }
+    setSaveError('')
+    setActiveStep(WIZARD_STEPS[activeStepIndex - 1]?.key || WIZARD_STEPS[0].key)
+  }
+
+  function goNext() {
+    if (!validateStep(activeStep)) {
+      return
+    }
+    setSaveError('')
+    setActiveStep(WIZARD_STEPS[Math.min(activeStepIndex + 1, WIZARD_STEPS.length - 1)]?.key || 'review')
+  }
+
   const footer = (
     <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-      <Button variant="ghost" onClick={onClose} disabled={saving}>
-        {createdTransaction ? 'Done' : 'Cancel'}
+      <Button variant="ghost" onClick={createdTransaction ? onClose : goBack} disabled={saving}>
+        {createdTransaction ? 'Done' : isFirstStep ? 'Cancel' : 'Back'}
       </Button>
 
       {createdTransaction ? (
@@ -2186,10 +2489,17 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
             <Save size={16} />
             Save Draft
           </Button>
-          <Button onClick={() => handleSave()} disabled={saving || loadingMeta}>
-            Create Transaction
-            <ArrowRight size={16} />
-          </Button>
+          {isReviewStep ? (
+            <Button onClick={() => handleSave()} disabled={saving || loadingMeta}>
+              Create Transaction
+              <ArrowRight size={16} />
+            </Button>
+          ) : (
+            <Button onClick={goNext} disabled={saving || loadingMeta}>
+              Continue
+              <ArrowRight size={16} />
+            </Button>
+          )}
         </div>
       )}
     </div>
@@ -2200,32 +2510,51 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
       open={open}
       onClose={saving ? undefined : onClose}
       title="New Transaction"
-      subtitle="Create the transaction. The buyer onboarding link is generated automatically."
+      subtitle={`${activeStepMeta.label}: ${activeStepMeta.helper}. The buyer onboarding link is generated automatically.`}
       className="max-w-[1460px]"
       footer={footer}
     >
       <div className="space-y-4">
         <div className="px-1 py-2">
-          <div className="grid gap-3 sm:grid-cols-3">
-            {PROGRESS_STEPS.map((step, index) => (
-              <div key={step} className="flex items-center gap-3">
+          <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+            {WIZARD_STEPS.map((step, index) => {
+              const isActive = step.key === activeStep
+              const isComplete = index < activeStepIndex
+              return (
+              <button
+                key={step.key}
+                type="button"
+                className={`flex items-center gap-3 rounded-[18px] border px-3 py-3 text-left transition ${
+                  isActive
+                    ? 'border-[#142132] bg-white shadow-[0_14px_30px_rgba(15,23,42,0.08)]'
+                    : isComplete
+                      ? 'border-[#d5eadf] bg-[#f3fbf6] hover:border-[#b9dcc8]'
+                      : 'border-[#dce5ef] bg-[#f8fafc] hover:bg-white'
+                }`}
+                onClick={() => {
+                  setSaveError('')
+                  setActiveStep(step.key)
+                }}
+              >
                 <span
                   className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${
-                    index === 0
+                    isActive
                       ? 'bg-[#142132] text-white shadow-[0_10px_22px_rgba(20,33,50,0.18)]'
-                      : 'border border-[#cfd9e6] bg-white text-[#60758d]'
+                      : isComplete
+                        ? 'bg-[#14804f] text-white'
+                        : 'border border-[#cfd9e6] bg-white text-[#60758d]'
                   }`}
                 >
                   {index + 1}
                 </span>
-                <span className={`text-sm font-semibold ${index === 0 ? 'text-[#142132]' : 'text-[#60758d]'}`}>
-                  {step}
+                <span className="min-w-0">
+                  <span className={`block text-sm font-semibold ${isActive ? 'text-[#142132]' : 'text-[#60758d]'}`}>
+                    {step.label}
+                  </span>
+                  <span className="mt-0.5 block truncate text-xs text-[#8ba0b8]">{step.helper}</span>
                 </span>
-                {index < PROGRESS_STEPS.length - 1 ? (
-                  <span className="hidden h-px flex-1 bg-[#d7e0ec] sm:block" aria-hidden="true" />
-                ) : null}
-              </div>
-            ))}
+              </button>
+            )})}
           </div>
         </div>
 
@@ -2245,17 +2574,33 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
         {!createdTransaction ? (
           <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
             <div className="space-y-5">
-              <section className="rounded-[20px] border border-[#dce5ef] bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.045)]">
+              <section className={`${activeStep === 'source' ? '' : 'hidden'} rounded-[20px] border border-[#dce5ef] bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.045)]`}>
                 <div className="mb-5 flex items-center gap-3">
                   <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#e7f5ee] text-sm font-bold text-[#14804f]">
                     1
                   </span>
                   <div>
-                    <h5 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Property</h5>
+                    <h5 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Source</h5>
+                    <p className="mt-1 text-sm text-[#60758d]">
+                      {isDeveloperTransactionWorkspace
+                        ? 'Select the development stock being sold.'
+                        : 'Select the transaction source for this matter.'}
+                    </p>
                   </div>
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-2">
+                  {isDeveloperTransactionWorkspace ? (
+                    <div className="md:col-span-2 rounded-[18px] border border-[#d8eadf] bg-[#eef8f2] px-4 py-3">
+                      <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#14804f]">
+                        Developer sale
+                      </span>
+                      <p className="mt-1 text-sm leading-6 text-[#355e49]">
+                        This transaction will be created from a development unit. Private-property listing transactions stay in the agent flow.
+                      </p>
+                    </div>
+                  ) : null}
+
                   {canChooseTransactionType ? (
                     <Field label="Transaction Type">
                       <select value={form.setup.transactionType} onChange={(event) => setSetupField('transactionType', event.target.value)}>
@@ -2357,7 +2702,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
                 </div>
               </section>
 
-              <section className="rounded-[20px] border border-[#dce5ef] bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.045)]">
+              <section className={`${activeStep === 'buyer' ? '' : 'hidden'} rounded-[20px] border border-[#dce5ef] bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.045)]`}>
                 <div className="mb-5 flex items-center gap-3">
                   <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#e7f5ee] text-sm font-bold text-[#14804f]">
                     2
@@ -2368,7 +2713,39 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-2">
-                  <Field label={form.setup.allowIncomplete ? 'Client Name (optional)' : 'Client Name'} error={errors.buyerFirstName}>
+                  <div className="md:col-span-2">
+                    <span className="mb-2 block text-sm font-medium text-[#233247]">Buyer Type</span>
+                    <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                      {BUYER_TYPE_OPTIONS.map((option) => {
+                        const selected = form.setup.purchaserType === option.value
+                        return (
+                          <button
+                            key={option.value}
+                            type="button"
+                            className={`rounded-[16px] border px-4 py-3 text-left transition ${
+                              selected
+                                ? 'border-[#142132] bg-[#f4f7fb] shadow-[0_10px_24px_rgba(15,23,42,0.08)]'
+                                : 'border-[#dde4ee] bg-white hover:border-[#cbd8e6] hover:bg-[#fbfdff]'
+                            }`}
+                            onClick={() => handlePurchaserTypeChange(option.value)}
+                          >
+                            <strong className="block text-sm font-semibold text-[#142132]">{option.label}</strong>
+                            <span className="mt-1 block text-xs leading-5 text-[#60758d]">{option.caption}</span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                    {buyerCaptureLabels.hint ? (
+                      <p className="mt-3 rounded-[14px] border border-[#d8e5f2] bg-[#f8fbff] px-3 py-2 text-xs leading-5 text-[#60758d]">
+                        {buyerCaptureLabels.hint}
+                      </p>
+                    ) : null}
+                  </div>
+
+                  <Field
+                    label={form.setup.allowIncomplete ? `${buyerCaptureLabels.firstName} (optional)` : buyerCaptureLabels.firstName}
+                    error={errors.buyerFirstName}
+                  >
                     <input
                       type="text"
                       value={form.setup.buyerFirstName}
@@ -2376,7 +2753,10 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
                     />
                   </Field>
 
-                  <Field label={form.setup.allowIncomplete ? 'Client Surname (optional)' : 'Client Surname'} error={errors.buyerLastName}>
+                  <Field
+                    label={form.setup.allowIncomplete ? `${buyerCaptureLabels.lastName} (optional)` : buyerCaptureLabels.lastName}
+                    error={errors.buyerLastName}
+                  >
                     <input
                       type="text"
                       value={form.setup.buyerLastName}
@@ -2384,7 +2764,10 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
                     />
                   </Field>
 
-                  <Field label={form.setup.allowIncomplete ? 'Client Email (optional)' : 'Client Email'} error={errors.buyerEmail}>
+                  <Field
+                    label={form.setup.allowIncomplete ? `${buyerCaptureLabels.email} (optional)` : buyerCaptureLabels.email}
+                    error={errors.buyerEmail}
+                  >
                     <input
                       type="email"
                       value={form.setup.buyerEmail}
@@ -2392,13 +2775,88 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
                     />
                   </Field>
 
-                  <Field label={form.setup.allowIncomplete ? 'Client Phone (optional)' : 'Client Phone'} error={errors.buyerPhone}>
+                  <Field
+                    label={form.setup.allowIncomplete ? `${buyerCaptureLabels.phone} (optional)` : buyerCaptureLabels.phone}
+                    error={errors.buyerPhone}
+                  >
                     <input
                       type="text"
                       value={form.setup.buyerPhone}
                       onChange={(event) => setSetupField('buyerPhone', event.target.value)}
                     />
                   </Field>
+
+                  <div className="md:col-span-2 rounded-[18px] border border-[#dce5ef] bg-[#fbfdff] p-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7b8ba5]">
+                          Additional Purchaser Parties
+                        </span>
+                        <p className="mt-1 text-sm leading-6 text-[#60758d]">
+                          Add spouses, co-purchasers, trustees, directors, or representatives that must appear on the transaction and onboarding pack.
+                        </p>
+                      </div>
+                      <Button type="button" variant="secondary" onClick={addBuyerParty}>
+                        Add Party
+                      </Button>
+                    </div>
+
+                    {form.setup.buyerParties.length ? (
+                      <div className="mt-4 space-y-3">
+                        {form.setup.buyerParties.map((party, index) => (
+                          <div key={party.id || index} className="rounded-[16px] border border-[#e1eaf3] bg-white p-4">
+                            <div className="mb-3 flex items-center justify-between gap-3">
+                              <strong className="text-sm font-semibold text-[#142132]">
+                                {getBuyerPartyRoleLabel(party.role)} {index + 1}
+                              </strong>
+                              <button
+                                type="button"
+                                className="text-sm font-semibold text-[#9b2c2c] hover:text-[#7f1d1d]"
+                                onClick={() => removeBuyerParty(index)}
+                              >
+                                Remove
+                              </button>
+                            </div>
+                            <div className="grid gap-3 md:grid-cols-2">
+                              <Field label="Role">
+                                <select value={party.role} onChange={(event) => updateBuyerParty(index, 'role', event.target.value)}>
+                                  {BUYER_PARTY_ROLE_OPTIONS.map((option) => (
+                                    <option key={option.value} value={option.value}>
+                                      {option.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              </Field>
+                              <Field label="Full Name / Entity Contact">
+                                <input value={party.name} onChange={(event) => updateBuyerParty(index, 'name', event.target.value)} />
+                              </Field>
+                              <Field label="Email">
+                                <input type="email" value={party.email} onChange={(event) => updateBuyerParty(index, 'email', event.target.value)} />
+                              </Field>
+                              <Field label="Phone">
+                                <input value={party.phone} onChange={(event) => updateBuyerParty(index, 'phone', event.target.value)} />
+                              </Field>
+                              <Field label="ID / Registration Number">
+                                <input value={party.identityNumber} onChange={(event) => updateBuyerParty(index, 'identityNumber', event.target.value)} />
+                              </Field>
+                              <label className="mt-7 flex items-center gap-2 text-sm font-semibold text-[#40546b]">
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(party.signatory)}
+                                  onChange={(event) => updateBuyerParty(index, 'signatory', event.target.checked)}
+                                />
+                                Signatory / needs documents
+                              </label>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-4 rounded-[14px] border border-dashed border-[#d6e1ee] bg-white px-3 py-3 text-sm text-[#60758d]">
+                        No additional purchaser parties added yet.
+                      </p>
+                    )}
+                  </div>
 
                   {isPrivateMatter ? (
                     <>
@@ -2430,17 +2888,20 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
                 </div>
               </section>
 
-              <section className="rounded-[20px] border border-[#dce5ef] bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.045)]">
+              <section className={`${['deal', 'finance', 'partners'].includes(activeStep) ? '' : 'hidden'} rounded-[20px] border border-[#dce5ef] bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.045)]`}>
                 <div className="mb-5 flex items-center gap-3">
                   <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#e7f5ee] text-sm font-bold text-[#14804f]">
                     3
                   </span>
                   <div>
-                    <h5 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Deal</h5>
+                    <h5 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">
+                      {activeStep === 'finance' ? 'Finance' : activeStep === 'partners' ? 'Partners' : 'Deal'}
+                    </h5>
                   </div>
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-2">
+                  <div className={`${activeStep === 'deal' ? 'contents' : 'hidden'}`}>
                   <Field
                     label={form.setup.allowIncomplete ? 'Sales Price (optional)' : 'Sales Price'}
                     error={errors.salesPrice}
@@ -2544,6 +3005,29 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
                           ))}
                         </select>
                       </Field>
+
+                      <div className="md:col-span-2">
+                        <span className="mb-2 block text-sm font-medium text-[#233247]">Reservation Payment Status</span>
+                        <div className="grid gap-2 md:grid-cols-3">
+                          {RESERVATION_STATUS_OPTIONS.map((option) => {
+                            const selected = form.finance.reservationStatus === option.value
+                            return (
+                              <button
+                                key={option.value}
+                                type="button"
+                                className={`rounded-[14px] border px-3 py-2.5 text-sm font-semibold transition ${
+                                  selected
+                                    ? 'border-[#147a52] bg-[#eef8f2] text-[#0f5132]'
+                                    : 'border-[#dde4ee] bg-white text-[#60758d] hover:border-[#cbd8e6]'
+                                }`}
+                                onClick={() => setFinanceField('reservationStatus', option.value)}
+                              >
+                                {option.label}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
                     </>
                   ) : null}
 
@@ -2646,8 +3130,112 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
                       </Field>
                     </>
                   ) : null}
+                  </div>
 
-                  <div className="md:col-span-2 rounded-[18px] border border-[#dce5ef] bg-white p-4">
+                  <div className={`${activeStep === 'finance' ? 'md:col-span-2 grid gap-4 md:grid-cols-2' : 'hidden'}`}>
+                    <div className="md:col-span-2">
+                      <span className="mb-2 block text-sm font-medium text-[#233247]">Finance Type</span>
+                      <div className="grid gap-2 md:grid-cols-3">
+                        {FINANCE_TYPE_OPTIONS.map((option) => {
+                          const selected = financeType === option.value
+                          return (
+                            <button
+                              key={option.value}
+                              type="button"
+                              className={`rounded-[16px] border px-4 py-3 text-left transition ${
+                                selected
+                                  ? 'border-[#142132] bg-[#f4f7fb] shadow-[0_10px_24px_rgba(15,23,42,0.08)]'
+                                  : 'border-[#dde4ee] bg-white hover:border-[#cbd8e6] hover:bg-[#fbfdff]'
+                              }`}
+                              onClick={() => setFinanceType(option.value)}
+                            >
+                              <strong className="block text-sm font-semibold text-[#142132]">{option.label}</strong>
+                              <span className="mt-1 block text-xs leading-5 text-[#60758d]">{option.caption}</span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+
+                    {includesCashFinance ? (
+                      <Field label={financeType === 'hybrid' ? 'Cash Portion' : 'Cash Amount'}>
+                        <input
+                          type="number"
+                          min="0"
+                          step="1000"
+                          value={form.finance.cashAmount}
+                          onChange={(event) => setFinanceField('cashAmount', event.target.value)}
+                          placeholder="Amount buyer will settle in cash"
+                        />
+                      </Field>
+                    ) : null}
+
+                    {isBondFinance ? (
+                      <Field label={financeType === 'hybrid' ? 'Bond Portion' : 'Bond Amount'}>
+                        <input
+                          type="number"
+                          min="0"
+                          step="1000"
+                          value={form.finance.bondAmount}
+                          onChange={(event) => setFinanceField('bondAmount', event.target.value)}
+                          placeholder="Expected bond amount"
+                        />
+                      </Field>
+                    ) : null}
+
+                    <Field label="Deposit Amount">
+                      <input
+                        type="number"
+                        min="0"
+                        step="1000"
+                        value={form.finance.depositAmount}
+                        onChange={(event) => setFinanceField('depositAmount', event.target.value)}
+                        placeholder="OTP deposit, if separate from reservation"
+                      />
+                    </Field>
+
+                    {isBondFinance ? (
+                      <div className="md:col-span-2">
+                        <span className="mb-2 block text-sm font-medium text-[#233247]">Bond Route</span>
+                        <div className="grid gap-2 md:grid-cols-2">
+                          {FINANCE_MANAGED_BY_OPTIONS.map((option) => {
+                            const selected = form.setup.financeManagedBy === option.value
+                            return (
+                              <button
+                                key={option.value}
+                                type="button"
+                                className={`rounded-[16px] border px-4 py-3 text-left transition ${
+                                  selected
+                                    ? 'border-[#147a52] bg-[#eef8f2] shadow-[0_10px_24px_rgba(20,128,79,0.08)]'
+                                    : 'border-[#dde4ee] bg-white hover:border-[#cbd8e6] hover:bg-[#fbfdff]'
+                                }`}
+                                onClick={() => setSetupField('financeManagedBy', option.value)}
+                              >
+                                <strong className="block text-sm font-semibold text-[#142132]">{option.label}</strong>
+                                <span className="mt-1 block text-xs leading-5 text-[#60758d]">{option.caption}</span>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="md:col-span-2 rounded-[18px] border border-[#d8eadf] bg-[#eef8f2] p-4">
+                        <p className="text-sm font-semibold text-[#0f5132]">Cash route selected</p>
+                        <p className="mt-1 text-sm leading-6 text-[#355e49]">
+                          No bond-originator partner will be routed unless the finance type changes to Bond or Hybrid.
+                        </p>
+                      </div>
+                    )}
+
+                    <div className="md:col-span-2 rounded-[18px] border border-[#dce5ef] bg-[#f8fbff] p-4">
+                      <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7b8ba5]">Finance routing</p>
+                      <p className="mt-2 text-sm leading-6 text-[#516277]">
+                        Bond and hybrid deals can route to a connected bond originator. Cash deals stay internally tracked and will ask for proof of funds in onboarding/documents.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className={`${activeStep === 'partners' ? 'md:col-span-2' : 'hidden'} rounded-[18px] border border-[#dce5ef] bg-white p-4`}>
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <div className="flex items-center gap-3">
                         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#e7f5ee] text-sm font-bold text-[#14804f]">
@@ -2657,12 +3245,12 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
                       </div>
                       {loadingPartners || loadingPartnerConnections ? <span className="text-xs font-semibold text-[#6b7d93]">Loading partners...</span> : null}
                     </div>
-                    {(developmentDefaultTransferAttorney || developmentDefaultBondOriginator) && !isPrivateMatter ? (
+                    {(developmentDefaultTransferAttorney || (shouldShowBondOriginatorPartner && developmentDefaultBondOriginator)) && !isPrivateMatter ? (
                       <div className="mt-3 rounded-[14px] border border-[#d7e4ee] bg-white px-3 py-2 text-xs leading-5 text-[#5d7188]">
                         Development defaults applied:
                         {developmentDefaultTransferAttorney ? ` transfer attorney - ${developmentDefaultTransferAttorney.companyName}` : ''}
-                        {developmentDefaultTransferAttorney && developmentDefaultBondOriginator ? ';' : ''}
-                        {developmentDefaultBondOriginator ? ` bond originator - ${developmentDefaultBondOriginator.companyName}` : ''}
+                        {developmentDefaultTransferAttorney && shouldShowBondOriginatorPartner && developmentDefaultBondOriginator ? ';' : ''}
+                        {shouldShowBondOriginatorPartner && developmentDefaultBondOriginator ? ` bond originator - ${developmentDefaultBondOriginator.companyName}` : ''}
                       </div>
                     ) : null}
 
@@ -2777,6 +3365,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
                         )}
                       </div>
 
+                      {shouldShowBondOriginatorPartner ? (
                       <div className="space-y-3 rounded-[16px] border border-[#dbe4ef] bg-[#fbfdff] p-3">
                         <div className="flex items-center justify-between gap-3">
                           <p className="text-sm font-semibold text-[#142132]">Bond Originator</p>
@@ -2886,7 +3475,121 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
                           </div>
                         )}
                       </div>
+                      ) : (
+                        <div className="rounded-[16px] border border-[#d8eadf] bg-[#eef8f2] p-4">
+                          <p className="text-sm font-semibold text-[#0f5132]">Bond Originator Not Required</p>
+                          <p className="mt-2 text-sm leading-6 text-[#355e49]">
+                            This transaction is {financeTypeSummary.toLowerCase()} and the finance route is not connected-originator managed. No originator invitation or assignment will be created.
+                          </p>
+                          <button
+                            type="button"
+                            className="mt-3 rounded-full border border-[#b9dcc8] bg-white px-3 py-1.5 text-xs font-semibold text-[#147a52]"
+                            onClick={() => {
+                              if (!isBondFinance) setFinanceType('bond')
+                              setSetupField('financeManagedBy', 'bond_originator')
+                              setActiveStep('finance')
+                            }}
+                          >
+                            Route to bond originator instead
+                          </button>
+                        </div>
+                      )}
                     </div>
+                  </div>
+                </div>
+              </section>
+
+              <section className={`${activeStep === 'review' ? '' : 'hidden'} rounded-[20px] border border-[#dce5ef] bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.045)]`}>
+                <div className="mb-5 flex items-center gap-3">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#142132] text-sm font-bold text-white">
+                    6
+                  </span>
+                  <div>
+                    <h5 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Review & Create</h5>
+                    <p className="mt-1 text-sm text-[#60758d]">Confirm the transaction setup before the workspace and onboarding link are generated.</p>
+                  </div>
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-2">
+                  {[
+                    { label: 'Source', value: propertySummaryLabel, detail: unitSummaryLabel },
+                    {
+                      label: 'Buyer',
+                      value: buyerDisplayName,
+                      detail: `${purchaserTypeLabel} • ${buyerContactSummary}${buyerPartyCount > 1 ? ` • ${buyerPartyCount} parties` : ''}`,
+                    },
+                    { label: 'Deal', value: form.setup.salesPrice ? toMoney(form.setup.salesPrice) : 'Price not added', detail: form.finance.reservationRequired ? `Reservation ${form.finance.reservationStatus || 'pending'}` : 'No reservation deposit' },
+                    { label: 'Finance', value: financeTypeSummary, detail: financeManagedBySummary },
+                    { label: 'Transfer Attorney', value: transferAttorneySummary, detail: selectedAttorneyPerson?.name || selectedPartnerProspects.transfer_attorney?.contactName || 'Firm queue / not selected' },
+                    { label: 'Bond Originator', value: bondOriginatorSummary, detail: selectedBondOriginatorPerson?.name || selectedPartnerProspects.bond_originator?.contactName || 'Company queue / not selected' },
+                  ]
+                    .filter((item) => item.label !== 'Bond Originator' || shouldShowBondOriginatorPartner)
+                    .map((item) => (
+                    <div key={item.label} className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfdff] p-4">
+                      <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7b8ba5]">{item.label}</span>
+                      <strong className="mt-2 block truncate text-base font-semibold text-[#142132]">{item.value}</strong>
+                      <span className="mt-1 block truncate text-sm text-[#60758d]">{item.detail}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-5 rounded-[18px] border border-[#d8eadf] bg-[#eef8f2] px-4 py-3">
+                  <div className="flex gap-3">
+                    <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-[#14804f]" />
+                    <div>
+                      <p className="text-sm font-semibold text-[#0f5132]">
+                        {readyComplete ? 'Ready to create this transaction' : 'Some required details still need attention'}
+                      </p>
+                      <p className="mt-1 text-sm leading-5 text-[#355e49]">
+                        {readyComplete
+                          ? 'Create Transaction will use the same stable save path as before, then generate the buyer onboarding link.'
+                          : 'Use Back or the step rail above to complete the missing source, buyer, or deal details.'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-5 rounded-[18px] border border-[#dce5ef] bg-[#fbfdff] p-4">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7b8ba5]">Signed OTP Handoff</p>
+                      <p className="mt-1 text-sm leading-6 text-[#60758d]">
+                        Tell the workspace what should happen immediately after creation.
+                      </p>
+                    </div>
+                    <span className="rounded-full border border-[#dce5ef] bg-white px-3 py-1 text-xs font-semibold text-[#40546b]">
+                      {signedOtpStatusLabel}
+                    </span>
+                  </div>
+                  <div className="mt-4 grid gap-2 md:grid-cols-3">
+                    {SIGNED_OTP_STATUS_OPTIONS.map((option) => {
+                      const selected = form.setup.signedOtpStatus === option.value
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          className={`rounded-[16px] border px-4 py-3 text-left transition ${
+                            selected
+                              ? 'border-[#142132] bg-white shadow-[0_10px_24px_rgba(15,23,42,0.08)]'
+                              : 'border-[#dde4ee] bg-[#f8fafc] hover:border-[#cbd8e6]'
+                          }`}
+                          onClick={() => setSetupField('signedOtpStatus', option.value)}
+                        >
+                          <strong className="block text-sm font-semibold text-[#142132]">{option.label}</strong>
+                          <span className="mt-1 block text-xs leading-5 text-[#60758d]">{option.caption}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <div className="mt-4">
+                    <Field label="Handoff Notes">
+                      <textarea
+                        rows={3}
+                        value={form.setup.handoffNotes}
+                        onChange={(event) => setSetupField('handoffNotes', event.target.value)}
+                        placeholder="Example: signed OTP received by email, upload after creation; buyer paid reservation deposit."
+                      />
+                    </Field>
                   </div>
                 </div>
               </section>
@@ -3040,7 +3743,58 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
                     <>No buyer email captured yet.</>
                   )}
               </p>
+              {createdTransaction.handoffChecklist?.signedOtpStatus ? (
+                <p className="mt-2 text-sm leading-6 text-[#516277]">
+                  Signed OTP handoff: {getOptionLabel(SIGNED_OTP_STATUS_OPTIONS, createdTransaction.handoffChecklist.signedOtpStatus)}.
+                </p>
+              ) : null}
             </section>
+
+            {createdTransaction.setupHealth ? (
+              <section className="rounded-[20px] border border-[#cdddf0] bg-white px-4 py-3">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Setup Health</span>
+                    <strong className="mt-1 block text-base text-[#142132]">{createdTransaction.setupHealth.label}</strong>
+                  </div>
+                  <span
+                    className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+                      createdTransaction.setupHealth.status === 'ready'
+                        ? 'border-[#bfe7cf] bg-[#eefbf3] text-[#157347]'
+                        : createdTransaction.setupHealth.status === 'needs_attention'
+                          ? 'border-[#f5d7a8] bg-[#fff8eb] text-[#a15c00]'
+                          : 'border-[#cdddf0] bg-[#f7fbff] text-[#315f89]'
+                    }`}
+                  >
+                    {createdTransaction.setupHealth.completeCount || 0} complete · {createdTransaction.setupHealth.actionRequiredCount || 0} next actions
+                  </span>
+                </div>
+                <div className="mt-3 grid gap-2 md:grid-cols-2">
+                  {(createdTransaction.setupHealth.checks || []).map((check) => (
+                    <div key={check.key} className="rounded-[14px] border border-[#e5edf6] bg-[#fbfdff] px-3 py-2">
+                      <div className="flex items-center justify-between gap-3">
+                        <strong className="text-sm text-[#142132]">{check.label}</strong>
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[0.68rem] font-semibold uppercase tracking-[0.08em] ${
+                            check.status === 'complete'
+                              ? 'bg-[#eefbf3] text-[#157347]'
+                              : check.status === 'needs_attention'
+                                ? 'bg-[#fff8eb] text-[#a15c00]'
+                                : 'bg-[#f1f6fc] text-[#315f89]'
+                          }`}
+                        >
+                          {check.status.replaceAll('_', ' ')}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs leading-5 text-[#60758d]">{check.detail}</p>
+                    </div>
+                  ))}
+                </div>
+                {createdTransaction.setupHealth.auditEventLogged === false ? (
+                  <p className="mt-3 text-xs font-medium text-[#8a5a12]">Audit event could not be confirmed, but the transaction was still created.</p>
+                ) : null}
+              </section>
+            ) : null}
 
             {onboardingUrl ? (
               <section className="rounded-[20px] border border-[#cdddf0] bg-white px-4 py-3">

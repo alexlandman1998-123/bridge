@@ -1967,23 +1967,82 @@ function BuyerAgencyMark({ brand = {}, tone = 'light' }) {
   )
 }
 
-function BuyerBrandBar({ brand = {} }) {
+function BuyerBrandBar({ brand = {}, tone = 'light' }) {
+  const isDarkTone = tone === 'dark'
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-[#e4ebf3] pb-4">
+    <div className={`flex items-center justify-between gap-3 border-b pb-4 ${isDarkTone ? 'border-white/20' : 'border-[#e4ebf3]'}`}>
       <div className="flex min-w-0 items-center gap-3">
-        <BuyerAgencyMark brand={brand} />
+        <BuyerAgencyMark brand={brand} tone={isDarkTone ? 'dark' : 'light'} />
         {!brand?.logoUrl && !brand?.logoDarkUrl && !brand?.logoLightUrl ? (
           <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-[#142132]">{brand?.name || 'Your property team'}</p>
-            <p className="mt-0.5 truncate text-xs text-[#6b7d93]">Buyer onboarding</p>
+            <p className={`truncate text-sm font-semibold ${isDarkTone ? 'text-white' : 'text-[#142132]'}`}>{brand?.name || 'Your property team'}</p>
+            <p className={`mt-0.5 truncate text-xs ${isDarkTone ? 'text-white/70' : 'text-[#6b7d93]'}`}>Buyer onboarding</p>
           </div>
         ) : null}
       </div>
-      <div className="flex w-fit shrink-0 items-center gap-2 rounded-full border border-[#dfe8f2] bg-white px-3 py-2 text-xs font-semibold text-[#6b7d93]">
+      <div className={`flex w-fit shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold ${isDarkTone ? 'border-white/20 bg-white/10 text-white/80' : 'border-[#dfe8f2] bg-white text-[#6b7d93]'}`}>
         <span>Powered by</span>
-        <span className="rounded-full bg-[#142033] px-2.5 py-1 text-white">arch9</span>
+        <span className={`rounded-full px-2.5 py-1 text-white ${isDarkTone ? 'bg-black/35' : 'bg-[#142033]'}`}>arch9</span>
       </div>
     </div>
+  )
+}
+
+function DemoDesktopOnboardingHero({
+  brand = {},
+  backgroundImage = '',
+  locationLabel = '',
+  activeStep = null,
+  buyerFlowSummaryItems = [],
+}) {
+  const heroImage = backgroundImage || '/brand/agency-intake-buy.webp'
+  return (
+    <section className="hidden overflow-hidden rounded-[34px] border border-white/70 bg-[#0d1b2a] text-white shadow-[0_26px_64px_rgba(15,23,42,0.18)] md:block">
+      <div className="relative min-h-[520px]">
+        <img src={heroImage} alt={locationLabel || 'Property'} className="absolute inset-0 h-full w-full object-cover" />
+        <div className="absolute inset-0 bg-[linear-gradient(110deg,rgba(7,17,30,0.94)_0%,rgba(10,27,43,0.86)_42%,rgba(10,27,43,0.56)_68%,rgba(10,27,43,0.78)_100%)]" />
+        <div className="relative grid min-h-[520px] gap-8 p-8 xl:grid-cols-[minmax(0,1fr)_460px] xl:p-10">
+          <div className="flex min-h-0 flex-col">
+            <BuyerBrandBar brand={brand} tone="dark" />
+            <div className="flex flex-1 flex-col justify-center py-10">
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-white/70">Buyer onboarding</p>
+              <h1 className="mt-4 max-w-4xl text-[4.2rem] font-semibold leading-[0.96] tracking-[-0.075em] text-white">
+                Complete your buyer onboarding
+              </h1>
+              <p className="mt-5 max-w-2xl text-lg leading-8 text-white/80">
+                A personalised buyer intake for your identity, finance, and purchase details. We only ask for what your transaction team needs.
+              </p>
+              <div className="mt-8 flex flex-wrap gap-3">
+                {['Guided questions', 'Save & continue later', 'Bond-ready workflow'].map((chip) => (
+                  <span key={chip} className="inline-flex min-h-[42px] items-center rounded-full border border-white/20 bg-white/10 px-5 text-sm font-semibold text-white backdrop-blur">
+                    {chip}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <aside className="self-stretch rounded-[30px] border border-white/20 bg-white/10 p-6 shadow-[0_24px_54px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-white/65">At a glance</p>
+            <div className="mt-5 grid gap-3">
+              {buyerFlowSummaryItems.map((item) => (
+                <div key={item.label} className="rounded-[18px] border border-white/15 bg-black/20 px-4 py-3">
+                  <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-white/60">{item.label}</span>
+                  <span className="mt-1 block text-sm font-semibold leading-6 text-white">{item.value}</span>
+                </div>
+              ))}
+            </div>
+            {activeStep ? (
+              <div className="mt-5 rounded-[22px] border border-white/15 bg-black/20 p-5">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-white/60">Current focus</p>
+                <h2 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-white">{activeStep.title}</h2>
+                <p className="mt-2 text-sm leading-6 text-white/70">{activeStep.description}</p>
+              </div>
+            ) : null}
+          </aside>
+        </div>
+      </div>
+    </section>
   )
 }
 
@@ -4886,7 +4945,7 @@ function ClientOnboarding() {
         {showLandingPage ? (
           <PremiumOnboardingLanding
             portalType="buyer"
-            agencyLogo={onboardingBrand.logoDarkUrl || onboardingBrand.logoUrl || onboardingBrand.logoLightUrl || ''}
+            agencyLogo={onboardingBrand.logoLightUrl || onboardingBrand.logoUrl || onboardingBrand.logoDarkUrl || ''}
             agencyName={onboardingBrand.name}
             personName={buyerLandingName === 'there' ? '' : buyerLandingName}
             propertyAddress={onboardingLocationLabel}
@@ -4922,56 +4981,66 @@ function ClientOnboarding() {
           <>
             {renderMobileFlowHeader()}
 
-            <section className={`hidden md:block ${HERO_SECTION_CLASS}`}>
-              <div className="p-4 pb-0 md:p-8 md:pb-0">
-                <BuyerBrandBar brand={onboardingBrand} />
-              </div>
-              <div className="grid gap-0 md:grid-cols-[1.25fr_0.95fr]">
-                <div className="p-4 md:p-8">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--buyer-brand-action)] md:text-xs md:tracking-[0.2em]">Buyer onboarding</p>
-                  <h1 className="mt-3 max-w-2xl text-[1.75rem] font-semibold leading-[1.08] tracking-normal text-[#132033] md:mt-4 md:text-5xl">
-                    Complete your buyer onboarding
-                  </h1>
-                  <p className="mt-3 max-w-2xl text-sm leading-6 text-[#556679] md:mt-4 md:text-[1.02rem] md:leading-7">
-                    A calm guided flow for your identity, finance, and transaction details. We only ask for the information that matters to your purchase.
-                  </p>
-                  <div className="mt-4 flex flex-wrap gap-2 md:mt-6 md:gap-3">
-                    {[
-                      'Guided questions',
-                      'Save & continue later',
-                      'Branch-aware questions',
-                    ].map((chip) => (
-                      <span
-                        key={chip}
-                        className="inline-flex min-h-[30px] items-center rounded-full border border-[#dbe5ef] bg-white px-3 py-1.5 text-xs font-medium text-[#42566b] shadow-[0_8px_18px_rgba(15,23,42,0.04)] md:min-h-[38px] md:px-4 md:py-2 md:text-sm"
-                      >
-                        {chip}
-                      </span>
-                    ))}
-                  </div>
+            {isDemoRoute ? (
+              <DemoDesktopOnboardingHero
+                brand={onboardingBrand}
+                backgroundImage={buyerLandingBackgroundImage}
+                locationLabel={onboardingLocationLabel}
+                activeStep={activeStep}
+                buyerFlowSummaryItems={buyerFlowSummaryItems}
+              />
+            ) : (
+              <section className={`hidden md:block ${HERO_SECTION_CLASS}`}>
+                <div className="p-4 pb-0 md:p-8 md:pb-0">
+                  <BuyerBrandBar brand={onboardingBrand} />
                 </div>
-
-                <aside className={HERO_SUMMARY_CLASS}>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#6a7f96] md:text-xs md:tracking-[0.18em]">At a glance</p>
-                  <div className="mt-3 grid gap-2 md:mt-4 md:block md:space-y-3">
-                    {buyerFlowSummaryItems.map((item) => (
-                      <div key={item.label} className="flex items-start justify-between gap-3 rounded-[14px] border border-[#e6edf5] bg-[#fbfdff] px-3 py-2.5 md:rounded-[18px] md:px-4 md:py-3">
-                        <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2] md:text-xs md:tracking-[0.14em]">{item.label}</span>
-                        <span className="max-w-[60%] text-right text-xs font-semibold leading-5 text-[#132033] md:text-sm md:leading-6">{item.value}</span>
-                      </div>
-                    ))}
+                <div className="grid gap-0 md:grid-cols-[1.25fr_0.95fr]">
+                  <div className="p-4 md:p-8">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--buyer-brand-action)] md:text-xs md:tracking-[0.2em]">Buyer onboarding</p>
+                    <h1 className="mt-3 max-w-2xl text-[1.75rem] font-semibold leading-[1.08] tracking-normal text-[#132033] md:mt-4 md:text-5xl">
+                      Complete your buyer onboarding
+                    </h1>
+                    <p className="mt-3 max-w-2xl text-sm leading-6 text-[#556679] md:mt-4 md:text-[1.02rem] md:leading-7">
+                      A calm guided flow for your identity, finance, and transaction details. We only ask for the information that matters to your purchase.
+                    </p>
+                    <div className="mt-4 flex flex-wrap gap-2 md:mt-6 md:gap-3">
+                      {[
+                        'Guided questions',
+                        'Save & continue later',
+                        'Branch-aware questions',
+                      ].map((chip) => (
+                        <span
+                          key={chip}
+                          className="inline-flex min-h-[30px] items-center rounded-full border border-[#dbe5ef] bg-white px-3 py-1.5 text-xs font-medium text-[#42566b] shadow-[0_8px_18px_rgba(15,23,42,0.04)] md:min-h-[38px] md:px-4 md:py-2 md:text-sm"
+                        >
+                          {chip}
+                        </span>
+                      ))}
+                    </div>
                   </div>
 
-                  {activeStep ? (
-                    <div className="mt-3 rounded-[16px] bg-[#f6f9fd] p-3 md:mt-5 md:rounded-[22px] md:p-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#6a7f96]">Current focus</p>
-                      <h2 className="mt-2 text-base font-semibold tracking-normal text-[#132033] md:text-lg">{activeStep.title}</h2>
-                      <p className="mt-1.5 text-sm leading-6 text-[#556679] md:mt-2">{activeStep.description}</p>
+                  <aside className={HERO_SUMMARY_CLASS}>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#6a7f96] md:text-xs md:tracking-[0.18em]">At a glance</p>
+                    <div className="mt-3 grid gap-2 md:mt-4 md:block md:space-y-3">
+                      {buyerFlowSummaryItems.map((item) => (
+                        <div key={item.label} className="flex items-start justify-between gap-3 rounded-[14px] border border-[#e6edf5] bg-[#fbfdff] px-3 py-2.5 md:rounded-[18px] md:px-4 md:py-3">
+                          <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2] md:text-xs md:tracking-[0.14em]">{item.label}</span>
+                          <span className="max-w-[60%] text-right text-xs font-semibold leading-5 text-[#132033] md:text-sm md:leading-6">{item.value}</span>
+                        </div>
+                      ))}
                     </div>
-                  ) : null}
-                </aside>
-              </div>
-            </section>
+
+                    {activeStep ? (
+                      <div className="mt-3 rounded-[16px] bg-[#f6f9fd] p-3 md:mt-5 md:rounded-[22px] md:p-4">
+                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#6a7f96]">Current focus</p>
+                        <h2 className="mt-2 text-base font-semibold tracking-normal text-[#132033] md:text-lg">{activeStep.title}</h2>
+                        <p className="mt-1.5 text-sm leading-6 text-[#556679] md:mt-2">{activeStep.description}</p>
+                      </div>
+                    ) : null}
+                  </aside>
+                </div>
+              </section>
+            )}
 
             <section className="hidden rounded-[18px] border border-[#dbe5ef] bg-white/92 p-3 shadow-[0_12px_30px_rgba(15,23,42,0.05)] backdrop-blur md:block md:rounded-[28px] md:p-5 md:shadow-[0_18px_40px_rgba(15,23,42,0.07)]">
               <div className="flex flex-wrap items-start justify-between gap-3">

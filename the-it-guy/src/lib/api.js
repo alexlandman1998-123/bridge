@@ -76,6 +76,11 @@ import {
   isBondFinanceType,
   normalizeFinanceType,
 } from '../core/transactions/financeType'
+import {
+  buildNewTransactionSetupHealth,
+  extractNewTransactionSetupHealthFromEvents,
+  resolveWizardHandoffNextAction,
+} from '../core/transactions/newTransactionSetupHealth.js'
 import { resolveTransactionSaleProfile } from '../core/transactions/transactionSaleProfile.js'
 import { buildBuyerOnboardingCompletionHook } from '../core/transactions/buyerOnboardingCompletionHook.js'
 import {
@@ -10643,6 +10648,10 @@ function normalizeTransactionEventRow(row) {
     createdAt: row?.created_at || null,
     updatedAt: row?.updated_at || null,
   }
+}
+
+function resolveTransactionSetupHealthFromEvents(events = []) {
+  return extractNewTransactionSetupHealthFromEvents(events)
 }
 
 function normalizeProxyUpdateTargetRole(value) {
@@ -28935,6 +28944,239 @@ async function persistCommissionSnapshotToTransactionRowIfPossible(
   return fallbackPayload
 }
 
+function normalizeWizardBuyerParty(party = {}, index = 0, fallbackPurchaserType = 'individual') {
+  const role = normalizeTextValue(party.role || party.partyRole || party.party_role || (index === 0 ? 'primary_purchaser' : 'co_purchaser')) || 'co_purchaser'
+  const purchaserType = normalizePurchaserType(party.purchaserType || party.purchaser_type || fallbackPurchaserType)
+  const firstName = normalizeNullableText(party.firstName || party.first_name)
+  const lastName = normalizeNullableText(party.lastName || party.last_name)
+  const fullName =
+    normalizeNullableText(party.name || party.fullName || party.full_name) ||
+    [firstName, lastName].filter(Boolean).join(' ') ||
+    null
+  const email = normalizeNullableText(party.email)?.toLowerCase() || null
+  const phone = normalizeNullableText(party.phone || party.mobile)
+  const identityNumber = normalizeNullableText(
+    party.identityNumber ||
+      party.identity_number ||
+      party.registrationNumber ||
+      party.registration_number ||
+      party.passportNumber ||
+      party.passport_number,
+  )
+  const isPrimary = party.primary === true || party.isPrimary === true || party.is_primary === true || role === 'primary_purchaser'
+
+  if (![fullName, email, phone, identityNumber].some(Boolean)) {
+    return null
+  }
+
+  return {
+    id: normalizeNullableText(party.id) || `buyer-party-${index + 1}`,
+    role,
+    party_role: role,
+    purchaserType,
+    purchaser_type: purchaserType,
+    name: fullName,
+    fullName,
+    full_name: fullName,
+    firstName,
+    first_name: firstName,
+    lastName,
+    last_name: lastName,
+    email,
+    phone,
+    identityNumber,
+    identity_number: identityNumber,
+    signatory: party.signatory !== false,
+    isPrimary,
+    is_primary: isPrimary,
+  }
+}
+
+function resolveWizardBuyerParties(setup = {}, purchaserType = 'individual') {
+  const explicitParties = Array.isArray(setup.buyerParties || setup.buyer_parties)
+    ? setup.buyerParties || setup.buyer_parties
+    : []
+  const parties = explicitParties
+    .map((party, index) => normalizeWizardBuyerParty(party, index, purchaserType))
+    .filter(Boolean)
+
+  const hasPrimaryParty = parties.some((party) => party.isPrimary || party.role === 'primary_purchaser')
+  if (!hasPrimaryParty) {
+    const primary = normalizeWizardBuyerParty(
+      {
+        role: 'primary_purchaser',
+        purchaserType,
+        name: setup.buyerName,
+        firstName: setup.buyerFirstName,
+        lastName: setup.buyerLastName,
+        email: setup.buyerEmail,
+        phone: setup.buyerPhone,
+        signatory: true,
+        primary: true,
+      },
+      0,
+      purchaserType,
+    )
+    if (primary) {
+      parties.unshift(primary)
+    }
+  }
+
+  return parties.map((party, index) => ({
+    ...party,
+    sequence: index + 1,
+  }))
+}
+
+function normalizeWizardHandoffChecklist(input = {}) {
+  const source = input && typeof input === 'object' ? input : {}
+  const signedOtpStatus = normalizeTextValue(
+    source.signedOtpStatus ||
+      source.signed_otp_status ||
+      source.otpStatus ||
+      source.otp_status ||
+      'pending_upload',
+  )
+  const allowedOtpStatuses = new Set(['uploaded', 'pending_upload', 'not_signed'])
+  const normalizedOtpStatus = allowedOtpStatuses.has(signedOtpStatus) ? signedOtpStatus : 'pending_upload'
+  const notes = normalizeNullableText(source.notes || source.handoffNotes || source.handoff_notes)
+
+  return {
+    signedOtpStatus: normalizedOtpStatus,
+    signed_otp_status: normalizedOtpStatus,
+    signedOtpUploaded: normalizedOtpStatus === 'uploaded',
+    signed_otp_uploaded: normalizedOtpStatus === 'uploaded',
+    requiresSignedOtpUpload: normalizedOtpStatus === 'pending_upload',
+    requires_signed_otp_upload: normalizedOtpStatus === 'pending_upload',
+    requiresOtpSignature: normalizedOtpStatus === 'not_signed',
+    requires_otp_signature: normalizedOtpStatus === 'not_signed',
+    buyerPartiesCaptured: Boolean(source.buyerPartiesCaptured ?? source.buyer_parties_captured),
+    financeCaptured: Boolean(source.financeCaptured ?? source.finance_captured),
+    partnersCaptured: Boolean(source.partnersCaptured ?? source.partners_captured),
+    notes,
+  }
+}
+
+async function persistInitialBuyerPartiesOnboardingData(
+  client,
+  { transactionId, purchaserType, buyerParties = [], financeSnapshot = {}, handoffChecklist = {} } = {},
+) {
+  if (!transactionId) {
+    return null
+  }
+
+  const hasFinanceSeed = Boolean(
+    financeSnapshot &&
+      [
+        financeSnapshot.financeType,
+        financeSnapshot.financeManagedBy,
+        financeSnapshot.purchasePrice,
+        financeSnapshot.cashAmount,
+        financeSnapshot.bondAmount,
+        financeSnapshot.depositAmount,
+        financeSnapshot.reservationRequired,
+        financeSnapshot.reservationAmount,
+        financeSnapshot.reservationStatus,
+        handoffChecklist.signedOtpStatus,
+      ].some((value) => value !== null && value !== undefined && value !== ''),
+  )
+
+  if (!buyerParties.length && !hasFinanceSeed) {
+    return null
+  }
+
+  const now = new Date().toISOString()
+  const existingQuery = await client
+    .from('onboarding_form_data')
+    .select('id, form_data')
+    .eq('transaction_id', transactionId)
+    .maybeSingle()
+
+  if (existingQuery.error && !isMissingTableError(existingQuery.error, 'onboarding_form_data')) {
+    throw existingQuery.error
+  }
+
+  if (existingQuery.error) {
+    throw existingQuery.error
+  }
+
+  const existingFormData =
+    existingQuery.data?.form_data && typeof existingQuery.data.form_data === 'object'
+      ? { ...existingQuery.data.form_data }
+      : {}
+  const existingBridgeParties =
+    existingFormData.__bridge_parties && typeof existingFormData.__bridge_parties === 'object'
+      ? existingFormData.__bridge_parties
+      : {}
+  const primaryParty = buyerParties.find((party) => party.isPrimary || party.role === 'primary_purchaser') || buyerParties[0]
+  const nextFormData = {
+    ...existingFormData,
+    purchaser_type: purchaserType,
+    purchaser_entity_type: purchaserType,
+    purchasers: buyerParties.length ? buyerParties : existingFormData.purchasers,
+    buyer_parties: buyerParties.length ? buyerParties : existingFormData.buyer_parties,
+    purchase_finance_type: financeSnapshot.financeType ?? existingFormData.purchase_finance_type,
+    finance_type: financeSnapshot.financeType ?? existingFormData.finance_type,
+    finance_managed_by: financeSnapshot.financeManagedBy ?? existingFormData.finance_managed_by,
+    financeManagedBy: financeSnapshot.financeManagedBy ?? existingFormData.financeManagedBy,
+    purchase_price: financeSnapshot.purchasePrice ?? existingFormData.purchase_price,
+    cash_amount: financeSnapshot.cashAmount ?? existingFormData.cash_amount,
+    bond_amount: financeSnapshot.bondAmount ?? existingFormData.bond_amount,
+    deposit_amount: financeSnapshot.depositAmount ?? existingFormData.deposit_amount,
+    reservation_required: financeSnapshot.reservationRequired ?? existingFormData.reservation_required,
+    reservation_amount: financeSnapshot.reservationAmount ?? existingFormData.reservation_amount,
+    reservation_status: financeSnapshot.reservationStatus ?? existingFormData.reservation_status,
+    __bridge_parties: {
+      ...existingBridgeParties,
+      buyerParties: buyerParties.length ? buyerParties : existingBridgeParties.buyerParties || [],
+      primaryBuyerParty: primaryParty || existingBridgeParties.primaryBuyerParty || null,
+      source: 'new_transaction_wizard',
+      capturedAt: now,
+    },
+    __bridge_finance: {
+      ...(existingFormData.__bridge_finance && typeof existingFormData.__bridge_finance === 'object'
+        ? existingFormData.__bridge_finance
+        : {}),
+      ...financeSnapshot,
+      source: 'new_transaction_wizard',
+      capturedAt: now,
+    },
+    __bridge_handoff: {
+      ...(existingFormData.__bridge_handoff && typeof existingFormData.__bridge_handoff === 'object'
+        ? existingFormData.__bridge_handoff
+        : {}),
+      ...handoffChecklist,
+      source: 'new_transaction_wizard',
+      capturedAt: now,
+    },
+  }
+
+  if (primaryParty) {
+    nextFormData.full_name = nextFormData.full_name || primaryParty.full_name || primaryParty.name || ''
+    nextFormData.first_name = nextFormData.first_name || primaryParty.first_name || ''
+    nextFormData.last_name = nextFormData.last_name || primaryParty.last_name || ''
+    nextFormData.email = nextFormData.email || primaryParty.email || ''
+    nextFormData.phone = nextFormData.phone || primaryParty.phone || ''
+    nextFormData.identity_number = nextFormData.identity_number || primaryParty.identity_number || ''
+  }
+
+  const upsertResult = await client.from('onboarding_form_data').upsert(
+    {
+      transaction_id: transactionId,
+      purchaser_type: purchaserType,
+      form_data: nextFormData,
+      updated_at: now,
+    },
+    { onConflict: 'transaction_id' },
+  )
+
+  if (upsertResult.error) {
+    throw upsertResult.error
+  }
+
+  return nextFormData
+}
+
 export async function createTransactionFromWizard({ setup = {}, finance = {}, status = {}, options = {} }) {
   const client = requireClient()
   const actorProfile = await resolveActiveProfileContext(client)
@@ -29058,6 +29300,12 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
   const resolvedDetailedStage = status.stage || 'Reserved'
   const resolvedMainStage = normalizeMainStage(status.mainStage, resolvedDetailedStage)
   const purchaserType = normalizePurchaserType(setup.purchaserType)
+  const buyerParties = resolveWizardBuyerParties(setup, purchaserType)
+  const handoffChecklist = normalizeWizardHandoffChecklist(options?.handoffChecklist || setup?.handoffChecklist || {})
+  const resolvedNextAction = resolveWizardHandoffNextAction(
+    handoffChecklist,
+    status.nextAction || finance.nextAction || null,
+  )
 
   const deferFinanceType = Boolean(options?.deferFinanceType)
   const rolePlayerSelections = normalizeTransactionRolePlayerInputs(options?.rolePlayers || [], {
@@ -29237,8 +29485,8 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     attorney: finance.attorney || null,
     bond_originator: finance.bondOriginator || null,
     bank: finance.bank || null,
-    next_action: status.nextAction || finance.nextAction || null,
-    comment: status.nextAction || finance.nextAction || null,
+    next_action: resolvedNextAction,
+    comment: resolvedNextAction,
     sales_price: resolvedPurchasePrice,
     gross_commission_percentage: snapshotGrossCommissionPercentage,
     gross_commission_amount: snapshotGrossCommissionAmount,
@@ -29314,8 +29562,8 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     partner_relationship_id: primaryPartnerSelection?.partnerRelationshipId || null,
     assigned_region_id: assignedRegionId || null,
     assigned_branch_id: assignedBranchId || null,
-    next_action: status.nextAction || finance.nextAction || null,
-    comment: status.nextAction || finance.nextAction || null,
+    next_action: resolvedNextAction,
+    comment: resolvedNextAction,
     reservation_required: reservationRequired,
     reservation_amount: resolvedReservationAmount,
     reservation_amount_type: reservationRequired ? reservationAmountType : null,
@@ -29878,6 +30126,9 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       reservationStatus: transactionPayload.reservation_status,
       alterationChargeTreatment: transactionPayload.alteration_charge_treatment,
       purchaserType,
+      buyerParties,
+      buyerPartyCount: buyerParties.length,
+      handoffChecklist,
       buyerId: buyer?.id || null,
       unitId: setup.unitId || null,
       developmentId: setup.developmentId || null,
@@ -30033,6 +30284,31 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       throw error
     }
     recordSetupWarning('buyer_onboarding', error, 'Buyer onboarding token could not be created.')
+  }
+
+  try {
+    await persistInitialBuyerPartiesOnboardingData(client, {
+      transactionId: transaction.id,
+      purchaserType,
+      buyerParties,
+      financeSnapshot: {
+        financeType: normalizedFinanceType,
+        financeManagedBy: transactionPayload.finance_managed_by,
+        purchasePrice: transactionPayload.purchase_price,
+        cashAmount: transactionPayload.cash_amount,
+        bondAmount: transactionPayload.bond_amount,
+        depositAmount: transactionPayload.deposit_amount,
+        reservationRequired: transactionPayload.reservation_required,
+        reservationAmount: transactionPayload.reservation_amount,
+        reservationStatus: transactionPayload.reservation_status,
+      },
+      handoffChecklist,
+    })
+  } catch (error) {
+    if (!isRecoverableTransactionSetupError(error)) {
+      throw error
+    }
+    recordSetupWarning('buyer_parties', error, 'Buyer party setup could not be completed.')
   }
 
   try {
@@ -30230,6 +30506,59 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     unitData = fetchedUnitData
   }
 
+  let setupHealth = buildNewTransactionSetupHealth({
+    setupWarnings,
+    handoffChecklist,
+    buyerParties,
+    rolePlayers: mergedRolePlayerSelections,
+    onboardingRecord,
+    transactionPayload,
+    transactionType,
+    sourceContext,
+    completeness: options?.completeness || null,
+  })
+
+  try {
+    const auditEvent = await logTransactionEventIfPossible(client, {
+      transactionId: transaction.id,
+      eventType: 'transaction_setup_audit',
+      createdBy: actorProfile.userId || null,
+      createdByRole: actorRole,
+      eventData: {
+        setupHealth,
+        setupWarnings,
+        handoffChecklist,
+        buyerPartyCount: buyerParties.length,
+        rolePlayerCount: mergedRolePlayerSelections.length,
+        originPath: options?.creationOrigin || null,
+        sourceContext,
+      },
+    })
+    setupHealth = {
+      ...setupHealth,
+      auditEventLogged: Boolean(auditEvent?.id),
+    }
+  } catch (error) {
+    if (!isRecoverableTransactionSetupError(error)) {
+      throw error
+    }
+    recordSetupWarning('setup_audit', error, 'Transaction setup audit could not be recorded.')
+    setupHealth = {
+      ...buildNewTransactionSetupHealth({
+        setupWarnings,
+        handoffChecklist,
+        buyerParties,
+        rolePlayers: mergedRolePlayerSelections,
+        onboardingRecord,
+        transactionPayload,
+        transactionType,
+        sourceContext,
+        completeness: options?.completeness || null,
+      }),
+      auditEventLogged: false,
+    }
+  }
+
   return {
     transactionId: transaction.id,
     unitId: unitData?.id || null,
@@ -30249,6 +30578,10 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     reservationTreatment: transactionPayload.reservation_treatment,
     reservationPayableTo: transactionPayload.reservation_payable_to,
     alterationChargeTreatment: transactionPayload.alteration_charge_treatment,
+    buyerPartyCount: buyerParties.length,
+    rolePlayerCount: mergedRolePlayerSelections.length,
+    handoffChecklist,
+    setupHealth,
     setupWarnings,
   }
 }
@@ -33630,6 +33963,7 @@ export async function fetchTransactionById(transactionId) {
 
     if (unitDetail?.transaction?.id === transactionId) {
       const transactionEvents = await fetchTransactionEvents(transactionId)
+      const setupHealth = resolveTransactionSetupHealthFromEvents(transactionEvents)
       const transactionProxyUpdates = await fetchTransactionProxyUpdatesWithClient(client, transactionId, {
         limit: 100,
       })
@@ -33657,6 +33991,8 @@ export async function fetchTransactionById(transactionId) {
         transactionRolePlayers: rolePlayers,
         transaction_role_players: rolePlayers,
         transactionEvents,
+        setupHealth,
+        newTransactionSetupHealth: setupHealth,
         transactionProxyUpdates,
         appointments: appointmentsByTransactionId[transactionId] || [],
         buyerProcessLeadHandoff,
@@ -33813,6 +34149,7 @@ export async function fetchTransactionById(transactionId) {
   const bondOriginatorAgentProgressView = await fetchAgentBondOriginatorProgressView(client, transactionId)
   const bondOriginatorAttorneyHandoffView = await fetchAttorneyBondOriginatorHandoffView(client, transactionId)
   const bondApplication = await fetchNormalizedBondApplicationBundle(client, transactionId)
+  const setupHealth = resolveTransactionSetupHealthFromEvents(transactionEvents)
   const normalizedTransactionParticipants = (participantsQuery.data || []).map((row) => normalizeTransactionParticipantRow(row))
   const buyerOperationalAudit = buildTransactionBuyerOperationalAudit({
     transaction,
@@ -33885,6 +34222,8 @@ export async function fetchTransactionById(transactionId) {
       transaction?.stage || unitQuery.data?.status || 'Available',
     ),
     transactionEvents,
+    setupHealth,
+    newTransactionSetupHealth: setupHealth,
     transactionProxyUpdates,
     appointments: appointmentsByTransactionId[transactionId] || [],
     buyerProcessLeadHandoff,

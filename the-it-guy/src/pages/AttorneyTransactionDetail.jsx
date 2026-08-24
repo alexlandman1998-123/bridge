@@ -13358,6 +13358,7 @@ function AgentTransactionOverview({
   partyRows = [],
   financialRows = [],
   buyerProcessHandoff = null,
+  setupHealth = null,
   onOpenDocuments,
   onOpenFinance,
   onOpenTransfer,
@@ -13478,6 +13479,52 @@ function AgentTransactionOverview({
         onOpenDocuments={onOpenDocuments}
         onOpenRoleplayers={onOpenStakeholders}
       />
+
+      {setupHealth ? (
+        <section className="rounded-[20px] border border-borderDefault bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.045)]">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-textMuted">Setup Health</p>
+              <h3 className="mt-1 text-base font-semibold text-textStrong">{setupHealth.label || 'Ready with next actions'}</h3>
+              <p className="mt-1 text-sm leading-6 text-textMuted">
+                Creation handoff recovered from the transaction audit trail.
+              </p>
+            </div>
+            <span
+              className={`inline-flex w-fit rounded-full border px-3 py-1 text-xs font-semibold ${
+                setupHealth.status === 'ready'
+                  ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                  : setupHealth.status === 'needs_attention'
+                    ? 'border-amber-200 bg-amber-50 text-amber-700'
+                    : 'border-blue-200 bg-blue-50 text-blue-700'
+              }`}
+            >
+              {setupHealth.completeCount || 0} complete · {setupHealth.actionRequiredCount || 0} next actions
+            </span>
+          </div>
+          <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+            {(setupHealth.checks || []).slice(0, 6).map((check) => (
+              <div key={check.key} className="rounded-[14px] border border-borderSoft bg-surfaceAlt/50 px-3 py-2">
+                <div className="flex items-center justify-between gap-3">
+                  <strong className="min-w-0 truncate text-sm text-textStrong">{check.label}</strong>
+                  <span
+                    className={`shrink-0 rounded-full px-2 py-0.5 text-[0.68rem] font-semibold uppercase tracking-[0.08em] ${
+                      check.status === 'complete'
+                        ? 'bg-emerald-50 text-emerald-700'
+                        : check.status === 'needs_attention'
+                          ? 'bg-amber-50 text-amber-700'
+                          : 'bg-blue-50 text-blue-700'
+                    }`}
+                  >
+                    {String(check.status || '').replaceAll('_', ' ')}
+                  </span>
+                </div>
+                <p className="mt-1 line-clamp-2 text-xs leading-5 text-textMuted">{check.detail}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <section className="grid gap-5 xl:grid-cols-[minmax(0,1.04fr)_minmax(360px,0.96fr)]">
         <article className="flex min-h-[286px] flex-col rounded-[20px] border border-borderDefault bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.045)]">
@@ -15507,6 +15554,7 @@ function AttorneyTransactionDetail() {
     [canViewInternalDiscussion, transactionDiscussion],
   )
   const transactionEvents = data?.transactionEvents ?? EMPTY_ARRAY
+  const setupHealth = data?.setupHealth || data?.newTransactionSetupHealth || null
   const documentRequests = data?.documentRequests ?? EMPTY_ARRAY
   const additionalDocumentRequests = useMemo(
     () =>
@@ -21072,6 +21120,7 @@ function AttorneyTransactionDetail() {
                       partyRows={agentOverviewPartyRows}
                       financialRows={agentOverviewFinancialRows}
                       buyerProcessHandoff={buyerProcessHandoff}
+                      setupHealth={setupHealth}
                       onOpenDocuments={() => openWorkspaceMenu('documents')}
                       onOpenFinance={() => openWorkspaceMenu('finance')}
                       onOpenTransfer={() => openWorkspaceMenu('transfer')}

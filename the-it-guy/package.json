@@ -31,6 +31,8 @@
     "test:multi-buyer-transaction-phase6": "node scripts/multi-buyer-transaction-phase6.test.mjs",
     "test:multi-buyer-transaction-phase7": "node scripts/multi-buyer-transaction-phase7.test.mjs",
     "test:multi-buyer-transaction-phase8": "node scripts/multi-buyer-transaction-phase8.test.mjs",
+    "test:new-transaction-setup-health-phase9": "node src/core/transactions/__tests__/newTransactionSetupHealth.test.js",
+    "test:new-transaction-setup-health-phase10": "node src/core/transactions/__tests__/newTransactionSetupHealth.test.js",
     "verify:multi-buyer-transaction": "npm run test:multi-buyer-transaction-phase1 && npm run test:multi-buyer-transaction-phase2 && npm run test:multi-buyer-transaction-phase3 && npm run test:multi-buyer-transaction-phase4 && npm run test:multi-buyer-transaction-phase5 && npm run test:multi-buyer-transaction-phase6 && npm run test:multi-buyer-transaction-phase7 && npm run test:multi-buyer-transaction-phase8",
     "test:direct-listing-intake-model-phase1": "node scripts/direct-listing-intake-model-phase1.test.mjs",
     "test:direct-listing-quick-add-phase2": "node scripts/direct-listing-quick-add-phase2.test.mjs",

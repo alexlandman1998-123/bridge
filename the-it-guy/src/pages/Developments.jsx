@@ -15,7 +15,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import AddDevelopmentModal from '../components/AddDevelopmentModal'
 import Button from '../components/ui/Button'
-import SectionHeader from '../components/ui/SectionHeader'
 import { selectBottlenecks, selectDevelopmentPerformance, selectPortfolioMetrics } from '../core/transactions/developerSelectors'
 import { fetchDevelopmentsData } from '../lib/api'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
@@ -397,11 +396,11 @@ function Developments() {
               <div className="absolute inset-0 opacity-[0.18] [background-image:linear-gradient(120deg,rgba(255,255,255,0.18)_1px,transparent_1px),linear-gradient(60deg,rgba(255,255,255,0.1)_1px,transparent_1px)] [background-size:88px_88px]" aria-hidden="true" />
               <div className="relative z-10 flex h-full flex-col justify-between gap-8">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-white/62">Portfolio View</p>
-                  <h1 className="mt-4 text-[clamp(2rem,4vw,3.4rem)] font-semibold leading-none tracking-[-0.06em]">
+                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-white/70">Portfolio View</p>
+                  <h1 className="mt-4 text-[clamp(2rem,4vw,3.4rem)] font-semibold leading-none tracking-[-0.06em] text-[#f8fbff]">
                     Developments
                   </h1>
-                  <p className="mt-3 max-w-[620px] text-[1rem] font-medium leading-7 text-white/76">
+                  <p className="mt-3 max-w-[620px] text-[1rem] font-medium leading-7 text-white/82">
                     Oversee your entire portfolio. Build better. Sell faster.
                   </p>
                 </div>
@@ -415,10 +414,10 @@ function Developments() {
                         className="rounded-[18px] border border-white/12 bg-white/[0.12] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.14)] backdrop-blur"
                       >
                         <div className="flex items-start justify-between gap-3">
-                          <span className="text-[0.78rem] font-semibold text-white/70">{metric.label}</span>
+                          <span className="text-[0.78rem] font-semibold text-white/78">{metric.label}</span>
                           <Icon size={18} className="text-[#5fe0a4]" />
                         </div>
-                        <strong className="mt-3 block text-[1.75rem] font-semibold leading-none tracking-[-0.04em]">
+                        <strong className="mt-3 block text-[1.75rem] font-semibold leading-none tracking-[-0.04em] text-[#f8fbff]">
                           {metric.value}
                         </strong>
                       </article>
@@ -507,16 +506,7 @@ function Developments() {
 
           {totalResults ? (
             <section className="mt-6">
-              <SectionHeader
-                title="Development Portfolio"
-                actions={
-                  <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-[#f7f9fc] px-3 py-1 text-[0.78rem] font-semibold text-[#66758b]">
-                    {totalResults} developments
-                  </span>
-                }
-              />
-
-              <div className="mt-6 grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+              <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
                 {filteredDevelopmentCards.map((item) => (
                   <article
                     key={item.id}

@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   ChevronRight,
   FileText,
+  FileSignature,
   HandCoins,
   Home,
   MessageCircle,
@@ -44,10 +45,14 @@ const DEMO_STAGES = [
 ]
 
 const DEMO_DOCUMENTS = [
-  { title: 'Buyer ID Document', group: 'FICA', status: 'Approved', tone: 'complete' },
-  { title: 'Bank Statements', group: 'Finance', status: 'Received', tone: 'complete' },
-  { title: 'Latest Payslip', group: 'Finance', status: 'Action needed', tone: 'action' },
-  { title: 'Signed Offer to Purchase', group: 'Sale Pack', status: 'Shared', tone: 'info' },
+  { title: 'Buyer ID Document', group: 'FICA documents', status: 'Approved', tone: 'complete', description: 'Verified copy of the buyer identity document.' },
+  { title: 'Proof of Residential Address', group: 'FICA documents', status: 'Received', tone: 'complete', description: 'Utility bill or bank statement confirming residential address.' },
+  { title: 'Signed Offer to Purchase', group: 'Sale documents', status: 'Shared', tone: 'info', description: 'Signed OTP available for the buyer and transfer team.' },
+  { title: 'Sale Agreement Addendum', group: 'Sale documents', status: 'Drafting', tone: 'info', description: 'Prepared if the attorneys need updated purchase terms.' },
+  { title: 'Rates Clearance Information', group: 'Property documents', status: 'Requested', tone: 'action', description: 'Property supporting document requested from the seller side.' },
+  { title: 'Sectional Title Conduct Rules', group: 'Property documents', status: 'Shared', tone: 'info', description: 'Scheme conduct rules for the purchased unit.' },
+  { title: 'Bank Statements', group: 'Bond documents', status: 'Received', tone: 'complete', description: 'Latest three months bank statements received.' },
+  { title: 'Latest Payslip', group: 'Bond documents', status: 'Action needed', tone: 'action', description: 'Required before the bond application pack goes to banks.' },
 ]
 
 const DEMO_UPDATES = [
@@ -137,7 +142,7 @@ export default function ProspectBuyerDemo() {
 
   return (
     <main className="min-h-screen bg-[#f3f6fb] text-[#142132]">
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-[280px] flex-col overflow-y-auto px-5 py-5 text-white lg:flex" style={sidebarStyle}>
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-[300px] flex-col overflow-y-auto px-6 py-6 text-white lg:flex" style={sidebarStyle}>
         <div className="border-b border-white/10 pb-5">
           {config.logoDarkUrl ? (
             <img src={config.logoDarkUrl} alt={`${config.agencyName} logo`} className="max-h-14 max-w-[210px] object-contain object-left" />
@@ -156,7 +161,7 @@ export default function ProspectBuyerDemo() {
                 key={item.key}
                 to={getDemoPath(token, item.key)}
                 className={`flex min-h-[46px] items-center gap-3 rounded-[12px] border px-3 text-sm font-semibold transition ${
-                  active ? 'border-white/30 bg-white/15 text-white shadow-[inset_3px_0_0_rgba(255,255,255,0.8)]' : 'border-transparent text-white/72 hover:bg-white/10 hover:text-white'
+                  active ? 'border-white/30 bg-white/15 text-white shadow-[inset_3px_0_0_rgba(255,255,255,0.8)]' : 'border-transparent text-white/78 hover:bg-white/10 hover:text-white'
                 }`}
               >
                 <Icon size={17} />
@@ -166,9 +171,9 @@ export default function ProspectBuyerDemo() {
           })}
         </nav>
 
-        <div className="mt-auto rounded-[18px] border border-white/12 bg-black/20 p-4">
-          <p className="text-sm font-semibold">Need help?</p>
-          <p className="mt-1 text-xs leading-5 text-white/70">Sarah Williams from {config.agencyName} is here to help.</p>
+        <div className="mt-auto rounded-[18px] border border-white/18 bg-white/10 p-4 text-white">
+          <p className="text-sm font-semibold text-white">Need help?</p>
+          <p className="mt-1 text-xs leading-5 text-white/75">Sarah Williams from {config.agencyName} is here to help.</p>
           <div className="mt-3 grid grid-cols-2 gap-2">
             <a href="mailto:sarah.demo@arch9.co.za" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-[10px] bg-white/15 text-xs font-semibold">
               <MessageCircle size={14} />
@@ -224,8 +229,8 @@ export default function ProspectBuyerDemo() {
         </nav>
       </section>
 
-      <section className="hidden min-h-screen lg:block lg:pl-[280px]">
-        <div className="mx-auto max-w-6xl px-6 py-8">
+      <section className="hidden min-h-screen lg:block lg:pl-[300px]">
+        <div className="w-full px-8 py-8 2xl:px-12">
           <DemoContent
             activeSection={activeSection}
             brand={brand}
@@ -244,18 +249,18 @@ export default function ProspectBuyerDemo() {
 
 function DemoContent({ activeSection, brand, config, heroOverlayStyle, loading, documentRows, demoUploadComplete, onCompleteUpload }) {
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <section className="relative mt-5 overflow-hidden rounded-[28px] border border-white/70 bg-slate-900 text-white shadow-[0_22px_54px_rgba(15,23,42,0.16)] lg:mt-0">
         <img src={config.samplePropertyImageUrl} alt={config.samplePropertyAddress} className="absolute inset-0 h-full w-full object-cover" />
         <div className="absolute inset-0" style={heroOverlayStyle} />
         <div className="relative grid min-h-[310px] gap-6 p-6 lg:grid-cols-[minmax(0,1fr)_280px] lg:p-8">
           <div className="flex flex-col justify-between">
             <div>
-              <p className="text-sm font-semibold uppercase tracking-[0.16em] text-white/70">{loading ? 'Loading demo' : 'Your purchase'}</p>
-              <h1 className="mt-4 max-w-2xl text-[2.35rem] font-semibold leading-[0.98] tracking-[-0.06em] lg:text-[3.5rem]">
+              <p className="text-sm font-semibold uppercase tracking-[0.16em] text-white/75">{loading ? 'Loading demo' : 'Your purchase'}</p>
+              <h1 className="mt-4 max-w-5xl text-[2.35rem] font-semibold leading-[0.98] tracking-[-0.06em] text-white lg:text-[3.5rem] 2xl:text-[4.15rem]">
                 {config.samplePropertyAddress}
               </h1>
-              <p className="mt-4 max-w-xl text-sm leading-6 text-white/78">
+              <p className="mt-4 max-w-3xl text-sm leading-6 text-white/80">
                 A personalised buyer workspace showing next steps, documents, finance status, legal updates, and your transaction team.
               </p>
             </div>
@@ -266,7 +271,7 @@ function DemoContent({ activeSection, brand, config, heroOverlayStyle, loading, 
             </div>
           </div>
           <div className="rounded-[24px] border border-white/18 bg-white/12 p-5 backdrop-blur">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-white/62">Progress</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-white/70">Progress</p>
             <div className="mt-5 flex items-center justify-center">
               <div className="relative flex h-36 w-36 items-center justify-center rounded-full" style={{ background: `conic-gradient(${brand.accent} 180deg, rgba(255,255,255,0.24) 0deg)` }}>
                 <span className="absolute inset-3 rounded-full bg-slate-950/70" />
@@ -276,10 +281,12 @@ function DemoContent({ activeSection, brand, config, heroOverlayStyle, loading, 
                 </span>
               </div>
             </div>
-            <p className="mt-5 text-sm leading-6 text-white/78">Next: transfer attorney prepares guarantees and lodgement documents.</p>
+            <p className="mt-5 text-sm leading-6 text-white/80">Next: transfer attorney prepares guarantees and lodgement documents.</p>
           </div>
         </div>
       </section>
+
+      <TransactionBanner brand={brand} config={config} />
 
       {activeSection === 'overview' ? (
         <OverviewSection brand={brand} documentRows={documentRows} onCompleteUpload={onCompleteUpload} demoUploadComplete={demoUploadComplete} />
@@ -292,10 +299,31 @@ function DemoContent({ activeSection, brand, config, heroOverlayStyle, loading, 
   )
 }
 
+function TransactionBanner({ brand, config }) {
+  return (
+    <section className="rounded-[24px] border border-[#dbe5ef] bg-white p-4 shadow-[0_14px_34px_rgba(15,23,42,0.05)] lg:p-5">
+      <div className="grid gap-3 lg:grid-cols-[1.1fr_0.9fr_0.9fr_1fr]">
+        {[
+          ['Transaction', 'Normal resale purchase', config.samplePropertyAddress],
+          ['Finance route', 'Bond application', 'Application pack being prepared'],
+          ['Next milestone', 'Guarantees', 'Transfer attorney to request guarantee wording'],
+          ['Key date', 'Target registration', 'Estimated 8 to 10 weeks'],
+        ].map(([kicker, title, detail]) => (
+          <article key={kicker} className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-3">
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">{kicker}</p>
+            <h3 className="mt-1 text-sm font-semibold text-[#142132]">{title}</h3>
+            <p className="mt-1 text-xs leading-5 text-[#667085]">{detail}</p>
+          </article>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 function HeroMetric({ label, value }) {
   return (
     <article className="rounded-[18px] border border-white/16 bg-white/12 px-4 py-3 backdrop-blur">
-      <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-white/62">{label}</span>
+      <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-white/70">{label}</span>
       <strong className="mt-1 block text-sm font-semibold text-white">{value}</strong>
     </article>
   )
@@ -365,32 +393,53 @@ function ProgressSection({ brand }) {
 }
 
 function DocumentsSection({ brand, documentRows, compact = false, demoUploadComplete, onCompleteUpload }) {
+  const groupedDocuments = documentRows.reduce((groups, document) => {
+    const key = document.group || 'Additional documents'
+    groups[key] = [...(groups[key] || []), document]
+    return groups
+  }, {})
+  const readyCount = documentRows.filter((document) => document.tone === 'complete' || document.status === 'Shared' || (document.title === 'Latest Payslip' && demoUploadComplete)).length
+
   return (
     <section className={`rounded-[24px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)] ${compact ? 'xl:col-span-2' : ''}`}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-2xl font-semibold tracking-[-0.05em]">Sale documents</h2>
-          <p className="mt-1 text-sm text-[#667085]">A simple view of what has been received and what still needs attention.</p>
+          <p className="mt-1 text-sm text-[#667085]">Grouped the same way a buyer sees the live journey: FICA, sale pack, bond, property, and additional items.</p>
         </div>
-        <span className="rounded-full bg-[#f2f4f7] px-3 py-1 text-xs font-semibold text-[#667085]">3 of 4 ready</span>
+        <span className="rounded-full bg-[#f2f4f7] px-3 py-1 text-xs font-semibold text-[#667085]">{readyCount} of {documentRows.length} ready</span>
       </div>
-      <div className="mt-5 grid gap-3 md:grid-cols-2">
-        {documentRows.map((document) => (
-          <article key={document.title} className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] p-4">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#8a98a8]">{document.group}</p>
-                <h3 className="mt-1 text-base font-semibold text-[#142132]">{document.title}</h3>
-              </div>
-              <span className={`rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${statusClasses(document.tone)}`}>{document.status}</span>
+      <div className="mt-5 grid gap-4 xl:grid-cols-2">
+        {Object.entries(groupedDocuments).map(([group, documents]) => (
+          <div key={group} className="rounded-[20px] border border-[#e3ebf4] bg-[#fbfdff] p-4">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-sm font-semibold uppercase tracking-[0.14em] text-[#65758a]">{group}</h3>
+              <span className="rounded-full bg-white px-2.5 py-1 text-[0.68rem] font-semibold text-[#667085]">{documents.length} items</span>
             </div>
-            {document.title === 'Latest Payslip' ? (
-              <button type="button" onClick={onCompleteUpload} className="mt-4 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-[12px] text-sm font-semibold text-white" style={{ backgroundColor: brand.primary }}>
-                <UploadCloud size={16} />
-                {demoUploadComplete ? 'Uploaded for review' : 'Upload latest payslip'}
-              </button>
-            ) : null}
-          </article>
+            <div className="mt-3 grid gap-3">
+              {documents.map((document) => {
+                const status = document.title === 'Latest Payslip' && demoUploadComplete ? 'Uploaded for review' : document.status
+                const tone = document.title === 'Latest Payslip' && demoUploadComplete ? 'info' : document.tone
+                return (
+                  <article key={document.title} className="rounded-[16px] border border-[#e4ebf3] bg-white p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <h4 className="text-base font-semibold text-[#142132]">{document.title}</h4>
+                        <p className="mt-1 text-sm leading-6 text-[#667085]">{document.description}</p>
+                      </div>
+                      <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${statusClasses(tone)}`}>{status}</span>
+                    </div>
+                    {document.title === 'Latest Payslip' ? (
+                      <button type="button" onClick={onCompleteUpload} className="mt-4 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-[12px] text-sm font-semibold text-white" style={{ backgroundColor: brand.primary }}>
+                        <UploadCloud size={16} />
+                        {demoUploadComplete ? 'Uploaded for review' : 'Upload latest payslip'}
+                      </button>
+                    ) : null}
+                  </article>
+                )
+              })}
+            </div>
+          </div>
         ))}
       </div>
     </section>
@@ -399,38 +448,87 @@ function DocumentsSection({ brand, documentRows, compact = false, demoUploadComp
 
 function FinanceSection({ brand }) {
   return (
-    <section className="grid gap-5 lg:grid-cols-3">
-      {[
-        ['Bond status', 'Documents requested', 'Latest payslip needed before submission.'],
-        ['Deposit', 'Proof received', 'Reservation deposit proof is safely stored.'],
-        ['Bank submission', 'Preparing', 'Your originator is preparing the application pack.'],
-      ].map(([label, value, helper]) => (
-        <article key={label} className="rounded-[24px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
-          <span className="inline-flex h-11 w-11 items-center justify-center rounded-[14px] text-white" style={{ backgroundColor: brand.primary }}>
-            <HandCoins size={20} />
-          </span>
-          <p className="mt-4 text-xs font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">{label}</p>
-          <h2 className="mt-1 text-xl font-semibold tracking-[-0.04em]">{value}</h2>
-          <p className="mt-2 text-sm leading-6 text-[#667085]">{helper}</p>
-        </article>
-      ))}
+    <section className="grid gap-5 xl:grid-cols-[0.95fr_1.4fr]">
+      <div className="grid gap-5">
+        {[
+          ['Bond status', 'Application in progress', 'Latest payslip needed before submission.'],
+          ['Requested amount', 'R 2 280 000', '80% loan-to-value on the purchase price.'],
+          ['Bank submission', 'Preparing', 'Originator is packaging the application for bank submission.'],
+        ].map(([label, value, helper]) => (
+          <article key={label} className="rounded-[24px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+            <span className="inline-flex h-11 w-11 items-center justify-center rounded-[14px] text-white" style={{ backgroundColor: brand.primary }}>
+              <HandCoins size={20} />
+            </span>
+            <p className="mt-4 text-xs font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">{label}</p>
+            <h2 className="mt-1 text-xl font-semibold tracking-[-0.04em]">{value}</h2>
+            <p className="mt-2 text-sm leading-6 text-[#667085]">{helper}</p>
+          </article>
+        ))}
+      </div>
+      <section className="rounded-[24px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Bond application</p>
+            <h2 className="mt-2 text-2xl font-semibold tracking-[-0.05em]">Application form preview</h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-[#667085]">A read-only version of the guided bond application workspace buyers complete in the normal portal.</p>
+          </div>
+          <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800">72% complete</span>
+        </div>
+        <div className="mt-5 grid gap-3 md:grid-cols-2">
+          {[
+            ['Applicant details', 'Mia Khumalo', 'Confirmed from onboarding'],
+            ['Employment', 'Full-time employed', 'Needs latest payslip'],
+            ['Income', 'R 82 000 gross monthly', 'Verified against bank statements'],
+            ['Expenses', 'R 24 500 monthly commitments', 'Captured for affordability'],
+            ['Requested bond', 'R 2 280 000', 'Submitted through BetterBond Demo Desk'],
+            ['Co-applicant', 'Not applicable', 'Single buyer application'],
+          ].map(([label, value, helper]) => (
+            <article key={label} className="rounded-[16px] border border-[#e4ebf3] bg-[#fbfdff] p-4">
+              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.13em] text-[#7b8ca2]">{label}</p>
+              <h3 className="mt-1 text-base font-semibold text-[#142132]">{value}</h3>
+              <p className="mt-1 text-sm leading-5 text-[#667085]">{helper}</p>
+            </article>
+          ))}
+        </div>
+        <div className="mt-5 rounded-[18px] border border-[#e4ebf3] bg-[#fbfdff] p-4">
+          <div className="flex items-center gap-3">
+            <span className="inline-flex h-10 w-10 items-center justify-center rounded-[13px] text-white" style={{ backgroundColor: brand.primary }}>
+              <FileSignature size={18} />
+            </span>
+            <div>
+              <h3 className="text-base font-semibold text-[#142132]">Next buyer action</h3>
+              <p className="mt-1 text-sm leading-6 text-[#667085]">Upload latest payslip so the originator can submit to banks.</p>
+            </div>
+          </div>
+        </div>
+      </section>
     </section>
   )
 }
 
 function TeamSection({ config }) {
+  const team = [
+    ['Sarah Williams', `${config.agencyName} Agent`, 'Coordinates the buyer relationship and keeps everyone aligned.', 'SW', 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=240&q=80'],
+    ['Daniel Jacobs', 'Transfer Attorney', 'Prepares transfer documents, guarantees, and registration milestones.', 'DJ', 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=240&q=80'],
+    ['Priya Naidoo', 'Bond Originator', 'Packages the bond application and manages lender feedback.', 'PN', 'https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=240&q=80'],
+    ['Lerato Mokoena', 'Conveyancing Secretary', 'Keeps lodgement documents and attorney admin moving.', 'LM', 'https://images.unsplash.com/photo-1531123897727-8f129e1688ce?auto=format&fit=crop&w=240&q=80'],
+  ]
+
   return (
-    <section className="grid gap-5 lg:grid-cols-3">
-      {[
-        ['Sarah Williams', `${config.agencyName} Agent`, 'Coordinates the buyer relationship and keeps everyone aligned.'],
-        ['Jacobs Transfer Attorneys', 'Transfer Attorney', 'Prepares transfer documents and registration milestones.'],
-        ['BetterBond Demo Desk', 'Bond Originator', 'Supports finance approvals and lender feedback.'],
-      ].map(([name, role, detail]) => (
+    <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+      {team.map(([name, role, detail, initials, image]) => (
         <article key={name} className="rounded-[24px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
-          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-[#eef4fb] text-sm font-semibold text-[#35546c]">{name.charAt(0)}</span>
+          <div className="flex items-center gap-3">
+            <img src={image} alt={name} className="h-14 w-14 rounded-full object-cover" />
+            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#eef4fb] text-xs font-semibold text-[#35546c]">{initials}</span>
+          </div>
           <h2 className="mt-4 text-lg font-semibold tracking-[-0.04em]">{name}</h2>
           <p className="mt-1 text-sm font-semibold text-[#667085]">{role}</p>
           <p className="mt-3 text-sm leading-6 text-[#667085]">{detail}</p>
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            <button type="button" className="min-h-10 rounded-[12px] bg-[#f2f4f7] text-xs font-semibold text-[#344054]">Message</button>
+            <button type="button" className="min-h-10 rounded-[12px] border border-[#dbe5ef] text-xs font-semibold text-[#344054]">Call</button>
+          </div>
         </article>
       ))}
     </section>

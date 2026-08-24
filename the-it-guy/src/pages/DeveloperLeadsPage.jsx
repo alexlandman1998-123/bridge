@@ -1506,14 +1506,10 @@ function DeveloperLeadList({
   onCreateLead,
 }) {
   return (
-    <section className="developer-leads-panel min-w-0 overflow-hidden rounded-[20px] border border-[#d9e5f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_16px_42px_rgba(31,54,78,0.06)]" data-developer-lead-table="true">
-      <div className="flex flex-col gap-4 border-b border-[#edf3f8] px-4 py-4 sm:px-5 lg:flex-row lg:items-center lg:justify-between">
-        <div className="min-w-0">
-          <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#6d839b]">Developer Leads</p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-[-0.03em] text-[#102033]">Buyer Leads</h1>
-        </div>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <div className="flex min-w-0 items-center gap-3 rounded-[14px] border border-[#d9e5f2] bg-white px-3 sm:w-[320px] lg:w-[380px]">
+    <section className="developer-leads-panel min-w-0 overflow-hidden rounded-[16px] border border-[#d9e5f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_16px_42px_rgba(31,54,78,0.06)]" data-developer-lead-table="true">
+      <div className="flex flex-col gap-2 border-b border-[#edf3f8] px-3 py-3 sm:px-4 lg:flex-row lg:items-center lg:justify-end">
+        <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center lg:w-auto">
+          <div className="flex min-w-0 flex-1 items-center gap-3 rounded-[14px] border border-[#d9e5f2] bg-white px-3 sm:min-w-[320px] lg:min-w-[420px]">
             <Search size={17} className="shrink-0 text-[#7a8ba3]" />
             <input
               className="h-11 min-w-0 flex-1 text-sm text-[#10243a] outline-none"
@@ -1533,7 +1529,7 @@ function DeveloperLeadList({
         </div>
       </div>
 
-      <div className="flex flex-col gap-3 border-b border-[#edf3f8] px-4 py-3 sm:px-5 lg:flex-row lg:items-center lg:justify-between">
+      <div className="flex flex-col gap-2 border-b border-[#edf3f8] px-3 py-2.5 sm:px-4 lg:flex-row lg:items-center lg:justify-between">
         <p className="text-sm font-medium text-[#60758b]">
           {loading ? 'Loading leads...' : `${leads.length} lead${leads.length === 1 ? '' : 's'} in this view`}
         </p>
@@ -1578,7 +1574,7 @@ function DeveloperLeadList({
       ) : leads.length ? (
         <>
           <div className="hidden min-h-0 max-w-full flex-1 overflow-x-auto overflow-y-visible lg:block">
-            <div className="min-w-[1040px] px-4 py-4">
+            <div className="min-w-[1040px] px-3 py-3">
               <div
                 className="grid items-center gap-4 px-3 text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]"
                 style={{ gridTemplateColumns: 'minmax(240px,1.18fr) minmax(118px,0.44fr) minmax(220px,0.95fr) minmax(190px,0.78fr) minmax(140px,0.54fr) minmax(132px,132px)' }}
@@ -1590,7 +1586,7 @@ function DeveloperLeadList({
                 <span>Last Activity</span>
                 <span className="sr-only">Actions</span>
               </div>
-              <div className="mt-3 space-y-3">
+              <div className="mt-2 space-y-2">
                 {leads.map((lead) => (
                   <LeadRow
                     key={lead.developerLeadId}
@@ -1611,7 +1607,7 @@ function DeveloperLeadList({
             </div>
           </div>
 
-          <div className="space-y-3 p-4 lg:hidden">
+          <div className="space-y-2 p-3 lg:hidden">
             {leads.map((lead) => (
               <LeadRow
                 key={lead.developerLeadId}
@@ -2874,8 +2870,8 @@ export default function DeveloperLeadsPage() {
   }
 
   return (
-    <main className="developer-leads-page min-h-screen overflow-x-hidden bg-[#f6f9fc] p-3 sm:p-4">
-      <div className="developer-leads-shell mx-auto grid w-full min-w-0 max-w-[1680px] gap-4">
+    <main className="developer-leads-page min-h-screen overflow-x-hidden bg-[#f6f9fc] p-2 sm:p-3">
+      <div className="developer-leads-shell mx-auto grid w-full min-w-0 max-w-none gap-3">
         {routeDeveloperLeadId && selectedLead ? (
           <>
             {error ? (
