@@ -3233,6 +3233,14 @@ function AppRoutes() {
                   }
                 />
                 <Route
+                  path="business-lines"
+                  element={
+                    <RoleRoute allowedRoles={['agent']}>
+                      <SettingsOrganisationPage section="business-lines" />
+                    </RoleRoute>
+                  }
+                />
+                <Route
                   path="branding"
                   element={
                     <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>

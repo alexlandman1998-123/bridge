@@ -1,4 +1,5 @@
 import {
+  BriefcaseBusiness,
   Building2,
   CreditCard,
   History,
@@ -49,6 +50,15 @@ export const SETTINGS_NAV_GROUPS = [
         roles: ['developer', 'agent', 'attorney', 'bond_originator'],
         permission: PERMISSIONS.manageWorkspaceSettings,
         keywords: 'company agency attorney modules bond cancellation principal branches permissions visibility governance',
+      },
+      {
+        to: '/settings/business-lines',
+        label: 'Business Lines',
+        description: 'Enable Sales, Rentals, or both for the organisation.',
+        icon: BriefcaseBusiness,
+        roles: ['agent'],
+        permission: PERMISSIONS.manageWorkspaceSettings,
+        keywords: 'business lines business focus sales rentals workspace split rental agents departments',
       },
       {
         to: '/settings/branding',

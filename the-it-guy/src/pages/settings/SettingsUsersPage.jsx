@@ -280,7 +280,6 @@ export default function SettingsUsersPage() {
     organisationMembershipRole,
     workspaceRole,
     workspaceType,
-    businessWorkspaceSplitEnabled,
     profile,
     retryWorkspaceBootstrap,
   } = useWorkspace()
@@ -353,8 +352,7 @@ export default function SettingsUsersPage() {
     [organisationBusinessWorkspaceIds],
   )
   const showBusinessWorkspaceAccessControls = Boolean(
-    businessWorkspaceSplitEnabled &&
-      usesAgencyGovernance &&
+    usesAgencyGovernance &&
       organisationBusinessWorkspaceIds.length > 1,
   )
 

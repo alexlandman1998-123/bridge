@@ -2000,6 +2000,7 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
     workspaceType: resolvedWorkspaceType,
   })
   const showBrandingOnly = section === 'branding'
+  const showBusinessLinesOnly = section === 'business-lines'
   const hasUnsavedChanges = state && initialState ? JSON.stringify(state) !== JSON.stringify(initialState) : false
   const showPublicIntakeControls = copyKey === 'agency' || role === 'agent' || role === 'developer'
   const publicIntakeOrganisationName = useMemo(() => getOrganisationDisplayName(form || {}, onboarding || {}), [form, onboarding])
@@ -3064,6 +3065,97 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
             message="Unsaved Branding Changes"
             discardLabel="Discard"
             saveLabel="Save Branding"
+            onDiscard={() => {
+              setState(initialState)
+              setMessage('')
+              setError('')
+            }}
+            onSave={handleSave}
+          />
+        ) : null}
+      </div>
+    )
+  }
+
+  if (showBusinessLinesOnly) {
+    return (
+      <div className={settingsPageClass}>
+        {!canEdit ? <SettingsBanner tone="warning">{copy.readOnly}</SettingsBanner> : null}
+        {error ? <SettingsBanner tone="error">{error}</SettingsBanner> : null}
+        {message && !isSaveSuccessMessage ? <SettingsBanner tone="success">{message}</SettingsBanner> : null}
+        {isSaveSuccessMessage ? (
+          <div className="fixed bottom-6 right-6 z-40 max-w-sm rounded-[16px] border border-[#ccead8] bg-white px-4 py-3 text-sm font-semibold text-[#1f7a45] shadow-[0_18px_42px_rgba(15,23,42,0.14)]" role="status">
+            {message}
+          </div>
+        ) : null}
+
+        <form className="space-y-6" onSubmit={handleSave}>
+          <section className="rounded-[24px] border border-[#dfe8f1] bg-white p-5 shadow-[0_18px_46px_rgba(15,23,42,0.06)] sm:p-6">
+            <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold uppercase tracking-[0.14em] text-[#60758d]">Workspace Setup</p>
+                <h1 className="mt-2 text-[1.65rem] font-semibold leading-tight text-[#17233a]">Business Lines</h1>
+                <p className="mt-2 max-w-3xl text-sm leading-6 text-[#60758d]">
+                  Configure whether this agency operates Sales, Rentals, or both. Team access is assigned in Users after the organisation lines are saved.
+                </p>
+              </div>
+              <Link
+                to="/settings/users"
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-[12px] border border-[#d9e3ef] bg-white px-4 text-sm font-semibold text-[#24364b] shadow-[0_6px_16px_rgba(15,23,42,0.04)] transition hover:bg-[#f7fafc]"
+              >
+                <UsersRound className="h-4 w-4" strokeWidth={2} />
+                Manage Users
+              </Link>
+            </div>
+          </section>
+
+          {isBondOriginator ? (
+            <OrganisationCard title="Business Focus" description="Select the operating focus for this bond originator workspace.">
+              <OrganisationField label={copy.businessFocusLabel} id="organisation-business-focus">
+                <Field as="select" id="organisation-business-focus" className={INPUT_CLASS} value={agencyInfo.businessFocus || 'bond_applications'} disabled={!canEdit} onChange={(event) => updateAgencyField('businessFocus', event.target.value)}>
+                  {BOND_BUSINESS_FOCUS_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </Field>
+              </OrganisationField>
+            </OrganisationCard>
+          ) : (
+            <OrganisationCard
+              title="Agency Business Lines"
+              description="Enable the operating lines this agency runs. At least one line must remain enabled."
+              actions={
+                <Link to="/settings/users" className="inline-flex h-10 items-center justify-center gap-2 rounded-[12px] border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#24364b] transition hover:bg-[#f7fafc]">
+                  <UsersRound className="h-4 w-4" strokeWidth={2} />
+                  Assign agents
+                </Link>
+              }
+            >
+              <div className="grid gap-3 md:grid-cols-2">
+                {AGENCY_BUSINESS_LINE_OPTIONS.map((option) => (
+                  <BusinessLineOption
+                    key={option.value}
+                    option={option}
+                    checked={agencyBusinessLines.includes(option.value)}
+                    disabled={!canEdit}
+                    onChange={updateAgencyBusinessLine}
+                  />
+                ))}
+              </div>
+              <div className="mt-5 rounded-[18px] border border-[#e4ecf5] bg-[#fbfdff] p-4 text-sm leading-6 text-[#60758d]">
+                <p className="font-semibold text-[#17233a]">How this affects the app</p>
+                <p className="mt-1">
+                  Principals and managers can inherit all enabled business lines. Agents can be set to Sales only, Rentals only, or Sales & Rentals from Users once both agency lines are enabled.
+                </p>
+              </div>
+            </OrganisationCard>
+          )}
+        </form>
+
+        {canEdit ? (
+          <SettingsStickySaveBar
+            dirty={Boolean(hasUnsavedChanges)}
+            saving={saving}
+            message="Unsaved Business Line Changes"
+            discardLabel="Discard"
+            saveLabel="Save Business Lines"
             onDiscard={() => {
               setState(initialState)
               setMessage('')
