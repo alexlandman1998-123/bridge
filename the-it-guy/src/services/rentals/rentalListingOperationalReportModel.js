@@ -14,6 +14,7 @@ export const RENTAL_LISTING_OPERATIONAL_VERIFICATION_COMMANDS = Object.freeze([
   'npm run test:rental-property24-readiness',
   'npm run test:rental-listing-architecture',
   'npm run test:rental-listing-index-model',
+  'npm run test:rental-listing-ui-parity',
   'npm run test:rental-listing-create-flow',
   'npm run test:rental-listing-detail-model',
   'npm run test:rental-listing-edit-model',

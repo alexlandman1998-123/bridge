@@ -93,6 +93,7 @@
     "test:rental-listing-draft-model": "node scripts/rental-listing-draft-model.test.mjs",
     "test:rental-listing-architecture": "node scripts/rental-listing-architecture.test.mjs",
     "test:rental-listing-index-model": "node scripts/rental-listing-index-model.test.mjs",
+    "test:rental-listing-ui-parity": "node scripts/rental-listing-ui-parity.test.mjs",
     "test:rental-listing-create-flow": "node scripts/rental-listing-create-flow.test.mjs",
     "test:rental-listing-detail-model": "node scripts/rental-listing-detail-model.test.mjs",
     "test:rental-listing-edit-model": "node scripts/rental-listing-edit-model.test.mjs",
