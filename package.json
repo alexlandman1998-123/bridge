@@ -98,6 +98,7 @@
     "test:rental-listing-edit-model": "node scripts/rental-listing-edit-model.test.mjs",
     "test:rental-property24-readiness": "node scripts/rental-property24-readiness.test.mjs",
     "test:rental-property24-publish-request": "node scripts/rental-property24-publish-request.test.mjs",
+    "test:rental-listing-release-gate": "node scripts/rental-listing-release-gate.test.mjs",
     "test:rental-application-draft-model": "node scripts/rental-application-draft-model.test.mjs",
     "test:rental-lease-workflow-model": "node scripts/rental-lease-workflow-model.test.mjs",
     "test:rental-module-availability": "node scripts/rental-module-availability.test.mjs",
