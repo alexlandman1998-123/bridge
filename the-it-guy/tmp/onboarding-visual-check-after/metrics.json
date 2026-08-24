@@ -1,0 +1,298 @@
+[
+  {
+    "name": "desktop",
+    "metrics": {
+      "viewport": {
+        "w": 1440,
+        "h": 1000
+      },
+      "bodyScrollWidth": 1440,
+      "buttons": [
+        {
+          "text": "Save Draft",
+          "rect": {
+            "x": 37,
+            "y": 1506,
+            "w": 115,
+            "h": 50,
+            "bottom": 1556,
+            "right": 152
+          },
+          "className": "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-control font-semibold transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:pointer-events-none disabled:opacity-50 active:scale-[0.985] text-textMuted hover:bg-mutedBg hover:text-textStrong h-11 px-5 min-h-[40px] md:min-h-[50px]"
+        },
+        {
+          "text": "Next Step",
+          "rect": {
+            "x": 1183,
+            "y": 1504,
+            "w": 220,
+            "h": 54,
+            "bottom": 1558,
+            "right": 1403
+          },
+          "className": "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-control font-semibold transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 disabled:pointer-events-none disabled:opacity-50 active:scale-[0.985] shadow-surface hover:-translate-y-0.5 hover:bg-primaryHover h-11 px-5 mt-2.5 w-full min-h-[48px] rounded-[14px] bg-[var(--buyer-brand-action)] text-[var(--buyer-brand-action-text)] hover:brightness-105 focus-visible:ring-[var(--buyer-brand-action-border)] md:mt-0 md:min-h-[54px] md:w-auto md:min-w-[220px] md:px-8"
+        }
+      ],
+      "cards": [
+        {
+          "rect": {
+            "x": 0,
+            "y": 0,
+            "w": 0,
+            "h": 0,
+            "bottom": 0,
+            "right": 0
+          },
+          "className": "md:hidden rounded-[22px] border border-[#dbe5ef] bg-white/95 p-4 shadow-[0_14px_34px_rgba(15,23,42,0.07)] backdrop-blur-xl"
+        },
+        {
+          "rect": {
+            "x": 16,
+            "y": 40,
+            "w": 1408,
+            "h": 577,
+            "bottom": 617,
+            "right": 1424
+          },
+          "className": "hidden md:block overflow-hidden rounded-[22px] border border-[#dbe4ee] bg-[linear-gradient(180deg,#ffffff_0%,#f7fbff_100%)] shadow-[0_16px_38px_rgba(15,23,42,0.06)] md:rounded-[32px] md:shadow-[0_22px_48px_rgba(15,23,42,0.08)]"
+        },
+        {
+          "rect": {
+            "x": 16,
+            "y": 637,
+            "w": 1408,
+            "h": 366,
+            "bottom": 1003,
+            "right": 1424
+          },
+          "className": "hidden rounded-[18px] border border-[#dbe5ef] bg-white/92 p-3 shadow-[0_12px_30px_rgba(15,23,42,0.05)] backdrop-blur md:block md:rounded-[28px] md:p-5 md:shadow-[0_18px_40px_rgba(15,23,42,0.07)]"
+        },
+        {
+          "rect": {
+            "x": 37,
+            "y": 780,
+            "w": 333,
+            "h": 202,
+            "bottom": 982,
+            "right": 370
+          },
+          "className": "h-full rounded-[16px] border px-3 py-3 text-left transition duration-150 ease-out md:rounded-[22px] md:px-5 md:py-5 border-[var(--buyer-brand-action-border)] bg-[var(--buyer-brand-action-softer)] shadow-[0_12px_28px_rgba(15,23,42,0.08)]"
+        },
+        {
+          "rect": {
+            "x": 382,
+            "y": 780,
+            "w": 333,
+            "h": 202,
+            "bottom": 982,
+            "right": 714
+          },
+          "className": "h-full rounded-[16px] border px-3 py-3 text-left transition duration-150 ease-out md:rounded-[22px] md:px-5 md:py-5 border-[#dbe5ef] bg-white shadow-[0_10px_22px_rgba(15,23,42,0.04)] hover:border-[#c9d7e6] hover:bg-[#fbfdff]"
+        },
+        {
+          "rect": {
+            "x": 726,
+            "y": 780,
+            "w": 333,
+            "h": 202,
+            "bottom": 982,
+            "right": 1059
+          },
+          "className": "h-full rounded-[16px] border px-3 py-3 text-left transition duration-150 ease-out md:rounded-[22px] md:px-5 md:py-5 border-[#dbe5ef] bg-white shadow-[0_10px_22px_rgba(15,23,42,0.04)] hover:border-[#c9d7e6] hover:bg-[#fbfdff]"
+        },
+        {
+          "rect": {
+            "x": 1071,
+            "y": 780,
+            "w": 333,
+            "h": 202,
+            "bottom": 982,
+            "right": 1403
+          },
+          "className": "h-full rounded-[16px] border px-3 py-3 text-left transition duration-150 ease-out md:rounded-[22px] md:px-5 md:py-5 border-[#dbe5ef] bg-white shadow-[0_10px_22px_rgba(15,23,42,0.04)] hover:border-[#c9d7e6] hover:bg-[#fbfdff]"
+        },
+        {
+          "rect": {
+            "x": 16,
+            "y": 1023,
+            "w": 1408,
+            "h": 444,
+            "bottom": 1467,
+            "right": 1424
+          },
+          "className": "rounded-[20px] border border-[#dbe5ef] bg-white/95 p-3 shadow-[0_14px_34px_rgba(15,23,42,0.05)] backdrop-blur md:rounded-[32px] md:p-7"
+        },
+        {
+          "rect": {
+            "x": 0,
+            "y": 0,
+            "w": 0,
+            "h": 0,
+            "bottom": 0,
+            "right": 0
+          },
+          "className": "space-y-4 md:hidden"
+        },
+        {
+          "rect": {
+            "x": 45,
+            "y": 1128,
+            "w": 1350,
+            "h": 310,
+            "bottom": 1438,
+            "right": 1395
+          },
+          "className": "rounded-[18px] border border-[#dfe8f2] bg-white p-3 shadow-[0_10px_24px_rgba(15,23,42,0.04)] md:rounded-[24px] md:p-6 hidden md:block"
+        }
+      ]
+    }
+  },
+  {
+    "name": "mobile",
+    "metrics": {
+      "viewport": {
+        "w": 390,
+        "h": 844
+      },
+      "bodyScrollWidth": 390,
+      "buttons": [
+        {
+          "text": "Save Draft",
+          "rect": {
+            "x": 37,
+            "y": 1045,
+            "w": 115,
+            "h": 44,
+            "bottom": 1089,
+            "right": 152
+          },
+          "className": "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-control font-semibold transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:pointer-events-none disabled:opacity-50 active:scale-[0.985] text-textMuted hover:bg-mutedBg hover:text-textStrong h-11 px-5 min-h-[40px] md:min-h-[50px]"
+        },
+        {
+          "text": "Continue",
+          "rect": {
+            "x": 37,
+            "y": 1099,
+            "w": 316,
+            "h": 48,
+            "bottom": 1147,
+            "right": 353
+          },
+          "className": "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-control font-semibold transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 disabled:pointer-events-none disabled:opacity-50 active:scale-[0.985] shadow-surface hover:-translate-y-0.5 hover:bg-primaryHover h-11 px-5 mt-2.5 w-full min-h-[48px] rounded-[14px] bg-[var(--buyer-brand-action)] text-[var(--buyer-brand-action-text)] hover:brightness-105 focus-visible:ring-[var(--buyer-brand-action-border)] md:mt-0 md:min-h-[54px] md:w-auto md:min-w-[220px] md:px-8"
+        }
+      ],
+      "cards": [
+        {
+          "rect": {
+            "x": 12,
+            "y": 12,
+            "w": 366,
+            "h": 296,
+            "bottom": 308,
+            "right": 378
+          },
+          "className": "md:hidden rounded-[22px] border border-[#dbe5ef] bg-white/95 p-4 shadow-[0_14px_34px_rgba(15,23,42,0.07)] backdrop-blur-xl"
+        },
+        {
+          "rect": {
+            "x": 0,
+            "y": 0,
+            "w": 0,
+            "h": 0,
+            "bottom": 0,
+            "right": 0
+          },
+          "className": "hidden md:block overflow-hidden rounded-[22px] border border-[#dbe4ee] bg-[linear-gradient(180deg,#ffffff_0%,#f7fbff_100%)] shadow-[0_16px_38px_rgba(15,23,42,0.06)] md:rounded-[32px] md:shadow-[0_22px_48px_rgba(15,23,42,0.08)]"
+        },
+        {
+          "rect": {
+            "x": 0,
+            "y": 0,
+            "w": 0,
+            "h": 0,
+            "bottom": 0,
+            "right": 0
+          },
+          "className": "hidden rounded-[18px] border border-[#dbe5ef] bg-white/92 p-3 shadow-[0_12px_30px_rgba(15,23,42,0.05)] backdrop-blur md:block md:rounded-[28px] md:p-5 md:shadow-[0_18px_40px_rgba(15,23,42,0.07)]"
+        },
+        {
+          "rect": {
+            "x": 0,
+            "y": 0,
+            "w": 0,
+            "h": 0,
+            "bottom": 0,
+            "right": 0
+          },
+          "className": "h-full rounded-[16px] border px-3 py-3 text-left transition duration-150 ease-out md:rounded-[22px] md:px-5 md:py-5 border-[var(--buyer-brand-action-border)] bg-[var(--buyer-brand-action-softer)] shadow-[0_12px_28px_rgba(15,23,42,0.08)]"
+        },
+        {
+          "rect": {
+            "x": 0,
+            "y": 0,
+            "w": 0,
+            "h": 0,
+            "bottom": 0,
+            "right": 0
+          },
+          "className": "h-full rounded-[16px] border px-3 py-3 text-left transition duration-150 ease-out md:rounded-[22px] md:px-5 md:py-5 border-[#dbe5ef] bg-white shadow-[0_10px_22px_rgba(15,23,42,0.04)] hover:border-[#c9d7e6] hover:bg-[#fbfdff]"
+        },
+        {
+          "rect": {
+            "x": 0,
+            "y": 0,
+            "w": 0,
+            "h": 0,
+            "bottom": 0,
+            "right": 0
+          },
+          "className": "h-full rounded-[16px] border px-3 py-3 text-left transition duration-150 ease-out md:rounded-[22px] md:px-5 md:py-5 border-[#dbe5ef] bg-white shadow-[0_10px_22px_rgba(15,23,42,0.04)] hover:border-[#c9d7e6] hover:bg-[#fbfdff]"
+        },
+        {
+          "rect": {
+            "x": 0,
+            "y": 0,
+            "w": 0,
+            "h": 0,
+            "bottom": 0,
+            "right": 0
+          },
+          "className": "h-full rounded-[16px] border px-3 py-3 text-left transition duration-150 ease-out md:rounded-[22px] md:px-5 md:py-5 border-[#dbe5ef] bg-white shadow-[0_10px_22px_rgba(15,23,42,0.04)] hover:border-[#c9d7e6] hover:bg-[#fbfdff]"
+        },
+        {
+          "rect": {
+            "x": 12,
+            "y": 324,
+            "w": 366,
+            "h": 692,
+            "bottom": 1016,
+            "right": 378
+          },
+          "className": "rounded-[20px] border border-[#dbe5ef] bg-white/95 p-3 shadow-[0_14px_34px_rgba(15,23,42,0.05)] backdrop-blur md:rounded-[32px] md:p-7"
+        },
+        {
+          "rect": {
+            "x": 25,
+            "y": 337,
+            "w": 340,
+            "h": 666,
+            "bottom": 1003,
+            "right": 365
+          },
+          "className": "space-y-4 md:hidden"
+        },
+        {
+          "rect": {
+            "x": 0,
+            "y": 0,
+            "w": 0,
+            "h": 0,
+            "bottom": 0,
+            "right": 0
+          },
+          "className": "rounded-[18px] border border-[#dfe8f2] bg-white p-3 shadow-[0_10px_24px_rgba(15,23,42,0.04)] md:rounded-[24px] md:p-6 hidden md:block"
+        }
+      ]
+    }
+  }
+]

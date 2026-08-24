@@ -613,9 +613,9 @@ export function StickyOnboardingActions({
   onPrimary,
 }) {
   return (
-    <div className="fixed inset-x-0 bottom-0 z-40 bg-[linear-gradient(180deg,rgba(249,251,253,0)_0%,rgba(255,255,255,0.92)_20%,rgba(255,255,255,0.98)_100%)] backdrop-blur-xl md:static md:mt-5 md:bg-transparent md:backdrop-blur-0">
-      <div className={`${pageContainerClass} px-3 pt-2 pb-[max(10px,env(safe-area-inset-bottom))] md:px-0 md:pt-0 md:pb-0`}>
-        <div className="rounded-t-[22px] border border-[#dbe5ef] bg-white/95 px-3 py-2.5 shadow-[0_-12px_28px_rgba(15,23,42,0.08)] md:rounded-none md:border-0 md:bg-transparent md:px-0 md:py-0 md:shadow-none">
+    <div className="mt-4 bg-transparent md:mt-5">
+      <div className={`${pageContainerClass} px-3 pb-[max(10px,env(safe-area-inset-bottom))] md:px-0 md:pb-0`}>
+        <div className="rounded-[22px] border border-[#dbe5ef] bg-white/95 p-3 shadow-[0_14px_34px_rgba(15,23,42,0.07)] backdrop-blur-xl md:flex md:items-center md:justify-between md:gap-3 md:rounded-[24px] md:px-5 md:py-4 md:shadow-[0_16px_38px_rgba(15,23,42,0.06)]">
           <div className="flex items-center justify-between gap-2 md:justify-start md:gap-3">
             <Button type="button" variant="ghost" onClick={onSaveDraft} disabled={saving} className="min-h-[40px] md:min-h-[50px]">
               Save Draft
@@ -624,15 +624,13 @@ export function StickyOnboardingActions({
               <Button type="button" variant="ghost" onClick={onBack} className="min-h-[40px] md:min-h-[50px]">
                 <ChevronLeft size={14} /> Back
               </Button>
-            ) : (
-              <span />
-            )}
+            ) : null}
           </div>
           <Button
             type="button"
             onClick={onPrimary}
             disabled={saving}
-            className="mt-2.5 w-full min-h-[48px] rounded-[14px] bg-[var(--buyer-brand-action)] text-[var(--buyer-brand-action-text)] hover:brightness-105 focus-visible:ring-[var(--buyer-brand-action-border)] md:mt-3 md:min-h-[54px] md:max-w-[320px]"
+            className="mt-2.5 w-full min-h-[48px] rounded-[14px] bg-[var(--buyer-brand-action)] text-[var(--buyer-brand-action-text)] hover:brightness-105 focus-visible:ring-[var(--buyer-brand-action-border)] md:mt-0 md:min-h-[54px] md:w-auto md:min-w-[220px] md:px-8"
             style={{
               backgroundColor: 'var(--buyer-brand-action)',
               color: 'var(--buyer-brand-action-text)',
