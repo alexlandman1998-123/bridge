@@ -6,6 +6,7 @@ export const ADMIN_NAV_ITEMS = [
   { id: 'organisations', label: 'Organisations', levels: [ADMIN_LEVELS.EXECUTIVE] },
   { id: 'transactions', label: 'Transactions', levels: [ADMIN_LEVELS.EXECUTIVE] },
   { id: 'users', label: 'Users', levels: [ADMIN_LEVELS.EXECUTIVE] },
+  { id: 'prospects', label: 'Prospects', levels: [ADMIN_LEVELS.EXECUTIVE] },
   { id: 'support', label: 'Support', levels: [ADMIN_LEVELS.EXECUTIVE, ADMIN_LEVELS.CUSTOMER_SUPPORT] },
   { id: 'reports', label: 'Reports', levels: [ADMIN_LEVELS.EXECUTIVE] },
   { id: 'search', label: 'Search', levels: [ADMIN_LEVELS.EXECUTIVE, ADMIN_LEVELS.CUSTOMER_SUPPORT] },
@@ -26,6 +27,7 @@ export function getViewFromPath(pathname = '', level = '') {
   if (path.includes('/admin/organisations')) return 'organisations'
   if (path.includes('/admin/transactions')) return 'transactions'
   if (path.includes('/admin/users')) return 'users'
+  if (path.includes('/admin/prospects')) return 'prospects'
   if (path.includes('/admin/support')) return 'support'
   if (path.includes('/admin/reports')) return 'reports'
   if (path.includes('/admin/search')) return 'search'
@@ -38,6 +40,7 @@ export function pathForView(viewId = 'dashboard') {
   if (viewId === 'organisations') return '/admin/organisations'
   if (viewId === 'transactions') return '/admin/transactions'
   if (viewId === 'users') return '/admin/users'
+  if (viewId === 'prospects') return '/admin/prospects'
   if (viewId === 'support') return '/admin/support'
   if (viewId === 'reports') return '/admin/reports'
   if (viewId === 'search') return '/admin/search'

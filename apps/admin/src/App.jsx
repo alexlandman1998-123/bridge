@@ -9,20 +9,24 @@ import {
   Clock3,
   Copy,
   Download,
+  ExternalLink,
   FileText,
   Filter,
   Headphones,
   Home,
+  Image as ImageIcon,
   ListChecks,
   Loader2,
   LogOut,
   NotebookPen,
+  Palette,
   Plus,
   RefreshCw,
   Search,
   Settings,
   ShieldCheck,
   Target,
+  UploadCloud,
   UserRoundCheck,
   UsersRound,
   X,
@@ -69,6 +73,43 @@ const SOURCE_OPTIONS = [
   { id: 'manual', label: 'Manual' },
   { id: 'other', label: 'Other' },
 ]
+
+const ARCH9_PUBLIC_URL = (APP_ENV.VITE_ARCH9_PUBLIC_URL || 'https://app.arch9.co.za').replace(/\/+$/, '')
+
+const PROSPECT_DEMO_COLOUR_CONTROLS = [
+  { key: 'primaryColour', payloadKey: 'primary_colour', label: 'Primary', fallback: '#274C69', description: 'Buttons and header surfaces' },
+  { key: 'secondaryColour', payloadKey: 'secondary_colour', label: 'Secondary', fallback: '#10273A', description: 'Dark supporting UI' },
+  { key: 'accentColour', payloadKey: 'accent_colour', label: 'Accent', fallback: '#F7CF22', description: 'Links, highlights and badges' },
+]
+
+function normalizeDemoSlug(value = '') {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
+function buildDemoLink(slug = '', suffix = 'buyer') {
+  const normalizedSlug = normalizeDemoSlug(slug)
+  if (!normalizedSlug) return ''
+  return `${ARCH9_PUBLIC_URL}/demo/${normalizedSlug}/${suffix}`
+}
+
+function normalizeHexColour(value = '', fallback = '#274C69') {
+  const text = String(value || '').trim()
+  return /^#[0-9a-f]{6}$/i.test(text) ? text : fallback
+}
+
+async function readFileAsDataUrl(file) {
+  if (!file) return ''
+  return await new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result || ''))
+    reader.onerror = () => reject(new Error('Unable to read the uploaded image.'))
+    reader.readAsDataURL(file)
+  })
+}
 
 const ROLE_CONFIGS = {
   developer: {
@@ -237,6 +278,7 @@ const NAV_ICONS = {
   reports: BarChart3,
   transactions: FileText,
   users: UsersRound,
+  prospects: NotebookPen,
   support: Headphones,
   search: Search,
   settings: Settings,
@@ -3137,6 +3179,7 @@ function Sidebar({ access, activeView, onNavigate, onSignOut, profile }) {
 
 function Topbar({ activeView, generatedAt, isLoading, onRefresh, rangeId, setRangeId }) {
   const isDashboard = activeView === 'dashboard'
+  const showDataControls = activeView !== 'prospects'
   const title =
     activeView === 'support'
       ? 'Support Queue'
@@ -3154,6 +3197,8 @@ function Topbar({ activeView, generatedAt, isLoading, onRefresh, rangeId, setRan
                 ? 'Users'
                 : activeView === 'reports'
                   ? 'Reports'
+                  : activeView === 'prospects'
+                    ? 'Prospect Demo Generator'
                   : 'Operating Dashboard'
 
   const subtitle =
@@ -3167,6 +3212,8 @@ function Topbar({ activeView, generatedAt, isLoading, onRefresh, rangeId, setRan
           ? 'Find organisations, users, and transactions.'
           : activeView === 'settings'
             ? 'Access, environment, and data-contract status.'
+            : activeView === 'prospects'
+              ? 'Create a branded buyer onboarding and buyer portal demo.'
             : 'Existing admin data, filtered into a focused workspace.'
 
   return (
@@ -3178,21 +3225,434 @@ function Topbar({ activeView, generatedAt, isLoading, onRefresh, rangeId, setRan
           <span>{subtitle}</span>
         </div>
       ) : null}
-      <div className="topbar-actions">
-        <label className="range-select">
-          <CalendarDays size={16} />
-          <select aria-label="Date range" onChange={(event) => setRangeId(event.target.value)} value={rangeId}>
-            {RANGE_OPTIONS.map((option) => (
-              <option key={option.id} value={option.id}>{option.label}</option>
-            ))}
-          </select>
-        </label>
-        <button className="primary-button compact" onClick={onRefresh} type="button">
-          {isLoading ? <Loader2 className="spin" size={16} /> : <RefreshCw size={16} />}
-          <span>Refresh</span>
+      {showDataControls ? (
+        <div className="topbar-actions">
+          <label className="range-select">
+            <CalendarDays size={16} />
+            <select aria-label="Date range" onChange={(event) => setRangeId(event.target.value)} value={rangeId}>
+              {RANGE_OPTIONS.map((option) => (
+                <option key={option.id} value={option.id}>{option.label}</option>
+              ))}
+            </select>
+          </label>
+          <button className="primary-button compact" onClick={onRefresh} type="button">
+            {isLoading ? <Loader2 className="spin" size={16} /> : <RefreshCw size={16} />}
+            <span>Refresh</span>
+          </button>
+        </div>
+      ) : null}
+    </header>
+  )
+}
+
+function ProspectColourField({ colour, description, label, onChange }) {
+  const safeColour = normalizeHexColour(colour)
+
+  return (
+    <label className="prospect-colour-field">
+      <span className="prospect-colour-swatch" style={{ backgroundColor: safeColour }} aria-hidden="true" />
+      <span className="prospect-colour-copy">
+        <strong>{label}</strong>
+        <small>{description}</small>
+      </span>
+      <span className="prospect-colour-inputs">
+        <input
+          aria-label={`${label} hex colour`}
+          className="prospect-hex-input"
+          onChange={(event) => onChange(event.target.value)}
+          value={colour}
+        />
+        <input
+          aria-label={`${label} colour picker`}
+          className="prospect-picker-input"
+          onChange={(event) => onChange(event.target.value)}
+          type="color"
+          value={safeColour}
+        />
+      </span>
+    </label>
+  )
+}
+
+function ProspectUploadField({ accept = 'image/*', helper, id, label, onFile, previewUrl }) {
+  return (
+    <label className={`prospect-upload-card${previewUrl ? ' has-preview' : ''}`} htmlFor={id}>
+      <span className="prospect-upload-preview">
+        {previewUrl ? (
+          <img alt="" src={previewUrl} />
+        ) : (
+          <ImageIcon size={22} />
+        )}
+      </span>
+      <span>
+        <strong>{label}</strong>
+        <small>{helper}</small>
+      </span>
+      <span className="prospect-upload-action">
+        <UploadCloud size={15} />
+        {previewUrl ? 'Replace' : 'Upload'}
+      </span>
+      <input
+        accept={accept}
+        className="prospect-file-input"
+        id={id}
+        onChange={(event) => {
+          const file = event.target.files?.[0] || null
+          if (file) void onFile(file)
+          event.target.value = ''
+        }}
+        type="file"
+      />
+    </label>
+  )
+}
+
+function ProspectDemoPreview({ config }) {
+  const agencyName = config.agencyName || 'Hello Group'
+  const primaryColour = normalizeHexColour(config.primaryColour, '#274C69')
+  const secondaryColour = normalizeHexColour(config.secondaryColour, '#10273A')
+  const accentColour = normalizeHexColour(config.accentColour, '#F7CF22')
+  const propertyAddress = config.samplePropertyAddress || '12 Example Road, Sea Point'
+
+  return (
+    <aside className="prospect-preview-card" style={{ '--prospect-primary': primaryColour, '--prospect-secondary': secondaryColour, '--prospect-accent': accentColour }}>
+      <div className="prospect-preview-hero">
+        <div className="prospect-preview-brand">
+          <span>
+            {config.logoUrl ? <img alt="" src={config.logoUrl} /> : agencyName.slice(0, 2).toUpperCase()}
+          </span>
+          <div>
+            <strong>{agencyName}</strong>
+            <small>Buyer onboarding preview</small>
+          </div>
+        </div>
+        <div className="prospect-preview-property">
+          {config.samplePropertyImageUrl ? (
+            <img alt="" src={config.samplePropertyImageUrl} />
+          ) : (
+            <div>
+              <ImageIcon size={22} />
+              <span>Property image</span>
+            </div>
+          )}
+        </div>
+      </div>
+      <div className="prospect-preview-body">
+        <span className="prospect-preview-pill">Demo mode</span>
+        <h3>Let’s get your property purchase started.</h3>
+        <p>{propertyAddress}</p>
+        <button type="button">Start buyer onboarding</button>
+      </div>
+      <div className="prospect-preview-steps" aria-hidden="true">
+        <span />
+        <span />
+        <span />
+      </div>
+    </aside>
+  )
+}
+
+function ProspectLinkCard({ copied, label, link, onCopy }) {
+  return (
+    <article className="prospect-link-card">
+      <div>
+        <h3>{label}</h3>
+        <p>{link}</p>
+      </div>
+      <div className="prospect-link-actions">
+        <button className="secondary-button compact" disabled={!link} onClick={() => window.open(link, '_blank', 'noopener,noreferrer')} type="button">
+          <ExternalLink size={15} />
+          <span>Preview</span>
+        </button>
+        <button className="secondary-button compact" disabled={!link} onClick={onCopy} type="button">
+          <Copy size={15} />
+          <span>{copied ? 'Copied' : 'Copy Link'}</span>
         </button>
       </div>
-    </header>
+    </article>
+  )
+}
+
+function ProspectDemoGeneratorView() {
+  const [form, setForm] = useState({
+    agencyName: '',
+    slug: '',
+    primaryColour: '#274C69',
+    secondaryColour: '#10273A',
+    accentColour: '#F7CF22',
+    logoUrl: '',
+    samplePropertyImageUrl: '',
+    samplePropertyAddress: '',
+  })
+  const [isSaving, setIsSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
+  const [savedConfig, setSavedConfig] = useState(null)
+  const [slugTouched, setSlugTouched] = useState(false)
+  const [copiedKey, setCopiedKey] = useState('')
+
+  const activeSlug = normalizeDemoSlug(savedConfig?.slug || form.slug || form.agencyName)
+  const buyerOnboardingLink = buildDemoLink(activeSlug, 'onboarding')
+  const buyerPortalLink = buildDemoLink(activeSlug, 'buyer')
+  const generatedConfig = savedConfig || {
+    slug: activeSlug,
+    agencyName: form.agencyName.trim(),
+    logoUrl: form.logoUrl.trim(),
+    primaryColour: normalizeHexColour(form.primaryColour, '#274C69'),
+    secondaryColour: normalizeHexColour(form.secondaryColour, '#10273A'),
+    accentColour: normalizeHexColour(form.accentColour, '#F7CF22'),
+    samplePropertyImageUrl: form.samplePropertyImageUrl.trim(),
+    samplePropertyAddress: form.samplePropertyAddress.trim(),
+  }
+  const showLinks = Boolean(savedConfig?.slug)
+
+  async function copyLink(key, value) {
+    if (!value || typeof navigator === 'undefined' || !navigator.clipboard?.writeText) return
+    await navigator.clipboard.writeText(value)
+    setCopiedKey(key)
+    window.setTimeout(() => setCopiedKey((current) => (current === key ? '' : current)), 1200)
+  }
+
+  async function handleSubmit(event) {
+    event.preventDefault()
+    setError('')
+    setSuccess('')
+
+    const slug = normalizeDemoSlug(form.slug || form.agencyName)
+    if (!slug) {
+      setError('Add an agency name or slug first.')
+      return
+    }
+
+    if (!form.logoUrl.trim()) {
+      setError('Upload an agency logo before generating the demo.')
+      return
+    }
+
+    if (!supabase) {
+      setError(getSupabaseConfigStatus().message)
+      return
+    }
+
+    setIsSaving(true)
+    try {
+      const payload = {
+        slug,
+        agency_name: form.agencyName.trim(),
+        logo_url: form.logoUrl.trim(),
+        primary_colour: normalizeHexColour(form.primaryColour, '#274C69'),
+        secondary_colour: normalizeHexColour(form.secondaryColour, '#10273A'),
+        accent_colour: normalizeHexColour(form.accentColour, '#F7CF22'),
+        sample_property_image_url: form.samplePropertyImageUrl.trim(),
+        sample_property_address: form.samplePropertyAddress.trim(),
+      }
+      const { error: upsertError } = await supabase
+        .from('prospect_demo_configs')
+        .upsert(payload, { onConflict: 'slug' })
+
+      if (upsertError) {
+        throw upsertError
+      }
+
+      setSavedConfig({
+        slug: payload.slug,
+        agencyName: payload.agency_name,
+        logoUrl: payload.logo_url,
+        primaryColour: payload.primary_colour,
+        secondaryColour: payload.secondary_colour,
+        accentColour: payload.accent_colour,
+        samplePropertyImageUrl: payload.sample_property_image_url,
+        samplePropertyAddress: payload.sample_property_address,
+      })
+      setSuccess('Prospect demo generated. Copy the links below and send them to the prospect.')
+    } catch (saveError) {
+      setError(saveError?.message || 'Unable to save the prospect demo.')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  async function handleImageUpload(field, file) {
+    if (!file) return
+    try {
+      const dataUrl = await readFileAsDataUrl(file)
+      setForm((previous) => ({
+        ...previous,
+        [field]: dataUrl,
+      }))
+    } catch (fileError) {
+      setError(fileError?.message || 'Unable to read the uploaded file.')
+    }
+  }
+
+  return (
+    <div className="prospect-demo-page">
+      <section className="prospect-demo-panel">
+        <div className="prospect-demo-panel-header">
+          <div>
+            <span className="prospect-demo-kicker">Internal utility</span>
+            <h2>Create prospect demo links</h2>
+            <p>Generate personalised buyer onboarding and buyer portal demos from existing Arch9 client experiences.</p>
+          </div>
+          <span className="prospect-demo-mode">Demo mode only</span>
+        </div>
+
+        <div className="prospect-demo-grid">
+          <form className="prospect-demo-form" onSubmit={handleSubmit}>
+            {error ? <Notice tone="danger" text={error} /> : null}
+            {success ? <Notice tone="success" text={success} /> : null}
+            {!isSupabaseConfigured ? <Notice tone="warning" text={getSupabaseConfigStatus().message} /> : null}
+
+            <div className="prospect-form-section">
+              <div className="prospect-section-heading">
+                <Building2 size={17} />
+                <div>
+                  <h3>Prospect</h3>
+                  <p>Name the agency and confirm the public URL slug.</p>
+                </div>
+              </div>
+              <div className="prospect-field-grid">
+                <label className="prospect-field">
+                  <span>Agency name</span>
+                  <input
+                    onChange={(event) => {
+                      const value = event.target.value
+                      setForm((previous) => ({
+                        ...previous,
+                        agencyName: value,
+                        slug: slugTouched ? previous.slug : normalizeDemoSlug(value),
+                      }))
+                    }}
+                    placeholder="Hello Group"
+                    value={form.agencyName}
+                  />
+                </label>
+                <label className="prospect-field">
+                  <span>URL slug</span>
+                  <input
+                    onChange={(event) => {
+                      setSlugTouched(true)
+                      setForm((previous) => ({ ...previous, slug: normalizeDemoSlug(event.target.value) }))
+                    }}
+                    placeholder="hello-group"
+                    value={form.slug}
+                  />
+                  <small>{activeSlug ? `/demo/${activeSlug}/buyer` : 'Used in both demo links'}</small>
+                </label>
+              </div>
+            </div>
+
+            <div className="prospect-form-section">
+              <div className="prospect-section-heading">
+                <Palette size={17} />
+                <div>
+                  <h3>Brand palette</h3>
+                  <p>Matches Organisation Settings: primary, secondary and accent colours.</p>
+                </div>
+              </div>
+              <div className="prospect-colour-grid">
+                {PROSPECT_DEMO_COLOUR_CONTROLS.map((control) => (
+                  <ProspectColourField
+                    key={control.key}
+                    colour={form[control.key]}
+                    description={control.description}
+                    label={control.label}
+                    onChange={(value) => setForm((previous) => ({ ...previous, [control.key]: value }))}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <div className="prospect-form-section">
+              <div className="prospect-section-heading">
+                <ImageIcon size={17} />
+                <div>
+                  <h3>Demo assets</h3>
+                  <p>Logo is required. Property details are optional and fall back to sample demo data.</p>
+                </div>
+              </div>
+              <div className="prospect-upload-grid">
+                <ProspectUploadField
+                  helper="PNG, JPG, WebP or SVG"
+                  id="prospect-logo-upload"
+                  label="Agency logo"
+                  onFile={(file) => handleImageUpload('logoUrl', file)}
+                  previewUrl={form.logoUrl}
+                />
+                <ProspectUploadField
+                  helper="Optional hero image for the sample property"
+                  id="prospect-property-upload"
+                  label="Property image"
+                  onFile={(file) => handleImageUpload('samplePropertyImageUrl', file)}
+                  previewUrl={form.samplePropertyImageUrl}
+                />
+              </div>
+              <label className="prospect-field">
+                <span>Sample property address</span>
+                <input
+                  onChange={(event) => setForm((previous) => ({ ...previous, samplePropertyAddress: event.target.value }))}
+                  placeholder="12 Example Road, Sea Point"
+                  value={form.samplePropertyAddress}
+                />
+              </label>
+            </div>
+
+            <div className="prospect-submit-row">
+              <button className="primary-button" disabled={isSaving} type="submit">
+                {isSaving ? <Loader2 className="spin" size={16} /> : <Plus size={16} />}
+                <span>Generate Demo</span>
+              </button>
+              <p>No buyers, transactions, notifications or workflow actions are created.</p>
+            </div>
+          </form>
+
+          <div className="prospect-preview-column">
+            <ProspectDemoPreview config={generatedConfig} />
+            <div className="prospect-link-preview">
+              <span>Link preview</span>
+              <strong>{activeSlug ? `${ARCH9_PUBLIC_URL}/demo/${activeSlug}/...` : 'Add an agency name to preview links'}</strong>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {showLinks ? (
+        <section className="prospect-links-panel">
+          <div className="prospect-demo-panel-header compact">
+            <div>
+              <span className="prospect-demo-kicker">Ready for outreach</span>
+              <h2>Generated links</h2>
+              <p>{generatedConfig.agencyName || generatedConfig.slug || 'Prospect demo'}</p>
+            </div>
+          </div>
+
+          <div className="prospect-generated-summary">
+            <span>{generatedConfig.slug}</span>
+            {PROSPECT_DEMO_COLOUR_CONTROLS.map((control) => (
+              <small key={control.key}>
+                <i style={{ backgroundColor: generatedConfig[control.key] || control.fallback }} />
+                {control.label}: {generatedConfig[control.key] || control.fallback}
+              </small>
+            ))}
+          </div>
+
+          <div className="prospect-links-grid">
+            <ProspectLinkCard
+              copied={copiedKey === 'onboarding'}
+              label="Buyer Onboarding"
+              link={buyerOnboardingLink}
+              onCopy={() => void copyLink('onboarding', buyerOnboardingLink)}
+            />
+            <ProspectLinkCard
+              copied={copiedKey === 'buyer'}
+              label="Buyer Portal"
+              link={buyerPortalLink}
+              onCopy={() => void copyLink('buyer', buyerPortalLink)}
+            />
+          </div>
+        </section>
+      ) : null}
+    </div>
   )
 }
 
@@ -5423,6 +5883,7 @@ export default function App() {
         {['organisations', 'transactions', 'users', 'reports'].includes(view) ? (
           <AdminWorkspaceView snapshot={dashboard} type={view} />
         ) : null}
+        {view === 'prospects' ? <ProspectDemoGeneratorView /> : null}
         {view === 'support' ? <SupportView dashboard={dashboard} snapshot={support} /> : null}
         {view === 'search' ? <SearchView /> : null}
         {view === 'settings' ? <SettingsView access={access} profile={profile} /> : null}

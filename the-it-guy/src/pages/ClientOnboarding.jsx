@@ -10,7 +10,7 @@ import {
   UserRound,
 } from 'lucide-react'
 import { createElement, useCallback, useEffect, useMemo, useState } from 'react'
-import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom'
+import { Link, Navigate, useLocation, useParams, useSearchParams } from 'react-router-dom'
 import { deriveFinanceManagedBy, normalizeFinanceType } from '../core/transactions/financeType'
 import {
   OnboardingStepHeader,
@@ -47,6 +47,7 @@ import {
   submitClientOnboarding,
 } from '../lib/api'
 import { getDemoBuyerOnboardingPayload, isBuyerOnboardingDemoToken } from '../lib/onboardingDemoLinks'
+import { resolveProspectDemoConfig } from '../lib/prospectDemoConfig'
 import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { sendWhatsAppNotification } from '../lib/whatsapp'
 
@@ -2098,15 +2099,18 @@ function resolveVisibleFinanceSections({
 
 function ClientOnboarding() {
   const { token = '' } = useParams()
+  const location = useLocation()
   const [searchParams] = useSearchParams()
   const onboardingRole = String(searchParams.get('role') || '').trim().toLowerCase()
   const buyerLinkTarget = useMemo(() => resolveBuyerOnboardingLinkTarget(searchParams), [searchParams])
-  const isDemoOnboarding = isBuyerOnboardingDemoToken(token)
+  const isDemoRoute = location.pathname.startsWith('/demo/')
+  const isDemoOnboarding = isBuyerOnboardingDemoToken(token) || isDemoRoute
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [platformFeeConsentError, setPlatformFeeConsentError] = useState('')
   const [payload, setPayload] = useState(null)
+  const [demoConfig, setDemoConfig] = useState(null)
   const [formData, setFormData] = useState({})
   const [submittedClientPortalPath, setSubmittedClientPortalPath] = useState('')
   const [activeStepIndex, setActiveStepIndex] = useState(0)
@@ -2129,9 +2133,11 @@ function ClientOnboarding() {
     try {
       setLoading(true)
       setError('')
+      const resolvedDemoConfig = isDemoRoute ? await resolveProspectDemoConfig(token) : null
       const data = isDemoOnboarding
-        ? getDemoBuyerOnboardingPayload(token)
+        ? getDemoBuyerOnboardingPayload(token, resolvedDemoConfig)
         : await fetchClientOnboardingByToken(token)
+      setDemoConfig(resolvedDemoConfig)
       setSubmittedClientPortalPath('')
       const initialFlow =
         data?.onboardingFlow ||
@@ -2195,7 +2201,7 @@ function ClientOnboarding() {
     } finally {
       setLoading(false)
     }
-  }, [buyerLinkTarget, isDemoOnboarding, token])
+  }, [buyerLinkTarget, isDemoOnboarding, isDemoRoute, token])
 
   useEffect(() => {
     void loadData()
@@ -3282,10 +3288,10 @@ function ClientOnboarding() {
       }
       if (isDemoOnboarding) {
         setPayload((previous) => ({
-          ...(previous || getDemoBuyerOnboardingPayload(token)),
+          ...(previous || getDemoBuyerOnboardingPayload(token, demoConfig)),
           formData: submissionData,
           onboarding: {
-            ...((previous || {}).onboarding || getDemoBuyerOnboardingPayload(token).onboarding),
+            ...((previous || {}).onboarding || getDemoBuyerOnboardingPayload(token, demoConfig).onboarding),
             status: 'In Progress',
             updatedAt: new Date().toISOString(),
           },
@@ -3328,10 +3334,10 @@ function ClientOnboarding() {
       }
       if (isDemoOnboarding) {
         setPayload((previous) => ({
-          ...(previous || getDemoBuyerOnboardingPayload(token)),
+          ...(previous || getDemoBuyerOnboardingPayload(token, demoConfig)),
           formData: submissionData,
           onboarding: {
-            ...((previous || {}).onboarding || getDemoBuyerOnboardingPayload(token).onboarding),
+            ...((previous || {}).onboarding || getDemoBuyerOnboardingPayload(token, demoConfig).onboarding),
             status: 'Submitted',
             submittedAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),

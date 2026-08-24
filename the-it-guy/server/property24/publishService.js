@@ -273,6 +273,8 @@ export async function buildProperty24ListingSubmitPlan({
   agencyId,
   agentId,
   agentSourceReference,
+  environment = 'exdev',
+  sandboxPayloadTestMode = false,
   suburbId,
   propertyTypeId,
   expiryDate,
@@ -309,6 +311,8 @@ export async function buildProperty24ListingSubmitPlan({
     },
     options: {
       agencyId,
+      environment,
+      sandboxPayloadTestMode,
       expiryDate,
       listingNumber,
       photosChanged,
@@ -336,6 +340,7 @@ export function createProperty24PublishReport({ config = {}, preview, apply = fa
       summary: preview?.summary || {},
       imageByteLoad: preview?.imageByteLoad || null,
     },
+    redactedPreviewPayload: createRedactedProperty24Payload(preview?.previewPayload),
     redactedPayload: createRedactedProperty24Payload(preview?.payload),
   }
 }

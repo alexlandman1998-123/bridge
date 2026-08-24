@@ -159,6 +159,13 @@ export function extractPrivatePropertyXmlTag(xml = '', tagName = '') {
   return match ? decodeXmlText(match[1]) : ''
 }
 
+export function extractPrivatePropertyXmlBlocks(xml = '', tagName = '') {
+  const tag = normalizePrivatePropertyText(tagName)
+  if (!tag) return []
+  const pattern = new RegExp(`<(?:[a-zA-Z0-9_]+:)?${tag}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/(?:[a-zA-Z0-9_]+:)?${tag}>`, 'gi')
+  return [...String(xml || '').matchAll(pattern)].map((match) => match[1])
+}
+
 export function extractPrivatePropertySoapFault(xml = '') {
   const faultCode = extractPrivatePropertyXmlTag(xml, 'faultcode') || extractPrivatePropertyXmlTag(xml, 'Code')
   const faultString = extractPrivatePropertyXmlTag(xml, 'faultstring') || extractPrivatePropertyXmlTag(xml, 'Reason')
@@ -288,6 +295,99 @@ export function createPrivatePropertyClient({
       if (!/<ListingImport(?:\s|>)/i.test(xml)) throw new Error('Private Property ListingImport XML must include <ListingImport>.')
       return callSoap('UpdateListing', [
         xml,
+        tokenXml(),
+      ].join(''))
+    },
+    getProvinces: ({ countryId } = {}) => {
+      const id = Number(countryId)
+      if (!Number.isFinite(id) || id <= 0) throw new Error('Private Property country ID is required.')
+      return callSoap('GetProvinces', [
+        `<CountryId>${Math.round(id)}</CountryId>`,
+        tokenXml(),
+      ].join(''))
+    },
+    getCities: ({ provinceId } = {}) => {
+      const id = Number(provinceId)
+      if (!Number.isFinite(id) || id <= 0) throw new Error('Private Property province ID is required.')
+      return callSoap('GetCities', [
+        `<ProvinceID>${Math.round(id)}</ProvinceID>`,
+        tokenXml(),
+      ].join(''))
+    },
+    getSuburbs: ({ cityId } = {}) => {
+      const id = Number(cityId)
+      if (!Number.isFinite(id) || id <= 0) throw new Error('Private Property city ID is required.')
+      return callSoap('GetSuburbs', [
+        `<CityID>${Math.round(id)}</CityID>`,
+        tokenXml(),
+      ].join(''))
+    },
+    getListingStatus: ({ branchGuid, propertyId } = {}) => {
+      const guid = normalizePrivatePropertyText(branchGuid)
+      const id = normalizePrivatePropertyText(propertyId)
+      if (!guid) throw new Error('Private Property branch GUID is required.')
+      if (!id) throw new Error('Private Property property ID is required.')
+      return callSoap('GetListingStatus', [
+        `<BranchId>${escapePrivatePropertyXml(guid)}</BranchId>`,
+        `<PropertyId>${escapePrivatePropertyXml(id)}</PropertyId>`,
+        tokenXml(),
+      ].join(''))
+    },
+    getListingStatusVerbose: ({ branchGuid, propertyId } = {}) => {
+      const guid = normalizePrivatePropertyText(branchGuid)
+      const id = normalizePrivatePropertyText(propertyId)
+      if (!guid) throw new Error('Private Property branch GUID is required.')
+      if (!id) throw new Error('Private Property property ID is required.')
+      return callSoap('GetListingStatusVerbose', [
+        `<BranchId>${escapePrivatePropertyXml(guid)}</BranchId>`,
+        `<PropertyId>${escapePrivatePropertyXml(id)}</PropertyId>`,
+        tokenXml(),
+      ].join(''))
+    },
+    getReferenceNumberByListing: ({ branchGuid, uniqueListingId, listingType = 'Sale' } = {}) => {
+      const guid = normalizePrivatePropertyText(branchGuid)
+      const id = normalizePrivatePropertyText(uniqueListingId)
+      const type = normalizePrivatePropertyText(listingType) || 'Sale'
+      if (!guid) throw new Error('Private Property branch GUID is required.')
+      if (!id) throw new Error('Private Property unique listing ID is required.')
+      return callSoap('GetReferenceNumberByListing', [
+        `<BranchId>${escapePrivatePropertyXml(guid)}</BranchId>`,
+        `<UniqueListingID>${escapePrivatePropertyXml(id)}</UniqueListingID>`,
+        `<listingType>${escapePrivatePropertyXml(type)}</listingType>`,
+        tokenXml(),
+      ].join(''))
+    },
+    getListingsDetails: ({ branchGuid, uniqueListingId } = {}) => {
+      const guid = normalizePrivatePropertyText(branchGuid)
+      const id = normalizePrivatePropertyText(uniqueListingId)
+      if (!guid) throw new Error('Private Property branch GUID is required.')
+      if (!id) throw new Error('Private Property unique listing ID is required.')
+      return callSoap('GetListingsDetails', [
+        `<BranchId>${escapePrivatePropertyXml(guid)}</BranchId>`,
+        `<UniqueListingID>${escapePrivatePropertyXml(id)}</UniqueListingID>`,
+        tokenXml(),
+      ].join(''))
+    },
+    getActiveListings: ({ branchGuid } = {}) => {
+      const guid = normalizePrivatePropertyText(branchGuid)
+      if (!guid) throw new Error('Private Property branch GUID is required.')
+      return callSoap('GetActiveListings', [
+        `<BranchId>${escapePrivatePropertyXml(guid)}</BranchId>`,
+        tokenXml(),
+      ].join(''))
+    },
+    listingStatusUpdate: ({ branchGuid, propertyId, listingType = 'Sale', propertyStatus = 'ForSale' } = {}) => {
+      const guid = normalizePrivatePropertyText(branchGuid)
+      const id = normalizePrivatePropertyText(propertyId)
+      const type = normalizePrivatePropertyText(listingType) || 'Sale'
+      const status = normalizePrivatePropertyText(propertyStatus) || 'ForSale'
+      if (!guid) throw new Error('Private Property branch GUID is required.')
+      if (!id) throw new Error('Private Property property ID is required.')
+      return callSoap('ListingStatusUpdate', [
+        `<BranchId>${escapePrivatePropertyXml(guid)}</BranchId>`,
+        `<PropertyId>${escapePrivatePropertyXml(id)}</PropertyId>`,
+        `<ListingType>${escapePrivatePropertyXml(type)}</ListingType>`,
+        `<PropertyStatus>${escapePrivatePropertyXml(status)}</PropertyStatus>`,
         tokenXml(),
       ].join(''))
     },

@@ -270,6 +270,57 @@ assert.equal(routeResponse.status, 200)
 assert.equal(routeResponse.body.mapping.source, 'organisation_settings.property24.agentMappings')
 assert.equal(routeResponse.body.report.preview.summary.contactAgentIds[0], 77959)
 
+let sandboxPreviewArgs = null
+const sandboxPreviewWithoutAgentResponse = await createProperty24ApiResponse({
+  method: 'POST',
+  url: '/api/property24/listings/00000000-0000-4000-8000-000000000001/preview',
+  headers: { authorization: 'Bearer test-token' },
+  body: JSON.stringify({ suburbId: 5864, propertyTypeId: 4 }),
+  env: {
+    PROPERTY24_API_INTERNAL_TOKEN: 'test-token',
+    SUPABASE_URL: 'https://example.supabase.co',
+    SUPABASE_SERVICE_ROLE_KEY: 'service-role',
+    PROPERTY24_ENVIRONMENT: 'exdev',
+  },
+  dependencies: {
+    createSupabase: () => ({}),
+    resolvePublishConfig: async ({ config }) => ({
+      ...config,
+      agencyId: '31382',
+      agentId: '',
+      agentSourceReference: '',
+      environment: 'exdev',
+      property24ResolvedMapping: { source: 'none' },
+    }),
+    buildSubmitPlan: async (args) => {
+      sandboxPreviewArgs = args
+      return {
+        canSubmit: false,
+        dataBlockers: [],
+        technicalBlockers: ['sandbox_property24_agent_id_required_before_submit'],
+        summary: {
+          agencyId: Number(args.agencyId),
+          contactAgentIds: [],
+          sandboxPayloadTestMode: args.sandboxPayloadTestMode,
+          agentMappingRequiredBeforeSubmit: true,
+        },
+        previewPayload: {
+          agencyId: Number(args.agencyId),
+          contactAgentIds: [],
+        },
+        payload: null,
+      }
+    },
+  },
+})
+
+assert.equal(sandboxPreviewWithoutAgentResponse.status, 200)
+assert.equal(sandboxPreviewArgs.sandboxPayloadTestMode, true)
+assert.equal(sandboxPreviewWithoutAgentResponse.body.report.preview.canSubmit, false)
+assert.deepEqual(sandboxPreviewWithoutAgentResponse.body.report.preview.technicalBlockers, ['sandbox_property24_agent_id_required_before_submit'])
+assert.deepEqual(sandboxPreviewWithoutAgentResponse.body.report.redactedPreviewPayload.contactAgentIds, [])
+assert.deepEqual(sandboxPreviewWithoutAgentResponse.body.report.redactedPayload, null)
+
 let browserResolverCalled = false
 const browserPreviewResponse = await createProperty24ApiResponse({
   method: 'POST',
@@ -374,6 +425,6 @@ const apiSource = read('server/property24/api.js')
 assert.match(apiSource, /resolveProperty24ListingPublishConfiguration/)
 assert.match(apiSource, /mapping: resolvedConfig\.property24ResolvedMapping/)
 assert.match(apiSource, /authenticateBrowserProperty24ListingRequest/)
-assert.match(apiSource, /\['previewListing', 'publishListing', 'listingStatus', 'updateListingStatus'\]/)
+assert.match(apiSource, /\['previewListing', 'publishListing', 'listingStatus', 'updateListingStatus', 'listingLeads'\]/)
 
 console.log('Property24 publish mapping resolution contract passed')

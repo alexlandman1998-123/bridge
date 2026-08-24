@@ -352,6 +352,41 @@ function eventMatchesClientRole(event = {}, clientRole = 'buyer') {
   return true
 }
 
+function normalizePortalActivityRoute(route = '') {
+  const normalized = normalize(route)
+    .replace(/^\/+|\/+$/g, '')
+    .replace(/[\s-]+/g, '_')
+  if (!normalized || normalized === 'home') return 'overview'
+  if (normalized.includes('/')) return normalizePortalActivityRoute(normalized.split('/').pop())
+  if (normalized === 'bond_application' || normalized === 'bondapplication') return 'bond_application'
+  return normalized
+}
+
+function getPortalEnabledSections(context = {}) {
+  const candidates = [
+    context?.portalProfile?.enabledSections,
+    context?.portalCapabilities?.enabledSections,
+    context?.portalContext?.enabledSections,
+  ]
+  return candidates.find((candidate) => candidate && typeof candidate === 'object') || {}
+}
+
+function isPortalActivityRouteEnabled(event = {}, context = {}) {
+  const enabledSections = getPortalEnabledSections(context)
+  const route = normalizePortalActivityRoute(
+    event?.metadata?.actionRoute ||
+      event?.metadata?.action_route ||
+      event?.actionRoute ||
+      event?.action_route,
+  )
+  if (!route || !Object.prototype.hasOwnProperty.call(enabledSections, route)) return true
+  return enabledSections[route] !== false
+}
+
+export function filterActivityByPortalCapabilities(events = [], context = {}) {
+  return (events || []).filter((event) => isPortalActivityRouteEnabled(event, context))
+}
+
 export function filterClientVisibleActivity(events = [], clientRole = 'buyer') {
   return (events || [])
     .map((event) => normalizeClientActivityEvent(event))
@@ -1011,7 +1046,10 @@ function buildRawClientPortalActivityEvents(transactionIdOrContext, clientRole =
     ...buildTransactionEventActivityEvents(portalData, resolvedClientRole),
   ]
 
-  const filtered = filterClientVisibleActivity(allEvents, resolvedClientRole)
+  const filtered = filterActivityByPortalCapabilities(
+    filterClientVisibleActivity(allEvents, resolvedClientRole),
+    context,
+  )
   return dedupeActivityEvents(filtered)
 }
 

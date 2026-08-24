@@ -1,0 +1,136 @@
+{
+  "phase": "private-property-phase4-publish-listing",
+  "generatedAt": "2026-08-24T07:52:07.295Z",
+  "environment": "sandbox",
+  "baseUrl": "https://services.sandbox.pp.co.za/AgentImport/AgentImport.asmx",
+  "vendor": "Arch9",
+  "username": "Arch9User",
+  "branchGuid": "CA167B18-C6DC-49AD-B018-2B72B187918F",
+  "apply": false,
+  "safety": {
+    "privatePropertyApiCalled": false,
+    "databaseWritten": false,
+    "listingPublished": false
+  },
+  "status": "DRY_RUN",
+  "canSubmit": true,
+  "dataBlockers": [],
+  "technicalBlockers": [],
+  "summary": {
+    "propertyId": "PRV-202608201031-U8YM",
+    "branchId": "CA167B18-C6DC-49AD-B018-2B72B187918F",
+    "agentIds": [
+      "ARCH9-SANDBOX-USER-1"
+    ],
+    "listingType": "Sale",
+    "category": "Residential",
+    "mandateType": "FullMandate",
+    "propertyStatus": "ForSale",
+    "price": 1234567,
+    "listingDate": "2026-08-20",
+    "suburbId": 140,
+    "imageUrlCount": 4,
+    "photoUrlPayloadCount": 4,
+    "attributeCount": 9,
+    "soleMandateExclusiveDays": null,
+    "descriptionPresent": true
+  },
+  "payloadPreview": {
+    "propertyId": "PRV-202608201031-U8YM",
+    "branchId": "CA167B18-C6DC-49AD-B018-2B72B187918F",
+    "categories": [
+      "Residential"
+    ],
+    "category": "Residential",
+    "mandateType": "FullMandate",
+    "listingType": "Sale",
+    "propertyStatus": "ForSale",
+    "address": {
+      "streetName": "694 Cicely Street",
+      "streetNumber": "10",
+      "complexName": "",
+      "unitNumber": "",
+      "suburb": "Garsfontein",
+      "suburbId": 140,
+      "town": "Pretoria",
+      "province": "Gauteng",
+      "hideStreetName": true,
+      "hideStreetNo": true,
+      "hideComplexName": true,
+      "hideUnitNo": true
+    },
+    "headline": "Beautiful 3 bed house in Garsfontein",
+    "description": "This is an ExDev integration test listing. Do not publish publicly. Agent: your test/training use\nWelcome to Junoah Estate, a secure, single-storey residential development in the sought-after suburb of Bartlett, Boksburg. Built for modern families and working professionals, it combines comfort, clean design, and everyday convenience in a safe, community-focused setting.\n\nEach home offers three well-sized bedrooms, two full bathrooms, and open-plan living areas that lead out to a private garden with a built-in braai — ideal for entertaining or unwinding at home. The kitchen is fitted with a gas stove and designed for practical, everyday use. Every unit also includes a double garage and quality finishes throughout.\n\nOptional extras such as backup inverter systems and air conditioning allow you to tailor your home to your needs, with added peace of mind during load-shedding. The estate is fully enclosed and features 24-hour security, access control, and electric fencing.\n\nResidents can enjoy a private park within the estate — a quiet, green space for children, families, and relaxed outdoor living. Junoah Estate is also conveniently located close to leading schools, shopping centres, and main transport routes.",
+    "price": 1234567,
+    "deposit": 0,
+    "listingDate": "2026-08-20",
+    "expiryDate": "",
+    "availableFrom": "",
+    "agentIds": [
+      "ARCH9-SANDBOX-USER-1"
+    ],
+    "photoUrls": [
+      "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/sign/documents/private-listings/f35d8916-2ae9-4364-b364-fc279e260fa7/gallery/1787222013076-Screenshot-2025-10-20-at-10.19.54.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV8yNmVhM2JiZi1lMGQ1LTQ1MDQtOTQyYy05YjI5NjU5MTM3ZWQiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJkb2N1bWVudHMvcHJpdmF0ZS1saXN0aW5ncy9mMzVkODkxNi0yYWU5LTQzNjQtYjM2NC1mYzI3OWUyNjBmYTcvZ2FsbGVyeS8xNzg3MjIyMDEzMDc2LVNjcmVlbnNob3QtMjAyNS0xMC0yMC1hdC0xMC4xOS41NC5wbmciLCJzY29wZSI6ImRvd25sb2FkIiwiaWF0IjoxNzg3MjIyMDI2LCJleHAiOjE3ODk4MTQwMjZ9.IullFTV3i9j7xiJpJU1l-wT5YnMymyHH0i8Bu9z2io0",
+      "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/sign/documents/private-listings/f35d8916-2ae9-4364-b364-fc279e260fa7/gallery/1787222013081-Screenshot-2025-10-20-at-10.20.04.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV8yNmVhM2JiZi1lMGQ1LTQ1MDQtOTQyYy05YjI5NjU5MTM3ZWQiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJkb2N1bWVudHMvcHJpdmF0ZS1saXN0aW5ncy9mMzVkODkxNi0yYWU5LTQzNjQtYjM2NC1mYzI3OWUyNjBmYTcvZ2FsbGVyeS8xNzg3MjIyMDEzMDgxLVNjcmVlbnNob3QtMjAyNS0xMC0yMC1hdC0xMC4yMC4wNC5wbmciLCJzY29wZSI6ImRvd25sb2FkIiwiaWF0IjoxNzg3MjIyMDI2LCJleHAiOjE3ODk4MTQwMjZ9.1F9bswDV5gMW2mmzcO2JJxd2yp5x8somW4fNv0mbfgY",
+      "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/sign/documents/private-listings/f35d8916-2ae9-4364-b364-fc279e260fa7/gallery/1787222013082-Screenshot-2025-10-20-at-10.20.12.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV8yNmVhM2JiZi1lMGQ1LTQ1MDQtOTQyYy05YjI5NjU5MTM3ZWQiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJkb2N1bWVudHMvcHJpdmF0ZS1saXN0aW5ncy9mMzVkODkxNi0yYWU5LTQzNjQtYjM2NC1mYzI3OWUyNjBmYTcvZ2FsbGVyeS8xNzg3MjIyMDEzMDgyLVNjcmVlbnNob3QtMjAyNS0xMC0yMC1hdC0xMC4yMC4xMi5wbmciLCJzY29wZSI6ImRvd25sb2FkIiwiaWF0IjoxNzg3MjIyMDI2LCJleHAiOjE3ODk4MTQwMjZ9.cZsSz4NHeVy_d_TXK34Hiu5VIG2Rk224m8A1-Luds6k",
+      "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/sign/documents/private-listings/f35d8916-2ae9-4364-b364-fc279e260fa7/gallery/1787222013082-Screenshot-2025-10-20-at-10.20.24.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV8yNmVhM2JiZi1lMGQ1LTQ1MDQtOTQyYy05YjI5NjU5MTM3ZWQiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJkb2N1bWVudHMvcHJpdmF0ZS1saXN0aW5ncy9mMzVkODkxNi0yYWU5LTQzNjQtYjM2NC1mYzI3OWUyNjBmYTcvZ2FsbGVyeS8xNzg3MjIyMDEzMDgyLVNjcmVlbnNob3QtMjAyNS0xMC0yMC1hdC0xMC4yMC4yNC5wbmciLCJzY29wZSI6ImRvd25sb2FkIiwiaWF0IjoxNzg3MjIyMDI1LCJleHAiOjE3ODk4MTQwMjV9.Rc0F4nPkW1RPLHN1zyb952cT5Kp6qONDBhf2CYOAGLc"
+    ],
+    "ownerId": "",
+    "xCoordinate": null,
+    "yCoordinate": null,
+    "attributes": [
+      {
+        "attributeType": "Bedrooms",
+        "value": "3"
+      },
+      {
+        "attributeType": "Bathrooms",
+        "value": "2"
+      },
+      {
+        "attributeType": "HomeType",
+        "value": "House"
+      },
+      {
+        "attributeType": "FloorArea",
+        "value": "100"
+      },
+      {
+        "attributeType": "LandArea",
+        "value": "150"
+      },
+      {
+        "attributeType": "Garages",
+        "value": "2"
+      },
+      {
+        "attributeType": "Parking",
+        "value": "2"
+      },
+      {
+        "attributeType": "Rates",
+        "value": "100"
+      },
+      {
+        "attributeType": "Levies",
+        "value": "100"
+      }
+    ],
+    "showdayEvents": [],
+    "soleMandateExclusiveDays": null
+  },
+  "listingXml": "<ListingImport><PropertyId>PRV-202608201031-U8YM</PropertyId><BranchId>CA167B18-C6DC-49AD-B018-2B72B187918F</BranchId><Category><Category>Residential</Category></Category><MandateType>FullMandate</MandateType><StreetName>694 Cicely Street</StreetName><StreetNumber>10</StreetNumber><ComplexName></ComplexName><UnitNumber></UnitNumber><Suburb></Suburb><SuburbId>140</SuburbId><Town></Town><Province></Province><Headline>Beautiful 3 bed house in Garsfontein</Headline><Description><![CDATA[This is an ExDev integration test listing. Do not publish publicly. Agent: your test/training use\nWelcome to Junoah Estate, a secure, single-storey residential development in the sought-after suburb of Bartlett, Boksburg. Built for modern families and working professionals, it combines comfort, clean design, and everyday convenience in a safe, community-focused setting.\n\nEach home offers three well-sized bedrooms, two full bathrooms, and open-plan living areas that lead out to a private garden with a built-in braai — ideal for entertaining or unwinding at home. The kitchen is fitted with a gas stove and designed for practical, everyday use. Every unit also includes a double garage and quality finishes throughout.\n\nOptional extras such as backup inverter systems and air conditioning allow you to tailor your home to your needs, with added peace of mind during load-shedding. The estate is fully enclosed and features 24-hour security, access control, and electric fencing.\n\nResidents can enjoy a private park within the estate — a quiet, green space for children, families, and relaxed outdoor living. Junoah Estate is also conveniently located close to leading schools, shopping centres, and main transport routes.]]></Description><Price>1234567</Price><Deposit>0</Deposit><ListingDate>2026-08-20</ListingDate><ExpiryDate></ExpiryDate><AvailableFrom></AvailableFrom><AgentId>ARCH9-SANDBOX-USER-1</AgentId><PhotoUrls><string>https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/sign/documents/private-listings/f35d8916-2ae9-4364-b364-fc279e260fa7/gallery/1787222013076-Screenshot-2025-10-20-at-10.19.54.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV8yNmVhM2JiZi1lMGQ1LTQ1MDQtOTQyYy05YjI5NjU5MTM3ZWQiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJkb2N1bWVudHMvcHJpdmF0ZS1saXN0aW5ncy9mMzVkODkxNi0yYWU5LTQzNjQtYjM2NC1mYzI3OWUyNjBmYTcvZ2FsbGVyeS8xNzg3MjIyMDEzMDc2LVNjcmVlbnNob3QtMjAyNS0xMC0yMC1hdC0xMC4xOS41NC5wbmciLCJzY29wZSI6ImRvd25sb2FkIiwiaWF0IjoxNzg3MjIyMDI2LCJleHAiOjE3ODk4MTQwMjZ9.IullFTV3i9j7xiJpJU1l-wT5YnMymyHH0i8Bu9z2io0</string><string>https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/sign/documents/private-listings/f35d8916-2ae9-4364-b364-fc279e260fa7/gallery/1787222013081-Screenshot-2025-10-20-at-10.20.04.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV8yNmVhM2JiZi1lMGQ1LTQ1MDQtOTQyYy05YjI5NjU5MTM3ZWQiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJkb2N1bWVudHMvcHJpdmF0ZS1saXN0aW5ncy9mMzVkODkxNi0yYWU5LTQzNjQtYjM2NC1mYzI3OWUyNjBmYTcvZ2FsbGVyeS8xNzg3MjIyMDEzMDgxLVNjcmVlbnNob3QtMjAyNS0xMC0yMC1hdC0xMC4yMC4wNC5wbmciLCJzY29wZSI6ImRvd25sb2FkIiwiaWF0IjoxNzg3MjIyMDI2LCJleHAiOjE3ODk4MTQwMjZ9.1F9bswDV5gMW2mmzcO2JJxd2yp5x8somW4fNv0mbfgY</string><string>https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/sign/documents/private-listings/f35d8916-2ae9-4364-b364-fc279e260fa7/gallery/1787222013082-Screenshot-2025-10-20-at-10.20.12.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV8yNmVhM2JiZi1lMGQ1LTQ1MDQtOTQyYy05YjI5NjU5MTM3ZWQiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJkb2N1bWVudHMvcHJpdmF0ZS1saXN0aW5ncy9mMzVkODkxNi0yYWU5LTQzNjQtYjM2NC1mYzI3OWUyNjBmYTcvZ2FsbGVyeS8xNzg3MjIyMDEzMDgyLVNjcmVlbnNob3QtMjAyNS0xMC0yMC1hdC0xMC4yMC4xMi5wbmciLCJzY29wZSI6ImRvd25sb2FkIiwiaWF0IjoxNzg3MjIyMDI2LCJleHAiOjE3ODk4MTQwMjZ9.cZsSz4NHeVy_d_TXK34Hiu5VIG2Rk224m8A1-Luds6k</string><string>https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/sign/documents/private-listings/f35d8916-2ae9-4364-b364-fc279e260fa7/gallery/1787222013082-Screenshot-2025-10-20-at-10.20.24.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV8yNmVhM2JiZi1lMGQ1LTQ1MDQtOTQyYy05YjI5NjU5MTM3ZWQiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJkb2N1bWVudHMvcHJpdmF0ZS1saXN0aW5ncy9mMzVkODkxNi0yYWU5LTQzNjQtYjM2NC1mYzI3OWUyNjBmYTcvZ2FsbGVyeS8xNzg3MjIyMDEzMDgyLVNjcmVlbnNob3QtMjAyNS0xMC0yMC1hdC0xMC4yMC4yNC5wbmciLCJzY29wZSI6ImRvd25sb2FkIiwiaWF0IjoxNzg3MjIyMDI1LCJleHAiOjE3ODk4MTQwMjV9.Rc0F4nPkW1RPLHN1zyb952cT5Kp6qONDBhf2CYOAGLc</string></PhotoUrls><OwnerID></OwnerID><XCoordinate></XCoordinate><YCoordinate></YCoordinate><ListingType>Sale</ListingType><PropertyStatus>ForSale</PropertyStatus><ShowdayEvents /><Attributes><Attribute><AttributeType>Bedrooms</AttributeType><Value>3</Value></Attribute><Attribute><AttributeType>Bathrooms</AttributeType><Value>2</Value></Attribute><Attribute><AttributeType>HomeType</AttributeType><Value>House</Value></Attribute><Attribute><AttributeType>FloorArea</AttributeType><Value>100</Value></Attribute><Attribute><AttributeType>LandArea</AttributeType><Value>150</Value></Attribute><Attribute><AttributeType>Garages</AttributeType><Value>2</Value></Attribute><Attribute><AttributeType>Parking</AttributeType><Value>2</Value></Attribute><Attribute><AttributeType>Rates</AttributeType><Value>100</Value></Attribute><Attribute><AttributeType>Levies</AttributeType><Value>100</Value></Attribute></Attributes><HideStreetName>true</HideStreetName><HideStreetNo>true</HideStreetNo><HideComplexName>true</HideComplexName><HideUnitNumber>true</HideUnitNumber></ListingImport>",
+  "syncCandidate": {
+    "listingId": "",
+    "propertyId": "PRV-202608201031-U8YM",
+    "branchGuid": "CA167B18-C6DC-49AD-B018-2B72B187918F",
+    "agentIds": [
+      "ARCH9-SANDBOX-USER-1"
+    ],
+    "environment": "sandbox",
+    "privatePropertyReference": "",
+    "lastSubmittedAt": ""
+  },
+  "apiResponse": null,
+  "nextStep": "No Private Property write was made. Re-run with --apply during the sandbox window to submit this listing."
+}

@@ -28,6 +28,12 @@ function parseArgs(argv) {
     agentIds: '',
     propertyId: '',
     suburbId: '',
+    streetName: '',
+    streetNumber: '',
+    complexName: '',
+    unitNumber: '',
+    town: '',
+    province: '',
     category: '',
     listingType: '',
     mandateType: '',
@@ -58,6 +64,18 @@ function parseArgs(argv) {
       options.propertyId = normalizePrivatePropertyPreviewText(arg.slice('--property-id='.length))
     } else if (arg.startsWith('--suburb-id=')) {
       options.suburbId = normalizePrivatePropertyPreviewText(arg.slice('--suburb-id='.length))
+    } else if (arg.startsWith('--street-name=')) {
+      options.streetName = normalizePrivatePropertyPreviewText(arg.slice('--street-name='.length))
+    } else if (arg.startsWith('--street-number=')) {
+      options.streetNumber = normalizePrivatePropertyPreviewText(arg.slice('--street-number='.length))
+    } else if (arg.startsWith('--complex-name=')) {
+      options.complexName = normalizePrivatePropertyPreviewText(arg.slice('--complex-name='.length))
+    } else if (arg.startsWith('--unit-number=')) {
+      options.unitNumber = normalizePrivatePropertyPreviewText(arg.slice('--unit-number='.length))
+    } else if (arg.startsWith('--town=')) {
+      options.town = normalizePrivatePropertyPreviewText(arg.slice('--town='.length))
+    } else if (arg.startsWith('--province=')) {
+      options.province = normalizePrivatePropertyPreviewText(arg.slice('--province='.length))
     } else if (arg.startsWith('--category=')) {
       options.category = normalizePrivatePropertyPreviewText(arg.slice('--category='.length))
     } else if (arg.startsWith('--listing-type=')) {
@@ -119,6 +137,12 @@ function buildConfig(options) {
     agentIds: normalizePrivatePropertyText(options.agentIds || env.PRIVATE_PROPERTY_DEFAULT_AGENT_IDS || env.PRIVATE_PROPERTY_DEFAULT_AGENT_ID),
     propertyId: options.propertyId,
     suburbId: normalizePrivatePropertyText(options.suburbId || env.PRIVATE_PROPERTY_DEFAULT_SUBURB_ID),
+    streetName: options.streetName,
+    streetNumber: options.streetNumber,
+    complexName: options.complexName,
+    unitNumber: options.unitNumber,
+    town: options.town,
+    province: options.province,
     category: options.category,
     listingType: options.listingType,
     mandateType: options.mandateType,
@@ -151,6 +175,12 @@ function createOptions(config, fixtureOptions = {}) {
     agentIds: config.agentIds,
     propertyId: config.propertyId,
     suburbId: config.suburbId,
+    streetName: config.streetName,
+    streetNumber: config.streetNumber,
+    complexName: config.complexName,
+    unitNumber: config.unitNumber,
+    town: config.town,
+    province: config.province,
     category: config.category || fixtureOptions.category,
     listingType: config.listingType || fixtureOptions.listingType,
     mandateType: config.mandateType || fixtureOptions.mandateType,

@@ -199,6 +199,38 @@ function filterByWorkspace(actions = [], workspace = 'shared') {
   })
 }
 
+function normalizePortalActionRoute(route = '') {
+  const normalized = normalizeValue(route)
+    .replace(/^\/+|\/+$/g, '')
+    .replace(/[\s-]+/g, '_')
+  if (!normalized || normalized === 'home') return 'overview'
+  if (normalized.includes('/')) {
+    return normalizePortalActionRoute(normalized.split('/').pop())
+  }
+  if (normalized === 'bond_application' || normalized === 'bondapplication') return 'bond_application'
+  return normalized
+}
+
+function getPortalEnabledSections(context = {}) {
+  const candidates = [
+    context?.portalProfile?.enabledSections,
+    context?.portalCapabilities?.enabledSections,
+    context?.portalContext?.enabledSections,
+  ]
+  return candidates.find((candidate) => candidate && typeof candidate === 'object') || {}
+}
+
+function isPortalActionRouteEnabled(action = {}, context = {}) {
+  const enabledSections = getPortalEnabledSections(context)
+  const route = normalizePortalActionRoute(action?.actionRoute || action?.to || action?.route)
+  if (!route || !Object.prototype.hasOwnProperty.call(enabledSections, route)) return true
+  return enabledSections[route] !== false
+}
+
+export function filterNextActionsByPortalCapabilities(actions = [], context = {}) {
+  return (actions || []).filter((action) => isPortalActionRouteEnabled(action, context))
+}
+
 function normalizeAppointmentStatus(value = '') {
   return normalizeValue(value).replace(/\s+/g, '_')
 }
@@ -977,8 +1009,18 @@ export function generateClientPortalNextActions(context = {}) {
 
   actions.push(...getWorkflowProjectionActions(context))
 
-  const normalized = dedupeActions(actions)
+  const normalized = filterNextActionsByPortalCapabilities(dedupeActions(actions), context)
   const withFallbackPassive = normalized.length ? normalized : getPassiveStatusActions({ ...context, actions: normalized })
-  const finalActions = dedupeActions([...withFallbackPassive, ...getPassiveStatusActions({ ...context, actions: withFallbackPassive })])
-  return sortNextActions(finalActions)
+  const finalActions = filterNextActionsByPortalCapabilities(
+    dedupeActions([...withFallbackPassive, ...getPassiveStatusActions({ ...context, actions: withFallbackPassive })]),
+    context,
+  )
+  return sortNextActions(finalActions).map((action) => ({
+    ...action,
+    metadata: {
+      ...(action?.metadata && typeof action.metadata === 'object' ? action.metadata : {}),
+      portalKind: context?.portalProfile?.portalKind || context?.portalContext?.portalKind || '',
+      navigationMode: context?.portalProfile?.navigationMode || context?.portalContext?.navigationMode || '',
+    },
+  }))
 }

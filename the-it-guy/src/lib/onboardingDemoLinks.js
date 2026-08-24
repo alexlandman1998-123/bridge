@@ -1,3 +1,8 @@
+import {
+  normalizeProspectDemoConfig,
+  normalizeProspectDemoSlug,
+} from './prospectDemoConfig'
+
 export const BUYER_ONBOARDING_DEMO_TOKEN = 'demo-buyer-onboarding'
 export const SELLER_ONBOARDING_DEMO_TOKEN = 'demo-seller-onboarding'
 export const BUYER_PORTAL_DEMO_TOKEN = 'demo-buyer-portal'
@@ -36,6 +41,54 @@ const DEMO_PROPERTY_GALLERY = [
   '/brand/agency-intake-sell.webp',
   '/brand/agency-intake-contact.webp',
 ]
+
+function resolveDemoConfig(token = '', prospectConfig = null) {
+  const normalizedToken = normalizeProspectDemoSlug(token)
+  return normalizeProspectDemoConfig(prospectConfig || {}, { slug: normalizedToken || token })
+}
+
+function resolveDemoBrand(token = '', prospectConfig = null) {
+  const config = resolveDemoConfig(token, prospectConfig)
+  const agencyName = config.agencyName || 'Demo Agency'
+  const logoUrl = config.logoUrl || DEMO_BRAND.logoUrl
+  const primaryColour = config.primaryColour || DEMO_BRAND.primaryColour
+  const secondaryColour = config.secondaryColour || DEMO_BRAND.secondaryColour
+  const accentColour = config.accentColour || DEMO_BRAND.accentColour
+  return {
+    ...DEMO_BRAND,
+    organisationId: `demo-${config.slug || normalizedProspectDemoSlug(token) || 'prospect'}`,
+    organisationName: agencyName,
+    agencyName,
+    senderName: agencyName,
+    logoUrl,
+    logoDarkUrl: logoUrl,
+    logoLightUrl: logoUrl,
+    primaryColour,
+    secondaryColour,
+    accentColour,
+  }
+}
+
+function resolveDemoProperty(token = '', prospectConfig = null) {
+  const config = resolveDemoConfig(token, prospectConfig)
+  const propertyAddress = config.samplePropertyAddress || DEMO_PROPERTY_ADDRESS.formatted
+  const propertyImageUrl = config.samplePropertyImageUrl || DEMO_PROPERTY_IMAGE_URL
+  const addressParts = propertyAddress.split(',').map((part) => part.trim()).filter(Boolean)
+  const line1 = addressParts[0] || propertyAddress
+  const line2 = addressParts.length > 4 ? addressParts[1] : ''
+  const suburb = addressParts[addressParts.length - 3] || DEMO_PROPERTY_ADDRESS.suburb
+  const city = addressParts[addressParts.length - 2] || DEMO_PROPERTY_ADDRESS.city
+  const province = addressParts[addressParts.length - 1] || DEMO_PROPERTY_ADDRESS.province
+  return {
+    address: propertyAddress,
+    imageUrl: propertyImageUrl,
+    line1,
+    line2,
+    suburb,
+    city,
+    province,
+  }
+}
 
 export function isBuyerOnboardingDemoToken(token = '') {
   return String(token || '').trim() === BUYER_ONBOARDING_DEMO_TOKEN
@@ -162,8 +215,10 @@ function demoUploadedDocument({
   }
 }
 
-function getDemoBuyerPortalSeed(token = BUYER_PORTAL_DEMO_TOKEN) {
-  const buyerPayload = getDemoBuyerOnboardingPayload(BUYER_ONBOARDING_DEMO_TOKEN)
+function getDemoBuyerPortalSeed(token = BUYER_PORTAL_DEMO_TOKEN, prospectConfig = null) {
+  const brand = resolveDemoBrand(token, prospectConfig)
+  const property = resolveDemoProperty(token, prospectConfig)
+  const buyerPayload = getDemoBuyerOnboardingPayload(token, prospectConfig)
   const formData = buyerPayload.formData || {}
   const updatedAt = '2026-07-06T09:30:00.000Z'
   const documents = [
@@ -247,6 +302,13 @@ function getDemoBuyerPortalSeed(token = BUYER_PORTAL_DEMO_TOKEN) {
   const transaction = {
     ...(buyerPayload.transaction || {}),
     token,
+    property_address: property.address,
+    property_address_line_1: property.line1,
+    property_address_line_2: property.line2,
+    suburb: property.suburb,
+    city: property.city,
+    province: property.province,
+    property_description: 'Two-bedroom apartment close to the promenade.',
     stage: 'Finance In Progress',
     current_main_stage: 'FIN',
     status: 'active',
@@ -260,36 +322,36 @@ function getDemoBuyerPortalSeed(token = BUYER_PORTAL_DEMO_TOKEN) {
   const unit = {
     ...(buyerPayload.unit || {}),
     price: 2850000,
-    heroImageUrl: DEMO_PROPERTY_IMAGE_URL,
-    imageUrl: DEMO_PROPERTY_IMAGE_URL,
+    heroImageUrl: property.imageUrl,
+    imageUrl: property.imageUrl,
     images: DEMO_PROPERTY_GALLERY,
     development: {
       ...(buyerPayload.unit?.development || {}),
-      name: 'Pine Avenue Apartments',
-      developer_company: 'Arch9 Demo Agency',
+      name: property.address || 'Pine Avenue Apartments',
+      developer_company: brand.agencyName,
     },
   }
   const portalData = {
     __demoPortal: true,
-    branding: DEMO_BRAND,
+    branding: brand,
     buyer: buyerPayload.buyer,
     transaction,
     unit,
     listing: {
       id: 'demo-buyer-listing',
-      title: '2 Pine Avenue, Unit 4',
-      address: DEMO_PROPERTY_ADDRESS.formatted,
-      heroImageUrl: DEMO_PROPERTY_IMAGE_URL,
-      coverImageUrl: DEMO_PROPERTY_IMAGE_URL,
-      imageUrl: DEMO_PROPERTY_IMAGE_URL,
+      title: property.address,
+      address: property.address,
+      heroImageUrl: property.imageUrl,
+      coverImageUrl: property.imageUrl,
+      imageUrl: property.imageUrl,
       images: DEMO_PROPERTY_GALLERY,
       galleryImages: DEMO_PROPERTY_GALLERY,
-      agencyName: DEMO_BRAND.agencyName,
-      organisationName: DEMO_BRAND.organisationName,
-      agencyLogoUrl: DEMO_BRAND.logoUrl,
-      agencyLogoDarkUrl: DEMO_BRAND.logoDarkUrl,
-      agencyLogoLightUrl: DEMO_BRAND.logoLightUrl,
-      branding: DEMO_BRAND,
+      agencyName: brand.agencyName,
+      organisationName: brand.organisationName,
+      agencyLogoUrl: brand.logoUrl,
+      agencyLogoDarkUrl: brand.logoDarkUrl,
+      agencyLogoLightUrl: brand.logoLightUrl,
+      branding: brand,
       seller: {
         name: 'Thabo Mokoena',
         email: 'thabo.demo@arch9.co.za',
@@ -302,6 +364,7 @@ function getDemoBuyerPortalSeed(token = BUYER_PORTAL_DEMO_TOKEN) {
       ...(buyerPayload.onboarding || {}),
       status: 'Submitted',
       submittedAt: '2026-07-06T08:45:00.000Z',
+      currentStep: 'submitted',
     },
     onboardingFormData: {
       status: 'Submitted',
@@ -821,14 +884,17 @@ function getDemoSellerPortalSeed(token = SELLER_PORTAL_DEMO_TOKEN) {
   }
 }
 
-export function getDemoClientPortalSeedData(token = '') {
+export function getDemoClientPortalSeedData(token = '', prospectConfig = null, workspace = 'buyer') {
   const normalizedToken = String(token || '').trim()
-  if (normalizedToken === BUYER_PORTAL_DEMO_TOKEN) return getDemoBuyerPortalSeed(normalizedToken)
+  if (normalizedToken === BUYER_PORTAL_DEMO_TOKEN) return getDemoBuyerPortalSeed(normalizedToken, prospectConfig)
   if (normalizedToken === SELLER_PORTAL_DEMO_TOKEN) return getDemoSellerPortalSeed(normalizedToken)
-  return null
+  if (String(workspace || '').trim().toLowerCase() === 'seller') return null
+  return getDemoBuyerPortalSeed(normalizedToken || BUYER_PORTAL_DEMO_TOKEN, prospectConfig)
 }
 
-export function getDemoBuyerOnboardingPayload(token = BUYER_ONBOARDING_DEMO_TOKEN, formDataOverride = null) {
+export function getDemoBuyerOnboardingPayload(token = BUYER_ONBOARDING_DEMO_TOKEN, prospectConfig = null, formDataOverride = null) {
+  const brand = resolveDemoBrand(token, prospectConfig)
+  const property = resolveDemoProperty(token, prospectConfig)
   const formData = formDataOverride || {
     purchaser_type: 'individual',
     purchaser_entity_type: 'individual',
@@ -926,16 +992,17 @@ export function getDemoBuyerOnboardingPayload(token = BUYER_ONBOARDING_DEMO_TOKE
     },
     transaction: {
       id: 'demo-buyer-transaction',
-      organisation_id: DEMO_BRAND.organisationId,
+      organisation_id: brand.organisationId,
       development_id: 'demo-development',
       unit_id: 'demo-unit-4',
       buyer_id: 'demo-buyer',
       transaction_reference: 'A9-BUY-2048',
-      property_address_line_1: DEMO_PROPERTY_ADDRESS.line1,
-      property_address_line_2: DEMO_PROPERTY_ADDRESS.line2,
-      suburb: DEMO_PROPERTY_ADDRESS.suburb,
-      city: DEMO_PROPERTY_ADDRESS.city,
-      province: DEMO_PROPERTY_ADDRESS.province,
+      property_address_line_1: property.line1,
+      property_address_line_2: property.line2,
+      suburb: property.suburb,
+      city: property.city,
+      province: property.province,
+      property_address: property.address,
       property_description: 'Two-bedroom apartment close to the promenade.',
       purchase_price: 2850000,
       sales_price: 2850000,
@@ -967,8 +1034,12 @@ export function getDemoBuyerOnboardingPayload(token = BUYER_ONBOARDING_DEMO_TOKE
       status: 'Offer Accepted',
       development: {
         id: 'demo-development',
-        name: 'Pine Avenue Apartments',
+        name: property.address || 'Pine Avenue Apartments',
+        developer_company: brand.agencyName,
       },
+      heroImageUrl: property.imageUrl,
+      imageUrl: property.imageUrl,
+      images: [property.imageUrl].filter(Boolean),
     },
     buyer: {
       id: 'demo-buyer',
@@ -977,12 +1048,12 @@ export function getDemoBuyerOnboardingPayload(token = BUYER_ONBOARDING_DEMO_TOKE
       phone: '+27 82 555 0142',
     },
     organisation: {
-      id: DEMO_BRAND.organisationId,
-      name: DEMO_BRAND.organisationName,
-      display_name: DEMO_BRAND.organisationName,
-      logo_url: '',
+      id: brand.organisationId,
+      name: brand.organisationName,
+      display_name: brand.organisationName,
+      logo_url: brand.logoUrl,
     },
-    branding: DEMO_BRAND,
+    branding: brand,
     purchaserType: 'individual',
     purchaserTypeLabel: 'Individual',
     formConfig: null,
@@ -1028,11 +1099,11 @@ export function getDemoBuyerOnboardingPayload(token = BUYER_ONBOARDING_DEMO_TOKE
     },
     clientPortalLink: {
       id: 'demo-buyer-portal-link',
-      token: 'demo-buyer-portal',
+      token: normalizeProspectDemoSlug(token) || 'demo-buyer-portal',
       is_active: true,
       transaction_id: 'demo-buyer-transaction',
     },
-    clientPortalPath: '/client/demo-buyer-portal/buying/documents',
+    clientPortalPath: `/demo/${normalizeProspectDemoSlug(token) || 'demo-buyer-portal'}/buyer`,
   }
 }
 

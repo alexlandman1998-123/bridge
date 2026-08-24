@@ -235,6 +235,7 @@ export function buildProperty24ApiConfig({ env = getRuntimeEnv(), requestUrl, pa
 
 function getMissingConfiguration(config = {}, needs = {}) {
   const missing = []
+  const allowMissingAgentMapping = Boolean(needs.allowMissingAgentMapping)
   if (needs.apiToken && !config.apiInternalToken && !config.allowUnsafeLocalApi) missing.push('PROPERTY24_API_INTERNAL_TOKEN')
   if (needs.enabled && !config.syndicationEnabled) missing.push('PROPERTY24_SYNDICATION_ENABLED=true')
   if (needs.supabase && !config.supabaseUrl) missing.push('SUPABASE_URL or VITE_SUPABASE_URL')
@@ -243,10 +244,14 @@ function getMissingConfiguration(config = {}, needs = {}) {
   if (needs.property24 && !config.property24Password) missing.push('PROPERTY24_BASIC_AUTH_PASSWORD')
   if (needs.listing && !config.listingId) missing.push('listingId')
   if (needs.mapping && !config.agencyId) missing.push('PROPERTY24_DEFAULT_AGENCY_ID or agencyId')
-  if (needs.mapping && !config.agentId) missing.push('PROPERTY24_DEFAULT_AGENT_ID or agentId')
-  if (needs.mapping && !config.agentSourceReference) missing.push('PROPERTY24_DEFAULT_AGENT_SOURCE_REFERENCE or agentSourceReference')
+  if (needs.mapping && !allowMissingAgentMapping && !config.agentId) missing.push('PROPERTY24_DEFAULT_AGENT_ID or agentId')
+  if (needs.mapping && !allowMissingAgentMapping && !config.agentSourceReference) missing.push('PROPERTY24_DEFAULT_AGENT_SOURCE_REFERENCE or agentSourceReference')
   if (needs.mapping && !config.suburbId) missing.push('PROPERTY24_DEFAULT_SUBURB_ID or suburbId')
   return missing
+}
+
+function canUseSandboxProperty24PayloadTest(config = {}) {
+  return normalizeProperty24Text(config.environment).toLowerCase() === 'exdev'
 }
 
 function getBearerToken(headers = {}) {
@@ -596,7 +601,11 @@ export async function createProperty24ApiResponse({
       const browserAuthFailure = await authenticateBrowserProperty24ListingRequest({ supabase, headers, config })
       if (browserAuthFailure) return browserAuthFailure
       const resolvedConfig = await resolvePublishConfig({ supabase, config, listingId: config.listingId })
-      const resolvedMissing = getMissingConfiguration(resolvedConfig, { mapping: true })
+      const sandboxPayloadTestMode = canUseSandboxProperty24PayloadTest(resolvedConfig)
+      const resolvedMissing = getMissingConfiguration(resolvedConfig, {
+        mapping: true,
+        allowMissingAgentMapping: sandboxPayloadTestMode,
+      })
       if (resolvedMissing.length) {
         return buildJsonResponse(400, {
           error: 'missing_configuration',
@@ -610,6 +619,8 @@ export async function createProperty24ApiResponse({
         agencyId: resolvedConfig.agencyId,
         agentId: resolvedConfig.agentId,
         agentSourceReference: resolvedConfig.agentSourceReference,
+        environment: resolvedConfig.environment,
+        sandboxPayloadTestMode,
         suburbId: resolvedConfig.suburbId,
         propertyTypeId: resolvedConfig.propertyTypeId,
         expiryDate: resolvedConfig.expiryDate,
@@ -660,6 +671,7 @@ export async function createProperty24ApiResponse({
         agencyId: resolvedConfig.agencyId,
         agentId: resolvedConfig.agentId,
         agentSourceReference: resolvedConfig.agentSourceReference,
+        environment: resolvedConfig.environment,
         suburbId: resolvedConfig.suburbId,
         propertyTypeId: resolvedConfig.propertyTypeId,
         expiryDate: resolvedConfig.expiryDate,

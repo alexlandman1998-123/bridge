@@ -1,0 +1,56 @@
+{
+  "phase": "private-property-phase5-find-suburb",
+  "generatedAt": "2026-08-24T08:01:22.622Z",
+  "environment": "sandbox",
+  "baseUrl": "https://services.sandbox.pp.co.za/AgentImport/AgentImport.asmx",
+  "vendor": "Arch9",
+  "username": "Arch9User",
+  "branchGuid": "CA167B18-C6DC-49AD-B018-2B72B187918F",
+  "apply": false,
+  "safety": {
+    "privatePropertyApiCalled": true,
+    "databaseWritten": false,
+    "listingStatusChanged": false
+  },
+  "status": "FOUND",
+  "criteria": {
+    "country": "South Africa",
+    "province": "Gauteng",
+    "city": "Pretoria",
+    "suburb": "Garsfontein",
+    "countryId": null,
+    "provinceId": null,
+    "cityId": null
+  },
+  "country": {
+    "id": 1,
+    "name": "South Africa",
+    "countryId": null,
+    "provinceId": null,
+    "cityId": null
+  },
+  "province": {
+    "id": 1,
+    "name": "Gauteng",
+    "countryId": 1,
+    "provinceId": null,
+    "cityId": null
+  },
+  "city": {
+    "id": 1,
+    "name": "Pretoria",
+    "countryId": null,
+    "provinceId": 1,
+    "cityId": null
+  },
+  "matches": [
+    {
+      "id": 140,
+      "name": "Garsfontein",
+      "countryId": null,
+      "provinceId": null,
+      "cityId": 1
+    }
+  ],
+  "nextStep": "Use --suburb-id=140 when previewing or publishing the Private Property listing."
+}

@@ -336,6 +336,15 @@ function sanitizePreviewPayload(payload) {
   }
 }
 
+function getProperty24PreviewNextStep(plan = {}) {
+  if (!plan.canPreview) return 'Resolve the listed dataBlockers, then run this preview again.'
+  if ((plan.technicalBlockers || []).includes('sandbox_property24_agent_id_required_before_submit')) {
+    return 'Sandbox payload is ready for review. Property24 must return a real agent ID before submit.'
+  }
+  if (!plan.canSubmit) return 'Resolve the listed technicalBlockers before a real ExDev publish.'
+  return 'Preview passed. This is ready for a controlled ExDev publish.'
+}
+
 export function createProperty24Arch9ListingPreview({
   listing = {},
   publication = {},
@@ -380,8 +389,6 @@ export function createProperty24Arch9ListingPreview({
     ...(imageByteLoad ? { imageByteLoad } : {}),
     ...(options.includeSubmitPayload ? { payload: plan.payload } : {}),
     previewPayload: sanitizePreviewPayload(plan.previewPayload),
-    nextStep: plan.canPreview
-      ? 'Load actual image bytes before a real ExDev publish.'
-      : 'Resolve the listed dataBlockers, then run this preview again.',
+    nextStep: getProperty24PreviewNextStep(plan),
   }
 }

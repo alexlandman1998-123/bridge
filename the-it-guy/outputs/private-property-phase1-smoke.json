@@ -1,6 +1,6 @@
 {
   "phase": "private-property-phase1-smoke",
-  "generatedAt": "2026-08-24T07:19:09.906Z",
+  "generatedAt": "2026-08-24T07:55:11.039Z",
   "environment": "sandbox",
   "baseUrl": "https://services.sandbox.pp.co.za/AgentImport/AgentImport.asmx",
   "vendor": "Arch9",
@@ -18,7 +18,7 @@
       "name": "GetCountries authenticated SOAP call",
       "status": "PASS",
       "httpStatus": 200,
-      "durationMs": 341,
+      "durationMs": 376,
       "summary": {
         "method": "GetCountries",
         "responseChars": 424,
@@ -31,7 +31,7 @@
       "name": "GetListingEventFeedByBranch authenticated SOAP call",
       "status": "PASS",
       "httpStatus": 200,
-      "durationMs": 516,
+      "durationMs": 577,
       "summary": {
         "method": "GetListingEventFeedByBranch",
         "responseChars": 386,
@@ -45,8 +45,8 @@
   "tokenProbe": {
     "generated": true,
     "userName": "Arch9User",
-    "stampTime": "2026-08-24T09:19:09+02:00",
-    "expires": "2026-08-24T09:49:09+02:00",
+    "stampTime": "2026-08-24T09:55:11+02:00",
+    "expires": "2026-08-24T10:25:11+02:00",
     "uidLength": 24,
     "digestLength": 28
   }

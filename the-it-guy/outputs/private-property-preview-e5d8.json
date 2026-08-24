@@ -1,0 +1,108 @@
+{
+  "phase": "private-property-listing-preview",
+  "generatedAt": "2026-08-24T07:51:05.464Z",
+  "safety": {
+    "privatePropertyApiCalled": false,
+    "databaseWritten": false,
+    "listingPublished": false
+  },
+  "status": "BLOCKED",
+  "canPreview": false,
+  "canSubmit": false,
+  "dataBlockers": [
+    "missing_description",
+    "missing_street_number",
+    "minimum_three_listing_image_urls_required"
+  ],
+  "technicalBlockers": [],
+  "summary": {
+    "propertyId": "PRV-TSHEPO-20260812-06-7ASTEGSTRE",
+    "branchId": "CA167B18-C6DC-49AD-B018-2B72B187918F",
+    "agentIds": [
+      "ARCH9-SANDBOX-USER-1"
+    ],
+    "listingType": "Sale",
+    "category": "Residential",
+    "mandateType": "FullMandate",
+    "propertyStatus": "ForSale",
+    "price": 2250000,
+    "listingDate": "2026-08-12",
+    "suburbId": null,
+    "imageUrlCount": 1,
+    "photoUrlPayloadCount": 1,
+    "attributeCount": 6,
+    "soleMandateExclusiveDays": null,
+    "descriptionPresent": false
+  },
+  "payloadPreview": {
+    "propertyId": "PRV-TSHEPO-20260812-06-7ASTEGSTRE",
+    "branchId": "CA167B18-C6DC-49AD-B018-2B72B187918F",
+    "categories": [
+      "Residential"
+    ],
+    "category": "Residential",
+    "mandateType": "FullMandate",
+    "listingType": "Sale",
+    "propertyStatus": "ForSale",
+    "address": {
+      "streetName": "7A Stegman Street",
+      "streetNumber": "",
+      "complexName": "",
+      "unitNumber": "",
+      "suburb": "Terenure",
+      "suburbId": null,
+      "town": "Kempton Park",
+      "province": "Gauteng",
+      "hideStreetName": true,
+      "hideStreetNo": true,
+      "hideComplexName": true,
+      "hideUnitNo": true
+    },
+    "headline": "7A Stegman Street",
+    "description": "",
+    "price": 2250000,
+    "deposit": 0,
+    "listingDate": "2026-08-12",
+    "expiryDate": "",
+    "availableFrom": "",
+    "agentIds": [
+      "ARCH9-SANDBOX-USER-1"
+    ],
+    "photoUrls": [
+      "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/sign/documents/private-listings/e5d8bc0a-2285-45aa-88fe-cfca627ae2e1/gallery/1786558412031-Screenshot-2026-08-12-at-20.13.09.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV8yNmVhM2JiZi1lMGQ1LTQ1MDQtOTQyYy05YjI5NjU5MTM3ZWQiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJkb2N1bWVudHMvcHJpdmF0ZS1saXN0aW5ncy9lNWQ4YmMwYS0yMjg1LTQ1YWEtODhmZS1jZmNhNjI3YWUyZTEvZ2FsbGVyeS8xNzg2NTU4NDEyMDMxLVNjcmVlbnNob3QtMjAyNi0wOC0xMi1hdC0yMC4xMy4wOS5wbmciLCJzY29wZSI6ImRvd25sb2FkIiwiaWF0IjoxNzg2NTU4NDIwLCJleHAiOjE3ODkxNTA0MjB9.koU3f5voMn5M7BwDYZWek938V9pujE6-Z5xRA9Qoexc"
+    ],
+    "ownerId": "",
+    "xCoordinate": null,
+    "yCoordinate": null,
+    "attributes": [
+      {
+        "attributeType": "Bedrooms",
+        "value": "4"
+      },
+      {
+        "attributeType": "Bathrooms",
+        "value": "2.5"
+      },
+      {
+        "attributeType": "HomeType",
+        "value": "Residential"
+      },
+      {
+        "attributeType": "LandArea",
+        "value": "512"
+      },
+      {
+        "attributeType": "Garages",
+        "value": "2"
+      },
+      {
+        "attributeType": "Parking",
+        "value": "2"
+      }
+    ],
+    "showdayEvents": [],
+    "soleMandateExclusiveDays": null
+  },
+  "listingXml": "",
+  "nextStep": "Resolve the blockers, then run the Private Property preview again."
+}

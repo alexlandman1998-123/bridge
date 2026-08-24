@@ -1,0 +1,36 @@
+{
+  "phase": "private-property-phase5-event-feed",
+  "generatedAt": "2026-08-24T08:02:09.083Z",
+  "environment": "sandbox",
+  "baseUrl": "https://services.sandbox.pp.co.za/AgentImport/AgentImport.asmx",
+  "vendor": "Arch9",
+  "username": "Arch9User",
+  "branchGuid": "CA167B18-C6DC-49AD-B018-2B72B187918F",
+  "apply": false,
+  "safety": {
+    "privatePropertyApiCalled": true,
+    "databaseWritten": false,
+    "listingStatusChanged": false
+  },
+  "status": "FOUND",
+  "criteria": {
+    "propertyId": "PRV-202608201031-U8YM",
+    "continuationKey": "0",
+    "startDateTime": null
+  },
+  "continuationKey": "639231549696449114PRV-202608201031-U8YM",
+  "eventCount": 1,
+  "matchCount": 1,
+  "events": [
+    {
+      "listingFeedEventType": "Activated",
+      "eventType": "",
+      "propertyId": "PRV-202608201031-U8YM",
+      "privatePropertyRef": "",
+      "eventDescription": "T2870287",
+      "eventStatus": "Active",
+      "eventDate": "2026-08-24T07:56:09.6449114Z"
+    }
+  ],
+  "nextStep": "Use --continuation-key=639231549696449114PRV-202608201031-U8YM on the next poll."
+}

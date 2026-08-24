@@ -6,9 +6,14 @@ import {
   fetchClientPortalMandatePacketSummaryByToken,
 } from '../lib/api'
 import { getDemoClientPortalSeedData } from '../lib/onboardingDemoLinks'
-import { generateClientPortalNextActions } from '../lib/clientPortalNextActionsEngine'
+import { resolveProspectDemoConfig } from '../lib/prospectDemoConfig'
+import {
+  filterNextActionsByPortalCapabilities,
+  generateClientPortalNextActions,
+} from '../lib/clientPortalNextActionsEngine'
 import {
   buildClientPortalActivityFeedModel,
+  filterActivityByPortalCapabilities,
 } from './clientPortalActivityFeedService'
 import {
   getClientPortalNotifications,
@@ -54,6 +59,13 @@ import {
 import {
   buildDocumentRequestContainerModel,
 } from '../core/documents/documentRequestContainerModel.js'
+import {
+  resolveClientPortalProfile,
+} from '../core/clientPortal/clientPortalProfile.js'
+import {
+  buildClientPortalProfileDiagnostics,
+  summarizeClientPortalProfileDiagnostics,
+} from '../core/clientPortal/clientPortalProfileDiagnostics.js'
 
 function normalizeWorkspace(value = 'shared') {
   const normalized = String(value || 'shared').trim().toLowerCase()
@@ -3270,6 +3282,34 @@ function annotateNextActionsWithEducation(nextActions = []) {
   })
 }
 
+function buildClientPortalCapabilities(portalProfile = null) {
+  const enabledSections =
+    portalProfile?.enabledSections && typeof portalProfile.enabledSections === 'object'
+      ? portalProfile.enabledSections
+      : {}
+  const disabledSections = Object.entries(enabledSections)
+    .filter(([, enabled]) => enabled === false)
+    .map(([sectionKey]) => sectionKey)
+  const developmentSectionKeys = ['handover', 'snags', 'alterations', 'review']
+  const developmentModules = developmentSectionKeys.reduce((modules, sectionKey) => {
+    modules[sectionKey] = enabledSections[sectionKey] !== false
+    return modules
+  }, {})
+
+  return {
+    portalKind: portalProfile?.portalKind || '',
+    navigationMode: portalProfile?.navigationMode || '',
+    saleRoute: portalProfile?.saleRoute || '',
+    transactionType: portalProfile?.transactionType || '',
+    enabledSections,
+    disabledSections,
+    developmentModules,
+    isDevelopmentBuyerPortal: Boolean(portalProfile?.isDevelopmentBuyerPortal),
+    isAgencyResaleBuyerPortal: Boolean(portalProfile?.isAgencyResaleBuyerPortal),
+    isAgencyIntroducedDevelopmentPortal: Boolean(portalProfile?.isAgencyIntroducedDevelopmentPortal),
+  }
+}
+
 function buildRoleEducation(rolePlayers = {}) {
   const roles = [
     rolePlayers?.team?.assignedAgent ? 'agent' : '',
@@ -3280,7 +3320,17 @@ function buildRoleEducation(rolePlayers = {}) {
   return roles.map((role) => getEducationalContentForRole(role))
 }
 
-function buildLegacyPortalPayload({ portalData, contexts, hasBuyingContext, hasSellingContext, workspaceMode }) {
+function buildLegacyPortalPayload({
+  portalData,
+  contexts,
+  hasBuyingContext,
+  hasSellingContext,
+  workspaceMode,
+  portalProfile = null,
+  portalCapabilities = null,
+  portalDiagnostics = [],
+  portalDiagnosticsSummary = null,
+}) {
   const roles = hasSellingContext ? (hasBuyingContext === false ? ['seller'] : ['buyer', 'seller']) : ['buyer']
   const portalContexts = (() => {
     const rows = Array.isArray(contexts) ? contexts : []
@@ -3308,6 +3358,13 @@ function buildLegacyPortalPayload({ portalData, contexts, hasBuyingContext, hasS
     __portalContexts: portalContexts,
     __hasBuyingContext: hasBuyingContext !== false,
     __hasSellingContext: Boolean(hasSellingContext),
+    portalProfile,
+    __portalProfile: portalProfile,
+    portalCapabilities,
+    __portalCapabilities: portalCapabilities,
+    portalDiagnostics,
+    portalDiagnosticsSummary,
+    __portalDiagnostics: portalDiagnostics,
   }
 }
 
@@ -3385,8 +3442,8 @@ async function fetchPortalDataForWorkspace(token, mode = 'full', options = {}) {
     : await fetchClientPortalByToken(token)
 }
 
-function buildDemoClientPortalWorkspaceData(token, workspace = 'shared') {
-  const seed = getDemoClientPortalSeedData(token)
+function buildDemoClientPortalWorkspaceData(token, workspace = 'shared', prospectConfig = null) {
+  const seed = getDemoClientPortalSeedData(token, prospectConfig, workspace)
   if (!seed?.portalData) return null
 
   const contexts = Array.isArray(seed.contexts) ? seed.contexts : []
@@ -3435,7 +3492,21 @@ function buildDemoClientPortalWorkspaceData(token, workspace = 'shared') {
   const lifecycle = buildLifecycle(portalData)
   const timeline = buildTimeline(portalData)
   const clientRole = workspaceMode === 'selling' ? 'seller' : 'buyer'
-  const nextActions = annotateNextActionsWithEducation(Array.isArray(seed.nextActions) ? seed.nextActions : [])
+  const portalProfile = resolveClientPortalProfile({
+    transaction: portalData?.transaction || {},
+    unit: portalData?.unit || {},
+    settings: portalData?.settings || {},
+    workspace: workspaceMode,
+    hasBuyingContext: context.hasBuyingContext,
+    hasSellingContext: context.hasSellingContext,
+  })
+  const portalCapabilities = buildClientPortalCapabilities(portalProfile)
+  const nextActions = annotateNextActionsWithEducation(
+    filterNextActionsByPortalCapabilities(Array.isArray(seed.nextActions) ? seed.nextActions : [], {
+      portalProfile,
+      portalCapabilities,
+    }),
+  )
   const workflowSummary = seed.workflowSummary || buildWorkflowSummary({
     workflowReadModel: null,
     lifecycle,
@@ -3444,13 +3515,28 @@ function buildDemoClientPortalWorkspaceData(token, workspace = 'shared') {
     workspaceMode,
     nextActions,
   })
-  const activityFeed = Array.isArray(seed.activityFeed) ? seed.activityFeed : []
+  const activityFeed = filterActivityByPortalCapabilities(Array.isArray(seed.activityFeed) ? seed.activityFeed : [], {
+    portalProfile,
+    portalCapabilities,
+  })
   const groupedActivityFeed = seed.groupedActivityFeed || {}
   const activityFeedSummary = seed.activityFeedSummary || {
     actionRequired: nextActions.filter((action) => action?.blocking).length,
     overdue: 0,
     dueSoon: 0,
   }
+  const portalDiagnostics = buildClientPortalProfileDiagnostics({
+    portalProfile,
+    transaction: portalData?.transaction || {},
+    unit: portalData?.unit || {},
+    settings: portalData?.settings || {},
+    workspace: workspaceMode,
+    hasBuyingContext: context.hasBuyingContext,
+    hasSellingContext: context.hasSellingContext,
+    nextActions,
+    activityFeed,
+  })
+  const portalDiagnosticsSummary = summarizeClientPortalProfileDiagnostics(portalDiagnostics)
   const notifications = seed.notifications || { unreadCount: 0, items: [] }
   const rolePlayers = {
     attorney: portalData?.attorneyRolePlayers || null,
@@ -3478,6 +3564,10 @@ function buildDemoClientPortalWorkspaceData(token, workspace = 'shared') {
     hasBuyingContext: context.hasBuyingContext,
     hasSellingContext: context.hasSellingContext,
     workspaceMode,
+    portalProfile,
+    portalCapabilities,
+    portalDiagnostics,
+    portalDiagnosticsSummary,
   })
 
   return {
@@ -3489,8 +3579,19 @@ function buildDemoClientPortalWorkspaceData(token, workspace = 'shared') {
       hasBuyingContext: context.hasBuyingContext,
       hasSellingContext: context.hasSellingContext,
       workspaceRoles: context.workspaceRoles,
+      portalKind: portalProfile.portalKind,
+      navigationMode: portalProfile.navigationMode,
+      saleRoute: portalProfile.saleRoute,
+      transactionType: portalProfile.transactionType,
+      enabledSections: portalCapabilities.enabledSections,
+      disabledSections: portalCapabilities.disabledSections,
+      diagnosticSummary: portalDiagnosticsSummary,
     },
+    portalProfile,
     client: portalData?.buyer || null,
+    portalCapabilities,
+    portalDiagnostics,
+    portalDiagnosticsSummary,
     transaction: portalData?.transaction || null,
     listing: portalData?.listing || null,
     property: portalData?.unit || null,
@@ -3541,6 +3642,11 @@ function buildDemoClientPortalWorkspaceData(token, workspace = 'shared') {
     },
     legacyPortalData,
   }
+}
+
+export async function getProspectDemoClientPortalWorkspaceData(token, workspace = 'shared') {
+  const prospectConfig = await resolveProspectDemoConfig(token)
+  return buildDemoClientPortalWorkspaceData(token, workspace, prospectConfig)
 }
 
 export async function getClientPortalWorkspaceData(token, workspace = 'shared', options = {}) {
@@ -3628,6 +3734,15 @@ export async function getClientPortalWorkspaceData(token, workspace = 'shared', 
   const appointments = Array.isArray(portalData?.appointments) ? portalData.appointments : []
   const lifecycle = buildLifecycle(portalData)
   const timeline = buildTimeline(portalData)
+  const portalProfile = resolveClientPortalProfile({
+    transaction: portalData?.transaction || {},
+    unit: portalData?.unit || {},
+    settings: portalData?.settings || {},
+    workspace: workspaceMode,
+    hasBuyingContext: context.hasBuyingContext,
+    hasSellingContext: context.hasSellingContext,
+  })
+  const portalCapabilities = buildClientPortalCapabilities(portalProfile)
   let workflowReadModel = null
   try {
     if (mode !== 'core' && portalData?.transaction?.id) {
@@ -3662,6 +3777,8 @@ export async function getClientPortalWorkspaceData(token, workspace = 'shared', 
     transactionId: portalData?.transaction?.id || null,
     portalData,
     workspaceMode,
+    portalProfile,
+    portalCapabilities,
     workflowSummary: provisionalWorkflowSummary,
     workflowReadModel,
   }, clientRole)
@@ -3671,8 +3788,15 @@ export async function getClientPortalWorkspaceData(token, workspace = 'shared', 
     portalContext: {
       token,
       workspace: workspaceMode,
+      portalKind: portalProfile.portalKind,
+      navigationMode: portalProfile.navigationMode,
+      enabledSections: portalCapabilities.enabledSections,
+      disabledSections: portalCapabilities.disabledSections,
+      diagnosticSummary: portalDiagnosticsSummary,
     },
     workspaceMode,
+    portalProfile,
+    portalCapabilities,
     portalData,
     appointments,
     documentCenter,
@@ -3701,6 +3825,18 @@ export async function getClientPortalWorkspaceData(token, workspace = 'shared', 
     workspaceMode,
     nextActions,
   })
+  const portalDiagnostics = buildClientPortalProfileDiagnostics({
+    portalProfile,
+    transaction: portalData?.transaction || {},
+    unit: portalData?.unit || {},
+    settings: portalData?.settings || {},
+    workspace: workspaceMode,
+    hasBuyingContext: context.hasBuyingContext,
+    hasSellingContext: context.hasSellingContext,
+    nextActions,
+    activityFeed,
+  })
+  const portalDiagnosticsSummary = summarizeClientPortalProfileDiagnostics(portalDiagnostics)
   let notifications = { unreadCount: 0, items: [] }
   const notificationContext = {
     token,
@@ -3714,7 +3850,13 @@ export async function getClientPortalWorkspaceData(token, workspace = 'shared', 
     portalContext: {
       token,
       workspace: workspaceMode,
+      portalKind: portalProfile.portalKind,
+      navigationMode: portalProfile.navigationMode,
+      enabledSections: portalCapabilities.enabledSections,
+      disabledSections: portalCapabilities.disabledSections,
     },
+    portalProfile,
+    portalCapabilities,
   }
   try {
     if (mode !== 'core') {
@@ -3752,13 +3894,16 @@ export async function getClientPortalWorkspaceData(token, workspace = 'shared', 
   const documentEducation = (documentCenter?.requiredDocuments || []).slice(0, 6).map((item) =>
     getEducationalContentForDocument(item?.key || item?.label || ''),
   )
-
   const legacyPortalData = buildLegacyPortalPayload({
     portalData,
     contexts: context.contexts,
     hasBuyingContext: context.hasBuyingContext,
     hasSellingContext: context.hasSellingContext,
     workspaceMode,
+    portalProfile,
+    portalCapabilities,
+    portalDiagnostics,
+    portalDiagnosticsSummary,
   })
 
   return {
@@ -3770,8 +3915,18 @@ export async function getClientPortalWorkspaceData(token, workspace = 'shared', 
       hasBuyingContext: context.hasBuyingContext,
       hasSellingContext: context.hasSellingContext,
       workspaceRoles: context.workspaceRoles,
+      portalKind: portalProfile.portalKind,
+      navigationMode: portalProfile.navigationMode,
+      saleRoute: portalProfile.saleRoute,
+      transactionType: portalProfile.transactionType,
+      enabledSections: portalCapabilities.enabledSections,
+      disabledSections: portalCapabilities.disabledSections,
     },
+    portalProfile,
     client: portalData?.buyer || null,
+    portalCapabilities,
+    portalDiagnostics,
+    portalDiagnosticsSummary,
     transaction: portalData?.transaction || null,
     listing: portalData?.listing || null,
     property: portalData?.unit || null,

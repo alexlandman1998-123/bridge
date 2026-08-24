@@ -118,6 +118,46 @@ assert.equal(previewOnly.previewPayload.photos[0].sourceUrl, 'https://cdn.exampl
 assert.equal(previewOnly.previewPayload.photos[0].bytesLoaded, false)
 assert.equal(previewOnly.payload, null)
 
+const sandboxPreviewWithoutAgentId = createProperty24ListingPlan({
+  listing: baseListing,
+  publication: basePublication,
+  media: imageWithBytes,
+  agentMapping: {},
+  catalogMapping: baseCatalogMapping,
+  options: {
+    expiryDate: '2026-12-31',
+    environment: 'exdev',
+    sandboxPayloadTestMode: true,
+  },
+})
+
+assert.equal(sandboxPreviewWithoutAgentId.canPreview, true)
+assert.equal(sandboxPreviewWithoutAgentId.canSubmit, false)
+assert.deepEqual(sandboxPreviewWithoutAgentId.dataBlockers, [])
+assert.ok(sandboxPreviewWithoutAgentId.technicalBlockers.includes('sandbox_property24_agent_id_required_before_submit'))
+assert.ok(sandboxPreviewWithoutAgentId.technicalBlockers.includes('sandbox_agent_source_reference_required_before_submit'))
+assert.deepEqual(sandboxPreviewWithoutAgentId.previewPayload.contactAgentIds, [])
+assert.equal(sandboxPreviewWithoutAgentId.payload, null)
+assert.equal(sandboxPreviewWithoutAgentId.summary.sandboxPayloadTestMode, true)
+assert.equal(sandboxPreviewWithoutAgentId.summary.agentMappingRequiredBeforeSubmit, true)
+
+const productionWithoutAgentId = createProperty24ListingPlan({
+  listing: baseListing,
+  publication: basePublication,
+  media: imageWithBytes,
+  agentMapping: {},
+  catalogMapping: baseCatalogMapping,
+  options: {
+    expiryDate: '2026-12-31',
+    environment: 'production',
+    sandboxPayloadTestMode: true,
+  },
+})
+
+assert.equal(productionWithoutAgentId.canPreview, false)
+assert.ok(productionWithoutAgentId.dataBlockers.includes('missing_property24_agent_id'))
+assert.ok(productionWithoutAgentId.dataBlockers.includes('missing_agent_source_reference'))
+
 const submitReady = createProperty24ListingPlan({
   listing: baseListing,
   publication: basePublication,

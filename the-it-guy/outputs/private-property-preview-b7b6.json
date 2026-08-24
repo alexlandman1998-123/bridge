@@ -1,0 +1,108 @@
+{
+  "phase": "private-property-listing-preview",
+  "generatedAt": "2026-08-24T07:51:05.429Z",
+  "safety": {
+    "privatePropertyApiCalled": false,
+    "databaseWritten": false,
+    "listingPublished": false
+  },
+  "status": "BLOCKED",
+  "canPreview": false,
+  "canSubmit": false,
+  "dataBlockers": [
+    "missing_description",
+    "missing_street_number",
+    "minimum_three_listing_image_urls_required"
+  ],
+  "technicalBlockers": [],
+  "summary": {
+    "propertyId": "PRV-TSHEPO-20260812-14-21MILKCRES",
+    "branchId": "CA167B18-C6DC-49AD-B018-2B72B187918F",
+    "agentIds": [
+      "ARCH9-SANDBOX-USER-1"
+    ],
+    "listingType": "Sale",
+    "category": "Residential",
+    "mandateType": "FullMandate",
+    "propertyStatus": "ForSale",
+    "price": 5600000,
+    "listingDate": "2026-08-12",
+    "suburbId": null,
+    "imageUrlCount": 1,
+    "photoUrlPayloadCount": 1,
+    "attributeCount": 6,
+    "soleMandateExclusiveDays": null,
+    "descriptionPresent": false
+  },
+  "payloadPreview": {
+    "propertyId": "PRV-TSHEPO-20260812-14-21MILKCRES",
+    "branchId": "CA167B18-C6DC-49AD-B018-2B72B187918F",
+    "categories": [
+      "Residential"
+    ],
+    "category": "Residential",
+    "mandateType": "FullMandate",
+    "listingType": "Sale",
+    "propertyStatus": "ForSale",
+    "address": {
+      "streetName": "21 Milkwood Crescent",
+      "streetNumber": "",
+      "complexName": "",
+      "unitNumber": "",
+      "suburb": "Serengeti",
+      "suburbId": null,
+      "town": "Kempton Park",
+      "province": "Gauteng",
+      "hideStreetName": true,
+      "hideStreetNo": true,
+      "hideComplexName": true,
+      "hideUnitNo": true
+    },
+    "headline": "21 Milkwood Crescent",
+    "description": "",
+    "price": 5600000,
+    "deposit": 0,
+    "listingDate": "2026-08-12",
+    "expiryDate": "",
+    "availableFrom": "",
+    "agentIds": [
+      "ARCH9-SANDBOX-USER-1"
+    ],
+    "photoUrls": [
+      "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/sign/documents/private-listings/b7b6e2a6-0e81-47d9-90c2-b5e1c3bdd453/gallery/1786557136980-Screenshot-2026-08-12-at-19.51.41.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV8yNmVhM2JiZi1lMGQ1LTQ1MDQtOTQyYy05YjI5NjU5MTM3ZWQiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJkb2N1bWVudHMvcHJpdmF0ZS1saXN0aW5ncy9iN2I2ZTJhNi0wZTgxLTQ3ZDktOTBjMi1iNWUxYzNiZGQ0NTMvZ2FsbGVyeS8xNzg2NTU3MTM2OTgwLVNjcmVlbnNob3QtMjAyNi0wOC0xMi1hdC0xOS41MS40MS5wbmciLCJzY29wZSI6ImRvd25sb2FkIiwiaWF0IjoxNzg2NTU3MTQ0LCJleHAiOjE3ODkxNDkxNDR9.oOh2oJlc_H4C1EgXwqyp9a5ku9moa0e0nYrJ7KxxFpg"
+    ],
+    "ownerId": "",
+    "xCoordinate": null,
+    "yCoordinate": null,
+    "attributes": [
+      {
+        "attributeType": "Bedrooms",
+        "value": "4"
+      },
+      {
+        "attributeType": "Bathrooms",
+        "value": "5"
+      },
+      {
+        "attributeType": "HomeType",
+        "value": "Residential"
+      },
+      {
+        "attributeType": "LandArea",
+        "value": "1200"
+      },
+      {
+        "attributeType": "Garages",
+        "value": "2"
+      },
+      {
+        "attributeType": "Parking",
+        "value": "4"
+      }
+    ],
+    "showdayEvents": [],
+    "soleMandateExclusiveDays": null
+  },
+  "listingXml": "",
+  "nextStep": "Resolve the blockers, then run the Private Property preview again."
+}

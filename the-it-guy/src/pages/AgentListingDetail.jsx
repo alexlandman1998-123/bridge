@@ -908,6 +908,9 @@ function getProperty24ApiMessage(payload = {}, fallback = 'Property24 request fa
   if (missing.length) return `Property24 setup is incomplete: ${missing.join(', ')}.`
   const dataBlockers = payload?.preview?.dataBlockers || payload?.report?.preview?.dataBlockers || []
   const technicalBlockers = payload?.preview?.technicalBlockers || payload?.report?.preview?.technicalBlockers || []
+  if (technicalBlockers.includes('sandbox_property24_agent_id_required_before_submit')) {
+    return 'Property24 sandbox payload is ready to review, but real publishing needs a usable Property24 agent ID first.'
+  }
   const blockers = [...dataBlockers, ...technicalBlockers].map(formatProperty24Blocker)
   if (blockers.length) return `Property24 cannot publish yet: ${blockers.join(', ')}.`
   return String(payload?.message || payload?.error || fallback)
@@ -937,6 +940,23 @@ function getProperty24ReadinessCounts(payload = {}) {
     imagesLoaded: Number(preview.imageByteLoad?.summary?.loaded || 0) || 0,
     imagesFailed: Number(preview.imageByteLoad?.summary?.failed || 0) || 0,
   }
+}
+
+function hasProperty24SandboxAgentIdBlocker(payload = {}) {
+  const preview = payload?.preview || payload?.report?.preview || {}
+  return Array.isArray(preview.technicalBlockers) &&
+    preview.technicalBlockers.includes('sandbox_property24_agent_id_required_before_submit')
+}
+
+function getProperty24ReadinessIssues(payload = {}) {
+  const preview = payload?.preview || payload?.report?.preview || {}
+  const missingConfiguration = Array.isArray(payload?.missingConfiguration) ? payload.missingConfiguration : []
+  const issues = [
+    ...missingConfiguration.map((item) => `Setup: ${formatProperty24Blocker(item)}`),
+    ...(Array.isArray(preview.dataBlockers) ? preview.dataBlockers.map(formatProperty24Blocker) : []),
+    ...(Array.isArray(preview.technicalBlockers) ? preview.technicalBlockers.map(formatProperty24Blocker) : []),
+  ]
+  return [...new Set(issues.filter(Boolean))]
 }
 
 function getProperty24StatusLabel(statusResult = {}) {
@@ -6820,14 +6840,28 @@ function AgentListingDetail() {
   const property24Reference = String(marketingDraft.property24Reference || listingRecord?.property24Reference || listingRecord?.property24_reference || '').trim()
   const property24Published = ['published', 'live', 'active'].includes(property24StatusKey)
   const property24PreviewCounts = getProperty24ReadinessCounts(property24Preview)
+  const property24ReadinessIssues = getProperty24ReadinessIssues(property24Preview)
   const property24LeadImportCounts = getProperty24LeadImportCounts(property24LeadImport)
   const property24StatusLabel = getProperty24StatusLabel(property24StatusCheck)
   const property24StatusCheckedAt = getProperty24StatusCheckedAt(property24StatusCheck)
   const property24HasReference = Boolean(property24Reference)
   const property24CanSubmit = property24Preview?.preview?.canSubmit ?? property24Preview?.report?.preview?.canSubmit ?? null
   const property24HasPreviewBlockers = property24PreviewCounts.dataBlockers > 0 || property24PreviewCounts.technicalBlockers > 0
+  const property24SandboxAgentIdPending = hasProperty24SandboxAgentIdBlocker(property24Preview)
+  const property24PublishDisabled = Boolean(property24Action) || property24CanSubmit !== true || property24HasPreviewBlockers
   const property24PrimaryActionLabel = property24HasReference ? 'Update Existing Listing' : 'Publish New Listing'
-  const property24NextStep = property24HasPreviewBlockers
+  const property24ReadinessStatus = property24Published
+    ? { label: 'Live', tone: 'success' }
+    : property24SandboxAgentIdPending
+      ? { label: 'Sandbox only', tone: 'warning' }
+      : property24HasPreviewBlockers
+        ? { label: 'Needs attention', tone: 'warning' }
+        : property24CanSubmit === true
+          ? { label: 'Ready to publish', tone: 'success' }
+          : { label: 'Not checked', tone: 'neutral' }
+  const property24NextStep = property24SandboxAgentIdPending
+    ? 'Sandbox payload can be reviewed. Real publishing stays blocked until Property24 returns a usable agent ID.'
+    : property24HasPreviewBlockers
     ? 'Fix the preview blockers before sending this listing to Property24.'
     : property24CanSubmit === true && !property24HasReference
       ? 'Preview passed. This is ready for the first ExDev publish.'
@@ -8806,7 +8840,7 @@ function AgentListingDetail() {
             </div>
             <div className="rounded-[16px] border border-[#e1e9f2] bg-white p-3">
               <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">2. Send</p>
-              <Button type="button" size="sm" className="mt-2 w-full justify-center" onClick={publishProperty24Listing} disabled={Boolean(property24Action) || property24HasPreviewBlockers}>
+              <Button type="button" size="sm" className="mt-2 w-full justify-center" onClick={publishProperty24Listing} disabled={property24PublishDisabled}>
                 {property24Action === 'publish' ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
                 {property24PrimaryActionLabel}
               </Button>
@@ -9104,32 +9138,72 @@ function AgentListingDetail() {
             </Button>
           </div>
 
-          <DistributionChannel
-            icon={Building2}
-            logoSrc="/lead-sources/property24.png"
-            name="Property24"
-            subtitle="Published via Arch9"
-            reference={property24Reference ? `Ref: ${property24Reference}` : 'Ref: Not assigned yet'}
-            status={property24Published ? 'live' : property24StatusKey || 'not_published'}
-            statusLabel={property24Published ? 'Live' : formatStatusLabel(property24StatusKey || 'not_published')}
-            lastSynced={property24LastSyncedAt ? `Last synced: ${formatRelativeTime(property24LastSyncedAt)}` : 'Last synced: Not checked yet'}
-            primaryAction={marketingDraft.property24ListingUrl ? (
-              <a href={marketingDraft.property24ListingUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#35546c] hover:bg-[#f7fbff]">
-                <Eye size={15} />
-                View Live Listing
-              </a>
-            ) : <Button type="button" size="sm" variant="secondary" disabled><Eye size={15} />View Live Listing</Button>}
-            secondaryAction={(
-              <Button type="button" size="sm" variant="secondary" onClick={() => setProperty24ManageOpen(true)}>
-                <SlidersHorizontal size={15} />
-                Manage
-              </Button>
-            )}
-            menuActions={[
-              <button key="preview" type="button" onClick={previewProperty24Listing} disabled={Boolean(property24Action)} className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] hover:bg-[#f7fbff] disabled:opacity-50"><Eye size={15} />Preview</button>,
-              <button key="refresh" type="button" onClick={refreshProperty24ListingStatus} disabled={Boolean(property24Action) || !property24HasReference} className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] hover:bg-[#f7fbff] disabled:opacity-50"><RefreshCw size={15} />Sync / Refresh</button>,
-            ]}
-          />
+          <div className="border-b border-[#edf2f7] px-4 py-4">
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
+              <div className="flex min-w-0 gap-4">
+                <span className="grid h-16 w-20 shrink-0 place-items-center">
+                  <img src="/lead-sources/property24.png" alt="Property24 logo" className="max-h-14 max-w-20 object-contain" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h4 className="text-base font-semibold text-[#142132]">Property24 readiness</h4>
+                    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                      property24ReadinessStatus.tone === 'success'
+                        ? 'border-[#c7ead4] bg-[#ecfaf1] text-[#18713e]'
+                        : property24ReadinessStatus.tone === 'warning'
+                          ? 'border-[#f2d4a4] bg-[#fff8ec] text-[#9a5b13]'
+                          : 'border-[#dbe6f2] bg-[#f7fbff] text-[#526a82]'
+                    }`}>
+                      {property24ReadinessStatus.tone === 'success' ? <CheckCircle2 size={14} /> : property24ReadinessStatus.tone === 'warning' ? <CircleAlert size={14} /> : <Info size={14} />}
+                      {property24ReadinessStatus.label}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-sm leading-6 text-[#607387]">{property24NextStep}</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <span className="rounded-full border border-[#dbe6f2] bg-[#fbfdff] px-3 py-1 text-xs font-semibold text-[#47627c]">
+                      {property24Reference ? `Ref: ${property24Reference}` : 'No Property24 ref yet'}
+                    </span>
+                    <span className="rounded-full border border-[#dbe6f2] bg-[#fbfdff] px-3 py-1 text-xs font-semibold text-[#47627c]">
+                      {property24LastSyncedAt ? `Last synced: ${formatRelativeTime(property24LastSyncedAt)}` : 'Last synced: Not checked yet'}
+                    </span>
+                    {property24Preview ? (
+                      <span className="rounded-full border border-[#dbe6f2] bg-[#fbfdff] px-3 py-1 text-xs font-semibold text-[#47627c]">
+                        {property24PreviewCounts.imagesLoaded} photo{property24PreviewCounts.imagesLoaded === 1 ? '' : 's'} checked
+                      </span>
+                    ) : null}
+                  </div>
+                  {property24ReadinessIssues.length ? (
+                    <div className="mt-3 rounded-[14px] border border-[#f2d4a4] bg-[#fffaf0] px-3 py-2">
+                      <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#9a5b13]">What to fix next</p>
+                      <ul className="mt-1 grid gap-1 text-sm leading-6 text-[#7a5518]">
+                        {property24ReadinessIssues.slice(0, 3).map((issue) => <li key={issue}>{issue}</li>)}
+                      </ul>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+                <Button type="button" size="sm" variant="secondary" onClick={previewProperty24Listing} disabled={Boolean(property24Action)}>
+                  {property24Action === 'preview' ? <Loader2 size={15} className="animate-spin" /> : <Eye size={15} />}
+                  Check Property24 readiness
+                </Button>
+                <Button type="button" size="sm" onClick={publishProperty24Listing} disabled={property24PublishDisabled}>
+                  {property24Action === 'publish' ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+                  {property24PrimaryActionLabel}
+                </Button>
+                {marketingDraft.property24ListingUrl ? (
+                  <a href={marketingDraft.property24ListingUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#35546c] hover:bg-[#f7fbff]">
+                    <ExternalLink size={15} />
+                    View Live Listing
+                  </a>
+                ) : null}
+                <Button type="button" size="sm" variant="secondary" onClick={() => setProperty24ManageOpen(true)}>
+                  <SlidersHorizontal size={15} />
+                  More actions
+                </Button>
+              </div>
+            </div>
+          </div>
 
           <DistributionChannel
             icon={Home}

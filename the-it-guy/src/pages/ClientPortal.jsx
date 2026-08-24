@@ -102,7 +102,10 @@ import {
   submitClientSellerInterestRequest,
   submitServiceReview,
 } from '../lib/api'
-import { getClientPortalWorkspaceData } from '../services/clientPortalWorkspaceService'
+import {
+  getClientPortalWorkspaceData,
+  getProspectDemoClientPortalWorkspaceData,
+} from '../services/clientPortalWorkspaceService'
 import useTransactionLiveRefresh from '../hooks/useTransactionLiveRefresh'
 import {
   clearSellerPortalAccessToken,
@@ -1336,6 +1339,91 @@ const BUYER_PORTAL_NAV_GROUPS = [
   },
 ]
 
+const BUYER_PORTAL_PRESENTATION_BY_MODE = Object.freeze({
+  developer_development: Object.freeze({
+    navigationLabels: Object.freeze({
+      progress: 'Purchase Journey',
+      documents: 'Development Documents',
+      handover: 'Handover',
+      snags: 'Snags',
+      team: 'Developer Team',
+      account: 'Payments',
+      details: 'Buyer Details',
+    }),
+    groupLabels: Object.freeze({
+      Start: 'Home',
+      'Next Steps': 'Purchase',
+      Property: 'Development',
+      Support: 'Support',
+    }),
+    metricLabels: Object.freeze({
+      documents: 'Development Docs',
+      handover: 'Handover',
+      snags: 'Snags',
+    }),
+    metricHelpers: Object.freeze({
+      handoverPending: 'Handover date pending',
+      handoverScheduled: 'Handover date on file',
+      snagsInactive: 'Snag reporting not active',
+    }),
+  }),
+  agency_development: Object.freeze({
+    navigationLabels: Object.freeze({
+      progress: 'Purchase Journey',
+      documents: 'Development Documents',
+      handover: 'Developer Handover',
+      snags: 'Developer Snags',
+      team: 'Agency & Developer Team',
+      account: 'Payments',
+      details: 'Buyer Details',
+    }),
+    groupLabels: Object.freeze({
+      Start: 'Home',
+      'Next Steps': 'Purchase',
+      Property: 'Development',
+      Support: 'Agency & Developer',
+    }),
+    metricLabels: Object.freeze({
+      documents: 'Development Docs',
+      handover: 'Developer Handover',
+      snags: 'Developer Snags',
+    }),
+    metricHelpers: Object.freeze({
+      handoverPending: 'Developer handover date pending',
+      handoverScheduled: 'Developer handover date on file',
+      snagsInactive: 'Developer snag reporting not active',
+    }),
+  }),
+  agency_resale: Object.freeze({
+    navigationLabels: Object.freeze({
+      progress: 'Transfer Journey',
+      documents: 'Sale Documents',
+      team: 'Agent & Legal Team',
+      account: 'Payments',
+      details: 'Buyer Details',
+    }),
+    groupLabels: Object.freeze({
+      Start: 'Home',
+      'Next Steps': 'Sale Progress',
+      Property: 'Sale',
+      Support: 'Support',
+    }),
+    metricLabels: Object.freeze({
+      documents: 'Sale Documents',
+    }),
+  }),
+})
+
+function resolveBuyerPortalPresentation(portalProfile = {}) {
+  const mode = String(portalProfile?.navigationMode || '').trim()
+  return BUYER_PORTAL_PRESENTATION_BY_MODE[mode] || {
+    navigationLabels: {},
+    groupLabels: {},
+    metricLabels: {},
+    metricHelpers: {},
+  }
+}
+
 const PORTAL_DESIGN_TOKENS = {
   surface: {
     card: 'rounded-[24px] border border-[#dbe5ef] bg-white',
@@ -1747,19 +1835,21 @@ const FICA_REQUIREMENT_CONFIG = {
 }
 
 function getClientPortalPath(token, sectionKey) {
-  if (sectionKey === 'overview') return `/client/${token}`
-  if (sectionKey === 'bond_application') return `/client/${token}/bond-application`
-  return `/client/${token}/${sectionKey}`
+  const basePath = getPortalRouteBase(token)
+  if (sectionKey === 'overview') return basePath
+  if (sectionKey === 'bond_application') return `${basePath}/bond-application`
+  return `${basePath}/${sectionKey}`
 }
 
 function getPortalWorkspaceBasePath(token, workspace = 'buyer') {
+  const prefix = getPortalRoutePrefix()
   if (workspace === 'seller') {
-    return `/client/${token}/selling`
+    return `${prefix}/${token}/selling`
   }
   if (workspace === 'buyer_explicit') {
-    return `/client/${token}/buying`
+    return `${prefix}/${token}/buying`
   }
-  return `/client/${token}`
+  return getPortalRouteBase(token)
 }
 
 function getPortalWorkspacePath(token, workspace = 'buyer', sectionKey = 'overview') {
@@ -1773,6 +1863,15 @@ function getPortalWorkspacePath(token, workspace = 'buyer', sectionKey = 'overvi
 function getPortalNavigationPath(token, workspace = 'buyer', item = {}) {
   const sectionKey = item.section || item.to || item.key || 'overview'
   return `${getPortalWorkspacePath(token, workspace, sectionKey)}${item.hash || ''}`
+}
+
+function getPortalRoutePrefix() {
+  if (typeof window === 'undefined') return '/client'
+  return window.location.pathname.startsWith('/demo/') ? '/demo' : '/client'
+}
+
+function getPortalRouteBase(token) {
+  return `${getPortalRoutePrefix()}/${token}`
 }
 
 function isPortalNavigationItemActive(item = {}, activeSection = 'overview', activeHash = '') {
@@ -3498,6 +3597,7 @@ function BuyerMobilePortal({
   onOpenBuyerDocument = null,
   teamMembers = [],
   enabledSections = {},
+  portalNavigationLabels = {},
   buyerPortalStatusItems = [],
   buyerPortalAccessDescription = '',
   buyerMoreSummary = {},
@@ -3543,11 +3643,11 @@ function BuyerMobilePortal({
     clientJourneySteps[0]
   const safeProgress = Math.max(0, Math.min(100, Number(journeyProgressPercent) || 0))
   const bottomNavItems = [
-    { key: 'overview', section: 'overview', label: 'Home', icon: Home },
-    { key: 'progress', section: 'progress', label: 'Tasks', icon: CheckCircle2 },
-    { key: 'documents', section: 'documents', label: 'Documents', icon: FileText },
-    { key: 'finance', section: financeSectionKey, label: 'Finance', icon: HandCoins },
-    { key: 'more', section: 'team', label: 'Team', icon: Users },
+    { key: 'overview', section: 'overview', label: portalNavigationLabels.overview || 'Home', icon: Home },
+    { key: 'progress', section: 'progress', label: portalNavigationLabels.progress || 'Tasks', icon: CheckCircle2 },
+    { key: 'documents', section: 'documents', label: portalNavigationLabels.documents || 'Documents', icon: FileText },
+    { key: 'finance', section: financeSectionKey, label: portalNavigationLabels.bond_application || portalNavigationLabels.account || 'Finance', icon: HandCoins },
+    { key: 'more', section: 'team', label: portalNavigationLabels.team || 'Team', icon: Users },
   ]
   const visibleTeamMembers = teamMembers.slice(0, 4)
   const buyerPrimaryContact = visibleTeamMembers.find((member) => member?.email || member?.phone) || visibleTeamMembers[0] || null
@@ -3564,7 +3664,7 @@ function BuyerMobilePortal({
   const mobileMoreCards = [
     {
       key: 'details',
-      label: 'My details',
+      label: portalNavigationLabels.details || 'My details',
       value: buyerMoreSummary.onboardingComplete ? 'Complete' : 'Review',
       description: buyerMoreSummary.onboardingFieldCount
         ? `${buyerMoreSummary.onboardingFieldCount} profile field${buyerMoreSummary.onboardingFieldCount === 1 ? '' : 's'} on file.`
@@ -3575,7 +3675,7 @@ function BuyerMobilePortal({
     },
     {
       key: 'handover',
-      label: 'Keys',
+      label: portalNavigationLabels.handover || 'Keys',
       value: buyerMoreSummary.handoverStatus || 'Preparing',
       description: buyerMoreSummary.handoverSummary || 'Track final readiness before key collection.',
       to: 'handover',
@@ -3584,7 +3684,7 @@ function BuyerMobilePortal({
     },
     {
       key: 'snags',
-      label: 'Issues',
+      label: portalNavigationLabels.snags || 'Issues',
       value: Number(buyerMoreSummary.snagOpenCount || 0) ? `${buyerMoreSummary.snagOpenCount} open` : 'Clear',
       description: enabledSections.snags ? 'Log and track items that need fixing.' : 'Issue reporting is not active yet.',
       to: 'snags',
@@ -8264,7 +8364,9 @@ function ClientPortal() {
 
   const requestedWorkspace = useMemo(() => getPortalWorkspaceFromPath(location.pathname), [location.pathname])
   const portalDataWorkspace = requestedWorkspace === 'buyer_explicit' ? 'buyer' : requestedWorkspace
+  const isDemoRoute = useMemo(() => location.pathname.startsWith('/demo/'), [location.pathname])
   const isSellerPortalToken = useMemo(() => String(token || '').trim().toLowerCase().startsWith('seller-'), [token])
+  const isDemoMode = isDemoRoute || Boolean(workspaceData?.permissions?.demoOnly)
 
   const requestedSection = useMemo(
     () => getPortalSectionFromRoute(location.pathname, routeSection),
@@ -8345,10 +8447,12 @@ function ClientPortal() {
         setError('')
         setHydratingPortal(true)
         const data = await withClientPortalLoadTimeout(
-          getClientPortalWorkspaceData(token, portalDataWorkspace, {
-            mode: 'full',
-            sellerPortalAccessToken: isSellerPortalToken ? effectiveSellerPortalAccessToken : '',
-          }),
+          isDemoRoute
+            ? getProspectDemoClientPortalWorkspaceData(token, portalDataWorkspace)
+            : getClientPortalWorkspaceData(token, portalDataWorkspace, {
+                mode: 'full',
+                sellerPortalAccessToken: isSellerPortalToken ? effectiveSellerPortalAccessToken : '',
+              }),
           { phase: 'background', timeoutMs: CLIENT_PORTAL_BACKGROUND_LOAD_TIMEOUT_MS },
         )
         if (!isCurrentLoad()) return
@@ -8390,10 +8494,12 @@ function ClientPortal() {
       setError('')
       setDocumentActionError('')
       const coreData = await withClientPortalLoadTimeout(
-        getClientPortalWorkspaceData(token, portalDataWorkspace, {
-          mode: 'core',
-          sellerPortalAccessToken: isSellerPortalToken ? effectiveSellerPortalAccessToken : '',
-        }),
+        isDemoRoute
+          ? getProspectDemoClientPortalWorkspaceData(token, portalDataWorkspace)
+          : getClientPortalWorkspaceData(token, portalDataWorkspace, {
+              mode: 'core',
+              sellerPortalAccessToken: isSellerPortalToken ? effectiveSellerPortalAccessToken : '',
+            }),
         { phase: 'core', timeoutMs: CLIENT_PORTAL_CORE_LOAD_TIMEOUT_MS },
       )
       if (!isCurrentLoad()) return
@@ -8438,10 +8544,12 @@ function ClientPortal() {
     try {
       setHydratingPortal(true)
       const fullData = await withClientPortalLoadTimeout(
-        getClientPortalWorkspaceData(token, portalDataWorkspace, {
-          mode: 'full',
-          sellerPortalAccessToken: isSellerPortalToken ? effectiveSellerPortalAccessToken : '',
-        }),
+        isDemoRoute
+          ? getProspectDemoClientPortalWorkspaceData(token, portalDataWorkspace)
+          : getClientPortalWorkspaceData(token, portalDataWorkspace, {
+              mode: 'full',
+              sellerPortalAccessToken: isSellerPortalToken ? effectiveSellerPortalAccessToken : '',
+            }),
         { phase: 'full', timeoutMs: CLIENT_PORTAL_FULL_LOAD_TIMEOUT_MS },
       )
       if (!isCurrentLoad()) return
@@ -8481,7 +8589,7 @@ function ClientPortal() {
         setLoading(false)
       }
     }
-  }, [isSellerPortalToken, portalDataWorkspace, sellerPortalAccessToken, token])
+  }, [isDemoRoute, isSellerPortalToken, portalDataWorkspace, sellerPortalAccessToken, token])
 
   const handleSellerPortalPasswordChange = useCallback((field, value) => {
     setSellerPortalPasswordForm((previous) => ({
@@ -8744,6 +8852,16 @@ function ClientPortal() {
   const handleMarkNotificationRead = useCallback(async (notificationId) => {
     if (!notificationId) return
     try {
+      if (isDemoMode) {
+        applyNotificationMutation((items) =>
+          items.map((item) =>
+            String(item?.id || '') === String(notificationId)
+              ? { ...item, status: 'read' }
+              : item,
+          ),
+        )
+        return
+      }
       await markClientPortalNotificationRead(notificationId, { token })
       applyNotificationMutation((items) =>
         items.map((item) =>
@@ -8755,20 +8873,34 @@ function ClientPortal() {
     } catch (notificationError) {
       console.warn('Failed to mark notification as read', notificationError)
     }
-  }, [applyNotificationMutation, token])
+  }, [applyNotificationMutation, isDemoMode, token])
 
   const handleMarkAllNotificationsRead = useCallback(async () => {
     try {
+      if (isDemoMode) {
+        applyNotificationMutation((items) => items.map((item) => ({ ...item, status: 'read' })))
+        return
+      }
       await markAllClientPortalNotificationsRead(token, currentNotificationRole)
       applyNotificationMutation((items) => items.map((item) => ({ ...item, status: 'read' })))
     } catch (notificationError) {
       console.warn('Failed to mark all notifications as read', notificationError)
     }
-  }, [applyNotificationMutation, currentNotificationRole, token])
+  }, [applyNotificationMutation, currentNotificationRole, isDemoMode, token])
 
   const handleDismissNotification = useCallback(async (notificationId) => {
     if (!notificationId) return
     try {
+      if (isDemoMode) {
+        applyNotificationMutation((items) =>
+          items.map((item) =>
+            String(item?.id || '') === String(notificationId)
+              ? { ...item, status: 'dismissed' }
+              : item,
+          ),
+        )
+        return
+      }
       await dismissClientPortalNotification(notificationId, { token })
       applyNotificationMutation((items) =>
         items.map((item) =>
@@ -8780,7 +8912,7 @@ function ClientPortal() {
     } catch (notificationError) {
       console.warn('Failed to dismiss notification', notificationError)
     }
-  }, [applyNotificationMutation, token])
+  }, [applyNotificationMutation, isDemoMode, token])
 
   function handleMyDetailsFieldChange(fieldKey, nextValue) {
     setMyDetailsDraft((previous) => updateMyDetailsDraftField(previous, fieldKey, nextValue))
@@ -8795,6 +8927,32 @@ function ClientPortal() {
     try {
       setMyDetailsSavingSection(sectionKey)
       setError('')
+      if (isDemoMode) {
+        setPortal((previous) =>
+          previous
+            ? {
+                ...previous,
+                onboardingFormData: {
+                  ...(previous.onboardingFormData || {}),
+                  formData: myDetailsDraft,
+                },
+              }
+            : previous,
+        )
+        setWorkspaceData((previous) =>
+          previous
+            ? {
+                ...previous,
+                onboardingFormData: {
+                  ...(previous.onboardingFormData || {}),
+                  formData: myDetailsDraft,
+                },
+              }
+            : previous,
+        )
+        setMyDetailsEditingSection('')
+        return
+      }
       await saveClientPortalOnboardingDraft({
         token,
         formData: myDetailsDraft,
@@ -8907,6 +9065,16 @@ function ClientPortal() {
     try {
       setBondApplicationSaving(true)
       setError('')
+      if (isDemoMode) {
+        const { draftToPersist } = buildLegacyBondApplicationPersistencePayload({
+          existingFormData: portal?.onboardingFormData?.formData || {},
+          legacyBondApplication: draftWithConfirmationMetadata,
+          submitted,
+        })
+        setBondApplicationDraft(draftToPersist)
+        setBondApplicationDirty(false)
+        return
+      }
 
       const { draftToPersist, formData: nextFormData } = buildLegacyBondApplicationPersistencePayload({
         existingFormData: portal?.onboardingFormData?.formData || {},
@@ -8955,10 +9123,27 @@ function ClientPortal() {
     setActiveBondApplicationTab('application')
     setActiveBondApplicationSectionTab(sectionKey)
     setBondApplicationDirty(false)
+    if (isDemoMode) {
+      return
+    }
     void loadPortal({ background: true })
   }
 
   async function handleGuidedBondApplicationDocumentReconciliation({ requirements = [], fingerprint = '' } = {}) {
+    if (isDemoMode) {
+      const rows = Array.isArray(requirements) ? requirements : []
+      setPortal((previous) => previous ? { ...previous, requiredDocuments: rows } : previous)
+      setWorkspaceData((previous) => previous?.documentCenter
+        ? {
+            ...previous,
+            documentCenter: {
+              ...previous.documentCenter,
+              requiredDocuments: rows,
+            },
+          }
+        : previous)
+      return rows
+    }
     const rows = await reconcileClientPortalBondDocumentRequirements({
       token,
       requirements,
@@ -8982,6 +9167,17 @@ function ClientPortal() {
     declarationValues = {},
     expectedSourceHash = '',
   } = {}) {
+    if (isDemoMode) {
+      setBondApplicationDirty(false)
+      return {
+        demo: true,
+        submitted: true,
+        token,
+        acceptedDeclarations,
+        declarationValues,
+        expectedSourceHash,
+      }
+    }
     const prepare = guidedBondApplicationParticipantFlag.enabled && guidedBondApplicationState?.application?.applicantStructure === 'joint'
       ? prepareClientPortalJointBondApplicationSubmission
       : prepareClientPortalBondApplicationSubmission
@@ -8997,10 +9193,16 @@ function ClientPortal() {
   }
 
   async function handleGuidedBondApplicationRefreshSubmission() {
+    if (isDemoMode) {
+      return { demo: true, token, submission: null }
+    }
     return fetchClientPortalBondApplicationSubmission({ token })
   }
 
   async function handleGuidedBondApplicationCancelPendingSubmission({ submissionId } = {}) {
+    if (isDemoMode) {
+      return { cancelled: true, demo: true, submissionId: submissionId || '' }
+    }
     const result = await cancelClientPortalBondApplicationSubmission({ token, submissionId })
     await loadPortal({ background: true })
     return result
@@ -9012,6 +9214,12 @@ function ClientPortal() {
     phone = '',
     idempotencyKey = '',
   } = {}) {
+    if (isDemoMode) {
+      return {
+        demo: true,
+        coApplicant: { fullName, email, phone, idempotencyKey },
+      }
+    }
     const result = await inviteClientPortalBondApplicationCoApplicant({
       token,
       fullName,
@@ -9192,11 +9400,32 @@ function ClientPortal() {
 
   async function handleSubmitIssue(event) {
     event.preventDefault()
+    if (!ensurePortalSectionEnabled('snags')) return
     const file = event.currentTarget.photo?.files?.[0] || null
 
     try {
       setSaving(true)
       setError('')
+      if (isDemoMode) {
+        const createdAt = new Date().toISOString()
+        const nextIssue = {
+          id: `demo-issue-${Date.now()}`,
+          ...issueForm,
+          status: 'submitted',
+          createdAt,
+          created_at: createdAt,
+          photoFile: file?.name || '',
+        }
+        setPortal((previous) => previous
+          ? { ...previous, issues: [nextIssue, ...(Array.isArray(previous.issues) ? previous.issues : [])] }
+          : previous)
+        setWorkspaceData((previous) => previous
+          ? { ...previous, issues: [nextIssue, ...(Array.isArray(previous.issues) ? previous.issues : [])] }
+          : previous)
+        setIssueForm({ category: ISSUE_CATEGORIES[0], description: '', location: '', priority: '' })
+        event.currentTarget.reset()
+        return
+      }
       await submitClientIssue({ token, ...issueForm, photoFile: file })
       setIssueForm({ category: ISSUE_CATEGORIES[0], description: '', location: '', priority: '' })
       event.currentTarget.reset()
@@ -9210,11 +9439,32 @@ function ClientPortal() {
 
   async function handleSubmitAlteration(event) {
     event.preventDefault()
+    if (!ensurePortalSectionEnabled('alterations')) return
     const file = event.currentTarget.referenceImage?.files?.[0] || null
 
     try {
       setSaving(true)
       setError('')
+      if (isDemoMode) {
+        const createdAt = new Date().toISOString()
+        const nextAlteration = {
+          id: `demo-alteration-${Date.now()}`,
+          ...alterationForm,
+          status: 'submitted',
+          createdAt,
+          created_at: createdAt,
+          referenceImageFile: file?.name || '',
+        }
+        setPortal((previous) => previous
+          ? { ...previous, alterations: [nextAlteration, ...(Array.isArray(previous.alterations) ? previous.alterations : [])] }
+          : previous)
+        setWorkspaceData((previous) => previous
+          ? { ...previous, alterations: [nextAlteration, ...(Array.isArray(previous.alterations) ? previous.alterations : [])] }
+          : previous)
+        setAlterationForm({ title: '', category: '', description: '', budgetRange: '', preferredTiming: '' })
+        event.currentTarget.reset()
+        return
+      }
       await submitAlterationRequest({ token, ...alterationForm, referenceImageFile: file })
       setAlterationForm({ title: '', category: '', description: '', budgetRange: '', preferredTiming: '' })
       event.currentTarget.reset()
@@ -9228,10 +9478,34 @@ function ClientPortal() {
 
   async function handleSubmitReview(event) {
     event.preventDefault()
+    if (!ensurePortalSectionEnabled('review')) return
 
     try {
       setSaving(true)
       setError('')
+      if (isDemoMode) {
+        const createdAt = new Date().toISOString()
+        const nextReview = {
+          id: `demo-review-${Date.now()}`,
+          ...reviewForm,
+          createdAt,
+          created_at: createdAt,
+        }
+        setPortal((previous) => previous
+          ? { ...previous, reviews: [nextReview, ...(Array.isArray(previous.reviews) ? previous.reviews : [])] }
+          : previous)
+        setWorkspaceData((previous) => previous
+          ? { ...previous, reviews: [nextReview, ...(Array.isArray(previous.reviews) ? previous.reviews : [])] }
+          : previous)
+        setReviewForm({
+          rating: 5,
+          reviewText: '',
+          positives: '',
+          improvements: '',
+          allowMarketingUse: false,
+        })
+        return
+      }
       await submitServiceReview({ token, ...reviewForm })
       setReviewForm({
         rating: 5,
@@ -9254,6 +9528,24 @@ function ClientPortal() {
     try {
       setSaving(true)
       setError('')
+      if (isDemoMode) {
+        const createdAt = new Date().toISOString()
+        const nextComment = {
+          id: `demo-comment-${Date.now()}`,
+          commentText: commentDraft,
+          status: 'posted',
+          createdAt,
+          created_at: createdAt,
+        }
+        setPortal((previous) => previous
+          ? { ...previous, discussion: [nextComment, ...(Array.isArray(previous.discussion) ? previous.discussion : [])] }
+          : previous)
+        setWorkspaceData((previous) => previous
+          ? { ...previous, activityFeed: [nextComment, ...(Array.isArray(previous.activityFeed) ? previous.activityFeed : [])] }
+          : previous)
+        setCommentDraft('')
+        return
+      }
       await submitClientPortalComment({
         token,
         commentText: commentDraft,
@@ -9285,6 +9577,29 @@ function ClientPortal() {
           tone: 'loading',
           message: 'Uploading proof of payment...',
         })
+      }
+      if (isDemoMode) {
+        const uploaded = {
+          id: `demo-upload-${Date.now()}`,
+          name: file.name,
+          document_name: file.name,
+          category: options.category || (isReservationProofUpload ? 'Reservation Deposit / Proof of Payment' : 'Required Document'),
+          document_type: options.documentType || (isReservationProofUpload ? 'reservation_deposit_pop' : documentKey),
+          requirementKey: documentKey,
+          requirement_key: documentKey,
+          status: 'uploaded',
+          visibility: 'client',
+          created_at: new Date().toISOString(),
+          url: '',
+        }
+        applyUploadedPortalDocument(uploaded, { requiredDocumentKey: documentKey })
+        if (isReservationProofUpload) {
+          setReservationProofUploadFeedback({
+            tone: 'success',
+            message: 'Proof of payment received. Thank you.',
+          })
+        }
+        return { ok: true, document: uploaded }
       }
       const uploaded = effectiveWorkspace === 'seller'
         ? await uploadSellerClientPortalDocument({
@@ -9419,6 +9734,8 @@ function ClientPortal() {
   function handleActivityAction(item) {
     const route = String(item?.actionRoute || '').trim() || String(item?.to || '').trim()
     if (!route) return
+    const sectionKey = normalizePortalWorkspaceSection(route)
+    if (!ensurePortalSectionEnabled(sectionKey)) return
     navigate(getPortalWorkspacePath(token, workspaceNavigationScope, route))
   }
 
@@ -9435,6 +9752,50 @@ function ClientPortal() {
       setError('')
       setAppointmentFeedback('')
       setAppointmentActionPending(pendingKey)
+      if (isDemoMode) {
+        const nextStatus =
+          normalizedAction === 'confirm'
+            ? 'confirmed'
+            : normalizedAction === 'decline'
+              ? 'declined'
+              : 'reschedule_requested'
+        const nextFeedback =
+          normalizedAction === 'confirm'
+            ? 'Appointment confirmed. Your team has been updated.'
+            : normalizedAction === 'decline'
+              ? 'Appointment declined. Your team has been updated.'
+              : 'Reschedule request sent. The team will confirm a new time shortly.'
+        setAppointmentFeedback(nextFeedback)
+        setPortal((previous) =>
+          previous
+            ? {
+                ...previous,
+                appointments: Array.isArray(previous.appointments)
+                  ? previous.appointments.map((item) =>
+                      String(item?.appointmentId || item?.id || '') === appointmentId
+                        ? { ...item, status: nextStatus }
+                        : item,
+                    )
+                  : previous.appointments,
+              }
+            : previous,
+        )
+        setWorkspaceData((previous) =>
+          previous
+            ? {
+                ...previous,
+                appointments: Array.isArray(previous.appointments)
+                  ? previous.appointments.map((item) =>
+                      String(item?.appointmentId || item?.id || '') === appointmentId
+                        ? { ...item, status: nextStatus }
+                        : item,
+                    )
+                  : previous.appointments,
+              }
+            : previous,
+        )
+        return
+      }
       const response = await respondToClientPortalAppointment({
         token,
         appointmentId,
@@ -9474,6 +9835,29 @@ function ClientPortal() {
         tone: 'loading',
         message: 'Uploading proof of payment...',
       })
+      if (isDemoMode) {
+        const uploaded = {
+          id: `demo-reservation-proof-${Date.now()}`,
+          name: file.name,
+          document_name: file.name,
+          category: 'Reservation Deposit / Proof of Payment',
+          document_type: 'reservation_deposit_pop',
+          requirementKey: reservationProofRequirement?.key || 'reservation_deposit_proof',
+          requirement_key: reservationProofRequirement?.key || 'reservation_deposit_proof',
+          status: 'uploaded',
+          visibility: 'client',
+          created_at: new Date().toISOString(),
+          url: '',
+        }
+        applyUploadedPortalDocument(uploaded, {
+          requiredDocumentKey: reservationProofRequirement?.key || 'reservation_deposit_proof',
+        })
+        setReservationProofUploadFeedback({
+          tone: 'success',
+          message: 'Proof of payment received. Thank you.',
+        })
+        return
+      }
       const uploaded = await uploadClientPortalDocument({
         token,
         requiredDocumentKey: reservationProofRequirement?.key || null,
@@ -9515,6 +9899,37 @@ function ClientPortal() {
       setError('')
       setDocumentActionError('')
       setOpeningDocumentPath(resolvedOpeningKey)
+      if (isDemoMode) {
+        const demoMarkup = `
+          <!doctype html>
+          <html lang="en">
+            <head>
+              <meta charset="utf-8" />
+              <title>Demo signed document</title>
+              <style>
+                body { font-family: Arial, sans-serif; margin: 0; padding: 32px; background: #f5f7fb; color: #123; }
+                .card { max-width: 720px; margin: 0 auto; background: #fff; border-radius: 20px; padding: 28px; box-shadow: 0 16px 34px rgba(15,23,42,.08); }
+                h1 { margin: 0 0 12px; font-size: 28px; }
+                p { line-height: 1.6; color: #445; }
+              </style>
+            </head>
+            <body>
+              <div class="card">
+                <h1>Demo signed document</h1>
+                <p>This is a local preview used in demo mode. It does not open a live production document.</p>
+              </div>
+            </body>
+          </html>
+        `
+        const demoUrl = URL.createObjectURL(new Blob([demoMarkup], { type: 'text/html;charset=utf-8' }))
+        if (targetWindow) {
+          targetWindow.location.href = demoUrl
+        } else if (typeof window !== 'undefined') {
+          window.open(demoUrl, '_blank', 'noopener,noreferrer')
+        }
+        window.setTimeout(() => URL.revokeObjectURL(demoUrl), 15000)
+        return
+      }
       const access = effectiveWorkspace === 'seller'
         ? await resolveSellerClientPortalFinalSignedDocumentAccess({
             token,
@@ -9672,6 +10087,28 @@ function ClientPortal() {
     financeTypeForPortal === 'bond' || financeTypeForPortal === 'combination' || financeTypeForPortal === 'hybrid'
   const financeManagedByForPortal = resolvePortalFinanceManagedBy(portal)
   const isOriginatorManagedPortalFinance = isBondOrHybridTransaction && financeManagedByForPortal === 'bond_originator'
+  const portalProfile = workspaceData?.portalProfile || portal?.portalProfile || portal?.__portalProfile || null
+  const portalProfileEnabledSections =
+    portalProfile?.enabledSections && typeof portalProfile.enabledSections === 'object'
+      ? portalProfile.enabledSections
+      : {}
+  const buyerPortalPresentation = resolveBuyerPortalPresentation(
+    portalProfile || workspaceData?.portalContext || {},
+  )
+  const buyerPortalNavigationLabels = buyerPortalPresentation.navigationLabels || {}
+  const buyerPortalGroupLabels = buyerPortalPresentation.groupLabels || {}
+  const buyerPortalMetricLabels = buyerPortalPresentation.metricLabels || {}
+  const buyerPortalMetricHelpers = buyerPortalPresentation.metricHelpers || {}
+  const buyerPortalSupportLabels =
+    portalProfile?.supportLabels && typeof portalProfile.supportLabels === 'object'
+      ? portalProfile.supportLabels
+      : {}
+  const resolveBuyerPortalLabel = (sectionKey, fallback) => buyerPortalNavigationLabels[sectionKey] || fallback
+  const resolvePortalSectionEnabled = (sectionKey, fallback) => (
+    Object.prototype.hasOwnProperty.call(portalProfileEnabledSections, sectionKey)
+      ? Boolean(portalProfileEnabledSections[sectionKey])
+      : fallback
+  )
 
   const sectionEnabled = {
     overview: true,
@@ -9682,12 +10119,19 @@ function ClientPortal() {
     account: true,
     bond_application: isOriginatorManagedPortalFinance,
     documents: true,
-    handover: true,
-    snags: Boolean(portal?.settings?.snag_reporting_enabled),
+    handover: resolvePortalSectionEnabled('handover', true),
+    snags: resolvePortalSectionEnabled('snags', Boolean(portal?.settings?.snag_reporting_enabled)),
     settings: true,
     team: true,
-    alterations: Boolean(portal?.settings?.alteration_requests_enabled),
-    review: Boolean(portal?.settings?.service_reviews_enabled),
+    alterations: resolvePortalSectionEnabled('alterations', Boolean(portal?.settings?.alteration_requests_enabled)),
+    review: resolvePortalSectionEnabled('review', Boolean(portal?.settings?.service_reviews_enabled)),
+  }
+  const getPortalSectionUnavailableMessage = (sectionKey) =>
+    `${resolveBuyerPortalLabel(sectionKey, 'This section')} is not available for this portal.`
+  const ensurePortalSectionEnabled = (sectionKey) => {
+    if (sectionEnabled[sectionKey] !== false) return true
+    setError(getPortalSectionUnavailableMessage(sectionKey))
+    return false
   }
 
   const availableWorkspaces = Array.isArray(portal?.__workspaceRoles) && portal.__workspaceRoles.length
@@ -10980,18 +11424,18 @@ function ClientPortal() {
     {
       key: 'snag_list_complete',
       title: 'Issues complete',
-      description: portal?.settings?.snag_reporting_enabled
+      description: sectionEnabled.snags
         ? snagOpenCount === 0
           ? 'No open issues are currently blocking key collection.'
           : `${snagOpenCount} issue${snagOpenCount === 1 ? '' : 's'} still open.`
         : 'Issue reporting is not required for this purchase.',
       status: resolveChecklistProgressState({
-        complete: !portal?.settings?.snag_reporting_enabled || snagOpenCount === 0,
-        inProgress: portal?.settings?.snag_reporting_enabled && portal?.issues?.length > 0 && snagOpenCount > 0,
+        complete: !sectionEnabled.snags || snagOpenCount === 0,
+        inProgress: sectionEnabled.snags && portal?.issues?.length > 0 && snagOpenCount > 0,
       }),
       responsible: 'Developer',
-      actionTo: portal?.settings?.snag_reporting_enabled ? 'snags' : null,
-      actionLabel: portal?.settings?.snag_reporting_enabled ? 'View Issues' : null,
+      actionTo: sectionEnabled.snags ? 'snags' : null,
+      actionLabel: sectionEnabled.snags ? 'View Issues' : null,
     },
     {
       key: 'final_inspection_done',
@@ -11266,15 +11710,91 @@ function ClientPortal() {
   const hasAttorneyRolePlayers = attorneyRolePlayerCards.length > 0
   const buyerBondOriginatorRequest = resolveBuyerBondOriginatorRequest(portal)
   const buyerBondOriginatorRequestMessage = getBuyerBondOriginatorRequestMessage(buyerBondOriginatorRequest)
+  const buyerAssignedAgentName = pickFirstText(
+    portal?.transaction?.assigned_agent,
+    portal?.agent?.name,
+    portal?.agent?.fullName,
+    portal?.agent?.full_name,
+  )
+  const buyerAssignedAgentEmail = pickFirstText(portal?.transaction?.assigned_agent_email, portal?.agent?.email)
+  const buyerAssignedAgentPhone = pickFirstText(portal?.transaction?.assigned_agent_phone, portal?.transaction?.agent_phone, portal?.agent?.phone)
+  const buyerDeveloperName = pickFirstText(
+    portal?.unit?.development?.developer_company,
+    portal?.unit?.development?.developerCompany,
+    portal?.unit?.development?.developer?.name,
+    portal?.branding?.developerCompany,
+    portal?.branding?.organisationName,
+    'Developer',
+  )
+  const buyerAgencyName = pickFirstText(
+    portal?.transaction?.source_agency_name,
+    portal?.transaction?.sourceAgencyName,
+    portal?.listing?.agencyName,
+    portal?.listing?.agency_name,
+    portal?.listing?.organisationName,
+    portal?.listing?.organisation_name,
+    portal?.agent?.agencyName,
+    portal?.agent?.agency_name,
+    portal?.agent?.organisationName,
+    portal?.agent?.organisation_name,
+    buyerAssignedAgentName,
+  )
+  const buyerPrimarySupportLabel = pickFirstText(
+    buyerPortalSupportLabels.primarySupportLabel,
+    resolveBuyerPortalLabel('team', 'Sales Team'),
+  )
+  const buyerDeveloperSupportLabel = pickFirstText(buyerPortalSupportLabels.developerSupportLabel)
+  const buyerOperationsSupportLabel = pickFirstText(buyerPortalSupportLabels.operationsSupportLabel, 'Arch9 Support')
+  const buyerTeamHeading = resolveBuyerPortalLabel('team', 'Your team')
+  const buyerTeamDescription = portalProfile?.isAgencyIntroducedDevelopmentPortal
+    ? 'Your introducing agency handles buyer communication while the developer team supports development delivery, handover, and snags.'
+    : portalProfile?.isAgencyResaleBuyerPortal
+      ? 'Your agent, legal team, and finance partners support the transfer from accepted offer to registration.'
+      : 'Your developer sales, legal, and finance teams support this purchase through handover.'
+  const buyerPortalBrandName = pickFirstText(
+    portalProfile?.isAgencyResaleBuyerPortal || portalProfile?.isAgencyIntroducedDevelopmentPortal
+      ? buyerAgencyName
+      : buyerDeveloperName,
+    'Arch9',
+  )
+  const buyerPortalBrandDescriptor = portalProfile?.isDevelopmentBuyerPortal ? 'New Development' : 'Real Estate'
+  const buyerPrimaryTeamMember = {
+    title: buyerPrimarySupportLabel,
+    name: portalProfile?.isDevelopmentBuyerPortal
+      ? (portalProfile?.isAgencyIntroducedDevelopmentPortal
+          ? pickFirstText(buyerAgencyName, buyerAssignedAgentName, buyerPrimarySupportLabel)
+          : pickFirstText(buyerAssignedAgentName, buyerDeveloperName, buyerPrimarySupportLabel))
+      : pickFirstText(buyerAssignedAgentName, buyerAgencyName, buyerPrimarySupportLabel),
+    detail: buyerAssignedAgentEmail || (
+      portalProfile?.isAgencyIntroducedDevelopmentPortal
+        ? 'Introduces and coordinates the buyer relationship with the developer team.'
+        : portalProfile?.isAgencyResaleBuyerPortal
+          ? 'Coordinates buyer communication, offer progress, and sale updates.'
+          : 'Handles deal updates, buyer communication, and development purchase coordination.'
+    ),
+    email: buyerAssignedAgentEmail,
+    phone: buyerAssignedAgentPhone,
+  }
+  const buyerDeveloperOperationsMember = portalProfile?.isAgencyIntroducedDevelopmentPortal && buyerDeveloperSupportLabel
+    ? {
+        title: buyerDeveloperSupportLabel,
+        name: buyerDeveloperName,
+        detail: 'Supports development documents, handover readiness, snags, and developer-side delivery.',
+      }
+    : null
+  const buyerOperationsSupportMember = {
+    title: buyerOperationsSupportLabel,
+    name: portalProfile?.isAgencyResaleBuyerPortal
+      ? pickFirstText(portal?.transaction?.attorney, buyerOperationsSupportLabel)
+      : pickFirstText(buyerDeveloperName, buyerOperationsSupportLabel),
+    detail: portalProfile?.isAgencyResaleBuyerPortal
+      ? 'Keeps transfer milestones, legal documents, and buyer updates aligned.'
+      : 'Keeps your portal, documents, and handover records aligned.',
+  }
 
   const teamMembers = [
-    {
-      title: 'Sales Team',
-      name: portal?.transaction?.assigned_agent || portal?.unit?.development?.developer_company || 'Arch9 Sales',
-      detail: portal?.transaction?.assigned_agent_email || 'Handles deal updates and coordination.',
-      email: pickFirstText(portal?.transaction?.assigned_agent_email, portal?.agent?.email),
-      phone: pickFirstText(portal?.transaction?.assigned_agent_phone, portal?.transaction?.agent_phone, portal?.agent?.phone),
-    },
+    buyerPrimaryTeamMember,
+    buyerDeveloperOperationsMember,
     ...(hasAttorneyRolePlayers
       ? []
       : [
@@ -11286,26 +11806,28 @@ function ClientPortal() {
             phone: pickFirstText(portal?.transaction?.assigned_attorney_phone, portal?.transaction?.attorney_phone),
           },
         ]),
-    {
-      title: 'Bond Originator',
-      name: portal?.transaction?.bond_originator || 'Bond Originator',
-      detail: portal?.transaction?.assigned_bond_originator_email || 'Supports finance approvals and lender feedback.',
-      extraDetail: buyerBondOriginatorRequestMessage,
-      email: pickFirstText(portal?.transaction?.assigned_bond_originator_email),
-      phone: pickFirstText(portal?.transaction?.assigned_bond_originator_phone, portal?.transaction?.bond_originator_phone),
-    },
-    {
-      title: 'Arch9 Support',
-      name: portal?.unit?.development?.developer_company || 'Arch9 Operations',
-      detail: 'Keeps your portal, documents, and key collection records aligned.',
-    },
-  ]
+    isBondOrHybridTransaction || portal?.transaction?.bond_originator || portal?.transaction?.assigned_bond_originator_email
+      ? {
+          title: 'Bond Originator',
+          name: portal?.transaction?.bond_originator || 'Bond Originator',
+          detail: portal?.transaction?.assigned_bond_originator_email || 'Supports finance approvals and lender feedback.',
+          extraDetail: buyerBondOriginatorRequestMessage,
+          email: pickFirstText(portal?.transaction?.assigned_bond_originator_email),
+          phone: pickFirstText(portal?.transaction?.assigned_bond_originator_phone, portal?.transaction?.bond_originator_phone),
+        }
+      : null,
+    buyerOperationsSupportMember,
+  ].filter(Boolean)
   const buyerSupportContact = teamMembers.find((member) => member.email || member.phone) || teamMembers[0] || {}
-  const visibleMenuItems = CLIENT_PORTAL_MENU.filter((item) => {
+  const buyerPortalMenuItems = CLIENT_PORTAL_MENU.map((item) => ({
+    ...item,
+    label: resolveBuyerPortalLabel(item.key, item.label),
+  }))
+  const visibleMenuItems = buyerPortalMenuItems.filter((item) => {
     if (effectiveWorkspace === 'seller') {
       return false
     }
-    if (item.key === 'snags' && !portal?.settings?.snag_reporting_enabled) return false
+    if (sectionEnabled[item.key] === false) return false
     if (item.key === 'bond_application' && !isBondOrHybridTransaction) return false
     return true
   })
@@ -11316,7 +11838,13 @@ function ClientPortal() {
     : BUYER_PORTAL_NAV_GROUPS
         .map((group) => ({
           ...group,
-          items: group.items.filter((item) => visibleBuyerMenuItemKeys.has(item.key)),
+          label: buyerPortalGroupLabels[group.label] || group.label,
+          items: group.items
+            .map((item) => ({
+              ...item,
+              label: resolveBuyerPortalLabel(item.key, item.label),
+            }))
+            .filter((item) => visibleBuyerMenuItemKeys.has(item.key)),
         }))
         .filter((group) => group.items.length)
   const portalAppointments = Array.isArray(workspaceData?.appointments)
@@ -11343,9 +11871,9 @@ function ClientPortal() {
           : null,
     appointments: upcomingAppointmentCount > 0 ? `${upcomingAppointmentCount} upcoming` : null,
     offers: activeSellerOfferCount > 0 ? `${activeSellerOfferCount}` : null,
-    snags: portal?.settings?.snag_reporting_enabled ? `${snagOpenCount} open` : null,
+    snags: sectionEnabled.snags ? `${snagOpenCount} open` : null,
   }
-  const activeMenuItem = portalNavigationItems.find((item) => item.key === activeSection) || portalNavigationItems[0] || CLIENT_PORTAL_MENU[0]
+  const activeMenuItem = portalNavigationItems.find((item) => item.key === activeSection) || portalNavigationItems[0] || buyerPortalMenuItems[0]
   const activeSectionLabel =
     activeSection === 'alterations'
       ? 'Alterations'
@@ -11374,7 +11902,7 @@ function ClientPortal() {
     const buyerOverviewMetricCards = [
       {
         key: 'documents',
-        label: 'Documents',
+        label: buyerPortalMetricLabels.documents || resolveBuyerPortalLabel('documents', 'Documents'),
         value: missingRequired ? `${missingRequired} required` : 'Ready',
         helper: missingRequired ? `${missingRequired} needed` : 'No uploads due',
         to: 'documents',
@@ -11401,25 +11929,29 @@ function ClientPortal() {
       icon: CalendarClock,
       tone: upcomingAppointmentCount ? 'info' : 'complete',
     },
-    {
-      key: 'handover',
-      label: 'Keys',
-      value: handoverReadinessStatus,
-      helper: handoverScheduled ? 'Key date on file' : 'Date pending',
-      to: 'handover',
-      icon: KeyRound,
-      tone: handoverCompleted ? 'complete' : 'info',
-    },
-    {
-      key: 'snags',
-      label: 'Issues',
-      value: portal?.settings?.snag_reporting_enabled ? `${snagOpenCount} open` : 'Inactive',
-      helper: portal?.settings?.snag_reporting_enabled ? `${snagResolvedCount} resolved` : 'Not active',
-      to: 'snags',
-      icon: Wrench,
+      {
+        key: 'handover',
+        label: buyerPortalMetricLabels.handover || resolveBuyerPortalLabel('handover', 'Keys'),
+        value: handoverReadinessStatus,
+        helper: handoverScheduled
+          ? buyerPortalMetricHelpers.handoverScheduled || 'Key date on file'
+          : buyerPortalMetricHelpers.handoverPending || 'Date pending',
+        to: 'handover',
+        icon: KeyRound,
+        tone: handoverCompleted ? 'complete' : 'info',
+      },
+      {
+        key: 'snags',
+        label: buyerPortalMetricLabels.snags || resolveBuyerPortalLabel('snags', 'Issues'),
+        value: sectionEnabled.snags ? `${snagOpenCount} open` : 'Inactive',
+        helper: sectionEnabled.snags
+          ? `${snagResolvedCount} resolved`
+          : buyerPortalMetricHelpers.snagsInactive || 'Not active',
+        to: 'snags',
+        icon: Wrench,
       tone: snagOpenCount ? 'action' : 'complete',
     },
-  ]
+  ].filter((card) => sectionEnabled[card.to] !== false)
   const sellerDisplayName = pickFirstText(portal?.buyer?.name, activeSellingContext?.clientName, activeSellingContext?.client_name, 'Seller')
   const sellerFirstName = String(sellerDisplayName || 'Seller').trim().split(/\s+/)[0] || 'Seller'
   const sellerPropertyTitle = pickFirstText(
@@ -11948,15 +12480,20 @@ function ClientPortal() {
   const bondApplicationSectionStatusByKey = bondApplicationCompletion.sectionStatusByKey
   const missingBondApplicationSectionLabels = bondApplicationCompletion.missingSectionLabels
   const bondApplicationProgressPercent = bondApplicationCompletion.progressPercent
+  const rawPrimaryOverviewActionTo = nextStepState.ctaTo || 'documents'
+  const primaryOverviewActionTo = sectionEnabled[rawPrimaryOverviewActionTo] === false ? 'documents' : rawPrimaryOverviewActionTo
   const primaryOverviewAction = {
-    to: nextStepState.ctaTo || 'documents',
-    label: nextStepState.ctaLabel || 'Open Documents',
+    to: primaryOverviewActionTo,
+    label: primaryOverviewActionTo === rawPrimaryOverviewActionTo
+      ? nextStepState.ctaLabel || `Open ${resolveBuyerPortalLabel(primaryOverviewActionTo, 'Documents')}`
+      : `Open ${resolveBuyerPortalLabel(primaryOverviewActionTo, 'Documents')}`,
   }
   const secondaryOverviewActions = [
-    { to: 'handover', label: 'Keys', icon: KeyRound },
-    { to: 'team', label: 'Team Contacts', icon: Users },
-    { to: 'documents', label: 'Documents', icon: FileText },
+    { to: 'handover', label: resolveBuyerPortalLabel('handover', 'Keys'), icon: KeyRound },
+    { to: 'team', label: resolveBuyerPortalLabel('team', 'Team Contacts'), icon: Users },
+    { to: 'documents', label: resolveBuyerPortalLabel('documents', 'Documents'), icon: FileText },
   ]
+    .filter((action) => sectionEnabled[action.to] !== false)
     .filter((action) => action.to !== primaryOverviewAction.to)
     .slice(0, 2)
   const primaryOverviewActionClasses =
@@ -12649,6 +13186,7 @@ function ClientPortal() {
             onOpenBuyerDocument={handleOpenPortalDocument}
             teamMembers={teamMembers}
             enabledSections={sectionEnabled}
+            portalNavigationLabels={buyerPortalNavigationLabels}
             buyerPortalStatusItems={buyerPortalStatusItems}
             buyerPortalAccessDescription={buyerPortalAccessDescription}
             buyerMoreSummary={{
@@ -12846,8 +13384,8 @@ function ClientPortal() {
                 </div>
               </div>
               <div className="mt-auto px-1 pb-2 pt-4 text-xs leading-5 text-[#d8e5ef]">
-                <p className="font-semibold text-white">Arch9</p>
-                <p className="text-[#a9bdce]">Real Estate</p>
+                <p className="font-semibold text-white">{buyerPortalBrandName}</p>
+                <p className="text-[#a9bdce]">{buyerPortalBrandDescriptor}</p>
               </div>
             </nav>
           )}
@@ -13176,7 +13714,7 @@ function ClientPortal() {
                         <FileText size={15} />
                         Documents
                       </Link>
-                      {isHandover || isBondApplication ? (
+                      {isHandover || isBondApplication || !sectionEnabled.handover ? (
                         <Link
                           to={getClientPortalPath(token, 'overview')}
                           className="inline-flex min-h-[42px] items-center gap-2 rounded-[12px] border border-[#d1deeb] bg-white px-3.5 py-2 text-sm font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-[#f8fbff]"
@@ -16286,9 +16824,9 @@ function ClientPortal() {
               <h4 className="text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">Workspace configuration</h4>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 {[
-                  ['Snag reporting', portal?.settings?.snag_reporting_enabled ? 'Enabled' : 'Not active'],
-                  ['Alteration requests', portal?.settings?.alteration_requests_enabled ? 'Enabled' : 'Not active'],
-                  ['Service reviews', portal?.settings?.service_reviews_enabled ? 'Enabled' : 'Not active'],
+                  ['Snag reporting', sectionEnabled.snags ? 'Enabled' : 'Not active'],
+                  ['Alteration requests', sectionEnabled.alterations ? 'Enabled' : 'Not active'],
+                  ['Service reviews', sectionEnabled.review ? 'Enabled' : 'Not active'],
                   ['Document uploads', 'Always available when requested'],
                 ].map(([label, value]) => (
                   <article key={label} className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
@@ -16323,9 +16861,9 @@ function ClientPortal() {
           <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
             <div>
               <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#64748b]">Support</p>
-              <h3 className="mt-2 text-[1.85rem] font-semibold tracking-[-0.04em] text-[#142132]">Your team</h3>
+              <h3 className="mt-2 text-[1.85rem] font-semibold tracking-[-0.04em] text-[#142132]">{buyerTeamHeading}</h3>
               <p className="mt-1.5 max-w-3xl text-sm leading-6 text-[#6b7d93]">
-                The people helping with your purchase, finance, transfer, and coordination.
+                {buyerTeamDescription}
               </p>
             </div>
             <span className="inline-flex items-center gap-2 rounded-full border border-[#dde7f1] bg-[#fbfdff] px-4 py-2 text-sm font-semibold text-[#64748b]">

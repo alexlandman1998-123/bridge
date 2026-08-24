@@ -1,0 +1,134 @@
+{
+  "phase": "private-property-listing-candidates",
+  "generatedAt": "2026-08-24T07:50:34.531Z",
+  "safety": {
+    "privatePropertyApiCalled": false,
+    "databaseWritten": false,
+    "listingPublished": false
+  },
+  "status": "FOUND",
+  "count": 10,
+  "candidates": [
+    {
+      "id": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+      "listingReference": "PRV-202608201031-U8YM",
+      "title": "Beautiful 3 bed house in Garsfontein",
+      "suburb": "Garsfontein",
+      "city": "Pretoria",
+      "province": "Gauteng",
+      "propertyType": "House",
+      "askingPrice": 1234567,
+      "listingStatus": "listing_review",
+      "updatedAt": "2026-08-20T10:31:05.955885+00:00"
+    },
+    {
+      "id": "cc13bccd-4635-419a-967a-c4fdfc126e12",
+      "listingReference": "PRV-202608181856-4ZOM",
+      "title": "House - Brixton",
+      "suburb": "Brixton",
+      "city": "Johannesburg",
+      "province": "Gauteng",
+      "propertyType": "House",
+      "askingPrice": 1980000,
+      "listingStatus": "seller_lead",
+      "updatedAt": "2026-08-18T18:56:27.789438+00:00"
+    },
+    {
+      "id": "045318cc-8660-416c-88fb-42367c992daa",
+      "listingReference": "PRV-202608130905-AAEN",
+      "title": "",
+      "suburb": "",
+      "city": "",
+      "province": "",
+      "propertyType": "House",
+      "askingPrice": 0,
+      "listingStatus": "onboarding_completed",
+      "updatedAt": "2026-08-13T14:52:41.259558+00:00"
+    },
+    {
+      "id": "03c78d9a-c676-4aa3-836a-d27f5528a5a6",
+      "listingReference": "PRV-202608131414-VBPW",
+      "title": "409 Queens Cres, Nr3, Lynnwood, Pretoria, Gauteng, 0081",
+      "suburb": "Lynnwood",
+      "city": "Pretoria",
+      "province": "Gauteng",
+      "propertyType": "House",
+      "askingPrice": 0,
+      "listingStatus": "active",
+      "updatedAt": "2026-08-13T14:27:03.901+00:00"
+    },
+    {
+      "id": "0e85cebc-9e6f-4a8f-8031-debf6b8025f0",
+      "listingReference": "PRV-202607070658-DH2U",
+      "title": "House",
+      "suburb": "Bartlett AH",
+      "city": "",
+      "province": "",
+      "propertyType": "House",
+      "askingPrice": 0,
+      "listingStatus": "withdrawn",
+      "updatedAt": "2026-08-13T09:15:12.72702+00:00"
+    },
+    {
+      "id": "0db84f18-7ae7-467b-bf52-8db83a545ffb",
+      "listingReference": "PRV-202607130739-6FA9",
+      "title": "House",
+      "suburb": "Lynnwood",
+      "city": "Pretoria",
+      "province": "Gauteng",
+      "propertyType": "House",
+      "askingPrice": 2000000,
+      "listingStatus": "withdrawn",
+      "updatedAt": "2026-08-13T09:15:12.72702+00:00"
+    },
+    {
+      "id": "b7b6e2a6-0e81-47d9-90c2-b5e1c3bdd453",
+      "listingReference": "PRV-TSHEPO-20260812-14-21MILKCRES",
+      "title": "21 Milkwood Crescent",
+      "suburb": "Serengeti",
+      "city": "Kempton Park",
+      "province": "Gauteng",
+      "propertyType": "Residential",
+      "askingPrice": 5600000,
+      "listingStatus": "active",
+      "updatedAt": "2026-08-13T09:15:12.72702+00:00"
+    },
+    {
+      "id": "e5d8bc0a-2285-45aa-88fe-cfca627ae2e1",
+      "listingReference": "PRV-TSHEPO-20260812-06-7ASTEGSTRE",
+      "title": "7A Stegman Street",
+      "suburb": "Terenure",
+      "city": "Kempton Park",
+      "province": "Gauteng",
+      "propertyType": "Residential",
+      "askingPrice": 2250000,
+      "listingStatus": "active",
+      "updatedAt": "2026-08-13T09:15:12.72702+00:00"
+    },
+    {
+      "id": "727678ef-9ed4-4d50-a236-f1659b7a08e5",
+      "listingReference": "PRV-TSHEPO-20260812-12-76BLUELAKE",
+      "title": "76 Blue Lakes Estate, New Modder Road",
+      "suburb": "Kleinfontein",
+      "city": "Benoni",
+      "province": "Gauteng",
+      "propertyType": "Residential",
+      "askingPrice": 425000,
+      "listingStatus": "active",
+      "updatedAt": "2026-08-13T09:15:12.72702+00:00"
+    },
+    {
+      "id": "f05f3eae-ab4c-4e52-b288-633cc75e3a6e",
+      "listingReference": "PRV-TSHEPO-20260812-04-6CLYDSTREC",
+      "title": "6 Clydesdale Street",
+      "suburb": "Crystal Park",
+      "city": "Benoni",
+      "province": "Gauteng",
+      "propertyType": "Residential",
+      "askingPrice": 1690000,
+      "listingStatus": "active",
+      "updatedAt": "2026-08-13T09:15:12.72702+00:00"
+    }
+  ],
+  "nextStep": "Pick one candidate id and pass it as --listing-id to generate the Private Property preview."
+}

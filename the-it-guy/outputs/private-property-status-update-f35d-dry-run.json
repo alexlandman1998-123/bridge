@@ -1,0 +1,22 @@
+{
+  "phase": "private-property-phase5-status-update",
+  "generatedAt": "2026-08-24T08:01:22.622Z",
+  "environment": "sandbox",
+  "baseUrl": "https://services.sandbox.pp.co.za/AgentImport/AgentImport.asmx",
+  "vendor": "Arch9",
+  "username": "Arch9User",
+  "branchGuid": "CA167B18-C6DC-49AD-B018-2B72B187918F",
+  "apply": false,
+  "safety": {
+    "privatePropertyApiCalled": false,
+    "databaseWritten": false,
+    "listingStatusChanged": false
+  },
+  "status": "DRY_RUN",
+  "request": {
+    "propertyId": "PRV-202608201031-U8YM",
+    "listingType": "Sale",
+    "propertyStatus": "ForSale"
+  },
+  "nextStep": "No Private Property status change was made. Re-run with --apply to call ListingStatusUpdate."
+}

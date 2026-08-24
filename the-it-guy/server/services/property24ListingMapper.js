@@ -306,13 +306,21 @@ export function createProperty24ListingPlan({
   const previewPhotos = buildPreviewPhotos(mediaRows, { includePhotos })
   const propertyFeatures = buildPropertyFeatures(listing, publication)
   const propertyInfo = buildPropertyInfo({ listing, publication, suburbId, propertyTypeId })
+  const sandboxPayloadTestMode = normalizeBoolean(options.sandboxPayloadTestMode, false) &&
+    normalizeProperty24ListingKey(options.environment) !== 'production'
 
   const dataBlockers = []
   const technicalBlockers = []
 
   if (!agencyId) dataBlockers.push('missing_property24_agency_id')
-  if (!property24AgentId) dataBlockers.push('missing_property24_agent_id')
-  if (!sourceReference) dataBlockers.push('missing_agent_source_reference')
+  if (!property24AgentId) {
+    if (sandboxPayloadTestMode) technicalBlockers.push('sandbox_property24_agent_id_required_before_submit')
+    else dataBlockers.push('missing_property24_agent_id')
+  }
+  if (!sourceReference) {
+    if (sandboxPayloadTestMode) technicalBlockers.push('sandbox_agent_source_reference_required_before_submit')
+    else dataBlockers.push('missing_agent_source_reference')
+  }
   if (!description) dataBlockers.push('missing_description')
   if (!expiryDate) dataBlockers.push('missing_expiry_date')
   if (!suburbId) dataBlockers.push('missing_property24_suburb_id')
@@ -335,7 +343,7 @@ export function createProperty24ListingPlan({
   const basePayload = canPreview
     ? {
         agencyId,
-        contactAgentIds: [property24AgentId],
+        contactAgentIds: property24AgentId ? [property24AgentId] : [],
         ...(listingNumber ? { listingNumber } : {}),
         listingType,
         status,
@@ -366,6 +374,8 @@ export function createProperty24ListingPlan({
       agencyId,
       contactAgentIds: property24AgentId ? [property24AgentId] : [],
       agentSourceReference: sourceReference,
+      sandboxPayloadTestMode,
+      agentMappingRequiredBeforeSubmit: Boolean(sandboxPayloadTestMode && !property24AgentId),
       listingNumber: listingNumber || null,
       listingType,
       status,

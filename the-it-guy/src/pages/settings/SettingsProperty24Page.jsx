@@ -1,13 +1,11 @@
 import {
   Activity,
-  ArrowLeft,
   ChevronDown,
   CheckCircle2,
   CircleAlert,
   Clock3,
   Copy,
   KeyRound,
-  Link2,
   MoreHorizontal,
   PlugZap,
   Plus,
@@ -19,7 +17,6 @@ import {
   Wand2,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
 import { useOrganisation } from '../../context/OrganisationContext'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { supabase } from '../../lib/supabaseClient'
@@ -248,9 +245,7 @@ function HealthMetric({ label, value }) {
 
 function Property24Logo() {
   return (
-    <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-[12px] border border-[#e3ebf3] bg-white p-2">
-      <img src="/lead-sources/property24.png" alt="Property24" className="max-h-12 max-w-full object-contain" />
-    </div>
+    <img src="/lead-sources/property24.png" alt="Property24" className="h-auto w-32 shrink-0 object-contain sm:w-36" />
   )
 }
 
@@ -264,6 +259,28 @@ function ConnectionBadge({ connected }) {
       {connected ? <CheckCircle2 className="h-4 w-4" /> : <CircleAlert className="h-4 w-4" />}
       {connected ? 'Connected' : 'Not connected'}
     </span>
+  )
+}
+
+function SetupStatusItem({ tone = 'neutral', icon, label, value, description }) {
+  const toneClasses = {
+    success: 'border-[#ccead8] bg-[#f2fbf5] text-[#1f7a45]',
+    info: 'border-[#cfe0f3] bg-[#f5f9ff] text-[#27527a]',
+    pending: 'border-[#f3d9a8] bg-[#fff8ec] text-[#a16207]',
+    neutral: 'border-[#e3ebf3] bg-[#fbfdff] text-[#40546b]',
+  }
+
+  return (
+    <div className={`flex min-h-[92px] items-start gap-3 rounded-[14px] border px-4 py-3 ${toneClasses[tone] || toneClasses.neutral}`}>
+      <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/70">
+        {icon}
+      </span>
+      <span className="min-w-0">
+        <span className="block text-xs font-semibold uppercase tracking-[0.04em] opacity-80">{label}</span>
+        <span className="mt-1 block text-sm font-semibold text-[#17233a]">{value}</span>
+        {description ? <span className="mt-1 block text-xs leading-5 opacity-80">{description}</span> : null}
+      </span>
+    </div>
   )
 }
 
@@ -401,6 +418,23 @@ export default function SettingsProperty24Page() {
   const healthChecks = property24Health?.checks || []
   const connectionReady = Boolean(settings.enabled && settings.agencyId)
   const latestSyncAt = healthSummary.latestListingSyncAt || healthSummary.latestLeadImportAt || property24Health?.generatedAt
+  const isSandboxEnvironment = settings.environment !== 'production'
+  const environmentLabel = isSandboxEnvironment ? 'ExDev sandbox' : 'Production'
+  const usableProperty24AgentCount = selectableProperty24Agents.length
+  const sandboxAgentIdsPending = isSandboxEnvironment && property24AgentsMissingIds.length > 0
+  const agentIdStatusValue = sandboxAgentIdsPending
+    ? 'Agent IDs pending'
+    : usableProperty24AgentCount
+      ? `${usableProperty24AgentCount} usable profile${usableProperty24AgentCount === 1 ? '' : 's'}`
+      : 'Sync agents to check IDs'
+  const agentIdStatusDescription = sandboxAgentIdsPending
+    ? 'ExDev returned agent data without usable IDs. Do not enter fake IDs.'
+    : usableProperty24AgentCount
+      ? 'Profiles with IDs can be connected to Arch9 agents.'
+      : 'This does not block sandbox listing payload checks.'
+  const agentConnectionLabel = isSandboxEnvironment && !readiness.mappingsReady
+    ? 'Agent IDs pending in sandbox'
+    : `${readiness.mappedCount} of ${readiness.candidateCount} agents connected`
 
   function updateSettings(patch) {
     setSuccess('')
@@ -719,17 +753,6 @@ export default function SettingsProperty24Page() {
 
   return (
     <div className={`${settingsPageClass} space-y-5`}>
-      <div className="space-y-5">
-        <Link to="/settings/syndication" className="inline-flex items-center gap-2 text-sm font-semibold text-[#0f7f4f] transition hover:text-[#0b6b42]">
-          <ArrowLeft className="h-4 w-4" />
-          Back to Integrations
-        </Link>
-
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <h1 className="text-2xl font-semibold tracking-[-0.03em] text-[#142132]">Property24</h1>
-        </div>
-      </div>
-
       {error ? <SettingsBanner>{error}</SettingsBanner> : null}
       {success ? <SettingsBanner tone="success">{success}</SettingsBanner> : null}
 
@@ -802,17 +825,56 @@ export default function SettingsProperty24Page() {
         </div>
       </section>
 
+      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <SetupStatusItem
+          tone={connectionReady ? 'success' : 'pending'}
+          icon={connectionReady ? <CheckCircle2 className="h-4 w-4" /> : <CircleAlert className="h-4 w-4" />}
+          label="Agency"
+          value={connectionReady ? 'Agency connected' : 'Connect agency first'}
+          description={settings.agencyId ? `Agency ID ${settings.agencyId}` : 'Use the agency number Property24 supplied.'}
+        />
+        <SetupStatusItem
+          tone={isSandboxEnvironment ? 'info' : 'success'}
+          icon={<Activity className="h-4 w-4" />}
+          label="Environment"
+          value={environmentLabel}
+          description={isSandboxEnvironment ? 'Safe testing mode for Property24 vetting.' : 'Live publishing mode.'}
+        />
+        <SetupStatusItem
+          tone={serverCredentialsReady ? 'success' : 'pending'}
+          icon={<KeyRound className="h-4 w-4" />}
+          label="Credentials"
+          value={serverCredentialsReady ? 'Credentials working' : 'Credentials needed'}
+          description="Property24 login details stay server-side."
+        />
+        <SetupStatusItem
+          tone={sandboxAgentIdsPending ? 'info' : usableProperty24AgentCount ? 'success' : 'neutral'}
+          icon={sandboxAgentIdsPending ? <Clock3 className="h-4 w-4" /> : <UserPlus className="h-4 w-4" />}
+          label="Agent IDs"
+          value={agentIdStatusValue}
+          description={agentIdStatusDescription}
+        />
+      </section>
+
       <section className="rounded-[16px] border border-[#e1e8ef] bg-white p-5 shadow-[0_10px_28px_rgba(15,23,42,0.035)]">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <h2 className="text-lg font-semibold text-[#17233a]">Connect Agents</h2>
             <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
-              Connect each Arch9 agent to their Property24 profile. This determines which agent listings are published under.
+              {isSandboxEnvironment
+                ? 'In ExDev, Property24 may not return usable agent IDs yet. Sync agents to check what Property24 provides, but do not enter fake IDs.'
+                : 'Connect each Arch9 agent to their Property24 profile. This determines which agent listings are published under.'}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <span className="inline-flex min-h-10 items-center rounded-[10px] border border-[#f3d9a8] bg-[#fff8ec] px-3 text-sm font-semibold text-[#a16207]">
-              {readiness.mappedCount} of {readiness.candidateCount} agents connected
+            <span className={`inline-flex min-h-10 items-center rounded-[10px] border px-3 text-sm font-semibold ${
+              isSandboxEnvironment && !readiness.mappingsReady
+                ? 'border-[#cfe0f3] bg-[#f5f9ff] text-[#27527a]'
+                : readiness.mappingsReady
+                  ? 'border-[#ccead8] bg-[#f2fbf5] text-[#1f7a45]'
+                  : 'border-[#f3d9a8] bg-[#fff8ec] text-[#a16207]'
+            }`}>
+              {agentConnectionLabel}
             </span>
             <button type="button" className={SECONDARY_BUTTON_CLASS} onClick={() => applySuggestedMappings()} disabled={saving}>
               <Wand2 className="h-4 w-4" />
@@ -823,9 +885,15 @@ export default function SettingsProperty24Page() {
 
         {property24AgentsMissingIds.length ? (
           <div className="mt-4">
-            <SettingsBanner>
-              Property24 returned {property24AgentsMissingIds.length} agent{property24AgentsMissingIds.length === 1 ? '' : 's'} without a Property24 ID. Those agents cannot be selected for publishing until Property24 returns an ID.
-            </SettingsBanner>
+            {isSandboxEnvironment ? (
+              <div className="rounded-[14px] border border-[#cfe0f3] bg-[#f5f9ff] px-4 py-3 text-sm leading-6 text-[#27527a]">
+                Property24 ExDev returned {property24AgentsMissingIds.length} agent{property24AgentsMissingIds.length === 1 ? '' : 's'} without a usable Property24 ID. This is a sandbox limitation, not something the agency principal must fix. Do not enter fake IDs; continue with agency and listing-payload testing while Property24 confirms the agent ID flow.
+              </div>
+            ) : (
+              <SettingsBanner>
+                Property24 returned {property24AgentsMissingIds.length} agent{property24AgentsMissingIds.length === 1 ? '' : 's'} without a Property24 ID. Those agents cannot be selected for publishing until Property24 returns an ID.
+              </SettingsBanner>
+            )}
           </div>
         ) : null}
 

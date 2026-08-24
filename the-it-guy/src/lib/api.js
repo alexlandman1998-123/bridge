@@ -67,6 +67,7 @@ import {
   statusFromLegacyFlags,
 } from '../core/documents/documentVaultArchitecture'
 import { normalizePortalDocumentType, resolvePortalDocumentMetadata } from '../core/documents/portalDocumentMetadata'
+import { resolveClientPortalProfile } from '../core/clientPortal/clientPortalProfile.js'
 import { resolveDefaultDocumentRequestVisibility } from '../core/documents/documentRequestContainerModel.js'
 import {
   CANONICAL_FINANCE_TYPES,
@@ -38885,6 +38886,78 @@ async function resolveClientPortalLinkByToken(client, token) {
   return data
 }
 
+const CLIENT_PORTAL_PROFILE_ACTION_TRANSACTION_SELECT =
+  'id, development_id, unit_id, buyer_id, transaction_type, sale_route, sale_channel, seller_party_type, lead_owner, ownership_model, source_agency_org_id, assigned_agent, assigned_agent_email'
+const CLIENT_PORTAL_PROFILE_ACTION_FALLBACK_TRANSACTION_SELECT =
+  'id, development_id, unit_id, buyer_id'
+const CLIENT_PORTAL_PROFILE_ACTION_ORIGIN_COLUMNS = [
+  'transaction_type',
+  'sale_route',
+  'sale_channel',
+  'seller_party_type',
+  'lead_owner',
+  'ownership_model',
+  'source_agency_org_id',
+  'assigned_agent',
+  'assigned_agent_email',
+]
+
+function isMissingClientPortalProfileActionColumnError(error) {
+  return CLIENT_PORTAL_PROFILE_ACTION_ORIGIN_COLUMNS.some((columnName) =>
+    isMissingColumnError(error, columnName),
+  )
+}
+
+async function resolveClientPortalProfileForTokenAction(client, link, settings = {}) {
+  let transaction = null
+  if (link?.transaction_id) {
+    let transactionQuery = await client
+      .from('transactions')
+      .select(CLIENT_PORTAL_PROFILE_ACTION_TRANSACTION_SELECT)
+      .eq('id', link.transaction_id)
+      .maybeSingle()
+
+    if (transactionQuery.error && isMissingClientPortalProfileActionColumnError(transactionQuery.error)) {
+      transactionQuery = await client
+        .from('transactions')
+        .select(CLIENT_PORTAL_PROFILE_ACTION_FALLBACK_TRANSACTION_SELECT)
+        .eq('id', link.transaction_id)
+        .maybeSingle()
+    }
+
+    if (transactionQuery.error) {
+      throw transactionQuery.error
+    }
+
+    transaction = transactionQuery.data || null
+  }
+
+  return resolveClientPortalProfile({
+    workspace: 'buying',
+    transaction: {
+      ...(transaction || {}),
+      development_id: transaction?.development_id || link?.development_id || null,
+      unit_id: transaction?.unit_id || link?.unit_id || null,
+      buyer_id: transaction?.buyer_id || link?.buyer_id || null,
+    },
+    settings,
+  })
+}
+
+async function assertClientPortalTokenSectionEnabled({
+  client,
+  link,
+  settings = {},
+  sectionKey,
+  message,
+}) {
+  const portalProfile = await resolveClientPortalProfileForTokenAction(client, link, settings)
+  if (portalProfile?.enabledSections?.[sectionKey] === false) {
+    throw new Error(message)
+  }
+  return portalProfile
+}
+
 async function fetchClientPortalBondOriginatorOfferGrantPackage(client) {
   const rpc = await client.rpc('bridge_client_portal_bond_originator_offer_grant_package')
 
@@ -44038,7 +44111,7 @@ export async function fetchClientPortalByToken(token) {
   let transactionQuery = await client
     .from('transactions')
     .select(
-      'id, development_id, unit_id, buyer_id, sales_price, purchase_price, finance_type, cash_amount, bond_amount, deposit_amount, reservation_required, reservation_amount, reservation_amount_type, reservation_treatment, reservation_payable_to, reservation_status, reservation_paid_date, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_proof_document, alteration_charge_treatment, onboarding_status, purchaser_type, stage, current_main_stage, current_sub_stage_summary, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, updated_at, created_at',
+      'id, development_id, unit_id, buyer_id, transaction_type, sale_route, sale_channel, seller_party_type, lead_owner, ownership_model, source_agency_org_id, sales_price, purchase_price, finance_type, cash_amount, bond_amount, deposit_amount, reservation_required, reservation_amount, reservation_amount_type, reservation_treatment, reservation_payable_to, reservation_status, reservation_paid_date, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_proof_document, alteration_charge_treatment, onboarding_status, purchaser_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, updated_at, created_at',
     )
     .eq('id', link.transaction_id)
     .maybeSingle()
@@ -44046,6 +44119,15 @@ export async function fetchClientPortalByToken(token) {
   if (
     transactionQuery.error &&
     (isMissingColumnError(transactionQuery.error, 'development_id') ||
+      isMissingColumnError(transactionQuery.error, 'transaction_type') ||
+      isMissingColumnError(transactionQuery.error, 'sale_route') ||
+      isMissingColumnError(transactionQuery.error, 'sale_channel') ||
+      isMissingColumnError(transactionQuery.error, 'seller_party_type') ||
+      isMissingColumnError(transactionQuery.error, 'lead_owner') ||
+      isMissingColumnError(transactionQuery.error, 'ownership_model') ||
+      isMissingColumnError(transactionQuery.error, 'source_agency_org_id') ||
+      isMissingColumnError(transactionQuery.error, 'assigned_agent') ||
+      isMissingColumnError(transactionQuery.error, 'assigned_agent_email') ||
       isMissingColumnError(transactionQuery.error, 'current_main_stage') ||
       isMissingColumnError(transactionQuery.error, 'current_sub_stage_summary') ||
       isMissingColumnError(transactionQuery.error, 'purchase_price') ||
@@ -44512,7 +44594,7 @@ export async function fetchClientPortalCoreByToken(token) {
   let transactionQuery = await client
     .from('transactions')
     .select(
-      'id, development_id, unit_id, buyer_id, sales_price, purchase_price, finance_type, cash_amount, bond_amount, deposit_amount, reservation_required, reservation_amount, reservation_amount_type, reservation_treatment, reservation_payable_to, reservation_status, reservation_paid_date, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_proof_document, alteration_charge_treatment, onboarding_status, purchaser_type, stage, current_main_stage, current_sub_stage_summary, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, updated_at, created_at',
+      'id, development_id, unit_id, buyer_id, transaction_type, sale_route, sale_channel, seller_party_type, lead_owner, ownership_model, source_agency_org_id, sales_price, purchase_price, finance_type, cash_amount, bond_amount, deposit_amount, reservation_required, reservation_amount, reservation_amount_type, reservation_treatment, reservation_payable_to, reservation_status, reservation_paid_date, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_proof_document, alteration_charge_treatment, onboarding_status, purchaser_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, updated_at, created_at',
     )
     .eq('id', link.transaction_id)
     .maybeSingle()
@@ -44520,6 +44602,15 @@ export async function fetchClientPortalCoreByToken(token) {
   if (
     transactionQuery.error &&
     (isMissingColumnError(transactionQuery.error, 'development_id') ||
+      isMissingColumnError(transactionQuery.error, 'transaction_type') ||
+      isMissingColumnError(transactionQuery.error, 'sale_route') ||
+      isMissingColumnError(transactionQuery.error, 'sale_channel') ||
+      isMissingColumnError(transactionQuery.error, 'seller_party_type') ||
+      isMissingColumnError(transactionQuery.error, 'lead_owner') ||
+      isMissingColumnError(transactionQuery.error, 'ownership_model') ||
+      isMissingColumnError(transactionQuery.error, 'source_agency_org_id') ||
+      isMissingColumnError(transactionQuery.error, 'assigned_agent') ||
+      isMissingColumnError(transactionQuery.error, 'assigned_agent_email') ||
       isMissingColumnError(transactionQuery.error, 'current_main_stage') ||
       isMissingColumnError(transactionQuery.error, 'current_sub_stage_summary') ||
       isMissingColumnError(transactionQuery.error, 'purchase_price') ||
@@ -46279,6 +46370,13 @@ async function upsertTransactionHandoverByToken({ token, handover = {}, complete
   if (!settings.client_portal_enabled) {
     throw new Error('Client portal is currently disabled for this development.')
   }
+  await assertClientPortalTokenSectionEnabled({
+    client,
+    link,
+    settings,
+    sectionKey: 'handover',
+    message: 'Handover is not available for this portal.',
+  })
 
   const { data: transaction, error: transactionError } = await client
     .from('transactions')
@@ -48094,6 +48192,13 @@ export async function submitClientIssue({
   if (!settings.client_portal_enabled || !settings.snag_reporting_enabled) {
     throw new Error('Issue reporting is not enabled for this development.')
   }
+  await assertClientPortalTokenSectionEnabled({
+    client,
+    link,
+    settings,
+    sectionKey: 'snags',
+    message: 'Issue reporting is not available for this portal.',
+  })
 
   if (!category?.trim() || !description?.trim()) {
     throw new Error('Category and description are required.')
@@ -48151,6 +48256,13 @@ export async function submitAlterationRequest({
   if (!settings.client_portal_enabled || !settings.alteration_requests_enabled) {
     throw new Error('Alteration requests are not enabled for this development.')
   }
+  await assertClientPortalTokenSectionEnabled({
+    client,
+    link,
+    settings,
+    sectionKey: 'alterations',
+    message: 'Alteration requests are not available for this portal.',
+  })
 
   if (!title?.trim() || !description?.trim()) {
     throw new Error('Title and description are required.')
@@ -48316,6 +48428,13 @@ export async function submitServiceReview({
   if (!settings.client_portal_enabled || !settings.service_reviews_enabled) {
     throw new Error('Service reviews are not enabled for this development.')
   }
+  await assertClientPortalTokenSectionEnabled({
+    client,
+    link,
+    settings,
+    sectionKey: 'review',
+    message: 'Service reviews are not available for this portal.',
+  })
 
   const { data: transaction, error: txError } = await client
     .from('transactions')

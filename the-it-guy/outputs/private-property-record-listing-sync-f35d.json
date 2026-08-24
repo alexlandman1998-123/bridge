@@ -1,0 +1,24 @@
+{
+  "phase": "private-property-phase6-record-listing-sync",
+  "generatedAt": "2026-08-24T08:17:48.695Z",
+  "status": "RECORDED_WITH_WARNINGS",
+  "safety": {
+    "privatePropertyApiCalled": false,
+    "databaseWritten": true
+  },
+  "databaseWrite": {
+    "table": "private_property_listing_syncs",
+    "privateListingId": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+    "propertyId": "PRV-202608201031-U8YM",
+    "privatePropertyRef": "T2870287",
+    "privatePropertyStatus": "published",
+    "externalStatus": "active",
+    "lastEventType": "Activated",
+    "continuationKey": "639231549696449114PRV-202608201031-U8YM",
+    "listingUpdateWarning": {
+      "message": "A completed canonical mandate packet or manual signed mandate upload is required before activating this listing.",
+      "code": "P0001",
+      "details": "PHASE0_PRIVATE_LISTING_CANONICAL_MANDATE_REQUIRED"
+    }
+  }
+}

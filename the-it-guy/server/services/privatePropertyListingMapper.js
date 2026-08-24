@@ -49,6 +49,20 @@ function toDateOnly(value = '') {
   return date.toISOString().slice(0, 10)
 }
 
+function addDaysToDateOnly(dateOnly = '', days = 0) {
+  const text = normalizePrivatePropertyText(dateOnly)
+  if (!text) return ''
+  const date = new Date(`${text}T00:00:00.000Z`)
+  if (Number.isNaN(date.getTime())) return ''
+  date.setUTCDate(date.getUTCDate() + days)
+  return date.toISOString().slice(0, 10)
+}
+
+function toPrivatePropertyDateTime(value = '') {
+  const dateOnly = toDateOnly(value)
+  return dateOnly ? `${dateOnly}T00:00:00` : ''
+}
+
 function normalizeMediaRows(media = []) {
   return (Array.isArray(media) ? media : [])
     .map((item, index) => {
@@ -351,19 +365,19 @@ export function buildPrivatePropertyListingXml(plan = {}) {
     `<Suburb>${payload.address.suburbId ? '' : escapePrivatePropertyXml(payload.address.suburb)}</Suburb>`,
     payload.address.suburbId ? `<SuburbId>${payload.address.suburbId}</SuburbId>` : '<SuburbId xsi:nil="true" />',
     `<Town>${payload.address.suburbId ? '' : escapePrivatePropertyXml(payload.address.town)}</Town>`,
-    `<Province>${payload.address.suburbId ? '' : escapePrivatePropertyXml(payload.address.province)}</Province>`,
+    payload.address.suburbId ? '<Province xsi:nil="true" />' : `<Province>${escapePrivatePropertyXml(payload.address.province)}</Province>`,
     `<Headline>${escapePrivatePropertyXml(payload.headline)}</Headline>`,
     `<Description><![CDATA[${payload.description.replaceAll(']]>', ']]]]><![CDATA[>')}]]></Description>`,
     `<Price>${payload.price}</Price>`,
     `<Deposit>${payload.deposit || 0}</Deposit>`,
-    `<ListingDate>${escapePrivatePropertyXml(payload.listingDate)}</ListingDate>`,
-    `<ExpiryDate>${escapePrivatePropertyXml(payload.expiryDate)}</ExpiryDate>`,
-    `<AvailableFrom>${escapePrivatePropertyXml(payload.availableFrom)}</AvailableFrom>`,
+    `<ListingDate>${escapePrivatePropertyXml(toPrivatePropertyDateTime(payload.listingDate))}</ListingDate>`,
+    `<ExpiryDate>${escapePrivatePropertyXml(toPrivatePropertyDateTime(payload.expiryDate))}</ExpiryDate>`,
+    `<AvailableFrom>${escapePrivatePropertyXml(toPrivatePropertyDateTime(payload.availableFrom))}</AvailableFrom>`,
     `<AgentId>${escapePrivatePropertyXml(payload.agentIds.join(','))}</AgentId>`,
     photoUrlsXml,
     `<OwnerID>${escapePrivatePropertyXml(payload.ownerId)}</OwnerID>`,
-    `<XCoordinate>${payload.xCoordinate ?? ''}</XCoordinate>`,
-    `<YCoordinate>${payload.yCoordinate ?? ''}</YCoordinate>`,
+    `<XCoordinate>${payload.xCoordinate ?? 0}</XCoordinate>`,
+    `<YCoordinate>${payload.yCoordinate ?? 0}</YCoordinate>`,
     `<ListingType>${escapePrivatePropertyXml(payload.listingType)}</ListingType>`,
     `<PropertyStatus>${escapePrivatePropertyXml(payload.propertyStatus)}</PropertyStatus>`,
     showdayXml,
@@ -372,7 +386,7 @@ export function buildPrivatePropertyListingXml(plan = {}) {
     `<HideStreetNo>${payload.address.hideStreetNo ? 'true' : 'false'}</HideStreetNo>`,
     `<HideComplexName>${payload.address.hideComplexName ? 'true' : 'false'}</HideComplexName>`,
     `<HideUnitNumber>${payload.address.hideUnitNo ? 'true' : 'false'}</HideUnitNumber>`,
-    payload.soleMandateExclusiveDays ? `<SoleMandateExclusiveDays>${payload.soleMandateExclusiveDays}</SoleMandateExclusiveDays>` : '',
+    payload.soleMandateExclusiveDays ? `<SoleMandateExclusiveDays>${payload.soleMandateExclusiveDays}</SoleMandateExclusiveDays>` : '<SoleMandateExclusiveDays xsi:nil="true" />',
     '</ListingImport>',
   ].join('')
 }
@@ -407,8 +421,8 @@ export function createPrivatePropertyListingPlan({
   const description = resolveDescription(listing, publication)
   const headline = resolveHeadline(listing, publication)
   const listingDate = resolveListingDate(listing, publication, options)
-  const availableFrom = resolveAvailableFrom(listing, publication, options)
-  const expiryDate = toDateOnly(firstText(options.expiryDate, publication.expiry_date, publication.expiryDate, listing.expiry_date, listing.expiryDate))
+  const availableFrom = resolveAvailableFrom(listing, publication, options) || listingDate
+  const expiryDate = toDateOnly(firstText(options.expiryDate, publication.expiry_date, publication.expiryDate, listing.expiry_date, listing.expiryDate)) || addDaysToDateOnly(listingDate, 180)
   const address = resolveAddress(listing, publication, options)
   const attributes = buildAttributes({ listing, publication, category })
   const mediaRows = normalizeMediaRows(media)
