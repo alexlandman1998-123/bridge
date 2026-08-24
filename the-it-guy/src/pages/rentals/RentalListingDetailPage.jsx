@@ -10,6 +10,7 @@ import {
   Pencil,
   RefreshCw,
   Save,
+  Send,
   ShieldCheck,
   Users,
   X,
@@ -18,6 +19,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import {
   getRentalListingForAgent,
+  prepareRentalProperty24PublishRequest,
   updateRentalListingDraft,
 } from '../../services/rentals/rentalListingDraftService'
 import {
@@ -126,13 +128,34 @@ function Property24ReadinessItem({ item }) {
   )
 }
 
-function Property24SyndicationPanel({ detail }) {
+function Property24SyndicationPanel({ detail, onPreparePublish, preparingPublish, publishError }) {
   const readiness = detail.property24Readiness
   const payload = readiness?.payloadPreview || {}
   const blockers = readiness?.blockers || []
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
       <DetailPanel eyebrow="Syndication" title="Property24 Rental Readiness">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-[8px] border border-[#dbe6f2] bg-[#fbfdff] p-3">
+          <div>
+            <p className="text-sm font-semibold text-[#18324b]">Controlled publish request</p>
+            <p className="mt-1 text-xs font-semibold text-[#607891]">Prepares the rental payload and records the internal handoff. Live Property24 writes stay behind backend wiring.</p>
+          </div>
+          <button
+            type="button"
+            className="ui-pill-button ui-pill-button-active"
+            onClick={onPreparePublish}
+            disabled={!readiness.readyToPublish || preparingPublish}
+            title={readiness.readyToPublish ? 'Prepare Property24 rental publish request' : 'Resolve blockers before preparing a publish request'}
+          >
+            {preparingPublish ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Send size={16} aria-hidden="true" />}
+            Prepare Request
+          </button>
+        </div>
+
+        {publishError ? (
+          <p className="mb-4 rounded-[8px] border border-[#f2c6c6] bg-[#fff7f7] px-4 py-3 text-sm font-semibold text-[#9f3131]">{publishError}</p>
+        ) : null}
+
         <div className="grid gap-3 md:grid-cols-3">
           <FactCard
             label="Portal status"
@@ -327,7 +350,7 @@ function RentalListingEditPanel({ form, onChange, onCancel, onSubmit, saving, ca
   )
 }
 
-function RentalTabContent({ activeTab, detail }) {
+function RentalTabContent({ activeTab, detail, onPreparePublish, preparingPublish, publishError }) {
   const row = detail.row
   if (activeTab === 'property') {
     return (
@@ -389,7 +412,14 @@ function RentalTabContent({ activeTab, detail }) {
     )
   }
   if (activeTab === 'syndication') {
-    return <Property24SyndicationPanel detail={detail} />
+    return (
+      <Property24SyndicationPanel
+        detail={detail}
+        onPreparePublish={onPreparePublish}
+        preparingPublish={preparingPublish}
+        publishError={publishError}
+      />
+    )
   }
   if (activeTab === 'applications') {
     return (
@@ -440,6 +470,8 @@ export default function RentalListingDetailPage() {
   const [editForm, setEditForm] = useState(() => ({ ...RENTAL_LISTING_INITIAL_FORM }))
   const [editError, setEditError] = useState('')
   const [savingEdit, setSavingEdit] = useState(false)
+  const [preparingPublish, setPreparingPublish] = useState(false)
+  const [publishError, setPublishError] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
 
   const detail = useMemo(() => (listing ? buildRentalListingDetailView(listing) : null), [listing])
@@ -518,6 +550,30 @@ export default function RentalListingDetailPage() {
       setEditError(saveError?.message || 'Unable to save rental listing details.')
     } finally {
       setSavingEdit(false)
+    }
+  }
+
+  async function handlePrepareProperty24Publish() {
+    if (!detail?.property24Readiness?.readyToPublish) {
+      setPublishError('Resolve the Property24 rental blockers before preparing a publish request.')
+      return
+    }
+    try {
+      setPreparingPublish(true)
+      setPublishError('')
+      setSuccessMessage('')
+      await prepareRentalProperty24PublishRequest(listingId, {
+        organisationId,
+        assignedAgentId,
+        performedBy: assignedAgentId,
+        requestedBy: assignedAgentId,
+      })
+      setSuccessMessage('Property24 rental publish request was prepared for backend handoff.')
+      await loadListing()
+    } catch (publishRequestError) {
+      setPublishError(publishRequestError?.message || 'Unable to prepare the Property24 rental publish request.')
+    } finally {
+      setPreparingPublish(false)
     }
   }
 
@@ -629,7 +685,13 @@ export default function RentalListingDetailPage() {
           <FactCard label="Property24" value={detail.property24StatusLabel} detail="Rental syndication" icon={<CheckCircle2 size={18} aria-hidden="true" />} />
         </div>
 
-        <RentalTabContent activeTab={activeTab} detail={detail} />
+        <RentalTabContent
+          activeTab={activeTab}
+          detail={detail}
+          onPreparePublish={handlePrepareProperty24Publish}
+          preparingPublish={preparingPublish}
+          publishError={publishError}
+        />
       </div>
     </section>
   )

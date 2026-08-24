@@ -16,6 +16,9 @@ import {
   buildRentalListingUpdatePayload,
   validateRentalListingEditForm,
 } from './rentalListingEditModel'
+import {
+  buildRentalProperty24PublishRequest,
+} from './rentalListingProperty24PublishModel'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -144,6 +147,51 @@ export async function updateRentalListingDraft(listingId, form = {}, context = {
   return {
     listing,
     publicationResult,
+    activity,
+  }
+}
+
+export async function prepareRentalProperty24PublishRequest(listingId, context = {}) {
+  const normalizedListingId = normalizeText(listingId)
+  if (!normalizedListingId) throw new Error('Rental listing id is required.')
+
+  const listing = await getPrivateListing(normalizedListingId, {
+    includeRequirementsAndDocuments: false,
+  })
+  if (!listing || !isRentalListingRecord(listing)) throw new Error('Rental listing not found.')
+
+  const request = buildRentalProperty24PublishRequest(listing, context)
+  if (!request.canPrepare) {
+    const blockerLabels = request.blockers.map((blocker) => blocker.label).join(', ')
+    const error = new Error(blockerLabels ? `Property24 rental publish is blocked: ${blockerLabels}.` : 'Property24 rental publish is blocked.')
+    error.blockers = request.blockers
+    error.publishRequest = request
+    throw error
+  }
+
+  const activity = await createPrivateListingActivity({
+    privateListingId: normalizedListingId,
+    activityType: request.activity.activityType,
+    activityTitle: request.activity.activityTitle,
+    activityDescription: request.activity.activityDescription,
+    performedBy: context.performedBy || context.requestedBy || context.assignedAgentId || null,
+    visibility: 'internal',
+    metadata: {
+      source: 'rentals_phase7_property24_publish_request',
+      version: request.version,
+      idempotencyKey: request.idempotencyKey,
+      liveWriteEnabled: request.liveWriteEnabled,
+      requiresBackendPublisher: request.requiresBackendPublisher,
+      requestedAt: request.requestedAt,
+      readinessVersion: request.readiness.version,
+      readinessPercent: request.readiness.readinessPercent,
+      payloadPreview: request.requestPayload,
+    },
+  }).catch(() => null)
+
+  return {
+    listing,
+    request,
     activity,
   }
 }
