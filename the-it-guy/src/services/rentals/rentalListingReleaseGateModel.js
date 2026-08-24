@@ -16,6 +16,9 @@ import {
 import {
   buildRentalProperty24Readiness,
 } from './rentalListingProperty24ReadinessModel.js'
+import {
+  buildRentalProperty24FieldComparison,
+} from './rentalListingProperty24FieldComparisonModel.js'
 
 export const RENTAL_LISTING_RELEASE_GATE_VERSION = 'arch9_rental_listing_release_gate_v1'
 
@@ -62,10 +65,10 @@ export const RENTAL_LISTING_RELEASE_GATE_FIXTURE = Object.freeze({
   city: 'Cape Town',
   province: 'Western Cape',
   propertyType: 'Apartment',
-  property24AgencyId: 'p24-agency-1',
-  property24ContactAgentIds: ['p24-agent-1'],
-  property24SuburbId: 'p24-suburb-123',
-  property24PropertyTypeId: 'p24-type-apartment',
+  property24AgencyId: '31382',
+  property24ContactAgentIds: ['77959'],
+  property24SuburbId: '12345',
+  property24PropertyTypeId: '5',
   assignedAgentId: 'agent-1',
   bedrooms: 2,
   bathrooms: 2,
@@ -73,6 +76,7 @@ export const RENTAL_LISTING_RELEASE_GATE_FIXTURE = Object.freeze({
   garden: false,
   pool: false,
   flatlet: false,
+  mandateEndDate: '2026-12-31',
   description: 'A complete rental listing fixture for release-gate checks.',
   photos: ['https://example.test/release-gate-rental.jpg'],
   sellerCanonicalFacts: {
@@ -110,6 +114,7 @@ export function buildRentalListingReleaseGate(options = {}) {
   const routeMap = getRentalListingRouteMap()
   const listing = options.listing || RENTAL_LISTING_RELEASE_GATE_FIXTURE
   const readiness = buildRentalProperty24Readiness(listing)
+  const property24FieldComparison = buildRentalProperty24FieldComparison(listing)
   const publishRequest = buildRentalProperty24PublishRequest(listing, {
     requestedAt: options.requestedAt || '2026-08-24T12:00:00.000Z',
     requestedBy: options.requestedBy || 'release-gate',
@@ -134,6 +139,7 @@ export function buildRentalListingReleaseGate(options = {}) {
     check('tab_contract', 'Detail tab contract', hasEvery(tabKeys, REQUIRED_DETAIL_TABS), REQUIRED_DETAIL_TABS.join(', ')),
     check('tab_routes', 'Detail tabs have routes', RENTAL_LISTING_DETAIL_TABS.every((tab) => routeMap[tab.key]), 'Every tab resolves to a rental listing route'),
     check('property24_readiness_contract', 'Property24 readiness contract', hasEvery(readiness.items.map((item) => item.key), PROPERTY24_RENTAL_READINESS_FIELDS), `${readiness.items.length}/${PROPERTY24_RENTAL_READINESS_FIELDS.length} fields`),
+    check('property24_field_comparison_contract', 'Property24 field comparison contract', property24FieldComparison.readyForBackendAdapter === true, `${property24FieldComparison.summary.blockers} blockers, ${property24FieldComparison.summary.warnings} warnings`),
     check('property24_ready_fixture', 'Property24 ready fixture', readiness.readyToPublish && readiness.readinessPercent === 100, `${readiness.readinessPercent}% ready`),
     check('publish_request_guarded', 'Publish request is guarded', publishRequest.canPrepare && publishRequest.status === 'ready_for_backend_publish', publishRequest.status),
     check('publish_live_write_disabled', 'Live portal write disabled', publishRequest.liveWriteEnabled === false && publishRequest.requiresBackendPublisher === true, 'Backend publisher still required'),
@@ -152,6 +158,7 @@ export function buildRentalListingReleaseGate(options = {}) {
     checks,
     failedChecks,
     readiness,
+    property24FieldComparison,
     publishRequest,
     architecture,
   }

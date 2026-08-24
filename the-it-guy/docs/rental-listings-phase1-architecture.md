@@ -206,6 +206,60 @@ Property24 rental publishing must be readiness-first. A rental listing should no
 
 Actual publishing remains gated until the rental payload is previewed and verified against Property24 Listing Service v53.
 
+## Property24 Field Comparison Contract
+
+Phase 1 adds a formal comparison between Arch9 rental fields and the Property24 Listing Service v53 payload.
+
+The contract lives in:
+
+- `src/services/rentals/rentalListingProperty24FieldComparisonModel.js`
+- `scripts/rental-property24-field-comparison.test.mjs`
+
+It answers, for each rental syndication field:
+
+- where the value comes from in Arch9
+- where it must land in Property24
+- whether it is required, optional, or an internal Arch9 publish gate
+- whether the value is mapped, defaulted, missing, or still needs a Property24 ID mapping
+- whether the issue blocks backend publish wiring
+
+Important outcomes:
+
+- fake string IDs such as `p24-agent-1` are rejected because Property24 expects integer IDs
+- monthly rent maps to `price`
+- rental availability maps to `occupationDate`
+- listing expiry still needs a real expiry or mandate end date
+- pets map to `propertyFeatures.petsAllowed` using `Yes`, `No`, or `DontKnow`
+- furnished status maps to `propertyFeatures.furnishedStatus` using `Yes`, `No`, or `Optional`
+- deposit and lease period map into `rentalInfo`
+- marketing approval and mandate status stay as Arch9 internal gates, not Property24 payload fields
+
+## Property24 Rental Backend Adapter
+
+Phase 2 adds a server-side rental adapter that converts a rental listing into the Property24 Listing Service v53 payload shape without calling Property24.
+
+The adapter lives in:
+
+- `server/services/property24RentalListingAdapter.js`
+- `scripts/rental-property24-backend-adapter.test.mjs`
+
+It keeps rental publishing separate from sale publishing while reusing the existing Property24 listing plan builder. The rental adapter adds the rental-only payload fields:
+
+- `listingType: Rental`
+- monthly rent into `price`
+- availability into `occupationDate`
+- deposit and lease period into `rentalInfo`
+- `rentalInfo.rentalRate`, defaulting to `Month`
+- rental pets and furnished values into the Property24 enum values
+
+Safety rules:
+
+- the adapter does not call the Property24 API
+- the adapter does not write to the database
+- the adapter does not mark a listing as published
+- fake Property24 IDs are never copied into the payload
+- missing real Property24 agent IDs remain a submit blocker in sandbox mode, but a safe preview can still be generated when the rest of the data is valid
+
 ## Phase 2 Entry Criteria
 
 Phase 2 can start when the contract in `src/services/rentals/rentalListingArchitecture.js` remains green.
