@@ -74,7 +74,7 @@ const SOURCE_OPTIONS = [
   { id: 'other', label: 'Other' },
 ]
 
-const ARCH9_PUBLIC_URL = (APP_ENV.VITE_ARCH9_PUBLIC_URL || 'https://app.arch9.co.za').replace(/\/+$/, '')
+const ARCH9_PUBLIC_URL = String(APP_ENV.VITE_ARCH9_PUBLIC_URL || 'https://app.arch9.co.za').trim().replace(/\/+$/, '')
 
 const PROSPECT_DEMO_COLOUR_CONTROLS = [
   { key: 'primaryColour', payloadKey: 'primary_colour', label: 'Primary', fallback: '#274C69', description: 'Buttons and header surfaces' },
