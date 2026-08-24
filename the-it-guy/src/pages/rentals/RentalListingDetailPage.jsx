@@ -112,6 +112,81 @@ function DetailPanel({ title, eyebrow, children }) {
   )
 }
 
+function Property24ReadinessItem({ item }) {
+  return (
+    <div className="flex items-start gap-3 rounded-[8px] border border-[#edf2f7] bg-white p-3">
+      <span className={`mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border ${item.complete ? 'border-[#cfe8dc] bg-[#f2fbf5] text-[#286b43]' : 'border-[#f0d5b5] bg-[#fffaf2] text-[#9f5f15]'}`}>
+        {item.complete ? <CheckCircle2 size={15} aria-hidden="true" /> : <ShieldCheck size={15} aria-hidden="true" />}
+      </span>
+      <div className="min-w-0">
+        <p className="text-sm font-semibold text-[#18324b]">{item.label}</p>
+        <p className="mt-1 text-xs font-semibold text-[#607891]">{item.detail || item.blocker}</p>
+      </div>
+    </div>
+  )
+}
+
+function Property24SyndicationPanel({ detail }) {
+  const readiness = detail.property24Readiness
+  const payload = readiness?.payloadPreview || {}
+  const blockers = readiness?.blockers || []
+  return (
+    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
+      <DetailPanel eyebrow="Syndication" title="Property24 Rental Readiness">
+        <div className="grid gap-3 md:grid-cols-3">
+          <FactCard
+            label="Portal status"
+            value={detail.property24StatusLabel}
+            detail="Current sync state"
+            icon={<CheckCircle2 size={18} aria-hidden="true" />}
+          />
+          <FactCard
+            label="Readiness"
+            value={`${readiness.readinessPercent}%`}
+            detail={`${readiness.completedCount}/${readiness.totalCount} checks complete`}
+            icon={<BadgeCheck size={18} aria-hidden="true" />}
+          />
+          <FactCard
+            label="Blockers"
+            value={String(blockers.length)}
+            detail={readiness.readyToPublish ? 'Ready for publish wiring' : 'Resolve before publish'}
+            icon={<ShieldCheck size={18} aria-hidden="true" />}
+          />
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          {readiness.items.map((item) => <Property24ReadinessItem key={item.key} item={item} />)}
+        </div>
+      </DetailPanel>
+
+      <div className="grid gap-4">
+        <DetailPanel eyebrow="Publishing blockers" title={readiness.readyToPublish ? 'No Blockers' : 'Resolve Before Publishing'}>
+          {blockers.length ? (
+            <div className="grid gap-2">
+              {blockers.map((blocker) => (
+                <div key={blocker.key} className="rounded-[8px] border border-[#f0d5b5] bg-[#fffaf2] p-3">
+                  <p className="text-sm font-semibold text-[#18324b]">{blocker.label}</p>
+                  <p className="mt-1 text-xs font-semibold text-[#9f5f15]">{blocker.detail}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="rounded-[8px] border border-[#cfe8dc] bg-[#f2fbf5] p-3 text-sm font-semibold text-[#286b43]">
+              This rental listing has the fields needed for the Property24 rental publish action once API wiring is enabled.
+            </p>
+          )}
+        </DetailPanel>
+
+        <DetailPanel eyebrow="Payload preview" title="Listing Service v53">
+          <pre className="max-h-[520px] overflow-auto rounded-[8px] border border-[#dbe6f2] bg-[#0f1f2f] p-4 text-xs font-semibold leading-relaxed text-[#d8e7f5]">
+            {JSON.stringify(payload, null, 2)}
+          </pre>
+        </DetailPanel>
+      </div>
+    </div>
+  )
+}
+
 function formField(name, value, onChange) {
   return {
     value,
@@ -314,13 +389,7 @@ function RentalTabContent({ activeTab, detail }) {
     )
   }
   if (activeTab === 'syndication') {
-    return (
-      <DetailPanel eyebrow="Syndication" title="Property24 Rental">
-        <DetailRow label="Portal status" value={detail.property24StatusLabel} />
-        <DetailRow label="Listing type" value="Rental" />
-        <DetailRow label="Publishing readiness" value={`${detail.readinessPercent}%`} />
-      </DetailPanel>
-    )
+    return <Property24SyndicationPanel detail={detail} />
   }
   if (activeTab === 'applications') {
     return (

@@ -6,6 +6,9 @@ import {
   buildRentalListingIndexRow,
   formatRentalIndexStatusLabel,
 } from './rentalListingIndexModel.js'
+import {
+  buildRentalProperty24Readiness,
+} from './rentalListingProperty24ReadinessModel.js'
 
 export const RENTAL_LISTING_DETAIL_VERSION = 'arch9_rental_listing_detail_v1'
 
@@ -91,6 +94,7 @@ export function buildRentalListingReadinessItems(row = {}) {
 export function buildRentalListingDetailView(listing = {}) {
   const row = buildRentalListingIndexRow(listing)
   const readinessItems = buildRentalListingReadinessItems(row)
+  const property24Readiness = buildRentalProperty24Readiness(listing)
   const completedReadinessCount = readinessItems.filter((item) => item.complete).length
   return {
     version: RENTAL_LISTING_DETAIL_VERSION,
@@ -98,6 +102,7 @@ export function buildRentalListingDetailView(listing = {}) {
     row,
     tabs: getRentalListingDetailTabs(row.id),
     readinessItems,
+    property24Readiness,
     completedReadinessCount,
     totalReadinessCount: readinessItems.length,
     readinessPercent: readinessItems.length ? Math.round((completedReadinessCount / readinessItems.length) * 100) : 0,
