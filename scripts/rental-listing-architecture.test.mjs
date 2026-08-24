@@ -39,6 +39,8 @@ assert.deepEqual(sharedSurfaceKeys, [
 assert.ok(SHARED_RESIDENTIAL_LISTING_SURFACES.every((surface) => surface.salesSurface && surface.rentalSurface))
 
 assert.equal(RENTAL_LISTING_ROUTES.index, '/agent/rentals/listings')
+assert.equal(RENTAL_LISTING_ROUTES.create, '/agent/rentals/listings/new')
+assert.equal(RENTAL_LISTING_ROUTES.legacyCreateQuery, '/agent/rentals/listings?create=rental')
 assert.equal(RENTAL_LISTING_ROUTES.detail, '/agent/rentals/listings/:listingId')
 assert.equal(getRentalListingRouteMap().syndication, '/agent/rentals/listings/:listingId/syndication')
 

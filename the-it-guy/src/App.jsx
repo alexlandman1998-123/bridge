@@ -237,6 +237,7 @@ const AuthCallback = lazy(() => import('./pages/AuthCallback'))
 const ResetPassword = lazy(() => import('./pages/ResetPassword'))
 const Arch9LaunchConcierge = lazy(() => import('./pages/Arch9LaunchConcierge'))
 const RentalApplicationsPage = lazy(() => import('./pages/rentals/RentalApplicationsPage'))
+const RentalListingCreatePage = lazy(() => import('./pages/rentals/RentalListingCreatePage'))
 const RentalListingsPage = lazy(() => import('./pages/rentals/RentalListingsPage'))
 const RentalTenanciesPage = lazy(() => import('./pages/rentals/RentalTenanciesPage'))
 const BridgeAgentsPage = lazyNamed(() => import('./pages/BridgeLanding'), 'BridgeAgentsPage')
@@ -2795,6 +2796,18 @@ function AppRoutes() {
                           title="Rental Calendar"
                           description="Rental inspections, viewings, applicant follow-ups, and lease appointments will be coordinated here."
                         />
+                      </RentalModuleGate>
+                    </RentalWorkspaceGuard>
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/agent/rentals/listings/new"
+                element={
+                  <RoleRoute allowedRoles={['agent']}>
+                    <RentalWorkspaceGuard>
+                      <RentalModuleGate moduleId={RENTAL_MODULES.listings}>
+                        <RentalListingCreatePage />
                       </RentalModuleGate>
                     </RentalWorkspaceGuard>
                   </RoleRoute>

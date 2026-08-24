@@ -8,22 +8,12 @@ import {
   Loader2,
   Plus,
   RefreshCw,
-  Save,
   Search,
-  ShieldCheck,
   Users,
 } from 'lucide-react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
-import {
-  createRentalListingDraft,
-  listRentalListingsForAgent,
-} from '../../services/rentals/rentalListingDraftService'
-import {
-  buildRentalListingTitle,
-  RENTAL_LISTING_INITIAL_FORM,
-  RENTAL_SELECT_OPTIONS,
-  validateRentalListingDraftForm,
-} from '../../services/rentals/rentalListingDraftModel'
+import { listRentalListingsForAgent } from '../../services/rentals/rentalListingDraftService'
 import {
   buildRentalListingIndexRows,
   filterRentalListingIndexRows,
@@ -55,26 +45,6 @@ function formatDate(value) {
     month: 'short',
     year: 'numeric',
   }).format(date)
-}
-
-function formField(name, value, onChange) {
-  return {
-    value,
-    onChange: (event) => onChange(name, event.target.value),
-  }
-}
-
-function SelectField({ label, name, value, options, onChange }) {
-  return (
-    <label className="form-field">
-      <span>{label}</span>
-      <select {...formField(name, value, onChange)}>
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>{option.label}</option>
-        ))}
-      </select>
-    </label>
-  )
 }
 
 function StatusBadge({ children, tone = 'neutral' }) {
@@ -180,20 +150,18 @@ function RentalListingIndexCard({ row }) {
 }
 
 export default function RentalListingsPage() {
+  const navigate = useNavigate()
+  const location = useLocation()
   const workspaceContext = useWorkspace()
   const rentalScope = useMemo(() => resolveRentalWorkspaceScope(workspaceContext), [workspaceContext])
   const organisationId = rentalScope.organisationId
-  const branchId = rentalScope.branchId
   const assignedAgentId = rentalScope.assignedAgentId
-  const [form, setForm] = useState(() => ({ ...RENTAL_LISTING_INITIAL_FORM }))
   const [listings, setListings] = useState([])
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
+  const [successMessage, setSuccessMessage] = useState('')
   const [query, setQuery] = useState('')
   const [statusTab, setStatusTab] = useState('all')
-  const [createPanelOpen, setCreatePanelOpen] = useState(false)
 
   const rentalRows = useMemo(() => buildRentalListingIndexRows(listings), [listings])
   const summary = useMemo(() => summarizeRentalListingIndexRows(rentalRows), [rentalRows])
@@ -201,18 +169,6 @@ export default function RentalListingsPage() {
     () => filterRentalListingIndexRows(rentalRows, { query, status: statusTab }),
     [query, rentalRows, statusTab],
   )
-
-  const validationErrors = useMemo(
-    () => validateRentalListingDraftForm(form, { organisationId }),
-    [form, organisationId],
-  )
-  const canSubmit = validationErrors.length === 0 && !saving
-
-  const updateForm = useCallback((name, value) => {
-    setForm((current) => ({ ...current, [name]: value }))
-    setError('')
-    setSuccess('')
-  }, [])
 
   const loadListings = useCallback(async () => {
     if (!assignedAgentId || !organisationId) {
@@ -237,33 +193,20 @@ export default function RentalListingsPage() {
     void loadListings()
   }, [loadListings])
 
-  async function handleSubmit(event) {
-    event.preventDefault()
-    if (!canSubmit) {
-      setError(validationErrors[0] || 'Complete the required rental listing fields.')
-      return
+  useEffect(() => {
+    const params = new URLSearchParams(location.search || '')
+    if (params.get('create') === 'rental') {
+      navigate('/agent/rentals/listings/new', { replace: true })
     }
-    try {
-      setSaving(true)
-      setError('')
-      setSuccess('')
-      const created = await createRentalListingDraft(form, {
-        organisationId,
-        branchId,
-        assignedAgentId,
-        performedBy: assignedAgentId,
-      })
-      setSuccess(`${buildRentalListingTitle(form)} was captured as a rental listing draft.`)
-      setForm({ ...RENTAL_LISTING_INITIAL_FORM })
-      setCreatePanelOpen(false)
-      setListings((current) => [created.listing, ...current])
-      void loadListings()
-    } catch (saveError) {
-      setError(saveError?.message || 'Unable to create the rental listing draft.')
-    } finally {
-      setSaving(false)
+  }, [location.search, navigate])
+
+  useEffect(() => {
+    const createdTitle = location.state?.rentalListingCreatedTitle
+    if (createdTitle) {
+      setSuccessMessage(`${createdTitle} was captured as a rental listing draft.`)
+      navigate(location.pathname, { replace: true, state: null })
     }
-  }
+  }, [location.pathname, location.state, navigate])
 
   return (
     <section className="page-content">
@@ -286,7 +229,7 @@ export default function RentalListingsPage() {
               {loading ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <RefreshCw size={16} aria-hidden="true" />}
               Refresh
             </button>
-            <button type="button" className="ui-pill-button ui-pill-button-active" onClick={() => setCreatePanelOpen((current) => !current)}>
+            <button type="button" className="ui-pill-button ui-pill-button-active" onClick={() => navigate('/agent/rentals/listings/new')}>
               <Plus size={16} aria-hidden="true" />
               Create Rental Listing
             </button>
@@ -329,134 +272,11 @@ export default function RentalListingsPage() {
           </div>
         </div>
 
-        {createPanelOpen ? (
-          <form onSubmit={handleSubmit} className="ui-panel ui-panel-body grid gap-6">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="text-xs font-semibold uppercase text-[#607891]">Rental draft</p>
-                <h2 className="text-lg font-semibold text-[#18324b]">Create rental listing</h2>
-              </div>
-              <span className="inline-flex items-center gap-2 rounded-full border border-[#dbe6f2] px-3 py-1 text-xs font-semibold text-[#42617f]">
-                <ShieldCheck size={14} aria-hidden="true" />
-                Private listing source
-              </span>
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-3">
-              <label className="form-field md:col-span-2">
-                <span>Listing title</span>
-                <input {...formField('title', form.title, updateForm)} placeholder="2 bedroom apartment in Green Point" />
-              </label>
-              <SelectField label="Property type" name="propertyType" value={form.propertyType} onChange={updateForm} options={[
-                { value: 'Apartment', label: 'Apartment' },
-                { value: 'House', label: 'House' },
-                { value: 'Townhouse', label: 'Townhouse' },
-                { value: 'Duplex', label: 'Duplex' },
-                { value: 'Studio', label: 'Studio' },
-              ]} />
-              <label className="form-field md:col-span-3">
-                <span>Property address</span>
-                <input {...formField('propertyAddress', form.propertyAddress, updateForm)} placeholder="Street address or complex name" />
-              </label>
-              <label className="form-field">
-                <span>Suburb</span>
-                <input {...formField('suburb', form.suburb, updateForm)} placeholder="Suburb" />
-              </label>
-              <label className="form-field">
-                <span>City</span>
-                <input {...formField('city', form.city, updateForm)} placeholder="City" />
-              </label>
-              <label className="form-field">
-                <span>Province</span>
-                <input {...formField('province', form.province, updateForm)} placeholder="Province" />
-              </label>
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-3">
-              <label className="form-field">
-                <span>Landlord name</span>
-                <input {...formField('landlordName', form.landlordName, updateForm)} placeholder="Landlord or entity name" />
-              </label>
-              <label className="form-field">
-                <span>Landlord email</span>
-                <input type="email" {...formField('landlordEmail', form.landlordEmail, updateForm)} placeholder="landlord@example.com" />
-              </label>
-              <label className="form-field">
-                <span>Landlord phone</span>
-                <input {...formField('landlordPhone', form.landlordPhone, updateForm)} placeholder="+27..." />
-              </label>
-              <SelectField label="Landlord type" name="landlordType" value={form.landlordType} onChange={updateForm} options={RENTAL_SELECT_OPTIONS.landlordType} />
-              <SelectField label="Rental mandate" name="mandateStatus" value={form.mandateStatus} onChange={updateForm} options={RENTAL_SELECT_OPTIONS.mandateStatus} />
-              <SelectField label="Marketing approval" name="marketingApprovalStatus" value={form.marketingApprovalStatus} onChange={updateForm} options={RENTAL_SELECT_OPTIONS.marketingApprovalStatus} />
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-4">
-              <label className="form-field">
-                <span>Monthly rent</span>
-                <input type="number" min="0" {...formField('monthlyRent', form.monthlyRent, updateForm)} placeholder="18500" />
-              </label>
-              <label className="form-field">
-                <span>Deposit</span>
-                <input type="number" min="0" {...formField('depositAmount', form.depositAmount, updateForm)} placeholder="37000" />
-              </label>
-              <label className="form-field">
-                <span>Available from</span>
-                <input type="date" {...formField('availableFrom', form.availableFrom, updateForm)} />
-              </label>
-              <label className="form-field">
-                <span>Lease period months</span>
-                <input type="number" min="1" {...formField('leasePeriodMonths', form.leasePeriodMonths, updateForm)} />
-              </label>
-              <label className="form-field">
-                <span>Bedrooms</span>
-                <input type="number" min="0" {...formField('bedrooms', form.bedrooms, updateForm)} />
-              </label>
-              <label className="form-field">
-                <span>Bathrooms</span>
-                <input type="number" min="0" step="0.5" {...formField('bathrooms', form.bathrooms, updateForm)} />
-              </label>
-              <label className="form-field">
-                <span>Parking bays</span>
-                <input type="number" min="0" {...formField('parkingBays', form.parkingBays, updateForm)} />
-              </label>
-              <SelectField label="Furnished" name="furnishedStatus" value={form.furnishedStatus} onChange={updateForm} options={RENTAL_SELECT_OPTIONS.furnishedStatus} />
-              <SelectField label="Pets" name="petsPolicy" value={form.petsPolicy} onChange={updateForm} options={RENTAL_SELECT_OPTIONS.petsPolicy} />
-              <SelectField label="Utilities" name="utilitiesPolicy" value={form.utilitiesPolicy} onChange={updateForm} options={RENTAL_SELECT_OPTIONS.utilitiesPolicy} />
-              <SelectField label="Inspection" name="inspectionStatus" value={form.inspectionStatus} onChange={updateForm} options={RENTAL_SELECT_OPTIONS.inspectionStatus} />
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-3">
-              <label className="form-field">
-                <span>Public description</span>
-                <textarea rows={5} {...formField('description', form.description, updateForm)} placeholder="Short rental marketing description" />
-              </label>
-              <label className="form-field">
-                <span>Inspection notes</span>
-                <textarea rows={5} {...formField('inspectionNotes', form.inspectionNotes, updateForm)} placeholder="Inspection checklist status, repairs, access notes" />
-              </label>
-              <label className="form-field">
-                <span>Internal notes</span>
-                <textarea rows={5} {...formField('internalNotes', form.internalNotes, updateForm)} placeholder="Landlord preferences, tenant profile, team notes" />
-              </label>
-            </div>
-
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="status-message">
-                Required: landlord name, landlord contact, property address, monthly rent, and availability date.
-              </p>
-              <button type="submit" className="ui-pill-button ui-pill-button-active" disabled={!canSubmit}>
-                {saving ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Save size={16} aria-hidden="true" />}
-                Save rental draft
-              </button>
-            </div>
-          </form>
-        ) : null}
-
         {error ? <p className="rounded-[8px] border border-[#f2c6c6] bg-[#fff7f7] px-4 py-3 text-sm font-semibold text-[#9f3131]">{error}</p> : null}
-        {success ? (
+        {successMessage ? (
           <p className="inline-flex items-center gap-2 rounded-[8px] border border-[#cfe8dc] bg-[#f2fbf5] px-4 py-3 text-sm font-semibold text-[#286b43]">
             <CheckCircle2 size={16} aria-hidden="true" />
-            {success}
+            {successMessage}
           </p>
         ) : null}
 
@@ -477,7 +297,7 @@ export default function RentalListingsPage() {
               <p className="mx-auto mt-2 max-w-xl text-sm text-[#607891]">
                 Create a rental listing draft or adjust the search and status filters.
               </p>
-              <button type="button" className="ui-pill-button ui-pill-button-active mx-auto mt-4" onClick={() => setCreatePanelOpen(true)}>
+              <button type="button" className="ui-pill-button ui-pill-button-active mx-auto mt-4" onClick={() => navigate('/agent/rentals/listings/new')}>
                 <Plus size={16} aria-hidden="true" />
                 Create Rental Listing
               </button>

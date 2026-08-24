@@ -37,7 +37,7 @@ Full rent collection, arrears, landlord payouts, and rental accounting stay out 
 | Surface | Sales | Rentals |
 | --- | --- | --- |
 | Index | `/listings` | `/agent/rentals/listings` |
-| Create flow | Quick Add Listing | Create Rental Listing |
+| Create flow | Quick Add Listing | `/agent/rentals/listings/new` |
 | Detail | `/agent/listings/:listingId` | `/agent/rentals/listings/:listingId` |
 | Media | Listing media | Listing media |
 | Mandate | Sale mandate | Rental mandate |
@@ -63,6 +63,7 @@ The rental listing detail page should use the same visual shell and operating rh
 Route map:
 
 - `/agent/rentals/listings`
+- `/agent/rentals/listings/new`
 - `/agent/rentals/listings/:listingId`
 - `/agent/rentals/listings/:listingId/property`
 - `/agent/rentals/listings/:listingId/landlord`

@@ -93,6 +93,7 @@
     "test:rental-listing-draft-model": "node scripts/rental-listing-draft-model.test.mjs",
     "test:rental-listing-architecture": "node scripts/rental-listing-architecture.test.mjs",
     "test:rental-listing-index-model": "node scripts/rental-listing-index-model.test.mjs",
+    "test:rental-listing-create-flow": "node scripts/rental-listing-create-flow.test.mjs",
     "test:rental-application-draft-model": "node scripts/rental-application-draft-model.test.mjs",
     "test:rental-lease-workflow-model": "node scripts/rental-lease-workflow-model.test.mjs",
     "test:rental-module-availability": "node scripts/rental-module-availability.test.mjs",

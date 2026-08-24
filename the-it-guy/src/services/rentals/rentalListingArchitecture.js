@@ -62,7 +62,8 @@ export const SHARED_RESIDENTIAL_LISTING_SURFACES = Object.freeze([
 
 export const RENTAL_LISTING_ROUTES = Object.freeze({
   index: '/agent/rentals/listings',
-  create: '/agent/rentals/listings?create=rental',
+  create: '/agent/rentals/listings/new',
+  legacyCreateQuery: '/agent/rentals/listings?create=rental',
   detail: '/agent/rentals/listings/:listingId',
   property: '/agent/rentals/listings/:listingId/property',
   landlord: '/agent/rentals/listings/:listingId/landlord',
