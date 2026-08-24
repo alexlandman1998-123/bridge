@@ -3876,6 +3876,9 @@ function ClientOnboarding() {
     const hasValue = normalizeInputValue(value).length > 0
     const showSuccess = fieldTouched && !showError && hasValue
     const isDateField = fieldConfig.type === 'date'
+    const isNumericField = fieldConfig.type === 'number'
+    const inputType = isNumericField ? 'text' : fieldConfig.type || 'text'
+    const numericInputMode = ['number_of_dependants', 'years_in_business'].includes(fieldConfig.key) ? 'numeric' : 'decimal'
     const baseInputClass = `${DETAIL_INPUT_CLASS} ${
       showError
         ? 'border-[#d92d20] focus:border-[#d92d20] focus:ring-[#d92d20]/12'
@@ -3964,7 +3967,7 @@ function ClientOnboarding() {
         ) : (
           <input
             className={baseInputClass}
-            type={fieldConfig.type || 'text'}
+            type={inputType}
             value={value}
             onChange={(event) => onChange(event.target.value)}
             onBlur={onBlur}
@@ -3972,8 +3975,10 @@ function ClientOnboarding() {
             inputMode={
               fieldConfig.type === 'email'
                 ? 'email'
-                : fieldConfig.type === 'number' || fieldConfig.type === 'tel'
-                  ? 'numeric'
+                : isNumericField
+                  ? numericInputMode
+                  : fieldConfig.type === 'tel'
+                    ? 'numeric'
                   : 'text'
             }
             autoComplete={

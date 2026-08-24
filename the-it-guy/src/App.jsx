@@ -263,6 +263,7 @@ const RetiredOfferWorkflowPage = lazy(() => import('./pages/RetiredOfferWorkflow
 const ClientModulePage = lazy(() => import('./pages/ClientModulePage'))
 const ClientOnboarding = lazy(() => import('./pages/ClientOnboarding'))
 const ClientPortal = lazy(() => import('./pages/ClientPortal'))
+const ProspectBuyerDemo = lazy(() => import('./pages/ProspectBuyerDemo'))
 const ClientProfile = lazy(() => import('./pages/ClientProfile'))
 const Clients = lazy(() => import('./pages/Clients'))
 const ConveyancerDevelopments = lazy(() => import('./pages/ConveyancerDevelopments'))
@@ -3488,8 +3489,8 @@ function AppRoutes() {
           <Route path="/quote/:token" element={<AppErrorBoundary scope="attorney-quote-decision" title="Attorney quote failed to load"><AttorneyQuoteDecisionPage /></AppErrorBoundary>} />
           <Route path="/demo/onboarding-links" element={<AppErrorBoundary scope="demo-onboarding-links" title="Demo onboarding links failed to load"><OnboardingLinksDemoPage /></AppErrorBoundary>} />
           <Route path="/demo/:token/onboarding" element={<AppErrorBoundary scope="client-portal-route" title="Buyer onboarding demo failed to load"><ClientOnboarding /></AppErrorBoundary>} />
-          <Route path="/demo/:token/buyer" element={<AppErrorBoundary scope="client-portal-route" title="Buyer portal demo failed to load"><ClientPortal /></AppErrorBoundary>} />
-          <Route path="/demo/:token/buyer/:section" element={<AppErrorBoundary scope="client-portal-route" title="Buyer portal demo failed to load"><ClientPortal /></AppErrorBoundary>} />
+          <Route path="/demo/:token/buyer" element={<AppErrorBoundary scope="prospect-buyer-demo-route" title="Buyer portal demo failed to load"><ProspectBuyerDemo /></AppErrorBoundary>} />
+          <Route path="/demo/:token/buyer/:section" element={<AppErrorBoundary scope="prospect-buyer-demo-route" title="Buyer portal demo failed to load"><ProspectBuyerDemo /></AppErrorBoundary>} />
           <Route path="/client/:token" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/client/:token/buying" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/client/:token/buying/:section" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
