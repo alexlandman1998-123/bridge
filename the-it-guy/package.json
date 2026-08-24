@@ -43,6 +43,7 @@
     "verify:direct-listing-global": "npm run test:direct-listing-intake-model-phase1 && npm run test:direct-listing-quick-add-phase2 && npm run test:direct-listing-persistence-phase3 && npm run test:direct-listing-requirement-sync-phase4 && npm run test:direct-listing-seller-portal-phase5 && npm run test:direct-listing-seller-portal-phase6 && npm run test:direct-listing-operational-audit-phase7 && npm run test:direct-listing-release-readiness-phase8",
     "test:rental-property24-field-comparison": "node scripts/rental-property24-field-comparison.test.mjs",
     "test:rental-property24-backend-adapter": "node scripts/rental-property24-backend-adapter.test.mjs",
+    "test:rental-property24-api-preview": "node scripts/rental-property24-api-preview.test.mjs",
     "test:legal-template-platform-defaults-phase1": "node scripts/legal-template-platform-defaults-phase1.test.mjs",
     "test:legal-template-platform-defaults-phase2": "node scripts/legal-template-platform-defaults-phase2.test.mjs",
     "test:legal-template-platform-defaults-phase3": "node scripts/legal-template-platform-defaults-phase3.test.mjs",

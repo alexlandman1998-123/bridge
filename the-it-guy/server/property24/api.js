@@ -16,6 +16,7 @@ import {
 } from './client.js'
 import {
   applyProperty24ListingPublish,
+  buildProperty24RentalListingSubmitPlan,
   buildProperty24ListingSubmitPlan,
   createProperty24PublishReport,
   resolveProperty24ListingPublishConfiguration,
@@ -156,6 +157,9 @@ function matchProperty24Route(requestUrl, routeParams = {}) {
   if (routeParts[0] === 'listings' && routeParts[2] === 'preview') {
     return { name: 'previewListing', listingId: normalizeProperty24Text(routeParams.listingId || routeParts[1]) }
   }
+  if (routeParts[0] === 'rentals' && routeParts[2] === 'preview') {
+    return { name: 'previewRentalListing', listingId: normalizeProperty24Text(routeParams.listingId || routeParts[1]) }
+  }
   if (routeParts[0] === 'listings' && routeParts[2] === 'publish') {
     return { name: 'publishListing', listingId: normalizeProperty24Text(routeParams.listingId || routeParts[1]) }
   }
@@ -260,7 +264,7 @@ function getBearerToken(headers = {}) {
 }
 
 function canUseBrowserProperty24ListingAuth({ headers = {}, config = {}, route = {} } = {}) {
-  return ['previewListing', 'publishListing', 'listingStatus', 'updateListingStatus', 'listingLeads'].includes(route?.name) &&
+  return ['previewListing', 'previewRentalListing', 'publishListing', 'listingStatus', 'updateListingStatus', 'listingLeads'].includes(route?.name) &&
     Boolean(getBearerToken(headers) && config.supabaseUrl && config.serviceRoleKey)
 }
 
@@ -580,6 +584,7 @@ export async function createProperty24ApiResponse({
     const createSupabase = dependencies.createSupabase || createSupabaseFromConfig
     const createProperty24 = dependencies.createProperty24 || createProperty24FromConfig
     const buildSubmitPlan = dependencies.buildSubmitPlan || buildProperty24ListingSubmitPlan
+    const buildRentalSubmitPlan = dependencies.buildRentalSubmitPlan || buildProperty24RentalListingSubmitPlan
     const resolvePublishConfig = dependencies.resolvePublishConfig || resolveProperty24ListingPublishConfiguration
     const applyPublish = dependencies.applyPublish || applyProperty24ListingPublish
     const applyControlledPublish = dependencies.applyControlledPublish || applyControlledProperty24ListingPublish
@@ -614,6 +619,57 @@ export async function createProperty24ApiResponse({
         })
       }
       const preview = await buildSubmitPlan({
+        supabase,
+        listingId: resolvedConfig.listingId,
+        agencyId: resolvedConfig.agencyId,
+        agentId: resolvedConfig.agentId,
+        agentSourceReference: resolvedConfig.agentSourceReference,
+        environment: resolvedConfig.environment,
+        sandboxPayloadTestMode,
+        suburbId: resolvedConfig.suburbId,
+        propertyTypeId: resolvedConfig.propertyTypeId,
+        expiryDate: resolvedConfig.expiryDate,
+        listingNumber: resolvedConfig.listingNumber,
+        storageBaseUrl: resolvedConfig.supabaseUrl,
+        maxImages: resolvedConfig.maxImages,
+        photosChanged: resolvedConfig.photosChanged,
+        convertImagesToJpeg: true,
+      })
+      const report = createProperty24PublishReport({ config: resolvedConfig, preview, apply: false })
+      return buildJsonResponse(200, {
+        route: route.name,
+        status: report.status,
+        listingId: resolvedConfig.listingId,
+        mapping: resolvedConfig.property24ResolvedMapping || null,
+        preview: toPublicPreview(preview),
+        report,
+      })
+    }
+
+    if (route.name === 'previewRentalListing') {
+      const missing = getMissingConfiguration(config, {
+        apiToken: !canUseBrowserProperty24ListingAuth({ headers, config, route }),
+        supabase: true,
+        listing: true,
+      })
+      if (missing.length) return buildJsonResponse(400, { error: 'missing_configuration', missingConfiguration: missing })
+      const supabase = createSupabase(config)
+      const browserAuthFailure = await authenticateBrowserProperty24ListingRequest({ supabase, headers, config })
+      if (browserAuthFailure) return browserAuthFailure
+      const resolvedConfig = await resolvePublishConfig({ supabase, config, listingId: config.listingId })
+      const sandboxPayloadTestMode = canUseSandboxProperty24PayloadTest(resolvedConfig)
+      const resolvedMissing = []
+      if (!resolvedConfig.agencyId) resolvedMissing.push('PROPERTY24_DEFAULT_AGENCY_ID or agencyId')
+      if (!sandboxPayloadTestMode && !resolvedConfig.agentId) resolvedMissing.push('PROPERTY24_DEFAULT_AGENT_ID or agentId')
+      if (!sandboxPayloadTestMode && !resolvedConfig.agentSourceReference) resolvedMissing.push('PROPERTY24_DEFAULT_AGENT_SOURCE_REFERENCE or agentSourceReference')
+      if (resolvedMissing.length) {
+        return buildJsonResponse(400, {
+          error: 'missing_configuration',
+          missingConfiguration: resolvedMissing,
+          mapping: resolvedConfig.property24ResolvedMapping || null,
+        })
+      }
+      const preview = await buildRentalSubmitPlan({
         supabase,
         listingId: resolvedConfig.listingId,
         agencyId: resolvedConfig.agencyId,

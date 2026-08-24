@@ -260,6 +260,25 @@ Safety rules:
 - fake Property24 IDs are never copied into the payload
 - missing real Property24 agent IDs remain a submit blocker in sandbox mode, but a safe preview can still be generated when the rest of the data is valid
 
+## Property24 Rental Preview API
+
+Phase 3 exposes the rental adapter through an internal Property24 API route:
+
+- `POST /api/property24/rentals/:listingId/preview`
+
+The route:
+
+- uses the same Property24 API auth and signed-in browser auth pattern as sale listing preview
+- loads the rental listing, publication data, media, and existing sync state
+- resolves the agency and mapped agent where available
+- runs the rental backend adapter
+- returns a redacted preview payload and blocker summary
+- does not call Property24
+- does not write to the database
+- does not publish the listing
+
+Rental preview intentionally lets the adapter report missing `suburbId` and `propertyTypeId` as payload blockers instead of blocking the route before the listing is loaded. This lets the UI show a useful readiness checklist on the rental marketing/syndication tab.
+
 ## Phase 2 Entry Criteria
 
 Phase 2 can start when the contract in `src/services/rentals/rentalListingArchitecture.js` remains green.

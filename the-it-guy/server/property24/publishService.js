@@ -5,6 +5,9 @@ import {
   normalizeProperty24PreviewText,
 } from './listingDataService.js'
 import {
+  createProperty24RentalListingPlan,
+} from '../services/property24RentalListingAdapter.js'
+import {
   PROPERTY24_EXDEV_BASE_URL,
   summarizeProperty24Payload,
 } from './client.js'
@@ -33,6 +36,24 @@ function asObject(value) {
 
 function asArray(value) {
   return Array.isArray(value) ? value : []
+}
+
+function isRentalListingBundle(bundle = {}) {
+  const listing = asObject(bundle.listing)
+  const publication = asObject(bundle.publication)
+  const facts = asObject(listing.seller_canonical_facts || listing.sellerCanonicalFacts)
+  const rentalInfo = asObject(facts.rentalInfo || facts.rental_info)
+  const category = normalizeLower(firstText(
+    listing.listing_category,
+    listing.listingCategory,
+    listing.listing_type,
+    listing.listingType,
+    publication.listing_type,
+    publication.listingType,
+    facts.listingType,
+    facts.listing_type,
+  ))
+  return category.includes('rental') || Object.keys(rentalInfo).length > 0
 }
 
 function isMissingRelationError(error) {
@@ -317,6 +338,66 @@ export async function buildProperty24ListingSubmitPlan({
       listingNumber,
       photosChanged,
       includeSubmitPayload: true,
+    },
+  })
+}
+
+export async function buildProperty24RentalListingSubmitPlan({
+  supabase,
+  listingId,
+  agencyId,
+  agentId,
+  agentSourceReference,
+  environment = 'exdev',
+  sandboxPayloadTestMode = true,
+  suburbId,
+  propertyTypeId,
+  expiryDate,
+  listingNumber,
+  storageBaseUrl = '',
+  maxImages = 20,
+  photosChanged = true,
+  convertImagesToJpeg = true,
+} = {}) {
+  if (!supabase) throw new Error('Supabase client is required.')
+  const bundle = await fetchArch9ListingForProperty24Preview({ client: supabase, listingId })
+  if (!isRentalListingBundle(bundle)) {
+    const error = new Error('This endpoint only supports rental listings.')
+    error.code = 'rental_listing_required'
+    error.status = 400
+    throw error
+  }
+  const loaded = await loadProperty24ImageBytesForPreview({
+    media: bundle.media,
+    storageClient: supabase,
+    storageBaseUrl,
+    maxImages,
+    convertImagesToJpeg,
+  })
+
+  return createProperty24RentalListingPlan({
+    ...bundle,
+    media: loaded.media,
+    agentMapping: {
+      property24AgentId: agentId,
+      sourceReference: agentSourceReference,
+    },
+    catalogMapping: {
+      suburbId,
+      propertyTypeId,
+    },
+    options: {
+      agencyId,
+      environment,
+      sandboxPayloadTestMode,
+      expiryDate,
+      listingNumber,
+      photosChanged,
+      includeSubmitPayload: true,
+    },
+    imageByteLoad: {
+      summary: loaded.summary,
+      results: loaded.results,
     },
   })
 }

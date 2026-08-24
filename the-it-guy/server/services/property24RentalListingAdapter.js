@@ -216,6 +216,7 @@ export function createProperty24RentalListingPlan({
   existingSync = {},
   agentMapping = {},
   catalogMapping = {},
+  imageByteLoad = null,
   options = {},
 } = {}) {
   const fieldComparison = buildRentalProperty24FieldComparison(listing)
@@ -279,6 +280,7 @@ export function createProperty24RentalListingPlan({
     canSubmit,
     dataBlockers,
     technicalBlockers,
+    ...(imageByteLoad ? { imageByteLoad } : {}),
     fieldComparison,
     summary: {
       ...basePlan.summary,

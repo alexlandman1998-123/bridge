@@ -183,6 +183,10 @@ const DEVELOPER_PERMISSIONS = [
   PERMISSIONS.manageUnits,
   PERMISSIONS.viewSalesPipeline,
   PERMISSIONS.manageDeveloperTransactions,
+  PERMISSIONS.viewListings,
+  PERMISSIONS.createListings,
+  PERMISSIONS.editListings,
+  PERMISSIONS.publishListings,
   PERMISSIONS.viewDeveloperFinancials,
   PERMISSIONS.exportDeveloperReports,
   PERMISSIONS.manageDevelopmentTeam,
@@ -343,11 +347,11 @@ export const permissionsByWorkspaceRole = Object.freeze({
   [WORKSPACE_TYPES.developerCompany]: Object.freeze({
     [ORG_ROLES.owner]: mergeGrants(allGeneral, grant(ACCESS_SCOPES.allWorkspace, DEVELOPER_PERMISSIONS)),
     [ORG_ROLES.director]: mergeGrants(allGeneral, grant(ACCESS_SCOPES.allWorkspace, DEVELOPER_PERMISSIONS)),
-    [ORG_ROLES.salesManager]: mergeGrants(grant(ACCESS_SCOPES.allWorkspace, [PERMISSIONS.viewDashboard, PERMISSIONS.viewDeveloperDashboard, PERMISSIONS.viewDevelopments, PERMISSIONS.editDevelopments, PERMISSIONS.manageUnits, PERMISSIONS.viewSalesPipeline, PERMISSIONS.manageDeveloperTransactions, PERMISSIONS.viewClients, PERMISSIONS.viewTransactions, PERMISSIONS.viewReports, PERMISSIONS.exportDeveloperReports, PERMISSIONS.manageDevelopmentTeam])),
-    [ORG_ROLES.developmentManager]: mergeGrants(grant(ACCESS_SCOPES.allWorkspace, [PERMISSIONS.viewDashboard, PERMISSIONS.viewDeveloperDashboard, PERMISSIONS.viewDevelopments, PERMISSIONS.createDevelopments, PERMISSIONS.editDevelopments, PERMISSIONS.manageUnits, PERMISSIONS.viewSalesPipeline, PERMISSIONS.manageDeveloperTransactions, PERMISSIONS.viewClients, PERMISSIONS.viewTransactions, PERMISSIONS.viewReports])),
-    [ORG_ROLES.salesAgent]: grant(ACCESS_SCOPES.assignedOnly, [PERMISSIONS.viewDashboard, PERMISSIONS.viewDeveloperDashboard, PERMISSIONS.viewDevelopments, PERMISSIONS.viewSalesPipeline, PERMISSIONS.viewClients, PERMISSIONS.viewTransactions]),
-    [ORG_ROLES.adminStaff]: mergeGrants(readOnlyGeneral, grant(ACCESS_SCOPES.teamOnly, [PERMISSIONS.viewDeveloperDashboard, PERMISSIONS.viewDevelopments, PERMISSIONS.manageUnits, PERMISSIONS.viewSalesPipeline, PERMISSIONS.viewClients, PERMISSIONS.viewTransactions])),
-    [ORG_ROLES.viewer]: mergeGrants(readOnlyGeneral, grant(ACCESS_SCOPES.assignedOnly, [PERMISSIONS.viewDeveloperDashboard, PERMISSIONS.viewDevelopments, PERMISSIONS.viewSalesPipeline, PERMISSIONS.viewClients, PERMISSIONS.viewTransactions])),
+    [ORG_ROLES.salesManager]: mergeGrants(grant(ACCESS_SCOPES.allWorkspace, [PERMISSIONS.viewDashboard, PERMISSIONS.viewDeveloperDashboard, PERMISSIONS.viewDevelopments, PERMISSIONS.editDevelopments, PERMISSIONS.manageUnits, PERMISSIONS.viewSalesPipeline, PERMISSIONS.manageDeveloperTransactions, PERMISSIONS.viewListings, PERMISSIONS.createListings, PERMISSIONS.editListings, PERMISSIONS.publishListings, PERMISSIONS.viewClients, PERMISSIONS.viewTransactions, PERMISSIONS.viewReports, PERMISSIONS.exportDeveloperReports, PERMISSIONS.manageDevelopmentTeam])),
+    [ORG_ROLES.developmentManager]: mergeGrants(grant(ACCESS_SCOPES.allWorkspace, [PERMISSIONS.viewDashboard, PERMISSIONS.viewDeveloperDashboard, PERMISSIONS.viewDevelopments, PERMISSIONS.createDevelopments, PERMISSIONS.editDevelopments, PERMISSIONS.manageUnits, PERMISSIONS.viewSalesPipeline, PERMISSIONS.manageDeveloperTransactions, PERMISSIONS.viewListings, PERMISSIONS.createListings, PERMISSIONS.editListings, PERMISSIONS.publishListings, PERMISSIONS.viewClients, PERMISSIONS.viewTransactions, PERMISSIONS.viewReports])),
+    [ORG_ROLES.salesAgent]: grant(ACCESS_SCOPES.assignedOnly, [PERMISSIONS.viewDashboard, PERMISSIONS.viewDeveloperDashboard, PERMISSIONS.viewDevelopments, PERMISSIONS.viewSalesPipeline, PERMISSIONS.viewListings, PERMISSIONS.createListings, PERMISSIONS.editListings, PERMISSIONS.viewClients, PERMISSIONS.viewTransactions]),
+    [ORG_ROLES.adminStaff]: mergeGrants(readOnlyGeneral, grant(ACCESS_SCOPES.teamOnly, [PERMISSIONS.viewDeveloperDashboard, PERMISSIONS.viewDevelopments, PERMISSIONS.manageUnits, PERMISSIONS.viewSalesPipeline, PERMISSIONS.viewListings, PERMISSIONS.viewClients, PERMISSIONS.viewTransactions])),
+    [ORG_ROLES.viewer]: mergeGrants(readOnlyGeneral, grant(ACCESS_SCOPES.assignedOnly, [PERMISSIONS.viewDeveloperDashboard, PERMISSIONS.viewDevelopments, PERMISSIONS.viewSalesPipeline, PERMISSIONS.viewListings, PERMISSIONS.viewClients, PERMISSIONS.viewTransactions])),
   }),
   [WORKSPACE_TYPES.attorneyFirm]: Object.freeze({
     [ORG_ROLES.owner]: mergeGrants(allGeneral, grant(ACCESS_SCOPES.allWorkspace, ATTORNEY_PERMISSIONS)),
@@ -539,8 +543,20 @@ export const routePermissionRules = Object.freeze([
   { prefix: '/agent/rentals/pipeline/leads', appRole: APP_ROLES.agent, workspaceType: WORKSPACE_TYPES.agency, permission: PERMISSIONS.viewLeads },
   { prefix: '/agent/rentals/listings', appRole: APP_ROLES.agent, workspaceType: WORKSPACE_TYPES.agency, permission: PERMISSIONS.viewListings },
   { prefix: '/agent/rentals', appRole: APP_ROLES.agent, workspaceType: WORKSPACE_TYPES.agency, permission: PERMISSIONS.viewAgencyDashboard },
-  { prefix: '/listings', appRole: APP_ROLES.agent, workspaceType: WORKSPACE_TYPES.agency, permission: PERMISSIONS.viewListings },
-  { prefix: '/agent/listings', appRole: APP_ROLES.agent, workspaceType: WORKSPACE_TYPES.agency, permission: PERMISSIONS.viewListings },
+  {
+    prefix: '/listings',
+    anyOf: [
+      { appRole: APP_ROLES.agent, workspaceType: WORKSPACE_TYPES.agency, permission: PERMISSIONS.viewListings },
+      { appRole: APP_ROLES.developer, workspaceType: WORKSPACE_TYPES.developerCompany, permission: PERMISSIONS.viewListings },
+    ],
+  },
+  {
+    prefix: '/agent/listings',
+    anyOf: [
+      { appRole: APP_ROLES.agent, workspaceType: WORKSPACE_TYPES.agency, permission: PERMISSIONS.viewListings },
+      { appRole: APP_ROLES.developer, workspaceType: WORKSPACE_TYPES.developerCompany, permission: PERMISSIONS.viewListings },
+    ],
+  },
   {
     prefix: '/new-transaction',
     anyOf: [

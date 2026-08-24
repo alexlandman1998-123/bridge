@@ -142,11 +142,13 @@ try {
   const developerKeys = visibleKeys(filterNavigationItems(getRoleNavItems('developer'), developerContext))
   assert.equal(developerKeys.includes('developer_pipeline'), true)
   assert.equal(developerKeys.includes('developments'), true)
+  assert.equal(developerKeys.includes('listings'), true)
   assert.equal(developerKeys.includes('developer_partners'), true)
   assert.equal(developerKeys.includes('developer_agencies'), true)
   assert.equal(developerKeys.includes('developer_snags'), false)
   assert.equal(developerKeys.includes('agency_pipeline'), false)
   assert.equal(can(PERMISSIONS.viewSalesPipeline, developerContext), true)
+  assert.equal(can(PERMISSIONS.viewListings, developerContext), true)
   assert.equal(can(PERMISSIONS.viewLeads, developerContext), false)
 
   const clientKeys = visibleKeys(filterNavigationItems(getRoleNavItems('client'), {
@@ -163,6 +165,7 @@ try {
   assert.equal(getRouteAccessRequirement('/pipeline/leads')?.workspaceType, 'agency')
   assert.equal(getRouteAccessRequirement('/pipeline/canvassing')?.permission, PERMISSIONS.createLeads)
   assert.equal(getRouteAccessRequirement('/agency/partners')?.permission, PERMISSIONS.partnersViewNetwork)
+  assert.equal(evaluateAccessRequirement(getRouteAccessRequirement('/listings/developments'), developerContext).ok, true)
   const newTransactionRequirement = getRouteAccessRequirement('/new-transaction')
   assert.equal(evaluateAccessRequirement(newTransactionRequirement, agencyContext).ok, true)
   assert.equal(evaluateAccessRequirement(newTransactionRequirement, developerContext).ok, true)

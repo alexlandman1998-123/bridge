@@ -2,6 +2,7 @@ export const PROPERTY24_API_BASE_PATH = '/api/property24'
 
 export const PROPERTY24_API_ROUTES = {
   previewListing: `${PROPERTY24_API_BASE_PATH}/listings/:listingId/preview`,
+  previewRentalListing: `${PROPERTY24_API_BASE_PATH}/rentals/:listingId/preview`,
   publishListing: `${PROPERTY24_API_BASE_PATH}/listings/:listingId/publish`,
   listingStatus: `${PROPERTY24_API_BASE_PATH}/listings/:listingId/status`,
   updateListingStatus: `${PROPERTY24_API_BASE_PATH}/listings/:listingId/status-update`,
@@ -12,6 +13,7 @@ export const PROPERTY24_API_ROUTES = {
 
 export const PROPERTY24_API_METHODS = {
   previewListing: 'POST',
+  previewRentalListing: 'POST',
   publishListing: 'POST',
   listingStatus: 'GET',
   updateListingStatus: 'POST',
