@@ -49,6 +49,7 @@ try {
   assert.equal(navPermissionByKey.agency_pipeline, PERMISSIONS.viewLeads)
   assert.equal(navPermissionByKey.agency_partners, PERMISSIONS.partnersViewNetwork)
   assert.equal(navPermissionByKey.developer_pipeline, PERMISSIONS.viewSalesPipeline)
+  assert.equal(navPermissionByKey.developer_leads, PERMISSIONS.viewSalesPipeline)
   assert.equal(navPermissionByKey.client_snags, PERMISSIONS.viewClientPortal)
   assert.equal(navPermissionByKey.developer_snags, PERMISSIONS.viewDevelopments)
 
@@ -140,7 +141,8 @@ try {
 
   const developerContext = context({ appRole: 'developer', workspaceType: 'developer_company', workspaceRole: 'owner' })
   const developerKeys = visibleKeys(filterNavigationItems(getRoleNavItems('developer'), developerContext))
-  assert.equal(developerKeys.includes('developer_pipeline'), true)
+  assert.equal(developerKeys.includes('developer_leads'), true)
+  assert.equal(developerKeys.includes('developer_pipeline'), false)
   assert.equal(developerKeys.includes('developments'), true)
   assert.equal(developerKeys.includes('listings'), true)
   assert.equal(developerKeys.includes('developer_partners'), true)

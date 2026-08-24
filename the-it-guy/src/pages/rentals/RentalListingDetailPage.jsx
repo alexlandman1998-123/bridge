@@ -4,7 +4,9 @@ import {
   BadgeCheck,
   CalendarDays,
   CheckCircle2,
+  CircleAlert,
   ClipboardList,
+  Eye,
   Home,
   Loader2,
   Pencil,
@@ -20,6 +22,7 @@ import { useWorkspace } from '../../context/WorkspaceContext'
 import {
   getRentalListingForAgent,
   prepareRentalProperty24PublishRequest,
+  previewRentalProperty24Listing,
   updateRentalListingDraft,
 } from '../../services/rentals/rentalListingDraftService'
 import {
@@ -114,6 +117,94 @@ function DetailPanel({ title, eyebrow, children }) {
   )
 }
 
+function formatProperty24PreviewBlocker(value = '') {
+  return String(value || '')
+    .replace(/^missing_/, 'Missing ')
+    .replace(/^listing_/, 'Listing ')
+    .replace(/_/g, ' ')
+    .replace(/\bproperty24\b/gi, 'Property24')
+}
+
+function getProperty24PreviewDetails(preview = null) {
+  const reportPreview = preview?.report?.preview || preview?.preview || {}
+  const dataBlockers = Array.isArray(reportPreview.dataBlockers) ? reportPreview.dataBlockers : []
+  const technicalBlockers = Array.isArray(reportPreview.technicalBlockers) ? reportPreview.technicalBlockers : []
+  const imageSummary = reportPreview.imageByteLoad?.summary || {}
+  const canSubmit = Boolean(reportPreview.canSubmit)
+  const sandboxAgentPending = technicalBlockers.includes('sandbox_property24_agent_id_required_before_submit')
+  const blockerCount = dataBlockers.length + technicalBlockers.length
+  const redactedPayload = preview?.report?.redactedPreviewPayload || preview?.report?.redactedPayload || null
+  return {
+    canSubmit,
+    dataBlockers,
+    technicalBlockers,
+    sandboxAgentPending,
+    blockerCount,
+    imagesLoaded: Number(imageSummary.loaded || 0) || 0,
+    imagesFailed: Number(imageSummary.failed || 0) || 0,
+    redactedPayload,
+    status: preview?.status || '',
+  }
+}
+
+function getProperty24PreviewIssues(preview = null) {
+  const details = getProperty24PreviewDetails(preview)
+  return [
+    ...details.dataBlockers.map((item) => ({ key: `data:${item}`, label: formatProperty24PreviewBlocker(item), detail: 'Fix this rental listing field before Property24 can accept it.' })),
+    ...details.technicalBlockers.map((item) => ({
+      key: `technical:${item}`,
+      label: item === 'sandbox_property24_agent_id_required_before_submit' ? 'Property24 agent ID needed for real publishing' : formatProperty24PreviewBlocker(item),
+      detail: item === 'sandbox_property24_agent_id_required_before_submit'
+        ? 'This is expected in the ExDev sandbox when Property24 has not returned a real agent ID yet.'
+        : 'This setup item must be resolved before a live submit.',
+    })),
+  ]
+}
+
+function getProperty24ReadinessStatus(preview = null) {
+  if (!preview) {
+    return {
+      label: 'Not checked',
+      tone: 'neutral',
+      detail: 'Run the readiness check to ask the backend what Property24 would accept.',
+    }
+  }
+  const details = getProperty24PreviewDetails(preview)
+  if (details.dataBlockers.length) {
+    return {
+      label: 'Needs listing info',
+      tone: 'warning',
+      detail: 'Property24 found rental data that must be completed first.',
+    }
+  }
+  if (details.sandboxAgentPending && details.technicalBlockers.length === 1) {
+    return {
+      label: 'Sandbox review ready',
+      tone: 'warning',
+      detail: 'The rental payload is safe to review in ExDev. Real publishing still needs Property24 agent IDs.',
+    }
+  }
+  if (details.technicalBlockers.length) {
+    return {
+      label: 'Setup needed',
+      tone: 'warning',
+      detail: 'The listing data is close, but Property24 setup still has a blocker.',
+    }
+  }
+  if (details.canSubmit) {
+    return {
+      label: 'Ready',
+      tone: 'success',
+      detail: 'The backend preview says this rental can be submitted when live publishing is enabled.',
+    }
+  }
+  return {
+    label: 'Checked',
+    tone: 'neutral',
+    detail: 'The backend preview completed. Review the details below before publishing.',
+  }
+}
+
 function Property24ReadinessItem({ item }) {
   return (
     <div className="flex items-start gap-3 rounded-[8px] border border-[#edf2f7] bg-white p-3">
@@ -128,29 +219,72 @@ function Property24ReadinessItem({ item }) {
   )
 }
 
-function Property24SyndicationPanel({ detail, onPreparePublish, preparingPublish, publishError }) {
+function Property24SyndicationPanel({
+  detail,
+  onPreparePublish,
+  preparingPublish,
+  publishError,
+  property24Preview,
+  checkingProperty24,
+  property24PreviewError,
+  onCheckProperty24,
+}) {
   const readiness = detail.property24Readiness
-  const payload = readiness?.payloadPreview || {}
-  const blockers = readiness?.blockers || []
+  const previewDetails = getProperty24PreviewDetails(property24Preview)
+  const previewStatus = getProperty24ReadinessStatus(property24Preview)
+  const previewIssues = getProperty24PreviewIssues(property24Preview)
+  const payload = previewDetails.redactedPayload || readiness?.payloadPreview || {}
+  const localBlockers = readiness?.blockers || []
+  const blockers = property24Preview ? previewIssues : localBlockers
+  const canPrepareHandoff = Boolean(property24Preview && previewDetails.canSubmit && readiness.readyToPublish)
+  const statusToneClasses = previewStatus.tone === 'success'
+    ? 'border-[#cfe8dc] bg-[#f2fbf5] text-[#286b43]'
+    : previewStatus.tone === 'warning'
+      ? 'border-[#f0d5b5] bg-[#fffaf2] text-[#9f5f15]'
+      : 'border-[#dbe6f2] bg-white text-[#42617f]'
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
       <DetailPanel eyebrow="Syndication" title="Property24 Rental Readiness">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-[8px] border border-[#dbe6f2] bg-[#fbfdff] p-3">
-          <div>
-            <p className="text-sm font-semibold text-[#18324b]">Controlled publish request</p>
-            <p className="mt-1 text-xs font-semibold text-[#607891]">Prepares the rental payload and records the internal handoff. Live Property24 writes stay behind backend wiring.</p>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-4 rounded-[8px] border border-[#dbe6f2] bg-[#fbfdff] p-4">
+          <div className="flex min-w-0 items-center gap-4">
+            <img src="/lead-sources/property24.png" alt="Property24" className="h-14 w-20 shrink-0 object-contain" />
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-sm font-semibold text-[#18324b]">Property24 rental check</p>
+                <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold ${statusToneClasses}`}>
+                  {previewStatus.tone === 'success' ? <CheckCircle2 size={14} aria-hidden="true" /> : previewStatus.tone === 'warning' ? <CircleAlert size={14} aria-hidden="true" /> : <ShieldCheck size={14} aria-hidden="true" />}
+                  {previewStatus.label}
+                </span>
+              </div>
+              <p className="mt-1 text-xs font-semibold text-[#607891]">{previewStatus.detail}</p>
+            </div>
           </div>
-          <button
-            type="button"
-            className="ui-pill-button ui-pill-button-active"
-            onClick={onPreparePublish}
-            disabled={!readiness.readyToPublish || preparingPublish}
-            title={readiness.readyToPublish ? 'Prepare Property24 rental publish request' : 'Resolve blockers before preparing a publish request'}
-          >
-            {preparingPublish ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Send size={16} aria-hidden="true" />}
-            Prepare Request
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="ui-pill-button ui-pill-button-active"
+              onClick={onCheckProperty24}
+              disabled={checkingProperty24}
+            >
+              {checkingProperty24 ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Eye size={16} aria-hidden="true" />}
+              Check Readiness
+            </button>
+            <button
+              type="button"
+              className="ui-pill-button"
+              onClick={onPreparePublish}
+              disabled={!canPrepareHandoff || preparingPublish}
+              title={canPrepareHandoff ? 'Prepare internal Property24 rental handoff' : 'Run a clean Property24 readiness check before preparing a handoff'}
+            >
+              {preparingPublish ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Send size={16} aria-hidden="true" />}
+              Prepare Handoff
+            </button>
+          </div>
         </div>
+
+        {property24PreviewError ? (
+          <p className="mb-4 rounded-[8px] border border-[#f2c6c6] bg-[#fff7f7] px-4 py-3 text-sm font-semibold text-[#9f3131]">{property24PreviewError}</p>
+        ) : null}
 
         {publishError ? (
           <p className="mb-4 rounded-[8px] border border-[#f2c6c6] bg-[#fff7f7] px-4 py-3 text-sm font-semibold text-[#9f3131]">{publishError}</p>
@@ -164,15 +298,15 @@ function Property24SyndicationPanel({ detail, onPreparePublish, preparingPublish
             icon={<CheckCircle2 size={18} aria-hidden="true" />}
           />
           <FactCard
-            label="Readiness"
-            value={`${readiness.readinessPercent}%`}
-            detail={`${readiness.completedCount}/${readiness.totalCount} checks complete`}
+            label="Backend check"
+            value={property24Preview ? previewStatus.label : `${readiness.readinessPercent}%`}
+            detail={property24Preview ? `Status: ${previewDetails.status || 'Checked'}` : `${readiness.completedCount}/${readiness.totalCount} local checks complete`}
             icon={<BadgeCheck size={18} aria-hidden="true" />}
           />
           <FactCard
-            label="Blockers"
-            value={String(blockers.length)}
-            detail={readiness.readyToPublish ? 'Ready for publish wiring' : 'Resolve before publish'}
+            label={property24Preview ? 'Backend blockers' : 'Local blockers'}
+            value={String(property24Preview ? previewDetails.blockerCount : localBlockers.length)}
+            detail={property24Preview ? `${previewDetails.imagesLoaded} photos checked, ${previewDetails.imagesFailed} errors` : 'Run backend check before handoff'}
             icon={<ShieldCheck size={18} aria-hidden="true" />}
           />
         </div>
@@ -183,7 +317,7 @@ function Property24SyndicationPanel({ detail, onPreparePublish, preparingPublish
       </DetailPanel>
 
       <div className="grid gap-4">
-        <DetailPanel eyebrow="Publishing blockers" title={readiness.readyToPublish ? 'No Blockers' : 'Resolve Before Publishing'}>
+        <DetailPanel eyebrow={property24Preview ? 'Backend result' : 'Local readiness'} title={blockers.length ? 'Resolve Before Publishing' : 'No Blockers'}>
           {blockers.length ? (
             <div className="grid gap-2">
               {blockers.map((blocker) => (
@@ -195,12 +329,12 @@ function Property24SyndicationPanel({ detail, onPreparePublish, preparingPublish
             </div>
           ) : (
             <p className="rounded-[8px] border border-[#cfe8dc] bg-[#f2fbf5] p-3 text-sm font-semibold text-[#286b43]">
-              This rental listing has the fields needed for the Property24 rental publish action once API wiring is enabled.
+              {property24Preview ? 'The backend preview did not find any Property24 blockers.' : 'Local rental readiness looks complete. Run the backend check before handoff.'}
             </p>
           )}
         </DetailPanel>
 
-        <DetailPanel eyebrow="Payload preview" title="Listing Service v53">
+        <DetailPanel eyebrow={property24Preview ? 'Backend payload preview' : 'Local payload preview'} title="Listing Service v53">
           <pre className="max-h-[520px] overflow-auto rounded-[8px] border border-[#dbe6f2] bg-[#0f1f2f] p-4 text-xs font-semibold leading-relaxed text-[#d8e7f5]">
             {JSON.stringify(payload, null, 2)}
           </pre>
@@ -350,7 +484,18 @@ function RentalListingEditPanel({ form, onChange, onCancel, onSubmit, saving, ca
   )
 }
 
-function RentalTabContent({ activeTab, detail, onPreparePublish, preparingPublish, publishError }) {
+function RentalTabContent({
+  activeTab,
+  detail,
+  onPreparePublish,
+  preparingPublish,
+  publishError,
+  property24Preview,
+  checkingProperty24,
+  property24PreviewError,
+  onCheckProperty24,
+  onOpenSyndication,
+}) {
   const row = detail.row
   if (activeTab === 'property') {
     return (
@@ -404,11 +549,41 @@ function RentalTabContent({ activeTab, detail, onPreparePublish, preparingPublis
     )
   }
   if (activeTab === 'marketing') {
+    const previewStatus = getProperty24ReadinessStatus(property24Preview)
+    const statusToneClasses = previewStatus.tone === 'success'
+      ? 'border-[#cfe8dc] bg-[#f2fbf5] text-[#286b43]'
+      : previewStatus.tone === 'warning'
+        ? 'border-[#f0d5b5] bg-[#fffaf2] text-[#9f5f15]'
+        : 'border-[#dbe6f2] bg-white text-[#42617f]'
     return (
-      <DetailPanel eyebrow="Marketing" title="Marketing Approval">
-        <DetailRow label="Approval status" value={detail.marketingApprovalStatusLabel} />
-        <DetailRow label="Property24 status" value={detail.property24StatusLabel} />
-      </DetailPanel>
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
+        <DetailPanel eyebrow="Marketing" title="Marketing Approval">
+          <DetailRow label="Approval status" value={detail.marketingApprovalStatusLabel} />
+          <DetailRow label="Property24 status" value={detail.property24StatusLabel} />
+        </DetailPanel>
+        <DetailPanel eyebrow="Property24" title="Rental Readiness">
+          <div className="flex items-start gap-3 rounded-[8px] border border-[#dbe6f2] bg-[#fbfdff] p-4">
+            <img src="/lead-sources/property24.png" alt="Property24" className="h-12 w-16 shrink-0 object-contain" />
+            <div className="min-w-0 flex-1">
+              <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold ${statusToneClasses}`}>
+                {previewStatus.tone === 'success' ? <CheckCircle2 size={14} aria-hidden="true" /> : previewStatus.tone === 'warning' ? <CircleAlert size={14} aria-hidden="true" /> : <ShieldCheck size={14} aria-hidden="true" />}
+                {previewStatus.label}
+              </span>
+              <p className="mt-2 text-sm font-semibold leading-6 text-[#607891]">{previewStatus.detail}</p>
+              {property24PreviewError ? <p className="mt-2 text-sm font-semibold text-[#9f3131]">{property24PreviewError}</p> : null}
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button type="button" className="ui-pill-button ui-pill-button-active" onClick={onCheckProperty24} disabled={checkingProperty24}>
+                  {checkingProperty24 ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Eye size={16} aria-hidden="true" />}
+                  Check Readiness
+                </button>
+                <button type="button" className="ui-pill-button" onClick={onOpenSyndication}>
+                  Open Syndication
+                </button>
+              </div>
+            </div>
+          </div>
+        </DetailPanel>
+      </div>
     )
   }
   if (activeTab === 'syndication') {
@@ -418,7 +593,12 @@ function RentalTabContent({ activeTab, detail, onPreparePublish, preparingPublis
         onPreparePublish={onPreparePublish}
         preparingPublish={preparingPublish}
         publishError={publishError}
-      />
+        property24Preview={property24Preview}
+        checkingProperty24={checkingProperty24}
+          property24PreviewError={property24PreviewError}
+          onCheckProperty24={onCheckProperty24}
+          onOpenSyndication={onOpenSyndication}
+        />
     )
   }
   if (activeTab === 'applications') {
@@ -472,6 +652,9 @@ export default function RentalListingDetailPage() {
   const [savingEdit, setSavingEdit] = useState(false)
   const [preparingPublish, setPreparingPublish] = useState(false)
   const [publishError, setPublishError] = useState('')
+  const [property24Preview, setProperty24Preview] = useState(null)
+  const [checkingProperty24, setCheckingProperty24] = useState(false)
+  const [property24PreviewError, setProperty24PreviewError] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
 
   const detail = useMemo(() => (listing ? buildRentalListingDetailView(listing) : null), [listing])
@@ -502,6 +685,8 @@ export default function RentalListingDetailPage() {
       }
       setListing(row)
       setEditForm(buildRentalListingEditForm(row))
+      setProperty24Preview(null)
+      setProperty24PreviewError('')
     } catch (loadError) {
       setListing(null)
       setError(loadError?.message || 'Unable to load the rental listing.')
@@ -544,6 +729,8 @@ export default function RentalListingDetailPage() {
       })
       setListing(result.listing)
       setEditForm(buildRentalListingEditForm(result.listing))
+      setProperty24Preview(null)
+      setProperty24PreviewError('')
       setEditOpen(false)
       setSuccessMessage('Rental listing details were saved.')
     } catch (saveError) {
@@ -554,8 +741,9 @@ export default function RentalListingDetailPage() {
   }
 
   async function handlePrepareProperty24Publish() {
-    if (!detail?.property24Readiness?.readyToPublish) {
-      setPublishError('Resolve the Property24 rental blockers before preparing a publish request.')
+    const previewDetails = getProperty24PreviewDetails(property24Preview)
+    if (!property24Preview || !previewDetails.canSubmit || !detail?.property24Readiness?.readyToPublish) {
+      setPublishError('Run a clean Property24 readiness check before preparing the internal handoff.')
       return
     }
     try {
@@ -574,6 +762,36 @@ export default function RentalListingDetailPage() {
       setPublishError(publishRequestError?.message || 'Unable to prepare the Property24 rental publish request.')
     } finally {
       setPreparingPublish(false)
+    }
+  }
+
+  async function handleCheckProperty24Readiness() {
+    try {
+      setCheckingProperty24(true)
+      setProperty24PreviewError('')
+      setPublishError('')
+      setSuccessMessage('')
+      const payload = await previewRentalProperty24Listing(listingId)
+      const previewDetails = getProperty24PreviewDetails(payload)
+      setProperty24Preview(payload)
+      if (previewDetails.dataBlockers.length) {
+        setSuccessMessage('')
+        return
+      }
+      if (previewDetails.sandboxAgentPending && previewDetails.technicalBlockers.length === 1) {
+        setSuccessMessage('Property24 sandbox preview is ready. Real publishing still needs the Property24 agent ID.')
+        return
+      }
+      if (previewDetails.technicalBlockers.length) {
+        setSuccessMessage('')
+        return
+      }
+      setSuccessMessage('Property24 rental readiness check passed.')
+    } catch (previewError) {
+      setProperty24Preview(null)
+      setProperty24PreviewError(previewError?.message || 'Unable to check Property24 rental readiness.')
+    } finally {
+      setCheckingProperty24(false)
     }
   }
 
@@ -691,6 +909,11 @@ export default function RentalListingDetailPage() {
           onPreparePublish={handlePrepareProperty24Publish}
           preparingPublish={preparingPublish}
           publishError={publishError}
+          property24Preview={property24Preview}
+          checkingProperty24={checkingProperty24}
+          property24PreviewError={property24PreviewError}
+          onCheckProperty24={handleCheckProperty24Readiness}
+          onOpenSyndication={() => navigate(buildRentalListingDetailPath(row.id, 'syndication'))}
         />
       </div>
     </section>

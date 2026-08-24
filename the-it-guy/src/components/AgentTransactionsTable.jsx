@@ -363,6 +363,7 @@ function AgentTransactionsTable({
   onDeleteTransaction = null,
   deletingTransactionId = null,
   title = 'Transactions',
+  createTransactionLabel = 'Create Deal',
   isPrincipalView = false,
   onCreateTransaction = null,
   onOpenPipeline = null,
@@ -416,7 +417,7 @@ function AgentTransactionsTable({
           <div className="agent-transactions-header-actions">
             <Button type="button" className="agent-transactions-create-button" onClick={onCreateTransaction}>
               <Plus size={16} />
-              Create Deal
+              {createTransactionLabel}
             </Button>
           </div>
         ) : null

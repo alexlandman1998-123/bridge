@@ -126,21 +126,11 @@ export const APP_NAV_BY_ROLE = {
     { key: 'dashboard', label: 'Dashboard', to: '/dashboard' },
     { key: 'transactions', label: 'Transactions', to: '/transactions', activeMatch: ['/transactions', '/units'] },
     { key: 'developments', label: 'Developments', to: '/developments', activeMatch: ['/developments'] },
-    {
-      key: 'developer_pipeline',
-      label: 'Pipeline',
-      to: '/developer/leads?view=pipeline',
-      activeMatch: ['/developer/leads', '/pipeline/calendar', '/calendar'],
-      icon: KanbanSquare,
-      children: [
-        { key: 'developer_leads', label: 'Leads', to: '/developer/leads', icon: Users },
-        { key: 'pipeline_calendar', label: 'Calendar', to: '/pipeline/calendar', activeMatch: ['/pipeline/calendar', '/calendar'], icon: CalendarDays },
-      ],
-    },
+    { key: 'developer_leads', label: 'Leads', to: '/developer/leads', activeMatch: ['/developer/leads'], icon: Users },
     {
       key: 'listings',
       label: 'Listings',
-      to: '/listings/developments',
+      to: '/listings',
       activeMatch: ['/listings', '/agent/listings'],
     },
     {

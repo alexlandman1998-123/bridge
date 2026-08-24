@@ -3,17 +3,17 @@ import {
   ArrowRight,
   ArrowRightLeft,
   Building2,
-  FileCheck2,
+  CheckCircle2,
+  Home,
   MapPin,
+  MoreHorizontal,
   Plus,
   RefreshCw,
   Search,
-  ShieldCheck,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import AddDevelopmentModal from '../components/AddDevelopmentModal'
-import SummaryCards from '../components/SummaryCards'
 import Button from '../components/ui/Button'
 import SectionHeader from '../components/ui/SectionHeader'
 import { selectBottlenecks, selectDevelopmentPerformance, selectPortfolioMetrics } from '../core/transactions/developerSelectors'
@@ -51,6 +51,32 @@ function toLifecycleLabel(status) {
   if (status === 'completed') return 'Completed'
   if (status === 'archived') return 'Archived'
   return 'Active'
+}
+
+function toStatusBadgeLabel(status) {
+  return toLifecycleLabel(status).toUpperCase()
+}
+
+function getProgressPercent(progress) {
+  const total = clampCount(progress?.total)
+  if (!total) return 0
+  return Math.round(((clampCount(progress?.inProgress) + clampCount(progress?.completed)) / total) * 100)
+}
+
+function getDevelopmentCoverFallback(name = '') {
+  const seed = String(name || '').length % 3
+  const gradients = [
+    'linear-gradient(135deg, rgba(8,37,52,0.96) 0%, rgba(21,76,70,0.88) 56%, rgba(226,175,63,0.72) 100%)',
+    'linear-gradient(135deg, rgba(15,35,54,0.96) 0%, rgba(45,89,109,0.9) 58%, rgba(139,159,176,0.68) 100%)',
+    'linear-gradient(135deg, rgba(23,50,45,0.96) 0%, rgba(40,91,87,0.9) 55%, rgba(218,185,104,0.7) 100%)',
+  ]
+  return gradients[seed]
+}
+
+function formatLocation(value) {
+  const normalized = String(value || '').trim()
+  if (!normalized || normalized.toLowerCase() === 'location pending') return 'Location not added'
+  return normalized
 }
 
 function summarizeAttention({ bottleneckCount, missingDocsCount, missingAttorney, activeTransactionsCount }) {
@@ -258,7 +284,8 @@ function Developments() {
         return {
           id: item.id,
           name: item.name,
-          location: profile.location || item.location || item.phase || 'Location pending',
+          location: formatLocation(profile.location || item.location || item.phase),
+          coverImageUrl: profile.coverImageUrl || item.coverImageUrl || null,
           lifecycleStatus,
           lifecycleLabel: toLifecycleLabel(lifecycleStatus),
           totalUnits,
@@ -272,6 +299,7 @@ function Developments() {
           lastUpdatedLabel: formatRelativeDate(item.lastActivity || profile.lastActivity || null),
           registeredLabel,
           progress,
+          progressPercent: getProgressPercent(progress),
           primaryCtaUrl: `/developments/${item.id}`,
         }
       })
@@ -315,27 +343,36 @@ function Developments() {
     return list
   }, [attentionFilter, developmentCards, searchTerm, sortBy, statusFilter])
 
-  const summaryItems = useMemo(
+  const heroMetrics = useMemo(
     () => [
-      { label: 'Active Developments', value: developmentCards.filter((item) => item.lifecycleStatus === 'active').length, icon: Building2 },
-      { label: 'Active Transactions', value: portfolioMetrics.dealsInProgress, icon: ArrowRightLeft },
-      { label: 'Registered Deals', value: portfolioMetrics.unitsRegistered, icon: FileCheck2 },
-      { label: 'Attention Required', value: developmentCards.filter((item) => item.attentionStatus === 'needs_attention').length, icon: AlertTriangle },
+      { label: 'Total Developments', value: developmentCards.length, icon: Building2 },
+      {
+        label: 'Total Units',
+        value: developmentCards.reduce((total, item) => total + item.totalUnits, 0) || data.metrics.totalUnits || 0,
+        icon: Home,
+      },
+      { label: 'Live Deals', value: portfolioMetrics.dealsInProgress, icon: ArrowRightLeft },
+      { label: 'Registered', value: portfolioMetrics.unitsRegistered, icon: CheckCircle2 },
+      {
+        label: 'Needs Attention',
+        value: developmentCards.filter((item) => item.attentionStatus === 'needs_attention').length,
+        icon: AlertTriangle,
+      },
     ],
-    [developmentCards, portfolioMetrics],
+    [data.metrics.totalUnits, developmentCards, portfolioMetrics],
   )
 
   const totalResults = filteredDevelopmentCards.length
   const developmentTagTone = {
-    active: 'border-[#cfe1f7] bg-[#eff6ff] text-[#35546c]',
-    completed: 'border-[#d6ece0] bg-[#edfdf3] text-[#1c7d45]',
-    archived: 'border-[#dde4ee] bg-[#f8fafc] text-[#66758b]',
+    active: 'border-white/20 bg-[#0e8b62] text-white',
+    completed: 'border-white/20 bg-[#1e6b42] text-white',
+    archived: 'border-white/20 bg-[#4f5f72] text-white',
   }
 
-  const attentionTagTone = {
-    needs_attention: 'border-[#f6d6d2] bg-[#fff3f2] text-[#b42318]',
-    some_issues: 'border-[#f4e0b7] bg-[#fff7e9] text-[#b67218]',
-    running_smoothly: 'border-[#d6ece0] bg-[#edfdf3] text-[#1c7d45]',
+  const attentionTextTone = {
+    needs_attention: 'text-[#b42318]',
+    some_issues: 'text-[#b67218]',
+    running_smoothly: 'text-[#1c7d45]',
   }
 
   return (
@@ -354,11 +391,45 @@ function Developments() {
 
       {!loading && isSupabaseConfigured ? (
         <>
-          <section className="mt-6">
-            <SummaryCards items={summaryItems} />
+          <section className="mt-6 overflow-hidden rounded-[26px] border border-white/10 bg-[#10293a] shadow-[0_22px_50px_rgba(15,23,42,0.14)]">
+            <div className="relative min-h-[250px] px-6 py-8 text-white sm:px-8 lg:px-10">
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_20%,rgba(47,143,92,0.32),transparent_30%),radial-gradient(circle_at_82%_12%,rgba(226,175,63,0.26),transparent_24%),linear-gradient(135deg,#071b28_0%,#10293a_48%,#203f4b_100%)]" aria-hidden="true" />
+              <div className="absolute inset-0 opacity-[0.18] [background-image:linear-gradient(120deg,rgba(255,255,255,0.18)_1px,transparent_1px),linear-gradient(60deg,rgba(255,255,255,0.1)_1px,transparent_1px)] [background-size:88px_88px]" aria-hidden="true" />
+              <div className="relative z-10 flex h-full flex-col justify-between gap-8">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-white/62">Portfolio View</p>
+                  <h1 className="mt-4 text-[clamp(2rem,4vw,3.4rem)] font-semibold leading-none tracking-[-0.06em]">
+                    Developments
+                  </h1>
+                  <p className="mt-3 max-w-[620px] text-[1rem] font-medium leading-7 text-white/76">
+                    Oversee your entire portfolio. Build better. Sell faster.
+                  </p>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                  {heroMetrics.map((metric) => {
+                    const Icon = metric.icon
+                    return (
+                      <article
+                        key={metric.label}
+                        className="rounded-[18px] border border-white/12 bg-white/[0.12] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.14)] backdrop-blur"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <span className="text-[0.78rem] font-semibold text-white/70">{metric.label}</span>
+                          <Icon size={18} className="text-[#5fe0a4]" />
+                        </div>
+                        <strong className="mt-3 block text-[1.75rem] font-semibold leading-none tracking-[-0.04em]">
+                          {metric.value}
+                        </strong>
+                      </article>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
           </section>
 
-          <section className="mt-4 rounded-[22px] border border-[#dde4ee] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
+          <section className="mt-6 rounded-[22px] border border-[#dde4ee] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
             <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
               <div className="grid min-w-0 flex-1 gap-3 lg:grid-cols-[minmax(0,1.25fr)_repeat(3,minmax(0,168px))]">
                 <label className="flex min-w-0 flex-col gap-2">
@@ -435,9 +506,9 @@ function Developments() {
           </section>
 
           {totalResults ? (
-            <section className="mt-6 rounded-[22px] border border-[#dde4ee] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
+            <section className="mt-6">
               <SectionHeader
-                title="Development Workspace"
+                title="Development Portfolio"
                 actions={
                   <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-[#f7f9fc] px-3 py-1 text-[0.78rem] font-semibold text-[#66758b]">
                     {totalResults} developments
@@ -445,11 +516,11 @@ function Developments() {
                 }
               />
 
-              <div className="mt-8 grid gap-6 xl:grid-cols-2 2xl:grid-cols-3">
+              <div className="mt-6 grid gap-6 md:grid-cols-2 xl:grid-cols-3">
                 {filteredDevelopmentCards.map((item) => (
                   <article
                     key={item.id}
-                    className="overflow-hidden rounded-[22px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.06)] transition duration-150 ease-out hover:-translate-y-[1px] hover:shadow-[0_16px_32px_rgba(15,23,42,0.08)]"
+                    className="group min-w-0 cursor-pointer overflow-hidden rounded-[22px] border border-[#dde4ee] bg-white shadow-[0_14px_34px_rgba(15,23,42,0.07)] transition duration-200 ease-out hover:-translate-y-[2px] hover:border-[#cfdbea] hover:shadow-[0_22px_44px_rgba(15,23,42,0.11)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2f8f5c]"
                     onClick={() =>
                       navigate(item.primaryCtaUrl, {
                         state: { headerTitle: item.name },
@@ -466,58 +537,70 @@ function Developments() {
                     role="button"
                     tabIndex={0}
                   >
-                    <div className="flex min-h-[160px] items-center justify-center bg-[linear-gradient(180deg,#496b88_0%,#2c4559_100%)]" aria-hidden="true">
-                      <div className="inline-flex h-20 w-20 items-center justify-center rounded-[24px] border border-white/14 bg-white/10 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.14)]">
-                        <Building2 size={24} />
+                    <div
+                      className="relative h-[148px] overflow-hidden bg-[#183247]"
+                      style={!item.coverImageUrl ? { background: getDevelopmentCoverFallback(item.name) } : undefined}
+                    >
+                      {item.coverImageUrl ? (
+                        <img src={item.coverImageUrl} alt="" className="h-full w-full object-cover transition duration-500 ease-out group-hover:scale-[1.03]" loading="lazy" />
+                      ) : (
+                        <div className="absolute inset-0" aria-hidden="true">
+                          <div className="absolute left-7 top-7 h-20 w-28 rounded-[22px] border border-white/14 bg-white/10" />
+                          <div className="absolute bottom-6 right-8 h-24 w-36 rounded-[26px] border border-white/12 bg-white/[0.08]" />
+                          <Building2 className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-white/82" size={34} />
+                        </div>
+                      )}
+                      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(5,18,28,0.08)_0%,rgba(5,18,28,0.52)_100%)]" aria-hidden="true" />
+                      <div className="absolute left-4 top-4 flex items-center gap-2">
+                        <span className={`inline-flex items-center rounded-[9px] border px-2.5 py-1 text-[0.68rem] font-bold uppercase tracking-[0.08em] shadow-[0_8px_18px_rgba(0,0,0,0.12)] ${developmentTagTone[item.lifecycleStatus] || developmentTagTone.active}`}>
+                          {toStatusBadgeLabel(item.lifecycleStatus)}
+                        </span>
                       </div>
+                      <span className="absolute right-4 top-4 rounded-[9px] bg-white/92 px-2.5 py-1 text-[0.68rem] font-bold uppercase tracking-[0.08em] text-[#30465b] shadow-[0_8px_18px_rgba(0,0,0,0.12)]">
+                        {item.totalUnits} units
+                      </span>
                     </div>
 
-                    <div className="flex flex-col gap-6 px-6 py-6">
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[0.78rem] font-semibold ${developmentTagTone[item.lifecycleStatus] || developmentTagTone.active}`}>
-                          {item.lifecycleLabel}
-                        </span>
-                        <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[0.78rem] font-semibold ${attentionTagTone[item.attentionStatus] || attentionTagTone.running_smoothly}`}>
-                          <ShieldCheck size={14} />
-                          {item.attentionLabel}
-                        </span>
-                      </div>
-
-                      <div className="flex flex-col gap-2">
-                        <h4 className="text-[1.18rem] font-semibold tracking-[-0.03em] text-[#142132]">{item.name}</h4>
-                        <p className="inline-flex items-center gap-2 text-[0.92rem] text-[#6b7d93]">
-                          <MapPin size={14} />
-                          {item.location}
-                        </p>
-                      </div>
-
-                      <div className="grid gap-2 text-[0.92rem] leading-6 text-[#51657b]">
-                        <p>{item.attentionLines[0]}</p>
-                        <p>Attorney: {item.assignedAttorneyName}</p>
-                        <p>{item.lastUpdatedLabel}</p>
-                      </div>
-
-                      <div className="grid gap-3 sm:grid-cols-3">
-                        <article className="rounded-[18px] border border-[#e4ebf4] bg-[#fbfcfe] px-4 py-4">
-                          <span className="block text-[0.78rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Units</span>
-                          <strong className="mt-2 block text-[1.2rem] font-semibold tracking-[-0.03em] text-[#142132]">{item.totalUnits}</strong>
-                        </article>
-                        <article className="rounded-[18px] border border-[#e4ebf4] bg-[#fbfcfe] px-4 py-4">
-                          <span className="block text-[0.78rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Live Deals</span>
-                          <strong className="mt-2 block text-[1.2rem] font-semibold tracking-[-0.03em] text-[#142132]">{item.activeTransactionsCount}</strong>
-                        </article>
-                        <article className="rounded-[18px] border border-[#e4ebf4] bg-[#fbfcfe] px-4 py-4">
-                          <span className="block text-[0.78rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Registered</span>
-                          <strong className="mt-2 block text-[1.2rem] font-semibold tracking-[-0.03em] text-[#142132]">{item.registeredTransactionsCount}</strong>
-                        </article>
-                      </div>
-
-                      <div className="rounded-[18px] border border-[#e4ebf4] bg-[#fbfcfe] px-4 py-4">
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="text-[0.78rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Progress</span>
-                          <span className="text-[0.76rem] font-semibold text-[#66758b]">{item.progress.total} units</span>
+                    <div className="px-5 py-5">
+                      <div className="flex min-w-0 items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <h4 className="truncate text-[1.08rem] font-semibold tracking-[-0.035em] text-[#142132]">{item.name}</h4>
+                          <p className="mt-1.5 inline-flex min-w-0 items-center gap-2 text-[0.84rem] text-[#6b7d93]">
+                            <MapPin size={14} />
+                            <span className="truncate">{item.location}</span>
+                          </p>
                         </div>
-                        <div className="mt-3 h-2.5 w-full overflow-hidden rounded-full bg-[#e5ebf3]">
+                        <button
+                          type="button"
+                          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[#5f7288] transition hover:bg-[#eef3f8] hover:text-[#142132] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2f8f5c]"
+                          aria-label={`Manage listings for ${item.name}`}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            navigate(`/listings?developmentId=${encodeURIComponent(item.id)}`)
+                          }}
+                        >
+                          <MoreHorizontal size={18} />
+                        </button>
+                      </div>
+
+                      <div className="mt-4 space-y-1.5 text-[0.82rem] leading-5 text-[#60758d]">
+                        <p>
+                          <span className={attentionTextTone[item.attentionStatus] || attentionTextTone.running_smoothly}>
+                            {item.attentionLines[0]}
+                          </span>
+                          {item.attentionStatus !== 'running_smoothly' && item.assignedAttorneyName === 'No attorney assigned' ? (
+                            <span> • No attorney assigned</span>
+                          ) : null}
+                        </p>
+                        <p className="text-[#7b8ca2]">{item.lastUpdatedLabel}</p>
+                      </div>
+
+                      <div className="mt-5">
+                        <div className="flex items-center justify-between gap-3 text-[0.78rem] font-semibold text-[#66758b]">
+                          <span>{item.progressPercent}% progressed</span>
+                          <span>{item.activeTransactionsCount} live deals</span>
+                        </div>
+                        <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-[#e5ebf3]">
                           {item.progress.total > 0 ? (
                             <div className="flex h-full w-full">
                               <div
@@ -538,55 +621,28 @@ function Developments() {
                             </div>
                           ) : null}
                         </div>
-                        <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                          <div className="flex items-center gap-2 text-[0.78rem] text-[#5f7288]">
+                        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5">
+                          <div className="flex items-center gap-2 text-[0.74rem] text-[#5f7288]">
                             <span className="h-2 w-2 rounded-full bg-[#97a4b7]" aria-hidden="true" />
-                            Available ({item.progress.available})
+                            Available {item.progress.available}
                           </div>
-                          <div className="flex items-center gap-2 text-[0.78rem] text-[#5f7288]">
+                          <div className="flex items-center gap-2 text-[0.74rem] text-[#5f7288]">
                             <span className="h-2 w-2 rounded-full bg-[#e2af3f]" aria-hidden="true" />
-                            In Progress ({item.progress.inProgress})
+                            In Progress {item.progress.inProgress}
                           </div>
-                          <div className="flex items-center gap-2 text-[0.78rem] text-[#5f7288]">
+                          <div className="flex items-center gap-2 text-[0.74rem] text-[#5f7288]">
                             <span className="h-2 w-2 rounded-full bg-[#2f8f5c]" aria-hidden="true" />
-                            Completed ({item.progress.completed})
+                            Completed {item.progress.completed}
                           </div>
                         </div>
                       </div>
 
-                      <div className="flex items-center justify-between gap-3 border-t border-[#edf2f7] pt-1">
-                        <Button
-                          variant="ghost"
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            navigate(item.primaryCtaUrl, {
-                              state: { headerTitle: item.name },
-                            })
-                          }}
-                        >
-                          Overview
-                        </Button>
-                        <Button
-                          variant="secondary"
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            navigate(`/listings/developments?developmentId=${encodeURIComponent(item.id)}`)
-                          }}
-                        >
-                          <ArrowRightLeft size={15} />
-                          Listings
-                        </Button>
-                        <Button
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            navigate(item.primaryCtaUrl, {
-                              state: { headerTitle: item.name },
-                            })
-                          }}
-                        >
-                          Open Development
-                          <ArrowRight size={15} />
-                        </Button>
+                      <div className="mt-5 flex items-center justify-between border-t border-[#edf2f7] pt-4 text-[0.76rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">
+                        <span>{item.registeredTransactionsCount} registered</span>
+                        <span className="inline-flex items-center gap-1 text-[#16724f]">
+                          Open workspace
+                          <ArrowRight size={13} />
+                        </span>
                       </div>
                     </div>
                   </article>

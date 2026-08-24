@@ -304,6 +304,11 @@ function getDemoBuyerPortalSeed(token = BUYER_PORTAL_DEMO_TOKEN, prospectConfig 
   const transaction = {
     ...(buyerPayload.transaction || {}),
     token,
+    transaction_type: 'private_property',
+    transactionType: 'private_property',
+    sale_route: 'private_property_sale',
+    saleRoute: 'private_property_sale',
+    seller_party_type: 'private_seller',
     property_address: property.address,
     property_address_line_1: property.line1,
     property_address_line_2: property.line2,
@@ -315,6 +320,8 @@ function getDemoBuyerPortalSeed(token = BUYER_PORTAL_DEMO_TOKEN, prospectConfig 
     current_main_stage: 'FIN',
     status: 'active',
     finance_managed_by: 'bond_originator',
+    source_agency_name: brand.agencyName,
+    sourceAgencyName: brand.agencyName,
     assigned_agent_phone: '+27 21 555 0100',
     assigned_attorney_email: 'transfers.demo@jacobs.example',
     assigned_bond_originator_email: 'bond.demo@betterbond.example',
@@ -323,15 +330,15 @@ function getDemoBuyerPortalSeed(token = BUYER_PORTAL_DEMO_TOKEN, prospectConfig 
   }
   const unit = {
     ...(buyerPayload.unit || {}),
+    development: undefined,
+    development_id: null,
+    developmentId: null,
     price: 2850000,
+    unit_number: property.line1 || property.address,
+    unit_label: property.line2 || 'Apartment',
     heroImageUrl: property.imageUrl,
     imageUrl: property.imageUrl,
     images: DEMO_PROPERTY_GALLERY,
-    development: {
-      ...(buyerPayload.unit?.development || {}),
-      name: property.address || 'Pine Avenue Apartments',
-      developer_company: brand.agencyName,
-    },
   }
   const portalData = {
     __demoPortal: true,
@@ -448,12 +455,12 @@ function getDemoBuyerPortalSeed(token = BUYER_PORTAL_DEMO_TOKEN, prospectConfig 
     ],
     events: [],
     settings: {
-      snag_reporting_enabled: true,
-      alteration_requests_enabled: true,
-      service_reviews_enabled: true,
+      snag_reporting_enabled: false,
+      alteration_requests_enabled: false,
+      service_reviews_enabled: false,
     },
     featureAvailability: {
-      review: true,
+      review: false,
     },
     handover: {
       status: 'not_started',

@@ -3569,6 +3569,11 @@ function BuyerMobilePortal({
   token,
   workspaceNavigationScope,
   activeSection,
+  brandName = '',
+  brandLogoUrl = '',
+  brandPrimaryColour = '#10213a',
+  brandSecondaryColour = '',
+  brandAccentColour = '#74d46e',
   developmentName,
   unitLabel,
   propertyImageUrl = '',
@@ -3895,6 +3900,43 @@ function BuyerMobilePortal({
   const buyerDashboardCards = quickActionItems
     .filter((item) => ['documents', 'finance'].includes(item.key))
     .slice(0, 2)
+  const mobilePrimaryColour = normalizePortalBrandColour(brandPrimaryColour, '#10213a')
+  const mobileSecondaryColour = normalizePortalBrandColour(brandSecondaryColour, mobilePrimaryColour)
+  const mobileAccentColour = normalizePortalBrandColour(brandAccentColour, mobilePrimaryColour)
+  const mobileHeroOverlayStyle = {
+    background: `radial-gradient(circle at 86% 18%, rgba(255,255,255,0.2), transparent 26%), linear-gradient(180deg, ${portalHexToRgba(mobilePrimaryColour, 0.9)} 0%, ${portalHexToRgba(mobilePrimaryColour, 0.74)} 48%, ${portalHexToRgba(mobileSecondaryColour, 0.9)} 100%)`,
+  }
+  const mobilePrimaryButtonStyle = {
+    backgroundColor: mobilePrimaryColour,
+    color: '#ffffff',
+  }
+  const mobileGhostButtonStyle = {
+    borderColor: portalHexToRgba(mobilePrimaryColour, 0.2),
+    color: mobilePrimaryColour,
+  }
+  const mobileSoftActionStyle = {
+    borderColor: portalHexToRgba(mobilePrimaryColour, 0.22),
+    backgroundColor: portalHexToRgba(mobilePrimaryColour, 0.08),
+    color: mobilePrimaryColour,
+  }
+  const mobileAttentionPanelStyle = {
+    borderColor: portalHexToRgba(mobilePrimaryColour, 0.4),
+    backgroundColor: mobilePrimaryColour,
+    boxShadow: `0 14px 30px ${portalHexToRgba(mobilePrimaryColour, 0.18)}`,
+  }
+  const mobileAttentionChipStyle = {
+    borderColor: portalHexToRgba(mobileAccentColour, 0.45),
+    color: '#ffffff',
+  }
+  const mobileAttentionActionStyle = {
+    borderColor: portalHexToRgba(mobileAccentColour, 0.55),
+    backgroundColor: portalHexToRgba(mobileSecondaryColour, 0.44),
+    color: '#ffffff',
+  }
+  const mobileBottomNavActiveStyle = {
+    backgroundColor: portalHexToRgba(mobilePrimaryColour, 0.1),
+    color: mobilePrimaryColour,
+  }
 
   useEffect(() => {
     if (!selectedBuyerUploadIsImage || !selectedBuyerUploadFileBlob) {
@@ -4129,7 +4171,14 @@ function BuyerMobilePortal({
   return (
     <main className="min-h-screen bg-[#f4f7f6] font-sans text-[#101823]">
       <div className="mx-auto min-h-screen w-full max-w-[430px] px-4 pb-44 pt-5">
-        <header className="flex min-h-[44px] items-center justify-end gap-2">
+        <header className="flex min-h-[44px] items-center justify-between gap-3">
+          <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, 'overview')} className="inline-flex min-h-11 min-w-0 items-center" aria-label={`${brandName || 'Agency'} home`}>
+            {brandLogoUrl ? (
+              <img src={brandLogoUrl} alt={`${brandName || 'Agency'} logo`} className="max-h-10 max-w-[168px] object-contain object-left" />
+            ) : (
+              <span className="truncate text-base font-semibold tracking-[-0.03em] text-[#101823]">{brandName || 'Buyer Portal'}</span>
+            )}
+          </Link>
           <div className="flex shrink-0 items-center gap-2">
             <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, 'team')} aria-label="Contact team" className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#e1e5ea] bg-white/90 text-[#1f2937] shadow-[0_10px_24px_rgba(15,23,42,0.06)] backdrop-blur">
               <MessageCircle size={18} />
@@ -4159,7 +4208,7 @@ function BuyerMobilePortal({
                   className="absolute inset-0 h-full w-full object-cover"
                 />
               ) : null}
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_86%_18%,rgba(255,255,255,0.2),transparent_26%),linear-gradient(180deg,rgba(5,28,34,0.88)_0%,rgba(5,28,34,0.72)_48%,rgba(5,28,34,0.86)_100%)]" aria-hidden="true" />
+              <div className="absolute inset-0" style={mobileHeroOverlayStyle} aria-hidden="true" />
               <div className="relative flex min-h-[212px] flex-col">
                 <p className="text-sm font-medium text-[#a5d8a7]">Your purchase</p>
                 <div className="mt-4 flex items-start justify-between gap-3">
@@ -4178,12 +4227,12 @@ function BuyerMobilePortal({
                   <div className="min-w-0">
                     <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#d8e7e5]">Where things stand</p>
                     <p className="mt-2 flex items-center gap-2 text-[1.12rem] font-semibold text-white">
-                      <span className="h-2 w-2 rounded-full bg-[#76d46f]" />
+                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: mobileAccentColour }} />
                       <span className="min-w-0 truncate">{journeyCurrentStageLabel}</span>
                     </p>
                     <p className="mt-1 text-sm font-medium text-[#d8e7e5]">Next: {journeyNextStageLabel}</p>
                   </div>
-                  <div className="relative inline-flex h-[88px] w-[88px] shrink-0 items-center justify-center rounded-full shadow-[0_16px_30px_rgba(0,0,0,0.24)]" style={{ background: `conic-gradient(#74d46e ${safeProgress * 3.6}deg, rgba(255,255,255,0.2) 0deg)` }}>
+                  <div className="relative inline-flex h-[88px] w-[88px] shrink-0 items-center justify-center rounded-full shadow-[0_16px_30px_rgba(0,0,0,0.24)]" style={{ background: `conic-gradient(${mobileAccentColour} ${safeProgress * 3.6}deg, rgba(255,255,255,0.2) 0deg)` }}>
                     <span className="absolute inset-2 rounded-full bg-[#10243a]/[0.94] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]" />
                     <span className="relative text-center">
                       <span className="block text-[1.32rem] font-semibold leading-none text-white">{safeProgress}%</span>
@@ -4194,15 +4243,15 @@ function BuyerMobilePortal({
                 </div>
               </section>
 
-              <section className="mt-3 overflow-hidden rounded-[20px] border border-[#1f6f52]/[0.4] bg-[#063f34] p-4 text-white shadow-[0_14px_30px_rgba(6,63,52,0.18)]">
+              <section className="mt-3 overflow-hidden rounded-[20px] border border-[#1f6f52]/[0.4] bg-[#063f34] p-4 text-white shadow-[0_14px_30px_rgba(6,63,52,0.18)]" style={mobileAttentionPanelStyle}>
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#9fe091]">Needs your attention</p>
-                  <span className="rounded-full border border-[#8bd985]/[0.45] bg-white/[0.1] px-2.5 py-1 text-[0.64rem] font-semibold uppercase tracking-[0.08em] text-[#d8ffd2]">
+                  <span className="rounded-full border border-[#8bd985]/[0.45] bg-white/[0.1] px-2.5 py-1 text-[0.64rem] font-semibold uppercase tracking-[0.08em] text-[#d8ffd2]" style={mobileAttentionChipStyle}>
                     {blockingActionCount} open
                   </span>
                 </div>
                 <div className="mt-3 flex items-start gap-3">
-                  <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] border border-[#8bd985]/[0.45] bg-white/[0.1] text-[#a9ec9c]">
+                  <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] border border-[#8bd985]/[0.45] bg-white/[0.1] text-[#a9ec9c]" style={mobileAttentionChipStyle}>
                     {hasRequiredBuyerAction ? <FileText size={20} /> : <ShieldCheck size={20} />}
                   </span>
                   <div className="min-w-0 flex-1">
@@ -4212,12 +4261,12 @@ function BuyerMobilePortal({
                   </div>
                 </div>
                 {hasRequiredBuyerAction ? (
-                  <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, primaryBuyerActionRoute)} className="mt-3 flex min-h-[42px] w-full items-center justify-center gap-2 rounded-[14px] border border-[#8bd985]/[0.6] bg-[#0a4d40] px-4 text-sm font-semibold text-[#d8ffd2]">
+                  <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, primaryBuyerActionRoute)} className="mt-3 flex min-h-[42px] w-full items-center justify-center gap-2 rounded-[14px] border border-[#8bd985]/[0.6] bg-[#0a4d40] px-4 text-sm font-semibold text-[#d8ffd2]" style={mobileAttentionActionStyle}>
                     <span>{primaryBuyerActionLabel}</span>
                     <ChevronRight size={18} />
                   </Link>
                 ) : (
-                  <div className="mt-3 flex min-h-[44px] items-center justify-center rounded-[14px] border border-[#8bd985]/[0.45] bg-[#0a4d40]/[0.86] px-4 text-sm font-semibold text-[#d8ffd2]">
+                  <div className="mt-3 flex min-h-[44px] items-center justify-center rounded-[14px] border border-[#8bd985]/[0.45] bg-[#0a4d40]/[0.86] px-4 text-sm font-semibold text-[#d8ffd2]" style={mobileAttentionActionStyle}>
                     All caught up
                   </div>
                 )}
@@ -5030,6 +5079,7 @@ function BuyerMobilePortal({
                   onClick={() => buyerFinancePhotoInputRef.current?.click()}
                   disabled={selectedBuyerFinanceBusy}
                   className="flex min-h-[56px] items-center justify-between rounded-[18px] bg-[#10213a] px-4 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-60"
+                  style={mobilePrimaryButtonStyle}
                 >
                   <span className="inline-flex items-center gap-3">
                     <Camera size={18} />
@@ -5042,6 +5092,7 @@ function BuyerMobilePortal({
                   onClick={() => buyerFinanceFileInputRef.current?.click()}
                   disabled={selectedBuyerFinanceBusy}
                   className="flex min-h-[56px] items-center justify-between rounded-[18px] border border-[#dfe5ec] bg-[#fbfcfd] px-4 text-sm font-semibold text-[#10213a] transition disabled:cursor-not-allowed disabled:opacity-60"
+                  style={mobileGhostButtonStyle}
                 >
                   <span className="inline-flex items-center gap-3">
                     <UploadCloud size={18} />
@@ -5054,6 +5105,7 @@ function BuyerMobilePortal({
                   onClick={() => void submitBuyerFinanceAction()}
                   disabled={selectedBuyerFinanceBusy || !selectedBuyerFinanceFile?.file}
                   className="flex min-h-[56px] items-center justify-center rounded-[18px] border border-[#cfe8d8] bg-[#eefbf3] px-4 text-sm font-semibold text-[#1f7a46] transition disabled:cursor-not-allowed disabled:opacity-60"
+                  style={mobileSoftActionStyle}
                 >
                   {selectedBuyerFinanceBusy ? 'Uploading...' : 'Submit for review'}
                 </button>
@@ -5061,8 +5113,9 @@ function BuyerMobilePortal({
                   <button
                     type="button"
                     onClick={closeBuyerFinanceSheet}
-                    className="flex min-h-[52px] items-center justify-center rounded-[18px] border border-[#dfe5ec] bg-white px-4 text-sm font-semibold text-[#10213a] transition"
-                  >
+                  className="flex min-h-[52px] items-center justify-center rounded-[18px] border border-[#dfe5ec] bg-white px-4 text-sm font-semibold text-[#10213a] transition"
+                  style={mobileGhostButtonStyle}
+                >
                     Done
                   </button>
                 ) : null}
@@ -5144,6 +5197,7 @@ function BuyerMobilePortal({
                   type="submit"
                   disabled={appointmentActionPending === `${selectedBuyerAppointment.id}:reschedule`}
                   className="flex min-h-[56px] items-center justify-center rounded-[18px] bg-[#10213a] px-4 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-60"
+                  style={mobilePrimaryButtonStyle}
                 >
                   {appointmentActionPending === `${selectedBuyerAppointment.id}:reschedule` ? 'Sending...' : 'Send request'}
                 </button>
@@ -5214,6 +5268,7 @@ function BuyerMobilePortal({
                   onClick={() => buyerPhotoInputRef.current?.click()}
                   disabled={selectedBuyerUploadBusy || !selectedBuyerUploadTarget?.uploadSpec}
                   className="flex min-h-[56px] items-center justify-between rounded-[18px] bg-[#10213a] px-4 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-60"
+                  style={mobilePrimaryButtonStyle}
                 >
                   <span className="inline-flex items-center gap-3">
                     {selectedBuyerUploadBusy ? <Clock3 size={18} /> : <Camera size={18} />}
@@ -5226,6 +5281,7 @@ function BuyerMobilePortal({
                   onClick={() => buyerFileInputRef.current?.click()}
                   disabled={selectedBuyerUploadBusy || !selectedBuyerUploadTarget?.uploadSpec}
                   className="flex min-h-[56px] items-center justify-between rounded-[18px] border border-[#dfe5ec] bg-[#fbfcfd] px-4 text-sm font-semibold text-[#10213a] transition disabled:cursor-not-allowed disabled:opacity-60"
+                  style={mobileGhostButtonStyle}
                 >
                   <span className="inline-flex items-center gap-3">
                     {selectedBuyerUploadBusy ? <Clock3 size={18} /> : <UploadCloud size={18} />}
@@ -5242,6 +5298,7 @@ function BuyerMobilePortal({
                     })}
                     disabled={selectedBuyerIsOpening}
                     className="flex min-h-[56px] items-center justify-between rounded-[18px] border border-[#dfe5ec] bg-white px-4 text-sm font-semibold text-[#10213a] transition disabled:cursor-not-allowed disabled:opacity-60"
+                    style={mobileGhostButtonStyle}
                   >
                     <span className="inline-flex items-center gap-3">
                       <Download size={18} />
@@ -5255,6 +5312,7 @@ function BuyerMobilePortal({
                     type="button"
                     onClick={closeBuyerDocumentSheet}
                     className="flex min-h-[52px] items-center justify-center rounded-[18px] border border-[#cfe8d8] bg-[#eefbf3] px-4 text-sm font-semibold text-[#1f7a46] transition"
+                    style={mobileSoftActionStyle}
                   >
                     Done
                   </button>
@@ -5291,6 +5349,7 @@ function BuyerMobilePortal({
                 to={getPortalWorkspacePath(token, workspaceNavigationScope, item.section)}
                 aria-current={isActive ? 'page' : undefined}
                 className={`flex min-h-[42px] flex-col items-center justify-center gap-0.5 rounded-[16px] text-[0.66rem] font-semibold transition ${isActive ? 'bg-[#e9f8ef] text-[#063f34]' : 'text-[#667085] hover:bg-[#f7f8fa] hover:text-[#344054]'}`}
+                style={isActive ? mobileBottomNavActiveStyle : undefined}
               >
                 <Icon size={18} strokeWidth={isActive ? 2.4 : 2} />
                 <span>{item.label}</span>
@@ -11969,8 +12028,19 @@ function ClientPortal() {
       : activeSection === 'review'
         ? 'Review'
         : activeMenuItem.label
-  const developmentName = portal?.unit?.development?.name || 'Development'
-  const unitLabel = portal?.unit?.unit_number ? `Unit ${portal.unit.unit_number}` : 'Unit'
+  const developmentName = pickFirstText(
+    portalProfile?.isDevelopmentBuyerPortal ? portal?.unit?.development?.name : '',
+    portal?.listing?.address,
+    portal?.listing?.title,
+    portal?.transaction?.property_address,
+    portal?.transaction?.propertyAddress,
+    portal?.unit?.display_name,
+    portal?.unit?.unit_label,
+    'Property purchase',
+  )
+  const unitLabel = portalProfile?.isDevelopmentBuyerPortal
+    ? (portal?.unit?.unit_number ? `Unit ${portal.unit.unit_number}` : 'Unit')
+    : pickFirstText(portal?.unit?.unit_label, portal?.unit?.unit_number, portal?.transaction?.property_description, 'Residential sale')
   const buyerName = portal?.buyer?.name || 'Client'
   const clientFirstName = String(buyerName || 'Client').trim().split(/\s+/)[0] || 'Client'
   const buyerInitial = String(buyerName || 'C').trim().charAt(0).toUpperCase() || 'C'
@@ -13219,6 +13289,11 @@ function ClientPortal() {
             token={token}
             workspaceNavigationScope={workspaceNavigationScope}
             activeSection={activeSection}
+            brandName={buyerPortalBrandName}
+            brandLogoUrl={buyerPortalLogoDarkUrl}
+            brandPrimaryColour={buyerPortalPrimaryColour}
+            brandSecondaryColour={buyerPortalSecondaryColour}
+            brandAccentColour={buyerPortalAccentColour}
             developmentName={developmentName}
             unitLabel={unitLabel}
             propertyImageUrl={buyerPropertyImageUrl}

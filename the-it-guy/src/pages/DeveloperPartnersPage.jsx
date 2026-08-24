@@ -20,14 +20,18 @@ import { useWorkspace } from '../context/WorkspaceContext'
 import {
   acceptDeveloperPartnerRelationship,
   activateDeveloperPartnerAgreement,
-  createDeveloperPartnerInvite,
   fetchDeveloperPartnerInviteOptions,
   fetchDeveloperPartnersWorkspace,
   generateDeveloperPartnerAgreement,
   sendDeveloperPartnerInvitation,
+  setDeveloperCanonicalPartnerDefault,
   setDeveloperPartnerDefault,
   waiveDeveloperPartnerAgreement,
 } from '../lib/api'
+import {
+  createPartnerInvitation,
+  fetchPartnersSnapshot,
+} from '../lib/partnersRepository'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 
 const TABS = [
@@ -115,7 +119,7 @@ function normalizeDeveloperPartnerPageType(value = '') {
   const normalized = normalizeLower(value)
   if (['attorney', 'attorney_firm', 'conveyancer', 'transfer_attorney'].includes(normalized)) return 'transfer_attorney'
   if (['bond', 'bond_originator'].includes(normalized)) return 'bond_originator'
-  if (['agent', 'agency', 'agency_network', 'estate_agency', 'selling_agent'].includes(normalized)) return 'agency'
+  if (['agent', 'agency', 'agency_network', 'estate_agency', 'referral_agency', 'selling_agent'].includes(normalized)) return 'agency'
   return normalized || 'agency'
 }
 
@@ -151,6 +155,131 @@ function organisationMatchesPartnerType(organisation = {}, partnerType = 'agency
   const organisationType = normalizeLower(organisation.type)
   if (!organisationType) return true
   return allowedTypes.has(organisationType)
+}
+
+function workspaceTypeForDeveloperPartnerType(partnerType = 'agency') {
+  const normalized = normalizeDeveloperPartnerPageType(partnerType)
+  if (normalized === 'transfer_attorney') return 'attorney_firm'
+  if (normalized === 'bond_originator') return 'bond_originator'
+  return 'agency'
+}
+
+function dedupeById(rows = []) {
+  const byId = new Map()
+  rows.forEach((row) => {
+    const id = normalizeText(row?.id)
+    if (!id || byId.has(id)) return
+    byId.set(id, row)
+  })
+  return [...byId.values()]
+}
+
+function defaultMatchesRelationship(currentDefault = null, relationship = {}) {
+  if (!currentDefault || !relationship) return false
+  const defaultPartnerType = normalizeDeveloperPartnerPageType(currentDefault.partnerType)
+  const relationshipPartnerType = normalizeDeveloperPartnerPageType(relationship.partnerType)
+  if (defaultPartnerType && relationshipPartnerType && defaultPartnerType !== relationshipPartnerType) return false
+  if (currentDefault.relationshipId && currentDefault.relationshipId === relationship.id) return true
+  if (currentDefault.relationshipId && currentDefault.relationshipId === relationship.canonicalRelationshipId) return true
+  if (currentDefault.partnerOrganisationId && currentDefault.partnerOrganisationId === relationship.partnerOrganisationId) return true
+  return Boolean(currentDefault.companyName && normalizeLower(currentDefault.companyName) === normalizeLower(relationship.partnerName))
+}
+
+function canonicalRelationshipToDeveloperPartnerRow(relationship = {}) {
+  if (normalizeLower(relationship.relationshipStatus || relationship.status) !== 'accepted') return null
+  const partner = relationship.partner || {}
+  const partnerOrganisationId = normalizeText(partner.id || relationship.counterpartOrganisationId || relationship.partnerOrganisationId)
+  const partnerType = normalizeDeveloperPartnerPageType(partner.type || relationship.partnerType)
+  if (!['agency', 'transfer_attorney', 'bond_originator'].includes(partnerType)) return null
+  const partnerName = normalizeText(partner.displayName || partner.name) || 'Connected partner'
+  const email = normalizeText((partner.contactEmails || [])[0])
+  return {
+    id: `canonical:${relationship.id}`,
+    rowType: 'canonical_relationship',
+    canonicalRelationshipId: normalizeText(relationship.id),
+    partnerOrganisationId,
+    partnerOrganisation: {
+      id: partnerOrganisationId,
+      displayName: partnerName,
+      name: partnerName,
+      legalName: normalizeText(partner.legalName),
+      type: partner.type,
+      logoUrl: partner.logoUrl,
+      status: partner.verificationStatus,
+    },
+    partnerName,
+    partnerInvitationEmail: email,
+    partnerType,
+    partnerTypeLabel: TYPE_META[partnerType]?.label || 'Partner',
+    status: 'agreement_active',
+    scopeType: 'all_developments',
+    scopeJson: {},
+    invitedAt: relationship.createdAt || null,
+    acceptedAt: relationship.acceptedAt || null,
+    updatedAt: relationship.updatedAt || relationship.acceptedAt || relationship.createdAt || null,
+    agreements: [],
+    activeAgreement: { id: `canonical:${relationship.id}:operational`, status: 'waived' },
+    agreementStatus: 'waived',
+    metadataJson: {
+      source: 'canonical_partner_network',
+      relationshipType: relationship.relationshipType,
+      preferred: Boolean(relationship.preferred),
+      scopeType: relationship.scopeType,
+      scopeId: relationship.scopeId,
+      scopeName: relationship.scopeName,
+    },
+  }
+}
+
+function mergeDeveloperPartnerSnapshot(legacySnapshot = {}, canonicalSnapshot = {}, workspaceId = '') {
+  const canonicalRows = (canonicalSnapshot.relationships || [])
+    .map(canonicalRelationshipToDeveloperPartnerRow)
+    .filter(Boolean)
+
+  const legacyKeys = new Set(
+    (legacySnapshot.relationships || []).map((relationship) => [
+      normalizeDeveloperPartnerPageType(relationship.partnerType),
+      normalizeText(relationship.partnerOrganisationId),
+      normalizeLower(relationship.partnerName),
+    ].join(':')),
+  )
+
+  const mergedCanonicalRows = canonicalRows.filter((relationship) => {
+    const key = [
+      normalizeDeveloperPartnerPageType(relationship.partnerType),
+      normalizeText(relationship.partnerOrganisationId),
+      normalizeLower(relationship.partnerName),
+    ].join(':')
+    return !legacyKeys.has(key)
+  })
+
+  const relationships = [...(legacySnapshot.relationships || []), ...mergedCanonicalRows]
+  const invitations = [...(legacySnapshot.invitations || []), ...(canonicalSnapshot.invitations || [])]
+  const agreements = legacySnapshot.agreements || []
+
+  return {
+    ...legacySnapshot,
+    accessContext: {
+      ...(legacySnapshot.accessContext || {}),
+      ...(canonicalSnapshot.accessContext || {}),
+      organisationId: normalizeText(legacySnapshot.accessContext?.organisationId || canonicalSnapshot.accessContext?.organisationId || workspaceId),
+    },
+    relationships,
+    invitations,
+    partnerDirectory: dedupeById(canonicalSnapshot.organisations || []),
+    metrics: {
+      ...(legacySnapshot.metrics || {}),
+      total: relationships.length,
+      active: relationships.filter((relationship) => ['accepted', 'agreement_active'].includes(normalizeLower(relationship.status))).length,
+      pendingInvites: invitations.filter((invitation) => ['pending', 'invited'].includes(normalizeLower(invitation.status))).length,
+      activeAgreements: agreements.filter((agreement) => ['active', 'signed'].includes(normalizeLower(agreement.status))).length + mergedCanonicalRows.length,
+      agreementPending: relationships.filter((relationship) => {
+        const status = normalizeLower(relationship.status)
+        return ['accepted', 'agreement_pending'].includes(status) && normalizeLower(relationship.agreementStatus) !== 'active'
+      }).length,
+    },
+    canonicalSource: canonicalSnapshot.source || '',
+  }
 }
 
 function StatusBadge({ status, variant = 'relationship' }) {
@@ -393,7 +522,7 @@ function DefaultsPanel({ relationships, defaults = [], busyKey = '', onSetDefaul
                       <p className="truncate text-sm font-semibold text-[#10243a]">{relationship.partnerName}</p>
                       <p className="text-xs text-[#60758d]">{getScopeLabel(relationship)}</p>
                     </div>
-                    {currentDefault?.relationshipId === relationship.id ? (
+                    {defaultMatchesRelationship(currentDefault, relationship) ? (
                       <span className="inline-flex h-7 shrink-0 items-center rounded-full border border-[#cfeedd] bg-[#f1fbf6] px-2.5 text-xs font-semibold text-[#17613d]">
                         Default
                       </span>
@@ -420,7 +549,16 @@ function DefaultsPanel({ relationships, defaults = [], busyKey = '', onSetDefaul
   )
 }
 
-function AddDeveloperPartnerModal({ open, workspaceId, onClose, onCreated }) {
+function AddDeveloperPartnerModal({
+  open,
+  workspaceId,
+  workspaceName = '',
+  workspaceType = 'developer_company',
+  profile = null,
+  directoryOrganisations = [],
+  onClose,
+  onCreated,
+}) {
   const [partnerType, setPartnerType] = useState('agency')
   const [targetMode, setTargetMode] = useState('existing')
   const [partnerOrganisationId, setPartnerOrganisationId] = useState('')
@@ -459,7 +597,10 @@ function AddDeveloperPartnerModal({ open, workspaceId, onClose, onCreated }) {
       .catch((loadError) => {
         if (!active) return
         console.error('[DeveloperPartnersPage] failed to load invite options', loadError)
-        setError(loadError?.message || 'Unable to load partner options right now.')
+        setOptions({ organisations: [], developments: [] })
+        if (!directoryOrganisations.length) {
+          setError(loadError?.message || 'Unable to load partner options right now.')
+        }
       })
       .finally(() => {
         if (active) setLoadingOptions(false)
@@ -467,7 +608,7 @@ function AddDeveloperPartnerModal({ open, workspaceId, onClose, onCreated }) {
     return () => {
       active = false
     }
-  }, [open, workspaceId])
+  }, [directoryOrganisations.length, open, workspaceId])
 
   useEffect(() => {
     if (!open) return
@@ -477,7 +618,7 @@ function AddDeveloperPartnerModal({ open, workspaceId, onClose, onCreated }) {
 
   const filteredOrganisations = useMemo(() => {
     const query = normalizeLower(directorySearch)
-    return (options.organisations || [])
+    return dedupeById([...(options.organisations || []), ...(directoryOrganisations || [])])
       .filter((organisation) => organisationMatchesPartnerType(organisation, partnerType))
       .filter((organisation) => {
         if (!query) return true
@@ -485,11 +626,12 @@ function AddDeveloperPartnerModal({ open, workspaceId, onClose, onCreated }) {
           .some((value) => normalizeLower(value).includes(query))
       })
       .slice(0, 8)
-  }, [directorySearch, options.organisations, partnerType])
+  }, [directoryOrganisations, directorySearch, options.organisations, partnerType])
 
   const selectedOrganisation = useMemo(() => {
-    return (options.organisations || []).find((organisation) => organisation.id === partnerOrganisationId) || null
-  }, [options.organisations, partnerOrganisationId])
+    return dedupeById([...(options.organisations || []), ...(directoryOrganisations || [])])
+      .find((organisation) => organisation.id === partnerOrganisationId) || null
+  }, [directoryOrganisations, options.organisations, partnerOrganisationId])
 
   const canSubmit = useMemo(() => {
     if (!workspaceId || saving) return false
@@ -511,17 +653,23 @@ function AddDeveloperPartnerModal({ open, workspaceId, onClose, onCreated }) {
     setSaving(true)
     setError('')
     try {
-      const created = await createDeveloperPartnerInvite({
-        developerOrganisationId: workspaceId,
-        partnerType,
-        partnerOrganisationId: targetMode === 'existing' ? partnerOrganisationId : null,
-        partnerDisplayName: targetMode === 'existing' ? selectedOrganisation?.displayName : partnerDisplayName,
-        partnerInvitationEmail: targetMode === 'invite' ? partnerInvitationEmail : null,
-        sendEmail: targetMode === 'invite',
-        scopeType,
-        scopeJson: scopeType === 'specific_developments'
-          ? { developmentIds: selectedDevelopmentIds }
-          : {},
+      const created = await createPartnerInvitation({
+        organisationId: workspaceId,
+        organisationName: workspaceName,
+        workspaceType,
+        recipientOrganisationId: targetMode === 'existing' ? partnerOrganisationId : '',
+        recipientOrganisationName: targetMode === 'existing' ? selectedOrganisation?.displayName : partnerDisplayName,
+        recipientEmail: targetMode === 'invite' ? partnerInvitationEmail : '',
+        toWorkspaceType: targetMode === 'existing' ? selectedOrganisation?.type : workspaceTypeForDeveloperPartnerType(partnerType),
+        relationshipType: 'approved',
+        preferred: false,
+        userId: normalizeText(profile?.id),
+        scopeType: 'organisation',
+        scopeId: workspaceId,
+        scopeName: scopeType === 'specific_developments'
+          ? `${selectedDevelopmentIds.length} selected developments`
+          : 'All developments',
+        message: 'Developer partner relationship for transaction allocation.',
       })
       resetForm()
       onCreated?.(created)
@@ -758,7 +906,7 @@ function AddDeveloperPartnerModal({ open, workspaceId, onClose, onCreated }) {
 }
 
 function DeveloperPartnersPage() {
-  const { currentWorkspace, workspace } = useWorkspace()
+  const { currentMembership, currentWorkspace, profile, role, workspace } = useWorkspace()
   const workspaceId = normalizeText(currentWorkspace?.id || workspace?.id)
   const [searchParams, setSearchParams] = useSearchParams()
   const [activeTab, setActiveTab] = useState('directory')
@@ -806,15 +954,31 @@ function DeveloperPartnersPage() {
     setLoading(true)
     setError('')
     try {
-      const nextSnapshot = await fetchDeveloperPartnersWorkspace({ organisationId: workspaceId })
-      setSnapshot(nextSnapshot)
+      const [legacySnapshot, canonicalSnapshot] = await Promise.all([
+        fetchDeveloperPartnersWorkspace({ organisationId: workspaceId }),
+        fetchPartnersSnapshot({
+          organisationId: workspaceId,
+          workspaceType: 'developer_company',
+          includeDirectory: true,
+          accessContext: {
+            organisationId: workspaceId,
+            currentMembership,
+            profile,
+            role: role || 'developer',
+          },
+        }).catch((canonicalError) => {
+          console.warn('[DeveloperPartnersPage] canonical partner snapshot unavailable', canonicalError)
+          return null
+        }),
+      ])
+      setSnapshot(canonicalSnapshot ? mergeDeveloperPartnerSnapshot(legacySnapshot, canonicalSnapshot, workspaceId) : legacySnapshot)
     } catch (loadError) {
       console.error('[DeveloperPartnersPage] failed to load partner workspace', loadError)
       setError(loadError?.message || 'Unable to load developer partners right now.')
     } finally {
       setLoading(false)
     }
-  }, [workspaceId])
+  }, [currentMembership, profile, role, workspaceId])
 
   useEffect(() => {
     void loadWorkspace()
@@ -900,12 +1064,26 @@ function DeveloperPartnersPage() {
     void runRelationshipAction(
       `default:${relationship.id}`,
       async () => {
-        await setDeveloperPartnerDefault(relationship.id)
+        if (relationship.rowType === 'canonical_relationship') {
+          await setDeveloperCanonicalPartnerDefault({
+            developerOrganisationId: workspaceId,
+            partnerType: relationship.partnerType,
+            partnerOrganisationId: relationship.partnerOrganisationId,
+            companyName: relationship.partnerName,
+            contactPerson: relationship.partnerName,
+            email: relationship.partnerInvitationEmail,
+            scopeType: relationship.scopeType,
+            scopeJson: relationship.scopeJson,
+            notes: 'Default set from Developer Partners canonical network.',
+          })
+        } else {
+          await setDeveloperPartnerDefault(relationship.id)
+        }
         setNotice(`${relationship.partnerName} is now the default ${relationship.partnerTypeLabel}.`)
       },
       'defaults',
     )
-  }, [runRelationshipAction])
+  }, [runRelationshipAction, workspaceId])
 
   const relationshipsById = useMemo(() => {
     return new Map(snapshot.relationships.map((relationship) => [relationship.id, relationship]))
@@ -915,6 +1093,7 @@ function DeveloperPartnersPage() {
     const currentOrganisationId = normalizeText(snapshot.accessContext?.organisationId || workspaceId)
 
     return (snapshot.invitations || [])
+      .filter((invitation) => ['pending', 'invited'].includes(normalizeLower(invitation.status)))
       .map((invitation) => {
         const senderIsCurrentOrganisation = normalizeText(invitation.fromOrganisationId) === currentOrganisationId
         const partnerName = senderIsCurrentOrganisation
@@ -1018,14 +1197,7 @@ function DeveloperPartnersPage() {
   return (
     <div className="min-h-full bg-[#f6f8fb] px-4 py-5 text-[#10243a] sm:px-6 lg:px-8">
       <div className="mx-auto flex max-w-[1480px] flex-col gap-5">
-        <header className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[#0f8f4c]">Developer</p>
-            <h1 className="mt-2 text-3xl font-semibold tracking-[-0.02em] text-[#08182d]">Partners</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-[#60758d]">
-              Manage partner relationships, agreement readiness and default assignment eligibility.
-            </p>
-          </div>
+        <header className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-end">
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
@@ -1201,6 +1373,10 @@ function DeveloperPartnersPage() {
       <AddDeveloperPartnerModal
         open={inviteOpen}
         workspaceId={workspaceId}
+        workspaceName={currentWorkspace?.name || workspace?.name || ''}
+        workspaceType={currentWorkspace?.type || workspace?.type || 'developer_company'}
+        profile={profile}
+        directoryOrganisations={snapshot.partnerDirectory || []}
         onClose={() => setInviteOpen(false)}
         onCreated={(created) => {
           setInviteOpen(false)

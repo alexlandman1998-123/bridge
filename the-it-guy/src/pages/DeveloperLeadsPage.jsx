@@ -1943,18 +1943,48 @@ function DeveloperLeadWorkspacePanel({
     )
   }
 
+  function renderWorkspaceTabs() {
+    return (
+      <section className="scroll-mt-3 overflow-x-auto rounded-[18px] border border-[#dce7f2] bg-white shadow-[0_10px_26px_rgba(31,54,78,0.045)]" role="tablist" aria-label="Buyer workspace sections" data-testid="lead-workspace-tabs">
+        <div className="grid min-w-[840px]" style={{ gridTemplateColumns: `repeat(${workspaceTabs.length}, minmax(132px, 1fr))` }}>
+          {workspaceTabs.map((tab) => {
+            const isActive = activeTab === tab.key
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setActiveTab(tab.key)}
+                role="tab"
+                aria-selected={isActive}
+                className={`relative flex min-h-[52px] items-center justify-center gap-2 whitespace-nowrap px-3 text-[0.82rem] transition ${
+                  isActive ? 'font-semibold text-[#123955]' : 'font-medium text-[#60758b] hover:text-[#163247]'
+                }`}
+              >
+                <span>{tab.label}</span>
+                {tab.meta !== '' ? (
+                  <span className={`rounded-full px-2 py-0.5 text-[0.66rem] ${isActive ? 'bg-[#e8f2fb] text-[#1f5f8a]' : 'bg-[#f6f9fc] text-[#8aa0b7]'}`}>{tab.meta}</span>
+                ) : null}
+                <span className={`absolute inset-x-5 bottom-0 h-0.5 rounded-full bg-[#2f7b9e] transition ${isActive ? 'opacity-100' : 'opacity-0'}`} />
+              </button>
+            )
+          })}
+        </div>
+      </section>
+    )
+  }
+
   return (
-    <section className="grid min-w-0 gap-5" data-developer-lead-workspace="true">
-      <div className="overflow-hidden rounded-[24px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_16px_42px_rgba(31,54,78,0.06)]">
-        <div className="border-b border-[#edf3f8] px-5 py-5 sm:px-7">
+    <section className="grid min-w-0 gap-3" data-developer-lead-workspace="true">
+      <div className="overflow-hidden rounded-[22px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_34px_rgba(31,54,78,0.05)]">
+        <div className="border-b border-[#edf3f8] px-4 py-4 sm:px-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <button type="button" className="inline-flex items-center gap-2 text-sm font-semibold text-[#60758d] transition hover:text-[#17613d]" onClick={onClose}>
+            <button type="button" className="inline-flex items-center gap-2 text-[0.82rem] font-semibold text-[#60758d] transition hover:text-[#17613d]" onClick={onClose}>
               <ArrowLeft size={16} />
               Back to Leads
             </button>
             <span className="sr-only">Buyer Lead Workspace</span>
             <details className="group relative">
-              <summary className="flex min-h-11 cursor-pointer list-none items-center gap-3 rounded-[14px] border border-[#d9e5f2] bg-white px-4 text-sm font-semibold text-[#102033] shadow-[0_10px_24px_rgba(31,54,78,0.06)] transition hover:border-[#bfd0e0]">
+              <summary className="flex min-h-10 cursor-pointer list-none items-center gap-2 rounded-[13px] border border-[#d9e5f2] bg-white px-4 text-[0.82rem] font-semibold text-[#102033] shadow-[0_8px_20px_rgba(31,54,78,0.05)] transition hover:border-[#bfd0e0]">
                 Actions
                 <ChevronDown size={16} className="transition group-open:rotate-180" />
               </summary>
@@ -1969,74 +1999,74 @@ function DeveloperLeadWorkspacePanel({
             </details>
           </div>
 
-          <div className="mt-8 overflow-hidden rounded-[24px] border border-[#dbe7f2] bg-white shadow-[0_18px_42px_rgba(31,54,78,0.08)]">
-            <div className="grid lg:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.95fr)]">
-              <div className="relative flex min-h-[330px] flex-col justify-between overflow-hidden bg-[#082b46] px-6 py-7 text-white sm:px-10 lg:px-12">
+          <div className="mt-4 overflow-hidden rounded-[20px] border border-[#dbe7f2] bg-white shadow-[0_14px_34px_rgba(31,54,78,0.07)]">
+            <div className="grid lg:grid-cols-[minmax(0,1.35fr)_minmax(300px,0.85fr)]">
+              <div className="relative flex min-h-[220px] flex-col justify-between overflow-hidden bg-[#082b46] px-5 py-5 text-white sm:px-7 lg:px-8">
                 <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_0%,rgba(47,123,158,0.32),transparent_34%),linear-gradient(145deg,rgba(5,31,52,0.12),rgba(5,31,52,0.92))]" />
                 <div className="relative">
                   <div className="flex flex-wrap gap-2">
-                    <span className="inline-flex h-8 items-center rounded-full border border-[#2b74b7] bg-[#0c3760] px-4 text-xs font-semibold text-white">Buyer Lead</span>
-                    <span className="inline-flex h-8 items-center rounded-full border border-white/10 bg-white/10 px-4 text-xs font-semibold text-[#d9e8f5]">Qualification</span>
+                    <span className="inline-flex h-7 items-center rounded-full border border-[#2b74b7] bg-[#0c3760] px-3 text-[0.72rem] font-semibold text-white">Buyer Lead</span>
+                    <span className="inline-flex h-7 items-center rounded-full border border-white/10 bg-white/10 px-3 text-[0.72rem] font-semibold text-[#d9e8f5]">Qualification</span>
                   </div>
-                  <h2 className="mt-10 max-w-4xl text-[clamp(2.5rem,6vw,4.6rem)] font-semibold leading-[0.98] tracking-[-0.06em] text-white">
+                  <h2 className="mt-6 max-w-4xl text-[clamp(2rem,4.5vw,3.25rem)] font-semibold leading-none tracking-[-0.055em] text-white">
                     {title}
                   </h2>
-                  <p className="mt-7 flex max-w-3xl items-center gap-3 text-lg font-semibold text-[#d8e5f0]">
-                    <Home size={21} className="shrink-0 text-[#9fb8ce]" />
+                  <p className="mt-4 flex max-w-3xl items-center gap-2 text-[0.98rem] font-semibold text-[#d8e5f0]">
+                    <Home size={17} className="shrink-0 text-[#9fb8ce]" />
                     <span className="min-w-0 truncate">{headerContextLine}</span>
                   </p>
                 </div>
-                <div className="relative mt-10 flex flex-wrap gap-x-6 gap-y-3 text-sm font-semibold text-[#d8e5f0] sm:text-base">
+                <div className="relative mt-6 flex flex-wrap gap-x-5 gap-y-2 text-[0.82rem] font-semibold text-[#d8e5f0]">
                   <span className="inline-flex min-w-0 items-center gap-2">
-                    <Phone size={18} className="shrink-0 text-[#9fb8ce]" />
+                    <Phone size={15} className="shrink-0 text-[#9fb8ce]" />
                     <span className="truncate">{getLeadContactLine(lead, 'phone')}</span>
                   </span>
                   <span className="inline-flex min-w-0 items-center gap-2">
-                    <Mail size={18} className="shrink-0 text-[#9fb8ce]" />
+                    <Mail size={15} className="shrink-0 text-[#9fb8ce]" />
                     <span className="truncate">{getLeadContactLine(lead, 'email')}</span>
                   </span>
                   <span className="inline-flex min-w-0 items-center gap-2">
-                    <UserPlus size={18} className="shrink-0 text-[#9fb8ce]" />
+                    <UserPlus size={15} className="shrink-0 text-[#9fb8ce]" />
                     <span className="truncate">{assignedLabel}</span>
                   </span>
                 </div>
               </div>
 
-              <div className="bg-white px-6 py-7 sm:px-8 lg:px-10">
-                <p className="text-[0.78rem] font-semibold uppercase tracking-[0.28em] text-[#425a74]">Buyer Readiness</p>
-                <div className="mt-7 grid gap-7 xl:grid-cols-[220px_minmax(0,1fr)] xl:items-center">
+              <div className="bg-white px-5 py-5 sm:px-6 lg:px-7">
+                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.24em] text-[#425a74]">Buyer Readiness</p>
+                <div className="mt-4 grid gap-4 xl:grid-cols-[150px_minmax(0,1fr)] xl:items-center">
                   <div className="flex flex-col items-center">
                     <div
-                      className="grid h-44 w-44 place-items-center rounded-full shadow-[inset_0_0_0_1px_rgba(219,231,242,0.9)]"
+                      className="grid h-32 w-32 place-items-center rounded-full shadow-[inset_0_0_0_1px_rgba(219,231,242,0.9)]"
                       style={{ background: `conic-gradient(#2f87aa ${journeyReadiness.score}%, #e8eef6 0)` }}
                     >
-                      <div className="grid h-28 w-28 place-items-center rounded-full bg-white shadow-[0_14px_34px_rgba(31,54,78,0.12)]">
-                        <span className="text-4xl font-semibold tracking-[-0.04em] text-[#102033]">{journeyReadiness.score}</span>
+                      <div className="grid h-20 w-20 place-items-center rounded-full bg-white shadow-[0_12px_26px_rgba(31,54,78,0.1)]">
+                        <span className="text-2xl font-semibold tracking-[-0.04em] text-[#102033]">{journeyReadiness.score}</span>
                       </div>
                     </div>
-                    <strong className="mt-6 text-xl font-semibold text-[#102033]">{journeyReadiness.statusLabel}</strong>
-                    <span className="mt-2 text-sm font-semibold text-[#6d839b]">{journeyReadiness.completedLabel}</span>
+                    <strong className="mt-3 text-base font-semibold text-[#102033]">{journeyReadiness.statusLabel}</strong>
+                    <span className="mt-1 text-xs font-semibold text-[#6d839b]">{journeyReadiness.completedLabel}</span>
                   </div>
 
-                  <div className="overflow-hidden rounded-[22px] border border-[#dbe7f2]">
+                  <div className="overflow-hidden rounded-[18px] border border-[#dbe7f2]">
                     {headerReadinessRows.map(({ key, label, value, helper, Icon }) => (
-                      <div key={key} className="grid min-h-[76px] grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-b border-[#e8eff6] px-5 py-3 last:border-b-0">
-                        <div className="flex min-w-0 items-center gap-3">
-                          <Icon size={19} className="shrink-0 text-[#315b7a]" />
-                          <span className="truncate text-lg font-semibold text-[#20364c]">{label}</span>
+                      <div key={key} className="grid min-h-[54px] grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-[#e8eff6] px-4 py-2 last:border-b-0">
+                        <div className="flex min-w-0 items-center gap-2.5">
+                          <Icon size={16} className="shrink-0 text-[#315b7a]" />
+                          <span className="truncate text-[0.9rem] font-semibold text-[#20364c]">{label}</span>
                         </div>
                         <div className="min-w-0 text-right">
-                          <strong className="block max-w-[150px] truncate text-base font-semibold text-[#6a8098]" title={String(value)}>{value}</strong>
-                          <span className="mt-0.5 block text-sm font-semibold text-[#8aa0b4]">{helper}</span>
+                          <strong className="block max-w-[126px] truncate text-[0.86rem] font-semibold text-[#6a8098]" title={String(value)}>{value}</strong>
+                          <span className="mt-0.5 block text-[0.76rem] font-semibold text-[#8aa0b4]">{helper}</span>
                         </div>
                       </div>
                     ))}
                   </div>
                 </div>
-                <div className="mt-6 flex flex-wrap gap-2">
-                  <span className="inline-flex h-8 items-center rounded-full border border-[#dbe6f1] bg-[#f8fbff] px-3 text-xs font-semibold text-[#4d6782]">{sourceLabel}</span>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <span className="inline-flex h-7 items-center rounded-full border border-[#dbe6f1] bg-[#f8fbff] px-3 text-[0.72rem] font-semibold text-[#4d6782]">{sourceLabel}</span>
                   <StatusBadge status={lead.leadStatus} />
-                  <span className={`inline-flex h-8 items-center rounded-full border px-3 text-xs font-semibold ${getHandoffTone(handoff.status)}`}>
+                  <span className={`inline-flex h-7 items-center rounded-full border px-3 text-[0.72rem] font-semibold ${getHandoffTone(handoff.status)}`}>
                     {converted ? 'Transaction created' : handoff.label}
                   </span>
                 </div>
@@ -2045,17 +2075,21 @@ function DeveloperLeadWorkspacePanel({
           </div>
         </div>
 
-        <div className="px-5 py-5 sm:px-7">
+        <div className="border-b border-[#edf3f8] px-4 py-3 sm:px-5">
+          {renderWorkspaceTabs()}
+        </div>
+
+        <div className="px-4 py-4 sm:px-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h3 className="text-[18px] font-semibold uppercase tracking-[0.08em] text-[#102033]">Deal Journey</h3>
-            <span className="rounded-full border border-[#d8e5f1] bg-[#fbfdff] px-3 py-1 text-[12px] font-semibold text-[#60758b]">
+            <h3 className="text-[0.95rem] font-semibold uppercase tracking-[0.08em] text-[#102033]">Deal Journey</h3>
+            <span className="rounded-full border border-[#d8e5f1] bg-[#fbfdff] px-3 py-1 text-[0.72rem] font-semibold text-[#60758b]">
               {selectedStage?.label || 'Lead captured'}
             </span>
           </div>
-          <div className="mt-6 overflow-x-auto pb-2">
+          <div className="mt-4 overflow-x-auto pb-1">
             <ol
-              className="grid min-w-[840px] items-start"
-              style={{ gridTemplateColumns: `repeat(${Math.max(journeyStages.length, 1)}, minmax(140px, 1fr))` }}
+              className="grid min-w-[780px] items-start"
+              style={{ gridTemplateColumns: `repeat(${Math.max(journeyStages.length, 1)}, minmax(124px, 1fr))` }}
             >
               {journeyStages.map((stage, index) => {
                 const isSelected = selectedStage?.key === stage.key
@@ -2069,8 +2103,8 @@ function DeveloperLeadWorkspacePanel({
                     <button
                       type="button"
                       onClick={() => setSelectedJourneyStage(stage.key)}
-                      className={`relative flex min-h-[112px] w-full flex-col items-center text-center transition ${
-                        isCurrent || isSelected ? 'rounded-[18px] border border-[#cfe0ee] bg-[#f4f9fc] px-3 py-3 shadow-[0_10px_22px_rgba(31,54,78,0.06)]' : 'px-2 py-3 hover:rounded-[18px] hover:bg-[#f8fbfd]'
+                      className={`relative flex min-h-[88px] w-full flex-col items-center text-center transition ${
+                        isCurrent || isSelected ? 'rounded-[16px] border border-[#cfe0ee] bg-[#f4f9fc] px-2.5 py-2.5 shadow-[0_8px_18px_rgba(31,54,78,0.05)]' : 'px-2 py-2.5 hover:rounded-[16px] hover:bg-[#f8fbfd]'
                       }`}
                       aria-current={isCurrent ? 'step' : undefined}
                     >
@@ -2083,8 +2117,8 @@ function DeveloperLeadWorkspacePanel({
                       }`}>
                         {isCompleted ? <CheckCircle2 size={15} /> : index + 1}
                       </span>
-                      <p className="mt-3 max-w-[150px] text-sm font-semibold leading-5 text-[#203a54]">{stage.label}</p>
-                      <p className="mt-1 max-w-[150px] truncate text-xs font-semibold text-[#6d839b]" title={stage.detail}>{stage.detail}</p>
+                      <p className="mt-2 max-w-[130px] text-[0.8rem] font-semibold leading-4 text-[#203a54]">{stage.label}</p>
+                      <p className="mt-1 max-w-[130px] truncate text-[0.7rem] font-semibold text-[#6d839b]" title={stage.detail}>{stage.detail}</p>
                       {isCurrent ? <span className="mt-2 rounded-full bg-[#dfeef7] px-2.5 py-1 text-[0.64rem] font-bold uppercase tracking-[0.1em] text-[#245f86]">Live</span> : null}
                     </button>
                   </li>
@@ -2092,11 +2126,11 @@ function DeveloperLeadWorkspacePanel({
               })}
             </ol>
           </div>
-          <div className="mt-5 rounded-[16px] border border-[#e4edf6] bg-[#fbfdff] p-4">
+          <div className="mt-3 rounded-[16px] border border-[#e4edf6] bg-[#fbfdff] p-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <p className="text-[12px] font-semibold uppercase tracking-[0.12em] text-[#7d91a8]">Stage Actions</p>
-                <h3 className="mt-1 text-base font-semibold text-[#18324b]">{selectedStage?.label || 'Lead captured'}</h3>
+                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7d91a8]">Stage Actions</p>
+                <h3 className="mt-1 text-[0.92rem] font-semibold text-[#18324b]">{selectedStage?.label || 'Lead captured'}</h3>
               </div>
               <div className="flex flex-wrap gap-2">
                 <JourneyStageOverrideActions
@@ -2132,7 +2166,7 @@ function DeveloperLeadWorkspacePanel({
         </div>
       </div>
 
-      <section className="grid gap-5 xl:grid-cols-[minmax(460px,0.55fr)_minmax(0,0.45fr)] xl:items-stretch">
+      <section className="grid gap-4 xl:grid-cols-[minmax(420px,0.55fr)_minmax(0,0.45fr)] xl:items-stretch">
         <form className="flex h-full flex-col rounded-[24px] border border-[#dce7f2] bg-white p-5 shadow-[0_14px_36px_rgba(31,54,78,0.05)]" onSubmit={(event) => {
           event.preventDefault()
           handleSaveQualificationPlan()
@@ -2289,32 +2323,6 @@ function DeveloperLeadWorkspacePanel({
               </div>
             </form>
           </section>
-        </div>
-      </section>
-
-      <section className="scroll-mt-4 overflow-x-auto rounded-[20px] border border-[#dce7f2] bg-white shadow-[0_10px_30px_rgba(31,54,78,0.045)]" role="tablist" aria-label="Buyer workspace sections" data-testid="lead-workspace-tabs">
-        <div className="grid min-w-[900px]" style={{ gridTemplateColumns: `repeat(${workspaceTabs.length}, minmax(140px, 1fr))` }}>
-          {workspaceTabs.map((tab) => {
-            const isActive = activeTab === tab.key
-            return (
-              <button
-                key={tab.key}
-                type="button"
-                onClick={() => setActiveTab(tab.key)}
-                role="tab"
-                aria-selected={isActive}
-                className={`relative flex min-h-[64px] items-center justify-center gap-2 whitespace-nowrap px-4 text-sm transition ${
-                  isActive ? 'font-semibold text-[#123955]' : 'font-medium text-[#60758b] hover:text-[#163247]'
-                }`}
-              >
-                <span>{tab.label}</span>
-                {tab.meta !== '' ? (
-                  <span className={`rounded-full px-2 py-0.5 text-[0.72rem] ${isActive ? 'bg-[#e8f2fb] text-[#1f5f8a]' : 'bg-[#f6f9fc] text-[#8aa0b7]'}`}>{tab.meta}</span>
-                ) : null}
-                <span className={`absolute inset-x-6 bottom-0 h-0.5 rounded-full bg-[#2f7b9e] transition ${isActive ? 'opacity-100' : 'opacity-0'}`} />
-              </button>
-            )
-          })}
         </div>
       </section>
 
@@ -2866,8 +2874,8 @@ export default function DeveloperLeadsPage() {
   }
 
   return (
-    <main className="developer-leads-page min-h-screen overflow-x-hidden bg-[#f6f9fc] p-4 sm:p-5 lg:p-6">
-      <div className="developer-leads-shell mx-auto grid w-full min-w-0 max-w-[1680px] gap-6">
+    <main className="developer-leads-page min-h-screen overflow-x-hidden bg-[#f6f9fc] p-3 sm:p-4">
+      <div className="developer-leads-shell mx-auto grid w-full min-w-0 max-w-[1680px] gap-4">
         {routeDeveloperLeadId && selectedLead ? (
           <>
             {error ? (

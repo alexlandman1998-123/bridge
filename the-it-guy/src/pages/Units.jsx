@@ -670,6 +670,7 @@ function Units() {
   }, [activeMemberships, currentMembership, currentWorkspace?.id, isDeveloperWorkspaceRole, resolvedWorkspaceType, workspace?.id])
   const isTransactionsRoute = location.pathname === '/transactions' || location.pathname === '/transactions/'
   const canToggleUnitsView = !isBondRole && !isAttorneyRole
+  const useDesignedTransactionsTable = isAgentRole || isDeveloperWorkspaceRole
   const canDeleteTransactions = role === 'developer' || role === 'internal_admin' || role === 'agent'
   const isDeveloperRole = role === 'developer'
   const isPrincipalAgentView = isAgentRole && canAccessPrincipalExperience({
@@ -1667,7 +1668,7 @@ function Units() {
         </p>
       ) : null}
 
-      {!isAgentRole && !isBondRole ? (
+      {!useDesignedTransactionsTable && !isBondRole ? (
         <section className="rounded-[24px] border border-borderDefault bg-surface p-4 shadow-panel no-print">
           <div className="flex flex-col gap-3">
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -1998,7 +1999,7 @@ function Units() {
               onRowClick={(row) => handleOpenAttorneyMatter(row)}
             />
           </>
-        ) : canToggleUnitsView && unitsViewMode === 'cards' ? (
+        ) : !useDesignedTransactionsTable && canToggleUnitsView && unitsViewMode === 'cards' ? (
           <section className="rounded-[24px] border border-borderDefault bg-surface p-6 shadow-panel">
             <SectionHeader
               title={unitsTitle}
@@ -2018,19 +2019,24 @@ function Units() {
               />
             </div>
           </section>
-        ) : isAgentRole ? (
+        ) : useDesignedTransactionsTable ? (
           <AgentTransactionsTable
             rows={rows}
             loading={loading}
             title="Transactions"
-            description="Manage active deals, transfer progress, registrations, and blocked transactions."
-            isPrincipalView={isPrincipalAgentView}
-            compactLayout={isTransactionsRoute}
+            description={
+              isDeveloperWorkspaceRole
+                ? 'Manage direct and agency-introduced development transactions, transfer progress, registrations, and blocked matters.'
+                : 'Manage active deals, transfer progress, registrations, and blocked transactions.'
+            }
+            isPrincipalView={isDeveloperWorkspaceRole || isPrincipalAgentView}
+            compactLayout={isTransactionsRoute || isDeveloperWorkspaceRole}
             searchValue={deferredSearch}
             onSearchChange={(nextValue) => setFilters((previous) => ({ ...previous, search: nextValue }))}
-            onRowClick={handleOpenAgentTransaction}
+            onRowClick={isDeveloperWorkspaceRole ? navigateToDeveloperTransactionWorkspace : handleOpenAgentTransaction}
             onCreateTransaction={() => window.dispatchEvent(new CustomEvent('itg:open-new-transaction'))}
-            onOpenPipeline={() => navigate('/pipeline')}
+            createTransactionLabel={isDeveloperWorkspaceRole ? 'Create Transaction' : 'Create Deal'}
+            onOpenPipeline={isDeveloperWorkspaceRole ? null : () => navigate('/pipeline')}
             onDeleteTransaction={canDeleteTransactions ? requestDeleteTransaction : null}
             deletingTransactionId={deletingTransactionId}
           />

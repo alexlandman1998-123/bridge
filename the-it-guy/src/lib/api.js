@@ -51116,6 +51116,71 @@ export async function setDeveloperPartnerDefault(relationshipId) {
   return normalizeDeveloperPartnerDefaultRow(writeResult.data)
 }
 
+export async function setDeveloperCanonicalPartnerDefault(input = {}) {
+  const developerOrganisationId = normalizeNullableUuid(
+    input.developerOrganisationId || input.developer_organisation_id || input.organisationId,
+  )
+  if (!developerOrganisationId) throw new Error('Developer organisation is required.')
+
+  const partnerType = normalizeDeveloperPartnerType(input.partnerType || input.partner_type)
+  const partnerOrganisationId = normalizeNullableUuid(input.partnerOrganisationId || input.partner_organisation_id)
+  const companyName = normalizeTextValue(input.companyName || input.company_name || input.partnerName || input.partner_name)
+  if (!partnerOrganisationId && !companyName) throw new Error('Partner organisation or company name is required.')
+
+  const client = requireClient()
+  const scopeType = normalizeDeveloperPartnerScopeType(input.scopeType || input.scope_type)
+  const scopeJson = normalizeDeveloperPartnerScopeJson(scopeType, input.scopeJson || input.scope_json)
+
+  const result = await client.rpc('bridge_save_organisation_partner', {
+    p_organisation_id: developerOrganisationId,
+    p_partner_role_configuration_id: normalizeNullableUuid(input.partnerRoleConfigurationId || input.partner_role_configuration_id),
+    p_external_partner_id: normalizeNullableUuid(input.preferredPartnerId || input.preferred_partner_id),
+    p_partner_organisation_id: partnerOrganisationId,
+    p_role_type: getPreferredPartnerTypeForDeveloperPartner(partnerType),
+    p_company_name: companyName || 'Connected partner',
+    p_contact_person: normalizeNullableText(input.contactPerson || input.contact_person) || companyName || null,
+    p_email_address: normalizeEmailAddress(input.email || input.emailAddress || input.email_address) || null,
+    p_phone_number: normalizeNullableText(input.phone || input.phoneNumber || input.phone_number),
+    p_website: normalizeNullableText(input.website),
+    p_physical_address: normalizeNullableText(input.physicalAddress || input.physical_address),
+    p_province: normalizeNullableText(input.province),
+    p_notes: normalizeNullableText(input.notes) || `${getDeveloperPartnerTypeLabel(partnerType)} synced from Developer Partners.`,
+    p_is_active: true,
+    p_is_preferred_default: true,
+    p_source: 'developer_partner_relationship',
+    p_scope_type: scopeType,
+    p_scope_json: scopeJson,
+  })
+
+  if (result.error) throw result.error
+  const payload = result.data || {}
+  if (payload.success === false) {
+    throw new Error(payload.code || payload.reason || 'Unable to set this partner as a default.')
+  }
+
+  const partner = payload.partner && typeof payload.partner === 'object' ? payload.partner : {}
+  return normalizeDeveloperPartnerDefaultRow({
+    id: partner.id || input.preferredPartnerId,
+    organisation_id: developerOrganisationId,
+    partner_type: getPreferredPartnerTypeForDeveloperPartner(partnerType),
+    partner_organisation_id: partnerOrganisationId,
+    source: 'developer_partner_relationship',
+    scope_type: scopeType,
+    scope_json: scopeJson,
+    company_name: partner.company_name || partner.companyName || companyName,
+    contact_person: partner.contact_person || partner.contactPerson || input.contactPerson || companyName,
+    email_address: partner.email_address || partner.emailAddress || input.email,
+    phone_number: partner.phone_number || partner.phoneNumber || input.phone,
+    website: partner.website || input.website,
+    physical_address: partner.physical_address || partner.physicalAddress || input.physicalAddress,
+    province: partner.province || input.province,
+    notes: partner.notes || input.notes,
+    is_active: true,
+    is_preferred_default: true,
+    updated_at: new Date().toISOString(),
+  })
+}
+
 export async function acceptDeveloperPartnerRelationship(relationshipId) {
   const safeRelationshipId = normalizeNullableUuid(relationshipId)
   if (!safeRelationshipId) throw new Error('Partner relationship is required.')
