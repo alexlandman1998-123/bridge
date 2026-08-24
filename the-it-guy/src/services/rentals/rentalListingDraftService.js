@@ -2,6 +2,7 @@ import {
   createPrivateListing,
   createPrivateListingActivity,
   getAgentPrivateListings,
+  getPrivateListing,
   syncPrivateListingDistributionData,
 } from '../privateListingService'
 import {
@@ -33,6 +34,28 @@ export async function listRentalListingsForAgent(agentId, options = {}) {
     includeAllOrganisationListings: options.includeAllOrganisationListings,
   })
   return rows.filter(isRentalListingRecord)
+}
+
+export async function getRentalListingForAgent(listingId, agentId, options = {}) {
+  const normalizedListingId = normalizeText(listingId)
+  if (!normalizedListingId) throw new Error('Rental listing id is required.')
+
+  const directListing = await getPrivateListing(normalizedListingId, {
+    includeRequirementsAndDocuments: false,
+  }).catch(() => null)
+  if (directListing && isRentalListingRecord(directListing)) return directListing
+
+  const rows = await listRentalListingsForAgent(agentId, options)
+  return rows.find((listing) => {
+    const identityValues = [
+      listing.id,
+      listing.listingId,
+      listing.listing_id,
+      listing.listingReference,
+      listing.listing_reference,
+    ].map(normalizeText)
+    return identityValues.includes(normalizedListingId)
+  }) || null
 }
 
 export async function createRentalListingDraft(form = {}, context = {}) {

@@ -4,6 +4,7 @@ import {
   CalendarDays,
   CheckCircle2,
   ClipboardList,
+  Eye,
   Home,
   Loader2,
   Plus,
@@ -79,7 +80,7 @@ function summaryCard(icon, label, value, detail) {
   )
 }
 
-function RentalListingIndexCard({ row }) {
+function RentalListingIndexCard({ row, onOpen }) {
   const property24Status = String(row.property24Status || '').toLowerCase()
   const statusTone = row.statusGroup === 'published'
     ? 'success'
@@ -144,6 +145,10 @@ function RentalListingIndexCard({ row }) {
         <span>{row.bathrooms ?? '0'} baths</span>
         <span>{row.parkingBays ?? '0'} parking</span>
         <span>{row.location || 'Location pending'}</span>
+        <button type="button" className="ui-pill-button ml-auto" onClick={onOpen}>
+          <Eye size={14} aria-hidden="true" />
+          Open
+        </button>
       </div>
     </article>
   )
@@ -287,7 +292,13 @@ export default function RentalListingsPage() {
               Loading rental listings
             </div>
           ) : filteredRows.length ? (
-            filteredRows.map((row) => <RentalListingIndexCard key={row.id} row={row} />)
+            filteredRows.map((row) => (
+              <RentalListingIndexCard
+                key={row.id}
+                row={row}
+                onOpen={() => navigate(`/agent/rentals/listings/${encodeURIComponent(row.id)}`)}
+              />
+            ))
           ) : (
             <div className="rounded-[8px] border border-dashed border-[#dbe6f2] bg-white p-8 text-center">
               <span className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-[8px] border border-[#dbe6f2] bg-[#f8fafc] text-[#42617f]">

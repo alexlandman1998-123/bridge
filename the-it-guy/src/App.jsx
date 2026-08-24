@@ -238,6 +238,7 @@ const ResetPassword = lazy(() => import('./pages/ResetPassword'))
 const Arch9LaunchConcierge = lazy(() => import('./pages/Arch9LaunchConcierge'))
 const RentalApplicationsPage = lazy(() => import('./pages/rentals/RentalApplicationsPage'))
 const RentalListingCreatePage = lazy(() => import('./pages/rentals/RentalListingCreatePage'))
+const RentalListingDetailPage = lazy(() => import('./pages/rentals/RentalListingDetailPage'))
 const RentalListingsPage = lazy(() => import('./pages/rentals/RentalListingsPage'))
 const RentalTenanciesPage = lazy(() => import('./pages/rentals/RentalTenanciesPage'))
 const BridgeAgentsPage = lazyNamed(() => import('./pages/BridgeLanding'), 'BridgeAgentsPage')
@@ -2808,6 +2809,18 @@ function AppRoutes() {
                     <RentalWorkspaceGuard>
                       <RentalModuleGate moduleId={RENTAL_MODULES.listings}>
                         <RentalListingCreatePage />
+                      </RentalModuleGate>
+                    </RentalWorkspaceGuard>
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/agent/rentals/listings/:listingId/:detailTab?"
+                element={
+                  <RoleRoute allowedRoles={['agent']}>
+                    <RentalWorkspaceGuard>
+                      <RentalModuleGate moduleId={RENTAL_MODULES.listings}>
+                        <RentalListingDetailPage />
                       </RentalModuleGate>
                     </RentalWorkspaceGuard>
                   </RoleRoute>
