@@ -37,6 +37,7 @@ function getPageTitle(pathname, stateTitle, role) {
   }
 
   if (pathname === '/setup' || pathname.startsWith('/setup/')) return ''
+  if (pathname === '/agent/rentals' || pathname.startsWith('/agent/rentals/')) return 'Rentals'
   if (pathname === '/dashboard' || pathname === '/') return 'Dashboard'
   if (pathname === '/developments') return 'Developments'
   if (pathname === '/units') return role === 'developer' ? 'Units' : role === 'bond_originator' ? 'Applications' : 'Transactions'
@@ -75,7 +76,7 @@ function getPageTitle(pathname, stateTitle, role) {
   if (pathname === '/users') return ''
   if (pathname === '/settings' || pathname.startsWith('/settings')) return ''
 
-  return 'Workspace'
+  return ''
 }
 
 function HeaderFilterSelect({ icon: Icon, value, options = [], label, onChange }) {
@@ -1043,7 +1044,7 @@ function HeaderBar({ onLogout, user }) {
     : location.pathname.startsWith('/pipeline/leads')
     ? 'Leads'
     : location.pathname.startsWith('/agency/branches')
-      ? 'Branch Workspace'
+      ? 'Branch'
       : 'Principal Overview'
   const premiumHeaderEyebrow = isPremiumAttorneyOperations
     ? ''
@@ -1055,12 +1056,12 @@ function HeaderBar({ onLogout, user }) {
   const premiumHeaderContext = isPremiumAttorneyOperations
     ? ''
     : location.pathname.startsWith('/pipeline/leads')
-    ? 'Pipeline workspace'
+    ? 'Pipeline'
     : location.pathname.startsWith('/agency/branches')
       ? 'Executive branch cockpit'
       : agencyWorkflowMode === 'principal'
         ? 'Agency command centre'
-        : 'Agent workspace'
+        : 'Agent'
   const hidePremiumHeaderTitle =
     location.pathname.startsWith('/pipeline/leads') ||
     location.pathname.startsWith('/agency/branches') ||

@@ -38,7 +38,7 @@ import { normalizeOrganisationMembershipRole } from '../lib/organisationAccess'
 import { inferWorkspaceTypeFromAppRole } from '../constants/workspaceTypes'
 import { trackWorkspaceBrandingMetric } from '../services/observability/monitoring'
 import { filterNavigationItems } from '../auth/permissions/navigationPermissions'
-import { resolveBusinessWorkspaceRoute } from '../lib/businessWorkspaceAccess'
+import { BUSINESS_WORKSPACES, resolveBusinessWorkspaceRoute } from '../lib/businessWorkspaceAccess'
 
 const ICON_BY_KEY = {
   dashboard: LayoutDashboard,
@@ -215,7 +215,7 @@ const ATTORNEY_SECONDARY_KEYS = new Set()
 const BOND_NAV_SECTIONS = [
   {
     key: 'workspace',
-    label: 'Workspace',
+    label: 'Overview',
     itemKeys: ['dashboard', 'bond_applications', 'bond_developments', 'partners', 'clients'],
   },
   {
@@ -301,7 +301,7 @@ function BusinessWorkspaceSwitcher({
   if (!visible || !Array.isArray(workspaces) || workspaces.length < 2) return null
 
   return (
-    <div ref={switcherRef} className="ui-business-workspace-switcher" aria-label="Business workspace">
+    <div ref={switcherRef} className="ui-business-workspace-switcher" aria-label="Business line">
       <button
         type="button"
         className={`ui-business-workspace-trigger ${open ? 'ui-business-workspace-trigger-open' : ''}`.trim()}
@@ -313,8 +313,8 @@ function BusinessWorkspaceSwitcher({
         <ChevronDown size={15} className={`ui-business-workspace-chevron ${open ? 'ui-business-workspace-chevron-open' : ''}`} aria-hidden="true" />
       </button>
       {open ? (
-        <div className="ui-business-workspace-menu" role="menu" aria-label="Switch workspace">
-          <p className="ui-business-workspace-menu-heading">Switch workspace</p>
+        <div className="ui-business-workspace-menu" role="menu" aria-label="Switch business line">
+          <p className="ui-business-workspace-menu-heading">Switch</p>
           {workspaces.map((workspace) => {
             const active = workspace.id === currentId
             return (
@@ -397,7 +397,7 @@ function Sidebar() {
     workspaceType: navWorkspaceType,
     currentWorkspace: workspaceContext.currentWorkspace
       ? { ...workspaceContext.currentWorkspace, type: navWorkspaceType }
-      : { id: workspace.id || '', name: workspace.name || 'Workspace', type: navWorkspaceType },
+      : { id: workspace.id || '', name: workspace.name || 'Organisation', type: navWorkspaceType },
     currentMembership: navCurrentMembership,
   }), [navCurrentMembership, navWorkspaceType, role, workspace.id, workspace.name, workspaceContext])
   const roleNavItems = useMemo(
@@ -446,23 +446,26 @@ function Sidebar() {
     () => roleNavItems.filter((item) => item.navSection === 'secondary'),
     [roleNavItems],
   )
+  const isRentalsBusinessLine = role === 'agent' && workspaceContext.businessWorkspaceId === BUSINESS_WORKSPACES.rentals
   const primaryNavItems = useMemo(
     () => {
       if (role === 'attorney') return roleNavItems.filter((item) => !ATTORNEY_SECONDARY_KEYS.has(item.key))
       if (role === 'bond_originator') return roleNavItems.filter((item) => item.navSection !== 'secondary')
+      if (isRentalsBusinessLine) return roleNavItems
       if (role === 'agent') return roleNavItems.filter((item) => item.navSection !== 'secondary')
       return roleNavItems
     },
-    [role, roleNavItems],
+    [isRentalsBusinessLine, role, roleNavItems],
   )
   const firmNavItems = useMemo(
     () => {
       if (role === 'attorney') return [...roleNavItems.filter((item) => ATTORNEY_SECONDARY_KEYS.has(item.key)), ...secondaryItems]
       if (role === 'bond_originator') return roleSecondaryNavItems.length ? roleSecondaryNavItems : secondaryItems
+      if (isRentalsBusinessLine) return secondaryItems
       if (role === 'agent') return roleSecondaryNavItems.length ? [...roleSecondaryNavItems, ...secondaryItems] : secondaryItems
       return secondaryItems
     },
-    [role, roleNavItems, roleSecondaryNavItems, secondaryItems],
+    [isRentalsBusinessLine, role, roleNavItems, roleSecondaryNavItems, secondaryItems],
   )
   const bondGroupedNavSections = useMemo(() => {
     if (role !== 'bond_originator') return []

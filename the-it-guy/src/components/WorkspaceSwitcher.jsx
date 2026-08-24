@@ -150,8 +150,8 @@ function WorkspaceSwitcher({ currentPath = '/', onSelectWorkspace, variant = 'de
       </button>
 
       {open ? (
-        <div className="ui-workspace-switcher-menu" role="menu" aria-label="Workspace switcher">
-          <p className="ui-workspace-switcher-menu-heading">Choose workspace</p>
+        <div className="ui-workspace-switcher-menu" role="menu" aria-label="Area switcher">
+          <p className="ui-workspace-switcher-menu-heading">Choose area</p>
           {WORKSPACES.map((workspace) => {
             const Icon = workspace.icon
             const active = workspace.key === activeWorkspace
