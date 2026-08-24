@@ -64,6 +64,34 @@ function assertIncludes(values, expected, message) {
 }
 
 {
+  const diagnostics = buildTransactionRoutingDiagnostics(
+    {
+      id: 'external-agency-missing-action',
+      transaction_type: 'developer_sale',
+      sale_route: 'external_agency_sale',
+      source_agency_org_id: '00000000-0000-4000-8000-000000000010',
+    },
+    {
+      requiredDocuments: [
+        { key: 'agency_handover_pack', groupKey: 'agency_documents', requiredFromRole: 'agency' },
+      ],
+      availableActions: [
+        { actionKey: 'REQUEST_DEVELOPER_DOCUMENTS' },
+      ],
+    },
+  )
+
+  assert.equal(diagnostics.saleRouteAudit.resolvedRoute, 'external_agency_sale')
+  assert.equal(diagnostics.saleRouteAudit.status, 'blocked')
+  assertIncludes(
+    diagnostics.saleRouteAudit.issues.map((issue) => issue.code),
+    'agency_handover_action_missing',
+    'Routing diagnostics should surface sale-route action overlap.',
+  )
+  assert.equal(diagnostics.saleRouteAuditSummary.healthy, false)
+}
+
+{
   const apiSource = fs.readFileSync(path.join(root, 'src/lib/api.js'), 'utf8')
   for (const column of [
     'property_tenure',
@@ -80,7 +108,9 @@ function assertIncludes(values, expected, message) {
 {
   const pageSource = fs.readFileSync(path.join(root, 'src/pages/AttorneyTransactionDetail.jsx'), 'utf8')
   assert.match(pageSource, /TransactionRoutingSummaryCard/, 'Attorney transaction overview should render the routing summary card.')
-  assert.match(pageSource, /buildTransactionRoutingDiagnostics\(transaction\)/, 'Routing summary should use the diagnostics service.')
+  assert.match(pageSource, /buildTransactionRoutingDiagnostics\(transaction,\s*\{/, 'Routing summary should use the enriched diagnostics service.')
+  assert.match(pageSource, /SaleRouteAuditSummary/, 'Routing panels should render sale-route audit health.')
+  assert.match(pageSource, /availableActions: transactionRollup\?\.availableActions/, 'Routing diagnostics should receive rollup actions.')
 }
 
 console.log('transaction-routing-diagnostics tests passed')

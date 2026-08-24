@@ -74,7 +74,11 @@ import {
 } from '../core/transactions/attorneyDocumentControl'
 import { buildAttorneyCommunicationControl } from '../core/transactions/attorneyCommunicationControl'
 import { deriveFinanceManagedBy, isBondFinanceType, normalizeFinanceType } from '../core/transactions/financeType'
-import { resolveTransactionSaleProfile } from '../core/transactions/transactionSaleProfile.js'
+import {
+  getTransactionSalePartyModel,
+  getTransactionSaleRouteBadge,
+  resolveTransactionSaleProfile,
+} from '../core/transactions/transactionSaleProfile.js'
 import {
   TRANSACTION_BUYER_DELIVERY_ACTIONS,
   buildTransactionBuyerDeliveryPayload,
@@ -264,6 +268,7 @@ const ATTORNEY_DOCUMENT_CATEGORIES = [
   'Instruction / OTP Documents',
   'Buyer FICA / Compliance',
   'Seller FICA / Compliance',
+  'Agency Documents',
   'Drafting Documents',
   'Signing Documents',
   'Guarantees',
@@ -291,6 +296,12 @@ const ATTORNEY_DOCUMENT_GROUPS = [
     label: 'Seller Documents',
     description: 'Seller FICA, mandate, existing bond, and seller signature files.',
     categories: ['Seller FICA / Compliance'],
+  },
+  {
+    key: 'agency_documents',
+    label: 'Agency Documents',
+    description: 'Agency handover, introducing agent, referral, and commission support files.',
+    categories: ['Agency Documents'],
   },
   {
     key: 'transfer_documents',
@@ -328,6 +339,17 @@ function getAttorneyCategoryForRequiredDocument(requirement = {}) {
   const groupKey = String(requirement?.groupKey || requirement?.group || '').trim().toLowerCase()
   const key = String(requirement?.key || '').trim().toLowerCase()
   const visibleSection = String(requirement?.visibleSection || '').trim().toLowerCase()
+  const expectedFromRole = String(requirement?.expectedFromRole || requirement?.requiredFromRole || '').trim().toLowerCase()
+  if (
+    visibleSection === 'agency_documents' ||
+    groupKey.includes('agency') ||
+    key.startsWith('agency_') ||
+    key.startsWith('introducing_agent_') ||
+    expectedFromRole === 'agency' ||
+    expectedFromRole === 'introducing_agent'
+  ) {
+    return 'Agency Documents'
+  }
   if (visibleSection === 'finance_documents' || groupKey === 'finance') {
     return 'Internal Working Documents'
   }
@@ -352,6 +374,7 @@ const DOCUMENT_LIBRARY_FILTERS = [
   { key: 'verified', label: 'Verified' },
   { key: 'buyer', label: 'Buyer' },
   { key: 'seller', label: 'Seller' },
+  { key: 'agency', label: 'Agency' },
   { key: 'finance', label: 'Finance' },
   { key: 'transfer', label: 'Transfer' },
   { key: 'bond', label: 'Bond' },
@@ -387,6 +410,7 @@ const ADDITIONAL_DOCUMENT_REQUESTED_FROM_OPTIONS = [
   { value: 'buyer_and_seller', label: 'Both Buyer and Seller' },
   { value: 'agent', label: 'Agent' },
   { value: 'developer', label: 'Developer' },
+  { value: 'agency', label: 'Agency / Introducing Agent' },
   { value: 'attorney', label: 'Attorney' },
   { value: 'bond_originator', label: 'Bond Originator' },
   { value: 'other', label: 'Other' },
@@ -415,6 +439,9 @@ function getLaneKeyForLegalWorkflowDetailKey(detailKey = '') {
 function inferLibraryCategoryFromTokens(tokens = '') {
   const haystack = String(tokens || '').toLowerCase()
 
+  if (/(agency|introducing agent|referral)/.test(haystack)) {
+    return 'agency'
+  }
   if (/(internal|commission|working|admin|confidential|private)/.test(haystack)) {
     return 'internal'
   }
@@ -497,7 +524,9 @@ function resolveRequirementLibraryCategory(requirement = {}) {
   if (String(requirement?.visibleSection || '').trim().toLowerCase().includes('transfer')) {
     return 'transfer'
   }
-  return getAttorneyCategoryForRequiredDocument(requirement).toLowerCase().includes('seller') ? 'seller' : 'buyer'
+  const attorneyCategory = getAttorneyCategoryForRequiredDocument(requirement).toLowerCase()
+  if (attorneyCategory.includes('agency')) return 'agency'
+  return attorneyCategory.includes('seller') ? 'seller' : 'buyer'
 }
 
 function resolveDocumentLibraryVisibility(document = {}) {
@@ -832,21 +861,22 @@ function getDeveloperSaleChannelLabel(value = '') {
   return 'Developer sale'
 }
 
-function getSellerPartyLabels({ isDeveloperSale = false, saleChannel = '' } = {}) {
+function getSellerPartyLabels({ isDeveloperSale = false, saleChannel = '', partyModel = null } = {}) {
+  const sellerModel = partyModel?.seller || null
   if (!isDeveloperSale) {
     return {
       isDeveloperSale: false,
-      party: 'Seller',
-      partyPending: 'Seller pending',
-      partyDetailsPending: 'Seller details pending',
-      documents: 'Seller Documents',
-      documentsShort: 'Seller files',
-      workspace: 'Seller Workspace',
+      party: sellerModel?.label || 'Seller',
+      partyPending: sellerModel?.pendingLabel || 'Seller pending',
+      partyDetailsPending: sellerModel?.detailsPendingLabel || 'Seller details pending',
+      documents: sellerModel?.documentsLabel || 'Seller Documents',
+      documentsShort: sellerModel?.documentsShortLabel || 'Seller files',
+      workspace: sellerModel?.workspaceLabel || 'Seller Workspace',
       workspaceSubtitle: 'Seller identity, FICA, existing bond information, cancellation triggers, and seller documents.',
-      contactCompany: 'Client',
+      contactCompany: sellerModel?.companyLabel || 'Client',
       portalAction: 'Send Seller Portal Link',
       portalBusy: 'Sending seller portal link...',
-      detailsTitle: 'Seller Details',
+      detailsTitle: sellerModel?.detailsLabel || 'Seller Details',
       detailsSubtitle: 'Seller identity and contact details for this matter.',
       bondFlagClear: 'No seller bond flagged',
       documentEmpty: 'No seller or cancellation documents have been uploaded yet.',
@@ -859,17 +889,17 @@ function getSellerPartyLabels({ isDeveloperSale = false, saleChannel = '' } = {}
   const channelLabel = getDeveloperSaleChannelLabel(saleChannel)
   return {
     isDeveloperSale: true,
-    party: 'Developer',
-    partyPending: 'Developer pending',
-    partyDetailsPending: 'Developer details pending',
-    documents: 'Developer Documents',
-    documentsShort: 'Developer files',
-    workspace: 'Developer Workspace',
+    party: sellerModel?.label || 'Developer',
+    partyPending: sellerModel?.pendingLabel || 'Developer pending',
+    partyDetailsPending: sellerModel?.detailsPendingLabel || 'Developer details pending',
+    documents: sellerModel?.documentsLabel || 'Developer Documents',
+    documentsShort: sellerModel?.documentsShortLabel || 'Developer files',
+    workspace: sellerModel?.workspaceLabel || 'Developer Workspace',
     workspaceSubtitle: 'Developer entity, authority, sale-pack, and unit/development documents for this transaction.',
-    contactCompany: 'Developer',
+    contactCompany: sellerModel?.companyLabel || 'Developer',
     portalAction: 'Request Developer Documents',
     portalBusy: 'Requesting developer documents...',
-    detailsTitle: 'Developer Details',
+    detailsTitle: sellerModel?.detailsLabel || 'Developer Details',
     detailsSubtitle: 'Developer entity and representative details for this matter.',
     bondFlagClear: 'No developer bond flagged',
     documentEmpty: 'No developer or cancellation documents have been uploaded yet.',
@@ -946,6 +976,7 @@ function getRequirementPartyLabel(requirement = {}) {
   const normalized = String(requirement?.expectedFromRole || requirement?.requiredFromRole || requirement?.requestedFrom || requirement?.requested_from || '').trim().toLowerCase()
   if (!normalized || normalized === 'client' || normalized === 'buyer') return 'Buyer'
   if (normalized === 'seller') return 'Seller'
+  if (normalized === 'agency' || normalized === 'introducing_agent') return 'Agency / Introducing Agent'
   if (normalized === 'agent') return 'Agent'
   if (normalized === 'bond_originator') return 'Bond originator'
   if (normalized === 'bond_attorney') return 'Bond attorney'
@@ -6567,6 +6598,26 @@ function ArchlineStatusPill({ children, tone = 'success' }) {
   )
 }
 
+function TransactionSaleRouteBadge({ badge = null, compact = false }) {
+  if (!badge?.label) return null
+  const tones = {
+    emerald: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+    blue: 'border-blue-200 bg-blue-50 text-blue-800',
+    amber: 'border-amber-200 bg-amber-50 text-amber-800',
+    slate: 'border-slate-200 bg-slate-50 text-slate-700',
+  }
+  return (
+    <span
+      className={`inline-flex min-h-7 min-w-0 items-center gap-1.5 rounded-full border px-3 py-1 text-[0.68rem] font-semibold uppercase leading-4 tracking-[0.08em] ${tones[badge.tone] || tones.slate}`}
+      title={`Sale route: ${badge.label}`}
+      data-sale-route={badge.saleRoute || undefined}
+    >
+      <span className="size-1.5 shrink-0 rounded-full bg-current" />
+      <span className={compact ? 'min-w-0 truncate' : 'min-w-0'}>{badge.label}</span>
+    </span>
+  )
+}
+
 function ArchlinePanel({ title, action = null, children, className = '' }) {
   return (
     <section className={`rounded-[22px] border border-slate-200/75 bg-white shadow-[0_18px_44px_rgba(15,23,42,0.045)] ${className}`.trim()}>
@@ -6597,6 +6648,7 @@ function ArchlineMatterHeader({
   tabs = [],
   activeTab,
   workspaceLabel = 'Legal Matter Workspace',
+  saleRouteBadge = null,
   shareLabel = 'Share Portal',
   moreActionsLabel = 'More Actions',
   showWorkflowProgress = true,
@@ -6658,6 +6710,7 @@ function ArchlineMatterHeader({
                 <span className="min-w-0">{backLabel || 'Back to Matters'}</span>
               </Link>
               {workspaceLabel ? <span className="min-w-0 text-xs font-semibold uppercase leading-5 tracking-[0.12em] text-[#7b8ca2]">{workspaceLabel}</span> : null}
+              <TransactionSaleRouteBadge badge={saleRouteBadge} compact />
             </div>
             <div className="archline-matter-header-actions flex min-w-0 flex-wrap items-center justify-end gap-2">
               <button type="button" className="inline-flex min-h-10 min-w-0 items-center gap-2 rounded-[12px] border border-[#dfe8f2] bg-white px-3.5 py-2 text-sm font-semibold leading-5 text-[#142132] shadow-[0_8px_18px_rgba(15,23,42,0.035)] transition hover:border-[#cbd8e6] hover:bg-[#f8fbfd]" onClick={onSharePortal}>
@@ -13234,11 +13287,16 @@ function getAgentContactHref(type, value = '') {
 
 function buildAgentPartyRows(transactionContactRows = [], sellerPartyLabels = getSellerPartyLabels()) {
   const rowByKey = new Map(transactionContactRows.map((row) => [row.key, row]))
-  return AGENT_PARTY_KEYS.map((key) => {
+  const partyKeys = rowByKey.has('agency')
+    ? ['buyer', 'seller', 'agency', 'transfer_attorney', 'bond_originator']
+    : AGENT_PARTY_KEYS
+  return partyKeys.map((key) => {
     const fallbackRole = key === 'transfer_attorney'
       ? 'Transfer Attorney'
       : key === 'bond_originator'
         ? 'Bond Originator'
+        : key === 'agency'
+          ? 'Agency / Introducing Agent'
         : key === 'seller'
           ? sellerPartyLabels.party
         : toTitle(key)
@@ -13246,7 +13304,7 @@ function buildAgentPartyRows(transactionContactRows = [], sellerPartyLabels = ge
       key,
       role: fallbackRole,
       contact: 'Not assigned',
-      company: key === 'buyer' ? 'Client' : key === 'seller' ? sellerPartyLabels.contactCompany : 'Awaiting Assignment',
+      company: key === 'buyer' ? 'Client' : key === 'seller' ? sellerPartyLabels.contactCompany : key === 'agency' ? 'Introducing Agency' : 'Awaiting Assignment',
       email: 'Not captured',
       phone: 'Not captured',
       status: 'Not assigned',
@@ -13263,6 +13321,8 @@ function buildAgentPartyRows(transactionContactRows = [], sellerPartyLabels = ge
         ? 'bg-emerald-50 text-emerald-800'
         : key === 'seller'
           ? 'bg-amber-50 text-amber-800'
+          : key === 'agency'
+            ? 'bg-orange-50 text-orange-800'
           : key === 'transfer_attorney'
             ? 'bg-slate-100 text-slate-800'
             : 'bg-blue-50 text-blue-800',
@@ -13577,7 +13637,11 @@ function MatterOverviewHeader({
   sellerName,
   sellerLabel = 'Seller',
   sellerPendingLabel = 'Seller pending',
+  agencyLabel = 'Agency / Introducing Agent',
+  agencyName = '',
+  showAgencyParty = false,
   agentName,
+  agentLabel = 'Assigned Agent',
   assignedFirms = [],
   metrics = [],
   progressIndex = 0,
@@ -13586,6 +13650,7 @@ function MatterOverviewHeader({
   updatedLabel = '',
   actionButtons = [],
   isAgentView = false,
+  saleRouteBadge = null,
 }) {
   const currentStage = MATTER_STAGE_MILESTONES[Math.min(progressIndex, MATTER_STAGE_MILESTONES.length - 1)] || MATTER_STAGE_MILESTONES[0]
 
@@ -13593,7 +13658,8 @@ function MatterOverviewHeader({
     const identityCards = [
       { label: 'Buyer', value: buyerName || 'Buyer pending', Icon: UserRound, tone: 'bg-emerald-50 text-emerald-700' },
       { label: sellerLabel, value: sellerName || sellerPendingLabel, Icon: UserRound, tone: 'bg-amber-50 text-amber-700' },
-      { label: 'Assigned Agent', value: agentName || 'Not assigned', Icon: Building2, tone: 'bg-blue-50 text-blue-700' },
+      ...(showAgencyParty ? [{ label: agencyLabel, value: agencyName || 'Not assigned', Icon: Building2, tone: 'bg-orange-50 text-orange-700' }] : []),
+      { label: agentLabel, value: agentName || 'Not assigned', Icon: Building2, tone: 'bg-blue-50 text-blue-700' },
       ...assignedFirms.map((item) => {
         const label = item?.label || 'Assigned Firm'
         const normalizedLabel = String(label).toLowerCase()
@@ -13627,6 +13693,7 @@ function MatterOverviewHeader({
                 <span className="inline-flex items-center rounded-full border border-[#d9e4ef] bg-white/88 px-3 py-1 text-[0.68rem] font-semibold uppercase text-[#60758d] shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
                   Transaction Command Center
                 </span>
+                <TransactionSaleRouteBadge badge={saleRouteBadge} compact />
                 <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${statusClassName}`}>
                   {statusLabel}
                 </span>
@@ -13738,6 +13805,7 @@ function MatterOverviewHeader({
               <span className="inline-flex items-center rounded-full border border-borderDefault bg-surfaceAlt px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-textMuted">
                 Transaction Command Center
               </span>
+              <TransactionSaleRouteBadge badge={saleRouteBadge} compact />
               <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${statusClassName}`}>
                 {statusLabel}
               </span>
@@ -13757,7 +13825,8 @@ function MatterOverviewHeader({
               {[
                 ['Buyer', buyerName || 'Buyer pending'],
                 [sellerLabel, sellerName || sellerPendingLabel],
-                ['Assigned Agent', agentName || 'Not assigned'],
+                ...(showAgencyParty ? [[agencyLabel, agencyName || 'Not assigned']] : []),
+                [agentLabel, agentName || 'Not assigned'],
                 ...assignedFirms.map((item) => [item.label, item.value]),
               ].map(([label, value]) => (
                 <article key={label} className="min-w-0 rounded-[14px] border border-borderSoft bg-surfaceAlt px-3 py-3">
@@ -14160,6 +14229,83 @@ function PartnerInvitesSidePanel({
   )
 }
 
+function getSaleRouteAuditMeta(audit = null) {
+  if (!audit) {
+    return {
+      label: 'Sale-route audit unavailable',
+      tone: 'border-borderSoft bg-surfaceAlt text-textMuted',
+      dot: 'bg-slate-300',
+      description: 'Document and next-action overlap has not been checked yet.',
+    }
+  }
+  if (audit.status === 'blocked') {
+    return {
+      label: 'Sale-route split needs attention',
+      tone: 'border-danger/30 bg-dangerSoft text-danger',
+      dot: 'bg-danger',
+      description: 'Route, documents, or next actions are overlapping.',
+    }
+  }
+  if (audit.status === 'attention') {
+    return {
+      label: 'Sale-route split warning',
+      tone: 'border-warning/30 bg-warningSoft text-warning',
+      dot: 'bg-warning',
+      description: 'The split is usable, but there are migration or labelling warnings.',
+    }
+  }
+  return {
+    label: 'Sale-route split clean',
+    tone: 'border-success/30 bg-successSoft text-success',
+    dot: 'bg-success',
+    description: 'Route, documents, and next actions are aligned.',
+  }
+}
+
+function formatSaleRouteAuditRoute(value = '') {
+  return String(value || 'unknown')
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (match) => match.toUpperCase())
+}
+
+function SaleRouteAuditSummary({ audit = null, compact = false }) {
+  if (!audit) return null
+  const meta = getSaleRouteAuditMeta(audit)
+  const issues = Array.isArray(audit.issues) ? audit.issues : []
+  const visibleIssues = compact ? issues.slice(0, 2) : issues.slice(0, 4)
+  const hiddenIssueCount = Math.max(issues.length - visibleIssues.length, 0)
+
+  return (
+    <div className={`mt-3 rounded-[13px] border px-3 py-2.5 ${meta.tone}`}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="inline-flex min-w-0 items-center gap-2 text-[0.72rem] font-bold uppercase tracking-[0.06em]">
+          <span className={`size-2 rounded-full ${meta.dot}`} />
+          {meta.label}
+        </span>
+        <span className="text-[0.68rem] font-semibold">
+          {formatSaleRouteAuditRoute(audit.resolvedRoute)}
+        </span>
+      </div>
+      {!compact ? (
+        <p className="mt-1 text-xs leading-5 opacity-90">{meta.description}</p>
+      ) : null}
+      {visibleIssues.length ? (
+        <ul className="mt-2 space-y-1 text-xs leading-5">
+          {visibleIssues.map((issue) => (
+            <li key={`${issue.code}-${issue.message}`} className="flex gap-2">
+              <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+              <span>{issue.message}</span>
+            </li>
+          ))}
+          {hiddenIssueCount ? (
+            <li className="font-semibold">+{hiddenIssueCount} more route audit issue{hiddenIssueCount === 1 ? '' : 's'}</li>
+          ) : null}
+        </ul>
+      ) : null}
+    </div>
+  )
+}
+
 function TransactionRoutingSummaryCard({ diagnostics = null, canEdit = false, onEdit = null }) {
   if (!diagnostics) return null
   const statusClasses = diagnostics.status === 'needs_attention'
@@ -14167,6 +14313,7 @@ function TransactionRoutingSummaryCard({ diagnostics = null, canEdit = false, on
     : diagnostics.status === 'ready'
       ? 'border-success/30 bg-successSoft text-success'
       : 'border-borderDefault bg-mutedBg text-textMuted'
+  const saleRouteAudit = diagnostics.saleRouteAudit || null
   return (
     <OverviewSidePanel title="Routing Profile">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -14185,6 +14332,7 @@ function TransactionRoutingSummaryCard({ diagnostics = null, canEdit = false, on
         ) : null}
       </div>
       <p className="mt-3 text-sm font-semibold leading-5 text-textStrong">{diagnostics.summary}</p>
+      <SaleRouteAuditSummary audit={saleRouteAudit} compact />
       <div className="mt-3 grid grid-cols-2 gap-2">
         {diagnostics.decisions.map((item) => (
           <div key={item.key} className="min-w-0 rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-2">
@@ -14221,6 +14369,7 @@ function LegalWorkflowRoutingPanel({ diagnostics = null, workflows = [], canEdit
       ? 'border-success/30 bg-successSoft text-success'
       : 'border-borderDefault bg-mutedBg text-textMuted'
   const activeWorkflows = workflows.filter((workflow) => workflow.required)
+  const saleRouteAudit = diagnostics.saleRouteAudit || null
 
   return (
     <section className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
@@ -14273,6 +14422,7 @@ function LegalWorkflowRoutingPanel({ diagnostics = null, workflows = [], canEdit
           <span>{diagnostics.missingFieldLabels.join(', ')}</span>
         </div>
       ) : null}
+      <SaleRouteAuditSummary audit={saleRouteAudit} />
     </section>
   )
 }
@@ -15282,10 +15432,6 @@ function AttorneyTransactionDetail() {
     () => workspaceRole === 'bond_originator' ? allDocuments.filter(isBondOriginatorFinanceDocument) : allDocuments,
     [allDocuments, workspaceRole],
   )
-  const routingDiagnostics = useMemo(
-    () => (transaction ? buildTransactionRoutingDiagnostics(transaction) : null),
-    [transaction],
-  )
   const canEditRoutingProfile = ['attorney', 'developer', 'internal_admin', 'admin', 'agent', 'bond_originator'].includes(
     String(workspaceRole || '').trim().toLowerCase(),
   )
@@ -15294,6 +15440,15 @@ function AttorneyTransactionDetail() {
     if (workspaceRole !== 'bond_originator') return rows
     return rows.filter((requirement) => isBondOriginatorFinanceDocument(requirement))
   }, [data?.requiredDocumentChecklist, workspaceRole])
+  const routingDiagnostics = useMemo(
+    () => (transaction
+      ? buildTransactionRoutingDiagnostics(transaction, {
+          requiredDocuments: requiredDocumentChecklist,
+          availableActions: transactionRollup?.availableActions || EMPTY_ARRAY,
+        })
+      : null),
+    [requiredDocumentChecklist, transaction, transactionRollup?.availableActions],
+  )
   const requiredDocumentsByDocumentId = useMemo(() => {
     const map = new Map()
     for (const requirement of requiredDocumentChecklist) {
@@ -15698,18 +15853,30 @@ function AttorneyTransactionDetail() {
     () => resolveTransactionSaleProfile({ transaction, unit }),
     [transaction, unit],
   )
+  const transactionSaleRouteBadge = useMemo(
+    () => getTransactionSaleRouteBadge(transactionSaleProfile.saleRoute),
+    [transactionSaleProfile.saleRoute],
+  )
+  const transactionSalePartyModel = useMemo(
+    () => getTransactionSalePartyModel(transactionSaleProfile.saleRoute),
+    [transactionSaleProfile.saleRoute],
+  )
   const isDeveloperSaleMatter = transactionSaleProfile.isDeveloperSale
   const sellerPartyLabels = useMemo(
     () =>
       getSellerPartyLabels({
         isDeveloperSale: isDeveloperSaleMatter,
         saleChannel: transactionSaleProfile.saleChannel,
+        partyModel: transactionSalePartyModel,
       }),
-    [isDeveloperSaleMatter, transactionSaleProfile.saleChannel],
+    [isDeveloperSaleMatter, transactionSalePartyModel, transactionSaleProfile.saleChannel],
   )
   const additionalDocumentRequestedFromOptions = useMemo(
-    () => ADDITIONAL_DOCUMENT_REQUESTED_FROM_OPTIONS.map((option) => relabelSellerOption(option, sellerPartyLabels)),
-    [sellerPartyLabels],
+    () =>
+      ADDITIONAL_DOCUMENT_REQUESTED_FROM_OPTIONS
+        .filter((option) => option.value !== 'agency' || transactionSalePartyModel.agency.visible)
+        .map((option) => relabelSellerOption(option, sellerPartyLabels)),
+    [sellerPartyLabels, transactionSalePartyModel.agency.visible],
   )
   const additionalDocumentVisibilityOptions = useMemo(
     () => ADDITIONAL_DOCUMENT_VISIBILITY_OPTIONS.map((option) => relabelSellerOption(option, sellerPartyLabels)),
@@ -15721,7 +15888,9 @@ function AttorneyTransactionDetail() {
   )
   const attorneyDocumentGroups = useMemo(
     () =>
-      ATTORNEY_DOCUMENT_GROUPS.map((group) =>
+      ATTORNEY_DOCUMENT_GROUPS.filter(
+        (group) => group.key !== 'agency_documents' || transactionSalePartyModel.agency.visible,
+      ).map((group) =>
         group.key === 'seller_documents'
           ? {
               ...group,
@@ -15732,7 +15901,7 @@ function AttorneyTransactionDetail() {
             }
           : group,
       ),
-    [isDeveloperSaleMatter, sellerPartyLabels.documents],
+    [isDeveloperSaleMatter, sellerPartyLabels.documents, transactionSalePartyModel.agency.visible],
   )
   const buyerDisplayName = useMemo(
     () => resolveBuyerDisplayName({
@@ -15791,6 +15960,59 @@ function AttorneyTransactionDetail() {
       '',
     )
   }, [roleplayerForm.sellerEmail, transaction?.seller_email, transactionParticipants])
+  const externalAgencyName = useMemo(() => firstPresent(
+    transaction?.source_agency_name,
+    transaction?.sourceAgencyName,
+    transaction?.referring_agency_name,
+    transaction?.referringAgencyName,
+    transaction?.agency_name,
+    transaction?.agencyName,
+    assignedAgent?.organisationName,
+    assignedAgent?.organisation_name,
+  ), [
+    assignedAgent?.organisationName,
+    assignedAgent?.organisation_name,
+    transaction?.agencyName,
+    transaction?.agency_name,
+    transaction?.referringAgencyName,
+    transaction?.referring_agency_name,
+    transaction?.sourceAgencyName,
+    transaction?.source_agency_name,
+  ])
+  const introducingAgentName = useMemo(() => firstPresent(
+    transaction?.source_agent_name,
+    transaction?.sourceAgentName,
+    transaction?.referring_agent_name,
+    transaction?.referringAgentName,
+    roleplayerForm.agentName,
+    assignedAgent?.participantName,
+    transaction?.assigned_agent,
+  ), [
+    assignedAgent?.participantName,
+    roleplayerForm.agentName,
+    transaction?.assigned_agent,
+    transaction?.referringAgentName,
+    transaction?.referring_agent_name,
+    transaction?.sourceAgentName,
+    transaction?.source_agent_name,
+  ])
+  const introducingAgentEmail = useMemo(() => cleanDetailEmail(firstPresent(
+    transaction?.source_agent_email,
+    transaction?.sourceAgentEmail,
+    transaction?.referring_agent_email,
+    transaction?.referringAgentEmail,
+    roleplayerForm.agentEmail,
+    assignedAgent?.participantEmail,
+    transaction?.assigned_agent_email,
+  )), [
+    assignedAgent?.participantEmail,
+    roleplayerForm.agentEmail,
+    transaction?.assigned_agent_email,
+    transaction?.referringAgentEmail,
+    transaction?.referring_agent_email,
+    transaction?.sourceAgentEmail,
+    transaction?.source_agent_email,
+  ])
   const mainStageLabel = MAIN_STAGE_LABELS[mainStage] || toTitle(transaction?.stage || 'Available')
   const matterTypeLabel = isPrivateMatter ? 'Private Matter' : 'Development Matter'
   const onboardingLifecycleStatus = String(transaction?.onboarding_status || '').trim().toLowerCase()
@@ -18526,11 +18748,25 @@ function AttorneyTransactionDetail() {
     transaction?.reservation_deposit_amount,
   ])
   const archlinePartyItems = useMemo(() => [
-    { key: 'buyer', label: 'Buyer', value: buyerDisplayName || 'Not assigned' },
+    { key: 'buyer', label: transactionSalePartyModel.buyer.label, value: buyerDisplayName || 'Not assigned' },
     { key: 'seller', label: sellerPartyLabels.party, value: sellerDisplayName || 'Not assigned' },
-    { key: 'agent', label: 'Agent', value: transaction?.assigned_agent || getParticipantDisplayName(assignedAgent) || 'Not assigned' },
+    ...(transactionSalePartyModel.agency.visible
+      ? [{ key: 'agency', label: transactionSalePartyModel.agency.label, value: externalAgencyName || introducingAgentName || 'Not assigned' }]
+      : []),
+    { key: 'agent', label: transactionSalePartyModel.agent.label, value: transaction?.assigned_agent || getParticipantDisplayName(assignedAgent) || 'Not assigned' },
     { key: 'bond-originator', label: 'Bond Originator', value: assignedBondOriginator?.organisationName || transaction?.bond_originator || 'Not assigned' },
-  ], [assignedAgent, assignedBondOriginator?.organisationName, buyerDisplayName, sellerDisplayName, sellerPartyLabels.party, transaction?.assigned_agent, transaction?.bond_originator])
+  ], [
+    assignedAgent,
+    assignedBondOriginator?.organisationName,
+    buyerDisplayName,
+    externalAgencyName,
+    introducingAgentName,
+    sellerDisplayName,
+    sellerPartyLabels.party,
+    transaction?.assigned_agent,
+    transaction?.bond_originator,
+    transactionSalePartyModel,
+  ])
   const archlineTransferWorkflow = useMemo(
     () => legalWorkflowModels.find((workflow) => workflow.detailKey === 'transfer') || legalWorkflowModels[0] || null,
     [legalWorkflowModels],
@@ -18617,7 +18853,7 @@ function AttorneyTransactionDetail() {
   const transactionContactRows = [
     {
       key: 'buyer',
-      role: 'Buyer',
+      role: transactionSalePartyModel.buyer.label,
       contact: roleplayerForm.buyerName || buyer?.name || 'Not assigned',
       company: 'Client',
       email: roleplayerForm.buyerEmail || buyer?.email || 'Not captured',
@@ -18634,8 +18870,18 @@ function AttorneyTransactionDetail() {
       status: roleplayerForm.sellerEmail || transaction?.seller_email ? 'Active' : 'Pending',
     },
     {
+      key: 'agency',
+      role: transactionSalePartyModel.agency.label,
+      contact: introducingAgentName || externalAgencyName || transactionSalePartyModel.agency.pendingLabel,
+      company: externalAgencyName || transactionSalePartyModel.agency.companyLabel,
+      email: introducingAgentEmail || 'Not captured',
+      phone: 'Not captured',
+      status: introducingAgentEmail || introducingAgentName || externalAgencyName ? 'Active' : 'Pending',
+      visible: transactionSalePartyModel.agency.visible,
+    },
+    {
       key: 'agent',
-      role: transactionSaleProfile.isAgencyIntroducedSale ? 'Introducing Agent' : 'Agent',
+      role: transactionSalePartyModel.agent.label,
       contact: roleplayerForm.agentName || assignedAgent?.participantName || transaction?.assigned_agent || 'Not assigned',
       company: assignedAgent?.organisationName || development?.name || 'Sales Team',
       email: roleplayerForm.agentEmail || assignedAgent?.participantEmail || transaction?.assigned_agent_email || 'Not captured',
@@ -20367,6 +20613,7 @@ function AttorneyTransactionDetail() {
               : archlineWorkspaceTabs}
             activeTab={isTransactionOperatorView ? activeWorkspaceMenu : archlineActiveWorkspaceTab}
             workspaceLabel={isDeveloperTransactionView || isAgentTransactionView ? '' : 'Legal Matter Workspace'}
+            saleRouteBadge={transactionSaleRouteBadge}
             shareLabel={isTransactionOperatorView ? 'Share Portal' : 'Share Portal'}
             moreActionsLabel={isTransactionOperatorView ? 'Activity' : 'More Actions'}
             showWorkflowProgress={!isTransactionOperatorView}
@@ -20424,7 +20671,11 @@ function AttorneyTransactionDetail() {
               sellerName={sellerDisplayName}
               sellerLabel={sellerPartyLabels.party}
               sellerPendingLabel={sellerPartyLabels.partyPending}
+              agencyLabel={transactionSalePartyModel.agency.label}
+              agencyName={externalAgencyName || introducingAgentName}
+              showAgencyParty={transactionSalePartyModel.agency.visible}
               agentName={transaction?.assigned_agent || getParticipantDisplayName(assignedAgent)}
+              agentLabel={transactionSalePartyModel.agent.label}
               assignedFirms={matterAssignedFirms}
               metrics={matterHeaderMetrics}
               progressIndex={matterProgressIndex}
@@ -20433,6 +20684,7 @@ function AttorneyTransactionDetail() {
               updatedLabel={displayedUpdatedLabel}
               actionButtons={headerWorkflowActionButtons}
               isAgentView={false}
+              saleRouteBadge={transactionSaleRouteBadge}
             />
           )}
           <MatterWorkspaceTabs

@@ -130,6 +130,46 @@ try {
     'Request developer documents',
   )
 
+  const externalAgencyHandoverRollup = await resolveTransactionRollup(
+    'tx-external-agency-docs',
+    {
+      context: buildBaseContext({
+        transaction: {
+          id: 'tx-external-agency-docs',
+          development_id: 'dev-1',
+          transaction_type: 'development_sale',
+          finance_type: 'cash',
+          seller_onboarding_status: '',
+          current_main_stage: 'OTP',
+          stage: 'OTP Signed',
+          lead_owner: 'agency',
+          ownership_model: 'agency_introduced',
+          source_agency_org_id: 'agency-1',
+        },
+        documents: [
+          { id: 'doc-external-agency-signed-otp', document_type: 'signed_otp', status: 'completed' },
+        ],
+        requiredDocuments: [
+          {
+            id: 'req-external-agency-handover',
+            document_key: 'agency_handover_pack',
+            group_key: 'agency_documents',
+            required_from_role: 'agency',
+            status: 'pending',
+          },
+        ],
+      }),
+    },
+  )
+
+  assert.equal(externalAgencyHandoverRollup.parentStage, 'SALES_OTP')
+  assert.equal(externalAgencyHandoverRollup.nextAction?.label, 'Request agency handover')
+  assert.equal(externalAgencyHandoverRollup.nextAction?.actionKey, 'REQUEST_AGENCY_HANDOVER')
+  assert.equal(
+    externalAgencyHandoverRollup.availableActions.some((action) => action.actionKey === 'REQUEST_AGENCY_HANDOVER'),
+    true,
+  )
+
   const transferRollup = await resolveTransactionRollup(
     'tx-2',
     {

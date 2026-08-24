@@ -265,6 +265,29 @@ assert.equal(developerRequirementModel.requiredRows[0].category, 'seller')
 assert.equal(developerRequirementModel.requiredRows[0].canonicalCategory, 'seller')
 assert.equal(developerRequirementModel.categorySummaries.find((row) => row.key === 'seller')?.requiredCount, 1)
 
+const agencyRequirementModel = buildMatterDocumentWorkspaceModel({
+  transaction: { ...transaction, transaction_type: 'development_sale', source_agency_org_id: 'agency-1' },
+  documents: [],
+  requiredDocumentChecklist: [
+    {
+      id: 'req-agency-handover-pack',
+      canonicalRequirementInstanceId: 'cri-agency-handover-pack',
+      key: 'agency_handover_pack',
+      label: 'Agency Handover Pack',
+      groupKey: 'agency_documents',
+      groupLabel: 'Agency Documents',
+      visibleSection: 'agency_documents',
+      status: 'missing',
+      expectedFromRole: 'agency',
+    },
+  ],
+})
+assert.equal(agencyRequirementModel.requiredRows[0].category, 'agency')
+assert.equal(agencyRequirementModel.requiredRows[0].canonicalCategory, 'agency')
+assert.equal(agencyRequirementModel.requiredRows[0].requiredParty, 'Agency / Introducing Agent')
+assert.equal(agencyRequirementModel.requiredRows[0].categoryGroupLabel, 'Handover Pack')
+assert.equal(agencyRequirementModel.categorySummaries.find((row) => row.key === 'agency')?.requiredCount, 1)
+
 const scopedRequirements = [
   {
     id: 'req-transfer-pack',

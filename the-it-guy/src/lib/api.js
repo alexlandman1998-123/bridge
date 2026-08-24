@@ -7957,6 +7957,19 @@ function getTransactionSellerPartyRequirementMeta(transaction = {}) {
   }
 }
 
+function getTransactionAgencyPartyRequirementMeta(transaction = {}) {
+  const saleProfile = resolveTransactionSaleProfile({ transaction })
+  const isExternalAgencySale = saleProfile.saleRoute === 'external_agency_sale'
+  return {
+    isExternalAgencySale,
+    partyRole: 'agency',
+    partyLabel: 'Agency / Introducing Agent',
+    documentsLabel: 'Agency Documents',
+    onboardingWorkflow: 'Agency / Introducing Agent handover',
+    inactiveReason: 'Agency requirements only apply to external agency sales.',
+  }
+}
+
 function isSellerPartyRequirement(row = {}, partyMeta = getTransactionSellerPartyRequirementMeta()) {
   const key = String(row?.document_key || row?.key || row?.id || '').trim().toLowerCase()
   const groupKey = String(row?.group_key || row?.groupKey || row?.group || '').trim().toLowerCase()
@@ -7980,6 +7993,25 @@ function isSellerPartyRequirement(row = {}, partyMeta = getTransactionSellerPart
     category === 'development_documents' ||
     key.startsWith('developer_') ||
     ['unit_schedule', 'building_plans', 'occupation_certificate', 'hoa_body_corporate_rules', 'sectional_title_documents', 'nhbrc_compliance_documents'].includes(key)
+  )
+}
+
+function isAgencyPartyRequirement(row = {}, agencyMeta = getTransactionAgencyPartyRequirementMeta()) {
+  if (!agencyMeta.isExternalAgencySale) return false
+  const key = String(row?.document_key || row?.key || row?.id || '').trim().toLowerCase()
+  const groupKey = String(row?.group_key || row?.groupKey || row?.group || '').trim().toLowerCase()
+  const expectedFromRole = String(row?.required_from_role || row?.expectedFromRole || row?.requiredFrom || '').trim().toLowerCase()
+  const appliesTo = String(row?.appliesTo || row?.applies_to || '').trim().toLowerCase()
+  const category = String(row?.category || row?.documentCategory || row?.document_category || '').trim().toLowerCase()
+
+  return (
+    groupKey.includes('agency') ||
+    expectedFromRole === 'agency' ||
+    expectedFromRole === 'introducing_agent' ||
+    appliesTo === 'agency' ||
+    category === 'agency_documents' ||
+    key.startsWith('agency_') ||
+    key.startsWith('introducing_agent_')
   )
 }
 
@@ -8055,6 +8087,7 @@ function getRequirementWorkflowMetadata(row = {}, context = {}) {
   const financeVisible = mainStageIndex >= getMainStageIndex('FIN')
   const preCollectionAllowed = FINANCE_PRE_COLLECTION_DOCUMENT_KEYS.has(key)
   const sellerPartyMeta = getTransactionSellerPartyRequirementMeta(context?.transaction)
+  const agencyPartyMeta = getTransactionAgencyPartyRequirementMeta(context?.transaction)
 
   let owningWorkflow = 'Transaction Documents'
   let visibleSection = 'transfer_documents'
@@ -8075,6 +8108,10 @@ function getRequirementWorkflowMetadata(row = {}, context = {}) {
   } else if (isSellerPartyRequirement(row, sellerPartyMeta)) {
     owningWorkflow = sellerPartyMeta.onboardingWorkflow
     visibleSection = 'seller_documents'
+    blockingStage = 'OTP'
+  } else if (isAgencyPartyRequirement(row, agencyPartyMeta)) {
+    owningWorkflow = agencyPartyMeta.onboardingWorkflow
+    visibleSection = 'agency_documents'
     blockingStage = 'OTP'
   } else if (groupKey.includes('cancellation') || key.includes('cancellation')) {
     owningWorkflow = 'Bond Cancellation'
@@ -9100,6 +9137,7 @@ function buildSupplementalAttorneyRequirementRows({ transaction = null, currentM
 
   const resolved = resolveLegalDocumentRequirements(transaction || {})
   const facts = resolved?.facts || {}
+  const agencyPartyMeta = getTransactionAgencyPartyRequirementMeta(transaction)
   if (!sellerPartyMeta.isDeveloperSale && facts.sellerEntityType === 'unknown') {
     return { rows: [], sellerEmptyReason: sellerPartyMeta.unknownEntityReason }
   }
@@ -9117,7 +9155,10 @@ function buildSupplementalAttorneyRequirementRows({ transaction = null, currentM
       if (requirement.category === 'property_compliance' || requirement.laneKey === 'transfer') {
         return mainStageIndex >= getMainStageIndex('ATTY')
       }
-      return isSellerPartyRequirement(requirement, sellerPartyMeta)
+      return (
+        isSellerPartyRequirement(requirement, sellerPartyMeta) ||
+        isAgencyPartyRequirement(requirement, agencyPartyMeta)
+      )
     })
     .map((requirement, index) => {
       const displayRequirement = relabelDeveloperRequirement(requirement, sellerPartyMeta)
@@ -9125,8 +9166,14 @@ function buildSupplementalAttorneyRequirementRows({ transaction = null, currentM
       let owningWorkflow = sellerPartyMeta.onboardingWorkflow
       let visibleSection = 'seller_documents'
       let blockingStage = 'OTP'
+      const isAgencyRequirement = isAgencyPartyRequirement(displayRequirement, agencyPartyMeta)
 
-      if (displayRequirement.laneKey === 'cancellation' && displayRequirement.id !== 'existing_bond_account_details') {
+      if (isAgencyRequirement) {
+        groupKey = 'agency_documents'
+        owningWorkflow = agencyPartyMeta.onboardingWorkflow
+        visibleSection = 'agency_documents'
+        blockingStage = 'OTP'
+      } else if (displayRequirement.laneKey === 'cancellation' && displayRequirement.id !== 'existing_bond_account_details') {
         groupKey = 'cancellation_documents'
         owningWorkflow = 'Bond Cancellation'
         visibleSection = 'transfer_documents'
@@ -9146,25 +9193,31 @@ function buildSupplementalAttorneyRequirementRows({ transaction = null, currentM
           label: displayRequirement.label,
           groupKey,
           groupLabel:
-            visibleSection === 'seller_documents'
-              ? sellerPartyMeta.documentsLabel
-              : visibleSection === 'finance_documents'
-                ? 'Finance'
-                : 'Transfer / Attorney',
+            visibleSection === 'agency_documents'
+              ? agencyPartyMeta.documentsLabel
+              : visibleSection === 'seller_documents'
+                ? sellerPartyMeta.documentsLabel
+                : visibleSection === 'finance_documents'
+                  ? 'Finance'
+                  : 'Transfer / Attorney',
           group:
-            visibleSection === 'seller_documents'
-              ? sellerPartyMeta.documentsLabel
-              : visibleSection === 'finance_documents'
-                ? 'Finance'
-                : 'Transfer / Attorney',
+            visibleSection === 'agency_documents'
+              ? agencyPartyMeta.documentsLabel
+              : visibleSection === 'seller_documents'
+                ? sellerPartyMeta.documentsLabel
+                : visibleSection === 'finance_documents'
+                  ? 'Finance'
+                  : 'Transfer / Attorney',
           description: displayRequirement.description || displayRequirement.reason || '',
           requirementLevel: displayRequirement.required === false ? 'optional' : 'required',
           isRequired: displayRequirement.required !== false,
           isUploaded: false,
           isEnabled: true,
           status: displayRequirement.required === false ? 'not_required' : 'missing',
-          expectedFromRole: displayRequirement.requiredFrom || sellerPartyMeta.partyRole,
-          visibilityScope: sellerPartyMeta.isDeveloperSale
+          expectedFromRole: isAgencyRequirement
+            ? agencyPartyMeta.partyRole
+            : displayRequirement.requiredFrom || sellerPartyMeta.partyRole,
+          visibilityScope: sellerPartyMeta.isDeveloperSale || isAgencyRequirement
             ? 'shared'
             : displayRequirement.visibilityDefault === 'client_visible'
               ? 'client'
@@ -11027,7 +11080,7 @@ function resolveWorkflowEvidenceKeyFromDocumentRequest(request = {}) {
   const assignedRole = String(request.assignedToRole || request.assigned_to_role || '')
     .trim()
     .toLowerCase()
-  if (requestType !== 'additional_document_request' && ['buyer', 'seller', 'client'].includes(assignedRole)) {
+  if (requestType !== 'additional_document_request' && ['buyer', 'seller', 'client', 'developer', 'agency', 'introducing_agent'].includes(assignedRole)) {
     return 'supporting_docs_complete'
   }
 
@@ -28973,8 +29026,17 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     unit_id: transactionType === 'developer_sale' ? setup.unitId : null,
     buyer_id: buyer?.id || null,
     transaction_type: transactionType,
+    sale_route: saleProfile.saleRoute,
     sale_channel: saleProfile.saleChannel,
     seller_party_type: saleProfile.sellerPartyType,
+    lead_owner: normalizeNullableText(sourceContext.leadOwner || sourceContext.lead_owner),
+    ownership_model: normalizeNullableText(sourceContext.ownershipModel || sourceContext.ownership_model),
+    source_agency_org_id: normalizeNullableUuid(
+      sourceContext.sourceAgencyOrgId ||
+        sourceContext.source_agency_org_id ||
+        sourceContext.agencyOrganisationId ||
+        sourceContext.agency_organisation_id,
+    ),
     property_type: transactionType === 'private_property' ? propertyType : null,
     property_address_line_1: normalizeNullableText(setup.propertyAddressLine1),
     property_address_line_2: normalizeNullableText(setup.propertyAddressLine2),
@@ -29053,8 +29115,17 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     unit_id: transactionType === 'developer_sale' ? setup.unitId : null,
     buyer_id: buyer?.id || null,
     transaction_type: transactionType,
+    sale_route: saleProfile.saleRoute,
     sale_channel: saleProfile.saleChannel,
     seller_party_type: saleProfile.sellerPartyType,
+    lead_owner: normalizeNullableText(sourceContext.leadOwner || sourceContext.lead_owner),
+    ownership_model: normalizeNullableText(sourceContext.ownershipModel || sourceContext.ownership_model),
+    source_agency_org_id: normalizeNullableUuid(
+      sourceContext.sourceAgencyOrgId ||
+        sourceContext.source_agency_org_id ||
+        sourceContext.agencyOrganisationId ||
+        sourceContext.agency_organisation_id,
+    ),
     property_type: transactionType === 'private_property' ? propertyType : null,
     property_address_line_1: normalizeNullableText(setup.propertyAddressLine1),
     property_address_line_2: normalizeNullableText(setup.propertyAddressLine2),
@@ -29214,8 +29285,12 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       isMissingColumnError(transactionResult.error, 'current_main_stage') ||
       isMissingColumnError(transactionResult.error, 'comment') ||
       isMissingColumnError(transactionResult.error, 'owner_user_id') ||
+      isMissingColumnError(transactionResult.error, 'sale_route') ||
       isMissingColumnError(transactionResult.error, 'sale_channel') ||
       isMissingColumnError(transactionResult.error, 'seller_party_type') ||
+      isMissingColumnError(transactionResult.error, 'lead_owner') ||
+      isMissingColumnError(transactionResult.error, 'ownership_model') ||
+      isMissingColumnError(transactionResult.error, 'source_agency_org_id') ||
       isMissingColumnError(transactionResult.error, 'access_level'))
   ) {
     const fallbackPayload = {
@@ -29270,8 +29345,12 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     delete fallbackPayload.agent_commission_amount
     delete fallbackPayload.agency_commission_amount
     delete fallbackPayload.owner_user_id
+    delete fallbackPayload.sale_route
     delete fallbackPayload.sale_channel
     delete fallbackPayload.seller_party_type
+    delete fallbackPayload.lead_owner
+    delete fallbackPayload.ownership_model
+    delete fallbackPayload.source_agency_org_id
     delete fallbackPayload.access_level
     if (isMissingColumnError(transactionResult.error, 'organisation_id')) {
       delete fallbackPayload.organisation_id
@@ -29377,8 +29456,12 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
         isMissingColumnError(transactionResult.error, 'current_main_stage') ||
         isMissingColumnError(transactionResult.error, 'comment') ||
         isMissingColumnError(transactionResult.error, 'owner_user_id') ||
+        isMissingColumnError(transactionResult.error, 'sale_route') ||
         isMissingColumnError(transactionResult.error, 'sale_channel') ||
         isMissingColumnError(transactionResult.error, 'seller_party_type') ||
+        isMissingColumnError(transactionResult.error, 'lead_owner') ||
+        isMissingColumnError(transactionResult.error, 'ownership_model') ||
+        isMissingColumnError(transactionResult.error, 'source_agency_org_id') ||
         isMissingColumnError(transactionResult.error, 'access_level'))
     ) {
       const fallbackPayload = {
@@ -29433,8 +29516,12 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       delete fallbackPayload.agent_commission_amount
       delete fallbackPayload.agency_commission_amount
       delete fallbackPayload.owner_user_id
+      delete fallbackPayload.sale_route
       delete fallbackPayload.sale_channel
       delete fallbackPayload.seller_party_type
+      delete fallbackPayload.lead_owner
+      delete fallbackPayload.ownership_model
+      delete fallbackPayload.source_agency_org_id
       delete fallbackPayload.access_level
       if (isMissingColumnError(transactionResult.error, 'organisation_id')) {
         delete fallbackPayload.organisation_id
@@ -29494,8 +29581,12 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
         isMissingColumnError(transactionResult.error, 'current_main_stage') ||
         isMissingColumnError(transactionResult.error, 'comment') ||
         isMissingColumnError(transactionResult.error, 'owner_user_id') ||
+        isMissingColumnError(transactionResult.error, 'sale_route') ||
         isMissingColumnError(transactionResult.error, 'sale_channel') ||
         isMissingColumnError(transactionResult.error, 'seller_party_type') ||
+        isMissingColumnError(transactionResult.error, 'lead_owner') ||
+        isMissingColumnError(transactionResult.error, 'ownership_model') ||
+        isMissingColumnError(transactionResult.error, 'source_agency_org_id') ||
         isMissingColumnError(transactionResult.error, 'access_level'))
     ) {
       const fallbackPayload = {
@@ -29549,8 +29640,12 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       delete fallbackPayload.agent_commission_amount
       delete fallbackPayload.agency_commission_amount
       delete fallbackPayload.owner_user_id
+      delete fallbackPayload.sale_route
       delete fallbackPayload.sale_channel
       delete fallbackPayload.seller_party_type
+      delete fallbackPayload.lead_owner
+      delete fallbackPayload.ownership_model
+      delete fallbackPayload.source_agency_org_id
       delete fallbackPayload.access_level
       if (isMissingColumnError(transactionResult.error, 'organisation_id')) {
         delete fallbackPayload.organisation_id

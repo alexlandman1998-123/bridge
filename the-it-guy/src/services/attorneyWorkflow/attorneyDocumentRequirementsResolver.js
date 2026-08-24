@@ -16,6 +16,7 @@ export const ATTORNEY_DOCUMENT_CATEGORIES = [
   'cancellation_documents',
   'property_compliance',
   'development_documents',
+  'agency_documents',
   'signing_documents',
   'other',
 ]
@@ -520,6 +521,39 @@ function addTransactionTypeRequirements(requirements, facts) {
       requirement({ id: 'sectional_title_documents', label: 'Sectional Title Documents', category: 'development_documents', requiredFrom: 'developer', appliesTo: 'property', required: false, clientUploadAllowed: false, reason: 'Sectional title documents may apply.' }),
       requirement({ id: 'developer_signing_authority', label: 'Developer Signing Authority', category: 'entity_documents', requiredFrom: 'developer', appliesTo: 'developer', clientUploadAllowed: false, reason: 'Developer signing authority must be confirmed.' }),
       requirement({ id: 'nhbrc_compliance_documents', label: 'NHBRC / Compliance Documents', category: 'development_documents', requiredFrom: 'developer', appliesTo: 'property', required: false, clientUploadAllowed: false, reason: 'NHBRC or compliance documents may apply.' }),
+    )
+  }
+
+  if (facts.isExternalAgencySale) {
+    requirements.push(
+      requirement({
+        id: 'agency_handover_pack',
+        label: 'Agency Handover Pack',
+        category: 'agency_documents',
+        requiredFrom: 'agency',
+        appliesTo: 'agency',
+        clientUploadAllowed: false,
+        reason: 'External agency sale requires introducing agency handover pack.',
+      }),
+      requirement({
+        id: 'introducing_agent_details',
+        label: 'Introducing Agent Details',
+        category: 'agency_documents',
+        requiredFrom: 'agency',
+        appliesTo: 'agency',
+        clientUploadAllowed: false,
+        reason: 'External agency sale requires introducing agent contact and mandate details.',
+      }),
+      requirement({
+        id: 'agency_commission_instruction',
+        label: 'Agency Commission / Referral Instruction',
+        category: 'agency_documents',
+        requiredFrom: 'agency',
+        appliesTo: 'agency',
+        required: false,
+        clientUploadAllowed: false,
+        reason: 'External agency sale may require referral or commission instruction support.',
+      }),
     )
   }
 

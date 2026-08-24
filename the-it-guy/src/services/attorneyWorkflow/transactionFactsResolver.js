@@ -1,4 +1,5 @@
 import { resolveBuyerOnboardingFlow } from '../../lib/buyerOnboardingFlow.js'
+import { resolveTransactionSaleProfile } from '../../core/transactions/transactionSaleProfile.js'
 
 const CASH_FINANCE_VALUES = new Set(['cash', 'cash_sale', 'cash_deal', 'proof_of_funds'])
 const BOND_FINANCE_VALUES = new Set(['bond', 'bonded', 'bond_finance', 'mortgage', 'home_loan'])
@@ -418,6 +419,7 @@ export function resolveTransactionFacts(transaction = {}) {
   const isDevelopmentSale = transactionType === 'development_sale'
   const isResale = transactionType === 'resale'
   const isPrivateSale = transactionType === 'private_sale' || isResale
+  const saleProfile = resolveTransactionSaleProfile({ transaction })
 
   if (!hasUsableValue(sellerBondRaw) && !hasUsableValue(cancellationRaw)) {
     confidenceWarnings.push('No seller bond/cancellation flag was found; cancellation workflow is not required by default.')
@@ -458,6 +460,10 @@ export function resolveTransactionFacts(transaction = {}) {
     buyerOnboardingFlowVersion: buyerFlowSnapshot?.version || buyerFlowSnapshot?.buyer_onboarding_flow_version || buyerFlowSnapshot?.onboarding_flow_version || '',
     buyerOnboardingFlow: buyerFlowSnapshot || null,
     isDevelopmentSale,
+    saleRoute: saleProfile.saleRoute,
+    isInternalDeveloperSale: saleProfile.saleRoute === 'internal_developer_sale',
+    isDeveloperAssignedSale: saleProfile.saleRoute === 'developer_assigned_sale',
+    isExternalAgencySale: saleProfile.saleRoute === 'external_agency_sale',
     isPrivateSale,
     isResale,
     isCommercialTransaction,

@@ -1,4 +1,5 @@
 import { resolveTransactionFacts } from './attorneyWorkflow/transactionFactsResolver.js'
+import { buildTransactionSaleRouteAudit } from '../core/transactions/transactionSaleRouteAudit.js'
 import {
   resolveTransactionRoutingProfile,
   resolveWorkflowKeysForRoutingProfile,
@@ -92,7 +93,34 @@ function hasUsableProfile(profile = {}) {
   return Boolean(profile && typeof profile === 'object' && Object.keys(profile).length)
 }
 
-export function buildTransactionRoutingDiagnostics(transaction = {}) {
+function getTransactionId(transaction = {}) {
+  return String(transaction?.id || transaction?.transactionId || transaction?.transaction_id || '').trim()
+}
+
+function buildSingleTransactionSaleRouteAudit(transaction = {}, {
+  requiredDocuments = null,
+  availableActions = null,
+} = {}) {
+  const transactionId = getTransactionId(transaction) || 'current_transaction'
+  const requiredDocumentsByTransactionId = Array.isArray(requiredDocuments)
+    ? { [transactionId]: requiredDocuments }
+    : {}
+  const availableActionsByTransactionId = Array.isArray(availableActions)
+    ? { [transactionId]: availableActions }
+    : {}
+  const audit = buildTransactionSaleRouteAudit({
+    transactions: [{ ...transaction, id: transactionId }],
+    requiredDocumentsByTransactionId,
+    availableActionsByTransactionId,
+  })
+
+  return {
+    audit,
+    item: audit.transactions[0] || null,
+  }
+}
+
+export function buildTransactionRoutingDiagnostics(transaction = {}, options = {}) {
   const persistedProfile = readRoutingProfile(transaction)
   const hasPersistedProfile = hasUsableProfile(persistedProfile)
   const profile = hasPersistedProfile ? persistedProfile : resolveTransactionRoutingProfile({ transaction })
@@ -121,6 +149,16 @@ export function buildTransactionRoutingDiagnostics(transaction = {}) {
     facts.requiresBondAttorney ? 'bond_attorney' : '',
     facts.requiresCancellationAttorney ? 'cancellation_attorney' : '',
   ])
+  const saleRouteAuditResult = buildSingleTransactionSaleRouteAudit(transaction, options)
+  const saleRouteAudit = saleRouteAuditResult.item
+  const saleRouteAuditSummary = saleRouteAuditResult.audit
+    ? {
+        healthy: saleRouteAuditResult.audit.healthy,
+        issueSummary: saleRouteAuditResult.audit.issueSummary,
+        issueCodes: saleRouteAuditResult.audit.issueCodes,
+        issueCounts: saleRouteAuditResult.audit.issueCounts,
+      }
+    : null
 
   return {
     transactionId: transaction?.id || facts.transactionId || profile.transactionId || null,
@@ -134,6 +172,8 @@ export function buildTransactionRoutingDiagnostics(transaction = {}) {
     requiredWorkflowKeys,
     requiredWorkflowLabels: requiredWorkflowKeys.map(workflowLabel),
     requiredDocumentGroups: compactUnique(profile.requiredDocumentGroups || facts.requiredDocumentGroups || []),
+    saleRouteAudit,
+    saleRouteAuditSummary,
     attorneyRoles,
     attorneyRoleLabels: attorneyRoles.map((role) => workflowLabel(role.replace('_attorney', '') === 'cancellation' ? 'seller_bond_cancellation' : `attorney_${role.replace('_attorney', '')}`)),
     missingFields,

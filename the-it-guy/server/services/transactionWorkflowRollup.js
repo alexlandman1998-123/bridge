@@ -28,7 +28,7 @@ import {
 import { normaliseFinanceType, resolveFinanceWorkflowKey } from './financeWorkflowResolver.js'
 
 const TRANSACTION_SELECT =
-  'id, finance_type, onboarding_status, seller_onboarding_status, current_main_stage, stage, lifecycle_state, purchaser_type, transaction_type, property_type, development_id, seller_has_existing_bond, existing_bond, cancellation_required, registration_date, title_deed_number, registration_confirmation_document_id, created_at, updated_at, completed_at, cancelled_at, last_meaningful_activity_at'
+  'id, finance_type, onboarding_status, seller_onboarding_status, current_main_stage, stage, lifecycle_state, purchaser_type, transaction_type, property_type, development_id, sale_route, sale_channel, lead_owner, ownership_model, source_agency_org_id, seller_has_existing_bond, existing_bond, cancellation_required, registration_date, title_deed_number, registration_confirmation_document_id, created_at, updated_at, completed_at, cancelled_at, last_meaningful_activity_at'
 
 const TRANSACTION_SELECT_FALLBACK =
   'id, finance_type, onboarding_status, seller_onboarding_status, current_main_stage, stage, lifecycle_state, purchaser_type, transaction_type, property_type, development_id, registration_date, title_deed_number, registration_confirmation_document_id, created_at, updated_at, completed_at, cancelled_at, last_meaningful_activity_at'
@@ -320,6 +320,18 @@ function resolveSalesOtpWorkflow(context) {
   const evidence = context.evidence || {}
   const facts = resolveTransactionFacts(context.transaction || {})
   const isDevelopmentSale = facts.isDevelopmentSale === true
+  const isExternalAgencySale = facts.saleRoute === 'external_agency_sale'
+  const supportingDocumentsLabel = isExternalAgencySale
+    ? 'Collect agency handover documents'
+    : isDevelopmentSale
+      ? 'Collect developer documents'
+      : 'Collect supporting documents'
+  const supportingDocumentsMessage = isExternalAgencySale
+    ? 'Agency handover documents must be complete before Finance can start.'
+    : isDevelopmentSale
+      ? 'Developer and buyer supporting documents must be complete before Finance can start.'
+      : 'Required supporting documents must be complete before Finance can start.'
+  const supportingDocumentsOwnerRole = isDevelopmentSale ? 'agent' : 'agent'
 
   const buyerDone = isEvidenceSatisfied(evidence, 'BUYER_ONBOARDING_COMPLETE')
   const signedOtpDone = isEvidenceSatisfied(evidence, 'SIGNED_OTP_DOCUMENT')
@@ -368,9 +380,9 @@ function resolveSalesOtpWorkflow(context) {
     }),
     createStep({
       key: 'collect_supporting_documents',
-      label: 'Collect supporting documents',
+      label: supportingDocumentsLabel,
       status: supportingDone ? 'complete' : signedOtpDone ? 'pending' : 'not_started',
-      ownerRole: 'agent',
+      ownerRole: supportingDocumentsOwnerRole,
       requiredEvidence: isDevelopmentSale ? ['BUYER_FICA_COMPLETE'] : ['BUYER_FICA_COMPLETE', 'SELLER_FICA_COMPLETE'],
       sourceIds: [
         ...(evidence.BUYER_FICA_COMPLETE?.sources || []),
@@ -441,10 +453,8 @@ function resolveSalesOtpWorkflow(context) {
     blockers.push(
       buildBlocker({
         code: 'SUPPORTING_DOCUMENTS_REQUIRED',
-        message: isDevelopmentSale
-          ? 'Buyer supporting documents must be complete before Finance can start.'
-          : 'Required supporting documents must be complete before Finance can start.',
-        ownerRole: 'agent',
+        message: supportingDocumentsMessage,
+        ownerRole: supportingDocumentsOwnerRole,
         workflowKey: 'sales_otp',
         stepKey: 'collect_supporting_documents',
         requiredEvidence: isDevelopmentSale ? ['BUYER_FICA_COMPLETE'] : ['BUYER_FICA_COMPLETE', 'SELLER_FICA_COMPLETE'],
@@ -1179,12 +1189,36 @@ function resolveActiveStep(activeWorkflow = null) {
   return activeWorkflow.requiredSteps.find((step) => !['complete', 'skipped', 'not_applicable'].includes(step.status)) || null
 }
 
-function resolveNextAction(activeWorkflow = null, activeStep = null) {
+function resolveNextAction(activeWorkflow = null, activeStep = null, transaction = {}) {
   if (!activeWorkflow || !activeStep) return null
+  const stepKey = normalizeKey(activeStep.key)
+  const facts = resolveTransactionFacts(transaction || {})
+  const isDevelopmentSale = facts.isDevelopmentSale === true
+  const isExternalAgencySale = facts.saleRoute === 'external_agency_sale'
+  let label = activeStep.nextActionLabel || activeStep.stepLabel || activeStep.label
+  let ownerRole = activeStep.ownerRole || 'system'
+  let actionKey = activeStep.actionKey || String(activeStep.key || '').toUpperCase()
+
+  if (['signed_otp_received', 'sign_otp'].includes(stepKey)) {
+    label = isDevelopmentSale ? 'Upload signed OTP' : 'Capture signed OTP'
+    ownerRole = isDevelopmentSale ? 'agent' : 'buyer'
+    actionKey = 'RECORD_SIGNED_OTP'
+  } else if (['supporting_docs_complete', 'collect_supporting_documents'].includes(stepKey)) {
+    if (isExternalAgencySale) {
+      label = 'Request agency handover'
+      ownerRole = 'agent'
+      actionKey = 'REQUEST_AGENCY_HANDOVER'
+    } else if (isDevelopmentSale) {
+      label = 'Request developer documents'
+      ownerRole = 'developer'
+      actionKey = 'REQUEST_DEVELOPER_DOCUMENTS'
+    }
+  }
+
   return {
-    label: activeStep.nextActionLabel || activeStep.stepLabel || activeStep.label,
-    ownerRole: activeStep.ownerRole || 'system',
-    actionKey: activeStep.actionKey || String(activeStep.key || '').toUpperCase(),
+    label,
+    ownerRole,
+    actionKey,
     workflowKey: activeWorkflow.workflowKey,
     stepKey: activeStep.key,
   }
@@ -1354,7 +1388,7 @@ function buildRollupResult({
     completedStages: collectCompletedStages(parentWorkflows, transaction),
     blockedStages: collectBlockedStages(parentWorkflows, transaction),
     blockers,
-    nextAction: resolveNextAction(activeWorkflow, activeStep),
+    nextAction: resolveNextAction(activeWorkflow, activeStep, transaction),
     availableActions: resolveWorkflowAvailableActions({
       transaction,
       parentStage,

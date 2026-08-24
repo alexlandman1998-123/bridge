@@ -4,6 +4,7 @@ export const MATTER_DOCUMENT_CATEGORIES = [
   'Instruction / OTP Documents',
   'Buyer FICA / Compliance',
   'Seller FICA / Compliance',
+  'Agency Documents',
   'Drafting Documents',
   'Signing Documents',
   'Guarantees',
@@ -31,6 +32,12 @@ export const MATTER_DOCUMENT_GROUPS = [
     label: 'Seller Documents',
     description: 'Seller FICA, mandate, existing bond, and seller signature files.',
     categories: ['Seller FICA / Compliance'],
+  },
+  {
+    key: 'agency_documents',
+    label: 'Agency Documents',
+    description: 'Agency handover, introducing agent, referral, and commission support files.',
+    categories: ['Agency Documents'],
   },
   {
     key: 'transfer_documents',
@@ -73,6 +80,7 @@ export const MATTER_DOCUMENT_LIBRARY_FILTERS = [
   { key: 'verified', label: 'Verified' },
   { key: 'buyer', label: 'Buyer' },
   { key: 'seller', label: 'Seller' },
+  { key: 'agency', label: 'Agency' },
   { key: 'finance', label: 'Finance' },
   { key: 'transfer', label: 'Transfer' },
   { key: 'bond', label: 'Bond' },
@@ -85,6 +93,7 @@ export const MATTER_DOCUMENT_LIBRARY_FILTERS = [
 export const MATTER_DOCUMENT_CANONICAL_CATEGORIES = [
   { key: 'buyer', label: 'Buyer Documents', shortLabel: 'Buyer' },
   { key: 'seller', label: 'Seller Documents', shortLabel: 'Seller' },
+  { key: 'agency', label: 'Agency Documents', shortLabel: 'Agency' },
   { key: 'finance', label: 'Finance Documents', shortLabel: 'Finance' },
   { key: 'transfer', label: 'Transfer Documents', shortLabel: 'Transfer' },
   { key: 'bond', label: 'Bond Documents', shortLabel: 'Bond' },
@@ -105,6 +114,13 @@ export const MATTER_DOCUMENT_CATEGORY_GROUPS = {
     { key: 'property_authority', label: 'Property Authority' },
     { key: 'entity_authority', label: 'Entity Authority' },
     { key: 'agreements', label: 'Agreements' },
+    { key: 'supporting_documents', label: 'Supporting Documents' },
+  ],
+  agency: [
+    { key: 'handover_pack', label: 'Handover Pack' },
+    { key: 'introducing_agent', label: 'Introducing Agent' },
+    { key: 'agreements', label: 'Agreements' },
+    { key: 'commission_referral', label: 'Commission / Referral' },
     { key: 'supporting_documents', label: 'Supporting Documents' },
   ],
   finance: [
@@ -146,7 +162,7 @@ export const MATTER_DOCUMENT_CATEGORY_GROUPS = {
 const MATTER_DOCUMENT_OPERATIONAL_FILTERS = new Set(['critical', 'missing', 'pending_review', 'bank_requested', 'verified'])
 const DOCUMENT_SCOPE_LANES = new Set(['transfer', 'bond', 'cancellation'])
 const DOCUMENT_SCOPE_CATEGORY_KEYS = Object.freeze({
-  transfer: new Set(['transfer', 'buyer', 'seller', 'general']),
+  transfer: new Set(['transfer', 'buyer', 'seller', 'agency', 'general']),
   bond: new Set(['bond', 'finance', 'bank_requested']),
   cancellation: new Set(['cancellation']),
 })
@@ -447,6 +463,12 @@ export function resolveMatterDocumentCategoryGroup({ category = '', document = {
     else if (hasAny(['agreement', 'otp', 'offer', 'sale'])) key = 'agreements'
     else if (canonicalCategory === 'seller' && hasAny(['title', 'rates', 'levy', 'property'])) key = 'property_authority'
     else key = 'supporting_documents'
+  } else if (canonicalCategory === 'agency') {
+    if (hasAny(['handover', 'pack'])) key = 'handover_pack'
+    else if (hasAny(['introducing', 'agent'])) key = 'introducing_agent'
+    else if (hasAny(['commission', 'referral'])) key = 'commission_referral'
+    else if (hasAny(['agreement', 'mandate', 'instruction'])) key = 'agreements'
+    else key = 'supporting_documents'
   } else if (canonicalCategory === 'finance') {
     if (hasAny(['proof_of_funds', 'proof of funds', 'fund'])) key = 'proof_of_funds'
     else if (hasAny(['statement', 'bank_statement'])) key = 'bank_statements'
@@ -487,6 +509,16 @@ export function getAttorneyCategoryForRequiredDocument(requirement = {}) {
   const key = String(requirement?.key || '').trim().toLowerCase()
   const visibleSection = String(requirement?.visibleSection || '').trim().toLowerCase()
   const expectedFromRole = String(requirement?.expectedFromRole || requirement?.requiredFromRole || requirement?.required_from_role || '').trim().toLowerCase()
+  if (
+    visibleSection === 'agency_documents' ||
+    groupKey.includes('agency') ||
+    key.startsWith('agency_') ||
+    key.startsWith('introducing_agent_') ||
+    expectedFromRole === 'agency' ||
+    expectedFromRole === 'introducing_agent'
+  ) {
+    return 'Agency Documents'
+  }
   if (visibleSection === 'finance_documents' || groupKey === 'finance') {
     return 'Internal Working Documents'
   }
@@ -505,6 +537,7 @@ export function getAttorneyCategoryForRequiredDocument(requirement = {}) {
 export function inferLibraryCategoryFromTokens(tokens = '') {
   const normalized = String(tokens || '').toLowerCase()
   if (normalized.includes('buyer')) return 'buyer'
+  if (normalized.includes('agency') || normalized.includes('introducing agent')) return 'agency'
   if (normalized.includes('seller') || normalized.includes('developer')) return 'seller'
   if (normalized.includes('bond cancellation') || normalized.includes('cancellation')) return 'cancellation'
   if (normalized.includes('bond') || normalized.includes('bank') || normalized.includes('guarantee')) return 'bond'
@@ -525,6 +558,7 @@ export function resolveDocumentLibraryCategory(document = {}) {
   const group = String(requirement?.groupKey || requirement?.group || '').toLowerCase()
   if (source === 'generated' || rawCategory === 'generated' || documentType.includes('generated')) return 'generated'
   if (rawCategory.includes('buyer') || group.includes('buyer') || name.includes('buyer')) return 'buyer'
+  if (rawCategory.includes('agency') || group.includes('agency') || name.includes('agency') || name.includes('introducing agent')) return 'agency'
   if (rawCategory.includes('seller') || rawCategory.includes('developer') || group.includes('seller') || group.includes('developer') || name.includes('seller') || name.includes('developer')) return 'seller'
   if (visibleSection === 'finance_documents' || group === 'finance') return 'finance'
   if (rawCategory.includes('guarantee') || rawCategory.includes('bond') || documentType.includes('bond')) return 'bond'
@@ -553,6 +587,7 @@ export function resolveRequirementLibraryCategory(requirement = {}) {
   const attorneyCategory = getAttorneyCategoryForRequiredDocument(requirement)
   if (attorneyCategory.includes('Buyer')) return 'buyer'
   if (attorneyCategory.includes('Seller')) return 'seller'
+  if (attorneyCategory.includes('Agency')) return 'agency'
   if (attorneyCategory.includes('Guarantee')) return 'bond'
   if (attorneyCategory.includes('Clearance')) return 'cancellation'
   const requirementTokens = [requirement?.key, requirement?.label, requirement?.documentLabel, requirement?.groupKey, requirement?.visibleSection].join(' ')
@@ -712,6 +747,7 @@ export function getDocumentCommandCategoryLabel(category = '') {
   const labels = {
     buyer: 'Buyer',
     seller: 'Seller',
+    agency: 'Agency',
     finance: 'Finance',
     transfer: 'Transfer',
     bond: 'Bond',
@@ -786,6 +822,7 @@ export function getRequirementPartyLabel(requirement = {}) {
   const normalized = String(requirement?.expectedFromRole || requirement?.requiredFromRole || requirement?.requestedFrom || requirement?.requested_from || '').trim().toLowerCase()
   if (!normalized || normalized === 'client' || normalized === 'buyer') return 'Buyer'
   if (normalized === 'seller') return 'Seller'
+  if (normalized === 'agency' || normalized === 'introducing_agent') return 'Agency / Introducing Agent'
   if (normalized === 'agent') return 'Agent'
   if (normalized === 'bond_originator') return 'Bond originator'
   if (normalized === 'bond_attorney') return 'Bond attorney'

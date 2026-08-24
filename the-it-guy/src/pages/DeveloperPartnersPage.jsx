@@ -990,11 +990,22 @@ function DeveloperPartnersPage() {
     })
   }, [activeTab, relationshipsById, searchTerm, snapshot.agreements, typeFilter])
 
-  const headerCounts = snapshot.metrics.byPartnerType || {}
+  const headerCounts = useMemo(() => {
+    return combinedPartnerRows.reduce(
+      (accumulator, relationship) => {
+        const key = normalizeDeveloperPartnerPageType(relationship.partnerType)
+        accumulator[key] = (accumulator[key] || 0) + 1
+        return accumulator
+      },
+      { agency: 0, transfer_attorney: 0, bond_originator: 0 },
+    )
+  }, [combinedPartnerRows])
+
   const displayMetrics = useMemo(() => ({
     ...snapshot.metrics,
-    pendingInvites: filteredRelationships.filter((relationship) => relationship.status === 'invited').length,
-  }), [filteredRelationships, snapshot.metrics])
+    total: combinedPartnerRows.length,
+    pendingInvites: combinedPartnerRows.filter((relationship) => relationship.status === 'invited').length,
+  }), [combinedPartnerRows, snapshot.metrics])
 
   const handleTypeFilterChange = useCallback((nextType) => {
     const normalizedType = normalizePartnerType(nextType)

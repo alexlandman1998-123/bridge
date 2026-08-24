@@ -72,6 +72,7 @@ try {
 
   const developmentActions = resolveWorkflowAvailableActions(developmentState).map((action) => action.actionKey)
   assert.equal(developmentActions.includes('REQUEST_BUYER_DETAILS'), true)
+  assert.equal(developmentActions.includes('REQUEST_AGENCY_HANDOVER'), false)
   assert.equal(
     developmentActions.includes('REQUEST_SELLER_DETAILS'),
     false,
@@ -103,6 +104,42 @@ try {
     agencyActions.includes('REQUEST_SELLER_DETAILS'),
     true,
     'Agency transactions must still expose seller onboarding requests.',
+  )
+
+  const externalAgencyActions = resolveWorkflowAvailableActions({
+    actorRole: 'agent',
+    parentStage: 'SALES_OTP',
+    transaction: {
+      id: 'tx-external-agency-phase5',
+      transaction_type: 'development_sale',
+      development_id: 'dev-1',
+      buyer_email: 'buyer@example.com',
+      lead_owner: 'agency',
+      ownership_model: 'agency_introduced',
+      source_agency_org_id: 'agency-1',
+      current_main_stage: 'OTP',
+    },
+    workflows: {
+      sales_otp: developmentSalesOtpWorkflow,
+    },
+    requiredDocuments: [
+      {
+        id: 'req-agency-handover',
+        document_key: 'agency_handover_pack',
+        group_key: 'agency_documents',
+        required_from_role: 'agency',
+        status: 'pending',
+      },
+    ],
+  })
+  const agencyHandoverAction = externalAgencyActions.find((action) => action.actionKey === 'REQUEST_AGENCY_HANDOVER')
+  assert.equal(Boolean(agencyHandoverAction), true, 'External agency sales must expose an agency handover action.')
+  assert.equal(agencyHandoverAction?.label, 'Request agency handover')
+  assert.equal(agencyHandoverAction?.ownerRole, 'agent')
+  assert.equal(
+    externalAgencyActions.some((action) => action.actionKey === 'REQUEST_SELLER_DETAILS'),
+    false,
+    'External developer agency sales must not reintroduce private seller onboarding.',
   )
 
   assert.match(

@@ -112,6 +112,26 @@ assert.equal(blockedAgency.eligible, false)
 assert.ok(blockedAgency.blockers.some((blocker) => blocker.code === 'agency_handover_required'))
 assert.ok(blockedAgency.blockers.some((blocker) => blocker.code === 'buyer_name_missing'))
 
+const releasedAgencyLead = buildDeveloperLeadTransactionHandoff({
+  ...readyLead,
+  leadOwner: 'agency',
+  ownershipModel: 'agency_introduced',
+  sourceAgencyOrgId: '22222222-2222-4222-8222-222222222222',
+  sourceAgentUserId: '33333333-3333-4333-8333-333333333333',
+  accessProfile: {
+    agencyFed: true,
+    requiresHandoverBeforePrivateDetails: false,
+  },
+})
+assert.equal(releasedAgencyLead.eligible, true)
+assert.equal(releasedAgencyLead.handoff.setup.saleRoute, 'external_agency_sale')
+assert.equal(releasedAgencyLead.handoff.setup.saleChannel, 'agency_introduced')
+assert.equal(releasedAgencyLead.handoff.setup.leadOwner, 'agency')
+assert.equal(releasedAgencyLead.handoff.setup.ownershipModel, 'agency_introduced')
+assert.equal(releasedAgencyLead.handoff.setup.sourceAgencyOrgId, '22222222-2222-4222-8222-222222222222')
+assert.equal(releasedAgencyLead.handoff.options.sourceContext.saleRoute, 'external_agency_sale')
+assert.equal(releasedAgencyLead.handoff.options.sourceContext.leadOwner, 'agency')
+
 const blockedNewLead = buildDeveloperLeadTransactionHandoff({
   ...readyLead,
   leadStatus: 'new',

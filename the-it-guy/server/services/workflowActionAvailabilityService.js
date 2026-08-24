@@ -1,5 +1,6 @@
 import { normalizeRoleType } from '../../src/core/transactions/permissions.js'
 import { buildRegistrationReadinessShortcut } from '../../src/core/transactions/registrationReadinessShortcut.js'
+import { resolveTransactionSaleProfile } from '../../src/core/transactions/transactionSaleProfile.js'
 import { resolveTransactionFacts } from '../../src/services/attorneyWorkflow/transactionFactsResolver.js'
 import { getTransactionWorkflowDefinition } from '../workflows/transactionWorkflowDefinitions.js'
 import { isGateWorkflowAction } from '../workflows/transactionWorkflowGates.js'
@@ -101,6 +102,14 @@ function resolveFinanceActionOwnerRole(state = {}) {
 
 function isDevelopmentSale(state = {}) {
   return resolveTransactionFacts(state.transaction || {}).isDevelopmentSale === true
+}
+
+function resolveSaleProfile(state = {}) {
+  return resolveTransactionSaleProfile({ transaction: state.transaction || {} })
+}
+
+function isExternalAgencySale(state = {}) {
+  return resolveSaleProfile(state).saleRoute === 'external_agency_sale'
 }
 
 function isActiveRequiredDocument(item = {}) {
@@ -216,6 +225,23 @@ const ACTION_DEFINITIONS = Object.freeze({
     reason(state = {}) {
       if (!isDevelopmentSale(state)) {
         return 'Developer documents apply only to new development transactions.'
+      }
+      return null
+    },
+  },
+  REQUEST_AGENCY_HANDOVER: {
+    label: 'Request agency handover',
+    groupKey: 'documents',
+    executionMode: 'external',
+    workflowKey: 'sales_otp',
+    stepKey: 'supporting_docs_complete',
+    ownerRole: 'agent',
+    allowedRoles: ['agent', 'developer', 'attorney', 'internal_admin'],
+    stages: ['SALES_OTP'],
+    hiddenWhen: (state = {}) => !isExternalAgencySale(state),
+    reason(state = {}) {
+      if (!isExternalAgencySale(state)) {
+        return 'Agency handover documents apply only to external agency sales.'
       }
       return null
     },

@@ -95,6 +95,31 @@ function assertIncludes(values, expected, message) {
 
 {
   const transaction = transactionWithProfile({
+    id: 'external-agency-development',
+    finance_type: 'cash',
+    transaction_type: 'development_sale',
+    property_type: 'sectional title unit',
+    buyer_entity_type: 'individual',
+    seller_type: 'developer',
+    development_id: 'dev-1',
+    vat_treatment: 'vat',
+    lead_owner: 'agency',
+    ownership_model: 'agency_introduced',
+    source_agency_org_id: 'agency-1',
+  })
+  const facts = resolveTransactionFacts(transaction)
+  const requirements = resolveLegalDocumentRequirements(transaction)
+  const agencyRequirement = requirements.requirements.find((row) => row.id === 'agency_handover_pack')
+
+  assert.equal(facts.saleRoute, 'external_agency_sale')
+  assert.equal(facts.isExternalAgencySale, true)
+  assert.equal(agencyRequirement?.requiredFrom, 'agency')
+  assert.equal(agencyRequirement?.category, 'agency_documents')
+  assertIncludes(ids(requirements.requirements), 'introducing_agent_details', 'External agency sale should require introducing agent details.')
+}
+
+{
+  const transaction = transactionWithProfile({
     id: 'bond-sectional-title',
     finance_type: 'bond',
     transaction_type: 'private_sale',
