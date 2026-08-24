@@ -93,6 +93,8 @@
     "test:rental-listing-draft-model": "node scripts/rental-listing-draft-model.test.mjs",
     "test:rental-application-draft-model": "node scripts/rental-application-draft-model.test.mjs",
     "test:rental-lease-workflow-model": "node scripts/rental-lease-workflow-model.test.mjs",
+    "test:rental-module-availability": "node scripts/rental-module-availability.test.mjs",
+    "test:rental-workspace-scope": "node scripts/rental-workspace-scope.test.mjs",
     "test:supabase-push-promote-one": "node scripts/supabase-push-promote-production-one-version.test.mjs",
     "test:supabase-resolve-ledger-drift": "node scripts/supabase-resolve-ledger-drift.test.mjs",
     "test:supabase-push-phase6": "node scripts/supabase-push-phase6-record-production-evidence.test.mjs",

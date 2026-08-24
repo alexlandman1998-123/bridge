@@ -1835,14 +1835,14 @@ const FICA_REQUIREMENT_CONFIG = {
 }
 
 function getClientPortalPath(token, sectionKey) {
-  const basePath = getPortalRouteBase(token)
-  if (sectionKey === 'overview') return basePath
-  if (sectionKey === 'bond_application') return `${basePath}/bond-application`
-  return `${basePath}/${sectionKey}`
+  return getPortalWorkspacePath(token, 'buyer', sectionKey)
 }
 
 function getPortalWorkspaceBasePath(token, workspace = 'buyer') {
   const prefix = getPortalRoutePrefix()
+  if (prefix === '/demo') {
+    return `${prefix}/${token}/buyer`
+  }
   if (workspace === 'seller') {
     return `${prefix}/${token}/selling`
   }
@@ -2010,6 +2010,26 @@ function pickFirstText(...values) {
     if (normalized) return normalized
   }
   return ''
+}
+
+function normalizePortalBrandColour(value = '', fallback = '#152432') {
+  const normalized = String(value || '').trim()
+  if (/^#[0-9a-fA-F]{6}$/.test(normalized)) return normalized
+  return fallback
+}
+
+function portalHexToRgb(hex = '#152432') {
+  const safeHex = normalizePortalBrandColour(hex, '#152432').slice(1)
+  return {
+    r: parseInt(safeHex.slice(0, 2), 16),
+    g: parseInt(safeHex.slice(2, 4), 16),
+    b: parseInt(safeHex.slice(4, 6), 16),
+  }
+}
+
+function portalHexToRgba(hex = '#152432', alpha = 1) {
+  const { r, g, b } = portalHexToRgb(hex)
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
 }
 
 const SELLER_BRAND_PLACEHOLDERS = new Set([
@@ -8401,6 +8421,7 @@ function ClientPortal() {
   }, [isSellerPortalToken, token])
 
   useEffect(() => {
+    if (isDemoRoute) return
     const normalizedToken = String(token || '').trim().toLowerCase()
     if (!normalizedToken.startsWith('seller-')) return
 
@@ -8412,7 +8433,7 @@ function ClientPortal() {
     if (!location.pathname.includes('/selling')) {
       navigate(`/client/${token}/selling`, { replace: true })
     }
-  }, [location.pathname, navigate, token])
+  }, [isDemoRoute, location.pathname, navigate, token])
 
   const loadPortal = useCallback(async ({ background = false, sellerPortalAccessTokenOverride = '' } = {}) => {
     const loadRequestId = portalLoadRequestRef.current + 1
@@ -11758,6 +11779,74 @@ function ClientPortal() {
     'Arch9',
   )
   const buyerPortalBrandDescriptor = portalProfile?.isDevelopmentBuyerPortal ? 'New Development' : 'Real Estate'
+  const buyerPortalLogoDarkUrl = pickFirstText(
+    portal?.listing?.agencyLogoDarkUrl,
+    portal?.listing?.agency_logo_dark_url,
+    portal?.listing?.organisationLogoDarkUrl,
+    portal?.listing?.organisation_logo_dark_url,
+    portal?.listing?.branding?.logoDarkUrl,
+    portal?.listing?.branding?.logoDark,
+    portal?.listing?.branding?.logo_dark_url,
+    portal?.branding?.logoDarkUrl,
+    portal?.branding?.logoDark,
+    portal?.branding?.logo_dark_url,
+    portal?.listing?.agencyLogoUrl,
+    portal?.listing?.agency_logo_url,
+    portal?.listing?.organisationLogoUrl,
+    portal?.listing?.organisation_logo_url,
+    portal?.listing?.branding?.logoUrl,
+    portal?.listing?.branding?.logo_url,
+    portal?.branding?.logoUrl,
+    portal?.branding?.logo_url,
+  )
+  const buyerPortalPrimaryColour = normalizePortalBrandColour(
+    pickFirstText(
+      portal?.listing?.branding?.primaryColour,
+      portal?.listing?.branding?.primaryColor,
+      portal?.listing?.branding?.primary_colour,
+      portal?.listing?.branding?.primary_color,
+      portal?.branding?.primaryColour,
+      portal?.branding?.primaryColor,
+      portal?.branding?.primary_colour,
+      portal?.branding?.primary_color,
+    ),
+    '#152432',
+  )
+  const buyerPortalSecondaryColour = normalizePortalBrandColour(
+    pickFirstText(
+      portal?.listing?.branding?.secondaryColour,
+      portal?.listing?.branding?.secondaryColor,
+      portal?.listing?.branding?.secondary_colour,
+      portal?.listing?.branding?.secondary_color,
+      portal?.branding?.secondaryColour,
+      portal?.branding?.secondaryColor,
+      portal?.branding?.secondary_colour,
+      portal?.branding?.secondary_color,
+    ),
+    '#152432',
+  )
+  const buyerPortalAccentColour = normalizePortalBrandColour(
+    pickFirstText(
+      portal?.listing?.branding?.accentColour,
+      portal?.listing?.branding?.accentColor,
+      portal?.listing?.branding?.accent_colour,
+      portal?.listing?.branding?.accent_color,
+      portal?.branding?.accentColour,
+      portal?.branding?.accentColor,
+      portal?.branding?.accent_colour,
+      portal?.branding?.accent_color,
+    ),
+    '#74d46e',
+  )
+  const buyerPortalSidebarStyle = {
+    backgroundColor: buyerPortalPrimaryColour,
+    backgroundImage: `radial-gradient(circle at 18% -6%, ${portalHexToRgba(buyerPortalAccentColour, 0.24)} 0%, transparent 34%), linear-gradient(180deg, ${buyerPortalPrimaryColour} 0%, ${buyerPortalSecondaryColour} 100%)`,
+  }
+  const buyerPortalActiveNavStyle = {
+    borderColor: 'rgba(255,255,255,0.34)',
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    boxShadow: `inset 3px 0 0 ${buyerPortalAccentColour}, 0 12px 24px rgba(2,6,23,0.16)`,
+  }
   const buyerPrimaryTeamMember = {
     title: buyerPrimarySupportLabel,
     name: portalProfile?.isDevelopmentBuyerPortal
@@ -13204,7 +13293,10 @@ function ClientPortal() {
         </div>
       )}
       <div className={isBondApplication && effectiveWorkspace !== 'seller' ? 'flex min-h-screen' : 'hidden min-h-screen lg:flex'}>
-        <aside className="fixed inset-y-0 left-0 z-30 hidden w-[280px] flex-col overflow-y-auto bg-[#152432] px-5 py-4 text-slate-100 [background-image:radial-gradient(circle_at_18%_-6%,rgba(108,152,193,0.18)_0%,transparent_34%),linear-gradient(180deg,#243c4f_0%,#152432_100%)] lg:flex">
+        <aside
+          className="fixed inset-y-0 left-0 z-30 hidden w-[280px] flex-col overflow-y-auto bg-[#152432] px-5 py-4 text-slate-100 [background-image:radial-gradient(circle_at_18%_-6%,rgba(108,152,193,0.18)_0%,transparent_34%),linear-gradient(180deg,#243c4f_0%,#152432_100%)] lg:flex"
+          style={effectiveWorkspace === 'seller' ? undefined : buyerPortalSidebarStyle}
+        >
           <div className="border-b border-white/10 pb-3 pt-[1.2rem]">
             {effectiveWorkspace === 'seller' ? (
               <div className="min-h-[72px]">
@@ -13222,8 +13314,16 @@ function ClientPortal() {
             ) : (
             <>
               <div className="min-h-[72px]">
-                <h1 className="text-[2rem] font-bold leading-tight tracking-[-0.04em] text-[#f8fbff]">Arch9</h1>
-                <p className="mt-2 text-[0.82rem] tracking-[0.02em] text-[#c8d5e3]">Your purchase</p>
+                {buyerPortalLogoDarkUrl ? (
+                  <img
+                    src={buyerPortalLogoDarkUrl}
+                    alt={`${buyerPortalBrandName || 'Agency'} logo`}
+                    className="max-h-14 max-w-[210px] object-contain object-left"
+                  />
+                ) : (
+                  <h1 className="text-[2rem] font-bold leading-tight tracking-[-0.04em] text-[#f8fbff]">{buyerPortalBrandName}</h1>
+                )}
+                <p className="mt-2 text-[0.82rem] tracking-[0.02em] text-[#dbe7f2]">Your purchase</p>
               </div>
             <div className="mt-4 rounded-[14px] border border-white/10 bg-[rgba(7,14,24,0.34)] px-3 py-3">
               <label htmlFor="client-journey-selector" className="block text-[0.64rem] font-semibold uppercase tracking-[0.14em] text-[#a8bdd2]">
@@ -13247,7 +13347,7 @@ function ClientPortal() {
               <p className="mt-1 truncate text-sm font-semibold text-white">{journeyCurrentStageLabel}</p>
               <p className="mt-1 truncate text-xs text-[#b9cad8]">Next: {journeyNextStageLabel}</p>
               <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/12" aria-hidden="true">
-                <div className="h-full rounded-full bg-[#74d46e]" style={{ width: `${safeJourneyProgressPercent}%` }} />
+                <div className="h-full rounded-full bg-[#74d46e]" style={{ width: `${safeJourneyProgressPercent}%`, backgroundColor: buyerPortalAccentColour }} />
               </div>
             </div>
             </>
@@ -13340,9 +13440,10 @@ function ClientPortal() {
                           className={[
                             'relative flex min-h-[44px] items-center gap-3 rounded-[10px] border px-3 py-2 text-[0.9rem] font-medium transition duration-150 ease-out',
                             isActive
-                              ? 'border-[rgba(52,211,153,0.42)] bg-[rgba(22,95,76,0.5)] text-white shadow-[inset_3px_0_0_#2fd18a]'
+                              ? 'border-white/30 bg-white/15 text-white'
                               : 'border-transparent text-slate-300 hover:border-white/10 hover:bg-white/5 hover:text-white',
                           ].join(' ')}
+                          style={isActive ? buyerPortalActiveNavStyle : undefined}
                         >
                           <Icon size={16} />
                           <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-normal [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]">
@@ -13592,37 +13693,54 @@ function ClientPortal() {
                   </div>
 
                   <article className="rounded-[22px] border border-[#dbe5ef] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className={buyerPropertyImageUrl ? 'grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]' : ''}>
                       <div className="min-w-0">
-                        <h1 className="text-[1.95rem] font-semibold leading-tight tracking-[-0.05em] text-[#142132] sm:text-[2.2rem]">
-                          {developmentName}
-                        </h1>
-                        <p className="mt-1.5 text-[1.03rem] font-semibold text-[#35546c]">{unitLabel}</p>
-                        <p className="mt-1 text-sm text-[#6b7d93]">{buyerName}</p>
-                      </div>
-                      <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] ${heroStatusBadge.className}`}>
-                        {heroStatusBadge.label}
-                      </span>
-                    </div>
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <h1 className="text-[1.95rem] font-semibold leading-tight tracking-[-0.05em] text-[#142132] sm:text-[2.2rem]">
+                              {developmentName}
+                            </h1>
+                            <p className="mt-1.5 text-[1.03rem] font-semibold text-[#35546c]">{unitLabel}</p>
+                            <p className="mt-1 text-sm text-[#6b7d93]">{buyerName}</p>
+                          </div>
+                          <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] ${heroStatusBadge.className}`}>
+                            {heroStatusBadge.label}
+                          </span>
+                        </div>
 
-                    <div className="mt-4 grid gap-3 sm:grid-cols-4">
-                      <article className="rounded-[14px] border border-[#e3ebf4] bg-white px-3.5 py-3">
-                        <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Where things stand</span>
-                        <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{MAIN_STAGE_LABELS[mainStage]}</strong>
-                      </article>
-                      <article className="rounded-[14px] border border-[#e3ebf4] bg-white px-3.5 py-3">
-                        <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Purchase price</span>
-                        <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{purchasePriceLabel}</strong>
-                      </article>
-                      <article className="rounded-[14px] border border-[#e3ebf4] bg-white px-3.5 py-3">
-                        <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Active for</span>
-                        <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{timeInStageLabel} active</strong>
-                        <span className="mt-1 block text-xs font-medium text-[#6b7d93]">Updated {stageUpdatedDateLabel}</span>
-                      </article>
-                      <article className="rounded-[14px] border border-[#e3ebf4] bg-white px-3.5 py-3">
-                        <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Next stage</span>
-                        <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{nextStage}</strong>
-                      </article>
+                        <div className="mt-4 grid gap-3 sm:grid-cols-4">
+                          <article className="rounded-[14px] border border-[#e3ebf4] bg-white px-3.5 py-3">
+                            <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Where things stand</span>
+                            <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{MAIN_STAGE_LABELS[mainStage]}</strong>
+                          </article>
+                          <article className="rounded-[14px] border border-[#e3ebf4] bg-white px-3.5 py-3">
+                            <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Purchase price</span>
+                            <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{purchasePriceLabel}</strong>
+                          </article>
+                          <article className="rounded-[14px] border border-[#e3ebf4] bg-white px-3.5 py-3">
+                            <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Active for</span>
+                            <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{timeInStageLabel} active</strong>
+                            <span className="mt-1 block text-xs font-medium text-[#6b7d93]">Updated {stageUpdatedDateLabel}</span>
+                          </article>
+                          <article className="rounded-[14px] border border-[#e3ebf4] bg-white px-3.5 py-3">
+                            <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Next stage</span>
+                            <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{nextStage}</strong>
+                          </article>
+                        </div>
+                      </div>
+
+                      {buyerPropertyImageUrl ? (
+                        <figure className="relative min-h-[190px] overflow-hidden rounded-[18px] border border-[#dbe5ef] bg-[#edf3f8] shadow-[inset_0_1px_0_rgba(255,255,255,0.65)]">
+                          <img
+                            src={buyerPropertyImageUrl}
+                            alt={`${developmentName} ${unitLabel}`.trim()}
+                            className="h-full min-h-[190px] w-full object-cover"
+                          />
+                          <figcaption className="absolute inset-x-3 bottom-3 rounded-[12px] border border-white/30 bg-[rgba(15,23,42,0.58)] px-3 py-2 text-xs font-semibold text-white backdrop-blur">
+                            {portal?.listing?.address || portal?.listing?.title || developmentName}
+                          </figcaption>
+                        </figure>
+                      ) : null}
                     </div>
                   </article>
 

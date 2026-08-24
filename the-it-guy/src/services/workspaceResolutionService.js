@@ -190,6 +190,7 @@ function normalizeOrganisationRow(row = null, fallback = {}) {
   if (!row) return null
   const type = normalizeWorkspaceType(row.type || row.workspace_type, inferWorkspaceTypeFromAppRole(fallback.appRole))
   const status = normalizeWorkspaceStatus(row.status)
+  const settingsJson = row.settings_json && typeof row.settings_json === 'object' ? row.settings_json : {}
   return {
     id: row.id,
     type,
@@ -200,6 +201,29 @@ function normalizeOrganisationRow(row = null, fallback = {}) {
     phone: normalizeText(row.company_phone || row.support_phone),
     status,
     isActive: isActiveWorkspaceStatus(status),
+    settingsJson,
+    settings_json: settingsJson,
+    settings: settingsJson,
+    raw: row,
+  }
+}
+
+function normalizeWorkspaceUnitRow(row = null) {
+  if (!row?.id) return null
+  return {
+    id: row.id,
+    workspaceId: normalizeText(row.workspace_id),
+    workspace_id: normalizeText(row.workspace_id) || null,
+    unitType: normalizeText(row.unit_type),
+    unit_type: normalizeText(row.unit_type),
+    name: normalizeText(row.name),
+    code: normalizeText(row.code),
+    description: normalizeText(row.description),
+    active: row.active !== false,
+    parentUnitId: row.parent_unit_id || null,
+    parent_unit_id: row.parent_unit_id || null,
+    regionId: row.region_id || null,
+    region_id: row.region_id || null,
     raw: row,
   }
 }
@@ -248,6 +272,9 @@ function createMembershipRecord({
   scopeMetadata = null,
   moduleContext = '',
   moduleMetadata = null,
+  department = null,
+  team = null,
+  workspaceUnit = null,
   jobTitle = '',
   isPrimaryOwner = false,
   activeWorkspaceSelectedAt = null,
@@ -293,6 +320,14 @@ function createMembershipRecord({
     module_context: normalizeText(moduleContext),
     moduleMetadata: moduleMetadata && typeof moduleMetadata === 'object' ? moduleMetadata : {},
     module_metadata: moduleMetadata && typeof moduleMetadata === 'object' ? moduleMetadata : {},
+    department,
+    departmentUnit: department,
+    department_unit: department,
+    team,
+    teamUnit: team,
+    team_unit: team,
+    workspaceUnit,
+    workspace_unit: workspaceUnit,
     jobTitle: normalizeText(jobTitle),
     job_title: normalizeText(jobTitle),
     isPrimaryOwner: Boolean(isPrimaryOwner),
@@ -646,6 +681,7 @@ export function buildWorkspaceResolution({
   profile: profileInput = null,
   organisationMembershipRows = [],
   organisationRows = [],
+  workspaceUnitRows = [],
   attorneyMembershipRows = [],
   attorneyFirmRows = [],
   requestedWorkspaceId = '',
@@ -656,6 +692,10 @@ export function buildWorkspaceResolution({
   const userId = normalizeText(user?.id || profile?.id)
   const appRole = normalizeCanonicalAppRole(profile?.role, '')
   const organisationById = new Map((organisationRows || []).map((row) => [row.id, normalizeOrganisationRow(row, { appRole })]))
+  const workspaceUnitById = new Map((workspaceUnitRows || []).map((row) => {
+    const unit = row?.raw ? row : normalizeWorkspaceUnitRow(row)
+    return [unit?.id, unit]
+  }).filter(([id]) => id))
   const firmById = new Map((attorneyFirmRows || []).map((row) => [row.id, normalizeAttorneyFirmRow(row)]))
   const firmByOrganisationId = new Map(
     Array.from(firmById.values())
@@ -687,6 +727,9 @@ export function buildWorkspaceResolution({
       scopeMetadata: row.scope_metadata || null,
       moduleContext: row.module_context || '',
       moduleMetadata: row.module_metadata || null,
+      department: workspaceUnitById.get(row.department_id) || null,
+      team: workspaceUnitById.get(row.team_id) || null,
+      workspaceUnit: workspaceUnitById.get(row.workspace_unit_id) || null,
       jobTitle: row.job_title || '',
       isPrimaryOwner: Boolean(row.is_primary_owner),
       activeWorkspaceSelectedAt: row.active_workspace_selected_at || null,
@@ -946,6 +989,7 @@ function normalizeWorkspaceResolutionRpcContext(context = null, { user = null, p
     preference: normalizeWorkspaceContextRpcPreference(context),
     organisationMembershipRows: normalizeWorkspaceContextRpcArray(context, 'organisationMembershipRows'),
     organisationRows: normalizeWorkspaceContextRpcArray(context, 'organisationRows'),
+    workspaceUnitRows: normalizeWorkspaceContextRpcArray(context, 'workspaceUnitRows'),
     attorneyMembershipRows: appendProfileAttorneyFirmMembership(
       normalizeWorkspaceContextRpcArray(context, 'attorneyMembershipRows'),
       normalizedUser,
@@ -1174,7 +1218,7 @@ async function fetchOrganisationRows(client, organisationIds = [], options = {})
   let query = await withWorkspaceQueryTimeout(
     client
       .from('organisations')
-      .select('id, name, display_name, company_email, company_phone, support_email, support_phone, legal_name, type, workspace_kind, status')
+      .select('id, name, display_name, company_email, company_phone, support_email, support_phone, legal_name, type, workspace_kind, status, settings_json')
       .in('id', ids),
     {
       label: 'workspace.organisations.fetch',
@@ -1187,7 +1231,7 @@ async function fetchOrganisationRows(client, organisationIds = [], options = {})
     query = await withWorkspaceQueryTimeout(
       client
         .from('organisations')
-        .select('id, name, display_name, company_email, company_phone, support_email, support_phone, legal_name, type, workspace_kind')
+        .select('id, name, display_name, company_email, company_phone, support_email, support_phone, legal_name, type, workspace_kind, settings_json')
         .in('id', ids),
       {
         label: 'workspace.organisations.fetchWithoutStatus',
@@ -1201,7 +1245,7 @@ async function fetchOrganisationRows(client, organisationIds = [], options = {})
     query = await withWorkspaceQueryTimeout(
       client
         .from('organisations')
-        .select('id, name, display_name, company_email, company_phone, support_email, support_phone, legal_name, type')
+        .select('id, name, display_name, company_email, company_phone, support_email, support_phone, legal_name, type, settings_json')
         .in('id', ids),
       {
         label: 'workspace.organisations.fetchWithoutKind',
@@ -1231,6 +1275,48 @@ async function fetchOrganisationRows(client, organisationIds = [], options = {})
   }
 
   return query.data || []
+}
+
+async function fetchWorkspaceUnitRows(client, membershipRows = [], options = {}) {
+  const ids = Array.from(new Set((membershipRows || [])
+    .flatMap((row) => [row?.department_id, row?.team_id, row?.workspace_unit_id])
+    .map((value) => normalizeText(value))
+    .filter(Boolean)))
+  if (!ids.length) return []
+
+  let query
+  try {
+    query = await withWorkspaceQueryTimeout(
+      client
+        .from('workspace_units')
+        .select('id, workspace_id, region_id, parent_unit_id, unit_type, name, code, description, active')
+        .in('id', ids),
+      {
+        label: 'workspace.units.fetchMembershipUnits',
+        timeoutMs: options.timeoutMs,
+        metadata: { table: 'workspace_units', count: ids.length },
+      },
+    )
+  } catch (error) {
+    if (isWorkspaceQueryTimeoutError(error)) {
+      warnOptionalWorkspaceQueryTimeout(error, 'workspace.units.fetchMembershipUnits')
+      return []
+    }
+    throw error
+  }
+
+  if (query.error) {
+    if (
+      isMissingTableError(query.error, 'workspace_units') ||
+      isMissingColumnError(query.error, 'unit_type') ||
+      isMissingColumnError(query.error, 'active')
+    ) {
+      return []
+    }
+    throw query.error
+  }
+
+  return (query.data || []).map(normalizeWorkspaceUnitRow).filter(Boolean)
 }
 
 async function fetchAttorneyMembershipRows(client, user, profile, options = {}) {
@@ -1383,6 +1469,7 @@ export async function resolveCurrentWorkspace(userId, options = {}) {
 
   let organisationMembershipRows = rpcContext?.organisationMembershipRows || []
   let organisationRows = rpcContext?.organisationRows || []
+  let workspaceUnitRows = rpcContext?.workspaceUnitRows || []
   let attorneyMembershipRows = rpcContext?.attorneyMembershipRows || []
   let attorneyFirmRows = rpcContext?.attorneyFirmRows || []
 
@@ -1398,6 +1485,9 @@ export async function resolveCurrentWorkspace(userId, options = {}) {
       fetchOrganisationRows(client, organisationMembershipRows.map((row) => row.organisation_id), { timeoutMs: queryTimeoutMs }),
       fetchAttorneyFirmRows(client, attorneyMembershipRows.map((row) => row.firm_id), { timeoutMs: queryTimeoutMs }),
     ])
+    workspaceUnitRows = await fetchWorkspaceUnitRows(client, organisationMembershipRows, { timeoutMs: optionalQueryTimeoutMs })
+  } else if (!workspaceUnitRows.length) {
+    workspaceUnitRows = await fetchWorkspaceUnitRows(client, organisationMembershipRows, { timeoutMs: optionalQueryTimeoutMs })
   }
 
   const resolution = buildWorkspaceResolution({
@@ -1405,6 +1495,7 @@ export async function resolveCurrentWorkspace(userId, options = {}) {
     profile,
     organisationMembershipRows,
     organisationRows,
+    workspaceUnitRows,
     attorneyMembershipRows,
     attorneyFirmRows,
     requestedWorkspaceId: options.requestedWorkspaceId,

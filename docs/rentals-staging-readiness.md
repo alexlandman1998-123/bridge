@@ -57,10 +57,13 @@ For the first Rentals build, production promotion requires:
 
 ## Implemented Shell Phases
 
+- Phase 1 defines the canonical business-line source of truth: global feature gates, organisation business lines, and agent membership business-workspace access. Runtime access now resolves by intersecting global enablement, organisation capability, and user access.
 - Phase 2 adds the gated Sales/Rentals workspace selector and `businessWorkspace` context.
 - Phase 3 adds Rentals navigation under `/agent/rentals/*` with guarded placeholder routes. Sales routes remain unchanged.
 - Phase 4 replaces `/agent/rentals/listings` with the first rental listing capture workflow. It creates guarded rental private-listing drafts, stores rental-specific facts in canonical JSON/notes, and syncs a Property24 publication draft with `listingType: Rental`.
 - Phase 5 replaces `/agent/rentals/pipeline/applications` with the first tenant application capture workflow. It records tenant details, documents, affordability, references, credit status, and landlord approval as guarded rental application activity against rental listings.
 - Phase 6 replaces `/agent/rentals/tenancies` with the first lease and handover workflow. It records lease generation state, signature workflow state, deposit proof tracking, occupation date, and check-in/handover status as guarded activity against rental listings.
+- Phase 7 hardens workspace route and query scope behaviour. Wrong-workspace routes redirect to the matching Sales/Rentals route, and rental listing/application/lease loading shares a single rental scope resolver so branch managers are branch-scoped and department managers do not get accidental organisation-wide access.
+- Phase 8 enforces module-level rental feature gates. The Sales/Rentals shell can be enabled without exposing listing capture, tenant application capture, lease workflow capture, rental management, or Property24 rental publishing before their specific flags are enabled.
 
 Phases 4, 5, and 6 deliberately do not add rental accounting, rent collection, landlord payouts, or dedicated rental tables. Those remain delayed until tenant applications, lease workflow, and early management workflows prove the correct data boundaries.

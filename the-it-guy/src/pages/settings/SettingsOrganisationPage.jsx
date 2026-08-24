@@ -35,6 +35,12 @@ import { useOrganisation } from '../../context/OrganisationContext'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import useAttorneyModuleSettings from '../../hooks/useAttorneyModuleSettings'
 import { ATTORNEY_MODULE_DEFINITIONS } from '../../lib/attorneyModuleSettings'
+import {
+  AGENCY_BUSINESS_LINE_OPTIONS,
+  getAgencyBusinessFocusFromLines,
+  getAgencyBusinessLinesFromFocus,
+  normalizeAgencyBusinessLines,
+} from '../../lib/agencyOnboarding'
 import { canManageOrganisationSettings, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
 import { upsertAreaFromAddress } from '../../lib/location/upsertArea'
 import {
@@ -90,12 +96,6 @@ const AGENCY_TYPE_OPTIONS = [
   { value: 'residential', label: 'Residential' },
   { value: 'commercial', label: 'Commercial' },
   { value: 'mixed', label: 'Residential & Commercial' },
-]
-
-const AGENCY_BUSINESS_FOCUS_OPTIONS = [
-  { value: 'sales', label: 'Sales' },
-  { value: 'rentals', label: 'Rentals' },
-  { value: 'sales_rentals', label: 'Sales & Rentals' },
 ]
 
 const ORGANISATION_DEFAULTS = {
@@ -589,6 +589,30 @@ function OrganisationField({ label, id, badge, className = '', children }) {
         {badge}
       </span>
       {children}
+    </label>
+  )
+}
+
+function BusinessLineOption({ option, checked = false, disabled = false, onChange }) {
+  return (
+    <label
+      className={`flex min-h-[104px] cursor-pointer items-start gap-3 rounded-[12px] border p-4 transition ${
+        checked
+          ? 'border-[#0f7f4f] bg-[#edf8f2] text-[#17233a]'
+          : 'border-[#dfe8f1] bg-white text-[#43566d]'
+      } ${disabled ? 'cursor-not-allowed opacity-60' : 'hover:border-[#8ec9ad]'}`.trim()}
+    >
+      <input
+        type="checkbox"
+        className="mt-1 h-4 w-4 rounded border-[#b8c7d6] text-[#0f7f4f] focus:ring-[#dff2e8]"
+        checked={checked}
+        disabled={disabled}
+        onChange={(event) => onChange?.(option.value, event.target.checked)}
+      />
+      <span className="grid gap-1">
+        <span className="text-sm font-semibold text-[#17233a]">{option.label}</span>
+        <span className="text-sm leading-5 text-[#60758d]">{option.description}</span>
+      </span>
     </label>
   )
 }
@@ -2150,6 +2174,79 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
     }))
   }
 
+  function synchronizeAgencyBusinessLines(nextState = state) {
+    if (!nextState || isBondOriginator) return nextState
+    const currentAgencyInfo = nextState.onboarding?.agencyInformation || {}
+    const businessLines = normalizeAgencyBusinessLines(
+      currentAgencyInfo.businessLines ||
+        currentAgencyInfo.business_lines ||
+        currentAgencyInfo.businessFocus ||
+        'sales',
+    )
+    const businessFocus = getAgencyBusinessFocusFromLines(businessLines)
+    const settingsJson = nextState.organisation?.settingsJson || {}
+    return {
+      ...nextState,
+      organisation: {
+        ...nextState.organisation,
+        settingsJson: {
+          ...settingsJson,
+          businessLines,
+          businessFocus,
+          agencyInformation: {
+            ...(settingsJson.agencyInformation || {}),
+            businessLines,
+            businessFocus,
+          },
+        },
+      },
+      onboarding: {
+        ...nextState.onboarding,
+        agencyInformation: {
+          ...currentAgencyInfo,
+          businessLines,
+          businessFocus,
+        },
+      },
+    }
+  }
+
+  function updateAgencyBusinessLine(line, checked) {
+    if (!canEdit || isBondOriginator) return
+    setMessage('')
+    setError('')
+    setState((previous) => {
+      const currentAgencyInfo = previous?.onboarding?.agencyInformation || {}
+      const current = normalizeAgencyBusinessLines(
+        currentAgencyInfo.businessLines ||
+          currentAgencyInfo.business_lines ||
+          currentAgencyInfo.businessFocus ||
+          'sales',
+      )
+      const nextSet = new Set(current)
+      if (checked) {
+        nextSet.add(line)
+      } else {
+        nextSet.delete(line)
+      }
+      if (!nextSet.size) {
+        setError('At least one business line must stay enabled.')
+        return previous
+      }
+      return synchronizeAgencyBusinessLines({
+        ...previous,
+        onboarding: {
+          ...previous.onboarding,
+          agencyInformation: {
+            ...currentAgencyInfo,
+            businessLines: Array.from(nextSet),
+            businessFocus: getAgencyBusinessFocusFromLines(Array.from(nextSet)),
+          },
+        },
+      })
+    })
+  }
+
   function updateOrganisationAddress(value) {
     setMessage('')
     setState((previous) => {
@@ -2598,21 +2695,22 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
       setSaving(true)
       setError('')
       setMessage('')
+      const stateToSave = synchronizeAgencyBusinessLines(state)
 
       const [organisationResponse, onboardingResponse] = await Promise.all([
-        updateOrganisationSettings(state.organisation),
+        updateOrganisationSettings(stateToSave.organisation),
         saveAgencyOnboardingDraft({
-          ...state.onboarding,
-          organisationType: isBondOriginator ? 'bond_originator' : state.onboarding?.organisationType,
+          ...stateToSave.onboarding,
+          organisationType: isBondOriginator ? 'bond_originator' : stateToSave.onboarding?.organisationType,
         }, { syncCommercialAccess: true }),
       ])
 
-      await upsertAreaFromAddress(buildOrganisationAddressValue(state.organisation, state.onboarding), { incrementListingCount: false })
+      await upsertAreaFromAddress(buildOrganisationAddressValue(stateToSave.organisation, stateToSave.onboarding), { incrementListingCount: false })
 
       const nextState = {
-        ...state,
+        ...stateToSave,
         ...organisationResponse,
-        membershipRole: organisationResponse.membershipRole || onboardingResponse.membershipRole || state?.membershipRole || 'viewer',
+        membershipRole: organisationResponse.membershipRole || onboardingResponse.membershipRole || stateToSave?.membershipRole || 'viewer',
         onboarding: onboardingResponse.onboarding,
       }
 
@@ -2661,6 +2759,10 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
   }
 
   const agencyInfo = onboarding.agencyInformation || {}
+  const agencyBusinessLineSource = agencyInfo.businessLines || agencyInfo.business_lines
+  const agencyBusinessLines = agencyBusinessLineSource
+    ? normalizeAgencyBusinessLines(agencyBusinessLineSource)
+    : getAgencyBusinessLinesFromFocus(agencyInfo.businessFocus || 'sales')
   const principal = onboarding.principalInformation || {}
   const permissions = onboarding.permissions || {}
   const branding = onboarding.branding || {}
@@ -3134,13 +3236,34 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
                         {(isBondOriginator ? BOND_ORIGINATOR_TYPE_OPTIONS : AGENCY_TYPE_OPTIONS).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                       </Field>
                     </OrganisationField>
-                    <OrganisationField label={copy.businessFocusLabel} id="organisation-business-focus">
-                      <Field as="select" id="organisation-business-focus" className={INPUT_CLASS} value={agencyInfo.businessFocus || (isBondOriginator ? 'bond_applications' : 'sales')} disabled={!canEdit} onChange={(event) => updateAgencyField('businessFocus', event.target.value)}>
-                        {(isBondOriginator ? BOND_BUSINESS_FOCUS_OPTIONS : AGENCY_BUSINESS_FOCUS_OPTIONS).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                      </Field>
-                    </OrganisationField>
+                    {isBondOriginator ? (
+                      <OrganisationField label={copy.businessFocusLabel} id="organisation-business-focus">
+                        <Field as="select" id="organisation-business-focus" className={INPUT_CLASS} value={agencyInfo.businessFocus || 'bond_applications'} disabled={!canEdit} onChange={(event) => updateAgencyField('businessFocus', event.target.value)}>
+                          {BOND_BUSINESS_FOCUS_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                        </Field>
+                      </OrganisationField>
+                    ) : null}
                   </div>
                 </OrganisationCard>
+
+                {!isBondOriginator ? (
+                  <OrganisationCard
+                    title="Business Lines"
+                    description="Select the operating lines this agency runs."
+                  >
+                    <div className="grid gap-3 md:grid-cols-2">
+                      {AGENCY_BUSINESS_LINE_OPTIONS.map((option) => (
+                        <BusinessLineOption
+                          key={option.value}
+                          option={option}
+                          checked={agencyBusinessLines.includes(option.value)}
+                          disabled={!canEdit}
+                          onChange={updateAgencyBusinessLine}
+                        />
+                      ))}
+                    </div>
+                  </OrganisationCard>
+                ) : null}
 
                 <OrganisationCard title="Contact Information" description="Primary contact details used across portals, reports and outbound communication.">
                   <div className="grid gap-4 md:grid-cols-2">

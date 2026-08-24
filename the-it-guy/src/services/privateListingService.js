@@ -2200,6 +2200,23 @@ function stripUnsupportedLocationColumns(payload = {}) {
   return next
 }
 
+const PRIVATE_LISTING_DEVELOPMENT_LINK_COLUMNS = [
+  'development_id',
+  'unit_id',
+]
+
+function hasMissingPrivateListingDevelopmentLinkColumn(error) {
+  return PRIVATE_LISTING_DEVELOPMENT_LINK_COLUMNS.some((column) => isMissingColumnError(error, column))
+}
+
+function stripUnsupportedDevelopmentLinkColumns(payload = {}) {
+  const next = { ...(payload || {}) }
+  for (const column of PRIVATE_LISTING_DEVELOPMENT_LINK_COLUMNS) {
+    delete next[column]
+  }
+  return next
+}
+
 function extractQuickAddMandateDates(value = '') {
   const mandateLine = String(value || '')
     .split('\n')
@@ -2973,6 +2990,10 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
   const mapped = {
     id: row.id,
     organisationId: row.organisation_id || null,
+    developmentId: row.development_id || null,
+    development_id: row.development_id || null,
+    unitId: row.unit_id || null,
+    unit_id: row.unit_id || null,
     branchId: row.branch_id || null,
     assignedAgentId: row.assigned_agent_id || null,
     assignedAgentName,
@@ -5468,6 +5489,8 @@ function buildPrivateListingPayload(payload = {}, userId = null) {
 
   return {
     organisation_id: organisationId,
+    development_id: normalizeUuid(payload.developmentId || payload.development_id),
+    unit_id: normalizeUuid(payload.unitId || payload.unit_id),
     branch_id: normalizeUuid(payload.branchId || payload.branch_id),
     assigned_agent_id: normalizeUuid(payload.assignedAgentId),
     seller_lead_id: normalizeLeadLink(payload.sellerLeadId),
@@ -5569,6 +5592,7 @@ export async function createPrivateListing(payload = {}, options = {}) {
     isMissingColumnError(insert.error, 'seller_canonical_facts_json') ||
     isMissingColumnError(insert.error, 'seller_canonical_fact_readiness_json') ||
     isMissingColumnError(insert.error, 'seller_canonical_facts_updated_at') ||
+    hasMissingPrivateListingDevelopmentLinkColumn(insert.error) ||
     hasMissingPrivateListingLocationColumn(insert.error) ||
     hasMissingPrivateListingPortalColumn(insert.error)
   )) {
@@ -5580,7 +5604,7 @@ export async function createPrivateListing(payload = {}, options = {}) {
     const shouldStripBranchId = isMissingColumnError(insert.error, 'branch_id')
     insert = await client
       .from('private_listings')
-      .insert(stripUnsupportedLocationColumns(stripUnsupportedPortalColumns(stripUnsupportedTaxonomyColumns(Object.fromEntries(Object.entries(fallbackPayload).filter(([key]) => !shouldStripBranchId || key !== 'branch_id'))))))
+      .insert(stripUnsupportedDevelopmentLinkColumns(stripUnsupportedLocationColumns(stripUnsupportedPortalColumns(stripUnsupportedTaxonomyColumns(Object.fromEntries(Object.entries(fallbackPayload).filter(([key]) => !shouldStripBranchId || key !== 'branch_id')))))))
       .select('*')
       .single()
   }
@@ -5658,6 +5682,12 @@ export async function updatePrivateListing(listingId, payload = {}, options = {}
   const includeRequirementsAndDocuments = options?.includeRequirementsAndDocuments !== false
 
   const patch = {}
+  if (payload.developmentId !== undefined || payload.development_id !== undefined) {
+    patch.development_id = normalizeUuid(payload.developmentId || payload.development_id)
+  }
+  if (payload.unitId !== undefined || payload.unit_id !== undefined) {
+    patch.unit_id = normalizeUuid(payload.unitId || payload.unit_id)
+  }
   if (payload.assignedAgentId !== undefined) patch.assigned_agent_id = normalizeUuid(payload.assignedAgentId)
   if (payload.sellerLeadId !== undefined) patch.seller_lead_id = normalizeLeadLink(payload.sellerLeadId)
   if (payload.originatingCrmLeadId !== undefined) patch.originating_crm_lead_id = normalizeLeadLink(payload.originatingCrmLeadId)
@@ -5735,6 +5765,7 @@ export async function updatePrivateListing(listingId, payload = {}, options = {}
     isMissingColumnError(updateQuery.error, 'seller_canonical_facts_json') ||
     isMissingColumnError(updateQuery.error, 'seller_canonical_fact_readiness_json') ||
     isMissingColumnError(updateQuery.error, 'seller_canonical_facts_updated_at') ||
+    hasMissingPrivateListingDevelopmentLinkColumn(updateQuery.error) ||
     hasMissingPrivateListingLocationColumn(updateQuery.error) ||
     hasMissingPrivateListingPortalColumn(updateQuery.error)
   )) {
@@ -5745,7 +5776,7 @@ export async function updatePrivateListing(listingId, payload = {}, options = {}
     delete compatiblePatch.seller_canonical_facts_updated_at
     updateQuery = await client
       .from('private_listings')
-      .update(stripUnsupportedLocationColumns(stripUnsupportedPortalColumns(stripUnsupportedTaxonomyColumns(compatiblePatch))))
+      .update(stripUnsupportedDevelopmentLinkColumns(stripUnsupportedLocationColumns(stripUnsupportedPortalColumns(stripUnsupportedTaxonomyColumns(compatiblePatch)))))
       .eq('id', normalizedId)
       .select('*')
       .single()
@@ -6344,6 +6375,7 @@ export async function getAgentPrivateListings(
   agentId,
   {
     organisationId = null,
+    branchId = null,
     includeAllOrganisationListings = false,
     assignedAgentIds = [],
   } = {},
@@ -6351,22 +6383,35 @@ export async function getAgentPrivateListings(
   const client = requireClient()
   const normalizedAgentId = normalizeUuid(agentId)
   const normalizedOrgId = normalizeUuid(organisationId)
+  const normalizedBranchId = normalizeUuid(branchId)
   const normalizedAgentIds = normalizeUuidList([normalizedAgentId, ...assignedAgentIds])
   if (!includeAllOrganisationListings && !normalizedAgentIds.length) return []
-  const queryBuilder = applyVisiblePrivateListingFilters(client.from('private_listings').select('*'))
 
-  if (normalizedOrgId) {
-    queryBuilder.eq('organisation_id', normalizedOrgId)
-  }
-  if (!includeAllOrganisationListings) {
-    if (normalizedAgentIds.length > 1) {
-      queryBuilder.in('assigned_agent_id', normalizedAgentIds)
-    } else if (normalizedAgentIds.length === 1) {
-      queryBuilder.eq('assigned_agent_id', normalizedAgentIds[0])
+  const buildQuery = ({ includeBranchFilter = true } = {}) => {
+    const queryBuilder = applyVisiblePrivateListingFilters(client.from('private_listings').select('*'))
+
+    if (normalizedOrgId) {
+      queryBuilder.eq('organisation_id', normalizedOrgId)
     }
+    if (includeBranchFilter && normalizedBranchId) {
+      queryBuilder.eq('branch_id', normalizedBranchId)
+    }
+    if (!includeAllOrganisationListings) {
+      if (normalizedAgentIds.length > 1) {
+        queryBuilder.in('assigned_agent_id', normalizedAgentIds)
+      } else if (normalizedAgentIds.length === 1) {
+        queryBuilder.eq('assigned_agent_id', normalizedAgentIds[0])
+      }
+    }
+
+    return queryBuilder.order('updated_at', { ascending: false })
   }
 
-  const query = await queryBuilder.order('updated_at', { ascending: false })
+  let query = await buildQuery({ includeBranchFilter: true })
+  if (query.error && normalizedBranchId && isMissingColumnError(query.error, 'branch_id')) {
+    if (includeAllOrganisationListings) return []
+    query = await buildQuery({ includeBranchFilter: false })
+  }
   if (query.error) {
     if (isMissingTableError(query.error, 'private_listings')) return []
     throw query.error

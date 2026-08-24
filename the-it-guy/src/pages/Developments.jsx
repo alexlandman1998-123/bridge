@@ -567,6 +567,16 @@ function Developments() {
                           Overview
                         </Button>
                         <Button
+                          variant="secondary"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            navigate(`/listings/developments?developmentId=${encodeURIComponent(item.id)}`)
+                          }}
+                        >
+                          <ArrowRightLeft size={15} />
+                          Listings
+                        </Button>
+                        <Button
                           onClick={(event) => {
                             event.stopPropagation()
                             navigate(item.primaryCtaUrl, {

@@ -91,6 +91,54 @@
   grid-template-columns: minmax(0, 1.35fr) minmax(310px, 0.65fr);
 }
 
+.prospect-demo-tabs {
+  background: #eef3f7;
+  border: 1px solid #dce5ee;
+  border-radius: 15px;
+  display: inline-flex;
+  gap: 6px;
+  margin-bottom: 20px;
+  padding: 5px;
+}
+
+.prospect-demo-tabs button {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 12px;
+  color: #52657b;
+  display: inline-flex;
+  font-weight: 750;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 13px;
+}
+
+.prospect-demo-tabs button.active {
+  background: #ffffff;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+  color: #0f5135;
+}
+
+.prospect-demo-tabs small {
+  align-items: center;
+  background: #dfe9f2;
+  border-radius: 999px;
+  color: #44556b;
+  display: inline-flex;
+  font-size: 0.7rem;
+  font-weight: 800;
+  height: 20px;
+  justify-content: center;
+  min-width: 20px;
+  padding: 0 6px;
+}
+
+.prospect-demo-tabs button.active small {
+  background: var(--green-soft);
+  color: #0f5135;
+}
+
 .prospect-demo-form,
 .prospect-form-section {
   display: grid;
@@ -450,6 +498,53 @@
   background: var(--prospect-accent);
 }
 
+.prospect-logo-strip {
+  background: #ffffff;
+  border-top: 1px solid #e4ebf2;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 0 18px 18px;
+}
+
+.prospect-logo-strip > span {
+  align-items: center;
+  background: #f7fafc;
+  border: 1px solid #e0e8f0;
+  border-radius: 13px;
+  color: #52657b;
+  display: grid;
+  gap: 7px;
+  min-height: 76px;
+  padding: 10px;
+}
+
+.prospect-logo-strip > span.dark {
+  background: #162234;
+  border-color: #24354b;
+  color: #dce7f4;
+}
+
+.prospect-logo-strip small {
+  color: inherit;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  opacity: 0.72;
+  text-transform: uppercase;
+}
+
+.prospect-logo-strip img {
+  max-height: 28px;
+  max-width: 150px;
+  object-fit: contain;
+  object-position: left center;
+}
+
+.prospect-logo-strip b {
+  font-size: 0.8rem;
+}
+
 .prospect-link-preview {
   background: #ffffff;
   border: 1px solid var(--border);
@@ -541,10 +636,132 @@
   gap: 8px;
 }
 
+.prospect-history-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.prospect-history-toolbar {
+  align-items: center;
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+  padding: 14px;
+}
+
+.prospect-history-toolbar h3 {
+  color: var(--text);
+  font-size: 1rem;
+  margin: 0 0 4px;
+}
+
+.prospect-history-toolbar p {
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.prospect-history-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.prospect-history-card {
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 17px;
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+}
+
+.prospect-history-main {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+}
+
+.prospect-history-logo {
+  align-items: center;
+  background: #102033;
+  border-radius: 14px;
+  color: #ffffff;
+  display: inline-flex;
+  flex: 0 0 auto;
+  font-size: 0.82rem;
+  font-weight: 800;
+  height: 58px;
+  justify-content: center;
+  overflow: hidden;
+  width: 58px;
+}
+
+.prospect-history-logo img {
+  height: 100%;
+  object-fit: contain;
+  padding: 8px;
+  width: 100%;
+}
+
+.prospect-history-main h3 {
+  color: var(--text);
+  font-size: 1rem;
+  margin: 0 0 3px;
+}
+
+.prospect-history-main p,
+.prospect-history-main small {
+  color: var(--muted);
+  display: block;
+  font-size: 0.8rem;
+  margin: 0;
+}
+
+.prospect-history-palette {
+  display: flex;
+  gap: 7px;
+}
+
+.prospect-history-palette i {
+  border: 1px solid rgba(16, 24, 40, 0.14);
+  border-radius: 999px;
+  display: inline-flex;
+  height: 14px;
+  width: 36px;
+}
+
+.prospect-history-links {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.prospect-history-empty {
+  align-items: center;
+  border: 1px dashed #cad8e6;
+  border-radius: 16px;
+  color: var(--muted);
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+  min-height: 180px;
+  padding: 24px;
+  text-align: center;
+}
+
+.prospect-history-empty p {
+  margin: 0;
+}
+
 @media (max-width: 1100px) {
   .prospect-demo-grid,
   .prospect-colour-grid,
-  .prospect-links-grid {
+  .prospect-links-grid,
+  .prospect-history-links {
     grid-template-columns: 1fr;
   }
 }
@@ -562,8 +779,11 @@
   }
 
   .prospect-demo-panel-header,
+  .prospect-demo-tabs,
   .prospect-field-grid,
-  .prospect-upload-grid {
+  .prospect-upload-grid,
+  .prospect-logo-strip,
+  .prospect-history-toolbar {
     display: grid;
     grid-template-columns: 1fr;
   }

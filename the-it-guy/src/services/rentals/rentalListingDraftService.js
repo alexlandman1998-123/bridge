@@ -28,6 +28,7 @@ export function isRentalListingRecord(listing = {}) {
 export async function listRentalListingsForAgent(agentId, options = {}) {
   const rows = await getAgentPrivateListings(agentId, {
     organisationId: options.organisationId,
+    branchId: options.branchId,
     assignedAgentIds: options.assignedAgentIds,
     includeAllOrganisationListings: options.includeAllOrganisationListings,
   })

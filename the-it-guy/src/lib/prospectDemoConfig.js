@@ -4,6 +4,8 @@ const DEFAULT_DEMO_CONFIG = Object.freeze({
   slug: '',
   agencyName: '',
   logoUrl: '',
+  logoLightUrl: '',
+  logoDarkUrl: '',
   primaryColour: '',
   secondaryColour: '',
   accentColour: '',
@@ -30,6 +32,8 @@ export function normalizeProspectDemoConfig(config = {}, { slug = '' } = {}) {
     slug: normalizedSlug,
     agencyName: normalizeText(source.agencyName || source.agency_name || source.organisationName || source.organisation_name || source.name),
     logoUrl: normalizeText(source.logoUrl || source.logo_url || source.logo || source.logo_data_url),
+    logoLightUrl: normalizeText(source.logoLightUrl || source.logo_light_url || source.logoLight || source.logo_light || source.logoUrl || source.logo_url),
+    logoDarkUrl: normalizeText(source.logoDarkUrl || source.logo_dark_url || source.logoDark || source.logo_dark || source.logoUrl || source.logo_url),
     primaryColour: normalizeText(source.primaryColour || source.primary_color || source.primary_colour || source.primaryColor),
     secondaryColour: normalizeText(source.secondaryColour || source.secondary_color || source.secondary_colour || source.secondaryColor),
     accentColour: normalizeText(source.accentColour || source.accent_color || source.accent_colour || source.accentColor),
@@ -64,7 +68,7 @@ export async function fetchProspectDemoConfigBySlug(slug = '') {
 
   const { data, error } = await supabase
     .from('prospect_demo_configs')
-    .select('slug, agency_name, logo_url, primary_colour, secondary_colour, accent_colour, sample_property_image_url, sample_property_address, created_at, updated_at')
+    .select('slug, agency_name, logo_url, logo_light_url, logo_dark_url, primary_colour, secondary_colour, accent_colour, sample_property_image_url, sample_property_address, created_at, updated_at')
     .eq('slug', normalizedSlug)
     .maybeSingle()
 

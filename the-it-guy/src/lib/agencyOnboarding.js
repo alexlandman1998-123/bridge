@@ -24,6 +24,62 @@ export const AGENCY_BUSINESS_FOCUS_OPTIONS = [
   { value: 'sales_rentals', label: 'Sales & Rentals' },
 ]
 
+export const AGENCY_BUSINESS_LINE_OPTIONS = [
+  { value: 'sales', label: 'Sales', description: 'Seller leads, sale listings, mandates, offers, and transactions.' },
+  { value: 'rentals', label: 'Rentals', description: 'Landlord leads, rental listings, tenant applications, leases, and tenancies.' },
+]
+
+const AGENCY_BUSINESS_LINE_VALUES = new Set(AGENCY_BUSINESS_LINE_OPTIONS.map((option) => option.value))
+
+export function normalizeAgencyBusinessLines(value = null, fallback = ['sales']) {
+  const lines = new Set()
+  const addLine = (candidate) => {
+    const normalized = normalizeText(candidate).toLowerCase().replace(/[\s-]+/g, '_')
+    if (normalized === 'sales_rentals' || normalized === 'sales_and_rentals' || normalized === 'both' || normalized === 'all') {
+      lines.add('sales')
+      lines.add('rentals')
+      return
+    }
+    if (normalized === 'rental' || normalized === 'rent' || normalized === 'letting' || normalized === 'lettings' || normalized === 'leasing') {
+      lines.add('rentals')
+      return
+    }
+    if (normalized === 'sale' || normalized === 'residential_sales') {
+      lines.add('sales')
+      return
+    }
+    if (AGENCY_BUSINESS_LINE_VALUES.has(normalized)) lines.add(normalized)
+  }
+
+  if (Array.isArray(value)) {
+    value.forEach(addLine)
+  } else if (value && typeof value === 'object') {
+    Object.entries(value).forEach(([key, enabled]) => {
+      if (enabled === false || enabled === null) return
+      addLine(key)
+    })
+  } else {
+    addLine(value)
+  }
+
+  if (!lines.size && fallback) {
+    normalizeAgencyBusinessLines(fallback, null).forEach((line) => lines.add(line))
+  }
+
+  return AGENCY_BUSINESS_LINE_OPTIONS.map((option) => option.value).filter((line) => lines.has(line))
+}
+
+export function getAgencyBusinessFocusFromLines(value = null) {
+  const lines = normalizeAgencyBusinessLines(value, ['sales'])
+  if (lines.includes('sales') && lines.includes('rentals')) return 'sales_rentals'
+  if (lines.includes('rentals')) return 'rentals'
+  return 'sales'
+}
+
+export function getAgencyBusinessLinesFromFocus(value = 'sales') {
+  return normalizeAgencyBusinessLines(value, ['sales'])
+}
+
 export const AGENCY_ORGANISATION_TYPE_OPTIONS = [
   { value: 'agency', label: 'Agency', enabled: true },
   { value: 'developer', label: 'Developer', enabled: false },
@@ -87,6 +143,7 @@ export function buildDefaultAgencyOnboarding(profile = null) {
       tradingName: '',
       agencyType: 'residential',
       businessFocus: 'sales',
+      businessLines: ['sales'],
       companyRegistrationNumber: '',
       vatNumber: '',
       eaabPpraNumber: '',
@@ -162,6 +219,24 @@ export function mergeAgencyOnboardingDraft(baseDraft = {}, nextDraft = {}, profi
       ...defaults.agencyInformation,
       ...(base.agencyInformation || {}),
       ...(incoming.agencyInformation || {}),
+      businessFocus: getAgencyBusinessFocusFromLines(
+        incoming.agencyInformation?.businessLines ||
+          incoming.agencyInformation?.business_lines ||
+          incoming.agencyInformation?.businessFocus ||
+          base.agencyInformation?.businessLines ||
+          base.agencyInformation?.business_lines ||
+          base.agencyInformation?.businessFocus ||
+          defaults.agencyInformation.businessFocus,
+      ),
+      businessLines: normalizeAgencyBusinessLines(
+        incoming.agencyInformation?.businessLines ||
+          incoming.agencyInformation?.business_lines ||
+          incoming.agencyInformation?.businessFocus ||
+          base.agencyInformation?.businessLines ||
+          base.agencyInformation?.business_lines ||
+          base.agencyInformation?.businessFocus ||
+          defaults.agencyInformation.businessLines,
+      ),
     },
     principalInformation: {
       ...defaults.principalInformation,

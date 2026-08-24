@@ -50,7 +50,9 @@ function resolveDemoConfig(token = '', prospectConfig = null) {
 function resolveDemoBrand(token = '', prospectConfig = null) {
   const config = resolveDemoConfig(token, prospectConfig)
   const agencyName = config.agencyName || 'Demo Agency'
-  const logoUrl = config.logoUrl || DEMO_BRAND.logoUrl
+  const logoLightUrl = config.logoLightUrl || config.logoUrl || DEMO_BRAND.logoLightUrl
+  const logoDarkUrl = config.logoDarkUrl || config.logoUrl || DEMO_BRAND.logoDarkUrl || logoLightUrl
+  const logoUrl = config.logoUrl || logoLightUrl || logoDarkUrl || DEMO_BRAND.logoUrl
   const primaryColour = config.primaryColour || DEMO_BRAND.primaryColour
   const secondaryColour = config.secondaryColour || DEMO_BRAND.secondaryColour
   const accentColour = config.accentColour || DEMO_BRAND.accentColour
@@ -61,8 +63,8 @@ function resolveDemoBrand(token = '', prospectConfig = null) {
     agencyName,
     senderName: agencyName,
     logoUrl,
-    logoDarkUrl: logoUrl,
-    logoLightUrl: logoUrl,
+    logoDarkUrl,
+    logoLightUrl,
     primaryColour,
     secondaryColour,
     accentColour,

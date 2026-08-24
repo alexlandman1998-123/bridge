@@ -4,6 +4,7 @@ import {
   BrainCircuit,
   Building2,
   CalendarDays,
+  Check,
   ClipboardList,
   FileCheck2,
   FileBarChart2,
@@ -26,7 +27,7 @@ import {
   Wallet,
   Workflow,
 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useOrganisation } from '../context/OrganisationContext'
 import { useWorkspace } from '../context/WorkspaceContext'
@@ -37,6 +38,7 @@ import { normalizeOrganisationMembershipRole } from '../lib/organisationAccess'
 import { inferWorkspaceTypeFromAppRole } from '../constants/workspaceTypes'
 import { trackWorkspaceBrandingMetric } from '../services/observability/monitoring'
 import { filterNavigationItems } from '../auth/permissions/navigationPermissions'
+import { resolveBusinessWorkspaceRoute } from '../lib/businessWorkspaceAccess'
 
 const ICON_BY_KEY = {
   dashboard: LayoutDashboard,
@@ -281,28 +283,61 @@ function BusinessWorkspaceSwitcher({
   onChange,
   visible = false,
 }) {
-  if (!visible || !Array.isArray(workspaces) || workspaces.length < 2) return null
+  const [open, setOpen] = useState(false)
+  const switcherRef = useRef(null)
   const currentId = currentWorkspace?.id || 'sales'
+  const currentLabel = currentWorkspace?.label || 'Sales'
+
+  useEffect(() => {
+    if (!open || typeof document === 'undefined') return undefined
+    const handlePointerDown = (event) => {
+      if (!switcherRef.current || switcherRef.current.contains(event.target)) return
+      setOpen(false)
+    }
+    document.addEventListener('pointerdown', handlePointerDown)
+    return () => document.removeEventListener('pointerdown', handlePointerDown)
+  }, [open])
+
+  if (!visible || !Array.isArray(workspaces) || workspaces.length < 2) return null
 
   return (
-    <div className="ui-business-workspace-switcher" aria-label="Business workspace">
-      <div className="ui-business-workspace-options" role="tablist" aria-label="Sales and Rentals">
-        {workspaces.map((workspace) => {
-          const active = workspace.id === currentId
-          return (
-            <button
-              key={workspace.id}
-              type="button"
-              role="tab"
-              aria-selected={active}
-              className={`ui-business-workspace-option ${active ? 'ui-business-workspace-option-active' : ''}`.trim()}
-              onClick={() => onChange?.(workspace.id)}
-            >
-              <span className="ui-business-workspace-option-label">{workspace.label}</span>
-            </button>
-          )
-        })}
-      </div>
+    <div ref={switcherRef} className="ui-business-workspace-switcher" aria-label="Business workspace">
+      <button
+        type="button"
+        className={`ui-business-workspace-trigger ${open ? 'ui-business-workspace-trigger-open' : ''}`.trim()}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <span className="ui-business-workspace-current">{currentLabel}</span>
+        <ChevronDown size={15} className={`ui-business-workspace-chevron ${open ? 'ui-business-workspace-chevron-open' : ''}`} aria-hidden="true" />
+      </button>
+      {open ? (
+        <div className="ui-business-workspace-menu" role="menu" aria-label="Switch workspace">
+          <p className="ui-business-workspace-menu-heading">Switch workspace</p>
+          {workspaces.map((workspace) => {
+            const active = workspace.id === currentId
+            return (
+              <button
+                key={workspace.id}
+                type="button"
+                role="menuitemradio"
+                aria-checked={active}
+                className={`ui-business-workspace-option ${active ? 'ui-business-workspace-option-active' : ''}`.trim()}
+                onClick={() => {
+                  setOpen(false)
+                  if (!active) onChange?.(workspace.id)
+                }}
+              >
+                <span className="ui-business-workspace-option-check" aria-hidden="true">
+                  {active ? <Check size={14} /> : null}
+                </span>
+                <span className="ui-business-workspace-option-label">{workspace.label}</span>
+              </button>
+            )
+          })}
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -314,6 +349,19 @@ function Sidebar() {
   const attorneyModuleState = useAttorneyModuleSettings({ enabled: role === 'attorney' })
   const location = useLocation()
   const navigate = useNavigate()
+  const handleBusinessWorkspaceChange = useCallback((nextWorkspaceId) => {
+    workspaceContext.setBusinessWorkspace?.(nextWorkspaceId)
+    const nextRoute = resolveBusinessWorkspaceRoute({
+      pathname: location.pathname,
+      search: location.search,
+      hash: location.hash,
+      targetWorkspace: nextWorkspaceId,
+    })
+    const currentRoute = `${location.pathname}${location.search}${location.hash}`
+    if (nextRoute && nextRoute !== currentRoute) {
+      navigate(nextRoute)
+    }
+  }, [location.hash, location.pathname, location.search, navigate, workspaceContext])
   const inferredRoleWorkspaceType = inferWorkspaceTypeFromAppRole(role)
   const navWorkspaceType =
     inferredRoleWorkspaceType && workspaceContext.currentWorkspace?.type !== inferredRoleWorkspaceType
@@ -538,23 +586,20 @@ function Sidebar() {
     window.queueMicrotask(() => {
       if (!active) return
       setExpandedMenus((previous) => {
-        const next = {}
+        const next = { ...previous }
         let changed = false
 
         for (const item of roleNavItems) {
           if (!Array.isArray(item.children) || !item.children.length) continue
           const isActive = isParentNavActive(item, location)
-          if (isActive) {
+          if (isActive && previous[item.key] === undefined) {
             next[item.key] = true
-          }
-          if (Boolean(previous[item.key]) !== Boolean(next[item.key])) {
             changed = true
           }
-        }
-
-        const previousKeys = Object.keys(previous)
-        if (previousKeys.length !== Object.keys(next).length) {
-          changed = true
+          if (!isActive && previous[item.key] !== undefined) {
+            delete next[item.key]
+            changed = true
+          }
         }
 
         return changed ? next : previous
@@ -602,7 +647,7 @@ function Sidebar() {
             currentWorkspace={workspaceContext.businessWorkspace}
             workspaces={workspaceContext.availableBusinessWorkspaces}
             visible={workspaceContext.showBusinessWorkspaceSwitcher}
-            onChange={workspaceContext.setBusinessWorkspace}
+            onChange={handleBusinessWorkspaceChange}
           />
         </div>
       </div>

@@ -11,10 +11,10 @@ import {
   RENTAL_SELECT_OPTIONS,
   validateRentalListingDraftForm,
 } from '../../services/rentals/rentalListingDraftModel'
-
-function normalizeText(value) {
-  return String(value || '').trim()
-}
+import {
+  buildRentalListingQueryOptions,
+  resolveRentalWorkspaceScope,
+} from '../../services/rentals/rentalWorkspaceScope'
 
 function formatCurrency(value) {
   const amount = Number(value || 0)
@@ -24,45 +24,6 @@ function formatCurrency(value) {
     currency: 'ZAR',
     maximumFractionDigits: 0,
   }).format(amount)
-}
-
-function resolveOrganisationId(workspaceContext = {}) {
-  const membership = workspaceContext.currentMembership || {}
-  return normalizeText(
-    workspaceContext.currentWorkspace?.id ||
-      workspaceContext.workspace?.id ||
-      membership.organisationId ||
-      membership.organisation_id ||
-      membership.organizationId ||
-      membership.organization_id ||
-      membership.workspaceId ||
-      membership.workspace_id ||
-      membership.raw?.organisation_id ||
-      membership.raw?.organization_id,
-  )
-}
-
-function resolveBranchId(workspaceContext = {}) {
-  const membership = workspaceContext.currentMembership || {}
-  return normalizeText(
-    membership.branchId ||
-      membership.branch_id ||
-      membership.organisationBranchId ||
-      membership.organisation_branch_id ||
-      membership.raw?.branch_id ||
-      membership.raw?.organisation_branch_id,
-  )
-}
-
-function canSeeOrganisationListings(workspaceContext = {}) {
-  const role = normalizeText(
-    workspaceContext.workspaceRole ||
-      workspaceContext.currentMembership?.workspaceRole ||
-      workspaceContext.currentMembership?.workspace_role ||
-      workspaceContext.currentMembership?.role,
-  ).toLowerCase()
-  return workspaceContext.agencyWorkflowMode === 'principal' ||
-    ['owner', 'principal', 'admin', 'agency_admin', 'manager', 'branch_manager'].includes(role)
 }
 
 function formField(name, value, onChange) {
@@ -114,9 +75,10 @@ function RentalListingCard({ listing }) {
 
 export default function RentalListingsPage() {
   const workspaceContext = useWorkspace()
-  const organisationId = useMemo(() => resolveOrganisationId(workspaceContext), [workspaceContext])
-  const branchId = useMemo(() => resolveBranchId(workspaceContext), [workspaceContext])
-  const assignedAgentId = normalizeText(workspaceContext.profile?.id)
+  const rentalScope = useMemo(() => resolveRentalWorkspaceScope(workspaceContext), [workspaceContext])
+  const organisationId = rentalScope.organisationId
+  const branchId = rentalScope.branchId
+  const assignedAgentId = rentalScope.assignedAgentId
   const [form, setForm] = useState(() => ({ ...RENTAL_LISTING_INITIAL_FORM }))
   const [listings, setListings] = useState([])
   const [loading, setLoading] = useState(true)
@@ -145,10 +107,7 @@ export default function RentalListingsPage() {
     try {
       setLoading(true)
       setError('')
-      const rows = await listRentalListingsForAgent(assignedAgentId, {
-        organisationId,
-        includeAllOrganisationListings: canSeeOrganisationListings(workspaceContext),
-      })
+      const rows = await listRentalListingsForAgent(assignedAgentId, buildRentalListingQueryOptions(rentalScope))
       setListings(rows)
     } catch (loadError) {
       setError(loadError?.message || 'Unable to load rental listings.')
@@ -156,7 +115,7 @@ export default function RentalListingsPage() {
     } finally {
       setLoading(false)
     }
-  }, [assignedAgentId, organisationId, workspaceContext])
+  }, [assignedAgentId, organisationId, rentalScope])
 
   useEffect(() => {
     void loadListings()

@@ -13,6 +13,10 @@ import {
   validateRentalApplicationDraftForm,
 } from '../../services/rentals/rentalApplicationDraftModel'
 import { listRentalListingsForAgent } from '../../services/rentals/rentalListingDraftService'
+import {
+  buildRentalListingQueryOptions,
+  resolveRentalWorkspaceScope,
+} from '../../services/rentals/rentalWorkspaceScope'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -32,33 +36,6 @@ function formatRatio(value) {
   const ratio = Number(value)
   if (!Number.isFinite(ratio) || ratio <= 0) return 'Unknown'
   return `${ratio.toFixed(1)}x rent`
-}
-
-function resolveOrganisationId(workspaceContext = {}) {
-  const membership = workspaceContext.currentMembership || {}
-  return normalizeText(
-    workspaceContext.currentWorkspace?.id ||
-      workspaceContext.workspace?.id ||
-      membership.organisationId ||
-      membership.organisation_id ||
-      membership.organizationId ||
-      membership.organization_id ||
-      membership.workspaceId ||
-      membership.workspace_id ||
-      membership.raw?.organisation_id ||
-      membership.raw?.organization_id,
-  )
-}
-
-function canSeeOrganisationListings(workspaceContext = {}) {
-  const role = normalizeText(
-    workspaceContext.workspaceRole ||
-      workspaceContext.currentMembership?.workspaceRole ||
-      workspaceContext.currentMembership?.workspace_role ||
-      workspaceContext.currentMembership?.role,
-  ).toLowerCase()
-  return workspaceContext.agencyWorkflowMode === 'principal' ||
-    ['owner', 'principal', 'admin', 'agency_admin', 'manager', 'branch_manager'].includes(role)
 }
 
 function getListingTitle(listing = {}) {
@@ -127,9 +104,9 @@ function ApplicationCard({ application }) {
 
 export default function RentalApplicationsPage() {
   const workspaceContext = useWorkspace()
-  const organisationId = useMemo(() => resolveOrganisationId(workspaceContext), [workspaceContext])
-  const assignedAgentId = normalizeText(workspaceContext.profile?.id)
-  const includeAllOrganisationListings = canSeeOrganisationListings(workspaceContext)
+  const rentalScope = useMemo(() => resolveRentalWorkspaceScope(workspaceContext), [workspaceContext])
+  const organisationId = rentalScope.organisationId
+  const assignedAgentId = rentalScope.assignedAgentId
   const [form, setForm] = useState(() => ({ ...RENTAL_APPLICATION_INITIAL_FORM }))
   const [listings, setListings] = useState([])
   const [applications, setApplications] = useState([])
@@ -165,7 +142,7 @@ export default function RentalApplicationsPage() {
     try {
       setLoading(true)
       setError('')
-      const options = { organisationId, includeAllOrganisationListings }
+      const options = buildRentalListingQueryOptions(rentalScope)
       const [rentalListings, rentalApplications] = await Promise.all([
         listRentalListingsForAgent(assignedAgentId, options),
         listRentalApplicationsForAgent(assignedAgentId, options),
@@ -182,7 +159,7 @@ export default function RentalApplicationsPage() {
     } finally {
       setLoading(false)
     }
-  }, [assignedAgentId, includeAllOrganisationListings, organisationId])
+  }, [assignedAgentId, organisationId, rentalScope])
 
   useEffect(() => {
     void loadData()

@@ -1831,6 +1831,8 @@ function buildInitialListingLeadForm(profile, workspace) {
     hasSignedFicaForm: false,
     sellerPortalInviteRequested: false,
     sellerPortalDeliveryMethod: '',
+    developmentId: '',
+    unitId: '',
     propertyAddress: '',
     propertyAddressValue: null,
     formattedAddress: '',
@@ -2242,15 +2244,25 @@ function validateQuickListingActiveRules({ form, assignedAgentKey }) {
 function AgentListings({ initialTab = null } = {}) {
   const navigate = useNavigate()
   const location = useLocation()
-  const { workspace, profile, agencyWorkflowMode, currentMembership, workspaceRole } = useWorkspace()
+  const { workspace, profile, role, agencyWorkflowMode, currentMembership, workspaceRole } = useWorkspace()
   const pilotCreationFreeze = resolveMvpPilotCreationFreeze()
+  const isDeveloperWorkspace = role === 'developer'
+  const linkedDevelopmentId = useMemo(() => {
+    const params = new URLSearchParams(location.search || '')
+    return normalizeText(params.get('developmentId') || '')
+  }, [location.search])
+  const linkedUnitId = useMemo(() => {
+    const params = new URLSearchParams(location.search || '')
+    return normalizeText(params.get('unitId') || '')
+  }, [location.search])
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [workflowMessage, setWorkflowMessage] = useState('')
   const [listingsTab, setListingsTab] = useState(() => {
     const pathIsDevelopments = location.pathname.startsWith('/listings/developments')
-    if (initialTab === 'developments' || pathIsDevelopments) return 'developments'
+    const queryTargetsDevelopment = Boolean(new URLSearchParams(location.search || '').get('developmentId'))
+    if (initialTab === 'developments' || pathIsDevelopments || queryTargetsDevelopment) return 'developments'
     return readListingsViewMode()
   })
   const [showNewListingModal, setShowNewListingModal] = useState(false)
@@ -2294,6 +2306,24 @@ function AgentListings({ initialTab = null } = {}) {
     [currentMembership, workspace],
   )
 
+  useEffect(() => {
+    setForm((previous) => {
+      const nextDevelopmentId = linkedDevelopmentId || ''
+      const nextUnitId = linkedUnitId || ''
+      const alreadySynced =
+        previous.developmentId === nextDevelopmentId &&
+        previous.unitId === nextUnitId &&
+        (!nextDevelopmentId || previous.listingSource === 'development')
+      if (alreadySynced) return previous
+      return {
+        ...previous,
+        developmentId: nextDevelopmentId,
+        unitId: nextUnitId,
+        listingSource: nextDevelopmentId ? 'development' : previous.listingSource,
+      }
+    })
+  }, [linkedDevelopmentId, linkedUnitId])
+
   const loadData = useCallback(async ({ showLoading = true, deletedIdsOverride = null } = {}) => {
     try {
       if (showLoading) setLoading(true)
@@ -2312,15 +2342,16 @@ function AgentListings({ initialTab = null } = {}) {
       let dbPrivateListings = []
       let resolvedOrganisationId = ''
       if (isSupabaseConfigured) {
+        const developmentRoleType = isDeveloperWorkspace ? 'developer' : 'agent'
         const [organisationContext, participantRowsResult, assignedIdsResult, organisationUsersResult] = await Promise.all([
           fetchOrganisationSettings().catch(() => null),
           profile?.id
-            ? fetchTransactionsByParticipantSummary({ userId: profile.id, roleType: 'agent' })
+            ? fetchTransactionsByParticipantSummary({ userId: profile.id, roleType: developmentRoleType })
             : Promise.resolve([]),
           fetchAssignedDevelopmentIdsForRole({
             userId: profile?.id || null,
             participantEmail: profile?.email || '',
-            roleType: 'agent',
+            roleType: developmentRoleType,
           }),
           listOrganisationUsers().catch(() => []),
         ])
@@ -2330,9 +2361,14 @@ function AgentListings({ initialTab = null } = {}) {
         branchRows = extractBranchOptions(organisationContext)
         resolvedOrganisationId = selectedWorkspaceOrganisationId || String(organisationContext?.organisation?.id || '').trim()
 
-        options = assignedIds.length
-          ? await fetchDevelopmentOptions({ developmentIds: assignedIds })
-          : await fetchDevelopmentOptions()
+        options = isDeveloperWorkspace
+          ? await fetchDevelopmentOptions({
+              developmentIds: assignedIds,
+              organisationId: selectedWorkspaceOrganisationId || resolvedOrganisationId,
+            })
+          : assignedIds.length
+            ? await fetchDevelopmentOptions({ developmentIds: assignedIds })
+            : await fetchDevelopmentOptions()
 
         const canUseDbFirstPrivateListings = !MOCK_DATA_ENABLED && Boolean(resolvedOrganisationId && profile?.id)
         if (canUseDbFirstPrivateListings) {
@@ -2375,7 +2411,7 @@ function AgentListings({ initialTab = null } = {}) {
     } finally {
       if (showLoading) setLoading(false)
     }
-  }, [agencyWorkflowMode, currentMembership, profile, selectedWorkspaceOrganisationId, workspaceRole])
+  }, [agencyWorkflowMode, currentMembership, isDeveloperWorkspace, profile, selectedWorkspaceOrganisationId, workspaceRole])
 
   useEffect(() => {
     let cancelled = false
@@ -2547,8 +2583,19 @@ function AgentListings({ initialTab = null } = {}) {
     setQuickAddDuplicateAction('')
   }
 
+  function buildContextualInitialListingLeadForm(previous = {}) {
+    const base = buildInitialListingLeadForm(profile, workspace)
+    return {
+      ...base,
+      branchId: currentBranchId || previous.branchId || base.branchId,
+      developmentId: linkedDevelopmentId || '',
+      unitId: linkedUnitId || '',
+      listingSource: linkedDevelopmentId ? 'development' : base.listingSource,
+    }
+  }
+
   function resetForm() {
-    setForm(buildInitialListingLeadForm(profile, workspace))
+    setForm(buildContextualInitialListingLeadForm())
   }
 
   const isPrincipalListingMode = listingModalMode === 'principal'
@@ -2621,7 +2668,7 @@ function AgentListings({ initialTab = null } = {}) {
     }
     setListingModalMode(agencyWorkflowMode === 'principal' ? 'principal' : 'agent')
     setListingModalFlow('quick_add')
-    setForm((previous) => ({ ...buildInitialListingLeadForm(profile, workspace), branchId: currentBranchId || previous.branchId }))
+    setForm((previous) => buildContextualInitialListingLeadForm(previous))
     setShowNewListingModal(true)
     setQuickAddDuplicateMatches([])
     setQuickAddDuplicateOverride(false)
@@ -3212,6 +3259,8 @@ function AgentListings({ initialTab = null } = {}) {
         }
         const created = await createPrivateListing({
           organisationId: listingOrganisationId,
+          developmentId: form.developmentId || linkedDevelopmentId || null,
+          unitId: form.unitId || linkedUnitId || null,
           branchId: resolvedBranchId || null,
           assignedAgentId: resolvedAssignedAgentId || null,
           listingStatus: resolvedListingStatus,
@@ -3220,7 +3269,7 @@ function AgentListings({ initialTab = null } = {}) {
           listingVisibility: resolveQuickListingVisibility(form.visibility, resolvedListingStatus),
           title: listingTitle,
           propertyCategory: normalizePropertyCategory(form.propertyCategory, { fallback: 'residential' }),
-          listingSource: 'private_listing',
+          listingSource: form.developmentId || linkedDevelopmentId ? 'development' : 'private_listing',
           propertyStructureType: normalizePropertyStructureType(form.propertyStructureType, { fallback: 'other' }),
           propertyType: form.propertyType,
           listingCategory: form.listingType === 'rental' ? 'rental' : 'private_sale',
@@ -3645,6 +3694,8 @@ function AgentListings({ initialTab = null } = {}) {
       }
       const created = await createPrivateListing({
         organisationId: listingOrganisationId,
+        developmentId: form.developmentId || linkedDevelopmentId || null,
+        unitId: form.unitId || linkedUnitId || null,
         assignedAgentId: String(profile?.id || '').trim() || null,
         assignedAgentEmail: String(profile?.email || '').trim(),
         sellerLeadId: persistedSellerLead.leadId,
@@ -3655,7 +3706,7 @@ function AgentListings({ initialTab = null } = {}) {
         listingVisibility: 'internal',
         title: listingTitle,
         propertyCategory: normalizePropertyCategory(form.propertyCategory, { fallback: 'residential' }),
-        listingSource: 'private_listing',
+        listingSource: form.developmentId || linkedDevelopmentId ? 'development' : 'private_listing',
         propertyStructureType: normalizePropertyStructureType(form.propertyStructureType, { fallback: 'other' }),
         propertyType: form.propertyType,
         listingCategory: form.listingCategory,
@@ -4121,7 +4172,7 @@ function AgentListings({ initialTab = null } = {}) {
         })
 
       const assignedByParticipantAccess = assignedDevelopmentIds.includes(developmentId)
-      if (!includesCurrentAgent && !assignedByParticipantAccess && normalizedProfileEmail) {
+      if (!isDeveloperWorkspace && !includesCurrentAgent && !assignedByParticipantAccess && normalizedProfileEmail) {
         continue
       }
 
@@ -4142,9 +4193,10 @@ function AgentListings({ initialTab = null } = {}) {
         assignedAgent:
           assignedAgents.find((agent) => String(agent?.email || agent?.contactEmail || '').trim().toLowerCase() === normalizedProfileEmail)?.name ||
           assignedAgents.find((agent) => String(agent?.email || agent?.contactEmail || '').trim().toLowerCase() === normalizedProfileEmail)?.contactName ||
-          profile?.fullName ||
-          profile?.name ||
-          'Assigned Agent',
+          assignedAgents.find((agent) => String(agent?.name || agent?.contactName || '').trim())?.name ||
+          assignedAgents.find((agent) => String(agent?.name || agent?.contactName || '').trim())?.contactName ||
+          (!isDeveloperWorkspace ? profile?.fullName || profile?.name : '') ||
+          (isDeveloperWorkspace ? 'Sales team pending' : 'Assigned Agent'),
         totalUnits: Number(option?.planned_units || 0) || 0,
         unitsAvailable: Number(option?.planned_units || 0) || 0,
         unitsSoldOrReserved: 0,
@@ -4234,19 +4286,21 @@ function AgentListings({ initialTab = null } = {}) {
       }
       return left.name.localeCompare(right.name)
     })
-  }, [assignedDevelopmentIds, developmentOptions, developmentRows, profile?.email, profile?.fullName, profile?.name, workspace.id])
+  }, [assignedDevelopmentIds, developmentOptions, developmentRows, isDeveloperWorkspace, profile?.email, profile?.fullName, profile?.name, workspace.id])
 
   const filteredDevelopmentCards = useMemo(() => {
     const query = String(filters.search || '').trim().toLowerCase()
     return developmentCards.filter((card) =>
-      query
+      linkedDevelopmentId && card.id !== linkedDevelopmentId
+        ? false
+        : query
         ? [card.name, card.location, card.developer, card.assignedAgent, card.status, card.nextAction, card.activeTransactionsCount, card.registeredTransactionsCount]
             .join(' ')
             .toLowerCase()
             .includes(query)
         : true,
     )
-  }, [developmentCards, filters.search])
+  }, [developmentCards, filters.search, linkedDevelopmentId])
 
   const listingTabCounts = useMemo(
     () => ({
@@ -4331,6 +4385,11 @@ function AgentListings({ initialTab = null } = {}) {
     const buyerEmail = normalizeText(developerLeadForm.buyerEmail)
     const buyerPhone = normalizeText(developerLeadForm.buyerPhone)
     const protectedSummary = buildAgencyDeveloperLeadProtectedSummary(developerLeadForm, selectedDevelopment?.name || '')
+
+    if (isDeveloperWorkspace) {
+      setError('Protected buyer-lead submission is only for agency-introduced development leads.')
+      return
+    }
 
     if (!developerLeadForm.primaryDevelopmentId) {
       setError('Select a development before submitting the buyer lead.')
@@ -4568,23 +4627,41 @@ function AgentListings({ initialTab = null } = {}) {
             </h2>
             <p className="mt-1 text-sm text-[#607387]">
               {listingsTab === 'developments'
-                ? 'Assigned developments, live buyer activity, and structured workspace access.'
+                ? isDeveloperWorkspace
+                  ? 'Development listings, portal syndication readiness, and buyer activity linked back to source developments.'
+                  : 'Assigned developments, live buyer activity, and structured workspace access.'
                 : 'Agent-owned listings, seller onboarding, offers, and deal preparation.'}
             </p>
             {listingsTab === 'developments' ? (
               <div className="mt-3 flex flex-wrap items-center gap-2">
-                <Button type="button" onClick={() => openDeveloperLeadCaptureModal()} disabled={pilotCreationFreeze.paused || !developmentCards.length}>
-                  <ShieldCheck size={16} />
-                  Submit Buyer Lead
-                </Button>
+                {!isDeveloperWorkspace ? (
+                  <Button type="button" onClick={() => openDeveloperLeadCaptureModal()} disabled={pilotCreationFreeze.paused || !developmentCards.length}>
+                    <ShieldCheck size={16} />
+                    Submit Buyer Lead
+                  </Button>
+                ) : null}
                 <Button type="button" onClick={() => window.dispatchEvent(new Event('itg:open-new-development'))}>
                   <Plus size={16} />
                   New Development
                 </Button>
-                <Button type="button" variant="secondary" onClick={() => window.dispatchEvent(new Event('itg:open-new-development'))}>
-                  <Plus size={16} />
-                  Invite Developer Access
-                </Button>
+                {!isDeveloperWorkspace ? (
+                  <Button type="button" variant="secondary" onClick={() => window.dispatchEvent(new Event('itg:open-new-development'))}>
+                    <Plus size={16} />
+                    Invite Developer Access
+                  </Button>
+                ) : null}
+                {linkedDevelopmentId ? (
+                  <Button type="button" variant="secondary" onClick={() => navigate('/listings/developments')}>
+                    <X size={16} />
+                    Show All Developments
+                  </Button>
+                ) : null}
+                {isDeveloperWorkspace ? (
+                  <Button type="button" variant="secondary" onClick={() => navigate('/developments')}>
+                    <FolderKanban size={16} />
+                    Development Workspace
+                  </Button>
+                ) : null}
               </div>
             ) : null}
           </div>
@@ -4816,18 +4893,20 @@ function AgentListings({ initialTab = null } = {}) {
                         <ArrowRight size={14} />
                       </span>
                     </div>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        openDeveloperLeadCaptureModal(card)
-                      }}
-                      disabled={pilotCreationFreeze.paused}
-                    >
-                      <ShieldCheck size={15} />
-                      Submit Buyer Lead
-                    </Button>
+                    {!isDeveloperWorkspace ? (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          openDeveloperLeadCaptureModal(card)
+                        }}
+                        disabled={pilotCreationFreeze.paused}
+                      >
+                        <ShieldCheck size={15} />
+                        Submit Buyer Lead
+                      </Button>
+                    ) : null}
                   </div>
                 </article>
               ))}

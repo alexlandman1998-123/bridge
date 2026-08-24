@@ -138,6 +138,12 @@ export const APP_NAV_BY_ROLE = {
       ],
     },
     {
+      key: 'listings',
+      label: 'Listings',
+      to: '/listings/developments',
+      activeMatch: ['/listings', '/agent/listings'],
+    },
+    {
       key: 'developer_organisation',
       label: 'Organisation',
       to: '/developer/partners?type=all',

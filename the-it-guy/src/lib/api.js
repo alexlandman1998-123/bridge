@@ -19079,6 +19079,10 @@ export async function fetchDevelopmentDetail(developmentId) {
   const documents = await fetchDevelopmentDocuments(developmentId)
   const attorneyConfig = await fetchDevelopmentAttorneyConfig(developmentId)
   const bondConfig = await fetchDevelopmentBondConfig(developmentId)
+  const linkedListings = await fetchDevelopmentLinkedListings(client, {
+    development,
+    units,
+  })
   let alterations = []
 
   let alterationsQuery = await client
@@ -19172,7 +19176,161 @@ export async function fetchDevelopmentDetail(developmentId) {
     stats: getSummaryStats(rowsWithDocumentSummary),
     settings,
     alterations,
+    listings: linkedListings,
   }
+}
+
+function readJsonLikeObject(value) {
+  if (!value || typeof value !== 'string') return null
+  const trimmed = value.trim()
+  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return null
+  try {
+    return JSON.parse(trimmed)
+  } catch {
+    return null
+  }
+}
+
+function getDevelopmentListingLinkSignals(row = {}) {
+  const propertyDetails = row.property_details && typeof row.property_details === 'object' ? row.property_details : {}
+  const metadata = row.metadata && typeof row.metadata === 'object' ? row.metadata : {}
+  const internalNotesJson = readJsonLikeObject(row.internal_listing_notes) || {}
+  return {
+    developmentId: normalizeTextValue(
+      row.development_id ||
+        row.developmentId ||
+        row.source_development_id ||
+        row.sourceDevelopmentId ||
+        propertyDetails.development_id ||
+        propertyDetails.developmentId ||
+        metadata.development_id ||
+        metadata.developmentId ||
+        internalNotesJson.development_id ||
+        internalNotesJson.developmentId,
+    ),
+    unitId: normalizeTextValue(
+      row.unit_id ||
+        row.unitId ||
+        row.source_unit_id ||
+        row.sourceUnitId ||
+        propertyDetails.unit_id ||
+        propertyDetails.unitId ||
+        metadata.unit_id ||
+        metadata.unitId ||
+        internalNotesJson.unit_id ||
+        internalNotesJson.unitId,
+    ),
+    unitNumber: normalizeTextValue(
+      row.unit_number ||
+        row.unitNumber ||
+        propertyDetails.unit_number ||
+        propertyDetails.unitNumber ||
+        metadata.unit_number ||
+        metadata.unitNumber ||
+        internalNotesJson.unit_number ||
+        internalNotesJson.unitNumber,
+    ),
+  }
+}
+
+function privateListingMatchesDevelopment(row = {}, { development = {}, units = [] } = {}) {
+  const developmentId = normalizeTextValue(development?.id)
+  if (!developmentId) return false
+
+  const linkSignals = getDevelopmentListingLinkSignals(row)
+  if (linkSignals.developmentId && linkSignals.developmentId === developmentId) return true
+
+  const unitIds = new Set((units || []).map((unit) => normalizeTextValue(unit?.id)).filter(Boolean))
+  if (linkSignals.unitId && unitIds.has(linkSignals.unitId)) return true
+
+  const source = normalizeTextValue(row.listing_source || row.stock_source || row.source || row.origin).toLowerCase()
+  const isDevelopmentListing = source.includes('development') || source.includes('developer_unit')
+  if (!isDevelopmentListing) return false
+
+  const unitNumbers = new Set(
+    (units || [])
+      .map((unit) => normalizeTextValue(unit?.unit_number || unit?.unitNumber))
+      .filter(Boolean)
+      .map((value) => value.toLowerCase()),
+  )
+  if (linkSignals.unitNumber && unitNumbers.has(linkSignals.unitNumber.toLowerCase())) return true
+
+  const developmentName = normalizeTextValue(development?.name).toLowerCase()
+  const searchableText = [
+    row.title,
+    row.description,
+    row.address_line_1,
+    row.address_line_2,
+    row.suburb,
+    row.city,
+    row.internal_listing_notes,
+  ].map((value) => normalizeTextValue(value).toLowerCase()).join(' ')
+
+  return Boolean(developmentName && searchableText.includes(developmentName))
+}
+
+function mapDevelopmentLinkedListing(row = {}) {
+  const linkSignals = getDevelopmentListingLinkSignals(row)
+  const title = normalizeTextValue(row.title || row.listing_title || row.address_line_1) || 'Development listing'
+  const location = [row.address_line_1, row.suburb, row.city].map(normalizeTextValue).filter(Boolean).join(', ')
+  const source = normalizeTextValue(row.listing_source || row.stock_source || row.source || row.origin || 'private_listing')
+  const portalSignals = [
+    row.property24_listing_url || row.property24_reference || row.property24_status,
+    row.private_property_listing_url || row.private_property_reference || row.private_property_status,
+    row.bridge_listing_public_url || row.bridge_listing_status,
+  ].filter(Boolean).length
+
+  return {
+    id: normalizeTextValue(row.id),
+    title,
+    location: location || 'Location pending',
+    price: Number(row.asking_price || row.estimated_value || 0) || 0,
+    status: normalizeTextValue(row.listing_status || row.status || 'draft') || 'draft',
+    visibility: normalizeTextValue(row.listing_visibility || row.visibility || 'internal') || 'internal',
+    source,
+    sourceLabel: source.replace(/_/g, ' ') || 'private listing',
+    agencyName: normalizeTextValue(row.agency_organisation || row.agency_name || row.organisation_name) || 'Agency / direct team',
+    assignedAgent: normalizeTextValue(row.assigned_agent_name || row.assigned_agent || row.assigned_agent_email) || 'Agent pending',
+    assignedAgentEmail: normalizeTextValue(row.assigned_agent_email),
+    unitId: linkSignals.unitId,
+    unitNumber: linkSignals.unitNumber,
+    portalSignals,
+    updatedAt: row.updated_at || row.created_at || null,
+  }
+}
+
+async function fetchDevelopmentLinkedListings(client, { development = {}, units = [] } = {}) {
+  const developmentId = normalizeTextValue(development?.id)
+  if (!developmentId) return []
+
+  let query = await client
+    .from('private_listings')
+    .select('*')
+    .eq('development_id', developmentId)
+    .order('updated_at', { ascending: false })
+
+  if (query.error && isMissingColumnError(query.error, 'development_id')) {
+    query = await client
+      .from('private_listings')
+      .select('*')
+      .order('updated_at', { ascending: false })
+      .limit(500)
+  }
+
+  if (query.error) {
+    if (
+      isMissingTableError(query.error, 'private_listings') ||
+      isPermissionDeniedError(query.error) ||
+      isMissingSchemaError(query.error)
+    ) {
+      return []
+    }
+    throw query.error
+  }
+
+  return (query.data || [])
+    .filter((row) => privateListingMatchesDevelopment(row, { development, units }))
+    .map(mapDevelopmentLinkedListing)
 }
 
 export async function fetchDevelopmentFinancials(developmentId) {

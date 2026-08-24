@@ -13,6 +13,7 @@ import {
   listOrganisationUserCommissionProfiles,
   listOrganisationUsers,
   transferOrganisationOwnership,
+  updateOrganisationUserBusinessWorkspaces,
   updateOrganisationUserJobTitle,
   updateOrganisationUserRole,
 } from '../../lib/settingsApi'
@@ -36,6 +37,12 @@ import {
   normalizeAgencyAuthorityRole,
 } from '../../services/agencyAuthorityService'
 import { getWorkspaceAdministratorLabel, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
+import {
+  BUSINESS_WORKSPACES,
+  BUSINESS_WORKSPACE_OPTIONS,
+  normalizeBusinessWorkspaceList,
+  resolveOrganisationBusinessWorkspaces,
+} from '../../lib/businessWorkspaceAccess'
 import {
   SettingsBanner,
   SettingsEmptyState,
@@ -107,6 +114,76 @@ function filterGovernedRoleOptions(actor = {}, target = {}, roleOptions = []) {
     if (currentOption) return [currentOption, ...options]
   }
   return options
+}
+
+const BUSINESS_ACCESS_MANAGEMENT_ROLES = new Set([
+  'owner',
+  'principal',
+  'director',
+  'partner',
+  'admin',
+  'admin_staff',
+  'manager',
+  'hq_manager',
+  'branch_manager',
+  'branch_admin',
+  'regional_manager',
+  'team_lead',
+  'team_leader',
+  'team_manager',
+])
+
+function isBusinessAccessManagedByRole(role = '') {
+  return BUSINESS_ACCESS_MANAGEMENT_ROLES.has(String(role || '').trim().toLowerCase())
+}
+
+function getBusinessWorkspaceAccessOptions(organisationWorkspaceIds = []) {
+  const organisationIds = normalizeBusinessWorkspaceList(organisationWorkspaceIds, [BUSINESS_WORKSPACES.sales])
+  const options = BUSINESS_WORKSPACE_OPTIONS
+    .filter((option) => organisationIds.includes(option.id))
+    .map((option) => ({ value: option.id, label: option.label }))
+
+  if (organisationIds.includes(BUSINESS_WORKSPACES.sales) && organisationIds.includes(BUSINESS_WORKSPACES.rentals)) {
+    options.push({ value: 'sales_rentals', label: 'Sales & Rentals' })
+  }
+  return options
+}
+
+function resolveUserBusinessWorkspaceIds(userRow = {}, organisationWorkspaceIds = []) {
+  const organisationIds = normalizeBusinessWorkspaceList(organisationWorkspaceIds, [BUSINESS_WORKSPACES.sales])
+  if (isBusinessAccessManagedByRole(userRow.role || userRow.workspaceRole || userRow.organisationRole)) {
+    return organisationIds
+  }
+  const explicitIds = normalizeBusinessWorkspaceList(
+    userRow.explicitBusinessWorkspaces ||
+      userRow.moduleMetadata?.businessWorkspaces ||
+      userRow.moduleMetadata?.business_workspaces,
+    [],
+  ).filter((id) => organisationIds.includes(id))
+  if (explicitIds.length) return explicitIds
+  const departmentIds = normalizeBusinessWorkspaceList(
+    userRow.departmentBusinessWorkspaces ||
+      userRow.businessWorkspaces,
+    [],
+  ).filter((id) => organisationIds.includes(id))
+  if (departmentIds.length) return departmentIds
+  if (organisationIds.length === 1) return organisationIds
+  return organisationIds.includes(BUSINESS_WORKSPACES.sales) ? [BUSINESS_WORKSPACES.sales] : [organisationIds[0]]
+}
+
+function getUserBusinessWorkspaceSourceLabel(userRow = {}) {
+  if (isBusinessAccessManagedByRole(userRow.role || userRow.workspaceRole || userRow.organisationRole)) return 'Role managed'
+  if (normalizeBusinessWorkspaceList(userRow.explicitBusinessWorkspaces, []).length) return 'User assigned'
+  if (normalizeBusinessWorkspaceList(userRow.departmentBusinessWorkspaces, []).length) {
+    return userRow.departmentUnit?.name || userRow.teamUnit?.name || userRow.workspaceUnit?.name || 'Department inherited'
+  }
+  return ''
+}
+
+function toBusinessWorkspaceAccessValue(workspaceIds = []) {
+  const ids = normalizeBusinessWorkspaceList(workspaceIds, [])
+  if (ids.includes(BUSINESS_WORKSPACES.sales) && ids.includes(BUSINESS_WORKSPACES.rentals)) return 'sales_rentals'
+  return ids[0] || BUSINESS_WORKSPACES.sales
 }
 
 function readInviteNavigationState(state = {}) {
@@ -203,6 +280,7 @@ export default function SettingsUsersPage() {
     organisationMembershipRole,
     workspaceRole,
     workspaceType,
+    businessWorkspaceSplitEnabled,
     profile,
     retryWorkspaceBootstrap,
   } = useWorkspace()
@@ -229,7 +307,8 @@ export default function SettingsUsersPage() {
   const [principalClaimInviteHistory, setPrincipalClaimInviteHistory] = useState([])
   const [commercialAccessRequests, setCommercialAccessRequests] = useState([])
   const [commercialAccessManagement, setCommercialAccessManagement] = useState({ organisationModuleStatus: null, users: [], auditEvents: [] })
-  const [inviteForm, setInviteForm] = useState({ firstName: '', lastName: '', email: '', role: initialInviteRole, commissionStructureId: '' })
+  const [inviteForm, setInviteForm] = useState({ firstName: '', lastName: '', email: '', role: initialInviteRole, commissionStructureId: '', businessWorkspaces: [BUSINESS_WORKSPACES.sales] })
+  const [organisationBusinessWorkspaceIds, setOrganisationBusinessWorkspaceIds] = useState([BUSINESS_WORKSPACES.sales])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [claimInviteBusyId, setClaimInviteBusyId] = useState('')
@@ -238,6 +317,7 @@ export default function SettingsUsersPage() {
   const [savingCommercialUserId, setSavingCommercialUserId] = useState('')
   const [savingRoleUserId, setSavingRoleUserId] = useState('')
   const [savingJobTitleUserId, setSavingJobTitleUserId] = useState('')
+  const [savingBusinessAccessUserId, setSavingBusinessAccessUserId] = useState('')
   const [deactivationTarget, setDeactivationTarget] = useState(null)
   const [deactivatingUser, setDeactivatingUser] = useState(false)
   const [ownershipTransferTarget, setOwnershipTransferTarget] = useState(null)
@@ -268,6 +348,15 @@ export default function SettingsUsersPage() {
     [authorityActor, usesAgencyGovernance, workspaceRoleOptions],
   )
   const principalInviteSelected = usesAgencyGovernance && (isPrincipalClaimInviteMode || isPrincipalInviteRole(inviteForm.role))
+  const businessWorkspaceAccessOptions = useMemo(
+    () => getBusinessWorkspaceAccessOptions(organisationBusinessWorkspaceIds),
+    [organisationBusinessWorkspaceIds],
+  )
+  const showBusinessWorkspaceAccessControls = Boolean(
+    businessWorkspaceSplitEnabled &&
+      usesAgencyGovernance &&
+      organisationBusinessWorkspaceIds.length > 1,
+  )
 
   const commissionStructureById = useMemo(
     () => new Map((commissionStructures || []).map((item) => [String(item.id || ''), item])),
@@ -303,6 +392,15 @@ export default function SettingsUsersPage() {
         listCommercialAccessManagementState().catch(() => ({ organisationModuleStatus: null, users: [], auditEvents: [] })),
       ])
       setUsers(response)
+      const nextOrganisationBusinessWorkspaceIds = resolveOrganisationBusinessWorkspaces({
+        currentWorkspace: context?.organisation,
+        currentMembership: context?.membership,
+      })
+      setOrganisationBusinessWorkspaceIds(
+        nextOrganisationBusinessWorkspaceIds.length
+          ? nextOrganisationBusinessWorkspaceIds
+          : [BUSINESS_WORKSPACES.sales],
+      )
       setMembershipRole(normalizeOrganisationMembershipRole(context.membershipRole || 'viewer', {
         appRole: role,
         workspaceType: context?.organisation?.type || resolvedWorkspaceType,
@@ -356,6 +454,16 @@ export default function SettingsUsersPage() {
     setInviteForm((previous) => ({ ...previous, role: inviteRoleOptions[0].value }))
   }, [inviteForm.role, inviteRoleOptions, isPrincipalClaimInviteMode])
 
+  useEffect(() => {
+    if (!showBusinessWorkspaceAccessControls) return
+    setInviteForm((previous) => {
+      const currentIds = normalizeBusinessWorkspaceList(previous.businessWorkspaces, [])
+        .filter((id) => organisationBusinessWorkspaceIds.includes(id))
+      if (currentIds.length) return previous
+      return { ...previous, businessWorkspaces: [BUSINESS_WORKSPACES.sales] }
+    })
+  }, [organisationBusinessWorkspaceIds, showBusinessWorkspaceAccessControls])
+
   async function handleInvite(event) {
     event.preventDefault()
     if (!canEdit) return
@@ -367,6 +475,10 @@ export default function SettingsUsersPage() {
         commissionStructureById.get(String(inviteForm.commissionStructureId || '').trim()) ||
         defaultCommissionStructure ||
         null
+      const selectedBusinessWorkspaces = normalizeBusinessWorkspaceList(
+        inviteForm.businessWorkspaces,
+        [BUSINESS_WORKSPACES.sales],
+      ).filter((id) => organisationBusinessWorkspaceIds.includes(id))
       const inviteResult = principalInviteSelected
         ? await createPrincipalClaimInvite({
             firstName: inviteForm.firstName,
@@ -383,9 +495,10 @@ export default function SettingsUsersPage() {
             branchName: inviteNavigationState.branchName || '',
             commissionStructureId: selectedCommissionStructure?.id || '',
             commissionStructureName: selectedCommissionStructure?.name || '',
+            businessWorkspaces: selectedBusinessWorkspaces.length ? selectedBusinessWorkspaces : [BUSINESS_WORKSPACES.sales],
             source: inviteNavigationState.inviteSource || 'settings_users_invite',
           })
-      setInviteForm({ firstName: '', lastName: '', email: '', role: 'agent', commissionStructureId: '' })
+      setInviteForm({ firstName: '', lastName: '', email: '', role: 'agent', commissionStructureId: '', businessWorkspaces: [BUSINESS_WORKSPACES.sales] })
       await loadUsers()
       setMessage(
         inviteResult.reusedExistingInvite
@@ -428,6 +541,25 @@ export default function SettingsUsersPage() {
       setError(saveError.message)
     } finally {
       setSavingJobTitleUserId('')
+    }
+  }
+
+  async function handleBusinessWorkspaceAccessChange(userRow, nextValue) {
+    if (!canEdit || !userRow?.id) return
+    try {
+      setError('')
+      setMessage('')
+      setSavingBusinessAccessUserId(userRow.id)
+      const nextBusinessWorkspaces = normalizeBusinessWorkspaceList(nextValue, [BUSINESS_WORKSPACES.sales])
+        .filter((id) => organisationBusinessWorkspaceIds.includes(id))
+      await updateOrganisationUserBusinessWorkspaces(userRow.id, nextBusinessWorkspaces)
+      await loadUsers()
+      retryWorkspaceBootstrap?.()
+      setMessage('Business line access updated.')
+    } catch (saveError) {
+      setError(saveError.message)
+    } finally {
+      setSavingBusinessAccessUserId('')
     }
   }
 
@@ -683,6 +815,26 @@ export default function SettingsUsersPage() {
               </>
             )}
             </label>
+          {showBusinessWorkspaceAccessControls && !principalInviteSelected && !isBusinessAccessManagedByRole(inviteForm.role) ? (
+            <label className={settingsFieldClass}>
+              <span className="text-sm font-medium text-[#51657b]">Business Lines</span>
+              <Field
+                as="select"
+                value={toBusinessWorkspaceAccessValue(inviteForm.businessWorkspaces)}
+                disabled={!canEdit}
+                onChange={(event) => setInviteForm((previous) => ({
+                  ...previous,
+                  businessWorkspaces: normalizeBusinessWorkspaceList(event.target.value, [BUSINESS_WORKSPACES.sales]),
+                }))}
+              >
+                {businessWorkspaceAccessOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </Field>
+            </label>
+          ) : null}
           <label className={settingsFieldClass}>
             <span className="text-sm font-medium text-[#51657b]">Sales Commission Structure (Optional)</span>
             <Field
@@ -977,18 +1129,19 @@ export default function SettingsUsersPage() {
 
         {!loading && users.length ? (
           <div className={`${settingsTableClass} overflow-x-auto`}>
-            <div className="hidden grid-cols-[1.05fr_1.05fr_1.25fr_0.95fr_1.1fr_0.65fr_0.7fr_0.65fr] gap-4 border-b border-[#e4ebf3] bg-[#f4f8fb] px-5 py-3 text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#7b8da6] lg:grid lg:min-w-[1240px]">
+            <div className="hidden grid-cols-[1.05fr_1.05fr_1.25fr_0.9fr_0.95fr_1.1fr_0.65fr_0.7fr_0.65fr] gap-4 border-b border-[#e4ebf3] bg-[#f4f8fb] px-5 py-3 text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#7b8da6] lg:grid lg:min-w-[1420px]">
               <span>Name</span>
               <span>Email</span>
               <span>Role</span>
               <span>Job title</span>
+              <span>Business Lines</span>
               <span>Sales Commission Structure</span>
               <span>Status</span>
               <span>Last active</span>
               <span>Actions</span>
             </div>
 
-            <div className="divide-y divide-[#e9eff5] lg:min-w-[1240px]">
+            <div className="divide-y divide-[#e9eff5] lg:min-w-[1420px]">
               {users.map((userRow) => {
                 const profileByOrgUserId = commissionProfileByUserKey.get(`org-user:${String(userRow.id || '')}`)
                 const profileByUserId = commissionProfileByUserKey.get(`user:${String(userRow.userId || '')}`)
@@ -1024,10 +1177,19 @@ export default function SettingsUsersPage() {
                   userRow.status !== 'deactivated' &&
                   userRow.role !== 'owner',
                 )
+                const businessWorkspaceIds = resolveUserBusinessWorkspaceIds(userRow, organisationBusinessWorkspaceIds)
+                const businessAccessManagedByRole = isBusinessAccessManagedByRole(userRow.role || userRow.workspaceRole || userRow.organisationRole)
+                const businessAccessSourceLabel = getUserBusinessWorkspaceSourceLabel(userRow)
+                const canChangeBusinessAccess = Boolean(
+                  showBusinessWorkspaceAccessControls &&
+                    canEdit &&
+                    !businessAccessManagedByRole &&
+                    userRow.status !== 'deactivated',
+                )
                 return (
                 <div
                   key={userRow.id}
-                  className="grid gap-3 px-5 py-4 lg:grid-cols-[1.05fr_1.05fr_1.25fr_0.95fr_1.1fr_0.65fr_0.7fr_0.65fr] lg:items-center lg:gap-4"
+                  className="grid gap-3 px-5 py-4 lg:grid-cols-[1.05fr_1.05fr_1.25fr_0.9fr_0.95fr_1.1fr_0.65fr_0.7fr_0.65fr] lg:items-center lg:gap-4"
                 >
                   <div className="space-y-1">
                     <span className="text-[0.7rem] font-semibold uppercase tracking-[0.18em] text-[#8da0b6] lg:hidden">Name</span>
@@ -1081,6 +1243,34 @@ export default function SettingsUsersPage() {
                         {getOrganisationJobTitleLabel(userRow.jobTitle, 'Not assigned')}
                       </span>
                     )}
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-[0.7rem] font-semibold uppercase tracking-[0.18em] text-[#8da0b6] lg:hidden">Business Lines</span>
+                    {canChangeBusinessAccess ? (
+                      <Field
+                        as="select"
+                        value={toBusinessWorkspaceAccessValue(businessWorkspaceIds)}
+                        className="py-2.5"
+                        disabled={savingBusinessAccessUserId === userRow.id}
+                        aria-label={`Business lines for ${userRow.fullName}`}
+                        onChange={(event) => handleBusinessWorkspaceAccessChange(userRow, event.target.value)}
+                      >
+                        {businessWorkspaceAccessOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </Field>
+                    ) : (
+                      <span className="text-sm text-[#51657b]">
+                        {businessWorkspaceIds
+                          .map((id) => BUSINESS_WORKSPACE_OPTIONS.find((option) => option.id === id)?.label || id)
+                          .join(' & ') || 'Sales'}
+                      </span>
+                    )}
+                    {businessAccessSourceLabel && showBusinessWorkspaceAccessControls ? (
+                      <span className="block text-xs font-medium text-[#7b8da6]">{businessAccessSourceLabel}</span>
+                    ) : null}
                   </div>
                   <div className="space-y-1">
                     <span className="text-[0.7rem] font-semibold uppercase tracking-[0.18em] text-[#8da0b6] lg:hidden">Sales Commission Structure</span>

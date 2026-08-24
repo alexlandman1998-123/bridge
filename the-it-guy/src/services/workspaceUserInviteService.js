@@ -1,4 +1,5 @@
 import { buildAgentInviteLink } from '../lib/agentInviteService'
+import { normalizeBusinessWorkspaceList } from '../lib/businessWorkspaceAccess'
 import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { formatSouthAfricanWhatsAppNumber, sendWhatsAppNotification } from '../lib/whatsapp'
 import { assignOrganisationUserCommissionProfile, fetchOrganisationSettings } from '../lib/settingsApi'
@@ -362,6 +363,7 @@ function normalizeWorkspaceInviteRow(row = {}, defaults = {}) {
     lastActiveAt: null,
     commissionStructureId: normalizeText(metadata.commission_structure_id || metadata.commissionStructureId),
     commissionStructureName: normalizeText(metadata.commission_structure_name || metadata.commissionStructureName),
+    businessWorkspaces: normalizeBusinessWorkspaceList(metadata.businessWorkspaces || metadata.business_workspaces, []),
     notes: normalizeText(metadata.notes),
     invitedByName: normalizeText(metadata.invited_by_name || metadata.invitedByName),
     isPendingInvite: status === 'pending_invite',
@@ -574,6 +576,7 @@ export async function createWorkspaceUserInvite(input = {}) {
   const mobile = normalizeText(input.mobile || input.phone)
   const commissionStructureId = normalizeText(input.commissionStructureId || input.commission_structure_id)
   const commissionStructureName = normalizeText(input.commissionStructureName || input.commission_structure_name)
+  const businessWorkspaces = normalizeBusinessWorkspaceList(input.businessWorkspaces || input.business_workspaces, [])
   const activeMembership = await findActiveWorkspaceUserByEmail({ workspaceId, email })
   if (activeMembership?.id) {
     const assignedBranchId = normalizeText(activeMembership.primary_branch_id || activeMembership.branch_id)
@@ -611,6 +614,8 @@ export async function createWorkspaceUserInvite(input = {}) {
         brand_primary_color: brandPrimaryColor,
         commission_structure_id: commissionStructureId,
         commission_structure_name: commissionStructureName,
+        businessWorkspaces,
+        business_workspaces: businessWorkspaces,
         notes: normalizeText(input.notes),
         invited_by_name: normalizeText(input.invitedByName || input.invited_by_name),
         ...(input.metadata && typeof input.metadata === 'object' ? input.metadata : {}),
@@ -672,6 +677,7 @@ export async function createWorkspaceUserInvite(input = {}) {
     roleLabel,
     commissionStructureId,
     commissionStructureName,
+    businessWorkspaces,
     invitedByName: normalizeText(input.invitedByName || input.invited_by_name),
   }
   const inviteLink = buildAgentInviteLink(invite.token)

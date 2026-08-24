@@ -82,6 +82,21 @@ const PROSPECT_DEMO_COLOUR_CONTROLS = [
   { key: 'accentColour', payloadKey: 'accent_colour', label: 'Accent', fallback: '#F7CF22', description: 'Links, highlights and badges' },
 ]
 
+const PROSPECT_DEMO_SELECT = [
+  'slug',
+  'agency_name',
+  'logo_url',
+  'logo_light_url',
+  'logo_dark_url',
+  'primary_colour',
+  'secondary_colour',
+  'accent_colour',
+  'sample_property_image_url',
+  'sample_property_address',
+  'created_at',
+  'updated_at',
+].join(', ')
+
 function normalizeDemoSlug(value = '') {
   return String(value || '')
     .trim()
@@ -94,6 +109,26 @@ function buildDemoLink(slug = '', suffix = 'buyer') {
   const normalizedSlug = normalizeDemoSlug(slug)
   if (!normalizedSlug) return ''
   return `${ARCH9_PUBLIC_URL}/demo/${normalizedSlug}/${suffix}`
+}
+
+function mapProspectDemoConfig(row = {}) {
+  const logoUrl = String(row.logoUrl || row.logo_url || '').trim()
+  const logoLightUrl = String(row.logoLightUrl || row.logo_light_url || logoUrl).trim()
+  const logoDarkUrl = String(row.logoDarkUrl || row.logo_dark_url || logoUrl).trim()
+  return {
+    slug: normalizeDemoSlug(row.slug || row.slug_key || ''),
+    agencyName: String(row.agencyName || row.agency_name || '').trim(),
+    logoUrl: logoUrl || logoLightUrl || logoDarkUrl,
+    logoLightUrl,
+    logoDarkUrl,
+    primaryColour: normalizeHexColour(row.primaryColour || row.primary_colour, '#274C69'),
+    secondaryColour: normalizeHexColour(row.secondaryColour || row.secondary_colour, '#10273A'),
+    accentColour: normalizeHexColour(row.accentColour || row.accent_colour, '#F7CF22'),
+    samplePropertyImageUrl: String(row.samplePropertyImageUrl || row.sample_property_image_url || '').trim(),
+    samplePropertyAddress: String(row.samplePropertyAddress || row.sample_property_address || '').trim(),
+    createdAt: row.createdAt || row.created_at || '',
+    updatedAt: row.updatedAt || row.updated_at || '',
+  }
 }
 
 function normalizeHexColour(value = '', fallback = '#274C69') {
@@ -3312,6 +3347,8 @@ function ProspectDemoPreview({ config }) {
   const primaryColour = normalizeHexColour(config.primaryColour, '#274C69')
   const secondaryColour = normalizeHexColour(config.secondaryColour, '#10273A')
   const accentColour = normalizeHexColour(config.accentColour, '#F7CF22')
+  const logoDarkUrl = config.logoDarkUrl || config.logoUrl || config.logoLightUrl || ''
+  const logoLightUrl = config.logoLightUrl || config.logoUrl || config.logoDarkUrl || ''
   const propertyAddress = config.samplePropertyAddress || '12 Example Road, Sea Point'
 
   return (
@@ -3319,7 +3356,7 @@ function ProspectDemoPreview({ config }) {
       <div className="prospect-preview-hero">
         <div className="prospect-preview-brand">
           <span>
-            {config.logoUrl ? <img alt="" src={config.logoUrl} /> : agencyName.slice(0, 2).toUpperCase()}
+            {logoDarkUrl ? <img alt="" src={logoDarkUrl} /> : agencyName.slice(0, 2).toUpperCase()}
           </span>
           <div>
             <strong>{agencyName}</strong>
@@ -3348,6 +3385,16 @@ function ProspectDemoPreview({ config }) {
         <span />
         <span />
       </div>
+      <div className="prospect-logo-strip" aria-label="Logo variants">
+        <span>
+          <small>Light surface</small>
+          {logoLightUrl ? <img alt="" src={logoLightUrl} /> : <b>Missing</b>}
+        </span>
+        <span className="dark">
+          <small>Dark surface</small>
+          {logoDarkUrl ? <img alt="" src={logoDarkUrl} /> : <b>Missing</b>}
+        </span>
+      </div>
     </aside>
   )
 }
@@ -3373,6 +3420,54 @@ function ProspectLinkCard({ copied, label, link, onCopy }) {
   )
 }
 
+function ProspectGeneratedDemoCard({ config, copiedKey, onCopy, onEdit }) {
+  const onboardingLink = buildDemoLink(config.slug, 'onboarding')
+  const buyerLink = buildDemoLink(config.slug, 'buyer')
+  const logoUrl = config.logoDarkUrl || config.logoUrl || config.logoLightUrl
+
+  return (
+    <article className="prospect-history-card">
+      <div className="prospect-history-main">
+        <span className="prospect-history-logo">
+          {logoUrl ? <img alt="" src={logoUrl} /> : (config.agencyName || config.slug || 'A').slice(0, 2).toUpperCase()}
+        </span>
+        <div>
+          <h3>{config.agencyName || config.slug || 'Prospect demo'}</h3>
+          <p>{config.slug ? `/demo/${config.slug}/...` : 'No slug'}</p>
+          <small>{config.updatedAt ? `Updated ${formatDate(config.updatedAt)}` : 'Generated demo'}</small>
+        </div>
+      </div>
+      <div className="prospect-history-palette">
+        {PROSPECT_DEMO_COLOUR_CONTROLS.map((control) => (
+          <i
+            aria-label={`${control.label} colour`}
+            key={control.key}
+            style={{ backgroundColor: config[control.key] || control.fallback }}
+          />
+        ))}
+      </div>
+      <div className="prospect-history-links">
+        <ProspectLinkCard
+          copied={copiedKey === `${config.slug}-onboarding`}
+          label="Buyer Onboarding"
+          link={onboardingLink}
+          onCopy={() => void onCopy(`${config.slug}-onboarding`, onboardingLink)}
+        />
+        <ProspectLinkCard
+          copied={copiedKey === `${config.slug}-buyer`}
+          label="Buyer Portal"
+          link={buyerLink}
+          onCopy={() => void onCopy(`${config.slug}-buyer`, buyerLink)}
+        />
+      </div>
+      <button className="secondary-button compact" onClick={() => onEdit(config)} type="button">
+        <NotebookPen size={15} />
+        <span>Use as form</span>
+      </button>
+    </article>
+  )
+}
+
 function ProspectDemoGeneratorView() {
   const [form, setForm] = useState({
     agencyName: '',
@@ -3381,9 +3476,14 @@ function ProspectDemoGeneratorView() {
     secondaryColour: '#10273A',
     accentColour: '#F7CF22',
     logoUrl: '',
+    logoLightUrl: '',
+    logoDarkUrl: '',
     samplePropertyImageUrl: '',
     samplePropertyAddress: '',
   })
+  const [activeTab, setActiveTab] = useState('create')
+  const [generatedDemos, setGeneratedDemos] = useState([])
+  const [isLoadingDemos, setIsLoadingDemos] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
@@ -3391,13 +3491,15 @@ function ProspectDemoGeneratorView() {
   const [slugTouched, setSlugTouched] = useState(false)
   const [copiedKey, setCopiedKey] = useState('')
 
-  const activeSlug = normalizeDemoSlug(savedConfig?.slug || form.slug || form.agencyName)
+  const activeSlug = normalizeDemoSlug(form.slug || form.agencyName || savedConfig?.slug)
   const buyerOnboardingLink = buildDemoLink(activeSlug, 'onboarding')
   const buyerPortalLink = buildDemoLink(activeSlug, 'buyer')
-  const generatedConfig = savedConfig || {
+  const generatedConfig = {
     slug: activeSlug,
     agencyName: form.agencyName.trim(),
-    logoUrl: form.logoUrl.trim(),
+    logoUrl: form.logoUrl.trim() || form.logoLightUrl.trim() || form.logoDarkUrl.trim(),
+    logoLightUrl: form.logoLightUrl.trim() || form.logoUrl.trim(),
+    logoDarkUrl: form.logoDarkUrl.trim() || form.logoUrl.trim(),
     primaryColour: normalizeHexColour(form.primaryColour, '#274C69'),
     secondaryColour: normalizeHexColour(form.secondaryColour, '#10273A'),
     accentColour: normalizeHexColour(form.accentColour, '#F7CF22'),
@@ -3405,6 +3507,30 @@ function ProspectDemoGeneratorView() {
     samplePropertyAddress: form.samplePropertyAddress.trim(),
   }
   const showLinks = Boolean(savedConfig?.slug)
+
+  useEffect(() => {
+    if (!supabase) return
+    void loadGeneratedDemos()
+  }, [])
+
+  async function loadGeneratedDemos() {
+    if (!supabase) return
+    setIsLoadingDemos(true)
+    try {
+      const { data, error: loadError } = await supabase
+        .from('prospect_demo_configs')
+        .select(PROSPECT_DEMO_SELECT)
+        .order('updated_at', { ascending: false })
+        .limit(100)
+
+      if (loadError) throw loadError
+      setGeneratedDemos((data || []).map(mapProspectDemoConfig))
+    } catch (loadError) {
+      setError(loadError?.message || 'Unable to load generated demos.')
+    } finally {
+      setIsLoadingDemos(false)
+    }
+  }
 
   async function copyLink(key, value) {
     if (!value || typeof navigator === 'undefined' || !navigator.clipboard?.writeText) return
@@ -3424,8 +3550,8 @@ function ProspectDemoGeneratorView() {
       return
     }
 
-    if (!form.logoUrl.trim()) {
-      setError('Upload an agency logo before generating the demo.')
+    if (!form.logoLightUrl.trim() || !form.logoDarkUrl.trim()) {
+      setError('Upload both light and dark agency logos before generating the demo.')
       return
     }
 
@@ -3439,7 +3565,9 @@ function ProspectDemoGeneratorView() {
       const payload = {
         slug,
         agency_name: form.agencyName.trim(),
-        logo_url: form.logoUrl.trim(),
+        logo_url: form.logoLightUrl.trim() || form.logoDarkUrl.trim(),
+        logo_light_url: form.logoLightUrl.trim(),
+        logo_dark_url: form.logoDarkUrl.trim(),
         primary_colour: normalizeHexColour(form.primaryColour, '#274C69'),
         secondary_colour: normalizeHexColour(form.secondaryColour, '#10273A'),
         accent_colour: normalizeHexColour(form.accentColour, '#F7CF22'),
@@ -3455,16 +3583,18 @@ function ProspectDemoGeneratorView() {
       }
 
       setSavedConfig({
-        slug: payload.slug,
-        agencyName: payload.agency_name,
-        logoUrl: payload.logo_url,
-        primaryColour: payload.primary_colour,
-        secondaryColour: payload.secondary_colour,
-        accentColour: payload.accent_colour,
-        samplePropertyImageUrl: payload.sample_property_image_url,
-        samplePropertyAddress: payload.sample_property_address,
+        ...mapProspectDemoConfig(payload),
+        updatedAt: new Date().toISOString(),
+      })
+      setGeneratedDemos((previous) => {
+        const nextConfig = {
+          ...mapProspectDemoConfig(payload),
+          updatedAt: new Date().toISOString(),
+        }
+        return [nextConfig, ...previous.filter((item) => item.slug !== nextConfig.slug)]
       })
       setSuccess('Prospect demo generated. Copy the links below and send them to the prospect.')
+      setActiveTab('create')
     } catch (saveError) {
       setError(saveError?.message || 'Unable to save the prospect demo.')
     } finally {
@@ -3485,6 +3615,27 @@ function ProspectDemoGeneratorView() {
     }
   }
 
+  function handleEditGeneratedDemo(config) {
+    const nextConfig = mapProspectDemoConfig(config)
+    setForm({
+      agencyName: nextConfig.agencyName,
+      slug: nextConfig.slug,
+      primaryColour: nextConfig.primaryColour,
+      secondaryColour: nextConfig.secondaryColour,
+      accentColour: nextConfig.accentColour,
+      logoUrl: nextConfig.logoUrl,
+      logoLightUrl: nextConfig.logoLightUrl || nextConfig.logoUrl,
+      logoDarkUrl: nextConfig.logoDarkUrl || nextConfig.logoUrl,
+      samplePropertyImageUrl: nextConfig.samplePropertyImageUrl,
+      samplePropertyAddress: nextConfig.samplePropertyAddress,
+    })
+    setSavedConfig(nextConfig)
+    setSlugTouched(true)
+    setError('')
+    setSuccess('')
+    setActiveTab('create')
+  }
+
   return (
     <div className="prospect-demo-page">
       <section className="prospect-demo-panel">
@@ -3497,6 +3648,34 @@ function ProspectDemoGeneratorView() {
           <span className="prospect-demo-mode">Demo mode only</span>
         </div>
 
+        <div className="prospect-demo-tabs" role="tablist" aria-label="Prospect demo generator">
+          <button
+            aria-selected={activeTab === 'create'}
+            className={activeTab === 'create' ? 'active' : ''}
+            onClick={() => setActiveTab('create')}
+            role="tab"
+            type="button"
+          >
+            <Plus size={15} />
+            <span>Add prospect</span>
+          </button>
+          <button
+            aria-selected={activeTab === 'generated'}
+            className={activeTab === 'generated' ? 'active' : ''}
+            onClick={() => {
+              setActiveTab('generated')
+              void loadGeneratedDemos()
+            }}
+            role="tab"
+            type="button"
+          >
+            <ListChecks size={15} />
+            <span>Generated demos</span>
+            <small>{generatedDemos.length}</small>
+          </button>
+        </div>
+
+        {activeTab === 'create' ? (
         <div className="prospect-demo-grid">
           <form className="prospect-demo-form" onSubmit={handleSubmit}>
             {error ? <Notice tone="danger" text={error} /> : null}
@@ -3568,16 +3747,23 @@ function ProspectDemoGeneratorView() {
                 <ImageIcon size={17} />
                 <div>
                   <h3>Demo assets</h3>
-                  <p>Logo is required. Property details are optional and fall back to sample demo data.</p>
+                  <p>Upload both logo variants, matching Organisation Settings. Property details are optional.</p>
                 </div>
               </div>
               <div className="prospect-upload-grid">
                 <ProspectUploadField
-                  helper="PNG, JPG, WebP or SVG"
-                  id="prospect-logo-upload"
-                  label="Agency logo"
-                  onFile={(file) => handleImageUpload('logoUrl', file)}
-                  previewUrl={form.logoUrl}
+                  helper="For documents and light UI surfaces"
+                  id="prospect-logo-light-upload"
+                  label="Light logo"
+                  onFile={(file) => handleImageUpload('logoLightUrl', file)}
+                  previewUrl={form.logoLightUrl}
+                />
+                <ProspectUploadField
+                  helper="For dark headers and branded hero areas"
+                  id="prospect-logo-dark-upload"
+                  label="Dark logo"
+                  onFile={(file) => handleImageUpload('logoDarkUrl', file)}
+                  previewUrl={form.logoDarkUrl}
                 />
                 <ProspectUploadField
                   helper="Optional hero image for the sample property"
@@ -3614,9 +3800,47 @@ function ProspectDemoGeneratorView() {
             </div>
           </div>
         </div>
+        ) : (
+          <section className="prospect-history-panel">
+            {error ? <Notice tone="danger" text={error} /> : null}
+            <div className="prospect-history-toolbar">
+              <div>
+                <h3>Generated prospect demos</h3>
+                <p>Reopen, preview or copy previously generated buyer demo links.</p>
+              </div>
+              <button className="secondary-button compact" disabled={isLoadingDemos} onClick={() => void loadGeneratedDemos()} type="button">
+                {isLoadingDemos ? <Loader2 className="spin" size={15} /> : <RefreshCw size={15} />}
+                <span>Refresh</span>
+              </button>
+            </div>
+            {isLoadingDemos ? (
+              <div className="prospect-history-empty">
+                <Loader2 className="spin" size={20} />
+                <p>Loading generated demos...</p>
+              </div>
+            ) : generatedDemos.length ? (
+              <div className="prospect-history-grid">
+                {generatedDemos.map((config) => (
+                  <ProspectGeneratedDemoCard
+                    config={config}
+                    copiedKey={copiedKey}
+                    key={config.slug}
+                    onCopy={copyLink}
+                    onEdit={handleEditGeneratedDemo}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="prospect-history-empty">
+                <ListChecks size={22} />
+                <p>No demos generated yet. Add a prospect and the saved links will appear here.</p>
+              </div>
+            )}
+          </section>
+        )}
       </section>
 
-      {showLinks ? (
+      {showLinks && activeTab === 'create' ? (
         <section className="prospect-links-panel">
           <div className="prospect-demo-panel-header compact">
             <div>

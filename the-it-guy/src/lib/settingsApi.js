@@ -59,6 +59,10 @@ import { loadSignupIntentForUser } from './signupIntent'
 import { isActiveMembershipStatus, normalizeMembershipStatus } from '../constants/membershipStatuses'
 import { uploadToStorageCandidateBuckets } from './storageFallbacks'
 import { normalizeOrganisationJobTitle } from './organisationJobTitles'
+import {
+  normalizeBusinessWorkspaceList,
+  resolveMembershipDepartmentBusinessWorkspaces,
+} from './businessWorkspaceAccess'
 
 export { fetchAgencyOnboardingSettings } from './organisationBootstrapApi'
 
@@ -5301,6 +5305,32 @@ function normalizeOrganisationUserRow(row) {
   const profileFullName = normalizeText(row?.profile?.full_name || row?.profile?.fullName)
   const profilePhone = normalizeText(row?.profile?.phone_number || row?.profile?.phoneNumber)
   const scopeMetadata = row?.scope_metadata && typeof row.scope_metadata === 'object' ? row.scope_metadata : {}
+  const moduleMetadata = row?.module_metadata && typeof row.module_metadata === 'object' ? row.module_metadata : {}
+  const explicitBusinessWorkspaces = normalizeBusinessWorkspaceList(
+    moduleMetadata.businessWorkspaces ||
+      moduleMetadata.business_workspaces ||
+      moduleMetadata.workspaceAccess ||
+      moduleMetadata.workspace_access ||
+      moduleMetadata.allowedBusinessWorkspaces ||
+      moduleMetadata.allowed_business_workspaces,
+    null,
+  )
+  const departmentUnit = row?.departmentUnit || row?.department_unit || null
+  const teamUnit = row?.teamUnit || row?.team_unit || null
+  const workspaceUnit = row?.workspaceUnit || row?.workspace_unit || null
+  const departmentBusinessWorkspaces = resolveMembershipDepartmentBusinessWorkspaces({
+    ...row,
+    moduleMetadata,
+    module_metadata: moduleMetadata,
+    department: departmentUnit,
+    departmentUnit,
+    department_unit: departmentUnit,
+    team: teamUnit,
+    teamUnit,
+    team_unit: teamUnit,
+    workspaceUnit,
+    workspace_unit: workspaceUnit,
+  })
   const genericRole = normalizeText(row?.workspace_role || row?.organisation_role || row?.organization_role || row?.role) || 'viewer'
   const status = normalizeText(row?.membership_status || row?.status) || 'invited'
   const isPrincipalClaim = scopeMetadata.source === 'principal_claim_invite' || Boolean(scopeMetadata.principalClaimInviteId)
@@ -5316,6 +5346,9 @@ function normalizeOrganisationUserRow(row) {
     userId: row?.user_id || null,
     organisationId: row?.organisation_id || null,
     branchId: row?.branch_id || null,
+    departmentId: row?.department_id || row?.departmentId || null,
+    teamId: row?.team_id || row?.teamId || null,
+    workspaceUnitId: row?.workspace_unit_id || row?.workspaceUnitId || null,
     firstName: profileFirstName || normalizeText(row?.first_name),
     lastName: profileLastName || normalizeText(row?.last_name),
     fullName:
@@ -5337,6 +5370,14 @@ function normalizeOrganisationUserRow(row) {
     attorneyCompatibilityRole: isAttorneyWorkspace ? normalizeText(row?.attorney_compatibility_role) || null : null,
     jobTitle: normalizeOrganisationJobTitle(row?.job_title || row?.jobTitle),
     scopeMetadata,
+    moduleContext: normalizeText(row?.module_context || row?.moduleContext),
+    moduleMetadata,
+    explicitBusinessWorkspaces,
+    departmentBusinessWorkspaces,
+    businessWorkspaces: explicitBusinessWorkspaces.length ? explicitBusinessWorkspaces : departmentBusinessWorkspaces,
+    departmentUnit,
+    teamUnit,
+    workspaceUnit,
     isPrincipalClaim,
     lastActiveAt: row?.last_active_at || null,
     invitedAt: row?.invited_at || null,
@@ -5404,6 +5445,57 @@ async function fetchOrganisationUserProfileAvatars(client, rows = []) {
   }, { byUserId: {}, byEmail: {} })
 }
 
+function normalizeWorkspaceUnitRow(row = null) {
+  if (!row?.id) return null
+  return {
+    id: row.id,
+    workspaceId: row.workspace_id || null,
+    workspace_id: row.workspace_id || null,
+    unitType: normalizeText(row.unit_type),
+    unit_type: normalizeText(row.unit_type),
+    name: normalizeText(row.name),
+    code: normalizeText(row.code),
+    description: normalizeText(row.description),
+    active: row.active !== false,
+    parentUnitId: row.parent_unit_id || null,
+    parent_unit_id: row.parent_unit_id || null,
+    regionId: row.region_id || null,
+    region_id: row.region_id || null,
+    raw: row,
+  }
+}
+
+async function fetchOrganisationUserWorkspaceUnits(client, rows = [], organisationId = '') {
+  const ids = Array.from(new Set((rows || [])
+    .flatMap((row) => [row?.department_id, row?.team_id, row?.workspace_unit_id])
+    .map((value) => normalizeText(value))
+    .filter(Boolean)))
+  if (!ids.length || !organisationId) return {}
+
+  const query = await client
+    .from('workspace_units')
+    .select('id, workspace_id, region_id, parent_unit_id, unit_type, name, code, description, active')
+    .eq('workspace_id', organisationId)
+    .in('id', ids)
+
+  if (query.error) {
+    if (
+      isMissingTableError(query.error, 'workspace_units') ||
+      isMissingColumnError(query.error, 'unit_type') ||
+      isMissingColumnError(query.error, 'active')
+    ) {
+      return {}
+    }
+    throw query.error
+  }
+
+  return (query.data || []).reduce((accumulator, row) => {
+    const unit = normalizeWorkspaceUnitRow(row)
+    if (unit?.id) accumulator[unit.id] = unit
+    return accumulator
+  }, {})
+}
+
 export async function listOrganisationUsers() {
   if (!isSupabaseConfigured || !supabase) {
     return []
@@ -5438,8 +5530,8 @@ export async function listOrganisationUsers() {
       ]
     }
 
-    const canonicalSelectColumns = 'id, organisation_id, user_id, branch_id, first_name, last_name, email, role, workspace_role, workspace_type, organisation_role, organization_role, job_title, status, membership_status, scope_metadata, invited_at, accepted_at, last_active_at, attorney_professional_role, attorney_practice_qualifications, attorney_compatibility_role'
-    const selectColumns = 'id, organisation_id, user_id, branch_id, first_name, last_name, email, role, workspace_role, workspace_type, organisation_role, organization_role, job_title, status, membership_status, scope_metadata, invited_at, accepted_at, last_active_at'
+    const canonicalSelectColumns = 'id, organisation_id, user_id, branch_id, department_id, team_id, workspace_unit_id, first_name, last_name, email, role, workspace_role, workspace_type, organisation_role, organization_role, job_title, status, membership_status, scope_metadata, module_context, module_metadata, invited_at, accepted_at, last_active_at, attorney_professional_role, attorney_practice_qualifications, attorney_compatibility_role'
+    const selectColumns = 'id, organisation_id, user_id, branch_id, department_id, team_id, workspace_unit_id, first_name, last_name, email, role, workspace_role, workspace_type, organisation_role, organization_role, job_title, status, membership_status, scope_metadata, module_context, module_metadata, invited_at, accepted_at, last_active_at'
     const legacySelectColumns = 'id, organisation_id, user_id, branch_id, first_name, last_name, email, role, workspace_role, organisation_role, organization_role, status, membership_status, scope_metadata, invited_at, accepted_at, last_active_at'
     let usersQuery = await client
       .from('organisation_users')
@@ -5459,7 +5551,14 @@ export async function listOrganisationUsers() {
         .order('created_at', { ascending: true })
     }
 
-    if (usersQuery.error && isMissingColumnError(usersQuery.error, 'job_title')) {
+    if (usersQuery.error && (
+      isMissingColumnError(usersQuery.error, 'job_title') ||
+      isMissingColumnError(usersQuery.error, 'module_context') ||
+      isMissingColumnError(usersQuery.error, 'module_metadata') ||
+      isMissingColumnError(usersQuery.error, 'department_id') ||
+      isMissingColumnError(usersQuery.error, 'team_id') ||
+      isMissingColumnError(usersQuery.error, 'workspace_unit_id')
+    )) {
       usersQuery = await client
         .from('organisation_users')
         .select(legacySelectColumns)
@@ -5476,7 +5575,10 @@ export async function listOrganisationUsers() {
       throw error
     }
 
-    const avatarLookup = await fetchOrganisationUserProfileAvatars(client, data || [])
+    const [avatarLookup, workspaceUnitLookup] = await Promise.all([
+      fetchOrganisationUserProfileAvatars(client, data || []),
+      fetchOrganisationUserWorkspaceUnits(client, data || [], context.organisation.id),
+    ])
     return (data || []).map((row) => normalizeOrganisationUserRow({
       ...row,
       profile:
@@ -5488,6 +5590,9 @@ export async function listOrganisationUsers() {
         normalizeText(avatarLookup.byUserId[normalizeText(row?.user_id)]?.avatar_url) ||
         normalizeText(avatarLookup.byEmail[normalizeEmail(row?.email)]?.avatar_url) ||
         '',
+      departmentUnit: workspaceUnitLookup[normalizeText(row?.department_id)] || null,
+      teamUnit: workspaceUnitLookup[normalizeText(row?.team_id)] || null,
+      workspaceUnit: workspaceUnitLookup[normalizeText(row?.workspace_unit_id)] || null,
     }))
   })()
     .then((users) => {
@@ -5859,6 +5964,81 @@ export async function updateOrganisationUserJobTitle(userRowId, jobTitle) {
     targetType: 'organisation_user',
     targetId: userRowId,
     metadata: { jobTitle: normalizedJobTitle || null },
+  })
+  organisationUsersCache = null
+  clearOrganisationRuntimeCache()
+  return normalizeOrganisationUserRow(data)
+}
+
+export async function updateOrganisationUserBusinessWorkspaces(userRowId, businessWorkspaces = []) {
+  const client = requireClient()
+  const context = await ensureOrganisationContext(client)
+  assertOrganisationAdminAccess(context, 'manage organisation users')
+
+  const membershipId = normalizeText(userRowId)
+  if (!membershipId) {
+    throw new Error('Organisation user is required before saving business workspace access.')
+  }
+
+  const nextBusinessWorkspaces = normalizeBusinessWorkspaceList(businessWorkspaces, [])
+  if (!nextBusinessWorkspaces.length) {
+    throw new Error('Select at least one business workspace for this user.')
+  }
+
+  const existing = await client
+    .from('organisation_users')
+    .select('id, organisation_id, user_id, branch_id, first_name, last_name, email, role, workspace_role, workspace_type, organisation_role, organization_role, job_title, status, membership_status, scope_metadata, module_context, module_metadata, invited_at, accepted_at, last_active_at')
+    .eq('id', membershipId)
+    .eq('organisation_id', context.organisation.id)
+    .maybeSingle()
+
+  if (existing.error) {
+    if (isMissingColumnError(existing.error, 'module_metadata') || isMissingColumnError(existing.error, 'module_context')) {
+      throw new Error('Business workspace access needs the organisation module metadata migration before it can be managed.')
+    }
+    throw existing.error
+  }
+  if (!existing.data?.id) throw new Error('Organisation user not found.')
+
+  const moduleMetadata = existing.data.module_metadata && typeof existing.data.module_metadata === 'object'
+    ? existing.data.module_metadata
+    : {}
+  const previousBusinessWorkspaces = normalizeBusinessWorkspaceList(
+    moduleMetadata.businessWorkspaces ||
+      moduleMetadata.business_workspaces ||
+      moduleMetadata.workspaceAccess ||
+      moduleMetadata.workspace_access ||
+      moduleMetadata.allowedBusinessWorkspaces ||
+      moduleMetadata.allowed_business_workspaces,
+    [],
+  )
+  const nextModuleMetadata = {
+    ...moduleMetadata,
+    businessWorkspaces: nextBusinessWorkspaces,
+    business_workspaces: nextBusinessWorkspaces,
+  }
+
+  const { data, error } = await client
+    .from('organisation_users')
+    .update({ module_metadata: nextModuleMetadata })
+    .eq('id', membershipId)
+    .eq('organisation_id', context.organisation.id)
+    .select('id, organisation_id, user_id, branch_id, first_name, last_name, email, role, workspace_role, workspace_type, organisation_role, organization_role, job_title, status, membership_status, scope_metadata, module_context, module_metadata, invited_at, accepted_at, last_active_at')
+    .maybeSingle()
+
+  if (error) throw error
+  if (!data?.id) throw new Error('Organisation user not found.')
+
+  void recordSecurityAuditEvent({
+    userId: context.profile?.id,
+    workspaceId: context.organisation.id,
+    action: 'organisation_user_business_workspaces_changed',
+    targetType: 'organisation_user',
+    targetId: membershipId,
+    metadata: {
+      previousBusinessWorkspaces,
+      businessWorkspaces: nextBusinessWorkspaces,
+    },
   })
   organisationUsersCache = null
   clearOrganisationRuntimeCache()

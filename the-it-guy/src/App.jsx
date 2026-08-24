@@ -14,7 +14,7 @@ import { FEATURE_FLAGS, SHOW_INTELLIGENCE_BETA } from './lib/featureFlags'
 import {
   isSupabaseConfigured,
 } from './lib/supabaseClient'
-import { getRuntimeEnvValidation } from './lib/envValidation'
+import { getFeatureFlags, getRuntimeEnvValidation } from './lib/envValidation'
 import { markRouteFirstVisibleContent, markRouteRendered } from './lib/performanceTrace'
 import { isOnboardingRoute } from './lib/onboardingRouting'
 import { buildPartnerInviteAutoAcceptPath, readPendingPartnerInvitePath } from './lib/pendingPartnerInvite'
@@ -31,7 +31,8 @@ import {
   hasCommercialAccessMarker,
   isCommercialProfessionalMember,
 } from './lib/commercialAccess'
-import { BUSINESS_WORKSPACES } from './lib/businessWorkspaceAccess'
+import { BUSINESS_WORKSPACES, resolveBusinessWorkspaceRoute } from './lib/businessWorkspaceAccess'
+import { RENTAL_MODULES, resolveRentalModuleAvailability } from './services/rentals/rentalModuleAvailability'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 
 const INACTIVITY_TIMEOUT_MINUTES = 15
@@ -525,8 +526,7 @@ function AppLayout({ onLogout, session = null, user }) {
   const hideSharedHeader =
     isLegalWorkspaceRoute ||
     location.pathname === '/command-center' ||
-    location.pathname === '/attorney/scheduling' ||
-    (role === 'developer' && (location.pathname === '/dashboard' || location.pathname === '/'))
+    location.pathname === '/attorney/scheduling'
   const isAttorneyDashboardRoute = role === 'attorney' && location.pathname === '/attorney/dashboard'
   const isDashboardRoute = location.pathname === '/dashboard' || location.pathname === '/'
   const defaultDevelopmentId = workspace.id === 'all' ? '' : workspace.id
@@ -1188,7 +1188,9 @@ function RentalWorkspaceGuard({ children }) {
     businessWorkspaceSplitEnabled,
     setBusinessWorkspace,
   } = useWorkspace()
+  const location = useLocation()
   const hasRentalAccess = availableBusinessWorkspaceIds.includes(BUSINESS_WORKSPACES.rentals)
+  const hasSalesAccess = availableBusinessWorkspaceIds.includes(BUSINESS_WORKSPACES.sales)
   const isRentalWorkspace = businessWorkspaceId === BUSINESS_WORKSPACES.rentals
 
   useEffect(() => {
@@ -1201,6 +1203,19 @@ function RentalWorkspaceGuard({ children }) {
   }
 
   if (!hasRentalAccess) {
+    if (hasSalesAccess) {
+      return (
+        <Navigate
+          to={resolveBusinessWorkspaceRoute({
+            pathname: location.pathname,
+            search: location.search,
+            hash: location.hash,
+            targetWorkspace: BUSINESS_WORKSPACES.sales,
+          })}
+          replace
+        />
+      )
+    }
     return <AccessDenied message="Your Arch9 access is not enabled for Rentals." />
   }
 
@@ -1218,11 +1233,75 @@ function RentalWorkspaceGuard({ children }) {
   return children
 }
 
+function SalesWorkspaceGuard({ children }) {
+  const {
+    availableBusinessWorkspaceIds = [],
+    businessWorkspaceId,
+    businessWorkspaceSplitEnabled,
+    role,
+    setBusinessWorkspace,
+  } = useWorkspace()
+  const location = useLocation()
+  const hasSalesAccess = availableBusinessWorkspaceIds.includes(BUSINESS_WORKSPACES.sales)
+  const hasRentalAccess = availableBusinessWorkspaceIds.includes(BUSINESS_WORKSPACES.rentals)
+  const isSalesWorkspace = businessWorkspaceId === BUSINESS_WORKSPACES.sales
+
+  useEffect(() => {
+    if (role !== 'agent' || !businessWorkspaceSplitEnabled || !hasSalesAccess || isSalesWorkspace) return
+    setBusinessWorkspace?.(BUSINESS_WORKSPACES.sales)
+  }, [businessWorkspaceSplitEnabled, hasSalesAccess, isSalesWorkspace, role, setBusinessWorkspace])
+
+  if (role !== 'agent' || !businessWorkspaceSplitEnabled) {
+    return children
+  }
+
+  if (!hasSalesAccess) {
+    if (hasRentalAccess) {
+      return (
+        <Navigate
+          to={resolveBusinessWorkspaceRoute({
+            pathname: location.pathname,
+            search: location.search,
+            hash: location.hash,
+            targetWorkspace: BUSINESS_WORKSPACES.rentals,
+          })}
+          replace
+        />
+      )
+    }
+    return <AccessDenied message="Your Arch9 access is not enabled for Sales." />
+  }
+
+  if (!isSalesWorkspace) {
+    return (
+      <section className="auth-loading-screen">
+        <div className="auth-loading-card">
+          <h2>Opening Sales workspace…</h2>
+          <p>Preparing the sales navigation context.</p>
+        </div>
+      </section>
+    )
+  }
+
+  return children
+}
+
 function RentalWorkspacePlaceholder({ title, description }) {
   return (
     <RentalWorkspaceGuard>
       <PlaceholderPage title={title} description={description} />
     </RentalWorkspaceGuard>
+  )
+}
+
+function RentalModuleGate({ moduleId = RENTAL_MODULES.dashboard, children }) {
+  const availability = resolveRentalModuleAvailability(getFeatureFlags(), moduleId)
+  if (availability.enabled) return children
+  return (
+    <RentalWorkspacePlaceholder
+      title={availability.title}
+      description={availability.description}
+    />
   )
 }
 
@@ -1681,7 +1760,7 @@ function AppRoutes() {
               </Route>
 
               <Route element={<OrganisationGate><ProtectedLayout onLogout={logout} session={session} /></OrganisationGate>}>
-              <Route path="/dashboard" element={<AppErrorBoundary scope="dashboard-shell" title="Dashboard failed to render"><ClientAwareDashboard /></AppErrorBoundary>} />
+              <Route path="/dashboard" element={<SalesWorkspaceGuard><AppErrorBoundary scope="dashboard-shell" title="Dashboard failed to render"><ClientAwareDashboard /></AppErrorBoundary></SalesWorkspaceGuard>} />
               <Route path="/command-center" element={<HQRoute><AppErrorBoundary scope="command-center" title="Mission Control failed to render"><CommandCenterPage /></AppErrorBoundary></HQRoute>} />
               <Route path="/commercial" element={<RoleRoute allowedRoles={['agent', 'commercial_broker', 'commercial_admin', 'commercial_principal', 'platform_admin']}><AppErrorBoundary scope="commercial-workspace" title="Commercial workspace failed to render"><CommercialLayout onLogout={logout} user={session?.user || null} /></AppErrorBoundary></RoleRoute>}>
                 <Route index element={<CommercialDashboard />} />
@@ -2192,12 +2271,14 @@ function AppRoutes() {
               <Route
                 path="/units"
                 element={
-                  <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
-                    <Units />
-                  </RoleRoute>
+                  <SalesWorkspaceGuard>
+                    <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
+                      <Units />
+                    </RoleRoute>
+                  </SalesWorkspaceGuard>
                 }
               />
-              <Route path="/transactions" element={<ClientAwareTransactions />} />
+              <Route path="/transactions" element={<SalesWorkspaceGuard><ClientAwareTransactions /></SalesWorkspaceGuard>} />
               <Route
                 path="/bond/dashboard"
                 element={
@@ -2225,11 +2306,13 @@ function AppRoutes() {
               <Route
                 path="/transactions/:transactionId/legal/:packetType"
                 element={
-                  <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
-                    <AppErrorBoundary scope="legal-document-workspace" title="Legal document workspace failed to load">
-                      <LegalDocumentWorkspacePage />
-                    </AppErrorBoundary>
-                  </RoleRoute>
+                  <SalesWorkspaceGuard>
+                    <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
+                      <AppErrorBoundary scope="legal-document-workspace" title="Legal document workspace failed to load">
+                        <LegalDocumentWorkspacePage />
+                      </AppErrorBoundary>
+                    </RoleRoute>
+                  </SalesWorkspaceGuard>
                 }
               />
               <Route
@@ -2245,21 +2328,25 @@ function AppRoutes() {
               <Route
                 path="/transactions/:transactionId"
                 element={
-                  <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
-                    <AppErrorBoundary scope="transaction-workspace" title="Transaction workspace failed to load">
-                      <AttorneyTransactionDetail />
-                    </AppErrorBoundary>
-                  </RoleRoute>
+                  <SalesWorkspaceGuard>
+                    <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
+                      <AppErrorBoundary scope="transaction-workspace" title="Transaction workspace failed to load">
+                        <AttorneyTransactionDetail />
+                      </AppErrorBoundary>
+                    </RoleRoute>
+                  </SalesWorkspaceGuard>
                 }
               />
               <Route
                 path="/transactions/:transactionId/transfer/:workflowDetailKey"
                 element={
-                  <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
-                    <AppErrorBoundary scope="transaction-workflow-detail" title="Transaction workflow detail failed to load">
-                      <AttorneyTransactionDetail />
-                    </AppErrorBoundary>
-                  </RoleRoute>
+                  <SalesWorkspaceGuard>
+                    <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
+                      <AppErrorBoundary scope="transaction-workflow-detail" title="Transaction workflow detail failed to load">
+                        <AttorneyTransactionDetail />
+                      </AppErrorBoundary>
+                    </RoleRoute>
+                  </SalesWorkspaceGuard>
                 }
               />
               <Route
@@ -2605,26 +2692,32 @@ function AppRoutes() {
               <Route
                 path="/units/:unitId"
                 element={
-                  <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
-                    <AppErrorBoundary scope="transaction-workspace" title="Unit workspace failed to load">
-                      <UnitDetail />
-                    </AppErrorBoundary>
-                  </RoleRoute>
+                  <SalesWorkspaceGuard>
+                    <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
+                      <AppErrorBoundary scope="transaction-workspace" title="Unit workspace failed to load">
+                        <UnitDetail />
+                      </AppErrorBoundary>
+                    </RoleRoute>
+                  </SalesWorkspaceGuard>
                 }
               />
               <Route
                 path="/pipeline"
                 element={
-                  <RoleRoute allowedRoles={['developer', 'agent', 'bond_originator']}>
-                    <PipelineEntryRoute />
-                  </RoleRoute>
+                  <SalesWorkspaceGuard>
+                    <RoleRoute allowedRoles={['developer', 'agent', 'bond_originator']}>
+                      <PipelineEntryRoute />
+                    </RoleRoute>
+                  </SalesWorkspaceGuard>
                 }
               />
               <Route
                 path="/agent/rentals"
                 element={
                   <RoleRoute allowedRoles={['agent']}>
-                    <Navigate to="/agent/rentals/dashboard" replace />
+                    <RentalWorkspaceGuard>
+                      <Navigate to="/agent/rentals/dashboard" replace />
+                    </RentalWorkspaceGuard>
                   </RoleRoute>
                 }
               />
@@ -2632,10 +2725,14 @@ function AppRoutes() {
                 path="/agent/rentals/dashboard"
                 element={
                   <RoleRoute allowedRoles={['agent']}>
-                    <RentalWorkspacePlaceholder
-                      title="Rentals Dashboard"
-                      description="Rental lead, listing, application, and lease activity will land here as the module is phased in."
-                    />
+                    <RentalWorkspaceGuard>
+                      <RentalModuleGate moduleId={RENTAL_MODULES.dashboard}>
+                        <RentalWorkspacePlaceholder
+                          title="Rentals Dashboard"
+                          description="Rental lead, listing, application, and lease activity will land here as the module is phased in."
+                        />
+                      </RentalModuleGate>
+                    </RentalWorkspaceGuard>
                   </RoleRoute>
                 }
               />
@@ -2644,7 +2741,9 @@ function AppRoutes() {
                 element={
                   <RoleRoute allowedRoles={['agent']}>
                     <RentalWorkspaceGuard>
-                      <RentalTenanciesPage />
+                      <RentalModuleGate moduleId={RENTAL_MODULES.tenancies}>
+                        <RentalTenanciesPage />
+                      </RentalModuleGate>
                     </RentalWorkspaceGuard>
                   </RoleRoute>
                 }
@@ -2653,10 +2752,14 @@ function AppRoutes() {
                 path="/agent/rentals/pipeline/leads"
                 element={
                   <RoleRoute allowedRoles={['agent']}>
-                    <RentalWorkspacePlaceholder
-                      title="Rental Leads"
-                      description="Landlord and tenant lead intake will be separated from seller and buyer sales leads here."
-                    />
+                    <RentalWorkspaceGuard>
+                      <RentalModuleGate moduleId={RENTAL_MODULES.leads}>
+                        <RentalWorkspacePlaceholder
+                          title="Rental Leads"
+                          description="Landlord and tenant lead intake will be separated from seller and buyer sales leads here."
+                        />
+                      </RentalModuleGate>
+                    </RentalWorkspaceGuard>
                   </RoleRoute>
                 }
               />
@@ -2664,7 +2767,9 @@ function AppRoutes() {
                 path="/agent/rentals/pipeline"
                 element={
                   <RoleRoute allowedRoles={['agent']}>
-                    <Navigate to="/agent/rentals/pipeline/leads" replace />
+                    <RentalWorkspaceGuard>
+                      <Navigate to="/agent/rentals/pipeline/leads" replace />
+                    </RentalWorkspaceGuard>
                   </RoleRoute>
                 }
               />
@@ -2673,7 +2778,9 @@ function AppRoutes() {
                 element={
                   <RoleRoute allowedRoles={['agent']}>
                     <RentalWorkspaceGuard>
-                      <RentalApplicationsPage />
+                      <RentalModuleGate moduleId={RENTAL_MODULES.applications}>
+                        <RentalApplicationsPage />
+                      </RentalModuleGate>
                     </RentalWorkspaceGuard>
                   </RoleRoute>
                 }
@@ -2682,10 +2789,14 @@ function AppRoutes() {
                 path="/agent/rentals/pipeline/calendar"
                 element={
                   <RoleRoute allowedRoles={['agent']}>
-                    <RentalWorkspacePlaceholder
-                      title="Rental Calendar"
-                      description="Rental inspections, viewings, applicant follow-ups, and lease appointments will be coordinated here."
-                    />
+                    <RentalWorkspaceGuard>
+                      <RentalModuleGate moduleId={RENTAL_MODULES.calendar}>
+                        <RentalWorkspacePlaceholder
+                          title="Rental Calendar"
+                          description="Rental inspections, viewings, applicant follow-ups, and lease appointments will be coordinated here."
+                        />
+                      </RentalModuleGate>
+                    </RentalWorkspaceGuard>
                   </RoleRoute>
                 }
               />
@@ -2694,7 +2805,9 @@ function AppRoutes() {
                 element={
                   <RoleRoute allowedRoles={['agent']}>
                     <RentalWorkspaceGuard>
-                      <RentalListingsPage />
+                      <RentalModuleGate moduleId={RENTAL_MODULES.listings}>
+                        <RentalListingsPage />
+                      </RentalModuleGate>
                     </RentalWorkspaceGuard>
                   </RoleRoute>
                 }
@@ -2702,109 +2815,133 @@ function AppRoutes() {
               <Route
                 path="/pipeline/leads"
                 element={
-                  <RoleRoute allowedRoles={['agent']}>
-                    <Pipeline initialAgentViewMode="leads" />
-                  </RoleRoute>
+                  <SalesWorkspaceGuard>
+                    <RoleRoute allowedRoles={['agent']}>
+                      <Pipeline initialAgentViewMode="leads" />
+                    </RoleRoute>
+                  </SalesWorkspaceGuard>
                 }
               />
               <Route
                 path="/pipeline/leads/:leadId/legal/:packetType"
                 element={
-                  <RoleRoute allowedRoles={['developer', 'agent']}>
-                    <AppErrorBoundary scope="legal-document-workspace" title="Legal document workspace failed to load">
-                      <LegalDocumentWorkspacePage />
-                    </AppErrorBoundary>
-                  </RoleRoute>
+                  <SalesWorkspaceGuard>
+                    <RoleRoute allowedRoles={['developer', 'agent']}>
+                      <AppErrorBoundary scope="legal-document-workspace" title="Legal document workspace failed to load">
+                        <LegalDocumentWorkspacePage />
+                      </AppErrorBoundary>
+                    </RoleRoute>
+                  </SalesWorkspaceGuard>
                 }
               />
               <Route
                 path="/pipeline/leads/:leadId"
                 element={
-                  <RoleRoute allowedRoles={['agent']}>
-                    <Pipeline initialAgentViewMode="leads" />
-                  </RoleRoute>
+                  <SalesWorkspaceGuard>
+                    <RoleRoute allowedRoles={['agent']}>
+                      <Pipeline initialAgentViewMode="leads" />
+                    </RoleRoute>
+                  </SalesWorkspaceGuard>
                 }
               />
               <Route
                 path="/pipeline/enquiries"
                 element={
-                  <RoleRoute allowedRoles={['agent']}>
-                    <AgentEnquiriesPage />
-                  </RoleRoute>
+                  <SalesWorkspaceGuard>
+                    <RoleRoute allowedRoles={['agent']}>
+                      <AgentEnquiriesPage />
+                    </RoleRoute>
+                  </SalesWorkspaceGuard>
                 }
               />
               <Route
                 path="/pipeline/overview"
                 element={
-                  <RoleRoute allowedRoles={['agent']}>
-                    <PipelineOverviewPage />
-                  </RoleRoute>
+                  <SalesWorkspaceGuard>
+                    <RoleRoute allowedRoles={['agent']}>
+                      <PipelineOverviewPage />
+                    </RoleRoute>
+                  </SalesWorkspaceGuard>
                 }
               />
               <Route
                 path="/pipeline/canvassing"
                 element={
-                  <RoleRoute allowedRoles={['agent']}>
-                    <PipelineCanvassingPage />
-                  </RoleRoute>
+                  <SalesWorkspaceGuard>
+                    <RoleRoute allowedRoles={['agent']}>
+                      <PipelineCanvassingPage />
+                    </RoleRoute>
+                  </SalesWorkspaceGuard>
                 }
               />
               <Route
                 path="/pipeline/canvassing/prospects/:prospectId"
                 element={
-                  <RoleRoute allowedRoles={['agent']}>
-                    <PipelineCanvassingPage />
-                  </RoleRoute>
+                  <SalesWorkspaceGuard>
+                    <RoleRoute allowedRoles={['agent']}>
+                      <PipelineCanvassingPage />
+                    </RoleRoute>
+                  </SalesWorkspaceGuard>
                 }
               />
               <Route
                 path="/pipeline/calendar"
                 element={
-                  <RoleRoute allowedRoles={['agent']}>
-                    <Pipeline key="pipeline-calendar" initialAgentViewMode="calendar" />
-                  </RoleRoute>
+                  <SalesWorkspaceGuard>
+                    <RoleRoute allowedRoles={['agent']}>
+                      <Pipeline key="pipeline-calendar" initialAgentViewMode="calendar" />
+                    </RoleRoute>
+                  </SalesWorkspaceGuard>
                 }
               />
               <Route
                 path="/calendar"
                 element={
-                  <RoleRoute allowedRoles={['agent']}>
-                    <Navigate to="/pipeline/calendar" replace />
-                  </RoleRoute>
+                  <SalesWorkspaceGuard>
+                    <RoleRoute allowedRoles={['agent']}>
+                      <Navigate to="/pipeline/calendar" replace />
+                    </RoleRoute>
+                  </SalesWorkspaceGuard>
                 }
               />
               <Route
                 path="/listings/:listingSection?"
                 element={
-                  <RoleRoute allowedRoles={['agent']}>
-                    <AgentListings />
-                  </RoleRoute>
+                  <SalesWorkspaceGuard>
+                    <RoleRoute allowedRoles={['developer', 'agent']}>
+                      <AgentListings />
+                    </RoleRoute>
+                  </SalesWorkspaceGuard>
                 }
               />
               <Route
                 path="/agent/listings/:listingId/legal/:packetType"
                 element={
-                  <RoleRoute allowedRoles={['agent']}>
-                    <AppErrorBoundary scope="legal-document-workspace" title="Legal document workspace failed to load">
-                      <LegalDocumentWorkspacePage />
-                    </AppErrorBoundary>
-                  </RoleRoute>
+                  <SalesWorkspaceGuard>
+                    <RoleRoute allowedRoles={['agent']}>
+                      <AppErrorBoundary scope="legal-document-workspace" title="Legal document workspace failed to load">
+                        <LegalDocumentWorkspacePage />
+                      </AppErrorBoundary>
+                    </RoleRoute>
+                  </SalesWorkspaceGuard>
                 }
               />
               <Route
                 path="/agent/listings/:listingId"
                 element={
-                  <RoleRoute allowedRoles={['agent']}>
-                    <AppErrorBoundary
-                      scope="agent-listing-detail"
-                      title="Listing workspace failed to load"
-                      fallbackPath="/listings"
-                      fallbackLabel="Back to Listings"
-                      resetKey={`${location.pathname}${location.search}`}
-                    >
-                      <AgentListingDetail />
-                    </AppErrorBoundary>
-                  </RoleRoute>
+                  <SalesWorkspaceGuard>
+                    <RoleRoute allowedRoles={['developer', 'agent']}>
+                      <AppErrorBoundary
+                        scope="agent-listing-detail"
+                        title="Listing workspace failed to load"
+                        fallbackPath="/listings"
+                        fallbackLabel="Back to Listings"
+                        resetKey={`${location.pathname}${location.search}`}
+                      >
+                        <AgentListingDetail />
+                      </AppErrorBoundary>
+                    </RoleRoute>
+                  </SalesWorkspaceGuard>
                 }
               />
               <Route
