@@ -4,12 +4,18 @@ import {
   getAgentPrivateListings,
   getPrivateListing,
   syncPrivateListingDistributionData,
+  updatePrivateListing,
 } from '../privateListingService'
 import {
   buildRentalPrivateListingPayload,
   buildRentalPublicationDraft,
   validateRentalListingDraftForm,
 } from './rentalListingDraftModel'
+import {
+  buildRentalListingEditPublicationDraft,
+  buildRentalListingUpdatePayload,
+  validateRentalListingEditForm,
+} from './rentalListingEditModel'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -97,6 +103,46 @@ export async function createRentalListingDraft(form = {}, context = {}) {
   return {
     listing: created.listing,
     existing: created.existing === true,
+    publicationResult,
+    activity,
+  }
+}
+
+export async function updateRentalListingDraft(listingId, form = {}, context = {}) {
+  const validationErrors = validateRentalListingEditForm(form, context)
+  if (validationErrors.length) {
+    const error = new Error(validationErrors.join(' '))
+    error.validationErrors = validationErrors
+    throw error
+  }
+
+  const listingPayload = buildRentalListingUpdatePayload(form)
+  const listing = await updatePrivateListing(listingId, listingPayload, {
+    includeRequirementsAndDocuments: false,
+  })
+
+  const publicationResult = await syncPrivateListingDistributionData(listingId, {
+    publicationData: buildRentalListingEditPublicationDraft(form),
+    media: {},
+    externalLinks: [],
+  })
+
+  const activity = await createPrivateListingActivity({
+    privateListingId: listingId,
+    activityType: 'rental_listing_updated',
+    activityTitle: 'Rental listing updated',
+    activityDescription: 'Rental listing facts were updated in the Rentals workspace.',
+    performedBy: context.performedBy || context.assignedAgentId || null,
+    visibility: 'internal',
+    metadata: {
+      source: 'rentals_phase5_detail_edit',
+      publicationDraftSkipped: publicationResult?.skipped === true,
+      publicationDraftReason: publicationResult?.reason || '',
+    },
+  }).catch(() => null)
+
+  return {
+    listing,
     publicationResult,
     activity,
   }

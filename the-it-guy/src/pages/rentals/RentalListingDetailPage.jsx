@@ -7,13 +7,27 @@ import {
   ClipboardList,
   Home,
   Loader2,
+  Pencil,
   RefreshCw,
+  Save,
   ShieldCheck,
   Users,
+  X,
 } from 'lucide-react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
-import { getRentalListingForAgent } from '../../services/rentals/rentalListingDraftService'
+import {
+  getRentalListingForAgent,
+  updateRentalListingDraft,
+} from '../../services/rentals/rentalListingDraftService'
+import {
+  RENTAL_LISTING_INITIAL_FORM,
+  RENTAL_SELECT_OPTIONS,
+} from '../../services/rentals/rentalListingDraftModel'
+import {
+  buildRentalListingEditForm,
+  validateRentalListingEditForm,
+} from '../../services/rentals/rentalListingEditModel'
 import {
   buildRentalListingDetailPath,
   buildRentalListingDetailView,
@@ -95,6 +109,146 @@ function DetailPanel({ title, eyebrow, children }) {
       </div>
       <div className="mt-4">{children}</div>
     </section>
+  )
+}
+
+function formField(name, value, onChange) {
+  return {
+    value,
+    onChange: (event) => onChange(name, event.target.value),
+  }
+}
+
+function SelectField({ label, name, value, options, onChange }) {
+  return (
+    <label className="form-field">
+      <span>{label}</span>
+      <select {...formField(name, value, onChange)}>
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>{option.label}</option>
+        ))}
+      </select>
+    </label>
+  )
+}
+
+function RentalListingEditPanel({ form, onChange, onCancel, onSubmit, saving, canSubmit, error }) {
+  return (
+    <form onSubmit={onSubmit} className="ui-panel ui-panel-body grid gap-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase text-[#607891]">Edit listing facts</p>
+          <h2 className="text-lg font-semibold text-[#18324b]">Rental Listing Details</h2>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" className="ui-pill-button" onClick={onCancel}>
+            <X size={16} aria-hidden="true" />
+            Cancel
+          </button>
+          <button type="submit" className="ui-pill-button ui-pill-button-active" disabled={!canSubmit}>
+            {saving ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Save size={16} aria-hidden="true" />}
+            Save Changes
+          </button>
+        </div>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <label className="form-field md:col-span-2">
+          <span>Listing title</span>
+          <input {...formField('title', form.title, onChange)} placeholder="2 bedroom apartment in Green Point" />
+        </label>
+        <label className="form-field">
+          <span>Property type</span>
+          <input {...formField('propertyType', form.propertyType, onChange)} />
+        </label>
+        <label className="form-field md:col-span-3">
+          <span>Property address</span>
+          <input {...formField('propertyAddress', form.propertyAddress, onChange)} />
+        </label>
+        <label className="form-field">
+          <span>Suburb</span>
+          <input {...formField('suburb', form.suburb, onChange)} />
+        </label>
+        <label className="form-field">
+          <span>City</span>
+          <input {...formField('city', form.city, onChange)} />
+        </label>
+        <label className="form-field">
+          <span>Province</span>
+          <input {...formField('province', form.province, onChange)} />
+        </label>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <label className="form-field">
+          <span>Landlord name</span>
+          <input {...formField('landlordName', form.landlordName, onChange)} />
+        </label>
+        <label className="form-field">
+          <span>Landlord email</span>
+          <input type="email" {...formField('landlordEmail', form.landlordEmail, onChange)} />
+        </label>
+        <label className="form-field">
+          <span>Landlord phone</span>
+          <input {...formField('landlordPhone', form.landlordPhone, onChange)} />
+        </label>
+        <SelectField label="Landlord type" name="landlordType" value={form.landlordType} onChange={onChange} options={RENTAL_SELECT_OPTIONS.landlordType} />
+        <SelectField label="Rental mandate" name="mandateStatus" value={form.mandateStatus} onChange={onChange} options={RENTAL_SELECT_OPTIONS.mandateStatus} />
+        <SelectField label="Marketing approval" name="marketingApprovalStatus" value={form.marketingApprovalStatus} onChange={onChange} options={RENTAL_SELECT_OPTIONS.marketingApprovalStatus} />
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-4">
+        <label className="form-field">
+          <span>Monthly rent</span>
+          <input type="number" min="0" {...formField('monthlyRent', form.monthlyRent, onChange)} />
+        </label>
+        <label className="form-field">
+          <span>Deposit</span>
+          <input type="number" min="0" {...formField('depositAmount', form.depositAmount, onChange)} />
+        </label>
+        <label className="form-field">
+          <span>Available from</span>
+          <input type="date" {...formField('availableFrom', form.availableFrom, onChange)} />
+        </label>
+        <label className="form-field">
+          <span>Lease period months</span>
+          <input type="number" min="1" {...formField('leasePeriodMonths', form.leasePeriodMonths, onChange)} />
+        </label>
+        <label className="form-field">
+          <span>Bedrooms</span>
+          <input type="number" min="0" {...formField('bedrooms', form.bedrooms, onChange)} />
+        </label>
+        <label className="form-field">
+          <span>Bathrooms</span>
+          <input type="number" min="0" step="0.5" {...formField('bathrooms', form.bathrooms, onChange)} />
+        </label>
+        <label className="form-field">
+          <span>Parking bays</span>
+          <input type="number" min="0" {...formField('parkingBays', form.parkingBays, onChange)} />
+        </label>
+        <SelectField label="Furnished" name="furnishedStatus" value={form.furnishedStatus} onChange={onChange} options={RENTAL_SELECT_OPTIONS.furnishedStatus} />
+        <SelectField label="Pets" name="petsPolicy" value={form.petsPolicy} onChange={onChange} options={RENTAL_SELECT_OPTIONS.petsPolicy} />
+        <SelectField label="Utilities" name="utilitiesPolicy" value={form.utilitiesPolicy} onChange={onChange} options={RENTAL_SELECT_OPTIONS.utilitiesPolicy} />
+        <SelectField label="Inspection" name="inspectionStatus" value={form.inspectionStatus} onChange={onChange} options={RENTAL_SELECT_OPTIONS.inspectionStatus} />
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <label className="form-field">
+          <span>Public description</span>
+          <textarea rows={5} {...formField('description', form.description, onChange)} />
+        </label>
+        <label className="form-field">
+          <span>Inspection notes</span>
+          <textarea rows={5} {...formField('inspectionNotes', form.inspectionNotes, onChange)} />
+        </label>
+        <label className="form-field">
+          <span>Internal notes</span>
+          <textarea rows={5} {...formField('internalNotes', form.internalNotes, onChange)} />
+        </label>
+      </div>
+
+      {error ? <p className="rounded-[8px] border border-[#f2c6c6] bg-[#fff7f7] px-4 py-3 text-sm font-semibold text-[#9f3131]">{error}</p> : null}
+    </form>
   )
 }
 
@@ -213,8 +367,18 @@ export default function RentalListingDetailPage() {
   const [listing, setListing] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [editOpen, setEditOpen] = useState(false)
+  const [editForm, setEditForm] = useState(() => ({ ...RENTAL_LISTING_INITIAL_FORM }))
+  const [editError, setEditError] = useState('')
+  const [savingEdit, setSavingEdit] = useState(false)
+  const [successMessage, setSuccessMessage] = useState('')
 
   const detail = useMemo(() => (listing ? buildRentalListingDetailView(listing) : null), [listing])
+  const editValidationErrors = useMemo(
+    () => validateRentalListingEditForm(editForm, { organisationId }),
+    [editForm, organisationId],
+  )
+  const canSaveEdit = editValidationErrors.length === 0 && !savingEdit
 
   const loadListing = useCallback(async () => {
     if (!listingId || !assignedAgentId || !organisationId) {
@@ -236,6 +400,7 @@ export default function RentalListingDetailPage() {
         return
       }
       setListing(row)
+      setEditForm(buildRentalListingEditForm(row))
     } catch (loadError) {
       setListing(null)
       setError(loadError?.message || 'Unable to load the rental listing.')
@@ -247,6 +412,45 @@ export default function RentalListingDetailPage() {
   useEffect(() => {
     void loadListing()
   }, [loadListing])
+
+  function openEditPanel() {
+    if (listing) setEditForm(buildRentalListingEditForm(listing))
+    setEditError('')
+    setSuccessMessage('')
+    setEditOpen(true)
+  }
+
+  function updateEditForm(name, value) {
+    setEditForm((current) => ({ ...current, [name]: value }))
+    setEditError('')
+    setSuccessMessage('')
+  }
+
+  async function handleEditSubmit(event) {
+    event.preventDefault()
+    if (!canSaveEdit) {
+      setEditError(editValidationErrors[0] || 'Complete the required rental listing fields.')
+      return
+    }
+    try {
+      setSavingEdit(true)
+      setEditError('')
+      setSuccessMessage('')
+      const result = await updateRentalListingDraft(listingId, editForm, {
+        organisationId,
+        assignedAgentId,
+        performedBy: assignedAgentId,
+      })
+      setListing(result.listing)
+      setEditForm(buildRentalListingEditForm(result.listing))
+      setEditOpen(false)
+      setSuccessMessage('Rental listing details were saved.')
+    } catch (saveError) {
+      setEditError(saveError?.message || 'Unable to save rental listing details.')
+    } finally {
+      setSavingEdit(false)
+    }
+  }
 
   if (loading) {
     return (
@@ -298,8 +502,35 @@ export default function RentalListingDetailPage() {
               <RefreshCw size={16} aria-hidden="true" />
               Refresh
             </button>
+            <button type="button" className="ui-pill-button ui-pill-button-active" onClick={openEditPanel}>
+              <Pencil size={16} aria-hidden="true" />
+              Edit Details
+            </button>
           </div>
         </header>
+
+        {successMessage ? (
+          <p className="inline-flex items-center gap-2 rounded-[8px] border border-[#cfe8dc] bg-[#f2fbf5] px-4 py-3 text-sm font-semibold text-[#286b43]">
+            <CheckCircle2 size={16} aria-hidden="true" />
+            {successMessage}
+          </p>
+        ) : null}
+
+        {editOpen ? (
+          <RentalListingEditPanel
+            form={editForm}
+            onChange={updateEditForm}
+            onCancel={() => {
+              setEditOpen(false)
+              setEditError('')
+              if (listing) setEditForm(buildRentalListingEditForm(listing))
+            }}
+            onSubmit={handleEditSubmit}
+            saving={savingEdit}
+            canSubmit={canSaveEdit}
+            error={editError}
+          />
+        ) : null}
 
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <FactCard label="Monthly rent" value={formatCurrency(row.monthlyRent)} detail="Rental terms" icon={<Home size={18} aria-hidden="true" />} />
