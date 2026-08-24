@@ -120,6 +120,23 @@ assert.equal(unmappedPlan.summary.ready, false)
 assert.equal(unmappedPlan.needsReview[0].reason, 'no_property24_agent_with_matching_email')
 assert.match(unmappedPlan.needsReview[0].suggestedSourceReference, /^ARCH9-/)
 
+const missingIdPlan = createProperty24AgentMappingPlan({
+  arch9Agents: [arch9Agent],
+  property24Agents: [
+    {
+      firstname: 'Alex',
+      lastname: 'Landman',
+      emailAddress: 'alex@arch9.co.za',
+      sourceReference: 'ARCH9-AGENT-001',
+      agencyId: 31382,
+    },
+  ],
+})
+assert.equal(missingIdPlan.summary.ready, false)
+assert.equal(missingIdPlan.summary.mappedCount, 0)
+assert.equal(missingIdPlan.summary.property24AgentMissingIdCount, 1)
+assert.equal(missingIdPlan.needsReview[0].reason, 'property24_agent_missing_id')
+
 const catalogPlan = createProperty24CatalogMappingPlan({
   localLocations: [
     {

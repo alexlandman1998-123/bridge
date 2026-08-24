@@ -1,0 +1,15 @@
+{
+  "phase": "private-property-listing-preview",
+  "generatedAt": "2026-08-24T07:31:06.299Z",
+  "safety": {
+    "privatePropertyApiCalled": false,
+    "databaseWritten": false,
+    "listingPublished": false
+  },
+  "status": "BLOCKED",
+  "missingConfiguration": [
+    "SUPABASE_SERVICE_ROLE_KEY",
+    "PRIVATE_PROPERTY_DEFAULT_AGENT_ID(S) or --agent-id/--agent-ids"
+  ],
+  "nextStep": "Add the missing values, then run this command again."
+}

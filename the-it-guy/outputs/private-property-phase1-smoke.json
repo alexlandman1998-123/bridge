@@ -1,0 +1,53 @@
+{
+  "phase": "private-property-phase1-smoke",
+  "generatedAt": "2026-08-24T07:19:09.906Z",
+  "environment": "sandbox",
+  "baseUrl": "https://services.sandbox.pp.co.za/AgentImport/AgentImport.asmx",
+  "vendor": "Arch9",
+  "username": "Arch9User",
+  "branchGuid": "CA167B18-C6DC-49AD-B018-2B72B187918F",
+  "credentialsConfigured": true,
+  "summary": {
+    "status": "PASS",
+    "passCount": 2,
+    "blockedCount": 0,
+    "skippedCount": 0
+  },
+  "checks": [
+    {
+      "name": "GetCountries authenticated SOAP call",
+      "status": "PASS",
+      "httpStatus": 200,
+      "durationMs": 341,
+      "summary": {
+        "method": "GetCountries",
+        "responseChars": 424,
+        "resultText": "<CountryModel><Id>1</Id><Name>South Africa</Name></CountryModel>",
+        "continuationKey": "",
+        "listingEventCount": 0
+      }
+    },
+    {
+      "name": "GetListingEventFeedByBranch authenticated SOAP call",
+      "status": "PASS",
+      "httpStatus": 200,
+      "durationMs": 516,
+      "summary": {
+        "method": "GetListingEventFeedByBranch",
+        "responseChars": 386,
+        "resultText": "",
+        "continuationKey": "",
+        "listingEventCount": 0
+      }
+    }
+  ],
+  "nextPhase": "Phase 2: create sandbox agents with UpdateAgent and capture Private Property AgentId values.",
+  "tokenProbe": {
+    "generated": true,
+    "userName": "Arch9User",
+    "stampTime": "2026-08-24T09:19:09+02:00",
+    "expires": "2026-08-24T09:49:09+02:00",
+    "uidLength": 24,
+    "digestLength": 28
+  }
+}

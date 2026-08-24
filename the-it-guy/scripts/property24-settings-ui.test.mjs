@@ -48,6 +48,21 @@ assert.equal(mappings[1].property24AgentId, '')
 assert.equal(mappings[1].matchStatus, 'unmapped')
 assert.match(mappings[1].sourceReference, /^ARCH9-/)
 
+const missingIdMappings = createSuggestedProperty24AgentMappings({
+  arch9Agents,
+  property24Agents: [
+    {
+      fullName: 'Alex Landman',
+      email: 'alex@arch9.co.za',
+      sourceReference: 'ARCH9-AGENT-001',
+    },
+  ],
+  sourceReferencePrefix: 'ARCH9',
+})
+assert.equal(missingIdMappings[0].property24AgentId, '')
+assert.equal(missingIdMappings[0].property24Name, '')
+assert.equal(missingIdMappings[0].matchStatus, 'unmapped')
+
 const partialSettings = normalizeProperty24Settings({
   enabled: true,
   environment: 'exdev',
@@ -83,11 +98,22 @@ assert.match(settingsPageSource, /sample\.errorMessage/)
 assert.match(settingsPageSource, /invalidFields/)
 assert.match(settingsPageSource, /async function persistProperty24Settings/)
 assert.match(settingsPageSource, /Save connection/)
-assert.match(settingsPageSource, /Advanced: Property24 Agent Records/)
+assert.match(settingsPageSource, /Property24 is connected/)
+assert.match(settingsPageSource, /Connect Agents/)
+assert.match(settingsPageSource, /Sync Status/)
+assert.match(settingsPageSource, /Advanced settings/)
+assert.match(settingsPageSource, /Property24 Agent Records/)
+assert.match(settingsPageSource, /Agent Mapping References/)
+assert.doesNotMatch(settingsPageSource, /title="Agent Mapping"/)
+assert.doesNotMatch(settingsPageSource, /title="Operational Health"/)
 assert.match(settingsPageSource, /function SourceReferenceInput/)
 assert.match(settingsPageSource, /onBlur=\{commitDraft\}/)
 assert.match(settingsPageSource, /Synced and saved/)
 assert.match(settingsPageSource, /Created and saved/)
+assert.match(settingsPageSource, /selectableProperty24Agents/)
+assert.match(settingsPageSource, /Property24 returned/)
+assert.match(settingsPageSource, /No Property24 profiles with IDs synced/)
+assert.match(settingsPageSource, /Can't find this agent\? Create on Property24/)
 
 const property24ClientSource = fs.readFileSync(new URL('../server/services/property24Client.js', import.meta.url), 'utf8')
 assert.match(property24ClientSource, /'errorMessage'/)

@@ -138,11 +138,14 @@ export function createProperty24AgentMappingPlan({
     .map(normalizeArch9AgentCandidate)
     .filter((agent) => agent.status !== 'inactive' && (isArch9AgentRole(agent.role) || agent.email || agent.sourceReference))
   const externalAgents = property24Agents.map(normalizeProperty24Agent)
+  const matchableExternalAgents = externalAgents.filter((agent) => agent.property24AgentId)
+  const missingIdExternalAgents = externalAgents.filter((agent) => !agent.property24AgentId)
   const activeMappings = existingMappings.map(normalizeExistingAgentMapping).filter((mapping) => mapping.status !== 'inactive')
 
-  const externalById = groupBy(externalAgents, (agent) => agent.property24AgentId)
-  const externalByEmail = groupBy(externalAgents, (agent) => agent.email)
-  const externalBySourceReference = groupBy(externalAgents, (agent) => normalizeLower(agent.sourceReference))
+  const externalById = groupBy(matchableExternalAgents, (agent) => agent.property24AgentId)
+  const externalByEmail = groupBy(matchableExternalAgents, (agent) => agent.email)
+  const externalBySourceReference = groupBy(matchableExternalAgents, (agent) => normalizeLower(agent.sourceReference))
+  const missingIdByEmail = groupBy(missingIdExternalAgents, (agent) => agent.email)
   const mappingByLocalId = groupBy(activeMappings, (mapping) => mapping.userId || mapping.profileId)
   const matchedExternalIds = new Set()
   const mappings = []
@@ -199,6 +202,18 @@ export function createProperty24AgentMappingPlan({
       continue
     }
 
+    const missingIdMatches = agent.email ? missingIdByEmail.get(agent.email) || [] : []
+    if (missingIdMatches.length) {
+      needsReview.push({
+        status: 'needs_review',
+        reason: 'property24_agent_missing_id',
+        arch9Agent: agent,
+        candidates: missingIdMatches,
+        suggestedSourceReference: createSuggestedAgentSourceReference(agent, sourceReferencePrefix),
+      })
+      continue
+    }
+
     needsReview.push({
       status: 'unmapped',
       reason: agent.email ? 'no_property24_agent_with_matching_email' : 'arch9_agent_missing_email',
@@ -207,12 +222,13 @@ export function createProperty24AgentMappingPlan({
     })
   }
 
-  const unmappedProperty24Agents = externalAgents.filter((agent) => !matchedExternalIds.has(agent.property24AgentId))
+  const unmappedProperty24Agents = matchableExternalAgents.filter((agent) => !matchedExternalIds.has(agent.property24AgentId))
 
   return {
     summary: {
       arch9AgentCount: localAgents.length,
       property24AgentCount: externalAgents.length,
+      property24AgentMissingIdCount: missingIdExternalAgents.length,
       mappedCount: mappings.length,
       needsReviewCount: needsReview.length,
       unmappedProperty24AgentCount: unmappedProperty24Agents.length,

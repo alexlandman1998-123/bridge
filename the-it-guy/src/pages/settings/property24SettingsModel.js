@@ -121,7 +121,8 @@ export function normalizeProperty24Settings(settings = {}) {
 function buildExternalLookups(property24Agents = []) {
   return property24Agents.reduce((lookups, agent) => {
     const normalized = normalizeProperty24AgentRow(agent)
-    if (normalized.property24AgentId) lookups.byId.set(normalized.property24AgentId, normalized)
+    if (!normalized.property24AgentId) return lookups
+    lookups.byId.set(normalized.property24AgentId, normalized)
     if (normalized.email) lookups.byEmail.set(normalized.email, [...(lookups.byEmail.get(normalized.email) || []), normalized])
     if (normalized.sourceReference) lookups.bySourceReference.set(normalizeLower(normalized.sourceReference), normalized)
     return lookups

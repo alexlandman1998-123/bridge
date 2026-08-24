@@ -5,6 +5,7 @@ import {
   CalendarDays,
   CheckCircle2,
   CheckSquare,
+  ChevronDown,
   ChevronRight,
   ClipboardList,
   Copy,
@@ -14,6 +15,8 @@ import {
   Filter,
   Home,
   Mail,
+  MessageCircle,
+  Pencil,
   Phone,
   Plus,
   RefreshCw,
@@ -845,6 +848,191 @@ function getDeveloperLeadNextAction(lead = {}) {
   }
 }
 
+function getLeadWorkspaceReadiness(journeyStages = []) {
+  const stages = Array.isArray(journeyStages) ? journeyStages : []
+  if (!stages.length) {
+    return {
+      score: 0,
+      completedLabel: '0/0 steps complete',
+      statusLabel: 'Captured',
+    }
+  }
+  const currentIndex = Math.max(0, stages.findIndex((stage) => stage.state === 'current'))
+  const completedCount = stages.filter((stage) => stage.state === 'completed').length
+  const effectiveStep = currentIndex >= 0 ? currentIndex + 1 : Math.min(completedCount + 1, stages.length)
+  const score = Math.max(0, Math.min(100, Math.round((effectiveStep / stages.length) * 100)))
+  const currentStage = stages[currentIndex] || stages.find((stage) => stage.state === 'current') || stages[0]
+
+  return {
+    score,
+    completedLabel: `${completedCount}/${stages.length} steps complete`,
+    statusLabel: currentStage?.label || 'Captured',
+  }
+}
+
+function getLeadWorkspaceContextLine({ lead = {}, developmentLabel = '', leadUnits = [] } = {}) {
+  const preferredUnitId = normalizeText(lead.preferredUnitId)
+  const preferredUnit = preferredUnitId ? leadUnits.find((unit) => unit.id === preferredUnitId) : null
+  const unitLabel = normalizeText(
+    preferredUnit?.unitNumber ||
+      preferredUnit?.unit_number ||
+      preferredUnit?.name ||
+      preferredUnit?.title,
+  )
+  const development = normalizeText(developmentLabel)
+  if (unitLabel && development) return `${unitLabel}, ${development}`
+  if (development && development !== 'Unallocated') return development
+  return normalizeText(lead.unitTypeInterest) || 'Property interest pending'
+}
+
+function getLeadWorkspaceFinanceLabel(lead = {}, onboardingProfile = {}) {
+  const financeRows = Array.isArray(onboardingProfile.financeRows) ? onboardingProfile.financeRows : []
+  const financeType = financeRows.find((row) => row.label === 'Finance type')?.value
+  const managedBy = financeRows.find((row) => row.label === 'Finance managed by')?.value
+  return firstFilled(lead.financeManagedBy, lead.financeRoute, financeType, managedBy, 'Not captured')
+}
+
+function getLeadWorkspaceUrgency(lead = {}, handoff = {}) {
+  const leadStatus = normalizeLower(lead.leadStatus || 'new')
+  if (leadStatus === 'onboarding_submitted' || leadStatus === 'otp' || isConvertedLead(lead)) {
+    return { value: 'High', helper: 'Act now' }
+  }
+  if (handoff?.eligible || leadStatus === 'onboarding_sent') {
+    return { value: 'Medium', helper: 'Active step' }
+  }
+  return { value: 'Normal', helper: 'Build readiness' }
+}
+
+function getLeadWorkspaceReadinessRows({
+  lead = {},
+  budget = '',
+  onboardingProfile = {},
+  journeyReadiness = {},
+  handoff = {},
+} = {}) {
+  const interestedCount = Array.isArray(lead.interestedDevelopmentIds) ? lead.interestedDevelopmentIds.length : 0
+  const signalCount = Math.max(interestedCount, lead.primaryDevelopmentId ? 1 : 0)
+  const urgency = getLeadWorkspaceUrgency(lead, handoff)
+  return [
+    {
+      key: 'budget',
+      label: 'Budget',
+      value: budget,
+      helper: budget === 'Open budget' ? 'Needs capture' : 'Captured',
+      Icon: Home,
+    },
+    {
+      key: 'financing',
+      label: 'Financing',
+      value: getLeadWorkspaceFinanceLabel(lead, onboardingProfile),
+      helper: onboardingProfile.hasOnboarding ? 'Buyer submitted' : 'Lead signal',
+      Icon: CheckSquare,
+    },
+    {
+      key: 'saved_searches',
+      label: 'Saved Searches',
+      value: signalCount ? String(signalCount) : '0',
+      helper: signalCount === 1 ? 'Active signal' : 'Active signals',
+      Icon: ClipboardList,
+    },
+    {
+      key: 'match_score',
+      label: 'Match Score',
+      value: `${journeyReadiness.score || 0}%`,
+      helper: handoff?.eligible ? 'Good fit' : 'Needs setup',
+      Icon: TrendingUp,
+    },
+    {
+      key: 'urgency',
+      label: 'Urgency',
+      value: urgency.value,
+      helper: urgency.helper,
+      Icon: Zap,
+    },
+  ]
+}
+
+function getOnboardingFinanceValue(onboardingProfile = {}, label = '') {
+  const rows = Array.isArray(onboardingProfile.financeRows) ? onboardingProfile.financeRows : []
+  return rows.find((row) => row.label === label)?.value || ''
+}
+
+function getDeveloperLeadQualificationRows({
+  lead = {},
+  budget = '',
+  onboardingProfile = {},
+  developmentLabel = '',
+  headerContextLine = '',
+  qualificationNote = '',
+} = {}) {
+  const formData = getLeadOnboardingFormData(lead)
+  const finance = isPlainObject(formData.finance) ? formData.finance : {}
+  const purchaser = getPrimaryOnboardingPurchaser(formData)
+  const preferredAreas = firstFilled(
+    formData.preferred_areas,
+    formData.preferredAreas,
+    Array.isArray(formData.area_interest) ? formData.area_interest.join(', ') : formData.area_interest,
+    Array.isArray(lead.interestedDevelopmentIds) && lead.interestedDevelopmentIds.length ? developmentLabel : '',
+    headerContextLine,
+  )
+  const moveTimeframe = firstFilled(
+    formData.move_timeframe,
+    formData.moveTimeframe,
+    formData.purchase_timeframe,
+    purchaser.move_timeframe,
+  )
+  const financeType = firstFilled(
+    getOnboardingFinanceValue(onboardingProfile, 'Finance type'),
+    lead.financeRoute,
+    lead.financeManagedBy,
+  )
+  const subjectToFinance = firstFilled(finance.subject_to_finance, formData.subject_to_finance)
+  const depositAvailable = firstFilled(
+    getOnboardingFinanceValue(onboardingProfile, 'Cash contribution available'),
+    finance.deposit_available,
+    finance.cash_contribution_available,
+    formData.deposit_available,
+  )
+  const preApprovalStatus = firstFilled(
+    getOnboardingFinanceValue(onboardingProfile, 'Pre-approval completed'),
+    finance.pre_approval_status,
+    finance.bond_preapproval_completed,
+    formData.pre_approval_status,
+  )
+  const propertyToSell = firstFilled(
+    formData.property_to_sell_first,
+    formData.property_to_sell,
+    purchaser.property_to_sell_first,
+  )
+  const propertyNeed = firstFilled(lead.unitTypeInterest, formData.property_need, formData.propertyNeed)
+
+  return [
+    { label: 'Budget', value: budget === 'Open budget' ? '' : budget, Icon: Home },
+    { label: 'Preferred areas', value: preferredAreas, Icon: Home },
+    { label: 'Move timeframe', value: moveTimeframe, Icon: CalendarDays },
+    { label: 'Cash or bond', value: financeType, Icon: CheckSquare },
+    { label: 'Subject to finance', value: subjectToFinance, Icon: FileText },
+    { label: 'Deposit available', value: depositAvailable, Icon: ClipboardList },
+    { label: 'Pre-approval status', value: preApprovalStatus, Icon: ShieldCheck },
+    { label: 'Property to sell first', value: propertyToSell, Icon: Home },
+    { label: 'Property need', value: propertyNeed, Icon: UserPlus },
+    { label: 'Call notes', value: qualificationNote, Icon: MessageCircle, wide: true },
+  ].map((row) => ({
+    ...row,
+    value: firstFilled(row.value, 'Not captured'),
+  }))
+}
+
+function getDeveloperQualificationStatusMeta(capturedCount = 0, totalCount = 0) {
+  if (totalCount && capturedCount >= totalCount) {
+    return { label: 'Qualified', className: 'border-[#d8efe4] bg-[#f1fbf6] text-[#17613d]' }
+  }
+  if (capturedCount > 0) {
+    return { label: 'In progress', className: 'border-[#f0dfb8] bg-[#fff9ec] text-[#8a5a12]' }
+  }
+  return { label: 'Needs qualification', className: 'border-[#d7e6f2] bg-[#f8fbfd] text-[#60758b]' }
+}
+
 function ReleasedDeveloperLeadConversionPanel({
   queue,
   summary,
@@ -1487,6 +1675,12 @@ function DeveloperLeadWorkspacePanel({
   const [selectedPreferredUnitId, setSelectedPreferredUnitId] = useState('')
   const [qualificationNote, setQualificationNote] = useState('')
   const [nextActionNote, setNextActionNote] = useState('')
+  const [activityDraft, setActivityDraft] = useState({
+    type: 'Call',
+    outcome: '',
+    note: '',
+    setAsNextAction: false,
+  })
 
   useEffect(() => {
     setActiveTab('overview')
@@ -1501,6 +1695,15 @@ function DeveloperLeadWorkspacePanel({
     setQualificationNote(normalizeText(lead?.qualificationNote))
     setNextActionNote(normalizeText(lead?.nextActionNote))
   }, [lead?.qualificationNote, lead?.nextActionNote, lead?.developerLeadId])
+
+  useEffect(() => {
+    setActivityDraft({
+      type: 'Call',
+      outcome: '',
+      note: '',
+      setAsNextAction: false,
+    })
+  }, [lead?.developerLeadId])
 
   useEffect(() => {
     let cancelled = false
@@ -1566,6 +1769,29 @@ function DeveloperLeadWorkspacePanel({
     sourceLabel,
     handoverRequired,
   })
+  const journeyReadiness = getLeadWorkspaceReadiness(journeyStages)
+  const headerContextLine = getLeadWorkspaceContextLine({ lead, developmentLabel, leadUnits })
+  const headerReadinessRows = getLeadWorkspaceReadinessRows({
+    lead,
+    budget,
+    onboardingProfile,
+    journeyReadiness,
+    handoff,
+  })
+  const qualificationRows = getDeveloperLeadQualificationRows({
+    lead,
+    budget,
+    onboardingProfile,
+    developmentLabel,
+    headerContextLine,
+    qualificationNote,
+  })
+  const qualificationCapturedCount = qualificationRows.filter((row) => row.value !== 'Not captured').length
+  const qualificationTotalCount = qualificationRows.length
+  const qualificationProgressPercent = qualificationTotalCount
+    ? Math.round((qualificationCapturedCount / qualificationTotalCount) * 100)
+    : 0
+  const qualificationStatusMeta = getDeveloperQualificationStatusMeta(qualificationCapturedCount, qualificationTotalCount)
   const workspaceTabs = [
     { key: 'overview', label: 'Overview', meta: '' },
     { key: 'buyer_profile', label: 'Buyer Profile', meta: handoverRequired ? 'Protected' : '' },
@@ -1614,6 +1840,36 @@ function DeveloperLeadWorkspacePanel({
       updates.previousLeadStatus = leadStatus
     }
     onUpdateLeadSetup(lead, updates)
+  }
+
+  function handleLogActivity(event) {
+    event.preventDefault()
+    const normalizedNote = normalizeText(activityDraft.note)
+    const normalizedOutcome = normalizeText(activityDraft.outcome)
+    const activitySummary = [
+      activityDraft.type,
+      normalizedOutcome,
+      normalizedNote,
+    ].filter(Boolean).join(' - ')
+    const mergedQualificationNote = [
+      normalizeText(qualificationNote),
+      activitySummary,
+    ].filter(Boolean).join('\n\n')
+    const nextActionFromActivity = normalizedNote || normalizedOutcome || `${activityDraft.type} follow-up`
+
+    setQualificationNote(mergedQualificationNote)
+    if (activityDraft.setAsNextAction) setNextActionNote(nextActionFromActivity)
+    onUpdateLeadSetup(lead, {
+      qualificationNote: mergedQualificationNote,
+      nextActionNote: activityDraft.setAsNextAction ? nextActionFromActivity : normalizeText(nextActionNote),
+      activityNote: activitySummary || `${activityDraft.type} touchpoint captured.`,
+    })
+    setActivityDraft({
+      type: activityDraft.type,
+      outcome: '',
+      note: '',
+      setAsNextAction: false,
+    })
   }
 
   function renderStageCompletionAction(action, { compact = false } = {}) {
@@ -1690,30 +1946,102 @@ function DeveloperLeadWorkspacePanel({
   return (
     <section className="grid min-w-0 gap-5" data-developer-lead-workspace="true">
       <div className="overflow-hidden rounded-[24px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_16px_42px_rgba(31,54,78,0.06)]">
-        <div className="flex flex-col gap-5 border-b border-[#edf3f8] px-5 py-5 sm:px-7 lg:flex-row lg:items-start lg:justify-between">
-          <div className="min-w-0">
-            <button type="button" className="mb-4 inline-flex items-center gap-2 text-sm font-semibold text-[#60758d] hover:text-[#17613d]" onClick={onClose}>
+        <div className="border-b border-[#edf3f8] px-5 py-5 sm:px-7">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <button type="button" className="inline-flex items-center gap-2 text-sm font-semibold text-[#60758d] transition hover:text-[#17613d]" onClick={onClose}>
               <ArrowLeft size={16} />
-              Back to leads
+              Back to Leads
             </button>
-            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#6d839b]">Buyer Lead Workspace</p>
-            <h2 className="mt-2 truncate text-3xl font-semibold tracking-[-0.04em] text-[#102033]">{title}</h2>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-[#60758d]">{subtitle}</p>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <span className="inline-flex h-8 items-center rounded-full border border-[#dbe6f1] bg-[#f8fbff] px-3 text-xs font-semibold text-[#4d6782]">{getLeadSourceLabel(lead.leadSource)}</span>
-              <StatusBadge status={lead.leadStatus} />
-              <span className={`inline-flex h-8 items-center rounded-full border px-3 text-xs font-semibold ${getHandoffTone(handoff.status)}`}>
-                {converted ? 'Transaction created' : handoff.label}
-              </span>
-            </div>
+            <span className="sr-only">Buyer Lead Workspace</span>
+            <details className="group relative">
+              <summary className="flex min-h-11 cursor-pointer list-none items-center gap-3 rounded-[14px] border border-[#d9e5f2] bg-white px-4 text-sm font-semibold text-[#102033] shadow-[0_10px_24px_rgba(31,54,78,0.06)] transition hover:border-[#bfd0e0]">
+                Actions
+                <ChevronDown size={16} className="transition group-open:rotate-180" />
+              </summary>
+              <div className="absolute right-0 z-30 mt-2 grid min-w-[260px] gap-2 rounded-[16px] border border-[#dbe7f2] bg-white p-2 shadow-[0_18px_44px_rgba(16,38,61,0.16)]">
+                <Button type="button" variant="secondary" className="justify-start" onClick={onClose}>
+                  <ArrowLeft size={16} />
+                  Lead Table
+                </Button>
+                {renderCopyOnboardingAction()}
+                {renderPrimaryAction()}
+              </div>
+            </details>
           </div>
-          <div className="flex flex-wrap gap-2 lg:justify-end">
-            <Button type="button" variant="secondary" onClick={onClose}>
-              <ArrowLeft size={16} />
-              Lead Table
-            </Button>
-            {renderCopyOnboardingAction()}
-            {renderPrimaryAction()}
+
+          <div className="mt-8 overflow-hidden rounded-[24px] border border-[#dbe7f2] bg-white shadow-[0_18px_42px_rgba(31,54,78,0.08)]">
+            <div className="grid lg:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.95fr)]">
+              <div className="relative flex min-h-[330px] flex-col justify-between overflow-hidden bg-[#082b46] px-6 py-7 text-white sm:px-10 lg:px-12">
+                <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_0%,rgba(47,123,158,0.32),transparent_34%),linear-gradient(145deg,rgba(5,31,52,0.12),rgba(5,31,52,0.92))]" />
+                <div className="relative">
+                  <div className="flex flex-wrap gap-2">
+                    <span className="inline-flex h-8 items-center rounded-full border border-[#2b74b7] bg-[#0c3760] px-4 text-xs font-semibold text-white">Buyer Lead</span>
+                    <span className="inline-flex h-8 items-center rounded-full border border-white/10 bg-white/10 px-4 text-xs font-semibold text-[#d9e8f5]">Qualification</span>
+                  </div>
+                  <h2 className="mt-10 max-w-4xl text-[clamp(2.5rem,6vw,4.6rem)] font-semibold leading-[0.98] tracking-[-0.06em] text-white">
+                    {title}
+                  </h2>
+                  <p className="mt-7 flex max-w-3xl items-center gap-3 text-lg font-semibold text-[#d8e5f0]">
+                    <Home size={21} className="shrink-0 text-[#9fb8ce]" />
+                    <span className="min-w-0 truncate">{headerContextLine}</span>
+                  </p>
+                </div>
+                <div className="relative mt-10 flex flex-wrap gap-x-6 gap-y-3 text-sm font-semibold text-[#d8e5f0] sm:text-base">
+                  <span className="inline-flex min-w-0 items-center gap-2">
+                    <Phone size={18} className="shrink-0 text-[#9fb8ce]" />
+                    <span className="truncate">{getLeadContactLine(lead, 'phone')}</span>
+                  </span>
+                  <span className="inline-flex min-w-0 items-center gap-2">
+                    <Mail size={18} className="shrink-0 text-[#9fb8ce]" />
+                    <span className="truncate">{getLeadContactLine(lead, 'email')}</span>
+                  </span>
+                  <span className="inline-flex min-w-0 items-center gap-2">
+                    <UserPlus size={18} className="shrink-0 text-[#9fb8ce]" />
+                    <span className="truncate">{assignedLabel}</span>
+                  </span>
+                </div>
+              </div>
+
+              <div className="bg-white px-6 py-7 sm:px-8 lg:px-10">
+                <p className="text-[0.78rem] font-semibold uppercase tracking-[0.28em] text-[#425a74]">Buyer Readiness</p>
+                <div className="mt-7 grid gap-7 xl:grid-cols-[220px_minmax(0,1fr)] xl:items-center">
+                  <div className="flex flex-col items-center">
+                    <div
+                      className="grid h-44 w-44 place-items-center rounded-full shadow-[inset_0_0_0_1px_rgba(219,231,242,0.9)]"
+                      style={{ background: `conic-gradient(#2f87aa ${journeyReadiness.score}%, #e8eef6 0)` }}
+                    >
+                      <div className="grid h-28 w-28 place-items-center rounded-full bg-white shadow-[0_14px_34px_rgba(31,54,78,0.12)]">
+                        <span className="text-4xl font-semibold tracking-[-0.04em] text-[#102033]">{journeyReadiness.score}</span>
+                      </div>
+                    </div>
+                    <strong className="mt-6 text-xl font-semibold text-[#102033]">{journeyReadiness.statusLabel}</strong>
+                    <span className="mt-2 text-sm font-semibold text-[#6d839b]">{journeyReadiness.completedLabel}</span>
+                  </div>
+
+                  <div className="overflow-hidden rounded-[22px] border border-[#dbe7f2]">
+                    {headerReadinessRows.map(({ key, label, value, helper, Icon }) => (
+                      <div key={key} className="grid min-h-[76px] grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-b border-[#e8eff6] px-5 py-3 last:border-b-0">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <Icon size={19} className="shrink-0 text-[#315b7a]" />
+                          <span className="truncate text-lg font-semibold text-[#20364c]">{label}</span>
+                        </div>
+                        <div className="min-w-0 text-right">
+                          <strong className="block max-w-[150px] truncate text-base font-semibold text-[#6a8098]" title={String(value)}>{value}</strong>
+                          <span className="mt-0.5 block text-sm font-semibold text-[#8aa0b4]">{helper}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="mt-6 flex flex-wrap gap-2">
+                  <span className="inline-flex h-8 items-center rounded-full border border-[#dbe6f1] bg-[#f8fbff] px-3 text-xs font-semibold text-[#4d6782]">{sourceLabel}</span>
+                  <StatusBadge status={lead.leadStatus} />
+                  <span className={`inline-flex h-8 items-center rounded-full border px-3 text-xs font-semibold ${getHandoffTone(handoff.status)}`}>
+                    {converted ? 'Transaction created' : handoff.label}
+                  </span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -1804,123 +2132,163 @@ function DeveloperLeadWorkspacePanel({
         </div>
       </div>
 
-      <section className="grid gap-5 xl:grid-cols-[0.8fr_1.2fr_0.9fr]">
-        <div className="rounded-[20px] border border-[#dce7f2] bg-white p-5 shadow-[0_10px_30px_rgba(31,54,78,0.045)]">
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="text-[18px] font-semibold text-[#102033]">Next Best Action</h2>
-            <Zap className="h-4 w-4 text-[#24568f]" />
-          </div>
-          <div className="mt-4 rounded-[16px] border border-[#dceafe] bg-[#f8fbff] p-4">
-            <p className="text-sm font-semibold text-[#18324b]">{displayedNextActionLabel}</p>
-            <p className="mt-2 text-sm leading-6 text-[#60758b]">{nextAction.helper}</p>
-          </div>
-          <div className="mt-4 grid gap-3 rounded-[16px] border border-[#e4edf6] bg-white p-4">
+      <section className="grid gap-5 xl:grid-cols-[minmax(460px,0.55fr)_minmax(0,0.45fr)] xl:items-stretch">
+        <form className="flex h-full flex-col rounded-[24px] border border-[#dce7f2] bg-white p-5 shadow-[0_14px_36px_rgba(31,54,78,0.05)]" onSubmit={(event) => {
+          event.preventDefault()
+          handleSaveQualificationPlan()
+        }}>
+          <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <label className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7a8ba3]" htmlFor={`developer-lead-qualification-${lead.developerLeadId}`}>
-                Qualification note
-              </label>
-              <textarea
-                id={`developer-lead-qualification-${lead.developerLeadId}`}
-                className="mt-2 min-h-24 w-full rounded-[12px] border border-[#d9e5f2] bg-white px-3 py-3 text-sm text-[#20364c] outline-none transition focus:border-[#2f7b9e] focus:ring-2 focus:ring-[#d9eaf3]"
-                value={qualificationNote}
-                onChange={(event) => setQualificationNote(event.target.value)}
-                placeholder="Budget, buying intent, unit fit, decision maker..."
-                disabled={setupUpdating}
-              />
-            </div>
-            <div>
-              <label className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7a8ba3]" htmlFor={`developer-lead-next-action-${lead.developerLeadId}`}>
-                Next action
-              </label>
-              <input
-                id={`developer-lead-next-action-${lead.developerLeadId}`}
-                className="mt-2 h-11 w-full rounded-[12px] border border-[#d9e5f2] bg-white px-3 text-sm font-semibold text-[#20364c] outline-none transition focus:border-[#2f7b9e] focus:ring-2 focus:ring-[#d9eaf3]"
-                value={nextActionNote}
-                onChange={(event) => setNextActionNote(event.target.value)}
-                placeholder="Call buyer, book viewing, send onboarding..."
-                disabled={setupUpdating}
-              />
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button type="button" size="sm" variant="secondary" disabled={setupUpdating} onClick={() => handleSaveQualificationPlan()}>
-                <CheckCircle2 size={16} />
-                {setupUpdating ? 'Saving...' : 'Save Plan'}
-              </Button>
-              {!['qualified', 'viewing', 'reserved', 'onboarding_sent', 'onboarding_submitted', 'otp', 'converted'].includes(leadStatus) ? (
-                <Button type="button" size="sm" disabled={setupUpdating} onClick={() => handleSaveQualificationPlan({ markQualified: true })}>
-                  <TrendingUp size={16} />
-                  {setupUpdating ? 'Saving...' : 'Save & Mark Qualified'}
-                </Button>
-              ) : null}
-            </div>
-          </div>
-          <div className="mt-4 grid gap-2">
-            {[
-              ['Buyer Profile', UserPlus, () => setActiveTab('buyer_profile')],
-              ['Transaction Setup / Offer', CheckSquare, () => setActiveTab('onboarding_otp')],
-              ['Development Interest', Home, () => setActiveTab('development')],
-              ['Activity', CalendarDays, () => setActiveTab('activity')],
-            ].map(([label, Icon, onClick]) => (
-              <button
-                key={label}
-                type="button"
-                className="flex w-full items-center gap-3 rounded-[12px] border border-[#dbe6f2] bg-white px-3 py-2.5 text-left text-sm font-semibold text-[#20364c] transition hover:border-[#b9cade] hover:bg-[#fbfdff]"
-                onClick={onClick}
-              >
-                <Icon className="h-4 w-4 text-[#315b7a]" />
-                <span className="min-w-0 flex-1">{label}</span>
-                <ChevronRight className="h-4 w-4 text-[#9aacbf]" />
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="rounded-[20px] border border-[#dce7f2] bg-white p-5 shadow-[0_10px_30px_rgba(31,54,78,0.045)]">
-          <h2 className="text-[18px] font-semibold text-[#102033]">Buyer Intelligence</h2>
-          <div className="mt-4 grid overflow-hidden rounded-[16px] border border-[#e4edf6] sm:grid-cols-2">
-            {[
-              ['Budget', budget, Home],
-              ['Financing', lead.financeManagedBy || lead.financeRoute || 'Not captured', CheckSquare],
-              ['Development', developmentLabel, Home],
-              ['Unit Interest', lead.unitTypeInterest || 'Any unit', ClipboardList],
-              ['Assigned', assignedLabel, UserPlus],
-              ['Stage', getLeadStagePresentation(lead.leadStatus).label, TrendingUp],
-            ].map(([label, value, Icon]) => (
-              <div key={label} className="flex min-h-[74px] items-center gap-3 border-b border-[#e4edf6] px-4 py-3 even:sm:border-l last:border-b-0 sm:[&:nth-last-child(2)]:border-b-0">
-                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[12px] bg-[#eef5fb] text-[#315b7a]">
-                  <Icon className="h-4 w-4" />
+              <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#6d839b]">Buyer Qualification</p>
+              <h2 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-[#102033]">Phone qualification questions</h2>
+              <span className="sr-only">Qualification note</span>
+              <span className="sr-only">Save & Mark Qualified</span>
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <span className="h-2 w-36 overflow-hidden rounded-full bg-[#e8eef5]">
+                  <span className="block h-full rounded-full bg-[#157aaf]" style={{ width: `${qualificationProgressPercent}%` }} />
                 </span>
-                <div className="min-w-0">
-                  <p className="text-[12px] font-semibold text-[#60758b]">{label}</p>
-                  <p className="mt-1 truncate text-sm font-semibold text-[#20364c]" title={String(value)}>{value}</p>
-                </div>
+                <span className="text-sm font-semibold text-[#60758b]">
+                  {qualificationCapturedCount} / {qualificationTotalCount} captured
+                </span>
               </div>
-            ))}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${qualificationStatusMeta.className}`}>
+                {qualificationStatusMeta.label}
+              </span>
+              <Button type="button" size="sm" variant="secondary" onClick={() => setActiveTab('buyer_profile')}>
+                <Pencil size={16} />
+                Edit
+              </Button>
+            </div>
           </div>
-        </div>
 
-        <div className="rounded-[20px] border border-[#dce7f2] bg-white p-5 shadow-[0_10px_30px_rgba(31,54,78,0.045)]">
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="text-[18px] font-semibold text-[#102033]">Recent Activity</h2>
-            <button type="button" className="text-xs font-semibold text-[#24568f]" onClick={() => setActiveTab('activity')}>View all</button>
-          </div>
-          <div className="mt-4 space-y-1">
-            {activityItems.map((item) => {
-              const Icon = item.Icon
+          <div className="mt-5 flex flex-1 flex-col border-t border-[#edf3f8]">
+            {qualificationRows.map((row, rowIndex) => {
+              const isMissing = row.value === 'Not captured'
+              const Icon = row.Icon
               return (
-                <button key={item.key} type="button" className="flex w-full items-start gap-3 rounded-[14px] px-2 py-3 text-left transition hover:bg-[#f8fbff]" onClick={() => setActiveTab('activity')}>
-                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#eef5fb] text-[#315b7a]">
-                    <Icon className="h-4 w-4" />
+                <div key={row.label} className={`grid flex-1 grid-cols-[42px_minmax(0,1fr)] gap-x-4 gap-y-2 border-b border-[#edf3f8] py-3 last:border-b-0 sm:grid-cols-[42px_minmax(170px,0.42fr)_minmax(0,1fr)] ${row.wide ? 'sm:items-start' : 'sm:items-center'} ${rowIndex === 0 ? 'pt-5' : ''}`}>
+                  <span className="grid h-10 w-10 place-items-center rounded-[13px] bg-[#eef5fb] text-[#1d65a6]">
+                    <Icon size={18} />
                   </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-semibold text-[#20364c]">{item.title}</span>
-                    <span className="mt-0.5 block truncate text-xs text-[#60758b]">{item.detail}</span>
+                  <span className="min-w-0 self-center">
+                    <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#536f8f]">{row.label}</span>
                   </span>
-                  <span className="shrink-0 text-xs font-medium text-[#7d91a8]">{formatRelativeTime(item.timestamp)}</span>
-                </button>
+                  <span className="col-start-2 min-w-0 self-center sm:col-start-auto">
+                    <span className={`block text-base leading-6 ${row.wide && !isMissing ? 'max-h-[12rem] overflow-y-auto whitespace-pre-wrap rounded-[12px] border border-[#e4edf6] bg-[#fbfdff] p-3' : 'truncate'} ${isMissing ? 'font-medium text-[#9aa9b8]' : 'font-semibold text-[#102033]'}`} title={String(row.value)}>{row.value}</span>
+                  </span>
+                </div>
               )
             })}
           </div>
+        </form>
+
+        <div className="flex h-full min-w-0 flex-col gap-5">
+          <section className="rounded-[24px] border border-[#17364d] bg-[#102033] p-6 text-white shadow-[0_14px_36px_rgba(16,32,51,0.16)]">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#a8bfd3]">What’s Next</p>
+            <h2 className="mt-3 text-2xl font-semibold tracking-[-0.04em] text-white">{displayedNextActionLabel}</h2>
+            <p className="mt-3 text-base leading-7 text-[#c7d5e2]">{nextAction.helper}</p>
+            <span className="mt-8 grid h-14 w-14 place-items-center rounded-full bg-white/10 text-[#9bd6b7] ring-1 ring-white/15">
+              <CheckSquare size={24} />
+            </span>
+            <div className="mt-7">
+              {renderPrimaryAction()}
+            </div>
+          </section>
+
+          <section className="flex flex-1 flex-col rounded-[24px] border border-[#dce7f2] bg-white p-5 shadow-[0_14px_36px_rgba(31,54,78,0.05)]">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#6d839b]">Activity Logger</p>
+                <h2 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-[#102033]">Capture touchpoint</h2>
+                <span className="sr-only">Next action</span>
+              </div>
+              <Zap size={24} className="text-[#2f7b9e]" />
+            </div>
+
+            <form className="mt-5 flex flex-1 flex-col gap-4" onSubmit={handleLogActivity}>
+              <div className="grid gap-1 rounded-[16px] bg-[#f3f7fb] p-1 sm:grid-cols-5">
+                {[
+                  ['Call', Phone],
+                  ['WhatsApp', MessageCircle],
+                  ['Email', Mail],
+                  ['Note', Pencil],
+                  ['Meeting', CalendarDays],
+                ].map(([label, Icon]) => {
+                  const active = activityDraft.type === label
+                  return (
+                    <button
+                      key={label}
+                      type="button"
+                      className={`flex min-h-12 items-center justify-center gap-2 rounded-[14px] px-3 text-sm font-semibold transition ${active ? 'bg-white text-[#123955] shadow-[0_8px_18px_rgba(31,54,78,0.08)]' : 'text-[#60758b] hover:text-[#123955]'}`}
+                      onClick={() => setActivityDraft((previous) => ({ ...previous, type: label }))}
+                    >
+                      <Icon size={18} />
+                      <span className="hidden sm:inline">{label}</span>
+                    </button>
+                  )
+                })}
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <select
+                  className="h-14 rounded-[14px] border border-[#dbe7f2] bg-white px-4 text-base font-medium text-[#20364c] outline-none transition focus:border-[#2f7b9e] focus:ring-2 focus:ring-[#d9eaf3]"
+                  value={activityDraft.type}
+                  onChange={(event) => setActivityDraft((previous) => ({ ...previous, type: event.target.value }))}
+                >
+                  {['Call', 'WhatsApp', 'Email', 'Note', 'Meeting'].map((option) => (
+                    <option key={option} value={option}>{option}</option>
+                  ))}
+                </select>
+                <select
+                  className="h-14 rounded-[14px] border border-[#dbe7f2] bg-white px-4 text-base font-medium text-[#20364c] outline-none transition focus:border-[#2f7b9e] focus:ring-2 focus:ring-[#d9eaf3]"
+                  value={activityDraft.outcome}
+                  onChange={(event) => setActivityDraft((previous) => ({ ...previous, outcome: event.target.value }))}
+                >
+                  {['', 'Connected', 'No answer', 'Qualified', 'Viewing booked', 'Follow-up needed'].map((option) => (
+                    <option key={option || 'empty-outcome'} value={option}>{option || 'Outcome'}</option>
+                  ))}
+                </select>
+              </div>
+
+              <textarea
+                className="min-h-[150px] flex-1 rounded-[16px] border border-[#dbe7f2] bg-white px-4 py-4 text-base text-[#20364c] outline-none transition placeholder:text-[#9aa9b8] focus:border-[#2f7b9e] focus:ring-2 focus:ring-[#d9eaf3]"
+                value={activityDraft.note}
+                onChange={(event) => setActivityDraft((previous) => ({ ...previous, note: event.target.value }))}
+                placeholder="Add notes about this activity..."
+                disabled={setupUpdating}
+              />
+
+              <label className="inline-flex w-fit items-center gap-2 text-sm font-semibold text-[#60758b]">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-[#cbd8e6]"
+                  checked={activityDraft.setAsNextAction}
+                  onChange={(event) => setActivityDraft((previous) => ({ ...previous, setAsNextAction: event.target.checked }))}
+                />
+                Set as next action
+              </label>
+
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                {!handoverRequired && lead.buyerPhone ? (
+                  <a className="inline-flex h-11 items-center justify-center gap-2 rounded-[14px] border border-[#dbe7f2] px-4 text-sm font-semibold text-[#20364c]" href={`tel:${lead.buyerPhone}`}>
+                    <Phone size={18} />
+                    Call
+                  </a>
+                ) : null}
+                {!handoverRequired && lead.buyerEmail ? (
+                  <a className="inline-flex h-11 items-center justify-center gap-2 rounded-[14px] border border-[#dbe7f2] px-4 text-sm font-semibold text-[#20364c]" href={`mailto:${lead.buyerEmail}`}>
+                    <Mail size={18} />
+                    Email
+                  </a>
+                ) : null}
+                <Button type="submit" disabled={setupUpdating}>
+                  {setupUpdating ? 'Logging...' : 'Log Activity'}
+                </Button>
+              </div>
+            </form>
+          </section>
         </div>
       </section>
 
