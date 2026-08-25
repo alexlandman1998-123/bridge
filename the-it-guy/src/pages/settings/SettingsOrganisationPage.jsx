@@ -31,6 +31,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import AddressAutocomplete from '../../components/location/AddressAutocomplete'
 import Field from '../../components/ui/Field'
+import { useAuthSession } from '../../context/AuthSessionContext'
 import { useOrganisation } from '../../context/OrganisationContext'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import useAttorneyModuleSettings from '../../hooks/useAttorneyModuleSettings'
@@ -1928,6 +1929,7 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
     applyOrganisationState,
     refreshOrganisation,
   } = useOrganisation()
+  const { refreshAuthState } = useAuthSession()
   const [state, setState] = useState(null)
   const [initialState, setInitialState] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -2721,6 +2723,7 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
       }))
       setInitialState(nextState)
       applyOrganisationState(nextState)
+      refreshAuthState?.()
 
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new Event('itg:organisation-branding-updated'))
