@@ -1,10 +1,49 @@
 import { describe, expect, it } from 'vitest'
 import {
   BUSINESS_WORKSPACES,
+  resolveBusinessWorkspaceRolloutAccess,
   resolveBusinessWorkspaceState,
 } from '../businessWorkspaceAccess'
 
 describe('business workspace access', () => {
+  it('allows production rollout access when an agency explicitly enables rentals in Business Lines', () => {
+    const access = resolveBusinessWorkspaceRolloutAccess({
+      enabled: true,
+      requiresAllowlist: true,
+      allowedWorkspaceIdentifiers: ['produktive'],
+      currentWorkspace: {
+        id: 'home-seekers',
+        name: 'Home Seekers',
+        type: 'agency',
+        settingsJson: {
+          businessLines: ['sales', 'rentals'],
+        },
+      },
+    })
+
+    expect(access.enabled).toBe(true)
+    expect(access.reason).toBe('workspace_business_lines_enabled')
+  })
+
+  it('keeps production rollout blocked for non-allowlisted agencies without rentals enabled', () => {
+    const access = resolveBusinessWorkspaceRolloutAccess({
+      enabled: true,
+      requiresAllowlist: true,
+      allowedWorkspaceIdentifiers: ['produktive'],
+      currentWorkspace: {
+        id: 'home-seekers',
+        name: 'Home Seekers',
+        type: 'agency',
+        settingsJson: {
+          businessLines: ['sales'],
+        },
+      },
+    })
+
+    expect(access.enabled).toBe(false)
+    expect(access.reason).toBe('allowlist_miss')
+  })
+
   it('lets principals inherit all enabled agency business lines despite stale user-level line metadata', () => {
     const state = resolveBusinessWorkspaceState({
       enabled: true,

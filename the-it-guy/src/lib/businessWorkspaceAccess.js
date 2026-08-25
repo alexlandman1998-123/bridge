@@ -443,6 +443,15 @@ export function resolveBusinessWorkspaceRolloutAccess({
   if (!enabled) return { enabled: false, reason: 'feature_disabled' }
   if (!requiresAllowlist) return { enabled: true, reason: 'allowlist_not_required' }
 
+  const organisationWorkspaces = resolveOrganisationBusinessWorkspaces({ currentWorkspace, currentMembership })
+  if (organisationWorkspaces.includes(BUSINESS_WORKSPACES.rentals)) {
+    return {
+      enabled: true,
+      reason: 'workspace_business_lines_enabled',
+      workspaceBusinessWorkspaces: organisationWorkspaces,
+    }
+  }
+
   const identifiers = collectBusinessWorkspaceRolloutIdentifiers({
     currentWorkspace,
     currentMembership,
