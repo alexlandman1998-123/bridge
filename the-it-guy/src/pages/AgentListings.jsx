@@ -145,7 +145,7 @@ const QUICK_ADD_INTENT_OPTIONS = [
   {
     value: 'draft',
     label: 'Draft listing',
-    description: 'Capture the essentials now and complete mandate/compliance later.',
+    description: 'Create a draft listing and follow up on mandate/compliance from the workspace.',
     listingStatus: 'draft',
     mandateStatus: 'not_started',
     nextStep: 'property',
@@ -792,12 +792,60 @@ function parseDirectListingPeopleText(value = '', role = 'Person') {
     })
 }
 
+function createListingOwnerCard(index = 0) {
+  return {
+    id: `additional-owner-${Date.now()}-${index}`,
+    fullName: '',
+    phone: '',
+    email: '',
+    idNumber: '',
+  }
+}
+
+function normalizeCreateListingOwnerCards(ownerCards = [], ownerText = '', { includeBlank = false } = {}) {
+  const fromCards = (Array.isArray(ownerCards) ? ownerCards : [])
+    .map((owner, index) => ({
+      id: normalizeText(owner?.id) || `additional-owner-${index + 1}`,
+      fullName: normalizeText(owner?.fullName || owner?.name),
+      phone: normalizeText(owner?.phone || owner?.mobile),
+      email: normalizeText(owner?.email),
+      idNumber: normalizeText(owner?.idNumber || owner?.identityNumber),
+    }))
+
+  if (fromCards.length) return fromCards
+
+  const fromText = parseDirectListingPeopleText(ownerText, 'Owner').map((owner, index) => ({
+    id: normalizeText(owner.id) || `additional-owner-${index + 1}`,
+    fullName: normalizeText(owner.fullName),
+    phone: normalizeText(owner.phone),
+    email: normalizeText(owner.email),
+    idNumber: '',
+  }))
+
+  if (fromText.length) return fromText
+  return includeBlank ? [createListingOwnerCard(1)] : []
+}
+
+function buildCreateListingOwnersText(ownerCards = []) {
+  return (Array.isArray(ownerCards) ? ownerCards : [])
+    .map((owner) => [
+      normalizeText(owner?.fullName || owner?.name),
+      normalizeText(owner?.phone || owner?.mobile),
+      normalizeText(owner?.email),
+      normalizeText(owner?.idNumber || owner?.identityNumber),
+    ].filter(Boolean).join(', '))
+    .filter(Boolean)
+    .join('\n')
+}
+
 function buildDirectListingMapperForm(form = {}) {
+  const multipleOwnersText = normalizeText(form.multipleOwnersText)
+    || buildCreateListingOwnersText(form.multipleOwners)
   return {
     ...form,
     companyDirectors: parseDirectListingPeopleText(form.companyDirectorsText, 'Director'),
     trustees: parseDirectListingPeopleText(form.trusteesText, 'Trustee'),
-    multipleOwners: parseDirectListingPeopleText(form.multipleOwnersText, 'Owner'),
+    multipleOwners: parseDirectListingPeopleText(multipleOwnersText, 'Owner'),
   }
 }
 
@@ -808,7 +856,9 @@ function getQuickAddSellerDisplayName(form = {}) {
   }
   if (legalType === 'trust') return normalizeText(form.trustName || form.sellerName)
   if (legalType === 'multiple_owners') {
-    return normalizeText(form.sellerName || parseDirectListingPeopleText(form.multipleOwnersText, 'Owner')[0]?.fullName)
+    const multipleOwnersText = normalizeText(form.multipleOwnersText)
+      || buildCreateListingOwnersText(form.multipleOwners)
+    return normalizeText(form.sellerName || parseDirectListingPeopleText(multipleOwnersText, 'Owner')[0]?.fullName)
   }
   return [normalizeText(form.sellerName), normalizeText(form.sellerSurname)].filter(Boolean).join(' ').trim()
 }
@@ -2099,6 +2149,7 @@ function buildInitialListingLeadForm(profile, workspace) {
     trustRegistrationNumber: '',
     trusteesText: '',
     multipleOwnersText: '',
+    multipleOwners: [],
     maritalStatus: '',
     spouseName: '',
     spouseEmail: '',
@@ -2882,6 +2933,7 @@ function AgentListings({ initialTab = null } = {}) {
           supportingDocumentFiles: [],
           listingImages: Array.isArray(parsed.listingImages) ? parsed.listingImages : [],
           keySellingPoints: Array.isArray(parsed.keySellingPoints) ? parsed.keySellingPoints : [],
+          multipleOwners: normalizeCreateListingOwnerCards(parsed.multipleOwners, parsed.multipleOwnersText),
           selectedSyndicationChannels: Array.isArray(parsed.selectedSyndicationChannels) && parsed.selectedSyndicationChannels.length
             ? parsed.selectedSyndicationChannels
             : previous.selectedSyndicationChannels,
@@ -2964,6 +3016,9 @@ function AgentListings({ initialTab = null } = {}) {
       }
       if (key === 'listingType') {
         next.listingCategory = normalizeKey(value) === 'rental' ? 'rental' : 'private_sale'
+      }
+      if (key === 'sellerType' && normalizeDirectListingKey(value) === 'multiple_owners') {
+        next.multipleOwners = normalizeCreateListingOwnerCards(previous.multipleOwners, previous.multipleOwnersText, { includeBlank: true })
       }
       return next
     })
@@ -3104,6 +3159,46 @@ function AgentListings({ initialTab = null } = {}) {
       sellerPortalInviteRequested: false,
       sellerPortalDeliveryMethod: '',
     }))
+  }
+
+  function updateCreateListingOwnerCard(ownerId, fallbackIndex, key, value) {
+    setForm((previous) => {
+      const owners = normalizeCreateListingOwnerCards(previous.multipleOwners, previous.multipleOwnersText, { includeBlank: true })
+      const ownerIndex = owners.findIndex((owner) => owner.id === ownerId)
+      const targetIndex = ownerIndex >= 0 ? ownerIndex : fallbackIndex
+      const nextOwners = owners.map((owner, index) => (
+        index === targetIndex ? { ...owner, [key]: value } : owner
+      ))
+      return {
+        ...previous,
+        multipleOwners: nextOwners,
+        multipleOwnersText: buildCreateListingOwnersText(nextOwners),
+      }
+    })
+  }
+
+  function addCreateListingOwnerCard() {
+    setForm((previous) => {
+      const owners = normalizeCreateListingOwnerCards(previous.multipleOwners, previous.multipleOwnersText, { includeBlank: true })
+      const nextOwners = [...owners, createListingOwnerCard(owners.length + 1)]
+      return {
+        ...previous,
+        multipleOwners: nextOwners,
+        multipleOwnersText: buildCreateListingOwnersText(nextOwners),
+      }
+    })
+  }
+
+  function removeCreateListingOwnerCard(ownerId) {
+    setForm((previous) => {
+      const owners = normalizeCreateListingOwnerCards(previous.multipleOwners, previous.multipleOwnersText, { includeBlank: true })
+      const nextOwners = owners.filter((owner) => owner.id !== ownerId)
+      return {
+        ...previous,
+        multipleOwners: nextOwners.length ? nextOwners : [createListingOwnerCard(1)],
+        multipleOwnersText: buildCreateListingOwnersText(nextOwners),
+      }
+    })
   }
 
   function toggleCreateListingSyndicationChannel(channel) {
@@ -5541,14 +5636,11 @@ function AgentListings({ initialTab = null } = {}) {
     const priceLabel = Number(form.listingPrice || form.estimatedAskingPrice || 0)
       ? `R${Number(form.listingPrice || form.estimatedAskingPrice || 0).toLocaleString('en-ZA')}`
       : 'Price not captured'
+    const createListingOwnerCards = normalizeCreateListingOwnerCards(form.multipleOwners, form.multipleOwnersText, { includeBlank: sellerTypeKey === 'multiple_owners' })
 
     return (
       <form className="space-y-5" onSubmit={handleSaveListing} noValidate>
-        <header className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <h1 className="text-3xl font-semibold text-[#142132]">Create Listing</h1>
-            <p className="mt-1 text-sm text-[#607387]">Capture the essentials now, then complete seller and portal requirements from the listing workspace.</p>
-          </div>
+        <header className="flex justify-end">
           <div className="flex flex-wrap items-center gap-2">
             <Button type="button" variant="secondary" disabled={isListingSaving} onClick={saveCreateListingDraftLocally}>
               Save as draft
@@ -5574,8 +5666,8 @@ function AgentListings({ initialTab = null } = {}) {
         {error ? <p className="rounded-[8px] border border-[#f6d4d4] bg-[#fff5f5] px-4 py-3 text-sm font-semibold text-[#b42318]">{error}</p> : null}
         {workflowMessage ? <p className="rounded-[8px] border border-[#d8ecdf] bg-[#eefbf3] px-4 py-3 text-sm font-semibold text-[#1f7d44]">{workflowMessage}</p> : null}
 
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_300px]">
-          <section className="rounded-[8px] border border-[#dde6ef] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">
+        <div>
+          <section className="rounded-[8px] border border-[#dde6ef] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">
             {createListingStep === 'seller' ? (
               <div className="space-y-6">
                 <div className="border-b border-[#e6edf5] pb-5">
@@ -5643,16 +5735,53 @@ function AgentListings({ initialTab = null } = {}) {
                         <span className="text-sm font-semibold text-[#2d445e]">ID number</span>
                         <Field value={form.sellerRegistrationNumber} onChange={(event) => updateForm('sellerRegistrationNumber', event.target.value)} placeholder="Optional" />
                       </label>
-                      {sellerTypeKey === 'multiple_owners' ? (
-                        <div className="grid gap-2 md:col-span-2">
-                          <span className="text-sm font-semibold text-[#2d445e]">Additional owners</span>
-                          <Field as="textarea" value={form.multipleOwnersText} onChange={(event) => updateForm('multipleOwnersText', event.target.value)} placeholder="Owner name, mobile, email - one owner per line" />
-                          <Button type="button" variant="secondary" size="sm" className="justify-self-start" onClick={() => updateForm('multipleOwnersText', `${form.multipleOwnersText}${form.multipleOwnersText ? '\n' : ''}Owner name, mobile, email`)}>
-                            <Plus size={14} />
-                            Add another owner
-                          </Button>
-                        </div>
-                      ) : null}
+	                      {sellerTypeKey === 'multiple_owners' ? (
+	                        <div className="grid gap-3 md:col-span-2 xl:col-span-3">
+	                          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+	                            <div>
+	                              <span className="text-sm font-semibold text-[#2d445e]">Additional owners</span>
+	                              <p className="mt-1 text-xs text-[#607387]">Capture each additional owner separately so mandate, FICA and disclosure follow-ups stay clear.</p>
+	                            </div>
+	                            <Button type="button" variant="secondary" size="sm" onClick={addCreateListingOwnerCard}>
+	                              <Plus size={14} />
+	                              Add owner
+	                            </Button>
+	                          </div>
+	                          <div className="grid gap-3 xl:grid-cols-2">
+	                            {createListingOwnerCards.map((owner, index) => (
+	                              <article key={owner.id} className="rounded-[10px] border border-[#dce6f2] bg-[#fbfdff] p-4">
+	                                <div className="flex items-start justify-between gap-3">
+	                                  <div>
+	                                    <p className="text-sm font-bold text-[#142132]">Owner {index + 2}</p>
+	                                    <p className="mt-1 text-xs text-[#607387]">Additional individual owner</p>
+	                                  </div>
+	                                  <Button type="button" variant="secondary" size="sm" onClick={() => removeCreateListingOwnerCard(owner.id)}>
+	                                    <Trash2 size={14} />
+	                                  </Button>
+	                                </div>
+	                                <div className="mt-4 grid gap-3 md:grid-cols-2">
+	                                  <label className="grid gap-2 md:col-span-2">
+	                                    <span className="text-xs font-bold uppercase tracking-[0.08em] text-[#7b8ca2]">Full name</span>
+	                                    <Field value={owner.fullName} onChange={(event) => updateCreateListingOwnerCard(owner.id, index, 'fullName', event.target.value)} placeholder="Owner full name" />
+	                                  </label>
+	                                  <label className="grid gap-2">
+	                                    <span className="text-xs font-bold uppercase tracking-[0.08em] text-[#7b8ca2]">Mobile</span>
+	                                    <Field value={owner.phone} onChange={(event) => updateCreateListingOwnerCard(owner.id, index, 'phone', event.target.value)} placeholder="082 123 4567" />
+	                                  </label>
+	                                  <label className="grid gap-2">
+	                                    <span className="text-xs font-bold uppercase tracking-[0.08em] text-[#7b8ca2]">Email</span>
+	                                    <Field type="email" value={owner.email} onChange={(event) => updateCreateListingOwnerCard(owner.id, index, 'email', event.target.value)} placeholder="owner@email.com" />
+	                                  </label>
+	                                  <label className="grid gap-2 md:col-span-2">
+	                                    <span className="text-xs font-bold uppercase tracking-[0.08em] text-[#7b8ca2]">ID number</span>
+	                                    <Field value={owner.idNumber} onChange={(event) => updateCreateListingOwnerCard(owner.id, index, 'idNumber', event.target.value)} placeholder="Optional" />
+	                                  </label>
+	                                </div>
+	                              </article>
+	                            ))}
+	                          </div>
+	                        </div>
+	                      ) : null}
                     </div>
                   )}
                 </div>
@@ -6044,48 +6173,10 @@ function AgentListings({ initialTab = null } = {}) {
                   Create Listing
                 </Button>
               )}
-            </div>
-          </section>
-
-          <aside className="grid content-start gap-4">
-            <section className="rounded-[8px] border border-[#dde6ef] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-              <div className="flex items-center gap-3">
-                <span className="inline-flex h-10 w-10 items-center justify-center rounded-[8px] bg-[#f0fbf4] text-[#1f7d44]">
-                  <ShieldCheck size={18} />
-                </span>
-                <div>
-                  <p className="text-sm font-bold text-[#142132]">Seller requirements</p>
-                  <p className="text-xs text-[#607387]">{sellerRequirementSummary.filter((item) => item.complete).length} of {sellerRequirementSummary.length} completed</p>
-                </div>
-              </div>
-              <div className="mt-4 grid gap-3">
-                {sellerRequirementSummary.map((item) => <CreateListingStatusRow key={item.key} label={item.label} complete={item.complete} />)}
-              </div>
-            </section>
-
-            <section className="rounded-[8px] border border-[#dde6ef] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-              <p className="text-sm font-bold text-[#142132]">What happens next?</p>
-              <div className="mt-4 grid gap-3">
-                {CREATE_LISTING_WORKFLOW_STEPS.slice(createListingStepIndex + 1).map((step, index) => (
-                  <div key={step.key} className="flex items-center gap-3 text-sm text-[#607387]">
-                    <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-[#eef2f6] text-xs font-bold text-[#6b7d93]">{createListingStepIndex + index + 2}</span>
-                    <span>{step.label}</span>
-                  </div>
-                ))}
-              </div>
-            </section>
-
-            <section className="rounded-[8px] border border-[#dde6ef] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-              <p className="text-sm font-bold text-[#142132]">Portal validation</p>
-              <div className="mt-4 grid gap-3">
-                {createListingPortalStatuses.map((portal) => (
-                  <CreateListingStatusRow key={portal.key} label={portal.label} complete={portal.missing.length === 0} detail={portal.missing.length ? `${portal.missing.length} missing` : 'Ready'} />
-                ))}
-              </div>
-            </section>
-          </aside>
-        </div>
-      </form>
+	            </div>
+	          </section>
+	        </div>
+	      </form>
     )
   }
 
