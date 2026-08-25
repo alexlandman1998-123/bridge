@@ -44,7 +44,8 @@ const DEMO_NAV = [
   { key: 'overview', label: 'Overview', icon: Home },
   { key: 'progress', label: 'Transfer Journey', icon: CheckCircle2 },
   { key: 'documents', label: 'Your Documents', icon: FileText },
-  { key: 'finance', label: 'Bond Application', icon: FileSignature },
+  { key: 'finance', label: 'Finance', icon: HandCoins },
+  { key: 'bond-application', label: 'Bond Application', icon: FileSignature },
   { key: 'messages', label: 'Messages', icon: Mail },
   { key: 'team', label: 'Your Team', icon: Users },
 ]
@@ -709,7 +710,7 @@ function statusClasses(tone = 'info') {
 
 export default function ProspectBuyerDemo() {
   const { token = '', section = 'overview' } = useParams()
-  const activeSection = ['overview', 'progress', 'documents', 'finance', 'messages', 'team'].includes(section) ? section : 'overview'
+  const activeSection = ['overview', 'progress', 'documents', 'finance', 'bond-application', 'messages', 'team'].includes(section) ? section : 'overview'
   const [config, setConfig] = useState(DEFAULT_BRAND)
   const [loading, setLoading] = useState(true)
   const [demoUploadComplete, setDemoUploadComplete] = useState(false)
@@ -856,7 +857,8 @@ function MobileBuyerPortal({ activeSection, brand, config, token, loading, trans
     overview: '',
     progress: 'Transfer Journey',
     documents: 'Your documents',
-    finance: 'Bond application',
+    finance: 'Finance',
+    'bond-application': 'Bond application',
     team: 'Your team',
   }
 
@@ -891,6 +893,7 @@ function MobileBuyerPortal({ activeSection, brand, config, token, loading, trans
           />
         ) : null}
         {mobileSection === 'finance' ? <MobileFinance brand={brand} demoUploadComplete={demoUploadComplete} onCompleteUpload={onCompleteUpload} token={token} /> : null}
+        {mobileSection === 'bond-application' ? <MobileBondApplication brand={brand} demoUploadComplete={demoUploadComplete} token={token} /> : null}
         {mobileSection === 'team' ? <MobileTeam brand={brand} team={transactionTeam} /> : null}
       </div>
       <MobileBottomNav activeSection={mobileSection} brand={brand} token={token} />
@@ -929,16 +932,16 @@ function MobileHeader({ activeSection, agencyName, logoUrl, brand, title }) {
 function MobileBottomNav({ activeSection, brand, token }) {
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-[#dfe7ee] bg-white/96 px-3 pb-[calc(8px+env(safe-area-inset-bottom))] pt-2 shadow-[0_-14px_32px_rgba(15,23,42,0.12)] backdrop-blur">
-      <div className="mx-auto grid max-w-[430px] grid-cols-5 gap-1">
+      <div className="mx-auto grid max-w-[430px] gap-1" style={{ gridTemplateColumns: `repeat(${MOBILE_DEMO_NAV.length}, minmax(0, 1fr))` }}>
         {MOBILE_DEMO_NAV.map((item) => {
           const Icon = item.icon
           const active = item.key === activeSection
-          const label = item.key === 'progress' ? 'Journey' : item.key === 'documents' ? 'Documents' : item.key === 'finance' ? 'Bond' : item.key === 'team' ? 'Team' : item.label
+          const label = item.key === 'progress' ? 'Journey' : item.key === 'documents' ? 'Docs' : item.key === 'bond-application' ? 'Bond' : item.key === 'team' ? 'Team' : item.label
           return (
             <Link
               key={item.key}
               to={getDemoPath(token, item.key)}
-              className="flex min-h-[52px] flex-col items-center justify-center gap-1 rounded-[14px] text-[0.66rem] font-semibold transition"
+              className="flex min-h-[52px] flex-col items-center justify-center gap-1 rounded-[14px] text-[0.6rem] font-semibold transition"
               style={active ? { color: brand.primary } : { color: '#667085' }}
             >
               <Icon size={18} strokeWidth={active ? 2.4 : 2} />
@@ -1178,12 +1181,65 @@ function MobileFinance({ brand, demoUploadComplete, onCompleteUpload, token }) {
     ...FINANCE_APPLICATION,
     requiredActions: demoUploadComplete ? [] : FINANCE_APPLICATION.requiredActions,
   }
+  const offers = application.bankApplications.filter((bank) => bank.approvedAmount)
+
+  return (
+    <div className="space-y-4">
+      <p className="-mt-2 text-sm leading-5 text-[#52657b]">Track your bond application and bank responses.</p>
+      <section className="rounded-[18px] border border-[#dbe5ef] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+        <div className="flex items-start gap-3">
+          <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full border ${statusClasses('info')}`}>
+            <FileSignature size={20} />
+          </span>
+          <div>
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#667085]">Bond status</p>
+            <h2 className="mt-1 text-base font-semibold text-[#142132]">{application.applicationStatus}</h2>
+            <p className="mt-1 text-sm text-[#52657b]">{application.statusHelper}</p>
+            <p className="mt-3 text-sm font-semibold text-[#142132]">{application.requestedAmount}</p>
+          </div>
+        </div>
+      </section>
+      <BondJourneyTracker brand={brand} currentStageIndex={0} />
+      <CurrentFinanceStatus brand={brand} application={application} demoUploadComplete={demoUploadComplete} onCompleteUpload={onCompleteUpload} />
+      <Link to={getDemoPath(token, 'bond-application')} className="flex min-h-11 items-center justify-center rounded-[12px] text-sm font-semibold text-white" style={{ backgroundColor: brand.primary }}>
+        Open bond application
+      </Link>
+      <section>
+        <h2 className="mb-2 text-base font-semibold text-[#142132]">Your bank applications</h2>
+        <div className="overflow-hidden rounded-[18px] border border-[#dbe5ef] bg-white">
+          {application.bankApplications.slice(0, demoUploadComplete ? 4 : 2).map((bank) => (
+            <MobileBankRow key={bank.bankId} bank={bank} brand={brand} />
+          ))}
+        </div>
+      </section>
+      {offers.length ? (
+        <section>
+          <h2 className="mb-2 text-base font-semibold text-[#142132]">Your bank offers</h2>
+          <div className="space-y-3">
+            {offers.map((offer) => (
+              <OfferCard key={offer.bankId} brand={brand} offer={offer} />
+            ))}
+          </div>
+        </section>
+      ) : null}
+      <Link to={getDemoPath(token, 'documents')} className="flex min-h-11 items-center justify-center rounded-[12px] border border-[#dbe5ef] bg-white text-sm font-semibold" style={{ color: brand.primary }}>
+        View all required documents
+      </Link>
+    </div>
+  )
+}
+
+function MobileBondApplication({ brand, demoUploadComplete, token }) {
+  const application = {
+    ...FINANCE_APPLICATION,
+    requiredActions: demoUploadComplete ? [] : FINANCE_APPLICATION.requiredActions,
+  }
 
   return (
     <div className="space-y-4">
       <DemoBondApplicationForm brand={brand} application={application} compact />
-      <Link to={getDemoPath(token, 'documents')} className="flex min-h-11 items-center justify-center rounded-[12px] border border-[#dbe5ef] bg-white text-sm font-semibold" style={{ color: brand.primary }}>
-        View all required documents
+      <Link to={getDemoPath(token, 'finance')} className="flex min-h-11 items-center justify-center rounded-[12px] border border-[#dbe5ef] bg-white text-sm font-semibold" style={{ color: brand.primary }}>
+        Back to finance
       </Link>
     </div>
   )
@@ -1331,6 +1387,15 @@ function DemoContent({ activeSection, brand, config, heroOverlayStyle, loading, 
         brand={brand}
         demoUploadComplete={demoUploadComplete}
         onCompleteUpload={onCompleteUpload}
+      />
+    )
+  }
+
+  if (activeSection === 'bond-application') {
+    return (
+      <BondApplicationSection
+        brand={brand}
+        demoUploadComplete={demoUploadComplete}
       />
     )
   }
@@ -2065,6 +2130,63 @@ function DocumentDetailPanel({ brand, config, document, onCompleteUpload }) {
 }
 
 function FinanceSection({ brand, demoUploadComplete, onCompleteUpload }) {
+  const [expandedBankId, setExpandedBankId] = useState('standard-bank')
+  const [showApplicationDetails, setShowApplicationDetails] = useState(false)
+  const application = {
+    ...FINANCE_APPLICATION,
+    requiredActions: demoUploadComplete ? [] : FINANCE_APPLICATION.requiredActions,
+  }
+  const currentStageIndex = BOND_JOURNEY_STAGES.findIndex((stage) => stage.id === application.currentStage)
+  const offers = application.bankApplications
+    .filter((bank) => bank.approvedAmount)
+    .sort((first, second) => Number(second.isRecommended) - Number(first.isRecommended))
+
+  return (
+    <div className="space-y-5">
+      <header className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <h1 className="text-3xl font-semibold tracking-[-0.06em] text-[#142132]">Finance</h1>
+          <p className="mt-2 text-base leading-6 text-[#52657b]">Track your bond application and compare bank offers.</p>
+        </div>
+        <div className="flex items-start gap-2 rounded-[14px] px-3 py-2 text-sm text-[#52657b]">
+          <Lock size={15} className="mt-1 shrink-0 text-[#142132]" />
+          <span>Your information is secure<br className="hidden lg:block" /> and encrypted.</span>
+        </div>
+      </header>
+
+      <FinanceSummary application={application} />
+
+      <section className="rounded-[24px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)] lg:p-6">
+        <h2 className="text-xl font-semibold tracking-[-0.04em] text-[#142132]">Your bond journey</h2>
+        <p className="mt-2 text-sm leading-6 text-[#52657b]">Here's where we are in the bond process.</p>
+        <BondJourneyTracker brand={brand} currentStageIndex={currentStageIndex} />
+        <CurrentFinanceStatus
+          brand={brand}
+          application={application}
+          demoUploadComplete={demoUploadComplete}
+          onCompleteUpload={onCompleteUpload}
+        />
+      </section>
+
+      <BankApplicationsSection
+        brand={brand}
+        banks={application.bankApplications}
+        expandedBankId={expandedBankId}
+        onToggleBank={(bankId) => setExpandedBankId((current) => (current === bankId ? '' : bankId))}
+      />
+
+      {offers.length ? <BankOffersSection brand={brand} application={application} offers={offers} /> : null}
+
+      <ApplicationDetailsSection
+        application={application}
+        expanded={showApplicationDetails}
+        onToggle={() => setShowApplicationDetails((value) => !value)}
+      />
+    </div>
+  )
+}
+
+function BondApplicationSection({ brand, demoUploadComplete }) {
   const application = {
     ...FINANCE_APPLICATION,
     requiredActions: demoUploadComplete ? [] : FINANCE_APPLICATION.requiredActions,
