@@ -243,7 +243,7 @@ export default function RentalListingsPage() {
                 onClick={() => navigate('/agent/rentals/listings/new')}
               >
                 <Plus size={16} aria-hidden="true" />
-                Add Listing
+                Quick Add Rental
               </button>
             </div>
           </div>
@@ -260,7 +260,7 @@ export default function RentalListingsPage() {
         <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
           <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
-              <h2 className="text-[1.02rem] font-semibold text-[#142132]">Listings</h2>
+              <h2 className="text-[1.02rem] font-semibold text-[#142132]">Rental Listings</h2>
               <p className="mt-1 text-sm text-[#607387]">
                 Rental stock, landlord readiness, applications, and Property24 rental preparation.
               </p>

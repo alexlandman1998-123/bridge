@@ -73,6 +73,7 @@ export const RENTAL_LISTING_RELEASE_GATE_FIXTURE = Object.freeze({
   bedrooms: 2,
   bathrooms: 2,
   parkingBays: 1,
+  garages: 0,
   garden: false,
   pool: false,
   flatlet: false,

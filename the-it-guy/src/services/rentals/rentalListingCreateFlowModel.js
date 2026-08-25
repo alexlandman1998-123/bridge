@@ -21,6 +21,11 @@ export const RENTAL_LISTING_CREATE_STEPS = Object.freeze([
     label: 'Readiness',
     fields: ['mandateStatus', 'marketingApprovalStatus', 'inspectionStatus'],
   },
+  {
+    key: 'portal',
+    label: 'Portal Fields',
+    fields: ['garages', 'garden', 'pool', 'flatlet', 'mandateEndDate'],
+  },
 ])
 
 function normalizeText(value) {
@@ -35,6 +40,10 @@ function normalizeNumber(value) {
 
 function isFieldComplete(field, form = {}) {
   if (field === 'landlordContact') return Boolean(normalizeText(form.landlordEmail) || normalizeText(form.landlordPhone))
+  if (['garages', 'coveredParking', 'openParking', 'carports'].includes(field)) {
+    const parsed = Number(form[field])
+    return Number.isFinite(parsed) && parsed >= 0
+  }
   if (field === 'monthlyRent' || field === 'depositAmount' || field === 'leasePeriodMonths') return Boolean(normalizeNumber(form[field]))
   return Boolean(normalizeText(form[field]))
 }

@@ -21,6 +21,31 @@ const PROPERTY_TYPE_OPTIONS = Object.freeze([
   { value: 'Studio', label: 'Studio' },
 ])
 
+const PORTAL_FEATURE_FIELDS = Object.freeze([
+  ['garden', 'Garden'],
+  ['pool', 'Pool'],
+  ['flatlet', 'Flatlet'],
+  ['accessGate', 'Access gate'],
+  ['alarm', 'Alarm'],
+  ['electricFencing', 'Electric fencing'],
+  ['securityPost', 'Security post'],
+  ['builtInCupboards', 'Built-in cupboards'],
+  ['fibreInternet', 'Fibre internet'],
+  ['prepaidElectricity', 'Prepaid electricity'],
+  ['prepaidWater', 'Prepaid water'],
+  ['borehole', 'Borehole'],
+  ['backupWater', 'Backup water'],
+  ['solarBackup', 'Solar / inverter'],
+  ['balcony', 'Balcony'],
+  ['patio', 'Patio'],
+  ['builtInBraai', 'Built-in braai'],
+  ['clubhouse', 'Clubhouse'],
+  ['gym', 'Gym'],
+  ['laundry', 'Laundry'],
+  ['scenicView', 'Scenic view'],
+  ['satellite', 'Satellite'],
+])
+
 function formField(name, value, onChange) {
   return {
     value,
@@ -280,6 +305,22 @@ export default function RentalListingCreatePage() {
                 <input {...formField('propertyAddress', form.propertyAddress, updateForm)} placeholder="Street address or complex name" />
               </label>
               <label className="form-field">
+                <span>Unit number</span>
+                <input {...formField('unitNumber', form.unitNumber, updateForm)} placeholder="Unit 12" />
+              </label>
+              <label className="form-field">
+                <span>Complex / building</span>
+                <input {...formField('complexName', form.complexName, updateForm)} placeholder="The Atrium" />
+              </label>
+              <label className="form-field">
+                <span>Street number</span>
+                <input {...formField('streetNumber', form.streetNumber, updateForm)} placeholder="10" />
+              </label>
+              <label className="form-field">
+                <span>Street name</span>
+                <input {...formField('streetName', form.streetName, updateForm)} placeholder="Beach Road" />
+              </label>
+              <label className="form-field">
                 <span>Suburb</span>
                 <input {...formField('suburb', form.suburb, updateForm)} placeholder="Suburb" />
               </label>
@@ -291,7 +332,11 @@ export default function RentalListingCreatePage() {
                 <span>Province</span>
                 <input {...formField('province', form.province, updateForm)} placeholder="Province" />
               </label>
-              <div />
+              <label className="form-field">
+                <span>Postal code</span>
+                <input {...formField('postalCode', form.postalCode, updateForm)} placeholder="8005" />
+              </label>
+              <SelectField label="Portal address display" name="exactAddressVisibility" value={form.exactAddressVisibility} onChange={updateForm} options={RENTAL_SELECT_OPTIONS.exactAddressVisibility} />
               <label className="form-field">
                 <span>Bedrooms</span>
                 <input type="number" min="0" {...formField('bedrooms', form.bedrooms, updateForm)} />
@@ -303,6 +348,50 @@ export default function RentalListingCreatePage() {
               <label className="form-field">
                 <span>Parking bays</span>
                 <input type="number" min="0" {...formField('parkingBays', form.parkingBays, updateForm)} />
+              </label>
+              <label className="form-field">
+                <span>Garages</span>
+                <input type="number" min="0" {...formField('garages', form.garages, updateForm)} placeholder="0" />
+              </label>
+              <label className="form-field">
+                <span>Covered parking</span>
+                <input type="number" min="0" {...formField('coveredParking', form.coveredParking, updateForm)} placeholder="0" />
+              </label>
+              <label className="form-field">
+                <span>Open parking</span>
+                <input type="number" min="0" {...formField('openParking', form.openParking, updateForm)} placeholder="0" />
+              </label>
+              <label className="form-field">
+                <span>Carports</span>
+                <input type="number" min="0" {...formField('carports', form.carports, updateForm)} placeholder="0" />
+              </label>
+              <label className="form-field">
+                <span>En-suite bathrooms</span>
+                <input type="number" min="0" step="0.5" {...formField('enSuiteBathrooms', form.enSuiteBathrooms, updateForm)} />
+              </label>
+              <label className="form-field">
+                <span>Lounges</span>
+                <input type="number" min="0" {...formField('lounges', form.lounges, updateForm)} />
+              </label>
+              <label className="form-field">
+                <span>Dining rooms</span>
+                <input type="number" min="0" {...formField('diningRooms', form.diningRooms, updateForm)} />
+              </label>
+              <label className="form-field">
+                <span>Kitchens</span>
+                <input type="number" min="0" {...formField('kitchens', form.kitchens, updateForm)} />
+              </label>
+              <label className="form-field">
+                <span>Studies</span>
+                <input type="number" min="0" {...formField('studies', form.studies, updateForm)} />
+              </label>
+              <label className="form-field">
+                <span>Storerooms</span>
+                <input type="number" min="0" {...formField('storerooms', form.storerooms, updateForm)} />
+              </label>
+              <label className="form-field">
+                <span>Staff rooms</span>
+                <input type="number" min="0" {...formField('staffRooms', form.staffRooms, updateForm)} />
               </label>
               <label className="form-field">
                 <span>Floor size (m2)</span>
@@ -332,6 +421,14 @@ export default function RentalListingCreatePage() {
               <SelectField label="Landlord type" name="landlordType" value={form.landlordType} onChange={updateForm} options={RENTAL_SELECT_OPTIONS.landlordType} />
               <SelectField label="Rental mandate" name="mandateStatus" value={form.mandateStatus} onChange={updateForm} options={RENTAL_SELECT_OPTIONS.mandateStatus} />
               <SelectField label="Marketing approval" name="marketingApprovalStatus" value={form.marketingApprovalStatus} onChange={updateForm} options={RENTAL_SELECT_OPTIONS.marketingApprovalStatus} />
+              <label className="form-field">
+                <span>Mandate start date</span>
+                <input type="date" {...formField('mandateStartDate', form.mandateStartDate, updateForm)} />
+              </label>
+              <label className="form-field">
+                <span>Mandate end / expiry date</span>
+                <input type="date" {...formField('mandateEndDate', form.mandateEndDate, updateForm)} />
+              </label>
             </div>
           </FormSection>
 
@@ -346,17 +443,58 @@ export default function RentalListingCreatePage() {
                 <input type="number" min="0" {...formField('depositAmount', form.depositAmount, updateForm)} placeholder="37000" />
               </label>
               <label className="form-field">
+                <span>Deposit multiplier</span>
+                <input type="number" min="0" step="0.5" {...formField('depositMultiplier', form.depositMultiplier, updateForm)} placeholder="1.5" />
+              </label>
+              <label className="form-field">
                 <span>Available from</span>
                 <input type="date" {...formField('availableFrom', form.availableFrom, updateForm)} />
+              </label>
+              <label className="form-field">
+                <span>Occupation date</span>
+                <input type="date" {...formField('occupationDate', form.occupationDate, updateForm)} />
               </label>
               <label className="form-field">
                 <span>Lease period months</span>
                 <input type="number" min="1" {...formField('leasePeriodMonths', form.leasePeriodMonths, updateForm)} />
               </label>
+              <SelectField label="Lease period type" name="leasePeriodType" value={form.leasePeriodType} onChange={updateForm} options={RENTAL_SELECT_OPTIONS.leasePeriodType} />
               <SelectField label="Furnished" name="furnishedStatus" value={form.furnishedStatus} onChange={updateForm} options={RENTAL_SELECT_OPTIONS.furnishedStatus} />
               <SelectField label="Pets" name="petsPolicy" value={form.petsPolicy} onChange={updateForm} options={RENTAL_SELECT_OPTIONS.petsPolicy} />
               <SelectField label="Utilities" name="utilitiesPolicy" value={form.utilitiesPolicy} onChange={updateForm} options={RENTAL_SELECT_OPTIONS.utilitiesPolicy} />
               <SelectField label="Inspection" name="inspectionStatus" value={form.inspectionStatus} onChange={updateForm} options={RENTAL_SELECT_OPTIONS.inspectionStatus} />
+              <label className="form-field md:col-span-2">
+                <span>Deposit requirements</span>
+                <input {...formField('depositRequirement', form.depositRequirement, updateForm)} placeholder="One and a half months deposit" />
+              </label>
+              <label className="form-field md:col-span-2">
+                <span>Rental includes</span>
+                <input {...formField('rentalIncludes', form.rentalIncludes, updateForm)} placeholder="Water, Wi-Fi, garden service" />
+              </label>
+              <label className="form-field md:col-span-2">
+                <span>Rental excludes</span>
+                <input {...formField('rentalExcludes', form.rentalExcludes, updateForm)} placeholder="Prepaid electricity, refuse, sewerage" />
+              </label>
+              <label className="form-field">
+                <span>Application fee</span>
+                <input type="number" min="0" {...formField('applicationFee', form.applicationFee, updateForm)} />
+              </label>
+              <label className="form-field">
+                <span>Lease admin fee</span>
+                <input type="number" min="0" {...formField('leaseAdminFee', form.leaseAdminFee, updateForm)} />
+              </label>
+              <label className="form-field">
+                <span>Credit check fee</span>
+                <input type="number" min="0" {...formField('creditCheckFee', form.creditCheckFee, updateForm)} />
+              </label>
+              <label className="form-field">
+                <span>Key deposit</span>
+                <input type="number" min="0" {...formField('keyDepositAmount', form.keyDepositAmount, updateForm)} />
+              </label>
+              <label className="form-field">
+                <span>Utility deposit</span>
+                <input type="number" min="0" {...formField('utilityDepositAmount', form.utilityDepositAmount, updateForm)} />
+              </label>
               <label className="form-field md:col-span-4">
                 <span>Inspection notes</span>
                 <textarea rows={4} {...formField('inspectionNotes', form.inspectionNotes, updateForm)} placeholder="Inspection checklist status, repairs, access notes" />
@@ -477,6 +615,27 @@ export default function RentalListingCreatePage() {
                     values={form.amenities}
                     onToggle={toggleAmenity}
                   />
+                </section>
+
+                <section className="rounded-[12px] border border-[#dbe6f2] bg-[#fbfdff] p-4">
+                  <div>
+                    <p className="text-sm font-semibold text-[#18324b]">Portal feature flags</p>
+                    <p className="mt-1 text-sm text-[#607891]">
+                      Capture explicit yes/no values for the fields portals expose as filters or property features.
+                    </p>
+                  </div>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    {PORTAL_FEATURE_FIELDS.map(([name, label]) => (
+                      <SelectField
+                        key={name}
+                        label={label}
+                        name={name}
+                        value={form[name]}
+                        onChange={updateForm}
+                        options={RENTAL_SELECT_OPTIONS.yesNoUnknown}
+                      />
+                    ))}
+                  </div>
                 </section>
               </div>
             </div>

@@ -80,6 +80,7 @@ for (const readinessField of [
   'propertyTypeId',
   'monthlyRent',
   'availableFrom',
+  'expiryDate',
   'photos',
   'marketingApprovalStatus',
   'mandateStatus',

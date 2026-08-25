@@ -19,6 +19,7 @@ const completeListing = {
   property24SuburbId: 'p24-suburb-123',
   property24PropertyTypeId: 'p24-type-apartment',
   assignedAgentId: 'agent-1',
+  mandateEndDate: '2026-12-31',
   bedrooms: 2,
   bathrooms: 2,
   parkingBays: 1,
@@ -47,15 +48,19 @@ const completeListing = {
 
 const readiness = buildRentalProperty24Readiness(completeListing)
 assert.equal(readiness.version, RENTAL_PROPERTY24_READINESS_VERSION)
-assert.equal(readiness.totalCount, 19)
-assert.equal(readiness.completedCount, 19)
+assert.equal(readiness.totalCount, 20)
+assert.equal(readiness.completedCount, 20)
 assert.equal(readiness.readinessPercent, 100)
 assert.equal(readiness.readyToPublish, true)
 assert.deepEqual(readiness.blockers, [])
 assert.deepEqual(readiness.missingContractFields, [])
 assert.equal(readiness.payloadPreview.listingType, 'Rental')
+assert.equal(readiness.payloadPreview.expiryDate, '2026-12-31')
 assert.equal(readiness.payloadPreview.rentalInfo.monthlyRent, 24500)
 assert.equal(readiness.payloadPreview.rentalInfo.petsAllowed, false)
+assert.equal(readiness.payloadPreview.rentalInfo.occupationDate, '2026-09-01')
+assert.equal(readiness.payloadPreview.rentalInfo.depositAmount, 49000)
+assert.equal(readiness.payloadPreview.property.garages, 1)
 assert.equal(readiness.payloadPreview.property.pool, true)
 assert.equal(readiness.payloadPreview.marketing.photos.length, 2)
 
@@ -91,10 +96,15 @@ for (const expectedBlocker of [
   'contactAgentIds',
   'suburbId',
   'propertyTypeId',
+  'expiryDate',
   'description',
   'photos',
   'petsAllowed',
   'furnishedStatus',
+  'garages',
+  'garden',
+  'pool',
+  'flatlet',
   'marketingApprovalStatus',
   'mandateStatus',
 ]) {

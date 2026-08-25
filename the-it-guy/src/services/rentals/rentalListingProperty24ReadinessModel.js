@@ -27,6 +27,10 @@ function normalizeNumber(value) {
   return Number.isFinite(parsed) ? parsed : null
 }
 
+function asObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+}
+
 function firstText(...values) {
   return values.map(normalizeText).find(Boolean) || ''
 }
@@ -87,13 +91,22 @@ function extractMediaItems(listing = {}, publication = {}) {
 }
 
 function resolveFeatureFlag(listing = {}, publication = {}, facts = {}, rentalInfo = {}, key = '') {
-  const directValue = firstPath({ listing, publication, facts, rentalInfo }, [
+  const propertyProfile = asObject(facts.propertyProfile || facts.property_profile)
+  const portalFeatures = asObject(propertyProfile.portalFeatures || propertyProfile.portal_features || publication.portalFeatures || publication.portal_features)
+  const directValue = firstPath({ listing, publication, facts, rentalInfo, propertyProfile, portalFeatures }, [
     `listing.${key}`,
     `listing.${key}_included`,
     `publication.${key}`,
     `publication.${key}_included`,
+    `publication.portalFeatures.${key}`,
+    `publication.portal_features.${key}`,
     `facts.${key}`,
     `facts.${key}_included`,
+    `facts.propertyProfile.portalFeatures.${key}`,
+    `facts.property_profile.portal_features.${key}`,
+    `propertyProfile.${key}`,
+    `propertyProfile.${key}_included`,
+    `portalFeatures.${key}`,
     `rentalInfo.${key}`,
     `rentalInfo.${key}_included`,
   ])
@@ -103,7 +116,7 @@ function resolveFeatureFlag(listing = {}, publication = {}, facts = {}, rentalIn
     if (['yes', 'true', 'included', 'available', 'has', '1'].includes(normalized)) return { captured: true, value: true, detail: 'Included' }
     if (['no', 'false', 'not_included', 'none', '0'].includes(normalized)) return { captured: true, value: false, detail: 'Not included' }
   }
-  return { captured: true, value: false, detail: 'Defaults to No until captured' }
+  return { captured: false, value: null, detail: 'Not captured' }
 }
 
 function resolvePetsAllowed(value) {
@@ -147,13 +160,15 @@ export function buildRentalProperty24PayloadPreview(listing = {}) {
     publication.garage_count,
     facts.garages,
     facts.garageCount,
+    facts.propertyProfile?.garages,
+    facts.property_profile?.garages,
     rentalInfo.garages,
     rentalInfo.garageCount,
-    row.parkingBays,
   )
 
   return {
     listingType: 'Rental',
+    expiryDate: firstText(listing.expiryDate, listing.expiry_date, listing.mandateEndDate, listing.mandate_end_date, row.mandateEndDate, rentalInfo.mandateEndDate, rentalInfo.mandate_end_date),
     agencyId: firstText(listing.property24AgencyId, listing.property24_agency_id, listing.agencyId, listing.agency_id),
     contactAgentIds: normalizeArray(firstPath(listing, [
       'property24ContactAgentIds',
@@ -174,7 +189,12 @@ export function buildRentalProperty24PayloadPreview(listing = {}) {
       propertyType: row.propertyType,
       bedrooms: row.bedrooms,
       bathrooms: row.bathrooms,
-      garages: garages ?? 0,
+      garages,
+      coveredParking: row.coveredParking,
+      openParking: row.openParking,
+      carports: row.carports,
+      floorSize: row.floorSize,
+      erfSize: row.erfSize,
       garden: garden.value,
       pool: pool.value,
       flatlet: flatlet.value,
@@ -182,8 +202,19 @@ export function buildRentalProperty24PayloadPreview(listing = {}) {
     rentalInfo: {
       monthlyRent: row.monthlyRent,
       depositAmount: row.depositAmount,
+      depositRequirement: row.depositRequirement,
+      depositMultiplier: row.depositMultiplier,
       availableFrom: row.availableFrom,
+      occupationDate: row.occupationDate || row.availableFrom,
       leasePeriodMonths: row.leasePeriodMonths,
+      leasePeriodType: row.leasePeriodType,
+      rentalIncludes: row.rentalIncludes,
+      rentalExcludes: row.rentalExcludes,
+      applicationFee: row.applicationFee,
+      leaseAdminFee: row.leaseAdminFee,
+      creditCheckFee: row.creditCheckFee,
+      keyDepositAmount: row.keyDepositAmount,
+      utilityDepositAmount: row.utilityDepositAmount,
       furnishedStatus: row.furnishedStatus,
       petsAllowed: petsAllowed.value,
       utilitiesPolicy: row.utilitiesPolicy,
@@ -221,11 +252,12 @@ export function buildRentalProperty24Readiness(listing = {}) {
   addItem(items, 'propertyTypeId', 'Property24 property type', Boolean(payloadPreview.property.propertyTypeId), payloadPreview.property.propertyTypeId || row.propertyType || 'Missing Property24 property type id', 'Resolve the Property24 property type id')
   addItem(items, 'monthlyRent', 'Monthly rent', Boolean(row.monthlyRent), row.monthlyRent ? `R${row.monthlyRent}` : 'Missing monthly rent', 'Capture monthly rent')
   addItem(items, 'availableFrom', 'Available from', Boolean(row.availableFrom), row.availableFrom || 'Missing availability date', 'Capture availability date')
+  addItem(items, 'expiryDate', 'Listing expiry', Boolean(payloadPreview.expiryDate), payloadPreview.expiryDate || 'Missing mandate end date', 'Capture mandate end / expiry date')
   addItem(items, 'description', 'Public description', Boolean(payloadPreview.marketing.description), payloadPreview.marketing.description ? 'Description ready' : 'Missing public description', 'Capture a public rental description')
   addItem(items, 'photos', 'Photos', media.length > 0, `${media.length} photo${media.length === 1 ? '' : 's'}`, 'Add at least one listing photo')
   addItem(items, 'petsAllowed', 'Pets allowed', petsAllowed.captured, petsAllowed.detail, 'Capture pets policy')
   addItem(items, 'furnishedStatus', 'Furnished status', Boolean(row.furnishedStatus), row.furnishedStatus || 'Missing furnished status', 'Capture furnished status')
-  addItem(items, 'garages', 'Garages', garages !== null && garages !== undefined, `${garages ?? 0} garage${garages === 1 ? '' : 's'}`, 'Capture garage or parking count')
+  addItem(items, 'garages', 'Garages', garages !== null && garages !== undefined, garages === null || garages === undefined ? 'Missing garage count' : `${garages} garage${garages === 1 ? '' : 's'}`, 'Capture garage count, even if it is 0')
   addItem(items, 'garden', 'Garden flag', garden.captured, garden.detail, 'Capture garden flag')
   addItem(items, 'pool', 'Pool flag', pool.captured, pool.detail, 'Capture pool flag')
   addItem(items, 'flatlet', 'Flatlet flag', flatlet.captured, flatlet.detail, 'Capture flatlet flag')

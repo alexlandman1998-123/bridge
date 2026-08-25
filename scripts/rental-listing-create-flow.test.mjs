@@ -13,6 +13,7 @@ assert.deepEqual(RENTAL_LISTING_CREATE_STEPS.map((step) => step.key), [
   'landlord',
   'terms',
   'readiness',
+  'portal',
 ])
 
 const emptyProgress = buildRentalListingCreateProgress(RENTAL_LISTING_INITIAL_FORM)
@@ -40,8 +41,13 @@ const completeProgress = buildRentalListingCreateProgress({
   landlordName: 'A Landlord',
   landlordPhone: '+27110000000',
   depositAmount: '37000',
+  garages: '0',
+  garden: 'no',
+  pool: 'no',
+  flatlet: 'no',
+  mandateEndDate: '2026-12-31',
 })
-assert.equal(completeProgress.completedSteps, 4)
+assert.equal(completeProgress.completedSteps, 5)
 assert.equal(completeProgress.firstIncompleteStep, '')
 
 console.log('rental listing create flow tests passed')

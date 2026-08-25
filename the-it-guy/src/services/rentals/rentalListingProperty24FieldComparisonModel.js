@@ -109,6 +109,7 @@ const PROPERTY24_RENTAL_FIELD_CONTRACT = Object.freeze([
     property24Field: 'expiryDate',
     requirement: 'Property24 required',
     severity: RENTAL_PROPERTY24_FIELD_SEVERITY.BLOCKER,
+    readinessKey: 'expiryDate',
   },
   {
     key: 'description',
@@ -320,7 +321,7 @@ function getValueForField(key, { listing, row, publication, rentalInfo, payloadP
     case 'availableFrom':
       return payloadPreview.rentalInfo?.availableFrom
     case 'expiryDate':
-      return firstText(listing.expiryDate, listing.expiry_date, listing.mandateEndDate, listing.mandate_end_date)
+      return firstText(listing.expiryDate, listing.expiry_date, listing.mandateEndDate, listing.mandate_end_date, row.mandateEndDate, rentalInfo.mandateEndDate, rentalInfo.mandate_end_date)
     case 'description':
       return payloadPreview.marketing?.description
     case 'title':
