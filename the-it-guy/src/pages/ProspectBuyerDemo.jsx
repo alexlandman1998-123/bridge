@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, Navigate, useParams } from 'react-router-dom'
 import {
   AlertCircle,
+  ArrowLeft,
   Building2,
   CalendarDays,
   CheckCircle2,
@@ -43,7 +44,7 @@ const DEMO_NAV = [
   { key: 'overview', label: 'Overview', icon: Home },
   { key: 'progress', label: 'Transfer Journey', icon: CheckCircle2 },
   { key: 'documents', label: 'Your Documents', icon: FileText },
-  { key: 'finance', label: 'Finance', icon: HandCoins },
+  { key: 'finance', label: 'Bond Application', icon: FileSignature },
   { key: 'messages', label: 'Messages', icon: Mail },
   { key: 'team', label: 'Your Team', icon: Users },
 ]
@@ -380,43 +381,27 @@ const FINANCE_APPLICATION = {
 }
 
 const DEMO_BOND_APPLICATION_SECTIONS = [
-  { key: 'summary', label: 'Summary', status: 'Complete', tone: 'complete' },
   { key: 'personal_details', label: 'Personal details', status: 'Complete', tone: 'complete' },
   { key: 'contact_address', label: 'Contact & address', status: 'Complete', tone: 'complete' },
   { key: 'employment', label: 'Employment', status: 'Complete', tone: 'complete' },
-  { key: 'income_deductions_expenses', label: 'Income & expenses', status: 'Needs review', tone: 'action' },
-  { key: 'banking_liabilities', label: 'Banking & liabilities', status: 'Pending', tone: 'info' },
+  { key: 'income_deductions_expenses', label: 'Income & expenses', status: '2 details needed', tone: 'action' },
+  { key: 'banking_liabilities', label: 'Banking & liabilities', status: 'Not completed', tone: 'neutral' },
   { key: 'loan_details', label: 'Loan details', status: 'Complete', tone: 'complete' },
   { key: 'documents', label: 'Documents', status: '1 missing', tone: 'action' },
-  { key: 'declarations_consents', label: 'Declarations', status: 'Ready', tone: 'info' },
+  { key: 'declarations_consents', label: 'Declaration', status: 'Final step', tone: 'neutral' },
 ]
 
 const DEMO_BOND_APPLICATION_FIELD_GROUPS = {
-  summary: [
-    {
-      title: 'Application summary',
-      helper: 'Prefilled from onboarding, property and finance information.',
-      fields: [
-        { key: 'applicant_name', label: 'Applicant name', value: 'Mia Khumalo', required: true },
-        { key: 'has_co_applicant', label: 'Co-applicant present', value: 'No', type: 'select', options: ['Yes', 'No'] },
-        { key: 'has_surety', label: 'Surety present', value: 'No', type: 'select', options: ['Yes', 'No'] },
-        { key: 'property_reference', label: 'Property reference', value: '2 Pine Avenue, Unit 4', required: true },
-        { key: 'purchase_price', label: 'Purchase price', value: 'R 2 850 000', inputMode: 'decimal', required: true },
-        { key: 'deposit_contribution', label: 'Deposit / contribution', value: 'R 570 000', inputMode: 'decimal' },
-        { key: 'finance_type', label: 'Finance type', value: 'Bond', required: true },
-        { key: 'first_time_home_buyer', label: 'First-time home buyer', value: 'Yes', type: 'select', options: ['Yes', 'No'] },
-      ],
-    },
-  ],
   personal_details: [
     {
       title: 'Primary applicant',
-      helper: 'The buyer confirms the personal information needed by the bond originator and banks.',
+      icon: UserRound,
+      helper: 'Personal details needed by the bond originator and banks.',
       fields: [
-        { key: 'first_names', label: 'First names', value: 'Mia Nomsa', required: true },
-        { key: 'surname', label: 'Surname', value: 'Khumalo', required: true },
-        { key: 'identity_number', label: 'ID number', value: '900512 **** 087', required: true },
-        { key: 'marital_status', label: 'Marital status', value: 'Single', type: 'select', options: ['Single', 'Married', 'Divorced', 'Widowed'], required: true },
+        { key: 'first_names', label: 'First names', value: 'Mia Nomsa', source: 'Prefilled from your buyer profile', required: true },
+        { key: 'surname', label: 'Surname', value: 'Khumalo', source: 'Prefilled from your buyer profile', required: true },
+        { key: 'identity_number', label: 'ID number', value: '900512 **** 087', source: 'Prefilled from onboarding', required: true },
+        { key: 'marital_status', label: 'Marital status', value: 'Single', type: 'select', options: ['Single', 'Married', 'Divorced', 'Widowed'], source: 'Prefilled from onboarding', required: true },
         { key: 'dependants', label: 'Number of dependants', value: '0', inputMode: 'numeric' },
         { key: 'main_residence', label: 'Main residence', value: 'Yes', type: 'select', options: ['Yes', 'No'] },
       ],
@@ -425,13 +410,14 @@ const DEMO_BOND_APPLICATION_FIELD_GROUPS = {
   contact_address: [
     {
       title: 'Contact details',
+      icon: Mail,
       helper: 'Communication and legal notice details used during the application.',
       fields: [
-        { key: 'cellphone_number', label: 'Cellphone number', value: '+27 82 555 0194', required: true },
-        { key: 'email_address', label: 'Email address', value: 'mia.demo@example.com', type: 'email', required: true },
-        { key: 'residential_address', label: 'Residential address', value: '14 Ocean View Drive, Sea Point', required: true },
-        { key: 'residential_city', label: 'City', value: 'Cape Town', required: true },
-        { key: 'postal_code', label: 'Postal code', value: '8005', required: true },
+        { key: 'cellphone_number', label: 'Cellphone number', value: '+27 82 555 0194', source: 'Prefilled from your buyer profile', required: true },
+        { key: 'email_address', label: 'Email address', value: 'mia.demo@example.com', type: 'email', source: 'Prefilled from your buyer profile', required: true },
+        { key: 'residential_address', label: 'Residential address', value: '14 Ocean View Drive, Sea Point', source: 'Prefilled from onboarding', required: true },
+        { key: 'residential_city', label: 'City', value: 'Cape Town', source: 'Prefilled from onboarding', required: true },
+        { key: 'postal_code', label: 'Postal code', value: '8005', source: 'Prefilled from onboarding', required: true },
         { key: 'legal_notice_delivery_method', label: 'Legal notice delivery method', value: 'Email', type: 'select', options: ['Email', 'Residential address', 'Postal address'], required: true },
       ],
     },
@@ -439,10 +425,11 @@ const DEMO_BOND_APPLICATION_FIELD_GROUPS = {
   employment: [
     {
       title: 'Employment',
-      helper: 'A compact version of the employment section from the buyer portal bond application.',
+      icon: Building2,
+      helper: 'Employment information used to prepare the affordability assessment.',
       fields: [
-        { key: 'occupation_status', label: 'Occupation status', value: 'Permanent employee', type: 'select', options: ['Permanent employee', 'Contract employee', 'Self-employed', 'Commission-based', 'Retired'], required: true },
-        { key: 'employer_name', label: 'Employer', value: 'Khumalo Advisory Group', required: true },
+        { key: 'occupation_status', label: 'Occupation status', value: 'Permanent employee', type: 'select', options: ['Permanent employee', 'Contract employee', 'Self-employed', 'Commission-based', 'Retired'], source: 'Prefilled from your profile', required: true },
+        { key: 'employer_name', label: 'Employer', value: 'Khumalo Advisory Group', source: 'Prefilled from your profile', required: true },
         { key: 'nature_of_occupation', label: 'Nature of occupation', value: 'Senior Financial Analyst', required: true },
         { key: 'employment_years', label: 'Employment years', value: '4', inputMode: 'numeric' },
         { key: 'employment_months', label: 'Employment months', value: '7', inputMode: 'numeric' },
@@ -452,21 +439,30 @@ const DEMO_BOND_APPLICATION_FIELD_GROUPS = {
   ],
   income_deductions_expenses: [
     {
-      title: 'Income, deductions & expenses',
-      helper: 'This is the affordability section the buyer would complete before bank submission.',
+      title: 'Monthly income',
+      icon: HandCoins,
+      helper: '',
       fields: [
-        { key: 'gross_salary', label: 'Gross salary', value: 'R 82 000', inputMode: 'decimal', required: true },
-        { key: 'average_commission', label: 'Average commission', value: 'R 8 500', inputMode: 'decimal' },
-        { key: 'tax_paye', label: 'Tax / PAYE', value: 'R 18 200', inputMode: 'decimal' },
-        { key: 'medical_aid', label: 'Medical aid', value: 'R 3 200', inputMode: 'decimal' },
-        { key: 'monthly_expenses', label: 'Monthly living expenses', value: 'R 24 500', inputMode: 'decimal', required: true },
-        { key: 'net_surplus', label: 'Estimated monthly surplus', value: 'R 44 600', readOnly: true },
+        { key: 'gross_salary', label: 'Gross monthly income', value: 'R 85 000', inputMode: 'decimal', source: 'Prefilled from your profile', required: true },
+        { key: 'other_income', label: 'Other income (bonus, commission, etc.)', value: 'R 5 000', inputMode: 'decimal' },
+      ],
+    },
+    {
+      title: 'Monthly commitments',
+      icon: Building2,
+      helper: '',
+      fields: [
+        { key: 'bond_rent', label: 'Bond / rent', value: 'R 18 000', inputMode: 'decimal', required: true },
+        { key: 'vehicle_finance', label: 'Vehicle finance', value: 'R 8 500', inputMode: 'decimal' },
+        { key: 'credit_repayments', label: 'Credit repayments', value: 'R 4 200', inputMode: 'decimal' },
+        { key: 'other_commitments', label: 'Other commitments', value: 'R 0', inputMode: 'decimal' },
       ],
     },
   ],
   banking_liabilities: [
     {
       title: 'Banking & liabilities',
+      icon: Building2,
       helper: 'The banks use this to assess current commitments and debit-order readiness.',
       fields: [
         { key: 'primary_bank_name', label: 'Primary bank / institution', value: 'Standard Bank', required: true },
@@ -481,11 +477,12 @@ const DEMO_BOND_APPLICATION_FIELD_GROUPS = {
   loan_details: [
     {
       title: 'Property & loan details',
+      icon: Home,
       helper: 'The loan instruction prepared for the bond originator and banks.',
       fields: [
-        { key: 'street_or_complex', label: 'Street / complex', value: '2 Pine Avenue', required: true },
-        { key: 'suburb', label: 'Suburb', value: 'Sea Point', required: true },
-        { key: 'amount_to_be_registered', label: 'Amount to be registered', value: 'R 2 280 000', inputMode: 'decimal', required: true },
+        { key: 'street_or_complex', label: 'Street / complex', value: '2 Pine Avenue', source: 'Prefilled from your property', required: true },
+        { key: 'suburb', label: 'Suburb', value: 'Sea Point', source: 'Prefilled from your property', required: true },
+        { key: 'amount_to_be_registered', label: 'Amount to be registered', value: 'R 2 280 000', inputMode: 'decimal', source: 'Prefilled from your offer', required: true },
         { key: 'loan_to_value', label: 'Loan to value', value: '80%', readOnly: true },
         { key: 'selected_banks', label: 'Preferred lenders', value: 'ABSA, FNB, Nedbank, Standard Bank' },
         { key: 'solar_panels_included', label: 'Solar panels included', value: 'No', type: 'select', options: ['Yes', 'No'] },
@@ -494,8 +491,9 @@ const DEMO_BOND_APPLICATION_FIELD_GROUPS = {
   ],
   declarations_consents: [
     {
-      title: 'Declarations & consents',
-      helper: 'The real portal asks buyers to accept these before preparing the submission pack.',
+      title: 'Declaration & consents',
+      icon: Lock,
+      helper: 'These are accepted before the submission pack is prepared.',
       fields: [
         { key: 'loan_processing_consent', label: 'I consent to loan processing and affordability assessment.', value: true, type: 'checkbox', required: true },
         { key: 'credit_bureau_consent', label: 'I consent to credit bureau, fraud and bank-data retrieval checks.', value: true, type: 'checkbox', required: true },
@@ -858,7 +856,7 @@ function MobileBuyerPortal({ activeSection, brand, config, token, loading, trans
     overview: '',
     progress: 'Transfer Journey',
     documents: 'Your documents',
-    finance: 'Finance',
+    finance: 'Bond application',
     team: 'Your team',
   }
 
@@ -935,7 +933,7 @@ function MobileBottomNav({ activeSection, brand, token }) {
         {MOBILE_DEMO_NAV.map((item) => {
           const Icon = item.icon
           const active = item.key === activeSection
-          const label = item.key === 'progress' ? 'Journey' : item.key === 'documents' ? 'Documents' : item.key === 'team' ? 'Team' : item.label
+          const label = item.key === 'progress' ? 'Journey' : item.key === 'documents' ? 'Documents' : item.key === 'finance' ? 'Bond' : item.key === 'team' ? 'Team' : item.label
           return (
             <Link
               key={item.key}
@@ -1180,45 +1178,10 @@ function MobileFinance({ brand, demoUploadComplete, onCompleteUpload, token }) {
     ...FINANCE_APPLICATION,
     requiredActions: demoUploadComplete ? [] : FINANCE_APPLICATION.requiredActions,
   }
-  const offers = application.bankApplications.filter((bank) => bank.approvedAmount)
 
   return (
     <div className="space-y-4">
-      <p className="-mt-2 text-sm leading-5 text-[#52657b]">Track your bond application.</p>
-      <section className="rounded-[18px] border border-[#dbe5ef] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-        <div className="flex items-start gap-3">
-          <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full border ${statusClasses('info')}`}>
-            <FileSignature size={20} />
-          </span>
-          <div>
-            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#667085]">Bond status</p>
-            <h2 className="mt-1 text-base font-semibold text-[#142132]">{application.applicationStatus}</h2>
-            <p className="mt-1 text-sm text-[#52657b]">{application.statusHelper}</p>
-            <p className="mt-3 text-sm font-semibold text-[#142132]">{application.requestedAmount}</p>
-          </div>
-        </div>
-      </section>
-      <BondJourneyTracker brand={brand} currentStageIndex={0} />
-      <CurrentFinanceStatus brand={brand} application={application} demoUploadComplete={demoUploadComplete} onCompleteUpload={onCompleteUpload} />
       <DemoBondApplicationForm brand={brand} application={application} compact />
-      <section>
-        <h2 className="mb-2 text-base font-semibold text-[#142132]">Your bank applications</h2>
-        <div className="overflow-hidden rounded-[18px] border border-[#dbe5ef] bg-white">
-          {application.bankApplications.slice(0, demoUploadComplete ? 4 : 2).map((bank) => (
-            <MobileBankRow key={bank.bankId} bank={bank} brand={brand} />
-          ))}
-        </div>
-      </section>
-      {offers.length ? (
-        <section>
-          <h2 className="mb-2 text-base font-semibold text-[#142132]">Your bank offers</h2>
-          <div className="space-y-3">
-            {offers.map((offer) => (
-              <OfferCard key={offer.bankId} brand={brand} offer={offer} />
-            ))}
-          </div>
-        </section>
-      ) : null}
       <Link to={getDemoPath(token, 'documents')} className="flex min-h-11 items-center justify-center rounded-[12px] border border-[#dbe5ef] bg-white text-sm font-semibold" style={{ color: brand.primary }}>
         View all required documents
       </Link>
@@ -2102,60 +2065,14 @@ function DocumentDetailPanel({ brand, config, document, onCompleteUpload }) {
 }
 
 function FinanceSection({ brand, demoUploadComplete, onCompleteUpload }) {
-  const [expandedBankId, setExpandedBankId] = useState('standard-bank')
-  const [showApplicationDetails, setShowApplicationDetails] = useState(false)
   const application = {
     ...FINANCE_APPLICATION,
     requiredActions: demoUploadComplete ? [] : FINANCE_APPLICATION.requiredActions,
   }
-  const currentStageIndex = BOND_JOURNEY_STAGES.findIndex((stage) => stage.id === application.currentStage)
-  const offers = application.bankApplications
-    .filter((bank) => bank.approvedAmount)
-    .sort((first, second) => Number(second.isRecommended) - Number(first.isRecommended))
 
   return (
-    <div className="space-y-5">
-      <header className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <h1 className="text-3xl font-semibold tracking-[-0.06em] text-[#142132]">Finance</h1>
-          <p className="mt-2 text-base leading-6 text-[#52657b]">Track your bond application and compare bank offers.</p>
-        </div>
-        <div className="flex items-start gap-2 rounded-[14px] px-3 py-2 text-sm text-[#52657b]">
-          <Lock size={15} className="mt-1 shrink-0 text-[#142132]" />
-          <span>Your information is secure<br className="hidden lg:block" /> and encrypted.</span>
-        </div>
-      </header>
-
-      <FinanceSummary application={application} />
-
-      <section className="rounded-[24px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)] lg:p-6">
-        <h2 className="text-xl font-semibold tracking-[-0.04em] text-[#142132]">Your bond journey</h2>
-        <p className="mt-2 text-sm leading-6 text-[#52657b]">Here's where we are in the bond process.</p>
-        <BondJourneyTracker brand={brand} currentStageIndex={currentStageIndex} />
-        <CurrentFinanceStatus
-          brand={brand}
-          application={application}
-          demoUploadComplete={demoUploadComplete}
-          onCompleteUpload={onCompleteUpload}
-        />
-      </section>
-
+    <div>
       <DemoBondApplicationForm brand={brand} application={application} />
-
-      <BankApplicationsSection
-        brand={brand}
-        banks={application.bankApplications}
-        expandedBankId={expandedBankId}
-        onToggleBank={(bankId) => setExpandedBankId((current) => (current === bankId ? '' : bankId))}
-      />
-
-      {offers.length ? <BankOffersSection brand={brand} application={application} offers={offers} /> : null}
-
-      <ApplicationDetailsSection
-        application={application}
-        expanded={showApplicationDetails}
-        onToggle={() => setShowApplicationDetails((value) => !value)}
-      />
     </div>
   )
 }
@@ -2291,12 +2208,26 @@ function createDemoBondApplicationValues() {
 }
 
 function DemoBondApplicationForm({ brand, application, compact = false }) {
-  const [activeSection, setActiveSection] = useState('summary')
+  const [activeSection, setActiveSection] = useState('income_deductions_expenses')
   const [values, setValues] = useState(() => createDemoBondApplicationValues())
   const [saved, setSaved] = useState(false)
-  const activeMeta = DEMO_BOND_APPLICATION_SECTIONS.find((section) => section.key === activeSection) || DEMO_BOND_APPLICATION_SECTIONS[0]
+  const [submitted, setSubmitted] = useState(false)
+  const documentNeededCount = application.requiredActions.length
+  const sections = DEMO_BOND_APPLICATION_SECTIONS.map((section) => {
+    if (section.key !== 'documents') return section
+    return documentNeededCount > 0
+      ? { ...section, status: `${documentNeededCount} document needed`, tone: 'action' }
+      : { ...section, status: 'Complete', tone: 'complete' }
+  })
+  const activeMeta = sections.find((section) => section.key === activeSection) || sections[0]
   const activeGroups = DEMO_BOND_APPLICATION_FIELD_GROUPS[activeSection] || []
-  const completedSections = DEMO_BOND_APPLICATION_SECTIONS.filter((section) => section.tone === 'complete').length
+  const activeIndex = sections.findIndex((section) => section.key === activeSection)
+  const selectedBanksCount = application.bankApplications.length
+  const totalDetails = 30
+  const completedDetails = documentNeededCount > 0 ? 24 : 26
+  const completionPercent = Math.round((completedDetails / totalDetails) * 100)
+  const isFirstSection = activeIndex <= 0
+  const isFinalSection = activeSection === 'declarations_consents'
 
   function updateField(key, value) {
     setSaved(false)
@@ -2305,148 +2236,292 @@ function DemoBondApplicationForm({ brand, application, compact = false }) {
 
   function handleSaveDemoProgress() {
     setSaved(true)
+    if (isFinalSection) {
+      setSubmitted(true)
+      return
+    }
+    const nextSection = sections[activeIndex + 1]
+    if (nextSection) setActiveSection(nextSection.key)
+  }
+
+  function handleBack() {
+    const previousSection = sections[activeIndex - 1]
+    if (previousSection) setActiveSection(previousSection.key)
+  }
+
+  if (submitted) {
+    return (
+      <section className={`${compact ? 'space-y-4' : 'mx-auto max-w-[1180px]'}`}>
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <span className="text-xs font-semibold uppercase tracking-[0.16em] text-[#53677d]">Your application</span>
+            <h1 className="mt-2 text-3xl font-semibold tracking-[-0.06em] text-[#142132] lg:text-4xl">Your bond application</h1>
+            <p className="mt-2 text-base leading-6 text-[#52657b]">Your application has been completed and is ready for bank submission.</p>
+          </div>
+          <span className="inline-flex w-fit items-center gap-2 rounded-[12px] border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#142132]">
+            <CheckCircle2 size={16} style={{ color: brand.primary }} />
+            Application completed
+          </span>
+        </div>
+        <div className="mt-6 rounded-[24px] border border-[#dbe5ef] bg-white p-5 shadow-[0_18px_42px_rgba(15,23,42,0.06)]">
+          <div className="grid gap-4 md:grid-cols-4">
+            {[
+              ['Application completed', 'Ready'],
+              ['Submitted to banks', 'Next'],
+              ['Offers received', 'Pending'],
+              ['Offer accepted', 'Pending'],
+            ].map(([label, status], index) => (
+              <article key={label} className="flex items-start gap-3">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border text-sm font-semibold" style={{
+                  borderColor: index === 0 ? brand.primary : '#dbe5ef',
+                  backgroundColor: index === 0 ? brand.primary : '#ffffff',
+                  color: index === 0 ? '#ffffff' : '#52657b',
+                }}>
+                  {index === 0 ? <CheckCircle2 size={18} /> : index + 1}
+                </span>
+                <div>
+                  <h2 className="text-sm font-semibold text-[#142132]">{label}</h2>
+                  <p className="mt-1 text-xs text-[#667085]">{status}</p>
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+    )
   }
 
   return (
-    <section className={`rounded-[24px] border border-[#dbe5ef] bg-white shadow-[0_14px_34px_rgba(15,23,42,0.05)] ${compact ? 'p-4' : 'p-5 lg:p-6'}`}>
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <span className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Bond application</span>
-          <h2 className={`${compact ? 'mt-1 text-lg' : 'mt-1 text-xl'} font-semibold tracking-[-0.04em] text-[#142132]`}>
-            Complete your bond application
-          </h2>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-[#52657b]">
-            A demo-safe preview of the application workspace buyers complete before the bond originator submits to the banks.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="rounded-full border border-[#dbe5ef] bg-[#fbfdff] px-3 py-1 text-xs font-semibold text-[#52657b]">
-            {completedSections} of {DEMO_BOND_APPLICATION_SECTIONS.length} sections complete
-          </span>
-          <span className="rounded-full border px-3 py-1 text-xs font-semibold" style={{ borderColor: hexToRgba(brand.primary, 0.18), backgroundColor: hexToRgba(brand.primary, 0.08), color: brand.primary }}>
-            Demo mode
-          </span>
-        </div>
-      </div>
-
-      <div className="mt-5 rounded-[18px] border border-[#e3ebf4] bg-[#f8fbff] p-4">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.13em] text-[#7b8ca2]">Already filled</p>
-            <p className="mt-1 text-sm font-semibold text-[#142132]">Onboarding and property details have prefilled the application.</p>
-          </div>
-          <div className="grid gap-2 text-xs font-semibold sm:grid-cols-3">
-            <span className="rounded-full bg-white px-3 py-1 text-[#2f7a51]">24 fields filled</span>
-            <span className="rounded-full bg-white px-3 py-1" style={{ color: brand.primary }}>4 banks selected</span>
-            <span className="rounded-full bg-white px-3 py-1 text-[#a15b31]">1 document needed</span>
-          </div>
-        </div>
-      </div>
-
-      <div className={`mt-5 grid gap-5 ${compact ? '' : 'lg:grid-cols-[260px_minmax(0,1fr)]'}`}>
-        <aside className={`${compact ? 'overflow-x-auto' : 'lg:sticky lg:top-6 lg:h-fit'} rounded-[16px] border border-[#e3ebf4] bg-[#fbfdff] p-2`}>
-          <nav className={`gap-2 ${compact ? 'flex min-w-max' : 'grid'}`}>
-            {DEMO_BOND_APPLICATION_SECTIONS.map((section) => {
-              const selected = section.key === activeSection
-              return (
-                <button
-                  key={section.key}
-                  type="button"
-                  onClick={() => setActiveSection(section.key)}
-                  className={`${compact ? 'min-w-[150px]' : 'w-full'} flex items-center justify-between gap-3 rounded-[12px] border px-3 py-2 text-left transition ${
-                    selected
-                      ? 'bg-white text-[#142132] shadow-[0_10px_22px_rgba(15,23,42,0.08)]'
-                      : section.tone === 'complete'
-                        ? 'border-[#d4e8dc] bg-[#f5fbf7] text-[#2f7a51] hover:border-[#c8dfd2]'
-                        : section.tone === 'action'
-                          ? 'border-[#ead9c6] bg-[#fffaf3] text-[#8a5a22] hover:border-[#e2c9ab]'
-                          : 'border-[#e3ebf4] bg-white text-[#5f7086] hover:border-[#d3e0ed]'
-                  }`}
-                  style={selected ? { borderColor: hexToRgba(brand.primary, 0.28) } : null}
-                >
-                  <span className="text-sm font-semibold">{section.label}</span>
-                  {!compact ? <span className="text-[0.64rem] font-semibold uppercase tracking-[0.08em]">{section.status}</span> : null}
-                </button>
-              )
-            })}
-          </nav>
+    <section className={`${compact ? 'space-y-4 overflow-hidden' : 'mx-auto max-w-[1280px]'}`}>
+      <div className={`grid min-w-0 gap-6 ${compact ? '' : 'xl:grid-cols-[300px_minmax(0,900px)] xl:gap-10'}`}>
+        <aside className={`${compact ? 'order-2 min-w-0' : 'xl:sticky xl:top-8 xl:self-start'}`}>
+          <DemoBondApplicationJourney
+            brand={brand}
+            sections={sections}
+            activeSection={activeSection}
+            onSelect={setActiveSection}
+            compact={compact}
+          />
+          {!compact ? (
+            <div className="mt-8 rounded-[16px] border p-4" style={{ borderColor: hexToRgba(brand.primary, 0.16), backgroundColor: hexToRgba(brand.primary, 0.045) }}>
+              <div className="flex items-start gap-3">
+                <Lock size={18} className="mt-0.5 shrink-0" style={{ color: brand.primary }} />
+                <div>
+                  <h2 className="text-sm font-semibold text-[#142132]">Your information is secure</h2>
+                  <p className="mt-1 text-sm leading-6 text-[#52657b]">We use bank-level security to protect your data.</p>
+                </div>
+              </div>
+            </div>
+          ) : null}
         </aside>
 
-        <div className="rounded-[18px] border border-[#e3ebf4] bg-white p-4">
-          <div className="flex flex-col gap-3 border-b border-[#e6edf5] pb-4 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <h3 className="text-lg font-semibold tracking-[-0.03em] text-[#142132]">{activeMeta.label}</h3>
-              <p className="mt-1 text-sm leading-6 text-[#52657b]">
-                {activeSection === 'documents'
-                  ? 'Supporting documents are linked to the bond application and document centre.'
-                  : 'These fields are editable here only for the demo preview.'}
-              </p>
+        <div className={`${compact ? 'order-1 min-w-0 overflow-hidden' : ''}`}>
+          <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <span className="text-xs font-semibold uppercase tracking-[0.16em] text-[#53677d]">Your application</span>
+              <h1 className="mt-2 text-3xl font-semibold tracking-[-0.06em] text-[#142132] lg:text-4xl">Your bond application</h1>
+              <p className="mt-2 text-base leading-6 text-[#52657b]">Most of your application is already complete.</p>
             </div>
-            <span className={`w-fit rounded-full border px-3 py-1 text-xs font-semibold ${statusClasses(activeMeta.tone)}`}>
-              {activeMeta.status}
-            </span>
+            <button type="button" className="inline-flex min-h-11 w-fit items-center justify-center gap-2 rounded-[12px] border border-[#dbe5ef] bg-white px-4 text-sm font-semibold text-[#142132] shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
+              <Lock size={15} />
+              Save & exit
+            </button>
+          </header>
+
+          <div className={`mt-5 ${compact ? 'space-y-2' : 'flex items-center gap-4'}`}>
+            <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-[#e4ebf3]">
+              <div className="h-full rounded-full transition-all duration-300" style={{ width: `${completionPercent}%`, backgroundColor: brand.primary }} />
+            </div>
+            <span className="block shrink-0 text-sm font-semibold" style={{ color: brand.primary }}>{completionPercent}% complete</span>
           </div>
 
-          {activeSection === 'documents' ? (
-            <DemoBondApplicationDocuments brand={brand} />
-          ) : (
-            <div className="mt-4 space-y-4">
-              {activeGroups.map((group) => (
-                <article key={group.title} className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfdff] p-4">
-                  <div className="mb-4">
-                    <h4 className="text-sm font-semibold text-[#142132]">{group.title}</h4>
-                    <p className="mt-1 text-xs leading-5 text-[#6b7d93]">{group.helper}</p>
-                  </div>
-                  <div className="grid gap-3 md:grid-cols-2">
-                    {group.fields.map((field) => (
-                      <DemoBondApplicationField
-                        key={field.key}
-                        field={field}
-                        value={values[field.key]}
-                        brand={brand}
-                        onChange={(nextValue) => updateField(field.key, nextValue)}
-                      />
-                    ))}
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
+          <DemoBondApplicationStatusCard
+            brand={brand}
+            completedDetails={completedDetails}
+            documentNeededCount={documentNeededCount}
+            selectedBanksCount={selectedBanksCount}
+          />
 
-          <div className="mt-5 flex flex-col gap-3 border-t border-[#e6edf5] pt-4 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-xs leading-5 text-[#6b7d93]">
-              Demo only: saving here will not create an application, send documents, notify banks, or update workflow state.
-            </p>
-            <div className="flex flex-col gap-2 sm:flex-row">
+          <article className="mt-6 rounded-[22px] border border-[#dbe5ef] bg-white p-5 shadow-[0_18px_42px_rgba(15,23,42,0.06)] lg:p-7">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h2 className="text-2xl font-semibold tracking-[-0.05em] text-[#142132]">{activeMeta.label}</h2>
+                <p className="mt-2 text-base leading-6 text-[#52657b]">{getDemoBondApplicationSectionHelper(activeSection)}</p>
+              </div>
+              {activeMeta.tone === 'action' ? (
+                <span className="w-fit rounded-full bg-amber-50 px-3 py-1 text-sm font-semibold text-amber-700">{activeMeta.status}</span>
+              ) : null}
+            </div>
+
+            {activeSection === 'documents' ? (
+              <DemoBondApplicationDocuments brand={brand} />
+            ) : (
+              <div className="mt-8 space-y-8">
+                {activeGroups.map((group) => {
+                  const Icon = group.icon || FileText
+                  return (
+                    <section key={group.title}>
+                      <div className="flex items-start gap-3">
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: hexToRgba(brand.primary, 0.1), color: brand.primary }}>
+                          <Icon size={18} />
+                        </span>
+                        <div>
+                          <h3 className="text-lg font-semibold tracking-[-0.03em] text-[#142132]">{group.title}</h3>
+                          {group.helper ? <p className="mt-1 text-sm leading-5 text-[#52657b]">{group.helper}</p> : null}
+                        </div>
+                      </div>
+                      <div className="mt-5 grid gap-x-6 gap-y-5 md:grid-cols-2">
+                        {group.fields.map((field) => (
+                          <DemoBondApplicationField
+                            key={field.key}
+                            field={field}
+                            value={values[field.key]}
+                            brand={brand}
+                            onChange={(nextValue) => updateField(field.key, nextValue)}
+                          />
+                        ))}
+                      </div>
+                    </section>
+                  )
+                })}
+              </div>
+            )}
+
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <button
+                type="button"
+                onClick={handleBack}
+                disabled={isFirstSection}
+                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-[12px] border border-[#dbe5ef] bg-white px-5 text-sm font-semibold text-[#142132] shadow-[0_8px_18px_rgba(15,23,42,0.04)] transition disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                <ArrowLeft size={16} />
+                Back
+              </button>
               <button
                 type="button"
                 onClick={handleSaveDemoProgress}
-                className="inline-flex min-h-10 items-center justify-center rounded-[12px] px-4 text-sm font-semibold text-white"
+                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-[12px] px-6 text-sm font-semibold text-white shadow-[0_14px_24px_rgba(15,23,42,0.14)]"
                 style={{ backgroundColor: brand.primary }}
               >
-                {saved ? 'Demo progress saved' : 'Save demo progress'}
-              </button>
-              <button type="button" className="inline-flex min-h-10 items-center justify-center rounded-[12px] border border-[#dbe5ef] bg-white px-4 text-sm font-semibold text-[#142132]">
-                Preview submission pack
+                {isFinalSection ? 'Review & submit' : saved ? 'Saved, continue' : 'Save & continue'}
+                <ChevronRight size={16} />
               </button>
             </div>
-          </div>
 
-          {!compact ? (
-            <div className="mt-4 grid gap-3 rounded-[16px] border p-4 md:grid-cols-3" style={{ borderColor: hexToRgba(brand.primary, 0.16), backgroundColor: hexToRgba(brand.primary, 0.045) }}>
-              {[
-                ['Requested bond', application.requestedAmount],
-                ['Purchase price', application.purchasePrice],
-                ['Loan to value', application.loanToValue],
-              ].map(([label, value]) => (
-                <div key={label}>
-                  <p className="text-[0.68rem] font-semibold uppercase tracking-[0.13em] text-[#7b8ca2]">{label}</p>
-                  <p className="mt-1 text-sm font-semibold text-[#142132]">{value}</p>
-                </div>
-              ))}
+            <div className="mt-8 rounded-[16px] border p-4" style={{ borderColor: hexToRgba(brand.primary, 0.14), backgroundColor: hexToRgba(brand.primary, 0.04) }}>
+              <div className="flex items-start gap-3">
+                <Lock size={17} className="mt-0.5 shrink-0" style={{ color: brand.primary }} />
+                <p className="text-sm leading-6 text-[#426074]">
+                  <strong className="text-[#142132]">We've prefilled what we can.</strong><br />
+                  You only need to complete the required details. Everything is saved as you go.
+                </p>
+              </div>
             </div>
-          ) : null}
+          </article>
+          <p className="mt-3 text-right text-xs font-medium text-[#7b8ca2]">Demo</p>
         </div>
+      </div>
+    </section>
+  )
+}
+
+function getDemoBondApplicationSectionHelper(sectionKey) {
+  if (sectionKey === 'income_deductions_expenses') return 'This helps your bond originator calculate affordability.'
+  if (sectionKey === 'documents') return 'We only show what is required for your application right now.'
+  if (sectionKey === 'declarations_consents') return 'Review the final declarations before your application is submitted.'
+  if (sectionKey === 'banking_liabilities') return 'Confirm your banking details and current financial commitments.'
+  if (sectionKey === 'loan_details') return 'Confirm the property, loan amount, deposit and selected banks.'
+  return 'Most of this information has already been completed from your profile.'
+}
+
+function DemoBondApplicationStatusCard({ brand, completedDetails, documentNeededCount, selectedBanksCount }) {
+  const items = [
+    {
+      label: `${completedDetails} details completed`,
+      helper: 'Prefilled from your profile, property & offer',
+      icon: CheckCircle2,
+      tone: 'complete',
+    },
+    {
+      label: `${documentNeededCount} document${documentNeededCount === 1 ? '' : 's'} needed`,
+      helper: documentNeededCount > 0 ? 'We just need one more document from you' : 'All required documents are in',
+      icon: FileText,
+      tone: documentNeededCount > 0 ? 'action' : 'complete',
+    },
+    {
+      label: `${selectedBanksCount} banks selected`,
+      helper: "We'll submit your application to your chosen banks",
+      icon: Building2,
+      tone: 'complete',
+    },
+  ]
+
+  return (
+    <section className="mt-6 rounded-[18px] border border-[#dbe5ef] bg-white px-4 py-4 shadow-[0_14px_28px_rgba(15,23,42,0.05)]">
+      <div className="grid gap-4 md:grid-cols-3 md:divide-x md:divide-[#dbe5ef]">
+        {items.map((item) => {
+          const Icon = item.icon
+          return (
+            <article key={item.label} className="flex min-w-0 items-start gap-3 md:px-5 first:md:pl-0 last:md:pr-0">
+              <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full border ${statusClasses(item.tone)}`}>
+                <Icon size={20} />
+              </span>
+              <div className="min-w-0">
+                <h2 className="text-base font-semibold text-[#142132]">{item.label}</h2>
+                <p className="mt-1 text-sm leading-5 text-[#52657b]">{item.helper}</p>
+              </div>
+            </article>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
+function DemoBondApplicationJourney({ brand, sections, activeSection, onSelect, compact }) {
+  return (
+    <section className={compact ? 'w-full min-w-0 overflow-hidden rounded-[18px] border border-[#dbe5ef] bg-white p-4' : ''}>
+      <p className="mb-4 text-xs font-semibold uppercase tracking-[0.16em] text-[#53677d]">Your application</p>
+      <div className={compact ? 'max-w-full overflow-x-auto pb-1' : ''}>
+        <nav className={compact ? 'flex w-max gap-3' : 'relative space-y-1'}>
+          {!compact ? <span className="absolute left-[15px] top-5 h-[calc(100%-40px)] w-px bg-[#dbe5ef]" /> : null}
+          {sections.map((section) => {
+            const active = section.key === activeSection
+            const complete = section.tone === 'complete'
+            const attention = section.tone === 'action'
+            const indicatorStyle = complete
+              ? { backgroundColor: brand.primary, borderColor: brand.primary, color: '#ffffff' }
+              : attention
+                ? { backgroundColor: '#f59e0b', borderColor: '#f59e0b', color: '#ffffff' }
+                : { backgroundColor: '#ffffff', borderColor: '#c8d3df', color: '#6b7d93' }
+
+            return (
+              <button
+                key={section.key}
+                type="button"
+                onClick={() => onSelect(section.key)}
+                className={`${compact ? 'min-w-[150px]' : 'relative w-full'} group rounded-[14px] px-3 py-3 text-left transition ${
+                  active
+                    ? attention
+                      ? 'bg-amber-50/75'
+                      : 'bg-white'
+                    : 'hover:bg-white/70'
+                }`}
+                style={active ? { boxShadow: `inset 3px 0 0 ${attention ? '#f59e0b' : brand.primary}` } : null}
+              >
+                <div className="grid grid-cols-[34px_minmax(0,1fr)] gap-3">
+                  <span className="relative z-10 flex h-8 w-8 items-center justify-center rounded-full border-2 text-sm font-semibold" style={indicatorStyle}>
+                    {complete ? <CheckCircle2 size={17} /> : attention ? '!' : ''}
+                  </span>
+                  <span>
+                    <strong className={`block text-sm ${active ? 'font-semibold text-[#142132]' : 'font-semibold text-[#21384d]'}`}>{section.label}</strong>
+                    <span className="mt-1 block text-sm text-[#52657b]">{section.status}</span>
+                  </span>
+                </div>
+              </button>
+            )
+          })}
+        </nav>
       </div>
     </section>
   )
@@ -2455,7 +2530,7 @@ function DemoBondApplicationForm({ brand, application, compact = false }) {
 function DemoBondApplicationField({ field, value, brand, onChange }) {
   if (field.type === 'checkbox') {
     return (
-      <label className="flex min-h-[48px] items-start gap-3 rounded-[12px] border border-[#e3ebf4] bg-white px-3 py-3 md:col-span-2">
+      <label className="flex min-h-[52px] items-start gap-3 rounded-[12px] border border-[#e3ebf4] bg-white px-3 py-3 md:col-span-2">
         <input
           type="checkbox"
           checked={Boolean(value)}
@@ -2471,7 +2546,7 @@ function DemoBondApplicationField({ field, value, brand, onChange }) {
     )
   }
 
-  const inputClassName = 'mt-2 min-h-[46px] w-full rounded-[12px] border border-[#d8e3ee] bg-white px-3 py-2.5 text-sm text-[#142132] outline-none transition focus:border-[#35546c]/45 focus:ring-2 focus:ring-[#35546c]/12 disabled:bg-[#f3f6f9] disabled:text-[#667085]'
+  const inputClassName = 'mt-2 min-h-[52px] w-full rounded-[12px] border border-[#d8e3ee] bg-white px-4 py-3 text-base text-[#142132] outline-none transition focus:border-[#35546c]/45 focus:ring-2 focus:ring-[#35546c]/12 disabled:bg-[#f3f6f9] disabled:text-[#667085]'
 
   return (
     <label className="block">
@@ -2496,16 +2571,22 @@ function DemoBondApplicationField({ field, value, brand, onChange }) {
           className={inputClassName}
         />
       )}
-      {field.readOnly ? <p className="mt-1 text-xs text-[#6b7d93]">Calculated from the demo application values.</p> : null}
+      {field.source ? (
+        <p className="mt-2 flex items-center gap-1.5 text-sm text-[#52657b]">
+          <CheckCircle2 size={14} style={{ color: brand.primary }} />
+          {field.source}
+        </p>
+      ) : null}
+      {field.readOnly ? <p className="mt-2 text-sm text-[#6b7d93]">Calculated from your application values.</p> : null}
     </label>
   )
 }
 
 function DemoBondApplicationDocuments({ brand }) {
   return (
-    <div className="mt-4 space-y-3">
+    <div className="mt-7 space-y-3">
       {DEMO_BOND_APPLICATION_DOCUMENTS.map((document) => (
-        <article key={document.label} className="flex flex-col gap-3 rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <article key={document.label} className="flex flex-col gap-3 rounded-[14px] border border-[#e3ebf4] bg-white px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-start gap-3">
             <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full border ${statusClasses(document.tone)}`}>
               {document.tone === 'complete' ? <CheckCircle2 size={18} /> : <AlertCircle size={18} />}
@@ -2518,12 +2599,12 @@ function DemoBondApplicationDocuments({ brand }) {
           <div className="flex items-center gap-2">
             <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${statusClasses(document.tone)}`}>{document.status}</span>
             {document.tone === 'action' ? (
-              <button type="button" className="inline-flex min-h-9 items-center justify-center gap-2 rounded-[10px] px-3 text-xs font-semibold text-white" style={{ backgroundColor: brand.primary }}>
+              <button type="button" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[12px] px-4 text-sm font-semibold text-white" style={{ backgroundColor: brand.primary }}>
                 <UploadCloud size={14} />
-                Upload
+                Upload payslip
               </button>
             ) : (
-              <button type="button" className="inline-flex min-h-9 items-center justify-center gap-2 rounded-[10px] border border-[#dbe5ef] bg-white px-3 text-xs font-semibold text-[#142132]">
+              <button type="button" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[12px] border border-[#dbe5ef] bg-white px-4 text-sm font-semibold text-[#142132]">
                 View
               </button>
             )}
