@@ -118,7 +118,7 @@ const baseLead = {
   const journey = buildSellerJourney({ lead })
   const readiness = getSellerReadiness({ lead, journey })
   assert.equal(journey.stage.key, 'seller_onboarding_sent')
-  assert.equal(readiness.blockers.some((item) => item.id === 'seller_onboarding_not_submitted'), false)
+  assert.equal(readiness.blockers.some((item) => item.id === 'seller_onboarding_not_submitted'), true)
   assert.equal(readiness.nextAction.id, 'open_seller_portal')
 }
 

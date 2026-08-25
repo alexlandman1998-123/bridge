@@ -388,12 +388,19 @@ export function isSellerLead(lead = {}) {
 }
 
 function getSellerOnboardingSignals({ lead = {}, listing = {} } = {}) {
-  const status = normalizeKey(
-    lead?.sellerOnboardingStatus ||
-      lead?.seller_onboarding_status ||
-      listing?.sellerOnboarding?.status ||
+  const listingScopedStatus = normalizeKey(
+    listing?.sellerOnboarding?.status ||
+      listing?.seller_onboarding?.status ||
+      listing?.sellerOnboardingStatus ||
       listing?.seller_onboarding_status,
   )
+  const leadScopedStatus = normalizeKey(
+    lead?.sellerOnboardingStatus ||
+      lead?.seller_onboarding_status ||
+      lead?.sellerOnboarding?.status ||
+      lead?.seller_onboarding?.status,
+  )
+  const status = listingScopedStatus || leadScopedStatus
   const leadJourneySignals = [
     lead?.stage,
     lead?.status,
@@ -433,6 +440,16 @@ function getSellerOnboardingSignals({ lead = {}, listing = {} } = {}) {
     token,
     pending: sent && !submitted && Boolean(status || token),
   }
+}
+
+function leadStageImpliesSubmittedOnboarding(leadStageIndex = 0, onboardingSignals = {}) {
+  const submittedIndex = STAGE_INDEX.get('seller_onboarding_submitted') ?? 0
+  if (leadStageIndex < submittedIndex) return false
+  if (onboardingSignals.pending && !onboardingSignals.submitted) return false
+  // Once a portal token/status exists, the portal row is the source of truth.
+  // Do not use a stale CRM stage to convert "sent" into "submitted".
+  if ((onboardingSignals.token || onboardingSignals.status) && !onboardingSignals.submitted) return false
+  return true
 }
 
 function getMandateStatus({ lead = {}, listing = {}, mandatePacketStatus = {}, mandatePacket = null } = {}) {
@@ -605,8 +622,13 @@ export function getSellerJourneyStage({ lead = {}, listing = null, mandatePacket
   if (onboardingSignals.pending && !onboardingSignals.submitted && leadStageIndex >= onboardingSubmittedIndex) {
     return evidenceStage
   }
+  const resolvedListingCreated = Boolean(
+    listing &&
+      readListingId(listing) &&
+      hasListingCreated({ lead, listing, mandateStatus }),
+  )
   const canUseLeadStageAsProgressFloor =
-    (leadStageIndex < listingCreatedIndex || hasListingShell({ lead, listing }))
+    (leadStageIndex < listingCreatedIndex || resolvedListingCreated)
   return canUseLeadStageAsProgressFloor ? laterSellerJourneyStage(evidenceStage, leadStage) : evidenceStage
 }
 
@@ -788,9 +810,8 @@ export function getSellerJourneyActions({ lead = {}, contact = {}, listing = nul
   const leadStageIndex = STAGE_INDEX.get(leadStage?.key) ?? 0
   const listingCreated = hasListingCreated({ lead, listing, mandateStatus })
   const onboardingSubmittedForProgress = onboardingSignals.submitted ||
-    leadStageIndex >= (STAGE_INDEX.get('seller_onboarding_submitted') ?? 2) ||
-    mandateStatus !== 'not_started' ||
-    listingCreated
+    leadStageImpliesSubmittedOnboarding(leadStageIndex, onboardingSignals) ||
+    mandateStatus !== 'not_started'
   const live = listingCreated && isListingLive(listing || lead)
   const sellerPortalToken = firstPresent(lead?.sellerOnboardingToken, lead?.seller_onboarding_token, listing?.sellerOnboarding?.token)
   const canContact = Boolean(firstPresent(contact?.phone, lead?.phone, contact?.email, lead?.email, lead?.sellerPhone, lead?.sellerEmail))
@@ -834,9 +855,8 @@ export function buildSellerJourney({ lead = {}, contact = {}, listing = null, ma
   const contactedIndex = STAGE_INDEX.get('contacted') ?? 1
   const leadIsExplicitlyNew = leadStage?.key === 'new_lead' && ['new', 'created', 'lead'].includes(normalizeKey(leadStage?.status))
   const onboardingSubmittedForProgress = onboardingSignals.submitted ||
-    leadStageIndex >= (STAGE_INDEX.get('seller_onboarding_submitted') ?? 2) ||
-    mandateStatus !== 'not_started' ||
-    listingCreated
+    leadStageImpliesSubmittedOnboarding(leadStageIndex, onboardingSignals) ||
+    mandateStatus !== 'not_started'
   const contactedForProgress = Boolean(
     (!leadIsExplicitlyNew && leadStageIndex >= contactedIndex) ||
       onboardingSignals.sent ||

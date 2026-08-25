@@ -6006,6 +6006,41 @@ function firstWorkspaceText(...values) {
   return values.map(normalizeText).find(Boolean) || ''
 }
 
+const SELLER_ONBOARDING_SUBMITTED_STATUS_KEYS = new Set([
+  'completed',
+  'complete',
+  'submitted',
+  'under_review',
+  'onboarding_completed',
+  'seller_onboarding_completed',
+])
+
+function normalizeWorkspaceStatusKey(value = '') {
+  return normalizeText(value).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+}
+
+function hasExplicitSellerOnboardingSubmissionEvidence(onboarding = {}, fallback = {}) {
+  const status = normalizeWorkspaceStatusKey(
+    onboarding?.status ||
+      onboarding?.onboardingStatus ||
+      onboarding?.onboarding_status ||
+      fallback?.status ||
+      fallback?.onboardingStatus ||
+      fallback?.onboarding_status,
+  )
+  const submittedAt = firstWorkspaceText(
+    onboarding?.submittedAt,
+    onboarding?.submitted_at,
+    onboarding?.completedAt,
+    onboarding?.completed_at,
+    fallback?.submittedAt,
+    fallback?.submitted_at,
+    fallback?.completedAt,
+    fallback?.completed_at,
+  )
+  return Boolean(submittedAt || SELLER_ONBOARDING_SUBMITTED_STATUS_KEYS.has(status))
+}
+
 function workspaceTextLooksLikeAddress(value = '') {
   const text = normalizeText(value)
   if (!text) return false
@@ -13199,6 +13234,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     (lead = {}) => {
       const listingId = normalizeText(lead?.listingId || lead?.listing_id)
       if (listingId && appointmentListingById.has(listingId)) return appointmentListingById.get(listingId)
+      const leadIsSeller = resolveLeadCategoryView(lead) === 'seller'
+      const sellerOnboardingToken = normalizeText(lead?.sellerOnboardingToken || lead?.seller_onboarding_token || lead?.sellerOnboarding?.token)
+      if (leadIsSeller && (listingId || sellerOnboardingToken)) return null
       const possibleLabels = [
         lead?.propertyInterest,
         lead?.sellerPropertyAddress,
@@ -14406,19 +14444,20 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         }
 
         const hydratedOnboarding = onboardingContext?.listing?.sellerOnboarding || null
+        const persistedOnboarding = onboardingContext?.onboarding || null
+        const explicitSubmissionEvidence = hasExplicitSellerOnboardingSubmissionEvidence(
+          persistedOnboarding,
+          hydratedOnboarding,
+        )
         const hydratedStatus = normalizeSellerOnboardingStatus(
-          hydratedOnboarding?.status || onboardingContext?.onboarding?.status,
+          persistedOnboarding?.status || hydratedOnboarding?.status,
           {
-            hasToken: true,
-            hasFormData: Boolean(
-              hydratedOnboarding?.formData &&
-                typeof hydratedOnboarding.formData === 'object' &&
-                Object.keys(hydratedOnboarding.formData).length,
-            ),
+            hasToken: Boolean(onboardingToken || persistedOnboarding?.token || hydratedOnboarding?.token),
+            hasFormData: false,
           },
         )
         if (cancelled) return
-        if (hydratedStatus !== 'completed') {
+        if (!explicitSubmissionEvidence || !['completed', 'submitted'].includes(hydratedStatus)) {
           if (typeof window !== 'undefined' && !cancelled) {
             clearPollTimer()
             pollTimer = window.setTimeout(() => {
@@ -14432,6 +14471,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           hydratedOnboarding?.completedAt ||
           hydratedOnboarding?.submittedAt ||
           onboardingContext?.onboarding?.submitted_at ||
+          onboardingContext?.onboarding?.completed_at ||
           new Date().toISOString()
         const listingId = normalizeText(onboardingContext?.listing?.id || linkedListingId)
         const patch = {

@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises'
 
 const serviceSource = await readFile(new URL('../src/services/privateListingService.js', import.meta.url), 'utf8')
 const onboardingSource = await readFile(new URL('../src/pages/SellerOnboarding.jsx', import.meta.url), 'utf8')
+const pipelineSource = await readFile(new URL('../src/pages/agency/AgencyPipelinePage.jsx', import.meta.url), 'utf8')
 
 assert.match(
   serviceSource,
@@ -38,6 +39,26 @@ assert.match(
   onboardingSource,
   /setSaving\(true\)[\s\S]*?finally \{[\s\S]*?setSaving\(false\)/,
   'silent autosaves must participate in the saving lifecycle',
+)
+assert.match(
+  pipelineSource,
+  /function hasExplicitSellerOnboardingSubmissionEvidence\([\s\S]*?SELLER_ONBOARDING_SUBMITTED_STATUS_KEYS\.has\(status\)/,
+  'seller onboarding reconciliation should require explicit submitted/completed status or timestamp',
+)
+assert.match(
+  pipelineSource,
+  /const hydratedStatus = normalizeSellerOnboardingStatus\([\s\S]*?hasFormData: false,[\s\S]*?\)/,
+  'seller onboarding completion polling must not treat seeded form data as submission evidence',
+)
+assert.doesNotMatch(
+  pipelineSource,
+  /const hydratedStatus = normalizeSellerOnboardingStatus\([\s\S]{0,700}hasFormData: Boolean\(/,
+  'seller onboarding completion polling should not complete from form_data presence alone',
+)
+assert.match(
+  pipelineSource,
+  /if \(leadIsSeller && \(listingId \|\| sellerOnboardingToken\)\) return null/,
+  'seller leads with explicit onboarding/listing linkage must not fall back to fuzzy listing label matches',
 )
 
 console.log('seller onboarding progress serialization contract passed')
