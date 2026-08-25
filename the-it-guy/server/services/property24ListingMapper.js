@@ -6,7 +6,7 @@ export const DEFAULT_PROPERTY24_PROPERTY_TYPE_MAPPINGS = [
   { id: 5, description: 'Apartment / Flat', aliases: ['apartment', 'flat', 'unit', 'sectional_title', 'sectional_title_apartment'] },
   { id: 6, description: 'Townhouse', aliases: ['townhouse', 'town_house', 'duplex', 'cluster'] },
   { id: 8, description: 'Vacant Land / Plot', aliases: ['vacant_land', 'plot', 'land', 'stand'] },
-  { id: 10, description: 'Farm', aliases: ['farm', 'smallholding', 'agricultural_holding'] },
+  { id: 10, description: 'Farm', aliases: ['farm', 'smallholding', 'small_holding', 'agricultural_holding'] },
   { id: 11, description: 'Commercial Property', aliases: ['commercial', 'commercial_property', 'office', 'retail', 'shop'] },
   { id: 12, description: 'Industrial Property', aliases: ['industrial', 'industrial_property', 'warehouse', 'factory'] },
 ]
@@ -56,6 +56,17 @@ function normalizeBoolean(value, fallback = false) {
   if (['yes', 'true', '1'].includes(key)) return true
   if (['no', 'false', '0'].includes(key)) return false
   return fallback
+}
+
+function hasFeature(source = {}, aliases = []) {
+  const normalizedAliases = new Set((Array.isArray(aliases) ? aliases : [aliases]).map(normalizeProperty24ListingKey).filter(Boolean))
+  const features = Array.isArray(source.features) ? source.features : []
+  return features.some((feature) => {
+    const value = typeof feature === 'string'
+      ? feature
+      : firstText(feature.key, feature.value, feature.label, feature.name, feature.type)
+    return normalizedAliases.has(normalizeProperty24ListingKey(value))
+  })
 }
 
 function normalizeMediaRows(media = []) {
@@ -176,7 +187,9 @@ function resolvePrice(listing = {}, publication = {}, options = {}) {
 }
 
 function resolvePoa(listing = {}, publication = {}, options = {}) {
-  return normalizeBoolean(options.isPOA ?? options.isPoa ?? publication.isPOA ?? publication.is_poa ?? listing.isPOA ?? listing.is_poa, false)
+  return normalizeBoolean(options.isPOA ?? options.isPoa ?? publication.isPOA ?? publication.is_poa ?? listing.isPOA ?? listing.is_poa, false) ||
+    hasFeature(publication, ['price_on_application', 'poa', 'is_poa']) ||
+    hasFeature(listing, ['price_on_application', 'poa', 'is_poa'])
 }
 
 function resolveDescription(listing = {}, publication = {}) {

@@ -31,8 +31,32 @@ test('Quick Add initial state includes ownership, declaration, and seller portal
     'hasSignedPropertyConditionDisclosure',
     'hasSignedFicaForm',
     'sellerPortalInviteRequested',
+    'propertyStructureType',
+    'estateOrHoa',
+    'onAuction',
+    'priceOnApplication',
+    'showReducedBanner',
+    'noTransferDuty',
   ]) {
     assert.match(agentListingsSource, new RegExp(`${field}:`), `${field} should be initialized`)
+  }
+})
+
+test('Sales new listing Step 2 exposes portal-critical property fields', () => {
+  for (const copy of [
+    'Ownership scheme',
+    'In an estate / HOA?',
+    'Descriptive property type',
+    'Smallholding',
+    'New Development',
+    'On Auction',
+    'Price on Application',
+    'Show Reduced Banner on Listing',
+    'No Transfer Duty',
+    'Section number',
+    'Sectional title number',
+  ]) {
+    assert.match(agentListingsSource, new RegExp(copy.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `${copy} should be visible in new listing capture`)
   }
 })
 
@@ -60,6 +84,13 @@ test('Quick Add exposes existing-document cards and seller portal actions withou
     hasSignedPropertyConditionDisclosure: false,
     hasSignedFicaForm: true,
     sellerPortalInviteRequested: true,
+    propertyStructureType: 'sectional_title',
+    estateOrHoa: true,
+    estateName: 'Bridge Estate',
+    onAuction: true,
+    priceOnApplication: true,
+    showReducedBanner: true,
+    noTransferDuty: true,
   })
 
   assert.equal(payload.uploadsRequired, false)
@@ -67,4 +98,10 @@ test('Quick Add exposes existing-document cards and seller portal actions withou
   assert.equal(payload.complianceDeclarations.uploadsRequired, false)
   assert.equal(payload.sellerPortalInvite.requested, true)
   assert.equal(payload.seller.sellerLegalType, 'company')
+  assert.equal(payload.listing.property_structure_type, 'sectional_title')
+  assert.equal(payload.sellerCanonicalFacts.property.estate_or_hoa, true)
+  assert.equal(payload.sellerCanonicalFacts.property.on_auction, true)
+  assert.equal(payload.sellerCanonicalFacts.property.price_on_application, true)
+  assert.equal(payload.sellerCanonicalFacts.property.show_reduced_banner, true)
+  assert.equal(payload.sellerCanonicalFacts.property.no_transfer_duty, true)
 })

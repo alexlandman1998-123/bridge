@@ -8,6 +8,9 @@ import {
   createPrivatePropertyArch9ListingPreview,
   createPrivatePropertySandboxFixture,
 } from '../server/services/privatePropertyListingPreviewService.js'
+import {
+  createPrivatePropertyListingPlan,
+} from '../server/services/privatePropertyListingMapper.js'
 
 function read(path) {
   return fs.readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
@@ -73,6 +76,47 @@ assert.match(calls[0].options.body, /<Token>/)
 assert.match(calls[0].options.body, /<UserName>Arch9User<\/UserName>/)
 assert.match(calls[0].options.body, /<UID>phase4uid<\/UID>/)
 assert.doesNotMatch(calls[0].options.body, /secret/)
+
+const auctionPlan = createPrivatePropertyListingPlan({
+  listing: {
+    id: 'private-property-auction-1',
+    listing_status: 'active',
+    listing_reference: 'PP-AUCTION-001',
+    address_line_1: '18 Auction Road',
+    streetNumber: '18',
+    streetName: 'Auction Road',
+    suburb: 'Sandton',
+    city: 'Johannesburg',
+    province: 'Gauteng',
+    property_type: 'smallholding',
+  },
+  publication: {
+    title: 'Auction smallholding',
+    listing_type: 'Sale',
+    property_type: 'smallholding',
+    asking_price: 3500000,
+    bedrooms: 3,
+    bathrooms: 2,
+    garages: 2,
+    description: 'A controlled auction listing prepared for Private Property.',
+    features: ['on_auction'],
+  },
+  media: [
+    { media_type: 'image', file_url: 'https://cdn.example.test/one.jpg' },
+    { media_type: 'image', file_url: 'https://cdn.example.test/two.jpg' },
+    { media_type: 'image', file_url: 'https://cdn.example.test/three.jpg' },
+  ],
+  agentMapping: { agentIds: 'ARCH9-SANDBOX-USER-1' },
+  options: {
+    branchGuid: 'CA167B18-C6DC-49AD-B018-2B72B187918F',
+    propertyId: 'PP-AUCTION-001',
+    listingDate: '2026-08-25',
+    expiryDate: '2026-12-31',
+  },
+})
+
+assert.equal(auctionPlan.payload.mandateType, 'AuctionOnly')
+assert.match(auctionPlan.listingXml, /<MandateType>AuctionOnly<\/MandateType>/)
 
 assert.throws(() => client.updateListing(''), /ListingImport XML is required/)
 assert.throws(() => client.updateListing('<NotListingImport />'), /must include <ListingImport>/)

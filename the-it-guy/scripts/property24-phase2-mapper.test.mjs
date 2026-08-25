@@ -67,6 +67,7 @@ assert.equal(resolveProperty24Status('active', { isNew: true }), 'NewListing')
 assert.equal(resolveProperty24Status('active', { isNew: false }), 'Active')
 assert.equal(resolveProperty24PropertyTypeId('Apartment'), 5)
 assert.equal(resolveProperty24PropertyTypeId('warehouse'), 12)
+assert.equal(resolveProperty24PropertyTypeId('small_holding'), 10)
 
 const missing = createProperty24ListingPlan({
   listing: {},
@@ -191,6 +192,23 @@ assert.equal(submitReady.payload.propertyFeatures.furnishedStatus, 'No')
 assert.equal(submitReady.payload.photos.length, 1)
 assert.equal(submitReady.payload.photos[0].bytes, 'base64-image-data')
 assert.equal(submitReady.previewPayload.photos[0].bytesLoaded, true)
+
+const poaViaPublicationFeature = createProperty24ListingPlan({
+  listing: { ...baseListing, asking_price: 0 },
+  publication: {
+    ...basePublication,
+    asking_price: 0,
+    features: ['price_on_application'],
+  },
+  media: imageWithBytes,
+  agentMapping: baseAgentMapping,
+  catalogMapping: baseCatalogMapping,
+  options: { expiryDate: '2026-12-31' },
+})
+
+assert.equal(poaViaPublicationFeature.canPreview, true)
+assert.equal(poaViaPublicationFeature.payload.price, 0)
+assert.equal(poaViaPublicationFeature.payload.isPOA, true)
 
 const updateWithoutPhotoChange = createProperty24ListingPlan({
   listing: baseListing,

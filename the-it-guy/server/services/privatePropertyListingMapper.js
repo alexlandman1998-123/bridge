@@ -41,6 +41,17 @@ function normalizeBoolean(value, fallback = false) {
   return fallback
 }
 
+function hasFeature(source = {}, aliases = []) {
+  const normalizedAliases = new Set((Array.isArray(aliases) ? aliases : [aliases]).map(normalizePrivatePropertyListingKey).filter(Boolean))
+  const features = Array.isArray(source.features) ? source.features : []
+  return features.some((feature) => {
+    const value = typeof feature === 'string'
+      ? feature
+      : firstText(feature.key, feature.value, feature.label, feature.name, feature.type)
+    return normalizedAliases.has(normalizePrivatePropertyListingKey(value))
+  })
+}
+
 function toDateOnly(value = '') {
   const text = normalizePrivatePropertyText(value)
   if (!text) return ''
@@ -405,7 +416,9 @@ export function createPrivatePropertyListingPlan({
     listingType,
     category,
     value: firstText(options.mandateType, publication.mandate_type, publication.mandateType, listing.mandate_type, listing.mandateType),
-    auction: normalizeBoolean(options.auction ?? publication.auction ?? listing.auction, false),
+    auction: normalizeBoolean(options.auction ?? publication.auction ?? listing.auction, false) ||
+      hasFeature(publication, ['on_auction', 'auction']) ||
+      hasFeature(listing, ['on_auction', 'auction']),
   })
   const propertyStatus = resolvePrivatePropertyStatus({
     listingType,

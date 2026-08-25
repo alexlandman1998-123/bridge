@@ -148,6 +148,10 @@ export function buildSellerOnboardingPublicationDraft({
   addFeature(features, 'gas_installation', bool(form.gasInstallation) || bool(complianceFacts.gas_installation))
   addFeature(features, 'estate_or_hoa', bool(form.estateOrHoa) || bool(propertyFacts.estate_or_hoa) || propertyBranch === 'estate_hoa')
   addFeature(features, 'sectional_title', bool(form.sectionalTitle) || bool(propertyFacts.sectional_title) || propertyBranch === 'sectional_title')
+  addFeature(features, 'on_auction', bool(form.onAuction) || bool(form.on_auction) || bool(propertyFacts.on_auction))
+  addFeature(features, 'price_on_application', bool(form.priceOnApplication) || bool(form.price_on_application) || bool(form.isPOA) || bool(form.is_poa) || bool(propertyFacts.price_on_application) || bool(propertyFacts.is_poa))
+  addFeature(features, 'reduced_banner', bool(form.showReducedBanner) || bool(form.show_reduced_banner) || bool(propertyFacts.show_reduced_banner))
+  addFeature(features, 'no_transfer_duty', bool(form.noTransferDuty) || bool(form.no_transfer_duty) || bool(propertyFacts.no_transfer_duty))
 
   return {
     title: firstText(

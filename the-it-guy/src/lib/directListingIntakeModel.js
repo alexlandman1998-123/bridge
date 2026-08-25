@@ -295,6 +295,8 @@ export function buildDirectListingPropertyFacts(form = {}) {
   )
   const propertyCategory = normalizePropertyCategory(form.propertyCategory, { fallback: 'residential' })
   const address = normalizeText(pickFirst(form.formattedAddress, form.propertyAddress, form.address))
+  const estateOrHoa = normalizeBooleanDeclaration(pickFirst(form.estateOrHoa, form.estate_or_hoa)) === true ||
+    Boolean(normalizeText(pickFirst(form.estateName, form.estate_name, form.estateComplexName, form.estate_complex_name)))
 
   return compactObject({
     address,
@@ -319,6 +321,19 @@ export function buildDirectListingPropertyFacts(form = {}) {
     property_structure_type: propertyStructureType,
     propertyTitleType: propertyStructureType,
     property_title_type: propertyStructureType,
+    estateOrHoa,
+    estate_or_hoa: estateOrHoa,
+    hoa: estateOrHoa,
+    onAuction: normalizeBooleanDeclaration(pickFirst(form.onAuction, form.on_auction)) === true,
+    on_auction: normalizeBooleanDeclaration(pickFirst(form.onAuction, form.on_auction)) === true,
+    priceOnApplication: normalizeBooleanDeclaration(pickFirst(form.priceOnApplication, form.price_on_application, form.isPOA, form.is_poa)) === true,
+    price_on_application: normalizeBooleanDeclaration(pickFirst(form.priceOnApplication, form.price_on_application, form.isPOA, form.is_poa)) === true,
+    isPOA: normalizeBooleanDeclaration(pickFirst(form.priceOnApplication, form.price_on_application, form.isPOA, form.is_poa)) === true,
+    is_poa: normalizeBooleanDeclaration(pickFirst(form.priceOnApplication, form.price_on_application, form.isPOA, form.is_poa)) === true,
+    showReducedBanner: normalizeBooleanDeclaration(pickFirst(form.showReducedBanner, form.show_reduced_banner)) === true,
+    show_reduced_banner: normalizeBooleanDeclaration(pickFirst(form.showReducedBanner, form.show_reduced_banner)) === true,
+    noTransferDuty: normalizeBooleanDeclaration(pickFirst(form.noTransferDuty, form.no_transfer_duty)) === true,
+    no_transfer_duty: normalizeBooleanDeclaration(pickFirst(form.noTransferDuty, form.no_transfer_duty)) === true,
     unitNumber: normalizeText(form.unitNumber),
     unit_number: normalizeText(form.unitNumber),
     sectionNumber: normalizeText(form.sectionNumber),

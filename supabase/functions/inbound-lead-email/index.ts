@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "supabase";
+import { buildLeadOperationsBrandingPayload } from "./leadOperationsBranding.ts";
 
 type JsonRecord = Record<string, unknown>;
 type SupabaseClientLike = {
@@ -2626,6 +2627,10 @@ async function dispatchLeadOperationsNotification({
     organisation?.legal_name,
     "Arch9",
   );
+  const brandingPayload = buildLeadOperationsBrandingPayload(
+    organisation as JsonRecord,
+    organisationName,
+  );
   const basePayload: JsonRecord = {
     organisationId,
     branchId,
@@ -2647,6 +2652,7 @@ async function dispatchLeadOperationsNotification({
       : "",
     actionLink: buildLeadActionLink(leadId),
     source: "inbound_lead_email",
+    ...brandingPayload,
     metadata: {
       inboundEmailId,
       providerMessageId: normalizeText(canonical.externalReference),

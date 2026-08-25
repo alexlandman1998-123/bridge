@@ -224,6 +224,33 @@ const CREATE_LISTING_WORKFLOW_STEPS = [
   { key: 'review', label: 'Review', description: 'Confirm & create' },
 ]
 
+const CREATE_LISTING_PROPERTY_STRUCTURE_OPTIONS = PROPERTY_STRUCTURE_TYPES
+  .filter((structureType) => ['full_title', 'sectional_title', 'share_block', 'freehold', 'agricultural_holding', 'other'].includes(structureType))
+  .map((structureType) => ({
+    value: structureType,
+    label: getPropertyStructureTypeLabel(structureType),
+  }))
+
+const CREATE_LISTING_DESCRIPTIVE_PROPERTY_TYPES = [
+  { value: 'House', label: 'House' },
+  { value: 'Apartment', label: 'Apartment / Flat' },
+  { value: 'Townhouse', label: 'Townhouse' },
+  { value: 'Cluster', label: 'Cluster' },
+  { value: 'Duplex', label: 'Duplex' },
+  { value: 'Penthouse', label: 'Penthouse' },
+  { value: 'vacant_stand', label: 'Vacant Stand' },
+  { value: 'smallholding', label: 'Smallholding' },
+  { value: 'Farm', label: 'Farm' },
+  { value: 'new_development', label: 'New Development' },
+]
+
+const CREATE_LISTING_SALES_FLAG_OPTIONS = [
+  { key: 'onAuction', label: 'On Auction', description: 'Market this listing as an auction listing.' },
+  { key: 'priceOnApplication', label: 'Price on Application', description: 'Allow publishing without showing a public price where supported.' },
+  { key: 'showReducedBanner', label: 'Show Reduced Banner on Listing', description: 'Flag this as reduced when the portal supports it.' },
+  { key: 'noTransferDuty', label: 'No Transfer Duty', description: 'Show no-transfer-duty messaging where supported.' },
+]
+
 const QUICK_ADD_HELP_STEPS = [
   'Listing Status',
   'Ownership & Seller Type',
@@ -650,6 +677,32 @@ function FormField({ label, children, className = '' }) {
   )
 }
 
+function BooleanChoiceField({ label, value = false, onChange, yesLabel = 'Yes', noLabel = 'No', yesDescription = '', noDescription = '' }) {
+  return (
+    <div className="grid gap-2">
+      <span className="text-sm font-semibold text-[#2d445e]">{label}</span>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <SelectionCard
+          compact
+          active={Boolean(value)}
+          title={yesLabel}
+          description={yesDescription}
+          icon={CheckCircle2}
+          onClick={() => onChange?.(true)}
+        />
+        <SelectionCard
+          compact
+          active={!value}
+          title={noLabel}
+          description={noDescription}
+          icon={Circle}
+          onClick={() => onChange?.(false)}
+        />
+      </div>
+    </div>
+  )
+}
+
 function NumberStepper({ label, value = '', onChange, min = 0 }) {
   const currentValue = Math.max(min, Number(normalizeIntegerInput(value) || min) || min)
   const updateValue = (nextValue) => {
@@ -820,19 +873,49 @@ function buildCreateListingRequirementSummary(form = {}) {
   ]
 }
 
+function hasListingPriceOrPoa(form = {}) {
+  return Boolean(Number(form.listingPrice || form.estimatedAskingPrice || 0) > 0 || form.priceOnApplication)
+}
+
+function listingHasPriceOrPoa(listing = {}) {
+  const quickMetadata = parseQuickListingMetadata(listing?.internalListingNotes || listing?.internal_listing_notes || listing?.description) || {}
+  const metadataProperty = quickMetadata?.property && typeof quickMetadata.property === 'object' ? quickMetadata.property : {}
+  const canonicalProperty = listing?.sellerCanonicalFacts?.property || listing?.seller_canonical_facts_json?.property || {}
+  return Boolean(
+    Number(listing.askingPrice || listing.asking_price || listing.estimatedValue || listing.estimated_value || 0) > 0 ||
+      listing.priceOnApplication ||
+      listing.isPOA ||
+      listing.is_poa ||
+      metadataProperty.priceOnApplication ||
+      canonicalProperty.price_on_application ||
+      canonicalProperty.is_poa,
+  )
+}
+
+function buildQuickListingPublicationFeatures(form = {}, keySellingPoints = []) {
+  const features = new Set((Array.isArray(keySellingPoints) ? keySellingPoints : []).map(normalizeDirectListingKey).filter(Boolean))
+  if (form.estateOrHoa || normalizeText(form.estateName)) features.add('estate_or_hoa')
+  if (isSectionalTitleProperty(form)) features.add('sectional_title')
+  if (form.onAuction) features.add('on_auction')
+  if (form.priceOnApplication) features.add('price_on_application')
+  if (form.showReducedBanner) features.add('reduced_banner')
+  if (form.noTransferDuty) features.add('no_transfer_duty')
+  return Array.from(features)
+}
+
 function buildCreateListingPortalStatuses(form = {}) {
   const hasDescription = Boolean(normalizeText(form.listingDescription || form.notes))
   const hasImages = Array.isArray(form.listingImages) && form.listingImages.length > 0
   const property24Missing = [
     !normalizeText(form.propertyAddress) ? 'Address' : '',
-    !Number(form.listingPrice || form.estimatedAskingPrice || 0) ? 'Price' : '',
+    !hasListingPriceOrPoa(form) ? 'Price or POA' : '',
     !hasDescription ? 'Description' : '',
     !hasImages ? 'Photos' : '',
     !normalizeText(form.floorSize) ? 'Floor size' : '',
   ].filter(Boolean)
   const privatePropertyMissing = [
     !normalizeText(form.propertyAddress) ? 'Address' : '',
-    !Number(form.listingPrice || form.estimatedAskingPrice || 0) ? 'Price' : '',
+    !hasListingPriceOrPoa(form) ? 'Price or POA' : '',
     !hasDescription ? 'Description' : '',
     !hasImages ? 'Photos' : '',
   ].filter(Boolean)
@@ -907,6 +990,7 @@ async function syncQuickListingDistributionData(listingId = '', form = {}, conte
   const uploadedImages = await uploadQuickListingImages(listingId, form.listingImages)
   const description = normalizeText(form.listingDescription || form.notes)
   const keySellingPoints = Array.isArray(form.keySellingPoints) ? form.keySellingPoints.map(normalizeText).filter(Boolean) : []
+  const publicationFeatures = buildQuickListingPublicationFeatures(form, keySellingPoints)
   return syncPrivateListingDistributionData(listingId, {
     publicationData: {
       title: normalizeText(form.listingTitle) || context.title || 'Listing draft',
@@ -923,7 +1007,7 @@ async function syncQuickListingDistributionData(listingId = '', form = {}, conte
       floorSize: Number(form.floorSize || 0) || null,
       erfSize: Number(form.erfSize || 0) || null,
       description,
-      features: keySellingPoints,
+      features: publicationFeatures,
       amenities: [],
       status: 'Draft',
     },
@@ -1563,10 +1647,22 @@ function buildListingPropertyCanonicalFacts(form = {}) {
   const estateName = normalizeText(form?.estateName)
   const sectionalTitleNumber = normalizeText(form?.sectionalTitleNumber)
   const isSectionalTitle = isSectionalTitleProperty(form)
+  const propertyStructureType = normalizePropertyStructureType(form?.propertyStructureType || form?.propertyType, { fallback: 'other' })
+  const propertyType = normalizeText(form?.propertyType)
+  const estateOrHoa = Boolean(form?.estateOrHoa || estateName || propertyStructureType === 'estate')
   return {
     property: {
-      property_structure_type: normalizePropertyStructureType(form?.propertyStructureType || form?.propertyType, { fallback: 'other' }),
+      property_structure_type: propertyStructureType,
+      propertyStructureType,
+      property_type: propertyType,
+      propertyType,
       sectional_title: isSectionalTitle,
+      estate_or_hoa: estateOrHoa,
+      hoa: estateOrHoa,
+      on_auction: Boolean(form?.onAuction),
+      price_on_application: Boolean(form?.priceOnApplication),
+      show_reduced_banner: Boolean(form?.showReducedBanner),
+      no_transfer_duty: Boolean(form?.noTransferDuty),
       unitNumber,
       unit_number: unitNumber,
       sectionNumber,
@@ -1581,6 +1677,13 @@ function buildListingPropertyCanonicalFacts(form = {}) {
       sectional_title_number: sectionalTitleNumber,
       sectionalTitleScheme: sectionalTitleNumber,
     },
+    propertyStructureType,
+    propertyType,
+    estateOrHoa,
+    onAuction: Boolean(form?.onAuction),
+    priceOnApplication: Boolean(form?.priceOnApplication),
+    showReducedBanner: Boolean(form?.showReducedBanner),
+    noTransferDuty: Boolean(form?.noTransferDuty),
     unitNumber,
     sectionNumber,
     complexName,
@@ -2238,7 +2341,8 @@ function getListingPropertyFacts(listing = {}, quickMetadata = null) {
   return [
     formatListingFactValue(listing.bedrooms || listing.bedroomCount || listing.bedroom_count || metadataProperty.bedrooms, 'bed'),
     formatListingFactValue(listing.bathrooms || listing.bathroomCount || listing.bathroom_count || metadataProperty.bathrooms, 'bath'),
-    formatListingFactValue(listing.parkingCount || listing.parking_count || listing.garages || metadataProperty.parkingCount, 'parking'),
+    formatListingFactValue(listing.garages || listing.garageCount || listing.garage_count || metadataProperty.garages, 'garage'),
+    formatListingFactValue(listing.parkingCount || listing.parking_count || metadataProperty.parkingCount, 'parking'),
   ].filter(Boolean)
 }
 
@@ -2431,6 +2535,7 @@ function buildInitialListingLeadForm(profile, workspace) {
     propertyType: 'House',
     listingType: 'sale',
     propertyStructureType: 'full_title',
+    estateOrHoa: false,
     unitNumber: '',
     sectionNumber: '',
     complexName: '',
@@ -2458,6 +2563,10 @@ function buildInitialListingLeadForm(profile, workspace) {
     parkingCount: '',
     erfSize: '',
     floorSize: '',
+    noTransferDuty: false,
+    onAuction: false,
+    priceOnApplication: false,
+    showReducedBanner: false,
     commissionPercentage: '',
     commissionAmount: '',
     mandateType: 'sole',
@@ -2538,7 +2647,7 @@ function buildListingCompleteness({ form } = {}) {
   const mandateDatesCaptured = Boolean(normalizeText(form?.mandateStartDate) && normalizeText(form?.mandateEndDate))
   const checks = [
     { label: 'Property address', complete: Boolean(normalizeText(form?.propertyAddress)) },
-    { label: 'Listing price', complete: Number(form?.listingPrice || form?.estimatedAskingPrice || 0) > 0 },
+    { label: 'Listing price or POA', complete: hasListingPriceOrPoa(form) },
     { label: 'Seller / entity name', complete: Boolean(sellerDisplayName) },
     { label: 'Seller contact details', complete: sellerHasContact },
     { label: 'Signed mandate', complete: mandateSigned },
@@ -2578,6 +2687,7 @@ function buildQuickListingNotes(form, completeness, mandateStatus) {
   const mandateStatusLabel = getQuickListingMandateStatusLabel(mandateStatus)
   const sellerDisplayName = getQuickAddSellerDisplayName(form)
   const keySellingPoints = Array.isArray(form.keySellingPoints) ? form.keySellingPoints.map(normalizeText).filter(Boolean) : []
+  const publicationFeatures = buildQuickListingPublicationFeatures(form, keySellingPoints)
   const humanNotes = [
     normalizeText(form.listingDescription || form.notes),
     `Capture type: ${quickAddIntent.label}`,
@@ -2603,14 +2713,22 @@ function buildQuickListingNotes(form, completeness, mandateStatus) {
     property: {
       quickAddIntent: quickAddIntent.value,
       listingType: normalizeText(form.listingType),
+      propertyStructureType: normalizeText(form.propertyStructureType),
+      estateOrHoa: Boolean(form.estateOrHoa),
+      estateName: normalizeText(form.estateName),
       bedrooms: normalizeText(form.bedrooms),
       bathrooms: normalizeText(form.bathrooms),
       garages: normalizeText(form.garages),
       parkingCount: normalizeText(form.parkingCount),
       erfSize: normalizeText(form.erfSize),
       propertySize: normalizeText(form.floorSize),
+      onAuction: Boolean(form.onAuction),
+      priceOnApplication: Boolean(form.priceOnApplication),
+      showReducedBanner: Boolean(form.showReducedBanner),
+      noTransferDuty: Boolean(form.noTransferDuty),
       externalListingLink: normalizeText(form.externalListingLink),
       keySellingPoints,
+      publicationFeatures,
       photoCount: Array.isArray(form.listingImages) ? form.listingImages.length : 0,
     },
     commission: mandatePack.commission,
@@ -2823,7 +2941,7 @@ function validateQuickListingMinimumFields({ form, assignedAgentKey, requireAssi
   const errors = []
   const sellerDisplayName = getQuickAddSellerDisplayName(form)
   if (!normalizeText(form.propertyAddress)) errors.push('Property address is required.')
-  if (!Number(form.listingPrice || form.estimatedAskingPrice || 0)) errors.push('Listing price is required.')
+  if (!hasListingPriceOrPoa(form)) errors.push('Listing price or price on application is required.')
   if (!normalizeText(form.propertyType)) errors.push('Property type is required.')
   if (!sellerDisplayName) errors.push(getQuickAddSellerNameRequirementLabel(form))
   if (!normalizeText(form.sellerEmail) && !normalizeText(form.sellerPhone)) errors.push('Seller email or mobile is required.')
@@ -2888,7 +3006,7 @@ function buildDeveloperListingCompleteness({ form = {} } = {}) {
   const checks = [
     { label: 'Development linked', complete: Boolean(normalizeText(form.developmentId)) },
     { label: 'Unit linked', complete: Boolean(normalizeText(form.unitId)) },
-    { label: 'Listing price', complete: Number(form.listingPrice || form.estimatedAskingPrice || 0) > 0 },
+    { label: 'Listing price or POA', complete: hasListingPriceOrPoa(form) },
     { label: 'Property details', complete: Boolean(normalizeText(form.propertyAddress || form.listingTitle || form.unitNumber)) },
     { label: 'Portal description', complete: Boolean(normalizeText(form.notes)) },
     { label: 'Portal link', complete: Boolean(normalizeText(form.externalListingLink)) },
@@ -2908,7 +3026,7 @@ function getDeveloperListingPortalWarnings(listing = {}, completeness = null) {
   const warnings = []
   if (!normalizeText(listing.developmentId || listing.development_id)) warnings.push('Development link missing')
   if (!normalizeText(listing.unitId || listing.unit_id)) warnings.push('Unit link missing')
-  if (!Number(listing.askingPrice || listing.asking_price || 0)) warnings.push('Listing price missing')
+  if (!listingHasPriceOrPoa(listing)) warnings.push('Listing price or POA missing')
   if (!hasListingExternalLink(listing)) warnings.push('Portal link missing')
   if (missing.has('portal description')) warnings.push('Portal description missing')
   return [...new Set(warnings)]
@@ -2939,12 +3057,21 @@ function buildDeveloperListingNotes(form = {}, completeness = {}) {
     },
     property: {
       listingType: normalizeText(form.listingType),
+      propertyStructureType: normalizeText(form.propertyStructureType),
+      estateOrHoa: Boolean(form.estateOrHoa),
+      estateName: normalizeText(form.estateName),
       bedrooms: normalizeText(form.bedrooms),
       bathrooms: normalizeText(form.bathrooms),
+      garages: normalizeText(form.garages),
       parkingCount: normalizeText(form.parkingCount),
       erfSize: normalizeText(form.erfSize),
       propertySize: normalizeText(form.floorSize),
+      onAuction: Boolean(form.onAuction),
+      priceOnApplication: Boolean(form.priceOnApplication),
+      showReducedBanner: Boolean(form.showReducedBanner),
+      noTransferDuty: Boolean(form.noTransferDuty),
       externalListingLink: normalizeText(form.externalListingLink),
+      publicationFeatures: buildQuickListingPublicationFeatures(form),
     },
   }
   return [...humanNotes, serializeQuickListingMetadata(metadata)].join('\n')
@@ -2954,7 +3081,7 @@ function validateDeveloperListingMinimumFields({ form = {}, assignedAgentKey = '
   const errors = []
   if (!normalizeText(form.developmentId)) errors.push('Select the development this listing belongs to.')
   if (!normalizeText(form.unitId)) errors.push('Select the unit this listing publishes.')
-  if (!Number(form.listingPrice || form.estimatedAskingPrice || 0)) errors.push('Listing price is required.')
+  if (!hasListingPriceOrPoa(form)) errors.push('Listing price or price on application is required.')
   if (!normalizeText(form.propertyType)) errors.push('Property type is required.')
   if (!normalizeText(form.propertyAddress || form.listingTitle || form.unitNumber)) errors.push('Add a listing title, address, or unit number.')
   if (requireAssignedAgent && !normalizeText(assignedAgentKey)) errors.push('Assigned sales user is required.')
@@ -3282,6 +3409,16 @@ function AgentListings({ initialTab = null } = {}) {
       if (key === 'propertyType' && normalizePropertyStructureType(value, { fallback: '' }) === 'sectional_title') {
         next.propertyStructureType = 'sectional_title'
       }
+      if (key === 'propertyType') {
+        next.propertyCategory = normalizePropertyCategory(value, { fallback: previous.propertyCategory || 'residential' })
+      }
+      if (key === 'propertyStructureType' && value !== 'sectional_title') {
+        next.sectionNumber = ''
+        next.sectionalTitleNumber = ''
+      }
+      if (key === 'estateOrHoa' && !value) {
+        next.estateName = ''
+      }
       if (key === 'developmentId' && value !== previous.developmentId) {
         next.unitId = ''
       }
@@ -3438,7 +3575,7 @@ function AgentListings({ initialTab = null } = {}) {
     if (!getQuickAddSellerDisplayName(form)) required.push('seller / entity name')
     if (!normalizeText(form.sellerEmail) && !normalizeText(form.sellerPhone)) required.push('seller contact')
     if (!normalizeText(form.propertyAddress)) required.push('property address')
-    if (!Number(form.listingPrice || form.estimatedAskingPrice || 0)) required.push('listing price')
+    if (!hasListingPriceOrPoa(form)) required.push('listing price or POA')
     return required
   }, [form])
 
@@ -4343,6 +4480,12 @@ function AgentListings({ initialTab = null } = {}) {
             developmentId: form.developmentId || linkedDevelopmentId || null,
             unitId: form.unitId || linkedUnitId || null,
             propertyStructureType: form.propertyStructureType,
+            estateOrHoa: Boolean(form.estateOrHoa),
+            onAuction: Boolean(form.onAuction),
+            priceOnApplication: Boolean(form.priceOnApplication),
+            isPOA: Boolean(form.priceOnApplication),
+            showReducedBanner: Boolean(form.showReducedBanner),
+            noTransferDuty: Boolean(form.noTransferDuty),
             propertyAddress: [addressLine2, propertyAddress, form.suburb.trim(), form.city.trim()].filter(Boolean).join(', ') || developerTitle,
             addressLine1: propertyAddress,
             addressLine2,
@@ -4758,6 +4901,12 @@ function AgentListings({ initialTab = null } = {}) {
           listingSource: 'private_listing',
           listingCategory: form.listingType === 'rental' ? 'rental' : 'private_sale',
           propertyStructureType: form.propertyStructureType,
+          estateOrHoa: Boolean(form.estateOrHoa),
+          onAuction: Boolean(form.onAuction),
+          priceOnApplication: Boolean(form.priceOnApplication),
+          isPOA: Boolean(form.priceOnApplication),
+          showReducedBanner: Boolean(form.showReducedBanner),
+          noTransferDuty: Boolean(form.noTransferDuty),
           propertyAddress: [addressLine2, propertyAddress, form.suburb.trim(), form.city.trim()].filter(Boolean).join(', '),
           addressLine1: propertyAddress,
           addressLine2,
@@ -5943,7 +6092,7 @@ function AgentListings({ initialTab = null } = {}) {
     const selectedSellerName = getQuickAddSellerDisplayName(form) || 'Seller not captured'
     const priceLabel = Number(form.listingPrice || form.estimatedAskingPrice || 0)
       ? `R${Number(form.listingPrice || form.estimatedAskingPrice || 0).toLocaleString('en-ZA')}`
-      : 'Price not captured'
+      : form.priceOnApplication ? 'Price on Application' : 'Price not captured'
     const createListingOwnerCards = normalizeCreateListingOwnerCards(form.multipleOwners, form.multipleOwnersText, { includeBlank: sellerTypeKey === 'multiple_owners' })
     const isFinalCreateListingStep = createListingStepIndex === CREATE_LISTING_WORKFLOW_STEPS.length - 1
 
@@ -6185,21 +6334,38 @@ function AgentListings({ initialTab = null } = {}) {
                 </ListingWizardSection>
 
                 <ListingWizardSection title="2. Listing basics" divided>
-                  <div className="mt-3 grid gap-4 md:grid-cols-2 xl:max-w-[760px]">
-                    <FormField label="Property type *">
+                  <div className="mt-3 grid gap-4 md:grid-cols-2">
+                    <FormField label="Ownership scheme *">
+                      <Field as="select" value={form.propertyStructureType} onChange={(event) => updateForm('propertyStructureType', event.target.value)}>
+                        {CREATE_LISTING_PROPERTY_STRUCTURE_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                      </Field>
+                    </FormField>
+                    <FormField label="Descriptive property type *">
                       <Field as="select" value={form.propertyType} onChange={(event) => updateForm('propertyType', event.target.value)}>
-                        <option>House</option>
-                        <option>Apartment</option>
-                        <option>Townhouse</option>
-                        <option>Sectional Title</option>
-                        <option>Vacant Land</option>
+                        {CREATE_LISTING_DESCRIPTIVE_PROPERTY_TYPES.map((option) => (
+                          <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
                       </Field>
                     </FormField>
                     <CurrencyInput
-                      label="Listing price *"
+                      label={form.priceOnApplication ? 'Listing price' : 'Listing price *'}
                       value={form.listingPrice}
                       onChange={(value) => updateForm('listingPrice', value)}
                     />
+                    <BooleanChoiceField
+                      label="In an estate / HOA?"
+                      value={form.estateOrHoa}
+                      yesDescription="Estate, HOA or managed community."
+                      noDescription="Standalone property."
+                      onChange={(value) => updateForm('estateOrHoa', value)}
+                    />
+                    {form.estateOrHoa ? (
+                      <FormField label="Estate / HOA name" className="md:col-span-2">
+                        <Field value={form.estateName} onChange={(event) => updateForm('estateName', event.target.value)} placeholder="Estate, complex or HOA name" />
+                      </FormField>
+                    ) : null}
                   </div>
                 </ListingWizardSection>
 
@@ -6224,8 +6390,30 @@ function AgentListings({ initialTab = null } = {}) {
                       <FormField label="Complex / scheme">
                         <Field value={form.complexName} onChange={(event) => updateForm('complexName', event.target.value)} />
                       </FormField>
+                      <FormField label="Section number">
+                        <Field value={form.sectionNumber} onChange={(event) => updateForm('sectionNumber', event.target.value)} />
+                      </FormField>
+                      <FormField label="Sectional title number">
+                        <Field value={form.sectionalTitleNumber} onChange={(event) => updateForm('sectionalTitleNumber', event.target.value)} />
+                      </FormField>
                     </div>
                   ) : null}
+                </ListingWizardSection>
+
+                <ListingWizardSection title="4. Sales portal options" description="Capture the publication flags agents expect before syndication." divided>
+                  <div className="mt-3 grid gap-3 md:grid-cols-2">
+                    {CREATE_LISTING_SALES_FLAG_OPTIONS.map((option) => (
+                      <SelectionCard
+                        key={option.key}
+                        compact
+                        active={Boolean(form[option.key])}
+                        title={option.label}
+                        description={option.description}
+                        icon={option.key === 'onAuction' ? CircleAlert : ShieldCheck}
+                        onClick={() => updateForm(option.key, !form[option.key])}
+                      />
+                    ))}
+                  </div>
                 </ListingWizardSection>
               </div>
             ) : null}
