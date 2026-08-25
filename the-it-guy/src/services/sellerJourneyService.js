@@ -216,6 +216,34 @@ const SELLER_ONBOARDING_SUBMITTED_STAGE_SIGNALS = new Set([
   'transaction_created',
   'sold',
 ])
+const PRE_LISTING_LIFECYCLE_STATUSES = new Set([
+  'seller_lead',
+  'onboarding_sent',
+  'seller_onboarding_sent',
+  'onboarding_pending',
+  'seller_onboarding_pending',
+  'onboarding_completed',
+  'seller_onboarding_completed',
+])
+const LIVE_LISTING_LIFECYCLE_STATUSES = new Set([
+  'active',
+  'listing_active',
+  'listing_live',
+  'active_market',
+  'live',
+])
+const LISTING_CREATED_LIFECYCLE_STATUSES = new Set([
+  'draft',
+  'created',
+  'listing_created',
+  'listing_review',
+  'mandate_signed',
+  ...LIVE_LISTING_LIFECYCLE_STATUSES,
+  'published',
+  'under_offer',
+  'transaction_created',
+  'sold',
+])
 
 function firstPresent(...values) {
   return values.map(normalizeText).find(Boolean) || ''
@@ -320,6 +348,39 @@ function readLinkedLeadIds(listing = {}) {
     listing?.leadId,
     listing?.lead_id,
   ].map(normalizeText).filter(Boolean)
+}
+
+function getCanonicalListingLifecycleStatus(listing = {}) {
+  return normalizeKey(listing?.listingStatus || listing?.listing_status || listing?.lifecycleStatus || listing?.lifecycle_status)
+}
+
+function getListingLifecycleStatus(listing = {}) {
+  return getCanonicalListingLifecycleStatus(listing) || normalizeKey(listing?.status)
+}
+
+function getListingSource(listing = {}) {
+  return normalizeKey(listing?.source || listing?.listingSource || listing?.listing_source || listing?.createdFrom || listing?.created_from)
+}
+
+function isPreListingLifecycleStatus(status = '') {
+  return PRE_LISTING_LIFECYCLE_STATUSES.has(normalizeKey(status))
+}
+
+function isOnboardingOnlyListingShell({ lead = {}, listing = {} } = {}) {
+  const source = getListingSource(listing)
+  const lifecycleStatus = getCanonicalListingLifecycleStatus(listing)
+  const onboardingStatus = normalizeKey(
+    listing?.sellerOnboarding?.status ||
+      listing?.seller_onboarding?.status ||
+      listing?.sellerOnboardingStatus ||
+      listing?.seller_onboarding_status ||
+      lead?.sellerOnboardingStatus ||
+      lead?.seller_onboarding_status,
+  )
+  return Boolean(
+    source === 'pipeline_seller_lead' ||
+      (isPreListingLifecycleStatus(lifecycleStatus) && onboardingStatus && !SELLER_ONBOARDING_SUBMITTED_STATUSES.has(onboardingStatus)),
+  )
 }
 
 export function isSellerLead(lead = {}) {
@@ -476,17 +537,15 @@ function listingBelongsToLead(listing = {}, lead = {}) {
 }
 
 function isListingLive(listing = {}) {
-  const status = normalizeKey(listing?.listingStatus || listing?.listing_status || listing?.status || listing?.lifecycleStatus || listing?.lifecycle_status)
+  const canonicalStatus = getCanonicalListingLifecycleStatus(listing)
+  if (isPreListingLifecycleStatus(canonicalStatus)) return false
+  const status = canonicalStatus || normalizeKey(listing?.status)
   const visibility = normalizeKey(listing?.listingVisibility || listing?.listing_visibility)
   return Boolean(
-    status === 'active' ||
-    status === 'listing_active' ||
-    status === 'listing_live' ||
-    status === 'active_market' ||
-    status === 'live' ||
-    visibility === 'active_market' ||
-    listing?.isActive ||
-    listing?.is_active,
+    LIVE_LISTING_LIFECYCLE_STATUSES.has(status) ||
+      visibility === 'active_market' ||
+      listing?.isActive ||
+      listing?.is_active,
   )
 }
 
@@ -498,8 +557,9 @@ function hasListingShell({ lead = {}, listing = {} } = {}) {
 function hasListingCreated({ lead = {}, listing = {}, mandateStatus = '' } = {}) {
   if (!hasListingShell({ lead, listing })) return false
   if (hasDirectListingPortalIntake(listing)) return true
-  const status = normalizeKey(listing?.listingStatus || listing?.listing_status || listing?.status || listing?.lifecycleStatus || listing?.lifecycle_status)
-  const source = normalizeKey(listing?.source || listing?.listingSource || listing?.listing_source || listing?.createdFrom || listing?.created_from)
+  if (isOnboardingOnlyListingShell({ lead, listing })) return false
+  const status = getListingLifecycleStatus(listing)
+  const source = getListingSource(listing)
   const explicitListingSource = [
     'pipeline_seller_conversion',
     'direct_listing',
@@ -507,22 +567,7 @@ function hasListingCreated({ lead = {}, listing = {}, mandateStatus = '' } = {})
     'agent_listing',
     'manual_listing',
   ].includes(source)
-  const listingStatusShowsDraft = [
-    'draft',
-    'created',
-    'listing_created',
-    'listing_review',
-    'mandate_signed',
-    'active',
-    'listing_active',
-    'listing_live',
-    'active_market',
-    'live',
-    'published',
-    'under_offer',
-    'transaction_created',
-    'sold',
-  ].includes(status)
+  const listingStatusShowsDraft = LISTING_CREATED_LIFECYCLE_STATUSES.has(status)
   return Boolean(mandateStatus === 'signed' || explicitListingSource || listingStatusShowsDraft)
 }
 
@@ -716,9 +761,11 @@ export function areSellerJourneyDocumentsSubmitted({ listing = {}, documents = [
 }
 
 export function buildListingJourney(listing = {}) {
-  const status = normalizeKey(listing?.listingStatus || listing?.listing_status || listing?.status || listing?.lifecycleStatus || listing?.lifecycle_status)
+  const canonicalStatus = getCanonicalListingLifecycleStatus(listing)
+  const status = canonicalStatus || normalizeKey(listing?.status)
   const visibility = normalizeKey(listing?.listingVisibility || listing?.listing_visibility)
-  const published = visibility === 'active_market' || ['active', 'under_offer', 'transaction_created', 'sold'].includes(status)
+  const isPreListing = isPreListingLifecycleStatus(canonicalStatus)
+  const published = !isPreListing && (visibility === 'active_market' || ['active', 'under_offer', 'transaction_created', 'sold'].includes(status))
   const active = isListingLive(listing)
   const archived = ['archived', 'withdrawn', 'sold'].includes(status) || visibility === 'archived'
   const paused = ['paused', 'on_hold', 'suspended'].includes(status)

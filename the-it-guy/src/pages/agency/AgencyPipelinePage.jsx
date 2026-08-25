@@ -15882,46 +15882,176 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedSellerReadiness.listingReadiness?.items,
   ])
 
-  const selectedSellerSummarySections = useMemo(() => ([
-    {
-      key: 'relationship',
-      title: 'Relationship',
-      rows: [
-        ['Lead Owner', selectedLeadAssignedAgentLabel],
-        ['Lead Channel', selectedLead?.leadDirection || 'Not captured'],
-        ['Lead Score', selectedLead?.priority || selectedLead?.leadScore || 'Not captured'],
-      ],
-    },
-    {
-      key: 'details',
-      title: 'Lead Details',
-      rows: [
-        ['Budget', selectedLead?.budget ? formatCurrency(selectedLead.budget) : 'Not captured'],
-        ['Pipeline Value', selectedLead?.estimatedValue ? formatCurrency(selectedLead.estimatedValue) : 'Not captured'],
-        ['Area of Interest', selectedLead?.areaInterest || selectedLeadPropertyLabel || 'Not captured'],
-      ],
-    },
-    {
-      key: 'progress',
-      title: 'Linked / Progress',
-      rows: [
-        ['Lifecycle Stage', selectedSellerJourney.stage?.label || selectedLeadDisplayLifecycleStage || 'Not captured'],
-        ['Linked Transaction', selectedLeadLinkedTransactionId || 'Not linked yet'],
-        ['Next Follow Up', selectedLeadHasKingstonsSellerProcess ? selectedKingstonsProcessAction.title : selectedLeadNextStep || 'Not captured'],
-        ['Days in Stage', `${selectedSellerJourney.daysInCurrentStage || 0} days`],
-      ],
-    },
-  ]), [
+  const selectedSellerSummarySections = useMemo(() => {
+    const lead = selectedLead || {}
+    const listing = selectedLeadLinkedListing?.sourceListing && isPlainObject(selectedLeadLinkedListing.sourceListing)
+      ? selectedLeadLinkedListing.sourceListing
+      : (selectedLeadLinkedListing || {})
+    const onboarding = getWorkspaceSellerOnboarding(lead, listing)
+    const directListingIntake = isPlainObject(listing?.directListingIntake)
+      ? listing.directListingIntake
+      : isPlainObject(listing?.direct_listing_intake)
+        ? listing.direct_listing_intake
+        : {}
+    const directSeller = isPlainObject(directListingIntake?.seller) ? directListingIntake.seller : {}
+    const value = (...values) => formatCapturedValue(firstWorkspaceValue(...values))
+    const price = (...values) => {
+      const amount = firstWorkspaceValue(...values)
+      return amount ? formatMaybeCurrency(amount) : 'Not captured'
+    }
+    const ownerSignal = firstWorkspaceText(
+      onboarding?.ownerEntityType,
+      onboarding?.owner_entity_type,
+      onboarding?.ownerStructureType,
+      onboarding?.owner_structure_type,
+      onboarding?.ownershipType,
+      onboarding?.ownership_type,
+      onboarding?.sellerLegalType,
+      onboarding?.seller_legal_type,
+      onboarding?.sellerType,
+      directSeller?.ownerEntityType,
+      directSeller?.owner_entity_type,
+      directSeller?.ownerStructureType,
+      directSeller?.owner_structure_type,
+      directSeller?.ownershipType,
+      directSeller?.ownership_type,
+      directSeller?.sellerLegalType,
+      directSeller?.seller_legal_type,
+      lead?.ownerEntityType,
+      lead?.owner_entity_type,
+      lead?.ownershipType,
+      lead?.ownership_type,
+      listing?.sellerType,
+      listing?.seller_type,
+      listing?.ownershipStructure,
+      listing?.ownership_structure,
+    )
+    const ownerTypeLabels = {
+      individual: 'Individual',
+      natural_person: 'Individual',
+      multiple: 'Multiple Owners',
+      multiple_individuals: 'Multiple Owners',
+      multiple_owners: 'Multiple Owners',
+      company: 'Company',
+      close_corporation: 'Close Corporation',
+      cc: 'Close Corporation',
+      trust: 'Trust',
+      deceased_estate: 'Deceased Estate',
+      power_of_attorney: 'Power of Attorney',
+      foreign_individual: 'Foreign Individual',
+      foreign_company: 'Foreign Company',
+      foreign_trust: 'Foreign Trust',
+      other_entity: 'Other Entity',
+      other: 'Other Entity',
+    }
+    const ownerType = ownerSignal
+      ? ownerTypeLabels[normalizeKey(ownerSignal)] || titleCaseWorkspaceValue(ownerSignal)
+      : 'Not captured'
+    const documentRows = selectedSellerDocumentCategories.flatMap((category) => category.items || [])
+    const documentStatus = (canonicalKey) => {
+      const row = documentRows.find((documentRow) => normalizeSellerBasePackKey(getSellerLeadDocumentCanonicalKey(documentRow)) === canonicalKey)
+      if (!row) return 'Missing'
+      const statusMeta = getSellerLeadDocumentStatusMeta(row)
+      if (statusMeta.state === 'complete') return 'Complete'
+      if (statusMeta.state === 'review') return 'Uploaded'
+      if (statusMeta.state === 'danger') return statusMeta.label || 'Needs attention'
+      return 'Missing'
+    }
+    const onboardingStatus = selectedSellerJourney.onboardingSubmitted
+      ? 'Submitted'
+      : selectedSellerJourney.onboardingSent
+        ? 'Sent'
+        : 'Not sent'
+    const mandateStatus = selectedSellerJourney.mandateStatus === 'signed'
+      ? 'Signed'
+      : ['draft', 'sent'].includes(normalizeKey(selectedSellerJourney.mandateStatus))
+        ? 'Upload required'
+        : 'Missing'
+    const listingDraftStatus = selectedSellerJourney.listingCreated
+      ? selectedSellerJourney.listingLive ? 'Live' : 'Created'
+      : 'Not created'
+
+    return [
+      {
+        key: 'seller',
+        title: 'Seller',
+        rows: [
+          ['Name', value(onboarding?.fullName, onboarding?.sellerFullName, directSeller?.fullName, directSeller?.name, selectedLeadDisplayName, lead?.sellerName, lead?.name)],
+          ['Mobile', value(selectedLeadContact?.phone, onboarding?.mobile, onboarding?.phone, directSeller?.mobile, directSeller?.phone, lead?.sellerPhone, lead?.phone)],
+          ['Email', value(selectedLeadContact?.email, onboarding?.email, directSeller?.email, lead?.sellerEmail, lead?.email)],
+          ['Owner Type', ownerType],
+        ],
+      },
+      {
+        key: 'property',
+        title: 'Property',
+        rows: [
+          ['Address', value(
+            listing?.propertyAddress,
+            listing?.property_address,
+            listing?.formattedAddress,
+            listing?.formatted_address,
+            listing?.address,
+            onboarding?.propertyAddress,
+            onboarding?.property_address,
+            onboarding?.formattedAddress,
+            onboarding?.formatted_address,
+            lead?.sellerPropertyAddress,
+            lead?.seller_property_address,
+            selectedLeadPropertyLabel === 'No property linked' ? '' : selectedLeadPropertyLabel,
+          )],
+          ['Property Type', value(
+            listing?.propertyType,
+            listing?.property_type,
+            listing?.propertyStructureType,
+            listing?.property_structure_type,
+            onboarding?.propertyType,
+            onboarding?.property_type,
+            onboarding?.propertyStructureType,
+            onboarding?.property_structure_type,
+            lead?.propertyType,
+            lead?.property_type,
+            lead?.sellerPropertyType,
+            lead?.seller_property_type,
+          )],
+          ['Expected Price', price(
+            listing?.askingPrice,
+            listing?.asking_price,
+            listing?.price,
+            onboarding?.expectedPrice,
+            onboarding?.expected_price,
+            onboarding?.askingPrice,
+            onboarding?.asking_price,
+            lead?.estimatedValue,
+            lead?.estimated_value,
+            lead?.budget,
+          )],
+        ],
+      },
+      {
+        key: 'readiness',
+        title: 'Readiness',
+        rows: [
+          ['Onboarding', onboardingStatus],
+          ['Mandate', mandateStatus],
+          ['FICA', documentStatus(SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION)],
+          ['Disclosure', documentStatus(SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM)],
+          ['Listing Draft', listingDraftStatus],
+        ],
+      },
+    ]
+  }, [
     selectedLead,
-    selectedLeadAssignedAgentLabel,
-    selectedLeadDisplayLifecycleStage,
-    selectedLeadLinkedTransactionId,
-    selectedLeadNextStep,
+    selectedLeadContact,
+    selectedLeadDisplayName,
+    selectedLeadLinkedListing,
     selectedLeadPropertyLabel,
-    selectedKingstonsProcessAction.title,
-    selectedLeadHasKingstonsSellerProcess,
-    selectedSellerJourney.daysInCurrentStage,
-    selectedSellerJourney.stage?.label,
+    selectedSellerDocumentCategories,
+    selectedSellerJourney.listingCreated,
+    selectedSellerJourney.listingLive,
+    selectedSellerJourney.mandateStatus,
+    selectedSellerJourney.onboardingSent,
+    selectedSellerJourney.onboardingSubmitted,
   ])
 
   const selectedLeadPropertyWorkspace = useMemo(() => buildSellerPropertyWorkspaceViewModel({
@@ -31483,7 +31613,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
                       <section className="flex min-h-[430px] min-w-0 flex-col overflow-hidden rounded-[20px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_34px_rgba(31,54,78,0.05)]">
                         <div className="flex items-center justify-between gap-3 border-b border-[#edf3f8] px-5 py-4">
-                          <h3 className="text-base font-semibold text-[#102033]">Lead Summary</h3>
+                          <h3 className="text-base font-semibold text-[#102033]">Seller Summary</h3>
                           <Button type="button" size="sm" variant="secondary" className="h-9 rounded-[12px] px-3 text-xs" onClick={() => handleLeadWorkspaceTabSelection('seller')}>
                             Edit
                           </Button>

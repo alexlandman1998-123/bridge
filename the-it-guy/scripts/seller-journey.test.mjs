@@ -276,6 +276,38 @@ function assertJourneyStepStates(journey, currentKey, completedKeys = []) {
   const journey = buildSellerJourney({
     lead: {
       ...baseLead,
+      listingId: 'listing-onboarding-sent-active-shell',
+      stage: 'Onboarding Sent',
+      status: 'Sent',
+      sellerOnboardingToken: 'seller-token-active-shell',
+      sellerOnboardingStatus: 'sent',
+    },
+    listing: {
+      id: 'listing-onboarding-sent-active-shell',
+      originatingCrmLeadId: 'lead-1',
+      listingStatus: 'seller_lead',
+      status: 'active',
+      listingVisibility: 'internal',
+      isActive: true,
+      source: 'pipeline_seller_lead',
+      mandateStatus: 'not_started',
+      sellerOnboardingStatus: 'sent',
+      sellerOnboarding: { token: 'seller-token-active-shell', status: 'sent' },
+    },
+  })
+  assert.equal(journey.stage.key, 'seller_onboarding_sent')
+  assert.equal(journey.listingCreated, false)
+  assert.equal(journey.listingLive, false)
+  assert.equal(journey.kpis.find((item) => item.key === 'listing').value, 'Not created')
+  assert.equal(journey.steps.find((step) => step.key === 'seller_onboarding_sent').state, 'current')
+  assert.equal(journey.steps.find((step) => step.key === 'listing_created').state, 'upcoming')
+  assert.equal(journey.steps.find((step) => step.key === 'listing_live').state, 'upcoming')
+}
+
+{
+  const journey = buildSellerJourney({
+    lead: {
+      ...baseLead,
       listingId: 'listing-onboarding-sent-with-stale-submitted-stage',
       stage: 'Seller Onboarding Submitted',
       status: 'Submitted',
