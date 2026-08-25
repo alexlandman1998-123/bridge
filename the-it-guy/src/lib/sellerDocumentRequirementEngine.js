@@ -1236,14 +1236,6 @@ export function getRequiredSellerDocuments(requirementProfile = {}) {
           visibility: 'seller_visible',
           generatedFrom: { ...generatedFrom, ownerId: owner.id },
         }),
-        buildRequirement({
-          key: `owner_${seq}_marital_status`,
-          name: `Owner ${seq} Marital Status Declaration`,
-          description: `Marital status declaration for owner ${seq}.`,
-          group: 'marital',
-          visibility: 'seller_visible',
-          generatedFrom: { ...generatedFrom, ownerId: owner.id },
-        }),
       )
       if (owner.maritalRegime === 'in_community' || owner.maritalRegime === 'married_in_community') {
         docs.push(
@@ -1259,14 +1251,6 @@ export function getRequiredSellerDocuments(requirementProfile = {}) {
       }
     })
     docs.push(
-      buildRequirement({
-        key: 'ownership_split_confirmation',
-        name: 'Ownership Split Confirmation',
-        description: 'Ownership split and participation confirmation.',
-        group: 'compliance',
-        visibility: 'seller_visible',
-        generatedFrom,
-      }),
       buildRequirement({
         key: 'all_owner_authority_consent',
         name: 'All Owner Authority / Consent',

@@ -1,5 +1,6 @@
 import { generateSellerDocumentRequirements } from '../lib/privateListingRequirementEngine.js'
 import { buildPropertyDisclosureDocumentMarkup } from '../lib/propertyDisclosure.js'
+import { buildSellerComplianceDocumentModel } from '../core/documents/sellerComplianceDocumentModel.js'
 import {
   getSellerBasePackAliases,
   isSellerBasePackKey,
@@ -237,6 +238,29 @@ const STALE_PRE_ONBOARDING_REQUIREMENT_KEYS = new Set([
   'seller_onboarding_submission',
 ])
 
+const STALE_INTERNAL_SELLER_CAPTURE_REQUIREMENT_PATTERNS = [
+  /^owner_\d+_marital_status$/,
+  /^owner_\d+_marital_status_declaration$/,
+  /^ownership_split_confirmation$/,
+]
+
+function isStaleInternalSellerCaptureRequirement(requirement = {}) {
+  const identity = normalizeDocumentMatchKey([
+    requirement?.key,
+    requirement?.requirementKey,
+    requirement?.requirement_key,
+    requirement?.documentType,
+    requirement?.document_type,
+    requirement?.name,
+    requirement?.requirement_name,
+    requirement?.label,
+  ].filter(Boolean).join(' '))
+  if (!identity) return false
+  return STALE_INTERNAL_SELLER_CAPTURE_REQUIREMENT_PATTERNS.some((pattern) => pattern.test(identity)) ||
+    (/owner_\d+/.test(identity) && identity.includes('marital_status') && identity.includes('declaration')) ||
+    identity.includes('ownership_split_confirmation')
+}
+
 const KINGSTONS_BASELINE_SELLER_DOCUMENT_REQUIREMENTS = Object.freeze([
   Object.freeze({
     key: 'valuation_document',
@@ -391,7 +415,8 @@ function filterStalePersistedRequirements(requirements = [], listing = {}, formD
 
   return (Array.isArray(requirements) ? requirements : []).filter((requirement) => {
     const key = requirementIdentity(requirement)
-    return !STALE_PRE_ONBOARDING_REQUIREMENT_KEYS.has(key)
+    return !STALE_PRE_ONBOARDING_REQUIREMENT_KEYS.has(key) &&
+      !isStaleInternalSellerCaptureRequirement(requirement)
   })
 }
 
@@ -1783,6 +1808,25 @@ function getSellerDocumentCategoryKey({ requirement = {}, document = {} } = {}) 
 
   if (group === 'additional' || category === 'additional_requests' || signal.includes('additional_request')) return 'additional'
   if (
+    requirementKey === 'rates_account' ||
+    documentKeys.includes('rates_account') ||
+    signal.includes('rates_account') ||
+    signal.includes('municipal_rates_account')
+  ) {
+    return 'property'
+  }
+  if (
+    requirementKey === 'proof_of_address' ||
+    requirementKey === 'proof_of_residential_address' ||
+    documentKeys.includes('proof_of_address') ||
+    documentKeys.includes('proof_of_residential_address') ||
+    signal.includes('proof_of_address') ||
+    signal.includes('proof_of_residential_address') ||
+    signal.includes('proof_of_residence')
+  ) {
+    return 'fica'
+  }
+  if (
     PROPERTY_COMPLIANCE_DOCUMENT_KEYS.has(requirementKey) ||
     documentKeys.some((key) => PROPERTY_COMPLIANCE_DOCUMENT_KEYS.has(key))
   ) {
@@ -2211,6 +2255,45 @@ function buildSellerFicaDeclarationDocumentFromOnboarding(formData = {}, listing
       listing?.sellerType ||
       listing?.seller_type,
   )
+  const propertyDisclosure = isPlainObject(formData?.propertyDisclosure)
+    ? formData.propertyDisclosure
+    : isPlainObject(formData?.property_disclosure)
+      ? formData.property_disclosure
+      : {}
+  const complianceSigning = isPlainObject(formData?.sellerComplianceSigning)
+    ? formData.sellerComplianceSigning
+    : isPlainObject(formData?.seller_compliance_signing)
+      ? formData.seller_compliance_signing
+      : isPlainObject(listing?.sellerComplianceSigning)
+        ? listing.sellerComplianceSigning
+        : isPlainObject(listing?.seller_compliance_signing)
+          ? listing.seller_compliance_signing
+          : {}
+  const sellerCompliancePack = buildSellerComplianceDocumentModel({
+    formData,
+    listing,
+    signing: complianceSigning,
+    generatedAt: completedAt || new Date().toISOString(),
+  })
+  const generatedHtml = buildPropertyDisclosureDocumentMarkup(propertyDisclosure, {
+    sellerName: normalizeText(formData.sellerName || [formData.sellerFirstName, formData.sellerSurname].filter(Boolean).join(' ')),
+    sellerIdNumber: normalizeText(formData.sellerIdNumber || formData.idNumber || formData.id_number),
+    sellerId: normalizeText(listing?.sellerProfileId || listing?.seller_profile_id),
+    propertyId: normalizeText(listing?.propertyProfileId || listing?.property_profile_id),
+    listingId: normalizeText(listing?.id || listing?.private_listing_id),
+    transactionId: normalizeText(listing?.transactionId || listing?.transaction_id),
+    propertyAddress: resolveSellerDocumentPropertyAddress(listing, formData),
+    documentReference: normalizeText(firstPresent(
+      listing?.listingReference,
+      listing?.listing_reference,
+      listing?.reference,
+      listing?.privateListingReference,
+      listing?.private_listing_reference,
+      listing?.id,
+    )),
+    branding: resolveSellerDocumentBranding(listing, formData),
+    sellerCompliancePack,
+  })
 
   return {
     id: `seller-fica-declaration-${normalizeText(listing?.id || listing?.private_listing_id || onboarding?.token || 'onboarding')}`,
@@ -2222,6 +2305,10 @@ function buildSellerFicaDeclarationDocumentFromOnboarding(formData = {}, listing
     document_category: 'fica_declaration',
     document_name: 'Signed FICA Declaration',
     name: 'Signed FICA Declaration',
+    generatedHtml,
+    generated_html: generatedHtml,
+    generatedFileName: 'signed-fica-declaration.pdf',
+    generated_file_name: 'signed-fica-declaration.pdf',
     status: 'completed',
     visibility: 'seller_visible',
     source: 'seller_onboarding.fica_declaration',

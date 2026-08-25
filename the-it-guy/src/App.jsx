@@ -495,6 +495,7 @@ function HeaderSkeleton() {
 
 function getStableRouteContentKey(pathname = '', search = '') {
   if (pathname.startsWith('/settings')) return 'settings-shell'
+  if (pathname.startsWith('/pipeline/leads/')) return pathname
 
   const rentalListingMatch = pathname.match(/^\/agent\/rentals\/listings\/([^/]+)(?:\/[^/]+)?$/)
   if (rentalListingMatch && rentalListingMatch[1] !== 'new') {
@@ -710,10 +711,9 @@ function AppLayout({ onLogout, session = null, user }) {
   useEffect(() => {
     function resetShellScrollIfLocked() {
       if (!document.documentElement.classList.contains('ui-shell-scroll-locked')) return
-      const mainEl = mainScrollRef.current
-      if (mainEl && typeof mainEl.scrollTo === 'function') {
-        mainEl.scrollTo({ top: 0, left: 0, behavior: 'auto' })
-      }
+      // The app shell owns the visible scroll position. Returning focus to the
+      // tab should only clean up accidental body/html scroll, not move the user
+      // away from their current workspace section.
       resetLockedShellWindowScroll()
     }
 
@@ -814,7 +814,7 @@ function AppLayout({ onLogout, session = null, user }) {
         ) : null}
         {degradedWorkspaceBanner}
 
-        <main ref={mainScrollRef} className={`ui-main-content ui-page-scroll ${hideSharedHeader ? 'pt-6' : ''}`.trim()}>
+        <main ref={mainScrollRef} data-app-shell-scroll="main" className={`ui-main-content ui-page-scroll ${hideSharedHeader ? 'pt-6' : ''}`.trim()}>
           <div
             key={routeContentKey}
             className={`ui-content-container ${isDashboardRoute ? 'ui-content-container-dashboard' : ''} ${isAttorneyDashboardRoute ? 'ui-content-container-edge' : ''}`.trim()}

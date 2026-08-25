@@ -837,11 +837,6 @@ const KINGSTONS_SELLER_FICA_ROLEPLAYER_DOCUMENTS = Object.freeze([
     label: 'Tax Number / SARS Confirmation',
     description: 'SARS tax number confirmation or current tax reference details for compliance capture.',
   },
-  {
-    key: 'signed_fica_declaration',
-    label: 'Signed FICA Declaration',
-    description: 'Signed FICA declaration or questionnaire for this roleplayer.',
-  },
 ])
 
 const BUYER_FICA_ROLEPLAYER_DOCUMENTS = Object.freeze([
@@ -2774,6 +2769,15 @@ function isKingstonsGeneratedSellerPackRequirementRow(documentRow = {}) {
     /(seller_fica|owner_fica|director_fica|trustee_fica|member_fica|spouse_fica|resolution_to_sell|letters_of_authority|trust_deed|spouse_consent|owner_authority_consent)/.test(key)
 }
 
+function isRedundantKingstonsGenericFicaRequirement(documentRow = {}) {
+  const section = normalizeKey(documentRow.documentRequirementSection || documentRow.document_requirement_section)
+  const source = normalizeKey(documentRow.source)
+  const key = normalizeKey(documentRow.key || documentRow.requirementKey || documentRow.requirement_key || documentRow.id)
+  return source !== normalizeKey(KINGSTONS_FICA_ROLEPLAYER_SOURCE) &&
+    section === 'seller_identity_fica' &&
+    /(owner_fica|director_fica|trustee_fica|member_fica|spouse_fica)/.test(key)
+}
+
 function buildKingstonsSellerPackDocumentRows(lead = {}, {
   listing = null,
   journey = null,
@@ -2797,6 +2801,7 @@ function buildKingstonsSellerPackDocumentRows(lead = {}, {
   const generatedRows = sourceRows.filter((documentRow) => {
     const key = normalizeKey(documentRow.key || documentRow.requirementKey || documentRow.requirement_key)
     if (!key || key === KINGSTONS_FORMAL_VALUATION_DOCUMENT.key) return false
+    if (isRedundantKingstonsGenericFicaRequirement(documentRow)) return false
     return isKingstonsGeneratedSellerPackRequirementRow(documentRow)
   })
 
@@ -3932,6 +3937,30 @@ const KINGSTONS_STALE_BASELINE_DOCUMENT_KEYS = new Set([
   'seller_onboarding_submission',
 ])
 
+const STALE_SELLER_LEAD_DOCUMENT_PATTERNS = [
+  /^owner_\d+_marital_status$/,
+  /^owner_\d+_marital_status_declaration$/,
+  /^ownership_split_confirmation$/,
+]
+
+function isStaleSellerLeadDocumentRequirement(row = {}) {
+  const identity = normalizeKey([
+    row?.key,
+    row?.requirementKey,
+    row?.requirement_key,
+    row?.documentType,
+    row?.document_type,
+    row?.label,
+    row?.title,
+    row?.document_name,
+    row?.name,
+  ].filter(Boolean).join(' '))
+  if (!identity) return false
+  return STALE_SELLER_LEAD_DOCUMENT_PATTERNS.some((pattern) => pattern.test(identity)) ||
+    (/owner_\d+/.test(identity) && identity.includes('marital_status') && identity.includes('declaration')) ||
+    identity.includes('ownership_split_confirmation')
+}
+
 function getSellerLeadDocumentCategoryKey(documentRow = {}) {
   const source = normalizeKey([
     documentRow?.category,
@@ -4023,6 +4052,7 @@ function getSellerLeadDocumentCanonicalLabel(row = {}) {
 }
 
 function getSellerLeadDocumentCanonicalKey(row = {}) {
+  const explicitKey = normalizeKey(row?.key || row?.requirementKey || row?.requirement_key || row?.id)
   const source = normalizeKey([
     row?.key,
     row?.requirementKey,
@@ -4038,6 +4068,24 @@ function getSellerLeadDocumentCanonicalKey(row = {}) {
   ].filter(Boolean).join(' '))
   const basePackKey = normalizeSellerBasePackKey(source)
   if (basePackKey) return basePackKey
+  if (isStaleSellerLeadDocumentRequirement(row)) return source
+  if (
+    source.includes('rates_account') ||
+    source.includes('municipal_rates_account') ||
+    (source.includes('rates') && source.includes('account'))
+  ) return 'rates_account'
+  if (
+    /^(owner|director|trustee|member|spouse)_\d+_proof_of_address$/.test(explicitKey) ||
+    /^(owner|director|trustee|member|spouse)_\d+_proof_of_residential_address$/.test(explicitKey) ||
+    /^seller_fica_.*_proof_of_address$/.test(explicitKey)
+  ) return explicitKey
+  if (
+    source.includes('proof_of_residential_address') ||
+    source.includes('proof_of_address') ||
+    source.includes('proof_of_residence') ||
+    (source.includes('residential') && source.includes('address')) ||
+    (source.includes('proof') && source.includes('address'))
+  ) return 'proof_of_address'
   if (source.includes('signed_mandate') || source.includes('mandate_signature') || (source.includes('signed') && source.includes('mandate'))) return 'signed_mandate'
   if (source.includes('signed_defect_form') || source.includes('defect_form') || (source.includes('signed') && source.includes('defect'))) return SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM
   if (source.includes('signed_fica_form') || source.includes('fica_form') || (source.includes('signed') && source.includes('fica'))) return SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION
@@ -4191,6 +4239,7 @@ function dedupeSellerLeadDocumentRows(rows = []) {
   const indexByKey = new Map()
   for (const row of Array.isArray(rows) ? rows : []) {
     if (!row || typeof row !== 'object') continue
+    if (isStaleSellerLeadDocumentRequirement(row)) continue
     const key = getSellerLeadDocumentCanonicalKey(row) || normalizeKey(row.id || row.label || row.title)
     if (!key) {
       mergedRows.push(row)
@@ -11774,20 +11823,32 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   ])
 
   const captureRouteLeadWorkspaceScroll = useCallback(() => {
-    if (!isLeadWorkspaceRoute || !routeLeadId || typeof window === 'undefined') return
+    if (!isLeadWorkspaceRoute || !routeLeadId || typeof window === 'undefined' || typeof document === 'undefined') return
+    const shellScrollElement = document.querySelector('[data-app-shell-scroll="main"], .ui-main-content.ui-page-scroll')
+    const shellScrollTop = Number(shellScrollElement?.scrollTop || 0)
+    const shellScrollLeft = Number(shellScrollElement?.scrollLeft || 0)
+    const windowScrollTop = window.scrollY || 0
+    const windowScrollLeft = window.scrollX || 0
+    const useShellScroll = Boolean(shellScrollElement && shellScrollTop > 0)
     routeLeadScrollSnapshotRef.current = {
       key: `${normalizeText(organisationId)}:${normalizeLeadIdentityKey(routeLeadId)}`,
-      x: window.scrollX || 0,
-      y: window.scrollY || 0,
+      target: useShellScroll ? 'shell' : 'window',
+      x: useShellScroll ? shellScrollLeft : windowScrollLeft,
+      y: useShellScroll ? shellScrollTop : windowScrollTop,
     }
   }, [isLeadWorkspaceRoute, organisationId, routeLeadId])
 
   const restoreRouteLeadWorkspaceScroll = useCallback(() => {
-    if (!isLeadWorkspaceRoute || !routeLeadId || typeof window === 'undefined') return
+    if (!isLeadWorkspaceRoute || !routeLeadId || typeof window === 'undefined' || typeof document === 'undefined') return
     const snapshot = routeLeadScrollSnapshotRef.current
     const key = `${normalizeText(organisationId)}:${normalizeLeadIdentityKey(routeLeadId)}`
     if (!snapshot || snapshot.key !== key || snapshot.y <= 0) return
+    const shellScrollElement = document.querySelector('[data-app-shell-scroll="main"], .ui-main-content.ui-page-scroll')
     const restore = () => {
+      if (snapshot.target === 'shell' && shellScrollElement && typeof shellScrollElement.scrollTo === 'function') {
+        shellScrollElement.scrollTo({ left: snapshot.x || 0, top: snapshot.y || 0, behavior: 'auto' })
+        return
+      }
       window.scrollTo({ left: snapshot.x || 0, top: snapshot.y || 0, behavior: 'auto' })
     }
     window.requestAnimationFrame(() => {
@@ -16131,7 +16192,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         mandatePacketStatus,
       })
       const usableSourceRows = selectedLeadHasKingstonsPipelineSignal
-        ? sourceRows.filter((row) => !isStaleKingstonsBaselineDocumentRow(row))
+        ? sourceRows.filter((row) =>
+            !isStaleKingstonsBaselineDocumentRow(row) &&
+            !isRedundantKingstonsGenericFicaRequirement(row)
+          )
         : sourceRows
       const mergedRows = dedupeSellerLeadDocumentRows([
         ...(selectedKingstonsFormalValuationRow ? [selectedKingstonsFormalValuationRow] : []),
@@ -16289,6 +16353,72 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLeadContact,
     selectedLeadLinkedListing,
     selectedSellerJourney,
+  ])
+
+  const selectedSellerNextBestActionModel = useMemo(() => {
+    const fallbackAction = selectedSellerReadiness.nextAction || {}
+    const complianceBlocker = selectedSellerComplianceAgentStatus.nextBlocker || null
+    const onboardingSubmittedOrLater = Boolean(
+      selectedSellerJourney.onboardingSubmitted ||
+        normalizeKey(selectedSellerJourney.stage?.key) === 'seller_onboarding_submitted' ||
+        ['draft', 'sent'].includes(normalizeKey(selectedSellerJourney.mandateStatus)),
+    )
+    const fallbackWantsHardCopyMandate = normalizeKey(fallbackAction.id) === 'record_hard_copy_mandate'
+    const mandateStillRequired = Boolean(
+      !selectedSellerComplianceAgentStatus.signedMandate &&
+        (onboardingSubmittedOrLater || fallbackWantsHardCopyMandate || complianceBlocker?.key === SELLER_BASE_PACK_KEYS.SIGNED_MANDATE),
+    )
+
+    if (mandateStillRequired) {
+      return {
+        title: 'Signed mandate still required',
+        copy: 'Upload the wet-ink signed mandate, or record the hard-copy mandate as signed, before treating the listing as created or live.',
+        actionId: 'record_hard_copy_mandate',
+        label: 'Upload Mandate',
+        disabled: false,
+      }
+    }
+
+    if (complianceBlocker?.key === 'seller_compliance_pack') {
+      return {
+        title: complianceBlocker.label || 'Seller compliance signatures incomplete',
+        copy: complianceBlocker.action || 'Complete the disclosure and FICA signatures for every required seller.',
+        actionId: 'open_documents',
+        label: 'Open Documents',
+        disabled: false,
+      }
+    }
+
+    if (complianceBlocker) {
+      return {
+        title: complianceBlocker.label || fallbackAction.label || 'Review seller journey',
+        copy: complianceBlocker.action || 'Resolve the next seller requirement before the listing can move forward.',
+        actionId: fallbackAction.id || 'open_journey',
+        label: fallbackAction.label || 'Open Journey',
+        disabled: Boolean(fallbackAction.disabled),
+      }
+    }
+
+    const fallbackBlocker = selectedSellerReadiness.blockers?.[0] || fallbackAction.blocker || null
+    return {
+      title: fallbackAction.label || 'Review seller journey',
+      copy: fallbackBlocker?.label
+        ? `${fallbackBlocker.label} needs attention before this seller is market ready.`
+        : fallbackAction.label
+          ? `Continue with ${fallbackAction.label.toLowerCase()} to move this seller workspace forward.`
+          : 'The seller workspace is on track.',
+      actionId: fallbackAction.id || 'open_journey',
+      label: fallbackAction.label || 'Open Journey',
+      disabled: Boolean(fallbackAction.disabled),
+    }
+  }, [
+    selectedSellerComplianceAgentStatus.nextBlocker,
+    selectedSellerComplianceAgentStatus.signedMandate,
+    selectedSellerJourney.mandateStatus,
+    selectedSellerJourney.onboardingSubmitted,
+    selectedSellerJourney.stage?.key,
+    selectedSellerReadiness.blockers,
+    selectedSellerReadiness.nextAction,
   ])
 
   const selectedSellerProcessPanelModel = useMemo(() => {
@@ -32388,16 +32518,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               <h3 className="mt-2 line-clamp-2 text-lg font-semibold leading-6 tracking-[-0.03em] text-white">
                                 {selectedLeadHasKingstonsSellerProcess
                                   ? selectedKingstonsProcessAction.title
-	                                  : selectedSellerComplianceAgentStatus.nextBlocker?.label || selectedSellerReadiness.nextAction?.label || 'Review seller journey'}
+	                                  : selectedSellerNextBestActionModel.title}
                               </h3>
                               <p className="mt-2 line-clamp-2 text-sm leading-5 text-[#c7d5e2]">
                                 {selectedLeadHasKingstonsSellerProcess
                                   ? selectedKingstonsProcessAction.copy
-                                  : selectedSellerComplianceAgentStatus.nextBlocker?.action
-                                    ? selectedSellerComplianceAgentStatus.nextBlocker.action
-                                  : selectedSellerReadiness.blockers?.[0]?.label
-                                    ? `${selectedSellerReadiness.blockers[0].label} needs attention before this seller is market ready.`
-                                    : 'The seller workspace is on track.'}
+                                  : selectedSellerNextBestActionModel.copy}
                               </p>
                             </div>
                             <Button
@@ -32407,22 +32533,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               onClick={() => handleSellerJourneyAction(
                                 selectedLeadHasKingstonsSellerProcess
                                   ? selectedKingstonsProcessAction.actionId
-                                  : selectedSellerComplianceAgentStatus.nextBlocker?.key === SELLER_BASE_PACK_KEYS.SIGNED_MANDATE
-                                    ? 'record_hard_copy_mandate'
-                                    : selectedSellerComplianceAgentStatus.nextBlocker?.key === 'seller_compliance_pack'
-                                      ? 'open_documents'
-                                      : selectedSellerReadiness.nextAction?.id || 'open_journey',
+                                  : selectedSellerNextBestActionModel.actionId,
                               )}
-                              disabled={selectedLeadHasKingstonsSellerProcess ? selectedKingstonsProcessAction.disabled : selectedSellerReadiness.nextAction?.disabled}
+                              disabled={selectedLeadHasKingstonsSellerProcess ? selectedKingstonsProcessAction.disabled : selectedSellerNextBestActionModel.disabled}
                             >
                               <CheckCircle2 className="h-4 w-4" />
                               {selectedLeadHasKingstonsSellerProcess
                                 ? selectedKingstonsProcessAction.label
-                                : selectedSellerComplianceAgentStatus.nextBlocker?.key === SELLER_BASE_PACK_KEYS.SIGNED_MANDATE
-                                  ? 'Upload Mandate'
-                                  : selectedSellerComplianceAgentStatus.nextBlocker?.key === 'seller_compliance_pack'
-                                    ? 'Open Documents'
-                                    : selectedSellerReadiness.nextAction?.label || 'Open Journey'}
+                                : selectedSellerNextBestActionModel.label}
                             </Button>
                           </div>
                         </section>
@@ -37219,6 +37337,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                                        const documentActionLabel = [
 	                                          SELLER_BASE_PACK_KEYS.SIGNED_MANDATE,
 	                                          SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM,
+	                                          SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION,
 	                                          'property_condition_disclosure',
 	                                          'valuation_document',
 	                                        ].includes(documentKey) ? 'Download' : 'Open'
