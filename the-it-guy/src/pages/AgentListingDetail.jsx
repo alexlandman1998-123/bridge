@@ -43,6 +43,15 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import StartDocumentModal from '../components/documents/StartDocumentModal'
 import SellerDocumentReviewActions from '../components/documents/SellerDocumentReviewActions'
+import {
+  ListingWorkspacePortalActionPanel,
+  ListingWorkspacePortalChecklist,
+  ListingWorkspacePortalFixGuide,
+  ListingWorkspacePortalGoLiveProof,
+  ListingWorkspacePortalPublishGate,
+  ListingWorkspacePortalReadinessGrid,
+  ListingWorkspaceTabs,
+} from '../components/listings/ListingWorkspaceShell'
 import AddressAutocomplete from '../components/location/AddressAutocomplete'
 import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
@@ -176,6 +185,17 @@ import {
   updateNotificationOutboxStatus,
 } from '../services/notificationOutboxService'
 import { buildListingWorkspaceAnalyticsSummary } from '../services/leadAnalyticsService'
+import {
+  buildListingWorkspacePortalActionPlan,
+  buildListingWorkspacePortalChecklist,
+  buildListingWorkspacePortalFixGuide,
+  buildListingWorkspacePortalGoLiveProof,
+  buildListingWorkspacePortalPublishGate,
+  buildListingWorkspacePortalSummary,
+  buildListingWorkspaceTabs,
+  resolveSalesListingWorkspaceTabFromLegacyState,
+  resolveSalesListingWorkspaceTarget,
+} from '../services/listings/listingWorkspaceUiModel'
 import { buildSellerMandateContinuityModel } from '../services/sellerMandateContinuityService'
 import { buildSellerDocumentSourceOfTruth } from '../services/sellerDocumentRequirementsService'
 import { reviewSellerDocument, sendSellerDocumentManualReminder } from '../services/sellerDocumentReviewWorkflowService'
@@ -222,16 +242,6 @@ import { upsertAreaFromAddress } from '../lib/location/upsertArea'
 import { formatSouthAfricanWhatsAppNumber, sendWhatsAppNotification } from '../lib/whatsapp'
 
 const PIPELINE_STORAGE_KEY = 'itg:pipeline-leads:v1'
-
-const DETAIL_TABS = [
-  { key: 'overview', label: 'Overview' },
-  { key: 'property_details', label: 'Property Details' },
-  { key: 'pipeline', label: 'Pipeline' },
-  { key: 'offers', label: 'Offers' },
-  { key: 'seller', label: 'Seller / Mandate' },
-  { key: 'documents', label: 'Documents' },
-  { key: 'role_players', label: 'Role Players' },
-]
 
 const CLIENT_INTAKE_PREFERENCE_OPTIONS = [
   { value: CLIENT_INTAKE_PREFERENCE.DIGITAL_PORTAL, label: getClientIntakePreferenceLabel(CLIENT_INTAKE_PREFERENCE.DIGITAL_PORTAL) },
@@ -3122,6 +3132,11 @@ function AgentListingDetail() {
   const [externalLinkEditingId, setExternalLinkEditingId] = useState('')
   const [propertyDetailsReturnTarget, setPropertyDetailsReturnTarget] = useState('')
   const [sellerWorkspaceTab, setSellerWorkspaceTab] = useState(() => getSellerWorkspaceTabFromSearch(typeof window !== 'undefined' ? window.location.search : '') || 'overview')
+  const salesWorkspaceTabs = useMemo(() => buildListingWorkspaceTabs('sales'), [])
+  const activeSalesWorkspaceTab = useMemo(
+    () => resolveSalesListingWorkspaceTabFromLegacyState({ activeTab, sellerWorkspaceTab }),
+    [activeTab, sellerWorkspaceTab],
+  )
   const [commissionDraft, setCommissionDraft] = useState({
     percentage: '',
     amount: '',
@@ -4811,6 +4826,39 @@ function AgentListingDetail() {
   function openDetailTab(tab) {
     setPropertyDetailsReturnTarget('')
     setActiveTab(tab)
+  }
+
+  function openSalesListingWorkspaceTab(tab) {
+    const target = resolveSalesListingWorkspaceTarget(tab)
+    setPropertyDetailsReturnTarget('')
+    setDetailError('')
+
+    if (target.sellerWorkspaceTab) {
+      openSellerWorkspaceSection(target.sellerWorkspaceTab)
+    } else {
+      setActiveTab(target.activeTab || 'overview')
+    }
+
+    if (target.openProperty24Manage) {
+      setProperty24ManageOpen(true)
+    }
+  }
+
+  function handleSalesPortalReadinessAction(item) {
+    if (item?.actionTarget === 'property24') {
+      openSalesListingWorkspaceTab('syndication')
+      return
+    }
+    openSellerWorkspaceSection('marketing')
+  }
+
+  function handleSalesPortalFixGuideAction(item) {
+    const target = item?.actionTarget || 'marketing'
+    if (salesWorkspaceTabs.some((tab) => tab.key === target)) {
+      openSalesListingWorkspaceTab(target)
+      return
+    }
+    handleSalesPortalReadinessAction(item)
   }
 
   function returnToMarketingConsole() {
@@ -6891,6 +6939,75 @@ function AgentListingDetail() {
     listingRecord?.publicationData?.updated_at,
     listingRecord?.updatedAt,
     listingRecord?.updated_at,
+  )
+  const privatePropertyPortalUrl = marketingDraft.privatePropertyListingUrl || privatePropertyLink?.url || ''
+  const privatePropertyPortalReference = marketingDraft.privatePropertyReference || privatePropertyLink?.reference || ''
+  const privatePropertyPortalStatus = privatePropertyStatusKey || normalizeKey(privatePropertyLink?.status || 'not_published')
+  const privatePropertyPortalLive = ['published', 'live', 'active'].includes(privatePropertyPortalStatus)
+  const salesPortalReadinessSummaries = useMemo(() => [
+    buildListingWorkspacePortalSummary({
+      type: 'sales',
+      portal: 'Property24',
+      logoSrc: '/lead-sources/property24.png',
+      published: property24Published,
+      checked: property24CanSubmit !== null,
+      missingFields: property24SandboxAgentIdPending ? [] : property24ReadinessIssues,
+      setupBlockers: property24SandboxAgentIdPending ? ['Property24 agent ID still needs to be confirmed before live publishing.'] : [],
+      reference: property24Reference,
+      lastSynced: property24LastSyncedAt ? `Last synced: ${formatRelativeTime(property24LastSyncedAt)}` : '',
+      detail: property24NextStep,
+      actionLabel: 'Open syndication',
+      actionTarget: 'property24',
+    }),
+    buildListingWorkspacePortalSummary({
+      type: 'sales',
+      portal: 'Private Property',
+      logoSrc: '/lead-sources/private-property.jpeg',
+      published: privatePropertyPortalLive,
+      checked: privatePropertyHasChannel,
+      missingFields: privatePropertyHasChannel ? [] : ['Private Property channel is not configured on this listing yet.'],
+      reference: privatePropertyPortalReference,
+      lastSynced: privatePropertyPortalUrl ? 'Managed as an external link' : '',
+      detail: privatePropertyPortalLive
+        ? 'Private Property is marked live for this listing.'
+        : privatePropertyHasChannel
+          ? 'Private Property channel details are saved. Confirm the portal status before go-live.'
+          : 'Add the Private Property channel from the marketing console when this listing is ready.',
+      actionLabel: 'Manage channel',
+      actionTarget: 'private_property',
+    }),
+  ], [
+    privatePropertyHasChannel,
+    privatePropertyPortalLive,
+    privatePropertyPortalReference,
+    privatePropertyPortalUrl,
+    property24CanSubmit,
+    property24LastSyncedAt,
+    property24NextStep,
+    property24Published,
+    property24ReadinessIssues,
+    property24Reference,
+    property24SandboxAgentIdPending,
+  ])
+  const salesPortalActionPlan = useMemo(
+    () => buildListingWorkspacePortalActionPlan(salesPortalReadinessSummaries, { type: 'sales' }),
+    [salesPortalReadinessSummaries],
+  )
+  const salesPortalPublishGate = useMemo(
+    () => buildListingWorkspacePortalPublishGate(salesPortalReadinessSummaries, { type: 'sales' }),
+    [salesPortalReadinessSummaries],
+  )
+  const salesPortalGoLiveProof = useMemo(
+    () => buildListingWorkspacePortalGoLiveProof(salesPortalReadinessSummaries, { type: 'sales' }),
+    [salesPortalReadinessSummaries],
+  )
+  const salesPortalChecklist = useMemo(
+    () => buildListingWorkspacePortalChecklist(salesPortalReadinessSummaries, { type: 'sales' }),
+    [salesPortalReadinessSummaries],
+  )
+  const salesPortalFixGuide = useMemo(
+    () => buildListingWorkspacePortalFixGuide(salesPortalReadinessSummaries, { type: 'sales' }),
+    [salesPortalReadinessSummaries],
   )
   const liveChannelCount = useMemo(() => {
     const isLive = (value) => ['published', 'live', 'active'].includes(normalizeKey(value))
@@ -9841,38 +9958,58 @@ function AgentListingDetail() {
             </div>
           </section>
 
-          <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+          <section data-testid="sales-listing-shared-workspace-tabs" className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
               <div>
                 <p className="text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Listing Workspace</p>
-                <p className="mt-1 text-sm text-[#607387]">Manage this property across seller onboarding, buyer interest, offers, and deal preparation.</p>
+                <p className="mt-1 text-sm text-[#607387]">Sales workspace for seller details, property data, marketing, media, syndication, and activity.</p>
               </div>
               <span className="inline-flex items-center self-start rounded-full border border-[#dbe6f2] bg-[#f7fbff] px-4 py-2 text-[0.92rem] font-semibold text-[#5f748a]">
-                {DETAIL_TABS.length} sections
+                Sales listing
               </span>
             </div>
 
-            <div className="mt-5 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
-              {DETAIL_TABS.map((tab) => {
-                const active = tab.key === activeTab
-                return (
-                  <button
-                    key={tab.key}
-                    type="button"
-                    onClick={() => openDetailTab(tab.key)}
-                    className={`min-h-[56px] rounded-[16px] border px-2.5 py-2.5 text-center transition xl:px-2 ${
-                      active
-                        ? 'border-[#1f4f78] bg-[#2b5577] text-white shadow-[0_18px_32px_rgba(31,79,120,0.24)]'
-                        : 'border-[#dbe6f2] bg-white text-[#47627c] hover:border-[#b7c8db] hover:shadow-[0_10px_20px_rgba(15,23,42,0.06)]'
-                    }`}
-                  >
-                    <span className={`block text-[0.78rem] font-semibold leading-tight tracking-[-0.01em] xl:text-[0.74rem] ${active ? 'text-white' : 'text-[#47627c]'}`}>
-                      {tab.label}
-                    </span>
-                  </button>
-                )
-              })}
-            </div>
+            <ListingWorkspaceTabs
+              className="mt-5 rounded-[8px] border border-[#dbe6f2] bg-[#fbfdff]"
+              tabs={salesWorkspaceTabs}
+              activeTab={activeSalesWorkspaceTab}
+              onTabChange={openSalesListingWorkspaceTab}
+              ariaLabel="Sales listing workspace sections"
+            />
+            <ListingWorkspacePortalActionPanel
+              className="mt-4"
+              plan={salesPortalActionPlan}
+              onAction={handleSalesPortalReadinessAction}
+              testId="sales-listing-portal-action-plan"
+            />
+            <ListingWorkspacePortalPublishGate
+              className="mt-4"
+              gate={salesPortalPublishGate}
+              onAction={handleSalesPortalReadinessAction}
+              testId="sales-listing-portal-publish-gate"
+            />
+            <ListingWorkspacePortalGoLiveProof
+              className="mt-4"
+              proof={salesPortalGoLiveProof}
+              testId="sales-listing-portal-go-live-proof"
+            />
+            <ListingWorkspacePortalChecklist
+              className="mt-4"
+              items={salesPortalChecklist}
+              testId="sales-listing-portal-checklist"
+            />
+            <ListingWorkspacePortalFixGuide
+              className="mt-4"
+              items={salesPortalFixGuide}
+              onAction={handleSalesPortalFixGuideAction}
+              testId="sales-listing-portal-fix-guide"
+            />
+            <ListingWorkspacePortalReadinessGrid
+              className="mt-4"
+              items={salesPortalReadinessSummaries}
+              onAction={handleSalesPortalReadinessAction}
+              testId="sales-listing-portal-readiness"
+            />
           </section>
         </>
       ) : null}
@@ -11706,6 +11843,16 @@ function AgentListingDetail() {
                 </div>
               </div>
             </div>
+          </section>
+
+          <section data-testid="sales-listing-shared-workspace-tabs" className="rounded-[24px] border border-[#dde4ee] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+            <ListingWorkspaceTabs
+              className="rounded-[8px] border border-[#dbe6f2] bg-[#fbfdff]"
+              tabs={salesWorkspaceTabs}
+              activeTab={activeSalesWorkspaceTab}
+              onTabChange={openSalesListingWorkspaceTab}
+              ariaLabel="Sales listing workspace sections"
+            />
           </section>
 
           <nav className="rounded-[22px] border border-[#dde4ee] bg-white p-2 shadow-[0_10px_24px_rgba(15,23,42,0.05)]" aria-label="Seller mandate workspace tabs">

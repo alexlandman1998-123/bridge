@@ -18,6 +18,15 @@ import {
   X,
 } from 'lucide-react'
 import { useNavigate, useParams } from 'react-router-dom'
+import {
+  ListingWorkspacePortalActionPanel,
+  ListingWorkspacePortalChecklist,
+  ListingWorkspacePortalFixGuide,
+  ListingWorkspacePortalGoLiveProof,
+  ListingWorkspacePortalPublishGate,
+  ListingWorkspacePortalReadinessGrid,
+  ListingWorkspaceTabs,
+} from '../../components/listings/ListingWorkspaceShell'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import {
   getRentalListingForAgent,
@@ -42,6 +51,17 @@ import {
   buildRentalListingQueryOptions,
   resolveRentalWorkspaceScope,
 } from '../../services/rentals/rentalWorkspaceScope'
+import {
+  buildListingWorkspacePortalActionPlan,
+  buildListingWorkspacePortalChecklist,
+  buildListingWorkspacePortalFixGuide,
+  buildListingWorkspacePortalGoLiveProof,
+  buildListingWorkspacePortalPublishGate,
+  buildListingWorkspacePortalSummary,
+  buildListingWorkspaceTabs,
+  resolveRentalListingWorkspaceTabFromDetailTab,
+  resolveRentalListingWorkspaceTarget,
+} from '../../services/listings/listingWorkspaceUiModel'
 
 const PORTAL_FEATURE_FIELDS = Object.freeze([
   ['garden', 'Garden'],
@@ -810,6 +830,62 @@ export default function RentalListingDetailPage() {
   const [successMessage, setSuccessMessage] = useState('')
 
   const detail = useMemo(() => (listing ? buildRentalListingDetailView(listing) : null), [listing])
+  const rentalWorkspaceTabs = useMemo(() => buildListingWorkspaceTabs('rentals'), [])
+  const activeRentalWorkspaceTab = useMemo(
+    () => resolveRentalListingWorkspaceTabFromDetailTab(activeTab),
+    [activeTab],
+  )
+  const rentalPortalReadinessSummaries = useMemo(() => {
+    if (!detail) return []
+    const property24Readiness = detail.property24Readiness || {}
+    const property24StatusKey = String(detail.row?.property24Status || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[\s-]+/g, '_')
+    const property24Published = ['published', 'live', 'active', 'on_portal'].includes(property24StatusKey)
+    const previewStatus = getProperty24ReadinessStatus(property24Preview)
+    const previewIssues = getProperty24PreviewIssues(property24Preview).map((item) => item.label)
+    const localBlockers = Array.isArray(property24Readiness.blockers)
+      ? property24Readiness.blockers.map((item) => item.detail || item.label).filter(Boolean)
+      : []
+
+    return [
+      buildListingWorkspacePortalSummary({
+        type: 'rentals',
+        portal: 'Property24',
+        logoSrc: '/lead-sources/property24.png',
+        published: property24Published,
+        checked: Boolean(property24Preview) || Boolean(property24Readiness.readyToPublish),
+        missingFields: property24Preview ? previewIssues : localBlockers,
+        reference: detail.row?.property24Reference || detail.listing?.property24Reference || detail.listing?.property24_reference || '',
+        detail: property24Preview
+          ? previewStatus.detail
+          : `${property24Readiness.readinessPercent || 0}% local Property24 checks complete.`,
+        actionLabel: property24Preview ? 'Open syndication' : 'Check readiness',
+        actionTarget: 'property24',
+      }),
+    ]
+  }, [detail, property24Preview])
+  const rentalPortalActionPlan = useMemo(
+    () => buildListingWorkspacePortalActionPlan(rentalPortalReadinessSummaries, { type: 'rentals' }),
+    [rentalPortalReadinessSummaries],
+  )
+  const rentalPortalPublishGate = useMemo(
+    () => buildListingWorkspacePortalPublishGate(rentalPortalReadinessSummaries, { type: 'rentals' }),
+    [rentalPortalReadinessSummaries],
+  )
+  const rentalPortalGoLiveProof = useMemo(
+    () => buildListingWorkspacePortalGoLiveProof(rentalPortalReadinessSummaries, { type: 'rentals' }),
+    [rentalPortalReadinessSummaries],
+  )
+  const rentalPortalChecklist = useMemo(
+    () => buildListingWorkspacePortalChecklist(rentalPortalReadinessSummaries, { type: 'rentals' }),
+    [rentalPortalReadinessSummaries],
+  )
+  const rentalPortalFixGuide = useMemo(
+    () => buildListingWorkspacePortalFixGuide(rentalPortalReadinessSummaries, { type: 'rentals' }),
+    [rentalPortalReadinessSummaries],
+  )
   const editValidationErrors = useMemo(
     () => validateRentalListingEditForm(editForm, { organisationId }),
     [editForm, organisationId],
@@ -974,6 +1050,29 @@ export default function RentalListingDetailPage() {
 
   const row = detail.row
 
+  function openRentalListingWorkspaceTab(tabKey) {
+    const target = resolveRentalListingWorkspaceTarget(tabKey)
+    navigate(buildRentalListingDetailPath(row.id, target.detailTab || 'overview'))
+  }
+
+  function handleRentalPortalReadinessAction(item) {
+    if (item?.actionTarget !== 'property24') return
+    if (property24Preview) {
+      navigate(buildRentalListingDetailPath(row.id, 'syndication'))
+      return
+    }
+    void handleCheckProperty24Readiness()
+  }
+
+  function handleRentalPortalFixGuideAction(item) {
+    const target = item?.actionTarget || 'property'
+    if (rentalWorkspaceTabs.some((tab) => tab.key === target)) {
+      openRentalListingWorkspaceTab(target)
+      return
+    }
+    handleRentalPortalReadinessAction(item)
+  }
+
   return (
     <section className="page-content">
       <div className="ui-section-stack">
@@ -1034,19 +1133,48 @@ export default function RentalListingDetailPage() {
           <FactCard label="Readiness" value={`${detail.readinessPercent}%`} detail={`${detail.completedReadinessCount}/${detail.totalReadinessCount} checks complete`} icon={<BadgeCheck size={18} aria-hidden="true" />} />
         </div>
 
-        <div className="ui-panel ui-panel-body">
-          <div className="flex flex-wrap gap-2">
-            {detail.tabs.map((tab) => (
-              <button
-                key={tab.key}
-                type="button"
-                className={`ui-pill-button ${activeTab === tab.key ? 'ui-pill-button-active' : ''}`}
-                onClick={() => navigate(buildRentalListingDetailPath(row.id, tab.key))}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
+        <div className="ui-panel ui-panel-body" data-testid="rental-listing-shared-workspace-tabs">
+          <ListingWorkspaceTabs
+            className="rounded-[8px] border border-[#dbe6f2] bg-[#fbfdff]"
+            tabs={rentalWorkspaceTabs}
+            activeTab={activeRentalWorkspaceTab}
+            onTabChange={openRentalListingWorkspaceTab}
+            ariaLabel="Rental listing workspace sections"
+          />
+          <ListingWorkspacePortalActionPanel
+            className="mt-4"
+            plan={rentalPortalActionPlan}
+            onAction={handleRentalPortalReadinessAction}
+            testId="rental-listing-portal-action-plan"
+          />
+          <ListingWorkspacePortalPublishGate
+            className="mt-4"
+            gate={rentalPortalPublishGate}
+            onAction={handleRentalPortalReadinessAction}
+            testId="rental-listing-portal-publish-gate"
+          />
+          <ListingWorkspacePortalGoLiveProof
+            className="mt-4"
+            proof={rentalPortalGoLiveProof}
+            testId="rental-listing-portal-go-live-proof"
+          />
+          <ListingWorkspacePortalChecklist
+            className="mt-4"
+            items={rentalPortalChecklist}
+            testId="rental-listing-portal-checklist"
+          />
+          <ListingWorkspacePortalFixGuide
+            className="mt-4"
+            items={rentalPortalFixGuide}
+            onAction={handleRentalPortalFixGuideAction}
+            testId="rental-listing-portal-fix-guide"
+          />
+          <ListingWorkspacePortalReadinessGrid
+            className="mt-4"
+            items={rentalPortalReadinessSummaries}
+            onAction={handleRentalPortalReadinessAction}
+            testId="rental-listing-portal-readiness"
+          />
         </div>
 
         <div className="grid gap-4 md:grid-cols-3">

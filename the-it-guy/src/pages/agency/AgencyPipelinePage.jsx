@@ -7153,7 +7153,7 @@ function ListingPicker({ listings = [], value = '', onChange, label = 'Linked Li
     : 'Choose a listing if this buyer enquiry is property-specific'
 
   return (
-    <div ref={pickerRef} className={`relative ${className}`.trim()}>
+    <div ref={pickerRef} className={`relative z-50 ${className}`.trim()}>
       <p className="mb-1.5 px-1 text-[0.68rem] font-semibold uppercase tracking-[0.11em] text-[#7c8da1]">{label}</p>
       <button
         type="button"
@@ -7174,7 +7174,7 @@ function ListingPicker({ listings = [], value = '', onChange, label = 'Linked Li
         <ChevronDown className={`h-4 w-4 shrink-0 text-[#7890a8] transition ${open ? 'rotate-180' : ''}`} />
       </button>
       {open ? (
-        <div className="absolute left-0 right-0 z-40 mt-2 max-h-72 overflow-y-auto rounded-[16px] border border-[#d6e3ef] bg-white p-2 shadow-[0_22px_48px_rgba(18,44,68,0.18)]" role="listbox">
+        <div className="absolute left-0 right-0 z-[80] mt-2 max-h-72 overflow-y-auto rounded-[16px] border border-[#d6e3ef] bg-white p-2 shadow-[0_22px_48px_rgba(18,44,68,0.18)]" role="listbox">
           <button
             type="button"
             role="option"
@@ -33329,7 +33329,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               </div>
                             </div>
 
-                            <section className="relative overflow-hidden rounded-[20px] border border-[#dce7f2] bg-white px-4 py-3 shadow-[0_12px_34px_rgba(31,54,78,0.045)]">
+                            <section className="relative z-20 overflow-visible rounded-[20px] border border-[#dce7f2] bg-white px-4 py-3 shadow-[0_12px_34px_rgba(31,54,78,0.045)]">
                               <span className="absolute inset-y-0 left-0 w-1 bg-[#157a4d]" aria-hidden="true" />
                               <div className="flex flex-wrap items-center justify-between gap-4 pl-1">
                                 <div className="flex min-w-0 items-center gap-3">
