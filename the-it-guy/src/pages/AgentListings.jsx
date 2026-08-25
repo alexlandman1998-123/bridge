@@ -209,7 +209,7 @@ const QUICK_ADD_LIFECYCLE_OPTIONS = [
 
 const QUICK_ADD_SELLER_TYPE_CARDS = [
   { value: 'individual', label: 'Individual', description: 'One individual owner', icon: UserRound },
-  { value: 'multiple_owners', label: 'Multiple Individuals', description: 'Two or more individual owners', icon: UsersRound },
+  { value: 'multiple_owners', label: 'Multiple owners', description: 'Two or more individual owners', icon: UsersRound },
   { value: 'company', label: 'Company', description: 'Pty Ltd / Ltd company', icon: Building2 },
   { value: 'close_corporation', label: 'Close Corporation', description: 'Registered close corp', icon: Building2 },
   { value: 'trust', label: 'Trust', description: 'Trust / Estate', icon: UsersRound },
@@ -217,7 +217,7 @@ const QUICK_ADD_SELLER_TYPE_CARDS = [
 ]
 
 const CREATE_LISTING_WORKFLOW_STEPS = [
-  { key: 'seller', label: 'Seller & Mandate', description: 'Who owns the property?' },
+  { key: 'seller', label: 'Seller & Mandate', description: 'Owner & mandate details' },
   { key: 'property', label: 'Property', description: 'Add property details' },
   { key: 'marketing', label: 'Marketing', description: 'Photos & description' },
   { key: 'syndication', label: 'Syndication', description: 'Publish to portals' },
@@ -404,6 +404,20 @@ function formatCurrency(value) {
   }).format(amount)
 }
 
+function formatCurrencyNumber(value) {
+  const digits = normalizeText(value).replace(/[^\d]/g, '')
+  if (!digits) return ''
+  return Number(digits).toLocaleString('en-ZA')
+}
+
+function normalizeIntegerInput(value) {
+  const digits = String(value ?? '').replace(/[^\d]/g, '')
+  if (!digits) return ''
+  const number = Math.floor(Number(digits))
+  if (!Number.isFinite(number) || number < 0) return ''
+  return String(number)
+}
+
 function getListingSortTimestamp(card = {}) {
   const rawDate = normalizeText(
     card.updatedAt ||
@@ -477,6 +491,41 @@ function QuickAddChoiceCard({ active = false, title, description, icon = Circle,
   )
 }
 
+function SelectionCard({ active = false, title, description = '', icon = Circle, onClick, compact = false }) {
+  const ChoiceIcon = icon
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`group flex w-full items-center justify-between gap-3 rounded-[14px] border text-left transition ${
+        compact ? 'min-h-[74px] px-4 py-3' : 'min-h-[92px] px-4 py-4'
+      } ${
+        active
+          ? 'border-[#1f8a4c] bg-[#f1fbf5] text-[#142132] shadow-[0_10px_22px_rgba(31,138,76,0.09)]'
+          : 'border-[#dce6f2] bg-white text-[#22374d] hover:border-[#b7c8db] hover:bg-[#fbfdff]'
+      }`}
+      aria-pressed={active}
+    >
+      <span className="flex min-w-0 items-center gap-3">
+        <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] ${
+          active ? 'bg-white text-[#1f8a4c]' : 'bg-[#f4f7fa] text-[#6f8398]'
+        }`}>
+          <ChoiceIcon size={17} />
+        </span>
+        <span className="min-w-0">
+          <span className="block text-sm font-bold leading-5">{title}</span>
+          {description ? <span className="mt-1 block text-xs leading-5 text-[#60758c]">{description}</span> : null}
+        </span>
+      </span>
+      <span className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
+        active ? 'border-[#1f8a4c] bg-[#1f8a4c] text-white' : 'border-[#9db0c4] text-transparent'
+      }`}>
+        <CheckCircle2 size={14} />
+      </span>
+    </button>
+  )
+}
+
 function QuickAddCheckCard({ checked = false, title, description, onChange }) {
   return (
     <label className={`flex min-h-[68px] cursor-pointer items-start gap-3 rounded-[14px] border px-3 py-3 transition ${
@@ -507,40 +556,242 @@ function normalizeKey(value) {
 function CreateListingProgressNav({ steps = [], activeStep = 'seller', maxVisitedStep = 0, onStepClick }) {
   const activeIndex = Math.max(0, steps.findIndex((step) => step.key === activeStep))
   return (
-    <nav className="overflow-x-auto rounded-[8px] border border-[#dde6ef] bg-white px-4 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.04)]" aria-label="Create listing progress">
+    <nav className="overflow-x-auto rounded-[16px] border border-[#dde6ef] bg-white px-4 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.035)]" aria-label="Create listing progress">
       <div className="flex min-w-[860px] items-center gap-4">
-        {steps.map((step, index) => {
-          const isActive = index === activeIndex
-          const isComplete = index < activeIndex
-          const canVisit = index <= maxVisitedStep
-          return (
-            <div key={step.key} className="flex flex-1 items-center gap-4">
-              <button
-                type="button"
-                disabled={!canVisit}
-                onClick={() => onStepClick(step.key)}
-                className={`flex min-w-0 items-center gap-3 rounded-[8px] px-2 py-2 text-left transition ${
-                  isActive || isComplete ? 'text-[#142132]' : 'text-[#7b8ca2] disabled:cursor-not-allowed'
-                }`}
-              >
-                <span className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold ${
-                  isActive || isComplete ? 'bg-[#1f7d44] text-white' : 'bg-[#eef2f6] text-[#6b7d93]'
-                }`}>
-                  {isComplete ? <CheckCircle2 size={16} aria-hidden="true" /> : index + 1}
-                </span>
-                <span className="min-w-0">
-                  <span className="block truncate text-sm font-bold">{step.label}</span>
-                  <span className="block truncate text-xs text-[#60758c]">{step.description}</span>
-                </span>
-              </button>
-              {index < steps.length - 1 ? (
-                <span className={`h-px flex-1 ${index < activeIndex ? 'bg-[#1f7d44]' : 'bg-[#d6e0eb]'}`} aria-hidden="true" />
-              ) : null}
-            </div>
-          )
-        })}
+        {steps.map((step, index) => (
+          <ListingWizardStep
+            key={step.key}
+            step={step}
+            index={index}
+            isActive={index === activeIndex}
+            isComplete={index < activeIndex}
+            canVisit={index <= maxVisitedStep}
+            isLast={index === steps.length - 1}
+            onStepClick={onStepClick}
+          />
+        ))}
       </div>
     </nav>
+  )
+}
+
+function ListingWizardStep({ step, index, isActive = false, isComplete = false, canVisit = false, isLast = false, onStepClick }) {
+  return (
+    <div className="flex flex-1 items-center gap-4">
+      <button
+        type="button"
+        disabled={!canVisit}
+        onClick={() => onStepClick(step.key)}
+        className={`relative flex min-w-0 items-center gap-3 rounded-[10px] px-2 py-2 text-left transition ${
+          isActive ? 'text-[#142132]' : isComplete ? 'text-[#294563]' : 'text-[#7b8ca2] disabled:cursor-not-allowed'
+        }`}
+      >
+        <span className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold ${
+          isActive || isComplete ? 'bg-[#1f7d44] text-white' : 'bg-[#eef2f6] text-[#6b7d93]'
+        }`}>
+          {isComplete ? <CheckCircle2 size={16} aria-hidden="true" /> : index + 1}
+        </span>
+        <span className="min-w-0">
+          <span className="block truncate text-sm font-bold">{step.label}</span>
+          <span className="block truncate text-xs text-[#60758c]">{step.description}</span>
+          {isActive ? <span className="mt-2 block h-0.5 w-12 rounded-full bg-[#1f7d44]" aria-hidden="true" /> : null}
+        </span>
+      </button>
+      {!isLast ? (
+        <span className={`h-px flex-1 ${isComplete ? 'bg-[#1f7d44]' : 'bg-[#d6e0eb]'}`} aria-hidden="true" />
+      ) : null}
+    </div>
+  )
+}
+
+function ListingWizard({ children, footer }) {
+  return (
+    <div className="overflow-hidden rounded-[16px] border border-[#dde6ef] bg-white shadow-[0_14px_34px_rgba(15,23,42,0.045)]">
+      <div className="px-5 py-6 sm:px-6 lg:px-8">{children}</div>
+      {footer}
+    </div>
+  )
+}
+
+function ListingWizardHeader({ eyebrow = '', title, description }) {
+  return (
+    <header className="flex flex-col gap-3 border-b border-[#e6edf5] pb-5 sm:flex-row sm:items-start sm:justify-between">
+      <div>
+        <h2 className="text-2xl font-semibold text-[#142132]">{title}</h2>
+        {description ? <p className="mt-1 text-sm text-[#607387]">{description}</p> : null}
+      </div>
+      {eyebrow ? (
+        <span className="inline-flex w-fit items-center rounded-full border border-[#cfe6d8] bg-[#f1fbf5] px-3 py-1 text-xs font-bold uppercase tracking-[0.08em] text-[#1f7d44]">
+          {eyebrow}
+        </span>
+      ) : null}
+    </header>
+  )
+}
+
+function ListingWizardSection({ title, description = '', divided = false, children }) {
+  return (
+    <section className={`${divided ? 'border-t border-[#e6edf5] pt-6' : ''}`}>
+      <div className="mb-3">
+        <h3 className="text-sm font-bold text-[#142132]">{title}</h3>
+        {description ? <p className="mt-1 text-sm text-[#607387]">{description}</p> : null}
+      </div>
+      {children}
+    </section>
+  )
+}
+
+function FormField({ label, children, className = '' }) {
+  return (
+    <label className={`grid gap-2 ${className}`}>
+      <span className="text-sm font-semibold text-[#2d445e]">{label}</span>
+      {children}
+    </label>
+  )
+}
+
+function NumberStepper({ label, value = '', onChange, min = 0 }) {
+  const currentValue = Math.max(min, Number(normalizeIntegerInput(value) || min) || min)
+  const updateValue = (nextValue) => {
+    const normalized = Math.max(min, Number(normalizeIntegerInput(nextValue) || min) || min)
+    onChange?.(String(normalized))
+  }
+
+  return (
+    <div className="grid gap-2">
+      <span className="text-sm font-semibold text-[#2d445e]">{label}</span>
+      <div className="grid h-11 grid-cols-[48px_minmax(56px,1fr)_48px] overflow-hidden rounded-[12px] border border-[#dce6f2] bg-white">
+        <button
+          type="button"
+          className="grid place-items-center border-r border-[#e3ebf4] text-lg font-semibold text-[#1f4f78] transition hover:bg-[#f5f8fb] disabled:text-[#b8c4d1]"
+          onClick={() => updateValue(currentValue - 1)}
+          disabled={currentValue <= min}
+          aria-label={`Decrease ${label}`}
+        >
+          −
+        </button>
+        <input
+          value={value === '' ? '' : currentValue}
+          inputMode="numeric"
+          onChange={(event) => onChange?.(normalizeIntegerInput(event.target.value))}
+          className="min-w-0 border-0 bg-white px-2 text-center text-sm font-semibold text-[#142132] outline-none"
+          aria-label={label}
+        />
+        <button
+          type="button"
+          className="grid place-items-center border-l border-[#e3ebf4] text-lg font-semibold text-[#1f4f78] transition hover:bg-[#f5f8fb]"
+          onClick={() => updateValue(currentValue + 1)}
+          aria-label={`Increase ${label}`}
+        >
+          +
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function CurrencyInput({ label, value = '', onChange, placeholder = '1,000,000' }) {
+  return (
+    <FormField label={label}>
+      <div className="grid h-11 grid-cols-[52px_minmax(0,1fr)] overflow-hidden rounded-[12px] border border-[#dce6f2] bg-white focus-within:border-[#1f8a4c] focus-within:ring-2 focus-within:ring-[#d8efdf]">
+        <span className="grid place-items-center border-r border-[#e3ebf4] bg-[#f8fafc] text-sm font-semibold text-[#607387]">R</span>
+        <input
+          value={formatCurrencyNumber(value)}
+          inputMode="numeric"
+          onChange={(event) => onChange?.(normalizeText(event.target.value).replace(/[^\d]/g, ''))}
+          placeholder={placeholder}
+          className="min-w-0 border-0 bg-white px-4 text-sm font-semibold text-[#142132] outline-none placeholder:text-[#9aa9ba]"
+        />
+      </div>
+    </FormField>
+  )
+}
+
+function UnitInput({ label, value = '', unit = 'm²', onChange }) {
+  return (
+    <FormField label={label}>
+      <div className="grid h-11 grid-cols-[minmax(0,1fr)_52px] overflow-hidden rounded-[12px] border border-[#dce6f2] bg-white focus-within:border-[#1f8a4c] focus-within:ring-2 focus-within:ring-[#d8efdf]">
+        <input
+          value={normalizeText(value)}
+          inputMode="numeric"
+          onChange={(event) => onChange?.(normalizeIntegerInput(event.target.value))}
+          className="min-w-0 border-0 bg-white px-4 text-sm font-semibold text-[#142132] outline-none placeholder:text-[#9aa9ba]"
+        />
+        <span className="grid place-items-center border-l border-[#e3ebf4] bg-[#f8fafc] text-sm font-semibold text-[#607387]">{unit}</span>
+      </div>
+    </FormField>
+  )
+}
+
+function FileUpload({ label, fileName = '', accept = '', onFileSelect, onClear }) {
+  function handleFileList(files) {
+    const file = files?.[0] || null
+    onFileSelect?.(file)
+  }
+
+  return (
+    <div className="grid gap-2">
+      {label ? <span className="text-sm font-semibold text-[#2d445e]">{label}</span> : null}
+      <label
+        className="flex min-h-[92px] cursor-pointer flex-col gap-3 rounded-[14px] border border-dashed border-[#b8c8da] bg-[#fbfdff] px-4 py-4 transition hover:border-[#1f8a4c] hover:bg-[#f7fcf9] sm:flex-row sm:items-center sm:justify-between"
+        onDragOver={(event) => event.preventDefault()}
+        onDrop={(event) => {
+          event.preventDefault()
+          handleFileList(event.dataTransfer?.files)
+        }}
+      >
+        <span className="flex min-w-0 items-center gap-3">
+          <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[12px] bg-[#eef7f2] text-[#1f8a4c]">
+            <FileText size={20} />
+          </span>
+          <span className="min-w-0">
+            <span className="block text-sm font-bold text-[#142132]">
+              {fileName || 'Drag and drop your file here'}
+            </span>
+            <span className="mt-1 block text-xs text-[#607387]">PDF up to 10MB</span>
+          </span>
+        </span>
+        <span className="flex shrink-0 items-center gap-2">
+          {fileName ? (
+            <button
+              type="button"
+              className="inline-flex h-10 items-center rounded-[10px] border border-[#dce6f2] bg-white px-3 text-sm font-semibold text-[#607387] transition hover:border-[#b7c8db] hover:text-[#22374d]"
+              onClick={(event) => {
+                event.preventDefault()
+                onClear?.()
+              }}
+            >
+              Remove
+            </button>
+          ) : null}
+          <span className="inline-flex h-10 items-center rounded-[10px] border border-[#dce6f2] bg-white px-3 text-sm font-semibold text-[#22374d] shadow-[0_8px_18px_rgba(15,23,42,0.05)]">
+            Choose file ↑
+          </span>
+        </span>
+        <input key={fileName || 'empty'} type="file" accept={accept} className="sr-only" onChange={(event) => handleFileList(event.target.files)} />
+      </label>
+    </div>
+  )
+}
+
+function WizardFooter({ isFinalStep = false, isSaving = false, leftLabel = 'Cancel', leftIcon = null, onCancel, onSaveDraft, onContinue }) {
+  return (
+    <footer className="sticky bottom-0 z-10 flex flex-col gap-3 border-t border-[#e6edf5] bg-white/95 px-5 py-4 backdrop-blur sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
+      <Button type="button" variant="secondary" onClick={onCancel} disabled={isSaving}>
+        {leftIcon}
+        {leftLabel}
+      </Button>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+        <Button type="button" variant="secondary" disabled={isSaving} onClick={onSaveDraft}>
+          Save draft
+        </Button>
+        <Button type={isFinalStep ? 'submit' : 'button'} disabled={isSaving} onClick={isFinalStep ? undefined : onContinue}>
+          {isSaving ? <Loader2 size={16} className="animate-spin" /> : null}
+          {isFinalStep ? 'Create listing' : 'Continue'}
+          {!isFinalStep ? <ArrowRight size={16} /> : null}
+        </Button>
+      </div>
+    </footer>
   )
 }
 
@@ -667,6 +918,7 @@ async function syncQuickListingDistributionData(listingId = '', form = {}, conte
       askingPrice: Number(form.listingPrice || form.estimatedAskingPrice || 0) || null,
       bedrooms: Number(form.bedrooms || 0) || null,
       bathrooms: Number(form.bathrooms || 0) || null,
+      garages: Number(form.garages || 0) || null,
       parkingBays: Number(form.parkingCount || 0) || null,
       floorSize: Number(form.floorSize || 0) || null,
       erfSize: Number(form.erfSize || 0) || null,
@@ -2167,6 +2419,8 @@ function buildInitialListingLeadForm(profile, workspace) {
     propertyAddress: '',
     propertyAddressValue: null,
     formattedAddress: '',
+    streetNumber: '',
+    streetName: '',
     streetAddress: '',
     suburb: '',
     country: 'South Africa',
@@ -2200,6 +2454,7 @@ function buildInitialListingLeadForm(profile, workspace) {
     province: '',
     bedrooms: '',
     bathrooms: '',
+    garages: '',
     parkingCount: '',
     erfSize: '',
     floorSize: '',
@@ -2327,7 +2582,7 @@ function buildQuickListingNotes(form, completeness, mandateStatus) {
     normalizeText(form.listingDescription || form.notes),
     `Capture type: ${quickAddIntent.label}`,
     `Seller Contact: ${sellerDisplayName} · ${normalizeText(form.sellerEmail)} · ${normalizeText(form.sellerPhone)}`,
-    `Quick Add Meta: Beds ${form.bedrooms || '-'} · Baths ${form.bathrooms || '-'} · Parking ${form.parkingCount || '-'} · Erf ${form.erfSize || '-'} · Floor ${form.floorSize || '-'}`,
+    `Quick Add Meta: Beds ${form.bedrooms || '-'} · Baths ${form.bathrooms || '-'} · Garages ${form.garages || '-'} · Parking ${form.parkingCount || '-'} · Erf ${form.erfSize || '-'} · Floor ${form.floorSize || '-'}`,
     keySellingPoints.length ? `Key selling points: ${keySellingPoints.join(', ')}` : '',
     `Mandate: ${mandateStatusLabel} · ${mandatePack.type} · ${mandatePack.startDate || '-'} → ${mandatePack.endDate || '-'} · ${mandatePack.dateStateLabel}`,
     `Commission: ${mandatePack.commission.type} · ${mandatePack.commission.value || 'Not captured'}`,
@@ -2350,6 +2605,7 @@ function buildQuickListingNotes(form, completeness, mandateStatus) {
       listingType: normalizeText(form.listingType),
       bedrooms: normalizeText(form.bedrooms),
       bathrooms: normalizeText(form.bathrooms),
+      garages: normalizeText(form.garages),
       parkingCount: normalizeText(form.parkingCount),
       erfSize: normalizeText(form.erfSize),
       propertySize: normalizeText(form.floorSize),
@@ -2535,6 +2791,9 @@ function buildListingAddressValueFromForm(form = {}) {
   if (!formattedAddress) return null
   return {
     formattedAddress,
+    streetNumber: normalizeText(form.streetNumber || form.propertyAddressValue?.streetNumber),
+    route: normalizeText(form.streetName || form.route || form.propertyAddressValue?.route),
+    streetName: normalizeText(form.streetName || form.route || form.propertyAddressValue?.streetName || form.propertyAddressValue?.route),
     streetAddress: normalizeText(form.streetAddress || form.propertyAddressValue?.streetAddress || form.propertyAddress) || formattedAddress,
     suburb: normalizeText(form.suburb || form.propertyAddressValue?.suburb),
     city: normalizeText(form.city || form.propertyAddressValue?.city),
@@ -2548,6 +2807,16 @@ function buildListingAddressValueFromForm(form = {}) {
     addressComponents: form.propertyAddressValue?.addressComponents,
     rawGoogleResponse: form.propertyAddressValue?.rawGoogleResponse,
   }
+}
+
+function composeStructuredListingAddress(form = {}) {
+  const streetAddress = [form.streetNumber, form.streetName || form.route].map(normalizeText).filter(Boolean).join(' ')
+  return [
+    streetAddress || normalizeText(form.streetAddress || form.propertyAddress),
+    form.suburb,
+    form.city,
+    form.postalCode,
+  ].map(normalizeText).filter(Boolean).join(', ')
 }
 
 function validateQuickListingMinimumFields({ form, assignedAgentKey, requireAssignedAgent = true }) {
@@ -2929,6 +3198,8 @@ function AgentListings({ initialTab = null } = {}) {
         setForm((previous) => ({
           ...previous,
           ...parsed,
+          listingType: 'sale',
+          listingCategory: 'private_sale',
           manualMandateFile: null,
           supportingDocumentFiles: [],
           listingImages: Array.isArray(parsed.listingImages) ? parsed.listingImages : [],
@@ -3064,12 +3335,17 @@ function AgentListings({ initialTab = null } = {}) {
   function updatePropertyAddress(nextValue) {
     setForm((previous) => {
       const formattedAddress = normalizeText(nextValue?.formattedAddress)
-      const streetAddress = normalizeText(nextValue?.streetAddress || nextValue?.streetName || formattedAddress)
+      const streetNumber = normalizeText(nextValue?.streetNumber)
+      const streetName = normalizeText(nextValue?.streetName || nextValue?.route)
+      const streetAddress = normalizeText(nextValue?.streetAddress || [streetNumber, streetName].filter(Boolean).join(' ') || formattedAddress)
       return {
         ...previous,
         propertyAddressValue: nextValue || null,
         propertyAddress: streetAddress,
         formattedAddress,
+        streetNumber: streetNumber || previous.streetNumber,
+        streetName: streetName || previous.streetName,
+        route: streetName || previous.route,
         streetAddress,
         suburb: normalizeText(nextValue?.suburb) || previous.suburb,
         city: normalizeText(nextValue?.city) || previous.city,
@@ -3093,6 +3369,9 @@ function AgentListings({ initialTab = null } = {}) {
       propertyAddressValue: text
         ? {
             formattedAddress: text,
+            streetNumber: previous.streetNumber,
+            route: previous.streetName || previous.route,
+            streetName: previous.streetName || previous.route,
             streetAddress: text,
             suburb: previous.suburb,
             city: previous.city,
@@ -3108,6 +3387,43 @@ function AgentListings({ initialTab = null } = {}) {
       longitude: null,
       googlePlaceId: '',
     }))
+    setQuickAddDuplicateMatches([])
+    setQuickAddDuplicateOverride(false)
+    setQuickAddDuplicateAction('')
+  }
+
+  function updatePropertyAddressPart(key, value) {
+    setForm((previous) => {
+      const next = {
+        ...previous,
+        [key]: value,
+      }
+      if (key === 'streetName') next.route = value
+      const streetAddress = [next.streetNumber, next.streetName || next.route]
+        .map(normalizeText)
+        .filter(Boolean)
+        .join(' ')
+      const formattedAddress = composeStructuredListingAddress({ ...next, streetAddress })
+      return {
+        ...next,
+        propertyAddress: streetAddress || next.propertyAddress,
+        formattedAddress: formattedAddress || next.formattedAddress,
+        streetAddress: streetAddress || next.streetAddress,
+        propertyAddressValue: {
+          ...(next.propertyAddressValue && typeof next.propertyAddressValue === 'object' ? next.propertyAddressValue : {}),
+          formattedAddress: formattedAddress || next.formattedAddress || next.propertyAddress,
+          streetNumber: normalizeText(next.streetNumber),
+          route: normalizeText(next.streetName || next.route),
+          streetName: normalizeText(next.streetName || next.route),
+          streetAddress: streetAddress || normalizeText(next.streetAddress),
+          suburb: normalizeText(next.suburb),
+          city: normalizeText(next.city),
+          province: normalizeText(next.province),
+          country: normalizeText(next.country) || 'South Africa',
+          postalCode: normalizeText(next.postalCode),
+        },
+      }
+    })
     setQuickAddDuplicateMatches([])
     setQuickAddDuplicateOverride(false)
     setQuickAddDuplicateAction('')
@@ -3141,24 +3457,6 @@ function AgentListings({ initialTab = null } = {}) {
   function goToPreviousCreateListingStep() {
     const previousIndex = Math.max(createListingStepIndex - 1, 0)
     setCreateListingStep(CREATE_LISTING_WORKFLOW_STEPS[previousIndex].key)
-  }
-
-  function updateSellerPortalAccessIntent(intent) {
-    if (intent === 'send_now') {
-      setForm((previous) => ({
-        ...previous,
-        sellerPortalAccessIntent: 'send_now',
-        sellerPortalInviteRequested: true,
-        sellerPortalDeliveryMethod: previous.sellerPortalDeliveryMethod || 'email',
-      }))
-      return
-    }
-    setForm((previous) => ({
-      ...previous,
-      sellerPortalAccessIntent: intent,
-      sellerPortalInviteRequested: false,
-      sellerPortalDeliveryMethod: '',
-    }))
   }
 
   function updateCreateListingOwnerCard(ownerId, fallbackIndex, key, value) {
@@ -3596,6 +3894,8 @@ function AgentListings({ initialTab = null } = {}) {
             addressLine1: propertyAddress,
             addressLine2,
             formattedAddress,
+            streetNumber: normalizeText(form.streetNumber),
+            streetName: normalizeText(form.streetName || form.route),
             streetAddress,
             suburb: form.suburb.trim(),
             city: form.city.trim(),
@@ -3960,6 +4260,8 @@ function AgentListings({ initialTab = null } = {}) {
             addressLine1: propertyAddress,
             addressLine2,
             formattedAddress,
+            streetNumber: normalizeText(form.streetNumber),
+            streetName: normalizeText(form.streetName || form.route),
             streetAddress,
             suburb: form.suburb.trim(),
             city: form.city.trim(),
@@ -4057,6 +4359,7 @@ function AgentListings({ initialTab = null } = {}) {
             askingPrice: Number(form.listingPrice || 0) || estimatedPrice,
             bedrooms: Number(form.bedrooms || 0) || 0,
             bathrooms: Number(form.bathrooms || 0) || 0,
+            garages: Number(form.garages || 0) || 0,
             parkingCount: Number(form.parkingCount || 0) || 0,
             erfSize: Number(form.erfSize || 0) || null,
             floorSize: Number(form.floorSize || 0) || null,
@@ -4267,6 +4570,8 @@ function AgentListings({ initialTab = null } = {}) {
           addressLine1: propertyAddress,
           addressLine2,
           formattedAddress,
+          streetNumber: normalizeText(form.streetNumber),
+          streetName: normalizeText(form.streetName || form.route),
           streetAddress,
           suburb: form.suburb.trim(),
           city: form.city.trim(),
@@ -4457,6 +4762,8 @@ function AgentListings({ initialTab = null } = {}) {
           addressLine1: propertyAddress,
           addressLine2,
           formattedAddress,
+          streetNumber: normalizeText(form.streetNumber),
+          streetName: normalizeText(form.streetName || form.route),
           streetAddress,
           suburb: form.suburb.trim(),
           city: form.city.trim(),
@@ -4469,6 +4776,7 @@ function AgentListings({ initialTab = null } = {}) {
           askingPrice: Number(form.listingPrice || 0) || estimatedPrice,
           bedrooms: Number(form.bedrooms || 0) || 0,
           bathrooms: Number(form.bathrooms || 0) || 0,
+          garages: Number(form.garages || 0) || 0,
           parkingCount: Number(form.parkingCount || 0) || 0,
           erfSize: Number(form.erfSize || 0) || null,
           floorSize: Number(form.floorSize || 0) || null,
@@ -5637,23 +5945,24 @@ function AgentListings({ initialTab = null } = {}) {
       ? `R${Number(form.listingPrice || form.estimatedAskingPrice || 0).toLocaleString('en-ZA')}`
       : 'Price not captured'
     const createListingOwnerCards = normalizeCreateListingOwnerCards(form.multipleOwners, form.multipleOwnersText, { includeBlank: sellerTypeKey === 'multiple_owners' })
+    const isFinalCreateListingStep = createListingStepIndex === CREATE_LISTING_WORKFLOW_STEPS.length - 1
 
     return (
-      <form className="space-y-5" onSubmit={handleSaveListing} noValidate>
-        <header className="flex justify-end">
-          <div className="flex flex-wrap items-center gap-2">
-            <Button type="button" variant="secondary" disabled={isListingSaving} onClick={saveCreateListingDraftLocally}>
-              Save as draft
-            </Button>
-            <button
-              type="button"
-              onClick={() => navigate('/listings')}
-              className="inline-flex h-10 w-10 items-center justify-center rounded-[8px] border border-[#dbe6f2] bg-white text-[#607387] transition hover:border-[#b7c8db] hover:text-[#22374d]"
-              aria-label="Close create listing"
-            >
-              <X size={18} />
-            </button>
+      <form className="space-y-5 pb-6" onSubmit={handleSaveListing} noValidate>
+        <header className="flex flex-wrap items-center justify-between gap-3">
+          <div className="text-sm font-semibold text-[#607387]">
+            <span>Listings</span>
+            <span className="mx-2 text-[#9aa9ba]">→</span>
+            <span className="text-[#142132]">New listing (sales)</span>
           </div>
+          <button
+            type="button"
+            onClick={() => navigate('/listings')}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-[10px] border border-[#dbe6f2] bg-white text-[#607387] transition hover:border-[#b7c8db] hover:text-[#22374d]"
+            aria-label="Close create listing"
+          >
+            <X size={18} />
+          </button>
         </header>
 
         <CreateListingProgressNav
@@ -5666,85 +5975,85 @@ function AgentListings({ initialTab = null } = {}) {
         {error ? <p className="rounded-[8px] border border-[#f6d4d4] bg-[#fff5f5] px-4 py-3 text-sm font-semibold text-[#b42318]">{error}</p> : null}
         {workflowMessage ? <p className="rounded-[8px] border border-[#d8ecdf] bg-[#eefbf3] px-4 py-3 text-sm font-semibold text-[#1f7d44]">{workflowMessage}</p> : null}
 
-        <div>
-          <section className="rounded-[8px] border border-[#dde6ef] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">
+        <ListingWizard
+          footer={(
+            <WizardFooter
+              isFinalStep={isFinalCreateListingStep}
+              isSaving={isListingSaving}
+              leftLabel={createListingStepIndex === 0 ? 'Cancel' : 'Back'}
+              leftIcon={createListingStepIndex === 0 ? null : <ArrowLeft size={16} />}
+              onCancel={createListingStepIndex === 0 ? () => navigate('/listings') : goToPreviousCreateListingStep}
+              onSaveDraft={saveCreateListingDraftLocally}
+              onContinue={goToNextCreateListingStep}
+            />
+          )}
+        >
             {createListingStep === 'seller' ? (
               <div className="space-y-6">
-                <div className="border-b border-[#e6edf5] pb-5">
-                  <p className="text-xs font-bold uppercase text-[#1f7d44]">Step 1 of 5</p>
-                  <h2 className="mt-2 text-2xl font-semibold text-[#142132]">Seller & Mandate</h2>
-                  <p className="mt-1 text-sm text-[#607387]">Let's capture the seller details and mandate status. You can complete additional information later.</p>
-                </div>
+                <ListingWizardHeader
+                  title="Seller & Mandate"
+                  description="Add the property owner and confirm the mandate."
+                  eyebrow="Step 1 of 5"
+                />
 
-                <div>
-                  <h3 className="text-sm font-bold text-[#142132]">Who owns the property?</h3>
+                <ListingWizardSection title="Ownership type">
                   <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
                     {QUICK_ADD_SELLER_TYPE_CARDS.map((option) => (
-                      <QuickAddChoiceCard
+                      <SelectionCard
                         key={option.value}
                         active={sellerTypeKey === option.value}
                         title={option.label}
-                        description={option.description}
                         icon={option.icon}
+                        compact
                         onClick={() => updateForm('sellerType', option.value)}
                       />
                     ))}
                   </div>
-                </div>
+                </ListingWizardSection>
 
-                <div className="border-t border-[#e6edf5] pt-5">
-                  <h3 className="text-sm font-bold text-[#142132]">Seller details</h3>
+                <ListingWizardSection title="Seller details" divided>
                   {['company', 'close_corporation', 'trust', 'other'].includes(sellerTypeKey) ? (
                     <div className="mt-3 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                      <label className="grid gap-2">
-                        <span className="text-sm font-semibold text-[#2d445e]">{sellerTypeKey === 'trust' ? 'Trust name *' : sellerTypeKey === 'close_corporation' ? 'CC name *' : sellerTypeKey === 'other' ? 'Entity name *' : 'Company name *'}</span>
+                      <FormField label={sellerTypeKey === 'trust' ? 'Trust name *' : sellerTypeKey === 'close_corporation' ? 'CC name *' : sellerTypeKey === 'other' ? 'Entity name *' : 'Company name *'}>
                         <Field value={sellerTypeKey === 'trust' ? form.trustName : form.companyName} onChange={(event) => updateForm(sellerTypeKey === 'trust' ? 'trustName' : 'companyName', event.target.value)} />
-                      </label>
-                      <label className="grid gap-2">
-                        <span className="text-sm font-semibold text-[#2d445e]">{sellerTypeKey === 'trust' ? 'Trust registration/reference number' : 'Registration number'}</span>
+                      </FormField>
+                      <FormField label={sellerTypeKey === 'trust' ? 'Trust registration/reference number' : 'Registration number'}>
                         <Field value={sellerTypeKey === 'trust' ? form.trustRegistrationNumber : form.companyRegistrationNumber} onChange={(event) => updateForm(sellerTypeKey === 'trust' ? 'trustRegistrationNumber' : 'companyRegistrationNumber', event.target.value)} placeholder="Optional" />
-                      </label>
-                      <label className="grid gap-2">
-                        <span className="text-sm font-semibold text-[#2d445e]">Contact person</span>
+                      </FormField>
+                      <FormField label="Contact person">
                         <Field value={form.sellerName} onChange={(event) => updateForm('sellerName', event.target.value)} />
-                      </label>
-                      <label className="grid gap-2">
-                        <span className="text-sm font-semibold text-[#2d445e]">Mobile *</span>
+                      </FormField>
+                      <FormField label="Mobile *">
                         <Field value={form.sellerPhone} onChange={(event) => updateForm('sellerPhone', event.target.value)} />
-                      </label>
-                      <label className="grid gap-2">
-                        <span className="text-sm font-semibold text-[#2d445e]">Email *</span>
+                      </FormField>
+                      <FormField label="Email *">
                         <Field type="email" value={form.sellerEmail} onChange={(event) => updateForm('sellerEmail', event.target.value)} />
-                      </label>
+                      </FormField>
                     </div>
                   ) : (
                     <div className="mt-3 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                      <label className="grid gap-2">
-                        <span className="text-sm font-semibold text-[#2d445e]">Full name *</span>
+                      <FormField label="Full name *">
                         <Field value={form.sellerName} onChange={(event) => updateForm('sellerName', event.target.value)} />
-                      </label>
-                      <label className="grid gap-2">
-                        <span className="text-sm font-semibold text-[#2d445e]">Mobile *</span>
+                      </FormField>
+                      <FormField label="Mobile *">
                         <Field value={form.sellerPhone} onChange={(event) => updateForm('sellerPhone', event.target.value)} />
-                      </label>
-                      <label className="grid gap-2">
-                        <span className="text-sm font-semibold text-[#2d445e]">Email *</span>
+                      </FormField>
+                      <FormField label="Email *">
                         <Field type="email" value={form.sellerEmail} onChange={(event) => updateForm('sellerEmail', event.target.value)} />
-                      </label>
-                      <label className="grid gap-2">
-                        <span className="text-sm font-semibold text-[#2d445e]">ID number</span>
+                      </FormField>
+                      <FormField label="ID number">
                         <Field value={form.sellerRegistrationNumber} onChange={(event) => updateForm('sellerRegistrationNumber', event.target.value)} placeholder="Optional" />
-                      </label>
+                      </FormField>
 	                      {sellerTypeKey === 'multiple_owners' ? (
 	                        <div className="grid gap-3 md:col-span-2 xl:col-span-3">
 	                          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
 	                            <div>
-	                              <span className="text-sm font-semibold text-[#2d445e]">Additional owners</span>
-	                              <p className="mt-1 text-xs text-[#607387]">Capture each additional owner separately so mandate, FICA and disclosure follow-ups stay clear.</p>
+	                              <span className="text-sm font-semibold text-[#2d445e]">Seller 1</span>
+	                              <p className="mt-1 text-xs text-[#607387]">Add another seller only when there is more than one owner.</p>
 	                            </div>
 	                            <Button type="button" variant="secondary" size="sm" onClick={addCreateListingOwnerCard}>
 	                              <Plus size={14} />
-	                              Add owner
+	                              Add another seller
 	                            </Button>
 	                          </div>
 	                          <div className="grid gap-3 xl:grid-cols-2">
@@ -5752,7 +6061,7 @@ function AgentListings({ initialTab = null } = {}) {
 	                              <article key={owner.id} className="rounded-[10px] border border-[#dce6f2] bg-[#fbfdff] p-4">
 	                                <div className="flex items-start justify-between gap-3">
 	                                  <div>
-	                                    <p className="text-sm font-bold text-[#142132]">Owner {index + 2}</p>
+	                                    <p className="text-sm font-bold text-[#142132]">Seller {index + 2}</p>
 	                                    <p className="mt-1 text-xs text-[#607387]">Additional individual owner</p>
 	                                  </div>
 	                                  <Button type="button" variant="secondary" size="sm" onClick={() => removeCreateListingOwnerCard(owner.id)}>
@@ -5784,19 +6093,18 @@ function AgentListings({ initialTab = null } = {}) {
 	                      ) : null}
                     </div>
                   )}
-                </div>
+                </ListingWizardSection>
 
-                <div className="border-t border-[#e6edf5] pt-5">
-                  <h3 className="text-sm font-bold text-[#142132]">Mandate status</h3>
+                <ListingWizardSection title="Mandate" description="Do you have a signed mandate from the seller?" divided>
                   <div className="mt-3 grid gap-3 md:grid-cols-2">
-                    <QuickAddChoiceCard
+                    <SelectionCard
                       active={mandateSigned}
                       title="Signed mandate"
-                      description="I already have a signed mandate from the seller."
+                      description="I already have a signed mandate."
                       icon={FileText}
                       onClick={() => applyQuickAddMandateStatus(true)}
                     />
-                    <QuickAddChoiceCard
+                    <SelectionCard
                       active={!mandateSigned}
                       title="Mandate still required"
                       description="The seller still needs to complete/sign the mandate."
@@ -5805,152 +6113,120 @@ function AgentListings({ initialTab = null } = {}) {
                     />
                   </div>
                   {mandateSigned ? (
-                    <div className="mt-3 grid gap-4 md:grid-cols-2">
-                      <label className="grid gap-2">
-                        <span className="text-sm font-semibold text-[#2d445e]">Upload mandate</span>
-                        <Field
-                          type="file"
-                          accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
-                          onChange={(event) => {
-                            const file = event.target.files?.[0] || null
-                            updateForm('manualMandateFile', file)
-                            updateForm('manualMandateFileName', file?.name || '')
-                          }}
-                        />
-                      </label>
-                      <QuickAddChoiceCard
-                        active={mandateSigned && !form.manualMandateFileName}
-                        title="I'll upload it later"
-                        description="Create the listing and keep mandate upload visible as a follow-up."
-                        icon={Circle}
-                        onClick={() => {
+                    <div className="mt-4 grid gap-3">
+                      <FileUpload
+                        label="Upload signed mandate"
+                        accept=".pdf"
+                        fileName={form.manualMandateFileName}
+                        onFileSelect={(file) => {
+                          updateForm('manualMandateFile', file)
+                          updateForm('manualMandateFileName', file?.name || '')
+                        }}
+                        onClear={() => {
                           updateForm('manualMandateFile', null)
                           updateForm('manualMandateFileName', '')
                         }}
                       />
+                      <button
+                        type="button"
+                        className="w-fit text-sm font-semibold text-[#607387] transition hover:text-[#1f7d44]"
+                        onClick={() => {
+                          updateForm('manualMandateFile', null)
+                          updateForm('manualMandateFileName', '')
+                        }}
+                      >
+                        I'll upload this later
+                      </button>
                     </div>
                   ) : null}
-                </div>
-
-                <div className="border-t border-[#e6edf5] pt-5">
-                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                    <div>
-                      <h3 className="text-sm font-bold text-[#142132]">Seller access</h3>
-                      <p className="mt-1 text-sm text-[#607387]">Give the seller access to their property page where they can complete information, upload documents and track their listing.</p>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <Button type="button" onClick={() => updateSellerPortalAccessIntent('send_now')}>
-                        <MessageCircle size={15} />
-                        Send now
-                      </Button>
-                      <Button type="button" variant="secondary" onClick={() => updateSellerPortalAccessIntent('later')}>Send later</Button>
-                      <Button type="button" variant="secondary" onClick={() => updateSellerPortalAccessIntent('copy_link')}>
-                        <Link size={15} />
-                        Copy link
-                      </Button>
-                    </div>
-                  </div>
-                  {form.sellerPortalAccessIntent === 'send_now' ? (
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {[
-                        { key: 'whatsapp', label: 'WhatsApp', icon: MessageCircle },
-                        { key: 'email', label: 'Email', icon: Mail },
-                      ].map((method) => {
-                        const MethodIcon = method.icon
-                        const active = form.sellerPortalDeliveryMethod === method.key
-                        return (
-                          <button
-                            key={method.key}
-                            type="button"
-                            onClick={() => applySellerPortalDeliveryMethod(method.key)}
-                            className={`inline-flex h-10 items-center gap-2 rounded-[8px] border px-3 text-sm font-semibold transition ${active ? 'border-[#1f7d44] bg-[#edf8f0] text-[#1f7d44]' : 'border-[#dce6f2] bg-white text-[#2d567d]'}`}
-                          >
-                            <MethodIcon size={15} />
-                            {method.label}
-                          </button>
-                        )
-                      })}
-                    </div>
-                  ) : null}
-                </div>
+                </ListingWizardSection>
               </div>
             ) : null}
 
             {createListingStep === 'property' ? (
               <div className="space-y-6">
-                <div className="border-b border-[#e6edf5] pb-5">
-                  <p className="text-xs font-bold uppercase text-[#1f7d44]">Step 2 of 5</p>
-                  <h2 className="mt-2 text-2xl font-semibold text-[#142132]">Property</h2>
-                  <p className="mt-1 text-sm text-[#607387]">Start with the essentials. Arch9 will tell you if anything else is required before publishing.</p>
-                </div>
-                <div className="grid gap-4 lg:grid-cols-[minmax(260px,1fr)_180px_180px_160px]">
+                <ListingWizardHeader
+                  title="Property"
+                  description="Add the property details."
+                  eyebrow="Step 2 of 5"
+                />
+
+                <ListingWizardSection title="1. Property address">
                   <AddressAutocomplete
                     label="Property address *"
                     value={buildListingAddressValueFromForm(form)}
                     onChange={updatePropertyAddress}
                     onInputValueChange={updatePropertyAddressInput}
                     predictionTypes={['address']}
-                    placeholder="Start typing the property address..."
+                    placeholder="Search for the property address..."
+                    hideUnavailableMessage
                     required
                   />
-                  <label className="grid gap-2">
-                    <span className="text-sm font-semibold text-[#2d445e]">Listing type *</span>
-                    <Field as="select" value={form.listingType} onChange={(event) => updateForm('listingType', event.target.value)}>
-                      <option value="sale">Sale</option>
-                      <option value="rental">Rental</option>
-                    </Field>
-                  </label>
-                  <label className="grid gap-2">
-                    <span className="text-sm font-semibold text-[#2d445e]">Property type *</span>
-                    <Field as="select" value={form.propertyType} onChange={(event) => updateForm('propertyType', event.target.value)}>
-                      <option>House</option>
-                      <option>Apartment</option>
-                      <option>Townhouse</option>
-                      <option>Sectional Title</option>
-                      <option>Vacant Land</option>
-                    </Field>
-                  </label>
-                  <label className="grid gap-2">
-                    <span className="text-sm font-semibold text-[#2d445e]">Listing price *</span>
-                    <Field type="number" value={form.listingPrice} onChange={(event) => updateForm('listingPrice', event.target.value)} placeholder="2500000" min="0" step="1000" />
-                  </label>
-                </div>
-                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                  <label className="grid gap-2">
-                    <span className="text-sm font-semibold text-[#2d445e]">Bedrooms</span>
-                    <Field type="number" min="0" value={form.bedrooms} onChange={(event) => updateForm('bedrooms', event.target.value)} />
-                  </label>
-                  <label className="grid gap-2">
-                    <span className="text-sm font-semibold text-[#2d445e]">Bathrooms</span>
-                    <Field type="number" min="0" step="0.5" value={form.bathrooms} onChange={(event) => updateForm('bathrooms', event.target.value)} />
-                  </label>
-                  <label className="grid gap-2">
-                    <span className="text-sm font-semibold text-[#2d445e]">Parking</span>
-                    <Field type="number" min="0" value={form.parkingCount} onChange={(event) => updateForm('parkingCount', event.target.value)} />
-                  </label>
-                  <label className="grid gap-2">
-                    <span className="text-sm font-semibold text-[#2d445e]">Floor size</span>
-                    <Field type="number" min="0" value={form.floorSize} onChange={(event) => updateForm('floorSize', event.target.value)} placeholder="m2" />
-                  </label>
-                  {normalizeDirectListingKey(form.propertyType) !== 'apartment' ? (
-                    <label className="grid gap-2">
-                      <span className="text-sm font-semibold text-[#2d445e]">Erf size</span>
-                      <Field type="number" min="0" value={form.erfSize} onChange={(event) => updateForm('erfSize', event.target.value)} placeholder="m2" />
-                    </label>
-                  ) : null}
+                  <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
+                    <FormField label="Street number">
+                      <Field value={form.streetNumber} onChange={(event) => updatePropertyAddressPart('streetNumber', event.target.value)} />
+                    </FormField>
+                    <FormField label="Street name" className="xl:col-span-2">
+                      <Field value={form.streetName} onChange={(event) => updatePropertyAddressPart('streetName', event.target.value)} />
+                    </FormField>
+                    <FormField label="Suburb">
+                      <Field value={form.suburb} onChange={(event) => updatePropertyAddressPart('suburb', event.target.value)} />
+                    </FormField>
+                    <FormField label="City / Town">
+                      <Field value={form.city} onChange={(event) => updatePropertyAddressPart('city', event.target.value)} />
+                    </FormField>
+                    <FormField label="Province">
+                      <Field value={form.province} onChange={(event) => updatePropertyAddressPart('province', event.target.value)} />
+                    </FormField>
+                    <FormField label="Postal code">
+                      <Field value={form.postalCode} onChange={(event) => updatePropertyAddressPart('postalCode', event.target.value)} />
+                    </FormField>
+                  </div>
+                </ListingWizardSection>
+
+                <ListingWizardSection title="2. Listing basics" divided>
+                  <div className="mt-3 grid gap-4 md:grid-cols-2 xl:max-w-[760px]">
+                    <FormField label="Property type *">
+                      <Field as="select" value={form.propertyType} onChange={(event) => updateForm('propertyType', event.target.value)}>
+                        <option>House</option>
+                        <option>Apartment</option>
+                        <option>Townhouse</option>
+                        <option>Sectional Title</option>
+                        <option>Vacant Land</option>
+                      </Field>
+                    </FormField>
+                    <CurrencyInput
+                      label="Listing price *"
+                      value={form.listingPrice}
+                      onChange={(value) => updateForm('listingPrice', value)}
+                    />
+                  </div>
+                </ListingWizardSection>
+
+                <ListingWizardSection title="3. Property specifications" divided>
+                  <div className="mt-3 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                    <NumberStepper label="Bedrooms" value={form.bedrooms} onChange={(value) => updateForm('bedrooms', value)} />
+                    <NumberStepper label="Bathrooms" value={form.bathrooms} onChange={(value) => updateForm('bathrooms', value)} />
+                    <NumberStepper label="Garages" value={form.garages} onChange={(value) => updateForm('garages', value)} />
+                    <NumberStepper label="Parking" value={form.parkingCount} onChange={(value) => updateForm('parkingCount', value)} />
+                  </div>
+                  <div className="mt-4 grid gap-4 md:grid-cols-2">
+                    <UnitInput label="Floor size" value={form.floorSize} onChange={(value) => updateForm('floorSize', value)} />
+                    {normalizeDirectListingKey(form.propertyType) !== 'apartment' ? (
+                      <UnitInput label="Erf size" value={form.erfSize} onChange={(value) => updateForm('erfSize', value)} />
+                    ) : null}
+                  </div>
                   {isSectionalTitleProperty(form) ? (
-                    <>
-                      <label className="grid gap-2">
-                        <span className="text-sm font-semibold text-[#2d445e]">Unit number</span>
+                    <div className="mt-4 grid gap-4 md:grid-cols-2">
+                      <FormField label="Unit number">
                         <Field value={form.unitNumber} onChange={(event) => updateForm('unitNumber', event.target.value)} />
-                      </label>
-                      <label className="grid gap-2">
-                        <span className="text-sm font-semibold text-[#2d445e]">Complex / scheme</span>
+                      </FormField>
+                      <FormField label="Complex / scheme">
                         <Field value={form.complexName} onChange={(event) => updateForm('complexName', event.target.value)} />
-                      </label>
-                    </>
+                      </FormField>
+                    </div>
                   ) : null}
-                </div>
+                </ListingWizardSection>
               </div>
             ) : null}
 
@@ -6158,25 +6434,8 @@ function AgentListings({ initialTab = null } = {}) {
               </div>
             ) : null}
 
-            <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-[#e6edf5] pt-5">
-              <Button type="button" variant="secondary" onClick={createListingStepIndex === 0 ? () => navigate('/listings') : goToPreviousCreateListingStep}>
-                {createListingStepIndex === 0 ? 'Cancel' : 'Back'}
-              </Button>
-              {createListingStepIndex < CREATE_LISTING_WORKFLOW_STEPS.length - 1 ? (
-                <Button type="button" onClick={goToNextCreateListingStep}>
-                  Continue
-                  <ArrowRight size={16} />
-                </Button>
-              ) : (
-                <Button type="submit" disabled={isListingSaving}>
-                  {isListingSaving ? <Loader2 size={16} className="animate-spin" /> : null}
-                  Create Listing
-                </Button>
-              )}
-	            </div>
-	          </section>
-	        </div>
-	      </form>
+        </ListingWizard>
+      </form>
     )
   }
 

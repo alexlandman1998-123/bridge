@@ -301,6 +301,11 @@ export function buildDirectListingPropertyFacts(form = {}) {
     propertyAddress: normalizeText(pickFirst(form.propertyAddress, form.address, form.formattedAddress)),
     formattedAddress: normalizeText(pickFirst(form.formattedAddress, form.propertyAddress, form.address)),
     streetAddress: normalizeText(form.streetAddress),
+    streetNumber: normalizeText(form.streetNumber),
+    street_number: normalizeText(form.streetNumber),
+    streetName: normalizeText(pickFirst(form.streetName, form.route)),
+    street_name: normalizeText(pickFirst(form.streetName, form.route)),
+    route: normalizeText(pickFirst(form.route, form.streetName)),
     suburb: normalizeText(form.suburb),
     city: normalizeText(form.city),
     province: normalizeText(form.province),
@@ -324,6 +329,15 @@ export function buildDirectListingPropertyFacts(form = {}) {
     estate_name: normalizeText(form.estateName),
     sectionalTitleNumber: normalizeText(form.sectionalTitleNumber),
     sectional_title_number: normalizeText(form.sectionalTitleNumber),
+    bedrooms: normalizeText(form.bedrooms),
+    bathrooms: normalizeText(form.bathrooms),
+    garages: normalizeText(form.garages),
+    parkingCount: normalizeText(form.parkingCount),
+    parking_count: normalizeText(form.parkingCount),
+    floorSize: normalizeText(form.floorSize),
+    floor_size: normalizeText(form.floorSize),
+    erfSize: normalizeText(form.erfSize),
+    erf_size: normalizeText(form.erfSize),
   })
 }
 

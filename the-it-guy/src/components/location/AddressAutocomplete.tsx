@@ -34,6 +34,7 @@ export type AddressAutocompleteProps = {
   required?: boolean
   disabled?: boolean
   error?: string
+  hideUnavailableMessage?: boolean
 }
 
 type Prediction = {
@@ -160,6 +161,7 @@ export default function AddressAutocomplete({
   required = false,
   disabled = false,
   error = '',
+  hideUnavailableMessage = false,
 }: AddressAutocompleteProps) {
   const [inputValue, setInputValue] = useState(value?.formattedAddress || '')
   const [predictions, setPredictions] = useState<Prediction[]>([])
@@ -373,11 +375,11 @@ export default function AddressAutocomplete({
 
   const helperText = useMemo(() => {
     if (error) return error
-    if (!isApiKeyAvailable) return 'Google Places is not configured for this environment.'
+    if (!isApiKeyAvailable) return hideUnavailableMessage ? '' : 'Google Places is not configured for this environment.'
     if (loadError) return loadError
-    if (noticeText) return noticeText
+    if (noticeText) return hideUnavailableMessage ? '' : noticeText
     return description
-  }, [description, error, isApiKeyAvailable, loadError, noticeText])
+  }, [description, error, hideUnavailableMessage, isApiKeyAvailable, loadError, noticeText])
 
   function handleClear() {
     requestIdRef.current += 1
