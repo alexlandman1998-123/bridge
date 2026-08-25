@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowLeft, Home, ImagePlus, Loader2, Save, Trash2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
@@ -78,16 +78,34 @@ function readAsDataUrl(file) {
   })
 }
 
+function createGalleryPreviewUrl(file) {
+  if (typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
+    return {
+      url: URL.createObjectURL(file),
+      revokeOnCleanup: true,
+    }
+  }
+  return readAsDataUrl(file).then((url) => ({
+    url,
+    revokeOnCleanup: false,
+  }))
+}
+
 async function buildGalleryDrafts(files = []) {
   return Promise.all(
-    files.map(async (file, index) => ({
-      id: createGalleryAssetId(index),
-      name: file.name || `Image ${index + 1}`,
-      url: await readAsDataUrl(file),
-      contentType: file.type || '',
-      size: file.size || 0,
-      file,
-    })),
+    files.map(async (file, index) => {
+      const preview = await createGalleryPreviewUrl(file)
+      return {
+        id: createGalleryAssetId(index),
+        name: file.name || `Image ${index + 1}`,
+        url: preview.url,
+        previewUrl: preview.url,
+        revokePreviewUrl: preview.revokeOnCleanup,
+        contentType: file.type || '',
+        size: file.size || 0,
+        file,
+      }
+    }),
   )
 }
 
@@ -164,6 +182,7 @@ export default function RentalListingCreatePage() {
   const branchId = rentalScope.branchId
   const assignedAgentId = rentalScope.assignedAgentId
   const [form, setForm] = useState(createInitialFormState)
+  const galleryImagesRef = useRef(form.galleryImages)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -172,6 +191,18 @@ export default function RentalListingCreatePage() {
     [form, organisationId],
   )
   const canSubmit = validationErrors.length === 0 && !saving
+
+  useEffect(() => {
+    galleryImagesRef.current = form.galleryImages
+  }, [form.galleryImages])
+
+  useEffect(() => () => {
+    for (const image of galleryImagesRef.current) {
+      if (image?.revokePreviewUrl && image.url && typeof URL !== 'undefined' && typeof URL.revokeObjectURL === 'function') {
+        URL.revokeObjectURL(image.url)
+      }
+    }
+  }, [])
 
   function updateForm(name, value) {
     setForm((current) => ({ ...current, [name]: value }))
@@ -214,6 +245,10 @@ export default function RentalListingCreatePage() {
 
   function removeGalleryImage(imageId) {
     setForm((current) => {
+      const removedImage = current.galleryImages.find((image) => String(image.id) === String(imageId))
+      if (removedImage?.revokePreviewUrl && removedImage.url && typeof URL !== 'undefined' && typeof URL.revokeObjectURL === 'function') {
+        URL.revokeObjectURL(removedImage.url)
+      }
       const nextGallery = current.galleryImages.filter((image) => String(image.id) !== String(imageId))
       return {
         ...current,
@@ -240,12 +275,19 @@ export default function RentalListingCreatePage() {
     try {
       setSaving(true)
       setError('')
-      await createRentalListingDraft(form, {
+      const result = await createRentalListingDraft(form, {
         organisationId,
         branchId,
         assignedAgentId,
         performedBy: assignedAgentId,
       })
+      const listingId = result?.listing?.id
+      if (listingId) {
+        navigate(`/agent/rentals/listings/${encodeURIComponent(listingId)}`, {
+          state: { rentalListingCreatedTitle: buildRentalListingTitle(form) },
+        })
+        return
+      }
       navigate('/agent/rentals/listings', {
         state: { rentalListingCreatedTitle: buildRentalListingTitle(form) },
       })

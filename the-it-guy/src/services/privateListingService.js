@@ -6377,6 +6377,7 @@ export async function getAgentPrivateListings(
     branchId = null,
     includeAllOrganisationListings = false,
     assignedAgentIds = [],
+    includeMedia = false,
   } = {},
 ) {
   const client = requireClient()
@@ -6417,7 +6418,7 @@ export async function getAgentPrivateListings(
   }
   const rows = (Array.isArray(query.data) ? query.data : []).filter((row) => !isDeletedPrivateListingRow(row))
   const listingIds = rows.map((row) => row.id)
-  const [onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap, mandatePacketsMap, assignedAgentsMap] = await Promise.all([
+  const [onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap, mandatePacketsMap, assignedAgentsMap, mediaMap] = await Promise.all([
     fetchOnboardingRowsForListings(client, listingIds),
     fetchRequirementRowsForListings(client, listingIds),
     fetchDocumentRowsForListings(client, listingIds),
@@ -6425,8 +6426,14 @@ export async function getAgentPrivateListings(
     fetchPublicationRowsForListings(client, listingIds),
     fetchMandatePacketRowsForListings(client, rows),
     fetchAssignedAgentProfilesForListings(client, rows),
+    includeMedia ? fetchMediaRowsForListings(client, listingIds) : Promise.resolve(new Map()),
   ])
-  return rows.map((row) => mapPrivateListingRow(row, onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap, mandatePacketsMap, assignedAgentsMap)).filter(Boolean)
+  return rows
+    .map((row) => {
+      const listing = mapPrivateListingRow(row, onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap, mandatePacketsMap, assignedAgentsMap)
+      return includeMedia ? attachDistributionMediaToListing(listing, mediaMap.get(String(row.id)) || []) : listing
+    })
+    .filter(Boolean)
 }
 
 export async function getAgentPrivateListingSummaries(

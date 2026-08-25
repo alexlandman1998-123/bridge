@@ -90,6 +90,12 @@ import {
   isPropertyDisclosureDigitallyComplete,
   normalizePropertyDisclosure,
 } from '../lib/propertyDisclosure'
+import { buildSellerComplianceDocumentModel } from '../core/documents/sellerComplianceDocumentModel'
+import {
+  applySellerComplianceSignatureToForm,
+  buildDisclosureForComplianceSigner,
+  buildSellerComplianceSigningForForm,
+} from '../core/documents/sellerComplianceSigningFlow'
 import {
   buildArch9SellerTermsAcceptance,
   getArch9SellerTermsConfig,
@@ -742,6 +748,27 @@ function resolveSellerWelcomeImageUrl(listing = {}) {
 function getSellerDisplayName(listing = {}, form = {}) {
   return [form?.sellerFirstName, form?.sellerSurname].filter(Boolean).join(' ').trim() ||
     String(listing?.seller?.name || listing?.sellerName || 'Seller').trim()
+}
+
+function getSellerComplianceSignerIdFromUrl() {
+  if (typeof window === 'undefined') return ''
+  return String(new URLSearchParams(window.location.search).get('signer') || '').trim()
+}
+
+function getSellerComplianceSignaturePaneIndex() {
+  return getDisclosureQuestionGroups().length + 2
+}
+
+function resolveSellerComplianceSigningIntent({ formData = {}, listing = {}, token = '', signerId = '' } = {}) {
+  if (!signerId) return null
+  const flow = buildSellerComplianceSigningForForm({
+    formData,
+    listing,
+    token,
+    signerId,
+  })
+  if (!flow.requestedSignerMatched || !flow.activeSigner || flow.activeSigner.complete) return null
+  return flow
 }
 
 function todayInputValue() {
@@ -1715,6 +1742,28 @@ function normalizeFormData(listing) {
     flowDocumentTriggers: Array.isArray(flow.document_triggers) ? flow.document_triggers : [],
     propertyDisclosure,
     propertyDisclosureStatus: getPropertyDisclosureStatus(propertyDisclosure),
+    sellerComplianceSigners: Array.isArray(existing.sellerComplianceSigners)
+      ? existing.sellerComplianceSigners
+      : Array.isArray(existing.seller_compliance_signers)
+        ? existing.seller_compliance_signers
+        : [],
+    seller_compliance_signers: Array.isArray(existing.seller_compliance_signers)
+      ? existing.seller_compliance_signers
+      : Array.isArray(existing.sellerComplianceSigners)
+        ? existing.sellerComplianceSigners
+        : [],
+    sellerComplianceSigning: existing.sellerComplianceSigning && typeof existing.sellerComplianceSigning === 'object'
+      ? existing.sellerComplianceSigning
+      : existing.seller_compliance_signing && typeof existing.seller_compliance_signing === 'object'
+        ? existing.seller_compliance_signing
+        : {},
+    seller_compliance_signing: existing.seller_compliance_signing && typeof existing.seller_compliance_signing === 'object'
+      ? existing.seller_compliance_signing
+      : existing.sellerComplianceSigning && typeof existing.sellerComplianceSigning === 'object'
+        ? existing.sellerComplianceSigning
+        : {},
+    sellerComplianceActiveSignerId: existing.sellerComplianceActiveSignerId || existing.seller_compliance_active_signer_id || '',
+    seller_compliance_active_signer_id: existing.seller_compliance_active_signer_id || existing.sellerComplianceActiveSignerId || '',
 
     features: normalizedFeatures,
     propertyCondition: existing.propertyCondition || 'good',
@@ -2305,6 +2354,9 @@ function PropertyDisclosureSection({
   disclosureKind = 'residential',
   sellerName = '',
   sellerIdNumber = '',
+  activeSigner = null,
+  signingStatus = null,
+  hasRequestedSigner = false,
   onAnswerChange,
   onDownload,
   onDisclosureChange,
@@ -2331,6 +2383,18 @@ function PropertyDisclosureSection({
       description="Complete the disclosure in the same structure as the mandate annexure. It can be downloaded as its own PDF afterwards."
     >
       <div className="space-y-5">
+        {activeSigner ? (
+          <section className="rounded-[18px] border border-[#cfe8da] bg-[#f2fbf5] p-4 text-sm leading-6 text-[#25603d]">
+            <p className="font-semibold text-[#14532d]">
+              Signing as {activeSigner.name || activeSigner.roleLabel || 'seller'}
+            </p>
+            <p className="mt-1">
+              {hasRequestedSigner
+                ? 'This link is only for this signer. The compliance pack stays open until every required signer is complete.'
+                : signingStatus?.statusLabel || 'Seller compliance signatures are tracked from this declaration.'}
+            </p>
+          </section>
+        ) : null}
         <FormSection
           icon={ShieldCheck}
           title="Annexure A questions"
@@ -2723,6 +2787,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   const draftAutosaveTimerRef = useRef(null)
   const lastDraftSignatureRef = useRef('')
   const saveDraftRef = useRef(null)
+  const requestedComplianceSignerId = useMemo(() => getSellerComplianceSignerIdFromUrl(), [token])
 
   useEffect(() => {
     let isMounted = true
@@ -2736,13 +2801,21 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       if (isDemoOnboarding) {
         const found = getDemoSellerOnboardingListing(token)
         const nextForm = normalizeFormData(found)
-        lastDraftSignatureRef.current = buildSellerDraftSignature(nextForm, 0)
+        const signerIntent = resolveSellerComplianceSigningIntent({
+          formData: nextForm,
+          listing: found,
+          token,
+          signerId: requestedComplianceSignerId,
+        })
+        const initialStep = signerIntent ? 2 : 0
+        lastDraftSignatureRef.current = buildSellerDraftSignature(nextForm, initialStep)
         setListing(found)
         setForm(nextForm)
-        setCurrentStep(0)
+        setCurrentStep(initialStep)
+        setMobilePaneIndex(signerIntent ? getSellerComplianceSignaturePaneIndex() : 0)
         setLastDraftSavedAt(resolveDraftSavedAt(found))
         setDraftSyncStatus('saved')
-        setShowWelcome(!embedded)
+        setShowWelcome(!embedded && !signerIntent)
         setLoading(false)
         return
       }
@@ -2782,13 +2855,21 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
 
           if (!isMounted) return
           const nextForm = normalizeFormData(nextListing)
-          lastDraftSignatureRef.current = buildSellerDraftSignature(nextForm, nextStep)
+          const signerIntent = resolveSellerComplianceSigningIntent({
+            formData: nextForm,
+            listing: nextListing,
+            token,
+            signerId: requestedComplianceSignerId,
+          })
+          const resolvedNextStep = signerIntent ? 2 : nextStep
+          lastDraftSignatureRef.current = buildSellerDraftSignature(nextForm, resolvedNextStep)
           setListing(nextListing)
           setForm(nextForm)
-          setCurrentStep(nextStep)
+          setCurrentStep(resolvedNextStep)
+          setMobilePaneIndex(signerIntent ? getSellerComplianceSignaturePaneIndex() : 0)
           setLastDraftSavedAt(resolveDraftSavedAt(nextListing))
           setDraftSyncStatus(resolveDraftSavedAt(nextListing) ? 'saved' : 'idle')
-          setShowWelcome(!embedded && ![
+          setShowWelcome(!embedded && !signerIntent && ![
             SELLER_ONBOARDING_STATUS.SUBMITTED,
             SELLER_ONBOARDING_STATUS.UNDER_REVIEW,
             SELLER_ONBOARDING_STATUS.COMPLETED,
@@ -2836,13 +2917,21 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
 
       if (!isMounted) return
       const nextForm = normalizeFormData(nextListing)
-      lastDraftSignatureRef.current = buildSellerDraftSignature(nextForm, nextStep)
+      const signerIntent = resolveSellerComplianceSigningIntent({
+        formData: nextForm,
+        listing: nextListing,
+        token,
+        signerId: requestedComplianceSignerId,
+      })
+      const resolvedNextStep = signerIntent ? 2 : nextStep
+      lastDraftSignatureRef.current = buildSellerDraftSignature(nextForm, resolvedNextStep)
       setListing(nextListing)
       setForm(nextForm)
-      setCurrentStep(nextStep)
+      setCurrentStep(resolvedNextStep)
+      setMobilePaneIndex(signerIntent ? getSellerComplianceSignaturePaneIndex() : 0)
       setLastDraftSavedAt(resolveDraftSavedAt(nextListing))
       setDraftSyncStatus(resolveDraftSavedAt(nextListing) ? 'saved' : 'idle')
-      setShowWelcome(!embedded && ![
+      setShowWelcome(!embedded && !signerIntent && ![
         SELLER_ONBOARDING_STATUS.SUBMITTED,
         SELLER_ONBOARDING_STATUS.UNDER_REVIEW,
         SELLER_ONBOARDING_STATUS.COMPLETED,
@@ -2854,7 +2943,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     return () => {
       isMounted = false
     }
-  }, [embedded, isDemoOnboarding, token, useDbFirstSellerOnboarding])
+  }, [embedded, isDemoOnboarding, requestedComplianceSignerId, token, useDbFirstSellerOnboarding])
 
   useEffect(() => {
     return () => {
@@ -2898,6 +2987,18 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   const isCompleted = String(listing?.sellerOnboarding?.status || '').trim().toLowerCase() === SELLER_ONBOARDING_STATUS.COMPLETED
   const flow = useMemo(() => getFlowContract(form || {}, listing || {}, getCanonicalSellerFacts(listing || {})), [form, listing])
   const propertyBranch = String(flow?.property_branch || form?.propertyBranch || '').trim() || 'residential'
+  const sellerComplianceSigningFlow = useMemo(() => buildSellerComplianceSigningForForm({
+    formData: form || {},
+    listing: listing || {},
+    token,
+    signerId: requestedComplianceSignerId || form?.sellerComplianceActiveSignerId || form?.seller_compliance_active_signer_id || '',
+  }), [form, listing, requestedComplianceSignerId, token])
+  const sellerComplianceSigning = sellerComplianceSigningFlow.model
+  const activeComplianceSigner = sellerComplianceSigningFlow.activeSigner
+  const hasRequestedComplianceSigner = Boolean(sellerComplianceSigningFlow.requestedSignerMatched)
+  const activePropertyDisclosure = useMemo(() => buildDisclosureForComplianceSigner(form?.propertyDisclosure || {}, activeComplianceSigner, {
+    preferSignerSignature: hasRequestedComplianceSigner,
+  }), [activeComplianceSigner, form?.propertyDisclosure, hasRequestedComplianceSigner])
   const propertyAddressDetails = useMemo(() => getPropertyAddressDetails(listing || {}, form || {}), [listing, form])
   const propertyTypeOptions = useMemo(
     () => getPropertyTypeOptionsByCategory(form?.propertyCategory || 'residential'),
@@ -3293,11 +3394,22 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         if (!patch.signedAt && !current.signedAt) patch.signedAt = todayInputValue()
       }
       const next = normalizePropertyDisclosure({ ...current, ...patch }, { kind: current.kind })
-      return {
+      const nextForm = {
         ...(previous || {}),
         propertyDisclosure: next,
         propertyDisclosureStatus: getPropertyDisclosureStatus(next),
       }
+      if (!isPropertyDisclosureDigitallyComplete(next)) return nextForm
+      return applySellerComplianceSignatureToForm({
+        formData: nextForm,
+        listing: listing || {},
+        token,
+        signerId: requestedComplianceSignerId || activeComplianceSigner?.id || '',
+        disclosure: next,
+        audit: {
+          userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
+        },
+      })
     })
   }
 
@@ -3330,7 +3442,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     let styleElement = null
     try {
       setError('')
-      const normalizedDisclosure = normalizePropertyDisclosure(form.propertyDisclosure || {}, {
+      const normalizedDisclosure = normalizePropertyDisclosure(activePropertyDisclosure || {}, {
         kind: propertyBranch === 'commercial' || propertyBranch === 'mixed_use' ? 'commercial' : 'residential',
       })
       if (!isPropertyDisclosureDigitallyComplete(normalizedDisclosure)) {
@@ -3340,6 +3452,17 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       const { default: html2pdf } = await import('html2pdf.js/src/index.js')
       const agencyBrand = resolveAgencyBrand(listing)
       const propertyAddress = getPropertyDisplayAddress(listing, form)
+      const compliancePackSigning = buildSellerComplianceSigningForForm({
+        formData: form || {},
+        listing: listing || {},
+        token,
+        signerId: requestedComplianceSignerId || activeComplianceSigner?.id || '',
+      }).model
+      const sellerCompliancePack = buildSellerComplianceDocumentModel({
+        formData: form || {},
+        listing: listing || {},
+        signing: compliancePackSigning,
+      })
       const markup = buildPropertyDisclosureDocumentMarkup(normalizedDisclosure, {
         sellerName: getSellerDisplayName(listing, form),
         sellerIdNumber: form.idNumber || form.foreignPassportNumber || form.passportNumber || '',
@@ -3364,6 +3487,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
           logoDarkUrl: agencyBrand.logoDarkUrl,
           logoLightUrl: agencyBrand.logoLightUrl,
         },
+        sellerCompliancePack,
       })
       const pdfDocument = new window.DOMParser().parseFromString(markup, 'text/html')
       const documentBody = pdfDocument.body
@@ -3395,7 +3519,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       await html2pdf()
         .set({
           margin: 0,
-          filename: 'seller-disclosure-annexure-a.pdf',
+          filename: 'seller-compliance-pack.pdf',
           image: { type: 'jpeg', quality: 0.98 },
           html2canvas: {
             scale: 2,
@@ -3851,7 +3975,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     }
 
     if (currentStep === 2) {
-      const missingDisclosureItems = getPropertyDisclosureMissingItems(form.propertyDisclosure || {})
+      const missingDisclosureItems = getPropertyDisclosureMissingItems(activePropertyDisclosure || {})
       if (missingDisclosureItems.length) {
         return `Please complete the Property Disclosure declaration before continuing: ${missingDisclosureItems.join(', ')}.`
       }
@@ -4026,7 +4150,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         }
       }
       if (activeMobilePaneIndex === disclosureQuestionGroups.length + 2) {
-        const missingDisclosureItems = getPropertyDisclosureMissingItems(form.propertyDisclosure || {})
+        const missingDisclosureItems = getPropertyDisclosureMissingItems(activePropertyDisclosure || {})
         if (missingDisclosureItems.length) {
           return `Please complete the Property Disclosure declaration before continuing: ${missingDisclosureItems.join(', ')}.`
         }
@@ -4094,6 +4218,11 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     setTermsAcceptanceError('')
     setSuccess('')
     const submissionForm = normalizeSellerFormForProgression(form || {}, listing || {})
+    const submissionDisclosure = hasRequestedComplianceSigner
+      ? normalizePropertyDisclosure(activePropertyDisclosure || {}, {
+          kind: propertyBranch === 'commercial' || propertyBranch === 'mixed_use' ? 'commercial' : 'residential',
+        })
+      : submissionForm.propertyDisclosure
     if (!isArch9SellerTermsAccepted(submissionForm)) {
       const message = getArch9SellerTermsConfig().validationMessage
       setTermsAcceptanceError(message)
@@ -4137,7 +4266,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     const finalRequiredMissing = [
       ...submissionSellerMissing.map((item) => `Seller: ${item}`),
       ...submissionPropertyMissing.map((item) => `Property: ${item}`),
-      ...getPropertyDisclosureMissingItems(submissionForm.propertyDisclosure || {}).map((item) => `Disclosure: ${item}`),
+      ...getPropertyDisclosureMissingItems(submissionDisclosure || {}).map((item) => `Disclosure: ${item}`),
     ]
     if (finalRequiredMissing.length) {
       setError(`Please finish the required items before submitting: ${finalRequiredMissing.join(', ')}.`)
@@ -4150,7 +4279,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
 
     try {
       setForm(submissionForm)
-      const disclosureDocument = buildPropertyDisclosureDocument(submissionForm.propertyDisclosure || {}, {
+      const disclosureDocument = buildPropertyDisclosureDocument(submissionDisclosure || {}, {
         sellerId: String(listing?.seller?.id || listing?.sellerId || '').trim(),
         propertyId: String(listing?.propertyId || listing?.property_id || '').trim(),
         listingId: String(listing?.id || '').trim(),
@@ -4174,7 +4303,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         : ''
       const arch9TermsAcceptance = readArch9SellerTermsAcceptance(submissionForm)
       const arch9TermsAcceptedAt = arch9TermsAcceptance.acceptedAt || arch9TermsAcceptance.accepted_at || new Date().toISOString()
-      const finalForm = {
+      let finalForm = {
         ...(submissionForm || {}),
         ...buildSellerEntityProfileAliases(submissionForm),
         dateOfBirth: String(submissionForm.dateOfBirth || submissionForm.date_of_birth || submissionForm.birthDate || '').trim(),
@@ -4214,7 +4343,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         arch9TermsAcceptedAt,
         arch9_terms_accepted_at: arch9TermsAcceptedAt,
         propertyDisclosure: {
-          ...(submissionForm.propertyDisclosure || {}),
+          ...(submissionDisclosure || {}),
           arch9TermsAcceptance: {
             ...arch9TermsAcceptance,
             acceptedAt: arch9TermsAcceptedAt,
@@ -4231,8 +4360,20 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
           arch9_terms_accepted_at: arch9TermsAcceptedAt,
           generatedDocument: disclosureDocument,
         },
-        propertyDisclosureStatus: getPropertyDisclosureStatus(submissionForm.propertyDisclosure || {}),
+        propertyDisclosureStatus: getPropertyDisclosureStatus(submissionDisclosure || {}),
         currentStep: FINAL_STEP_INDEX,
+      }
+      if (isPropertyDisclosureDigitallyComplete(finalForm.propertyDisclosure || {})) {
+        finalForm = applySellerComplianceSignatureToForm({
+          formData: finalForm,
+          listing: listing || {},
+          token,
+          signerId: requestedComplianceSignerId || activeComplianceSigner?.id || '',
+          disclosure: finalForm.propertyDisclosure,
+          audit: {
+            userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
+          },
+        })
       }
       const canonicalPayload = buildCanonicalPayload(finalForm, {
         draft: false,
@@ -4515,7 +4656,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         : showCommercialDetails
           ? [form.commercialUseDescription, form.floorSize ? `${form.floorSize} m2` : ''].filter(Boolean).join(' / ')
           : `${form.erfSize || 'Not provided'} m2`
-  const disclosureMissing = getPropertyDisclosureMissingItems(form.propertyDisclosure || {})
+  const disclosureMissing = getPropertyDisclosureMissingItems(activePropertyDisclosure || {})
   const reviewIssueGroups = [
     { label: 'Seller details', missing: sellerMissing, onEdit: () => setCurrentStep(0) },
     { label: 'Mandate preferences', missing: mandateMissing, onEdit: () => setCurrentStep(0) },
@@ -5984,10 +6125,13 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
 
           {currentStep === 2 ? (
             <PropertyDisclosureSection
-              disclosure={form.propertyDisclosure}
+              disclosure={activePropertyDisclosure}
               disclosureKind={propertyBranch === 'commercial' || propertyBranch === 'mixed_use' ? 'commercial' : 'residential'}
-              sellerName={getSellerDisplayName(listing, form)}
+              sellerName={activeComplianceSigner?.name || getSellerDisplayName(listing, form)}
               sellerIdNumber={form.idNumber || form.foreignPassportNumber || form.passportNumber || ''}
+              activeSigner={activeComplianceSigner}
+              signingStatus={sellerComplianceSigning}
+              hasRequestedSigner={hasRequestedComplianceSigner}
               onAnswerChange={handleDisclosureAnswerChange}
               onDownload={handleDownloadDisclosurePdf}
               onDisclosureChange={patchPropertyDisclosure}

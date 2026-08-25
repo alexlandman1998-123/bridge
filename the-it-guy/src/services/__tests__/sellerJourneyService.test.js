@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 
-import { __sellerJourneyServiceTestUtils } from '../sellerJourneyService.js'
+import { buildSellerJourney, __sellerJourneyServiceTestUtils } from '../sellerJourneyService.js'
 
 const { getMandateStatus } = __sellerJourneyServiceTestUtils
 
@@ -63,5 +63,60 @@ const copMandateStatus = getMandateStatus({
 })
 
 assert.equal(copMandateStatus, 'sent')
+
+const staleLiveListingJourney = buildSellerJourney({
+  lead: {
+    leadId: 'seller-lead-stale-live',
+    leadCategory: 'seller',
+    sellerOnboardingStatus: 'sent',
+    mandatePacketId: 'packet-stale-live',
+    listingId: 'listing-stale-live',
+    stage: 'Listing Live',
+    status: 'Live',
+  },
+  listing: {
+    id: 'listing-stale-live',
+    sellerLeadId: 'seller-lead-stale-live',
+    status: 'active',
+    listingStatus: 'active',
+    listingVisibility: 'active_market',
+  },
+  mandatePacketStatus: {
+    packet: { id: 'packet-stale-live', packet_type: 'mandate' },
+    state: 'ready_for_client_signature',
+  },
+})
+
+assert.equal(staleLiveListingJourney.mandateStatus, 'draft')
+assert.equal(staleLiveListingJourney.listingCreated, false)
+assert.equal(staleLiveListingJourney.listingLive, false)
+assert.notEqual(staleLiveListingJourney.stage.key, 'listing_live')
+
+const hardCopySignedJourney = buildSellerJourney({
+  lead: {
+    leadId: 'seller-lead-hard-copy',
+    leadCategory: 'seller',
+    sellerOnboardingStatus: 'submitted',
+    listingId: 'listing-hard-copy',
+  },
+  listing: {
+    id: 'listing-hard-copy',
+    sellerLeadId: 'seller-lead-hard-copy',
+    status: 'active',
+    listingStatus: 'active',
+    listingVisibility: 'active_market',
+  },
+  documents: [
+    {
+      requirementKey: 'signed_mandate',
+      status: 'uploaded',
+      file_path: 'seller-mandates/listing-hard-copy.pdf',
+    },
+  ],
+})
+
+assert.equal(hardCopySignedJourney.mandateStatus, 'signed')
+assert.equal(hardCopySignedJourney.listingCreated, true)
+assert.equal(hardCopySignedJourney.listingLive, true)
 
 console.log('sellerJourneyService tests passed')

@@ -534,19 +534,154 @@ export function buildPropertyDisclosureAnnexureSnapshot(disclosure = {}, context
   }
 }
 
+function normalizeCompliancePackRows(rows = []) {
+  if (!Array.isArray(rows)) return []
+  return rows
+    .map((row) => ({
+      label: normalizeText(row?.label),
+      value: normalizeText(row?.value),
+    }))
+    .filter((row) => row.label && row.value)
+}
+
+function normalizeCompliancePackSections(sections = []) {
+  if (!Array.isArray(sections)) return []
+  return sections
+    .map((section) => ({
+      title: normalizeText(section?.title),
+      rows: normalizeCompliancePackRows(section?.rows),
+    }))
+    .filter((section) => section.title && section.rows.length)
+}
+
+function renderComplianceValue(value = '') {
+  return escapeHtml(value).replace(/\n/g, '<br />')
+}
+
+function renderComplianceDataTable(rows = []) {
+  return `
+    <table class="compliance-table">
+      <tbody>
+        ${rows.map((row) => `
+          <tr>
+            <th scope="row">${escapeHtml(row.label)}</th>
+            <td>${renderComplianceValue(row.value)}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `
+}
+
+function renderSellerComplianceFicaPage(compliancePack = {}, branding = {}, pageNumber = 1, pageTotal = 1, documentReference = '') {
+  const sections = normalizeCompliancePackSections(compliancePack.ficaSections)
+  if (!sections.length) return ''
+  return `
+    <section class="property-disclosure-page">
+      ${renderDisclosureHeader(branding)}
+      <section class="doc-title compliance-title">
+        <p class="eyebrow">Seller Compliance Pack</p>
+        <h1>FICA Summary</h1>
+        <p>${escapeHtml(compliancePack.subtitle || 'Seller information captured during onboarding.')}<br />Document reference: ${escapeHtml(documentReference)}</p>
+      </section>
+      <section class="doc-body compliance-body">
+        <p class="intro">This page records the seller information captured for FICA, tax and property onboarding purposes. Supporting documents remain attached or uploaded separately where required.</p>
+        <div class="compliance-section-grid">
+          ${sections.map((section) => `
+            <section class="compliance-section">
+              <h2>${escapeHtml(section.title)}</h2>
+              ${renderComplianceDataTable(section.rows)}
+            </section>
+          `).join('')}
+        </div>
+      </section>
+      ${renderDisclosureFooter(branding, pageNumber, pageTotal)}
+    </section>
+  `
+}
+
+function renderSellerComplianceSignerPage(compliancePack = {}, branding = {}, pageNumber = 1, pageTotal = 1, documentReference = '') {
+  const signers = Array.isArray(compliancePack.signers) ? compliancePack.signers : []
+  if (!signers.length) return ''
+  const summary = compliancePack.signingSummary || {}
+  return `
+    <section class="property-disclosure-page">
+      ${renderDisclosureHeader(branding)}
+      <section class="doc-title compliance-title">
+        <p class="eyebrow">Seller Compliance Pack</p>
+        <h1>Signature Certificate</h1>
+        <p>Document reference: ${escapeHtml(documentReference)}</p>
+      </section>
+      <section class="doc-body compliance-body">
+        <p class="intro">This certificate records each required seller signature for the combined FICA and property disclosure pack.</p>
+        <div class="compliance-summary">
+          <span>Status</span>
+          <strong>${escapeHtml(summary.statusLabel || summary.progressLabel || 'Pending signatures')}</strong>
+        </div>
+        <table class="signer-table">
+          <thead>
+            <tr>
+              <th scope="col">Signer</th>
+              <th scope="col">Role</th>
+              <th scope="col">Status</th>
+              <th scope="col">Signed at</th>
+              <th scope="col">Authority</th>
+              <th scope="col">Signature</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${signers.map((signer) => {
+              const signature = normalizeText(signer.signature)
+              const signatureMarkup = signature
+                ? isImageSignature(signature)
+                  ? `<img class="signer-signature-image" src="${escapeHtml(signature)}" alt="${escapeHtml(signer.name || 'Signer')} signature" />`
+                  : escapeHtml(signature)
+                : '&nbsp;'
+              return `
+                <tr>
+                  <td>
+                    <strong>${escapeHtml(signer.name || 'Seller')}</strong>
+                    ${signer.email ? `<span>${escapeHtml(signer.email)}</span>` : ''}
+                  </td>
+                  <td>${escapeHtml(signer.roleLabel || 'Seller')}</td>
+                  <td>${escapeHtml(signer.statusLabel || signer.status || 'Pending')}</td>
+                  <td>${escapeHtml(signer.signedAt) || '&nbsp;'}</td>
+                  <td>${signer.authorityRequired ? escapeHtml(signer.authorityLabel || 'Authority document required') : 'Not required'}</td>
+                  <td class="signer-signature-cell">${signatureMarkup}</td>
+                </tr>
+              `
+            }).join('')}
+          </tbody>
+        </table>
+      </section>
+      ${renderDisclosureFooter(branding, pageNumber, pageTotal)}
+    </section>
+  `
+}
+
 export function buildPropertyDisclosureDocumentMarkup(disclosure = {}, context = {}) {
   const snapshot = buildPropertyDisclosureAnnexureSnapshot(disclosure, context)
+  const compliancePack = context.sellerCompliancePack && typeof context.sellerCompliancePack === 'object'
+    ? context.sellerCompliancePack
+    : context.compliancePack && typeof context.compliancePack === 'object'
+      ? context.compliancePack
+      : null
+  const hasComplianceFicaPage = normalizeCompliancePackSections(compliancePack?.ficaSections).length > 0
+  const hasComplianceSignerPage = Array.isArray(compliancePack?.signers) && compliancePack.signers.length > 0
   const sellerName = normalizeText(context.sellerName || snapshot.sellerName || 'Seller')
   const sellerIdNumber = normalizeText(context.sellerIdNumber || snapshot.sellerIdNumber)
   const propertyAddress = normalizeText(context.propertyAddress)
   const documentReference = firstNonEmpty(context.documentReference, context.listingReference, context.listingId, propertyAddress, snapshot.title)
+  const documentTitle = compliancePack?.title || snapshot.title
   const branding = resolvePropertyDisclosureBranding(context)
   const sellerSignatureIsImage = isImageSignature(snapshot.sellerSignature)
   const sellerSignatureMarkup = sellerSignatureIsImage
     ? `<img class="signature-image" src="${escapeHtml(snapshot.sellerSignature)}" alt="Seller signature" />`
     : (escapeHtml(snapshot.sellerSignature) || '&nbsp;')
   const answerCell = (answer, value) => (answer === value ? '<span class="answer-mark">&#10003;</span>' : '&nbsp;')
-  const pageTotal = 3
+  const pageTotal = 3 + (hasComplianceFicaPage ? 1 : 0) + (hasComplianceSignerPage ? 1 : 0)
+  let pageNumber = 1
+  const nextFooter = () => renderDisclosureFooter(branding, pageNumber++, pageTotal)
   const renderRows = (items) => items.map((item) => `
     <tr>
       <td class="question-cell">
@@ -592,7 +727,7 @@ export function buildPropertyDisclosureDocumentMarkup(disclosure = {}, context =
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>${escapeHtml(snapshot.title)}</title>
+  <title>${escapeHtml(documentTitle)}</title>
   <style>
     * { box-sizing: border-box; }
     :root { color-scheme: light; font-family: Helvetica, Arial, sans-serif; }
@@ -607,9 +742,29 @@ export function buildPropertyDisclosureDocumentMarkup(disclosure = {}, context =
     .doc-title { padding: 8mm 18mm 5mm; text-align: center; border-bottom: 1px solid #e4e4e4; }
     .doc-title h1 { margin: 0; color: #111827; font-size: 22px; font-weight: 700; letter-spacing: 0; line-height: 1.2; text-transform: uppercase; }
     .doc-title p { margin: 6px 0 0; color: #5c6670; font-size: 11.5px; line-height: 1.45; }
+    .doc-title .eyebrow { margin: 0 0 2mm; color: #176c43; font-size: 8.5pt; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; }
+    .compliance-title h1 { color: #0f2f22; }
     .doc-body { padding: 7mm 18mm 24mm; }
+    .compliance-body { padding-top: 8mm; }
     .intro { margin: 0 0 3mm; color: #1f2937; font-size: 11.5px; line-height: 1.5; }
     .meta { margin: 0 0 5mm; color: #3f4a56; font-size: 11px; line-height: 1.45; }
+    .compliance-section-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5mm; align-items: start; }
+    .compliance-section { break-inside: avoid; page-break-inside: avoid; border: 1px solid #d7e3dc; border-radius: 3mm; overflow: hidden; }
+    .compliance-section h2 { margin: 0; padding: 3mm 4mm; background: #eef8f1; color: #0f5132; font-size: 10pt; font-weight: 800; text-transform: uppercase; }
+    .compliance-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 8.7pt; line-height: 1.35; }
+    .compliance-table th, .compliance-table td { border-top: 1px solid #e0e7e2; padding: 2.2mm 3mm; vertical-align: top; }
+    .compliance-table th { width: 39%; color: #5c6670; font-weight: 700; text-align: left; }
+    .compliance-table td { color: #111827; font-weight: 700; }
+    .compliance-summary { display: flex; align-items: center; justify-content: space-between; gap: 5mm; margin: 0 0 5mm; padding: 4mm 5mm; border: 1px solid #b8dcc8; border-radius: 3mm; background: #f1fbf4; color: #0f5132; }
+    .compliance-summary span { font-size: 8.5pt; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
+    .compliance-summary strong { font-size: 12pt; }
+    .signer-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 8.8pt; line-height: 1.35; }
+    .signer-table th, .signer-table td { border: 1px solid #d7d7d7; padding: 2.4mm; vertical-align: top; }
+    .signer-table th { background: #f6f7f8; color: #111827; font-size: 8pt; font-weight: 800; text-align: left; text-transform: uppercase; }
+    .signer-table td strong, .signer-table td span { display: block; }
+    .signer-table td span { margin-top: 1mm; color: #5c6670; font-size: 8pt; font-weight: 500; }
+    .signer-signature-cell { min-height: 18mm; text-align: center; font-weight: 700; }
+    .signer-signature-image { max-width: 28mm; max-height: 15mm; object-fit: contain; }
     .annexure-table { width: 100%; border-collapse: collapse; table-layout: fixed; color: #1f2937; font-size: 9.35pt; line-height: 1.34; }
     .annexure-table th, .annexure-table td { border: 1px solid #d7d7d7; vertical-align: top; padding: 2mm 2.3mm; }
     .annexure-table th { background: #f6f7f8; color: #111827; font-size: 8.7pt; font-weight: 700; text-align: left; text-transform: uppercase; }
@@ -647,6 +802,7 @@ export function buildPropertyDisclosureDocumentMarkup(disclosure = {}, context =
 </head>
 <body>
   <main class="property-disclosure-document">
+    ${hasComplianceFicaPage ? renderSellerComplianceFicaPage(compliancePack, branding, pageNumber++, pageTotal, documentReference) : ''}
     <section class="property-disclosure-page">
       ${renderDisclosureHeader(branding)}
       ${renderTitle()}
@@ -656,7 +812,7 @@ export function buildPropertyDisclosureDocumentMarkup(disclosure = {}, context =
         ${propertyAddress ? `<p class="meta"><strong>Property:</strong> ${escapeHtml(propertyAddress)}</p>` : ''}
         ${renderQuestionTable(pageOneRows)}
       </section>
-      ${renderDisclosureFooter(branding, 1, pageTotal)}
+      ${nextFooter()}
     </section>
     <section class="property-disclosure-page">
       ${renderDisclosureHeader(branding)}
@@ -667,7 +823,7 @@ export function buildPropertyDisclosureDocumentMarkup(disclosure = {}, context =
           <tr><td class="comments-box" colspan="4">${comments || '&nbsp;'}</td></tr>
         `)}
       </section>
-      ${renderDisclosureFooter(branding, 2, pageTotal)}
+      ${nextFooter()}
     </section>
     <section class="property-disclosure-page">
       ${renderDisclosureHeader(branding)}
@@ -700,8 +856,9 @@ export function buildPropertyDisclosureDocumentMarkup(disclosure = {}, context =
           </div>
         </section>
       </section>
-      ${renderDisclosureFooter(branding, 3, pageTotal)}
+      ${nextFooter()}
     </section>
+    ${hasComplianceSignerPage ? renderSellerComplianceSignerPage(compliancePack, branding, pageNumber++, pageTotal, documentReference) : ''}
   </main>
 </body>
 </html>`

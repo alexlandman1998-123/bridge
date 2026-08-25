@@ -244,6 +244,27 @@ const LISTING_CREATED_LIFECYCLE_STATUSES = new Set([
   'transaction_created',
   'sold',
 ])
+const SIGNED_MANDATE_STATUSES = new Set([
+  'signed',
+  'signed_uploaded',
+  'uploaded_signed',
+  'completed',
+  'complete',
+  'fully_signed',
+  'approved',
+  'verified',
+])
+const UPLOADED_DOCUMENT_STATUSES = new Set([
+  'uploaded',
+  'received',
+  'completed',
+  'complete',
+  'approved',
+  'verified',
+  'signed',
+  'signed_uploaded',
+  'uploaded_signed',
+])
 
 function firstPresent(...values) {
   return values.map(normalizeText).find(Boolean) || ''
@@ -298,6 +319,59 @@ function hasMandateSignerDeliveryEvidence(signer = null) {
     ['sent', 'viewed', 'signed', 'completed', 'complete'].includes(status) ||
       normalizeText(signer?.sent_at || signer?.sentAt || signer?.viewed_at || signer?.viewedAt || signer?.signed_at || signer?.signedAt || signer?.token_used_at || signer?.tokenUsedAt),
   )
+}
+
+function isSignedMandateDocumentLike(document = {}) {
+  const source = [
+    document?.key,
+    document?.requirementKey,
+    document?.requirement_key,
+    document?.canonicalDocumentRequestKey,
+    document?.canonical_document_request_key,
+    document?.documentType,
+    document?.document_type,
+    document?.category,
+    document?.document_category,
+    document?.name,
+    document?.document_name,
+    document?.label,
+    document?.requirementName,
+    document?.requirement_name,
+  ].filter(Boolean).join(' ')
+  const normalized = normalizeKey(source)
+  return normalized.includes('signed_mandate') ||
+    normalized.includes('physical_signed_mandate') ||
+    normalized.includes('mandate_signature') ||
+    (normalized.includes('mandate') && normalized.includes('signed'))
+}
+
+function hasUploadedDocumentFile(document = {}) {
+  return Boolean(
+    document?.file_path ||
+      document?.filePath ||
+      document?.file_url ||
+      document?.fileUrl ||
+      document?.url ||
+      document?.storagePath ||
+      document?.storage_path ||
+      document?.uploadedDocumentId ||
+      document?.uploaded_document_id,
+  )
+}
+
+function hasSignedMandateDocumentEvidence(documents = []) {
+  return (Array.isArray(documents) ? documents : []).some((document) => {
+    if (!isSignedMandateDocumentLike(document)) return false
+    const status = normalizeSellerDocumentRequirementStatus(document?.status || document?.documentStatus || document?.document_status)
+    return Boolean(
+      document?.complete ||
+        document?.completed ||
+        document?.isUploaded ||
+        document?.is_uploaded ||
+        hasUploadedDocumentFile(document) ||
+        UPLOADED_DOCUMENT_STATUSES.has(status),
+    )
+  })
 }
 
 function hasSellerOnboardingDurableSubmissionEvidence({ lead = {}, listing = {} } = {}) {
@@ -452,7 +526,7 @@ function leadStageImpliesSubmittedOnboarding(leadStageIndex = 0, onboardingSigna
   return true
 }
 
-function getMandateStatus({ lead = {}, listing = {}, mandatePacketStatus = {}, mandatePacket = null } = {}) {
+function getMandateStatus({ lead = {}, listing = {}, mandatePacketStatus = {}, mandatePacket = null, documents = [] } = {}) {
   const packet = mandatePacket || mandatePacketStatus?.packet || lead?.mandatePacket || null
   const sourceContext = packet?.source_context_json && typeof packet.source_context_json === 'object'
     ? packet.source_context_json
@@ -498,9 +572,15 @@ function getMandateStatus({ lead = {}, listing = {}, mandatePacketStatus = {}, m
   const hasFinalArtifact = (Array.isArray(mandatePacketStatus?.versions) ? mandatePacketStatus.versions : []).some((version) =>
     firstPresent(version?.final_signed_file_path, version?.final_signed_file_url, version?.final_signed_file_access_url),
   )
+  const hasSignedMandateUpload = hasSignedMandateDocumentEvidence([
+    ...(Array.isArray(listing?.documents) ? listing.documents : []),
+    ...(Array.isArray(documents) ? documents : []),
+  ])
   const mandatePacketRef = firstPresent(lead?.mandatePacketId, lead?.mandate_packet_id, listing?.mandatePacketId, listing?.mandate_packet_id, packet?.id)
   const allowStatusOnlyMandate = !onboardingStatusBlocksStatusOnlyMandate || Boolean(mandatePacketRef)
-  const convertedToListing = statuses.some((status) => status.includes('converted_to_listing'))
+  const signedMandateScopedStatus = mandateScopedStatuses.some((status) =>
+    SIGNED_MANDATE_STATUSES.has(status) || status.includes('mandate_signed'),
+  )
   const hasExplicitSentEvidence = Boolean(
     firstPresent(
       lead?.mandateSentAt,
@@ -526,8 +606,8 @@ function getMandateStatus({ lead = {}, listing = {}, mandatePacketStatus = {}, m
   if (
     allSignersSigned ||
     hasFinalArtifact ||
-    (mandatePacketRef && convertedToListing) ||
-    (allowStatusOnlyMandate && statuses.some((status) => ['signed', 'signed_uploaded', 'completed', 'fully_signed', 'uploaded_signed'].includes(status) || status.includes('mandate_signed')))
+    hasSignedMandateUpload ||
+    (allowStatusOnlyMandate && signedMandateScopedStatus)
   ) {
     return 'signed'
   }
@@ -594,11 +674,11 @@ function laterSellerJourneyStage(left = null, right = null) {
   return rightIndex > leftIndex ? right : left
 }
 
-export function getSellerJourneyStage({ lead = {}, listing = null, mandatePacketStatus = null, mandatePacket = null } = {}) {
+export function getSellerJourneyStage({ lead = {}, listing = null, mandatePacketStatus = null, mandatePacket = null, documents = [] } = {}) {
   if (!isSellerLead(lead)) return null
   const leadStage = getSellerJourneyStageFromLead(lead)
   const onboardingSignals = getSellerOnboardingSignals({ lead, listing })
-  const mandateStatus = getMandateStatus({ lead, listing, mandatePacketStatus, mandatePacket })
+  const mandateStatus = getMandateStatus({ lead, listing, mandatePacketStatus, mandatePacket, documents })
   const listingCreated = hasListingCreated({ lead, listing, mandateStatus })
   const documentsSubmitted = areSellerJourneyDocumentsSubmitted({
     listing,
@@ -803,9 +883,9 @@ export function buildListingJourney(listing = {}) {
   }))
 }
 
-export function getSellerJourneyActions({ lead = {}, contact = {}, listing = null, mandatePacketStatus = null } = {}) {
+export function getSellerJourneyActions({ lead = {}, contact = {}, listing = null, mandatePacketStatus = null, documents = [] } = {}) {
   const onboardingSignals = getSellerOnboardingSignals({ lead, listing })
-  const mandateStatus = getMandateStatus({ lead, listing, mandatePacketStatus })
+  const mandateStatus = getMandateStatus({ lead, listing, mandatePacketStatus, documents })
   const listingShellExists = hasListingShell({ lead, listing })
   const leadStage = getSellerJourneyStageFromLead(lead)
   const leadStageIndex = STAGE_INDEX.get(leadStage?.key) ?? 0
@@ -845,9 +925,9 @@ export function getSellerJourneyStatus(args = {}) {
 }
 
 export function buildSellerJourney({ lead = {}, contact = {}, listing = null, mandatePacketStatus = null, mandatePacket = null, documents = [] } = {}) {
-  const stage = getSellerJourneyStage({ lead, listing, mandatePacketStatus, mandatePacket }) || { key: 'new_lead', label: 'New Lead', status: '' }
+  const stage = getSellerJourneyStage({ lead, listing, mandatePacketStatus, mandatePacket, documents }) || { key: 'new_lead', label: 'New Lead', status: '' }
   const onboardingSignals = getSellerOnboardingSignals({ lead, listing })
-  const mandateStatus = getMandateStatus({ lead, listing, mandatePacketStatus, mandatePacket })
+  const mandateStatus = getMandateStatus({ lead, listing, mandatePacketStatus, mandatePacket, documents })
   const listingShellExists = hasListingShell({ lead, listing })
   const listingCreated = hasListingCreated({ lead, listing, mandateStatus })
   const listingLive = listingCreated && isListingLive(listing || lead)
@@ -897,7 +977,7 @@ export function buildSellerJourney({ lead = {}, contact = {}, listing = null, ma
     lead?.property_interest,
   )
   const estimatedValue = toNumber(listing?.estimatedValue || listing?.estimated_value || listing?.askingPrice || listing?.asking_price || lead?.estimatedValue || lead?.estimated_value)
-  const actions = getSellerJourneyActions({ lead, contact, listing, mandatePacketStatus })
+  const actions = getSellerJourneyActions({ lead, contact, listing, mandatePacketStatus, documents })
   const nextRecommendedAction = actions.find((action) => action.enabled && !['contact_seller', 'open_seller_portal'].includes(action.id)) ||
     actions.find((action) => action.enabled) ||
     null
@@ -930,7 +1010,7 @@ export function buildSellerJourney({ lead = {}, contact = {}, listing = null, ma
   return {
     isSeller: isSellerLead(lead),
     stage,
-    status: getSellerJourneyStatus({ lead, listing, mandatePacketStatus, mandatePacket }),
+    status: getSellerJourneyStatus({ lead, listing, mandatePacketStatus, mandatePacket, documents }),
     steps,
     mandateStatus,
     onboardingSent: onboardingSignals.sent,

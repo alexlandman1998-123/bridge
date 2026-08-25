@@ -493,6 +493,17 @@ function HeaderSkeleton() {
   )
 }
 
+function getStableRouteContentKey(pathname = '', search = '') {
+  if (pathname.startsWith('/settings')) return 'settings-shell'
+
+  const rentalListingMatch = pathname.match(/^\/agent\/rentals\/listings\/([^/]+)(?:\/[^/]+)?$/)
+  if (rentalListingMatch && rentalListingMatch[1] !== 'new') {
+    return `/agent/rentals/listings/${rentalListingMatch[1]}`
+  }
+
+  return `${pathname}${search || ''}`
+}
+
 function AppLayout({ onLogout, session = null, user }) {
   const {
     workspace,
@@ -525,7 +536,7 @@ function AppLayout({ onLogout, session = null, user }) {
     /^\/pipeline\/leads\/[^/]+\/legal\/[^/]+/.test(location.pathname)
   const isCommercialRoute = location.pathname.startsWith('/commercial')
   const isBondRoute = location.pathname.startsWith('/bond')
-  const routeContentKey = location.pathname.startsWith('/settings') ? 'settings-shell' : `${location.pathname}${location.search || ''}`
+  const routeContentKey = getStableRouteContentKey(location.pathname, location.search)
   const hideSharedHeader =
     isLegalWorkspaceRoute ||
     location.pathname === '/command-center' ||
@@ -694,7 +705,7 @@ function AppLayout({ onLogout, session = null, user }) {
     return () => {
       window.cancelAnimationFrame(frameId)
     }
-  }, [location.pathname, location.search])
+  }, [routeContentKey])
 
   useEffect(() => {
     function resetShellScrollIfLocked() {

@@ -88,6 +88,7 @@ import { repairSellerDocumentTransactionContinuity } from '../../services/seller
 import { buildSellerJourney, getSellerJourneyMetrics } from '../../services/sellerJourneyService'
 import { buildSellerReadinessSummary } from '../../services/sellerReadinessService'
 import { buildSellerDocumentSourceOfTruth } from '../../services/sellerDocumentRequirementsService'
+import { buildSellerComplianceAgentStatus } from '../../core/documents/sellerComplianceAgentStatusModel'
 import { getSellerProcessDefinition } from '../../services/sellerProcessDefinitionService'
 import {
   KINGSTONS_SELLER_PROCESS_ORGANISATION_IDS,
@@ -3800,6 +3801,39 @@ function hasMandateDeliveredOrSignedEvidence({ lead = {}, mandatePacketStatus = 
   ]
   return values.some((value) => getMandateStatePriority(value) >= 50) ||
     explicitSentEvidence
+}
+
+function getSellerComplianceSigningFromWorkspace(lead = {}, listing = {}) {
+  const candidates = [
+    lead?.sellerComplianceSigning,
+    lead?.seller_compliance_signing,
+    lead?.sellerOnboarding?.formData?.sellerComplianceSigning,
+    lead?.sellerOnboarding?.formData?.seller_compliance_signing,
+    lead?.seller_onboarding?.form_data?.sellerComplianceSigning,
+    lead?.seller_onboarding?.form_data?.seller_compliance_signing,
+    listing?.sellerComplianceSigning,
+    listing?.seller_compliance_signing,
+    listing?.sellerOnboarding?.formData?.sellerComplianceSigning,
+    listing?.sellerOnboarding?.formData?.seller_compliance_signing,
+    listing?.seller_onboarding?.form_data?.sellerComplianceSigning,
+    listing?.seller_onboarding?.form_data?.seller_compliance_signing,
+  ]
+  return candidates.find((candidate) => candidate && typeof candidate === 'object' && !Array.isArray(candidate)) || null
+}
+
+function getSellerComplianceSummaryStatus(agentStatus = {}, key = '') {
+  const row = (Array.isArray(agentStatus?.readiness) ? agentStatus.readiness : []).find((item) => normalizeKey(item?.key) === normalizeKey(key))
+  if (!row) return 'Not captured'
+  if (row.complete) return 'Complete'
+  if (key === 'mandate') return 'Hard copy required'
+  if (key === 'listing_draft') return agentStatus?.canCreateListingDraft ? 'Ready to create' : 'Not created'
+  if (key === 'fica' || key === 'disclosure') {
+    const compliance = agentStatus?.compliance || {}
+    if (!agentStatus?.complianceRequired) return 'Not started'
+    if (compliance.completedCount > 0) return `${compliance.completedCount} of ${compliance.requiredCount || 0} signed`
+    return 'Signature required'
+  }
+  return 'Incomplete'
 }
 
 function isStaleMandateGenerationRecoveryMessage(value = '') {
@@ -14827,9 +14861,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       normalizeText(version?.final_signed_file_path || version?.final_signed_file_url || version?.final_signed_file_access_url),
     )
     return (
-      ['signed', 'uploaded_signed', 'completed', 'fully_signed'].includes(mandateSigningStatus) ||
-      ['signed', 'uploaded_signed', 'completed', 'fully_signed'].includes(mandateSourceSigningStatus) ||
-      ['signed', 'completed', 'fully_signed'].includes(mandatePacketState) ||
+      ['signed', 'signed_uploaded', 'uploaded_signed', 'completed', 'fully_signed'].includes(mandateSigningStatus) ||
+      ['signed', 'signed_uploaded', 'uploaded_signed', 'completed', 'fully_signed'].includes(mandateSourceSigningStatus) ||
+      ['signed', 'signed_uploaded', 'uploaded_signed', 'completed', 'fully_signed'].includes(mandatePacketState) ||
       allRequiredSignersCompleted ||
       mandateHasFinalArtifact
     )
@@ -15126,9 +15160,75 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         documents: selectedLeadLinkedListing?.documents || [],
         mandatePacketStatus,
       })
+      const sellerTimelineDocumentRows = buildSellerLeadDocumentRowsFromSource({
+        lead: selectedLead || {},
+        listing: selectedLeadLinkedListing,
+        journey: sellerJourney,
+        mandatePacketStatus,
+      })
+      const sellerTimelineComplianceSigning = getSellerComplianceSigningFromWorkspace(
+        selectedLead || {},
+        selectedLeadLinkedListing || {},
+      )
+      const sellerTimelineComplianceStatus = buildSellerComplianceAgentStatus({
+        sellerComplianceSigning: sellerTimelineComplianceSigning,
+        requirements: sellerTimelineDocumentRows,
+        documents: [
+          ...(Array.isArray(selectedLeadLinkedListing?.documents) ? selectedLeadLinkedListing.documents : []),
+          ...sellerTimelineDocumentRows,
+        ],
+        listing: {
+          ...(selectedLeadLinkedListing || {}),
+          sellerOnboardingStatus: selectedLead?.sellerOnboardingStatus ||
+            selectedLead?.seller_onboarding_status ||
+            selectedLeadLinkedListing?.sellerOnboardingStatus ||
+            selectedLeadLinkedListing?.seller_onboarding_status,
+          mandateStatus: selectedLeadMandateResolvedState ||
+            selectedLeadLinkedListing?.mandateStatus ||
+            selectedLeadLinkedListing?.mandate_status ||
+            selectedLead?.mandateStatus ||
+            selectedLead?.mandate_status,
+        },
+        activeSellingContext: {
+          listingId: selectedLeadLinkedListing?.id ||
+            selectedLeadLinkedListing?.listingId ||
+            selectedLeadLinkedListing?.listing_id ||
+            selectedLead?.listingId ||
+            selectedLead?.listing_id,
+          listingStatus: selectedLeadLinkedListing?.listingStatus ||
+            selectedLeadLinkedListing?.listing_status ||
+            selectedLeadLinkedListing?.status,
+          mandateStatus: selectedLeadMandateResolvedState,
+          sellerOnboardingStatus: selectedLead?.sellerOnboardingStatus ||
+            selectedLead?.seller_onboarding_status,
+        },
+      })
+      const isUngatedListingLiveSignal = (value = '') => {
+        const signal = normalizeWorkspaceStatusKey(value)
+        return signal.includes('listing_activated') ||
+          signal.includes('listing_is_live') ||
+          signal.includes('listing_live')
+      }
+      if (!sellerTimelineComplianceStatus.canTreatListingAsLive) {
+        for (let index = timelineRows.length - 1; index >= 0; index -= 1) {
+          const row = timelineRows[index] || {}
+          const rowSignal = [
+            row.sourceLabel,
+            row.title,
+            row.description,
+            row.activityType,
+            row.activityNote,
+            row.outcome,
+            row.status,
+          ].filter(Boolean).join(' ')
+          if (isUngatedListingLiveSignal(rowSignal)) timelineRows.splice(index, 1)
+        }
+      }
 
       for (const activity of selectedLeadPrivateListingActivities) {
         const presentation = privateListingActivityPresentation(activity)
+        const isUngatedListingLiveActivity = isUngatedListingLiveSignal(`${presentation.sourceLabel} ${presentation.title}`)
+        if (isUngatedListingLiveActivity && !sellerTimelineComplianceStatus.canTreatListingAsLive) continue
         if (hasTimelineSignal(timelineRows, ...presentation.duplicateSignals)) continue
         timelineRows.push({
           id: `private-listing-activity:${activity.id || activity.activity_id || activity.created_at}`,
@@ -15204,14 +15304,75 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         })
       }
 
+      if (
+        sellerTimelineComplianceSigning &&
+        !sellerTimelineComplianceStatus.complianceComplete &&
+        !hasTimelineSignal(timelineRows, 'seller compliance signatures outstanding', 'seller_compliance_signature_required')
+      ) {
+        const waitingNames = (sellerTimelineComplianceStatus.compliance?.waitingOn || [])
+          .map((signer) => normalizeText(signer?.name || signer?.roleLabel || signer?.role))
+          .filter(Boolean)
+        timelineRows.push({
+          id: `seller-compliance-signature-required:${selectedLead.leadId || 'selected'}`,
+          sourceType: 'task',
+          sourceLabel: 'Seller Compliance',
+          title: 'Seller compliance signatures outstanding',
+          description: waitingNames.length
+            ? `Waiting for ${waitingNames.join(', ')} to sign disclosure and FICA.`
+            : sellerTimelineComplianceSigning.nextMessage || 'Seller compliance signatures are still outstanding.',
+          actorName: 'System Update',
+          timestamp: selectedLead.updatedAt || selectedLead.createdAt || new Date().toISOString(),
+          status: 'Action needed',
+        })
+      }
+
+      if (
+        sellerTimelineComplianceSigning &&
+        sellerTimelineComplianceStatus.complianceComplete &&
+        !hasTimelineSignal(timelineRows, 'seller compliance pack completed', 'seller_compliance_pack_completed')
+      ) {
+        timelineRows.push({
+          id: `seller-compliance-complete:${selectedLead.leadId || 'selected'}`,
+          sourceType: 'system',
+          sourceLabel: 'Seller Compliance',
+          title: 'Seller compliance pack completed',
+          description: 'Disclosure and FICA signatures are complete for all required sellers.',
+          actorName: 'System Update',
+          timestamp: selectedLead.updatedAt || selectedLead.createdAt || new Date().toISOString(),
+          status: 'Complete',
+        })
+      }
+
+      if (
+        !sellerTimelineComplianceStatus.signedMandate &&
+        sellerTimelineComplianceStatus.rawListingLiveSignal &&
+        !hasTimelineSignal(timelineRows, 'signed mandate still required', 'hard copy required')
+      ) {
+        timelineRows.push({
+          id: `seller-mandate-blocker:${selectedLead.leadId || 'selected'}`,
+          sourceType: 'task',
+          sourceLabel: 'Signed Mandate Required',
+          title: 'Signed mandate still required',
+          description: 'The listing has market/live signals, but it cannot be treated as live until the wet-ink signed mandate is uploaded.',
+          actorName: 'System Update',
+          timestamp: selectedLead.updatedAt || selectedLead.createdAt || new Date().toISOString(),
+          status: 'Action needed',
+        })
+      }
+
       const listingId = normalizeText(selectedLead?.listingId || selectedLead?.listing_id || selectedLead?.privateListingId || selectedLead?.private_listing_id)
-      if (listingId && sellerJourney.listingCreated && !hasTimelineSignal(timelineRows, 'listing_created', 'listing created', 'listing_activated', 'listing activated', 'listing live')) {
-        const listingLive = sellerJourney.listingLive
+      if (listingId && sellerTimelineComplianceStatus.listingDraftExists && !hasTimelineSignal(timelineRows, 'listing_created', 'listing created', 'listing draft created', 'listing_activated', 'listing activated', 'listing live')) {
+        const listingLive = sellerTimelineComplianceStatus.canTreatListingAsLive
+        const listingCreated = sellerTimelineComplianceStatus.canTreatListingAsCreated
         timelineRows.push({
           id: `seller-listing:${listingId}`,
           sourceType: 'system',
-          sourceLabel: listingLive ? 'Listing Activated' : 'Listing Created',
-          title: listingLive ? 'Seller listing is live' : 'Seller listing created',
+          sourceLabel: listingLive ? 'Listing Activated' : listingCreated ? 'Listing Created' : 'Listing Draft Created',
+          title: listingLive
+            ? 'Seller listing is live'
+            : listingCreated
+              ? 'Seller listing created'
+              : 'Listing draft created',
           description: listingId,
           actorName: 'System Update',
           timestamp: selectedLead.updatedAt || selectedLead.createdAt || new Date().toISOString(),
@@ -15235,6 +15396,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLeadContact,
     selectedLeadIsSeller,
     selectedLeadMandateSignedEvidence,
+    selectedLeadMandateResolvedState,
     selectedLeadLinkedListing,
     selectedLeadNotes,
     selectedLeadOffers,
@@ -16000,6 +16162,49 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     ],
   )
 
+  const selectedSellerComplianceSigning = useMemo(
+    () => selectedLeadIsSeller
+      ? getSellerComplianceSigningFromWorkspace(selectedLead || {}, selectedLeadLinkedListing || {})
+      : null,
+    [selectedLead, selectedLeadIsSeller, selectedLeadLinkedListing],
+  )
+
+  const selectedSellerComplianceAgentStatus = useMemo(() => {
+    const sellerDocumentRows = selectedSellerDocumentCategories.flatMap((category) => category.items || [])
+    return buildSellerComplianceAgentStatus({
+      sellerComplianceSigning: selectedSellerComplianceSigning,
+      requirements: sellerDocumentRows,
+      documents: [
+        ...(Array.isArray(selectedLeadLinkedListing?.documents) ? selectedLeadLinkedListing.documents : []),
+        ...sellerDocumentRows,
+      ],
+      listing: {
+        ...(selectedLeadLinkedListing || {}),
+        sellerOnboardingStatus: selectedLead?.sellerOnboardingStatus ||
+          selectedLead?.seller_onboarding_status ||
+          selectedLeadLinkedListing?.sellerOnboardingStatus ||
+          selectedLeadLinkedListing?.seller_onboarding_status,
+        mandateStatus: selectedLeadMandateResolvedState ||
+          selectedLeadLinkedListing?.mandateStatus ||
+          selectedLeadLinkedListing?.mandate_status ||
+          selectedLead?.mandateStatus ||
+          selectedLead?.mandate_status,
+      },
+      activeSellingContext: {
+        listingId: selectedLeadLinkedListing?.id || selectedLeadLinkedListing?.listingId || selectedLeadLinkedListing?.listing_id || selectedLead?.listingId || selectedLead?.listing_id,
+        listingStatus: selectedLeadLinkedListing?.listingStatus || selectedLeadLinkedListing?.listing_status || selectedLeadLinkedListing?.status,
+        mandateStatus: selectedLeadMandateResolvedState,
+        sellerOnboardingStatus: selectedLead?.sellerOnboardingStatus || selectedLead?.seller_onboarding_status,
+      },
+    })
+  }, [
+    selectedLead,
+    selectedLeadLinkedListing,
+    selectedLeadMandateResolvedState,
+    selectedSellerComplianceSigning,
+    selectedSellerDocumentCategories,
+  ])
+
   const selectedSellerFicaRoleplayerModel = useMemo(
     () => buildRoleplayerFicaDocumentModel(
       selectedSellerDocumentCategories.flatMap((category) => category.items || []),
@@ -16215,11 +16420,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       selectedLead?.attorney_name,
     )
     const mandateStatePriority = getMandateStatePriority(selectedLeadMandateResolvedState)
-    const mandateComplete = mandateStatePriority >= 50 || selectedSellerJourney.mandateStatus === 'signed'
-    const mandateStatus = mandateStatePriority >= 60 || selectedSellerJourney.mandateStatus === 'signed'
+    const mandateComplete = selectedSellerComplianceAgentStatus.signedMandate
+    const mandateStatus = mandateComplete
       ? 'Complete'
       : mandateStatePriority >= 50
-        ? 'Signing complete'
+        ? 'Upload hard copy'
         : mandateStatePriority >= 40 || selectedSellerJourney.mandateStatus === 'sent'
           ? 'Sent'
           : mandateStatePriority >= 10
@@ -16262,6 +16467,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLead,
     selectedLeadLinkedListing,
     selectedLeadMandateResolvedState,
+    selectedSellerComplianceAgentStatus.signedMandate,
     selectedSellerJourney.documentsOutstanding,
     selectedSellerJourney.documentsSubmitted,
     selectedSellerJourney.mandateStatus,
@@ -16348,14 +16554,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       : selectedSellerJourney.onboardingSent
         ? 'Sent'
         : 'Not sent'
-    const mandateStatus = selectedSellerJourney.mandateStatus === 'signed'
-      ? 'Signed'
-      : ['draft', 'sent'].includes(normalizeKey(selectedSellerJourney.mandateStatus))
-        ? 'Upload required'
-        : 'Missing'
-    const listingDraftStatus = selectedSellerJourney.listingCreated
-      ? selectedSellerJourney.listingLive ? 'Live' : 'Created'
-      : 'Not created'
+    const mandateStatus = getSellerComplianceSummaryStatus(selectedSellerComplianceAgentStatus, 'mandate')
+    const listingDraftStatus = getSellerComplianceSummaryStatus(selectedSellerComplianceAgentStatus, 'listing_draft')
 
     return [
       {
@@ -16420,8 +16620,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         rows: [
           ['Onboarding', onboardingStatus],
           ['Mandate', mandateStatus],
-          ['FICA', documentStatus(SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION)],
-          ['Disclosure', documentStatus(SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM)],
+          ['FICA', getSellerComplianceSummaryStatus(selectedSellerComplianceAgentStatus, 'fica') || documentStatus(SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION)],
+          ['Disclosure', getSellerComplianceSummaryStatus(selectedSellerComplianceAgentStatus, 'disclosure') || documentStatus(SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM)],
           ['Listing Draft', listingDraftStatus],
         ],
       },
@@ -16432,10 +16632,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLeadDisplayName,
     selectedLeadLinkedListing,
     selectedLeadPropertyLabel,
+    selectedSellerComplianceAgentStatus,
     selectedSellerDocumentCategories,
-    selectedSellerJourney.listingCreated,
-    selectedSellerJourney.listingLive,
-    selectedSellerJourney.mandateStatus,
     selectedSellerJourney.onboardingSent,
     selectedSellerJourney.onboardingSubmitted,
   ])
@@ -32190,11 +32388,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               <h3 className="mt-2 line-clamp-2 text-lg font-semibold leading-6 tracking-[-0.03em] text-white">
                                 {selectedLeadHasKingstonsSellerProcess
                                   ? selectedKingstonsProcessAction.title
-	                                  : selectedSellerReadiness.nextAction?.label || 'Review seller journey'}
+	                                  : selectedSellerComplianceAgentStatus.nextBlocker?.label || selectedSellerReadiness.nextAction?.label || 'Review seller journey'}
                               </h3>
                               <p className="mt-2 line-clamp-2 text-sm leading-5 text-[#c7d5e2]">
                                 {selectedLeadHasKingstonsSellerProcess
                                   ? selectedKingstonsProcessAction.copy
+                                  : selectedSellerComplianceAgentStatus.nextBlocker?.action
+                                    ? selectedSellerComplianceAgentStatus.nextBlocker.action
                                   : selectedSellerReadiness.blockers?.[0]?.label
                                     ? `${selectedSellerReadiness.blockers[0].label} needs attention before this seller is market ready.`
                                     : 'The seller workspace is on track.'}
@@ -32204,11 +32404,25 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               type="button"
                               size="sm"
                               className="min-h-10 shrink-0 bg-white px-4 text-[#102033] hover:bg-[#edf4fa]"
-                              onClick={() => handleSellerJourneyAction(selectedLeadHasKingstonsSellerProcess ? selectedKingstonsProcessAction.actionId : selectedSellerReadiness.nextAction?.id || 'open_journey')}
+                              onClick={() => handleSellerJourneyAction(
+                                selectedLeadHasKingstonsSellerProcess
+                                  ? selectedKingstonsProcessAction.actionId
+                                  : selectedSellerComplianceAgentStatus.nextBlocker?.key === SELLER_BASE_PACK_KEYS.SIGNED_MANDATE
+                                    ? 'record_hard_copy_mandate'
+                                    : selectedSellerComplianceAgentStatus.nextBlocker?.key === 'seller_compliance_pack'
+                                      ? 'open_documents'
+                                      : selectedSellerReadiness.nextAction?.id || 'open_journey',
+                              )}
                               disabled={selectedLeadHasKingstonsSellerProcess ? selectedKingstonsProcessAction.disabled : selectedSellerReadiness.nextAction?.disabled}
                             >
                               <CheckCircle2 className="h-4 w-4" />
-                              {selectedLeadHasKingstonsSellerProcess ? selectedKingstonsProcessAction.label : selectedSellerReadiness.nextAction?.label || 'Open Journey'}
+                              {selectedLeadHasKingstonsSellerProcess
+                                ? selectedKingstonsProcessAction.label
+                                : selectedSellerComplianceAgentStatus.nextBlocker?.key === SELLER_BASE_PACK_KEYS.SIGNED_MANDATE
+                                  ? 'Upload Mandate'
+                                  : selectedSellerComplianceAgentStatus.nextBlocker?.key === 'seller_compliance_pack'
+                                    ? 'Open Documents'
+                                    : selectedSellerReadiness.nextAction?.label || 'Open Journey'}
                             </Button>
                           </div>
                         </section>

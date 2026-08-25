@@ -66,6 +66,9 @@ import {
   buildClientPortalProfileDiagnostics,
   summarizeClientPortalProfileDiagnostics,
 } from '../core/clientPortal/clientPortalProfileDiagnostics.js'
+import { buildSellerCompliancePortalModel } from '../core/documents/sellerCompliancePortalModel.js'
+import { buildSellerComplianceDocumentModel } from '../core/documents/sellerComplianceDocumentModel.js'
+import { buildSellerComplianceAgentStatus } from '../core/documents/sellerComplianceAgentStatusModel.js'
 
 function normalizeWorkspace(value = 'shared') {
   const normalized = String(value || 'shared').trim().toLowerCase()
@@ -810,6 +813,21 @@ async function fetchSellerClientPortalDataByToken(token, options = {}) {
   const sellerRequiredDocuments = sellerDocumentPack.requiredDocuments
   const documents = (corePayload ? [] : Array.isArray(listing?.documents) ? listing.documents : [])
     .map((item) => mapSellerUploadedDocument(item))
+  const sellerComplianceSigning = buildSellerCompliancePortalModel({
+    formData,
+    listing,
+    portalData: {
+      ...context,
+      listing,
+      onboarding,
+      sellerOnboarding,
+      onboardingFormData: {
+        status,
+        formData,
+      },
+    },
+    token,
+  })
   const appointments = (corePayload ? [] : Array.isArray(context?.appointments) ? context.appointments : [])
     .map((item) => mapSellerPortalAppointment(item))
   const rawOffers = [
@@ -944,6 +962,26 @@ async function fetchSellerClientPortalDataByToken(token, options = {}) {
     agencyName: sellerPortalBranding.agencyName,
     organisationName: sellerPortalBranding.organisationName,
   }
+  const sellerComplianceAgentStatus = buildSellerComplianceAgentStatus({
+    sellerComplianceSigning,
+    requirements: sellerRequiredDocuments,
+    documents,
+    listing,
+    activeSellingContext,
+    portal: {
+      listing,
+      documents,
+      requiredDocuments: sellerRequiredDocuments,
+      onboarding: {
+        status,
+      },
+      onboardingFormData: {
+        status,
+        formData,
+      },
+      sellerComplianceSigning,
+    },
+  })
 
   return {
     link: {
@@ -1052,6 +1090,8 @@ async function fetchSellerClientPortalDataByToken(token, options = {}) {
     documentPackSource: sellerDocumentPack.source,
     documentPackRequirementKeys: sellerDocumentPack.requirementKeys,
     documentPackFingerprint: sellerDocumentPack.documentPackFingerprint,
+    sellerComplianceSigning,
+    sellerComplianceAgentStatus,
     requiredDocumentSummary: {
       totalRequired: sellerRequiredDocuments.length,
       uploadedCount: documents.length,
@@ -1075,6 +1115,8 @@ async function fetchSellerClientPortalDataByToken(token, options = {}) {
       mandateStatus: mandatePacket?.state || listing?.mandateStatus || listing?.mandate_status || '',
       sellerLeadId,
       listingId,
+      sellerComplianceSigning,
+      sellerComplianceAgentStatus,
       heroImageUrl: sellerPortalHeroImageUrl,
       hero_image_url: sellerPortalHeroImageUrl,
       coverImageUrl: sellerPortalHeroImageUrl,
@@ -1690,17 +1732,17 @@ function documentMatchesRequirement(document = {}, requirement = {}) {
   if (isPropertyDisclosureRequirement(requirement) && isPropertyDisclosureDocument(document)) return true
 
   const requirementKey = normalizeDocumentMatchKey(requirement?.key || requirement?.requirement_key)
-  const documentRequirementKey = normalizeDocumentMatchKey(document?.requirementKey || document?.requirement_key)
-  const documentType = normalizeDocumentMatchKey(document?.document_type || document?.documentType)
-  const documentCategory = normalizeDocumentMatchKey(document?.category || document?.document_category)
-  return Boolean(
-    requirementKey &&
-      (
-        documentRequirementKey === requirementKey ||
-        documentType === requirementKey ||
-        documentCategory === requirementKey
-      ),
-  )
+  const documentKeys = [
+    document?.requirementKey,
+    document?.requirement_key,
+    document?.document_type,
+    document?.documentType,
+    document?.category,
+    document?.document_category,
+    ...(Array.isArray(document?.requirementKeys) ? document.requirementKeys : []),
+    ...(Array.isArray(document?.requirement_keys) ? document.requirement_keys : []),
+  ].map(normalizeDocumentMatchKey).filter(Boolean)
+  return Boolean(requirementKey && documentKeys.includes(requirementKey))
 }
 
 function findUploadedDocumentForRequirement(uploadedDocuments = [], requirement = {}) {
@@ -1723,6 +1765,14 @@ function getDocumentLookupKeys(document = {}) {
     document?.storage_path,
     document?.url,
     document?.file_url,
+    document?.requirementKey,
+    document?.requirement_key,
+    document?.document_type,
+    document?.documentType,
+    document?.category,
+    document?.document_category,
+    ...(Array.isArray(document?.requirementKeys) ? document.requirementKeys : []),
+    ...(Array.isArray(document?.requirement_keys) ? document.requirement_keys : []),
   ]
     .map((value) => String(value || '').trim())
     .filter(Boolean)
@@ -2182,6 +2232,24 @@ function buildPropertyDisclosureDocumentFromFormData(portalData = {}, workspaceM
       ? disclosure.generated_document
       : {}
   const listing = isPlainObject(portalData?.listing) ? portalData.listing : {}
+  const sellerComplianceSigning = isPlainObject(portalData?.sellerComplianceSigning)
+    ? portalData.sellerComplianceSigning
+    : isPlainObject(portalData?.seller_compliance_signing)
+      ? portalData.seller_compliance_signing
+      : isPlainObject(portalData?.activeSellingContext?.sellerComplianceSigning)
+        ? portalData.activeSellingContext.sellerComplianceSigning
+        : buildSellerCompliancePortalModel({
+            formData,
+            listing,
+            portalData,
+            token: toDisplayText(portalData?.sellerWorkspaceToken || portalData?.seller_workspace_token || portalData?.token),
+          })
+  const sellerCompliancePack = buildSellerComplianceDocumentModel({
+    formData,
+    listing,
+    signing: sellerComplianceSigning,
+    generatedAt: generatedDocument.generatedAt || generatedDocument.generated_at || disclosure.signedAt || disclosure.signed_at || new Date().toISOString(),
+  })
   const context = {
     sellerName: toDisplayText(formData.sellerName || [formData.sellerFirstName, formData.sellerSurname].filter(Boolean).join(' ')),
     sellerIdNumber: toDisplayText(formData.sellerIdNumber || formData.idNumber || formData.id_number),
@@ -2200,20 +2268,34 @@ function buildPropertyDisclosureDocumentFromFormData(portalData = {}, workspaceM
         listing?.id,
     ),
     branding: resolveSellerPortalDisclosureBranding(portalData, formData, listing),
+    sellerCompliancePack,
   }
   const generatedHtml = buildPropertyDisclosureDocumentMarkup(disclosure, context)
-  const fileName = toDisplayText(generatedDocument.fileName || generatedDocument.file_name, 'seller-disclosure-annexure-a.pdf')
+  const fileName = toDisplayText(generatedDocument.fileName || generatedDocument.file_name, 'seller-compliance-pack.pdf')
   return {
     id: generatedDocument.id || `property-disclosure-${context.listingId || context.propertyId || 'document'}`,
-    name: generatedDocument.title || 'Property Condition Disclosure',
-    document_name: generatedDocument.title || 'Property Condition Disclosure',
+    name: generatedDocument.title || 'Seller Compliance Pack',
+    document_name: generatedDocument.title || 'Seller Compliance Pack',
     category: 'property_condition_disclosure',
     document_type: 'property_condition_disclosure',
     requirementKey: 'property_condition_disclosure',
     requirement_key: 'property_condition_disclosure',
+    requirementKeys: [
+      'property_condition_disclosure',
+      SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM,
+      SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION,
+    ],
+    requirement_keys: [
+      'property_condition_disclosure',
+      SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM,
+      SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION,
+    ],
     status: 'completed',
     visibility: 'seller_visible',
     systemGeneratedDocument: true,
+    bundleType: 'seller_compliance_pack',
+    bundle_type: 'seller_compliance_pack',
+    sellerCompliancePack,
     generatedHtml,
     generatedFileName: fileName.replace(/\.(html?|pdf)$/i, '.pdf'),
     created_at: generatedDocument.generatedAt || generatedDocument.generated_at || disclosure.signedAt || disclosure.signed_at || null,
@@ -2369,19 +2451,21 @@ function buildSellerPortalSaleDocuments(portalData = {}, workspaceMode = 'buying
       : null,
     propertyDisclosureDocument
       ? buildSellerSaleDocumentCenterItem(propertyDisclosureDocument, {
-          id: 'seller-declaration-disclosure',
-          description: 'Completed seller property disclosure available for download.',
+          id: 'seller-compliance-pack',
+          title: 'Seller Compliance Pack',
+          description: 'Completed FICA summary and seller property disclosure available for download.',
         })
       : null,
   ].filter(Boolean)
 }
 
 function buildSellerDownloadableDocumentLookup(portalData = {}, workspaceMode = 'buying') {
+  const propertyDisclosureDocument = buildPropertyDisclosureDocumentFromFormData(portalData, workspaceMode)
   const documents = [
     buildSignedMandateDocumentFromPacket(portalData, workspaceMode),
     buildGeneratedMandateDocumentFromPacket(portalData, workspaceMode),
-    buildPropertyDisclosureDocumentFromFormData(portalData, workspaceMode),
-    buildSellerFicaDeclarationDocumentFromOnboarding(portalData, workspaceMode),
+    propertyDisclosureDocument,
+    propertyDisclosureDocument ? null : buildSellerFicaDeclarationDocumentFromOnboarding(portalData, workspaceMode),
   ].filter(Boolean)
   const lookup = new Map()
   documents.forEach((document) => {

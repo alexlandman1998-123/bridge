@@ -288,6 +288,14 @@ function getDocumentLookupKeys(document = {}) {
     document?.storage_path,
     document?.url,
     document?.file_url,
+    document?.requirementKey,
+    document?.requirement_key,
+    document?.document_type,
+    document?.documentType,
+    document?.category,
+    document?.document_category,
+    ...(Array.isArray(document?.requirementKeys) ? document.requirementKeys : []),
+    ...(Array.isArray(document?.requirement_keys) ? document.requirement_keys : []),
   ]
     .map((value) => toText(value))
     .filter(Boolean)
@@ -302,17 +310,17 @@ function documentMatchesRequirement(document = {}, requirement = {}) {
   if (isPropertyDisclosureRequirement(requirement) && isPropertyDisclosureDocument(document)) return true
 
   const requirementKey = normalizeDocumentMatchKey(requirement?.key || requirement?.requirement_key)
-  const documentRequirementKey = normalizeDocumentMatchKey(document?.requirementKey || document?.requirement_key)
-  const documentType = normalizeDocumentMatchKey(document?.document_type || document?.documentType)
-  const documentCategory = normalizeDocumentMatchKey(document?.category || document?.document_category)
-  return Boolean(
-    requirementKey &&
-      (
-        documentRequirementKey === requirementKey ||
-        documentType === requirementKey ||
-        documentCategory === requirementKey
-      ),
-  )
+  const documentKeys = [
+    document?.requirementKey,
+    document?.requirement_key,
+    document?.document_type,
+    document?.documentType,
+    document?.category,
+    document?.document_category,
+    ...(Array.isArray(document?.requirementKeys) ? document.requirementKeys : []),
+    ...(Array.isArray(document?.requirement_keys) ? document.requirement_keys : []),
+  ].map(normalizeDocumentMatchKey).filter(Boolean)
+  return Boolean(requirementKey && documentKeys.includes(requirementKey))
 }
 
 function findUploadedDocumentForRequirement(uploadedDocuments = [], requirement = {}) {

@@ -1,3 +1,5 @@
+import { buildSellerComplianceAgentStatus } from '../core/documents/sellerComplianceAgentStatusModel.js'
+
 function toText(value, fallback = '') {
   const normalized = String(value || '').trim()
   return normalized || fallback
@@ -83,6 +85,10 @@ function getTitleForType(type = '', metadata = {}) {
     mandate_generated: 'Mandate prepared',
     mandate_sent: 'Mandate sent for signature',
     mandate_signed: 'Mandate signed',
+    signed_mandate_uploaded: 'Signed mandate uploaded',
+    seller_compliance_signature_required: 'Seller signature required',
+    seller_compliance_signer_signed: 'Seller signature completed',
+    seller_compliance_pack_completed: 'Seller compliance pack completed',
     otp_ready: 'OTP ready for signature',
     otp_signed: 'OTP signed',
     finance_submitted: 'Finance submitted',
@@ -138,6 +144,10 @@ function getDescriptionForType(type = '', metadata = {}) {
     mandate_generated: 'Your mandate draft was generated.',
     mandate_sent: 'Your mandate is ready for review and signature.',
     mandate_signed: 'Your mandate has been signed and recorded.',
+    signed_mandate_uploaded: 'The wet-ink signed mandate has been uploaded and recorded.',
+    seller_compliance_signature_required: 'A required seller still needs to sign the disclosure and FICA declaration pack.',
+    seller_compliance_signer_signed: 'A seller completed their disclosure and FICA declaration signature.',
+    seller_compliance_pack_completed: 'All required seller compliance signatures have been completed.',
     otp_ready: 'Your Offer to Purchase is ready for signature.',
     otp_signed: 'Your Offer to Purchase has been signed.',
     finance_submitted: 'Finance documents were submitted for review.',
@@ -187,6 +197,9 @@ function getActionForEvent(type = '', metadata = {}) {
   if (type === 'mandate_sent') {
     return { label: 'Review & Sign Mandate', route: 'documents' }
   }
+  if (type === 'seller_compliance_signature_required') {
+    return { label: 'Open Compliance Pack', route: 'documents' }
+  }
   if (type === 'onboarding_sent') {
     return { label: 'Complete Onboarding', route: 'details' }
   }
@@ -206,13 +219,13 @@ function getActionForEvent(type = '', metadata = {}) {
 
 export function getActivityFeedDisplayType(event = {}) {
   const type = normalize(event?.type)
-  if (['document_rejected', 'additional_document_requested', 'document_requested', 'document_reminder_due', 'document_reminder_overdue', 'bond_application_required', 'bond_application_attention_required', 'otp_ready', 'mandate_sent', 'appointment_documents_required'].includes(type)) {
+  if (['document_rejected', 'additional_document_requested', 'document_requested', 'document_reminder_due', 'document_reminder_overdue', 'bond_application_required', 'bond_application_attention_required', 'otp_ready', 'mandate_sent', 'seller_compliance_signature_required', 'appointment_documents_required'].includes(type)) {
     return 'action_required'
   }
   if (['document_uploaded', 'finance_submitted', 'finance_updated', 'bond_application_submitted', 'lodgement_submitted', 'transaction_stage_changed', 'appointment_scheduled', 'appointment_reschedule_requested', 'appointment_reschedule_proposed', 'appointment_confirmed', 'appointment_rescheduled', 'appointment_reminder_due', 'roleplayer_intro_sent', 'buyer_bond_originator_request_resolved'].includes(type)) {
     return 'progress'
   }
-  if (['document_approved', 'finance_approved', 'registration_completed', 'mandate_signed', 'otp_signed', 'appointment_completed'].includes(type)) {
+  if (['document_approved', 'finance_approved', 'registration_completed', 'mandate_signed', 'signed_mandate_uploaded', 'seller_compliance_signer_signed', 'seller_compliance_pack_completed', 'otp_signed', 'appointment_completed'].includes(type)) {
     return 'milestone'
   }
   return 'update'
@@ -287,6 +300,7 @@ function isAttentionActivity(type = '') {
     'bond_application_attention_required',
     'otp_ready',
     'mandate_sent',
+    'seller_compliance_signature_required',
     'appointment_documents_required',
   ].includes(normalize(type))
 }
@@ -632,6 +646,123 @@ function buildDocumentEvents(portalData = {}, clientRole = 'buyer') {
   })
 
   return [...requirementEvents, ...additionalEvents, ...buildDocumentReminderEvents({ requiredDocuments, additionalRequests, portalData, clientRole })]
+}
+
+function isUploadedSignedMandateEvidence(document = {}) {
+  const source = [
+    document?.requirementKey,
+    document?.requirement_key,
+    document?.document_type,
+    document?.documentType,
+    document?.category,
+    document?.document_category,
+    document?.name,
+    document?.document_name,
+    document?.label,
+    ...(Array.isArray(document?.requirementKeys) ? document.requirementKeys : []),
+    ...(Array.isArray(document?.requirement_keys) ? document.requirement_keys : []),
+  ].filter(Boolean).join(' ').toLowerCase()
+  const hasMandateSignal =
+    source.includes('signed_mandate') ||
+    source.includes('mandate_signature') ||
+    source.includes('physical_signed_mandate') ||
+    (source.includes('mandate') && source.includes('signed'))
+  return Boolean(hasMandateSignal && (document?.id || document?.file_path || document?.filePath || document?.url))
+}
+
+function buildSellerComplianceEvents(portalData = {}, clientRole = 'buyer') {
+  if (normalize(clientRole) !== 'seller') return []
+  const sellerComplianceSigning = portalData?.sellerComplianceSigning || portalData?.activeSellingContext?.sellerComplianceSigning || null
+  const agentStatus = buildSellerComplianceAgentStatus({
+    sellerComplianceSigning,
+    requirements: portalData?.requiredDocuments || [],
+    documents: portalData?.documents || [],
+    listing: portalData?.listing || {},
+    activeSellingContext: portalData?.activeSellingContext || {},
+    portal: portalData,
+  })
+  const timestamp = portalData?.lastUpdated || portalData?.transaction?.updated_at || new Date().toISOString()
+  const events = []
+
+  if ((portalData?.documents || []).some(isUploadedSignedMandateEvidence)) {
+    events.push({
+      id: 'seller_compliance_signed_mandate_uploaded',
+      type: 'signed_mandate_uploaded',
+      timestamp,
+      actor: 'Arch9',
+      actorRole: 'System',
+      visibility: 'client_visible',
+      metadata: {
+        audience: 'seller',
+        category: 'signature',
+      },
+    })
+  }
+
+  const signers = Array.isArray(sellerComplianceSigning?.signers)
+    ? sellerComplianceSigning.signers
+    : Array.isArray(sellerComplianceSigning?.signingState?.signers)
+      ? sellerComplianceSigning.signingState.signers
+      : []
+
+  for (const signer of signers) {
+    if (signer?.status !== 'signed' && !signer?.complete) continue
+    events.push({
+      id: `seller_compliance_signer_signed_${toText(signer.id || signer.role || signer.email)}`,
+      type: 'seller_compliance_signer_signed',
+      timestamp: signer.signedAt || signer.signed_at || timestamp,
+      actor: toText(signer.name || signer.roleLabel, 'Seller'),
+      actorRole: 'Seller',
+      visibility: 'client_visible',
+      metadata: {
+        title: `${toText(signer.name || signer.roleLabel, 'Seller')} signed the compliance pack`,
+        description: 'A required seller completed their disclosure and FICA declaration signature.',
+        audience: 'seller',
+        category: 'signature',
+      },
+    })
+  }
+
+  if (sellerComplianceSigning && !agentStatus.complianceComplete) {
+    const waitingNames = agentStatus.compliance.waitingOn
+      .map((signer) => signer.name || signer.roleLabel)
+      .filter(Boolean)
+    events.push({
+      id: 'seller_compliance_signature_required',
+      type: 'seller_compliance_signature_required',
+      timestamp,
+      actor: 'Arch9',
+      actorRole: 'System',
+      visibility: 'client_visible',
+      metadata: {
+        title: 'Seller compliance signatures outstanding',
+        description: waitingNames.length
+          ? `Waiting for ${waitingNames.join(', ')} to sign the disclosure and FICA declaration pack.`
+          : sellerComplianceSigning.nextMessage || 'Required seller signatures are still outstanding.',
+        audience: 'seller',
+        actionLabel: 'Open Compliance Pack',
+        actionRoute: 'documents',
+        category: 'signature',
+      },
+    })
+  }
+
+  if (sellerComplianceSigning && agentStatus.complianceComplete) {
+    events.push({
+      id: 'seller_compliance_pack_completed',
+      type: 'seller_compliance_pack_completed',
+      timestamp,
+      actor: 'Arch9',
+      actorRole: 'System',
+      visibility: 'client_visible',
+      metadata: {
+        audience: 'seller',
+        category: 'signature',
+      },
+    })
+  }
+
+  return events
 }
 
 function buildWorkflowEvents(portalData = {}, clientRole = 'buyer') {
@@ -1037,6 +1168,7 @@ function buildRawClientPortalActivityEvents(transactionIdOrContext, clientRole =
   const allEvents = [
     ...buildOnboardingEvents(portalData, resolvedClientRole),
     ...buildDocumentEvents(portalData, resolvedClientRole),
+    ...buildSellerComplianceEvents(portalData, resolvedClientRole),
     ...buildWorkflowEvents(portalData, resolvedClientRole),
     ...buildWorkflowProjectionEvents(context, resolvedClientRole),
     ...buildAppointmentEvents(portalData, resolvedClientRole),

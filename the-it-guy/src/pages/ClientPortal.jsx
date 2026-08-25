@@ -136,6 +136,7 @@ import {
 import { getOffersForListing } from '../lib/listingOffersService'
 import { getSellerPortalStageMeta } from '../lib/sellerPortalStageMapper'
 import { buildSellerDocumentExperienceModel } from '../lib/sellerDocumentExperienceModel'
+import { buildSellerComplianceAgentStatus } from '../core/documents/sellerComplianceAgentStatusModel'
 import {
   formatPlatformFeeAmount,
   getPlatformFeeConsentConfig,
@@ -899,6 +900,71 @@ function isSignedMandateDocumentLink(requirement = {}, document = {}) {
     documentSource.includes('mandate_signature') ||
     (documentSource.includes('mandate') && documentSource.includes('signed'))
   return requirementIsSignedMandate && documentIsSignedMandate
+}
+
+function isSignedMandateRequirementLike(requirement = {}) {
+  const source = normalizeDocumentKey([
+    requirement?.key,
+    requirement?.requirement_key,
+    requirement?.label,
+    requirement?.requirement_name,
+    requirement?.name,
+  ].filter(Boolean).join(' '))
+  return source.includes('signed_mandate') ||
+    source.includes('mandate_signature') ||
+    source.includes('physical_signed_mandate') ||
+    (source.includes('mandate') && source.includes('signed'))
+}
+
+function isSignedMandateDocumentLike(document = {}) {
+  const source = normalizeDocumentKey([
+    document?.requirementKey,
+    document?.requirement_key,
+    document?.document_type,
+    document?.documentType,
+    document?.category,
+    document?.document_category,
+    document?.name,
+    document?.document_name,
+  ].filter(Boolean).join(' '))
+  return source.includes('signed_mandate') ||
+    source.includes('mandate_signature') ||
+    source.includes('physical_signed_mandate') ||
+    (source.includes('mandate') && source.includes('signed'))
+}
+
+function hasSignedMandateEvidence({
+  requirements = [],
+  documents = [],
+  mandatePacketState = '',
+  mandatePacketFinalSignedAvailable = false,
+  activeSellingContext = {},
+  portal = {},
+} = {}) {
+  const hasCompletedRequirement = (Array.isArray(requirements) ? requirements : []).some((requirement) => {
+    if (!isSignedMandateRequirementLike(requirement)) return false
+    const status = normalizeDocumentKey(requirement?.status || requirement?.documentStatus || requirement?.document_status)
+    return Boolean(
+      requirement?.complete ||
+        requirement?.isUploaded ||
+        requirement?.is_uploaded ||
+        requirement?.uploadedDocumentId ||
+        requirement?.uploaded_document_id ||
+        ['completed', 'complete', 'approved', 'uploaded', 'received'].includes(status),
+    )
+  })
+  const hasUploadedDocument = (Array.isArray(documents) ? documents : []).some((document) =>
+    isSignedMandateDocumentLike(document) && hasPersistedPortalDocument(document),
+  )
+  const normalizedPacketState = normalizeSellerPortalKey(mandatePacketState)
+  return Boolean(
+    hasCompletedRequirement ||
+      hasUploadedDocument ||
+      ['signed', 'signed_uploaded', 'fully_signed', 'completed', 'complete', 'uploaded_signed'].includes(normalizedPacketState) ||
+      mandatePacketFinalSignedAvailable ||
+      activeSellingContext?.mandatePacket?.finalSignedAccess?.available === true ||
+      portal?.mandate?.packet?.finalSignedAccess?.available === true,
+  )
 }
 
 function hasPersistedPortalDocument(document = null) {
@@ -6948,6 +7014,188 @@ function SellerNextStepCard({ sellerNextStep, token, workspaceNavigationScope, s
   )
 }
 
+function SellerCompliancePackCard({
+  model = null,
+  token,
+  workspaceNavigationScope,
+  signedMandateRequirement = null,
+  signedMandateUploadedDocument = null,
+  uploadingDocumentKey = '',
+  openingDocumentPath = '',
+  onUploadAuthority = null,
+  onUploadSignedMandate = null,
+  onOpenDocument = null,
+  compact = false,
+}) {
+  if (!model?.signingState) return null
+  const state = model.signingState
+  const percent = Math.max(0, Math.min(100, Number(state.percent || 0)))
+  const signers = Array.isArray(model.signers) ? model.signers : []
+  const actions = Array.isArray(model.actions) ? model.actions : []
+  const complete = Boolean(model.complete || state.complete)
+  const statusClass = complete
+    ? 'border-[#cfe9da] bg-[#eefbf4] text-[#157347]'
+    : state.status === 'authority_review_required'
+      ? 'border-[#f0dfb8] bg-[#fff9ec] text-[#8a5a12]'
+      : 'border-[#d8e7f7] bg-[#eef5ff] text-[#0f65b7]'
+  const actionBaseClass = 'inline-flex min-h-[40px] items-center justify-center gap-2 rounded-[12px] px-4 py-2 text-sm font-semibold transition'
+  const mandateUploadKey = signedMandateRequirement?.key || signedMandateRequirement?.requirement_key || 'signed_mandate'
+  const mandateUploaded = hasPersistedPortalDocument(signedMandateUploadedDocument)
+
+  const renderAction = (action) => {
+    const className = action.tone === 'primary'
+      ? `${actionBaseClass} bg-[#063f37] text-white hover:bg-[#052f2a]`
+      : `${actionBaseClass} border border-[#dbe5ef] bg-white text-[#35546c] hover:border-[#c6d7e7] hover:bg-[#f8fbff]`
+    if (action.key === 'upload_authority' && onUploadAuthority) {
+      const uploadKey = action.uploadTarget?.key || action.key
+      return (
+        <label key={action.key} className={`${className} cursor-pointer`}>
+          <UploadCloud size={15} />
+          {uploadingDocumentKey === uploadKey ? 'Uploading...' : action.label}
+          <input
+            type="file"
+            className="hidden"
+            disabled={uploadingDocumentKey === uploadKey}
+            onChange={(event) => {
+              const file = event.target.files?.[0]
+              if (file) onUploadAuthority(action, file)
+              event.target.value = ''
+            }}
+          />
+        </label>
+      )
+    }
+    return (
+      <SellerPortalAction
+        key={action.key}
+        action={action}
+        token={token}
+        workspaceNavigationScope={workspaceNavigationScope}
+        className={className}
+      >
+        {action.key === 'send_link' ? <ExternalLink size={15} /> : action.key === 'upload_authority' ? <UploadCloud size={15} /> : <FileSignature size={15} />}
+        <span>{action.label}</span>
+      </SellerPortalAction>
+    )
+  }
+
+  return (
+    <article id="seller-compliance-pack" className={`rounded-[18px] border border-[#dbe5ef] bg-white ${compact ? 'p-5' : 'px-4 py-4'} shadow-[0_14px_30px_rgba(15,23,42,0.05)]`}>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <span className="inline-flex items-center gap-1.5 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#718196]">
+            <ShieldCheck size={13} />
+            Seller compliance
+          </span>
+          <h3 className="mt-1.5 text-[1.04rem] font-semibold tracking-[-0.03em] text-[#142132]">Seller Compliance Pack</h3>
+          <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
+            Disclosure, FICA declaration and seller signatures are tracked per required signer.
+          </p>
+        </div>
+        <span className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold ${statusClass}`}>
+          {model.statusLabel}
+        </span>
+      </div>
+
+      <div className="mt-4">
+        <div className="flex items-center justify-between gap-3 text-xs font-semibold text-[#5f7086]">
+          <span>{model.progressLabel}</span>
+          <span>{percent}%</span>
+        </div>
+        <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#e8eef5]">
+          <div className="h-full rounded-full bg-[#078449]" style={{ width: `${percent}%` }} />
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-2 md:grid-cols-2">
+        {signers.map((signer) => {
+          const signerComplete = Boolean(signer.complete)
+          return (
+            <div key={signer.id} className={`rounded-[14px] border px-3.5 py-3 ${signerComplete ? 'border-[#cfe9da] bg-[#f4fbf7]' : 'border-[#e3ebf4] bg-[#fbfdff]'}`}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <strong className="block truncate text-sm font-semibold text-[#142132]">{signer.name || signer.roleLabel}</strong>
+                  <span className="mt-0.5 block text-xs text-[#6b7d93]">{signer.roleLabel}</span>
+                  {signer.email ? <span className="mt-1 block truncate text-xs text-[#8292a5]">{signer.email}</span> : null}
+                </div>
+                <span className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-1 text-[0.66rem] font-semibold ${signerComplete ? 'border-[#cfe9da] bg-white text-[#157347]' : 'border-[#d8e7f7] bg-white text-[#0f65b7]'}`}>
+                  {signerComplete ? <CheckCircle2 size={12} /> : <Clock3 size={12} />}
+                  {signer.statusLabel}
+                </span>
+              </div>
+              {signer.authorityRequired ? (
+                <p className="mt-2 rounded-[10px] bg-white px-3 py-2 text-xs leading-5 text-[#6b7d93]">
+                  Authority required: {signer.authorityRequirement?.label || 'supporting authority document'}.
+                </p>
+              ) : null}
+            </div>
+          )
+        })}
+      </div>
+
+      <div className="mt-4 rounded-[14px] border border-[#dbe5ef] bg-[#f8fbff] px-3.5 py-3">
+        <p className="text-sm font-semibold text-[#142132]">{model.nextMessage}</p>
+        {actions.length ? (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {actions.map(renderAction)}
+          </div>
+        ) : null}
+      </div>
+
+      {onUploadSignedMandate || signedMandateRequirement || mandateUploaded ? (
+        <div className="mt-4 rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <strong className="block text-sm font-semibold text-[#142132]">Signed hard-copy mandate</strong>
+              <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
+                Upload the wet-ink mandate once it has been signed. This is separate from the disclosure/FICA signature pack.
+              </p>
+            </div>
+            <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${mandateUploaded ? 'border-[#cfe9da] bg-[#eefbf4] text-[#157347]' : 'border-[#f0dfb8] bg-[#fff9ec] text-[#8a5a12]'}`}>
+              {mandateUploaded ? 'Uploaded' : 'Required'}
+            </span>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {mandateUploadKey && onUploadSignedMandate ? (
+              <label className="inline-flex min-h-[38px] cursor-pointer items-center gap-2 rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff]">
+                <UploadCloud size={14} />
+                {uploadingDocumentKey === mandateUploadKey
+                  ? 'Uploading...'
+                  : mandateUploaded
+                    ? 'Replace signed mandate'
+                    : 'Upload signed mandate'}
+                <input
+                  type="file"
+                  className="hidden"
+                  disabled={uploadingDocumentKey === mandateUploadKey}
+                  onChange={(event) => {
+                    const file = event.target.files?.[0]
+                    if (file) onUploadSignedMandate(mandateUploadKey, file)
+                    event.target.value = ''
+                  }}
+                />
+              </label>
+            ) : null}
+            {mandateUploaded && onOpenDocument ? (
+              <button
+                type="button"
+                onClick={() => void onOpenDocument(signedMandateUploadedDocument)}
+                disabled={openingDocumentPath === String(signedMandateUploadedDocument?.file_path || signedMandateUploadedDocument?.id || '')}
+                className="inline-flex min-h-[38px] items-center gap-2 rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff]"
+              >
+                <Download size={14} />
+                {openingDocumentPath === String(signedMandateUploadedDocument?.file_path || signedMandateUploadedDocument?.id || '')
+                  ? 'Opening...'
+                  : 'View signed mandate'}
+              </button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+    </article>
+  )
+}
+
 function SellerSectionHeading({ title, subtitle }) {
   return (
     <div>
@@ -7507,6 +7755,7 @@ function SellerPortalDashboard({
   sellerTimelineItems,
   sellerChatUpdates,
   sellerDocumentTracker,
+  sellerComplianceSigning,
   sellerListingUrl,
   latestAttorneyUpdate,
   commentDraft,
@@ -7549,13 +7798,19 @@ function SellerPortalDashboard({
         <SellerAgentUpdate update={sellerAgentUpdate} />
         <SellerJourneyTimeline items={sellerTimelineItems} />
       </section>
-      <section className="grid items-stretch gap-5 xl:grid-cols-2">
+      <section className="grid items-stretch gap-5 xl:grid-cols-3">
         <SellerConversationCard
           updates={sellerChatUpdates}
           commentDraft={commentDraft}
           saving={savingComment}
           onCommentDraftChange={onCommentDraftChange}
           onCommentSubmit={onCommentSubmit}
+        />
+        <SellerCompliancePackCard
+          model={sellerComplianceSigning}
+          token={token}
+          workspaceNavigationScope={workspaceNavigationScope}
+          compact
         />
         <SellerDocumentTracker
           tracker={sellerDocumentTracker}
@@ -11183,33 +11438,7 @@ function ClientPortal() {
     )
   const mandatePacket = activeSellingContext?.mandatePacket || null
   const mandatePacketState = String(mandatePacket?.state || '').trim().toLowerCase()
-  const mandatePacketSignPath = String(mandatePacket?.signPath || '').trim()
   const mandatePacketFinalSignedAvailable = mandatePacket?.finalSignedAccess?.available === true
-  const mandatePacketFinalSignedMessage = String(mandatePacket?.finalSignedAccess?.message || '').trim()
-  const mandatePacketId = String(mandatePacket?.packet?.id || mandatePacket?.id || '').trim()
-  const mandatePacketVersionId = String(mandatePacket?.packetVersionId || mandatePacket?.version?.id || '').trim()
-  const mandatePacketGeneratedPreviewFilePath = String(mandatePacket?.generatedPreviewFilePath || '').trim()
-  const mandatePacketGeneratedPreviewFileName = String(mandatePacket?.generatedPreviewFileName || 'Mandate').trim()
-  const mandatePacketUsingStructuredFlow = effectiveWorkspace === 'seller'
-    && (
-      Boolean(mandatePacket?.packet?.id) ||
-      ['not_generated', 'preparing', 'generated_not_ready', 'ready_for_client_signature', 'awaiting_other_signatures', 'fully_signed', 'finalisation_pending'].includes(mandatePacketState)
-    )
-  const mandateStatusLabel = mandatePacketUsingStructuredFlow
-    ? (
-      mandatePacketState === 'fully_signed'
-        ? 'Signed'
-        : mandatePacketState === 'awaiting_other_signatures'
-          ? 'Awaiting signatures'
-          : mandatePacketState === 'ready_for_client_signature'
-            ? 'Ready to sign'
-            : mandatePacketState === 'generated_not_ready' || mandatePacketState === 'preparing'
-              ? 'Preparing'
-              : mandatePacketState === 'finalisation_pending'
-                ? 'Finalising'
-              : 'Not available'
-    )
-    : 'Not available'
   const salesOtherSharedDocuments = salesSharedDocuments.filter((document) => !isOtpDocument(document) && !isReservationDocument(document))
   const bondApplicationHeaderApplicants = bondApplicants
     .map((applicant) => `${applicant?.first_name || ''} ${applicant?.last_name || ''}`.trim())
@@ -12241,6 +12470,34 @@ function ClientPortal() {
     audience: 'seller',
   })
   const sellerDocumentsNeedingAttention = sellerDocumentExperience.actionItems
+  const sellerComplianceSigning =
+    workspaceData?.sellerComplianceSigning ||
+    portal?.sellerComplianceSigning ||
+    activeSellingContext?.sellerComplianceSigning ||
+    null
+  const signedMandateRequirement =
+    sellerRequiredDocuments.find((document) => isSignedMandateRequirementLike(document)) ||
+    salesOtherRequiredDocuments.find((document) => isSignedMandateRequirementLike(document)) ||
+    null
+  const signedMandateUploadedDocument =
+    sellerUploadedDocuments.find((document) => isSignedMandateDocumentLike(document)) ||
+    (
+      signedMandateRequirement?.uploadedDocumentId || signedMandateRequirement?.uploaded_document_id
+        ? portalDocumentsById.get(String(signedMandateRequirement.uploadedDocumentId || signedMandateRequirement.uploaded_document_id))
+        : null
+    )
+  const sellerComplianceAgentStatus = buildSellerComplianceAgentStatus({
+    sellerComplianceSigning,
+    requirements: sellerRequiredDocuments,
+    documents: sellerUploadedDocuments,
+    listing: portal?.listing || {},
+    activeSellingContext,
+    portal,
+  })
+  const hasSellerCompliancePackComplete = sellerComplianceAgentStatus.complianceComplete
+  const visibleSalesOtherRequiredDocuments = salesOtherRequiredDocuments.filter((document) =>
+    !signedMandateRequirement || String(document?.key || document?.requirement_key || '') !== String(signedMandateRequirement?.key || signedMandateRequirement?.requirement_key || ''),
+  )
   const normalizedSellerOnboardingStatus = normalizePortalStatus(
     activeSellingContext?.sellerOnboardingStatus ||
       activeSellingContext?.seller_onboarding_status ||
@@ -12256,19 +12513,6 @@ function ClientPortal() {
       portal?.mandate?.packet,
   )
   const sellerStageProgressKey = normalizeSellerPortalKey(sellerStageMeta.currentStageKey || sellerStageMeta?.currentStage?.key)
-  const sellerStagesAtOrAfterMandate = [
-    'mandate_signed',
-    'listing_created',
-    'listing_live',
-    'listed',
-    'documents_submitted',
-    'documents_complete',
-    'offers',
-    'offer_accepted',
-    'transfer',
-    'registered',
-    'registration',
-  ]
   const sellerStagesAtOrAfterListing = [
     'listing_created',
     'listing_live',
@@ -12281,21 +12525,29 @@ function ClientPortal() {
     'registered',
     'registration',
   ]
-  const hasMandateSigned = Boolean(
-    sellerStagesAtOrAfterMandate.includes(sellerStageProgressKey) ||
-      ['signed', 'fully_signed', 'completed', 'uploaded_signed'].includes(normalizeSellerPortalKey(mandatePacketState)) ||
-      mandatePacketFinalSignedAvailable ||
-      activeSellingContext?.mandatePacket?.finalSignedAccess?.available === true ||
-      portal?.mandate?.packet?.finalSignedAccess?.available === true,
+  const hasMandateSigned = sellerComplianceAgentStatus.signedMandate || Boolean(
+    hasSignedMandateEvidence({
+      requirements: sellerRequiredDocuments,
+      documents: sellerUploadedDocuments,
+      mandatePacketState,
+      mandatePacketFinalSignedAvailable,
+      activeSellingContext,
+      portal,
+    }),
   )
   const hasListingCreated = Boolean(
-    sellerStagesAtOrAfterListing.includes(sellerStageProgressKey) ||
-      sellerVisibleListingLinks.length ||
-      normalizePortalStatus(activeSellingContext?.listingStatus || activeSellingContext?.listing_status).includes('active'),
+    hasMandateSigned &&
+      (
+        sellerComplianceAgentStatus.canTreatListingAsCreated ||
+        sellerStagesAtOrAfterListing.includes(sellerStageProgressKey) ||
+        sellerVisibleListingLinks.length ||
+        normalizePortalStatus(activeSellingContext?.listingStatus || activeSellingContext?.listing_status).includes('active')
+      ),
   )
   const hasDocumentsComplete = Boolean(
     (sellerDocumentExperience.summary.ready || sellerStageMeta.currentStageKey === 'registered') &&
-      hasListingCreated,
+      hasListingCreated &&
+      (!sellerComplianceSigning || hasSellerCompliancePackComplete),
   )
   const inferredSellerListingProgressModel = buildSellerPortalProgressModel({
     hasSellingContext,
@@ -12308,8 +12560,13 @@ function ClientPortal() {
     hasDocumentsComplete,
   })
   const sharedSellerListingProgressModel = buildSellerPortalProgressModelFromSharedJourney(sharedSellerPortalJourney)
+  const shouldUseSharedSellerListingProgress = Boolean(
+    (hasMandateSigned && (!sellerComplianceSigning || hasSellerCompliancePackComplete)) || hasDocumentsComplete,
+  )
   const sellerListingProgressModel = {
-    ...(hasDocumentsComplete ? inferredSellerListingProgressModel : sharedSellerListingProgressModel || inferredSellerListingProgressModel),
+    ...(shouldUseSharedSellerListingProgress
+      ? sharedSellerListingProgressModel || inferredSellerListingProgressModel
+      : inferredSellerListingProgressModel),
     title: 'Listing Progress',
     workflowKey: 'listing',
     isStarted: true,
@@ -12336,15 +12593,6 @@ function ClientPortal() {
     return ['pending', 'proposed', 'awaiting_confirmation'].includes(status)
   }) || null
   const sellerNextStep = (() => {
-    if (sellerPrimaryNextAction) {
-      return {
-        title: sellerPrimaryNextAction.title || 'Review your next step',
-        description: sellerPrimaryNextAction.description || 'Your transaction team needs one item from you.',
-        to: sellerPrimaryNextAction.actionRoute || 'documents',
-        label: sellerPrimaryNextAction.actionLabel || 'Open next step',
-        tone: sellerPrimaryNextAction.blocking ? 'action' : 'info',
-      }
-    }
     if (!hasSellerOnboardingSubmitted) {
       return {
         title: 'Complete seller onboarding',
@@ -12353,6 +12601,24 @@ function ClientPortal() {
         to: 'documents',
         label: 'Open onboarding',
         tone: 'action',
+      }
+    }
+    if (sellerComplianceSigning && !hasSellerCompliancePackComplete) {
+      return {
+        title: 'Complete seller compliance pack',
+        description: sellerComplianceSigning.nextMessage || 'Required seller signatures are still outstanding.',
+        to: 'documents',
+        label: 'Open compliance pack',
+        tone: 'action',
+      }
+    }
+    if (sellerPrimaryNextAction) {
+      return {
+        title: sellerPrimaryNextAction.title || 'Review your next step',
+        description: sellerPrimaryNextAction.description || 'Your transaction team needs one item from you.',
+        to: sellerPrimaryNextAction.actionRoute || 'documents',
+        label: sellerPrimaryNextAction.actionLabel || 'Open next step',
+        tone: sellerPrimaryNextAction.blocking ? 'action' : 'info',
       }
     }
     if (mandatePacketState === 'ready_for_client_signature') {
@@ -12555,16 +12821,18 @@ function ClientPortal() {
     ...sellerNextStep,
     href: sellerNextStep?.href || getPortalWorkspacePath(token, workspaceNavigationScope, sellerNextStep?.to || 'documents'),
   }
-  const sellerMobileResolvedIndex = resolveSellerMobileJourneyIndex(
-    sharedSellerPortalJourney?.currentStage?.key,
-    sharedSellerPortalJourney?.stageMeta?.currentStage?.key,
-    sharedSellerPortalJourney?.stageMeta?.currentStageKey,
-    sellerStageMeta?.currentStageKey,
-    sellerStageMeta?.currentStage?.key,
-    sellerListingProgressModel?.currentKey,
-    sellerSaleProgressModel?.isStarted ? sellerSaleProgressModel?.currentKey : '',
-    mainStage,
-  )
+  const sellerMobileResolvedIndex = shouldUseSharedSellerListingProgress
+    ? resolveSellerMobileJourneyIndex(
+        sharedSellerPortalJourney?.currentStage?.key,
+        sharedSellerPortalJourney?.stageMeta?.currentStage?.key,
+        sharedSellerPortalJourney?.stageMeta?.currentStageKey,
+        sellerStageMeta?.currentStageKey,
+        sellerStageMeta?.currentStage?.key,
+        sellerListingProgressModel?.currentKey,
+        sellerSaleProgressModel?.isStarted ? sellerSaleProgressModel?.currentKey : '',
+        mainStage,
+      )
+    : null
   const sellerMobileCurrentIndex = Math.max(
     !hasSellerOnboardingSubmitted ? 0 : 1,
     sellerMobileResolvedIndex ??
@@ -13984,6 +14252,7 @@ function ClientPortal() {
                       sellerTimelineItems={sellerTimelineItems}
                       sellerChatUpdates={sellerActivityItems}
                       sellerDocumentTracker={sellerDocumentTracker}
+                      sellerComplianceSigning={sellerComplianceSigning}
                       sellerListingUrl={sellerListingUrl}
                       latestAttorneyUpdate={latestAttorneyUpdate}
                       commentDraft={commentDraft}
@@ -15730,105 +15999,23 @@ function ClientPortal() {
                 ) : null}
 
                 {effectiveWorkspace === 'seller' ? (
-                  <article className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <strong className="block text-sm font-semibold text-[#142132]">Mandate</strong>
-                        <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
-                          {mandatePacketUsingStructuredFlow
-                            ? (
-                              mandatePacketState === 'not_generated'
-                                ? 'Your agent is preparing your mandate. It will appear here when ready.'
-                                : mandatePacketState === 'ready_for_client_signature'
-                                  ? 'Your mandate is ready. Sign online to proceed.'
-                                  : mandatePacketState === 'awaiting_other_signatures'
-                                    ? 'You have signed the mandate. We are waiting for the remaining parties to complete signing.'
-                                    : mandatePacketState === 'fully_signed'
-                                      ? 'Your mandate is fully signed. Download the final signed document below.'
-                                      : mandatePacketState === 'finalisation_pending'
-                                        ? (mandatePacketFinalSignedMessage || 'Your signatures are complete. The final document is being securely published.')
-                                      : 'Your mandate has been generated and is being prepared for signing.'
-                            )
-                            : 'Your agent is preparing your mandate. It will appear here when ready.'}
-                        </p>
-                      </div>
-                      <span className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold ${getStatusToneClasses(mandateStatusLabel)}`}>
-                        {mandateStatusLabel}
-                      </span>
-                    </div>
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      {mandatePacketUsingStructuredFlow ? (
-                        <>
-                          {mandatePacketState === 'ready_for_client_signature' && mandatePacketSignPath ? (
-                            <a
-                              href={mandatePacketSignPath}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="inline-flex items-center gap-2 rounded-full bg-[#35546c] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#2d475d]"
-                            >
-                              <FileSignature size={14} />
-                              Sign Mandate
-                            </a>
-                          ) : null}
-                          {mandatePacketGeneratedPreviewFilePath ? (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                void handleOpenPortalDocument({
-                                  id: `mandate-generated-${mandatePacket?.version?.id || ''}`,
-                                  file_path: mandatePacketGeneratedPreviewFilePath,
-                                  name: mandatePacketGeneratedPreviewFileName,
-                                })
-                              }
-                              disabled={openingDocumentPath === String(mandatePacketGeneratedPreviewFilePath || '')}
-                              className="inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff]"
-                            >
-                              <Download size={14} />
-                              {openingDocumentPath === String(mandatePacketGeneratedPreviewFilePath || '')
-                                ? 'Opening...'
-                                : 'View Mandate'}
-                            </button>
-                          ) : null}
-                          {mandatePacketState === 'fully_signed' && mandatePacketFinalSignedAvailable && mandatePacketId && mandatePacketVersionId ? (
-                            <button
-                              type="button"
-                              onClick={() => void handleOpenFinalSignedPortalDocument({
-                                packetId: mandatePacketId,
-                                packetVersionId: mandatePacketVersionId,
-                                openingKey: `mandate-final-signed-${mandatePacketVersionId}`,
-                              })}
-                              disabled={openingDocumentPath === `mandate-final-signed-${mandatePacketVersionId}`}
-                              className="inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff]"
-                            >
-                              <Download size={14} />
-                              {openingDocumentPath === `mandate-final-signed-${mandatePacketVersionId}`
-                                ? 'Opening...'
-                                : 'Download Signed Mandate'}
-                            </button>
-                          ) : null}
-                          {mandatePacketState === 'not_generated' ? (
-                            <button
-                              type="button"
-                              disabled
-                              className="inline-flex cursor-not-allowed items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#8ba0b8]"
-                            >
-                              <Download size={14} />
-                              Mandate not available yet
-                            </button>
-                          ) : null}
-                        </>
-                      ) : (
-                        <button
-                          type="button"
-                          disabled
-                          className="inline-flex cursor-not-allowed items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#8ba0b8]"
-                        >
-                          <Download size={14} />
-                          Mandate not available yet
-                        </button>
-                      )}
-                    </div>
-                  </article>
+                  <SellerCompliancePackCard
+                    model={sellerComplianceSigning}
+                    token={token}
+                    workspaceNavigationScope={workspaceNavigationScope}
+                    signedMandateRequirement={signedMandateRequirement}
+                    signedMandateUploadedDocument={signedMandateUploadedDocument}
+                    uploadingDocumentKey={uploadingDocumentKey}
+                    openingDocumentPath={openingDocumentPath}
+                    onUploadAuthority={(action, file) => {
+                      const uploadKey = action?.uploadTarget?.key || ''
+                      if (uploadKey) void handleUploadRequiredDocument(uploadKey, file)
+                    }}
+                    onUploadSignedMandate={(uploadKey, file) => {
+                      if (uploadKey) void handleUploadRequiredDocument(uploadKey, file)
+                    }}
+                    onOpenDocument={handleOpenPortalDocument}
+                  />
                 ) : (
                   <article className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
                     <div className="flex flex-wrap items-start justify-between gap-3">
@@ -15953,7 +16140,7 @@ function ClientPortal() {
                   </article>
                 )}
 
-                {salesOtherRequiredDocuments.map((document) => {
+                {visibleSalesOtherRequiredDocuments.map((document) => {
                   const uploadedDocument = document.uploadedDocument || document.uploaded_document || (document.uploadedDocumentId ? portalDocumentsById.get(String(document.uploadedDocumentId)) : null)
                   const hasUploadedDocument = hasPersistedPortalDocument(uploadedDocument)
                   const isLinkedSignedMandate = hasUploadedDocument && isSignedMandateDocumentLink(document, uploadedDocument)
