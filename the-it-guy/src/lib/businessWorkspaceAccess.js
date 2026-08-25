@@ -22,6 +22,8 @@ const DEFAULT_BUSINESS_WORKSPACE_ORDER = Object.freeze([BUSINESS_WORKSPACES.sale
 const MANAGEMENT_ROLES = new Set([
   'owner',
   'principal',
+  'agency_principal',
+  'principal_owner',
   'director',
   'partner',
   'admin',
@@ -501,6 +503,10 @@ export function resolveAvailableBusinessWorkspaces({
     ? organisationWorkspaces
     : DEFAULT_BUSINESS_WORKSPACE_ORDER
 
+  if (MANAGEMENT_ROLES.has(role)) {
+    return allowedOrganisationWorkspaces
+  }
+
   if (explicitWorkspaces.size) {
     const explicitAllowed = allowedOrganisationWorkspaces.filter((id) => explicitWorkspaces.has(id))
     return explicitAllowed.length ? explicitAllowed : [allowedOrganisationWorkspaces[0] || BUSINESS_WORKSPACES.sales]
@@ -509,10 +515,6 @@ export function resolveAvailableBusinessWorkspaces({
   if (departmentWorkspaces.length) {
     const departmentAllowed = allowedOrganisationWorkspaces.filter((id) => departmentWorkspaces.includes(id))
     if (departmentAllowed.length) return departmentAllowed
-  }
-
-  if (MANAGEMENT_ROLES.has(role)) {
-    return allowedOrganisationWorkspaces
   }
 
   if (normalizeKey(workspaceType) !== 'agency') return [BUSINESS_WORKSPACES.sales]
