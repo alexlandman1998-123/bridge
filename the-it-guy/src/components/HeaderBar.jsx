@@ -37,7 +37,7 @@ function getPageTitle(pathname, stateTitle, role) {
   }
 
   if (pathname === '/setup' || pathname.startsWith('/setup/')) return ''
-  if (pathname === '/agent/rentals' || pathname.startsWith('/agent/rentals/')) return 'Rentals'
+  if (pathname === '/agent/rentals' || pathname.startsWith('/agent/rentals/')) return ''
   if (pathname === '/dashboard' || pathname === '/') return 'Dashboard'
   if (pathname === '/developments') return 'Developments'
   if (pathname === '/units') return role === 'developer' ? 'Units' : role === 'bond_originator' ? 'Applications' : 'Transactions'
