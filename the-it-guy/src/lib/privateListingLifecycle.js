@@ -82,10 +82,6 @@ const PRIVATE_LISTING_TRANSITIONS = {
   withdrawn: [],
 }
 
-const CANONICAL_MANDATE_COMPLETION_TARGETS = new Set(['mandate_signed', 'active'])
-const MANDATE_COMPLETION_BLOCKER = 'A completed canonical mandate packet or manual signed mandate upload is required before activating this listing.'
-const MANUAL_SIGNED_MANDATE_STATUSES = new Set(['signed_uploaded', 'uploaded_signed'])
-const MANUAL_SIGNED_MANDATE_DOCUMENT_STATUSES = new Set(['uploaded', 'completed', 'approved', 'verified', 'signed', 'signed_uploaded', 'uploaded_signed'])
 const QUICK_LISTING_METADATA_PREFIX = 'BRIDGE_QUICK_ADD_METADATA:'
 const CURRENT_LISTING_IMPORT_INTENTS = new Set([
   'active_listing',
@@ -286,94 +282,6 @@ function hasValue(value) {
   return normalizeText(value).length > 0
 }
 
-function hasCanonicalFinalMandatePacket(listing = {}) {
-  const packet = listing?.mandatePacket && typeof listing.mandatePacket === 'object'
-    ? listing.mandatePacket
-    : listing?.mandate_packet && typeof listing.mandate_packet === 'object'
-      ? listing.mandate_packet
-      : {}
-  const packetRecord = packet?.packet && typeof packet.packet === 'object' ? packet.packet : packet
-  const version = packet?.version && typeof packet.version === 'object' ? packet.version : {}
-  const packetId = normalizeText(packet?.id || packet?.packetId || packet?.packet_id || packetRecord?.id)
-  const packetStatus = normalizeKey(packet?.state || packet?.status || packetRecord?.status || packetRecord?.lifecycle_state)
-  const finalArtifactPath = normalizeText(
-    packet?.finalSignedFilePath ||
-      packet?.final_signed_file_path ||
-      version?.finalSignedFilePath ||
-      version?.final_signed_file_path,
-  )
-  const completed = ['completed', 'fully_signed', 'finalised', 'finalized'].includes(packetStatus)
-  return Boolean(packetId && completed && finalArtifactPath)
-}
-
-function getListingDocumentRows(listing = {}, metadata = {}) {
-  return [
-    ...(Array.isArray(metadata?.documents) ? metadata.documents : []),
-    ...(Array.isArray(listing?.documents) ? listing.documents : []),
-    ...(Array.isArray(listing?.private_listing_documents) ? listing.private_listing_documents : []),
-    ...(Array.isArray(listing?.sellerDocuments) ? listing.sellerDocuments : []),
-    ...(Array.isArray(listing?.seller_documents) ? listing.seller_documents : []),
-  ]
-}
-
-function hasManualSignedMandateDocument(listing = {}, metadata = {}) {
-  const directArtifact = normalizeText(
-    metadata?.mandateSignedDocumentPath ||
-      metadata?.mandate_signed_document_path ||
-      metadata?.mandateSignedDocumentUrl ||
-      metadata?.mandate_signed_document_url ||
-      listing?.mandateSignedDocumentPath ||
-      listing?.mandate_signed_document_path ||
-      listing?.mandateSignedDocumentUrl ||
-      listing?.mandate_signed_document_url,
-  )
-  if (directArtifact) return true
-
-  return getListingDocumentRows(listing, metadata).some((document) => {
-    const searchable = [
-      document?.document_type,
-      document?.documentType,
-      document?.category,
-      document?.document_name,
-      document?.documentName,
-      document?.file_name,
-      document?.fileName,
-      document?.name,
-    ].map((value) => normalizeKey(value)).join(' ')
-    const mandateLike = searchable.includes('mandate')
-    const status = normalizeKey(document?.status || document?.documentStatus || document?.document_status)
-    const uploadArtifact = normalizeText(
-      document?.storage_path ||
-        document?.storagePath ||
-        document?.file_path ||
-        document?.filePath ||
-        document?.file_url ||
-        document?.fileUrl ||
-        document?.url ||
-        document?.documentUrl ||
-        document?.document_url ||
-        document?.id,
-    )
-    return mandateLike && MANUAL_SIGNED_MANDATE_DOCUMENT_STATUSES.has(status) && Boolean(uploadArtifact)
-  })
-}
-
-function hasManualSignedMandateUpload(listing = {}, metadata = {}) {
-  const mandateStatus = normalizeKey(metadata?.mandateStatus || metadata?.mandate_status || listing?.mandateStatus || listing?.mandate_status)
-  return MANUAL_SIGNED_MANDATE_STATUSES.has(mandateStatus) || hasManualSignedMandateDocument(listing, metadata)
-}
-
-function hasMandateCompletionProof(listing = {}, metadata = {}) {
-  return hasCanonicalFinalMandatePacket(listing) || hasManualSignedMandateUpload(listing, metadata)
-}
-
-function getMandateCompletionBlocker(listing = {}, targetStatus = '', metadata = {}) {
-  const normalizedTarget = mapLegacyListingStatusToCanonicalStatus(targetStatus)
-  if (!CANONICAL_MANDATE_COMPLETION_TARGETS.has(normalizedTarget)) return ''
-  if (isCurrentListingImportActivation(listing, normalizedTarget, metadata)) return ''
-  return hasMandateCompletionProof(listing, metadata) ? '' : MANDATE_COMPLETION_BLOCKER
-}
-
 function isOnboardingCompleted(listing = {}, metadata = {}) {
   const onboardingStatus = normalizeKey(
     metadata?.onboardingStatus ||
@@ -503,9 +411,6 @@ export function evaluatePrivateListingTransitionGuards(listing = {}, targetStatu
     }
   }
 
-  const mandateCompletionBlocker = getMandateCompletionBlocker(listing, normalizedTarget, metadata)
-  if (mandateCompletionBlocker) blockers.push(mandateCompletionBlocker)
-
   if (normalizedTarget === 'under_offer') {
     const currentStatus = getPrivateListingLifecycleState(listing)
     if (currentStatus !== 'active') {
@@ -544,8 +449,7 @@ export function canTransitionPrivateListing(listing = {}, targetStatus, { allowO
   const allowedTargets = getAllowedPrivateListingTransitions(currentStatus)
   const transitionAllowed = allowedTargets.includes(normalizedTarget)
   const blockers = evaluatePrivateListingTransitionGuards(listing, normalizedTarget, metadata)
-  const mandateCompletionBlocker = getMandateCompletionBlocker(listing, normalizedTarget, metadata)
-  const nonOverridableBlockers = mandateCompletionBlocker ? [mandateCompletionBlocker] : []
+  const nonOverridableBlockers = []
   const allowed = transitionAllowed && nonOverridableBlockers.length === 0 && (allowOverride || blockers.length === 0)
 
   return {

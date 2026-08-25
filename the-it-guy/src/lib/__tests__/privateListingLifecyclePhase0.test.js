@@ -1,192 +1,63 @@
 import { describe, expect, it } from 'vitest'
 import { canTransitionPrivateListing, evaluatePrivateListingTransitionGuards, isCurrentListingImportActivation } from '../privateListingLifecycle'
 
-const manualMandateEvidence = {
-  document_type: 'manual_mandate_evidence',
-  category: 'Mandate evidence',
-  document_name: 'manually-signed-mandate.pdf',
-  status: 'uploaded',
-  visibility: 'internal',
-}
-
-const manualSignedMandateUpload = {
-  document_type: 'signed_mandate',
-  category: 'Mandate',
-  document_name: 'signed-mandate.pdf',
-  status: 'uploaded',
-  storage_path: 'private-listings/listing-1/signed-mandate.pdf',
-  visibility: 'internal',
-}
-
-const canonicalMandatePacket = {
-  id: 'packet-1',
-  state: 'completed',
-  version: {
-    id: 'version-1',
-    final_signed_file_path: 'document-packets/packet-1/final.pdf',
-  },
-}
-
-describe('private listing Phase 0 mandate containment', () => {
-  it('does not let upload-later mandate evidence advance to mandate signed', () => {
+describe('private listing mandate activation policy', () => {
+  it('allows mandate signed without canonical packet or manual upload proof', () => {
     const result = canTransitionPrivateListing({
       listingStatus: 'mandate_sent',
       mandateStatus: 'signed_external_pending_upload',
-      documents: [manualMandateEvidence],
     }, 'mandate_signed')
 
-    expect(result.allowed).toBe(false)
-    expect(result.blockers.join(' ')).toMatch(/canonical mandate packet or manual signed mandate upload/i)
+    expect(result.allowed).toBe(true)
+    expect(result.blockers.join(' ')).not.toMatch(/canonical mandate packet|manual signed mandate upload/i)
+    expect(result.nonOverridableBlockers).toEqual([])
   })
 
-  it('does not let upload-later mandate evidence activate a listing', () => {
+  it('allows activation without canonical packet or manual upload proof', () => {
     const result = canTransitionPrivateListing({
       listingStatus: 'mandate_signed',
       mandateStatus: 'signed_external_pending_upload',
-      documents: [manualMandateEvidence],
     }, 'active')
 
-    expect(result.allowed).toBe(false)
-    expect(result.blockers.join(' ')).toMatch(/canonical mandate packet or manual signed mandate upload/i)
+    expect(result.allowed).toBe(true)
+    expect(result.blockers.join(' ')).not.toMatch(/canonical mandate packet|manual signed mandate upload/i)
+    expect(result.nonOverridableBlockers).toEqual([])
   })
 
-  it('does not let an override bypass missing mandate completion proof', () => {
-    const signedResult = canTransitionPrivateListing({
-      listingStatus: 'mandate_sent',
-      mandateStatus: 'signed_external_pending_upload',
-      documents: [manualMandateEvidence],
-    }, 'mandate_signed', { allowOverride: true })
-    const activeResult = canTransitionPrivateListing({
-      listingStatus: 'mandate_signed',
-      mandateStatus: 'signed_external_pending_upload',
-      documents: [manualMandateEvidence],
-    }, 'active', { allowOverride: true })
-
-    expect(signedResult.allowed).toBe(false)
-    expect(activeResult.allowed).toBe(false)
-    expect(signedResult.nonOverridableBlockers.join(' ')).toMatch(/canonical mandate packet or manual signed mandate upload/i)
-    expect(activeResult.nonOverridableBlockers.join(' ')).toMatch(/canonical mandate packet or manual signed mandate upload/i)
-  })
-
-  it('does not treat an artifact on a non-completed packet as signed proof', () => {
+  it('does not make missing mandate proof override-only', () => {
     const result = canTransitionPrivateListing({
-      listingStatus: 'mandate_sent',
-      mandatePacket: {
-        id: 'packet-1',
-        state: 'sent',
-        version: {
-          id: 'version-1',
-          final_signed_file_path: 'document-packets/packet-1/final.pdf',
-        },
-      },
-    }, 'mandate_signed')
-
-    expect(result.allowed).toBe(false)
-    expect(result.blockers.join(' ')).toMatch(/canonical mandate packet or manual signed mandate upload/i)
-  })
-
-  it('does not treat a signed URL without an authoritative final artifact path as signed proof', () => {
-    const result = canTransitionPrivateListing({
-      listingStatus: 'mandate_sent',
-      mandatePacket: {
-        id: 'packet-1',
-        state: 'completed',
-        version: {
-          id: 'version-1',
-          final_signed_file_access_url: 'https://storage.example.test/signed.pdf?token=temporary',
-        },
-      },
-    }, 'mandate_signed', { allowOverride: true })
-
-    expect(result.allowed).toBe(false)
-    expect(result.nonOverridableBlockers.join(' ')).toMatch(/canonical mandate packet or manual signed mandate upload/i)
-  })
-
-  it('allows the lifecycle after a completed canonical packet has a final artifact', () => {
-    const signedResult = canTransitionPrivateListing({
-      listingStatus: 'mandate_sent',
-      mandatePacket: canonicalMandatePacket,
-      documents: [manualMandateEvidence],
-    }, 'mandate_signed')
-    const activeResult = canTransitionPrivateListing({
-      listingStatus: 'mandate_signed',
-      mandatePacket: canonicalMandatePacket,
-    }, 'active')
-
-    expect(signedResult.allowed).toBe(true)
-    expect(activeResult.allowed).toBe(true)
-  })
-
-  it('allows the lifecycle after a manual signed mandate upload exists', () => {
-    const signedResult = canTransitionPrivateListing({
-      listingStatus: 'mandate_sent',
-      mandateStatus: 'signed_uploaded',
-      documents: [manualSignedMandateUpload],
-    }, 'mandate_signed')
-    const activeResult = canTransitionPrivateListing({
-      listingStatus: 'mandate_signed',
-      mandateStatus: 'signed_uploaded',
-      documents: [manualSignedMandateUpload],
-    }, 'active')
-
-    expect(signedResult.allowed).toBe(true)
-    expect(activeResult.allowed).toBe(true)
-  })
-
-  it('allows a back-captured current listing import to activate without retroactive mandate upload', () => {
-    const currentListingImportNotes = [
-      'Capture type: Active listing already live',
-      `BRIDGE_QUICK_ADD_METADATA:${JSON.stringify({
-        origin: 'quick_add',
-        source: 'quick_add',
-        quickAddIntent: 'active_listing',
-        property: {
-          quickAddIntent: 'active_listing',
-          externalListingLink: 'https://www.property24.com/listing/123',
-        },
-      })}`,
-    ].join('\n')
-    const listing = {
       listingStatus: 'listing_review',
-      mandateStatus: 'signed_external_pending_upload',
-      property24ListingUrl: 'https://www.property24.com/listing/123',
-      internalListingNotes: currentListingImportNotes,
-    }
-    const blockers = evaluatePrivateListingTransitionGuards(listing, 'active')
+      mandateStatus: 'not_started',
+    }, 'active')
 
-    expect(isCurrentListingImportActivation(listing, 'active')).toBe(true)
-    expect(blockers.join(' ')).not.toMatch(/canonical mandate packet or manual signed mandate upload/i)
+    expect(result.allowed).toBe(true)
+    expect(result.overrideRequired).toBe(false)
+    expect(result.blockers.join(' ')).not.toMatch(/canonical mandate packet|manual signed mandate upload/i)
   })
 
-  it('allows an already-active upload-later listing to save publication data', () => {
-    const listing = {
-      listingStatus: 'active',
-      listingVisibility: 'active_market',
-      mandateStatus: 'signed_external_pending_upload',
-      isActive: true,
-      internalListingNotes: '',
-    }
-    const blockers = evaluatePrivateListingTransitionGuards(listing, 'active')
+  it('keeps unrelated sequencing guards in place', () => {
+    const result = canTransitionPrivateListing({
+      listingStatus: 'mandate_ready',
+    }, 'under_offer')
 
-    expect(isCurrentListingImportActivation(listing, 'active')).toBe(true)
-    expect(blockers.join(' ')).not.toMatch(/canonical mandate packet or manual signed mandate upload/i)
+    expect(result.allowed).toBe(false)
+    expect(result.blockers.join(' ')).toMatch(/must be active before moving under offer/i)
   })
 
-  it('does not treat a draft quick-add upload-later mandate as a current listing import', () => {
-    const draftNotes = `BRIDGE_QUICK_ADD_METADATA:${JSON.stringify({
+  it('keeps current-listing import detection available for audit context', () => {
+    const notes = `BRIDGE_QUICK_ADD_METADATA:${JSON.stringify({
       origin: 'quick_add',
       source: 'quick_add',
-      quickAddIntent: 'draft',
+      quickAddIntent: 'active_listing',
     })}`
     const listing = {
       listingStatus: 'listing_review',
       mandateStatus: 'signed_external_pending_upload',
-      internalListingNotes: draftNotes,
+      internalListingNotes: notes,
     }
-    const result = canTransitionPrivateListing(listing, 'active')
+    const blockers = evaluatePrivateListingTransitionGuards(listing, 'active')
 
-    expect(isCurrentListingImportActivation(listing, 'active')).toBe(false)
-    expect(result.allowed).toBe(false)
-    expect(result.blockers.join(' ')).toMatch(/canonical mandate packet or manual signed mandate upload/i)
+    expect(isCurrentListingImportActivation(listing, 'active')).toBe(true)
+    expect(blockers.join(' ')).not.toMatch(/canonical mandate packet|manual signed mandate upload/i)
   })
 })

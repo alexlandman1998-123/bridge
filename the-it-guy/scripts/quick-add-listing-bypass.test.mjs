@@ -25,7 +25,7 @@ assert.match(
 
 assert.match(
   source,
-  /Seller email or phone is required\./,
+  /Seller email or (phone|mobile) is required\./,
   'Quick Add should require at least one seller contact method.',
 )
 
@@ -35,19 +35,13 @@ assert.match(
   'Quick Add Supabase persistence must not mark seller onboarding completed.',
 )
 
-assert.doesNotMatch(
-  source,
-  /sellerOnboardingStatus: 'completed'/,
-  'Quick Add should not persist completed onboarding for agent-captured listings.',
-)
-
 assert.match(
   source,
   /QUICK_ADD_MANDATE_STATUS_OPTIONS = \[/,
   'Quick Add should expose explicit manual mandate status options.',
 )
 
-for (const status of ['in_progress', 'signed_uploaded', 'signed_external_pending_upload', 'expired']) {
+for (const status of ['in_progress', 'signed_external_pending_upload', 'expired']) {
   assert.match(
     source,
     new RegExp(status),
@@ -79,20 +73,20 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /if \(\['active', 'mandate_signed', 'under_offer', 'transaction_created', 'sold'\]\.includes\(normalized\)\) return 'listing_review'/,
-  'Supabase Quick Add should create as listing review before any signed mandate upload promotes it to active.',
+  /\['active', 'mandate_signed', 'under_offer', 'transaction_created', 'sold'\]\.includes\(normalized\)[\s\S]{0,160}return normalized === 'mandate_signed' \? 'mandate_signed' : normalized/,
+  'Supabase Quick Add should preserve selected active-like statuses without requiring signed mandate upload proof.',
 )
 
 assert.doesNotMatch(
   source,
-  /sellerUpdatePayload\.listingStatus = 'active'/,
-  'Quick Add should not promote listings to active without canonical mandate completion.',
+  /Upload the signed hard-copy mandate before marking the listing Active\./,
+  'Quick Add should not block Active status on signed mandate upload proof.',
 )
 
-assert.match(
+assert.doesNotMatch(
   source,
-  /function canQuickListingActivateWithMandateStatus\(\)[\s\S]*return false/,
-  'Active listing selection should wait for canonical mandate completion before activation.',
+  /function canQuickListingActivateWithMandateStatus/,
+  'Active listing selection should not wait for canonical mandate completion before activation.',
 )
 
 assert.match(
@@ -163,10 +157,10 @@ assert.match(
   'Legacy organisation settings lookup should prefer membership_status when finding active memberships.',
 )
 
-assert.match(
+assert.doesNotMatch(
   source,
   /Capture a signed mandate status before marking the listing Active\./,
-  'Active listing selection should still block listings without signed mandate authority.',
+  'Active listing selection should not block listings without signed mandate authority.',
 )
 
 assert.match(
@@ -177,13 +171,13 @@ assert.match(
 
 assert.match(
   source,
-  /Manual mandate evidence upload outstanding/,
+  /Evidence upload outstanding/,
   'Signed external mandates should keep the evidence upload follow-up visible.',
 )
 
 assert.match(
   source,
-  /Use this when the listing or mandate already exists outside Bridge\./,
+  /Capture a live listing from Property24, Private Property, or another system\./,
   'Quick Add copy should explain the manual or external listing workaround.',
 )
 

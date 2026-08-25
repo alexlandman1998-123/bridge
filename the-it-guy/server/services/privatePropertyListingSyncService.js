@@ -73,15 +73,6 @@ function isRecoverableSyncTableError(error = {}) {
   )
 }
 
-function isPrivateListingStatusGuardError(error = {}) {
-  const detail = normalizePrivatePropertyText(error.details)
-  const message = normalizePrivatePropertyText(error.message)
-  return error.code === 'P0001' && (
-    detail === 'PHASE0_PRIVATE_LISTING_CANONICAL_MANDATE_REQUIRED' ||
-    message.toLowerCase().includes('canonical mandate')
-  )
-}
-
 async function upsertExternalLink({ client, privateListingId, url, status, now } = {}) {
   const normalizedUrl = normalizePrivatePropertyText(url)
   if (!normalizedUrl) return { externalLink: null, externalLinkWarning: null }
@@ -212,12 +203,7 @@ export async function recordPrivatePropertyListingSync({
     .select('id, private_property_reference, private_property_status, private_property_listing_url, updated_at')
     .single()
 
-  if (listingError && !isPrivateListingStatusGuardError(listingError)) throw listingError
-  const listingUpdateWarning = listingError ? {
-    message: listingError.message,
-    code: listingError.code || null,
-    details: listingError.details || null,
-  } : null
+  if (listingError) throw listingError
 
   const { externalLink, externalLinkWarning } = await upsertExternalLink({
     client,
@@ -230,7 +216,7 @@ export async function recordPrivatePropertyListingSync({
   return {
     sync,
     listing,
-    listingUpdateWarning,
+    listingUpdateWarning: null,
     externalLink,
     externalLinkWarning,
     arch9Status,

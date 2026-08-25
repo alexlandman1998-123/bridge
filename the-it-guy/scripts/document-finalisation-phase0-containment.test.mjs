@@ -7,6 +7,7 @@ const finaliser = fs.readFileSync('../supabase/functions/generate-final-signed-d
 const mandateEmail = fs.readFileSync('../supabase/functions/send-mandate-signing-email/index.ts', 'utf8')
 const genericEmail = fs.readFileSync('../supabase/functions/send-email/index.ts', 'utf8')
 const deliveryMigration = fs.readFileSync('../supabase/migrations/202607220002_authoritative_mandate_signing_delivery_phase0.sql', 'utf8')
+const mandateGuardRemovalMigration = fs.readFileSync('../supabase/migrations/202608250001_remove_listing_mandate_activation_guards.sql', 'utf8')
 const supabaseConfig = fs.readFileSync('../supabase/config.toml', 'utf8')
 
 assert.match(signerAction, /const FINALISER_SERVICE_ROLE_KEY = SUPABASE_SERVICE_ROLE_KEY/)
@@ -64,7 +65,7 @@ for (const marker of [
   assert.match(mandateEmail, new RegExp(marker))
 }
 assert.match(mandateEmail, /portalLink: `\$\{resolveAppBaseUrl\(\)\}\/sign\/\$\{signingToken\}`/)
-assert.match(genericEmail, /MANDATE_SIGNING_DELIVERY_ROUTE_RETIRED/)
+assert.match(genericEmail, /FINAL_SIGNED_LEGAL_DOCUMENT_DELIVERY_ROUTE_RETIRED/)
 assert.match(supabaseConfig, /\[functions\.send-mandate-signing-email\][\s\S]*?verify_jwt = true/)
 
 for (const marker of [
@@ -109,5 +110,16 @@ assert.doesNotMatch(
   deliveryMigration,
   /lower\(coalesce\(new\.mandate_status, ''\)\) in \('signed', 'signed_uploaded', 'signed_external_pending_upload'\)/,
 )
+
+for (const marker of [
+  'drop trigger if exists trg_private_listing_mandate_completion_phase0',
+  'drop trigger if exists trg_listing_publication_mandate_completion_phase0',
+  'drop trigger if exists trg_listing_external_publication_mandate_completion_phase0',
+  'drop trigger if exists trg_active_listing_mandate_integrity_phase0',
+  'drop function if exists public.bridge_enforce_private_listing_mandate_completion_phase0()',
+  'drop function if exists public.bridge_require_canonical_completed_mandate_phase0(uuid, uuid)',
+]) {
+  assert.match(mandateGuardRemovalMigration, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+}
 
 console.log('Document finalisation Phase 0 containment contract passed.')

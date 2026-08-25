@@ -2337,13 +2337,6 @@ function isQuickListingManualMandateReportedStatus(value) {
   return normalizeKey(value) === 'signed_external_pending_upload'
 }
 
-function canQuickListingActivateWithMandateStatus(mandateStatus = '', form = {}) {
-  return (
-    ['signed_uploaded', 'uploaded_signed'].includes(normalizeKey(mandateStatus)) ||
-    (isQuickListingManualMandateReportedStatus(mandateStatus) && Boolean(normalizeText(form?.manualMandateFileName)))
-  )
-}
-
 function getQuickListingActivationTier({ listingStatus = '' } = {}) {
   const normalizedListingStatus = normalizeKey(listingStatus)
   if (normalizedListingStatus === 'mandate_signed') {
@@ -2392,11 +2385,9 @@ function getQuickListingActivationTier({ listingStatus = '' } = {}) {
 
 function resolveQuickListingStatus(form, { activationWarnings = [] } = {}) {
   const normalized = normalizeKey(form.listingStatus)
-  const mandateStatus = getQuickListingMandateStatus(form)
   if (
     !activationWarnings.length &&
-    ['active', 'mandate_signed', 'under_offer', 'transaction_created', 'sold'].includes(normalized) &&
-    canQuickListingActivateWithMandateStatus(mandateStatus, form)
+    ['active', 'mandate_signed', 'under_offer', 'transaction_created', 'sold'].includes(normalized)
   ) {
     return normalized === 'mandate_signed' ? 'mandate_signed' : normalized
   }
@@ -2523,12 +2514,7 @@ function validateQuickListingMinimumFields({ form, assignedAgentKey, requireAssi
 
 function validateQuickListingActiveRules({ form, assignedAgentKey }) {
   if (normalizeKey(form.listingStatus) !== 'active') return []
-  const errors = validateQuickListingMinimumFields({ form, assignedAgentKey, requireAssignedAgent: true })
-  const mandateStatus = getQuickListingMandateStatus(form)
-  if (!canQuickListingActivateWithMandateStatus(mandateStatus, form)) {
-    errors.push('Upload the signed hard-copy mandate before marking the listing Active.')
-  }
-  return [...new Set(errors)]
+  return validateQuickListingMinimumFields({ form, assignedAgentKey, requireAssignedAgent: true })
 }
 
 function getDeveloperOrganisationName({ workspace = null, profile = null } = {}) {
@@ -7937,7 +7923,7 @@ function AgentListings({ initialTab = null } = {}) {
                             {form.manualMandateFileName
                               ? `Selected: ${form.manualMandateFileName}. It will be stored as internal evidence when you save.`
                               : normalizeKey(form.manualMandateStatus) === 'signed_external_pending_upload'
-                                ? 'Upload the signed hard-copy mandate to activate the listing from this capture.'
+                                ? 'Upload the signed hard-copy mandate as internal evidence when it is available.'
                                 : 'Add internal evidence if useful, or generate the mandate later from the listing workspace.'}
                           </span>
                         </label>

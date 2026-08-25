@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
 const agentListingsSource = readFileSync(new URL('../src/pages/AgentListings.jsx', import.meta.url), 'utf8')
-const migrationSource = readFileSync(new URL('../../supabase/migrations/202608120001_manual_mandate_listing_activation.sql', import.meta.url), 'utf8')
+const guardRemovalMigrationSource = readFileSync(new URL('../../supabase/migrations/202608250001_remove_listing_mandate_activation_guards.sql', import.meta.url), 'utf8')
 
 function test(name, fn) {
   try {
@@ -14,22 +14,17 @@ function test(name, fn) {
   }
 }
 
-test('manual mandate upload can satisfy Quick Add active-listing readiness', () => {
-  assert.match(agentListingsSource, /function canQuickListingActivateWithMandateStatus\(mandateStatus = '', form = \{\}\)/)
-  assert.match(agentListingsSource, /isQuickListingManualMandateReportedStatus\(mandateStatus\) && Boolean\(normalizeText\(form\?\.manualMandateFileName\)\)/)
+test('Quick Add active-listing readiness is not mandate-upload gated', () => {
+  assert.doesNotMatch(agentListingsSource, /function canQuickListingActivateWithMandateStatus/)
   assert.match(agentListingsSource, /signed: manualMandateFileSelected/)
-  assert.match(agentListingsSource, /Upload the signed hard-copy mandate before marking the listing Active\./)
+  assert.doesNotMatch(agentListingsSource, /Upload the signed hard-copy mandate before marking the listing Active\./)
   assert.doesNotMatch(agentListingsSource, /Manual evidence cannot finalize a mandate or activate this listing/)
   assert.doesNotMatch(agentListingsSource, /requires canonical packet completion before the listing can activate/)
 })
 
-test('database guard accepts manual evidence and hard-copy pending capture', () => {
-  assert.match(migrationSource, /bridge_listing_has_manual_mandate_evidence_phase0/)
-  assert.match(migrationSource, /manual_mandate_evidence/)
-  assert.match(migrationSource, /signed_mandate/)
-  assert.match(migrationSource, /storage_path/)
-  assert.match(migrationSource, /file_url/)
-  assert.match(migrationSource, /signed_external_pending_upload/)
-  assert.match(migrationSource, /p_allow_pending_manual/)
-  assert.match(migrationSource, /not v_public_distribution_requested/)
+test('database mandate activation guards are removed', () => {
+  assert.match(guardRemovalMigrationSource, /drop trigger if exists trg_private_listing_mandate_completion_phase0/)
+  assert.match(guardRemovalMigrationSource, /drop trigger if exists trg_listing_publication_mandate_completion_phase0/)
+  assert.match(guardRemovalMigrationSource, /drop trigger if exists trg_listing_external_publication_mandate_completion_phase0/)
+  assert.match(guardRemovalMigrationSource, /drop function if exists public\.bridge_require_completed_or_manual_mandate_phase0/)
 })

@@ -46,7 +46,6 @@ import {
 import { syncCanonicalToPrivateListingRequirements } from './documents/canonicalDocumentAdapterService'
 import { linkUploadedDocumentToRequirement } from './documents/canonicalDocumentLifecycleService'
 import { resolveRequirements } from './documents/canonicalDocumentResolverService'
-import { canAdvanceWorkflowStage } from './documents/canonicalWorkflowGateService'
 import {
   calculateSellerFactReadiness,
   buildCanonicalSellerOnboardingPayload,
@@ -8283,34 +8282,15 @@ export async function validatePrivateListingTransition(listingId, targetStatus, 
     metadata: options?.metadata || {},
   })
   const currentListingImportActivation = isCurrentListingImportActivation(listing, targetStatus, options?.metadata || {})
-  const canonicalGate = currentListingImportActivation
-    ? {
-        allowed: true,
-        can_advance: true,
-        skipped: true,
-        reason: 'current_listing_import_activation',
-        warning: null,
-        error: null,
-      }
-    : await canAdvanceWorkflowStage({
-        contextType: 'private_listing',
-        contextId: listing.id,
-        targetStage: targetStatus,
-        actorRole: options?.actorRole || 'agent',
-        actorUserId: options?.actorUserId || options?.performedBy || null,
-        client: supabase,
-        override: Boolean(options?.allowOverride),
-      }).catch((error) => ({
-        allowed: true,
-        can_advance: true,
-        skipped: true,
-        reason: null,
-        warning: null,
-        error: error?.message || 'canonical_gate_evaluation_failed',
-      }))
-  const canonicalBlockers = canonicalGate?.allowed === false
-    ? [canonicalGate.reason || 'Canonical document readiness is blocking this listing stage.']
-    : []
+  const canonicalGate = {
+    allowed: true,
+    can_advance: true,
+    skipped: true,
+    reason: 'private_listing_mandate_activation_gate_removed',
+    warning: null,
+    error: null,
+  }
+  const canonicalBlockers = []
   const normalizedTarget = mapLegacyListingStatusToCanonicalStatus(targetStatus)
   const assuranceStages = normalizedTarget === 'transaction_created'
     ? new Set(['mandate_ready', 'listing_ready', 'transaction_ready'])
@@ -8322,7 +8302,7 @@ export async function validatePrivateListingTransition(listingId, targetStatus, 
   const assuranceRequirements = assuranceStages
     ? (listing.documentRequirements || []).filter((requirement) => {
         const key = normalizeKey(requirement?.requirement_key || requirement?.key)
-        if (normalizedTarget === 'mandate_ready' && key === 'signed_mandate') return false
+        if (key.includes('mandate')) return false
         const stage = normalizeKey(requirement?.request_stage || requirement?.requestStage || 'listing_ready')
         return assuranceStages.has(stage)
       })

@@ -91,25 +91,6 @@ function createFakeClient() {
   }
 }
 
-function createMandateBlockedClient() {
-  const client = createFakeClient()
-  client.from = (table) => {
-    const query = new FakeQuery(table, client.operations)
-    if (table === 'private_listings') {
-      query.single = async () => ({
-        data: null,
-        error: {
-          code: 'P0001',
-          message: 'A completed canonical mandate packet or manual signed mandate upload is required before activating this listing.',
-          details: 'PHASE0_PRIVATE_LISTING_CANONICAL_MANDATE_REQUIRED',
-        },
-      })
-    }
-    return query
-  }
-  return client
-}
-
 assert.equal(resolvePrivatePropertyExternalStatus({ privatePropertyStatus: 'For Sale' }), 'active')
 assert.equal(resolvePrivatePropertyExternalStatus({ eventType: 'Activated', eventStatus: 'Active' }), 'active')
 assert.equal(resolvePrivatePropertyExternalStatus({ eventType: 'ErrorDownloadingImages' }), 'failed')
@@ -191,19 +172,6 @@ assert.deepEqual(syncOperation.options, { onConflict: 'private_listing_id,enviro
 assert.equal(syncOperation.payload.agent_ids[0], 'ARCH9-SANDBOX-USER-1')
 assert.equal(syncOperation.payload.last_payload_summary.imageUrlCount, 4)
 assert.equal(syncOperation.payload.last_payload_summary.photoUrls, undefined)
-
-const mandateBlockedClient = createMandateBlockedClient()
-const mandateBlockedResult = await recordPrivatePropertyListingSync({
-  client: mandateBlockedClient,
-  listingId: 'f35d8916-2ae9-4364-b364-fc279e260fa7',
-  propertyId: 'PRV-202608201031-U8YM',
-  branchGuid: '11111111-1111-4111-8111-111111111111',
-  privatePropertyRef: 'T2870287',
-  privatePropertyStatus: 'For Sale',
-})
-assert.equal(mandateBlockedResult.sync.private_property_ref, 'T2870287')
-assert.equal(mandateBlockedResult.listing, null)
-assert.equal(mandateBlockedResult.listingUpdateWarning.details, 'PHASE0_PRIVATE_LISTING_CANONICAL_MANDATE_REQUIRED')
 
 const sql = read('sql/20260824_private_property_listing_syncs.sql')
 assert.match(sql, /create table if not exists public\.private_property_listing_syncs/)

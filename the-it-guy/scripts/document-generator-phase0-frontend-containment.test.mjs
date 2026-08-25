@@ -11,7 +11,7 @@ assert.doesNotMatch(workspace, /handleManualSignedUpload/)
 assert.doesNotMatch(workspace, /uploadFinalSignedPacketArtifact/)
 assert.doesNotMatch(workspace, /updateDocumentPacketVersionFinalArtifact/)
 assert.doesNotMatch(workspace, /recordPhysicalDownloadEvent/)
-assert.match(workspace, /Physical completion is paused until the server can capture the signed PDF/)
+assert.match(workspace, /Physical completion is paused until server-attested signing evidence is available\./)
 
 const deliveryCheck = workspace.lastIndexOf('if (!hasConfirmedSigningDelivery(sendResult))')
 assert.ok(deliveryCheck >= 0, 'delivery confirmation must gate the dispatch result')
@@ -61,14 +61,8 @@ assert.match(subprocess, /manual_otp_evidence_uploaded: true/)
 assert.doesNotMatch(subprocess, /signed_otp_received: true/)
 
 const agentListing = fs.readFileSync('src/pages/AgentListingDetail.jsx', 'utf8')
-const manualMandateUpload = agentListing.slice(
-  agentListing.indexOf('async function handleSignedMandateUpload'),
-  agentListing.indexOf('function handleFollowUpAction'),
-)
-assert.match(manualMandateUpload, /documentType: 'manual_mandate_evidence'/)
-assert.doesNotMatch(manualMandateUpload, /mandateStatus: 'signed_uploaded'/)
-assert.doesNotMatch(manualMandateUpload, /listingStatus:/)
-assert.match(agentListing, /does not mark the mandate signed or activate the listing/)
+assert.doesNotMatch(agentListing, /async function handleSignedMandateUpload/)
+assert.doesNotMatch(agentListing, /does not mark the mandate signed or activate the listing/)
 
 const quickAddListings = fs.readFileSync('src/pages/AgentListings.jsx', 'utf8')
 const quickAddQueue = quickAddListings.slice(
@@ -86,7 +80,8 @@ const quickAddSave = quickAddListings.slice(
 assert.doesNotMatch(quickAddSave, /mandateStatus = 'signed_uploaded'/)
 assert.doesNotMatch(quickAddSave, /listingStatus = 'active'/)
 assert.match(quickAddSave, /activatedAt: null/)
-assert.match(quickAddListings, /function resolveQuickListingStatus\(form\)[\s\S]{0,420}\['active', 'mandate_signed', 'under_offer', 'transaction_created', 'sold'\].includes\(normalized\)\) return 'listing_review'/)
+assert.match(quickAddListings, /function resolveQuickListingStatus\(form[\s\S]{0,260}\['active', 'mandate_signed', 'under_offer', 'transaction_created', 'sold'\]\.includes\(normalized\)[\s\S]{0,120}return normalized === 'mandate_signed' \? 'mandate_signed' : normalized/)
+assert.doesNotMatch(quickAddListings, /canQuickListingActivateWithMandateStatus/)
 assert.match(quickAddListings, /function hasCanonicalFinalMandatePacket/)
 assert.match(quickAddListings, /documentType \|\| document\?\.document_type\) === 'manual_mandate_evidence'/)
 const quickAddActivationTier = quickAddListings.slice(
@@ -97,12 +92,12 @@ assert.doesNotMatch(quickAddActivationTier, /fully_compliant_active/)
 assert.doesNotMatch(quickAddActivationTier, /signed_uploaded/)
 
 const lifecycle = fs.readFileSync('src/lib/privateListingLifecycle.js', 'utf8')
-assert.match(lifecycle, /function hasCanonicalFinalMandatePacket/)
-assert.match(lifecycle, /CANONICAL_MANDATE_COMPLETION_TARGETS = new Set\(\['mandate_signed', 'active'\]\)/)
-assert.match(lifecycle, /function getCanonicalMandateCompletionBlocker/)
+assert.doesNotMatch(lifecycle, /CANONICAL_MANDATE_COMPLETION_TARGETS/)
+assert.doesNotMatch(lifecycle, /function getCanonicalMandateCompletionBlocker|function getMandateCompletionBlocker/)
 assert.match(lifecycle, /nonOverridableBlockers/)
+assert.match(lifecycle, /const nonOverridableBlockers = \[\]/)
 assert.doesNotMatch(lifecycle, /listingHasDocumentSignal/)
-assert.match(lifecycle, /completed canonical mandate packet or manual signed mandate upload/)
+assert.doesNotMatch(lifecycle, /completed canonical mandate packet or manual signed mandate upload/)
 
 const privateListingService = fs.readFileSync('src/services/privateListingService.js', 'utf8')
 const packetSummary = privateListingService.slice(
