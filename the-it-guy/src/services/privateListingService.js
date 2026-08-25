@@ -7002,7 +7002,12 @@ export async function linkPrivateListingDocument(listingId, {
   }
 
   if (mandateDocument) {
-    await updatePrivateListing(normalizedListingId, { mandateStatus: 'signed_uploaded' }, { includeRequirementsAndDocuments: false }).catch((error) => {
+    await updatePrivateListing(normalizedListingId, {
+      listingStatus: 'mandate_signed',
+      listingVisibility: 'internal',
+      isActive: false,
+      mandateStatus: 'signed_uploaded',
+    }, { includeRequirementsAndDocuments: false }).catch((error) => {
       console.warn('[Private Listings] mandate status update skipped after signed mandate link', error)
       return null
     })
@@ -8822,7 +8827,12 @@ export async function uploadPrivateListingDocument(listingId, file, {
   }
 
   if (mandateUpload) {
-    await updatePrivateListing(normalizedListingId, { mandateStatus: 'signed_uploaded' }, { includeRequirementsAndDocuments: false }).catch((error) => {
+    await updatePrivateListing(normalizedListingId, {
+      listingStatus: 'mandate_signed',
+      listingVisibility: 'internal',
+      isActive: false,
+      mandateStatus: 'signed_uploaded',
+    }, { includeRequirementsAndDocuments: false }).catch((error) => {
       console.warn('[Private Listings] mandate status update skipped after signed mandate upload', error)
       return null
     })

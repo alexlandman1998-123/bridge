@@ -60,5 +60,30 @@ assert.match(
   /if \(leadIsSeller && \(listingId \|\| sellerOnboardingToken\)\) return null/,
   'seller leads with explicit onboarding/listing linkage must not fall back to fuzzy listing label matches',
 )
+assert.match(
+  pipelineSource,
+  /const getPrivateListingActivity = createDeferredAction\(loadPrivateListingActions, 'getPrivateListingActivity'\)/,
+  'seller lead workspace should be able to hydrate linked private listing activity',
+)
+assert.match(
+  pipelineSource,
+  /const \[selectedLeadPrivateListingActivities, setSelectedLeadPrivateListingActivities\] = useState\(\[\]\)/,
+  'selected seller lead should keep private listing activity rows in state',
+)
+assert.match(
+  pipelineSource,
+  /for \(const activity of selectedLeadPrivateListingActivities\)[\s\S]*?privateListingActivityPresentation\(activity\)/,
+  'seller lead activity timeline should include linked private listing lifecycle events',
+)
+assert.match(
+  pipelineSource,
+  /const getActivitySourceLabel = \(activity = \{\}, sourceType = 'activity'\) => \{[\s\S]*?typeKey\.includes\('seller_contact'\)[\s\S]*?typeKey\.includes\('seller_lead_created'\)/,
+  'seller lead CRM activity rows should use seller workflow labels instead of generic activity labels',
+)
+assert.match(
+  pipelineSource,
+  /if \(listingId && sellerJourney\.listingCreated && !hasTimelineSignal/,
+  'seller lead timeline must only synthesize listing-created activity from journey evidence',
+)
 
 console.log('seller onboarding progress serialization contract passed')

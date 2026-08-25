@@ -52,7 +52,7 @@ const baseLead = {
     ['new_lead', { key: 'new_lead', label: 'New Lead', status: 'New' }, 'contact_seller', 'Contact Seller'],
     ['contacted', { key: 'contacted', label: 'Contacted', status: 'Active' }, 'send_seller_onboarding', 'Send Seller Onboarding'],
     ['seller_onboarding_sent', { key: 'seller_onboarding_sent', label: 'Onboarding Sent', status: 'Sent' }, 'open_seller_portal', 'Track Seller Onboarding'],
-    ['seller_onboarding_submitted', { key: 'seller_onboarding_submitted', label: 'Onboarding Submitted', status: 'Submitted' }, 'open_documents', 'Open Documents'],
+    ['seller_onboarding_submitted', { key: 'seller_onboarding_submitted', label: 'Onboarding Submitted', status: 'Submitted' }, 'record_hard_copy_mandate', 'Mandate signed as hard copy'],
     ['mandate_signed', { key: 'mandate_signed', label: 'Mandate Signed', status: 'Signed' }, 'create_listing', 'Create Listing'],
   ]
   for (const [stageKey, stage, expectedId, expectedLabel] of cases) {
@@ -77,7 +77,7 @@ const baseLead = {
     lead: { ...baseLead, mandatePacketId: 'packet-1' },
     mandatePacketStatus: { packet: { id: 'packet-1', status: 'generated' } },
   }
-  assert.equal(getNextSellerAction(args).id, 'open_documents')
+  assert.equal(getNextSellerAction(args).id, 'record_hard_copy_mandate')
 }
 
 {
@@ -87,8 +87,8 @@ const baseLead = {
     mandatePacketStatus: { packet: { id: 'packet-1', status: 'generated' } },
   }
   assert.equal(canSendMandate(args), false)
-  assert.equal(getNextSellerAction(args).id, 'open_documents')
-  assert.equal(getNextSellerAction(args).label, 'Open Documents')
+  assert.equal(getNextSellerAction(args).id, 'record_hard_copy_mandate')
+  assert.equal(getNextSellerAction(args).label, 'Mandate signed as hard copy')
   assert.equal(getSellerReadiness(args).actions.some((item) => item.id === 'mark_valuation_complete'), false)
 }
 
@@ -104,7 +104,7 @@ const baseLead = {
     mandatePacketStatus: { packet: { id: 'packet-1', status: 'generated' } },
   }
   assert.equal(canSendMandate(args), false)
-  assert.equal(getNextSellerAction(args).id, 'open_documents')
+  assert.equal(getNextSellerAction(args).id, 'record_hard_copy_mandate')
 }
 
 {
@@ -148,8 +148,8 @@ const baseLead = {
   assert.equal(journey.mandateStatus, 'draft')
   assert.equal(journey.stage.key, 'seller_onboarding_submitted')
   assert.equal(journey.stage.status, 'Submitted')
-  assert.equal(readiness.nextAction.id, 'open_documents')
-  assert.equal(readiness.nextAction.label, 'Open Documents')
+  assert.equal(readiness.nextAction.id, 'record_hard_copy_mandate')
+  assert.equal(readiness.nextAction.label, 'Mandate signed as hard copy')
   assert.equal(readiness.blockers.some((item) => item.id === 'mandate_signature_outstanding'), true)
 }
 
@@ -178,8 +178,8 @@ const baseLead = {
   const journey = buildSellerJourney(args)
   const readiness = getSellerReadiness({ ...args, journey })
   assert.equal(journey.mandateStatus, 'draft')
-  assert.equal(readiness.nextAction.id, 'open_documents')
-  assert.equal(readiness.nextAction.label, 'Open Documents')
+  assert.equal(readiness.nextAction.id, 'record_hard_copy_mandate')
+  assert.equal(readiness.nextAction.label, 'Mandate signed as hard copy')
   assert.equal(readiness.blockers.some((item) => item.id === 'mandate_signature_outstanding'), true)
 }
 
@@ -191,7 +191,7 @@ const baseLead = {
   }
   const readiness = getSellerReadiness(args)
   assert.equal(readiness.readinessStatus, 'action_required')
-  assert.equal(readiness.nextAction.id, 'open_documents')
+  assert.equal(readiness.nextAction.id, 'record_hard_copy_mandate')
   assert.equal(readiness.blockers.find((item) => item.id === 'mandate_signature_outstanding').label, 'Signed Mandate Outstanding')
 }
 

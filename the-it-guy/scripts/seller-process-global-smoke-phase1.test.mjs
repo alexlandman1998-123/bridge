@@ -181,7 +181,7 @@ function assertNextAction(args, expectedId, expectedLabel) {
 }
 
 {
-  const { journey, readiness } = assertNextAction({ lead: submittedLead }, 'open_documents', 'Open Documents')
+  const { journey, readiness } = assertNextAction({ lead: submittedLead }, 'record_hard_copy_mandate', 'Mandate signed as hard copy')
   assert.equal(journey.stage.key, 'seller_onboarding_submitted')
   assert.equal(readiness.canSendMandate, false)
   assert.equal(actionById(readiness.actions, 'open_seller_portal')?.enabled, true)
@@ -191,8 +191,8 @@ function assertNextAction(args, expectedId, expectedLabel) {
 {
   const { journey, readiness } = assertNextAction(
     { lead: submittedLead, mandatePacketStatus: draftMandatePacketStatus },
-    'open_documents',
-    'Open Documents',
+    'record_hard_copy_mandate',
+    'Mandate signed as hard copy',
   )
   assert.equal(journey.stage.key, 'seller_onboarding_submitted')
   assert.equal(journey.mandateStatus, 'draft')
@@ -203,8 +203,8 @@ function assertNextAction(args, expectedId, expectedLabel) {
 {
   const { journey, readiness } = assertNextAction(
     { lead: submittedLead, mandatePacketStatus: sentMandatePacketStatus },
-    'open_documents',
-    'Open Documents',
+    'record_hard_copy_mandate',
+    'Mandate signed as hard copy',
   )
   assert.equal(journey.stage.key, 'seller_onboarding_submitted')
   assert.equal(journey.mandateStatus, 'sent')

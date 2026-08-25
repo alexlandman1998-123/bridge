@@ -228,13 +228,15 @@ function assertJourneyStepStates(journey, currentKey, completedKeys = []) {
       },
     },
   })
-  assert.equal(journey.stage.key, 'listing_created')
-  assert.equal(journey.listingCreated, true)
+  assert.equal(journey.stage.key, 'new_lead')
+  assert.equal(journey.listingDraftExists, true)
+  assert.equal(journey.listingCreated, false)
   assert.equal(journey.listingLive, false)
   assert.equal(journey.mandateStatus, 'not_started')
-  assert.equal(journey.kpis.find((item) => item.key === 'listing').value, 'Draft')
-  assert.equal(journey.steps.find((step) => step.key === 'listing_created').state, 'current')
-  assert.equal(journey.steps.find((step) => step.key === 'listing_created').completed, true)
+  assert.equal(journey.kpis.find((item) => item.key === 'listing').value, 'Not created')
+  assert.equal(journey.steps.find((step) => step.key === 'new_lead').state, 'current')
+  assert.equal(journey.steps.find((step) => step.key === 'listing_created').state, 'upcoming')
+  assert.equal(journey.steps.find((step) => step.key === 'listing_created').completed, false)
   assert.equal(journey.steps.find((step) => step.key === 'listing_live').state, 'upcoming')
   assert.equal(journey.actions.find((item) => item.id === 'create_listing').enabled, false)
   assert.equal(journey.actions.find((item) => item.id === 'open_listing').enabled, true)
@@ -345,6 +347,9 @@ function assertJourneyStepStates(journey, currentKey, completedKeys = []) {
       id: 'listing-onboarding-sent-with-stale-live-stage',
       originatingCrmLeadId: 'lead-1',
       listingStatus: 'onboarding_sent',
+      status: 'active',
+      listingVisibility: 'active_market',
+      isActive: true,
       mandateStatus: 'not_started',
       sellerOnboardingStatus: 'sent',
       sellerOnboarding: { token: 'seller-token-stale-live', status: 'sent' },
@@ -407,16 +412,16 @@ function assertJourneyStepStates(journey, currentKey, completedKeys = []) {
       sellerOnboarding: { token: 'seller-token-active', status: 'submitted' },
     },
   })
-  assert.equal(journey.stage.key, 'listing_live')
-  assert.equal(journey.listingCreated, true)
-  assert.equal(journey.listingLive, true)
+  assert.equal(journey.stage.key, 'seller_onboarding_submitted')
+  assert.equal(journey.listingCreated, false)
+  assert.equal(journey.listingLive, false)
   assert.equal(journey.mandateStatus, 'not_started')
-  assert.equal(journey.kpis.find((item) => item.key === 'listing').value, 'Live')
-  assert.equal(journey.steps.find((step) => step.key === 'seller_onboarding_submitted').state, 'completed')
+  assert.equal(journey.kpis.find((item) => item.key === 'listing').value, 'Not created')
+  assert.equal(journey.steps.find((step) => step.key === 'seller_onboarding_submitted').state, 'current')
   assert.equal(journey.steps.some((step) => step.key === 'mandate_sent'), false)
   assert.equal(journey.steps.find((step) => step.key === 'mandate_signed').state, 'upcoming')
-  assert.equal(journey.steps.find((step) => step.key === 'listing_created').state, 'completed')
-  assert.equal(journey.steps.find((step) => step.key === 'listing_live').state, 'current')
+  assert.equal(journey.steps.find((step) => step.key === 'listing_created').state, 'upcoming')
+  assert.equal(journey.steps.find((step) => step.key === 'listing_live').state, 'upcoming')
 }
 
 {

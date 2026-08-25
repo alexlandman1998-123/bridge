@@ -295,7 +295,7 @@ export function canSendMandate() {
 export function canCreateListing(args = {}) {
   const journey = args.journey || buildSellerJourney(args)
   const blockers = getSellerBlockers({ ...args, journey })
-  return onboardingSubmitted(journey) && !journey.listingCreated && !blockers.some((item) => item.category === 'seller' || item.category === 'onboarding')
+  return onboardingSubmitted(journey) && journey.mandateStatus === 'signed' && !journey.listingCreated && !blockers.some((item) => item.category === 'seller' || item.category === 'onboarding')
 }
 
 export function canActivateListing(args = {}) {
@@ -328,7 +328,7 @@ export function getNextSellerAction(args = {}) {
   if (stageKey === 'new_lead') return action('contact_seller', 'Contact Seller', true, '', { blocker: blockers.find((item) => item.id === 'missing_seller_contact') || null })
   if (stageKey === 'contacted') return action('send_seller_onboarding', 'Send Seller Onboarding', true, '', { blocker: blockers.find((item) => item.id === 'seller_onboarding_not_sent') || blocking })
   if (stageKey === 'seller_onboarding_sent') return action('open_seller_portal', 'Track Seller Onboarding', true, '', { blocker: openPortalBlocker })
-  if (stageKey === 'seller_onboarding_submitted') return action('open_documents', 'Open Documents', true, '', { blocker: blocking })
+  if (stageKey === 'seller_onboarding_submitted') return action('record_hard_copy_mandate', 'Mandate signed as hard copy', true, '', { blocker: blocking })
   if (stageKey === 'mandate_signed') return action('create_listing', 'Create Listing', canCreateListing({ ...args, journey }), blocking?.label || '', { blocker: blocking })
   if (stageKey === 'listing_created') return action('activate_listing', 'Activate Listing', canActivateListing({ ...args, journey }), listingBlocker?.label || '', { blocker: listingBlocker })
   if (stageKey === 'listing_live' || stageKey === 'documents_submitted') return action('monitor_performance', 'Monitor Performance')
@@ -339,10 +339,10 @@ export function getNextSellerAction(args = {}) {
   if (journey.listingLive) return action('monitor_performance', 'Monitor Performance')
   if (journey.listingCreated) return action('activate_listing', 'Activate Listing', canActivateListing({ ...args, journey }), blockers.find((item) => item.category === 'listing_live')?.label || '', { blocker: blockers.find((item) => item.category === 'listing_live') || null })
   if (journey.mandateStatus === 'signed') return action('create_listing', 'Create Listing', canCreateListing({ ...args, journey }), blocking?.label || '', { blocker: blocking })
-  if (journey.mandateStatus === 'sent' || journey.mandateStatus === 'draft') return action('open_documents', 'Open Documents', true, '', { blocker: blockers.find((item) => item.id === 'mandate_signature_outstanding') || null })
+  if (journey.mandateStatus === 'sent' || journey.mandateStatus === 'draft') return action('record_hard_copy_mandate', 'Mandate signed as hard copy', true, '', { blocker: blockers.find((item) => item.id === 'mandate_signature_outstanding') || null })
   if (!onboardingSent(journey)) return action('send_seller_onboarding', 'Send Seller Onboarding')
   if (!onboardingSubmitted(journey) && !hasProgressedPastOnboarding(journey)) return action('open_seller_portal', 'Track Seller Onboarding')
-  if (onboardingSubmitted(journey)) return action('open_documents', 'Open Documents')
+  if (onboardingSubmitted(journey)) return action('record_hard_copy_mandate', 'Mandate signed as hard copy')
   if (hasProgressedPastOnboarding(journey)) return action('open_documents', 'Open Documents', true, '', { blocker: blocking })
   return action('open_seller_portal', 'Send Seller Onboarding', true, blocking?.label || '', { blocker: blocking })
 }
@@ -405,6 +405,7 @@ export function getStageAwareSellerActions({ lead = {}, contact = {}, appointmen
         ]
         : stageKey === 'seller_onboarding_submitted'
           ? [
+            make('record_hard_copy_mandate', 'Mandate signed as hard copy', true),
             make('open_documents', 'Open Documents', true),
             make('open_seller_portal', 'Open Seller Portal', true),
           ]

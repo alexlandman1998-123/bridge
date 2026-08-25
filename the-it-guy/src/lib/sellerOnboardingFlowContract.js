@@ -656,6 +656,50 @@ function normalizeBoolean(value) {
   return ['true', 'yes', 'y', '1', 'on', 'enabled'].includes(normalized)
 }
 
+const GAS_FEATURE_KEYS = Object.freeze([
+  'gas',
+  'gas_geyser',
+  'gas_hob',
+  'gas_stove',
+  'gas_oven',
+  'gas_fireplace',
+  'gas_braai',
+  'gas_installation',
+])
+
+const ELECTRIC_FENCE_FEATURE_KEYS = Object.freeze([
+  'electric_fence',
+  'electric_fencing',
+])
+
+const SOLAR_FEATURE_KEYS = Object.freeze([
+  'solar',
+  'solar_power',
+  'solar_panels',
+  'solar_pv',
+  'solar_installation',
+  'photovoltaic',
+])
+
+const BOREHOLE_FEATURE_KEYS = Object.freeze([
+  'borehole',
+  'wellpoint',
+])
+
+function normalizeFeatureKey(feature) {
+  if (!feature || typeof feature !== 'object') return normalizeKey(feature)
+  return normalizeKey(feature.key || feature.value || feature.id || feature.slug || feature.name || feature.label)
+}
+
+function normalizeFeatureKeys(features = []) {
+  if (!Array.isArray(features)) return []
+  return features.map(normalizeFeatureKey).filter(Boolean)
+}
+
+function hasFeature(featureSet, aliases = []) {
+  return aliases.some((alias) => featureSet.has(normalizeKey(alias)))
+}
+
 function hasOwnValue(source, key) {
   return Boolean(source && Object.prototype.hasOwnProperty.call(source, key) && source[key] !== null && source[key] !== undefined && source[key] !== '')
 }
@@ -1031,6 +1075,7 @@ function collectDynamicTriggers(form = {}, source = {}) {
   const property = form?.property || source?.property || {}
   const occupancy = form?.occupancy || source?.occupancy || {}
   const finance = form?.finance || source?.finance || {}
+  const featureSet = new Set(normalizeFeatureKeys(form?.features || property?.features || source?.property?.features || []))
   const hasBond = normalizeBoolean(
     form?.existingBond ??
       form?.sellerHasExistingBond ??
@@ -1105,34 +1150,32 @@ function collectDynamicTriggers(form = {}, source = {}) {
   }
 
   if (
-    normalizeBoolean(
-      form?.gasInstallation ||
-        form?.gasGeyser ||
-        compliance?.gas_installation ||
-        compliance?.gas_geyser ||
-        source?.compliance?.gas_installation ||
-        false,
-    )
+    normalizeBoolean(form?.gasInstallation) ||
+    normalizeBoolean(form?.gas_installation) ||
+    normalizeBoolean(form?.gasGeyser) ||
+    normalizeBoolean(form?.gas_geyser) ||
+    normalizeBoolean(compliance?.gas_installation) ||
+    normalizeBoolean(compliance?.gas_geyser) ||
+    normalizeBoolean(source?.compliance?.gas_installation) ||
+    hasFeature(featureSet, GAS_FEATURE_KEYS)
   ) {
     triggers.push('gas_compliance_certificate')
   }
   if (
-    normalizeBoolean(
-      form?.solarInstallation ||
-        compliance?.solar_installation ||
-        source?.compliance?.solar_installation ||
-        false,
-    )
+    normalizeBoolean(form?.solarInstallation) ||
+    normalizeBoolean(form?.solar_installation) ||
+    normalizeBoolean(compliance?.solar_installation) ||
+    normalizeBoolean(source?.compliance?.solar_installation) ||
+    hasFeature(featureSet, SOLAR_FEATURE_KEYS)
   ) {
     triggers.push('solar_compliance_documents')
   }
   if (
-    normalizeBoolean(
-      form?.electricFence ||
-        compliance?.electric_fence ||
-        source?.compliance?.electric_fence ||
-        false,
-    )
+    normalizeBoolean(form?.electricFence) ||
+    normalizeBoolean(form?.electric_fence) ||
+    normalizeBoolean(compliance?.electric_fence) ||
+    normalizeBoolean(source?.compliance?.electric_fence) ||
+    hasFeature(featureSet, ELECTRIC_FENCE_FEATURE_KEYS)
   ) {
     triggers.push('electric_fence_certificate')
   }
@@ -1147,16 +1190,14 @@ function collectDynamicTriggers(form = {}, source = {}) {
     triggers.push('plumbing_certificate')
   }
   if (
-    normalizeBoolean(
-      form?.boreholeInstallation ||
-        form?.borehole ||
-        compliance?.borehole_installation ||
-        compliance?.borehole ||
-        property?.borehole ||
-        source?.property?.borehole ||
-        source?.compliance?.borehole_installation ||
-        false,
-    )
+    normalizeBoolean(form?.boreholeInstallation) ||
+    normalizeBoolean(form?.borehole) ||
+    normalizeBoolean(compliance?.borehole_installation) ||
+    normalizeBoolean(compliance?.borehole) ||
+    normalizeBoolean(property?.borehole) ||
+    normalizeBoolean(source?.property?.borehole) ||
+    normalizeBoolean(source?.compliance?.borehole_installation) ||
+    hasFeature(featureSet, BOREHOLE_FEATURE_KEYS)
   ) {
     triggers.push('borehole_certificate')
   }

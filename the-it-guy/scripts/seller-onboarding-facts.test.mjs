@@ -102,6 +102,71 @@ test('transforms seller onboarding into canonical resolver facts', () => {
   assert.equal(facts.context.id, listing.id)
 })
 
+test('only exact compliance amenities create certificate-triggering facts', () => {
+  const genericFacts = transformSellerOnboardingToFacts({
+    sellerFirstName: 'Riley',
+    sellerSurname: 'Seller',
+    email: 'riley@example.com',
+    phone: '0820000001',
+    ownershipType: 'individual',
+    propertyCategory: 'residential',
+    propertyStructureType: 'full_title',
+    propertyType: 'house',
+    mandateType: 'sole',
+    propertyAddress: '10 Security Estate',
+    suburb: 'Sandton',
+    province: 'Gauteng',
+    ratesTaxes: '1500',
+    leviesNotApplicable: true,
+    waterBillingType: 'municipal',
+    features: ['security', 'water'],
+  }, listing)
+
+  assert.equal(genericFacts.compliance.electric_fence, false)
+  assert.equal(genericFacts.compliance.borehole_installation, false)
+  assert.equal(genericFacts.compliance.borehole, false)
+  assert.equal(genericFacts.compliance.water_tank, false)
+  assert.equal(genericFacts.document_triggers.includes('electric_fence_certificate'), false)
+  assert.equal(genericFacts.document_triggers.includes('borehole_certificate'), false)
+
+  const exactFacts = transformSellerOnboardingToFacts({
+    sellerFirstName: 'Riley',
+    sellerSurname: 'Seller',
+    email: 'riley@example.com',
+    phone: '0820000001',
+    ownershipType: 'individual',
+    propertyCategory: 'residential',
+    propertyStructureType: 'full_title',
+    propertyType: 'house',
+    mandateType: 'sole',
+    propertyAddress: '10 Security Estate',
+    suburb: 'Sandton',
+    province: 'Gauteng',
+    ratesTaxes: '1500',
+    leviesNotApplicable: true,
+    waterBillingType: 'municipal',
+    features: [
+      'electric_fence',
+      'gas_geyser',
+      'solar_panels',
+      'borehole',
+      'water_tank',
+      { key: 'inverter_battery', label: 'Inverter / battery' },
+    ],
+  }, listing)
+
+  assert.equal(exactFacts.compliance.electric_fence, true)
+  assert.equal(exactFacts.compliance.gas_installation, true)
+  assert.equal(exactFacts.compliance.solar_installation, true)
+  assert.equal(exactFacts.compliance.borehole_installation, true)
+  assert.equal(exactFacts.compliance.water_tank, true)
+  assert.equal(exactFacts.compliance.inverter_battery, true)
+  assert.equal(exactFacts.document_triggers.includes('electric_fence_certificate'), true)
+  assert.equal(exactFacts.document_triggers.includes('gas_compliance_certificate'), true)
+  assert.equal(exactFacts.document_triggers.includes('solar_compliance_documents'), true)
+  assert.equal(exactFacts.document_triggers.includes('borehole_certificate'), true)
+})
+
 test('captures split owner model, foreign metadata, and owner invite mode', () => {
   const foreignFacts = transformSellerOnboardingToFacts({
     sellerFirstName: 'Morgan',
@@ -112,6 +177,11 @@ test('captures split owner model, foreign metadata, and owner invite mode', () =
     ownerStructureType: 'foreign_individual',
     foreignOwnerCountry: 'United Kingdom',
     idNumber: 'P-123456',
+    taxNumber: '9999999999',
+    taxResident: 'foreign_resident',
+    popiConsent: true,
+    dateOfBirth: '1985-05-10',
+    nationality: 'British',
     foreignResidencyStatus: 'Signing abroad',
     residentialAddress: '10 London Road, London',
     propertyCategory: 'residential',
@@ -144,6 +214,9 @@ test('captures split owner model, foreign metadata, and owner invite mode', () =
     ownerStructureType: 'multiple_owners',
     ownershipType: 'multiple_owners',
     multipleOwnerCaptureMode: 'send_onboarding',
+    taxNumber: '8888888888',
+    taxResident: 'sa_resident',
+    popiConsent: true,
     multipleOwners: [
       { name: 'Alex', surname: 'Owner', email: 'alex@example.com', ownershipShare: '50' },
       { name: 'Kim', surname: 'Owner', email: 'kim@example.com', ownershipShare: '50' },
@@ -242,6 +315,9 @@ test('builds canonical payload with readiness and resolver input', () => {
     email: 'taylor@example.com',
     phone: '0840000000',
     ownershipType: 'trust',
+    taxNumber: '7777777777',
+    taxResident: 'sa_resident',
+    popiConsent: true,
     trustRegistrationNumber: 'IT1234/2024',
     trustName: 'Taylor Family Trust',
     trusteeName: 'Taylor Trustee',
@@ -267,6 +343,7 @@ test('builds canonical payload with readiness and resolver input', () => {
       declarationAccepted: true,
       signature: 'Taylor Trustee',
       signedAt: '2026-06-21',
+      arch9TermsAccepted: true,
     },
   }, listing, { contextType: 'private_listing', contextId: listing.id, listingId: listing.id })
 

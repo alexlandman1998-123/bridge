@@ -123,6 +123,43 @@ function assertRowsAreProperty(rows = [], keys = []) {
 }
 
 {
+  const requirements = getSellerRequiredDocuments({
+    ...baseListing,
+    sellerOnboarding: {
+      ...baseListing.sellerOnboarding,
+      formData: {
+        ...baseFormData,
+        features: ['security', 'water'],
+      },
+    },
+  })
+  const keys = keysOf(requirements)
+  assertNoKeys(
+    keys,
+    ['electric_fence_certificate', 'borehole_certificate', 'gas_compliance_certificate', 'solar_compliance_documents'],
+    'generic amenities should not create compliance requirements',
+  )
+}
+
+{
+  const requirements = getSellerRequiredDocuments({
+    ...baseListing,
+    sellerOnboarding: {
+      ...baseListing.sellerOnboarding,
+      formData: {
+        ...baseFormData,
+        features: ['electric_fencing', 'gas_geyser', 'solar_panels'],
+      },
+    },
+  })
+  const keys = keysOf(requirements)
+  assert.equal(keys.includes('electric_fence_certificate'), true)
+  assert.equal(keys.includes('gas_compliance_certificate'), true)
+  assert.equal(keys.includes('solar_compliance_documents'), true)
+  assert.equal(keys.includes('borehole_certificate'), false)
+}
+
+{
   const formData = {
     ...baseFormData,
     gasInstallation: true,

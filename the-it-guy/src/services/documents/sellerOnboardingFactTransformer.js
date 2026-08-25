@@ -90,6 +90,62 @@ function normalizeKey(value) {
   return normalizeText(value).toLowerCase().replace(/[\s-]+/g, '_')
 }
 
+const GAS_FEATURE_KEYS = Object.freeze([
+  'gas',
+  'gas_geyser',
+  'gas_hob',
+  'gas_stove',
+  'gas_oven',
+  'gas_fireplace',
+  'gas_braai',
+  'gas_installation',
+])
+
+const ELECTRIC_FENCE_FEATURE_KEYS = Object.freeze([
+  'electric_fence',
+  'electric_fencing',
+])
+
+const SOLAR_FEATURE_KEYS = Object.freeze([
+  'solar',
+  'solar_power',
+  'solar_panels',
+  'solar_pv',
+  'solar_installation',
+  'photovoltaic',
+])
+
+const INVERTER_BATTERY_FEATURE_KEYS = Object.freeze([
+  'inverter',
+  'inverter_battery',
+  'battery_backup',
+])
+
+const BOREHOLE_FEATURE_KEYS = Object.freeze([
+  'borehole',
+  'wellpoint',
+])
+
+const WATER_TANK_FEATURE_KEYS = Object.freeze([
+  'water_tank',
+  'jojo_tank',
+  'rainwater_tank',
+])
+
+function normalizeFeatureKey(feature) {
+  if (!feature || typeof feature !== 'object') return normalizeKey(feature)
+  return normalizeKey(feature.key || feature.value || feature.id || feature.slug || feature.name || feature.label)
+}
+
+function normalizeFeatureKeys(features = []) {
+  if (!Array.isArray(features)) return []
+  return features.map(normalizeFeatureKey).filter(Boolean)
+}
+
+function hasFeature(featureSet, aliases = []) {
+  return aliases.some((alias) => featureSet.has(normalizeKey(alias)))
+}
+
 function pickEnum(value, allowed, fallback) {
   const normalized = normalizeKey(value)
   return allowed.includes(normalized) ? normalized : fallback
@@ -299,7 +355,8 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
   const rawPropertyStructureType = normalizePropertyStructureType(form.propertyStructureType || listingSource.propertyStructureType || listingSource.property_structure_type, { fallback: 'other' })
   const propertyStructureType = rawPropertyStructureType === 'estate' ? 'full_title' : rawPropertyStructureType
   const occupancyStatus = normalizeOccupancyStatus(form)
-  const features = Array.isArray(form.features) ? form.features.map(normalizeKey) : []
+  const features = normalizeFeatureKeys(form.features)
+  const featureSet = new Set(features)
   const vatEligibleSeller = flow.seller_branch === 'company' || flow.seller_branch === 'trust'
   const estateOrHoa = normalizeBoolean(form.estateOrHoa, false) || rawPropertyStructureType === 'estate' || Boolean(normalizeText(form.estateName || form.estateComplexName))
   const sectionalTitle = normalizeBoolean(form.sectionalTitle, false) || propertyType === 'sectional_title'
@@ -307,13 +364,26 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
   const commercialProperty = normalizeBoolean(form.commercialProperty, false) || ['commercial', 'industrial', 'mixed_use'].includes(propertyType)
   const bodyCorporate = normalizeBoolean(form.bodyCorporate, false) || sectionalTitle || shareBlock
   const existingBond = normalizeBoolean(form.existingBond ?? form.sellerHasExistingBond ?? form.bondedProperty, false)
-  const gasInstallation = normalizeBoolean(form.gasInstallation ?? form.gasGeyser, false) || features.includes('gas_geyser')
-  const electricFence = normalizeBoolean(form.electricFence, false) || features.includes('security')
-  const solarInstallation = normalizeBoolean(form.solarInstallation, false) || features.includes('solar')
+  const gasInstallation =
+    normalizeBoolean(form.gasInstallation ?? form.gas_installation, false) ||
+    normalizeBoolean(form.gasGeyser ?? form.gas_geyser, false) ||
+    hasFeature(featureSet, GAS_FEATURE_KEYS)
+  const electricFence =
+    normalizeBoolean(form.electricFence ?? form.electric_fence, false) ||
+    hasFeature(featureSet, ELECTRIC_FENCE_FEATURE_KEYS)
+  const solarInstallation =
+    normalizeBoolean(form.solarInstallation ?? form.solar_installation, false) ||
+    hasFeature(featureSet, SOLAR_FEATURE_KEYS)
   const swimmingPool = normalizeBoolean(form.swimmingPool ?? form.pool, false)
-  const boreholeInstallation = normalizeBoolean(form.boreholeInstallation ?? form.borehole, false) || features.includes('borehole') || features.includes('water')
-  const inverterBattery = normalizeBoolean(form.inverterBattery ?? form.inverter_battery, false) || features.includes('inverter_battery')
-  const waterTank = normalizeBoolean(form.waterTank ?? form.water_tank, false) || features.includes('water_tank') || features.includes('water')
+  const boreholeInstallation =
+    normalizeBoolean(form.boreholeInstallation ?? form.borehole, false) ||
+    hasFeature(featureSet, BOREHOLE_FEATURE_KEYS)
+  const inverterBattery =
+    normalizeBoolean(form.inverterBattery ?? form.inverter_battery, false) ||
+    hasFeature(featureSet, INVERTER_BATTERY_FEATURE_KEYS)
+  const waterTank =
+    normalizeBoolean(form.waterTank ?? form.water_tank, false) ||
+    hasFeature(featureSet, WATER_TANK_FEATURE_KEYS)
   const disclosureResponses = form.propertyDisclosure?.responses || form.property_disclosure?.responses || {}
   const disclosureAnswer = (key) => normalizeKey(disclosureResponses?.[key]?.answer || disclosureResponses?.[key])
   const declaredAlterationIssue =

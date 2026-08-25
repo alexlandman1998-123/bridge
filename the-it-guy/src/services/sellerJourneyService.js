@@ -573,8 +573,8 @@ function hasListingShell({ lead = {}, listing = {} } = {}) {
 
 function hasListingCreated({ lead = {}, listing = {}, mandateStatus = '' } = {}) {
   if (!hasListingShell({ lead, listing })) return false
+  if (mandateStatus !== 'signed') return false
   if (hasDirectListingPortalIntake(listing)) return true
-  if (isOnboardingOnlyListingShell({ lead, listing })) return false
   const status = getListingLifecycleStatus(listing)
   const source = getListingSource(listing)
   const explicitListingSource = [
@@ -806,6 +806,7 @@ export function buildListingJourney(listing = {}) {
 export function getSellerJourneyActions({ lead = {}, contact = {}, listing = null, mandatePacketStatus = null } = {}) {
   const onboardingSignals = getSellerOnboardingSignals({ lead, listing })
   const mandateStatus = getMandateStatus({ lead, listing, mandatePacketStatus })
+  const listingShellExists = hasListingShell({ lead, listing })
   const leadStage = getSellerJourneyStageFromLead(lead)
   const leadStageIndex = STAGE_INDEX.get(leadStage?.key) ?? 0
   const listingCreated = hasListingCreated({ lead, listing, mandateStatus })
@@ -815,13 +816,15 @@ export function getSellerJourneyActions({ lead = {}, contact = {}, listing = nul
   const live = listingCreated && isListingLive(listing || lead)
   const sellerPortalToken = firstPresent(lead?.sellerOnboardingToken, lead?.seller_onboarding_token, listing?.sellerOnboarding?.token)
   const canContact = Boolean(firstPresent(contact?.phone, lead?.phone, contact?.email, lead?.email, lead?.sellerPhone, lead?.sellerEmail))
+  const mandateSigned = mandateStatus === 'signed'
   return [
     { id: 'contact_seller', label: 'Contact Seller', enabled: canContact },
     { id: 'send_onboarding', label: 'Send Seller Onboarding', enabled: !onboardingSignals.sent },
     { id: 'open_documents', label: 'Open Documents', enabled: onboardingSubmittedForProgress || mandateStatus !== 'not_started' },
-    { id: 'create_listing', label: 'Create Listing', enabled: !listingCreated },
-    { id: 'open_listing', label: 'Open Listing', enabled: listingCreated },
-    { id: 'activate_listing', label: 'Activate Listing', enabled: listingCreated && !live && mandateStatus === 'signed' },
+    { id: 'record_hard_copy_mandate', label: 'Mandate signed as hard copy', enabled: onboardingSubmittedForProgress && !mandateSigned },
+    { id: 'create_listing', label: mandateSigned ? 'Create Listing' : 'Create Listing Draft', enabled: !listingShellExists },
+    { id: 'open_listing', label: mandateSigned ? 'Open Listing' : 'Open Listing Draft', enabled: listingShellExists },
+    { id: 'activate_listing', label: 'Activate Listing', enabled: listingCreated && !live && mandateSigned },
     { id: 'open_seller_portal', label: 'Track Seller Onboarding', enabled: Boolean(sellerPortalToken) },
   ].map((action) => ({
     ...action,
@@ -845,6 +848,7 @@ export function buildSellerJourney({ lead = {}, contact = {}, listing = null, ma
   const stage = getSellerJourneyStage({ lead, listing, mandatePacketStatus, mandatePacket }) || { key: 'new_lead', label: 'New Lead', status: '' }
   const onboardingSignals = getSellerOnboardingSignals({ lead, listing })
   const mandateStatus = getMandateStatus({ lead, listing, mandatePacketStatus, mandatePacket })
+  const listingShellExists = hasListingShell({ lead, listing })
   const listingCreated = hasListingCreated({ lead, listing, mandateStatus })
   const listingLive = listingCreated && isListingLive(listing || lead)
   const sellerDocuments = buildSellerDocuments({ listing, documents })
@@ -933,6 +937,8 @@ export function buildSellerJourney({ lead = {}, contact = {}, listing = null, ma
     onboardingSubmitted: onboardingSubmittedForProgress,
     listing,
     listingCreated,
+    listingShellExists,
+    listingDraftExists: listingShellExists,
     listingLive,
     documentsSubmitted,
     listingJourney: buildListingJourney(listing || {}),

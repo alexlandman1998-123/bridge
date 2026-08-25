@@ -36,8 +36,8 @@ assert.match(
 
 assert.match(
   serviceSource,
-  /await updatePrivateListing\(normalizedListingId, \{ mandateStatus: 'signed_uploaded' \}, \{ includeRequirementsAndDocuments: false \}\)/,
-  'wet-signed mandate uploads must mark the listing mandate as signed_uploaded',
+  /await updatePrivateListing\(normalizedListingId, \{\s*listingStatus: 'mandate_signed',\s*listingVisibility: 'internal',\s*isActive: false,\s*mandateStatus: 'signed_uploaded',\s*\}, \{ includeRequirementsAndDocuments: false \}\)/s,
+  'wet-signed mandate uploads must keep the listing internal while marking the mandate as signed_uploaded',
 )
 
 assert.match(
