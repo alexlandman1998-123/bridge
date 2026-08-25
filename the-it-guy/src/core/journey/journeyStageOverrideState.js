@@ -129,10 +129,22 @@ export function applyJourneyStageOverrides({
     }
   })
 
+  const explicitCurrentIndex = nextStages.findIndex((stage) => stage.current === true || stage.state === 'current')
+  const latestCompletedIndex = nextStages.reduce((latestIndex, stage, index) => {
+    return (stage.done || stage.completed || stage.state === 'completed') ? index : latestIndex
+  }, -1)
+  const shouldPreserveExplicitCurrent = explicitCurrentIndex >= 0 && latestCompletedIndex <= explicitCurrentIndex
   const firstIncompleteIndex = nextStages.findIndex((stage) => !(stage.done || stage.completed || stage.state === 'completed'))
-  const currentIndex = firstIncompleteIndex >= 0 ? firstIncompleteIndex : nextStages.length - 1
+  const currentIndex = shouldPreserveExplicitCurrent
+    ? explicitCurrentIndex
+    : firstIncompleteIndex >= 0
+      ? firstIncompleteIndex
+      : nextStages.length - 1
 
   return nextStages.map((stage, index) => {
+    if (index === currentIndex) {
+      return { ...stage, current: true, state: 'current' }
+    }
     if (stage.state === 'completed' || stage.done || stage.completed) {
       return { ...stage, state: 'completed' }
     }

@@ -49,6 +49,19 @@ function assertJourneyStepStates(journey, currentKey, completedKeys = []) {
 }
 
 {
+  const journey = buildSellerJourney({
+    lead: {
+      ...baseLead,
+      stage: 'New Lead',
+      status: 'New',
+    },
+  })
+  assert.equal(journey.stage.key, 'new_lead')
+  assert.equal(journey.stage.status, 'New')
+  assertJourneyStepStates(journey, 'new_lead', [])
+}
+
+{
   const stage = getSellerJourneyStage({
     lead: baseLead,
     appointments: [{ appointmentType: 'seller_valuation', status: 'requested', dateTime: '2026-06-03T10:00:00Z' }],
@@ -109,7 +122,8 @@ function assertJourneyStepStates(journey, currentKey, completedKeys = []) {
   assert.equal(journey.mandateStatus, 'draft')
   assert.equal(journey.stage.key, 'mandate_sent')
   assert.equal(journey.stage.status, 'Draft')
-  assert.equal(journey.actions.find((item) => item.id === 'send_mandate')?.label, 'Send for Signature')
+  assert.equal(journey.actions.some((item) => item.id === 'send_mandate'), false)
+  assert.equal(journey.actions.find((item) => item.id === 'open_documents')?.label, 'Open Documents')
 }
 
 {
@@ -136,7 +150,8 @@ function assertJourneyStepStates(journey, currentKey, completedKeys = []) {
   })
   assert.equal(journey.mandateStatus, 'draft')
   assert.equal(journey.stage.key, 'mandate_sent')
-  assert.equal(journey.actions.find((item) => item.id === 'send_mandate')?.label, 'Send for Signature')
+  assert.equal(journey.actions.some((item) => item.id === 'send_mandate'), false)
+  assert.equal(journey.actions.find((item) => item.id === 'open_documents')?.label, 'Open Documents')
 }
 
 {
@@ -160,7 +175,8 @@ function assertJourneyStepStates(journey, currentKey, completedKeys = []) {
     },
   })
   assert.equal(journey.mandateStatus, 'sent')
-  assert.equal(journey.actions.find((item) => item.id === 'view_signing_status')?.enabled, true)
+  assert.equal(journey.actions.some((item) => item.id === 'view_signing_status'), false)
+  assert.equal(journey.actions.find((item) => item.id === 'open_documents')?.enabled, true)
 }
 
 {
@@ -254,7 +270,7 @@ function assertJourneyStepStates(journey, currentKey, completedKeys = []) {
   assert.equal(journey.steps.find((step) => step.key === 'mandate_sent').state, 'upcoming')
   assert.equal(journey.steps.find((step) => step.key === 'mandate_signed').state, 'upcoming')
   assert.equal(journey.steps.find((step) => step.key === 'listing_created').state, 'upcoming')
-  assert.equal(journey.actions.find((item) => item.id === 'generate_mandate').enabled, false)
+  assert.equal(journey.actions.some((item) => item.id === 'generate_mandate'), false)
 }
 
 {
@@ -280,7 +296,8 @@ function assertJourneyStepStates(journey, currentKey, completedKeys = []) {
   assert.equal(journey.stage.key, 'seller_onboarding_sent')
   assert.equal(journey.steps.find((step) => step.key === 'seller_onboarding_sent').state, 'current')
   assert.equal(journey.steps.find((step) => step.key === 'seller_onboarding_submitted').state, 'completed')
-  assert.equal(journey.actions.find((item) => item.id === 'generate_mandate').enabled, true)
+  assert.equal(journey.actions.some((item) => item.id === 'generate_mandate'), false)
+  assert.equal(journey.actions.find((item) => item.id === 'open_documents').enabled, true)
 }
 
 {

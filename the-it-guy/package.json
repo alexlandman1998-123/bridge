@@ -779,6 +779,7 @@
     "test:seller-process-workspace-panel-phase8": "node scripts/seller-process-workspace-panel-phase8.test.mjs",
     "test:seller-process-panel-action-routing-phase9": "node scripts/seller-process-panel-action-routing-phase9.test.mjs",
     "test:seller-listing-conversion-idempotency": "node scripts/seller-listing-conversion-idempotency.test.mjs",
+    "test:seller-lead-listing-prefill-alignment": "node scripts/seller-lead-listing-prefill-alignment.test.mjs",
     "test:seller-listing-publication-mapper": "node scripts/seller-listing-publication-mapper.test.mjs",
     "test:seller-listing-relationship-integrity": "node scripts/seller-listing-relationship-integrity.test.mjs",
     "test:seller-listing-relationship-graph-integrity": "node scripts/seller-listing-relationship-graph-integrity.test.mjs",

@@ -48,7 +48,7 @@ test('applies catch-up overrides to allowed rail stages', () => {
   const stages = applyJourneyStageOverrides({
     entityType: JOURNEY_ENTITY_TYPES.buyerLead,
     stages: [
-      { key: 'captured', label: 'Captured', done: true },
+      { key: 'captured', label: 'Captured', done: true, current: true, state: 'current' },
       { key: 'contacted', label: 'Contacted', done: true },
       { key: 'qualification', label: 'Qualification', done: true },
       { key: 'viewing', label: 'Viewing', done: false, detail: 'Not booked' },
@@ -64,6 +64,22 @@ test('applies catch-up overrides to allowed rail stages', () => {
   assert.equal(viewing.overridden, true)
   assert.equal(viewing.detail, 'Completed by override')
   assert.equal(offer.state, 'current')
+})
+
+test('preserves explicitly current stages even when they also have completion evidence', () => {
+  const stages = applyJourneyStageOverrides({
+    entityType: JOURNEY_ENTITY_TYPES.sellerLead,
+    stages: [
+      { key: 'new_lead', label: 'New Lead', completed: true, current: true, state: 'current' },
+      { key: 'contacted', label: 'Contacted', completed: false, current: false, state: 'upcoming' },
+      { key: 'seller_onboarding_sent', label: 'Onboarding Sent', completed: false, current: false, state: 'upcoming' },
+    ],
+    overrides: [],
+  })
+
+  assert.equal(stages.find((stage) => stage.key === 'new_lead').state, 'current')
+  assert.equal(stages.find((stage) => stage.key === 'contacted').state, 'upcoming')
+  assert.equal(stages.filter((stage) => stage.state === 'current').length, 1)
 })
 
 test('does not let mark-complete override finish hard evidence gates', () => {

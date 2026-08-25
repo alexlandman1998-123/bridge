@@ -739,9 +739,7 @@ export function getSellerJourneyActions({ lead = {}, contact = {}, listing = nul
   return [
     { id: 'contact_seller', label: 'Contact Seller', enabled: canContact },
     { id: 'send_onboarding', label: 'Send Seller Onboarding', enabled: !onboardingSignals.sent },
-    { id: 'generate_mandate', label: 'Generate Mandate', enabled: onboardingSubmittedForProgress && (mandateStatus === 'not_started' || mandateStatus === 'draft') },
-    { id: 'send_mandate', label: 'Send for Signature', enabled: onboardingSubmittedForProgress && mandateStatus === 'draft' },
-    { id: 'view_signing_status', label: 'Track Signature', enabled: mandateStatus !== 'not_started' },
+    { id: 'open_documents', label: 'Open Documents', enabled: onboardingSubmittedForProgress || mandateStatus !== 'not_started' },
     { id: 'create_listing', label: 'Create Listing', enabled: !listingCreated },
     { id: 'open_listing', label: 'Open Listing', enabled: listingCreated },
     { id: 'activate_listing', label: 'Activate Listing', enabled: listingCreated && !live && mandateStatus === 'signed' },
@@ -776,10 +774,11 @@ export function buildSellerJourney({ lead = {}, contact = {}, listing = null, ma
   const leadStage = getSellerJourneyStageFromLead(lead)
   const leadStageIndex = STAGE_INDEX.get(leadStage?.key) ?? 0
   const contactedIndex = STAGE_INDEX.get('contacted') ?? 1
+  const leadIsExplicitlyNew = leadStage?.key === 'new_lead' && ['new', 'created', 'lead'].includes(normalizeKey(leadStage?.status))
   const onboardingSubmittedForProgress = onboardingSignals.submitted ||
     leadStageIndex >= (STAGE_INDEX.get('seller_onboarding_submitted') ?? 2)
   const contactedForProgress = Boolean(
-    leadStageIndex >= contactedIndex ||
+    (!leadIsExplicitlyNew && leadStageIndex >= contactedIndex) ||
       onboardingSignals.sent ||
       mandateStatus !== 'not_started' ||
       listingCreated,

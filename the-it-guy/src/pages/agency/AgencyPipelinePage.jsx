@@ -11,6 +11,7 @@ import Button from '../../components/ui/Button'
 import Field from '../../components/ui/Field'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { isUnsafeFallbackAllowed } from '../../lib/envValidation'
+import { buildSellerLeadListingPrefill } from '../../lib/sellerLeadListingPrefill'
 import {
   SELLER_BASE_PACK_COMPLETION_ROUTES,
   SELLER_BASE_PACK_KEYS,
@@ -132,8 +133,8 @@ import {
 } from '../../core/documents/packetStatusResolver'
 import { getAppointmentTypeLabel, getAppointmentTypeOptions } from '../../lib/appointmentTypeDefinitions'
 import { readViewingRequests } from '../../lib/viewingWorkflow'
-import { JOURNEY_ENTITY_TYPES } from '../../core/journey/journeyStagePolicy'
-import { applyJourneyStageOverrides } from '../../core/journey/journeyStageOverrideState'
+import { JOURNEY_ENTITY_TYPES, JOURNEY_STAGE_ACTIONS } from '../../core/journey/journeyStagePolicy'
+import { applyJourneyStageOverrides, buildJourneyStageOverrideActionModel } from '../../core/journey/journeyStageOverrideState'
 import {
   applyAppointmentTemplate,
   getAppointmentTemplateInstructions,
@@ -203,7 +204,6 @@ const PIPELINE_APPOINTMENT_ROLLING_PAST_DAYS = 45
 const PIPELINE_APPOINTMENT_ROLLING_FUTURE_DAYS = 180
 const PIPELINE_CALENDAR_RANGE_PADDING_DAYS = 7
 const PIPELINE_MANDATE_SIGNING_EMAIL_TIMEOUT_MS = 20000
-const LegalDocumentWorkspace = lazy(() => import('../../components/documents/LegalDocumentWorkspace'))
 const LeadActivityWorkspace = lazy(() => import('../../components/lead-activity/LeadActivityWorkspace'))
 const KingstonsSellerAppointmentsWorkspace = lazy(() => import('../../components/appointments/KingstonsSellerAppointmentsWorkspace'))
 function createDeferredAction(loadModule, actionName) {
@@ -273,6 +273,7 @@ const linkPrivateListingDocument = createDeferredAction(loadPrivateListingAction
 const markPrivateListingDocumentsPendingTransactionPromotion = createDeferredAction(loadPrivateListingActions, 'markPrivateListingDocumentsPendingTransactionPromotion')
 const persistSellerProfileOnboardingFormData = createDeferredAction(loadPrivateListingActions, 'persistSellerProfileOnboardingFormData')
 const sendSellerOnboarding = createDeferredAction(loadPrivateListingActions, 'sendSellerOnboarding')
+const syncPrivateListingDistributionData = createDeferredAction(loadPrivateListingActions, 'syncPrivateListingDistributionData')
 const updatePrivateListing = createDeferredAction(loadPrivateListingActions, 'updatePrivateListing')
 const SELLER_PORTAL_ACTIVATION_SOURCES = Object.freeze({
   sellerLead: 'seller_lead',
@@ -3807,7 +3808,7 @@ function isStaleMandateGenerationRecoveryMessage(value = '') {
 const BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY = 'onboarding_otp'
 const BUYER_ONBOARDING_OTP_WORKSPACE_SOURCE = 'buyer_onboarding_otp_workspace'
 const OFFER_UPLOAD_SUCCESS_PREFIX = 'Offer upload '
-const SELLER_LEAD_WORKSPACE_TAB_KEYS = new Set(['overview', 'seller', 'property', 'mandate', 'appointments', 'documents', 'activity'])
+const SELLER_LEAD_WORKSPACE_TAB_KEYS = new Set(['overview', 'seller', 'property', 'appointments', 'documents', 'activity'])
 const BUYER_PROFILE_WORKSPACE_TAB_KEY = 'buyer_profile'
 const BUYER_LEAD_WORKSPACE_TAB_KEYS = new Set(['overview', BUYER_PROFILE_WORKSPACE_TAB_KEY, BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY, 'properties', 'appointments', 'documents', 'activity'])
 
@@ -8263,55 +8264,6 @@ async function applyPreparedSigningLayoutForQuickFlow({ packetId, versionId, pre
   })
 }
 
-function resolveWorkspaceModeFromAction(actionKey) {
-  const normalized = normalizeText(actionKey).toLowerCase()
-  if (normalized === 'generate') return 'generate'
-  if (normalized === 'edit') return 'edit'
-  if (normalized === 'send') return 'send'
-  if (normalized === 'view_signed') return 'signed'
-  return 'view'
-}
-
-function resolveMandateQuickStartPrimaryLabel(actionKey = '', step = 'details', signingMethod = '') {
-  const normalizedStep = normalizeText(step).toLowerCase() || 'details'
-  const normalizedMethod = normalizeText(signingMethod).toLowerCase()
-  if (normalizedStep === 'details') return 'Generate Mandate'
-  if (normalizedStep === 'method') {
-    if (normalizedMethod === 'physical') return 'Continue to Physical Signing'
-    if (normalizedMethod === 'digital') return 'Confirm Emails'
-    return 'Choose Signing Method'
-  }
-  if (normalizedStep === 'emails') return 'Review Send'
-  if (normalizedStep === 'send') return 'Send for Signature'
-  const normalized = normalizeText(actionKey).toLowerCase()
-  if (normalized === 'send' || normalized === 'edit') return 'Start Signing'
-  return 'Generate & Start Signing'
-}
-
-function resolveMandateQuickStartTitle(step = 'details') {
-  const normalizedStep = normalizeText(step).toLowerCase() || 'details'
-  if (normalizedStep === 'method') return 'Choose signing method'
-  if (normalizedStep === 'emails') return 'Confirm signer emails'
-  if (normalizedStep === 'send') return 'Send mandate for signature'
-  return 'Confirm mandate details'
-}
-
-function resolveMandateQuickStartIntro(actionKey = '', step = 'details', signingMethod = '') {
-  const normalizedStep = normalizeText(step).toLowerCase() || 'details'
-  const normalizedMethod = normalizeText(signingMethod).toLowerCase()
-  if (normalizedStep === 'method') return 'Choose whether this mandate will be signed digitally or handled as a physical signature.'
-  if (normalizedStep === 'emails') return 'Confirm the recipient email addresses before Arch9 creates and sends digital signing links.'
-  if (normalizedStep === 'send') {
-    return normalizedMethod === 'digital'
-      ? 'Review the digital signing recipients, then send the mandate.'
-      : 'Continue to the mandate workspace to manage the physical signature copy.'
-  }
-  const normalized = normalizeText(actionKey).toLowerCase()
-  if (normalized === 'send') return 'The mandate PDF is ready. Confirm the details before choosing how it should be signed.'
-  if (normalized === 'edit') return 'A mandate draft exists. Confirm the details below, then choose how it should be signed.'
-  return 'Confirm the seller, property, and signer details before Arch9 generates the mandate.'
-}
-
 function resolveOtpQuickStartPrimaryLabel() {
   return 'Upload Signed OTP'
 }
@@ -11485,22 +11437,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const sellerPreferredAttorneysCacheRef = useRef(new Map())
   const sellerPreferredAttorneysPrefetchKeyRef = useRef('')
   const sellerPreferredAttorneysRequestRef = useRef(0)
-  const [isMandateGenerating, setIsMandateGenerating] = useState(false)
-  const [isMandateSending, setIsMandateSending] = useState(false)
-  const [mandateQuickStartOpen, setMandateQuickStartOpen] = useState(false)
-  const [mandateQuickStartBusy, setMandateQuickStartBusy] = useState(false)
-  const [mandateQuickStartProgress, setMandateQuickStartProgress] = useState('')
-  const [mandateQuickStartError, setMandateQuickStartError] = useState('')
-  const [mandateQuickStartNotice, setMandateQuickStartNotice] = useState('')
-  const [mandateQuickStartStep, setMandateQuickStartStep] = useState('details')
-  const [mandateQuickStartSigningMethod, setMandateQuickStartSigningMethod] = useState('')
-  const [mandateQuickStartPacketId, setMandateQuickStartPacketId] = useState('')
-  const [mandateQuickStartPacketVersionId, setMandateQuickStartPacketVersionId] = useState('')
-  const [mandateQuickStartEmailDraft, setMandateQuickStartEmailDraft] = useState({ agent: '', seller: '' })
-  const [selectedLeadMandateTemplateReadiness, setSelectedLeadMandateTemplateReadiness] = useState(null)
-  const mandateAutoGenerationAttemptRef = useRef(new Set())
-  const generateMandateFromSellerLeadRef = useRef(null)
-
   const routeLeadRecord = useMemo(() => {
     if (!routeLeadId) return null
     const routeLeadKey = normalizeLeadIdentityKey(routeLeadId)
@@ -11510,9 +11446,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   useEffect(() => {
     routeLeadRecordRef.current = routeLeadRecord
   }, [routeLeadRecord])
-  const [legalWorkspaceOpen, setLegalWorkspaceOpen] = useState(false)
-  const [legalWorkspaceMode, setLegalWorkspaceMode] = useState('view')
-  const [legalWorkspaceInitialAction, setLegalWorkspaceInitialAction] = useState('')
   const [mandatePacketStatus, setMandatePacketStatus] = useState(() => ({
     packetType: 'mandate',
     state: 'NO_PACKET',
@@ -14183,14 +14116,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           id: organisationId,
           name: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
         },
-        templateReadiness: selectedLeadMandateTemplateReadiness,
       }),
-    [currentAgent, organisationId, organisationName, profile, selectedLead, selectedLeadContact, selectedLeadMandateTemplateReadiness],
-  )
-  const selectedLeadHasMandateData = Boolean(
-    selectedLeadMandateReadiness.facts.sellerName &&
-      selectedLeadMandateReadiness.facts.sellerPhone &&
-      (selectedLeadMandateReadiness.facts.propertyAddress || selectedLeadPropertyArea || normalizeText(selectedLead?.propertyInterest || selectedLead?.listingId)),
+    [currentAgent, organisationId, organisationName, profile, selectedLead, selectedLeadContact],
   )
   const selectedLeadOnboardingCompleted =
     selectedLeadMandateReadiness.facts.sellerOnboardingSubmitted ||
@@ -14360,7 +14287,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   useEffect(() => {
     if (!selectedLead) return
-    if (selectedLeadIsSeller && selectedLeadHasKingstonsPipelineSignal && leadWorkspaceTab === 'mandate') {
+    if (selectedLeadIsSeller && leadWorkspaceTab === 'mandate') {
       setLeadWorkspaceTab('documents')
       if (isLeadWorkspaceRoute) replaceLeadWorkspaceTabInUrl('documents')
       return
@@ -14590,16 +14517,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     reloadRecords,
   ])
 
-  const selectedLeadMandateViewLink = useMemo(() => {
-    const directLink = normalizeText(selectedLead?.mandateSigningLink || selectedLead?.mandateSignerLink)
-    if (directLink) return directLink
-    const token = normalizeText(selectedLead?.sellerOnboardingToken)
-    if (!token) return ''
-    const baseLink = buildSellerClientPortalLink(token)
-    if (!baseLink) return ''
-    return `${baseLink}/mandate`
-  }, [selectedLead])
-
   const selectedLeadMandateResolvedState = useMemo(() => {
     const packetState = normalizeKey(mandatePacketStatus?.state)
     const leadState = resolveMandatePacketStateHintFromLead(selectedLead)
@@ -14625,43 +14542,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     if (packetState && !['no_packet', 'unknown'].includes(packetState)) return mandatePacketStatus?.state
     return leadState || mandatePacketStatus?.state
   }, [mandatePacketStatus, selectedLead])
-  const selectedLeadMandateActionState = useMemo(
-    () =>
-      resolveDocumentPacketActionState({
-        packetType: 'mandate',
-        state: selectedLeadMandateResolvedState,
-        isBusy: isMandateGenerating || isMandateSending,
-        warningCount: Array.isArray(mandatePacketStatus?.warnings) ? mandatePacketStatus.warnings.length : 0,
-      }),
-    [isMandateGenerating, isMandateSending, mandatePacketStatus?.warnings, selectedLeadMandateResolvedState],
-  )
-  const selectedLeadMandateActionMeta = useMemo(() => {
-    const stamp = formatPacketStatusMeta(mandatePacketStatus)
-    if (stamp) return stamp
-    if (selectedLeadMandateActionState.actionKey === 'generate') return 'No mandate packet yet.'
-    if (selectedLeadMandateActionState.actionKey === 'edit') return 'Draft exists and can be updated.'
-    if (selectedLeadMandateActionState.actionKey === 'send') return 'Draft generated and ready to send.'
-    if (selectedLeadMandateActionState.actionKey === 'view') return 'Packet was already sent for signature.'
-    if (selectedLeadMandateActionState.actionKey === 'view_signed') return 'Fully signed packet is available.'
-    return ''
-  }, [mandatePacketStatus, selectedLeadMandateActionState.actionKey])
-  const selectedLeadMandateRequiresCompletedOnboarding =
-    selectedLeadIsSeller &&
-    !selectedLeadOnboardingCompleted &&
-    selectedLeadMandateActionState.actionKey === 'generate'
-  const selectedLeadMandateActionDisabled =
-    isMandateGenerating || isMandateSending || mandateQuickStartBusy
-  const selectedLeadMandateActionTitle = selectedLeadMandateRequiresCompletedOnboarding
-    ? 'Review the mandate readiness details before generating or editing.'
-    : !selectedLeadHasMandateData && selectedLeadMandateActionState.actionKey === 'generate'
-      ? 'Review missing seller/property details before generating.'
-      : selectedLeadMandateActionMeta
-  const selectedLeadMandateQuickStartActionKey = normalizeText(selectedLeadMandateActionState?.actionKey).toLowerCase()
-  const selectedLeadMandatePrimaryLabel = ['edit', 'send'].includes(selectedLeadMandateQuickStartActionKey)
-    ? 'Send for Signature'
-    : selectedLeadMandateQuickStartActionKey === 'generate'
-      ? resolveMandateQuickStartPrimaryLabel(selectedLeadMandateQuickStartActionKey, 'details', '')
-    : selectedLeadMandateActionState.label
   useEffect(() => {
     if (!selectedLead || !selectedLeadIsSeller || !isStaleMandateGenerationRecoveryMessage(error)) return
     if (!hasMandateDeliveredOrSignedEvidence({ lead: selectedLead, mandatePacketStatus })) return
@@ -14679,221 +14559,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLeadIsSeller,
     selectedLeadMandateResolvedState,
   ])
-  const selectedLeadMandateTemplateBlocking =
-    isSupabaseConfigured &&
-    selectedLeadMandateQuickStartActionKey === 'generate' &&
-    selectedLeadMandateTemplateReadiness?.ready !== true &&
-    normalizeKey(selectedLeadMandateTemplateReadiness?.status) !== 'checking'
-  useEffect(() => {
-    if (
-      !selectedLead ||
-      !selectedLeadIsSeller ||
-      !organisationId ||
-      selectedLeadMandateQuickStartActionKey !== 'generate' ||
-      !isSupabaseConfigured
-    ) {
-      setSelectedLeadMandateTemplateReadiness(null)
-      return undefined
-    }
-
-    let cancelled = false
-    setSelectedLeadMandateTemplateReadiness({
-      ready: false,
-      status: 'checking',
-      optional: true,
-      value: 'Checking published mandate template route...',
-    })
-
-    async function checkMandateTemplateRoute() {
-      try {
-        const templateContextReadiness = resolveMandateReadiness({
-          lead: selectedLead,
-          contact: selectedLeadContact,
-          agent: currentAgent,
-          agency: {
-            name: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
-            legalName: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
-          },
-          organisation: {
-            id: organisationId,
-            name: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
-          },
-        })
-        const mandateData = templateContextReadiness.mandateData
-        const templateResolution = await resolveActiveTemplate({
-          packetType: 'mandate',
-          moduleType: 'residential',
-          organisationId,
-          includeSections: false,
-          context: {
-            organisationId,
-            validationAction: 'generate',
-            mandateData,
-            sourceContext: mandateData?.sourceContext || {},
-          },
-        })
-        const policy = resolveSignableTemplatePolicy({
-          packetType: 'mandate',
-          template: templateResolution?.template || null,
-          resolutionSource: templateResolution?.source || '',
-        })
-        if (cancelled) return
-        setSelectedLeadMandateTemplateReadiness(describeMandateTemplateReadiness(templateResolution, policy))
-      } catch (templateError) {
-        if (cancelled) return
-        console.warn('[MANDATE] template route readiness check failed', templateError)
-        setSelectedLeadMandateTemplateReadiness({
-          ready: false,
-          status: normalizeText(templateError?.code) || 'unavailable',
-          value: templateError?.message || 'The mandate template route could not be checked. Refresh and try again.',
-        })
-      }
-    }
-
-    void checkMandateTemplateRoute()
-    return () => {
-      cancelled = true
-    }
-  }, [
-    currentAgent,
-    organisationId,
-    organisationName,
-    profile,
-    selectedLead,
-    selectedLeadContact,
-    selectedLeadIsSeller,
-    selectedLeadMandateQuickStartActionKey,
-  ])
-
-  useEffect(() => {
-    if (
-      !selectedLead ||
-      !selectedLeadIsSeller ||
-      !selectedLeadOnboardingCompleted ||
-      !organisationId ||
-      !isSupabaseConfigured ||
-      selectedLeadMandateQuickStartActionKey !== 'generate' ||
-      selectedLeadMandateTemplateReadiness?.ready !== true ||
-      isMandateGenerating
-    ) return undefined
-
-    const existingPacketId = normalizeText(
-      selectedLead?.mandatePacketId ||
-      selectedLead?.mandate_packet_id ||
-      mandatePacketStatus?.packet?.id,
-    )
-    if (isUuidLike(existingPacketId) || isActiveLegalDocumentGenerationJob(mandatePacketStatus?.legalDocumentJob)) return undefined
-
-    const leadKey = normalizeLeadIdentityKey(selectedLead.leadId)
-    if (!leadKey || mandateAutoGenerationAttemptRef.current.has(leadKey)) return undefined
-    mandateAutoGenerationAttemptRef.current.add(leadKey)
-    setMessage('Seller onboarding submitted. Preparing the mandate in the background...')
-
-    let cancelled = false
-    const generateMandateFromSellerLead = generateMandateFromSellerLeadRef.current
-    if (typeof generateMandateFromSellerLead !== 'function') return undefined
-
-    void generateMandateFromSellerLead({
-      onProgress: (message) => {
-        if (!cancelled && normalizeText(message)) setMandateQuickStartProgress(normalizeText(message))
-      },
-    }).then((result) => {
-      if (cancelled) return
-      if (result?.backgroundGenerationQueued) {
-        setMessage('Mandate generation is running in the background. Signing will unlock when the PDF is ready.')
-      }
-    }).catch((autoError) => {
-      if (cancelled) return
-      mandateAutoGenerationAttemptRef.current.delete(leadKey)
-      console.warn('[MANDATE] automatic generation after seller onboarding failed', autoError)
-      setError(autoError?.message || 'Seller onboarding was submitted, but mandate generation could not start automatically.')
-    }).finally(() => {
-      if (!cancelled) setMandateQuickStartProgress('')
-    })
-
-    return () => {
-      cancelled = true
-    }
-  }, [
-    isMandateGenerating,
-    mandatePacketStatus?.legalDocumentJob,
-    mandatePacketStatus?.packet?.id,
-    organisationId,
-    selectedLead,
-    selectedLeadIsSeller,
-    selectedLeadMandateQuickStartActionKey,
-    selectedLeadMandateTemplateReadiness?.ready,
-    selectedLeadOnboardingCompleted,
-  ])
-
-  const selectedLeadMandateQuickStartRows = useMemo(
-    () => selectedLeadMandateReadiness.rows,
-    [selectedLeadMandateReadiness],
-  )
-  const selectedLeadMandateQuickStartBlockers = useMemo(
-    () => selectedLeadMandateReadiness.blockers,
-    [selectedLeadMandateReadiness],
-  )
-  const selectedLeadMandateQuickStartWarnings = useMemo(
-    () => selectedLeadMandateReadiness.warnings,
-    [selectedLeadMandateReadiness],
-  )
-  const mandateQuickStartSellerEmail = normalizeText(selectedLeadContact?.email)
-  const mandateQuickStartAgentEmail = useMemo(() => {
-    const assignedAgentEmail = normalizeText(selectedLead?.assignedAgentEmail).toLowerCase()
-    const currentAgentEmail = normalizeText(currentAgent.email).toLowerCase()
-    return isValidEmail(assignedAgentEmail) ? assignedAgentEmail : currentAgentEmail
-  }, [currentAgent.email, selectedLead?.assignedAgentEmail])
-  const mandateQuickStartAgentName = normalizeText(selectedLead?.assignedAgentName || currentAgent.fullName || currentAgent.email || 'Signing agent')
-  const mandateQuickStartDigitalEmailRows = useMemo(
-    () => [
-      {
-        key: 'agent',
-        label: 'Agent signer',
-        name: mandateQuickStartAgentName,
-        email: normalizeText(mandateQuickStartEmailDraft.agent),
-        ready: isValidEmail(mandateQuickStartEmailDraft.agent),
-        issue: 'Add an email address for the assigned agent before sending digital signing.',
-      },
-      {
-        key: 'seller',
-        label: 'Seller signer',
-        name: [selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ').trim() || 'Seller',
-        email: normalizeText(mandateQuickStartEmailDraft.seller),
-        ready: isValidEmail(mandateQuickStartEmailDraft.seller),
-        issue: 'Add the seller email address before sending digital signing.',
-      },
-    ],
-    [
-      mandateQuickStartAgentName,
-      mandateQuickStartEmailDraft.agent,
-      mandateQuickStartEmailDraft.seller,
-      selectedLeadContact?.firstName,
-      selectedLeadContact?.lastName,
-    ],
-  )
-  const mandateQuickStartDigitalEmailBlockers = useMemo(
-    () => mandateQuickStartDigitalEmailRows.filter((row) => !row.ready).map((row) => row.issue),
-    [mandateQuickStartDigitalEmailRows],
-  )
-  const mandateQuickStartPrimaryDisabled = useMemo(() => {
-    const step = normalizeText(mandateQuickStartStep).toLowerCase() || 'details'
-    if (mandateQuickStartBusy) return true
-    if (step === 'details') {
-      return selectedLeadMandateTemplateBlocking || selectedLeadMandateQuickStartBlockers.length > 0
-    }
-    if (step === 'method') return !['digital', 'physical'].includes(mandateQuickStartSigningMethod)
-    if (step === 'emails' || step === 'send') return mandateQuickStartDigitalEmailBlockers.length > 0
-    return false
-  }, [
-    mandateQuickStartBusy,
-    mandateQuickStartDigitalEmailBlockers,
-    mandateQuickStartSigningMethod,
-    mandateQuickStartStep,
-    selectedLeadMandateQuickStartBlockers,
-    selectedLeadMandateTemplateBlocking,
-  ])
-
   const selectedLeadMandateSignedEvidence = useMemo(() => {
     const mandateSigningStatus = normalizeText(mandatePacketStatus?.signingStatus).toLowerCase()
     const mandatePacketState = normalizeText(mandatePacketStatus?.state || mandatePacketStatus?.packet?.status).toLowerCase()
@@ -16106,6 +15771,21 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       selectedSellerJourney.steps,
     ],
   )
+  const selectedSellerJourneyCurrentRailStep = useMemo(
+    () =>
+      selectedSellerJourneyRailSteps.find((step) => step.current === true || step.state === 'current') ||
+      selectedSellerJourneyRailSteps.find((step) => !(step.completed === true || step.state === 'completed')) ||
+      selectedSellerJourneyRailSteps[0] ||
+      null,
+    [selectedSellerJourneyRailSteps],
+  )
+  const selectedSellerJourneyCanMarkCurrentStepComplete = useMemo(() => {
+    if (!selectedSellerJourneyCurrentRailStep) return false
+    return buildJourneyStageOverrideActionModel({
+      entityType: JOURNEY_ENTITY_TYPES.sellerLead,
+      stage: selectedSellerJourneyCurrentRailStep,
+    }).actions.some((action) => action.key === JOURNEY_STAGE_ACTIONS.markComplete)
+  }, [selectedSellerJourneyCurrentRailStep])
   const defaultSellerJourneyRailStyle = {
     gridTemplateColumns: `repeat(${Math.max(selectedSellerJourney.steps.length, 1)}, minmax(140px, 1fr))`,
   }
@@ -22661,7 +22341,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     if (!selectedLeadIsSeller) {
       throw new Error('Mandates can only be generated for seller leads.')
     }
-    setIsMandateGenerating(true)
     onProgress?.('Preparing template…')
     try {
       const packetTitle = `Mandate - ${[selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ') || 'Seller'}`
@@ -23290,11 +22969,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         setError(formatLegalDocumentGenerationRecovery(mandateError, { packetType: 'mandate' }))
       }
       throw mandateError
-    } finally {
-      setIsMandateGenerating(false)
     }
   }
-  generateMandateFromSellerLeadRef.current = handleGenerateMandateFromSellerLead
 
   async function syncKingstonsSellerPackToListing(listingId, lead = selectedLead, handoffPayload = null) {
     const resolvedListingId = normalizeText(listingId)
@@ -23585,6 +23261,21 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       selectedLead?.seller_property_address,
       sellerLeadPropertyAddress,
     )
+    const conversionCapturedAt = new Date().toISOString()
+    const sellerLeadListingPrefill = buildSellerLeadListingPrefill({
+      lead: selectedLead,
+      contact: selectedLeadContact,
+      listing: selectedLeadLinkedListing,
+      currentAgent,
+      propertyArea: selectedLeadPropertyArea,
+      propertyType: selectedLeadPropertyType,
+      valuationAddress: selectedLeadValuationAddress,
+      capturedAt: conversionCapturedAt,
+    })
+    const prefilledListingPayload = sellerLeadListingPrefill.listingPayload || {}
+    const prefilledPublicationData = sellerLeadListingPrefill.publicationData || {}
+    const prefilledFormData = sellerLeadListingPrefill.sellerOnboardingFormData || {}
+    const prefilledForm = sellerLeadListingPrefill.form || {}
     const useDbFirstListingPersistence = Boolean(isSupabaseConfigured && !MOCK_DATA_ENABLED)
     let createdListingId = ''
     let sellerPackSyncResult = null
@@ -23605,22 +23296,23 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             : 'not_started',
         mandateStatus: mandateStatusForCreation,
         listingVisibility: 'internal',
-        title: normalizeText(selectedLead?.propertyInterest || sellerLeadPropertyAddress),
-        propertyType: normalizeText(selectedLeadPropertyType) || 'House',
+        ...prefilledListingPayload,
+        title: normalizeText(prefilledListingPayload.title || selectedLead?.propertyInterest || sellerLeadPropertyAddress),
+        propertyType: normalizeText(prefilledListingPayload.propertyType || selectedLeadPropertyType) || 'House',
         listingCategory: 'private_sale',
-        askingPrice: Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0,
-        estimatedValue: Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0,
-        addressLine1: sellerLeadStreetAddress,
-        formattedAddress: sellerLeadPropertyAddress,
-        streetAddress: sellerLeadStreetAddress,
-        suburb: normalizeText(selectedLead?.suburb || selectedLead?.areaInterest),
-        city: normalizeText(selectedLead?.city),
-        province: normalizeText(selectedLead?.province),
-        country: normalizeText(selectedLead?.country) || 'South Africa',
-        postalCode: normalizeText(selectedLead?.postalCode),
-        latitude: selectedLead?.latitude ?? null,
-        longitude: selectedLead?.longitude ?? null,
-        googlePlaceId: normalizeText(selectedLead?.googlePlaceId),
+        askingPrice: Number(prefilledListingPayload.askingPrice || selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0,
+        estimatedValue: Number(prefilledListingPayload.estimatedValue || selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0,
+        addressLine1: normalizeText(prefilledListingPayload.addressLine1 || sellerLeadStreetAddress),
+        formattedAddress: normalizeText(prefilledListingPayload.formattedAddress || sellerLeadPropertyAddress),
+        streetAddress: normalizeText(prefilledListingPayload.streetAddress || sellerLeadStreetAddress),
+        suburb: normalizeText(prefilledListingPayload.suburb || selectedLead?.suburb || selectedLead?.areaInterest),
+        city: normalizeText(prefilledListingPayload.city || selectedLead?.city),
+        province: normalizeText(prefilledListingPayload.province || selectedLead?.province),
+        country: normalizeText(prefilledListingPayload.country || selectedLead?.country) || 'South Africa',
+        postalCode: normalizeText(prefilledListingPayload.postalCode || selectedLead?.postalCode),
+        latitude: prefilledListingPayload.latitude ?? selectedLead?.latitude ?? null,
+        longitude: prefilledListingPayload.longitude ?? selectedLead?.longitude ?? null,
+        googlePlaceId: normalizeText(prefilledListingPayload.googlePlaceId || selectedLead?.googlePlaceId),
         ...(kingstonsListingHandoffPayload?.listingPayload || {}),
         source: 'pipeline_seller_conversion',
       })
@@ -23629,6 +23321,42 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         setError('Unable to create canonical listing from this seller lead.')
         return
       }
+      if (created?.existing) {
+        await updatePrivateListing(createdListingId, {
+          ...prefilledListingPayload,
+          listingStatus: listingStatusForCreation,
+          mandateStatus: mandateStatusForCreation,
+          ...(kingstonsListingHandoffPayload?.listingPayload || {}),
+        }, { includeRequirementsAndDocuments: false }).catch((prefillUpdateError) => {
+          console.warn('[AgencyPipelinePage] seller lead listing prefill update skipped for existing listing.', prefillUpdateError)
+        })
+      }
+      await persistSellerProfileOnboardingFormData({
+        listingId: createdListingId,
+        token: normalizeText(selectedLead?.sellerOnboardingToken || selectedLead?.sellerOnboarding?.token),
+        formData: prefilledFormData,
+        status: normalizeText(selectedLead?.sellerOnboardingStatus || '').toLowerCase() === 'completed'
+          ? 'completed'
+          : normalizeText(selectedLead?.sellerOnboardingToken || selectedLead?.sellerOnboarding?.token)
+            ? 'in_progress'
+            : 'not_started',
+        sellerType: sellerLeadListingPrefill.directListingIntake?.seller?.sellerLegalType || prefilledForm.sellerType,
+        ownershipStructure: sellerLeadListingPrefill.directListingIntake?.seller?.ownerStructureType || prefilledForm.ownershipType,
+      }).catch((prefillPersistenceError) => {
+        console.warn('[AgencyPipelinePage] seller lead listing prefill form data persistence skipped.', prefillPersistenceError)
+        return null
+      })
+      await syncPrivateListingDistributionData(createdListingId, {
+        publicationData: {
+          ...prefilledPublicationData,
+          status: 'Draft',
+        },
+        media: sellerLeadListingPrefill.media || {},
+        externalLinks: [],
+      }).catch((distributionError) => {
+        console.warn('[AgencyPipelinePage] seller lead listing draft distribution prefill skipped.', distributionError)
+        return null
+      })
       if (selectedLeadHasKingstonsPipelineSignal) {
         kingstonsListingHandoffPayload = buildKingstonsSellerPackListingHandoffPayload({
           lead: selectedLead,
@@ -23677,26 +23405,32 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           sellerSurname: normalizeText(selectedLeadContact?.lastName),
           sellerEmail: normalizeText(selectedLeadContact?.email),
           sellerPhone: normalizeText(selectedLeadContact?.phone),
-          propertyAddress: sellerLeadPropertyAddress,
-          propertyType: normalizeText(selectedLeadPropertyType) || 'House',
-          estimatedPrice: Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0,
-          listingTitle: normalizeText(selectedLead?.propertyInterest || sellerLeadPropertyAddress),
-          suburb: normalizeText(selectedLead?.suburb || selectedLead?.areaInterest),
-          city: normalizeText(selectedLead?.city),
-          province: normalizeText(selectedLead?.province),
-          country: normalizeText(selectedLead?.country) || 'South Africa',
+          propertyAddress: normalizeText(prefilledForm.propertyAddress || sellerLeadPropertyAddress),
+          propertyType: normalizeText(prefilledForm.propertyType || selectedLeadPropertyType) || 'House',
+          propertyStructureType: normalizeText(prefilledForm.propertyStructureType),
+          estimatedPrice: Number(prefilledForm.askingPrice || selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0,
+          listingTitle: normalizeText(prefilledForm.listingTitle || selectedLead?.propertyInterest || sellerLeadPropertyAddress),
+          suburb: normalizeText(prefilledForm.suburb || selectedLead?.suburb || selectedLead?.areaInterest),
+          city: normalizeText(prefilledForm.city || selectedLead?.city),
+          province: normalizeText(prefilledForm.province || selectedLead?.province),
+          country: normalizeText(prefilledForm.country || selectedLead?.country) || 'South Africa',
+          propertyDetails: prefilledPublicationData,
+          marketing: {
+            imageGallery: sellerLeadListingPrefill.media?.galleryImages || [],
+          },
           propertyData: {
-            formattedAddress: sellerLeadPropertyAddress,
-            streetAddress: sellerLeadStreetAddress,
-            addressLine1: sellerLeadStreetAddress,
-            suburb: normalizeText(selectedLead?.suburb || selectedLead?.areaInterest),
-            city: normalizeText(selectedLead?.city),
-            province: normalizeText(selectedLead?.province),
-            country: normalizeText(selectedLead?.country) || 'South Africa',
-            postalCode: normalizeText(selectedLead?.postalCode),
-            latitude: selectedLead?.latitude ?? null,
-            longitude: selectedLead?.longitude ?? null,
-            googlePlaceId: normalizeText(selectedLead?.googlePlaceId),
+            ...prefilledPublicationData,
+            formattedAddress: normalizeText(prefilledForm.formattedAddress || sellerLeadPropertyAddress),
+            streetAddress: normalizeText(prefilledForm.streetAddress || sellerLeadStreetAddress),
+            addressLine1: normalizeText(prefilledForm.addressLine1 || sellerLeadStreetAddress),
+            suburb: normalizeText(prefilledForm.suburb || selectedLead?.suburb || selectedLead?.areaInterest),
+            city: normalizeText(prefilledForm.city || selectedLead?.city),
+            province: normalizeText(prefilledForm.province || selectedLead?.province),
+            country: normalizeText(prefilledForm.country || selectedLead?.country) || 'South Africa',
+            postalCode: normalizeText(prefilledForm.postalCode || selectedLead?.postalCode),
+            latitude: prefilledForm.latitude ?? selectedLead?.latitude ?? null,
+            longitude: prefilledForm.longitude ?? selectedLead?.longitude ?? null,
+            googlePlaceId: normalizeText(prefilledForm.googlePlaceId || selectedLead?.googlePlaceId),
           },
           assignedAgentName: normalizeText(selectedLead?.assignedAgentName || currentAgent.fullName),
           assignedAgentEmail: normalizeText(selectedLead?.assignedAgentEmail || currentAgent.email),
@@ -23713,21 +23447,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             status: normalizeText(selectedLead?.sellerOnboardingStatus || '').toLowerCase() === 'completed'
               ? SELLER_ONBOARDING_STATUS.COMPLETED
               : SELLER_ONBOARDING_STATUS.NOT_STARTED,
-            formData: {
-              propertyAddress: sellerLeadPropertyAddress,
-              formattedAddress: sellerLeadPropertyAddress,
-              streetAddress: sellerLeadStreetAddress,
-              suburb: normalizeText(selectedLead?.suburb || selectedLead?.areaInterest),
-              city: normalizeText(selectedLead?.city),
-              province: normalizeText(selectedLead?.province),
-              country: normalizeText(selectedLead?.country) || 'South Africa',
-              postalCode: normalizeText(selectedLead?.postalCode),
-              latitude: selectedLead?.latitude ?? null,
-              longitude: selectedLead?.longitude ?? null,
-              googlePlaceId: normalizeText(selectedLead?.googlePlaceId),
-              propertyType: normalizeText(selectedLeadPropertyType),
-              askingPrice: Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0,
-            },
+            formData: prefilledFormData,
           },
           mandate: {
             status: listingMandateSigned ? 'signed_uploaded' : 'draft',
@@ -24242,11 +23962,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       return
     }
     if (['generate_mandate', 'send_mandate', 'view_signing_status', 'view_mandate', 'check_signature_status', 'resend_mandate'].includes(id)) {
-      if (selectedLeadKingstonsDigitalSigningDecision.blocked) {
-        handleLeadWorkspaceTabSelection('documents')
-        return
-      }
-      void handleSelectedLeadMandatePrimaryAction()
+      handleLeadWorkspaceTabSelection('documents')
       return
     }
     if (id === 'create_listing') {
@@ -24474,7 +24190,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       statusPacket?.id,
     )
     if (!mandatePacketId || !isUuidLike(mandatePacketId)) {
-      const errorMessage = 'The mandate packet was not saved yet. Click Generate Mandate again, then send it once the packet is ready.'
+      const errorMessage = 'The mandate packet is not available from Seller Lead anymore. Open Documents to upload or review the signed mandate record.'
       setError(errorMessage)
       return { ok: false, errorMessage }
     }
@@ -24486,7 +24202,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       return { ok: false, errorMessage }
     }
 
-    setIsMandateSending(true)
     try {
       if (isSupabaseConfigured && isUuidLike(mandatePacketId)) {
         const packet = await fetchDocumentPacket(mandatePacketId, { includeVersions: false, includeEvents: false })
@@ -24541,7 +24256,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         const recipientEmail = recipientRole === 'seller' ? sellerEmail : agentRecipientEmail
         const recipientName = recipientRole === 'seller' ? sellerName : agentRecipientName
         const backgroundPacketVersionId = normalizeText(options.packetVersionId)
-        setMandateQuickStartProgress('Sending started…')
+        setMessage('Mandate sending started in the background.')
         const origin =
           (typeof window !== 'undefined' && window.location?.origin)
             ? window.location.origin
@@ -24934,307 +24649,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         recipientEmail,
         delivery: emailDelivery?.delivery || null,
       }
-    } finally {
-      setIsMandateSending(false)
+    } catch (sendError) {
+      const errorMessage = sendError?.message || 'Unable to send mandate right now.'
+      setError(errorMessage)
+      return { ok: false, errorMessage }
     }
-  }
-
-  function openSelectedLeadMandateWorkspace(actionKey = selectedLeadMandateQuickStartActionKey) {
-    const normalizedAction = normalizeKey(actionKey)
-    const workspaceMode = normalizedAction === 'upload_signed' ? 'send' : resolveWorkspaceModeFromAction(actionKey)
-    setMandateQuickStartOpen(false)
-    setLegalWorkspaceInitialAction(normalizedAction === 'upload_signed' ? 'upload_signed' : '')
-    setLegalWorkspaceMode(workspaceMode)
-    setLegalWorkspaceOpen(true)
-  }
-
-  function handleSelectedLeadSignedMandateUploadAction() {
-    if (!selectedLead || !selectedLeadIsSeller) return
-    openSelectedLeadMandateWorkspace('upload_signed')
-  }
-
-  async function handleSelectedLeadMandatePrimaryAction() {
-    if (!selectedLead || !selectedLeadIsSeller) return
-
-    const actionKey = normalizeText(selectedLeadMandateActionState?.actionKey).toLowerCase()
-    if (['view', 'view_signed'].includes(actionKey)) {
-      openSelectedLeadMandateWorkspace(actionKey)
-      return
-    }
-
-    setMandateQuickStartError('')
-    setMandateQuickStartNotice('')
-    setMandateQuickStartProgress('')
-    setMandateQuickStartStep('details')
-    setMandateQuickStartSigningMethod('')
-    setMandateQuickStartPacketId('')
-    setMandateQuickStartPacketVersionId('')
-    setMandateQuickStartEmailDraft({
-      agent: mandateQuickStartAgentEmail,
-      seller: mandateQuickStartSellerEmail,
-    })
-    setMandateQuickStartOpen(true)
-  }
-
-  async function handleMandateQuickStartGenerateAndSend() {
-    if (!selectedLead || !selectedLeadIsSeller) return
-    const currentStep = normalizeText(mandateQuickStartStep).toLowerCase() || 'details'
-
-    if (currentStep === 'method') {
-      if (mandateQuickStartSigningMethod === 'digital') {
-        setMandateQuickStartError('')
-        setMandateQuickStartNotice('')
-        setMandateQuickStartStep('emails')
-        return
-      }
-      if (mandateQuickStartSigningMethod === 'physical') {
-        setMandateQuickStartOpen(false)
-        setMandateQuickStartStep('details')
-        setMandateQuickStartSigningMethod('')
-        setMandateQuickStartPacketVersionId('')
-        setMandateQuickStartEmailDraft({ agent: '', seller: '' })
-        setMandateQuickStartError('')
-        setMandateQuickStartNotice('')
-        setMandateQuickStartProgress('')
-        openSelectedLeadMandateWorkspace('send')
-        setMessage('Mandate prepared. Choose physical signature handling in the mandate workspace.')
-        return
-      }
-      setMandateQuickStartError('Choose digital signing or physical signature before continuing.')
-      setMandateQuickStartNotice('')
-      return
-    }
-
-    if (currentStep === 'emails') {
-      if (mandateQuickStartDigitalEmailBlockers.length) {
-        setMandateQuickStartError(mandateQuickStartDigitalEmailBlockers[0])
-        setMandateQuickStartNotice('')
-        return
-      }
-      setMandateQuickStartError('')
-      setMandateQuickStartNotice('')
-      setMandateQuickStartStep('send')
-      return
-    }
-
-    if (currentStep === 'send' && mandateQuickStartSigningMethod !== 'digital') {
-      setMandateQuickStartError('Choose digital signing before sending signing links.')
-      setMandateQuickStartNotice('')
-      return
-    }
-
-    if (currentStep === 'send' && mandateQuickStartDigitalEmailBlockers.length) {
-      setMandateQuickStartError(mandateQuickStartDigitalEmailBlockers[0])
-      setMandateQuickStartNotice('')
-      return
-    }
-
-    if (selectedLeadMandateTemplateBlocking) {
-      setMandateQuickStartError(selectedLeadMandateTemplateReadiness?.value || 'Checking the published mandate template route. Try again in a moment.')
-      setMandateQuickStartNotice('')
-      return
-    }
-    if (hasMandateDeliveredOrSignedEvidence({ lead: selectedLead, mandatePacketStatus })) {
-      const deliveredState = normalizeKey(selectedLeadMandateResolvedState || resolveMandatePacketStateHintFromLead(selectedLead))
-      const viewAction = getMandateStatePriority(deliveredState) >= 60 ? 'view_signed' : 'view'
-      setMandateQuickStartOpen(false)
-      setMandateQuickStartStep('details')
-      setMandateQuickStartSigningMethod('')
-      setMandateQuickStartPacketId('')
-      setMandateQuickStartPacketVersionId('')
-      setMandateQuickStartEmailDraft({ agent: '', seller: '' })
-      setMandateQuickStartError('')
-      setMandateQuickStartNotice('')
-      setMandateQuickStartProgress('')
-      setError('')
-      setMessage(
-        viewAction === 'view_signed'
-          ? 'This mandate is already signed. Open the signed mandate instead of generating another draft.'
-          : 'This mandate is already sent for signature. Open the current mandate instead of generating another draft.',
-      )
-      openSelectedLeadMandateWorkspace(viewAction)
-      return
-    }
-    if (selectedLeadMandateQuickStartBlockers.length) {
-      setMandateQuickStartError(selectedLeadMandateQuickStartBlockers[0])
-      setMandateQuickStartNotice('')
-      return
-    }
-
-    setMandateQuickStartBusy(true)
-    setMandateQuickStartError('')
-    setMandateQuickStartNotice('')
-    setMandateQuickStartProgress('')
-    try {
-      const actionKey = selectedLeadMandateQuickStartActionKey
-      const statusPacketId = mandatePacketStatus?.packet && documentPacketBelongsToLead(mandatePacketStatus.packet, selectedLead?.leadId)
-        ? normalizeText(mandatePacketStatus.packet.id)
-        : ''
-      const statusGeneratedVersionId = normalizeText(findLatestD3PersistedGeneratedVersion(mandatePacketStatus?.versions || [])?.id)
-      let mandatePacketId = normalizeText(mandateQuickStartPacketId || statusPacketId || selectedLead?.mandatePacketId || selectedLead?.mandatePacket?.id)
-      let mandatePacketVersionId = normalizeText(mandateQuickStartPacketVersionId || statusGeneratedVersionId)
-      let generationJob = mandatePacketStatus?.legalDocumentJob || null
-
-      if (isUuidLike(mandatePacketId) && !isUuidLike(mandatePacketVersionId)) {
-        const recoveredGeneratedStatus = await findLatestLeadMandateStatusWithGeneratedVersion({
-          organisationId,
-          leadId: selectedLead.leadId,
-          excludePacketId: mandatePacketId,
-        }).catch((recoveryError) => {
-          console.warn('[MANDATE] generated mandate packet recovery lookup failed before send', recoveryError)
-          return null
-        })
-        const recoveredPacketId = normalizeText(recoveredGeneratedStatus?.packet?.id)
-        const recoveredVersionId = normalizeText(findLatestD3PersistedGeneratedVersion(recoveredGeneratedStatus?.versions || [])?.id)
-        if (isUuidLike(recoveredPacketId) && isUuidLike(recoveredVersionId)) {
-          mandatePacketId = recoveredPacketId
-          mandatePacketVersionId = recoveredVersionId
-          setMandatePacketStatus(recoveredGeneratedStatus)
-          setMandateQuickStartPacketId(recoveredPacketId)
-          setMandateQuickStartPacketVersionId(recoveredVersionId)
-          void updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, {
-            mandatePacketId: recoveredPacketId,
-            mandateStatus: 'generated',
-          }).catch((syncError) => {
-            console.warn('[MANDATE] recovered generated packet lead sync skipped', syncError)
-          })
-          patchSelectedLeadRecord({
-            mandatePacketId: recoveredPacketId,
-            mandateStatus: 'generated',
-          }, selectedLead.leadId)
-        }
-      }
-
-      const needsGeneration = (currentStep === 'details' && actionKey === 'generate') || !isUuidLike(mandatePacketId) || !isUuidLike(mandatePacketVersionId)
-
-      if (isUuidLike(mandatePacketId) && !isUuidLike(mandatePacketVersionId)) {
-        const jobs = await listLegalDocumentJobsForPacket({ packetId: mandatePacketId, limit: 5 }).catch((jobError) => {
-          console.warn('[MANDATE] background generation job lookup failed before quick start retry', jobError)
-          return []
-        })
-        generationJob = findLatestMandateGenerationJob(jobs) || generationJob
-        if (isActiveLegalDocumentGenerationJob(generationJob)) {
-          const queuedStatus = buildMandateGenerationQueuedStatus({
-            packet: mandatePacketStatus?.packet || { id: mandatePacketId, packet_type: 'mandate', lead_id: normalizeLeadUuid(selectedLead.leadId) || null },
-            versions: mandatePacketStatus?.versions || [],
-            job: generationJob,
-            warnings: mandatePacketStatus?.warnings || [],
-          })
-          setMandatePacketStatus(queuedStatus)
-          setMandateQuickStartPacketId(mandatePacketId)
-          setMandateQuickStartNotice('Mandate generation is already running in the background. Signing will unlock automatically when the PDF is ready.')
-          setMessage('Mandate generation is running in the background. You can come back to send signing as soon as it is ready.')
-          return
-        }
-      }
-
-      if ((currentStep === 'details' || currentStep === 'send') && needsGeneration) {
-        const generated = await handleGenerateMandateFromSellerLead({
-          onProgress: (message) => setMandateQuickStartProgress(normalizeText(message)),
-        })
-        mandatePacketId = normalizeText(
-          generated?.packet?.id ||
-          generated?.status?.packet?.id ||
-          generated?.status?.packetId ||
-          mandatePacketId,
-        )
-        mandatePacketVersionId = normalizeText(
-          generated?.draftReadyOnly === true
-            ? findLatestD3PersistedGeneratedVersion(generated?.status?.versions || [])?.id || mandatePacketVersionId
-            : generated?.version?.id ||
-              findLatestD3PersistedGeneratedVersion(generated?.status?.versions || [])?.id ||
-              mandatePacketVersionId,
-        )
-        generationJob = generated?.job || generated?.status?.legalDocumentJob || generationJob
-        if (generated?.backgroundGenerationQueued || isActiveLegalDocumentGenerationJob(generationJob)) {
-          setMandateQuickStartPacketId(mandatePacketId)
-          setMandateQuickStartNotice('Mandate generation has started in the background. Signing will unlock automatically when the PDF is ready.')
-          return
-        }
-        if (generated?.draftReadyOnly === true) {
-          setMandateQuickStartPacketId(mandatePacketId)
-          setMandateQuickStartNotice('Mandate source draft is saved, but the signable PDF was not confirmed before the database timed out. Refresh after the database hot path recovers, then generate once.')
-          return
-        }
-      }
-
-      if (!isUuidLike(mandatePacketId)) {
-        throw new Error('The mandate was prepared, but no saved packet is available for signing. Open the editor to resolve packet setup.')
-      }
-      if (!isUuidLike(mandatePacketVersionId)) {
-        throw new Error('The mandate PDF was not saved as a generated packet version yet. Click Generate again before sending for signature.')
-      }
-
-      setMandateQuickStartPacketId(mandatePacketId)
-      setMandateQuickStartPacketVersionId(mandatePacketVersionId)
-
-      if (currentStep === 'details') {
-        setMandateQuickStartStep('method')
-        setMandateQuickStartProgress('')
-        return
-      }
-
-      setMandateQuickStartProgress('Starting signing…')
-      const sendResult = await handleSendMandateToSeller({
-        packetId: mandatePacketId,
-        packetVersionId: mandatePacketVersionId,
-        agentEmail: mandateQuickStartEmailDraft.agent,
-        sellerEmail: mandateQuickStartEmailDraft.seller,
-      })
-      if (!sendResult?.ok) {
-        throw new Error(sendResult?.errorMessage || 'Mandate signing could not be started yet. Check the signer emails and try again.')
-      }
-
-      setMandateQuickStartOpen(false)
-      setMandateQuickStartStep('details')
-      setMandateQuickStartSigningMethod('')
-      setMandateQuickStartPacketId('')
-      setMandateQuickStartPacketVersionId('')
-      setMandateQuickStartEmailDraft({ agent: '', seller: '' })
-      setMandateQuickStartNotice('')
-      setMandateQuickStartProgress('')
-    } catch (quickStartError) {
-      setMandateQuickStartNotice('')
-      const mandateAlreadyDeliveredOrSigned = hasMandateDeliveredOrSignedEvidence({ lead: selectedLead, mandatePacketStatus })
-      if (mandateAlreadyDeliveredOrSigned) {
-        setMandateQuickStartOpen(false)
-        setMandateQuickStartError('')
-        setError('')
-        setMessage('This mandate is already sent or signed. Open the current mandate instead of generating another draft.')
-        openSelectedLeadMandateWorkspace(getMandateStatePriority(selectedLeadMandateResolvedState) >= 60 ? 'view_signed' : 'view')
-        return
-      }
-      const recoveryMessage = quickStartError?.code || quickStartError?.details || quickStartError?.validation
-        ? formatLegalDocumentGenerationRecovery(quickStartError, { packetType: 'mandate' })
-        : ''
-      setMandateQuickStartError(recoveryMessage || quickStartError?.message || 'Unable to generate and start signing right now.')
-    } finally {
-      setMandateQuickStartBusy(false)
-      setMandateQuickStartProgress('')
-    }
-  }
-
-  function handleWorkspaceViewMandate() {
-    if (!selectedLeadMandateViewLink) {
-      setError('Mandate link is not available yet. Generate and send the mandate first.')
-      return
-    }
-    const opened = window.open(selectedLeadMandateViewLink, '_blank', 'noopener,noreferrer')
-    if (!opened) window.location.href = selectedLeadMandateViewLink
-  }
-
-  function handleWorkspaceViewSignedMandate() {
-    const versions = Array.isArray(mandatePacketStatus?.versions) ? mandatePacketStatus.versions : []
-    const signedVersion =
-      versions.find((version) => normalizeText(version?.final_signed_file_access_url || version?.final_signed_file_url)) ||
-      null
-    const signedUrl = normalizeText(signedVersion?.final_signed_file_access_url || signedVersion?.final_signed_file_url)
-    if (!signedUrl) {
-      setError('Signed mandate PDF is not available yet. Complete all signatures and finalize the signed record first.')
-      return
-    }
-    const opened = window.open(signedUrl, '_blank', 'noopener,noreferrer')
-    if (!opened) window.location.href = signedUrl
   }
 
   async function handleOpenSellerLeadFinalSignedDocument(documentRow = {}) {
@@ -31092,21 +30511,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                                            handleSellerJourneyAction('open_seller_portal')
 	                                          },
 	                                        },
-                                        ...(selectedLeadHasKingstonsPipelineSignal ? [] : [{
-                                          label: selectedLeadMandatePrimaryLabel,
-                                          Icon: FileText,
-                                          tone: 'text-[#29435d]',
-                                          disabled: selectedLeadMandateActionDisabled,
-                                          title: selectedLeadMandateActionTitle,
-                                          onClick: () => {
-                                            if (selectedLeadMandateActionDisabled) return
-                                            setLeadActionsMenuOpen(false)
-                                            void handleSelectedLeadMandatePrimaryAction()
-                                          },
-                                        }]),
-	                                        {
-	                                          label: 'Schedule Appointment',
-	                                          Icon: CalendarDays,
+		                                        {
+		                                          label: 'Schedule Appointment',
+		                                          Icon: CalendarDays,
 	                                          tone: 'text-[#29435d]',
 	                                          onClick: () => {
 	                                            setLeadActionsMenuOpen(false)
@@ -31497,15 +30904,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       </section>
 
                       <div className="mt-3 scroll-mt-4 overflow-x-auto rounded-[22px] border border-[#dbe7f2] bg-[#fbfdff] p-2 shadow-[0_12px_32px_rgba(31,54,78,0.06)]" role="tablist" aria-label="Lead workspace sections" data-testid="lead-workspace-tabs">
-                        <div className={`grid min-w-[860px] gap-2 ${selectedLeadHasKingstonsPipelineSignal ? 'grid-cols-6' : 'grid-cols-7'}`}>
-                          {[
-                            { key: 'overview', label: 'Overview', meta: '' },
-                            { key: 'seller', label: 'Seller Profile', meta: '' },
-                            { key: 'property', label: 'Property', meta: '' },
-                            ...(selectedLeadHasKingstonsPipelineSignal ? [] : [{ key: 'mandate', label: 'Mandate', meta: '' }]),
-                            { key: 'appointments', label: 'Appointments', meta: selectedLeadAppointments.length },
-                            { key: 'documents', label: 'Documents', meta: '' },
-                            { key: 'activity', label: 'Activity', meta: selectedLeadUnifiedTimeline.length },
+	                        <div className="grid min-w-[860px] grid-cols-6 gap-2">
+	                          {[
+	                            { key: 'overview', label: 'Overview', meta: '' },
+	                            { key: 'seller', label: 'Seller Profile', meta: '' },
+	                            { key: 'property', label: 'Property', meta: '' },
+	                            { key: 'appointments', label: 'Appointments', meta: selectedLeadAppointments.length },
+	                            { key: 'documents', label: 'Documents', meta: '' },
+	                            { key: 'activity', label: 'Activity', meta: selectedLeadUnifiedTimeline.length },
                           ].map((tab) => {
                             const isActive = leadWorkspaceTab === tab.key
                             return (
@@ -31948,22 +31354,24 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                   {isCurrent ? (
                                     <span className="mt-2 rounded-full bg-[#dff4e8] px-2.5 py-1 text-[0.64rem] font-bold uppercase tracking-[0.1em] text-[#0f7b4e]">Live</span>
                                   ) : null}
-                                  <div className="mt-2 flex justify-center">
-                                    <JourneyStageOverrideActions
-                                      organisationId={organisationId}
-                                      entityType={JOURNEY_ENTITY_TYPES.sellerLead}
-                                      entityId={selectedLeadRecordId}
-                                      stage={step}
-                                      onCreated={handleSelectedLeadJourneyOverrideCreated}
-                                      onError={setError}
-                                    />
-                                  </div>
                                 </div>
                               </li>
                             )
                           })}
                         </ol>
                       </div>
+                      {selectedSellerJourneyCanMarkCurrentStepComplete ? (
+                        <div className="flex justify-end border-t border-[#edf3f8] px-5 py-4 sm:px-8">
+                          <JourneyStageOverrideActions
+                            organisationId={organisationId}
+                            entityType={JOURNEY_ENTITY_TYPES.sellerLead}
+                            entityId={selectedLeadRecordId}
+                            stage={selectedSellerJourneyCurrentRailStep}
+                            onCreated={handleSelectedLeadJourneyOverrideCreated}
+                            onError={setError}
+                          />
+                        </div>
+                      ) : null}
                     </section>
 
                     <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,0.85fr)_minmax(0,0.85fr)_minmax(0,0.8fr)] 2xl:grid-cols-[minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,0.8fr)]">
@@ -31975,7 +31383,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               <h3 className="mt-2 line-clamp-2 text-lg font-semibold leading-6 tracking-[-0.03em] text-white">
                                 {selectedLeadHasKingstonsSellerProcess
                                   ? selectedKingstonsProcessAction.title
-                                  : selectedSellerReadiness.nextAction?.label || selectedLeadMandatePrimaryLabel || 'Review seller journey'}
+	                                  : selectedSellerReadiness.nextAction?.label || 'Review seller journey'}
                               </h3>
                               <p className="mt-2 line-clamp-2 text-sm leading-5 text-[#c7d5e2]">
                                 {selectedLeadHasKingstonsSellerProcess
@@ -36662,48 +36070,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   </div>
                   ) : null}
 
-                  {leadWorkspaceTab === 'mandate' && selectedLeadIsSeller && !selectedLeadHasKingstonsPipelineSignal ? (
-                  <div className="space-y-4">
-                    <section className="rounded-[26px] border border-[#dbe7f2] bg-white p-5 shadow-[0_16px_38px_rgba(31,54,78,0.06)] sm:p-6">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8aa0b7]">Mandate</p>
-                          <h4 className="mt-2 text-xl font-semibold tracking-[-0.035em] text-[#102033]">{selectedLeadMandatePrimaryLabel}</h4>
-                          <p className="mt-1 text-sm leading-6 text-[#60758b]">{selectedLeadMandateActionTitle || 'Prepare, generate, send, or view the mandate from the current packet state.'}</p>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Button type="button" size="sm" variant="secondary" onClick={handleSelectedLeadSignedMandateUploadAction}>
-                            <Upload className="h-4 w-4" />
-                            Upload Signed Mandate
-                          </Button>
-                          <Button type="button" size="sm" onClick={() => void handleSelectedLeadMandatePrimaryAction()} disabled={selectedLeadMandateActionDisabled}>
-                            {selectedLeadMandatePrimaryLabel}
-                          </Button>
-                        </div>
-                      </div>
-                      <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                        {selectedLeadMandateQuickStartRows.map((row) => (
-                          <div key={row.key} className={`rounded-[16px] border px-3 py-3 ${row.ready ? 'border-[#d7eadf] bg-[#fbfffd]' : row.optional ? 'border-[#e6eef7] bg-[#fbfdff]' : 'border-[#f1d6d1] bg-[#fff7f5]'}`}>
-                            <p className="text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#8496aa]">{row.label}</p>
-                            <p className="mt-1 break-words text-sm font-semibold text-[#203a54]">{row.value}</p>
-                          </div>
-                        ))}
-                      </div>
-                      {selectedLeadMandateQuickStartBlockers.length ? (
-                        <div className="mt-5 rounded-[16px] border border-[#f1d6d1] bg-[#fff7f5] p-4">
-                          <p className="text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#9f3028]">Mandate Blockers</p>
-                          <div className="mt-3 grid gap-2">
-                            {selectedLeadMandateQuickStartBlockers.map((blocker) => (
-                              <p key={blocker} className="text-sm font-semibold text-[#8d3529]">- {blocker}</p>
-                            ))}
-                          </div>
-                        </div>
-                      ) : null}
-                    </section>
-                  </div>
-                  ) : null}
-
-                  {leadWorkspaceTab === 'documents' ? (
+	                  {leadWorkspaceTab === 'documents' ? (
                   <div className="space-y-4">
                     {isLeadWorkspaceRoute && routeLeadId && ['loading', 'slow'].includes(routeLeadHydrationStatus) ? (
                       <div className="rounded-[18px] border border-[#d8e6f6] bg-[#f4f9ff] px-4 py-3 text-sm font-semibold text-[#315b7a]">
@@ -38850,363 +38217,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         </div>
       </Modal>
 
-      <Modal
-        open={mandateQuickStartOpen}
-        onClose={() => {
-          if (mandateQuickStartBusy) return
-          setMandateQuickStartOpen(false)
-          setMandateQuickStartError('')
-          setMandateQuickStartNotice('')
-          setMandateQuickStartProgress('')
-          setMandateQuickStartStep('details')
-          setMandateQuickStartSigningMethod('')
-          setMandateQuickStartPacketId('')
-          setMandateQuickStartPacketVersionId('')
-          setMandateQuickStartEmailDraft({ agent: '', seller: '' })
-        }}
-        title={resolveMandateQuickStartTitle(mandateQuickStartStep)}
-        subtitle={resolveMandateQuickStartIntro(selectedLeadMandateQuickStartActionKey, mandateQuickStartStep, mandateQuickStartSigningMethod)}
-        className="max-w-2xl"
-        footer={(
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => openSelectedLeadMandateWorkspace('edit')}
-              disabled={mandateQuickStartBusy}
-            >
-              <Pencil className="h-4 w-4" />
-              Review Mandate / Signing
-            </Button>
-            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-              {normalizeText(mandateQuickStartStep).toLowerCase() !== 'details' ? (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() => {
-                    const currentStep = normalizeText(mandateQuickStartStep).toLowerCase()
-                    setMandateQuickStartError('')
-                    setMandateQuickStartNotice('')
-                    setMandateQuickStartProgress('')
-                    if (currentStep === 'send') setMandateQuickStartStep('emails')
-                    else if (currentStep === 'emails') setMandateQuickStartStep('method')
-                    else setMandateQuickStartStep('details')
-                  }}
-                  disabled={mandateQuickStartBusy}
-                >
-                  Back
-                </Button>
-              ) : null}
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => {
-                  setMandateQuickStartOpen(false)
-                  setMandateQuickStartError('')
-                  setMandateQuickStartNotice('')
-                  setMandateQuickStartProgress('')
-                  setMandateQuickStartStep('details')
-                  setMandateQuickStartSigningMethod('')
-                  setMandateQuickStartPacketId('')
-                  setMandateQuickStartPacketVersionId('')
-                  setMandateQuickStartEmailDraft({ agent: '', seller: '' })
-                }}
-                disabled={mandateQuickStartBusy}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                onClick={() => void handleMandateQuickStartGenerateAndSend()}
-                disabled={mandateQuickStartPrimaryDisabled}
-              >
-                {mandateQuickStartBusy
-                  ? (mandateQuickStartProgress || 'Working…')
-                  : resolveMandateQuickStartPrimaryLabel(selectedLeadMandateQuickStartActionKey, mandateQuickStartStep, mandateQuickStartSigningMethod)}
-              </Button>
-            </div>
-          </div>
-        )}
-      >
-        <div className="space-y-4">
-          {normalizeText(mandateQuickStartStep).toLowerCase() === 'details' ? (
-          <>
-            <div className="grid gap-2 sm:grid-cols-2">
-              {selectedLeadMandateQuickStartRows.map((row) => {
-                const ready = row.ready === true
-                const Icon = ready ? CheckCircle2 : AlertTriangle
-                const stateLabel = ready ? 'Ready' : row.optional ? 'Review' : 'Required'
-                return (
-                  <div
-                    key={row.key}
-                    className={`rounded-[14px] border px-3 py-2.5 ${
-                      ready
-                        ? 'border-[#d4eadb] bg-[#f3fbf6]'
-                        : row.optional
-                          ? 'border-[#f2ddb7] bg-[#fff8eb]'
-                          : 'border-[#f0c8c3] bg-[#fff5f4]'
-                    }`}
-                  >
-                    <div className="flex items-start gap-2">
-                      <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${ready ? 'text-[#237a4d]' : row.optional ? 'text-[#a86b17]' : 'text-[#ba382f]'}`} />
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <p className="text-sm font-semibold text-[#243f5a]">{row.label}</p>
-                          <span className={`rounded-full px-2 py-0.5 text-[0.66rem] font-semibold uppercase tracking-[0.08em] ${
-                            ready
-                              ? 'bg-white text-[#237a4d]'
-                              : row.optional
-                                ? 'bg-white text-[#936018]'
-                                : 'bg-white text-[#a63830]'
-                          }`}>
-                            {stateLabel}
-                          </span>
-                        </div>
-                        <p className="mt-1 break-words text-sm text-[#5d7288]">{row.value}</p>
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-
-            {selectedLeadMandateQuickStartBlockers.length ? (
-              <div className="rounded-[14px] border border-[#efc4bf] bg-[#fff4f3] px-3 py-3 text-sm text-[#8f3029]">
-                <p className="font-semibold">Required before sending</p>
-                <ul className="mt-2 list-disc space-y-1 pl-5">
-                  {selectedLeadMandateQuickStartBlockers.map((blocker, index) => (
-                    <li key={`${blocker}-${index}`}>{blocker}</li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-
-            {selectedLeadMandateQuickStartWarnings.length ? (
-              <div className="rounded-[14px] border border-[#f0ddb7] bg-[#fff9ed] px-3 py-3 text-sm text-[#7a5417]">
-                <p className="font-semibold">Can continue, but worth checking</p>
-                <ul className="mt-2 list-disc space-y-1 pl-5">
-                  {selectedLeadMandateQuickStartWarnings.map((warning, index) => (
-                    <li key={`${warning}-${index}`}>{warning}</li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-          </>
-          ) : null}
-
-          {normalizeText(mandateQuickStartStep).toLowerCase() === 'method' ? (
-            <div className="grid gap-3 sm:grid-cols-2">
-              {[
-                {
-                  key: 'digital',
-                  title: 'Digital Signing',
-                  copy: 'Send secure signing links to the agent and seller.',
-                  icon: Mail,
-                },
-                {
-                  key: 'physical',
-                  title: 'Physical Signature',
-                  copy: 'Download the mandate and manage the signed upload manually.',
-                  icon: FileText,
-                },
-              ].map((option) => {
-                const selected = mandateQuickStartSigningMethod === option.key
-                const Icon = option.icon
-                return (
-                  <button
-                    key={option.key}
-                    type="button"
-                    onClick={() => {
-                      setMandateQuickStartSigningMethod(option.key)
-                      setMandateQuickStartError('')
-                    }}
-                    className={`flex min-h-[120px] w-full items-start gap-3 rounded-[14px] border p-4 text-left transition ${
-                      selected
-                        ? 'border-[#1f7a53] bg-[#f1fbf6] shadow-sm'
-                        : 'border-[#dbe7f3] bg-white hover:border-[#abc9e5]'
-                    }`}
-                    disabled={mandateQuickStartBusy}
-                  >
-                    <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full border ${
-                      selected ? 'border-[#9fd4ba] bg-white text-[#1f7a53]' : 'border-[#d7e5f3] bg-[#f7fbff] text-[#476783]'
-                    }`}>
-                      <Icon className="h-5 w-5" />
-                    </span>
-                    <span>
-                      <span className="block text-sm font-semibold text-[#142238]">{option.title}</span>
-                      <span className="mt-1 block text-sm leading-5 text-[#60748b]">{option.copy}</span>
-                    </span>
-                  </button>
-                )
-              })}
-            </div>
-          ) : null}
-
-          {normalizeText(mandateQuickStartStep).toLowerCase() === 'emails' ? (
-            <div className="space-y-3">
-              <div className="grid gap-2 sm:grid-cols-2">
-                {mandateQuickStartDigitalEmailRows.map((row) => {
-                  const ready = row.ready === true
-                  const Icon = ready ? CheckCircle2 : AlertTriangle
-                  return (
-                    <div
-                      key={row.key}
-                      className={`rounded-[14px] border px-3 py-3 ${
-                        ready ? 'border-[#d4eadb] bg-[#f3fbf6]' : 'border-[#f0c8c3] bg-[#fff5f4]'
-                      }`}
-                    >
-                      <div className="flex items-start gap-2">
-                        <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${ready ? 'text-[#237a4d]' : 'text-[#ba382f]'}`} />
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <p className="text-sm font-semibold text-[#243f5a]">{row.label}</p>
-                            <span className={`rounded-full bg-white px-2 py-0.5 text-[0.66rem] font-semibold uppercase tracking-[0.08em] ${ready ? 'text-[#237a4d]' : 'text-[#a63830]'}`}>
-                              {ready ? 'Ready' : 'Required'}
-                            </span>
-                          </div>
-                          <p className="mt-1 text-sm text-[#5d7288]">{row.name}</p>
-                          <label className="sr-only" htmlFor={`mandate-quick-start-${row.key}-email`}>
-                            {row.label} email
-                          </label>
-                          <input
-                            id={`mandate-quick-start-${row.key}-email`}
-                            type="email"
-                            value={row.email}
-                            onChange={(event) => {
-                              const nextEmail = event.target.value
-                              setMandateQuickStartEmailDraft((previous) => ({
-                                ...previous,
-                                [row.key]: nextEmail,
-                              }))
-                              setMandateQuickStartError('')
-                            }}
-                            placeholder={row.issue}
-                            disabled={mandateQuickStartBusy}
-                            className={`mt-2 w-full rounded-[10px] border bg-white px-3 py-2 text-sm font-medium text-[#233f58] outline-none transition focus:border-[#1f7a53] focus:ring-2 focus:ring-[#bfe7d0] ${
-                              ready ? 'border-[#cfe5d8]' : 'border-[#efb9b2]'
-                            }`}
-                          />
-                          {!ready ? (
-                            <p className="mt-1 text-xs font-medium text-[#a63830]">{row.issue}</p>
-                          ) : null}
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-              {mandateQuickStartDigitalEmailBlockers.length ? (
-                <div className="rounded-[14px] border border-[#efc4bf] bg-[#fff4f3] px-3 py-3 text-sm text-[#8f3029]">
-                  <p className="font-semibold">Required before digital signing</p>
-                  <ul className="mt-2 list-disc space-y-1 pl-5">
-                    {mandateQuickStartDigitalEmailBlockers.map((blocker, index) => (
-                      <li key={`${blocker}-${index}`}>{blocker}</li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-
-          {normalizeText(mandateQuickStartStep).toLowerCase() === 'send' ? (
-            <div className="rounded-[14px] border border-[#d7e5f3] bg-white px-4 py-4">
-              <div className="flex items-start gap-3">
-                <Send className="mt-1 h-5 w-5 shrink-0 text-[#1f7a53]" />
-                <div>
-                  <p className="text-sm font-semibold text-[#142238]">Ready to send digital signing</p>
-                  <p className="mt-1 text-sm leading-5 text-[#60748b]">
-                    Arch9 will send the mandate to the agent first. Once the agent signs, the seller-side signing flow can continue.
-                  </p>
-                  <div className="mt-3 space-y-1 text-sm text-[#314a63]">
-                    {mandateQuickStartDigitalEmailRows.map((row) => (
-                      <p key={row.key}>
-                        <span className="font-semibold">{row.label}:</span> {row.email}
-                      </p>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-          ) : null}
-
-          {mandateQuickStartProgress && mandateQuickStartBusy ? (
-            <div className="flex items-center gap-2 rounded-[14px] border border-[#d6e7f5] bg-[#f4f9ff] px-3 py-3 text-sm font-semibold text-[#315f8c]">
-              <RefreshCw className="h-4 w-4 animate-spin" />
-              {mandateQuickStartProgress}
-            </div>
-          ) : null}
-
-          {mandateQuickStartNotice ? (
-            <div className="rounded-[14px] border border-[#b9d9ee] bg-[#f3f9fd] px-3 py-3 text-sm font-semibold text-[#275f82]">
-              {mandateQuickStartNotice}
-            </div>
-          ) : null}
-
-          {mandateQuickStartError ? (
-            <div className="rounded-[14px] border border-[#efc4bf] bg-[#fff4f3] px-3 py-3 text-sm font-semibold text-[#8f3029]">
-              {mandateQuickStartError}
-            </div>
-          ) : null}
-        </div>
-      </Modal>
-
-      {legalWorkspaceOpen ? (
-        <Suspense
-          fallback={(
-            <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/30 px-4 backdrop-blur-sm">
-              <div className="w-full max-w-xl rounded-[24px] border border-white/70 bg-white p-5 shadow-[0_24px_80px_rgba(15,23,42,0.2)]">
-                <div className="h-3 w-28 animate-pulse rounded-full bg-slate-200" />
-                <div className="mt-4 h-7 w-64 max-w-full animate-pulse rounded-2xl bg-slate-200" />
-                <div className="mt-5 space-y-3">
-                  <div className="h-12 animate-pulse rounded-2xl bg-slate-100" />
-                  <div className="h-12 animate-pulse rounded-2xl bg-slate-100" />
-                  <div className="h-12 animate-pulse rounded-2xl bg-slate-100" />
-                </div>
-                <p className="mt-4 text-sm font-semibold text-slate-500">Loading legal document workspace</p>
-              </div>
-            </div>
-          )}
-        >
-          <LegalDocumentWorkspace
-            open={legalWorkspaceOpen}
-            onClose={() => {
-              setLegalWorkspaceOpen(false)
-              setLegalWorkspaceInitialAction('')
-            }}
-            transactionId={selectedLeadLinkedTransactionId}
-            transactionReference={
-              [
-                normalizeText(selectedLead?.propertyInterest || selectedLead?.sellerPropertyAddress),
-                normalizeText(selectedLead?.leadCategory || 'Seller Lead'),
-              ].filter(Boolean).join(' · ') || 'Seller lead document context'
-            }
-            packetType="mandate"
-            packetId={
-              isUuidLike(mandatePacketStatus?.packet?.id) && documentPacketBelongsToLead(mandatePacketStatus?.packet, selectedLead?.leadId)
-                ? normalizeText(mandatePacketStatus.packet.id)
-                : ''
-            }
-            mode={legalWorkspaceMode}
-            initialAction={legalWorkspaceInitialAction}
-            initialStatus={mandatePacketStatus}
-            initialMandateData={selectedLeadMandateReadiness?.mandateData || null}
-            organisationId={organisationId}
-            onGenerate={handleGenerateMandateFromSellerLead}
-            onSend={handleSendMandateToSeller}
-            onEdit={handleGenerateMandateFromSellerLead}
-            onView={handleWorkspaceViewMandate}
-            onViewSigned={handleWorkspaceViewSignedMandate}
-            onRefreshContext={async () => {
-              await refreshSelectedLeadMandateTarget({
-                packetId: normalizeText(mandatePacketStatus?.packet?.id || selectedLeadMandatePacketId),
-                leadId: selectedLeadRecordId,
-                reason: 'phase5_workspace_context_targeted_refresh',
-              })
-            }}
-            autoGenerateEnabled={legalWorkspaceOpen}
-          />
-        </Suspense>
-      ) : null}
     </section>
   )
 }
