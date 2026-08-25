@@ -14,6 +14,8 @@ export const RENTAL_LISTING_INITIAL_FORM = Object.freeze({
   bedrooms: '',
   bathrooms: '',
   parkingBays: '',
+  floorSize: '',
+  erfSize: '',
   monthlyRent: '',
   depositAmount: '',
   availableFrom: '',
@@ -27,8 +29,36 @@ export const RENTAL_LISTING_INITIAL_FORM = Object.freeze({
   mandateStatus: 'not_started',
   marketingApprovalStatus: 'draft',
   description: '',
+  selectedFeatures: [],
+  amenities: [],
+  galleryImages: [],
+  coverImageId: '',
   internalNotes: '',
 })
+
+export const RENTAL_FEATURE_OPTIONS = Object.freeze([
+  'Solar',
+  'Backup Water',
+  'Pool',
+  'Pet Friendly',
+  'Security',
+  'Garden',
+  'Fibre',
+  'Study',
+  'Staff Quarters',
+  'Entertainment Area',
+])
+
+export const RENTAL_AMENITY_OPTIONS = Object.freeze([
+  'Security Estate',
+  'Clubhouse',
+  'Kids Play Area',
+  'Walking Trails',
+  'Built-in Braai',
+  'Solar System',
+  'Staff Accommodation',
+  'Open Plan Living',
+])
 
 export const RENTAL_SELECT_OPTIONS = Object.freeze({
   landlordType: [
@@ -87,6 +117,10 @@ function optionLabel(group, value) {
   return RENTAL_SELECT_OPTIONS[group]?.find((item) => item.value === normalized)?.label || normalized
 }
 
+function normalizeTextArray(values = []) {
+  return [...new Set((Array.isArray(values) ? values : []).map(normalizeText).filter(Boolean))]
+}
+
 function joinNonEmpty(parts, separator = ', ') {
   return parts.map(normalizeText).filter(Boolean).join(separator)
 }
@@ -124,6 +158,16 @@ export function buildRentalCanonicalFacts(form = {}) {
     suburb: normalizeText(form.suburb),
     city: normalizeText(form.city),
     province: normalizeText(form.province),
+    propertyProfile: {
+      propertyType: normalizeText(form.propertyType) || 'Apartment',
+      bedrooms: normalizeNumber(form.bedrooms),
+      bathrooms: normalizeNumber(form.bathrooms),
+      parkingBays: normalizeNumber(form.parkingBays),
+      floorSize: normalizeNumber(form.floorSize),
+      erfSize: normalizeNumber(form.erfSize),
+      selectedFeatures: normalizeTextArray(form.selectedFeatures),
+      amenities: normalizeTextArray(form.amenities),
+    },
     rentalInfo: {
       monthlyRent,
       depositAmount,
@@ -175,12 +219,23 @@ export function buildRentalListingNotes(form = {}) {
     `Inspection: ${optionLabel('inspectionStatus', facts.rentalInfo.inspectionStatus)}`,
     `Marketing approval: ${optionLabel('marketingApprovalStatus', facts.rentalInfo.marketingApprovalStatus)}`,
   ]
+  if (facts.propertyProfile?.floorSize !== null) lines.push(`Floor size: ${facts.propertyProfile.floorSize} m2`)
+  if (facts.propertyProfile?.erfSize !== null) lines.push(`Erf size: ${facts.propertyProfile.erfSize} m2`)
+  if (facts.propertyProfile?.selectedFeatures?.length) lines.push(`Features: ${facts.propertyProfile.selectedFeatures.join(', ')}`)
+  if (facts.propertyProfile?.amenities?.length) lines.push(`Amenities: ${facts.propertyProfile.amenities.join(', ')}`)
+  if (Array.isArray(form.galleryImages) && form.galleryImages.length) lines.push(`Gallery images: ${form.galleryImages.length}`)
   if (normalizeText(form.inspectionNotes)) lines.push(`Inspection notes: ${normalizeText(form.inspectionNotes)}`)
   if (normalizeText(form.internalNotes)) lines.push(`Internal notes: ${normalizeText(form.internalNotes)}`)
   return lines.join('\n')
 }
 
 export function buildRentalPublicationDraft(form = {}) {
+  const rentalFeatures = [
+    optionLabel('furnishedStatus', form.furnishedStatus),
+    optionLabel('petsPolicy', form.petsPolicy),
+    optionLabel('utilitiesPolicy', form.utilitiesPolicy),
+  ].filter(Boolean)
+
   return {
     title: buildRentalListingTitle(form),
     address: normalizeText(form.propertyAddress),
@@ -192,13 +247,11 @@ export function buildRentalPublicationDraft(form = {}) {
     bedrooms: normalizeNumber(form.bedrooms),
     bathrooms: normalizeNumber(form.bathrooms),
     parkingBays: normalizeNumber(form.parkingBays),
+    floorSize: normalizeNumber(form.floorSize),
+    erfSize: normalizeNumber(form.erfSize),
     description: normalizeText(form.description),
-    features: [
-      optionLabel('furnishedStatus', form.furnishedStatus),
-      optionLabel('petsPolicy', form.petsPolicy),
-      optionLabel('utilitiesPolicy', form.utilitiesPolicy),
-    ].filter(Boolean),
-    amenities: [],
+    features: normalizeTextArray([...(Array.isArray(form.selectedFeatures) ? form.selectedFeatures : []), ...rentalFeatures]),
+    amenities: normalizeTextArray(form.amenities),
     status: normalizeText(form.marketingApprovalStatus) === 'approved' ? 'Ready' : 'Draft',
   }
 }

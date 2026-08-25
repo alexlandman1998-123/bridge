@@ -76,6 +76,8 @@ export function getRentalListingFacts(listing = {}) {
   return asObject(
     listing.sellerCanonicalFacts ||
       listing.seller_canonical_facts ||
+      listing.sellerCanonicalFactsJson ||
+      listing.seller_canonical_facts_json ||
       listing.canonicalFacts ||
       listing.canonical_facts,
   )

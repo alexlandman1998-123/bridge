@@ -58,7 +58,7 @@ const apiSource = read('server/property24/api.js')
 assert.match(apiSource, /canUseBrowserProperty24ListingAuth/)
 assert.match(apiSource, /authenticateBrowserProperty24ListingRequest/)
 assert.match(apiSource, /Only the assigned agent or an agency admin can publish this listing to Property24/)
-assert.match(apiSource, /\['previewListing', 'publishListing', 'listingStatus', 'updateListingStatus', 'listingLeads'\]/)
+assert.match(apiSource, /\['previewListing', 'previewRentalListing', 'publishListing', 'listingStatus', 'updateListingStatus', 'listingLeads'\]/)
 assert.match(apiSource, /recordProperty24ListingSync/)
 
 console.log('Property24 listing publish UI contract passed')

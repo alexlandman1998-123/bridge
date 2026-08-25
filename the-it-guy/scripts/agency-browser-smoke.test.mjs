@@ -41,7 +41,7 @@ const smokeSteps = [
     route: '/listings',
     actions: [
       'confirm oversight strip is hidden',
-      'open Quick Add Listing modal',
+      'open Add Listing modal',
       'edit manual seller/property fields',
       'toggle mandate details',
       'close modal safely',
@@ -291,10 +291,10 @@ async function runLeadSmoke(page, baseUrl) {
 
 async function runListingSmoke(page, baseUrl) {
   await openAsAgent(page, baseUrl, '/listings')
-  await page.getByRole('button', { name: /^Quick Add Listing$/ }).first().waitFor({ state: 'visible', timeout: 15_000 })
+  await page.getByRole('button', { name: /^Add Listing$/ }).first().waitFor({ state: 'visible', timeout: 15_000 })
   assert.equal(await page.getByText('Follow-Up Oversight').count(), 0, 'Follow-Up Oversight strip should not render on listings.')
   assert.equal(await page.getByRole('button', { name: /Copy Chase List/ }).count(), 0, 'Copy Chase List action should not render on listings.')
-  await clickByRole(page, 'button', /^Quick Add Listing$/)
+  await clickByRole(page, 'button', /^Add Listing$/)
   await page.getByText('Quick Add is for manual or external listings.').first().waitFor({ state: 'visible', timeout: 10_000 })
   await fillFirstByTextLabel(page, 'Seller name', 'Phase Four Seller')
   await fillFirstByTextLabel(page, 'Seller phone', '+27821111111')

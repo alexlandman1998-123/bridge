@@ -89,9 +89,10 @@ const serviceSource = read('server/property24/healthService.js')
 const packageJson = JSON.parse(read('package.json'))
 const rootPackageJson = JSON.parse(fs.readFileSync(new URL('../../package.json', import.meta.url), 'utf8'))
 
-assert.match(settingsPage, /Operational Health/)
+assert.match(settingsPage, /Diagnostics/)
 assert.match(settingsPage, /\/api\/property24\/settings\/health/)
-assert.match(settingsPage, /Listings tracked/)
+assert.match(settingsPage, /Sync Status/)
+assert.match(settingsPage, /Listings published/)
 assert.match(settingsPage, /Leads imported/)
 assert.match(settingsPage, /loadProperty24Health/)
 

@@ -376,6 +376,14 @@ const CANONICAL_LISTING_STRUCTURE = [
 const TRANSFER_ATTORNEY_OPTIONS = ['Tuckers Attorneys', 'Van Breda Conveyancers', 'Ndlovu Legal Transfers']
 const BOND_ATTORNEY_OPTIONS = ['Bond & Co Attorneys', 'HomeLoan Legal Desk', 'Mokoena Bond Attorneys']
 const BOND_ORIGINATOR_OPTIONS = ['Arch9 Bond Desk', 'Prime Originators', 'Urban Finance Originators']
+const LISTING_SORT_OPTIONS = [
+  { value: 'newest', label: 'Newest first' },
+  { value: 'oldest', label: 'Oldest first' },
+  { value: 'price_desc', label: 'Price high to low' },
+  { value: 'price_asc', label: 'Price low to high' },
+  { value: 'status', label: 'Status' },
+  { value: 'agent', label: 'Agent / name' },
+]
 
 function formatCurrency(value) {
   const amount = Number(value || 0)
@@ -385,6 +393,39 @@ function formatCurrency(value) {
     currency: 'ZAR',
     maximumFractionDigits: 0,
   }).format(amount)
+}
+
+function getListingSortTimestamp(card = {}) {
+  const rawDate = normalizeText(
+    card.updatedAt ||
+      card.updated_at ||
+      card.createdAt ||
+      card.created_at ||
+      card.lastUpdatedAt,
+  )
+  if (!rawDate) return 0
+  const timestamp = new Date(rawDate).getTime()
+  return Number.isFinite(timestamp) ? timestamp : 0
+}
+
+function getListingSortPrice(card = {}) {
+  const price = Number(card.price || card.askingPrice || card.asking_price || card.minPrice || card.fromPrice || 0)
+  return Number.isFinite(price) ? price : 0
+}
+
+function sortListingCards(cards = [], sortBy = 'newest') {
+  return [...cards].sort((left, right) => {
+    if (sortBy === 'oldest') return getListingSortTimestamp(left) - getListingSortTimestamp(right)
+    if (sortBy === 'price_desc') return getListingSortPrice(right) - getListingSortPrice(left)
+    if (sortBy === 'price_asc') return getListingSortPrice(left) - getListingSortPrice(right)
+    if (sortBy === 'status') {
+      return normalizeText(left.inventoryStatusLabel || left.status).localeCompare(normalizeText(right.inventoryStatusLabel || right.status))
+    }
+    if (sortBy === 'agent') {
+      return normalizeText(left.agentName || left.assignedAgent || left.name || left.title).localeCompare(normalizeText(right.agentName || right.assignedAgent || right.name || right.title))
+    }
+    return getListingSortTimestamp(right) - getListingSortTimestamp(left)
+  })
 }
 
 function QuickAddSection({ number, title, copy, children }) {
@@ -2444,6 +2485,7 @@ function AgentListings({ initialTab = null } = {}) {
   const [shareError, setShareError] = useState('')
   const [filters, setFilters] = useState({
     search: '',
+    sortBy: 'newest',
   })
   const [quickAddDuplicateMatches, setQuickAddDuplicateMatches] = useState([])
   const [quickAddDuplicateOverride, setQuickAddDuplicateOverride] = useState(false)
@@ -4068,7 +4110,7 @@ function AgentListings({ initialTab = null } = {}) {
         handoffPlan,
       })
       setWorkflowMessage(
-        `Quick Add Listing created as ${activationTier.workflowLabel}. Mandate follow-up still requires canonical signing before activation.${buildQuickAddSellerPortalInviteMessage(directListingSellerPortalInvite)}${failedDocumentUploads.length ? ` ${failedDocumentUploads.length} supporting document upload${failedDocumentUploads.length === 1 ? '' : 's'} need to be retried.` : ''}`,
+        `Listing created as ${activationTier.workflowLabel}. Mandate follow-up still requires canonical signing before activation.${buildQuickAddSellerPortalInviteMessage(directListingSellerPortalInvite)}${failedDocumentUploads.length ? ` ${failedDocumentUploads.length} supporting document upload${failedDocumentUploads.length === 1 ? '' : 's'} need to be retried.` : ''}`,
       )
       window.dispatchEvent(new Event('itg:listings-updated'))
       return
@@ -4534,6 +4576,8 @@ function AgentListings({ initialTab = null } = {}) {
         suburb: [listing.suburb, listing.city].filter(Boolean).join(', ') || 'Location pending',
         address: [listing.addressLine1 || listing.propertyAddress, listing.suburb, listing.city].filter(Boolean).join(', ') || 'Address pending',
         price: Number(listing.askingPrice || 0),
+        createdAt: listing.createdAt || listing.created_at || '',
+        updatedAt: listing.updatedAt || listing.updated_at || '',
         propertyFacts: getListingPropertyFacts(listing, quickMetadata),
         listingStatusKey: statusKey,
         listingStatusLabel: getListingStatusLabel(statusKey),
@@ -4591,25 +4635,25 @@ function AgentListings({ initialTab = null } = {}) {
   const residentialListingCards = useMemo(() => {
     const query = String(filters.search || '').trim().toLowerCase()
     if (isDeveloperWorkspace) {
-      return privateListingCards.filter((card) => (
+      return sortListingCards(privateListingCards.filter((card) => (
         query
           ? [card.title, card.suburb, card.typeLabel, card.agentName, card.originLabel, card.listingSourceLabel, ...(card.followUpQueue || []).map((item) => item.label)].join(' ').toLowerCase().includes(query)
           : true
-      ))
+      )), filters.sortBy)
     }
     const tabCategoryMap = {
       residential: new Set(['residential', 'mixed_use', 'vacant_land']),
     }
     const targetCategories = tabCategoryMap[listingsTab] || tabCategoryMap.residential
 
-    return privateListingCards.filter((card) => {
+    return sortListingCards(privateListingCards.filter((card) => {
       const categoryMatch = targetCategories.has(String(card.propertyCategory || 'residential').toLowerCase())
       const searchMatch = query
         ? [card.title, card.suburb, card.typeLabel, card.agentName, card.originLabel, ...(card.followUpQueue || []).map((item) => item.label)].join(' ').toLowerCase().includes(query)
         : true
       return categoryMatch && searchMatch
-    })
-  }, [filters.search, isDeveloperWorkspace, listingsTab, privateListingCards])
+    }), filters.sortBy)
+  }, [filters.search, filters.sortBy, isDeveloperWorkspace, listingsTab, privateListingCards])
 
   const developmentCards = useMemo(() => {
     const grouped = new Map()
@@ -4680,7 +4724,10 @@ function AgentListings({ initialTab = null } = {}) {
         activeTransactionsCount: 0,
         registeredTransactionsCount: 0,
         buyerCount: 0,
-        lastUpdatedAt: null,
+        minPrice: Number(option?.min_price || option?.minPrice || option?.from_price || option?.fromPrice || 0) || 0,
+        createdAt: option?.created_at || option?.createdAt || null,
+        updatedAt: option?.updated_at || option?.updatedAt || null,
+        lastUpdatedAt: option?.updated_at || option?.updatedAt || option?.created_at || option?.createdAt || null,
       })
     }
 
@@ -4709,6 +4756,9 @@ function AgentListings({ initialTab = null } = {}) {
           activeTransactionsCount: 0,
           registeredTransactionsCount: 0,
           buyerCount: 0,
+          minPrice: 0,
+          createdAt: row?.development?.created_at || row?.development?.createdAt || null,
+          updatedAt: row?.development?.updated_at || row?.development?.updatedAt || null,
           lastUpdatedAt: null,
         })
       }
@@ -4725,6 +4775,10 @@ function AgentListings({ initialTab = null } = {}) {
       current.buyerCount += row?.buyer?.name ? 1 : 0
       current.unitsSoldOrReserved += stage === 'available' ? 0 : 1
       current.unitsAvailable += stage === 'available' ? 1 : 0
+      const unitPrice = Number(row?.unit?.price || row?.unit?.asking_price || row?.unit?.askingPrice || row?.transaction?.purchase_price || row?.transaction?.purchasePrice || 0)
+      if (Number.isFinite(unitPrice) && unitPrice > 0 && (!current.minPrice || unitPrice < current.minPrice)) {
+        current.minPrice = unitPrice
+      }
 
       const updatedAt = row?.transaction?.updated_at || row?.transaction?.created_at || row?.unit?.updated_at || row?.unit?.created_at || null
       if (!current.lastUpdatedAt || new Date(updatedAt || 0) > new Date(current.lastUpdatedAt || 0)) {
@@ -4767,7 +4821,7 @@ function AgentListings({ initialTab = null } = {}) {
 
   const filteredDevelopmentCards = useMemo(() => {
     const query = String(filters.search || '').trim().toLowerCase()
-    return developmentCards.filter((card) =>
+    return sortListingCards(developmentCards.filter((card) =>
       linkedDevelopmentId && card.id !== linkedDevelopmentId
         ? false
         : query
@@ -4776,8 +4830,8 @@ function AgentListings({ initialTab = null } = {}) {
             .toLowerCase()
             .includes(query)
         : true,
-    )
-  }, [developmentCards, filters.search, linkedDevelopmentId])
+    ), filters.sortBy)
+  }, [developmentCards, filters.search, filters.sortBy, linkedDevelopmentId])
 
   const listingTabCounts = useMemo(
     () => ({
@@ -5072,7 +5126,7 @@ function AgentListings({ initialTab = null } = {}) {
           </div>
         ) : null}
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-          <div className="grid flex-1 gap-3 md:grid-cols-1 xl:max-w-[460px]">
+          <div className="grid flex-1 gap-3 md:grid-cols-[minmax(260px,1fr)_220px] xl:max-w-[720px]">
             <label className="grid gap-2">
               <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Search</span>
               <div className="flex h-[44px] items-center gap-2 rounded-[14px] border border-[#dce6f2] bg-white px-3">
@@ -5091,13 +5145,26 @@ function AgentListings({ initialTab = null } = {}) {
                 />
               </div>
             </label>
+            <label className="grid gap-2">
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Sort by</span>
+              <Field
+                as="select"
+                value={filters.sortBy}
+                onChange={(event) => setFilters((prev) => ({ ...prev, sortBy: event.target.value }))}
+                className="h-[44px] rounded-[14px]"
+              >
+                {LISTING_SORT_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </Field>
+            </label>
           </div>
 
           {isDeveloperWorkspace || listingsTab !== 'developments' ? (
             <div className="flex flex-wrap items-center gap-2 xl:justify-end">
               <Button type="button" variant="secondary" onClick={openQuickAddListingModal} disabled={pilotCreationFreeze.paused}>
                 <Plus size={16} />
-                {isDeveloperWorkspace ? 'Create Listing' : 'Quick Add Listing'}
+                {isDeveloperWorkspace ? 'Create Listing' : 'Add Listing'}
               </Button>
             </div>
           ) : null}
@@ -5374,7 +5441,7 @@ function AgentListings({ initialTab = null } = {}) {
                 ) : null}
                 <Button type="button" variant="secondary" onClick={openManualListingModal} disabled={pilotCreationFreeze.paused}>
                   <Plus size={16} />
-                  {isDeveloperWorkspace ? 'Create Listing' : 'Quick Add Listing'}
+                  {isDeveloperWorkspace ? 'Create Listing' : 'Add Listing'}
                 </Button>
               </div>
             </div>
@@ -5722,7 +5789,7 @@ function AgentListings({ initialTab = null } = {}) {
                     </span>
                     <div>
                       <h3 className="text-2xl font-bold tracking-normal text-[#122136]">
-                        {isDeveloperDirectListingFlow ? 'Create Listing' : 'Quick Add Listing'}
+                        {isDeveloperDirectListingFlow ? 'Create Listing' : 'Add Listing'}
                       </h3>
                       <p className="mt-1 max-w-2xl text-sm leading-6 text-[#60758c]">
                         {isDeveloperDirectListingFlow

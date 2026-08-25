@@ -332,7 +332,8 @@ async function auditManualLeadInterventionUi() {
 async function auditManualListingInterventionUi() {
   const listingsPage = await readAppFile('src/pages/AgentListings.jsx')
   assertIncludesAll(listingsPage, [
-    'Quick Add Listing',
+    'Add Listing',
+    'Sort by',
     'Quick Add is for manual or external listings.',
     'manual_admin_capture',
     'manualMandateStatus',

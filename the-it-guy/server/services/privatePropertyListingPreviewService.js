@@ -1,5 +1,9 @@
 import { createPrivatePropertyListingPlan } from './privatePropertyListingMapper.js'
 import { normalizePrivatePropertyText } from './privatePropertyClient.js'
+import {
+  createPrivatePropertyRentalListingPlan,
+  isPrivatePropertyRentalListing,
+} from './privatePropertyRentalListingAdapter.js'
 
 export function normalizePrivatePropertyPreviewText(value = '') {
   return normalizePrivatePropertyText(value)
@@ -106,14 +110,23 @@ export function createPrivatePropertyArch9ListingPreview({
   agentMapping = {},
   options = {},
 } = {}) {
-  const plan = createPrivatePropertyListingPlan({
-    listing,
-    publication,
-    media,
-    existingSync,
-    agentMapping,
-    options,
-  })
+  const plan = isPrivatePropertyRentalListing(listing, options)
+    ? createPrivatePropertyRentalListingPlan({
+      listing,
+      publication,
+      media,
+      existingSync,
+      agentMapping,
+      options,
+    })
+    : createPrivatePropertyListingPlan({
+      listing,
+      publication,
+      media,
+      existingSync,
+      agentMapping,
+      options,
+    })
 
   return {
     phase: 'private-property-listing-preview',

@@ -4,6 +4,7 @@ import {
   getAgentPrivateListings,
   getPrivateListing,
   syncPrivateListingDistributionData,
+  uploadPrivateListingMediaAsset,
   updatePrivateListing,
 } from '../privateListingService'
 import {
@@ -23,6 +24,77 @@ import { isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
 
 function normalizeText(value) {
   return String(value || '').trim()
+}
+
+function normalizeGalleryItems(items = []) {
+  return (Array.isArray(items) ? items : [])
+    .filter((item) => item && (item.url || item.signedUrl || item.publicUrl || item.file))
+    .map((item, index) => ({
+      id: String(item.id || item.path || `gallery-${index + 1}`),
+      name: String(item.name || item.fileName || `Image ${index + 1}`),
+      url: normalizeText(item.url || item.signedUrl || item.publicUrl),
+      signedUrl: normalizeText(item.signedUrl),
+      publicUrl: normalizeText(item.publicUrl),
+      path: normalizeText(item.path),
+      bucket: normalizeText(item.bucket),
+      contentType: normalizeText(item.contentType || item.file?.type),
+      size: Number(item.size || item.file?.size || 0) || 0,
+      file: typeof File !== 'undefined' && item.file instanceof File ? item.file : null,
+    }))
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result || ''))
+    reader.onerror = () => reject(new Error('Unable to read file'))
+    reader.readAsDataURL(file)
+  })
+}
+
+async function uploadRentalGalleryImages(galleryImages = [], listingId) {
+  const normalizedImages = normalizeGalleryItems(galleryImages)
+  const uploadedImages = await Promise.all(
+    normalizedImages.map(async (item, index) => {
+      if (!item.file) return item
+      try {
+        const asset = await uploadPrivateListingMediaAsset(item.file, { listingId, type: 'gallery' })
+        return {
+          id: asset.path || item.id,
+          name: asset.fileName || item.name,
+          url: asset.url || asset.signedUrl || asset.publicUrl || item.url,
+          signedUrl: asset.signedUrl || '',
+          publicUrl: asset.publicUrl || '',
+          path: asset.path || '',
+          bucket: asset.bucket || '',
+          contentType: asset.contentType || item.contentType || '',
+          size: asset.size || item.size || 0,
+        }
+      } catch (error) {
+        const fallbackUrl = item.url || await readFileAsDataUrl(item.file).catch(() => '')
+        return {
+          ...item,
+          id: item.id || `gallery-${index + 1}`,
+          url: fallbackUrl,
+          uploadWarning: error?.message || 'Storage upload failed.',
+        }
+      }
+    }),
+  )
+
+  return uploadedImages.map((item) => {
+    const nextImage = { ...item }
+    delete nextImage.file
+    delete nextImage.uploadWarning
+    return nextImage
+  })
+}
+
+function buildRentalListingMediaPayload(form = {}, uploadedGalleryImages = []) {
+  return {
+    galleryImages: uploadedGalleryImages,
+    coverImageId: normalizeText(form.coverImageId) || normalizeText(uploadedGalleryImages[0]?.id),
+  }
 }
 
 function formatProperty24Blocker(value = '') {
@@ -109,9 +181,10 @@ export async function createRentalListingDraft(form = {}, context = {}) {
   const listingId = created?.listing?.id
   if (!listingId) throw new Error('Unable to create the rental listing draft.')
 
+  const uploadedGalleryImages = await uploadRentalGalleryImages(form.galleryImages, listingId)
   const publicationResult = await syncPrivateListingDistributionData(listingId, {
     publicationData: buildRentalPublicationDraft(form),
-    media: {},
+    media: buildRentalListingMediaPayload(form, uploadedGalleryImages),
     externalLinks: [],
   })
 
@@ -150,9 +223,10 @@ export async function updateRentalListingDraft(listingId, form = {}, context = {
     includeRequirementsAndDocuments: false,
   })
 
+  const uploadedGalleryImages = await uploadRentalGalleryImages(form.galleryImages, listingId)
   const publicationResult = await syncPrivateListingDistributionData(listingId, {
     publicationData: buildRentalListingEditPublicationDraft(form),
-    media: {},
+    media: buildRentalListingMediaPayload(form, uploadedGalleryImages),
     externalLinks: [],
   })
 
