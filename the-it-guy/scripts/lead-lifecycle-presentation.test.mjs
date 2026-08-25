@@ -39,7 +39,9 @@ const sellerMandate = resolveLeadLifecyclePresentation({
   leadCategory: 'seller',
   stage: 'Mandate Sent',
 })
-assert.equal(sellerMandate.columnId, 'mandate_sent')
+assert.equal(sellerMandate.key, 'seller_onboarding_submitted')
+assert.equal(sellerMandate.label, 'Onboarding Submitted')
+assert.equal(sellerMandate.columnId, 'lead')
 assert.equal(sellerMandate.reporting.contacted, false)
 
 const sellerNewLead = resolveLeadLifecyclePresentation({

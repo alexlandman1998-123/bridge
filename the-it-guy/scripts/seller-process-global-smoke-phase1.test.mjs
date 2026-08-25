@@ -31,7 +31,6 @@ const defaultStageKeys = [
   'contacted',
   'seller_onboarding_sent',
   'seller_onboarding_submitted',
-  'mandate_sent',
   'mandate_signed',
   'listing_created',
   'listing_live',
@@ -177,14 +176,14 @@ function assertNextAction(args, expectedId, expectedLabel) {
   const { journey, readiness } = assertNextAction({ lead }, 'open_seller_portal', 'Track Seller Onboarding')
   assert.equal(journey.stage.key, 'seller_onboarding_sent')
   assert.equal(actionById(getSellerJourneyActions({ lead }), 'open_seller_portal')?.enabled, true)
-  assert.equal(actionById(readiness.actions, 'generate_mandate')?.enabled, false)
+  assert.equal(actionById(readiness.actions, 'generate_mandate'), null)
   assertNoKingstonsTokens({ journey, readiness }, 'onboarding sent global smoke')
 }
 
 {
-  const { journey, readiness } = assertNextAction({ lead: submittedLead }, 'generate_mandate', 'Generate Mandate')
+  const { journey, readiness } = assertNextAction({ lead: submittedLead }, 'open_documents', 'Open Documents')
   assert.equal(journey.stage.key, 'seller_onboarding_submitted')
-  assert.equal(actionById(readiness.actions, 'generate_mandate')?.enabled, true)
+  assert.equal(readiness.canSendMandate, false)
   assert.equal(actionById(readiness.actions, 'open_seller_portal')?.enabled, true)
   assertNoKingstonsTokens({ journey, readiness }, 'onboarding submitted global smoke')
 }
@@ -192,24 +191,24 @@ function assertNextAction(args, expectedId, expectedLabel) {
 {
   const { journey, readiness } = assertNextAction(
     { lead: submittedLead, mandatePacketStatus: draftMandatePacketStatus },
-    'send_mandate',
-    'Send for Signature',
+    'open_documents',
+    'Open Documents',
   )
-  assert.equal(journey.stage.key, 'mandate_sent')
+  assert.equal(journey.stage.key, 'seller_onboarding_submitted')
   assert.equal(journey.mandateStatus, 'draft')
-  assert.equal(readiness.canSendMandate, true)
+  assert.equal(readiness.canSendMandate, false)
   assertNoKingstonsTokens({ journey, readiness }, 'draft mandate global smoke')
 }
 
 {
   const { journey, readiness } = assertNextAction(
     { lead: submittedLead, mandatePacketStatus: sentMandatePacketStatus },
-    'check_signature_status',
-    'Track Signature',
+    'open_documents',
+    'Open Documents',
   )
-  assert.equal(journey.stage.key, 'mandate_sent')
+  assert.equal(journey.stage.key, 'seller_onboarding_submitted')
   assert.equal(journey.mandateStatus, 'sent')
-  assert.equal(actionById(readiness.actions, 'resend_mandate')?.enabled, true)
+  assert.equal(readiness.blockers.some((item) => item.id === 'mandate_signature_outstanding'), true)
   assertNoKingstonsTokens({ journey, readiness }, 'sent mandate global smoke')
 }
 

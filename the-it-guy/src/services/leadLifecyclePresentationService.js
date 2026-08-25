@@ -36,7 +36,6 @@ const SELLER_LIFECYCLE_STAGES = Object.freeze({
   contacted: 'Contacted',
   seller_onboarding_sent: 'Onboarding Sent',
   seller_onboarding_submitted: 'Onboarding Submitted',
-  mandate_sent: 'Mandate Sent',
   mandate_signed: 'Mandate Signed',
   listing_created: 'Listing Created',
   listing_live: 'Listing Live',
@@ -57,9 +56,9 @@ const SELLER_LIFECYCLE_STAGE_ALIASES = Object.freeze({
   onboarding_completed: 'seller_onboarding_submitted',
   seller_onboarding_submitted: 'seller_onboarding_submitted',
   seller_onboarding_completed: 'seller_onboarding_submitted',
-  mandate_generated: 'mandate_sent',
-  mandate_ready: 'mandate_sent',
-  mandate_sent: 'mandate_sent',
+  mandate_generated: 'seller_onboarding_submitted',
+  mandate_ready: 'seller_onboarding_submitted',
+  mandate_sent: 'seller_onboarding_submitted',
   mandate_signed: 'mandate_signed',
   listing_created: 'listing_created',
   converted_to_listing: 'listing_created',
@@ -178,7 +177,7 @@ function resolveColumnId(lead = {}, { linkedDeal = null } = {}) {
     if (combined.includes('offer') || combined.includes('negotiating')) return 'offer_received'
     if (combined.includes('converted to listing') || combined.includes('listing active')) return 'listing_active'
     if (combined.includes('mandate signed')) return 'mandate_signed'
-    if (combined.includes('mandate sent') || combined.includes('mandate generated') || combined.includes('mandate ready')) return 'mandate_sent'
+    if (combined.includes('mandate sent') || combined.includes('mandate generated') || combined.includes('mandate ready')) return 'lead'
     if (combined.includes('valuation') || combined.includes('appointment') || combined.includes('viewing')) return 'valuation_scheduled'
     if (
       combined.includes('onboarding') ||

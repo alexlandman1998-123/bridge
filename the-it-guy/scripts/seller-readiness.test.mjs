@@ -53,7 +53,6 @@ const baseLead = {
     ['contacted', { key: 'contacted', label: 'Contacted', status: 'Active' }, 'send_seller_onboarding', 'Send Seller Onboarding'],
     ['seller_onboarding_sent', { key: 'seller_onboarding_sent', label: 'Onboarding Sent', status: 'Sent' }, 'open_seller_portal', 'Track Seller Onboarding'],
     ['seller_onboarding_submitted', { key: 'seller_onboarding_submitted', label: 'Onboarding Submitted', status: 'Submitted' }, 'open_documents', 'Open Documents'],
-    ['mandate_sent', { key: 'mandate_sent', label: 'Mandate Sent', status: 'Sent' }, 'open_documents', 'Open Documents'],
     ['mandate_signed', { key: 'mandate_signed', label: 'Mandate Signed', status: 'Signed' }, 'create_listing', 'Create Listing'],
   ]
   for (const [stageKey, stage, expectedId, expectedLabel] of cases) {
@@ -61,9 +60,9 @@ const baseLead = {
       isSeller: true,
       stage,
       stageKey,
-      onboardingSent: ['seller_onboarding_sent', 'seller_onboarding_submitted', 'mandate_sent', 'mandate_signed'].includes(stageKey),
-      onboardingSubmitted: ['seller_onboarding_submitted', 'mandate_sent', 'mandate_signed'].includes(stageKey),
-      mandateStatus: stageKey === 'mandate_sent' ? 'sent' : stageKey === 'mandate_signed' ? 'signed' : 'not_started',
+      onboardingSent: ['seller_onboarding_sent', 'seller_onboarding_submitted', 'mandate_signed'].includes(stageKey),
+      onboardingSubmitted: ['seller_onboarding_submitted', 'mandate_signed'].includes(stageKey),
+      mandateStatus: stageKey === 'mandate_signed' ? 'signed' : 'not_started',
       listingCreated: false,
       listingLive: false,
     }
@@ -104,15 +103,15 @@ const baseLead = {
     appointments: [{ appointmentType: 'seller_valuation', status: 'completed', completedAt: '2026-06-03T10:00:00Z' }],
     mandatePacketStatus: { packet: { id: 'packet-1', status: 'generated' } },
   }
-  assert.equal(canSendMandate(args), true)
+  assert.equal(canSendMandate(args), false)
   assert.equal(getNextSellerAction(args).id, 'open_documents')
 }
 
 {
   const lead = {
     ...baseLead,
-    stage: 'mandate_sent',
-    status: 'Mandate Sent',
+    stage: 'Seller Onboarding Submitted',
+    status: 'Submitted',
     sellerOnboardingToken: 'seller-token-stale',
     sellerOnboardingStatus: 'sent',
   }
@@ -127,8 +126,8 @@ const baseLead = {
   const args = {
     lead: {
       ...baseLead,
-      stage: 'Mandate Sent',
-      status: 'Draft',
+      stage: 'Seller Onboarding Submitted',
+      status: 'Submitted',
       mandatePacketId: 'packet-generated',
       sellerOnboardingToken: 'seller-token-generated',
       sellerOnboardingStatus: 'completed',
@@ -147,19 +146,19 @@ const baseLead = {
   const journey = buildSellerJourney(args)
   const readiness = getSellerReadiness({ ...args, journey })
   assert.equal(journey.mandateStatus, 'draft')
-  assert.equal(journey.stage.key, 'mandate_sent')
-  assert.equal(journey.stage.status, 'Draft')
+  assert.equal(journey.stage.key, 'seller_onboarding_submitted')
+  assert.equal(journey.stage.status, 'Submitted')
   assert.equal(readiness.nextAction.id, 'open_documents')
   assert.equal(readiness.nextAction.label, 'Open Documents')
-  assert.equal(readiness.blockers.some((item) => item.id === 'mandate_signature_outstanding'), false)
+  assert.equal(readiness.blockers.some((item) => item.id === 'mandate_signature_outstanding'), true)
 }
 
 {
   const args = {
     lead: {
       ...baseLead,
-      stage: 'Mandate Sent',
-      status: 'Mandate Sent',
+      stage: 'Seller Onboarding Submitted',
+      status: 'Submitted',
       mandatePacketId: 'packet-status-only-sent',
       sellerOnboardingStatus: 'completed',
     },
@@ -181,7 +180,7 @@ const baseLead = {
   assert.equal(journey.mandateStatus, 'draft')
   assert.equal(readiness.nextAction.id, 'open_documents')
   assert.equal(readiness.nextAction.label, 'Open Documents')
-  assert.equal(readiness.blockers.some((item) => item.id === 'mandate_signature_outstanding'), false)
+  assert.equal(readiness.blockers.some((item) => item.id === 'mandate_signature_outstanding'), true)
 }
 
 {
@@ -224,7 +223,8 @@ const baseLead = {
   const nextAction = getNextSellerAction(args)
   assert.equal(nextAction.id, 'create_listing')
   assert.equal(nextAction.label, 'Create Listing')
-  assert.equal(nextAction.reason, 'Required Documents Missing')
+  assert.equal(nextAction.enabled, true)
+  assert.equal(nextAction.reason, '')
 }
 
 {

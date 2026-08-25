@@ -30,7 +30,6 @@ const expectedDefaultStageKeys = [
   'contacted',
   'seller_onboarding_sent',
   'seller_onboarding_submitted',
-  'mandate_sent',
   'mandate_signed',
   'listing_created',
   'listing_live',
@@ -120,13 +119,12 @@ function assertStepStates(journey, currentKey, completedKeys = []) {
     'contacted',
     'seller_onboarding_sent',
     'seller_onboarding_submitted',
-    'mandate_sent',
   ])
 
   const readiness = getSellerReadiness({ lead: baseLead, journey })
   assert.equal(getNextSellerAction({ lead: baseLead, journey }).id, 'create_listing')
   assert.equal(readiness.nextAction.id, 'create_listing')
-  assert.equal(canCreateListing({ lead: baseLead, journey }), false)
+  assert.equal(canCreateListing({ lead: baseLead, journey }), true)
   assert.equal(readiness.blockers.some((item) => item.id === 'required_documents_missing'), true)
   assertNoKingstonsKeys(readiness, 'default mandate-signed readiness')
 }

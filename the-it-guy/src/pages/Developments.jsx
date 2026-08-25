@@ -20,19 +20,6 @@ import { fetchDevelopmentsData } from '../lib/api'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 import { useWorkspace } from '../context/WorkspaceContext'
 
-function formatRelativeDate(value) {
-  if (!value) return 'No recent activity'
-  const delta = Date.now() - new Date(value).getTime()
-  if (!Number.isFinite(delta) || delta < 0) return 'Updated today'
-  const days = Math.floor(delta / (1000 * 60 * 60 * 24))
-  if (days <= 0) return 'Updated today'
-  if (days === 1) return 'Updated 1 day ago'
-  if (days < 30) return `Updated ${days} days ago`
-  const months = Math.floor(days / 30)
-  if (months === 1) return 'Updated 1 month ago'
-  return `Updated ${months} months ago`
-}
-
 function toLifecycleStatus(rawStatus, summary) {
   const normalized = String(rawStatus || '').trim().toLowerCase()
 
@@ -295,7 +282,6 @@ function Developments() {
           attentionLines: attention.lines,
           assignedAttorneyName,
           lastUpdatedAt: item.lastActivity || profile.lastActivity || null,
-          lastUpdatedLabel: formatRelativeDate(item.lastActivity || profile.lastActivity || null),
           registeredLabel,
           progress,
           progressPercent: getProgressPercent(progress),
@@ -400,7 +386,7 @@ function Developments() {
                   <h1 className="mt-4 text-[clamp(2rem,4vw,3.4rem)] font-semibold leading-none tracking-[-0.06em] text-[#f8fbff]">
                     Developments
                   </h1>
-                  <p className="mt-3 max-w-[620px] text-[1rem] font-medium leading-7 text-white/82">
+                  <p className="mt-3 max-w-[620px] text-[1rem] font-medium leading-7 text-white">
                     Oversee your entire portfolio. Build better. Sell faster.
                   </p>
                 </div>
@@ -535,8 +521,7 @@ function Developments() {
                         <img src={item.coverImageUrl} alt="" className="h-full w-full object-cover transition duration-500 ease-out group-hover:scale-[1.03]" loading="lazy" />
                       ) : (
                         <div className="absolute inset-0" aria-hidden="true">
-                          <div className="absolute left-7 top-7 h-20 w-28 rounded-[22px] border border-white/14 bg-white/10" />
-                          <div className="absolute bottom-6 right-8 h-24 w-36 rounded-[26px] border border-white/12 bg-white/[0.08]" />
+                          <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_16%,rgba(95,224,164,0.18),transparent_28%),radial-gradient(circle_at_84%_20%,rgba(226,175,63,0.16),transparent_30%)]" />
                           <Building2 className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-white/82" size={34} />
                         </div>
                       )}
@@ -582,7 +567,6 @@ function Developments() {
                             <span> • No attorney assigned</span>
                           ) : null}
                         </p>
-                        <p className="text-[#7b8ca2]">{item.lastUpdatedLabel}</p>
                       </div>
 
                       <div className="mt-5">

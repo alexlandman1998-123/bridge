@@ -65,11 +65,10 @@ const SELLER_JOURNEY_STAGE_ORDER = new Map([
   ['contacted', 1],
   ['seller_onboarding_sent', 2],
   ['seller_onboarding_submitted', 3],
-  ['mandate_sent', 4],
-  ['mandate_signed', 5],
-  ['listing_created', 6],
-  ['listing_live', 7],
-  ['documents_submitted', 8],
+  ['mandate_signed', 4],
+  ['listing_created', 5],
+  ['listing_live', 6],
+  ['documents_submitted', 7],
 ])
 
 function sellerStageIndex(journey = {}) {
@@ -268,16 +267,12 @@ export function getSellerBlockers({ lead = {}, contact = {}, appointments = [], 
     blockers.push(blocker('missing_property_address', 'Missing Property Address', 'seller', 'capture_property_address', 'blocked', 'Your agent needs the property address.'))
   }
 
-  if (resolvedJourney.mandateStatus === 'sent') {
+  if (['sent', 'draft'].includes(resolvedJourney.mandateStatus)) {
     blockers.push(blocker('mandate_signature_outstanding', 'Signed Mandate Outstanding', 'mandate', 'open_documents', 'action_required', 'Your signed mandate still needs to be uploaded or confirmed.'))
   }
 
-  if (resolvedJourney.stage?.key === 'mandate_sent' && resolvedJourney.mandateStatus === 'not_started') {
-    blockers.push(blocker('signed_mandate_missing', 'Signed Mandate Missing', 'mandate', 'open_documents', 'blocked', 'Upload or request the signed mandate from Documents.'))
-  }
-
-  if ((resolvedJourney.stage?.key === 'mandate_signed' || resolvedJourney.stage?.key === 'listing_created') && resolvedJourney.mandateStatus !== 'signed') {
-    blockers.push(blocker('mandate_not_signed', 'Mandate Not Signed', 'listing', 'open_documents', 'blocked', 'Your signed mandate is required before listing.'))
+  if (resolvedJourney.stage?.key === 'mandate_signed' && resolvedJourney.mandateStatus !== 'signed') {
+    blockers.push(blocker('mandate_not_signed', 'Mandate Not Signed', 'mandate', 'open_documents', 'blocked', 'Upload or confirm the signed mandate.'))
   }
 
   if (resolvedJourney.mandateStatus === 'signed' && !resolvedJourney.listingCreated && !sellerDocumentsComplete(resolvedJourney, listing || {})) {
@@ -293,16 +288,14 @@ export function getSellerBlockers({ lead = {}, contact = {}, appointments = [], 
   return blockers
 }
 
-export function canSendMandate(args = {}) {
-  const journey = args.journey || buildSellerJourney(args)
-  const blockers = getSellerBlockers({ ...args, journey })
-  return journey.mandateStatus === 'draft' && onboardingSubmitted(journey) && !blockers.some((item) => item.category === 'onboarding' || item.category === 'seller')
+export function canSendMandate() {
+  return false
 }
 
 export function canCreateListing(args = {}) {
   const journey = args.journey || buildSellerJourney(args)
   const blockers = getSellerBlockers({ ...args, journey })
-  return journey.mandateStatus === 'signed' && !journey.listingCreated && !blockers.some((item) => item.category === 'listing')
+  return onboardingSubmitted(journey) && !journey.listingCreated && !blockers.some((item) => item.category === 'seller' || item.category === 'onboarding')
 }
 
 export function canActivateListing(args = {}) {
@@ -330,16 +323,12 @@ export function getNextSellerAction(args = {}) {
   if (blocking?.id === 'missing_seller_contact') return action('contact_seller', 'Contact Seller', true, '', { blocker: blocking })
   const stageKey = normalizeKey(journey?.stage?.key || journey?.stageKey || journey?.stage)
   const openPortalBlocker = blockers.find((item) => item.id === 'seller_onboarding_not_submitted') || blocking
-  const signatureBlocker = blockers.find((item) => item.id === 'mandate_signature_outstanding') || blocking
   const listingBlocker = blockers.find((item) => item.category === 'listing_live') || blocking
 
   if (stageKey === 'new_lead') return action('contact_seller', 'Contact Seller', true, '', { blocker: blockers.find((item) => item.id === 'missing_seller_contact') || null })
   if (stageKey === 'contacted') return action('send_seller_onboarding', 'Send Seller Onboarding', true, '', { blocker: blockers.find((item) => item.id === 'seller_onboarding_not_sent') || blocking })
   if (stageKey === 'seller_onboarding_sent') return action('open_seller_portal', 'Track Seller Onboarding', true, '', { blocker: openPortalBlocker })
   if (stageKey === 'seller_onboarding_submitted') return action('open_documents', 'Open Documents', true, '', { blocker: blocking })
-  if (stageKey === 'mandate_sent') {
-    return action('open_documents', 'Open Documents', true, signatureBlocker?.label || blocking?.label || '', { blocker: signatureBlocker })
-  }
   if (stageKey === 'mandate_signed') return action('create_listing', 'Create Listing', canCreateListing({ ...args, journey }), blocking?.label || '', { blocker: blocking })
   if (stageKey === 'listing_created') return action('activate_listing', 'Activate Listing', canActivateListing({ ...args, journey }), listingBlocker?.label || '', { blocker: listingBlocker })
   if (stageKey === 'listing_live' || stageKey === 'documents_submitted') return action('monitor_performance', 'Monitor Performance')
@@ -350,10 +339,9 @@ export function getNextSellerAction(args = {}) {
   if (journey.listingLive) return action('monitor_performance', 'Monitor Performance')
   if (journey.listingCreated) return action('activate_listing', 'Activate Listing', canActivateListing({ ...args, journey }), blockers.find((item) => item.category === 'listing_live')?.label || '', { blocker: blockers.find((item) => item.category === 'listing_live') || null })
   if (journey.mandateStatus === 'signed') return action('create_listing', 'Create Listing', canCreateListing({ ...args, journey }), blocking?.label || '', { blocker: blocking })
-  if (journey.mandateStatus === 'sent') return action('open_documents', 'Open Documents', true, '', { blocker: blockers.find((item) => item.id === 'mandate_signature_outstanding') || null })
+  if (journey.mandateStatus === 'sent' || journey.mandateStatus === 'draft') return action('open_documents', 'Open Documents', true, '', { blocker: blockers.find((item) => item.id === 'mandate_signature_outstanding') || null })
   if (!onboardingSent(journey)) return action('send_seller_onboarding', 'Send Seller Onboarding')
   if (!onboardingSubmitted(journey) && !hasProgressedPastOnboarding(journey)) return action('open_seller_portal', 'Track Seller Onboarding')
-  if (journey.mandateStatus === 'draft') return action('open_documents', 'Open Documents', true, blocking?.label || '', { blocker: blocking })
   if (onboardingSubmitted(journey)) return action('open_documents', 'Open Documents')
   if (hasProgressedPastOnboarding(journey)) return action('open_documents', 'Open Documents', true, '', { blocker: blocking })
   return action('open_seller_portal', 'Send Seller Onboarding', true, blocking?.label || '', { blocker: blocking })
@@ -420,12 +408,7 @@ export function getStageAwareSellerActions({ lead = {}, contact = {}, appointmen
             make('open_documents', 'Open Documents', true),
             make('open_seller_portal', 'Open Seller Portal', true),
           ]
-      : stageKey === 'mandate_sent'
-        ? [
-          make('open_documents', 'Open Documents', true),
-          make('open_seller_portal', 'Open Seller Portal', Boolean(firstPresent(lead?.sellerOnboardingToken, lead?.seller_onboarding_token, listing?.sellerOnboarding?.token))),
-        ]
-        : stageKey === 'mandate_signed'
+      : stageKey === 'mandate_signed'
           ? [
             make('create_listing', 'Create Listing', canCreateListing({ lead, contact, appointments, listing, mandatePacketStatus, mandatePacket, documents, journey: resolvedJourney })),
             make('open_documents', 'Open Documents', true),

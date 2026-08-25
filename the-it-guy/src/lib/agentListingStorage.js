@@ -653,6 +653,7 @@ export function createListingDraftFromSellerLead(lead, options = {}) {
         (onboardingCompleted && existing?.stage === LISTING_STATUS.SELLER_ONBOARDING_PENDING
           ? LISTING_STATUS.SELLER_ONBOARDING_COMPLETED
           : existing?.stage),
+      source: lead?.source || existing?.source || 'pipeline_seller_conversion',
       seller: {
         name: [lead?.sellerName, lead?.sellerSurname].filter(Boolean).join(' ').trim() || existing?.seller?.name || '',
         email: lead?.sellerEmail || existing?.seller?.email || '',
@@ -735,6 +736,7 @@ export function createListingDraftFromSellerLead(lead, options = {}) {
     mandateStatus: 'pending',
     requiredDocumentsStatus: getDraftDocumentSummary(requiredDocuments).ready ? 'complete' : 'pending',
     internalVisibility: true,
+    source: lead?.source || 'pipeline_seller_conversion',
     seller: {
       name: [lead?.sellerName, lead?.sellerSurname].filter(Boolean).join(' ').trim(),
       email: lead?.sellerEmail || '',
@@ -775,8 +777,8 @@ export function createListingDraftFromSellerLead(lead, options = {}) {
     commission: lead?.commission || null,
     rolePlayers: lead?.rolePlayers || null,
     mandate: lead?.mandate || null,
-    requiredDocuments,
-    sellerOnboarding: {
+      requiredDocuments,
+      sellerOnboarding: {
       ...(lead?.sellerOnboarding || {}),
       status: onboardingCompleted ? SELLER_ONBOARDING_STATUS.COMPLETED : lead?.sellerOnboarding?.status || SELLER_ONBOARDING_STATUS.NOT_STARTED,
     },

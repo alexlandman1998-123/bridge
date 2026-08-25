@@ -507,13 +507,6 @@ const SELLER_LEAD_KANBAN_STAGES = [
     emptyState: 'Move seller leads here once valuation is booked or being arranged.',
   },
   {
-    id: 'mandate_sent',
-    label: 'Mandate Sent',
-    stageValue: 'Mandate Sent',
-    description: 'Mandate prepared or sent to seller.',
-    emptyState: 'Move seller leads here once the mandate is prepared or sent.',
-  },
-  {
     id: 'mandate_signed',
     label: 'Mandate Signed',
     stageValue: 'Mandate Signed',
@@ -14818,9 +14811,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const mandateLabel = selectedLeadMandateSignedEvidence
         ? 'Mandate Signed'
         : hasExplicitMandateSentEvidence({ lead: selectedLead, mandatePacketStatus })
-          ? 'Mandate Sent'
+          ? 'Signed Mandate Outstanding'
           : normalizeText(selectedLead?.mandatePacketId || selectedLead?.mandate_packet_id || mandatePacketStatus?.packet?.id)
-            ? 'Mandate Generated'
+            ? 'Signed Mandate Outstanding'
             : ''
       if (mandateLabel) {
         timelineRows.push({
@@ -14831,7 +14824,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           description: normalizeText(mandatePacketStatus?.packet?.title || selectedLead?.mandatePacketId || selectedLead?.mandate_packet_id),
           actorName: currentAgent.fullName || 'Agent',
           timestamp: mandatePacketStatus?.packet?.updated_at || mandatePacketStatus?.packet?.created_at || selectedLead.updatedAt || selectedLead.createdAt || new Date().toISOString(),
-          status: mandateLabel.replace('Mandate ', ''),
+          status: mandateLabel === 'Mandate Signed' ? 'Signed' : 'Outstanding',
         })
       }
 
@@ -15393,8 +15386,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           })
           if (!cancelled) {
             const leadPatch = {
-              stage: 'Mandate Sent',
-              status: 'Mandate Sent',
+              stage: 'Seller Onboarding Submitted',
+              status: 'Submitted',
               mandateStatus: 'sent_for_signature',
               mandateSentAt: sentAtIso,
               mandatePacketId: packetId,
@@ -24522,15 +24515,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }
 
       await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, {
-        stage: 'Mandate Sent',
-        status: 'Mandate Sent',
+        stage: 'Seller Onboarding Submitted',
+        status: 'Submitted',
         mandateStatus: finalMandateStatus,
         mandateSentAt: sentAtIso,
         mandateSigningLink: outboundMandateLink,
       })
       patchSelectedLeadRecord({
-        stage: 'Mandate Sent',
-        status: 'Mandate Sent',
+        stage: 'Seller Onboarding Submitted',
+        status: 'Submitted',
         mandateStatus: finalMandateStatus,
         mandateSentAt: sentAtIso,
         mandateSigningLink: outboundMandateLink,
@@ -24619,22 +24612,22 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
       await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
         agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
-        activityType: 'Mandate Sent',
+        activityType: 'Signed Mandate Requested',
         activityNote: signingEmailFailed
           ? 'Mandate signing link was created, but the email could not be sent.'
-          : 'Mandate was sent to the seller for digital signing.',
-        outcome: signingEmailFailed ? 'Email failed' : 'Sent for digital signing',
+          : 'Signed mandate request was recorded. Upload or confirm the wet-ink signed mandate in Documents.',
+        outcome: signingEmailFailed ? 'Email failed' : 'Signed mandate outstanding',
       }, { actor: currentAgent })
       setError('')
       setMessage(signingEmailFailed
-        ? 'Mandate signing link created, but the email could not be sent. Use resend from the mandate workspace.'
-        : 'Mandate sent to seller.')
+        ? 'Mandate signing link created, but the email could not be sent. Upload or confirm the wet-ink signed mandate in Documents.'
+        : 'Signed mandate request recorded. Upload or confirm the wet-ink signed mandate in Documents.')
       await refreshSelectedLeadMandateTarget({
         packetId: mandatePacketId,
         leadId: selectedLead.leadId,
         leadPatch: {
-          stage: 'Mandate Sent',
-          status: 'Mandate Sent',
+          stage: 'Seller Onboarding Submitted',
+          status: 'Submitted',
           mandateStatus: finalMandateStatus,
           mandateSentAt: sentAtIso,
           mandateSigningLink: outboundMandateLink,

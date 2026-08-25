@@ -7253,12 +7253,9 @@ async function syncSellerJourneyLeadStageFromListing(
   if (lifecycle === 'onboarding_sent') {
     targetStage = 'Seller Onboarding Sent'
     targetStatus = 'Sent'
-  } else if (['onboarding_completed', 'listing_review', 'mandate_ready'].includes(lifecycle)) {
+  } else if (['onboarding_completed', 'listing_review', 'mandate_ready', 'mandate_sent'].includes(lifecycle)) {
     targetStage = 'Seller Onboarding Submitted'
     targetStatus = 'Submitted'
-  } else if (lifecycle === 'mandate_sent') {
-    targetStage = 'Mandate Sent'
-    targetStatus = 'Sent'
   } else if (lifecycle === 'mandate_signed') {
     targetStage = 'Mandate Signed'
     targetStatus = 'Signed'

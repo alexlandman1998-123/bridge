@@ -14,7 +14,6 @@ const DEFAULT_SELLER_STAGE_KEYS = Object.freeze([
   'contacted',
   'seller_onboarding_sent',
   'seller_onboarding_submitted',
-  'mandate_sent',
   'mandate_signed',
   'listing_created',
   'listing_live',

@@ -298,7 +298,6 @@ const SELLER_PROGRESS_STEPS = [
   { key: 'contacted', label: 'Contacted' },
   { key: 'onboarding', label: 'Onboarding' },
   { key: 'submitted', label: 'Submitted' },
-  { key: 'mandate_sent', label: 'Mandate Sent' },
   { key: 'mandate_signed', label: 'Mandate Signed' },
   { key: 'listing_created', label: 'Listing Created' },
   { key: 'documents_complete', label: 'Documents Complete' },
@@ -473,10 +472,8 @@ function buildSellerPortalProgressModel({
     currentKey = 'contacted'
   } else if (!hasOnboardingSubmitted) {
     currentKey = 'onboarding'
-  } else if (!hasMandatePacket) {
+  } else if (!hasMandatePacket || !hasMandateSigned) {
     currentKey = 'submitted'
-  } else if (!hasMandateSigned) {
-    currentKey = 'mandate_sent'
   } else if (!hasListingCreated) {
     currentKey = 'mandate_signed'
   } else if (!hasDocumentsComplete) {
@@ -500,7 +497,6 @@ function buildSellerPortalProgressModel({
     contacted: 'Your seller workspace is active and your agent will guide the next milestone.',
     onboarding: 'Your onboarding details are the next step before your agent can prepare the file.',
     submitted: 'Your seller onboarding has been submitted and is under review by your agent.',
-    mandate_sent: 'Your onboarding is complete and your mandate is being prepared for review.',
     mandate_signed: 'Your mandate is in place and the listing setup is moving forward.',
     listing_created: 'Your property is moving through listing setup and live marketing preparation.',
     documents_complete: 'Your seller file is complete and we will keep you updated as the sale progresses.',
@@ -519,7 +515,6 @@ const SELLER_PROGRESS_PORTAL_KEY_BY_JOURNEY_KEY = {
   contacted: 'contacted',
   seller_onboarding_sent: 'onboarding',
   seller_onboarding_submitted: 'submitted',
-  mandate_sent: 'mandate_sent',
   mandate_signed: 'mandate_signed',
   listing_created: 'listing_created',
   listing_live: 'listing_created',
@@ -1927,13 +1922,22 @@ function normalizeSellerPortalKey(value = '') {
   return String(value || '').trim().toLowerCase().replace(/\s+/g, '_')
 }
 
+function normalizePortalWorkspaceSection(value = '') {
+  const normalized = String(value || '').trim()
+  if (!normalized) return 'overview'
+  const path = normalized.split(/[?#]/)[0]
+  const lastSegment = path.split('/').filter(Boolean).at(-1) || 'overview'
+  const key = normalizeSellerPortalKey(lastSegment.replaceAll('-', '_'))
+  if (key === 'bond_application') return 'bond_application'
+  return key || 'overview'
+}
+
 const SELLER_MOBILE_STAGE_INDEX_BY_KEY = {
   contacted: 0,
   seller_onboarding_sent: 0,
   seller_onboarding_submitted: 0,
   onboarding: 0,
   submitted: 0,
-  mandate_sent: 1,
   mandate_signed: 1,
   listing_created: 2,
   listing_live: 2,
@@ -2973,13 +2977,11 @@ function resolveSellerStatusLabel({
   if (sellerOfferItems.length > 0 || stageKey === 'offers') return 'Offers Received'
   if (hasListingCreated || ['listed', 'listing_live'].includes(stageKey)) return 'Listing Live'
   if (stageKey === 'mandate_signed') return 'Mandate Signed'
-  if (stageKey === 'mandate_sent') return 'Mandate Sent'
   return 'Sale In Progress'
 }
 
 function buildSellerTransactionHealth({
   hasOnboardingSubmitted = false,
-  hasMandatePacket = false,
   hasMandateSigned = false,
   hasListingCreated = false,
   hasDocumentsComplete = false,
@@ -2988,7 +2990,6 @@ function buildSellerTransactionHealth({
 } = {}) {
   const signals = [
     { key: 'onboarding', complete: hasOnboardingSubmitted },
-    { key: 'mandate_sent', complete: hasMandatePacket },
     { key: 'mandate_signed', complete: hasMandateSigned },
     { key: 'listing', complete: hasListingCreated },
     { key: 'documents', complete: hasDocumentsComplete },
@@ -9816,7 +9817,7 @@ function ClientPortal() {
     if (!route) return
     const sectionKey = normalizePortalWorkspaceSection(route)
     if (!ensurePortalSectionEnabled(sectionKey)) return
-    navigate(getPortalWorkspacePath(token, workspaceNavigationScope, route))
+    navigate(getPortalWorkspacePath(token, workspaceNavigationScope, sectionKey))
   }
 
   async function handleRespondToAppointment(appointment, action, options = {}) {
