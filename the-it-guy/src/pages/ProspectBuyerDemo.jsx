@@ -379,6 +379,142 @@ const FINANCE_APPLICATION = {
   ],
 }
 
+const DEMO_BOND_APPLICATION_SECTIONS = [
+  { key: 'summary', label: 'Summary', status: 'Complete', tone: 'complete' },
+  { key: 'personal_details', label: 'Personal details', status: 'Complete', tone: 'complete' },
+  { key: 'contact_address', label: 'Contact & address', status: 'Complete', tone: 'complete' },
+  { key: 'employment', label: 'Employment', status: 'Complete', tone: 'complete' },
+  { key: 'income_deductions_expenses', label: 'Income & expenses', status: 'Needs review', tone: 'action' },
+  { key: 'banking_liabilities', label: 'Banking & liabilities', status: 'Pending', tone: 'info' },
+  { key: 'loan_details', label: 'Loan details', status: 'Complete', tone: 'complete' },
+  { key: 'documents', label: 'Documents', status: '1 missing', tone: 'action' },
+  { key: 'declarations_consents', label: 'Declarations', status: 'Ready', tone: 'info' },
+]
+
+const DEMO_BOND_APPLICATION_FIELD_GROUPS = {
+  summary: [
+    {
+      title: 'Application summary',
+      helper: 'Prefilled from onboarding, property and finance information.',
+      fields: [
+        { key: 'applicant_name', label: 'Applicant name', value: 'Mia Khumalo', required: true },
+        { key: 'has_co_applicant', label: 'Co-applicant present', value: 'No', type: 'select', options: ['Yes', 'No'] },
+        { key: 'has_surety', label: 'Surety present', value: 'No', type: 'select', options: ['Yes', 'No'] },
+        { key: 'property_reference', label: 'Property reference', value: '2 Pine Avenue, Unit 4', required: true },
+        { key: 'purchase_price', label: 'Purchase price', value: 'R 2 850 000', inputMode: 'decimal', required: true },
+        { key: 'deposit_contribution', label: 'Deposit / contribution', value: 'R 570 000', inputMode: 'decimal' },
+        { key: 'finance_type', label: 'Finance type', value: 'Bond', required: true },
+        { key: 'first_time_home_buyer', label: 'First-time home buyer', value: 'Yes', type: 'select', options: ['Yes', 'No'] },
+      ],
+    },
+  ],
+  personal_details: [
+    {
+      title: 'Primary applicant',
+      helper: 'The buyer confirms the personal information needed by the bond originator and banks.',
+      fields: [
+        { key: 'first_names', label: 'First names', value: 'Mia Nomsa', required: true },
+        { key: 'surname', label: 'Surname', value: 'Khumalo', required: true },
+        { key: 'identity_number', label: 'ID number', value: '900512 **** 087', required: true },
+        { key: 'marital_status', label: 'Marital status', value: 'Single', type: 'select', options: ['Single', 'Married', 'Divorced', 'Widowed'], required: true },
+        { key: 'dependants', label: 'Number of dependants', value: '0', inputMode: 'numeric' },
+        { key: 'main_residence', label: 'Main residence', value: 'Yes', type: 'select', options: ['Yes', 'No'] },
+      ],
+    },
+  ],
+  contact_address: [
+    {
+      title: 'Contact details',
+      helper: 'Communication and legal notice details used during the application.',
+      fields: [
+        { key: 'cellphone_number', label: 'Cellphone number', value: '+27 82 555 0194', required: true },
+        { key: 'email_address', label: 'Email address', value: 'mia.demo@example.com', type: 'email', required: true },
+        { key: 'residential_address', label: 'Residential address', value: '14 Ocean View Drive, Sea Point', required: true },
+        { key: 'residential_city', label: 'City', value: 'Cape Town', required: true },
+        { key: 'postal_code', label: 'Postal code', value: '8005', required: true },
+        { key: 'legal_notice_delivery_method', label: 'Legal notice delivery method', value: 'Email', type: 'select', options: ['Email', 'Residential address', 'Postal address'], required: true },
+      ],
+    },
+  ],
+  employment: [
+    {
+      title: 'Employment',
+      helper: 'A compact version of the employment section from the buyer portal bond application.',
+      fields: [
+        { key: 'occupation_status', label: 'Occupation status', value: 'Permanent employee', type: 'select', options: ['Permanent employee', 'Contract employee', 'Self-employed', 'Commission-based', 'Retired'], required: true },
+        { key: 'employer_name', label: 'Employer', value: 'Khumalo Advisory Group', required: true },
+        { key: 'nature_of_occupation', label: 'Nature of occupation', value: 'Senior Financial Analyst', required: true },
+        { key: 'employment_years', label: 'Employment years', value: '4', inputMode: 'numeric' },
+        { key: 'employment_months', label: 'Employment months', value: '7', inputMode: 'numeric' },
+        { key: 'works_in_south_africa', label: 'Works in South Africa', value: 'Yes', type: 'select', options: ['Yes', 'No'] },
+      ],
+    },
+  ],
+  income_deductions_expenses: [
+    {
+      title: 'Income, deductions & expenses',
+      helper: 'This is the affordability section the buyer would complete before bank submission.',
+      fields: [
+        { key: 'gross_salary', label: 'Gross salary', value: 'R 82 000', inputMode: 'decimal', required: true },
+        { key: 'average_commission', label: 'Average commission', value: 'R 8 500', inputMode: 'decimal' },
+        { key: 'tax_paye', label: 'Tax / PAYE', value: 'R 18 200', inputMode: 'decimal' },
+        { key: 'medical_aid', label: 'Medical aid', value: 'R 3 200', inputMode: 'decimal' },
+        { key: 'monthly_expenses', label: 'Monthly living expenses', value: 'R 24 500', inputMode: 'decimal', required: true },
+        { key: 'net_surplus', label: 'Estimated monthly surplus', value: 'R 44 600', readOnly: true },
+      ],
+    },
+  ],
+  banking_liabilities: [
+    {
+      title: 'Banking & liabilities',
+      helper: 'The banks use this to assess current commitments and debit-order readiness.',
+      fields: [
+        { key: 'primary_bank_name', label: 'Primary bank / institution', value: 'Standard Bank', required: true },
+        { key: 'primary_account_type', label: 'Primary account type', value: 'Cheque / Current', type: 'select', options: ['Cheque / Current', 'Savings', 'Transmission'], required: true },
+        { key: 'primary_account_number', label: 'Account number', value: '********4921', required: true },
+        { key: 'preferred_debit_order_date', label: 'Preferred debit order date', value: '2026-09-01', type: 'date', required: true },
+        { key: 'retail_current_balance', label: 'Retail account balance', value: 'R 7 200', inputMode: 'decimal' },
+        { key: 'debt_review', label: 'Currently under debt review', value: 'No', type: 'select', options: ['Yes', 'No'], required: true },
+      ],
+    },
+  ],
+  loan_details: [
+    {
+      title: 'Property & loan details',
+      helper: 'The loan instruction prepared for the bond originator and banks.',
+      fields: [
+        { key: 'street_or_complex', label: 'Street / complex', value: '2 Pine Avenue', required: true },
+        { key: 'suburb', label: 'Suburb', value: 'Sea Point', required: true },
+        { key: 'amount_to_be_registered', label: 'Amount to be registered', value: 'R 2 280 000', inputMode: 'decimal', required: true },
+        { key: 'loan_to_value', label: 'Loan to value', value: '80%', readOnly: true },
+        { key: 'selected_banks', label: 'Preferred lenders', value: 'ABSA, FNB, Nedbank, Standard Bank' },
+        { key: 'solar_panels_included', label: 'Solar panels included', value: 'No', type: 'select', options: ['Yes', 'No'] },
+      ],
+    },
+  ],
+  declarations_consents: [
+    {
+      title: 'Declarations & consents',
+      helper: 'The real portal asks buyers to accept these before preparing the submission pack.',
+      fields: [
+        { key: 'loan_processing_consent', label: 'I consent to loan processing and affordability assessment.', value: true, type: 'checkbox', required: true },
+        { key: 'credit_bureau_consent', label: 'I consent to credit bureau, fraud and bank-data retrieval checks.', value: true, type: 'checkbox', required: true },
+        { key: 'third_party_communication_consent', label: 'I consent to related third-party communication where required.', value: true, type: 'checkbox' },
+        { key: 'declaration_accepted', label: 'I confirm that all information submitted is true and complete.', value: false, type: 'checkbox', required: true },
+        { key: 'digital_signature_name', label: 'Digital signature name', value: 'Mia Khumalo', required: true },
+        { key: 'digital_signature_date', label: 'Digital signature date', value: '2026-08-26', type: 'date', required: true },
+      ],
+    },
+  ],
+}
+
+const DEMO_BOND_APPLICATION_DOCUMENTS = [
+  { label: 'Buyer ID document', type: 'FICA', status: 'Uploaded', tone: 'complete' },
+  { label: 'Three months bank statements', type: 'Income', status: 'Uploaded', tone: 'complete' },
+  { label: 'Latest payslip', type: 'Income', status: 'Needed', tone: 'action' },
+  { label: 'Signed Offer to Purchase', type: 'Sale document', status: 'Linked', tone: 'complete' },
+]
+
 const BOND_JOURNEY_STAGES = [
   { id: 'application', label: 'Application', helper: 'We are here', icon: FileSignature },
   { id: 'submitted', label: 'Submitted to Banks', helper: 'Coming next', icon: Building2 },
@@ -1064,6 +1200,7 @@ function MobileFinance({ brand, demoUploadComplete, onCompleteUpload, token }) {
       </section>
       <BondJourneyTracker brand={brand} currentStageIndex={0} />
       <CurrentFinanceStatus brand={brand} application={application} demoUploadComplete={demoUploadComplete} onCompleteUpload={onCompleteUpload} />
+      <DemoBondApplicationForm brand={brand} application={application} compact />
       <section>
         <h2 className="mb-2 text-base font-semibold text-[#142132]">Your bank applications</h2>
         <div className="overflow-hidden rounded-[18px] border border-[#dbe5ef] bg-white">
@@ -2003,6 +2140,8 @@ function FinanceSection({ brand, demoUploadComplete, onCompleteUpload }) {
         />
       </section>
 
+      <DemoBondApplicationForm brand={brand} application={application} />
+
       <BankApplicationsSection
         brand={brand}
         banks={application.bankApplications}
@@ -2136,6 +2275,261 @@ function CurrentFinanceStatus({ brand, application, demoUploadComplete, onComple
         </div>
       </div>
       {demoUploadComplete ? <p className="mt-4 text-sm font-semibold text-emerald-700">Latest payslip uploaded for review.</p> : null}
+    </div>
+  )
+}
+
+function createDemoBondApplicationValues() {
+  return Object.values(DEMO_BOND_APPLICATION_FIELD_GROUPS).reduce((values, groups) => {
+    groups.forEach((group) => {
+      group.fields.forEach((field) => {
+        values[field.key] = field.value ?? ''
+      })
+    })
+    return values
+  }, {})
+}
+
+function DemoBondApplicationForm({ brand, application, compact = false }) {
+  const [activeSection, setActiveSection] = useState('summary')
+  const [values, setValues] = useState(() => createDemoBondApplicationValues())
+  const [saved, setSaved] = useState(false)
+  const activeMeta = DEMO_BOND_APPLICATION_SECTIONS.find((section) => section.key === activeSection) || DEMO_BOND_APPLICATION_SECTIONS[0]
+  const activeGroups = DEMO_BOND_APPLICATION_FIELD_GROUPS[activeSection] || []
+  const completedSections = DEMO_BOND_APPLICATION_SECTIONS.filter((section) => section.tone === 'complete').length
+
+  function updateField(key, value) {
+    setSaved(false)
+    setValues((current) => ({ ...current, [key]: value }))
+  }
+
+  function handleSaveDemoProgress() {
+    setSaved(true)
+  }
+
+  return (
+    <section className={`rounded-[24px] border border-[#dbe5ef] bg-white shadow-[0_14px_34px_rgba(15,23,42,0.05)] ${compact ? 'p-4' : 'p-5 lg:p-6'}`}>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <span className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Bond application</span>
+          <h2 className={`${compact ? 'mt-1 text-lg' : 'mt-1 text-xl'} font-semibold tracking-[-0.04em] text-[#142132]`}>
+            Complete your bond application
+          </h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-[#52657b]">
+            A demo-safe preview of the application workspace buyers complete before the bond originator submits to the banks.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-full border border-[#dbe5ef] bg-[#fbfdff] px-3 py-1 text-xs font-semibold text-[#52657b]">
+            {completedSections} of {DEMO_BOND_APPLICATION_SECTIONS.length} sections complete
+          </span>
+          <span className="rounded-full border px-3 py-1 text-xs font-semibold" style={{ borderColor: hexToRgba(brand.primary, 0.18), backgroundColor: hexToRgba(brand.primary, 0.08), color: brand.primary }}>
+            Demo mode
+          </span>
+        </div>
+      </div>
+
+      <div className="mt-5 rounded-[18px] border border-[#e3ebf4] bg-[#f8fbff] p-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.13em] text-[#7b8ca2]">Already filled</p>
+            <p className="mt-1 text-sm font-semibold text-[#142132]">Onboarding and property details have prefilled the application.</p>
+          </div>
+          <div className="grid gap-2 text-xs font-semibold sm:grid-cols-3">
+            <span className="rounded-full bg-white px-3 py-1 text-[#2f7a51]">24 fields filled</span>
+            <span className="rounded-full bg-white px-3 py-1" style={{ color: brand.primary }}>4 banks selected</span>
+            <span className="rounded-full bg-white px-3 py-1 text-[#a15b31]">1 document needed</span>
+          </div>
+        </div>
+      </div>
+
+      <div className={`mt-5 grid gap-5 ${compact ? '' : 'lg:grid-cols-[260px_minmax(0,1fr)]'}`}>
+        <aside className={`${compact ? 'overflow-x-auto' : 'lg:sticky lg:top-6 lg:h-fit'} rounded-[16px] border border-[#e3ebf4] bg-[#fbfdff] p-2`}>
+          <nav className={`gap-2 ${compact ? 'flex min-w-max' : 'grid'}`}>
+            {DEMO_BOND_APPLICATION_SECTIONS.map((section) => {
+              const selected = section.key === activeSection
+              return (
+                <button
+                  key={section.key}
+                  type="button"
+                  onClick={() => setActiveSection(section.key)}
+                  className={`${compact ? 'min-w-[150px]' : 'w-full'} flex items-center justify-between gap-3 rounded-[12px] border px-3 py-2 text-left transition ${
+                    selected
+                      ? 'bg-white text-[#142132] shadow-[0_10px_22px_rgba(15,23,42,0.08)]'
+                      : section.tone === 'complete'
+                        ? 'border-[#d4e8dc] bg-[#f5fbf7] text-[#2f7a51] hover:border-[#c8dfd2]'
+                        : section.tone === 'action'
+                          ? 'border-[#ead9c6] bg-[#fffaf3] text-[#8a5a22] hover:border-[#e2c9ab]'
+                          : 'border-[#e3ebf4] bg-white text-[#5f7086] hover:border-[#d3e0ed]'
+                  }`}
+                  style={selected ? { borderColor: hexToRgba(brand.primary, 0.28) } : null}
+                >
+                  <span className="text-sm font-semibold">{section.label}</span>
+                  {!compact ? <span className="text-[0.64rem] font-semibold uppercase tracking-[0.08em]">{section.status}</span> : null}
+                </button>
+              )
+            })}
+          </nav>
+        </aside>
+
+        <div className="rounded-[18px] border border-[#e3ebf4] bg-white p-4">
+          <div className="flex flex-col gap-3 border-b border-[#e6edf5] pb-4 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h3 className="text-lg font-semibold tracking-[-0.03em] text-[#142132]">{activeMeta.label}</h3>
+              <p className="mt-1 text-sm leading-6 text-[#52657b]">
+                {activeSection === 'documents'
+                  ? 'Supporting documents are linked to the bond application and document centre.'
+                  : 'These fields are editable here only for the demo preview.'}
+              </p>
+            </div>
+            <span className={`w-fit rounded-full border px-3 py-1 text-xs font-semibold ${statusClasses(activeMeta.tone)}`}>
+              {activeMeta.status}
+            </span>
+          </div>
+
+          {activeSection === 'documents' ? (
+            <DemoBondApplicationDocuments brand={brand} />
+          ) : (
+            <div className="mt-4 space-y-4">
+              {activeGroups.map((group) => (
+                <article key={group.title} className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfdff] p-4">
+                  <div className="mb-4">
+                    <h4 className="text-sm font-semibold text-[#142132]">{group.title}</h4>
+                    <p className="mt-1 text-xs leading-5 text-[#6b7d93]">{group.helper}</p>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {group.fields.map((field) => (
+                      <DemoBondApplicationField
+                        key={field.key}
+                        field={field}
+                        value={values[field.key]}
+                        brand={brand}
+                        onChange={(nextValue) => updateField(field.key, nextValue)}
+                      />
+                    ))}
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+
+          <div className="mt-5 flex flex-col gap-3 border-t border-[#e6edf5] pt-4 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-xs leading-5 text-[#6b7d93]">
+              Demo only: saving here will not create an application, send documents, notify banks, or update workflow state.
+            </p>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <button
+                type="button"
+                onClick={handleSaveDemoProgress}
+                className="inline-flex min-h-10 items-center justify-center rounded-[12px] px-4 text-sm font-semibold text-white"
+                style={{ backgroundColor: brand.primary }}
+              >
+                {saved ? 'Demo progress saved' : 'Save demo progress'}
+              </button>
+              <button type="button" className="inline-flex min-h-10 items-center justify-center rounded-[12px] border border-[#dbe5ef] bg-white px-4 text-sm font-semibold text-[#142132]">
+                Preview submission pack
+              </button>
+            </div>
+          </div>
+
+          {!compact ? (
+            <div className="mt-4 grid gap-3 rounded-[16px] border p-4 md:grid-cols-3" style={{ borderColor: hexToRgba(brand.primary, 0.16), backgroundColor: hexToRgba(brand.primary, 0.045) }}>
+              {[
+                ['Requested bond', application.requestedAmount],
+                ['Purchase price', application.purchasePrice],
+                ['Loan to value', application.loanToValue],
+              ].map(([label, value]) => (
+                <div key={label}>
+                  <p className="text-[0.68rem] font-semibold uppercase tracking-[0.13em] text-[#7b8ca2]">{label}</p>
+                  <p className="mt-1 text-sm font-semibold text-[#142132]">{value}</p>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function DemoBondApplicationField({ field, value, brand, onChange }) {
+  if (field.type === 'checkbox') {
+    return (
+      <label className="flex min-h-[48px] items-start gap-3 rounded-[12px] border border-[#e3ebf4] bg-white px-3 py-3 md:col-span-2">
+        <input
+          type="checkbox"
+          checked={Boolean(value)}
+          onChange={(event) => onChange(event.target.checked)}
+          className="mt-1 h-4 w-4 rounded border-[#c7d4e3]"
+          style={{ accentColor: brand.primary }}
+        />
+        <span className="text-sm leading-6 text-[#324559]">
+          {field.label}
+          {field.required ? <span className="ml-1 font-semibold" style={{ color: brand.primary }}>*</span> : null}
+        </span>
+      </label>
+    )
+  }
+
+  const inputClassName = 'mt-2 min-h-[46px] w-full rounded-[12px] border border-[#d8e3ee] bg-white px-3 py-2.5 text-sm text-[#142132] outline-none transition focus:border-[#35546c]/45 focus:ring-2 focus:ring-[#35546c]/12 disabled:bg-[#f3f6f9] disabled:text-[#667085]'
+
+  return (
+    <label className="block">
+      <span className="text-sm font-semibold text-[#203549]">
+        {field.label}
+        {field.required ? <span className="ml-1" style={{ color: brand.primary }}>*</span> : null}
+      </span>
+      {field.type === 'select' ? (
+        <select value={value ?? ''} onChange={(event) => onChange(event.target.value)} className={inputClassName}>
+          {(field.options || []).map((option) => (
+            <option key={option} value={option}>{option}</option>
+          ))}
+        </select>
+      ) : (
+        <input
+          type={field.type === 'date' || field.type === 'email' ? field.type : 'text'}
+          inputMode={field.inputMode}
+          value={value ?? ''}
+          readOnly={field.readOnly}
+          disabled={field.readOnly}
+          onChange={(event) => onChange(event.target.value)}
+          className={inputClassName}
+        />
+      )}
+      {field.readOnly ? <p className="mt-1 text-xs text-[#6b7d93]">Calculated from the demo application values.</p> : null}
+    </label>
+  )
+}
+
+function DemoBondApplicationDocuments({ brand }) {
+  return (
+    <div className="mt-4 space-y-3">
+      {DEMO_BOND_APPLICATION_DOCUMENTS.map((document) => (
+        <article key={document.label} className="flex flex-col gap-3 rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3">
+            <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full border ${statusClasses(document.tone)}`}>
+              {document.tone === 'complete' ? <CheckCircle2 size={18} /> : <AlertCircle size={18} />}
+            </span>
+            <div>
+              <h4 className="text-sm font-semibold text-[#142132]">{document.label}</h4>
+              <p className="mt-1 text-xs text-[#6b7d93]">{document.type}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${statusClasses(document.tone)}`}>{document.status}</span>
+            {document.tone === 'action' ? (
+              <button type="button" className="inline-flex min-h-9 items-center justify-center gap-2 rounded-[10px] px-3 text-xs font-semibold text-white" style={{ backgroundColor: brand.primary }}>
+                <UploadCloud size={14} />
+                Upload
+              </button>
+            ) : (
+              <button type="button" className="inline-flex min-h-9 items-center justify-center gap-2 rounded-[10px] border border-[#dbe5ef] bg-white px-3 text-xs font-semibold text-[#142132]">
+                View
+              </button>
+            )}
+          </div>
+        </article>
+      ))}
     </div>
   )
 }
