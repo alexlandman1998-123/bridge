@@ -1094,9 +1094,9 @@ function stripQuickListingMetadataText(value = '') {
 }
 
 function findListingForEditor(listings = [], listingId = '') {
-  const target = normalizeText(decodeURIComponent(String(listingId || '')))
-  if (!target) return null
-  return (Array.isArray(listings) ? listings : []).find((listing) => getListingIdentityKeys(listing).includes(target)) || null
+  const candidates = new Set(expandListingIdentityCandidates([listingId]))
+  if (!candidates.size) return null
+  return (Array.isArray(listings) ? listings : []).find((listing) => listingMatchesIdentityCandidates(listing, candidates)) || null
 }
 
 function resolveListingEditorStep(value = '', fallback = 'seller') {
@@ -1726,6 +1726,36 @@ function normalizeListingDeleteIdentity(value) {
 function addListingIdentityKey(keys, prefix, value) {
   const normalized = normalizeListingDeleteIdentity(value)
   if (normalized) keys.push(`${prefix}:${normalized}`)
+}
+
+function expandListingIdentityCandidates(values = []) {
+  const candidates = []
+  for (const value of Array.isArray(values) ? values : [values]) {
+    const raw = String(value || '').trim()
+    if (!raw) continue
+    candidates.push(raw)
+    try {
+      const decoded = decodeURIComponent(raw)
+      if (decoded && decoded !== raw) candidates.push(decoded)
+    } catch {
+      // Ignore malformed route fragments; raw identity is still useful.
+    }
+    const comparable = normalizeListingDeleteIdentity(raw)
+    if (comparable) candidates.push(comparable)
+  }
+  return Array.from(new Set(candidates))
+}
+
+function getListingIdentityCandidateSet(row = {}, extras = []) {
+  return new Set(expandListingIdentityCandidates([
+    ...getListingIdentityKeys(row),
+    ...(Array.isArray(extras) ? extras : [extras]),
+  ]))
+}
+
+function listingMatchesIdentityCandidates(row = {}, candidates = new Set()) {
+  if (!(candidates instanceof Set) || !candidates.size) return false
+  return expandListingIdentityCandidates(getListingIdentityKeys(row)).some((candidate) => candidates.has(candidate))
 }
 
 function getListingAddressFingerprint(row = {}) {
@@ -4237,12 +4267,16 @@ function AgentListings({ initialTab = null } = {}) {
       }).catch(() => null)
     } else {
       const localListings = readAgentPrivateListings()
-      const localIndex = localListings.findIndex((row) => getListingIdentityKeys(row).includes(listingId))
-      if (localIndex < 0) {
-        setError('Unable to update this local listing.')
-        return
-      }
-      const existingLocal = localListings[localIndex]
+      const localIdentityCandidates = getListingIdentityCandidateSet(listing, [listingId, editListingId])
+      const localIndex = localListings.findIndex((row) => listingMatchesIdentityCandidates(row, localIdentityCandidates))
+      const existingLocal = localIndex >= 0
+        ? localListings[localIndex]
+        : {
+            ...listing,
+            id: normalizeText(listing.id || listing.listingId || editListingId || listingId) || generateId('listing'),
+            listingId: normalizeText(listing.listingId || listingId || editListingId),
+            privateListingId: normalizeText(listing.privateListingId || (isUuidLike(listingId) ? listingId : '')),
+          }
       const localUpdated = {
         ...existingLocal,
         ...listingPatch,
@@ -4310,10 +4344,15 @@ function AgentListings({ initialTab = null } = {}) {
         ],
       }
       const localRequirementSync = buildLocalQuickAddRequirementSync(localUpdated, existingLocal.documentRequirements || existingLocal.requiredDocuments || [])
-      localListings[localIndex] = {
+      const nextLocalListing = {
         ...localUpdated,
         requiredDocuments: localRequirementSync.requirements,
         documentRequirements: localRequirementSync.requirements,
+      }
+      if (localIndex >= 0) {
+        localListings[localIndex] = nextLocalListing
+      } else {
+        localListings.unshift(nextLocalListing)
       }
       writeAgentPrivateListings(localListings)
     }
