@@ -150,7 +150,6 @@ function HomeSeekersDemo() {
         <img className="hs-hero-image" src={heroImage} alt="" />
         <div className="hs-hero-shade" />
         <div className="hs-hero-copy">
-          <p className="hs-kicker">Arch9 concept demo</p>
           <h1>45</h1>
           <p className="hs-hero-title">Days to sell your home.</p>
           <p className="hs-hero-subtitle">Or we halve our commission.</p>

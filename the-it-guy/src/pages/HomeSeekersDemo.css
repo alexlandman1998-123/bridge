@@ -110,7 +110,6 @@
   animation: hsRise 720ms ease-out both;
 }
 
-.hs-kicker,
 .hs-section-label,
 .hs-card-index {
   color: var(--hs-gold-strong);
