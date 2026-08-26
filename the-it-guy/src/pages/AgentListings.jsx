@@ -254,6 +254,31 @@ const CREATE_LISTING_SALES_FLAG_OPTIONS = [
   { key: 'noTransferDuty', label: 'No Transfer Duty', description: 'Show no-transfer-duty messaging where supported.' },
 ]
 
+const CREATE_LISTING_SELLING_POINT_OPTIONS = [
+  { value: 'pool', label: 'Pool' },
+  { value: 'garden', label: 'Garden' },
+  { value: 'security', label: 'Security' },
+  { value: 'electric_fence', label: 'Electric fence' },
+  { value: 'solar', label: 'Solar' },
+  { value: 'backup_power', label: 'Backup power' },
+  { value: 'backup_water', label: 'Backup water' },
+  { value: 'borehole', label: 'Borehole' },
+  { value: 'fibre', label: 'Fibre' },
+  { value: 'pet_friendly', label: 'Pet friendly' },
+  { value: 'study', label: 'Study' },
+  { value: 'staff_quarters', label: 'Staff quarters' },
+  { value: 'entertainment_area', label: 'Entertainment area' },
+  { value: 'built_in_braai', label: 'Built-in braai' },
+  { value: 'fireplace', label: 'Fireplace' },
+  { value: 'air_conditioning', label: 'Air conditioning' },
+  { value: 'open_plan_living', label: 'Open-plan living' },
+  { value: 'balcony', label: 'Balcony' },
+  { value: 'sea_view', label: 'Sea view' },
+  { value: 'mountain_view', label: 'Mountain view' },
+  { value: 'flatlet', label: 'Flatlet' },
+  { value: 'new_development', label: 'New development' },
+]
+
 const QUICK_ADD_HELP_STEPS = [
   'Listing Status',
   'Ownership & Seller Type',
@@ -1153,6 +1178,14 @@ function buildListingEditorFormFromListing(listing = {}, profile = {}, workspace
   const formattedAddress = normalizeText(listing.formattedAddress || [propertyAddress, listing.suburb, listing.city, listing.province].filter(Boolean).join(', '))
   const mandateStatus = normalizeDirectListingKey(listing.mandateStatus || listing.mandate_status || onboardingFormData.mandateStatus)
   const hasSignedMandate = ['signed', 'signed_uploaded', 'signed_external_pending_upload'].includes(mandateStatus)
+  const listingFeatureSelections = [
+    ...(Array.isArray(listing.keySellingPoints) ? listing.keySellingPoints : []),
+    ...(Array.isArray(listing.listingPublicationData?.features) ? listing.listingPublicationData.features : []),
+    ...(Array.isArray(listing.publicationData?.features) ? listing.publicationData.features : []),
+    ...(Array.isArray(listing.propertyDetails?.selectedFeatures) ? listing.propertyDetails.selectedFeatures : []),
+    ...(Array.isArray(onboardingFormData.keySellingPoints) ? onboardingFormData.keySellingPoints : []),
+    ...(Array.isArray(onboardingFormData.features) ? onboardingFormData.features : []),
+  ].map(normalizeDirectListingKey).filter(Boolean)
 
   return {
     ...base,
@@ -1242,7 +1275,7 @@ function buildListingEditorFormFromListing(listing = {}, profile = {}, workspace
         listing.description ||
         onboardingFormData.propertyNotes,
     ),
-    keySellingPoints: Array.isArray(listing.keySellingPoints) ? listing.keySellingPoints.map(normalizeText).filter(Boolean) : [],
+    keySellingPoints: Array.from(new Set(listingFeatureSelections)),
     listingImages: galleryImages,
     coverImageId: normalizeText(listing.coverImageId || galleryImages[0]?.id),
     selectedSyndicationChannels: Array.from(selectedSyndicationChannels),
@@ -1472,6 +1505,7 @@ function buildQuickAddDirectListingPersistencePayload(form = {}, context = {}) {
   const sellerOnboardingFormData = {
     ...directListingIntake.sellerOnboardingFormData,
     propertyNotes: normalizeText(form.listingDescription),
+    propertyDescription: normalizeText(form.listingDescription),
     listingDescription: normalizeText(form.listingDescription),
     listingPreviewDescription: normalizeText(form.listingDescription || form.notes),
     directListingIntake: {
@@ -3846,9 +3880,9 @@ function AgentListings({ initialTab = null } = {}) {
     if (targetIndex < 0 || (!isEditListingWorkspace && !allowForward && targetIndex > createListingMaxVisitedStep)) return
     setCreateListingStep(stepKey)
     if (isEditListingWorkspace) {
-      const params = new URLSearchParams(location.search || '')
+      const params = new URLSearchParams(window.location.search || location.search || '')
       params.set('step', stepKey)
-      navigate(`${location.pathname}?${params.toString()}`, { replace: true })
+      window.history.replaceState(window.history.state, '', `${location.pathname}?${params.toString()}`)
     }
   }
 
@@ -3916,26 +3950,18 @@ function AgentListings({ initialTab = null } = {}) {
     })
   }
 
-  function updateKeySellingPoint(index, value) {
+  function toggleKeySellingPoint(value) {
+    const normalizedValue = normalizeDirectListingKey(value)
+    if (!normalizedValue) return
     setForm((previous) => {
-      const points = Array.isArray(previous.keySellingPoints) ? [...previous.keySellingPoints] : []
-      points[index] = value
-      return { ...previous, keySellingPoints: points }
+      const points = new Set((Array.isArray(previous.keySellingPoints) ? previous.keySellingPoints : []).map(normalizeDirectListingKey).filter(Boolean))
+      if (points.has(normalizedValue)) {
+        points.delete(normalizedValue)
+      } else {
+        points.add(normalizedValue)
+      }
+      return { ...previous, keySellingPoints: Array.from(points) }
     })
-  }
-
-  function addKeySellingPoint() {
-    setForm((previous) => ({
-      ...previous,
-      keySellingPoints: [...(Array.isArray(previous.keySellingPoints) ? previous.keySellingPoints : []), ''],
-    }))
-  }
-
-  function removeKeySellingPoint(index) {
-    setForm((previous) => ({
-      ...previous,
-      keySellingPoints: (Array.isArray(previous.keySellingPoints) ? previous.keySellingPoints : []).filter((_, itemIndex) => itemIndex !== index),
-    }))
   }
 
   async function handleCreateListingImageUpload(event) {
@@ -4136,6 +4162,8 @@ function AgentListings({ initialTab = null } = {}) {
       floorSize: form.floorSize,
       askingPrice,
       propertyNotes: normalizeText(form.listingDescription),
+      propertyDescription: normalizeText(form.listingDescription),
+      listingDescription: normalizeText(form.listingDescription),
       listingPreviewDescription: normalizeText(form.listingDescription),
       imageGallery: uploadedImages,
       coverImageId: normalizeText(form.coverImageId || uploadedImages[0]?.id),
@@ -4232,6 +4260,30 @@ function AgentListings({ initialTab = null } = {}) {
         keySellingPoints,
         galleryImages: uploadedImages,
         coverImageId: normalizeText(form.coverImageId || uploadedImages[0]?.id),
+        marketing: {
+          ...(existingLocal.marketing || {}),
+          imageGallery: uploadedImages,
+          coverImageId: normalizeText(form.coverImageId || uploadedImages[0]?.id),
+          description: normalizeText(form.listingDescription),
+          features: buildQuickListingPublicationFeatures(form, keySellingPoints).join(', '),
+        },
+        propertyDetails: {
+          ...(existingLocal.propertyDetails || {}),
+          addressLine1: propertyAddress,
+          formattedAddress,
+          streetNumber: normalizeText(form.streetNumber),
+          streetName: normalizeText(form.streetName || form.route),
+          streetAddress,
+          suburb: normalizeText(form.suburb),
+          city: normalizeText(form.city),
+          province: normalizeText(form.province),
+          postalCode,
+          country,
+          propertyType,
+          description: normalizeText(form.listingDescription),
+          listingPreviewDescription: normalizeText(form.listingDescription || form.notes),
+          selectedFeatures: keySellingPoints,
+        },
         selectedSyndicationChannels: Array.isArray(form.selectedSyndicationChannels) ? form.selectedSyndicationChannels : [],
         seller: {
           ...(existingLocal.seller || {}),
@@ -7072,21 +7124,27 @@ function AgentListings({ initialTab = null } = {}) {
                     <Field as="textarea" value={form.listingDescription} onChange={(event) => updateForm('listingDescription', event.target.value)} placeholder="Describe the property, lifestyle, and standout value." />
                   </label>
                   <div className="grid gap-2">
-                    <div className="flex items-center justify-between gap-3">
+                    <div>
                       <span className="text-sm font-semibold text-[#2d445e]">Key selling points</span>
-                      <Button type="button" size="sm" variant="secondary" onClick={addKeySellingPoint}>
-                        <Plus size={14} />
-                        Add point
-                      </Button>
+                      <p className="mt-1 text-xs text-[#607387]">Choose the features that can be passed through to Property24, Private Property, and the agency website.</p>
                     </div>
-                    {(form.keySellingPoints.length ? form.keySellingPoints : ['']).map((point, index) => (
-                      <div key={`selling-point-${index}`} className="flex gap-2">
-                        <Field value={point} onChange={(event) => updateKeySellingPoint(index, event.target.value)} placeholder="Solar system" />
-                        <Button type="button" variant="secondary" disabled={!form.keySellingPoints.length} onClick={() => removeKeySellingPoint(index)}>
-                          <Trash2 size={15} />
-                        </Button>
-                      </div>
-                    ))}
+                    <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                      {CREATE_LISTING_SELLING_POINT_OPTIONS.map((option) => {
+                        const selectedPoints = new Set((Array.isArray(form.keySellingPoints) ? form.keySellingPoints : []).map(normalizeDirectListingKey).filter(Boolean))
+                        const isSelected = selectedPoints.has(option.value)
+                        return (
+                          <button
+                            key={option.value}
+                            type="button"
+                            onClick={() => toggleKeySellingPoint(option.value)}
+                            className={`flex items-center justify-between gap-3 rounded-[8px] border px-3 py-2 text-left text-sm font-semibold transition ${isSelected ? 'border-[#1f7d44] bg-[#eefaf3] text-[#176437]' : 'border-[#dce6f2] bg-white text-[#2d445e] hover:border-[#b7c8db]'}`}
+                          >
+                            <span>{option.label}</span>
+                            {isSelected ? <CheckCircle2 size={15} /> : <Circle size={15} className="text-[#8fa2b7]" />}
+                          </button>
+                        )
+                      })}
+                    </div>
                   </div>
                 </div>
               </div>

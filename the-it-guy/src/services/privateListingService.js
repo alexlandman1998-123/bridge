@@ -2180,6 +2180,8 @@ function stripUnsupportedPortalColumns(payload = {}) {
 
 const PRIVATE_LISTING_LOCATION_COLUMNS = [
   'formatted_address',
+  'street_number',
+  'street_name',
   'street_address',
   'country',
   'latitude',
@@ -2988,6 +2990,8 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
   const complexName = pickFirstText(canonicalPropertyFacts.complexName, canonicalPropertyFacts.complex_name, canonicalPropertyFacts.schemeName, canonicalPropertyFacts.scheme_name, canonicalSellerFacts.complexName, canonicalSellerFacts.complex_name, canonicalSellerFacts.property_complex_name)
   const estateName = pickFirstText(canonicalPropertyFacts.estateName, canonicalPropertyFacts.estate_name, canonicalSellerFacts.estateName, canonicalSellerFacts.estate_name, canonicalSellerFacts.property_estate_name)
   const sectionalTitleNumber = pickFirstText(canonicalPropertyFacts.sectionalTitleNumber, canonicalPropertyFacts.sectional_title_number, canonicalPropertyFacts.sectionalTitleScheme, canonicalSellerFacts.sectionalTitleNumber, canonicalSellerFacts.sectional_title_number)
+  const streetNumber = pickFirstText(row.street_number, onboardingFormData.streetNumber, onboardingFormData.street_number, canonicalPropertyFacts.streetNumber, canonicalPropertyFacts.street_number)
+  const streetName = pickFirstText(row.street_name, onboardingFormData.streetName, onboardingFormData.street_name, onboardingFormData.route, canonicalPropertyFacts.streetName, canonicalPropertyFacts.street_name, canonicalPropertyFacts.route)
 
   const mapped = {
     id: row.id,
@@ -3020,6 +3024,10 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     estimatedValue: Number(row.estimated_value || 0) || 0,
     addressLine1: row.address_line_1 || '',
     formattedAddress: row.formatted_address || '',
+    streetNumber,
+    street_number: streetNumber,
+    streetName,
+    street_name: streetName,
     streetAddress: row.street_address || row.address_line_1 || '',
     addressLine2: row.address_line_2 || '',
     suburb: row.suburb || '',
@@ -3091,6 +3099,9 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     images: imageGallery,
     galleryImages: imageGallery,
     coverImageId,
+    keySellingPoints: Array.isArray(onboardingFormData.keySellingPoints)
+      ? onboardingFormData.keySellingPoints.map((item) => normalizeText(item)).filter(Boolean)
+      : onboardingFeatures,
     externalLinks: externalListingLinks,
     listingExternalLinks: externalListingLinks,
     listingPreviewDescription,
@@ -3130,6 +3141,13 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
       propertyType: row.property_type || '',
       listingStatus,
       addressLine1: row.address_line_1 || '',
+      formattedAddress: row.formatted_address || '',
+      streetNumber,
+      streetName,
+      streetAddress: row.street_address || row.address_line_1 || '',
+      postalCode: row.postal_code || '',
+      country: row.country || 'South Africa',
+      googlePlaceId: row.google_place_id || '',
       suburb: row.suburb || '',
       city: row.city || '',
       province: row.province || '',
@@ -5513,6 +5531,8 @@ function buildPrivateListingPayload(payload = {}, userId = null) {
     estimated_value: normalizeNumber(payload.estimatedValue),
     address_line_1: normalizeNullableText(payload.addressLine1 || payload.propertyAddress),
     formatted_address: normalizeNullableText(payload.formattedAddress),
+    street_number: normalizeNullableText(payload.streetNumber || payload.street_number),
+    street_name: normalizeNullableText(payload.streetName || payload.street_name || payload.route),
     street_address: normalizeNullableText(payload.streetAddress || payload.addressLine1 || payload.propertyAddress),
     address_line_2: normalizeNullableText(payload.addressLine2),
     suburb: normalizeNullableText(payload.suburb),
@@ -5726,6 +5746,8 @@ export async function updatePrivateListing(listingId, payload = {}, options = {}
   if (payload.estimatedValue !== undefined) patch.estimated_value = normalizeNumber(payload.estimatedValue)
   if (payload.addressLine1 !== undefined) patch.address_line_1 = normalizeNullableText(payload.addressLine1)
   if (payload.formattedAddress !== undefined) patch.formatted_address = normalizeNullableText(payload.formattedAddress)
+  if (payload.streetNumber !== undefined || payload.street_number !== undefined) patch.street_number = normalizeNullableText(payload.streetNumber || payload.street_number)
+  if (payload.streetName !== undefined || payload.street_name !== undefined || payload.route !== undefined) patch.street_name = normalizeNullableText(payload.streetName || payload.street_name || payload.route)
   if (payload.streetAddress !== undefined) patch.street_address = normalizeNullableText(payload.streetAddress)
   if (payload.addressLine2 !== undefined) patch.address_line_2 = normalizeNullableText(payload.addressLine2)
   if (payload.suburb !== undefined) patch.suburb = normalizeNullableText(payload.suburb)
