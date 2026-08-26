@@ -315,6 +315,7 @@ export function createProperty24ListingPlan({
   const mediaRows = normalizeMediaRows(media)
   const imageRows = mediaRows.filter((item) => item.mediaType === 'image')
   const includePhotos = isNew || options.photosChanged !== false
+  const requirePhotoBytes = options.requirePhotoBytes !== false
   const photos = buildPhotos(mediaRows, { includePhotos })
   const previewPhotos = buildPreviewPhotos(mediaRows, { includePhotos })
   const propertyFeatures = buildPropertyFeatures(listing, publication)
@@ -347,7 +348,7 @@ export function createProperty24ListingPlan({
   if (propertyFeatures.pool === null || propertyFeatures.pool === undefined) dataBlockers.push('missing_pool_value')
   if (propertyFeatures.flatlet === null || propertyFeatures.flatlet === undefined) dataBlockers.push('missing_flatlet_value')
 
-  if (includePhotos && imageRows.length && photos.length !== imageRows.length) {
+  if (requirePhotoBytes && includePhotos && imageRows.length && photos.length !== imageRows.length) {
     technicalBlockers.push('listing_image_bytes_not_loaded_for_property24_submit')
   }
 

@@ -77,6 +77,19 @@ const client = createFakeClient({
       province: 'Gauteng',
       updated_at: '2026-08-20T09:00:00.000Z',
     },
+    {
+      id: 'arch9-listing-onboarding',
+      listing_reference: 'ARCH9-LISTING-ONBOARDING',
+      listing_status: 'active',
+      title: 'Onboarding Hydrated Listing',
+      address_line_1: '12 Mandate Road',
+      property_type: 'house',
+      asking_price: 1850000,
+      suburb: 'Bartlett',
+      city: 'Boksburg',
+      province: 'Gauteng',
+      updated_at: '2026-08-26T09:00:00.000Z',
+    },
   ],
   listing_publication_data: [
     {
@@ -92,6 +105,28 @@ const client = createFakeClient({
       erf_size: 500,
       description: 'This is a real Arch9-shaped listing preview for Property24.',
       status: 'Published',
+    },
+    {
+      listing_id: 'arch9-listing-onboarding',
+      title: 'Onboarding Hydrated Listing',
+      listing_type: 'Sale',
+      property_type: 'House',
+      asking_price: 1850000,
+      bedrooms: 2,
+      bathrooms: 1,
+      garages: 1,
+      status: 'Draft',
+    },
+  ],
+  private_listing_seller_onboarding: [
+    {
+      private_listing_id: 'arch9-listing-onboarding',
+      form_data: {
+        listingDescription: 'Mandate form data should hydrate the Property24 description.',
+        mandateStartDate: '2026-08-26',
+        mandateEndDate: '2027-02-26',
+      },
+      updated_at: '2026-08-26T09:05:00.000Z',
     },
   ],
   listing_media: [
@@ -111,8 +146,12 @@ assert.equal(bundle.listing.id, listingId)
 assert.equal(bundle.publication.listing_id, listingId)
 assert.equal(bundle.media.length, 1)
 
+const onboardingHydratedBundle = await fetchArch9ListingForProperty24Preview({ client, listingId: 'arch9-listing-onboarding' })
+assert.equal(onboardingHydratedBundle.listing.listingPreviewDescription, 'Mandate form data should hydrate the Property24 description.')
+assert.equal(onboardingHydratedBundle.listing.mandateEndDate, '2027-02-26')
+
 const candidates = await fetchRecentArch9ListingsForProperty24Preview({ client, limit: 5 })
-assert.equal(candidates.length, 1)
+assert.equal(candidates.length, 2)
 assert.equal(candidates[0].id, listingId)
 assert.equal(candidates[0].suburb, 'Sandton')
 
@@ -146,6 +185,26 @@ assert.equal(report.previewPayload.photos[0].bytesLoaded, false)
 assert.equal(report.safety.property24ApiCalled, false)
 assert.equal(report.safety.databaseWritten, false)
 assert.equal(report.safety.listingPublished, false)
+
+const onboardingHydratedReport = createProperty24Arch9ListingPreview({
+  ...onboardingHydratedBundle,
+  agentMapping: {
+    property24AgentId: 77959,
+    sourceReference: 'ARCH9-AGENT-001',
+  },
+  catalogMapping: {
+    suburbId: 1987,
+    propertyTypeId: 4,
+  },
+  options: {
+    agencyId: 31382,
+    requirePhotoBytes: false,
+  },
+})
+assert.equal(onboardingHydratedReport.summary.expiryDate, '2027-02-26T00:00:00.000Z')
+assert.equal(onboardingHydratedReport.summary.descriptionPresent, true)
+assert.equal(onboardingHydratedReport.dataBlockers.includes('missing_expiry_date'), false)
+assert.equal(onboardingHydratedReport.dataBlockers.includes('missing_description'), false)
 
 const loaded = await loadProperty24ImageBytesForPreview({
   media: bundle.media,

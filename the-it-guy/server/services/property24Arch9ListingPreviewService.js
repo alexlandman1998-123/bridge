@@ -11,6 +11,76 @@ export function normalizeProperty24PreviewText(value = '') {
   return String(value || '').trim()
 }
 
+function asObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+}
+
+function firstText(...values) {
+  for (const value of values) {
+    const text = normalizeProperty24PreviewText(value)
+    if (text) return text
+  }
+  return ''
+}
+
+function hydrateListingFromOnboarding(listing = {}, onboarding = {}) {
+  const formData = asObject(onboarding.form_data || onboarding.formData)
+  if (!Object.keys(formData).length) return listing
+
+  const mandateEndDate = firstText(
+    listing.mandate_end_date,
+    listing.mandateEndDate,
+    listing.expiry_date,
+    listing.expiryDate,
+    formData.mandateEndDate,
+    formData.mandate_end_date,
+    formData.mandateExpiryDate,
+    formData.mandate_expiry_date,
+    formData.expiryDate,
+  )
+  const mandateStartDate = firstText(
+    listing.mandate_start_date,
+    listing.mandateStartDate,
+    formData.mandateStartDate,
+    formData.mandate_start_date,
+    formData.listingDate,
+  )
+  const listingDescription = firstText(
+    listing.listing_preview_description,
+    listing.listingPreviewDescription,
+    listing.description,
+    formData.listingPreviewDescription,
+    formData.listingDescription,
+    formData.propertyNotes,
+    formData.description,
+  )
+
+  return {
+    ...listing,
+    ...(listingDescription
+      ? {
+          description: firstText(listing.description, listingDescription),
+          listing_preview_description: firstText(listing.listing_preview_description, listingDescription),
+          listingPreviewDescription: firstText(listing.listingPreviewDescription, listingDescription),
+        }
+      : {}),
+    ...(mandateStartDate
+      ? {
+          mandate_start_date: firstText(listing.mandate_start_date, mandateStartDate),
+          mandateStartDate: firstText(listing.mandateStartDate, mandateStartDate),
+        }
+      : {}),
+    ...(mandateEndDate
+      ? {
+          mandate_end_date: firstText(listing.mandate_end_date, mandateEndDate),
+          mandateEndDate: firstText(listing.mandateEndDate, mandateEndDate),
+          expiry_date: firstText(listing.expiry_date, mandateEndDate),
+          expiryDate: firstText(listing.expiryDate, mandateEndDate),
+        }
+      : {}),
+  }
+}
+
 function isMissingRelationError(error) {
   const message = normalizeProperty24PreviewText(error?.message).toLowerCase()
   return error?.code === '42P01' || message.includes('does not exist') || message.includes('schema cache')
@@ -66,14 +136,15 @@ export async function fetchArch9ListingForProperty24Preview({ client, listingId 
   if (!normalizedListingId) throw new Error('--listing-id is required.')
 
   const listing = await fetchRequiredSingle(client, 'private_listings', 'id', normalizedListingId)
-  const [publication, media, existingSync] = await Promise.all([
+  const [publication, media, existingSync, onboarding] = await Promise.all([
     fetchOptionalSingle(client, 'listing_publication_data', 'listing_id', normalizedListingId),
     fetchRows(client, 'listing_media', 'listing_id', normalizedListingId),
     fetchOptionalSingle(client, 'property24_listing_syncs', 'private_listing_id', normalizedListingId),
+    fetchOptionalSingle(client, 'private_listing_seller_onboarding', 'private_listing_id', normalizedListingId),
   ])
 
   return {
-    listing,
+    listing: hydrateListingFromOnboarding(listing, onboarding || {}),
     publication: publication || {},
     media,
     existingSync: existingSync || {},

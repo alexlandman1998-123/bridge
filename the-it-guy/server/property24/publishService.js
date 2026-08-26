@@ -304,16 +304,29 @@ export async function buildProperty24ListingSubmitPlan({
   maxImages = 20,
   photosChanged = true,
   convertImagesToJpeg = true,
+  loadImageBytes = true,
 } = {}) {
   if (!supabase) throw new Error('Supabase client is required.')
   const bundle = await fetchArch9ListingForProperty24Preview({ client: supabase, listingId })
-  const loaded = await loadProperty24ImageBytesForPreview({
-    media: bundle.media,
-    storageClient: supabase,
-    storageBaseUrl,
-    maxImages,
-    convertImagesToJpeg,
-  })
+  const loaded = loadImageBytes
+    ? await loadProperty24ImageBytesForPreview({
+        media: bundle.media,
+        storageClient: supabase,
+        storageBaseUrl,
+        maxImages,
+        convertImagesToJpeg,
+      })
+    : {
+        media: bundle.media,
+        summary: {
+          requested: 0,
+          loaded: 0,
+          failed: 0,
+          convertedToJpeg: 0,
+          skipped: Array.isArray(bundle.media) ? bundle.media.length : 0,
+        },
+        results: [],
+      }
 
   return createProperty24Arch9ListingPreview({
     ...bundle,
@@ -338,6 +351,7 @@ export async function buildProperty24ListingSubmitPlan({
       listingNumber,
       photosChanged,
       includeSubmitPayload: true,
+      requirePhotoBytes: loadImageBytes,
     },
   })
 }
@@ -358,6 +372,7 @@ export async function buildProperty24RentalListingSubmitPlan({
   maxImages = 20,
   photosChanged = true,
   convertImagesToJpeg = true,
+  loadImageBytes = true,
 } = {}) {
   if (!supabase) throw new Error('Supabase client is required.')
   const bundle = await fetchArch9ListingForProperty24Preview({ client: supabase, listingId })
@@ -367,13 +382,25 @@ export async function buildProperty24RentalListingSubmitPlan({
     error.status = 400
     throw error
   }
-  const loaded = await loadProperty24ImageBytesForPreview({
-    media: bundle.media,
-    storageClient: supabase,
-    storageBaseUrl,
-    maxImages,
-    convertImagesToJpeg,
-  })
+  const loaded = loadImageBytes
+    ? await loadProperty24ImageBytesForPreview({
+        media: bundle.media,
+        storageClient: supabase,
+        storageBaseUrl,
+        maxImages,
+        convertImagesToJpeg,
+      })
+    : {
+        media: bundle.media,
+        summary: {
+          requested: 0,
+          loaded: 0,
+          failed: 0,
+          convertedToJpeg: 0,
+          skipped: Array.isArray(bundle.media) ? bundle.media.length : 0,
+        },
+        results: [],
+      }
 
   return createProperty24RentalListingPlan({
     ...bundle,
@@ -394,6 +421,7 @@ export async function buildProperty24RentalListingSubmitPlan({
       listingNumber,
       photosChanged,
       includeSubmitPayload: true,
+      requirePhotoBytes: loadImageBytes,
     },
     imageByteLoad: {
       summary: loaded.summary,
