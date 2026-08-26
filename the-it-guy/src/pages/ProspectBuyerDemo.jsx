@@ -44,7 +44,6 @@ const DEMO_NAV = [
   { key: 'overview', label: 'Overview', icon: Home },
   { key: 'progress', label: 'Transfer Journey', icon: CheckCircle2 },
   { key: 'documents', label: 'Your Documents', icon: FileText },
-  { key: 'finance', label: 'Finance', icon: HandCoins },
   { key: 'bond-application', label: 'Bond Application', icon: FileSignature },
   { key: 'messages', label: 'Messages', icon: Mail },
   { key: 'team', label: 'Your Team', icon: Users },
@@ -454,9 +453,9 @@ const DEMO_BOND_APPLICATION_FIELD_GROUPS = {
       helper: '',
       fields: [
         { key: 'bond_rent', label: 'Bond / rent', value: 'R 18 000', inputMode: 'decimal', required: true },
-        { key: 'vehicle_finance', label: 'Vehicle finance', value: 'R 8 500', inputMode: 'decimal' },
+        { key: 'vehicle_finance', label: 'Vehicle finance', value: 'R 8 500', inputMode: 'decimal', reviewRequired: true, reviewMessage: 'Confirm this amount before continuing' },
         { key: 'credit_repayments', label: 'Credit repayments', value: 'R 4 200', inputMode: 'decimal' },
-        { key: 'other_commitments', label: 'Other commitments', value: 'R 0', inputMode: 'decimal' },
+        { key: 'other_commitments', label: 'Other commitments', value: 'R 0', inputMode: 'decimal', reviewRequired: true, reviewMessage: 'Confirm this amount before continuing' },
       ],
     },
   ],
@@ -2348,6 +2347,7 @@ function DemoBondApplicationForm({ brand, application, compact = false }) {
   const totalDetails = 30
   const completedDetails = documentNeededCount > 0 ? 24 : 26
   const completionPercent = Math.round((completedDetails / totalDetails) * 100)
+  const actionColour = brand.accent || brand.primary
   const isFirstSection = activeIndex <= 0
   const isFinalSection = activeSection === 'declarations_consents'
 
@@ -2414,8 +2414,8 @@ function DemoBondApplicationForm({ brand, application, compact = false }) {
   }
 
   return (
-    <section className={`${compact ? 'space-y-4 overflow-hidden' : 'mx-auto max-w-[1280px]'}`}>
-      <div className={`grid min-w-0 gap-6 ${compact ? '' : 'xl:grid-cols-[300px_minmax(0,900px)] xl:gap-10'}`}>
+    <section className={`${compact ? 'space-y-4 overflow-hidden' : 'mx-auto max-w-[1320px]'}`}>
+      <div className={`grid min-w-0 gap-5 ${compact ? '' : 'xl:grid-cols-[270px_minmax(0,1fr)]'}`}>
         <aside className={`${compact ? 'order-2 min-w-0' : 'xl:sticky xl:top-8 xl:self-start'}`}>
           <DemoBondApplicationJourney
             brand={brand}
@@ -2424,92 +2424,84 @@ function DemoBondApplicationForm({ brand, application, compact = false }) {
             onSelect={setActiveSection}
             compact={compact}
           />
-          {!compact ? (
-            <div className="mt-8 rounded-[16px] border p-4" style={{ borderColor: hexToRgba(brand.primary, 0.16), backgroundColor: hexToRgba(brand.primary, 0.045) }}>
-              <div className="flex items-start gap-3">
-                <Lock size={18} className="mt-0.5 shrink-0" style={{ color: brand.primary }} />
-                <div>
-                  <h2 className="text-sm font-semibold text-[#142132]">Your information is secure</h2>
-                  <p className="mt-1 text-sm leading-6 text-[#52657b]">We use bank-level security to protect your data.</p>
-                </div>
-              </div>
-            </div>
-          ) : null}
         </aside>
 
         <div className={`${compact ? 'order-1 min-w-0 overflow-hidden' : ''}`}>
-          <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div className="min-w-0">
-              <span className="text-xs font-semibold uppercase tracking-[0.16em] text-[#53677d]">Your application</span>
-              <h1 className="mt-2 text-3xl font-semibold tracking-[-0.06em] text-[#142132] lg:text-4xl">Your bond application</h1>
-              <p className="mt-2 text-base leading-6 text-[#52657b]">Most of your application is already complete.</p>
+          <header className="rounded-[22px] border border-[#e3eaf2] bg-white px-5 py-5 shadow-[0_18px_40px_rgba(15,23,42,0.045)] lg:rounded-[24px] lg:px-7 lg:py-6">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <h1 className="text-3xl font-semibold tracking-[-0.06em] text-[#142132] lg:text-4xl">Your bond application</h1>
+                <p className="mt-2 text-base leading-6 text-[#52657b]">Most of your application is already complete.</p>
+              </div>
+              <button type="button" className="inline-flex min-h-11 w-fit items-center justify-center gap-2 rounded-[12px] border border-[#dbe5ef] bg-white px-4 text-sm font-semibold text-[#142132] shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
+                <Lock size={15} />
+                Save & exit
+              </button>
             </div>
-            <button type="button" className="inline-flex min-h-11 w-fit items-center justify-center gap-2 rounded-[12px] border border-[#dbe5ef] bg-white px-4 text-sm font-semibold text-[#142132] shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
-              <Lock size={15} />
-              Save & exit
-            </button>
+
+            <div className={`mt-6 ${compact ? 'space-y-2' : 'flex items-center gap-5'}`}>
+              <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-[#e4ebf3]">
+                <div className="h-full rounded-full transition-all duration-300" style={{ width: `${completionPercent}%`, backgroundColor: actionColour }} />
+              </div>
+              <span className="block shrink-0 text-sm font-semibold" style={{ color: actionColour }}>{completionPercent}% complete</span>
+            </div>
+
+            <DemoBondApplicationStatusCard
+              brand={brand}
+              completedDetails={completedDetails}
+              documentNeededCount={documentNeededCount}
+              selectedBanksCount={selectedBanksCount}
+            />
           </header>
 
-          <div className={`mt-5 ${compact ? 'space-y-2' : 'flex items-center gap-4'}`}>
-            <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-[#e4ebf3]">
-              <div className="h-full rounded-full transition-all duration-300" style={{ width: `${completionPercent}%`, backgroundColor: brand.primary }} />
-            </div>
-            <span className="block shrink-0 text-sm font-semibold" style={{ color: brand.primary }}>{completionPercent}% complete</span>
-          </div>
-
-          <DemoBondApplicationStatusCard
-            brand={brand}
-            completedDetails={completedDetails}
-            documentNeededCount={documentNeededCount}
-            selectedBanksCount={selectedBanksCount}
-          />
-
-          <article className="mt-6 rounded-[22px] border border-[#dbe5ef] bg-white p-5 shadow-[0_18px_42px_rgba(15,23,42,0.06)] lg:p-7">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <h2 className="text-2xl font-semibold tracking-[-0.05em] text-[#142132]">{activeMeta.label}</h2>
-                <p className="mt-2 text-base leading-6 text-[#52657b]">{getDemoBondApplicationSectionHelper(activeSection)}</p>
+          <article className="mt-5 overflow-hidden rounded-[22px] border border-[#e3eaf2] bg-white shadow-[0_18px_40px_rgba(15,23,42,0.045)] lg:rounded-[24px]">
+            <div className="p-5 lg:p-7">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <h2 className="text-2xl font-semibold tracking-[-0.05em] text-[#142132]">{activeMeta.label}</h2>
+                  <p className="mt-2 text-base leading-6 text-[#52657b]">{getDemoBondApplicationSectionHelper(activeSection)}</p>
+                </div>
+                {activeMeta.tone === 'action' ? (
+                  <span className="w-fit rounded-full bg-amber-50 px-3 py-1 text-sm font-semibold text-amber-700">{activeMeta.status}</span>
+                ) : null}
               </div>
-              {activeMeta.tone === 'action' ? (
-                <span className="w-fit rounded-full bg-amber-50 px-3 py-1 text-sm font-semibold text-amber-700">{activeMeta.status}</span>
-              ) : null}
-            </div>
 
-            {activeSection === 'documents' ? (
-              <DemoBondApplicationDocuments brand={brand} />
-            ) : (
-              <div className="mt-8 space-y-8">
-                {activeGroups.map((group) => {
-                  const Icon = group.icon || FileText
-                  return (
-                    <section key={group.title}>
-                      <div className="flex items-start gap-3">
-                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: hexToRgba(brand.primary, 0.1), color: brand.primary }}>
-                          <Icon size={18} />
-                        </span>
-                        <div>
-                          <h3 className="text-lg font-semibold tracking-[-0.03em] text-[#142132]">{group.title}</h3>
-                          {group.helper ? <p className="mt-1 text-sm leading-5 text-[#52657b]">{group.helper}</p> : null}
+              {activeSection === 'documents' ? (
+                <DemoBondApplicationDocuments brand={brand} />
+              ) : (
+                <div className="mt-8">
+                  {activeGroups.map((group, groupIndex) => {
+                    const Icon = group.icon || FileText
+                    return (
+                      <section key={group.title} className={groupIndex > 0 ? 'mt-9 border-t border-[#e5ecf3] pt-8' : ''}>
+                        <div className="flex items-start gap-3">
+                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: hexToRgba(brand.primary, 0.08), color: brand.primary }}>
+                            <Icon size={18} />
+                          </span>
+                          <div>
+                            <h3 className="text-lg font-semibold tracking-[-0.03em] text-[#142132]">{group.title}</h3>
+                            {group.helper ? <p className="mt-1 text-sm leading-5 text-[#52657b]">{group.helper}</p> : null}
+                          </div>
                         </div>
-                      </div>
-                      <div className="mt-5 grid gap-x-6 gap-y-5 md:grid-cols-2">
-                        {group.fields.map((field) => (
-                          <DemoBondApplicationField
-                            key={field.key}
-                            field={field}
-                            value={values[field.key]}
-                            brand={brand}
-                            onChange={(nextValue) => updateField(field.key, nextValue)}
-                          />
-                        ))}
-                      </div>
-                    </section>
-                  )
-                })}
-              </div>
-            )}
+                        <div className="mt-5 grid gap-x-6 gap-y-5 md:grid-cols-2">
+                          {group.fields.map((field) => (
+                            <DemoBondApplicationField
+                              key={field.key}
+                              field={field}
+                              value={values[field.key]}
+                              brand={brand}
+                              onChange={(nextValue) => updateField(field.key, nextValue)}
+                            />
+                          ))}
+                        </div>
+                      </section>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
 
-            <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="sticky bottom-0 flex flex-col gap-3 border-t border-[#e5ecf3] bg-white/95 px-5 py-4 backdrop-blur sm:flex-row sm:items-center sm:justify-between lg:px-7">
               <button
                 type="button"
                 onClick={handleBack}
@@ -2523,21 +2515,11 @@ function DemoBondApplicationForm({ brand, application, compact = false }) {
                 type="button"
                 onClick={handleSaveDemoProgress}
                 className="inline-flex min-h-12 items-center justify-center gap-2 rounded-[12px] px-6 text-sm font-semibold text-white shadow-[0_14px_24px_rgba(15,23,42,0.14)]"
-                style={{ backgroundColor: brand.primary }}
+                style={{ backgroundColor: actionColour }}
               >
                 {isFinalSection ? 'Review & submit' : saved ? 'Saved, continue' : 'Save & continue'}
                 <ChevronRight size={16} />
               </button>
-            </div>
-
-            <div className="mt-8 rounded-[16px] border p-4" style={{ borderColor: hexToRgba(brand.primary, 0.14), backgroundColor: hexToRgba(brand.primary, 0.04) }}>
-              <div className="flex items-start gap-3">
-                <Lock size={17} className="mt-0.5 shrink-0" style={{ color: brand.primary }} />
-                <p className="text-sm leading-6 text-[#426074]">
-                  <strong className="text-[#142132]">We've prefilled what we can.</strong><br />
-                  You only need to complete the required details. Everything is saved as you go.
-                </p>
-              </div>
             </div>
           </article>
           <p className="mt-3 text-right text-xs font-medium text-[#7b8ca2]">Demo</p>
@@ -2548,7 +2530,7 @@ function DemoBondApplicationForm({ brand, application, compact = false }) {
 }
 
 function getDemoBondApplicationSectionHelper(sectionKey) {
-  if (sectionKey === 'income_deductions_expenses') return 'This helps your bond originator calculate affordability.'
+  if (sectionKey === 'income_deductions_expenses') return 'Complete the two outstanding fields below so we can calculate your affordability.'
   if (sectionKey === 'documents') return 'We only show what is required for your application right now.'
   if (sectionKey === 'declarations_consents') return 'Review the final declarations before your application is submitted.'
   if (sectionKey === 'banking_liabilities') return 'Confirm your banking details and current financial commitments.'
@@ -2579,7 +2561,7 @@ function DemoBondApplicationStatusCard({ brand, completedDetails, documentNeeded
   ]
 
   return (
-    <section className="mt-6 rounded-[18px] border border-[#dbe5ef] bg-white px-4 py-4 shadow-[0_14px_28px_rgba(15,23,42,0.05)]">
+    <section className="mt-6 rounded-[18px] border border-[#e4ebf3] bg-[#fbfcfe] px-4 py-4">
       <div className="grid gap-4 md:grid-cols-3 md:divide-x md:divide-[#dbe5ef]">
         {items.map((item) => {
           const Icon = item.icon
@@ -2602,17 +2584,17 @@ function DemoBondApplicationStatusCard({ brand, completedDetails, documentNeeded
 
 function DemoBondApplicationJourney({ brand, sections, activeSection, onSelect, compact }) {
   return (
-    <section className={compact ? 'w-full min-w-0 overflow-hidden rounded-[18px] border border-[#dbe5ef] bg-white p-4' : ''}>
-      <p className="mb-4 text-xs font-semibold uppercase tracking-[0.16em] text-[#53677d]">Your application</p>
+    <section className={`${compact ? 'w-full min-w-0 overflow-hidden rounded-[18px]' : 'min-h-[calc(100vh-64px)]'} flex flex-col rounded-[22px] border border-[#e3eaf2] bg-white p-5 shadow-[0_18px_40px_rgba(15,23,42,0.045)] lg:p-6`}>
+      <p className="mb-5 text-xs font-semibold uppercase tracking-[0.16em] text-[#142132]">Your application</p>
       <div className={compact ? 'max-w-full overflow-x-auto pb-1' : ''}>
         <nav className={compact ? 'flex w-max gap-3' : 'relative space-y-1'}>
-          {!compact ? <span className="absolute left-[15px] top-5 h-[calc(100%-40px)] w-px bg-[#dbe5ef]" /> : null}
+          {!compact ? <span className="absolute left-[15px] top-6 h-[calc(100%-48px)] w-px bg-[#dbe5ef]" /> : null}
           {sections.map((section) => {
             const active = section.key === activeSection
             const complete = section.tone === 'complete'
             const attention = section.tone === 'action'
             const indicatorStyle = complete
-              ? { backgroundColor: brand.primary, borderColor: brand.primary, color: '#ffffff' }
+              ? { backgroundColor: '#087443', borderColor: '#087443', color: '#ffffff' }
               : attention
                 ? { backgroundColor: '#f59e0b', borderColor: '#f59e0b', color: '#ffffff' }
                 : { backgroundColor: '#ffffff', borderColor: '#c8d3df', color: '#6b7d93' }
@@ -2629,7 +2611,7 @@ function DemoBondApplicationJourney({ brand, sections, activeSection, onSelect, 
                       : 'bg-white'
                     : 'hover:bg-white/70'
                 }`}
-                style={active ? { boxShadow: `inset 3px 0 0 ${attention ? '#f59e0b' : brand.primary}` } : null}
+                style={active && attention ? { boxShadow: 'inset 3px 0 0 #f59e0b' } : null}
               >
                 <div className="grid grid-cols-[34px_minmax(0,1fr)] gap-3">
                   <span className="relative z-10 flex h-8 w-8 items-center justify-center rounded-full border-2 text-sm font-semibold" style={indicatorStyle}>
@@ -2645,11 +2627,30 @@ function DemoBondApplicationJourney({ brand, sections, activeSection, onSelect, 
           })}
         </nav>
       </div>
+      {!compact ? (
+        <div className="mt-auto pt-8">
+          <div className="rounded-[16px] bg-emerald-50/65 p-4">
+            <div className="flex items-start gap-3">
+              <Lock size={17} className="mt-0.5 shrink-0 text-emerald-700" />
+              <div>
+                <h2 className="text-sm font-semibold text-emerald-900">Your information is secure</h2>
+                <p className="mt-1 text-sm leading-6 text-[#52657b]">We use bank-level security to protect your data.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   )
 }
 
 function DemoBondApplicationField({ field, value, brand, onChange }) {
+  const actionColour = brand.accent || brand.primary
+  const hasValue = typeof value === 'boolean' ? value : String(value ?? '').trim().length > 0
+  const showConfirmedValue = Boolean(field.source && hasValue && field.type !== 'select')
+  const needsRequiredValue = Boolean(field.required && !hasValue)
+  const needsReview = Boolean(field.reviewRequired)
+
   if (field.type === 'checkbox') {
     return (
       <label className="flex min-h-[52px] items-start gap-3 rounded-[12px] border border-[#e3ebf4] bg-white px-3 py-3 md:col-span-2">
@@ -2658,7 +2659,7 @@ function DemoBondApplicationField({ field, value, brand, onChange }) {
           checked={Boolean(value)}
           onChange={(event) => onChange(event.target.checked)}
           className="mt-1 h-4 w-4 rounded border-[#c7d4e3]"
-          style={{ accentColor: brand.primary }}
+          style={{ accentColor: actionColour }}
         />
         <span className="text-sm leading-6 text-[#324559]">
           {field.label}
@@ -2668,13 +2669,17 @@ function DemoBondApplicationField({ field, value, brand, onChange }) {
     )
   }
 
-  const inputClassName = 'mt-2 min-h-[52px] w-full rounded-[12px] border border-[#d8e3ee] bg-white px-4 py-3 text-base text-[#142132] outline-none transition focus:border-[#35546c]/45 focus:ring-2 focus:ring-[#35546c]/12 disabled:bg-[#f3f6f9] disabled:text-[#667085]'
+  const inputClassName = `mt-2 min-h-[52px] w-full rounded-[12px] border bg-white px-4 py-3 text-base text-[#142132] outline-none transition disabled:bg-[#f3f6f9] disabled:text-[#667085] ${
+    needsRequiredValue || needsReview
+      ? 'border-amber-300 bg-amber-50/45 focus:border-amber-400 focus:ring-2 focus:ring-amber-100'
+      : 'border-[#d8e3ee] focus:border-[#35546c]/45 focus:ring-2 focus:ring-[#35546c]/12'
+  } ${showConfirmedValue ? 'pr-11' : ''}`
 
   return (
     <label className="block">
       <span className="text-sm font-semibold text-[#203549]">
         {field.label}
-        {field.required ? <span className="ml-1" style={{ color: brand.primary }}>*</span> : null}
+        {field.required ? <span className="ml-1 text-[#142132]">*</span> : null}
       </span>
       {field.type === 'select' ? (
         <select value={value ?? ''} onChange={(event) => onChange(event.target.value)} className={inputClassName}>
@@ -2683,22 +2688,29 @@ function DemoBondApplicationField({ field, value, brand, onChange }) {
           ))}
         </select>
       ) : (
-        <input
-          type={field.type === 'date' || field.type === 'email' ? field.type : 'text'}
-          inputMode={field.inputMode}
-          value={value ?? ''}
-          readOnly={field.readOnly}
-          disabled={field.readOnly}
-          onChange={(event) => onChange(event.target.value)}
-          className={inputClassName}
-        />
+        <span className="relative block">
+          <input
+            type={field.type === 'date' || field.type === 'email' ? field.type : 'text'}
+            inputMode={field.inputMode}
+            value={value ?? ''}
+            readOnly={field.readOnly}
+            disabled={field.readOnly}
+            onChange={(event) => onChange(event.target.value)}
+            className={inputClassName}
+          />
+          {showConfirmedValue ? (
+            <CheckCircle2 size={18} className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-emerald-700" />
+          ) : null}
+        </span>
       )}
       {field.source ? (
         <p className="mt-2 flex items-center gap-1.5 text-sm text-[#52657b]">
-          <CheckCircle2 size={14} style={{ color: brand.primary }} />
+          <CheckCircle2 size={14} className="text-emerald-700" />
           {field.source}
         </p>
       ) : null}
+      {needsRequiredValue ? <p className="mt-2 text-sm font-medium text-amber-700">Required to continue</p> : null}
+      {!needsRequiredValue && needsReview ? <p className="mt-2 text-sm font-medium text-amber-700">{field.reviewMessage || 'Confirm before continuing'}</p> : null}
       {field.readOnly ? <p className="mt-2 text-sm text-[#6b7d93]">Calculated from your application values.</p> : null}
     </label>
   )
