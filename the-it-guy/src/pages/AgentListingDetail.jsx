@@ -893,7 +893,7 @@ function buildListingSnapshotFormData(draft = {}) {
     propertyNotes: String(draft.description || '').trim(),
     propertyDescription: String(draft.description || '').trim(),
     listingDescription: String(draft.description || '').trim(),
-    listingPreviewDescription: String(draft.listingPreviewDescription || '').trim(),
+    listingPreviewDescription: String(draft.listingPreviewDescription || draft.description || '').trim(),
     internalNotes: String(draft.notes || '').trim(),
     publicationStatus: String(draft.publicationStatus || 'Draft').trim(),
     imageGallery: normalizeMediaItems(draft.galleryImages),
@@ -3780,6 +3780,12 @@ function AgentListingDetail() {
             listingTitle: nextDraft.headline.trim() || row?.listingTitle || '',
             propertyType: nextDraft.propertyType || row?.propertyType || 'House',
             status: nextDraft.publicationStatus === 'Published' ? 'active' : nextDraft.listingStatus || row?.status || 'active',
+            description: nextDraft.description.trim(),
+            listingDescription: nextDraft.description.trim(),
+            listingPreviewDescription: String(nextDraft.listingPreviewDescription || nextDraft.description || '').trim(),
+            keySellingPoints: nextDraft.selectedFeatures,
+            selectedFeatures: nextDraft.selectedFeatures,
+            features: nextDraft.selectedFeatures,
             addressLine1: nextDraft.addressLine1.trim(),
             formattedAddress: nextDraft.formattedAddress.trim(),
             streetAddress: nextDraft.streetAddress.trim(),
@@ -3800,6 +3806,8 @@ function AgentListingDetail() {
         source: nextDraft.source,
         status: nextDraft.listingStatus,
         description: nextDraft.description,
+        selectedFeatures: nextDraft.selectedFeatures,
+        keySellingPoints: nextDraft.selectedFeatures,
         features: nextDraft.selectedFeatures.join(', '),
         externalLinks: normalizeExternalListingLinks(nextDraft.externalLinks),
         videoLink: nextDraft.videoLink,
@@ -3851,7 +3859,7 @@ function AgentListingDetail() {
         fibreReady: nextDraft.fibreReady,
         securityFeatures: nextDraft.securityFeatures,
         description: nextDraft.description.trim(),
-        listingPreviewDescription: nextDraft.listingPreviewDescription.trim(),
+        listingPreviewDescription: String(nextDraft.listingPreviewDescription || nextDraft.description || '').trim(),
         notes: nextDraft.notes.trim(),
         floorplans: nextDraft.floorplans,
         coverImageId: nextDraft.coverImageId,
@@ -3894,6 +3902,8 @@ function AgentListingDetail() {
         ratesTaxes: nextDraft.ratesTaxesNotApplicable ? '' : nextDraft.ratesTaxes,
         levies: nextDraft.leviesNotApplicable ? '' : nextDraft.levies,
         description: nextDraft.description.trim(),
+        keySellingPoints: nextDraft.selectedFeatures,
+        selectedFeatures: nextDraft.selectedFeatures,
         features: nextDraft.selectedFeatures,
         amenities: nextDraft.amenities,
         status: nextDraft.publicationStatus,
@@ -3981,7 +3991,7 @@ function AgentListingDetail() {
         privatePropertyStatus: draft.privatePropertyStatus || privatePropertyExternalLink?.status || 'not_published',
         bridgeListingStatus: draft.bridgeListingStatus,
         bridgeListingPublicUrl: draft.bridgeListingPublicUrl.trim(),
-        listingPreviewDescription: draft.listingPreviewDescription.trim(),
+        listingPreviewDescription: String(draft.listingPreviewDescription || draft.description || '').trim(),
         internalListingNotes: draft.notes.trim(),
       }
       if (options.listingVisibility) listingPatch.listingVisibility = options.listingVisibility
@@ -8414,7 +8424,17 @@ function AgentListingDetail() {
   }
 
   function updateMarketingDraft(key, value) {
-    setMarketingDraft((previous) => ({ ...previous, [key]: value }))
+    setMarketingDraft((previous) => {
+      if (key !== 'description') return { ...previous, [key]: value }
+      const previousDescription = String(previous.description || '').trim()
+      const previousPreview = String(previous.listingPreviewDescription || '').trim()
+      const shouldSyncPreview = !previousPreview || previousPreview === previousDescription
+      return {
+        ...previous,
+        description: value,
+        listingPreviewDescription: shouldSyncPreview ? value : previous.listingPreviewDescription,
+      }
+    })
   }
 
   function updateCommissionDraft(key, value) {

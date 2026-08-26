@@ -3339,12 +3339,13 @@ function buildDeveloperSellerFacts({ form = {}, workspace = null, profile = null
 }
 
 function buildDeveloperListingCompleteness({ form = {} } = {}) {
+  const hasPortalDescription = Boolean(normalizeText(form.listingDescription || form.notes))
   const checks = [
     { label: 'Development linked', complete: Boolean(normalizeText(form.developmentId)) },
     { label: 'Unit linked', complete: Boolean(normalizeText(form.unitId)) },
     { label: 'Listing price or POA', complete: hasListingPriceOrPoa(form) },
     { label: 'Property details', complete: Boolean(normalizeText(form.propertyAddress || form.listingTitle || form.unitNumber)) },
-    { label: 'Portal description', complete: Boolean(normalizeText(form.notes)) },
+    { label: 'Portal description', complete: hasPortalDescription },
     { label: 'Portal link', complete: Boolean(normalizeText(form.externalListingLink)) },
   ]
   const completedItems = checks.filter((item) => item.complete).map((item) => item.label)
@@ -3743,13 +3744,13 @@ function AgentListings({ initialTab = null } = {}) {
         navigate('/listings/new', { replace: true, state: {} })
       } else {
         setShowNewListingModal(true)
-        navigate(location.pathname, { replace: true, state: {} })
+        navigate(`${location.pathname}${location.search || ''}`, { replace: true, state: {} })
       }
     })
     return () => {
       cancelled = true
     }
-  }, [agencyWorkflowMode, isDeveloperWorkspace, location.pathname, location.state, navigate])
+  }, [agencyWorkflowMode, isDeveloperWorkspace, location.pathname, location.search, location.state, navigate])
 
   useEffect(() => {
     const message = String(location.state?.message || '').trim()
@@ -3758,12 +3759,12 @@ function AgentListings({ initialTab = null } = {}) {
     queueMicrotask(() => {
       if (cancelled) return
       setWorkflowMessage(message)
-      navigate(location.pathname, { replace: true, state: {} })
+      navigate(`${location.pathname}${location.search || ''}`, { replace: true, state: {} })
     })
     return () => {
       cancelled = true
     }
-  }, [location.pathname, location.state, navigate])
+  }, [location.pathname, location.search, location.state, navigate])
 
   function updateForm(key, value) {
     setForm((previous) => {
@@ -3952,8 +3953,25 @@ function AgentListings({ initialTab = null } = {}) {
     }
   }
 
-  function goToNextCreateListingStep() {
+  async function goToNextCreateListingStep() {
     const nextIndex = Math.min(createListingStepIndex + 1, CREATE_LISTING_WORKFLOW_STEPS.length - 1)
+    if (isEditListingWorkspace && editListingRecord && !isListingSaving) {
+      setIsListingSaving(true)
+      setError('')
+      try {
+        await performUpdateExistingListing({
+          navigateAfterSave: false,
+          reloadAfterSave: false,
+          successMessage: 'Listing step saved.',
+        })
+      } catch (saveError) {
+        console.error('[Listings] listing step save failed', saveError)
+        setError(saveError?.message || 'Unable to save this listing step right now.')
+        setIsListingSaving(false)
+        return
+      }
+      setIsListingSaving(false)
+    }
     setCreateListingMaxVisitedStep((previous) => Math.max(previous, nextIndex))
     openCreateListingStep(CREATE_LISTING_WORKFLOW_STEPS[nextIndex].key, { allowForward: true })
   }
@@ -4106,7 +4124,11 @@ function AgentListings({ initialTab = null } = {}) {
     setForm(buildContextualInitialListingLeadForm())
   }
 
-  async function performUpdateExistingListing() {
+  async function performUpdateExistingListing({
+    navigateAfterSave = true,
+    reloadAfterSave = true,
+    successMessage = 'Listing changes saved.',
+  } = {}) {
     const listing = editListingRecord
     const listingId = getRemotePrivateListingId(listing) || editListingId
     if (!listing || !listingId) {
@@ -4247,7 +4269,10 @@ function AgentListings({ initialTab = null } = {}) {
     }
 
     if (isSupabaseConfigured && isUuidLike(listingId)) {
-      await updatePrivateListing(listingId, listingPatch, { includeRequirementsAndDocuments: false })
+      const savedListing = await updatePrivateListing(listingId, listingPatch, { includeRequirementsAndDocuments: false })
+      if (savedListing?.id) {
+        setPrivateListings((rows) => mergePrivateListingRows([savedListing], rows, deletedListingIds))
+      }
       await persistSellerProfileOnboardingFormData({
         listingId,
         formData: onboardingPatch,
@@ -4391,13 +4416,18 @@ function AgentListings({ initialTab = null } = {}) {
         localListings.unshift(nextLocalListing)
       }
       writeAgentPrivateListings(localListings)
+      setPrivateListings(mergePrivateListingRows([], localListings, deletedListingIds))
     }
 
     setError('')
-    setWorkflowMessage('Listing changes saved.')
+    setWorkflowMessage(successMessage)
     window.dispatchEvent(new Event('itg:listings-updated'))
-    await loadData({ showLoading: false }).catch(() => null)
-    navigate(`/agent/listings/${encodeURIComponent(listingId)}?tab=marketing`, { replace: true, state: { message: 'Listing changes saved.' } })
+    if (reloadAfterSave) {
+      await loadData({ showLoading: false }).catch(() => null)
+    }
+    if (navigateAfterSave) {
+      navigate(`/agent/listings/${encodeURIComponent(listingId)}?tab=marketing`, { replace: true, state: { message: successMessage } })
+    }
   }
 
   const isPrincipalListingMode = listingModalMode === 'principal'

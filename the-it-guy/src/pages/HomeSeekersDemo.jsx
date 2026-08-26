@@ -11,7 +11,7 @@ import {
   Search,
   X,
 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import './HomeSeekersDemo.css'
 
 const heroImage = '/brand/agency-intake-buy.webp'
@@ -96,11 +96,35 @@ const agents = [
   },
 ]
 
-const promiseSteps = [
-  { day: '01', title: 'Your home launches.', copy: 'Photography, positioning and the first buyer signal go live with intent.' },
-  { day: '15', title: 'Marketing is fully active.', copy: 'Every channel is working, every response is tracked, every warm lead is followed up.' },
-  { day: '30', title: 'The network works harder.', copy: 'Buyer matching tightens around the best-fit audience and objections are fed back into the campaign.' },
-  { day: '45', title: 'Still not sold?', copy: 'Then HomeSeekers halves the commission. Simple, memorable, accountable.' },
+const promiseStages = [
+  {
+    day: '01',
+    label: 'Launch',
+    title: ['Your home', 'launches.'],
+    copy: 'Photography. Positioning. Launch.',
+    variant: 'launch',
+  },
+  {
+    day: '15',
+    label: 'Market',
+    title: ['The market', 'knows.'],
+    copy: 'Every channel. Every lead. Followed up.',
+    variant: 'market',
+  },
+  {
+    day: '30',
+    label: 'Buyers',
+    title: ['We work', 'the buyers.'],
+    copy: 'Matching. Follow-up. Feedback. Repeat.',
+    variant: 'buyers',
+  },
+  {
+    day: '45',
+    label: 'Promise',
+    title: ['Still not', 'sold?'],
+    copy: 'Then HomeSeekers halves the commission.',
+    variant: 'promise',
+  },
 ]
 
 const marketingRows = [
@@ -113,16 +137,73 @@ const marketingRows = [
 ]
 
 function HomeSeekersDemo() {
+  const promiseRef = useRef(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const [valuationOpen, setValuationOpen] = useState(false)
   const [selectedListing, setSelectedListing] = useState(null)
   const [saved, setSaved] = useState(() => new Set())
   const [leadSent, setLeadSent] = useState(false)
+  const [promiseProgress, setPromiseProgress] = useState(0)
+  const [isPromiseActive, setIsPromiseActive] = useState(false)
+  const [activePromiseStage, setActivePromiseStage] = useState('01')
 
   useEffect(() => {
     document.documentElement.classList.add('homeseekers-demo-lock')
     return () => document.documentElement.classList.remove('homeseekers-demo-lock')
+  }, [])
+
+  useEffect(() => {
+    const section = promiseRef.current
+    if (!section || typeof window === 'undefined') return undefined
+
+    let frameId = 0
+
+    const updateProgress = () => {
+      frameId = 0
+      const rect = section.getBoundingClientRect()
+      const viewportHeight = window.innerHeight || 1
+      const start = viewportHeight * 0.68
+      const end = rect.height - viewportHeight * 0.38
+      const nextProgress = Math.min(Math.max((start - rect.top) / Math.max(end, 1), 0), 1)
+      setPromiseProgress(nextProgress)
+    }
+
+    const queueProgressUpdate = () => {
+      if (frameId) return
+      frameId = window.requestAnimationFrame(updateProgress)
+    }
+
+    const sectionObserver = new IntersectionObserver(
+      ([entry]) => setIsPromiseActive(entry.isIntersecting),
+      { rootMargin: '-18% 0px -24% 0px', threshold: 0.01 },
+    )
+
+    const stageObserver = new IntersectionObserver(
+      (entries) => {
+        const activeEntry = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0]
+        if (activeEntry?.target?.dataset?.stage) {
+          setActivePromiseStage(activeEntry.target.dataset.stage)
+        }
+      },
+      { rootMargin: '-34% 0px -44% 0px', threshold: [0.2, 0.45, 0.7] },
+    )
+
+    sectionObserver.observe(section)
+    section.querySelectorAll('[data-stage]').forEach((stage) => stageObserver.observe(stage))
+    updateProgress()
+    window.addEventListener('scroll', queueProgressUpdate, { passive: true })
+    window.addEventListener('resize', queueProgressUpdate)
+
+    return () => {
+      if (frameId) window.cancelAnimationFrame(frameId)
+      sectionObserver.disconnect()
+      stageObserver.disconnect()
+      window.removeEventListener('scroll', queueProgressUpdate)
+      window.removeEventListener('resize', queueProgressUpdate)
+    }
   }, [])
 
   const toggleSaved = (event, id) => {
@@ -137,7 +218,7 @@ function HomeSeekersDemo() {
 
   return (
     <main className="hs-demo">
-      <header className="hs-header">
+      <header className={`hs-header${isPromiseActive ? ' hs-header--over-45' : ''}`}>
         <a className="hs-logo" href="#top" aria-label="HomeSeekers demo home">
           <img src="/brand/homeseekers/logo.png" alt="HomeSeekers" />
         </a>
@@ -160,20 +241,47 @@ function HomeSeekersDemo() {
         </div>
       </section>
 
-      <section id="promise" className="hs-promise">
-        <div className="hs-section-label">The Promise</div>
-        {promiseSteps.map((step) => (
-          <article className="hs-promise-step" key={step.day}>
-            <div className="hs-day">DAY {step.day}</div>
-            <div>
-              <h2>{step.title}</h2>
-              <p>{step.copy}</p>
-            </div>
-          </article>
-        ))}
-        <div className="hs-half-commission">
-          <span>1/2</span>
-          <p>our commission.</p>
+      <section
+        id="promise"
+        className="hs-promise"
+        ref={promiseRef}
+        style={{ '--hs-promise-progress': promiseProgress }}
+        aria-label="The 45 HomeSeekers promise"
+      >
+        <div className="hs-promise-intro">
+          <span className="hs-section-label">The 45</span>
+          <h2>Your 45 days. <span>Here's what</span> happens next.</h2>
+          <p>From launch to sold, here's how we work.</p>
+        </div>
+
+        <div className="hs-promise-canvas">
+          <div className="hs-promise-rail" aria-hidden="true">
+            <div className="hs-promise-rail-track" />
+            <div className="hs-promise-rail-fill" />
+          </div>
+
+          <div className="hs-promise-stages">
+            {promiseStages.map((stage) => (
+              <article
+                className={`hs-promise-stage hs-promise-stage--${stage.variant}${activePromiseStage === stage.day ? ' is-active' : ''}`}
+                data-stage={stage.day}
+                key={stage.day}
+              >
+                <div className="hs-promise-marker" aria-hidden="true">
+                  <span>{stage.day}</span>
+                </div>
+                <div className="hs-promise-stage-body">
+                  <span className="hs-promise-backdrop-number" aria-hidden="true">{stage.day}</span>
+                  <div className="hs-promise-copy">
+                    <span className="hs-promise-stage-label">{stage.label}</span>
+                    <h3>{stage.title[0]}<span>{stage.title[1]}</span></h3>
+                    <p>{stage.copy}</p>
+                  </div>
+                  <PromiseStageVisual stage={stage} />
+                </div>
+              </article>
+            ))}
+          </div>
         </div>
       </section>
 
@@ -244,7 +352,12 @@ function HomeSeekersDemo() {
         </button>
       </section>
 
-      <button className="hs-floating-search" type="button" onClick={() => setSearchOpen(true)}>
+      <button
+        className={`hs-floating-search${isPromiseActive ? ' hs-floating-search--compact' : ''}`}
+        type="button"
+        onClick={() => setSearchOpen(true)}
+        aria-label="Search homes"
+      >
         <Search size={18} />
         <span>Search homes</span>
         <Heart size={16} fill={saved.size ? 'currentColor' : 'none'} />
@@ -349,6 +462,70 @@ function HomeSeekersDemo() {
         </div>
       )}
     </main>
+  )
+}
+
+function PromiseStageVisual({ stage }) {
+  if (stage.variant === 'launch') {
+    return (
+      <div className="hs-promise-launch-visual" aria-hidden="true">
+        <img src="/brand/agency-intake-sell.webp" alt="" loading="lazy" />
+      </div>
+    )
+  }
+
+  if (stage.variant === 'market') {
+    return (
+      <div className="hs-promise-network" aria-hidden="true">
+        <div className="hs-network-ring hs-network-ring-one" />
+        <div className="hs-network-ring hs-network-ring-two" />
+        <div className="hs-network-node hs-network-node-centre">
+          <Home size={24} />
+        </div>
+        {['Property24', 'Private Property', 'Social Media', 'Buyer Database', 'HomeSeekers Website'].map((channel, index) => (
+          <div className={`hs-network-node hs-network-node-${index + 1}`} key={channel}>
+            {channel}
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  if (stage.variant === 'buyers') {
+    return (
+      <div className="hs-promise-buyer-visual" aria-hidden="true">
+        <img src="https://images.unsplash.com/photo-1512428559087-560fa5ceab42?auto=format&fit=crop&w=900&q=80" alt="" loading="lazy" />
+        <div className="hs-buyer-panel">
+          <span>Buyer matches</span>
+          <div className="hs-avatar-row">
+            <i />
+            <i />
+            <i />
+            <i />
+            <b>+12</b>
+          </div>
+          {[
+            ['New enquiries', '18'],
+            ['Viewings booked', '7'],
+            ['Feedback received', '11'],
+          ].map(([label, value]) => (
+            <div className="hs-buyer-row" key={label}>
+              <span>{label}</span>
+              <strong>{value}</strong>
+            </div>
+          ))}
+          <small>Illustrative UI data.</small>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="hs-promise-payoff" aria-label="One half our commission. Terms and conditions apply.">
+      <span>1/2</span>
+      <strong>Our commission.</strong>
+      <small>*T&Cs apply.</small>
+    </div>
   )
 }
 

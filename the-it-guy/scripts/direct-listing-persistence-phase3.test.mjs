@@ -68,8 +68,13 @@ test('listing description is persisted and rehydrated through shared aliases', (
   assert.match(agentListingsSource, /listingMarketing\.description/)
   assert.match(agentListingsSource, /onboardingFormData\.listingDescription/)
   assert.match(agentListingsSource, /onboardingFormData\.propertyDescription/)
+  assert.match(agentListingsSource, /const hasPortalDescription = Boolean\(normalizeText\(form\.listingDescription \|\| form\.notes\)\)/)
+  assert.match(agentListingsSource, /await performUpdateExistingListing\(\{\s*\n\s*navigateAfterSave: false,\s*\n\s*reloadAfterSave: false,/)
   assert.match(agentListingDetailSource, /onboardingFormData\.listingDescription/)
   assert.match(agentListingDetailSource, /propertyDescription: String\(draft\.description/)
+  assert.match(agentListingDetailSource, /listingPreviewDescription: String\(draft\.listingPreviewDescription \|\| draft\.description/)
+  assert.match(agentListingDetailSource, /listingDescription: nextDraft\.description\.trim\(\)/)
+  assert.match(agentListingDetailSource, /description: value,\s*\n\s*listingPreviewDescription: shouldSyncPreview \? value : previous\.listingPreviewDescription/)
   assert.match(privateListingServiceSource, /onboardingFormData\.listingDescription/)
 })
 
