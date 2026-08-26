@@ -44,6 +44,7 @@ const DEMO_NAV = [
   { key: 'overview', label: 'Overview', icon: Home },
   { key: 'progress', label: 'Transfer Journey', icon: CheckCircle2 },
   { key: 'documents', label: 'Your Documents', icon: FileText },
+  { key: 'finance', label: 'Finance', icon: HandCoins },
   { key: 'bond-application', label: 'Bond Application', icon: FileSignature },
   { key: 'messages', label: 'Messages', icon: Mail },
   { key: 'team', label: 'Your Team', icon: Users },
