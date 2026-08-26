@@ -1940,8 +1940,8 @@ function resolveBuyerQuestionHeaderIdentity(payload = {}) {
 
 function BuyerAgencyMark({ brand = {}, tone = 'light' }) {
   const preferredLogoUrls = tone === 'light'
-    ? [brand?.logoDarkUrl, brand?.logoUrl, brand?.logoLightUrl, brand?.logoIconUrl]
-    : [brand?.logoLightUrl, brand?.logoUrl, brand?.logoDarkUrl, brand?.logoIconUrl]
+    ? [brand?.logoLightUrl, brand?.logoUrl, brand?.logoDarkUrl, brand?.logoIconUrl]
+    : [brand?.logoDarkUrl, brand?.logoUrl, brand?.logoLightUrl, brand?.logoIconUrl]
   const logoCandidates = Array.from(
     new Set(preferredLogoUrls.map((url) => normalizeOnboardingLogoUrl(url)).filter(Boolean)),
   )
@@ -1996,11 +1996,21 @@ function DemoDesktopOnboardingHero({
   buyerFlowSummaryItems = [],
 }) {
   const heroImage = backgroundImage || '/brand/agency-intake-buy.webp'
+  const theme = resolveBuyerOnboardingTheme(brand)
+  const heroOverlayStyle = {
+    background: `linear-gradient(110deg, ${buyerBrandRgba(theme.primary, 0.94)} 0%, ${buyerBrandRgba(theme.primary, 0.88)} 38%, ${buyerBrandRgba(theme.secondary, 0.66)} 66%, ${buyerBrandRgba(theme.primary, 0.82)} 100%)`,
+  }
+  const summaryPanelStyle = {
+    background: `linear-gradient(145deg, ${buyerBrandRgba(theme.primary, 0.76)} 0%, ${buyerBrandRgba(theme.secondary, 0.64)} 100%)`,
+  }
+  const summaryCardStyle = {
+    background: buyerBrandRgba(theme.secondary, 0.42),
+  }
   return (
-    <section className="hidden overflow-hidden rounded-[34px] border border-white/70 bg-[#0d1b2a] text-white shadow-[0_26px_64px_rgba(15,23,42,0.18)] md:block">
+    <section className="hidden overflow-hidden rounded-[34px] border border-white/70 text-white shadow-[0_26px_64px_rgba(15,23,42,0.18)] md:block" style={{ backgroundColor: theme.primary }}>
       <div className="relative min-h-[520px]">
         <img src={heroImage} alt={locationLabel || 'Property'} className="absolute inset-0 h-full w-full object-cover" />
-        <div className="absolute inset-0 bg-[linear-gradient(110deg,rgba(7,17,30,0.94)_0%,rgba(10,27,43,0.86)_42%,rgba(10,27,43,0.56)_68%,rgba(10,27,43,0.78)_100%)]" />
+        <div className="absolute inset-0" style={heroOverlayStyle} />
         <div className="relative grid min-h-[520px] gap-8 p-8 xl:grid-cols-[minmax(0,1fr)_460px] xl:p-10">
           <div className="flex min-h-0 flex-col">
             <BuyerBrandBar brand={brand} tone="dark" />
@@ -2022,18 +2032,18 @@ function DemoDesktopOnboardingHero({
             </div>
           </div>
 
-          <aside className="self-stretch rounded-[30px] border border-white/20 bg-white/10 p-6 shadow-[0_24px_54px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
+          <aside className="self-stretch rounded-[30px] border border-white/20 p-6 shadow-[0_24px_54px_rgba(0,0,0,0.22)] backdrop-blur-2xl" style={summaryPanelStyle}>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-white/65">At a glance</p>
             <div className="mt-5 grid gap-3">
               {buyerFlowSummaryItems.map((item) => (
-                <div key={item.label} className="rounded-[18px] border border-white/15 bg-black/20 px-4 py-3">
+                <div key={item.label} className="rounded-[18px] border border-white/15 px-4 py-3" style={summaryCardStyle}>
                   <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-white/60">{item.label}</span>
                   <span className="mt-1 block text-sm font-semibold leading-6 text-white">{item.value}</span>
                 </div>
               ))}
             </div>
             {activeStep ? (
-              <div className="mt-5 rounded-[22px] border border-white/15 bg-black/20 p-5">
+              <div className="mt-5 rounded-[22px] border border-white/15 p-5" style={summaryCardStyle}>
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-white/60">Current focus</p>
                 <h2 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-white">{activeStep.title}</h2>
                 <p className="mt-2 text-sm leading-6 text-white/70">{activeStep.description}</p>

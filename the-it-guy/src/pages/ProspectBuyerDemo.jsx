@@ -807,11 +807,11 @@ export default function ProspectBuyerDemo() {
           <p className="mt-1 text-xs leading-5 text-white/75">{mainContact.name} from {mainContact.organisation} is here to help.</p>
           {mainContact.profileImage ? <img src={mainContact.profileImage} alt={mainContact.name} className="mt-3 h-10 w-10 rounded-full object-cover" /> : null}
           <div className="mt-3 grid grid-cols-2 gap-2">
-            <a href={`mailto:${mainContact.email}`} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-[10px] bg-white/15 text-xs font-semibold">
+            <a href={`mailto:${mainContact.email}`} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-[10px] bg-white/15 text-xs font-semibold text-white transition hover:bg-white/20">
               <MessageCircle size={14} />
               Email
             </a>
-            <a href={`tel:${mainContact.phone}`} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-[10px] border border-white/15 text-xs font-semibold">
+            <a href={`tel:${mainContact.phone}`} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-[10px] border border-white/15 text-xs font-semibold text-white transition hover:bg-white/10">
               <PhoneCall size={14} />
               Call
             </a>
