@@ -1233,7 +1233,15 @@ function buildListingEditorFormFromListing(listing = {}, profile = {}, workspace
     listingStatus: normalizeDirectListingKey(listing.listingStatus || listing.status) || base.listingStatus,
     externalListingLink: normalizeText(listing.property24ListingUrl || externalLinks[0]?.url),
     notes: stripQuickListingMetadataText(listing.internalListingNotes || listing.notes),
-    listingDescription: normalizeText(listing.listingPreviewDescription || listingMarketing.description || stripQuickListingMetadataText(listing.description)),
+    listingDescription: normalizeText(
+      listing.listingDescription ||
+        listing.listingPreviewDescription ||
+        listingMarketing.description ||
+        listing.listingPublicationData?.description ||
+        listing.publicationData?.description ||
+        listing.description ||
+        onboardingFormData.propertyNotes,
+    ),
     keySellingPoints: Array.isArray(listing.keySellingPoints) ? listing.keySellingPoints.map(normalizeText).filter(Boolean) : [],
     listingImages: galleryImages,
     coverImageId: normalizeText(listing.coverImageId || galleryImages[0]?.id),
@@ -1463,6 +1471,9 @@ function buildQuickAddDirectListingPersistencePayload(form = {}, context = {}) {
   })
   const sellerOnboardingFormData = {
     ...directListingIntake.sellerOnboardingFormData,
+    propertyNotes: normalizeText(form.listingDescription),
+    listingDescription: normalizeText(form.listingDescription),
+    listingPreviewDescription: normalizeText(form.listingDescription || form.notes),
     directListingIntake: {
       ...(directListingIntake.sellerOnboardingFormData?.directListingIntake || {}),
       capturedAt,
@@ -2914,7 +2925,7 @@ function buildQuickListingNotes(form, completeness, mandateStatus) {
   const keySellingPoints = Array.isArray(form.keySellingPoints) ? form.keySellingPoints.map(normalizeText).filter(Boolean) : []
   const publicationFeatures = buildQuickListingPublicationFeatures(form, keySellingPoints)
   const humanNotes = [
-    normalizeText(form.listingDescription || form.notes),
+    normalizeText(form.notes),
     `Capture type: ${quickAddIntent.label}`,
     `Seller Contact: ${sellerDisplayName} · ${normalizeText(form.sellerEmail)} · ${normalizeText(form.sellerPhone)}`,
     `Quick Add Meta: Beds ${form.bedrooms || '-'} · Baths ${form.bathrooms || '-'} · Garages ${form.garages || '-'} · Parking ${form.parkingCount || '-'} · Erf ${form.erfSize || '-'} · Floor ${form.floorSize || '-'}`,

@@ -2924,8 +2924,11 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
   const coverImageId = normalizeText(onboardingFormData.coverImageId || row.coverImageId || row.cover_image_id) || normalizeText(imageGallery[0]?.id)
   const coverImage = imageGallery.find((item) => normalizeText(item.id) === coverImageId) || imageGallery[0] || fallbackCoverImage
   const floorplans = normalizeMediaItems(onboardingFormData.floorplans)
-  const onboardingDescription = normalizeText(onboardingFormData.propertyNotes)
-  const listingPreviewDescription = normalizeText(row.listing_preview_description || onboardingFormData.listingPreviewDescription)
+  const rowDescription = normalizeText(row.description)
+  const publicationDescription = normalizeText(publicationDraft?.description)
+  const onboardingDescription = normalizeText(onboardingFormData.propertyNotes || onboardingFormData.propertyDescription || onboardingFormData.description)
+  const listingDescription = pickFirstText(publicationDescription, rowDescription, onboardingDescription)
+  const listingPreviewDescription = pickFirstText(row.listing_preview_description, onboardingFormData.listingPreviewDescription, listingDescription)
   const onboardingNotes = normalizeText(onboardingFormData.internalNotes)
   const onboardingFeatures = Array.isArray(onboardingFormData.features)
     ? onboardingFormData.features.map((item) => normalizeText(item)).filter(Boolean)
@@ -3012,7 +3015,7 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     propertyType: row.property_type || '',
     listingCategory: row.listing_category || 'private_sale',
     title: row.title || '',
-    description: row.description || '',
+    description: listingDescription,
     askingPrice: Number(row.asking_price || 0) || 0,
     estimatedValue: Number(row.estimated_value || 0) || 0,
     addressLine1: row.address_line_1 || '',
@@ -3114,7 +3117,7 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
       imageGallery,
       coverImageId,
       floorplans,
-      description: onboardingDescription,
+      description: listingDescription,
       features: onboardingFeatures.join(', '),
       notes: onboardingNotes,
       status: listingStatus,
@@ -3146,7 +3149,7 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
       vatApplicable: onboardingFormData.vatApplicable || 'no',
       offersFrom: normalizeNumber(onboardingFormData.offersFrom) ?? 0,
       selectedFeatures: onboardingFeatures,
-      description: onboardingDescription,
+      description: listingDescription,
       listingPreviewDescription,
       notes: onboardingNotes,
       coverImageId,
@@ -3324,7 +3327,7 @@ function mapPrivateListingSummaryRow(row = {}, onboardingCommissionByListingId =
     propertyType: row.property_type || '',
     listingCategory: row.listing_category || 'private_sale',
     title: row.title || '',
-    description: '',
+    description: normalizeText(row.description),
     askingPrice: Number(row.asking_price || 0) || 0,
     estimatedValue: Number(row.estimated_value || 0) || 0,
     addressLine1,
@@ -6463,6 +6466,7 @@ export async function getAgentPrivateListingSummaries(
       'asking_price',
       'estimated_value',
       'title',
+      'description',
       'address_line_1',
       'address_line_2',
       'formatted_address',
