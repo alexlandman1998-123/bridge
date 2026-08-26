@@ -4945,7 +4945,7 @@ function ClientOnboarding() {
         {showLandingPage ? (
           <PremiumOnboardingLanding
             portalType="buyer"
-            agencyLogo={onboardingBrand.logoLightUrl || onboardingBrand.logoUrl || onboardingBrand.logoDarkUrl || ''}
+            agencyLogo={onboardingBrand.logoDarkUrl || onboardingBrand.logoUrl || onboardingBrand.logoLightUrl || ''}
             agencyName={onboardingBrand.name}
             personName={buyerLandingName === 'there' ? '' : buyerLandingName}
             propertyAddress={onboardingLocationLabel}
