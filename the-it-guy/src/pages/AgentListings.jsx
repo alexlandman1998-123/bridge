@@ -3962,6 +3962,7 @@ function AgentListings({ initialTab = null } = {}) {
         await performUpdateExistingListing({
           navigateAfterSave: false,
           reloadAfterSave: false,
+          emitListingsUpdated: false,
           successMessage: 'Listing step saved.',
         })
       } catch (saveError) {
@@ -4127,13 +4128,14 @@ function AgentListings({ initialTab = null } = {}) {
   async function performUpdateExistingListing({
     navigateAfterSave = true,
     reloadAfterSave = true,
+    emitListingsUpdated = true,
     successMessage = 'Listing changes saved.',
   } = {}) {
     const listing = editListingRecord
     const listingId = getRemotePrivateListingId(listing) || editListingId
     if (!listing || !listingId) {
       setError('Unable to load this listing for editing.')
-      return
+      return false
     }
 
     const sellerName = normalizeText(form.sellerName)
@@ -4421,13 +4423,16 @@ function AgentListings({ initialTab = null } = {}) {
 
     setError('')
     setWorkflowMessage(successMessage)
-    window.dispatchEvent(new Event('itg:listings-updated'))
+    if (emitListingsUpdated) {
+      window.dispatchEvent(new Event('itg:listings-updated'))
+    }
     if (reloadAfterSave) {
       await loadData({ showLoading: false }).catch(() => null)
     }
     if (navigateAfterSave) {
       navigate(`/agent/listings/${encodeURIComponent(listingId)}?tab=marketing`, { replace: true, state: { message: successMessage } })
     }
+    return true
   }
 
   const isPrincipalListingMode = listingModalMode === 'principal'

@@ -3765,7 +3765,12 @@ function AgentListingDetail() {
       updatedListing = rowsWithListing[0]
     }
     setPrivateListings(rowsWithListing)
-    writeAgentPrivateListings(rowsWithListing)
+    try {
+      writeAgentPrivateListings(rowsWithListing)
+    } catch (storageError) {
+      // The remote database save must not be blocked by oversized browser fallback cache data.
+      console.warn('[AgentListingDetail] local listing cache write skipped', storageError)
+    }
     return updatedListing
   }
 
@@ -3951,7 +3956,12 @@ function AgentListingDetail() {
   }
 
   async function saveMarketingDraft(draftOverride = marketingDraft, options = {}) {
-    const draft = draftOverride || marketingDraft
+    const draft = draftOverride &&
+      typeof draftOverride === 'object' &&
+      !('nativeEvent' in draftOverride) &&
+      !('currentTarget' in draftOverride)
+      ? draftOverride
+      : marketingDraft
     setDetailMessage('')
     setDetailError('')
     const normalizedExternalLinks = normalizeExternalListingLinks(draft.externalLinks)
@@ -10422,7 +10432,7 @@ function AgentListingDetail() {
                         {[marketingDraft.suburb, marketingDraft.city, marketingDraft.province].filter(Boolean).join(', ') || 'Location pending'}
                       </p>
                     </div>
-                    <Button size="sm" onClick={saveMarketingDraft}>Save Property Details</Button>
+                    <Button size="sm" onClick={() => saveMarketingDraft()}>Save Property Details</Button>
                   </div>
 
                   <div className="mt-5 flex flex-wrap gap-2">
@@ -10765,7 +10775,7 @@ function AgentListingDetail() {
                   <h3 className="text-[1.08rem] font-semibold text-[#142132]">Property Details</h3>
                   <p className="mt-1 text-sm text-[#607387]">Structured listing data for stronger presentation, cleaner reporting, and better downstream conversion.</p>
                 </div>
-                <Button size="sm" onClick={saveMarketingDraft}>Save Property Details</Button>
+                <Button size="sm" onClick={() => saveMarketingDraft()}>Save Property Details</Button>
               </div>
               <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
                 <div className="rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
