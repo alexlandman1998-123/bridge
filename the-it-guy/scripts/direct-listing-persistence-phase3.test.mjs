@@ -4,6 +4,8 @@ import { readFileSync } from 'node:fs'
 import { buildDirectListingIntakePayload } from '../src/lib/directListingIntakeModel.js'
 
 const agentListingsSource = readFileSync(new URL('../src/pages/AgentListings.jsx', import.meta.url), 'utf8')
+const agentListingDetailSource = readFileSync(new URL('../src/pages/AgentListingDetail.jsx', import.meta.url), 'utf8')
+const privateListingServiceSource = readFileSync(new URL('../src/services/privateListingService.js', import.meta.url), 'utf8')
 
 function test(name, fn) {
   try {
@@ -60,4 +62,30 @@ test('direct listing persistence payload remains declaration-only and portal-awa
   assert.equal(payload.complianceDeclarations.uploadsRequired, false)
   assert.equal(payload.complianceDeclarations.evidenceRequired, false)
   assert.equal(payload.sellerPortalInvite.requested, true)
+})
+
+test('listing description is persisted and rehydrated through shared aliases', () => {
+  assert.match(agentListingsSource, /listingMarketing\.description/)
+  assert.match(agentListingsSource, /onboardingFormData\.listingDescription/)
+  assert.match(agentListingsSource, /onboardingFormData\.propertyDescription/)
+  assert.match(agentListingDetailSource, /onboardingFormData\.listingDescription/)
+  assert.match(agentListingDetailSource, /propertyDescription: String\(draft\.description/)
+  assert.match(privateListingServiceSource, /onboardingFormData\.listingDescription/)
+})
+
+test('key selling points survive editor, detail workspace, and publication mapping', () => {
+  assert.match(agentListingsSource, /normalizeDirectListingFeatureSelections\(listing\.keySellingPoints/)
+  assert.match(agentListingsSource, /normalizeDirectListingFeatureSelections\(listingMarketing\.features/)
+  assert.match(agentListingsSource, /normalizeDirectListingFeatureSelections\(listing\.listingPublicationData\?\.features/)
+  assert.match(agentListingDetailSource, /normalizeListingFeatureSelections\(\s*propertyDetails\?\.selectedFeatures/)
+  assert.match(agentListingDetailSource, /listingRecord\?\.keySellingPoints/)
+  assert.match(agentListingDetailSource, /listingRecord\?\.listingPublicationData\?\.features/)
+  assert.match(privateListingServiceSource, /normalizeListingSellingPointSelections/)
+  assert.match(privateListingServiceSource, /keySellingPoints: listingFeatureSelections/)
+})
+
+test('publication sync can still save description when feature columns are missing', () => {
+  assert.match(privateListingServiceSource, /delete compatiblePublicationPayload\.features/)
+  assert.match(privateListingServiceSource, /delete compatiblePublicationPayload\.amenities/)
+  assert.match(privateListingServiceSource, /\.select\('listing_id, title, address, suburb, province, property_type, listing_type, asking_price, bedrooms, bathrooms, garages, parking_bays, floor_size, erf_size, rates_taxes, levies, description, status, created_at, updated_at'\)/)
 })

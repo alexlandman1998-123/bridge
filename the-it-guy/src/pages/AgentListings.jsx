@@ -278,6 +278,7 @@ const CREATE_LISTING_SELLING_POINT_OPTIONS = [
   { value: 'flatlet', label: 'Flatlet' },
   { value: 'new_development', label: 'New development' },
 ]
+const CREATE_LISTING_SELLING_POINT_VALUE_SET = new Set(CREATE_LISTING_SELLING_POINT_OPTIONS.map((option) => option.value))
 
 const QUICK_ADD_HELP_STEPS = [
   'Listing Status',
@@ -1179,13 +1180,17 @@ function buildListingEditorFormFromListing(listing = {}, profile = {}, workspace
   const mandateStatus = normalizeDirectListingKey(listing.mandateStatus || listing.mandate_status || onboardingFormData.mandateStatus)
   const hasSignedMandate = ['signed', 'signed_uploaded', 'signed_external_pending_upload'].includes(mandateStatus)
   const listingFeatureSelections = [
-    ...(Array.isArray(listing.keySellingPoints) ? listing.keySellingPoints : []),
-    ...(Array.isArray(listing.listingPublicationData?.features) ? listing.listingPublicationData.features : []),
-    ...(Array.isArray(listing.publicationData?.features) ? listing.publicationData.features : []),
-    ...(Array.isArray(listing.propertyDetails?.selectedFeatures) ? listing.propertyDetails.selectedFeatures : []),
-    ...(Array.isArray(onboardingFormData.keySellingPoints) ? onboardingFormData.keySellingPoints : []),
-    ...(Array.isArray(onboardingFormData.features) ? onboardingFormData.features : []),
-  ].map(normalizeDirectListingKey).filter(Boolean)
+    ...normalizeDirectListingFeatureSelections(listing.keySellingPoints, { allowedValues: CREATE_LISTING_SELLING_POINT_VALUE_SET }),
+    ...normalizeDirectListingFeatureSelections(listing.features, { allowedValues: CREATE_LISTING_SELLING_POINT_VALUE_SET }),
+    ...normalizeDirectListingFeatureSelections(listingMarketing.features, { allowedValues: CREATE_LISTING_SELLING_POINT_VALUE_SET }),
+    ...normalizeDirectListingFeatureSelections(listingMarketing.selectedFeatures, { allowedValues: CREATE_LISTING_SELLING_POINT_VALUE_SET }),
+    ...normalizeDirectListingFeatureSelections(listing.listingPublicationData?.features, { allowedValues: CREATE_LISTING_SELLING_POINT_VALUE_SET }),
+    ...normalizeDirectListingFeatureSelections(listing.publicationData?.features, { allowedValues: CREATE_LISTING_SELLING_POINT_VALUE_SET }),
+    ...normalizeDirectListingFeatureSelections(listingPropertyDetails.selectedFeatures, { allowedValues: CREATE_LISTING_SELLING_POINT_VALUE_SET }),
+    ...normalizeDirectListingFeatureSelections(listingPropertyDetails.features, { allowedValues: CREATE_LISTING_SELLING_POINT_VALUE_SET }),
+    ...normalizeDirectListingFeatureSelections(onboardingFormData.keySellingPoints, { allowedValues: CREATE_LISTING_SELLING_POINT_VALUE_SET }),
+    ...normalizeDirectListingFeatureSelections(onboardingFormData.features, { allowedValues: CREATE_LISTING_SELLING_POINT_VALUE_SET }),
+  ]
 
   return {
     ...base,
@@ -1268,12 +1273,14 @@ function buildListingEditorFormFromListing(listing = {}, profile = {}, workspace
     notes: stripQuickListingMetadataText(listing.internalListingNotes || listing.notes),
     listingDescription: normalizeText(
       listing.listingDescription ||
-        listing.listingPreviewDescription ||
         listingMarketing.description ||
         listing.listingPublicationData?.description ||
         listing.publicationData?.description ||
         listing.description ||
-        onboardingFormData.propertyNotes,
+        onboardingFormData.listingDescription ||
+        onboardingFormData.propertyDescription ||
+        onboardingFormData.propertyNotes ||
+        listing.listingPreviewDescription,
     ),
     keySellingPoints: Array.from(new Set(listingFeatureSelections)),
     listingImages: galleryImages,
@@ -1360,6 +1367,30 @@ function normalizeDirectListingKey(value) {
     .replace(/&/g, ' and ')
     .replace(/[^a-z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '')
+}
+
+function normalizeDirectListingFeatureSelections(value, { allowedValues = null } = {}) {
+  const values = []
+  const pushValue = (item) => {
+    if (Array.isArray(item)) {
+      item.forEach(pushValue)
+      return
+    }
+    if (item && typeof item === 'object') {
+      pushValue(item.value || item.key || item.id || item.label || item.name)
+      return
+    }
+    String(item || '')
+      .split(/[\n,]+/)
+      .map(normalizeDirectListingKey)
+      .filter(Boolean)
+      .forEach((key) => {
+        if (!allowedValues || allowedValues.has(key)) values.push(key)
+      })
+  }
+
+  pushValue(value)
+  return values
 }
 
 function splitDirectListingPersonName(value) {
@@ -1502,12 +1533,17 @@ function buildQuickAddDirectListingPersistencePayload(form = {}, context = {}) {
     capturedBy: context.capturedBy || '',
     capturedAt,
   })
+  const keySellingPoints = normalizeDirectListingFeatureSelections(form.keySellingPoints, {
+    allowedValues: CREATE_LISTING_SELLING_POINT_VALUE_SET,
+  })
   const sellerOnboardingFormData = {
     ...directListingIntake.sellerOnboardingFormData,
     propertyNotes: normalizeText(form.listingDescription),
     propertyDescription: normalizeText(form.listingDescription),
     listingDescription: normalizeText(form.listingDescription),
     listingPreviewDescription: normalizeText(form.listingDescription || form.notes),
+    features: buildQuickListingPublicationFeatures(form, keySellingPoints),
+    keySellingPoints,
     directListingIntake: {
       ...(directListingIntake.sellerOnboardingFormData?.directListingIntake || {}),
       capturedAt,

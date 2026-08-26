@@ -417,7 +417,30 @@ const BOND_ORIGINATOR_OPTIONS = [
 
 const PROPERTY_TYPE_OPTIONS = ['House', 'Apartment', 'Townhouse', 'Cluster', 'Land', 'Commercial', 'Mixed-use']
 const LISTING_STATUS_OPTIONS = ['mandate_signed', 'active', 'under_offer', 'sold', 'withdrawn']
-const FEATURE_OPTIONS = ['Solar', 'Backup Water', 'Pool', 'Pet Friendly', 'Security', 'Garden', 'Fibre', 'Study', 'Staff Quarters', 'Entertainment Area']
+const FEATURE_OPTIONS = [
+  'Pool',
+  'Garden',
+  'Security',
+  'Electric Fence',
+  'Solar',
+  'Backup Power',
+  'Backup Water',
+  'Borehole',
+  'Fibre',
+  'Pet Friendly',
+  'Study',
+  'Staff Quarters',
+  'Entertainment Area',
+  'Built-in Braai',
+  'Fireplace',
+  'Air Conditioning',
+  'Open-plan Living',
+  'Balcony',
+  'Sea View',
+  'Mountain View',
+  'Flatlet',
+  'New Development',
+]
 const LISTING_TYPE_OPTIONS = ['Sale', 'Rental']
 const PUBLICATION_STATUS_OPTIONS = ['Draft', 'Ready', 'Published', 'Archived']
 const AMENITY_OPTIONS = ['Security Estate', 'Clubhouse', 'Kids Play Area', 'Walking Trails', 'Built-in Braai', 'Solar System', 'Staff Accommodation', 'Open Plan Living']
@@ -428,6 +451,55 @@ const PROPERTY24_STATUS_UPDATE_OPTIONS = ['Active', 'Pending', 'Sold', 'Withdraw
 const ARCH9_PUBLIC_SITE_ORIGIN = 'https://www.arch9.co.za'
 const ARCH9_PUBLIC_LISTINGS_API_PATH = '/api/public/listings'
 const PROPERTY24_LISTING_API_BASE_PATH = '/api/property24/listings'
+const LISTING_SYSTEM_PUBLICATION_FEATURE_KEYS = new Set([
+  'estate_or_hoa',
+  'sectional_title',
+  'on_auction',
+  'price_on_application',
+  'reduced_banner',
+  'no_transfer_duty',
+])
+const LISTING_FEATURE_LABEL_BY_KEY = new Map(
+  [...FEATURE_OPTIONS, ...AMENITY_OPTIONS].map((label) => [normalizeKey(label), label]),
+)
+
+function toTitleCaseLabel(value = '') {
+  return normalizeText(value)
+    .replace(/_/g, ' ')
+    .replace(/\s+/g, ' ')
+    .split(' ')
+    .filter(Boolean)
+    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1).toLowerCase()}`)
+    .join(' ')
+}
+
+function normalizeListingFeatureLabel(value = '') {
+  const key = normalizeKey(value)
+  if (!key || LISTING_SYSTEM_PUBLICATION_FEATURE_KEYS.has(key)) return ''
+  return LISTING_FEATURE_LABEL_BY_KEY.get(key) || toTitleCaseLabel(value)
+}
+
+function normalizeListingFeatureSelections(...sources) {
+  const labels = []
+  const pushValue = (value) => {
+    if (Array.isArray(value)) {
+      value.forEach(pushValue)
+      return
+    }
+    if (value && typeof value === 'object') {
+      pushValue(value.label || value.name || value.value || value.key || value.id)
+      return
+    }
+    String(value || '')
+      .split(/[\n,]+/)
+      .map(normalizeListingFeatureLabel)
+      .filter(Boolean)
+      .forEach((label) => labels.push(label))
+  }
+
+  sources.forEach(pushValue)
+  return [...new Set(labels)]
+}
 const SELLER_PACK_TRANSACTION_REQUIREMENT_KEYS = [
   SELLER_BASE_PACK_KEYS.SIGNED_MANDATE,
   SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM,
@@ -813,11 +885,14 @@ function buildListingSnapshotFormData(draft = {}) {
     vatApplicable: String(draft.vatApplicable || '').trim(),
     offersFrom: draft.offersFrom,
     features: Array.isArray(draft.selectedFeatures) ? draft.selectedFeatures : [],
+    keySellingPoints: Array.isArray(draft.selectedFeatures) ? draft.selectedFeatures : [],
     amenities: Array.isArray(draft.amenities) ? draft.amenities : [],
     petFriendly: Boolean(draft.petFriendly),
     fibreReady: Boolean(draft.fibreReady),
     securityFeatures: String(draft.securityFeatures || '').trim(),
     propertyNotes: String(draft.description || '').trim(),
+    propertyDescription: String(draft.description || '').trim(),
+    listingDescription: String(draft.description || '').trim(),
     listingPreviewDescription: String(draft.listingPreviewDescription || '').trim(),
     internalNotes: String(draft.notes || '').trim(),
     publicationStatus: String(draft.publicationStatus || 'Draft').trim(),
@@ -2918,14 +2993,18 @@ function buildPropertyDraft(listingRecord) {
   const rawListingStatus = String(propertyDetails?.listingStatus || listingRecord?.status || 'active').trim().toLowerCase()
   const normalizedListingStatus = rawListingStatus === 'listing_active' ? 'active' : rawListingStatus
 
-  const selectedFeatures = Array.isArray(propertyDetails?.selectedFeatures)
-    ? propertyDetails.selectedFeatures
-    : Array.isArray(onboardingFormData.features)
-      ? onboardingFormData.features
-      : String(marketing?.features || '')
-          .split(',')
-          .map((item) => item.trim())
-          .filter(Boolean)
+  const selectedFeatures = normalizeListingFeatureSelections(
+    propertyDetails?.selectedFeatures,
+    propertyDetails?.features,
+    listingRecord?.keySellingPoints,
+    listingRecord?.features,
+    listingRecord?.listingPublicationData?.features,
+    listingRecord?.publicationData?.features,
+    onboardingFormData.keySellingPoints,
+    onboardingFormData.features,
+    marketing?.selectedFeatures,
+    marketing?.features,
+  )
   const amenities = Array.isArray(propertyDetails?.amenities)
     ? propertyDetails.amenities
     : Array.isArray(onboardingFormData.amenities)
@@ -2992,7 +3071,10 @@ function buildPropertyDraft(listingRecord) {
       listingRecord?.description,
       listingRecord?.listingPublicationData?.description,
       listingRecord?.publicationData?.description,
+      onboardingFormData.listingDescription,
+      onboardingFormData.propertyDescription,
       onboardingFormData.propertyNotes,
+      onboardingFormData.description,
     )).trim(),
     listingPreviewDescription: String(firstDraftValue(
       propertyDetails?.listingPreviewDescription,
@@ -7042,13 +7124,13 @@ function AgentListingDetail() {
     [salesPortalReadinessSummaries],
   )
   const incompleteReadinessItems = listingReadinessItems.filter((item) => !item.complete)
-  const marketingSellingPoints = [
-    ...marketingDraft.selectedFeatures,
-    ...marketingDraft.amenities,
+  const marketingSellingPoints = normalizeListingFeatureSelections(
+    marketingDraft.selectedFeatures,
+    marketingDraft.amenities,
     marketingDraft.petFriendly ? 'Pet Friendly' : '',
     marketingDraft.fibreReady ? 'Fibre Ready' : '',
     marketingDraft.securityFeatures ? 'Security' : '',
-  ].filter(Boolean)
+  )
   const marketingMediaBadges = [
     { key: 'photos', label: `${marketingDraft.galleryImages.length} photo${marketingDraft.galleryImages.length === 1 ? '' : 's'}`, complete: marketingDraft.galleryImages.length > 0 },
     { key: 'cover', label: coverImage?.url ? 'Cover selected' : 'Cover missing', complete: Boolean(coverImage?.url) },

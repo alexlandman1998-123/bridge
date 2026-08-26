@@ -332,6 +332,41 @@ function normalizeStatusKey(value) {
   return normalizeKey(value).replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
 }
 
+const LISTING_SYSTEM_PUBLICATION_FEATURE_KEYS = new Set([
+  'estate_or_hoa',
+  'sectional_title',
+  'on_auction',
+  'price_on_application',
+  'reduced_banner',
+  'no_transfer_duty',
+])
+
+function normalizeListingFeatureSelections(...sources) {
+  const values = []
+  const pushValue = (value) => {
+    if (Array.isArray(value)) {
+      value.forEach(pushValue)
+      return
+    }
+    if (value && typeof value === 'object') {
+      pushValue(value.value || value.key || value.id || value.label || value.name)
+      return
+    }
+    String(value || '')
+      .split(/[\n,]+/)
+      .map((item) => normalizeStatusKey(item))
+      .filter(Boolean)
+      .forEach((item) => values.push(item))
+  }
+
+  sources.forEach(pushValue)
+  return [...new Set(values)]
+}
+
+function normalizeListingSellingPointSelections(...sources) {
+  return normalizeListingFeatureSelections(...sources).filter((item) => !LISTING_SYSTEM_PUBLICATION_FEATURE_KEYS.has(item))
+}
+
 function isPlainObject(value) {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value))
 }
@@ -2928,13 +2963,23 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
   const floorplans = normalizeMediaItems(onboardingFormData.floorplans)
   const rowDescription = normalizeText(row.description)
   const publicationDescription = normalizeText(publicationDraft?.description)
-  const onboardingDescription = normalizeText(onboardingFormData.propertyNotes || onboardingFormData.propertyDescription || onboardingFormData.description)
+  const onboardingDescription = normalizeText(onboardingFormData.listingDescription || onboardingFormData.propertyNotes || onboardingFormData.propertyDescription || onboardingFormData.description)
   const listingDescription = pickFirstText(publicationDescription, rowDescription, onboardingDescription)
   const listingPreviewDescription = pickFirstText(row.listing_preview_description, onboardingFormData.listingPreviewDescription, listingDescription)
   const onboardingNotes = normalizeText(onboardingFormData.internalNotes)
-  const onboardingFeatures = Array.isArray(onboardingFormData.features)
-    ? onboardingFormData.features.map((item) => normalizeText(item)).filter(Boolean)
-    : []
+  const publicationFeatures = normalizeListingFeatureSelections(publicationDraft?.features)
+  const onboardingFeatures = normalizeListingFeatureSelections(onboardingFormData.features)
+  const keySellingPointFeatures = normalizeListingSellingPointSelections(
+    onboardingFormData.keySellingPoints,
+    row.keySellingPoints,
+    row.key_selling_points,
+    row.marketing?.features,
+  )
+  const listingFeatureSelections = normalizeListingSellingPointSelections(
+    keySellingPointFeatures,
+    publicationFeatures,
+    onboardingFeatures,
+  )
   const distributionExternalLinks = externalLinksByListingId ? externalLinksByListingId.get(String(row.id || '')) || [] : []
   const externalListingLinks = normalizeListingExternalLinks(
     distributionExternalLinks.length
@@ -3099,9 +3144,7 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     images: imageGallery,
     galleryImages: imageGallery,
     coverImageId,
-    keySellingPoints: Array.isArray(onboardingFormData.keySellingPoints)
-      ? onboardingFormData.keySellingPoints.map((item) => normalizeText(item)).filter(Boolean)
-      : onboardingFeatures,
+    keySellingPoints: listingFeatureSelections,
     externalLinks: externalListingLinks,
     listingExternalLinks: externalListingLinks,
     listingPreviewDescription,
@@ -3129,7 +3172,7 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
       coverImageId,
       floorplans,
       description: listingDescription,
-      features: onboardingFeatures.join(', '),
+      features: listingFeatureSelections.join(', '),
       notes: onboardingNotes,
       status: listingStatus,
       source: row.listing_source || '',
@@ -3166,7 +3209,7 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
       saleType: onboardingFormData.saleType || 'For Sale',
       vatApplicable: onboardingFormData.vatApplicable || 'no',
       offersFrom: normalizeNumber(onboardingFormData.offersFrom) ?? 0,
-      selectedFeatures: onboardingFeatures,
+      selectedFeatures: listingFeatureSelections,
       description: listingDescription,
       listingPreviewDescription,
       notes: onboardingNotes,
@@ -5464,10 +5507,16 @@ async function fetchExternalLinkRowsForListings(client, listingIds = []) {
 async function fetchPublicationRowsForListings(client, listingIds = []) {
   const ids = normalizeUuidList(listingIds)
   if (!ids.length || hasMissingTableCache('listing_publication_data')) return new Map()
-  const query = await client
+  let query = await client
     .from('listing_publication_data')
     .select('listing_id, title, address, suburb, province, property_type, listing_type, asking_price, bedrooms, bathrooms, garages, parking_bays, floor_size, erf_size, rates_taxes, levies, description, features, amenities, status, created_at, updated_at')
     .in('listing_id', ids)
+  if (query.error && isMissingColumnError(query.error)) {
+    query = await client
+      .from('listing_publication_data')
+      .select('listing_id, title, address, suburb, province, property_type, listing_type, asking_price, bedrooms, bathrooms, garages, parking_bays, floor_size, erf_size, rates_taxes, levies, description, status, created_at, updated_at')
+      .in('listing_id', ids)
+  }
   if (query.error) {
     if (isMissingTableError(query.error, 'listing_publication_data') || isMissingColumnError(query.error)) {
       rememberMissingTable('listing_publication_data')
@@ -6111,11 +6160,21 @@ export async function syncPrivateListingDistributionData(listingId, payload = {}
       visible_to_seller: item.visibleToSeller,
     }))
 
-  const publication = await client
+  let publication = await client
     .from('listing_publication_data')
     .upsert(publicationPayload, { onConflict: 'listing_id' })
     .select('*')
     .single()
+  if (publication.error && isMissingColumnError(publication.error)) {
+    const compatiblePublicationPayload = { ...publicationPayload }
+    delete compatiblePublicationPayload.features
+    delete compatiblePublicationPayload.amenities
+    publication = await client
+      .from('listing_publication_data')
+      .upsert(compatiblePublicationPayload, { onConflict: 'listing_id' })
+      .select('*')
+      .single()
+  }
   if (publication.error) {
     if (isMissingTableError(publication.error, 'listing_publication_data')) return { skipped: true, reason: 'distribution_tables_missing' }
     throw publication.error
