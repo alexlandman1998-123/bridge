@@ -1,0 +1,66 @@
+{
+  "phase": "private-property-phase2-agent-setup",
+  "generatedAt": "2026-08-26T10:05:12.037Z",
+  "environment": "sandbox",
+  "baseUrl": "https://services.sandbox.pp.co.za/AgentImport/AgentImport.asmx",
+  "vendor": "Arch9",
+  "username": "Arch9User",
+  "branchGuid": "CA167B18-C6DC-49AD-B018-2B72B187918F",
+  "apply": true,
+  "credentialsConfigured": true,
+  "agent": {
+    "agentId": "ARCH9-SANDBOX-USER-2",
+    "firstName": "User",
+    "lastName": "Two",
+    "email": "alex+privatepropertytest2@arch9.co.za",
+    "telCell": "+27686439449",
+    "telWork": "+27686439449",
+    "telHome": null,
+    "active": true,
+    "privysealAlias": null,
+    "privatePropertyAgentId": null,
+    "imageUrlConfigured": true
+  },
+  "summary": {
+    "status": "BLOCKED",
+    "passCount": 1,
+    "blockedCount": 1,
+    "skippedCount": 0
+  },
+  "checks": [
+    {
+      "name": "UpdateAgent SOAP write",
+      "status": "BLOCKED",
+      "httpStatus": 500,
+      "durationMs": 211,
+      "error": {
+        "name": "PrivatePropertySoapError",
+        "message": "<soap:Text xml:lang=\"en\">System.Web.Services.Protocols.SoapException: Server was unable to process request. ---> PPLSystems.Web.WebServices.AgentImport.ASAPIException: PP107 - Agent cell phone number was in an incorrect format.\r\n   at PPLSystems.Web.WebServices.AgentImport.AgentImport.UpdateAgent(Agent Agent, SecurityToken Token)\r\n   --- End of inner exception stack trace ---</soap:Text>",
+        "statusText": "Internal Server Error",
+        "faultCode": "<soap:Value>soap:Receiver</soap:Value>",
+        "faultString": "<soap:Text xml:lang=\"en\">System.Web.Services.Protocols.SoapException: Server was unable to process request. ---> PPLSystems.Web.WebServices.AgentImport.ASAPIException: PP107 - Agent cell phone number was in an incorrect format.\r\n   at PPLSystems.Web.WebServices.AgentImport.AgentImport.UpdateAgent(Agent Agent, SecurityToken Token)\r\n   --- End of inner exception stack trace ---</soap:Text>",
+        "responseSummary": {
+          "method": "UpdateAgent SOAP write",
+          "responseChars": 767,
+          "resultText": "",
+          "continuationKey": "",
+          "listingEventCount": 0
+        }
+      }
+    },
+    {
+      "name": "UpdateAgentImage SOAP write",
+      "status": "PASS",
+      "httpStatus": 200,
+      "durationMs": 79,
+      "summary": {
+        "method": "UpdateAgentImage",
+        "responseChars": 405,
+        "resultText": "only jpg images are supported",
+        "continuationKey": "",
+        "listingEventCount": 0
+      }
+    }
+  ],
+  "nextPhase": "Phase 3: build the Private Property listing mapper preview once sandbox agents exist."
+}

@@ -5,7 +5,7 @@ const DEMO_ACCOUNT = DEMO_ACCOUNTS.find((account) => account.id === 'home-seeker
 const DEMO_PROFILE = DEMO_ACCOUNT.profile || {}
 
 export const HOME_SEEKERS_DEMO_ACCOUNT = DEMO_ACCOUNT
-export const HOME_SEEKERS_DEMO_EMAIL = String(DEMO_PROFILE.email || 'principal@homeseekers.demo').trim().toLowerCase()
+export const HOME_SEEKERS_DEMO_EMAIL = String(DEMO_PROFILE.email || 'alex.homeseekers.training@arch9.test').trim().toLowerCase()
 export const HOME_SEEKERS_DEMO_PASSWORD = 'HomeSeekersDemo!2026'
 export const HOME_SEEKERS_DEMO_SEED_KEY = String(DEMO_ACCOUNT.seedData?.seedKey || 'home-seekers-demo-seed-v1').trim()
 export const HOME_SEEKERS_DEMO_ORGANISATION_ID = stableUuid('home-seekers:organisation')
@@ -54,19 +54,6 @@ async function upsertRow(client, definitions, table, row, onConflict = 'id') {
   return result
 }
 
-async function findAuthUserIdByEmail(client, email) {
-  if (!client?.auth?.admin?.listUsers) return ''
-  const normalizedEmail = normalizeEmail(email)
-  for (let page = 1; page <= 5; page += 1) {
-    const result = await client.auth.admin.listUsers({ page, perPage: 200 })
-    if (result.error) throw result.error
-    const match = (result.data?.users || []).find((user) => normalizeEmail(user?.email) === normalizedEmail)
-    if (match?.id) return match.id
-    if ((result.data?.users || []).length < 200) break
-  }
-  return ''
-}
-
 async function ensureAuthUser(client, { email, password, account = HOME_SEEKERS_DEMO_ACCOUNT }) {
   const normalizedEmail = normalizeEmail(email || HOME_SEEKERS_DEMO_EMAIL)
   const profileQuery = await client
@@ -97,20 +84,7 @@ async function ensureAuthUser(client, { email, password, account = HOME_SEEKERS_
       })
       if (updateResult.error) throw updateResult.error
     }
-    return { userId, created: false }
-  }
-
-  const existingAuthUserId = await findAuthUserIdByEmail(client, normalizedEmail)
-  if (existingAuthUserId) {
-    if (password && client?.auth?.admin?.updateUserById) {
-      const updateResult = await client.auth.admin.updateUserById(existingAuthUserId, {
-        email_confirm: true,
-        password,
-        user_metadata: metadata,
-      })
-      if (updateResult.error) throw updateResult.error
-    }
-    return { userId: existingAuthUserId, created: false }
+    return { userId, created: false, profile: profileQuery.data }
   }
 
   if (!password) {
@@ -126,7 +100,36 @@ async function ensureAuthUser(client, { email, password, account = HOME_SEEKERS_
   if (createResult.error) throw createResult.error
   const userId = createResult.data?.user?.id || ''
   if (!userId) throw new Error(`Could not create auth user for ${normalizedEmail}.`)
-  return { userId, created: true }
+  return { userId, created: true, profile: null }
+}
+
+async function resolveExistingOrganisationId(client, { account = HOME_SEEKERS_DEMO_ACCOUNT } = {}) {
+  const organisationName = normalizeText(account.name || 'Home Seekers') || 'Home Seekers'
+  const byName = await client
+    .from('organisations')
+    .select('id')
+    .eq('name', organisationName)
+    .maybeSingle()
+  if (byName?.data?.id) return byName.data.id
+  const byDisplayName = await client
+    .from('organisations')
+    .select('id')
+    .eq('display_name', organisationName)
+    .maybeSingle()
+  if (byDisplayName?.data?.id) return byDisplayName.data.id
+  return HOME_SEEKERS_DEMO_ORGANISATION_ID
+}
+
+async function resolveExistingBranchId(client, organisationId) {
+  const branchQuery = await client
+    .from('organisation_branches')
+    .select('id')
+    .eq('organisation_id', organisationId)
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle()
+  if (branchQuery?.data?.id) return branchQuery.data.id
+  return HOME_SEEKERS_DEMO_BRANCH_ID
 }
 
 function buildOrganisationPayload({ account = HOME_SEEKERS_DEMO_ACCOUNT } = {}) {
@@ -213,21 +216,22 @@ function buildOrganisationSettingsPayload({ account = HOME_SEEKERS_DEMO_ACCOUNT 
   }
 }
 
-function buildProfilePayload(userId, { account = HOME_SEEKERS_DEMO_ACCOUNT } = {}) {
+function buildProfilePayload(userId, { account = HOME_SEEKERS_DEMO_ACCOUNT, existingProfile = null } = {}) {
+  const existing = existingProfile && typeof existingProfile === 'object' ? existingProfile : {}
   return {
     id: userId,
     email: HOME_SEEKERS_DEMO_EMAIL,
-    full_name: account.profile?.fullName || 'Home Seekers Principal',
-    first_name: account.profile?.firstName || 'Home',
-    last_name: account.profile?.lastName || 'Seekers',
-    company_name: account.profile?.companyName || 'Home Seekers',
+    full_name: existing.full_name || account.profile?.fullName || 'Home Seekers Principal',
+    first_name: existing.first_name || account.profile?.firstName || 'Home',
+    last_name: existing.last_name || account.profile?.lastName || 'Seekers',
+    company_name: existing.company_name || account.profile?.companyName || 'Home Seekers',
     phone_number: null,
     avatar_url: null,
-    role: 'agent',
-    system_role: 'agent',
+    role: existing.role || 'agent',
+    system_role: existing.system_role || 'agent',
     primary_attorney_firm_id: null,
     attorney_role: null,
-    onboarding_completed: true,
+    onboarding_completed: existing.onboarding_completed ?? true,
     updated_at: new Date().toISOString(),
   }
 }
@@ -257,7 +261,7 @@ function buildMembershipPayload(userId, { account = HOME_SEEKERS_DEMO_ACCOUNT } 
     app_role: 'agent',
     workspace_type: 'agency',
     membership_status: 'active',
-    branch_scope: 'all',
+    branch_scope: 'all_branches',
     scope_level: 'organisation',
     active_workspace_selected_at: now,
     is_demo_data: true,
@@ -268,6 +272,108 @@ function buildMembershipPayload(userId, { account = HOME_SEEKERS_DEMO_ACCOUNT } 
     },
     updated_at: now,
   }
+}
+
+function buildListingPayloads(userId, { account = HOME_SEEKERS_DEMO_ACCOUNT } = {}) {
+  const now = new Date().toISOString()
+  const listings = Array.isArray(account.seedData?.listings) && account.seedData.listings.length
+    ? account.seedData.listings
+    : [
+        {
+          id: 'home-seekers-listing-116-ridge-road',
+          title: '116 Ridge Road',
+          addressLine1: '116 Ridge Road',
+          suburb: 'Sea Point',
+          city: 'Cape Town',
+          province: 'Western Cape',
+          postalCode: '8005',
+          askingPrice: 3125000,
+          propertyType: 'House',
+        },
+        {
+          id: 'home-seekers-listing-117-ridge-road',
+          title: '117 Ridge Road',
+          addressLine1: '117 Ridge Road',
+          suburb: 'Sea Point',
+          city: 'Cape Town',
+          province: 'Western Cape',
+          postalCode: '8005',
+          askingPrice: 4850000,
+          propertyType: 'House',
+        },
+        {
+          id: 'home-seekers-listing-constantia',
+          title: '18 Constantia Road',
+          addressLine1: '18 Constantia Road',
+          suburb: 'Constantia',
+          city: 'Cape Town',
+          province: 'Western Cape',
+          postalCode: '7806',
+          askingPrice: 6250000,
+          propertyType: 'House',
+        },
+        {
+          id: 'home-seekers-listing-woodstock',
+          title: '12 Woodstock Street',
+          addressLine1: '12 Woodstock Street',
+          suburb: 'Woodstock',
+          city: 'Cape Town',
+          province: 'Western Cape',
+          postalCode: '7925',
+          askingPrice: 2650000,
+          propertyType: 'Apartment',
+        },
+      ]
+
+  return listings.map((listing, index) => {
+    const title = normalizeText(listing.title || `Home Seekers Listing ${index + 1}`)
+    const addressLine1 = normalizeText(listing.addressLine1 || title)
+    const suburb = normalizeText(listing.suburb || '')
+    const city = normalizeText(listing.city || 'Cape Town')
+    const province = normalizeText(listing.province || 'Western Cape')
+    const postalCode = normalizeText(listing.postalCode || '')
+    return {
+      id: stableUuid(`home-seekers:listing:${listing.id || title}`),
+      organisation_id: HOME_SEEKERS_DEMO_ORGANISATION_ID,
+      branch_id: HOME_SEEKERS_DEMO_BRANCH_ID,
+      assigned_agent_id: userId,
+      assigned_agent_email: HOME_SEEKERS_DEMO_EMAIL,
+      listing_reference: `HS-${String(index + 1).padStart(3, '0')}`,
+      title,
+      description: `Demo listing for ${title}.`,
+      listing_category: 'sale',
+      listing_status: 'seller_lead',
+      listing_visibility: 'internal',
+      mandate_status: 'not_started',
+      seller_onboarding_status: 'sent',
+      is_active: false,
+      listing_source: 'home_seekers_demo_seed',
+      property_type: listing.propertyType || 'House',
+      property_category: 'residential',
+      property_structure_type: 'freehold',
+      asking_price: Number(listing.askingPrice || 0),
+      street_address: addressLine1,
+      address_line_1: addressLine1,
+      formatted_address: [addressLine1, suburb, city, province, postalCode].filter(Boolean).join(', '),
+      suburb,
+      city,
+      province,
+      postal_code: postalCode,
+      country: 'South Africa',
+      bedrooms: 3,
+      bathrooms: 2,
+      floor_size_sqm: 140,
+      is_demo_data: true,
+      demo_metadata: {
+        seedKey: HOME_SEEKERS_DEMO_SEED_KEY,
+        accountId: account.id || 'home-seekers',
+        listingId: listing.id || title,
+        source: 'home_seekers_demo_bootstrap',
+      },
+      created_at: now,
+      updated_at: now,
+    }
+  })
 }
 
 export async function ensureHomeSeekersAgencyDemoWorkspace(client, {
@@ -282,10 +388,15 @@ export async function ensureHomeSeekersAgencyDemoWorkspace(client, {
     throw new Error(`Unexpected agency demo email ${normalizedEmail || '<empty>'}.`)
   }
 
+  const organisationId = await resolveExistingOrganisationId(client, { account })
+  const branchId = await resolveExistingBranchId(client, organisationId)
+  let profileRecord = null
+
   let userId = ''
   if (createAuthUser) {
     const authResult = await ensureAuthUser(client, { email: normalizedEmail, password, account })
     userId = authResult.userId
+    profileRecord = authResult.profile
   } else {
     const profileQuery = await client
       .from('profiles')
@@ -300,29 +411,45 @@ export async function ensureHomeSeekersAgencyDemoWorkspace(client, {
     throw new Error(`Could not resolve a demo profile id for ${normalizedEmail}.`)
   }
 
-  await upsertRow(client, definitions, 'profiles', buildProfilePayload(userId, { account }), 'id')
-  await upsertRow(client, definitions, 'organisations', buildOrganisationPayload({ account }), 'id')
-  await upsertRow(client, definitions, 'organisation_settings', buildOrganisationSettingsPayload({ account }), 'organisation_id')
-  await upsertRow(client, definitions, 'organisation_branches', buildBranchPayload({ account }), 'id')
-  await upsertRow(client, definitions, 'organisation_users', buildMembershipPayload(userId, { account }), 'id')
+  const profilePayload = buildProfilePayload(userId, { account, existingProfile: profileRecord })
+  const organisationPayload = { ...buildOrganisationPayload({ account }), id: organisationId }
+  const organisationSettingsPayload = { ...buildOrganisationSettingsPayload({ account }), organisation_id: organisationId }
+  const branchPayload = { ...buildBranchPayload({ account }), id: branchId, organisation_id: organisationId }
+  const membershipPayload = {
+    ...buildMembershipPayload(userId, { account }),
+    organisation_id: organisationId,
+    branch_id: branchId,
+  }
+  const listingRows = buildListingPayloads(userId, { account }).map((row) => ({
+    ...row,
+    organisation_id: organisationId,
+    branch_id: branchId,
+  }))
+
+  await upsertRow(client, definitions, 'profiles', profilePayload, 'id')
+  await upsertRow(client, definitions, 'organisations', organisationPayload, 'id')
+  await upsertRow(client, definitions, 'organisation_settings', organisationSettingsPayload, 'organisation_id')
+  await upsertRow(client, definitions, 'organisation_branches', branchPayload, 'id')
+  await upsertRow(client, definitions, 'organisation_users', membershipPayload, 'organisation_id,email')
+  await Promise.all(listingRows.map((row) => upsertRow(client, definitions, 'private_listings', row, 'id')))
 
   const [membershipResult, usersResult, listingsResult] = await Promise.all([
     client
       .from('organisation_users')
       .select('*')
-      .eq('organisation_id', HOME_SEEKERS_DEMO_ORGANISATION_ID)
+      .eq('organisation_id', organisationId)
       .eq('status', 'active')
       .order('created_at', { ascending: true }),
     client
       .from('organisation_users')
       .select('id, user_id, email, first_name, last_name, role, workspace_role, branch_id')
-      .eq('organisation_id', HOME_SEEKERS_DEMO_ORGANISATION_ID)
+      .eq('organisation_id', organisationId)
       .eq('status', 'active')
       .order('created_at', { ascending: true }),
     client
       .from('private_listings')
       .select('id, title, address_line_1, suburb, city, province, postal_code, asking_price, property_type, assigned_agent_id')
-      .eq('organisation_id', HOME_SEEKERS_DEMO_ORGANISATION_ID)
+      .eq('organisation_id', organisationId)
       .order('created_at', { ascending: false })
       .limit(20),
   ])
@@ -346,13 +473,13 @@ export async function ensureHomeSeekersAgencyDemoWorkspace(client, {
       company_name: account.profile?.companyName || 'Home Seekers',
     },
     organisation: {
-      id: HOME_SEEKERS_DEMO_ORGANISATION_ID,
+      id: organisationId,
       name: normalizeText(account.name || 'Home Seekers') || 'Home Seekers',
     },
-    organisationId: HOME_SEEKERS_DEMO_ORGANISATION_ID,
-    branchId: HOME_SEEKERS_DEMO_BRANCH_ID,
+    organisationId,
+    branchId,
     membership,
     users: usersResult.data || [],
-    listings: listingsResult.data || [],
+    listings: listingsResult.data || listingRows,
   }
 }

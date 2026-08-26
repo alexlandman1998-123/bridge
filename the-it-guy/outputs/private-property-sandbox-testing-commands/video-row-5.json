@@ -1,0 +1,35 @@
+{
+  "phase": "private-property-listing-video",
+  "generatedAt": "2026-08-26T10:09:59.090Z",
+  "environment": "sandbox",
+  "baseUrl": "https://services.sandbox.pp.co.za/AgentImport/AgentImport.asmx",
+  "vendor": "Arch9",
+  "username": "Arch9User",
+  "branchGuid": "CA167B18-C6DC-49AD-B018-2B72B187918F",
+  "apply": true,
+  "safety": {
+    "privatePropertyApiCalled": true,
+    "databaseWritten": false,
+    "listingStatusChanged": true
+  },
+  "status": "PASS",
+  "request": {
+    "propertyId": "PP-SANDBOX-SALE-RES-VIDEO-001",
+    "listingType": "Sale",
+    "youtubeVideoIdConfigured": true,
+    "matterportIdConfigured": false
+  },
+  "apiResponse": {
+    "status": 200,
+    "durationMs": 249,
+    "resultText": "Successful",
+    "summary": {
+      "method": "UpdateListingVideoOrMatterport",
+      "responseChars": 442,
+      "resultText": "Successful",
+      "continuationKey": "",
+      "listingEventCount": 0
+    }
+  },
+  "nextStep": "Run private-property:post-submit-monitor or portal checks to confirm the listing remains active."
+}

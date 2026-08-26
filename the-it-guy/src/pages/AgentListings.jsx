@@ -80,6 +80,7 @@ import { buildFinalListingModuleOverview } from '../services/listings/finalListi
 
 const LISTINGS_VIEW_STORAGE_KEY = 'itg:agent-listings:view-mode:v1'
 const CREATE_LISTING_DRAFT_STORAGE_KEY = 'itg:agent-listings:create-draft:v1'
+const CREATE_LISTING_DRAFT_UNSTORABLE_URL_PATTERN = /^(data|blob):/i
 const DEVELOPER_LEAD_PHASE20_CONTRACT = 'developer-leads-phase20-agent-capture-v1'
 const ACTIVE_LISTING_TABS = ['residential', 'developments']
 const MANUAL_LISTING_STATUSES = ['draft', 'mandate_signed', 'active', 'under_offer', 'sold']
@@ -582,6 +583,10 @@ function normalizeKey(value) {
   return normalizeText(value).toLowerCase()
 }
 
+function isUnstorableCreateListingImageUrl(value) {
+  return CREATE_LISTING_DRAFT_UNSTORABLE_URL_PATTERN.test(normalizeText(value))
+}
+
 function CreateListingProgressNav({ steps = [], activeStep = 'seller', maxVisitedStep = 0, onStepClick }) {
   const activeIndex = Math.max(0, steps.findIndex((step) => step.key === activeStep))
   return (
@@ -1027,15 +1032,47 @@ async function syncQuickListingDistributionData(listingId = '', form = {}, conte
 }
 
 function serializeCreateListingDraftForm(form = {}) {
+  const listingImages = (Array.isArray(form.listingImages) ? form.listingImages : [])
+    .map((image) => {
+      const draftImage = { ...image }
+      delete draftImage.file
+      if (isUnstorableCreateListingImageUrl(draftImage.url)) {
+        delete draftImage.url
+      }
+      return draftImage
+    })
+    .filter((image) => (
+      normalizeText(image.url) ||
+      normalizeText(image.signedUrl) ||
+      normalizeText(image.publicUrl) ||
+      normalizeText(image.path)
+    ))
+  const coverImageId = listingImages.some((image) => normalizeText(image.id) === normalizeText(form.coverImageId))
+    ? normalizeText(form.coverImageId)
+    : normalizeText(listingImages[0]?.id)
+
   return {
     ...form,
     manualMandateFile: null,
     supportingDocumentFiles: [],
-    listingImages: (Array.isArray(form.listingImages) ? form.listingImages : []).map((image) => {
-      const draftImage = { ...image }
-      delete draftImage.file
-      return draftImage
-    }),
+    coverImageId,
+    listingImages,
+  }
+}
+
+function saveCreateListingDraftToStorage(storageKey = '', form = {}) {
+  if (typeof window === 'undefined' || !storageKey) return false
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify(serializeCreateListingDraftForm(form)))
+    return true
+  } catch (storageError) {
+    console.warn('[Listings] create listing draft autosave skipped', storageError)
+    try {
+      window.localStorage.removeItem(storageKey)
+    } catch {
+      // Ignore cleanup failures; the draft is only a browser convenience.
+    }
+    return false
   }
 }
 
@@ -3324,18 +3361,19 @@ function AgentListings({ initialTab = null } = {}) {
     try {
       const parsed = JSON.parse(stored)
       if (parsed && typeof parsed === 'object') {
+        const restoredDraft = serializeCreateListingDraftForm(parsed)
         setForm((previous) => ({
           ...previous,
-          ...parsed,
+          ...restoredDraft,
           listingType: 'sale',
           listingCategory: 'private_sale',
           manualMandateFile: null,
           supportingDocumentFiles: [],
-          listingImages: Array.isArray(parsed.listingImages) ? parsed.listingImages : [],
-          keySellingPoints: Array.isArray(parsed.keySellingPoints) ? parsed.keySellingPoints : [],
-          multipleOwners: normalizeCreateListingOwnerCards(parsed.multipleOwners, parsed.multipleOwnersText),
-          selectedSyndicationChannels: Array.isArray(parsed.selectedSyndicationChannels) && parsed.selectedSyndicationChannels.length
-            ? parsed.selectedSyndicationChannels
+          listingImages: Array.isArray(restoredDraft.listingImages) ? restoredDraft.listingImages : [],
+          keySellingPoints: Array.isArray(restoredDraft.keySellingPoints) ? restoredDraft.keySellingPoints : [],
+          multipleOwners: normalizeCreateListingOwnerCards(restoredDraft.multipleOwners, restoredDraft.multipleOwnersText),
+          selectedSyndicationChannels: Array.isArray(restoredDraft.selectedSyndicationChannels) && restoredDraft.selectedSyndicationChannels.length
+            ? restoredDraft.selectedSyndicationChannels
             : previous.selectedSyndicationChannels,
         }))
       }
@@ -3346,7 +3384,7 @@ function AgentListings({ initialTab = null } = {}) {
 
   useEffect(() => {
     if (!isCreateListingWorkspace || typeof window === 'undefined') return
-    window.localStorage.setItem(createListingDraftStorageKey, JSON.stringify(serializeCreateListingDraftForm(form)))
+    saveCreateListingDraftToStorage(createListingDraftStorageKey, form)
   }, [createListingDraftStorageKey, form, isCreateListingWorkspace])
 
   useEffect(() => {
@@ -3715,10 +3753,10 @@ function AgentListings({ initialTab = null } = {}) {
   }
 
   function saveCreateListingDraftLocally() {
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(createListingDraftStorageKey, JSON.stringify(serializeCreateListingDraftForm(form)))
-    }
-    setWorkflowMessage('Draft saved. You can continue this create listing workflow later.')
+    const saved = saveCreateListingDraftToStorage(createListingDraftStorageKey, form)
+    setWorkflowMessage(saved
+      ? 'Draft saved. You can continue this create listing workflow later.'
+      : 'Draft text saved where possible. Uploaded image previews are too large for browser draft storage, so add photos again before publishing.')
   }
 
   function buildContextualInitialListingLeadForm(previous = {}) {

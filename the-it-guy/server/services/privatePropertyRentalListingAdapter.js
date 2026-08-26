@@ -241,6 +241,7 @@ export function createPrivatePropertyRentalListingPlan({
     town: firstText(options.town, adaptedListing.city),
     province: firstText(options.province, adaptedListing.province),
     category: firstText(options.category, 'Residential'),
+    rentalPriceType: firstText(options.rentalPriceType, rentalPublication.rentalPriceType, rentalPublication.rental_price_type, listing.rentalPriceType, listing.rental_price_type),
     soleMandateExclusiveDays: '',
   }
 
@@ -296,6 +297,7 @@ export function createPrivatePropertyRentalListingPlan({
       propertyStatus: 'ToLet',
       price: monthlyRent || 0,
       deposit: depositAmount || 0,
+      rentalPriceType: basePlan.summary.rentalPriceType || '',
       availableFrom,
       suburbId: Number(suburbId) || null,
       rentalMandateStatus: row.mandateStatus,

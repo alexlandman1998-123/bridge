@@ -1,0 +1,122 @@
+{
+  "version": "arch9_private_property_post_submit_monitor_v1",
+  "phase": "private-property-go-live-phase5-post-submit-monitor",
+  "generatedAt": "2026-08-26T10:16:09.582Z",
+  "environment": "sandbox",
+  "listingId": "d1104b55-0893-4ac3-b00e-4527b84ebb7a",
+  "propertyId": "PP-SANDBOX-SALE-COM-SHOWDAY-001",
+  "branchGuid": "ca167b18-c6dc-49ad-b018-2b72b187918f",
+  "listingType": "Sale",
+  "recordSync": true,
+  "safety": {
+    "privatePropertyApiCalled": true,
+    "databaseWritten": true,
+    "rawCredentialsStored": false
+  },
+  "readiness": {
+    "status": "READY",
+    "ready": true,
+    "warnings": []
+  },
+  "status": "ACTIVATED",
+  "blockers": [],
+  "warnings": [],
+  "checks": [
+    {
+      "name": "listing_status",
+      "status": "PASS"
+    },
+    {
+      "name": "reference_number",
+      "status": "PASS"
+    },
+    {
+      "name": "active_listing",
+      "status": "PASS"
+    },
+    {
+      "name": "event_feed",
+      "status": "PASS"
+    }
+  ],
+  "eventFeed": {
+    "continuationKey": "639233359842859585PP-SANDBOX-SALE-LAND-001",
+    "eventCount": 10,
+    "matchCount": 1,
+    "latestEvent": {
+      "listingFeedEventType": "Activated",
+      "eventType": "",
+      "propertyId": "PP-SANDBOX-SALE-COM-SHOWDAY-001",
+      "privatePropertyRef": "T2870291",
+      "eventDescription": "T2870291",
+      "eventStatus": "Active",
+      "eventDate": "2026-08-26T10:11:04.2378576Z"
+    },
+    "events": [
+      {
+        "listingFeedEventType": "Activated",
+        "eventType": "",
+        "propertyId": "PP-SANDBOX-SALE-COM-SHOWDAY-001",
+        "privatePropertyRef": "T2870291",
+        "eventDescription": "T2870291",
+        "eventStatus": "Active",
+        "eventDate": "2026-08-26T10:11:04.2378576Z"
+      }
+    ],
+    "responseSummary": {
+      "method": "GetListingEventFeedByBranch",
+      "responseChars": 4348,
+      "resultText": "<ContinuationKey>639233359842859585PP-SANDBOX-SALE-LAND-001</ContinuationKey><OfficeFeedRef>ca167b18-c6dc-49ad-b018-2b72b187918f</OfficeFeedRef><FeedData><LisitngEventFeedData><TimeStamp>2026-08-24T07:56:09.6449114Z</TimeStamp><ListingFeedR",
+      "continuationKey": "639233359842859585PP-SANDBOX-SALE-LAND-001",
+      "listingEventCount": 10
+    }
+  },
+  "statusProbe": {
+    "privatePropertyStatus": "For Sale",
+    "privatePropertyStatusVerbose": "For Sale",
+    "privatePropertyRef": "T2870291",
+    "activeListing": {
+      "listingType": "Sale Listing",
+      "privatePropertyRef": "T2870291",
+      "uniqueId": "PP-SANDBOX-SALE-COM-SHOWDAY-001"
+    },
+    "responseSummaries": {
+      "status": {
+        "method": "GetListingStatus",
+        "responseChars": 384,
+        "resultText": "For Sale",
+        "continuationKey": "",
+        "listingEventCount": 0
+      },
+      "verbose": {
+        "method": "GetListingStatusVerbose",
+        "responseChars": 412,
+        "resultText": "For Sale",
+        "continuationKey": "",
+        "listingEventCount": 0
+      },
+      "reference": {
+        "method": "GetReferenceNumberByListing",
+        "responseChars": 428,
+        "resultText": "T2870291",
+        "continuationKey": "",
+        "listingEventCount": 0
+      },
+      "active": {
+        "method": "GetActiveListings",
+        "responseChars": 2051,
+        "resultText": "<ActiveListing><ListingType>Rental Listing</ListingType><PrivatePropertyRef>rr2755972</PrivatePropertyRef><UniqueId>PP-SANDBOX-RENTAL-001</UniqueId></ActiveListing><ActiveListing><ListingType>Rental Listing</ListingType><PrivatePropertyRef>",
+        "continuationKey": "",
+        "listingEventCount": 0
+      }
+    }
+  },
+  "syncResult": {
+    "arch9Status": "published",
+    "syncId": "72c2ffa2-448b-47e6-b427-82ea2b5ea083",
+    "listingId": "d1104b55-0893-4ac3-b00e-4527b84ebb7a",
+    "externalLinkWarning": null
+  },
+  "nextStep": "Private Property shows the listing as active. Keep polling event feed until image events settle, then close go-live evidence.",
+  "externalStatus": "active"
+}

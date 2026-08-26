@@ -1,0 +1,34 @@
+{
+  "phase": "private-property-phase5-status-update",
+  "generatedAt": "2026-08-26T10:16:02.031Z",
+  "environment": "sandbox",
+  "baseUrl": "https://services.sandbox.pp.co.za/AgentImport/AgentImport.asmx",
+  "vendor": "Arch9",
+  "username": "Arch9User",
+  "branchGuid": "CA167B18-C6DC-49AD-B018-2B72B187918F",
+  "apply": true,
+  "safety": {
+    "privatePropertyApiCalled": true,
+    "databaseWritten": false,
+    "listingStatusChanged": true
+  },
+  "status": "PASS",
+  "request": {
+    "propertyId": "PP-SANDBOX-SALE-COM-SHOWDAY-001",
+    "listingType": "Sale",
+    "propertyStatus": "ForSale"
+  },
+  "apiResponse": {
+    "status": 200,
+    "durationMs": 542,
+    "resultText": "Successful",
+    "summary": {
+      "method": "ListingStatusUpdate",
+      "responseChars": 398,
+      "resultText": "Successful",
+      "continuationKey": "",
+      "listingEventCount": 0
+    }
+  },
+  "nextStep": "Run private-property:listing-status to confirm the current Private Property status/reference."
+}

@@ -1,0 +1,200 @@
+{
+  "version": "arch9_private_property_controlled_publish_rehearsal_v1",
+  "phase": "private-property-go-live-phase4-controlled-publish-rehearsal",
+  "generatedAt": "2026-08-26T10:08:50.873Z",
+  "environment": "sandbox",
+  "listingId": "237730c6-3f64-47c5-baa9-deb7385c59c2",
+  "apply": true,
+  "recordSync": true,
+  "status": "SUBMITTED",
+  "safety": {
+    "readinessChecked": true,
+    "privatePropertyApiCalled": true,
+    "databaseWritten": true,
+    "rawCredentialsStored": false,
+    "listingPublished": true
+  },
+  "readiness": {
+    "status": "READY",
+    "ready": true,
+    "blockers": [],
+    "warnings": [],
+    "checks": [
+      {
+        "name": "agency_config",
+        "status": "PASS",
+        "blockers": [],
+        "warnings": [],
+        "details": {
+          "source": "private_property_agency_configs.branch",
+          "config": {
+            "id": "90b83d5e-4c4a-4cf3-ab3c-5f731a602506",
+            "organisationId": "efa6c6ff-6941-4b59-8bcb-e4d9ba9e585a",
+            "branchId": "531f1439-62b3-4c76-a908-e6ec906d7fdf",
+            "environment": "sandbox",
+            "vendorName": "Arch9",
+            "branchGuid": "ca167b18-c6dc-49ad-b018-2b72b187918f",
+            "usernameSecretName": "PRIVATE_PROPERTY_USERNAME",
+            "passwordSecretName": "PRIVATE_PROPERTY_PASSWORD",
+            "baseUrl": "https://services.sandbox.pp.co.za/AgentImport/AgentImport.asmx",
+            "enabled": true,
+            "status": "sandbox_ready",
+            "goLiveApprovedAt": "",
+            "lastAuthCheckAt": "",
+            "lastPublishCheckAt": "",
+            "lastEventFeedCheckAt": "",
+            "metadata": {}
+          }
+        }
+      },
+      {
+        "name": "agent_mapping",
+        "status": "PASS",
+        "blockers": [],
+        "warnings": [],
+        "details": {
+          "source": "arch9_user",
+          "mapping": {
+            "id": "e444408b-736b-4812-b5ab-6a26b38750c9",
+            "agencyConfigId": "90b83d5e-4c4a-4cf3-ab3c-5f731a602506",
+            "organisationId": "efa6c6ff-6941-4b59-8bcb-e4d9ba9e585a",
+            "branchId": "531f1439-62b3-4c76-a908-e6ec906d7fdf",
+            "organisationUserId": null,
+            "arch9UserId": "763b2e6b-909d-42ef-9303-ff2dd64e6ade",
+            "environment": "sandbox",
+            "privatePropertyAgentId": "ARCH9-SANDBOX-USER-1",
+            "sourceReference": "ARCH9-SANDBOX-USER-1",
+            "emailSnapshot": "alex+privatepropertytest@arch9.co.za",
+            "firstNameSnapshot": "Alexander",
+            "lastNameSnapshot": "Landman",
+            "mobileSnapshot": "0676125009",
+            "imageUrlSnapshot": "",
+            "isDefaultForBranch": false,
+            "isDefaultForOrganisation": false,
+            "matchType": "manual",
+            "confidence": 1,
+            "status": "active",
+            "lastSyncedAt": "",
+            "lastVerifiedAt": "",
+            "metadata": {}
+          }
+        }
+      },
+      {
+        "name": "runtime_credentials",
+        "status": "PASS",
+        "blockers": [],
+        "warnings": [],
+        "details": {
+          "usernamePresent": true,
+          "passwordPresent": true,
+          "usernameSecretName": "PRIVATE_PROPERTY_USERNAME",
+          "passwordSecretName": "PRIVATE_PROPERTY_PASSWORD"
+        }
+      },
+      {
+        "name": "listing_payload",
+        "status": "PASS",
+        "blockers": [],
+        "warnings": [],
+        "details": {
+          "canPreview": true,
+          "summary": {
+            "propertyId": "PP-SANDBOX-SALE-RES-VIDEO-001",
+            "branchId": "ca167b18-c6dc-49ad-b018-2b72b187918f",
+            "agentIds": [
+              "ARCH9-SANDBOX-USER-1"
+            ],
+            "listingType": "Sale",
+            "category": "Residential",
+            "mandateType": "OpenMandate",
+            "propertyStatus": "ForSale",
+            "rentalPriceType": "",
+            "price": 2500000,
+            "listingDate": "2026-08-26",
+            "suburbId": 140,
+            "imageUrlCount": 3,
+            "photoUrlPayloadCount": 3,
+            "attributeCount": 7,
+            "soleMandateExclusiveDays": null,
+            "descriptionPresent": true
+          }
+        }
+      },
+      {
+        "name": "location_resolution",
+        "status": "PASS",
+        "blockers": [],
+        "warnings": [],
+        "details": {
+          "address": {
+            "streetName": "Sandbox Sale Street",
+            "streetNumber": "12",
+            "complexName": "",
+            "unitNumber": "",
+            "suburb": "Garsfontein",
+            "suburbId": 140,
+            "town": "Pretoria",
+            "province": "Gauteng",
+            "hideStreetName": true,
+            "hideStreetNo": true,
+            "hideComplexName": true,
+            "hideUnitNo": true
+          }
+        }
+      },
+      {
+        "name": "production_approval",
+        "status": "PASS",
+        "blockers": [],
+        "warnings": [],
+        "details": {
+          "environment": "sandbox",
+          "status": "sandbox_ready",
+          "goLiveApprovedAt": ""
+        }
+      }
+    ]
+  },
+  "submitCandidate": {
+    "propertyId": "PP-SANDBOX-SALE-RES-VIDEO-001",
+    "branchGuid": "ca167b18-c6dc-49ad-b018-2b72b187918f",
+    "agentIds": [
+      "ARCH9-SANDBOX-USER-1"
+    ],
+    "listingType": "Sale",
+    "category": "Residential",
+    "mandateType": "OpenMandate",
+    "propertyStatus": "ForSale",
+    "suburbId": 140,
+    "payloadDigest": "7a090d4c7e57c081559a80b5a6d6707541f79573f3bccfad7c2f967459ec7e00",
+    "listingXmlDigest": "a413b0211b873cd51b85258572afc4733c582719b9af08e50809b28af9f0c1b9"
+  },
+  "blockers": [],
+  "warnings": [],
+  "apiResponse": {
+    "status": 200,
+    "durationMs": 856,
+    "summary": {
+      "method": "UpdateListing",
+      "responseChars": 374,
+      "resultText": "Successful",
+      "continuationKey": "",
+      "listingEventCount": 0
+    },
+    "privatePropertyReference": null
+  },
+  "syncResult": {
+    "arch9Status": "draft",
+    "syncId": "853f0a64-6bc6-43d9-98e7-a447738de00b",
+    "listingId": "237730c6-3f64-47c5-baa9-deb7385c59c2",
+    "externalLinkWarning": null
+  },
+  "nextStep": "Poll the Private Property event feed and reconcile activation/images.",
+  "credentialCheck": {
+    "usernamePresent": true,
+    "passwordPresent": true,
+    "usernameSecretName": "PRIVATE_PROPERTY_USERNAME",
+    "passwordSecretName": "PRIVATE_PROPERTY_PASSWORD"
+  }
+}

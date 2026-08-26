@@ -51,6 +51,15 @@ function projectRefFromUrl(url = '') {
   return String(url).match(/^https:\/\/([^.]+)\.supabase\.co/i)?.[1] || ''
 }
 
+const args = new Set(process.argv.slice(2))
+const argValue = (name, fallback = '') => {
+  const prefix = `${name}=`
+  const match = process.argv.slice(2).find((arg) => arg.startsWith(prefix))
+  return match ? match.slice(prefix.length) : fallback
+}
+
+const ENVIRONMENT = String(argValue('--environment', process.env.AGENCY_DEMO_ENVIRONMENT || 'staging')).trim()
+
 async function fetchDefinitions({ supabaseUrl, serviceRoleKey }) {
   const response = await fetch(`${supabaseUrl.replace(/\/$/, '')}/rest/v1/`, {
     headers: {
@@ -152,9 +161,10 @@ async function main() {
   const env = loadEnv()
   const supabaseUrl = normalizeText(env.SUPABASE_URL || env.VITE_SUPABASE_URL)
   const serviceRoleKey = normalizeText(env.SUPABASE_SERVICE_ROLE_KEY)
+  const anonKey = normalizeText(env.VITE_SUPABASE_ANON_KEY || env.SUPABASE_ANON_KEY)
   const projectRef = projectRefFromUrl(supabaseUrl)
   const appUrl = normalizeUrl(env.AGENCY_RUNTIME_AUTH_APP_URL || env.STAGING_APP_URL || DEFAULT_APP_URL)
-  const email = normalizeEmail(env.AGENCY_RUNTIME_AGENT_EMAIL || HOME_SEEKERS_DEMO_EMAIL)
+  const email = normalizeText(env.AGENCY_DEMO_EMAIL || HOME_SEEKERS_DEMO_EMAIL).toLowerCase()
   const password = normalizeText(env.AGENCY_RUNTIME_AGENT_PASSWORD || HOME_SEEKERS_DEMO_PASSWORD)
 
   if (!supabaseUrl || !serviceRoleKey || !projectRef) {
@@ -162,6 +172,9 @@ async function main() {
   }
   if (!email || !password) {
     throw new Error('AGENCY_RUNTIME_AGENT_EMAIL and AGENCY_RUNTIME_AGENT_PASSWORD are required.')
+  }
+  if (!anonKey) {
+    throw new Error('VITE_SUPABASE_ANON_KEY is required.')
   }
 
   const definitions = await fetchDefinitions({ supabaseUrl, serviceRoleKey })
@@ -174,35 +187,22 @@ async function main() {
     password,
   })
 
-  const browser = await chromium.launch({ headless: true })
-  let finalUrl = appUrl
-  try {
-    const page = await browser.newPage()
-    await page.goto(`${appUrl}/auth`, { waitUntil: 'domcontentloaded', timeout: 60_000 })
-    await page.getByLabel(/email/i).fill(email)
-    await page.getByLabel(/^password$/i).fill(password)
-    await page.getByRole('button', { name: /^(sign in|sign in securely|launch workspace)$/i }).click()
-    finalUrl = page.url()
-
-    let authKeyPreview = []
-    for (let attempt = 0; attempt < 6; attempt += 1) {
-      await page.waitForTimeout(2500)
-      authKeyPreview = await page.evaluate(() =>
-        Object.keys(window.localStorage || {})
-          .filter((key) => key.includes('auth') || key.startsWith('sb-'))
-          .slice(0, 8),
-      )
-      if (authKeyPreview.length > 0) break
-    }
-
-    if (authKeyPreview.length === 0) {
-      throw new Error('Agency staging auth login did not persist an auth session in browser storage.')
-    }
-
-    await page.context().storageState({ path: AUTH_STATE_PATH })
-  } finally {
-    await browser.close()
+  const authClient = createClient(supabaseUrl, anonKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+      detectSessionInUrl: false,
+    },
+  })
+  const authResult = await authClient.auth.signInWithPassword({ email, password })
+  if (authResult.error) throw authResult.error
+  const session = authResult.data?.session || null
+  if (!session?.access_token) {
+    throw new Error('Agency staging auth login did not return a session.')
   }
+
+  fs.mkdirSync(path.dirname(AUTH_STATE_PATH), { recursive: true })
+  fs.writeFileSync(AUTH_STATE_PATH, `${JSON.stringify(buildStorageState({ appUrl, projectRef, session }), null, 2)}\n`)
 
   const verifiedFinalUrl = await verifyBrowserSession({ appUrl, outputPath: AUTH_STATE_PATH })
 
@@ -214,7 +214,7 @@ async function main() {
         fullName: profile.full_name || null,
         projectRef,
         outputPath: AUTH_STATE_PATH,
-        finalUrl: verifiedFinalUrl || finalUrl,
+        finalUrl: verifiedFinalUrl,
       },
       null,
       2,

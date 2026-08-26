@@ -15,6 +15,7 @@ function parseArgs(argv) {
     listingId: '',
     environment: 'sandbox',
     output: '',
+    agentIds: '',
     propertyId: '',
     suburbId: '',
     streetName: '',
@@ -27,10 +28,13 @@ function parseArgs(argv) {
     listingType: '',
     mandateType: '',
     price: '',
+    rentalPriceType: '',
     availableFrom: '',
     listingDate: '',
     photosChanged: true,
     soleMandateExclusiveDays: '',
+    farmName: '',
+    showdayEvents: '',
   }
 
   for (const arg of argv) {
@@ -42,6 +46,10 @@ function parseArgs(argv) {
       options.environment = normalizePrivatePropertyText(arg.slice('--environment='.length))
     } else if (arg.startsWith('--output=')) {
       options.output = normalizePrivatePropertyText(arg.slice('--output='.length))
+    } else if (arg.startsWith('--agent-ids=')) {
+      options.agentIds = normalizePrivatePropertyText(arg.slice('--agent-ids='.length))
+    } else if (arg.startsWith('--agent-id=')) {
+      options.agentIds = normalizePrivatePropertyText(arg.slice('--agent-id='.length))
     } else if (arg.startsWith('--property-id=')) {
       options.propertyId = normalizePrivatePropertyText(arg.slice('--property-id='.length))
     } else if (arg.startsWith('--suburb-id=')) {
@@ -66,12 +74,18 @@ function parseArgs(argv) {
       options.mandateType = normalizePrivatePropertyText(arg.slice('--mandate-type='.length))
     } else if (arg.startsWith('--price=')) {
       options.price = normalizePrivatePropertyText(arg.slice('--price='.length))
+    } else if (arg.startsWith('--rental-price-type=')) {
+      options.rentalPriceType = normalizePrivatePropertyText(arg.slice('--rental-price-type='.length))
     } else if (arg.startsWith('--available-from=')) {
       options.availableFrom = normalizePrivatePropertyText(arg.slice('--available-from='.length))
     } else if (arg.startsWith('--listing-date=')) {
       options.listingDate = normalizePrivatePropertyText(arg.slice('--listing-date='.length))
     } else if (arg.startsWith('--exclusive-days=')) {
       options.soleMandateExclusiveDays = normalizePrivatePropertyText(arg.slice('--exclusive-days='.length))
+    } else if (arg.startsWith('--farm-name=')) {
+      options.farmName = normalizePrivatePropertyText(arg.slice('--farm-name='.length))
+    } else if (arg.startsWith('--showday-events=')) {
+      options.showdayEvents = normalizePrivatePropertyText(arg.slice('--showday-events='.length))
     } else {
       throw new Error(`Unknown option: ${arg}`)
     }
@@ -108,6 +122,7 @@ function loadEnv() {
 function createOverrides(options = {}) {
   return {
     propertyId: options.propertyId,
+    agentIds: options.agentIds,
     suburbId: options.suburbId,
     streetName: options.streetName,
     streetNumber: options.streetNumber,
@@ -119,10 +134,13 @@ function createOverrides(options = {}) {
     listingType: options.listingType,
     mandateType: options.mandateType,
     price: options.price,
+    rentalPriceType: options.rentalPriceType,
     availableFrom: options.availableFrom,
     listingDate: options.listingDate,
     photosChanged: options.photosChanged,
     soleMandateExclusiveDays: options.soleMandateExclusiveDays,
+    farmName: options.farmName,
+    showdayEvents: options.showdayEvents,
   }
 }
 

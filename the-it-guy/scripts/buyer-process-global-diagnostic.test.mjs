@@ -76,7 +76,7 @@ for (const requiredText of [
 assert.match(agencyPipelinePage, /Upload Signed OTP/)
 assert.match(agencyPipelinePage, /OTP workspace ready/)
 assert.doesNotMatch(agencyPipelinePage, /label: 'Generate OTP'/)
-assert.match(buyerOfferPage, /OTP prepared or uploaded/)
+assert.match(buyerOfferPage, /Signed offer prepared or uploaded/)
 assert.doesNotMatch(buyerOfferPage, /OTP Generated/)
 assert.doesNotMatch(buyerOfferPage, /before OTP generation/)
 assert.match(postViewingPortal, /manual signed OTP upload/)

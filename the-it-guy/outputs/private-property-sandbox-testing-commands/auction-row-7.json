@@ -1,0 +1,39 @@
+{
+  "phase": "private-property-auction-update",
+  "generatedAt": "2026-08-26T10:12:00.929Z",
+  "environment": "sandbox",
+  "baseUrl": "https://services.sandbox.pp.co.za/AgentImport/AgentImport.asmx",
+  "vendor": "Arch9",
+  "username": "Arch9User",
+  "branchGuid": "CA167B18-C6DC-49AD-B018-2B72B187918F",
+  "apply": true,
+  "safety": {
+    "privatePropertyApiCalled": true,
+    "databaseWritten": false,
+    "listingStatusChanged": true
+  },
+  "status": "PASS",
+  "request": {
+    "propertyId": "PP-SANDBOX-SALE-FARM-AUCTION-001",
+    "reservePrice": "4200000",
+    "startPrice": "4000000",
+    "startDate": "2026-08-29T10:00:00",
+    "endDate": "2026-09-05T12:00:00",
+    "active": true,
+    "showPrice": true,
+    "sameAsAddress": true,
+    "auctionVenueId": 0
+  },
+  "apiResponse": {
+    "status": 200,
+    "durationMs": 308,
+    "summary": {
+      "method": "ListingAuctionDetailsUpdate",
+      "responseChars": 313,
+      "resultText": "",
+      "continuationKey": "",
+      "listingEventCount": 0
+    }
+  },
+  "nextStep": "Run private-property:post-submit-monitor or portal checks to confirm the auction listing remains active."
+}

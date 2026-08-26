@@ -74,6 +74,26 @@ function envValue(...names) {
   return ''
 }
 
+async function fetchDefinitions() {
+  const response = await fetch(`${supabaseUrl.replace(/\/$/, '')}/rest/v1/`, {
+    headers: {
+      apikey: serviceRoleKey,
+      Authorization: `Bearer ${serviceRoleKey}`,
+      Accept: 'application/openapi+json',
+    },
+  })
+  if (!response.ok) {
+    throw new Error(`Could not fetch Supabase schema: ${response.status} ${await response.text()}`)
+  }
+  const spec = await response.json()
+  return Object.fromEntries(
+    Object.entries(spec.definitions || {}).map(([table, schema]) => [
+      table,
+      new Set(Object.keys(schema.properties || {})),
+    ]),
+  )
+}
+
 const supabaseUrl = envValue('SUPABASE_URL', 'VITE_SUPABASE_URL')
 const serviceRoleKey = envValue('SUPABASE_SERVICE_ROLE_KEY')
 const projectRef = supabaseUrl.match(/^https:\/\/([^.]+)/)?.[1] || ''
@@ -93,7 +113,9 @@ const supabase = createClient(supabaseUrl, serviceRoleKey, {
 })
 
 async function fetchDemoOrganisationId() {
+  const definitions = await fetchDefinitions()
   const context = await ensureHomeSeekersAgencyDemoWorkspace(supabase, {
+    definitions,
     email: TARGET_EMAIL,
     password: TARGET_PASSWORD,
   })

@@ -4072,7 +4072,7 @@ function buildDevelopmentSummaries(rows) {
   const map = new Map()
 
   for (const row of rows) {
-    const developmentId = row.unit.development_id
+    const developmentId = row.unit?.development_id || row.development?.id || null
     const developmentName = row.development?.name || 'Unknown Development'
     const existing = map.get(developmentId) || {
       id: developmentId,
@@ -33943,6 +33943,7 @@ export async function fetchTransactionById(transactionId) {
     }
   }
 
+  try {
   if (transaction.listing_id) {
     await attemptPromotePendingSellerDocumentsIfPossible(client, transaction.listing_id)
   }
@@ -34231,6 +34232,13 @@ export async function fetchTransactionById(transactionId) {
     bondOriginatorAttorneyHandoffView,
     bondApplication,
     normalizedBondApplication: bondApplication,
+  }
+  } catch (loadError) {
+    console.warn('[transaction-detail] full detail load failed; leaving core shell in place', {
+      transactionId,
+      message: loadError?.message || 'Unknown transaction detail load failure.',
+    })
+    return null
   }
 }
 
@@ -34718,7 +34726,7 @@ export async function fetchDocumentsByUnit({ developmentId = null, organisationI
   }, {})
 
   const requirementsByDevelopment = {}
-  const uniqueDevelopmentIds = [...new Set(rows.map((row) => row.unit.development_id).filter(Boolean))]
+  const uniqueDevelopmentIds = [...new Set(rows.map((row) => row.unit?.development_id || row.development?.id || null).filter(Boolean))]
   const transactionRequirementsByTransactionId = await fetchTransactionRequiredDocumentsByTransactionIds(
     client,
     transactionIds,
@@ -34735,7 +34743,7 @@ export async function fetchDocumentsByUnit({ developmentId = null, organisationI
     const checklistResult = transactionRequirements.length
       ? buildRequiredChecklistFromRows(transactionRequirements, unitDocuments)
       : buildDocumentChecklist(
-          requirementsByDevelopment[row.unit.development_id] || DEFAULT_DOCUMENT_REQUIREMENTS,
+          requirementsByDevelopment[row.unit?.development_id || row.development?.id || null] || DEFAULT_DOCUMENT_REQUIREMENTS,
           unitDocuments,
         )
 

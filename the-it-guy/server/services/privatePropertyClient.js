@@ -126,6 +126,24 @@ export function buildPrivatePropertyAgentXml(agent = {}) {
   ].join('')
 }
 
+function buildPrivatePropertyShowdayXml(showday = {}) {
+  const propertyId = normalizePrivatePropertyText(showday.propertyId || showday.PropertyId)
+  const startDate = normalizePrivatePropertyText(showday.startDate || showday.StartDate)
+  const endDate = normalizePrivatePropertyText(showday.endDate || showday.EndDate)
+  const description = normalizePrivatePropertyText(showday.description || showday.Description)
+  const active = showday.active === undefined || showday.active === null ? true : Boolean(showday.active)
+
+  return [
+    '<Showday>',
+    `<PropertyId>${escapePrivatePropertyXml(propertyId)}</PropertyId>`,
+    `<StartDate>${escapePrivatePropertyXml(startDate)}</StartDate>`,
+    `<EndDate>${escapePrivatePropertyXml(endDate)}</EndDate>`,
+    `<Description>${escapePrivatePropertyXml(description)}</Description>`,
+    `<Active>${active ? 'true' : 'false'}</Active>`,
+    '</Showday>',
+  ].join('')
+}
+
 export function buildPrivatePropertySoapEnvelope(method, innerXml = '', { soapPrefix = 'soap12' } = {}) {
   const normalizedMethod = normalizePrivatePropertyText(method)
   if (!normalizedMethod) throw new Error('Private Property SOAP method is required.')
@@ -388,6 +406,80 @@ export function createPrivatePropertyClient({
         `<PropertyId>${escapePrivatePropertyXml(id)}</PropertyId>`,
         `<ListingType>${escapePrivatePropertyXml(type)}</ListingType>`,
         `<PropertyStatus>${escapePrivatePropertyXml(status)}</PropertyStatus>`,
+        tokenXml(),
+      ].join(''))
+    },
+    listingShowdayUpdate: ({ branchGuid, propertyId, startDate, endDate, description = 'Show day', active = true } = {}) => {
+      const guid = normalizePrivatePropertyText(branchGuid)
+      const id = normalizePrivatePropertyText(propertyId)
+      if (!guid) throw new Error('Private Property branch GUID is required.')
+      if (!id) throw new Error('Private Property property ID is required.')
+      if (!normalizePrivatePropertyText(startDate)) throw new Error('Private Property show day start date is required.')
+      if (!normalizePrivatePropertyText(endDate)) throw new Error('Private Property show day end date is required.')
+      return callSoap('ListingShowdayUpdate', [
+        `<BranchId>${escapePrivatePropertyXml(guid)}</BranchId>`,
+        buildPrivatePropertyShowdayXml({ propertyId: id, startDate, endDate, description, active }),
+        tokenXml(),
+      ].join(''))
+    },
+    listingAuctionDetailsUpdate: ({
+      branchGuid,
+      uniqueListingId,
+      reservePrice,
+      startPrice,
+      active = true,
+      startDate,
+      endDate,
+      showPrice = true,
+      sameAsAddress = true,
+      auctionVenueId = 0,
+    } = {}) => {
+      const guid = normalizePrivatePropertyText(branchGuid)
+      const id = normalizePrivatePropertyText(uniqueListingId)
+      const reserve = Number(reservePrice)
+      const start = Number(startPrice)
+      const venue = Number(auctionVenueId)
+      if (!guid) throw new Error('Private Property branch GUID is required.')
+      if (!id) throw new Error('Private Property unique listing ID is required.')
+      if (!Number.isFinite(reserve) || reserve <= 0) throw new Error('Private Property auction reserve price is required.')
+      if (!Number.isFinite(start) || start <= 0) throw new Error('Private Property auction start price is required.')
+      if (!normalizePrivatePropertyText(startDate)) throw new Error('Private Property auction start date is required.')
+      if (!normalizePrivatePropertyText(endDate)) throw new Error('Private Property auction end date is required.')
+      return callSoap('ListingAuctionDetailsUpdate', [
+        `<BranchId>${escapePrivatePropertyXml(guid)}</BranchId>`,
+        `<UniqueListingId>${escapePrivatePropertyXml(id)}</UniqueListingId>`,
+        `<ReservePrice>${reserve}</ReservePrice>`,
+        `<StartPrice>${start}</StartPrice>`,
+        `<Active>${active ? 'true' : 'false'}</Active>`,
+        `<StartDate>${escapePrivatePropertyXml(startDate)}</StartDate>`,
+        `<EndDate>${escapePrivatePropertyXml(endDate)}</EndDate>`,
+        `<ShowPrice>${showPrice ? 'true' : 'false'}</ShowPrice>`,
+        `<SameAsAddress>${sameAsAddress ? 'true' : 'false'}</SameAsAddress>`,
+        `<AuctionVenueId>${Number.isFinite(venue) ? Math.round(venue) : 0}</AuctionVenueId>`,
+        tokenXml(),
+      ].join(''))
+    },
+    updateListingVideoOrMatterport: ({
+      branchGuid,
+      uniqueListingId,
+      listingType = 'Sale',
+      matterportId = '',
+      youtubeVideoId = '',
+    } = {}) => {
+      const guid = normalizePrivatePropertyText(branchGuid)
+      const id = normalizePrivatePropertyText(uniqueListingId)
+      const type = normalizePrivatePropertyText(listingType) || 'Sale'
+      if (!guid) throw new Error('Private Property branch GUID is required.')
+      if (!id) throw new Error('Private Property unique listing ID is required.')
+      if (!normalizePrivatePropertyText(matterportId) && !normalizePrivatePropertyText(youtubeVideoId)) {
+        throw new Error('Private Property Matterport ID or YouTube video ID is required.')
+      }
+      return callSoap('UpdateListingVideoOrMatterport', [
+        `<BranchId>${escapePrivatePropertyXml(guid)}</BranchId>`,
+        `<UniqueListingId>${escapePrivatePropertyXml(id)}</UniqueListingId>`,
+        `<MatterportId>${escapePrivatePropertyXml(matterportId)}</MatterportId>`,
+        `<YoutubeVideoId>${escapePrivatePropertyXml(youtubeVideoId)}</YoutubeVideoId>`,
+        `<ListingType>${escapePrivatePropertyXml(type)}</ListingType>`,
         tokenXml(),
       ].join(''))
     },

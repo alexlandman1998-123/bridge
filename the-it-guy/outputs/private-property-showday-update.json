@@ -1,0 +1,24 @@
+{
+  "phase": "private-property-showday-update",
+  "generatedAt": "2026-08-26T10:14:30.321Z",
+  "environment": "sandbox",
+  "baseUrl": "https://services.sandbox.pp.co.za/AgentImport/AgentImport.asmx",
+  "vendor": "Arch9",
+  "username": "Arch9User",
+  "branchGuid": "CA167B18-C6DC-49AD-B018-2B72B187918F",
+  "apply": false,
+  "safety": {
+    "privatePropertyApiCalled": false,
+    "databaseWritten": false,
+    "listingStatusChanged": false
+  },
+  "status": "DRY_RUN",
+  "request": {
+    "propertyId": "PP-SANDBOX-SALE-COM-SHOWDAY-001",
+    "startDate": "2026-08-29T10:00:00",
+    "endDate": "2026-08-29T12:00:00",
+    "description": "Arch9 sandbox show day",
+    "active": true
+  },
+  "nextStep": "No Private Property show day change was made. Re-run with --apply to call ListingShowdayUpdate."
+}

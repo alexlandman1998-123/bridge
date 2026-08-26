@@ -11845,16 +11845,6 @@ function AgentListingDetail() {
             </div>
           </section>
 
-          <section data-testid="sales-listing-shared-workspace-tabs" className="rounded-[24px] border border-[#dde4ee] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-            <ListingWorkspaceTabs
-              className="rounded-[8px] border border-[#dbe6f2] bg-[#fbfdff]"
-              tabs={salesWorkspaceTabs}
-              activeTab={activeSalesWorkspaceTab}
-              onTabChange={openSalesListingWorkspaceTab}
-              ariaLabel="Sales listing workspace sections"
-            />
-          </section>
-
           <nav className="rounded-[22px] border border-[#dde4ee] bg-white p-2 shadow-[0_10px_24px_rgba(15,23,42,0.05)]" aria-label="Seller mandate workspace tabs">
             <div className="overflow-x-auto">
               <div className="grid min-w-[880px] grid-cols-7 gap-1">

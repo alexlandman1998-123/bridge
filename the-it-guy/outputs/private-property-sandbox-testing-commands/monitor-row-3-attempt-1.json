@@ -1,0 +1,100 @@
+{
+  "version": "arch9_private_property_post_submit_monitor_v1",
+  "phase": "private-property-go-live-phase5-post-submit-monitor",
+  "generatedAt": "2026-08-26T10:06:38.521Z",
+  "environment": "sandbox",
+  "listingId": "831742a2-a732-49cb-9af6-c73cb96677e6",
+  "propertyId": "PP-SANDBOX-RENTAL-COM-M2-001",
+  "branchGuid": "ca167b18-c6dc-49ad-b018-2b72b187918f",
+  "listingType": "Rental",
+  "recordSync": true,
+  "safety": {
+    "privatePropertyApiCalled": true,
+    "databaseWritten": true,
+    "rawCredentialsStored": false
+  },
+  "readiness": {
+    "status": "READY",
+    "ready": true,
+    "warnings": []
+  },
+  "status": "PENDING",
+  "blockers": [],
+  "warnings": [],
+  "checks": [
+    {
+      "name": "listing_status",
+      "status": "PASS"
+    },
+    {
+      "name": "reference_number",
+      "status": "PASS"
+    },
+    {
+      "name": "active_listing",
+      "status": "PENDING"
+    },
+    {
+      "name": "event_feed",
+      "status": "PENDING"
+    }
+  ],
+  "eventFeed": {
+    "continuationKey": "639233292642545034PP-SANDBOX-SALE-001",
+    "eventCount": 3,
+    "matchCount": 0,
+    "latestEvent": null,
+    "events": [],
+    "responseSummary": {
+      "method": "GetListingEventFeedByBranch",
+      "responseChars": 1692,
+      "resultText": "<ContinuationKey>639233292642545034PP-SANDBOX-SALE-001</ContinuationKey><OfficeFeedRef>ca167b18-c6dc-49ad-b018-2b72b187918f</OfficeFeedRef><FeedData><LisitngEventFeedData><TimeStamp>2026-08-24T07:56:09.6449114Z</TimeStamp><ListingFeedRef>PR",
+      "continuationKey": "639233292642545034PP-SANDBOX-SALE-001",
+      "listingEventCount": 3
+    }
+  },
+  "statusProbe": {
+    "privatePropertyStatus": "Inactive",
+    "privatePropertyStatusVerbose": "Inactive",
+    "privatePropertyRef": "rr2755974",
+    "activeListing": null,
+    "responseSummaries": {
+      "status": {
+        "method": "GetListingStatus",
+        "responseChars": 384,
+        "resultText": "Inactive",
+        "continuationKey": "",
+        "listingEventCount": 0
+      },
+      "verbose": {
+        "method": "GetListingStatusVerbose",
+        "responseChars": 412,
+        "resultText": "Inactive",
+        "continuationKey": "",
+        "listingEventCount": 0
+      },
+      "reference": {
+        "method": "GetReferenceNumberByListing",
+        "responseChars": 429,
+        "resultText": "rr2755974",
+        "continuationKey": "",
+        "listingEventCount": 0
+      },
+      "active": {
+        "method": "GetActiveListings",
+        "responseChars": 864,
+        "resultText": "<ActiveListing><ListingType>Rental Listing</ListingType><PrivatePropertyRef>rr2755972</PrivatePropertyRef><UniqueId>PP-SANDBOX-RENTAL-001</UniqueId></ActiveListing><ActiveListing><ListingType>Sale Listing</ListingType><PrivatePropertyRef>T2",
+        "continuationKey": "",
+        "listingEventCount": 0
+      }
+    }
+  },
+  "syncResult": {
+    "arch9Status": "draft",
+    "syncId": "88fe0fe9-cf97-4e32-ae4a-a669985ff346",
+    "listingId": "831742a2-a732-49cb-9af6-c73cb96677e6",
+    "externalLinkWarning": null
+  },
+  "nextStep": "Poll again with the returned continuation key until the listing is active or an error event appears.",
+  "externalStatus": "inactive"
+}

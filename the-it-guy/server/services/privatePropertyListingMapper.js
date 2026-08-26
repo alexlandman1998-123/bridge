@@ -74,6 +74,15 @@ function toPrivatePropertyDateTime(value = '') {
   return dateOnly ? `${dateOnly}T00:00:00` : ''
 }
 
+function normalizeDateTime(value = '') {
+  const text = normalizePrivatePropertyText(value)
+  if (!text) return ''
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?(?:Z|[+-]\d{2}:\d{2})?$/i.test(text)) {
+    return text.length === 16 ? `${text}:00` : text
+  }
+  return toPrivatePropertyDateTime(text)
+}
+
 function normalizeMediaRows(media = []) {
   return (Array.isArray(media) ? media : [])
     .map((item, index) => {
@@ -117,6 +126,32 @@ export function resolvePrivatePropertyMandateType({ listingType = 'Sale', catego
   if (['sole', 'full', 'full_mandate', 'sole_mandate', 'exclusive'].includes(key)) return 'FullMandate'
   if (category === 'Farms' && key === 'auction_only') return 'AuctionOnly'
   return 'OpenMandate'
+}
+
+export function resolvePrivatePropertyRentalPriceType(value = '', { listingType = 'Sale', category = 'Residential' } = {}) {
+  if (listingType !== 'Rental') return ''
+  const key = normalizePrivatePropertyListingKey(value)
+  const map = {
+    per_month: 'PerMonth',
+    permonth: 'PerMonth',
+    month: 'PerMonth',
+    monthly: 'PerMonth',
+    per_week: 'PerWeek',
+    perweek: 'PerWeek',
+    week: 'PerWeek',
+    weekly: 'PerWeek',
+    per_day: 'PerDay',
+    perday: 'PerDay',
+    day: 'PerDay',
+    daily: 'PerDay',
+    per_m2: 'PerM2',
+    perm2: 'PerM2',
+    per_square_meter: 'PerM2',
+    per_square_metre: 'PerM2',
+    m2: 'PerM2',
+  }
+  if (map[key]) return map[key]
+  return category === 'Commercial' || category === 'Land' ? 'PerMonth' : 'PerMonth'
 }
 
 export function resolvePrivatePropertyStatus({ listingType = 'Sale', value = '' } = {}) {
@@ -196,6 +231,18 @@ function resolveHeadline(listing = {}, publication = {}) {
 
 function resolvePrice(listing = {}, publication = {}, options = {}) {
   return firstNumber(options.price, publication.asking_price, publication.askingPrice, listing.asking_price, listing.askingPrice)
+}
+
+function resolveFarmName(listing = {}, publication = {}, options = {}) {
+  return firstText(
+    options.farmName,
+    publication.farm_name,
+    publication.farmName,
+    listing.farm_name,
+    listing.farmName,
+    listing.seller_canonical_facts_json?.farmName,
+    listing.seller_canonical_facts_json?.farm?.name,
+  )
 }
 
 function resolveListingDate(listing = {}, publication = {}, options = {}) {
@@ -294,7 +341,36 @@ function resolveFarmType(value = '') {
   return map[key] || 'Farm'
 }
 
-function buildAttributes({ listing = {}, publication = {}, category = 'Residential' } = {}) {
+function parseJsonArray(value) {
+  const text = normalizePrivatePropertyText(value)
+  if (!text) return []
+  try {
+    const parsed = JSON.parse(text)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+function normalizeShowdayEvents(value = []) {
+  const source = Array.isArray(value) ? value : parseJsonArray(value)
+  return source
+    .map((event) => {
+      if (!event || typeof event !== 'object') return null
+      const startDate = normalizeDateTime(firstText(event.startDate, event.start_date, event.StartDate))
+      const endDate = normalizeDateTime(firstText(event.endDate, event.end_date, event.EndDate))
+      if (!startDate || !endDate) return null
+      return {
+        startDate,
+        endDate,
+        description: firstText(event.description, event.Description, 'Show day'),
+        active: event.active === undefined || event.active === null ? true : normalizeBoolean(event.active, true),
+      }
+    })
+    .filter(Boolean)
+}
+
+function buildAttributes({ listing = {}, publication = {}, category = 'Residential', options = {} } = {}) {
   const attributes = []
   const propertyType = firstText(publication.property_type, publication.propertyType, listing.property_type, listing.propertyType)
 
@@ -314,7 +390,7 @@ function buildAttributes({ listing = {}, publication = {}, category = 'Residenti
 
   if (category === 'Farms') {
     addAttribute(attributes, 'FarmType', resolveFarmType(propertyType))
-    addAttribute(attributes, 'FarmName', firstText(publication.farm_name, publication.farmName, listing.farm_name, listing.farmName))
+    addAttribute(attributes, 'FarmName', resolveFarmName(listing, publication, options))
   }
 
   addAttribute(attributes, 'FloorArea', firstNumber(publication.floor_size, publication.floorSize, listing.floor_size, listing.floorSize, listing.propertyDetails?.floorSize))
@@ -345,6 +421,9 @@ export function buildPrivatePropertyListingXml(plan = {}) {
   const photoUrlsXml = payload.photoUrls === null
     ? '<PhotoUrls xsi:nil="true" />'
     : `<PhotoUrls>${payload.photoUrls.map((url) => `<string>${escapePrivatePropertyXml(url)}</string>`).join('')}</PhotoUrls>`
+  const rentalPriceTypeXml = payload.rentalPriceType
+    ? `<RentalPriceType>${escapePrivatePropertyXml(payload.rentalPriceType)}</RentalPriceType>`
+    : ''
   const attributesXml = payload.attributes.map((attribute) => [
     '<Attribute>',
     `<AttributeType>${escapePrivatePropertyXml(attribute.attributeType)}</AttributeType>`,
@@ -381,6 +460,7 @@ export function buildPrivatePropertyListingXml(plan = {}) {
     `<Description><![CDATA[${payload.description.replaceAll(']]>', ']]]]><![CDATA[>')}]]></Description>`,
     `<Price>${payload.price}</Price>`,
     `<Deposit>${payload.deposit || 0}</Deposit>`,
+    rentalPriceTypeXml,
     `<ListingDate>${escapePrivatePropertyXml(toPrivatePropertyDateTime(payload.listingDate))}</ListingDate>`,
     `<ExpiryDate>${escapePrivatePropertyXml(toPrivatePropertyDateTime(payload.expiryDate))}</ExpiryDate>`,
     `<AvailableFrom>${escapePrivatePropertyXml(toPrivatePropertyDateTime(payload.availableFrom))}</AvailableFrom>`,
@@ -431,13 +511,17 @@ export function createPrivatePropertyListingPlan({
   const deposit = listingType === 'Rental'
     ? firstNumber(options.deposit, publication.deposit, listing.deposit) ?? 0
     : firstNumber(options.deposit, publication.deposit, listing.deposit) ?? 0
+  const rentalPriceType = resolvePrivatePropertyRentalPriceType(
+    firstText(options.rentalPriceType, publication.rental_price_type, publication.rentalPriceType, listing.rental_price_type, listing.rentalPriceType),
+    { listingType, category },
+  )
   const description = resolveDescription(listing, publication)
   const headline = resolveHeadline(listing, publication)
   const listingDate = resolveListingDate(listing, publication, options)
   const availableFrom = resolveAvailableFrom(listing, publication, options) || listingDate
   const expiryDate = toDateOnly(firstText(options.expiryDate, publication.expiry_date, publication.expiryDate, listing.expiry_date, listing.expiryDate)) || addDaysToDateOnly(listingDate, 180)
   const address = resolveAddress(listing, publication, options)
-  const attributes = buildAttributes({ listing, publication, category })
+  const attributes = buildAttributes({ listing, publication, category, options })
   const mediaRows = normalizeMediaRows(media)
   const imageRows = mediaRows.filter((item) => item.mediaType === 'image')
   const includePhotos = options.photosChanged !== false
@@ -493,7 +577,8 @@ export function createPrivatePropertyListingPlan({
     xCoordinate: firstNumber(options.xCoordinate, publication.x_coordinate, publication.xCoordinate, listing.x_coordinate, listing.xCoordinate),
     yCoordinate: firstNumber(options.yCoordinate, publication.y_coordinate, publication.yCoordinate, listing.y_coordinate, listing.yCoordinate),
     attributes,
-    showdayEvents: Array.isArray(options.showdayEvents) ? options.showdayEvents : [],
+    rentalPriceType,
+    showdayEvents: normalizeShowdayEvents(firstText(options.showdayEvents) ? options.showdayEvents : publication.showday_events || publication.showdayEvents || listing.showday_events || listing.showdayEvents || []),
     soleMandateExclusiveDays,
   }
 
@@ -513,6 +598,7 @@ export function createPrivatePropertyListingPlan({
       category,
       mandateType,
       propertyStatus,
+      rentalPriceType,
       price: price ?? 0,
       listingDate,
       suburbId: address.suburbId || null,

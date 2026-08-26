@@ -1,0 +1,59 @@
+{
+  "phase": "private-property-phase2-agent-setup",
+  "generatedAt": "2026-08-26T10:13:24.647Z",
+  "environment": "sandbox",
+  "baseUrl": "https://services.sandbox.pp.co.za/AgentImport/AgentImport.asmx",
+  "vendor": "Arch9",
+  "username": "Arch9User",
+  "branchGuid": "CA167B18-C6DC-49AD-B018-2B72B187918F",
+  "apply": true,
+  "credentialsConfigured": true,
+  "agent": {
+    "agentId": "ARCH9-SANDBOX-USER-2",
+    "firstName": "User",
+    "lastName": "Two",
+    "email": "alex+privatepropertytest2@arch9.co.za",
+    "telCell": "0686439449",
+    "telWork": "0686439449",
+    "telHome": null,
+    "active": true,
+    "privysealAlias": null,
+    "privatePropertyAgentId": null,
+    "imageUrlConfigured": true
+  },
+  "summary": {
+    "status": "PASS",
+    "passCount": 2,
+    "blockedCount": 0,
+    "skippedCount": 0
+  },
+  "checks": [
+    {
+      "name": "UpdateAgent SOAP write",
+      "status": "PASS",
+      "httpStatus": 200,
+      "durationMs": 1607,
+      "summary": {
+        "method": "UpdateAgent",
+        "responseChars": 366,
+        "resultText": "Successful",
+        "continuationKey": "",
+        "listingEventCount": 0
+      }
+    },
+    {
+      "name": "UpdateAgentImage SOAP write",
+      "status": "PASS",
+      "httpStatus": 200,
+      "durationMs": 1767,
+      "summary": {
+        "method": "UpdateAgentImage",
+        "responseChars": 387,
+        "resultText": "image saved",
+        "continuationKey": "",
+        "listingEventCount": 0
+      }
+    }
+  ],
+  "nextPhase": "Phase 3: build the Private Property listing mapper preview once sandbox agents exist."
+}

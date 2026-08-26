@@ -1,0 +1,41 @@
+{
+  "phase": "property24-suburb-lookup",
+  "generatedAt": "2026-08-26T11:22:04.365Z",
+  "baseUrl": "https://api.exdev.property24-test.com",
+  "query": {
+    "countryName": "South Africa",
+    "provinceName": "Gauteng",
+    "cityName": "Boksburg",
+    "suburbName": "Bartlett"
+  },
+  "summary": {
+    "status": "FOUND",
+    "found": true,
+    "suburbId": 1987
+  },
+  "httpStatus": 200,
+  "durationMs": 345,
+  "responseSummary": {
+    "type": "object",
+    "keys": [
+      "found",
+      "suburb"
+    ],
+    "sample": {}
+  },
+  "suburb": {
+    "id": 1987,
+    "name": "Bartlett",
+    "countryName": "South Africa",
+    "countryId": 1,
+    "provinceName": "Gauteng",
+    "provinceId": 1,
+    "cityName": "Boksburg",
+    "cityId": 20,
+    "alternateNames": [],
+    "geoPoint": {
+      "longitude": 28.275971,
+      "latitude": -26.174993
+    }
+  }
+}

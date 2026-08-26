@@ -1,0 +1,104 @@
+{
+  "version": "arch9_private_property_post_submit_monitor_v1",
+  "phase": "private-property-go-live-phase5-post-submit-monitor",
+  "generatedAt": "2026-08-26T10:11:59.891Z",
+  "environment": "sandbox",
+  "listingId": "51f2a34b-4827-441e-ac4c-5c08680d88a3",
+  "propertyId": "PP-SANDBOX-SALE-FARM-AUCTION-001",
+  "branchGuid": "ca167b18-c6dc-49ad-b018-2b72b187918f",
+  "listingType": "Sale",
+  "recordSync": true,
+  "safety": {
+    "privatePropertyApiCalled": true,
+    "databaseWritten": true,
+    "rawCredentialsStored": false
+  },
+  "readiness": {
+    "status": "READY",
+    "ready": true,
+    "warnings": []
+  },
+  "status": "ACTIVATED",
+  "blockers": [],
+  "warnings": [],
+  "checks": [
+    {
+      "name": "listing_status",
+      "status": "PASS"
+    },
+    {
+      "name": "reference_number",
+      "status": "PASS"
+    },
+    {
+      "name": "active_listing",
+      "status": "PASS"
+    },
+    {
+      "name": "event_feed",
+      "status": "PENDING"
+    }
+  ],
+  "eventFeed": {
+    "continuationKey": "639233358642378576PP-SANDBOX-SALE-COM-SHOWDAY-001",
+    "eventCount": 8,
+    "matchCount": 0,
+    "latestEvent": null,
+    "events": [],
+    "responseSummary": {
+      "method": "GetListingEventFeedByBranch",
+      "responseChars": 3599,
+      "resultText": "<ContinuationKey>639233358642378576PP-SANDBOX-SALE-COM-SHOWDAY-001</ContinuationKey><OfficeFeedRef>ca167b18-c6dc-49ad-b018-2b72b187918f</OfficeFeedRef><FeedData><LisitngEventFeedData><TimeStamp>2026-08-24T07:56:09.6449114Z</TimeStamp><Listi",
+      "continuationKey": "639233358642378576PP-SANDBOX-SALE-COM-SHOWDAY-001",
+      "listingEventCount": 8
+    }
+  },
+  "statusProbe": {
+    "privatePropertyStatus": "For Sale",
+    "privatePropertyStatusVerbose": "For Sale",
+    "privatePropertyRef": "T2870292",
+    "activeListing": {
+      "listingType": "Sale Listing",
+      "privatePropertyRef": "T2870292",
+      "uniqueId": "PP-SANDBOX-SALE-FARM-AUCTION-001"
+    },
+    "responseSummaries": {
+      "status": {
+        "method": "GetListingStatus",
+        "responseChars": 384,
+        "resultText": "For Sale",
+        "continuationKey": "",
+        "listingEventCount": 0
+      },
+      "verbose": {
+        "method": "GetListingStatusVerbose",
+        "responseChars": 412,
+        "resultText": "For Sale",
+        "continuationKey": "",
+        "listingEventCount": 0
+      },
+      "reference": {
+        "method": "GetReferenceNumberByListing",
+        "responseChars": 428,
+        "resultText": "T2870292",
+        "continuationKey": "",
+        "listingEventCount": 0
+      },
+      "active": {
+        "method": "GetActiveListings",
+        "responseChars": 1887,
+        "resultText": "<ActiveListing><ListingType>Rental Listing</ListingType><PrivatePropertyRef>rr2755972</PrivatePropertyRef><UniqueId>PP-SANDBOX-RENTAL-001</UniqueId></ActiveListing><ActiveListing><ListingType>Rental Listing</ListingType><PrivatePropertyRef>",
+        "continuationKey": "",
+        "listingEventCount": 0
+      }
+    }
+  },
+  "syncResult": {
+    "arch9Status": "published",
+    "syncId": "4370b244-80f1-4bbf-9e5e-46af01485c57",
+    "listingId": "51f2a34b-4827-441e-ac4c-5c08680d88a3",
+    "externalLinkWarning": null
+  },
+  "nextStep": "Private Property shows the listing as active. Keep polling event feed until image events settle, then close go-live evidence.",
+  "externalStatus": "active"
+}

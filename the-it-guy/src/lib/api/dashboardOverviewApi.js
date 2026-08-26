@@ -380,7 +380,7 @@ function buildDevelopmentSummaries(rows) {
   const map = new Map()
 
   for (const row of rows) {
-    const developmentId = row.unit.development_id
+    const developmentId = row.unit?.development_id || row.development?.id || null
     const developmentName = row.development?.name || 'Unknown Development'
     const existing = map.get(developmentId) || {
       id: developmentId,

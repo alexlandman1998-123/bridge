@@ -45,9 +45,12 @@ function parseArgs(argv) {
     mandateType: '',
     environment: '',
     price: '',
+    rentalPriceType: '',
     listingDate: '',
     photosChanged: true,
     soleMandateExclusiveDays: '',
+    farmName: '',
+    showdayEvents: '',
   }
 
   for (const arg of argv) {
@@ -93,10 +96,16 @@ function parseArgs(argv) {
       options.environment = normalizePrivatePropertyPreviewText(arg.slice('--environment='.length))
     } else if (arg.startsWith('--price=')) {
       options.price = normalizePrivatePropertyPreviewText(arg.slice('--price='.length))
+    } else if (arg.startsWith('--rental-price-type=')) {
+      options.rentalPriceType = normalizePrivatePropertyPreviewText(arg.slice('--rental-price-type='.length))
     } else if (arg.startsWith('--listing-date=')) {
       options.listingDate = normalizePrivatePropertyPreviewText(arg.slice('--listing-date='.length))
     } else if (arg.startsWith('--exclusive-days=')) {
       options.soleMandateExclusiveDays = normalizePrivatePropertyPreviewText(arg.slice('--exclusive-days='.length))
+    } else if (arg.startsWith('--farm-name=')) {
+      options.farmName = normalizePrivatePropertyPreviewText(arg.slice('--farm-name='.length))
+    } else if (arg.startsWith('--showday-events=')) {
+      options.showdayEvents = normalizePrivatePropertyPreviewText(arg.slice('--showday-events='.length))
     } else {
       throw new Error(`Unknown option: ${arg}`)
     }
@@ -156,9 +165,12 @@ function buildConfig(options) {
     listingType: options.listingType,
     mandateType: options.mandateType,
     price: options.price,
+    rentalPriceType: options.rentalPriceType,
     listingDate: options.listingDate,
     photosChanged: options.photosChanged,
     soleMandateExclusiveDays: options.soleMandateExclusiveDays,
+    farmName: options.farmName,
+    showdayEvents: options.showdayEvents,
   }
 
   config.missing = []
@@ -196,9 +208,12 @@ function createOptions(config, fixtureOptions = {}) {
     listingType: config.listingType || fixtureOptions.listingType,
     mandateType: config.mandateType || fixtureOptions.mandateType,
     price: config.price,
+    rentalPriceType: config.rentalPriceType,
     listingDate: config.listingDate,
     photosChanged: config.photosChanged,
     soleMandateExclusiveDays: config.soleMandateExclusiveDays,
+    farmName: config.farmName,
+    showdayEvents: config.showdayEvents,
   }
 }
 

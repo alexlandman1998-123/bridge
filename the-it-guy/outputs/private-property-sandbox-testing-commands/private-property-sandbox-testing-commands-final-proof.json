@@ -1,0 +1,86 @@
+{
+  "phase": "private-property-sandbox-testing-commands-final-proof",
+  "generatedAt": "2026-08-26T10:16:43.739Z",
+  "status": "PASS",
+  "rows": [
+    {
+      "row": 2,
+      "apiAction": "Rental - Create New Residential",
+      "propertyId": "PP-SANDBOX-RENTAL-RES-001",
+      "referenceNumber": "rr2755973",
+      "status": "ACTIVATED",
+      "externalStatus": "active",
+      "specialActionStatus": null
+    },
+    {
+      "row": 3,
+      "apiAction": "Rental - Create New Commercial, Price Per M2",
+      "propertyId": "PP-SANDBOX-RENTAL-COM-M2-001",
+      "referenceNumber": "rr2755974",
+      "status": "ACTIVATED",
+      "externalStatus": "active",
+      "specialActionStatus": null
+    },
+    {
+      "row": 4,
+      "apiAction": "Rental - Create New Commercial, Price Type Per Day",
+      "propertyId": "PP-SANDBOX-RENTAL-COM-DAY-001",
+      "referenceNumber": "rr2755975",
+      "status": "ACTIVATED",
+      "externalStatus": "active",
+      "specialActionStatus": null
+    },
+    {
+      "row": 5,
+      "apiAction": "Sale - Create New Residential, Add Video",
+      "propertyId": "PP-SANDBOX-SALE-RES-VIDEO-001",
+      "referenceNumber": "T2870290",
+      "status": "ACTIVATED",
+      "externalStatus": "active",
+      "specialActionStatus": "PASS"
+    },
+    {
+      "row": 6,
+      "apiAction": "Sale - Create New Commercial, Add Show Day",
+      "propertyId": "PP-SANDBOX-SALE-COM-SHOWDAY-001",
+      "referenceNumber": "T2870291",
+      "status": "ACTIVATED",
+      "externalStatus": "active",
+      "specialActionStatus": "PASS"
+    },
+    {
+      "row": 7,
+      "apiAction": "Sale - Create New Farm, Auction Listing, Add 2 Agents, Add Farm Name",
+      "propertyId": "PP-SANDBOX-SALE-FARM-AUCTION-001",
+      "referenceNumber": "T2870292",
+      "status": "ACTIVATED",
+      "externalStatus": "active",
+      "specialActionStatus": "PASS"
+    },
+    {
+      "row": 8,
+      "apiAction": "Sale - Create New Land, Add Land Area, Rates and Levies",
+      "propertyId": "PP-SANDBOX-SALE-LAND-001",
+      "referenceNumber": "T2870293",
+      "status": "ACTIVATED",
+      "externalStatus": "active",
+      "specialActionStatus": null
+    }
+  ],
+  "agents": [
+    {
+      "agentId": "ARCH9-SANDBOX-USER-1",
+      "status": "PASS",
+      "email": "alex+privatepropertytest@arch9.co.za",
+      "updateAgent": "PASS",
+      "updateAgentImage": "PASS"
+    },
+    {
+      "agentId": "ARCH9-SANDBOX-USER-2",
+      "status": "PASS",
+      "email": "alex+privatepropertytest2@arch9.co.za",
+      "updateAgent": "PASS",
+      "updateAgentImage": "PASS"
+    }
+  ]
+}

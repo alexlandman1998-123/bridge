@@ -1,0 +1,23 @@
+{
+  "phase": "private-property-listing-video",
+  "generatedAt": "2026-08-26T10:14:20.925Z",
+  "environment": "sandbox",
+  "baseUrl": "https://services.sandbox.pp.co.za/AgentImport/AgentImport.asmx",
+  "vendor": "Arch9",
+  "username": "Arch9User",
+  "branchGuid": "CA167B18-C6DC-49AD-B018-2B72B187918F",
+  "apply": false,
+  "safety": {
+    "privatePropertyApiCalled": false,
+    "databaseWritten": false,
+    "listingStatusChanged": false
+  },
+  "status": "DRY_RUN",
+  "request": {
+    "propertyId": "PP-SANDBOX-SALE-RES-VIDEO-001",
+    "listingType": "Sale",
+    "youtubeVideoIdConfigured": true,
+    "matterportIdConfigured": false
+  },
+  "nextStep": "No Private Property video/Matterport change was made. Re-run with --apply to call UpdateListingVideoOrMatterport."
+}

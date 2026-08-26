@@ -6,6 +6,7 @@ const STALE_CHUNK_AUTO_RELOAD_LIMIT = 6
 const STALE_CHUNK_FORCE_RELOAD_AFTER_PROBE_ATTEMPT = 3
 const STALE_CHUNK_RELOAD_MARKER_TTL_MS = 10 * 60 * 1000
 const STALE_CHUNK_RETRY_DELAYS_MS = [250, 1500, 4000, 8000, 15000, 30000]
+const CREATE_LISTING_DRAFT_STORAGE_PREFIX = 'itg:agent-listings:create-draft:v1:'
 
 function getErrorMessage(error) {
   const message = String(error?.message || '').trim()
@@ -31,6 +32,36 @@ function isStaleChunkLoadError(error) {
   ].some((pattern) => text.includes(pattern)) ||
     (/\/assets\/.+\.js/.test(text) && /chunkloaderror|dynamically imported module|module script|failed to fetch|importing a module|load failed for module/i.test(text)) ||
     (normalizedText.includes('javascript mime type') && normalizedText.includes('text/html'))
+}
+
+function isBrowserStorageQuotaError(error) {
+  const text = [
+    error?.name,
+    error?.message,
+    error?.stack,
+  ].filter(Boolean).join(' ').toLowerCase()
+
+  return text.includes('storage') &&
+    text.includes('setitem') &&
+    (text.includes('quota') || text.includes('exceeded'))
+}
+
+function clearCreateListingDraftStorage() {
+  if (typeof window === 'undefined' || !window.localStorage) return 0
+
+  const keysToClear = []
+  for (let index = 0; index < window.localStorage.length; index += 1) {
+    const key = window.localStorage.key(index)
+    if (String(key || '').startsWith(CREATE_LISTING_DRAFT_STORAGE_PREFIX)) {
+      keysToClear.push(key)
+    }
+  }
+
+  keysToClear.forEach((key) => {
+    window.localStorage.removeItem(key)
+  })
+
+  return keysToClear.length
 }
 
 function getStaleChunkErrorText(error) {
@@ -308,6 +339,15 @@ class AppErrorBoundary extends Component {
     this.recoverFromStaleChunk({ force: false })
   }
 
+  async clearLocalListingDraftAndReload() {
+    try {
+      clearCreateListingDraftStorage()
+    } catch (error) {
+      console.warn('[ERROR_BOUNDARY] local listing draft cleanup failed', error)
+    }
+    await reloadWithFreshAppShell()
+  }
+
   render() {
     if (!this.state.hasError) {
       return this.props.children
@@ -315,6 +355,7 @@ class AppErrorBoundary extends Component {
 
     const staleChunkError = isStaleChunkLoadError(this.state.error)
     const staleChunkExhausted = staleChunkError && this.state.staleChunkRecoveryExhausted
+    const browserStorageQuotaError = isBrowserStorageQuotaError(this.state.error)
 
     return (
       <section className="auth-loading-screen">
@@ -322,7 +363,9 @@ class AppErrorBoundary extends Component {
           <h2>
             {staleChunkExhausted
               ? 'App update is still reaching this browser'
-              : staleChunkError ? 'Loading the latest app version' : this.props.title || 'We hit an unexpected error'}
+              : staleChunkError
+                ? 'Loading the latest app version'
+                : browserStorageQuotaError ? 'Local listing draft is too large' : this.props.title || 'We hit an unexpected error'}
           </h2>
           <p>
             {this.state.recoveringFromStaleChunk
@@ -331,7 +374,9 @@ class AppErrorBoundary extends Component {
                 ? 'One of the app files is still unavailable at this location. Refresh again in a moment, or open the dashboard while the app file catches up.'
               : staleChunkError
                 ? 'This page was opened with an older app file. Refresh to load the latest version.'
-                : getErrorMessage(this.state.error)}
+                : browserStorageQuotaError
+                  ? 'Your browser saved an oversized listing draft. Clear the local draft and reload this page; saved listings and settings will not be deleted.'
+                  : getErrorMessage(this.state.error)}
           </p>
           {import.meta.env.DEV && this.state.error ? (
             <details className="mt-3 w-full rounded-[12px] border border-[#e2e8f0] bg-[#f8fafc] px-3 py-2 text-left text-xs text-[#334155]">
@@ -348,10 +393,14 @@ class AppErrorBoundary extends Component {
                   this.recoverFromStaleChunk({ force: true })
                   return
                 }
+                if (browserStorageQuotaError) {
+                  void this.clearLocalListingDraftAndReload()
+                  return
+                }
                 this.setState({ hasError: false, error: null, recoveringFromStaleChunk: false, staleChunkRecoveryExhausted: false })
               }}
             >
-              {staleChunkError ? 'Refresh App' : 'Retry'}
+              {staleChunkError ? 'Refresh App' : browserStorageQuotaError ? 'Clear Local Draft' : 'Retry'}
             </button>
             <Link to={this.props.fallbackPath || '/dashboard'} className="auth-secondary-cta">
               {this.props.fallbackLabel || 'Go to Dashboard'}

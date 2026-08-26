@@ -10,6 +10,7 @@ test('includes the Home Seekers demo profile and seed manifest', () => {
   assert.equal(homeSeekers.profile.companyName, 'Home Seekers')
   assert.equal(homeSeekers.seedData.seedKey, 'home-seekers-demo-seed-v1')
   assert.ok(homeSeekers.seedData.team.length >= 4)
+  assert.ok(homeSeekers.seedData.listings.some((listing) => listing.title === '116 Ridge Road'))
 
   const manifest = DEMO_SEED_MANIFEST.find((row) => row.accountId === 'home-seekers')
   assert.ok(manifest, 'Home Seekers seed manifest should be present')
