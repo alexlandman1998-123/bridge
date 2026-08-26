@@ -1,6 +1,11 @@
 #!/usr/bin/env node
 import fs from 'node:fs'
 import { createClient } from '@supabase/supabase-js'
+import {
+  ensureHomeSeekersAgencyDemoWorkspace,
+  HOME_SEEKERS_DEMO_EMAIL,
+  HOME_SEEKERS_DEMO_PASSWORD,
+} from './agencyDemoBootstrap.mjs'
 
 const args = new Set(process.argv.slice(2))
 const argValue = (name, fallback = '') => {
@@ -10,7 +15,8 @@ const argValue = (name, fallback = '') => {
 }
 
 const ENVIRONMENT = String(argValue('--environment', process.env.AGENCY_DEMO_ENVIRONMENT || 'staging')).trim()
-const TARGET_EMAIL = String(process.env.AGENCY_DEMO_EMAIL || 'principal.demo@arch9.co.za').trim().toLowerCase()
+const TARGET_EMAIL = String(process.env.AGENCY_DEMO_EMAIL || HOME_SEEKERS_DEMO_EMAIL).trim().toLowerCase()
+const TARGET_PASSWORD = String(process.env.AGENCY_DEMO_PASSWORD || HOME_SEEKERS_DEMO_PASSWORD).trim()
 const PRODUCTION_PROJECT_REF = 'isdowlnollckzvltkasn'
 const CAPTION_PREFIX = 'Agency demo cover image'
 
@@ -87,29 +93,11 @@ const supabase = createClient(supabaseUrl, serviceRoleKey, {
 })
 
 async function fetchDemoOrganisationId() {
-  const profileResult = await supabase
-    .from('profiles')
-    .select('id, email')
-    .ilike('email', TARGET_EMAIL)
-    .maybeSingle()
-  if (profileResult.error) throw profileResult.error
-  if (!profileResult.data?.id) throw new Error(`No profile found for ${TARGET_EMAIL}.`)
-
-  const membershipResult = await supabase
-    .from('organisation_users')
-    .select('organisation_id, workspace_type, status, created_at')
-    .eq('user_id', profileResult.data.id)
-    .eq('workspace_type', 'agency')
-    .eq('status', 'active')
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-  if (membershipResult.error) throw membershipResult.error
-  if (!membershipResult.data?.organisation_id) {
-    throw new Error(`No active agency organisation found for ${TARGET_EMAIL}.`)
-  }
-
-  return membershipResult.data.organisation_id
+  const context = await ensureHomeSeekersAgencyDemoWorkspace(supabase, {
+    email: TARGET_EMAIL,
+    password: TARGET_PASSWORD,
+  })
+  return context.organisationId
 }
 
 async function main() {
@@ -123,6 +111,18 @@ async function main() {
 
   if (listingsResult.error) throw listingsResult.error
   const listings = listingsResult.data || []
+  if (!listings.length) {
+    console.log(JSON.stringify({
+      environment: ENVIRONMENT,
+      projectRef,
+      targetEmail: TARGET_EMAIL,
+      organisationId,
+      count: 0,
+      listings: [],
+      status: 'skipped_no_listings_found',
+    }, null, 2))
+    return
+  }
   const rows = listings
     .map((listing) => {
       const image = LISTING_IMAGES.find((item) => item.title === listing.title)
@@ -138,7 +138,18 @@ async function main() {
     })
     .filter(Boolean)
 
-  if (!rows.length) throw new Error(`No matching demo listings found for ${TARGET_EMAIL}.`)
+  if (!rows.length) {
+    console.log(JSON.stringify({
+      environment: ENVIRONMENT,
+      projectRef,
+      targetEmail: TARGET_EMAIL,
+      organisationId,
+      count: 0,
+      listings: [],
+      status: 'skipped_no_matching_listings',
+    }, null, 2))
+    return
+  }
 
   const listingIds = rows.map((row) => row.listing_id)
   const deleteResult = await supabase

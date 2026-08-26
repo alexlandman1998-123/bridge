@@ -1,0 +1,34 @@
+{
+  "phase": "private-property-phase5-active-listings",
+  "generatedAt": "2026-08-26T08:20:53.313Z",
+  "environment": "sandbox",
+  "baseUrl": "https://services.sandbox.pp.co.za/AgentImport/AgentImport.asmx",
+  "vendor": "Arch9",
+  "username": "Arch9User",
+  "branchGuid": "CA167B18-C6DC-49AD-B018-2B72B187918F",
+  "apply": false,
+  "safety": {
+    "privatePropertyApiCalled": true,
+    "databaseWritten": false,
+    "listingStatusChanged": false
+  },
+  "status": "FOUND",
+  "filters": {
+    "propertyId": null,
+    "privatePropertyRef": null
+  },
+  "count": 2,
+  "matchCount": 2,
+  "activeListings": [
+    {
+      "listingType": "Rental Listing",
+      "privatePropertyRef": "rr2755972",
+      "uniqueId": "PP-SANDBOX-RENTAL-001"
+    },
+    {
+      "listingType": "Sale Listing",
+      "privatePropertyRef": "T2870287",
+      "uniqueId": "PRV-202608201031-U8YM"
+    }
+  ]
+}

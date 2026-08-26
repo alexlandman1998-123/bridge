@@ -72,24 +72,50 @@ function addRow(rows, label, value, { format = null } = {}) {
 
 function addPeopleRows(rows, label, people = []) {
   if (!Array.isArray(people) || !people.length) return
-  const value = people
+  const normalizedPeople = people
     .map((person, index) => {
       const name = firstText(person?.full_name, person?.name, `Person ${index + 1}`)
-      const bits = [
+      const idNumber = text(person?.id_number || person?.idNumber)
+      const email = text(person?.email)
+      const phone = text(person?.phone || person?.mobile)
+      return {
         name,
-        person?.id_number ? `ID ${person.id_number}` : '',
-        person?.email,
-        person?.phone,
-      ].map(text).filter(Boolean)
-      return bits.join(' | ')
+        idNumber,
+        email,
+        phone,
+        summary: [name, idNumber ? `ID ${idNumber}` : '', email, phone].map(text).filter(Boolean).join(' | '),
+      }
     })
-    .join('\n')
-  addRow(rows, label, value)
+    .filter((person) => person.summary)
+  if (!normalizedPeople.length) return
+  rows.push({
+    label,
+    value: normalizedPeople.map((person) => person.summary).join('\n'),
+    type: 'people',
+    people: normalizedPeople,
+  })
 }
 
 function buildSellerSection(facts = {}, formData = {}) {
   const seller = facts.seller || {}
   const rows = []
+  const primarySellerKeys = new Set([
+    key(firstText(fullName(seller.first_name, seller.surname), formData.sellerName)),
+    key(seller.email),
+    key(seller.phone),
+    key(seller.id_number),
+  ].filter(Boolean))
+  const additionalOwners = Array.isArray(seller.owners)
+    ? seller.owners.filter((owner) => {
+      const ownerKeys = [
+        key(firstText(owner?.full_name, owner?.name)),
+        key(owner?.email),
+        key(owner?.phone || owner?.mobile),
+        key(owner?.id_number || owner?.idNumber),
+      ].filter(Boolean)
+      return !ownerKeys.some((ownerKey) => primarySellerKeys.has(ownerKey))
+    })
+    : []
   addRow(rows, 'Seller name', firstText(fullName(seller.first_name, seller.surname), formData.sellerName))
   addRow(rows, 'Owner type', firstText(seller.branch_label, humanize(seller.owner_structure_type), humanize(seller.legal_type)))
   addRow(rows, 'Owner entity', humanize(seller.owner_entity_type))
@@ -104,7 +130,7 @@ function buildSellerSection(facts = {}, formData = {}) {
   addRow(rows, 'Spouse ID number', seller.spouse?.id_number)
   addRow(rows, 'Spouse email', seller.spouse?.email)
   addRow(rows, 'Residential address', seller.residential_address)
-  addPeopleRows(rows, 'Additional owners', seller.owners)
+  addPeopleRows(rows, 'Additional owners', additionalOwners)
   return { title: 'Seller', rows }
 }
 

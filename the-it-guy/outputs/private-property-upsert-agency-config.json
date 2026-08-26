@@ -1,0 +1,52 @@
+{
+  "phase": "private-property-go-live-phase1-config-upsert",
+  "generatedAt": "2026-08-26T08:18:04.654Z",
+  "status": "CONFIG_RECORDED",
+  "action": "inserted",
+  "safety": {
+    "privatePropertyApiCalled": false,
+    "databaseWritten": true,
+    "rawCredentialStored": false
+  },
+  "config": {
+    "id": "90b83d5e-4c4a-4cf3-ab3c-5f731a602506",
+    "organisationId": "efa6c6ff-6941-4b59-8bcb-e4d9ba9e585a",
+    "branchId": "531f1439-62b3-4c76-a908-e6ec906d7fdf",
+    "environment": "sandbox",
+    "vendorName": "Arch9",
+    "branchGuid": "ca167b18-c6dc-49ad-b018-2b72b187918f",
+    "usernameSecretName": "PRIVATE_PROPERTY_USERNAME",
+    "passwordSecretName": "PRIVATE_PROPERTY_PASSWORD",
+    "baseUrl": "https://services.sandbox.pp.co.za/AgentImport/AgentImport.asmx",
+    "enabled": true,
+    "status": "sandbox_ready",
+    "goLiveApprovedAt": "",
+    "lastAuthCheckAt": "",
+    "lastPublishCheckAt": "",
+    "lastEventFeedCheckAt": "",
+    "metadata": {}
+  },
+  "readiness": {
+    "ready": true,
+    "blockers": [],
+    "warnings": [],
+    "config": {
+      "id": "90b83d5e-4c4a-4cf3-ab3c-5f731a602506",
+      "organisationId": "efa6c6ff-6941-4b59-8bcb-e4d9ba9e585a",
+      "branchId": "531f1439-62b3-4c76-a908-e6ec906d7fdf",
+      "environment": "sandbox",
+      "vendorName": "Arch9",
+      "branchGuid": "ca167b18-c6dc-49ad-b018-2b72b187918f",
+      "usernameSecretName": "PRIVATE_PROPERTY_USERNAME",
+      "passwordSecretName": "PRIVATE_PROPERTY_PASSWORD",
+      "baseUrl": "https://services.sandbox.pp.co.za/AgentImport/AgentImport.asmx",
+      "enabled": true,
+      "status": "sandbox_ready",
+      "goLiveApprovedAt": "",
+      "lastAuthCheckAt": "",
+      "lastPublishCheckAt": "",
+      "lastEventFeedCheckAt": "",
+      "metadata": {}
+    }
+  }
+}

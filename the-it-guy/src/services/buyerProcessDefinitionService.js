@@ -8,7 +8,8 @@ import {
 export const BUYER_PROCESS_STAGE_KEYS = Object.freeze({
   captured: 'captured',
   contacted: 'contacted',
-  qualification: 'qualification',
+  qualified: 'qualified',
+  qualification: 'qualified',
   viewing: 'viewing',
   transactionSetup: 'transaction_setup',
   offer: 'offer',
@@ -41,7 +42,7 @@ export const BUYER_PROCESS_ACTION_KEYS = Object.freeze({
 const DEFAULT_ACTIVE_STAGE_KEYS = Object.freeze([
   BUYER_PROCESS_STAGE_KEYS.captured,
   BUYER_PROCESS_STAGE_KEYS.contacted,
-  BUYER_PROCESS_STAGE_KEYS.qualification,
+  BUYER_PROCESS_STAGE_KEYS.qualified,
   BUYER_PROCESS_STAGE_KEYS.viewing,
   BUYER_PROCESS_STAGE_KEYS.transactionSetup,
   BUYER_PROCESS_STAGE_KEYS.offer,
@@ -51,7 +52,7 @@ const DEFAULT_ACTIVE_STAGE_KEYS = Object.freeze([
 const KINGSTONS_ACTIVE_STAGE_KEYS = Object.freeze([
   BUYER_PROCESS_STAGE_KEYS.captured,
   BUYER_PROCESS_STAGE_KEYS.contacted,
-  BUYER_PROCESS_STAGE_KEYS.qualification,
+  BUYER_PROCESS_STAGE_KEYS.qualified,
   BUYER_PROCESS_STAGE_KEYS.viewing,
   BUYER_PROCESS_STAGE_KEYS.offer,
   BUYER_PROCESS_STAGE_KEYS.transactionSetup,
@@ -96,10 +97,10 @@ const BUYER_PROCESS_STAGES = Object.freeze([
     ]),
   }),
   Object.freeze({
-    key: BUYER_PROCESS_STAGE_KEYS.qualification,
-    label: 'Qualification',
-    phase: 'qualification',
-    description: 'Buyer intent, budget, timing, area, and finance readiness are being confirmed.',
+    key: BUYER_PROCESS_STAGE_KEYS.qualified,
+    label: 'Qualified',
+    phase: 'qualified',
+    description: 'Buyer intent, budget, timing, area, and finance readiness have been confirmed.',
     requiredEvidenceKeys: Object.freeze(['buyer_qualified']),
     allowedActionKeys: Object.freeze([
       BUYER_PROCESS_ACTION_KEYS.scheduleViewing,
@@ -199,11 +200,11 @@ const DEFAULT_BUYER_STAGE_TRANSITIONS = Object.freeze({
     BUYER_PROCESS_STAGE_KEYS.lost,
   ]),
   [BUYER_PROCESS_STAGE_KEYS.contacted]: Object.freeze([
-    BUYER_PROCESS_STAGE_KEYS.qualification,
+    BUYER_PROCESS_STAGE_KEYS.qualified,
     BUYER_PROCESS_STAGE_KEYS.onHold,
     BUYER_PROCESS_STAGE_KEYS.lost,
   ]),
-  [BUYER_PROCESS_STAGE_KEYS.qualification]: Object.freeze([
+  [BUYER_PROCESS_STAGE_KEYS.qualified]: Object.freeze([
     BUYER_PROCESS_STAGE_KEYS.viewing,
     BUYER_PROCESS_STAGE_KEYS.onHold,
     BUYER_PROCESS_STAGE_KEYS.lost,
@@ -232,7 +233,7 @@ const DEFAULT_BUYER_STAGE_TRANSITIONS = Object.freeze({
   [BUYER_PROCESS_STAGE_KEYS.onHold]: Object.freeze([
     BUYER_PROCESS_STAGE_KEYS.captured,
     BUYER_PROCESS_STAGE_KEYS.contacted,
-    BUYER_PROCESS_STAGE_KEYS.qualification,
+    BUYER_PROCESS_STAGE_KEYS.qualified,
     BUYER_PROCESS_STAGE_KEYS.viewing,
     BUYER_PROCESS_STAGE_KEYS.transactionSetup,
     BUYER_PROCESS_STAGE_KEYS.offer,
@@ -277,7 +278,7 @@ const BUYER_PROCESS_EVIDENCE_GATES = Object.freeze([
   Object.freeze({
     key: 'buyer_qualified',
     source: 'qualification',
-    requiredForStage: BUYER_PROCESS_STAGE_KEYS.qualification,
+    requiredForStage: BUYER_PROCESS_STAGE_KEYS.qualified,
   }),
   Object.freeze({
     key: 'viewing_recorded',
@@ -344,7 +345,7 @@ const BUYER_PROCESS_ACTIONS = Object.freeze([
   Object.freeze({
     key: BUYER_PROCESS_ACTION_KEYS.qualify,
     label: 'Qualify buyer',
-    outcomeStageKey: BUYER_PROCESS_STAGE_KEYS.qualification,
+    outcomeStageKey: BUYER_PROCESS_STAGE_KEYS.qualified,
   }),
   Object.freeze({
     key: BUYER_PROCESS_ACTION_KEYS.scheduleViewing,
@@ -461,9 +462,9 @@ const BUYER_STAGE_ALIASES = Object.freeze({
   first_contacted: BUYER_PROCESS_STAGE_KEYS.contacted,
   buyer_contacted: BUYER_PROCESS_STAGE_KEYS.contacted,
   follow_up: BUYER_PROCESS_STAGE_KEYS.contacted,
-  qualified: BUYER_PROCESS_STAGE_KEYS.qualification,
-  qualification: BUYER_PROCESS_STAGE_KEYS.qualification,
-  qualifying: BUYER_PROCESS_STAGE_KEYS.qualification,
+  qualified: BUYER_PROCESS_STAGE_KEYS.qualified,
+  qualification: BUYER_PROCESS_STAGE_KEYS.qualified,
+  qualifying: BUYER_PROCESS_STAGE_KEYS.qualified,
   viewing: BUYER_PROCESS_STAGE_KEYS.viewing,
   viewing_scheduled: BUYER_PROCESS_STAGE_KEYS.viewing,
   appointment_scheduled: BUYER_PROCESS_STAGE_KEYS.viewing,

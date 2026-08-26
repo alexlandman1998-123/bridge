@@ -46,12 +46,17 @@ function hasDocumentFile(document = null) {
   return Boolean(
     document &&
       (
-        document.id ||
         document.file_path ||
         document.filePath ||
+        document.storage_path ||
+        document.storagePath ||
         document.url ||
         document.file_url ||
-        document.fileUrl
+        document.fileUrl ||
+        document.public_url ||
+        document.publicUrl ||
+        document.uploadedDocumentId ||
+        document.uploaded_document_id
       ),
   )
 }

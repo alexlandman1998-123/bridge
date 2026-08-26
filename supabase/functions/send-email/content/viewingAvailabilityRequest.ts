@@ -137,14 +137,20 @@ function renderPropertyCard(properties: ViewingAvailabilityRequestProperty[]) {
   `;
 }
 
-function renderActionButton(actionLink = "", accent = "#d9a128") {
+function renderActionButton(
+  actionLink = "",
+  accent = "#d9a128",
+  label = "Select 3 viewing times",
+) {
   const link = normalizeText(actionLink);
   if (!link) return "";
   return `
     <div style="margin: 0;">
       <a href="${
     escapeHtml(link)
-  }" style="display: block; padding: 16px 20px; border-radius: 8px; background: linear-gradient(135deg, ${accent} 0%, #e5b13c 48%, #c68615 100%); color: #ffffff; font-size: 18px; line-height: 1.2; font-weight: 800; text-align: center; text-decoration: none;">Select 3 viewing times</a>
+  }" style="display: block; padding: 16px 20px; border-radius: 8px; background: linear-gradient(135deg, ${accent} 0%, #e5b13c 48%, #c68615 100%); color: #ffffff; font-size: 18px; line-height: 1.2; font-weight: 800; text-align: center; text-decoration: none;">${
+    escapeHtml(label)
+  }</a>
     </div>
   `;
 }
@@ -305,10 +311,10 @@ export function buildBuyerViewingAvailabilityRequestEmailHtml({
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Choose your preferred viewing times</title>
+    <title>Share your details and choose viewing times</title>
   </head>
   <body style="margin:0; padding:0; background:#f5f5f3; color:#101827;">
-    <div style="display:none; max-height:0; overflow:hidden; opacity:0; color:transparent;">Choose three viewing times that work for you.</div>
+    <div style="display:none; max-height:0; overflow:hidden; opacity:0; color:transparent;">Share a few details and choose three viewing times that work for you.</div>
     <div style="margin:0; padding:18px 12px 32px; background:#f5f5f3;">
       <div style="max-width:600px; margin:0 auto; overflow:hidden; border:1px solid #e4e0d7; border-radius:14px; background:#ffffff; font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;">
         <div style="padding:24px 32px 20px; background:#ffffff; text-align:center;">
@@ -322,16 +328,16 @@ export function buildBuyerViewingAvailabilityRequestEmailHtml({
         </div>
         <div style="padding:38px 38px 42px; background:radial-gradient(circle at 86% 38%, rgba(255,255,255,0.13) 0, rgba(255,255,255,0.06) 24%, rgba(255,255,255,0) 48%), linear-gradient(135deg, ${primaryColor} 0%, #05142d 100%); color:#ffffff;">
           <p style="margin:0 0 18px; color:${accentColor}; font-size:13px; line-height:1.2; font-weight:800; letter-spacing:0.09em; text-transform:uppercase;">Viewing request</p>
-          <h1 style="margin:0; max-width:430px; color:#ffffff; font-size:38px; line-height:1.08; font-weight:800; letter-spacing:0;">Let us set up your viewing.</h1>
-          <p style="margin:18px 0 0; max-width:420px; color:rgba(255,255,255,0.9); font-size:17px; line-height:1.58;">Choose three times that work for you, and we will coordinate the best option with the seller.</p>
+          <h1 style="margin:0; max-width:430px; color:#ffffff; font-size:38px; line-height:1.08; font-weight:800; letter-spacing:0;">Share a few details, then choose 3 viewing times.</h1>
+          <p style="margin:18px 0 0; max-width:420px; color:rgba(255,255,255,0.9); font-size:17px; line-height:1.58;">If you have five minutes, answer a few quick buyer questions and then choose three times that work for you.</p>
         </div>
         <div style="padding:28px 30px 30px; background:#ffffff;">
           <div style="margin:0 0 26px; padding:24px; border:1px solid #eadfcd; border-radius:12px; background:#ffffff; box-shadow:0 16px 34px rgba(8,19,38,0.10); text-align:center;">
             <p style="margin:0 0 8px; color:#101827; font-size:20px; line-height:1.25; font-weight:800;">Hi ${
     escapeHtml(greetingName)
   }, your enquiry is in.</p>
-            <p style="margin:0 0 18px; color:#455366; font-size:14px; line-height:1.55;">The quickest way to keep things moving is to tell us when you are available. It takes less than a minute.</p>
-            ${renderActionButton(actionLink, accentColor)}
+            <p style="margin:0 0 18px; color:#455366; font-size:14px; line-height:1.55;">The quickest way to keep things moving is to share a few details and tell us when you are available. It takes less than five minutes.</p>
+            ${renderActionButton(actionLink, accentColor, "Share details and 3 viewing times")}
             <p style="margin:12px 0 0; color:#687487; font-size:12px; line-height:1.45; font-weight:600;">Secure public link. No sign-in needed.</p>
           </div>
           ${renderPropertyCard(selectedProperties)}
@@ -420,7 +426,7 @@ export function buildBuyerViewingAvailabilityRequestEmailText({
         : `${selectedProperties.length || 1} viewing options`
     } for you.`,
     actionLink
-      ? "Select 3 viewing times here:"
+      ? "Share details and 3 viewing times here:"
       : "Please reply with exactly three time windows that suit you.",
     actionLink || null,
     agentAvatarUrl ? `Agent photo: ${agentAvatarUrl}` : null,
@@ -432,7 +438,8 @@ export function buildBuyerViewingAvailabilityRequestEmailText({
     actionLink ? "Or reply with:" : "Please reply with:",
     "1. Which property or properties you would like to view.",
     "2. Exactly three time windows that work for you.",
-    "3. Whether anyone else will be joining the viewing.",
+    "3. Exactly three time windows that work for you.",
+    "4. Whether anyone else will be joining the viewing.",
     "",
     "Need help? Reply to this email and your agent will assist you.",
     "",

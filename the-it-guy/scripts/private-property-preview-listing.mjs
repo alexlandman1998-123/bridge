@@ -10,6 +10,9 @@ import {
   fetchRecentArch9ListingsForPrivatePropertyPreview,
   normalizePrivatePropertyPreviewText,
 } from '../server/services/privatePropertyListingPreviewService.js'
+import {
+  resolvePrivatePropertyAgentMapping,
+} from '../server/services/privatePropertyAgentMappingService.js'
 
 const appRoot = fileURLToPath(new URL('..', import.meta.url))
 
@@ -33,6 +36,7 @@ function parseArgs(argv) {
     category: '',
     listingType: '',
     mandateType: '',
+    environment: '',
     price: '',
     listingDate: '',
     photosChanged: true,
@@ -80,6 +84,8 @@ function parseArgs(argv) {
       options.listingType = normalizePrivatePropertyPreviewText(arg.slice('--listing-type='.length))
     } else if (arg.startsWith('--mandate-type=')) {
       options.mandateType = normalizePrivatePropertyPreviewText(arg.slice('--mandate-type='.length))
+    } else if (arg.startsWith('--environment=')) {
+      options.environment = normalizePrivatePropertyPreviewText(arg.slice('--environment='.length))
     } else if (arg.startsWith('--price=')) {
       options.price = normalizePrivatePropertyPreviewText(arg.slice('--price='.length))
     } else if (arg.startsWith('--listing-date=')) {
@@ -141,6 +147,7 @@ function buildConfig(options) {
     category: options.category,
     listingType: options.listingType,
     mandateType: options.mandateType,
+    environment: normalizePrivatePropertyPreviewText(options.environment || env.PRIVATE_PROPERTY_ENVIRONMENT || env.PRIVATE_PROPERTY_ENV || 'sandbox'),
     price: options.price,
     listingDate: options.listingDate,
     photosChanged: options.photosChanged,
@@ -157,8 +164,10 @@ function buildConfig(options) {
     if (!config.supabaseUrl) config.missing.push('SUPABASE_URL or VITE_SUPABASE_URL')
     if (!config.serviceRoleKey) config.missing.push('SUPABASE_SERVICE_ROLE_KEY')
   }
-  if (!config.branchGuid) config.missing.push('PRIVATE_PROPERTY_BRANCH_GUID or --branch-guid')
-  if (!config.agentIds) config.missing.push('PRIVATE_PROPERTY_DEFAULT_AGENT_ID(S) or --agent-id/--agent-ids')
+  if (config.fixture) {
+    if (!config.branchGuid) config.missing.push('PRIVATE_PROPERTY_BRANCH_GUID or --branch-guid')
+    if (!config.agentIds) config.missing.push('PRIVATE_PROPERTY_DEFAULT_AGENT_ID(S) or --agent-id/--agent-ids')
+  }
 
   return config
 }
@@ -241,6 +250,7 @@ async function run() {
 
   let bundle
   let fixtureOptions = {}
+  let resolvedMapping = null
   if (config.fixture) {
     const fixture = createPrivatePropertySandboxFixture(config.fixture)
     bundle = {
@@ -255,6 +265,13 @@ async function run() {
       auth: { persistSession: false, autoRefreshToken: false },
     })
     bundle = await fetchArch9ListingForPrivatePropertyPreview({ client, listingId: config.listingId })
+    resolvedMapping = await resolvePrivatePropertyAgentMapping({
+      client,
+      listingId: config.listingId,
+      environment: config.environment,
+    })
+    config.branchGuid = config.branchGuid || resolvedMapping.agencyConfig?.branchGuid || ''
+    config.agentIds = config.agentIds || resolvedMapping.agentMapping?.agentIds || ''
   }
 
   const report = createPrivatePropertyArch9ListingPreview({
@@ -264,6 +281,12 @@ async function run() {
     },
     options: createOptions(config, fixtureOptions),
   })
+  if (resolvedMapping) {
+    report.mappingResolution = resolvedMapping
+    report.technicalBlockers = [...new Set([...(report.technicalBlockers || []), ...(resolvedMapping.ready ? [] : resolvedMapping.blockers)])]
+    report.canPreview = report.dataBlockers.length === 0 && report.technicalBlockers.length === 0
+    report.status = report.canPreview ? 'PREVIEW_READY' : 'BLOCKED'
+  }
 
   const output = writeReport(report, options.output)
   console.log(JSON.stringify({

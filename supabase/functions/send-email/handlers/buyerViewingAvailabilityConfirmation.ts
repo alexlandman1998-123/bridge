@@ -100,9 +100,9 @@ export async function handleBuyerViewingAvailabilityConfirmationEmail(
     defaults: { organisationName, supportEmail, supportPhone },
   });
   const subject = normalizeText(payload.subject) ||
-    "Thanks, we have your viewing times";
+    "Thanks, we have your details and viewing times";
   const message = normalizeText(payload.message) ||
-    "Thank you! We have your preferred viewing times. We are confirming the options with the seller and will confirm shortly.";
+    "Thank you! We have your details and preferred viewing times. We are confirming the options with the seller and will confirm shortly.";
   const followUpMessage = firstText(
     payload.followUpMessage,
     payload.follow_up_message,
@@ -112,9 +112,9 @@ export async function handleBuyerViewingAvailabilityConfirmationEmail(
     (agentName
       ? `${agentName} will come back to you as soon as the seller confirms access.`
       : "Your agent will come back to you as soon as the seller confirms access.");
-  const title = normalizeText(payload.title) || "Viewing Times Received";
+  const title = normalizeText(payload.title) || "Details and Viewing Times Received";
   const preheader = normalizeText(payload.preheader) ||
-    "Thank you - we have your preferred viewing times.";
+    "Thank you - we have your details and viewing times.";
   const contentHtml = [
     renderBridgeIntroParagraphs([
       message,

@@ -595,8 +595,8 @@ function BuyerOfferSubmission() {
     if (section.key === 'signature') {
       return {
         ...section,
-        title: 'OTP Transaction',
-        description: 'Your agent prepares or uploads the OTP after onboarding is submitted.',
+        title: 'Offer Transaction',
+        description: 'Your agent prepares or uploads the signed offer after onboarding is submitted.',
       }
     }
     if (section.key === 'finance') {
@@ -616,7 +616,7 @@ function BuyerOfferSubmission() {
   const canonicalBanner = useMemo(() => {
     if (!canonicalLifecycle) return null
     if (canonicalLifecycle.effectiveStatus === 'countered') {
-      return { tone: 'amber', text: 'This buyer link has seller feedback attached. Complete buyer onboarding so the agent can confirm the OTP transaction next.' }
+      return { tone: 'amber', text: 'This buyer link has seller feedback attached. Complete buyer onboarding so the agent can confirm the signed offer next.' }
     }
     if (canonicalLifecycle.effectiveStatus === 'changes_requested') {
       return { tone: 'amber', text: 'The agent asked for updated buyer details. Review the onboarding information and resubmit.' }
@@ -1244,7 +1244,7 @@ function BuyerOfferSubmission() {
         <TrustItem>Time Stamped</TrustItem>
         <TrustItem>Agent Notified Instantly</TrustItem>
         <TrustItem>Buyer Details Recorded</TrustItem>
-        <TrustItem>OTP Transaction Prepared Next</TrustItem>
+        <TrustItem>Signed Offer Prepared Next</TrustItem>
       </div>
     </section>
   )
@@ -1253,7 +1253,7 @@ function BuyerOfferSubmission() {
     <section className="rounded-[24px] border border-[#E5E7EB] bg-white p-5 md:p-6">
       <h2 className="text-xl font-semibold tracking-[-0.035em] text-[#111827]">What Happens Next?</h2>
       <div className="mt-5 flex gap-3 overflow-x-auto pb-1">
-        {['Buyer onboarding submitted', 'Agent checks details', 'OTP prepared or uploaded', 'Buyer signs OTP', 'Transaction continues'].map((item, index) => (
+        {['Buyer onboarding submitted', 'Agent checks details', 'Signed offer prepared or uploaded', 'Buyer signs offer', 'Transaction continues'].map((item, index) => (
           <div key={item} className="min-w-[150px] rounded-[18px] bg-[#F7F7F4] p-4">
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#0F7A5A] text-sm font-bold text-white">{index + 1}</div>
             <p className="mt-3 text-sm font-bold text-[#111827]">{item}</p>
@@ -1274,7 +1274,7 @@ function BuyerOfferSubmission() {
           ['Finance', financeLabel],
           ['Indicative Bond Amount', formatCurrency(loanAmount)],
           ...(bondFinanceSelected ? [['Bond Support', bondAssistanceLabel]] : []),
-          ['OTP Route', isDevelopmentOffer ? 'New Development' : 'Normal Sale'],
+          ['Offer Route', isDevelopmentOffer ? 'New Development' : 'Normal Sale'],
           ['Purchaser Type', isCompanyBuyer ? 'Company' : isTrustBuyer ? 'Trust' : 'Individual'],
           ['Buyer', buyerDisplayName],
           ['Contact Email', (isCompanyBuyer ? form.company_contact_email : isTrustBuyer ? form.trust_contact_email : form.email) || 'Not captured'],

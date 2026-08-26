@@ -15,6 +15,12 @@ import {
   fetchArch9ListingForPrivatePropertyPreview,
   normalizePrivatePropertyPreviewText,
 } from '../server/services/privatePropertyListingPreviewService.js'
+import {
+  resolvePrivatePropertyRuntimeCredentials,
+} from '../server/services/privatePropertyAgencyConfigService.js'
+import {
+  resolvePrivatePropertyAgentMapping,
+} from '../server/services/privatePropertyAgentMappingService.js'
 
 const appRoot = fileURLToPath(new URL('..', import.meta.url))
 
@@ -37,6 +43,7 @@ function parseArgs(argv) {
     category: '',
     listingType: '',
     mandateType: '',
+    environment: '',
     price: '',
     listingDate: '',
     photosChanged: true,
@@ -82,6 +89,8 @@ function parseArgs(argv) {
       options.listingType = normalizePrivatePropertyPreviewText(arg.slice('--listing-type='.length))
     } else if (arg.startsWith('--mandate-type=')) {
       options.mandateType = normalizePrivatePropertyPreviewText(arg.slice('--mandate-type='.length))
+    } else if (arg.startsWith('--environment=')) {
+      options.environment = normalizePrivatePropertyPreviewText(arg.slice('--environment='.length))
     } else if (arg.startsWith('--price=')) {
       options.price = normalizePrivatePropertyPreviewText(arg.slice('--price='.length))
     } else if (arg.startsWith('--listing-date=')) {
@@ -113,7 +122,7 @@ function parseEnvFile(filePath) {
 }
 
 function loadEnv() {
-  const files = ['.env', '.env.local', '.env.private-property.local']
+  const files = ['.env', '.env.local', '.env.private-property.local', '../.env.production.local']
   const fromFiles = files.reduce((merged, file) => ({ ...merged, ...parseEnvFile(path.join(appRoot, file)) }), {})
   const processOverrides = Object.fromEntries(
     Object.entries(process.env).filter(([, value]) => normalizePrivatePropertyText(value)),
@@ -128,7 +137,7 @@ function buildConfig(options) {
     username: normalizePrivatePropertyText(env.PRIVATE_PROPERTY_USERNAME || env.PRIVATE_PROPERTY_USER_NAME),
     password: normalizePrivatePropertyText(env.PRIVATE_PROPERTY_PASSWORD),
     vendor: normalizePrivatePropertyText(env.PRIVATE_PROPERTY_VENDOR),
-    environment: normalizePrivatePropertyText(env.PRIVATE_PROPERTY_ENVIRONMENT || env.PRIVATE_PROPERTY_ENV || 'sandbox'),
+    environment: normalizePrivatePropertyText(options.environment || env.PRIVATE_PROPERTY_ENVIRONMENT || env.PRIVATE_PROPERTY_ENV || 'sandbox'),
     supabaseUrl: normalizePrivatePropertyText(env.SUPABASE_URL || env.VITE_SUPABASE_URL),
     serviceRoleKey: normalizePrivatePropertyText(env.SUPABASE_SERVICE_ROLE_KEY),
     listingId: options.listingId,
@@ -158,9 +167,11 @@ function buildConfig(options) {
     if (!config.serviceRoleKey) config.missing.push('SUPABASE_SERVICE_ROLE_KEY')
     if (!config.listingId) config.missing.push('--listing-id or --fixture=<scenario>')
   }
-  if (!config.branchGuid) config.missing.push('PRIVATE_PROPERTY_BRANCH_GUID or --branch-guid')
-  if (!config.agentIds) config.missing.push('PRIVATE_PROPERTY_DEFAULT_AGENT_ID(S) or --agent-id/--agent-ids')
-  if (options.apply) {
+  if (config.fixture) {
+    if (!config.branchGuid) config.missing.push('PRIVATE_PROPERTY_BRANCH_GUID or --branch-guid')
+    if (!config.agentIds) config.missing.push('PRIVATE_PROPERTY_DEFAULT_AGENT_ID(S) or --agent-id/--agent-ids')
+  }
+  if (options.apply && config.fixture) {
     if (!config.username) config.missing.push('PRIVATE_PROPERTY_USERNAME')
     if (!config.password) config.missing.push('PRIVATE_PROPERTY_PASSWORD')
   }
@@ -205,7 +216,7 @@ function createPublishReport({ config, options, preview }) {
     environment: config.environment,
     baseUrl: config.baseUrl,
     vendor: config.vendor || null,
-    username: config.username || null,
+    usernameConfigured: Boolean(config.username),
     branchGuid: config.branchGuid || null,
     apply: Boolean(options.apply),
     safety: {
@@ -230,6 +241,7 @@ function createPublishReport({ config, options, preview }) {
       lastSubmittedAt: '',
     },
     apiResponse: null,
+    goLiveReadiness: null,
     nextStep: 'Resolve blockers before submitting to Private Property.',
   }
 }
@@ -241,7 +253,7 @@ function createBlockedReport(config, options) {
     environment: config.environment,
     baseUrl: config.baseUrl,
     vendor: config.vendor || null,
-    username: config.username || null,
+    usernameConfigured: Boolean(config.username),
     branchGuid: config.branchGuid || null,
     apply: Boolean(options.apply),
     safety: {
@@ -278,9 +290,16 @@ async function fetchBundle(config) {
   const client = createClient(config.supabaseUrl, config.serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   })
+  const bundle = await fetchArch9ListingForPrivatePropertyPreview({ client, listingId: config.listingId })
+  const resolvedMapping = await resolvePrivatePropertyAgentMapping({
+    client,
+    listingId: config.listingId,
+    environment: config.environment,
+  })
   return {
-    bundle: await fetchArch9ListingForPrivatePropertyPreview({ client, listingId: config.listingId }),
+    bundle,
     fixtureOptions: {},
+    resolvedMapping,
   }
 }
 
@@ -296,7 +315,13 @@ async function run() {
     return
   }
 
-  const { bundle, fixtureOptions } = await fetchBundle(config)
+  const { bundle, fixtureOptions, resolvedMapping = null } = await fetchBundle(config)
+  if (resolvedMapping) {
+    config.branchGuid = config.branchGuid || resolvedMapping.agencyConfig?.branchGuid || ''
+    config.agentIds = config.agentIds || resolvedMapping.agentMapping?.agentIds || ''
+    config.baseUrl = resolvedMapping.agencyConfig?.baseUrl || config.baseUrl
+    config.vendor = resolvedMapping.agencyConfig?.vendorName || config.vendor
+  }
   const preview = createPrivatePropertyArch9ListingPreview({
     ...bundle,
     agentMapping: {
@@ -304,7 +329,43 @@ async function run() {
     },
     options: createOptions(config, fixtureOptions),
   })
+  if (resolvedMapping) {
+    preview.mappingResolution = resolvedMapping
+    preview.technicalBlockers = [...new Set([...(preview.technicalBlockers || []), ...(resolvedMapping.ready ? [] : resolvedMapping.blockers)])]
+    preview.canPreview = preview.dataBlockers.length === 0 && preview.technicalBlockers.length === 0
+    preview.status = preview.canPreview ? 'PREVIEW_READY' : 'BLOCKED'
+  }
+
+  let credentialResolution = null
+  if (resolvedMapping) {
+    credentialResolution = resolvePrivatePropertyRuntimeCredentials(resolvedMapping.agencyConfig, loadEnv())
+    config.username = config.username || credentialResolution.username
+    config.password = config.password || credentialResolution.password
+    if (options.apply && credentialResolution.missingSecrets.length) {
+      preview.technicalBlockers = [...new Set([
+        ...(preview.technicalBlockers || []),
+        ...credentialResolution.missingSecrets.map((secretName) => `missing_runtime_secret:${secretName}`),
+      ])]
+      preview.canPreview = false
+      preview.status = 'BLOCKED'
+    }
+  }
   const report = createPublishReport({ config, options, preview })
+  if (resolvedMapping || credentialResolution) {
+    report.goLiveReadiness = {
+      mappingReady: resolvedMapping?.ready ?? false,
+      credentialReady: credentialResolution ? credentialResolution.missingSecrets.length === 0 : Boolean(config.username && config.password),
+      credentialDetails: credentialResolution?.redacted || {
+        usernamePresent: Boolean(config.username),
+        passwordPresent: Boolean(config.password),
+      },
+      blockers: [
+        ...(resolvedMapping?.ready === false ? resolvedMapping.blockers : []),
+        ...(credentialResolution?.missingSecrets || []).map((secretName) => `missing_runtime_secret:${secretName}`),
+      ],
+      warnings: resolvedMapping?.warnings || [],
+    }
+  }
 
   if (!preview.canPreview) {
     const output = writeReport(report, options.output)

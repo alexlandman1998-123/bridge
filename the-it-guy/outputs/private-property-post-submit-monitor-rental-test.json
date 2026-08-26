@@ -1,0 +1,122 @@
+{
+  "version": "arch9_private_property_post_submit_monitor_v1",
+  "phase": "private-property-go-live-phase5-post-submit-monitor",
+  "generatedAt": "2026-08-26T08:20:37.040Z",
+  "environment": "sandbox",
+  "listingId": "1b497444-53fe-43c0-a5f8-192cb43a7e90",
+  "propertyId": "PP-SANDBOX-RENTAL-001",
+  "branchGuid": "ca167b18-c6dc-49ad-b018-2b72b187918f",
+  "listingType": "Rental",
+  "recordSync": true,
+  "safety": {
+    "privatePropertyApiCalled": true,
+    "databaseWritten": true,
+    "rawCredentialsStored": false
+  },
+  "readiness": {
+    "status": "READY",
+    "ready": true,
+    "warnings": []
+  },
+  "status": "ACTIVATED",
+  "blockers": [],
+  "warnings": [],
+  "checks": [
+    {
+      "name": "listing_status",
+      "status": "PASS"
+    },
+    {
+      "name": "reference_number",
+      "status": "PASS"
+    },
+    {
+      "name": "active_listing",
+      "status": "PASS"
+    },
+    {
+      "name": "event_feed",
+      "status": "PASS"
+    }
+  ],
+  "eventFeed": {
+    "continuationKey": "639233292062344002PP-SANDBOX-RENTAL-001",
+    "eventCount": 2,
+    "matchCount": 1,
+    "latestEvent": {
+      "listingFeedEventType": "Activated",
+      "eventType": "",
+      "propertyId": "PP-SANDBOX-RENTAL-001",
+      "privatePropertyRef": "",
+      "eventDescription": "RR2755972",
+      "eventStatus": "Active",
+      "eventDate": "2026-08-26T08:20:06.2344002Z"
+    },
+    "events": [
+      {
+        "listingFeedEventType": "Activated",
+        "eventType": "",
+        "propertyId": "PP-SANDBOX-RENTAL-001",
+        "privatePropertyRef": "",
+        "eventDescription": "RR2755972",
+        "eventStatus": "Active",
+        "eventDate": "2026-08-26T08:20:06.2344002Z"
+      }
+    ],
+    "responseSummary": {
+      "method": "GetListingEventFeedByBranch",
+      "responseChars": 1325,
+      "resultText": "<ContinuationKey>639233292062344002PP-SANDBOX-RENTAL-001</ContinuationKey><OfficeFeedRef>ca167b18-c6dc-49ad-b018-2b72b187918f</OfficeFeedRef><FeedData><LisitngEventFeedData><TimeStamp>2026-08-24T07:56:09.6449114Z</TimeStamp><ListingFeedRef>",
+      "continuationKey": "639233292062344002PP-SANDBOX-RENTAL-001",
+      "listingEventCount": 2
+    }
+  },
+  "statusProbe": {
+    "privatePropertyStatus": "ToLet",
+    "privatePropertyStatusVerbose": "ToLet",
+    "privatePropertyRef": "rr2755972",
+    "activeListing": {
+      "listingType": "Rental Listing",
+      "privatePropertyRef": "rr2755972",
+      "uniqueId": "PP-SANDBOX-RENTAL-001"
+    },
+    "responseSummaries": {
+      "status": {
+        "method": "GetListingStatus",
+        "responseChars": 381,
+        "resultText": "ToLet",
+        "continuationKey": "",
+        "listingEventCount": 0
+      },
+      "verbose": {
+        "method": "GetListingStatusVerbose",
+        "responseChars": 409,
+        "resultText": "ToLet",
+        "continuationKey": "",
+        "listingEventCount": 0
+      },
+      "reference": {
+        "method": "GetReferenceNumberByListing",
+        "responseChars": 429,
+        "resultText": "rr2755972",
+        "continuationKey": "",
+        "listingEventCount": 0
+      },
+      "active": {
+        "method": "GetActiveListings",
+        "responseChars": 705,
+        "resultText": "<ActiveListing><ListingType>Rental Listing</ListingType><PrivatePropertyRef>rr2755972</PrivatePropertyRef><UniqueId>PP-SANDBOX-RENTAL-001</UniqueId></ActiveListing><ActiveListing><ListingType>Sale Listing</ListingType><PrivatePropertyRef>T2",
+        "continuationKey": "",
+        "listingEventCount": 0
+      }
+    }
+  },
+  "syncResult": {
+    "arch9Status": "published",
+    "syncId": "d7cc1c90-b888-4be3-b12e-c132b0e7dc68",
+    "listingId": "1b497444-53fe-43c0-a5f8-192cb43a7e90",
+    "externalLinkWarning": null
+  },
+  "nextStep": "Private Property shows the listing as active. Keep polling event feed until image events settle, then close go-live evidence.",
+  "externalStatus": "active"
+}

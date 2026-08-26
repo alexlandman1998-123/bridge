@@ -2,6 +2,11 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { chromium } from 'playwright'
 import { createClient } from '@supabase/supabase-js'
+import {
+  ensureHomeSeekersAgencyDemoWorkspace,
+  HOME_SEEKERS_DEMO_EMAIL,
+  HOME_SEEKERS_DEMO_PASSWORD,
+} from './agencyDemoBootstrap.mjs'
 
 const DEFAULT_APP_URL = 'https://app.arch9.co.za'
 const AUTH_STATE_PATH = path.join('playwright', '.auth', 'staging-agency.json')
@@ -44,6 +49,26 @@ function normalizeUrl(value) {
 
 function projectRefFromUrl(url = '') {
   return String(url).match(/^https:\/\/([^.]+)\.supabase\.co/i)?.[1] || ''
+}
+
+async function fetchDefinitions({ supabaseUrl, serviceRoleKey }) {
+  const response = await fetch(`${supabaseUrl.replace(/\/$/, '')}/rest/v1/`, {
+    headers: {
+      apikey: serviceRoleKey,
+      Authorization: `Bearer ${serviceRoleKey}`,
+      Accept: 'application/openapi+json',
+    },
+  })
+  if (!response.ok) {
+    throw new Error(`Could not fetch Supabase schema: ${response.status} ${await response.text()}`)
+  }
+  const spec = await response.json()
+  return Object.fromEntries(
+    Object.entries(spec.definitions || {}).map(([table, schema]) => [
+      table,
+      new Set(Object.keys(schema.properties || {})),
+    ]),
+  )
 }
 
 function buildAuthTokenStorageName(projectRef) {
@@ -114,24 +139,13 @@ async function prepareAgencyPassword(config) {
     },
   })
 
-  const profileResult = await adminClient
-    .from('profiles')
-    .select('id, email, full_name')
-    .eq('email', config.email)
-    .maybeSingle()
-  if (profileResult.error) throw new Error(`Could not resolve agency profile: ${profileResult.error.message}`)
-  if (!profileResult.data?.id) {
-    throw new Error(`No profile found for ${config.email}.`)
-  }
-
-  const { error: updateError } = await adminClient.auth.admin.updateUserById(profileResult.data.id, {
+  const context = await ensureHomeSeekersAgencyDemoWorkspace(adminClient, {
+    definitions: config.definitions,
+    email: config.email,
     password: config.password,
   })
-  if (updateError) {
-    throw new Error(`Could not update agency demo password: ${updateError.message}`)
-  }
 
-  return profileResult.data
+  return context.profile
 }
 
 async function main() {
@@ -140,8 +154,8 @@ async function main() {
   const serviceRoleKey = normalizeText(env.SUPABASE_SERVICE_ROLE_KEY)
   const projectRef = projectRefFromUrl(supabaseUrl)
   const appUrl = normalizeUrl(env.AGENCY_RUNTIME_AUTH_APP_URL || env.STAGING_APP_URL || DEFAULT_APP_URL)
-  const email = normalizeEmail(env.AGENCY_RUNTIME_AGENT_EMAIL || '')
-  const password = normalizeText(env.AGENCY_RUNTIME_AGENT_PASSWORD || '')
+  const email = normalizeEmail(env.AGENCY_RUNTIME_AGENT_EMAIL || HOME_SEEKERS_DEMO_EMAIL)
+  const password = normalizeText(env.AGENCY_RUNTIME_AGENT_PASSWORD || HOME_SEEKERS_DEMO_PASSWORD)
 
   if (!supabaseUrl || !serviceRoleKey || !projectRef) {
     throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required.')
@@ -150,9 +164,12 @@ async function main() {
     throw new Error('AGENCY_RUNTIME_AGENT_EMAIL and AGENCY_RUNTIME_AGENT_PASSWORD are required.')
   }
 
+  const definitions = await fetchDefinitions({ supabaseUrl, serviceRoleKey })
+
   const profile = await prepareAgencyPassword({
     supabaseUrl,
     serviceRoleKey,
+    definitions,
     email,
     password,
   })

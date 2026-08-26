@@ -23,7 +23,7 @@ try {
   assert.deepEqual(workflow.BUYER_WORKFLOW_STAGES, [
     'Captured',
     'Contacted',
-    'Qualification',
+    'Qualified',
     'Viewing',
     'Transaction Setup',
     'Offer',
@@ -38,7 +38,8 @@ try {
 
   assert.equal(workflow.normalizeBuyerWorkflowStage('New Lead'), 'Captured')
   assert.equal(workflow.normalizeBuyerWorkflowStage('Contacted'), 'Contacted')
-  assert.equal(workflow.normalizeBuyerWorkflowStage('Qualified'), 'Qualification')
+  assert.equal(workflow.normalizeBuyerWorkflowStage('Qualified'), 'Qualified')
+  assert.equal(workflow.normalizeBuyerWorkflowStage('Qualification'), 'Qualified')
   assert.equal(workflow.normalizeBuyerWorkflowStage('Viewing Completed'), 'Viewing')
   assert.equal(workflow.normalizeBuyerWorkflowStage('Offer + Onboarding Link Sent'), 'Transaction Setup')
   assert.equal(workflow.normalizeBuyerWorkflowStage('Offer Submitted'), 'Offer')
@@ -85,12 +86,12 @@ try {
     lead: { ...lead, stage: 'Contacted' },
     leadId: lead.leadId,
     fromStage: 'Contacted',
-    toStage: 'Qualification',
+    toStage: 'Qualified',
     actor,
   })
   assert.equal(qualification.allowed, true)
   assert.equal(qualification.fromStageKey, definition.BUYER_PROCESS_STAGE_KEYS.contacted)
-  assert.equal(qualification.toStageKey, definition.BUYER_PROCESS_STAGE_KEYS.qualification)
+  assert.equal(qualification.toStageKey, definition.BUYER_PROCESS_STAGE_KEYS.qualified)
 
   const transactionSetup = await workflow.validateBuyerStageTransition({
     lead: { ...lead, stage: 'Viewing' },
@@ -120,7 +121,7 @@ try {
     lead,
     leadId: lead.leadId,
     fromStage: 'Contacted',
-    toStage: 'Qualification',
+    toStage: 'Qualified',
     actor: { role: 'bond_originator' },
   })
   assert.equal(blockedRole.allowed, false)

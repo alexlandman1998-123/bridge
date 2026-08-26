@@ -240,7 +240,7 @@ function resolveReportingFlags(label = '', { category = 'buyer' } = {}) {
   if (buyerStageKey) {
     const contactedStages = new Set([
       BUYER_PROCESS_STAGE_KEYS.contacted,
-      BUYER_PROCESS_STAGE_KEYS.qualification,
+      BUYER_PROCESS_STAGE_KEYS.qualified,
       BUYER_PROCESS_STAGE_KEYS.viewing,
       BUYER_PROCESS_STAGE_KEYS.buyerOnboardingSent,
       BUYER_PROCESS_STAGE_KEYS.offerReceived,
@@ -250,7 +250,7 @@ function resolveReportingFlags(label = '', { category = 'buyer' } = {}) {
       BUYER_PROCESS_STAGE_KEYS.closedLost,
     ])
     const qualifiedStages = new Set([
-      BUYER_PROCESS_STAGE_KEYS.qualification,
+      BUYER_PROCESS_STAGE_KEYS.qualified,
       BUYER_PROCESS_STAGE_KEYS.viewing,
       BUYER_PROCESS_STAGE_KEYS.buyerOnboardingSent,
       BUYER_PROCESS_STAGE_KEYS.offerReceived,

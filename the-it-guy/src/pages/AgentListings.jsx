@@ -4,6 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
 import SectionHeader from '../components/ui/SectionHeader'
+import FinalListingModuleOverview from '../components/listings/FinalListingModuleOverview'
 import AddressAutocomplete from '../components/location/AddressAutocomplete'
 import { getTransactionScopeForRow } from '../core/transactions/transactionScope'
 import {
@@ -75,6 +76,7 @@ import {
   PROPERTY_CATEGORIES,
   PROPERTY_STRUCTURE_TYPES,
 } from '../lib/propertyTaxonomy'
+import { buildFinalListingModuleOverview } from '../services/listings/finalListingModuleModel'
 
 const LISTINGS_VIEW_STORAGE_KEY = 'itg:agent-listings:view-mode:v1'
 const CREATE_LISTING_DRAFT_STORAGE_KEY = 'itg:agent-listings:create-draft:v1'
@@ -5808,6 +5810,15 @@ function AgentListings({ initialTab = null } = {}) {
     }),
     [developmentCards.length, privateListingCards],
   )
+  const finalListingModuleOverview = useMemo(
+    () => buildFinalListingModuleOverview({
+      activeType: 'sales',
+      salesCount: listingTabCounts.residential,
+      rentalCount: null,
+      developmentCount: listingTabCounts.developments,
+    }),
+    [listingTabCounts.developments, listingTabCounts.residential],
+  )
 
   const selectedDeveloperLeadDevelopment = useMemo(
     () => developmentCards.find((card) => card.id === developerLeadForm.primaryDevelopmentId) || null,
@@ -6629,6 +6640,13 @@ function AgentListings({ initialTab = null } = {}) {
 
   return (
     <section className="space-y-5">
+      {!isDeveloperWorkspace ? (
+        <FinalListingModuleOverview
+          overview={finalListingModuleOverview}
+          onNavigate={(path) => path && navigate(path)}
+        />
+      ) : null}
+
       <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
         {pilotCreationFreeze.paused ? (
           <div className="mb-4 rounded-[14px] border border-[#f2cf8d] bg-[#fff8e8] px-4 py-3 text-sm text-[#805d12]" role="status">

@@ -1,0 +1,201 @@
+{
+  "version": "arch9_private_property_controlled_publish_rehearsal_v1",
+  "phase": "private-property-go-live-phase4-controlled-publish-rehearsal",
+  "generatedAt": "2026-08-26T08:18:41.791Z",
+  "environment": "sandbox",
+  "listingId": "2520ee7a-e48b-4197-a567-19951ed92e75",
+  "apply": true,
+  "recordSync": true,
+  "status": "BLOCKED",
+  "safety": {
+    "readinessChecked": true,
+    "privatePropertyApiCalled": true,
+    "databaseWritten": false,
+    "rawCredentialsStored": false,
+    "listingPublished": false
+  },
+  "readiness": {
+    "status": "READY",
+    "ready": true,
+    "blockers": [],
+    "warnings": [],
+    "checks": [
+      {
+        "name": "agency_config",
+        "status": "PASS",
+        "blockers": [],
+        "warnings": [],
+        "details": {
+          "source": "private_property_agency_configs.branch",
+          "config": {
+            "id": "90b83d5e-4c4a-4cf3-ab3c-5f731a602506",
+            "organisationId": "efa6c6ff-6941-4b59-8bcb-e4d9ba9e585a",
+            "branchId": "531f1439-62b3-4c76-a908-e6ec906d7fdf",
+            "environment": "sandbox",
+            "vendorName": "Arch9",
+            "branchGuid": "ca167b18-c6dc-49ad-b018-2b72b187918f",
+            "usernameSecretName": "PRIVATE_PROPERTY_USERNAME",
+            "passwordSecretName": "PRIVATE_PROPERTY_PASSWORD",
+            "baseUrl": "https://services.sandbox.pp.co.za/AgentImport/AgentImport.asmx",
+            "enabled": true,
+            "status": "sandbox_ready",
+            "goLiveApprovedAt": "",
+            "lastAuthCheckAt": "",
+            "lastPublishCheckAt": "",
+            "lastEventFeedCheckAt": "",
+            "metadata": {}
+          }
+        }
+      },
+      {
+        "name": "agent_mapping",
+        "status": "PASS",
+        "blockers": [],
+        "warnings": [],
+        "details": {
+          "source": "arch9_user",
+          "mapping": {
+            "id": "e444408b-736b-4812-b5ab-6a26b38750c9",
+            "agencyConfigId": "90b83d5e-4c4a-4cf3-ab3c-5f731a602506",
+            "organisationId": "efa6c6ff-6941-4b59-8bcb-e4d9ba9e585a",
+            "branchId": "531f1439-62b3-4c76-a908-e6ec906d7fdf",
+            "organisationUserId": null,
+            "arch9UserId": "763b2e6b-909d-42ef-9303-ff2dd64e6ade",
+            "environment": "sandbox",
+            "privatePropertyAgentId": "ARCH9-SANDBOX-USER-1",
+            "sourceReference": "ARCH9-SANDBOX-USER-1",
+            "emailSnapshot": "alex+privatepropertytest@arch9.co.za",
+            "firstNameSnapshot": "Alexander",
+            "lastNameSnapshot": "Landman",
+            "mobileSnapshot": "0676125009",
+            "imageUrlSnapshot": "",
+            "isDefaultForBranch": false,
+            "isDefaultForOrganisation": false,
+            "matchType": "manual",
+            "confidence": 1,
+            "status": "active",
+            "lastSyncedAt": "",
+            "lastVerifiedAt": "",
+            "metadata": {}
+          }
+        }
+      },
+      {
+        "name": "runtime_credentials",
+        "status": "PASS",
+        "blockers": [],
+        "warnings": [],
+        "details": {
+          "usernamePresent": true,
+          "passwordPresent": true,
+          "usernameSecretName": "PRIVATE_PROPERTY_USERNAME",
+          "passwordSecretName": "PRIVATE_PROPERTY_PASSWORD"
+        }
+      },
+      {
+        "name": "listing_payload",
+        "status": "PASS",
+        "blockers": [],
+        "warnings": [],
+        "details": {
+          "canPreview": true,
+          "summary": {
+            "propertyId": "PP-SANDBOX-SALE-001",
+            "branchId": "ca167b18-c6dc-49ad-b018-2b72b187918f",
+            "agentIds": [
+              "ARCH9-SANDBOX-USER-1"
+            ],
+            "listingType": "Sale",
+            "category": "Residential",
+            "mandateType": "OpenMandate",
+            "propertyStatus": "ForSale",
+            "price": 2500000,
+            "listingDate": "2026-08-26",
+            "suburbId": 12345,
+            "imageUrlCount": 3,
+            "photoUrlPayloadCount": 3,
+            "attributeCount": 7,
+            "soleMandateExclusiveDays": null,
+            "descriptionPresent": true
+          }
+        }
+      },
+      {
+        "name": "location_resolution",
+        "status": "PASS",
+        "blockers": [],
+        "warnings": [],
+        "details": {
+          "address": {
+            "streetName": "Sandbox Sale Street",
+            "streetNumber": "12",
+            "complexName": "",
+            "unitNumber": "",
+            "suburb": "Garsfontein",
+            "suburbId": 12345,
+            "town": "Pretoria",
+            "province": "Gauteng",
+            "hideStreetName": true,
+            "hideStreetNo": true,
+            "hideComplexName": true,
+            "hideUnitNo": true
+          }
+        }
+      },
+      {
+        "name": "production_approval",
+        "status": "PASS",
+        "blockers": [],
+        "warnings": [],
+        "details": {
+          "environment": "sandbox",
+          "status": "sandbox_ready",
+          "goLiveApprovedAt": ""
+        }
+      }
+    ]
+  },
+  "submitCandidate": {
+    "propertyId": "PP-SANDBOX-SALE-001",
+    "branchGuid": "ca167b18-c6dc-49ad-b018-2b72b187918f",
+    "agentIds": [
+      "ARCH9-SANDBOX-USER-1"
+    ],
+    "listingType": "Sale",
+    "category": "Residential",
+    "mandateType": "OpenMandate",
+    "propertyStatus": "ForSale",
+    "suburbId": 12345,
+    "payloadDigest": "f41cb789477437a6a6d2c710787e68924209927ed5a8b8d326d67ce168725fa6",
+    "listingXmlDigest": "39e9359671f9959c9812d09edabf6ca8a82cd2ca405d3f8d41e232f6dda7c038"
+  },
+  "blockers": [
+    "private_property_update_listing_failed"
+  ],
+  "warnings": [],
+  "apiResponse": {
+    "error": {
+      "name": "PrivatePropertySoapError",
+      "message": "<soap:Text xml:lang=\"en\">System.Web.Services.Protocols.SoapException: Server was unable to process request. ---> PPLSystems.Web.WebServices.AgentImport.ASAPIException: PP112 - The provided SuburbId is invalid: 12345\r\n   at PPLSystems.Web.WebServices.AgentImport.AgentImport.MapProperty(Property property, Listing listingImport, Branch branch, String reference, String uniqueId)\r\n   at PPLSystems.Web.WebServices.AgentImport.AgentImport.MandateSave(Branch branch, Listing listingImport, Int32 listingId, Int32 propertyId, Property prop)\r\n   at PPLSystems.Web.WebServices.AgentImport.AgentImport.ImportSalesListing(Int32 listingId, Branch branch, Listing listingImport)\r\n   at PPLSystems.Web.WebServices.AgentImport.AgentImport.UpdateListing(Listing ListingImport, SecurityToken Token)\r\n   --- End of inner exception stack trace ---</soap:Text>",
+      "status": 500,
+      "statusText": "Internal Server Error",
+      "faultCode": "<soap:Value>soap:Receiver</soap:Value>",
+      "faultString": "<soap:Text xml:lang=\"en\">System.Web.Services.Protocols.SoapException: Server was unable to process request. ---> PPLSystems.Web.WebServices.AgentImport.ASAPIException: PP112 - The provided SuburbId is invalid: 12345\r\n   at PPLSystems.Web.WebServices.AgentImport.AgentImport.MapProperty(Property property, Listing listingImport, Branch branch, String reference, String uniqueId)\r\n   at PPLSystems.Web.WebServices.AgentImport.AgentImport.MandateSave(Branch branch, Listing listingImport, Int32 listingId, Int32 propertyId, Property prop)\r\n   at PPLSystems.Web.WebServices.AgentImport.AgentImport.ImportSalesListing(Int32 listingId, Branch branch, Listing listingImport)\r\n   at PPLSystems.Web.WebServices.AgentImport.AgentImport.UpdateListing(Listing ListingImport, SecurityToken Token)\r\n   --- End of inner exception stack trace ---</soap:Text>",
+      "responseSummary": {
+        "method": "UpdateListing",
+        "responseChars": 1219,
+        "resultText": "",
+        "continuationKey": "",
+        "listingEventCount": 0
+      }
+    }
+  },
+  "syncResult": null,
+  "nextStep": "Fix the Private Property submit error, then re-run the controlled publish rehearsal.",
+  "credentialCheck": {
+    "usernamePresent": true,
+    "passwordPresent": true,
+    "usernameSecretName": "PRIVATE_PROPERTY_USERNAME",
+    "passwordSecretName": "PRIVATE_PROPERTY_PASSWORD"
+  }
+}

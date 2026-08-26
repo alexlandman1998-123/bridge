@@ -1,0 +1,276 @@
+{
+  "version": "arch9_private_property_go_live_readiness_service_v1",
+  "phase": "private-property-go-live-phase3-readiness",
+  "generatedAt": "2026-08-26T08:18:23.146Z",
+  "environment": "sandbox",
+  "listingId": "2520ee7a-e48b-4197-a567-19951ed92e75",
+  "safety": {
+    "privatePropertyApiCalled": false,
+    "databaseWritten": false,
+    "rawCredentialsStored": false,
+    "listingPublished": false
+  },
+  "status": "READY",
+  "ready": true,
+  "blockers": [],
+  "warnings": [],
+  "checks": [
+    {
+      "name": "agency_config",
+      "status": "PASS",
+      "blockers": [],
+      "warnings": [],
+      "details": {
+        "source": "private_property_agency_configs.branch",
+        "config": {
+          "id": "90b83d5e-4c4a-4cf3-ab3c-5f731a602506",
+          "organisationId": "efa6c6ff-6941-4b59-8bcb-e4d9ba9e585a",
+          "branchId": "531f1439-62b3-4c76-a908-e6ec906d7fdf",
+          "environment": "sandbox",
+          "vendorName": "Arch9",
+          "branchGuid": "ca167b18-c6dc-49ad-b018-2b72b187918f",
+          "usernameSecretName": "PRIVATE_PROPERTY_USERNAME",
+          "passwordSecretName": "PRIVATE_PROPERTY_PASSWORD",
+          "baseUrl": "https://services.sandbox.pp.co.za/AgentImport/AgentImport.asmx",
+          "enabled": true,
+          "status": "sandbox_ready",
+          "goLiveApprovedAt": "",
+          "lastAuthCheckAt": "",
+          "lastPublishCheckAt": "",
+          "lastEventFeedCheckAt": "",
+          "metadata": {}
+        }
+      }
+    },
+    {
+      "name": "agent_mapping",
+      "status": "PASS",
+      "blockers": [],
+      "warnings": [],
+      "details": {
+        "source": "arch9_user",
+        "mapping": {
+          "id": "e444408b-736b-4812-b5ab-6a26b38750c9",
+          "agencyConfigId": "90b83d5e-4c4a-4cf3-ab3c-5f731a602506",
+          "organisationId": "efa6c6ff-6941-4b59-8bcb-e4d9ba9e585a",
+          "branchId": "531f1439-62b3-4c76-a908-e6ec906d7fdf",
+          "organisationUserId": null,
+          "arch9UserId": "763b2e6b-909d-42ef-9303-ff2dd64e6ade",
+          "environment": "sandbox",
+          "privatePropertyAgentId": "ARCH9-SANDBOX-USER-1",
+          "sourceReference": "ARCH9-SANDBOX-USER-1",
+          "emailSnapshot": "alex+privatepropertytest@arch9.co.za",
+          "firstNameSnapshot": "Alexander",
+          "lastNameSnapshot": "Landman",
+          "mobileSnapshot": "0676125009",
+          "imageUrlSnapshot": "",
+          "isDefaultForBranch": false,
+          "isDefaultForOrganisation": false,
+          "matchType": "manual",
+          "confidence": 1,
+          "status": "active",
+          "lastSyncedAt": "",
+          "lastVerifiedAt": "",
+          "metadata": {}
+        }
+      }
+    },
+    {
+      "name": "runtime_credentials",
+      "status": "PASS",
+      "blockers": [],
+      "warnings": [],
+      "details": {
+        "usernamePresent": true,
+        "passwordPresent": true,
+        "usernameSecretName": "PRIVATE_PROPERTY_USERNAME",
+        "passwordSecretName": "PRIVATE_PROPERTY_PASSWORD"
+      }
+    },
+    {
+      "name": "listing_payload",
+      "status": "PASS",
+      "blockers": [],
+      "warnings": [],
+      "details": {
+        "canPreview": true,
+        "summary": {
+          "propertyId": "PP-SANDBOX-SALE-001",
+          "branchId": "ca167b18-c6dc-49ad-b018-2b72b187918f",
+          "agentIds": [
+            "ARCH9-SANDBOX-USER-1"
+          ],
+          "listingType": "Sale",
+          "category": "Residential",
+          "mandateType": "OpenMandate",
+          "propertyStatus": "ForSale",
+          "price": 2500000,
+          "listingDate": "2026-08-26",
+          "suburbId": 12345,
+          "imageUrlCount": 3,
+          "photoUrlPayloadCount": 3,
+          "attributeCount": 7,
+          "soleMandateExclusiveDays": null,
+          "descriptionPresent": true
+        }
+      }
+    },
+    {
+      "name": "location_resolution",
+      "status": "PASS",
+      "blockers": [],
+      "warnings": [],
+      "details": {
+        "address": {
+          "streetName": "Sandbox Sale Street",
+          "streetNumber": "12",
+          "complexName": "",
+          "unitNumber": "",
+          "suburb": "Garsfontein",
+          "suburbId": 12345,
+          "town": "Pretoria",
+          "province": "Gauteng",
+          "hideStreetName": true,
+          "hideStreetNo": true,
+          "hideComplexName": true,
+          "hideUnitNo": true
+        }
+      }
+    },
+    {
+      "name": "production_approval",
+      "status": "PASS",
+      "blockers": [],
+      "warnings": [],
+      "details": {
+        "environment": "sandbox",
+        "status": "sandbox_ready",
+        "goLiveApprovedAt": ""
+      }
+    }
+  ],
+  "agencyConfig": {
+    "id": "90b83d5e-4c4a-4cf3-ab3c-5f731a602506",
+    "organisationId": "efa6c6ff-6941-4b59-8bcb-e4d9ba9e585a",
+    "branchId": "531f1439-62b3-4c76-a908-e6ec906d7fdf",
+    "environment": "sandbox",
+    "vendorName": "Arch9",
+    "branchGuid": "ca167b18-c6dc-49ad-b018-2b72b187918f",
+    "usernameSecretName": "PRIVATE_PROPERTY_USERNAME",
+    "passwordSecretName": "PRIVATE_PROPERTY_PASSWORD",
+    "baseUrl": "https://services.sandbox.pp.co.za/AgentImport/AgentImport.asmx",
+    "enabled": true,
+    "status": "sandbox_ready",
+    "goLiveApprovedAt": "",
+    "lastAuthCheckAt": "",
+    "lastPublishCheckAt": "",
+    "lastEventFeedCheckAt": "",
+    "metadata": {}
+  },
+  "agentMapping": {
+    "agentIds": "ARCH9-SANDBOX-USER-1",
+    "privatePropertyAgentId": "ARCH9-SANDBOX-USER-1"
+  },
+  "preview": {
+    "status": "PREVIEW_READY",
+    "canPreview": true,
+    "canSubmit": false,
+    "dataBlockers": [],
+    "technicalBlockers": [],
+    "summary": {
+      "propertyId": "PP-SANDBOX-SALE-001",
+      "branchId": "ca167b18-c6dc-49ad-b018-2b72b187918f",
+      "agentIds": [
+        "ARCH9-SANDBOX-USER-1"
+      ],
+      "listingType": "Sale",
+      "category": "Residential",
+      "mandateType": "OpenMandate",
+      "propertyStatus": "ForSale",
+      "price": 2500000,
+      "listingDate": "2026-08-26",
+      "suburbId": 12345,
+      "imageUrlCount": 3,
+      "photoUrlPayloadCount": 3,
+      "attributeCount": 7,
+      "soleMandateExclusiveDays": null,
+      "descriptionPresent": true
+    },
+    "payloadPreview": {
+      "propertyId": "PP-SANDBOX-SALE-001",
+      "branchId": "ca167b18-c6dc-49ad-b018-2b72b187918f",
+      "categories": [
+        "Residential"
+      ],
+      "category": "Residential",
+      "mandateType": "OpenMandate",
+      "listingType": "Sale",
+      "propertyStatus": "ForSale",
+      "address": {
+        "streetName": "Sandbox Sale Street",
+        "streetNumber": "12",
+        "complexName": "",
+        "unitNumber": "",
+        "suburb": "Garsfontein",
+        "suburbId": 12345,
+        "town": "Pretoria",
+        "province": "Gauteng",
+        "hideStreetName": true,
+        "hideStreetNo": true,
+        "hideComplexName": true,
+        "hideUnitNo": true
+      },
+      "headline": "Private Property Sandbox Sale Listing",
+      "description": "Controlled Arch9 sale test listing for Private Property sandbox validation.",
+      "price": 2500000,
+      "deposit": 0,
+      "listingDate": "2026-08-26",
+      "expiryDate": "2027-02-22",
+      "availableFrom": "2026-08-26",
+      "agentIds": [
+        "ARCH9-SANDBOX-USER-1"
+      ],
+      "photoUrls": [
+        "https://images.unsplash.com/photo-1560185127-fb5d0f6b4efb?auto=format&fit=crop&w=1600&q=80&arch9_pp_sale_1",
+        "https://images.unsplash.com/photo-1560185127-fb5d0f6b4efb?auto=format&fit=crop&w=1600&q=80&arch9_pp_sale_2",
+        "https://images.unsplash.com/photo-1560185127-fb5d0f6b4efb?auto=format&fit=crop&w=1600&q=80&arch9_pp_sale_3"
+      ],
+      "ownerId": "",
+      "xCoordinate": null,
+      "yCoordinate": null,
+      "attributes": [
+        {
+          "attributeType": "Bedrooms",
+          "value": "3"
+        },
+        {
+          "attributeType": "Bathrooms",
+          "value": "2"
+        },
+        {
+          "attributeType": "HomeType",
+          "value": "House"
+        },
+        {
+          "attributeType": "FloorArea",
+          "value": "180"
+        },
+        {
+          "attributeType": "LandArea",
+          "value": "500"
+        },
+        {
+          "attributeType": "Garages",
+          "value": "1"
+        },
+        {
+          "attributeType": "Rates",
+          "value": "1200"
+        }
+      ],
+      "showdayEvents": [],
+      "soleMandateExclusiveDays": null
+    }
+  },
+  "nextStep": "Run the controlled Private Property publish command for this exact listing/environment."
+}

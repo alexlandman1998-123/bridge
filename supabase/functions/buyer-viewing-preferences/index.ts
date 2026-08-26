@@ -1,5 +1,12 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "supabase";
+import {
+  BUYER_INTAKE_QUALIFICATION_FIELDS,
+  BUYER_INTAKE_MINIMUM_ANSWER_COUNT,
+  buildBuyerIntakeNotes,
+  buildBuyerQualificationIntake,
+  buildBuyerViewingIntake,
+} from "../../../the-it-guy/src/services/buyerIntakeModel.js";
 
 type JsonRecord = Record<string, unknown>;
 type SupabaseQueryClient = { from: (table: string) => any };
@@ -704,6 +711,36 @@ function replaceNoteBlock(notes = "", plan: JsonRecord) {
   ].filter(Boolean).join("\n\n");
 }
 
+function buildBuyerQualificationNoteBlock(answers: JsonRecord = {}) {
+  return [
+    "[Buyer qualification]",
+    ...BUYER_INTAKE_QUALIFICATION_FIELDS.map(({ key, label }) =>
+      `${label}: ${normalizeText(answers[key], 4000)}`
+    ),
+    "[/Buyer qualification]",
+  ].join("\n");
+}
+
+function replaceBuyerQualificationNoteBlock(
+  notes = "",
+  answers: JsonRecord = {},
+) {
+  const block = buildBuyerQualificationNoteBlock(answers);
+  const raw = String(notes || "").trim();
+  const startMarker = "[Buyer qualification]";
+  const endMarker = "[/Buyer qualification]";
+  const startIndex = raw.indexOf(startMarker);
+  const endIndex = raw.indexOf(endMarker, startIndex);
+  if (startIndex === -1 || endIndex === -1 || endIndex <= startIndex) {
+    return [raw, block].filter(Boolean).join("\n\n");
+  }
+  return [
+    raw.slice(0, startIndex).trim(),
+    block,
+    raw.slice(endIndex + endMarker.length).trim(),
+  ].filter(Boolean).join("\n\n");
+}
+
 async function getAuthenticatedUser(
   req: Request,
   supabaseUrl: string,
@@ -965,6 +1002,27 @@ Deno.serve(async (req) => {
       ? link.selected_property_ids
       : []).map((item) => normalizeText(item, 120)).filter(Boolean),
   );
+  const incomingBuyerIntake = asRecord(
+    body.buyerIntake || body.buyer_intake,
+  );
+  const qualificationAnswers = asRecord(
+    body.qualificationAnswers || body.qualification_answers,
+  );
+  const buyerIntake = buildBuyerQualificationIntake(qualificationAnswers, {
+    existingIntake: incomingBuyerIntake,
+    capturedAt: normalizeText(
+      incomingBuyerIntake.capturedAt || incomingBuyerIntake.captured_at || "",
+      80,
+    ) || normalizeText(link.last_sent_at || link.created_at, 80),
+    updatedAt: normalizeText(body.updatedAt || body.updated_at, 80) ||
+      normalizeText(link.updated_at || link.last_sent_at || link.created_at, 80),
+    qualifiedAt: normalizeText(
+      asRecord(incomingBuyerIntake.qualification).qualifiedAt ||
+        asRecord(incomingBuyerIntake.qualification).qualified_at ||
+        "",
+      80,
+    ),
+  });
   const propertyResponses = normalizePropertyResponses(
     body.propertyResponses || body.property_responses,
     allowedIds,
@@ -1020,7 +1078,7 @@ Deno.serve(async (req) => {
   }
 
   const now = new Date().toISOString();
-  const response = {
+  const response: JsonRecord = {
     propertyResponses,
     confirmedPropertyIds,
     availabilityWindows,
@@ -1029,6 +1087,7 @@ Deno.serve(async (req) => {
     attendeeNotes,
     responseNotes,
     submittedAt: now,
+    buyerIntake,
   };
   const update = await supabase
     .from("buyer_viewing_preference_links")
@@ -1068,17 +1127,46 @@ Deno.serve(async (req) => {
     responseNotes,
     attendeeNotes ? `Attendees: ${attendeeNotes}` : "",
   ].filter(Boolean).join("\n");
+  let qualificationComplete = false;
+  let qualificationAnsweredCount = 0;
+  const qualificationMinimumCount = BUYER_INTAKE_MINIMUM_ANSWER_COUNT;
   if (leadId && organisationId) {
     const leadQuery = await supabase
       .from("leads")
       .select("notes")
       .eq("organisation_id", organisationId)
-      .eq("lead_id", leadId)
-      .maybeSingle();
+    .eq("lead_id", leadId)
+    .maybeSingle();
     if (!leadQuery.error) {
       const existingNotes = normalizeText(leadQuery.data?.notes, 20000);
       const existingPlan = parseNoteBlock(existingNotes);
-      const nextNotes = replaceNoteBlock(existingNotes, {
+      const nextIntake = buildBuyerViewingIntake(
+        {
+          propertyResponses,
+          confirmedPropertyIds,
+          selectedPropertyIds,
+          availabilityWindows,
+          availabilitySlots,
+          timezone,
+          attendeeNotes,
+          responseNotes: combinedNotes,
+          submittedAt: now,
+        },
+        {
+          notes: existingNotes,
+          existingIntake: buyerIntake,
+          source: "buyer_viewing_preferences",
+          requestedAt: normalizeText(existingPlan.requestedAt) ||
+            normalizeText(link.last_sent_at) || normalizeText(link.created_at),
+          respondedAt: now,
+          updatedAt: now,
+        },
+      );
+      const qualificationNotes = replaceBuyerQualificationNoteBlock(
+        existingNotes,
+        nextIntake.qualification?.answers || {},
+      );
+      const nextNotes = replaceNoteBlock(qualificationNotes, {
         ...existingPlan,
         status: "buyer_confirmed",
         selectedPropertyIds: selectedPropertyIds.length
@@ -1093,11 +1181,37 @@ Deno.serve(async (req) => {
         recipientEmail: existingPlan.recipientEmail || link.contact_email,
         updatedAt: now,
       });
+      const notesWithIntake = buildBuyerIntakeNotes(nextIntake, nextNotes);
+      qualificationComplete = nextIntake.qualification?.complete === true;
+      qualificationAnsweredCount = Number(nextIntake.qualification?.answeredCount || 0);
+      const leadPatch: JsonRecord = {
+        notes: notesWithIntake,
+        updated_at: now,
+      };
+      if (qualificationComplete) {
+        leadPatch.stage = "Viewing";
+        leadPatch.status = "Viewing";
+      }
       await supabase
         .from("leads")
-        .update({ notes: nextNotes, updated_at: now })
+        .update(leadPatch)
         .eq("organisation_id", organisationId)
         .eq("lead_id", leadId);
+      response.buyerIntake = nextIntake;
+      const responseUpdate = await supabase
+        .from("buyer_viewing_preference_links")
+        .update({
+          response,
+          updated_at: now,
+        })
+        .eq("id", link.id)
+        .eq("status", "submitted");
+      if (responseUpdate.error) {
+        console.error("[buyer-viewing-preferences] response update with intake failed", {
+          code: responseUpdate.error.code,
+          message: responseUpdate.error.message,
+        });
+      }
     }
 
     const activity = await supabase.from("lead_activities").insert({
@@ -1110,11 +1224,14 @@ Deno.serve(async (req) => {
         `${confirmedPropertyIds.length} viewing${
           confirmedPropertyIds.length === 1 ? "" : "s"
         } requested${confirmedTitles ? `: ${confirmedTitles}` : ""}.`,
+        qualificationComplete
+          ? `Qualification complete: ${qualificationAnsweredCount}/${qualificationMinimumCount} answers captured.`
+          : `Qualification progress: ${qualificationAnsweredCount}/${qualificationMinimumCount} answers captured.`,
         `Preferred times: ${availabilityText}`,
         combinedNotes ? `Notes: ${combinedNotes}` : "",
       ].filter(Boolean).join("\n"),
       activity_date: now,
-      outcome: "Buyer confirmed",
+      outcome: qualificationComplete ? "Qualified" : "Buyer confirmed",
     });
     if (activity.error) {
       console.error("[buyer-viewing-preferences] lead activity insert failed", {
@@ -1138,7 +1255,9 @@ Deno.serve(async (req) => {
           leadEmail: normalizeText(link.contact_email, 320),
           leadSource: "Viewing preference link",
           leadCategory: "Buyer",
-          leadStatus: "Buyer confirmed viewing times",
+          leadStatus: qualificationComplete
+            ? "Buyer qualified and viewing times received"
+            : "Buyer confirmed viewing times",
           propertyLabel: confirmedTitles,
           availabilityWindows,
           assignedAgentName: normalizeText(link.agent_name, 180),
@@ -1147,6 +1266,9 @@ Deno.serve(async (req) => {
             `${
               normalizeText(link.buyer_name, 180) || "A buyer"
             } submitted three preferred viewing times.`,
+            qualificationComplete
+              ? "The buyer also completed the qualification details and is ready for the Viewing stage."
+              : "Qualification details were captured alongside the viewing response.",
             `Preferred times: ${availabilityText}`,
             "Review the options in the viewing planner, then send the suitable times to the seller for access confirmation.",
           ].join("\n"),

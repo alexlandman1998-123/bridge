@@ -11,6 +11,8 @@ import {
 } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
+import FinalListingModuleOverview from '../../components/listings/FinalListingModuleOverview'
+import { buildFinalListingModuleOverview } from '../../services/listings/finalListingModuleModel'
 import { listRentalListingsForAgent } from '../../services/rentals/rentalListingDraftService'
 import {
   buildRentalListingIndexRows,
@@ -173,6 +175,15 @@ export default function RentalListingsPage() {
 
   const rentalRows = useMemo(() => buildRentalListingIndexRows(listings), [listings])
   const summary = useMemo(() => summarizeRentalListingIndexRows(rentalRows), [rentalRows])
+  const finalListingModuleOverview = useMemo(
+    () => buildFinalListingModuleOverview({
+      activeType: 'rentals',
+      salesCount: null,
+      rentalCount: summary.total,
+      developmentCount: null,
+    }),
+    [summary.total],
+  )
   const filteredRows = useMemo(
     () => filterRentalListingIndexRows(rentalRows, { query, status: statusTab }),
     [query, rentalRows, statusTab],
@@ -219,6 +230,11 @@ export default function RentalListingsPage() {
   return (
     <section className="page-content">
       <div className="ui-section-stack">
+        <FinalListingModuleOverview
+          overview={finalListingModuleOverview}
+          onNavigate={(path) => path && navigate(path)}
+        />
+
         <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
             <div className="grid flex-1 gap-3 md:grid-cols-1 xl:max-w-[460px]">

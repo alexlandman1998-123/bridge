@@ -17,7 +17,7 @@ assert.equal(
 const canonicalBuyerStages = [
   'Captured',
   'Contacted',
-  'Qualification',
+  'Qualified',
   'Viewing',
   'Transaction Setup',
   'Offer',
@@ -35,9 +35,11 @@ const buyerKanbanBlock = agencyPipelinePageSource.slice(
 
 assert.match(buyerKanbanBlock, /getBuyerProcessDefinition\(\)\.stages\.map/)
 assert.match(buyerKanbanBlock, /contacted/)
+assert.match(buyerKanbanBlock, /qualified/)
 assert.match(buyerKanbanBlock, /transaction_setup/)
 assert.match(buyerKanbanBlock, /offer/)
 assert.match(buyerKanbanBlock, /transaction/)
+assert.doesNotMatch(buyerKanbanBlock, /qualification:/)
 assert.doesNotMatch(buyerKanbanBlock, /Deal \/ OTP/)
 assert.doesNotMatch(buyerKanbanBlock, /stageValue: 'Finance'/)
 assert.doesNotMatch(buyerKanbanBlock, /stageValue: 'Transfer'/)

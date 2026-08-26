@@ -303,7 +303,9 @@ function resolvePropertyDisclosureBranding(context = {}) {
 }
 
 function renderDisclosureCompanyDetails(items = [], fallback = '', className = 'company-details') {
-  const rows = items.length ? items : [normalizeText(fallback)].filter(Boolean)
+  const rows = (items.length ? items : [normalizeText(fallback)])
+    .map((item) => normalizeText(item))
+    .filter((item) => item && !/^\d{4}-\d{2}-\d{2}t/i.test(item))
   if (!rows.length) return ''
   return `<span class="${className}">${rows.map((item) => `<span>${escapeHtml(item)}</span>`).join('')}</span>`
 }
@@ -540,6 +542,17 @@ function normalizeCompliancePackRows(rows = []) {
     .map((row) => ({
       label: normalizeText(row?.label),
       value: normalizeText(row?.value),
+      type: normalizeText(row?.type),
+      people: Array.isArray(row?.people)
+        ? row.people
+          .map((person) => ({
+            name: normalizeText(person?.name || person?.full_name),
+            idNumber: normalizeText(person?.idNumber || person?.id_number),
+            email: normalizeText(person?.email),
+            phone: normalizeText(person?.phone || person?.mobile),
+          }))
+          .filter((person) => person.name || person.idNumber || person.email || person.phone)
+        : [],
     }))
     .filter((row) => row.label && row.value)
 }
@@ -558,18 +571,34 @@ function renderComplianceValue(value = '') {
   return escapeHtml(value).replace(/\n/g, '<br />')
 }
 
+function renderCompliancePeople(people = []) {
+  if (!people.length) return ''
+  return `
+    <div class="compliance-people">
+      ${people.map((person, index) => `
+        <article class="compliance-person">
+          <strong>${escapeHtml(person.name || `Owner ${index + 1}`)}</strong>
+          <span>${[
+            person.idNumber ? `ID ${person.idNumber}` : '',
+            person.email,
+            person.phone,
+          ].map((item) => escapeHtml(item)).filter(Boolean).join(' &middot; ')}</span>
+        </article>
+      `).join('')}
+    </div>
+  `
+}
+
 function renderComplianceDataTable(rows = []) {
   return `
-    <table class="compliance-table">
-      <tbody>
-        ${rows.map((row) => `
-          <tr>
-            <th scope="row">${escapeHtml(row.label)}</th>
-            <td>${renderComplianceValue(row.value)}</td>
-          </tr>
-        `).join('')}
-      </tbody>
-    </table>
+    <dl class="compliance-list">
+      ${rows.map((row) => `
+        <div class="compliance-row${row.type === 'people' && row.people.length ? ' compliance-row-wide' : ''}">
+          <dt>${escapeHtml(row.label)}</dt>
+          <dd>${row.type === 'people' && row.people.length ? renderCompliancePeople(row.people) : renderComplianceValue(row.value)}</dd>
+        </div>
+      `).join('')}
+    </dl>
   `
 }
 
@@ -585,7 +614,7 @@ function renderSellerComplianceFicaPage(compliancePack = {}, branding = {}, page
         <p>${escapeHtml(compliancePack.subtitle || 'Seller information captured during onboarding.')}<br />Document reference: ${escapeHtml(documentReference)}</p>
       </section>
       <section class="doc-body compliance-body">
-        <p class="intro">This page records the seller information captured for FICA, tax and property onboarding purposes. Supporting documents remain attached or uploaded separately where required.</p>
+        <p class="intro compliance-intro">Seller information captured for FICA, tax and property onboarding. Supporting documents stay attached separately where required.</p>
         <div class="compliance-section-grid">
           ${sections.map((section) => `
             <section class="compliance-section">
@@ -613,46 +642,37 @@ function renderSellerComplianceSignerPage(compliancePack = {}, branding = {}, pa
         <p>Document reference: ${escapeHtml(documentReference)}</p>
       </section>
       <section class="doc-body compliance-body">
-        <p class="intro">This certificate records each required seller signature for the combined FICA and property disclosure pack.</p>
+        <p class="intro compliance-intro">Signature evidence for the combined FICA and property disclosure pack.</p>
         <div class="compliance-summary">
           <span>Status</span>
           <strong>${escapeHtml(summary.statusLabel || summary.progressLabel || 'Pending signatures')}</strong>
         </div>
-        <table class="signer-table">
-          <thead>
-            <tr>
-              <th scope="col">Signer</th>
-              <th scope="col">Role</th>
-              <th scope="col">Status</th>
-              <th scope="col">Signed at</th>
-              <th scope="col">Authority</th>
-              <th scope="col">Signature</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${signers.map((signer) => {
-              const signature = normalizeText(signer.signature)
-              const signatureMarkup = signature
-                ? isImageSignature(signature)
-                  ? `<img class="signer-signature-image" src="${escapeHtml(signature)}" alt="${escapeHtml(signer.name || 'Signer')} signature" />`
-                  : escapeHtml(signature)
-                : '&nbsp;'
-              return `
-                <tr>
-                  <td>
-                    <strong>${escapeHtml(signer.name || 'Seller')}</strong>
-                    ${signer.email ? `<span>${escapeHtml(signer.email)}</span>` : ''}
-                  </td>
-                  <td>${escapeHtml(signer.roleLabel || 'Seller')}</td>
-                  <td>${escapeHtml(signer.statusLabel || signer.status || 'Pending')}</td>
-                  <td>${escapeHtml(signer.signedAt) || '&nbsp;'}</td>
-                  <td>${signer.authorityRequired ? escapeHtml(signer.authorityLabel || 'Authority document required') : 'Not required'}</td>
-                  <td class="signer-signature-cell">${signatureMarkup}</td>
-                </tr>
-              `
-            }).join('')}
-          </tbody>
-        </table>
+        <div class="signer-card-grid">
+          ${signers.map((signer) => {
+            const signature = normalizeText(signer.signature)
+            const signatureMarkup = signature
+              ? isImageSignature(signature)
+                ? `<img class="signer-signature-image" src="${escapeHtml(signature)}" alt="${escapeHtml(signer.name || 'Signer')} signature" />`
+                : escapeHtml(signature)
+              : 'Awaiting signature'
+            return `
+              <article class="signer-card">
+                <div class="signer-card-main">
+                  <span class="signer-role">${escapeHtml(signer.roleLabel || 'Seller')}</span>
+                  <strong>${escapeHtml(signer.name || 'Seller')}</strong>
+                  ${signer.email ? `<span>${escapeHtml(signer.email)}</span>` : ''}
+                  ${signer.mobile ? `<span>${escapeHtml(signer.mobile)}</span>` : ''}
+                </div>
+                <div class="signer-card-meta">
+                  <span class="signer-status">${escapeHtml(signer.statusLabel || signer.status || 'Pending')}</span>
+                  <span>${escapeHtml(signer.signedAt) || 'Not signed yet'}</span>
+                  <span>${signer.authorityRequired ? escapeHtml(signer.authorityLabel || 'Authority document required') : 'Own signature'}</span>
+                </div>
+                <div class="signer-card-signature">${signatureMarkup}</div>
+              </article>
+            `
+          }).join('')}
+        </div>
       </section>
       ${renderDisclosureFooter(branding, pageNumber, pageTotal)}
     </section>
@@ -734,37 +754,46 @@ export function buildPropertyDisclosureDocumentMarkup(disclosure = {}, context =
     body { margin: 0; padding: 0; background: #ffffff; color: #1f2937; font-family: Helvetica, Arial, sans-serif; }
     .property-disclosure-document { width: 210mm; margin: 0 auto; background: #ffffff; }
     .property-disclosure-page { width: 210mm; height: 296mm; min-height: 296mm; margin: 0 auto; background: #ffffff; color: #1f2937; position: relative; overflow: hidden; }
-    .doc-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10mm; padding: 13mm 18mm 7mm; border-bottom: 1px solid #d7d7d7; }
+    .doc-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10mm; padding: 11mm 18mm 6mm; border-bottom: 1px solid #e1e6e3; }
     .agency-brand { display: inline-flex; align-items: center; justify-content: flex-start; min-width: 0; color: #1f2937; font-size: 16px; font-weight: 800; letter-spacing: 0; }
     .agency-brand img { max-width: 54mm; max-height: 17mm; object-fit: contain; }
     .company-details { display: grid; justify-items: end; gap: 1px; max-width: 74mm; color: #43546a; font-size: 8.3pt; line-height: 1.25; text-align: right; }
     .company-details span:first-child { color: #111827; font-weight: 800; }
-    .doc-title { padding: 8mm 18mm 5mm; text-align: center; border-bottom: 1px solid #e4e4e4; }
-    .doc-title h1 { margin: 0; color: #111827; font-size: 22px; font-weight: 700; letter-spacing: 0; line-height: 1.2; text-transform: uppercase; }
-    .doc-title p { margin: 6px 0 0; color: #5c6670; font-size: 11.5px; line-height: 1.45; }
+    .doc-title { padding: 7mm 18mm 5mm; text-align: center; border-bottom: 1px solid #e6ebe8; }
+    .doc-title h1 { margin: 0; color: #111827; font-size: 20px; font-weight: 800; letter-spacing: 0; line-height: 1.2; text-transform: uppercase; }
+    .doc-title p { margin: 5px 0 0; color: #66758a; font-size: 10.5px; line-height: 1.4; }
     .doc-title .eyebrow { margin: 0 0 2mm; color: #176c43; font-size: 8.5pt; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; }
-    .compliance-title h1 { color: #0f2f22; }
+    .compliance-title h1 { color: #0f2f22; letter-spacing: -0.01em; }
     .doc-body { padding: 7mm 18mm 24mm; }
-    .compliance-body { padding-top: 8mm; }
+    .compliance-body { padding-top: 7mm; }
     .intro { margin: 0 0 3mm; color: #1f2937; font-size: 11.5px; line-height: 1.5; }
+    .compliance-intro { margin-bottom: 5mm; color: #334155; font-size: 10.3pt; }
     .meta { margin: 0 0 5mm; color: #3f4a56; font-size: 11px; line-height: 1.45; }
-    .compliance-section-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5mm; align-items: start; }
-    .compliance-section { break-inside: avoid; page-break-inside: avoid; border: 1px solid #d7e3dc; border-radius: 3mm; overflow: hidden; }
-    .compliance-section h2 { margin: 0; padding: 3mm 4mm; background: #eef8f1; color: #0f5132; font-size: 10pt; font-weight: 800; text-transform: uppercase; }
-    .compliance-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 8.7pt; line-height: 1.35; }
-    .compliance-table th, .compliance-table td { border-top: 1px solid #e0e7e2; padding: 2.2mm 3mm; vertical-align: top; }
-    .compliance-table th { width: 39%; color: #5c6670; font-weight: 700; text-align: left; }
-    .compliance-table td { color: #111827; font-weight: 700; }
-    .compliance-summary { display: flex; align-items: center; justify-content: space-between; gap: 5mm; margin: 0 0 5mm; padding: 4mm 5mm; border: 1px solid #b8dcc8; border-radius: 3mm; background: #f1fbf4; color: #0f5132; }
-    .compliance-summary span { font-size: 8.5pt; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
-    .compliance-summary strong { font-size: 12pt; }
-    .signer-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 8.8pt; line-height: 1.35; }
-    .signer-table th, .signer-table td { border: 1px solid #d7d7d7; padding: 2.4mm; vertical-align: top; }
-    .signer-table th { background: #f6f7f8; color: #111827; font-size: 8pt; font-weight: 800; text-align: left; text-transform: uppercase; }
-    .signer-table td strong, .signer-table td span { display: block; }
-    .signer-table td span { margin-top: 1mm; color: #5c6670; font-size: 8pt; font-weight: 500; }
-    .signer-signature-cell { min-height: 18mm; text-align: center; font-weight: 700; }
-    .signer-signature-image { max-width: 28mm; max-height: 15mm; object-fit: contain; }
+    .compliance-section-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4.5mm; align-items: start; }
+    .compliance-section { break-inside: avoid; page-break-inside: avoid; border: 1px solid #dfe9e3; border-radius: 3mm; overflow: hidden; background: #ffffff; }
+    .compliance-section h2 { margin: 0; padding: 3mm 4mm; background: #edf8f1; color: #14543a; font-size: 9.2pt; font-weight: 800; letter-spacing: 0.03em; text-transform: uppercase; }
+    .compliance-list { display: grid; gap: 0; margin: 0; font-size: 8.4pt; line-height: 1.32; }
+    .compliance-row { display: grid; grid-template-columns: 38% 1fr; gap: 2.5mm; padding: 2mm 3.5mm; border-top: 1px solid #edf1ee; }
+    .compliance-row:first-child { border-top: 0; }
+    .compliance-row-wide { display: block; }
+    .compliance-row dt { margin: 0; color: #64748b; font-weight: 700; }
+    .compliance-row dd { margin: 0; color: #111827; font-weight: 800; overflow-wrap: anywhere; }
+    .compliance-people { display: grid; gap: 1.6mm; margin-top: 1.5mm; }
+    .compliance-person { padding: 2mm; border: 1px solid #e1e8e3; border-radius: 2mm; background: #fbfdfb; }
+    .compliance-person strong { display: block; color: #111827; font-size: 8.8pt; }
+    .compliance-person span { display: block; margin-top: 0.7mm; color: #66758a; font-size: 7.8pt; line-height: 1.3; }
+    .compliance-summary { display: flex; align-items: center; justify-content: space-between; gap: 5mm; margin: 0 0 5mm; padding: 3.5mm 5mm; border: 1px solid #b8dcc8; border-radius: 3mm; background: #f1fbf4; color: #0f5132; }
+    .compliance-summary span { font-size: 8.3pt; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
+    .compliance-summary strong { font-size: 11.5pt; }
+    .signer-card-grid { display: grid; gap: 4mm; }
+    .signer-card { display: grid; grid-template-columns: 1.1fr 0.9fr 36mm; gap: 4mm; align-items: stretch; padding: 4mm; border: 1px solid #dfe5e1; border-radius: 3mm; break-inside: avoid; page-break-inside: avoid; }
+    .signer-card-main, .signer-card-meta { display: grid; align-content: start; gap: 1mm; min-width: 0; }
+    .signer-card-main strong { color: #111827; font-size: 11pt; line-height: 1.2; }
+    .signer-card-main span, .signer-card-meta span { color: #64748b; font-size: 8.2pt; line-height: 1.3; overflow-wrap: anywhere; }
+    .signer-role { color: #176c43 !important; font-size: 7.8pt !important; font-weight: 800; letter-spacing: 0.09em; text-transform: uppercase; }
+    .signer-status { width: max-content; max-width: 100%; padding: 1mm 2mm; border-radius: 999px; background: #e9f8ee; color: #136d42 !important; font-weight: 800; }
+    .signer-card-signature { display: flex; align-items: center; justify-content: center; min-height: 18mm; border: 1px solid #d5ddd8; border-radius: 2mm; color: #64748b; font-size: 8pt; font-weight: 700; text-align: center; }
+    .signer-signature-image { max-width: 30mm; max-height: 16mm; object-fit: contain; }
     .annexure-table { width: 100%; border-collapse: collapse; table-layout: fixed; color: #1f2937; font-size: 9.35pt; line-height: 1.34; }
     .annexure-table th, .annexure-table td { border: 1px solid #d7d7d7; vertical-align: top; padding: 2mm 2.3mm; }
     .annexure-table th { background: #f6f7f8; color: #111827; font-size: 8.7pt; font-weight: 700; text-align: left; text-transform: uppercase; }
@@ -778,15 +807,15 @@ export function buildPropertyDisclosureDocumentMarkup(disclosure = {}, context =
     .answer-mark { display: inline-block; font-size: 12pt; font-weight: 700; line-height: 1; }
     .comments-title { color: #111827; font-weight: 700; text-transform: uppercase; }
     .comments-box { min-height: 32mm; color: #1f2937; line-height: 1.45; }
-    .signature-section { margin-top: 8mm; color: #1f2937; font-size: 10.5pt; line-height: 1.5; }
+    .signature-section { margin-top: 5mm; color: #1f2937; font-size: 10.5pt; line-height: 1.5; }
     .signature-section h2 { margin: 0 0 4mm; padding-bottom: 2mm; border-bottom: 1px solid #d7d7d7; color: #111827; font-size: 11pt; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
     .execution-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; margin-top: 5mm; }
-    .execution-field { min-height: 17mm; border: 1px solid #d7d7d7; padding: 3mm; }
+    .execution-field { min-height: 15mm; border: 1px solid #dce2de; border-radius: 1.5mm; padding: 3mm; }
     .execution-label { display: block; color: #5c6670; font-size: 8.5pt; font-weight: 700; text-transform: uppercase; }
     .execution-value { display: block; margin-top: 2mm; color: #111827; font-size: 11pt; font-weight: 700; }
-    .signature-panel { margin-top: 8mm; break-inside: avoid; page-break-inside: avoid; }
-    .signature-box { display: flex; align-items: center; justify-content: center; min-height: 34mm; border: 1px solid #111827; background: #ffffff; padding: 3mm; color: #111827; font-size: 11pt; font-weight: 700; }
-    .signature-image { max-width: 100%; max-height: 28mm; object-fit: contain; }
+    .signature-panel { margin-top: 6mm; break-inside: avoid; page-break-inside: avoid; }
+    .signature-box { display: flex; align-items: center; justify-content: center; min-height: 27mm; border: 1px solid #8c969f; border-radius: 1.5mm; background: #ffffff; padding: 3mm; color: #111827; font-size: 11pt; font-weight: 700; }
+    .signature-image { max-width: 100%; max-height: 23mm; object-fit: contain; }
     .signature-label { margin-top: 1.5mm; color: #3f4a56; font-size: 10px; font-weight: 700; text-align: right; text-transform: uppercase; }
     .doc-footer { position: absolute; left: 18mm; right: 18mm; bottom: 6mm; display: flex; align-items: center; justify-content: space-between; gap: 8mm; padding-top: 4mm; border-top: 1px solid #d8d8d8; color: #606a75; font-size: 10px; }
     .footer-brand { display: inline-flex; align-items: center; min-width: 34mm; max-width: 48mm; }

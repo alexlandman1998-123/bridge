@@ -37,7 +37,7 @@ const packageJson = JSON.parse(readFileSync(resolve(appRoot, 'package.json'), 'u
 const defaultActiveStageKeys = [
   'captured',
   'contacted',
-  'qualification',
+  'qualified',
   'viewing',
   'transaction_setup',
   'offer',
@@ -47,7 +47,7 @@ const defaultActiveStageKeys = [
 const kingstonsActiveStageKeys = [
   'captured',
   'contacted',
-  'qualification',
+  'qualified',
   'viewing',
   'offer',
   'transaction_setup',
@@ -177,7 +177,8 @@ const evidenceKeys = [
 {
   assert.equal(normalizeBuyerProcessStageKey('New Lead'), BUYER_PROCESS_STAGE_KEYS.captured)
   assert.equal(normalizeBuyerProcessStageKey('Contacted'), BUYER_PROCESS_STAGE_KEYS.contacted)
-  assert.equal(normalizeBuyerProcessStageKey('Qualified'), BUYER_PROCESS_STAGE_KEYS.qualification)
+  assert.equal(normalizeBuyerProcessStageKey('Qualified'), BUYER_PROCESS_STAGE_KEYS.qualified)
+  assert.equal(normalizeBuyerProcessStageKey('Qualification'), BUYER_PROCESS_STAGE_KEYS.qualified)
   assert.equal(normalizeBuyerProcessStageKey('Viewing Completed'), BUYER_PROCESS_STAGE_KEYS.viewing)
   assert.equal(normalizeBuyerProcessStageKey('Offer + Onboarding Link Sent'), BUYER_PROCESS_STAGE_KEYS.buyerOnboardingSent)
   assert.equal(normalizeBuyerProcessStageKey('Offer Submitted'), BUYER_PROCESS_STAGE_KEYS.offerReceived)
@@ -201,8 +202,8 @@ const evidenceKeys = [
     BUYER_PROCESS_STAGE_KEYS.lost,
   ])
   assert.equal(canTransitionBuyerProcessStage('Captured', 'Contacted'), true)
-  assert.equal(canTransitionBuyerProcessStage('Captured', 'Qualification'), false)
-  assert.equal(canTransitionBuyerProcessStage('Contacted', 'Qualification'), true)
+  assert.equal(canTransitionBuyerProcessStage('Captured', 'Qualified'), false)
+  assert.equal(canTransitionBuyerProcessStage('Contacted', 'Qualified'), true)
   assert.equal(canTransitionBuyerProcessStage('Viewing', 'Transaction Setup'), true)
   assert.equal(canTransitionBuyerProcessStage('Viewing', 'Offer'), false)
   assert.equal(canTransitionBuyerProcessStage('Transaction Setup', 'Offer'), true)

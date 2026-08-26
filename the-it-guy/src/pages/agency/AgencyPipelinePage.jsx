@@ -108,6 +108,10 @@ import {
   normalizeBuyerProcessStageKey,
 } from '../../services/buyerProcessDefinitionService'
 import {
+  buildBuyerIntakeNotes,
+  buildBuyerQualificationIntake,
+} from '../../services/buyerIntakeModel'
+import {
   getClientAccessPolicyMessage,
   resolveSellerAccessPolicy,
 } from '../../core/clientAccess/clientAccessPolicy'
@@ -457,7 +461,7 @@ const BUYER_LEAD_KANBAN_STAGE_META = {
   contacted: {
     emptyState: 'Buyers with logged contact will appear here before qualification.',
   },
-  qualification: {
+  qualified: {
     emptyState: 'Move buyers here while intent, budget, finance readiness, and timing are confirmed.',
   },
   viewing: {
@@ -11463,7 +11467,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [draggingPipelineCardId, setDraggingPipelineCardId] = useState('')
   const draggingPipelineCardRef = useRef('')
   const [leadWorkspaceTab, setLeadWorkspaceTab] = useState('overview')
-  const [buyerJourneyActionStage, setBuyerJourneyActionStage] = useState('qualification')
+  const [buyerJourneyActionStage, setBuyerJourneyActionStage] = useState(BUYER_PROCESS_STAGE_KEYS.qualified)
   const [leadFilter, setLeadFilter] = useState(DEFAULT_LEAD_FILTER)
   const [leadTablePage, setLeadTablePage] = useState(1)
   const [showLeadForm, setShowLeadForm] = useState(false)
@@ -16371,10 +16375,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
     if (mandateStillRequired) {
       return {
-        title: 'Signed mandate still required',
-        copy: 'Upload the wet-ink signed mandate, or record the hard-copy mandate as signed, before treating the listing as created or live.',
+        title: 'Upload signed mandate',
+        copy: 'The seller onboarding is submitted. Upload the wet-ink signed mandate before the listing can move to created or live.',
         actionId: 'record_hard_copy_mandate',
-        label: 'Upload Mandate',
+        label: 'Upload Signed Mandate',
         disabled: false,
       }
     }
@@ -18082,8 +18086,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       { key: 'captured', label: 'Captured', detail: formatDateShort(selectedLead?.createdAt), done: Boolean(selectedLead) },
       { key: 'contacted', label: 'Contacted', detail: contacted ? formatDateShort(selectedLeadLastContactedAt || selectedLeadLastActiveAt || selectedLead?.updatedAt) : 'Not reached', done: contacted },
       {
-        key: 'qualification',
-        label: 'Qualification',
+        key: BUYER_PROCESS_STAGE_KEYS.qualified,
+        label: 'Qualified',
         detail: qualified
           ? `${selectedLeadBuyerQualificationEvidence.answeredCount} captured`
           : qualificationStarted
@@ -18138,8 +18142,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const rawFinanceType = normalizeText(selectedLead?.financeType || selectedLead?.preferredFinanceType || selectedLead?.finance_type || selectedLeadLinkedTransaction?.finance_type || selectedLeadLinkedTransaction?.financeType)
     const hasContacted = selectedLeadBuyerJourneyStages.some((stage) => stage.key === 'contacted' && stage.done)
     const hasViewingBooked = selectedLeadViewingAppointments.length > 0
-    const hasQualificationStarted = selectedLeadBuyerJourneyStages.some((stage) => stage.key === 'qualification' && (stage.done || stage.started))
-    const hasQualificationComplete = selectedLeadBuyerJourneyStages.some((stage) => stage.key === 'qualification' && stage.done)
+    const hasQualificationStarted = selectedLeadBuyerJourneyStages.some((stage) => stage.key === BUYER_PROCESS_STAGE_KEYS.qualified && (stage.done || stage.started))
+    const hasQualificationComplete = selectedLeadBuyerJourneyStages.some((stage) => stage.key === BUYER_PROCESS_STAGE_KEYS.qualified && stage.done)
     const hasFinanceStarted = Boolean(
       selectedLeadLinkedTransactionId ||
         rawFinanceType ||
@@ -21146,9 +21150,18 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
     setIsLeadDetailSaving(true)
     try {
+      const now = new Date().toISOString()
       const budgetAmount = parseCurrencyAmount(buyerQualificationForm.budget)
       const qualificationEvidence = getBuyerQualificationEvidence(buyerQualificationForm)
-      const notes = buildBuyerQualificationNotes(buyerQualificationForm, selectedLead.notes)
+      const qualificationNotes = buildBuyerQualificationNotes(buyerQualificationForm, selectedLead.notes)
+      const combinedIntake = buildBuyerQualificationIntake(buyerQualificationForm, {
+        notes: selectedLead.notes,
+        source: 'buyer_qualification_form',
+        capturedAt: selectedLead.createdAt || selectedLead.created_at || now,
+        updatedAt: now,
+        qualifiedAt: qualificationEvidence.complete ? now : '',
+      })
+      const notes = buildBuyerIntakeNotes(combinedIntake, qualificationNotes)
       const leadPatch = {
         budget: budgetAmount || 0,
         estimatedValue: budgetAmount || Number(leadDetailForm.estimatedValue || 0) || 0,
@@ -26671,7 +26684,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }
 
   function handleOpenBuyerQualificationAction() {
-    setBuyerJourneyActionStage('qualification')
+    setBuyerJourneyActionStage(BUYER_PROCESS_STAGE_KEYS.qualified)
     setBuyerQualificationEditing(true)
     handleLeadWorkspaceTabSelection('overview')
   }
@@ -26721,19 +26734,19 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           status: contactMove.stage,
         }
       }
-      if (!advancedStageKeys.has(currentStageKey) && currentStageKey !== BUYER_PROCESS_STAGE_KEYS.qualification) {
-        await handleUpdateLeadStage(selectedLead.leadId, 'Qualification', {
+      if (!advancedStageKeys.has(currentStageKey) && currentStageKey !== BUYER_PROCESS_STAGE_KEYS.qualified) {
+        await handleUpdateLeadStage(selectedLead.leadId, 'Qualified', {
           lead: workflowLead,
           override: true,
           successMessage: '',
-          activityNote: 'Buyer journey override moved the contacted buyer into qualification.',
+          activityNote: 'Buyer journey override moved the contacted buyer into qualified.',
           metadata: { source: 'buyer_journey_whats_next', action: 'mark_contacted' },
         })
       }
-      setBuyerJourneyActionStage('qualification')
+      setBuyerJourneyActionStage(BUYER_PROCESS_STAGE_KEYS.qualified)
       setBuyerQualificationEditing(true)
       handleLeadWorkspaceTabSelection('overview')
-      setMessage('Buyer marked as contacted. Qualification is ready.')
+      setMessage('Buyer marked as contacted. Qualification details are ready.')
       setError('')
     } catch (contactError) {
       setError(contactError?.message || 'Unable to mark the buyer as contacted.')
@@ -31627,7 +31640,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 		                                          },
 		                                        },
 		                                        {
-		                                          label: 'Mandate signed as hard copy',
+		                                          label: 'Upload Signed Mandate',
 		                                          Icon: Upload,
 		                                          tone: 'text-[#29435d]',
 		                                          disabled: sellerLeadMandateUploading || selectedSellerJourney.mandateStatus === 'signed',
@@ -32217,7 +32230,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         <div>
                           <p className="text-[12px] font-semibold uppercase tracking-[0.12em] text-[#7d91a8]">Stage Actions</p>
                           <h3 className="mt-1 text-base font-semibold text-[#18324b]">
-                            {selectedLeadBuyerJourneyStages.find((stage) => stage.key === buyerJourneyActionStage)?.label || 'Qualification'}
+                            {selectedLeadBuyerJourneyStages.find((stage) => stage.key === buyerJourneyActionStage)?.label || 'Qualified'}
                           </h3>
                         </div>
                         <div className="flex flex-wrap gap-2">
@@ -32268,7 +32281,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                 <Button type="button" size="sm" variant="secondary" onClick={() => navigate(`/transactions/${selectedLeadLinkedTransactionId}`)}>Open Transaction</Button>
                               ) : null}
                             </>
-                          ) : buyerJourneyActionStage === 'qualification' ? (
+                          ) : buyerJourneyActionStage === BUYER_PROCESS_STAGE_KEYS.qualified ? (
                             <>
                               <Button type="button" size="sm" onClick={handleOpenBuyerQualificationAction}>Qualify lead</Button>
                               <Button type="button" size="sm" variant="secondary" onClick={handleMarkBuyerQualifiedAction}>Mark qualified</Button>
@@ -33538,7 +33551,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           ? {
                               icon: Phone,
                               title: 'Mark as contacted',
-                              description: 'Confirm first contact, move the buyer into Qualification, and open the qualification questions.',
+                              description: 'Confirm first contact, move the buyer into Qualified, and open the qualification questions.',
                               actions: [
                                 { key: 'mark-contacted', label: 'Mark contacted', icon: CheckCircle2, primary: true, onClick: () => void handleBuyerJourneyMarkContactedAndQualify() },
                               ],
@@ -37454,7 +37467,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 		                                              {canUploadSellerLeadSignedMandate ? (
 		                                                <label className={`inline-flex min-h-9 items-center gap-1.5 rounded-[12px] border px-3 text-xs font-semibold transition ${sellerLeadMandateUploading ? 'cursor-not-allowed border-[#e5edf5] bg-[#f8fbff] text-[#a0afbf]' : 'cursor-pointer border-[#cfdceb] bg-white text-[#315b7a] hover:border-[#a9bfd6]'}`}>
 		                                                  <Upload className="h-3.5 w-3.5" />
-		                                                  {sellerLeadMandateUploading ? 'Uploading...' : documentHasFile ? 'Replace' : 'Mandate signed as hard copy'}
+		                                                  {sellerLeadMandateUploading ? 'Uploading...' : documentHasFile ? 'Replace' : 'Upload Signed Mandate'}
 		                                                  <input
 		                                                    type="file"
 		                                                    className="sr-only"

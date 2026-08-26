@@ -1,0 +1,89 @@
+{
+  "phase": "private-property-seed-test-listings",
+  "generatedAt": "2026-08-26T08:20:23.203Z",
+  "apply": true,
+  "status": "SEEDED",
+  "safety": {
+    "privatePropertyApiCalled": false,
+    "databaseWritten": true,
+    "rawCredentialsStored": false,
+    "listingPublished": false
+  },
+  "target": {
+    "workspace": "produktive",
+    "organisationId": "efa6c6ff-6941-4b59-8bcb-e4d9ba9e585a",
+    "branchId": "531f1439-62b3-4c76-a908-e6ec906d7fdf",
+    "assignedAgentId": "763b2e6b-909d-42ef-9303-ff2dd64e6ade",
+    "assignedAgentEmail": "alex.produktive.training@arch9.test"
+  },
+  "blockers": [],
+  "candidates": [
+    {
+      "kind": "sale",
+      "listingReference": "PP-SANDBOX-SALE-001",
+      "title": "Private Property Sandbox Sale Listing",
+      "listingType": "Sale",
+      "propertyType": "House",
+      "price": 2500000
+    },
+    {
+      "kind": "rental",
+      "listingReference": "PP-SANDBOX-RENTAL-001",
+      "title": "Private Property Sandbox Rental Listing",
+      "listingType": "Rental",
+      "propertyType": "Apartment",
+      "price": 18500
+    }
+  ],
+  "result": [
+    {
+      "kind": "sale",
+      "action": "updated",
+      "listing": {
+        "id": "2520ee7a-e48b-4197-a567-19951ed92e75",
+        "listing_reference": "PP-SANDBOX-SALE-001",
+        "title": "Private Property Sandbox Sale Listing",
+        "organisation_id": "efa6c6ff-6941-4b59-8bcb-e4d9ba9e585a",
+        "branch_id": "531f1439-62b3-4c76-a908-e6ec906d7fdf",
+        "assigned_agent_id": "763b2e6b-909d-42ef-9303-ff2dd64e6ade",
+        "assigned_agent_email": "alex.produktive.training@arch9.test"
+      },
+      "publication": {
+        "id": "e99f77bd-47f8-4c73-9973-6c2b91e53805",
+        "listing_id": "2520ee7a-e48b-4197-a567-19951ed92e75",
+        "listing_type": "Sale",
+        "status": "Ready"
+      },
+      "media": {
+        "inserted": 0,
+        "updated": 3,
+        "skipped": 0
+      }
+    },
+    {
+      "kind": "rental",
+      "action": "updated",
+      "listing": {
+        "id": "1b497444-53fe-43c0-a5f8-192cb43a7e90",
+        "listing_reference": "PP-SANDBOX-RENTAL-001",
+        "title": "Private Property Sandbox Rental Listing",
+        "organisation_id": "efa6c6ff-6941-4b59-8bcb-e4d9ba9e585a",
+        "branch_id": "531f1439-62b3-4c76-a908-e6ec906d7fdf",
+        "assigned_agent_id": "763b2e6b-909d-42ef-9303-ff2dd64e6ade",
+        "assigned_agent_email": "alex.produktive.training@arch9.test"
+      },
+      "publication": {
+        "id": "b166e002-132d-40cd-8c79-a1b86cdb2a89",
+        "listing_id": "1b497444-53fe-43c0-a5f8-192cb43a7e90",
+        "listing_type": "Rental",
+        "status": "Ready"
+      },
+      "media": {
+        "inserted": 0,
+        "updated": 3,
+        "skipped": 0
+      }
+    }
+  ],
+  "nextStep": "Run Private Property readiness for each listing, then preview/publish to sandbox."
+}

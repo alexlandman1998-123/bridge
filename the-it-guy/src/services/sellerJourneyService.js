@@ -901,7 +901,7 @@ export function getSellerJourneyActions({ lead = {}, contact = {}, listing = nul
     { id: 'contact_seller', label: 'Contact Seller', enabled: canContact },
     { id: 'send_onboarding', label: 'Send Seller Onboarding', enabled: !onboardingSignals.sent },
     { id: 'open_documents', label: 'Open Documents', enabled: onboardingSubmittedForProgress || mandateStatus !== 'not_started' },
-    { id: 'record_hard_copy_mandate', label: 'Mandate signed as hard copy', enabled: onboardingSubmittedForProgress && !mandateSigned },
+    { id: 'record_hard_copy_mandate', label: 'Upload Signed Mandate', enabled: onboardingSubmittedForProgress && !mandateSigned },
     { id: 'create_listing', label: mandateSigned ? 'Create Listing' : 'Create Listing Draft', enabled: !listingShellExists },
     { id: 'open_listing', label: mandateSigned ? 'Open Listing' : 'Open Listing Draft', enabled: listingShellExists },
     { id: 'activate_listing', label: 'Activate Listing', enabled: listingCreated && !live && mandateSigned },

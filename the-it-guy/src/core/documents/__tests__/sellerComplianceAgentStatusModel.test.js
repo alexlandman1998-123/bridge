@@ -32,6 +32,44 @@ test('blocks listing live when a listing is active but the signed mandate is mis
   assert.equal(model.nextBlocker.key, 'signed_mandate')
 })
 
+test('does not treat a pending signed mandate requirement row as uploaded evidence', () => {
+  const model = buildSellerComplianceAgentStatus({
+    sellerComplianceSigning: {
+      complete: true,
+      signingState: {
+        complete: true,
+        requiredCount: 1,
+        completedCount: 1,
+        remainingCount: 0,
+      },
+    },
+    requirements: [
+      {
+        id: 'requirement-signed-mandate',
+        requirement_key: 'signed_mandate',
+        status: 'outstanding',
+      },
+    ],
+    documents: [
+      {
+        id: 'requirement-signed-mandate',
+        requirement_key: 'signed_mandate',
+        status: 'outstanding',
+      },
+    ],
+    listing: {
+      id: 'listing-1',
+      status: 'active',
+      sellerOnboardingStatus: 'submitted',
+    },
+  })
+
+  assert.equal(model.rawListingLiveSignal, true)
+  assert.equal(model.signedMandate, false)
+  assert.equal(model.canTreatListingAsLive, false)
+  assert.equal(model.status, 'seller_onboarding_submitted')
+})
+
 test('treats signed_uploaded as hard-copy signed mandate evidence', () => {
   const model = buildSellerComplianceAgentStatus({
     sellerComplianceSigning: {

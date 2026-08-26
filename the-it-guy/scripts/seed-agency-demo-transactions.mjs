@@ -2,6 +2,12 @@
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import { createClient } from '@supabase/supabase-js'
+import {
+  ensureHomeSeekersAgencyDemoWorkspace,
+  HOME_SEEKERS_DEMO_EMAIL,
+  HOME_SEEKERS_DEMO_PASSWORD,
+  HOME_SEEKERS_DEMO_SEED_KEY,
+} from './agencyDemoBootstrap.mjs'
 
 const args = new Set(process.argv.slice(2))
 const argValue = (name, fallback = '') => {
@@ -11,8 +17,9 @@ const argValue = (name, fallback = '') => {
 }
 
 const ENVIRONMENT = String(argValue('--environment', process.env.AGENCY_DEMO_ENVIRONMENT || 'staging')).trim()
-const TARGET_EMAIL = String(process.env.AGENCY_DEMO_EMAIL || 'principal.demo@arch9.co.za').trim().toLowerCase()
-const SEED_KEY = 'agency-demo-transactions-v1'
+const TARGET_EMAIL = String(process.env.AGENCY_DEMO_EMAIL || HOME_SEEKERS_DEMO_EMAIL).trim().toLowerCase()
+const TARGET_PASSWORD = String(process.env.AGENCY_DEMO_PASSWORD || HOME_SEEKERS_DEMO_PASSWORD).trim()
+const SEED_KEY = HOME_SEEKERS_DEMO_SEED_KEY
 const UUID_NAMESPACE = 'bridge9-agency-demo-transactions-v1'
 const PRODUCTION_PROJECT_REF = 'isdowlnollckzvltkasn'
 
@@ -346,59 +353,12 @@ async function upsertRows(table, rows, definitions, options = {}) {
   return safeRows.length
 }
 
-async function fetchTargetContext() {
-  const profileResult = await supabase
-    .from('profiles')
-    .select('id, email, full_name, first_name, last_name')
-    .ilike('email', TARGET_EMAIL)
-    .maybeSingle()
-  if (profileResult.error) throw profileResult.error
-  if (!profileResult.data?.id) throw new Error(`No profile found for ${TARGET_EMAIL}.`)
-
-  const membershipsResult = await supabase
-    .from('organisation_users')
-    .select('*')
-    .eq('user_id', profileResult.data.id)
-    .eq('workspace_type', 'agency')
-    .eq('status', 'active')
-    .order('created_at', { ascending: false })
-    .limit(10)
-  if (membershipsResult.error) throw membershipsResult.error
-
-  const membership = (membershipsResult.data || [])[0]
-  if (!membership?.organisation_id) throw new Error(`No active agency membership found for ${TARGET_EMAIL}.`)
-
-  const orgResult = await supabase
-    .from('organisations')
-    .select('*')
-    .eq('id', membership.organisation_id)
-    .maybeSingle()
-  if (orgResult.error) throw orgResult.error
-  if (!orgResult.data?.id) throw new Error(`No organisation found for ${membership.organisation_id}.`)
-
-  const usersResult = await supabase
-    .from('organisation_users')
-    .select('id, user_id, email, first_name, last_name, role, workspace_role, branch_id')
-    .eq('organisation_id', membership.organisation_id)
-    .eq('status', 'active')
-    .order('created_at', { ascending: true })
-  if (usersResult.error) throw usersResult.error
-
-  const listingsResult = await supabase
-    .from('private_listings')
-    .select('id, title, address_line_1, suburb, city, province, postal_code, asking_price, property_type, assigned_agent_id')
-    .eq('organisation_id', membership.organisation_id)
-    .order('created_at', { ascending: false })
-    .limit(20)
-  if (listingsResult.error) throw listingsResult.error
-
-  return {
-    profile: profileResult.data,
-    membership,
-    organisation: orgResult.data,
-    users: usersResult.data || [],
-    listings: listingsResult.data || [],
-  }
+async function fetchTargetContext(definitions = null) {
+  return ensureHomeSeekersAgencyDemoWorkspace(supabase, {
+    definitions,
+    email: TARGET_EMAIL,
+    password: TARGET_PASSWORD,
+  })
 }
 
 function resolveAssignedUser(context, scenarioIndex) {
@@ -748,7 +708,7 @@ function participantRow(transactionId, roleType, name, email, phone, userId, org
 
 async function main() {
   const definitions = await fetchDefinitions()
-  const context = await fetchTargetContext()
+  const context = await fetchTargetContext(definitions)
   const rows = buildRows(context)
 
   const counts = {
