@@ -1,6 +1,6 @@
 import { ArrowLeft, ArrowRight, Building2, CheckCircle2, Circle, CircleAlert, FileText, FolderKanban, HelpCircle, ImagePlus, Link, Loader2, Mail, MessageCircle, MoreVertical, Plus, Search, Share2, ShieldCheck, Sparkles, Trash2, UserRound, UsersRound, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
 import SectionHeader from '../components/ui/SectionHeader'
@@ -834,7 +834,7 @@ function FileUpload({ label, fileName = '', accept = '', onFileSelect, onClear }
   )
 }
 
-function WizardFooter({ isFinalStep = false, isSaving = false, leftLabel = 'Cancel', leftIcon = null, onCancel, onSaveDraft, onContinue }) {
+function WizardFooter({ isFinalStep = false, isSaving = false, leftLabel = 'Cancel', leftIcon = null, onCancel, onSaveDraft, onContinue, finalLabel = 'Create listing', showSaveDraft = true }) {
   return (
     <footer className="sticky bottom-0 z-10 flex flex-col gap-3 border-t border-[#e6edf5] bg-white/95 px-5 py-4 backdrop-blur sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
       <Button type="button" variant="secondary" onClick={onCancel} disabled={isSaving}>
@@ -842,12 +842,14 @@ function WizardFooter({ isFinalStep = false, isSaving = false, leftLabel = 'Canc
         {leftLabel}
       </Button>
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
-        <Button type="button" variant="secondary" disabled={isSaving} onClick={onSaveDraft}>
-          Save draft
-        </Button>
+        {showSaveDraft ? (
+          <Button type="button" variant="secondary" disabled={isSaving} onClick={onSaveDraft}>
+            Save draft
+          </Button>
+        ) : null}
         <Button type={isFinalStep ? 'submit' : 'button'} disabled={isSaving} onClick={isFinalStep ? undefined : onContinue}>
           {isSaving ? <Loader2 size={16} className="animate-spin" /> : null}
-          {isFinalStep ? 'Create listing' : 'Continue'}
+          {isFinalStep ? finalLabel : 'Continue'}
           {!isFinalStep ? <ArrowRight size={16} /> : null}
         </Button>
       </div>
@@ -1057,6 +1059,190 @@ function serializeCreateListingDraftForm(form = {}) {
     supportingDocumentFiles: [],
     coverImageId,
     listingImages,
+  }
+}
+
+function stripQuickListingMetadataText(value = '') {
+  const text = normalizeText(value)
+  const markerIndex = text.indexOf(QUICK_LISTING_METADATA_PREFIX)
+  return markerIndex >= 0 ? text.slice(0, markerIndex).trim() : text
+}
+
+function findListingForEditor(listings = [], listingId = '') {
+  const target = normalizeText(decodeURIComponent(String(listingId || '')))
+  if (!target) return null
+  return (Array.isArray(listings) ? listings : []).find((listing) => getListingIdentityKeys(listing).includes(target)) || null
+}
+
+function resolveListingEditorStep(value = '', fallback = 'seller') {
+  const requested = normalizeDirectListingKey(value)
+  const aliases = {
+    seller_mandate: 'seller',
+    seller_and_mandate: 'seller',
+    property_details: 'property',
+    media: 'marketing',
+    documents: 'syndication',
+    publishing: 'syndication',
+  }
+  const key = aliases[requested] || requested || fallback
+  return CREATE_LISTING_WORKFLOW_STEPS.some((step) => step.key === key) ? key : fallback
+}
+
+function buildListingEditorFormFromListing(listing = {}, profile = {}, workspace = {}) {
+  const base = buildInitialListingLeadForm(profile, workspace)
+  const onboardingFormData = listing?.sellerOnboarding?.formData && typeof listing.sellerOnboarding.formData === 'object'
+    ? listing.sellerOnboarding.formData
+    : {}
+  const canonicalFacts = listing?.sellerCanonicalFacts && typeof listing.sellerCanonicalFacts === 'object'
+    ? listing.sellerCanonicalFacts
+    : {}
+  const canonicalSeller = canonicalFacts.seller && typeof canonicalFacts.seller === 'object' ? canonicalFacts.seller : {}
+  const canonicalProperty = canonicalFacts.property && typeof canonicalFacts.property === 'object' ? canonicalFacts.property : {}
+  const listingPropertyDetails = listing?.propertyDetails && typeof listing.propertyDetails === 'object' ? listing.propertyDetails : {}
+  const listingMarketing = listing?.marketing && typeof listing.marketing === 'object' ? listing.marketing : {}
+  const seller = listing?.seller && typeof listing.seller === 'object' ? listing.seller : {}
+  const sellerName = normalizeText(
+    listing.sellerName ||
+      canonicalFacts.sellerName ||
+      canonicalFacts.fullName ||
+      canonicalFacts.name ||
+      canonicalSeller.fullName ||
+      seller.name,
+  )
+  const sellerType = normalizeDirectListingKey(
+    listing.sellerType ||
+      listing.seller_type ||
+      canonicalSeller.sellerLegalType ||
+      canonicalSeller.legalType ||
+      onboardingFormData.sellerType ||
+      'individual',
+  )
+  const ownerCards = normalizeCreateListingOwnerCards(
+    canonicalSeller.owners ||
+      canonicalSeller.multipleOwners ||
+      onboardingFormData.multipleOwners ||
+      onboardingFormData.additionalOwners ||
+      [],
+    onboardingFormData.multipleOwnersText || '',
+  )
+  const galleryImages = (Array.isArray(listing.galleryImages) ? listing.galleryImages : Array.isArray(listing.images) ? listing.images : [])
+    .map((image, index) => ({
+      id: normalizeText(image?.id || image?.path || `listing-image-${index + 1}`),
+      name: normalizeText(image?.name || image?.caption || image?.fileName || `Image ${index + 1}`),
+      url: normalizeText(image?.url || image?.signedUrl || image?.publicUrl || image?.fileUrl || image?.file_url),
+      signedUrl: normalizeText(image?.signedUrl),
+      publicUrl: normalizeText(image?.publicUrl),
+      path: normalizeText(image?.path),
+      bucket: normalizeText(image?.bucket),
+      contentType: normalizeText(image?.contentType),
+      size: Number(image?.size || 0) || 0,
+    }))
+    .filter((image) => image.url || image.signedUrl || image.publicUrl)
+  const externalLinks = Array.isArray(listing.externalLinks) ? listing.externalLinks : Array.isArray(listing.listingExternalLinks) ? listing.listingExternalLinks : []
+  const selectedSyndicationChannels = new Set(['arch9_seller_experience'])
+  if (normalizeText(listing.property24ListingUrl || listing.property24Reference || listing.property24Status)) selectedSyndicationChannels.add('property24')
+  if (normalizeText(listing.privatePropertyListingUrl || listing.privatePropertyReference || listing.privatePropertyStatus)) selectedSyndicationChannels.add('private_property')
+  if (normalizeText(listing.bridgeListingPublicUrl || listing.bridgeListingStatus)) selectedSyndicationChannels.add('agency_website')
+  externalLinks.forEach((link) => {
+    const platform = normalizeDirectListingKey(link?.platform)
+    if (platform.includes('property24')) selectedSyndicationChannels.add('property24')
+    if (platform.includes('private')) selectedSyndicationChannels.add('private_property')
+    if (platform.includes('agency') || platform.includes('website')) selectedSyndicationChannels.add('agency_website')
+  })
+  const propertyAddress = normalizeText(listing.addressLine1 || listing.streetAddress || listing.propertyAddress)
+  const formattedAddress = normalizeText(listing.formattedAddress || [propertyAddress, listing.suburb, listing.city, listing.province].filter(Boolean).join(', '))
+  const mandateStatus = normalizeDirectListingKey(listing.mandateStatus || listing.mandate_status || onboardingFormData.mandateStatus)
+  const hasSignedMandate = ['signed', 'signed_uploaded', 'signed_external_pending_upload'].includes(mandateStatus)
+
+  return {
+    ...base,
+    quickAddIntent: hasSignedMandate ? 'signed_mandate' : 'draft',
+    sellerName,
+    sellerSurname: '',
+    sellerEmail: normalizeText(listing.sellerEmail || canonicalFacts.email || canonicalFacts.sellerEmail || canonicalSeller.email || seller.email),
+    sellerPhone: normalizeText(listing.sellerPhone || canonicalFacts.phone || canonicalFacts.sellerPhone || canonicalFacts.mobile || canonicalSeller.phone || seller.phone),
+    sellerType: DIRECT_LISTING_SELLER_TYPE_OPTIONS.some((option) => option.value === sellerType) ? sellerType : 'individual',
+    sellerRegistrationNumber: normalizeText(canonicalFacts.idNumber || canonicalFacts.identityNumber || canonicalSeller.idNumber || seller.registrationNumber),
+    companyName: normalizeText(canonicalSeller.companyName || onboardingFormData.companyName || (['company', 'close_corporation', 'other'].includes(sellerType) ? sellerName : '')),
+    companyRegistrationNumber: normalizeText(canonicalSeller.registrationNumber || onboardingFormData.companyRegistrationNumber),
+    trustName: normalizeText(canonicalSeller.trustName || onboardingFormData.trustName || (sellerType === 'trust' ? sellerName : '')),
+    trustRegistrationNumber: normalizeText(canonicalSeller.trustRegistrationNumber || onboardingFormData.trustRegistrationNumber),
+    multipleOwners: ownerCards,
+    multipleOwnersText: buildCreateListingOwnersText(ownerCards),
+    maritalStatus: normalizeText(onboardingFormData.maritalStatus || canonicalSeller.maritalStatus),
+    hasSignedMandate,
+    mandateStatusCaptured: Boolean(mandateStatus),
+    manualMandateStatus: mandateStatus || base.manualMandateStatus,
+    mandateType: normalizeText(listing.mandateType || listing.mandate_type || onboardingFormData.mandateType) || base.mandateType,
+    mandateStartDate: normalizeText(listing.mandateStartDate || onboardingFormData.mandateStartDate),
+    mandateEndDate: normalizeText(listing.mandateEndDate || onboardingFormData.mandateEndDate),
+    propertyAddress,
+    formattedAddress,
+    streetAddress: normalizeText(listing.streetAddress || propertyAddress),
+    streetNumber: normalizeText(listing.streetNumber || canonicalProperty.streetNumber),
+    streetName: normalizeText(listing.streetName || canonicalProperty.streetName),
+    suburb: normalizeText(listing.suburb || canonicalProperty.suburb),
+    city: normalizeText(listing.city || canonicalProperty.city),
+    province: normalizeText(listing.province || canonicalProperty.province),
+    country: normalizeText(listing.country || canonicalProperty.country) || 'South Africa',
+    postalCode: normalizeText(listing.postalCode || canonicalProperty.postalCode),
+    latitude: listing.latitude ?? null,
+    longitude: listing.longitude ?? null,
+    googlePlaceId: normalizeText(listing.googlePlaceId || listing.placeId),
+    propertyAddressValue: formattedAddress ? {
+      formattedAddress,
+      streetNumber: normalizeText(listing.streetNumber || canonicalProperty.streetNumber),
+      route: normalizeText(listing.streetName || canonicalProperty.streetName),
+      streetName: normalizeText(listing.streetName || canonicalProperty.streetName),
+      streetAddress: normalizeText(listing.streetAddress || propertyAddress),
+      suburb: normalizeText(listing.suburb || canonicalProperty.suburb),
+      city: normalizeText(listing.city || canonicalProperty.city),
+      province: normalizeText(listing.province || canonicalProperty.province),
+      country: normalizeText(listing.country || canonicalProperty.country) || 'South Africa',
+      postalCode: normalizeText(listing.postalCode || canonicalProperty.postalCode),
+      latitude: listing.latitude ?? null,
+      longitude: listing.longitude ?? null,
+      googlePlaceId: normalizeText(listing.googlePlaceId || listing.placeId),
+    } : null,
+    propertyType: normalizeText(listing.propertyType || listingPropertyDetails.propertyType || canonicalProperty.propertyType) || base.propertyType,
+    propertyStructureType: normalizePropertyStructureType(listing.propertyStructureType || canonicalProperty.propertyStructureType, { fallback: base.propertyStructureType }),
+    propertyCategory: normalizePropertyCategory(listing.propertyCategory || canonicalProperty.propertyCategory, { fallback: base.propertyCategory }),
+    listingCategory: normalizeText(listing.listingCategory) || base.listingCategory,
+    listingType: normalizeDirectListingKey(listing.listingCategory) === 'rental' ? 'rental' : 'sale',
+    estateOrHoa: Boolean(listing.estateOrHoa || canonicalProperty.estateOrHoa || canonicalProperty.estate_or_hoa || listing.estateName || canonicalProperty.estateName),
+    estateName: normalizeText(listing.estateName || canonicalProperty.estateName),
+    unitNumber: normalizeText(listing.unitNumber || canonicalProperty.unitNumber),
+    sectionNumber: normalizeText(listing.sectionNumber || canonicalProperty.sectionNumber),
+    complexName: normalizeText(listing.complexName || canonicalProperty.complexName || canonicalProperty.schemeName),
+    sectionalTitleNumber: normalizeText(listing.sectionalTitleNumber || canonicalProperty.sectionalTitleNumber),
+    estimatedAskingPrice: normalizeText(listing.estimatedValue || ''),
+    listingPrice: normalizeText(listing.askingPrice || listingPropertyDetails.price || ''),
+    listingTitle: normalizeText(listing.listingTitle || listing.title),
+    bedrooms: normalizeText(listing.bedrooms || listingPropertyDetails.bedrooms),
+    bathrooms: normalizeText(listing.bathrooms || listingPropertyDetails.bathrooms),
+    garages: normalizeText(listing.garages || listingPropertyDetails.garages),
+    parkingCount: normalizeText(listing.parkingCount || listing.coveredParking || listing.openParking || listingPropertyDetails.parkingBays),
+    erfSize: normalizeText(listing.erfSize || listingPropertyDetails.erfSize),
+    floorSize: normalizeText(listing.floorSize || listingPropertyDetails.floorSize),
+    noTransferDuty: Boolean(listing.noTransferDuty || canonicalProperty.no_transfer_duty),
+    onAuction: Boolean(listing.onAuction || canonicalProperty.on_auction),
+    priceOnApplication: Boolean(listing.priceOnApplication || listing.isPOA || canonicalProperty.price_on_application),
+    showReducedBanner: Boolean(listing.showReducedBanner || canonicalProperty.show_reduced_banner),
+    commissionType: normalizeText(listing.commission?.type || onboardingFormData.commissionType) || base.commissionType,
+    commissionValue: normalizeText(listing.commission?.value || onboardingFormData.commissionValue),
+    listingStatus: normalizeDirectListingKey(listing.listingStatus || listing.status) || base.listingStatus,
+    externalListingLink: normalizeText(listing.property24ListingUrl || externalLinks[0]?.url),
+    notes: stripQuickListingMetadataText(listing.internalListingNotes || listing.notes),
+    listingDescription: normalizeText(listing.listingPreviewDescription || listingMarketing.description || stripQuickListingMetadataText(listing.description)),
+    keySellingPoints: Array.isArray(listing.keySellingPoints) ? listing.keySellingPoints.map(normalizeText).filter(Boolean) : [],
+    listingImages: galleryImages,
+    coverImageId: normalizeText(listing.coverImageId || galleryImages[0]?.id),
+    selectedSyndicationChannels: Array.from(selectedSyndicationChannels),
+    assignedAgent: normalizeText(listing.assignedAgentName || listing.assignedAgent || profile?.fullName || profile?.email),
+    assignedAgentId: normalizeText(listing.assignedAgentId || profile?.id),
+    assignedAgentEmail: normalizeText(listing.assignedAgentEmail || profile?.email),
+    branchId: normalizeText(listing.branchId),
+    visibility: normalizeText(listing.listingVisibility || listing.visibility) || base.visibility,
   }
 }
 
@@ -3131,6 +3317,7 @@ function validateDeveloperListingMinimumFields({ form = {}, assignedAgentKey = '
 function AgentListings({ initialTab = null } = {}) {
   const navigate = useNavigate()
   const location = useLocation()
+  const routeParams = useParams()
   const { workspace, profile, role, agencyWorkflowMode, currentMembership, workspaceRole } = useWorkspace()
   const pilotCreationFreeze = resolveMvpPilotCreationFreeze()
   const isDeveloperWorkspace = role === 'developer'
@@ -3194,11 +3381,19 @@ function AgentListings({ initialTab = null } = {}) {
   const [listingUnitsLoading, setListingUnitsLoading] = useState(false)
 
   const [form, setForm] = useState(() => buildInitialListingLeadForm(profile, workspace))
+  const [hydratedEditListingId, setHydratedEditListingId] = useState('')
+  const editListingId = normalizeText(routeParams.listingId)
   const isCreateListingWorkspace = location.pathname === '/listings/new'
+  const isEditListingWorkspace = Boolean(editListingId && location.pathname.startsWith('/listings/') && location.pathname.endsWith('/edit'))
+  const isListingEditorWorkspace = isCreateListingWorkspace || isEditListingWorkspace
   const createListingDraftStorageKey = `${CREATE_LISTING_DRAFT_STORAGE_KEY}:${normalizeText(profile?.id || profile?.email || 'local')}`
   const selectedWorkspaceOrganisationId = useMemo(
     () => resolveSelectedWorkspaceOrganisationId({ workspace, currentMembership }),
     [currentMembership, workspace],
+  )
+  const editListingRecord = useMemo(
+    () => (isEditListingWorkspace ? findListingForEditor(privateListings, editListingId) : null),
+    [editListingId, isEditListingWorkspace, privateListings],
   )
 
   useEffect(() => {
@@ -3342,7 +3537,8 @@ function AgentListings({ initialTab = null } = {}) {
   }, [isDeveloperWorkspace, listingsTab])
 
   useEffect(() => {
-    if (!isCreateListingWorkspace) return
+    if (!isListingEditorWorkspace) return
+    const requestedStep = resolveListingEditorStep(new URLSearchParams(location.search || '').get('step'), isEditListingWorkspace ? 'property' : 'seller')
     setListingModalMode(isDeveloperWorkspace ? 'developer' : agencyWorkflowMode === 'principal' ? 'principal' : 'agent')
     setListingModalFlow('quick_add')
     setShowNewListingModal(false)
@@ -3351,8 +3547,23 @@ function AgentListings({ initialTab = null } = {}) {
     setQuickAddDuplicateAction('')
     setQuickAddSuccess(null)
     setError('')
-    setCreateListingStep((previous) => previous || 'seller')
-  }, [agencyWorkflowMode, isCreateListingWorkspace, isDeveloperWorkspace])
+    setCreateListingStep(requestedStep)
+    setCreateListingMaxVisitedStep(isEditListingWorkspace ? CREATE_LISTING_WORKFLOW_STEPS.length - 1 : Math.max(0, CREATE_LISTING_WORKFLOW_STEPS.findIndex((step) => step.key === requestedStep)))
+  }, [agencyWorkflowMode, isCreateListingWorkspace, isDeveloperWorkspace, isEditListingWorkspace, isListingEditorWorkspace, location.search])
+
+  useEffect(() => {
+    if (!isEditListingWorkspace) return
+    if (!editListingRecord) return
+    if (hydratedEditListingId === editListingId) return
+    setForm(buildListingEditorFormFromListing(editListingRecord, profile, workspace))
+    setHydratedEditListingId(editListingId)
+  }, [editListingId, editListingRecord, hydratedEditListingId, isEditListingWorkspace, profile, workspace])
+
+  useEffect(() => {
+    if (isEditListingWorkspace) return
+    if (!hydratedEditListingId) return
+    setHydratedEditListingId('')
+  }, [hydratedEditListingId, isEditListingWorkspace])
 
   useEffect(() => {
     if (!isCreateListingWorkspace || typeof window === 'undefined') return
@@ -3619,21 +3830,26 @@ function AgentListings({ initialTab = null } = {}) {
     return required
   }, [form])
 
-  function openCreateListingStep(stepKey) {
+  function openCreateListingStep(stepKey, { allowForward = false } = {}) {
     const targetIndex = CREATE_LISTING_WORKFLOW_STEPS.findIndex((step) => step.key === stepKey)
-    if (targetIndex < 0 || targetIndex > createListingMaxVisitedStep) return
+    if (targetIndex < 0 || (!isEditListingWorkspace && !allowForward && targetIndex > createListingMaxVisitedStep)) return
     setCreateListingStep(stepKey)
+    if (isEditListingWorkspace) {
+      const params = new URLSearchParams(location.search || '')
+      params.set('step', stepKey)
+      navigate(`${location.pathname}?${params.toString()}`, { replace: true })
+    }
   }
 
   function goToNextCreateListingStep() {
     const nextIndex = Math.min(createListingStepIndex + 1, CREATE_LISTING_WORKFLOW_STEPS.length - 1)
     setCreateListingMaxVisitedStep((previous) => Math.max(previous, nextIndex))
-    setCreateListingStep(CREATE_LISTING_WORKFLOW_STEPS[nextIndex].key)
+    openCreateListingStep(CREATE_LISTING_WORKFLOW_STEPS[nextIndex].key, { allowForward: true })
   }
 
   function goToPreviousCreateListingStep() {
     const previousIndex = Math.max(createListingStepIndex - 1, 0)
-    setCreateListingStep(CREATE_LISTING_WORKFLOW_STEPS[previousIndex].key)
+    openCreateListingStep(CREATE_LISTING_WORKFLOW_STEPS[previousIndex].key)
   }
 
   function updateCreateListingOwnerCard(ownerId, fallbackIndex, key, value) {
@@ -3785,6 +4001,265 @@ function AgentListings({ initialTab = null } = {}) {
 
   function resetForm() {
     setForm(buildContextualInitialListingLeadForm())
+  }
+
+  async function performUpdateExistingListing() {
+    const listing = editListingRecord
+    const listingId = getRemotePrivateListingId(listing) || editListingId
+    if (!listing || !listingId) {
+      setError('Unable to load this listing for editing.')
+      return
+    }
+
+    const sellerName = normalizeText(form.sellerName)
+    const sellerEmail = normalizeText(form.sellerEmail)
+    const sellerPhone = normalizeText(form.sellerPhone)
+    const propertyAddress = normalizeText(form.propertyAddress)
+    const propertyAddressValue = buildListingAddressValueFromForm(form)
+    const formattedAddress = normalizeText(propertyAddressValue?.formattedAddress || propertyAddress)
+    const streetAddress = normalizeText(propertyAddressValue?.streetAddress || propertyAddress)
+    const country = normalizeText(propertyAddressValue?.country || form.country) || 'South Africa'
+    const postalCode = normalizeText(propertyAddressValue?.postalCode || form.postalCode)
+    const googlePlaceId = normalizeText(propertyAddressValue?.googlePlaceId || propertyAddressValue?.placeId || form.googlePlaceId)
+    const latitude = propertyAddressValue?.latitude ?? form.latitude ?? null
+    const longitude = propertyAddressValue?.longitude ?? form.longitude ?? null
+    const addressLine2 = buildSectionalTitleAddressLine(form)
+    const listingPropertyCanonicalFacts = buildListingPropertyCanonicalFacts(form)
+    const propertyType = normalizeText(form.propertyType)
+    const listingTitle = normalizeText(form.listingTitle) || [propertyType, normalizeText(form.suburb)].filter(Boolean).join(' - ') || propertyAddress || 'Listing'
+    const askingPrice = Number(form.listingPrice || form.estimatedAskingPrice || 0) || 0
+    const mandateStatus = getQuickListingMandateStatus(form)
+    const mandatePack = buildQuickListingMandatePack(form, mandateStatus)
+    const keySellingPoints = Array.isArray(form.keySellingPoints) ? form.keySellingPoints.map(normalizeText).filter(Boolean) : []
+    const uploadedImages = isSupabaseConfigured && isUuidLike(listingId)
+      ? await uploadQuickListingImages(listingId, form.listingImages)
+      : (Array.isArray(form.listingImages) ? form.listingImages : []).map((image) => {
+        const safeImage = { ...image }
+        delete safeImage.file
+        return safeImage
+      }).filter((image) => normalizeText(image.url || image.signedUrl || image.publicUrl))
+    const directListingPersistence = buildQuickAddDirectListingPersistencePayload(form, {
+      capturedBy: profile?.id || profile?.email || '',
+      listingStatus: form.listingStatus,
+      mandateStatus,
+    })
+    const sellerCanonicalFacts = {
+      ...directListingPersistence.sellerCanonicalFacts,
+      sellerName,
+      name: sellerName,
+      fullName: sellerName,
+      email: sellerEmail,
+      sellerEmail,
+      phone: sellerPhone,
+      mobile: sellerPhone,
+      ...listingPropertyCanonicalFacts,
+    }
+    const sellerCanonicalFactReadiness = {
+      ...directListingPersistence.sellerCanonicalFactReadiness,
+      sellerName: Boolean(sellerName),
+      sellerEmail: Boolean(sellerEmail),
+      sellerPhone: Boolean(sellerPhone),
+      propertyUnitNumber: Boolean(listingPropertyCanonicalFacts.unitNumber),
+      propertyComplexName: Boolean(listingPropertyCanonicalFacts.complexName),
+    }
+    const existingNotes = normalizeText(listing.internalListingNotes || listing.notes || listing.description)
+    const nextNotes = mergeQuickListingMetadataInNotes(existingNotes, {
+      editor: {
+        mode: 'edit',
+        updatedAt: new Date().toISOString(),
+        mandate: mandatePack,
+      },
+    })
+    const listingPatch = {
+      developmentId: form.developmentId || null,
+      unitId: form.unitId || null,
+      branchId: form.branchId || null,
+      assignedAgentId: form.assignedAgentId || null,
+      listingStatus: form.listingStatus || listing.listingStatus || listing.status || 'draft',
+      listingVisibility: form.visibility || listing.listingVisibility || 'internal',
+      title: listingTitle,
+      propertyCategory: normalizePropertyCategory(form.propertyCategory, { fallback: 'residential' }),
+      listingSource: form.developmentId || linkedDevelopmentId ? 'development' : form.listingSource || 'private_listing',
+      propertyStructureType: normalizePropertyStructureType(form.propertyStructureType, { fallback: 'other' }),
+      propertyType,
+      listingCategory: form.listingType === 'rental' ? 'rental' : 'private_sale',
+      askingPrice,
+      estimatedValue: askingPrice,
+      addressLine1: propertyAddress,
+      addressLine2,
+      formattedAddress,
+      streetNumber: normalizeText(form.streetNumber),
+      streetName: normalizeText(form.streetName || form.route),
+      streetAddress,
+      suburb: normalizeText(form.suburb),
+      city: normalizeText(form.city),
+      province: normalizeText(form.province),
+      country,
+      postalCode,
+      latitude,
+      longitude,
+      googlePlaceId,
+      description: normalizeText(form.listingDescription) || stripQuickListingMetadataText(listing.description),
+      listingPreviewDescription: normalizeText(form.listingDescription || form.notes),
+      internalListingNotes: nextNotes,
+      sellerType: directListingPersistence.seller?.sellerLegalType || form.sellerType,
+      mandateType: normalizeText(form.mandateType) || 'sole',
+      mandateStatus,
+      mandateStartDate: form.mandateStartDate || null,
+      mandateEndDate: form.mandateEndDate || null,
+      property24ListingUrl: form.externalListingLink || listing.property24ListingUrl || '',
+      sellerCanonicalFacts,
+      sellerCanonicalFactReadiness,
+      sellerCanonicalFactsUpdatedAt: new Date().toISOString(),
+    }
+    const onboardingPatch = {
+      ...directListingPersistence.sellerOnboardingFormData,
+      propertyType,
+      propertyStructureType: form.propertyStructureType,
+      ownershipType: form.sellerType,
+      bedrooms: form.bedrooms,
+      bathrooms: form.bathrooms,
+      garages: form.garages,
+      parkingCovered: form.parkingCount,
+      erfSize: form.erfSize,
+      floorSize: form.floorSize,
+      askingPrice,
+      propertyNotes: normalizeText(form.listingDescription),
+      listingPreviewDescription: normalizeText(form.listingDescription),
+      imageGallery: uploadedImages,
+      coverImageId: normalizeText(form.coverImageId || uploadedImages[0]?.id),
+      features: buildQuickListingPublicationFeatures(form, keySellingPoints),
+      keySellingPoints,
+      mandateStatus,
+      mandateType: form.mandateType,
+      mandateStartDate: form.mandateStartDate || '',
+      mandateEndDate: form.mandateEndDate || '',
+    }
+    const distributionLinks = Array.isArray(listing.externalLinks) ? [...listing.externalLinks] : []
+    const property24Url = normalizeText(form.externalListingLink || listing.property24ListingUrl)
+    if (property24Url && !distributionLinks.some((link) => normalizeDirectListingKey(link?.platform).includes('property24'))) {
+      distributionLinks.push({ platform: 'Property24', url: property24Url, status: listing.property24Status || 'Draft', visibleToSeller: false })
+    }
+
+    if (isSupabaseConfigured && isUuidLike(listingId)) {
+      await updatePrivateListing(listingId, listingPatch, { includeRequirementsAndDocuments: false })
+      await persistSellerProfileOnboardingFormData({
+        listingId,
+        formData: onboardingPatch,
+        status: listing.sellerOnboardingStatus || listing.seller_onboarding_status || 'in_progress',
+        sellerType: form.sellerType,
+        ownershipStructure: form.sellerType,
+      }).catch((persistenceError) => {
+        console.warn('[Listings] listing editor onboarding form persistence skipped', persistenceError)
+        return null
+      })
+      await syncPrivateListingDistributionData(listingId, {
+        publicationData: {
+          title: listingTitle,
+          address: formattedAddress || propertyAddress,
+          suburb: form.suburb,
+          province: form.province,
+          propertyType,
+          listingType: form.listingType === 'rental' ? 'Rental' : 'Sale',
+          askingPrice,
+          bedrooms: Number(form.bedrooms || 0) || null,
+          bathrooms: Number(form.bathrooms || 0) || null,
+          garages: Number(form.garages || 0) || null,
+          parkingBays: Number(form.parkingCount || 0) || null,
+          floorSize: Number(form.floorSize || 0) || null,
+          erfSize: Number(form.erfSize || 0) || null,
+          description: normalizeText(form.listingDescription),
+          features: buildQuickListingPublicationFeatures(form, keySellingPoints),
+          amenities: [],
+          status: 'Draft',
+        },
+        media: {
+          galleryImages: uploadedImages,
+          coverImageId: normalizeText(form.coverImageId || uploadedImages[0]?.id),
+          floorplans: listing.marketing?.floorplans || listing.propertyDetails?.floorplans || [],
+        },
+        externalLinks: distributionLinks,
+      }).catch((syncError) => {
+        console.warn('[Listings] listing editor distribution sync skipped', syncError)
+        return null
+      })
+      await createPrivateListingActivity({
+        privateListingId: listingId,
+        activityType: 'listing_editor_saved',
+        activityTitle: 'Listing details updated',
+        activityDescription: 'Listing details were updated through the shared listing editor.',
+        performedBy: profile?.id || null,
+        visibility: 'internal',
+        metadata: {
+          source: 'shared_listing_editor',
+          activeStep: createListingStep,
+          updatedAt: new Date().toISOString(),
+        },
+      }).catch(() => null)
+    } else {
+      const localListings = readAgentPrivateListings()
+      const localIndex = localListings.findIndex((row) => getListingIdentityKeys(row).includes(listingId))
+      if (localIndex < 0) {
+        setError('Unable to update this local listing.')
+        return
+      }
+      const existingLocal = localListings[localIndex]
+      const localUpdated = {
+        ...existingLocal,
+        ...listingPatch,
+        id: existingLocal.id,
+        updatedAt: new Date().toISOString(),
+        propertyAddress: [addressLine2, propertyAddress, form.suburb, form.city].filter(Boolean).join(', '),
+        bedrooms: Number(form.bedrooms || 0) || 0,
+        bathrooms: Number(form.bathrooms || 0) || 0,
+        garages: Number(form.garages || 0) || 0,
+        parkingCount: Number(form.parkingCount || 0) || 0,
+        erfSize: Number(form.erfSize || 0) || null,
+        floorSize: Number(form.floorSize || 0) || null,
+        listingDescription: normalizeText(form.listingDescription),
+        listingPreviewDescription: normalizeText(form.listingDescription || form.notes),
+        keySellingPoints,
+        galleryImages: uploadedImages,
+        coverImageId: normalizeText(form.coverImageId || uploadedImages[0]?.id),
+        selectedSyndicationChannels: Array.isArray(form.selectedSyndicationChannels) ? form.selectedSyndicationChannels : [],
+        seller: {
+          ...(existingLocal.seller || {}),
+          name: sellerName,
+          email: sellerEmail,
+          phone: sellerPhone,
+          registrationNumber: form.sellerRegistrationNumber,
+        },
+        sellerOnboarding: {
+          ...(existingLocal.sellerOnboarding || {}),
+          formData: {
+            ...(existingLocal.sellerOnboarding?.formData || {}),
+            ...onboardingPatch,
+          },
+        },
+        activityLog: [
+          ...(Array.isArray(existingLocal.activityLog) ? existingLocal.activityLog : []),
+          {
+            type: 'listing_editor_saved',
+            title: 'Listing details updated',
+            source: 'shared_listing_editor',
+            createdAt: new Date().toISOString(),
+          },
+        ],
+      }
+      const localRequirementSync = buildLocalQuickAddRequirementSync(localUpdated, existingLocal.documentRequirements || existingLocal.requiredDocuments || [])
+      localListings[localIndex] = {
+        ...localUpdated,
+        requiredDocuments: localRequirementSync.requirements,
+        documentRequirements: localRequirementSync.requirements,
+      }
+      writeAgentPrivateListings(localListings)
+    }
+
+    setError('')
+    setWorkflowMessage('Listing changes saved.')
+    window.dispatchEvent(new Event('itg:listings-updated'))
+    await loadData({ showLoading: false }).catch(() => null)
+    navigate(`/agent/listings/${encodeURIComponent(listingId)}?tab=marketing`, { replace: true, state: { message: 'Listing changes saved.' } })
   }
 
   const isPrincipalListingMode = listingModalMode === 'principal'
@@ -5398,12 +5873,18 @@ function AgentListings({ initialTab = null } = {}) {
     setError('')
     setWorkflowMessage('')
     try {
-      assertMvpPilotCreationAllowed({ operation: 'create a listing' })
+      if (!isEditListingWorkspace) {
+        assertMvpPilotCreationAllowed({ operation: 'create a listing' })
+      }
       setIsListingSaving(true)
-      await performSaveListing()
+      if (isEditListingWorkspace) {
+        await performUpdateExistingListing()
+      } else {
+        await performSaveListing()
+      }
     } catch (saveError) {
       console.error('[Listings] listing save failed', saveError)
-      setError(saveError?.message || 'Unable to create listing right now.')
+      setError(saveError?.message || (isEditListingWorkspace ? 'Unable to save listing changes right now.' : 'Unable to create listing right now.'))
     } finally {
       setIsListingSaving(false)
     }
@@ -6133,7 +6614,28 @@ function AgentListings({ initialTab = null } = {}) {
     navigate(`/pipeline/leads/${encodeURIComponent(draftId)}/legal/mandate?${params.toString()}`)
   }
 
-  if (isCreateListingWorkspace) {
+  if (isListingEditorWorkspace) {
+    if (isEditListingWorkspace && loading) {
+      return (
+        <section className="rounded-[18px] border border-[#dde6ef] bg-white p-6 text-sm font-semibold text-[#607387] shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
+          Loading listing editor...
+        </section>
+      )
+    }
+    if (isEditListingWorkspace && !editListingRecord) {
+      return (
+        <section className="space-y-4 rounded-[18px] border border-[#f6d4d4] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
+          <div>
+            <p className="text-lg font-semibold text-[#142132]">Listing not found</p>
+            <p className="mt-1 text-sm text-[#607387]">This listing could not be loaded for editing.</p>
+          </div>
+          <Button type="button" variant="secondary" onClick={() => navigate('/listings')}>
+            <ArrowLeft size={16} />
+            Back to listings
+          </Button>
+        </section>
+      )
+    }
     const sellerTypeKey = normalizeDirectListingKey(form.sellerType || 'individual')
     const mandateSigned = Boolean(form.hasSignedMandate)
     const selectedAgentKey = normalizeText(form.assignedAgentId || form.assignedAgentEmail)
@@ -6144,29 +6646,59 @@ function AgentListings({ initialTab = null } = {}) {
       : form.priceOnApplication ? 'Price on Application' : 'Price not captured'
     const createListingOwnerCards = normalizeCreateListingOwnerCards(form.multipleOwners, form.multipleOwnersText, { includeBlank: sellerTypeKey === 'multiple_owners' })
     const isFinalCreateListingStep = createListingStepIndex === CREATE_LISTING_WORKFLOW_STEPS.length - 1
+    const editorTitle = isEditListingWorkspace ? 'Edit Listing' : 'New listing (sales)'
+    const editorHeading = isEditListingWorkspace ? 'Edit Listing' : 'New listing'
+    const editorDescription = isEditListingWorkspace ? 'Update the details of your property listing.' : 'Capture the listing details.'
+    const editorCrumbTitle = isEditListingWorkspace ? normalizeText(editListingRecord?.listingTitle || editListingRecord?.title || editListingRecord?.addressLine1 || editListingRecord?.propertyAddress || 'Listing') : ''
+    const cancelEditor = () => navigate(isEditListingWorkspace ? `/agent/listings/${encodeURIComponent(editListingId)}` : '/listings')
 
     return (
       <form className="space-y-5 pb-6" onSubmit={handleSaveListing} noValidate>
-        <header className="flex flex-wrap items-center justify-between gap-3">
-          <div className="text-sm font-semibold text-[#607387]">
-            <span>Listings</span>
-            <span className="mx-2 text-[#9aa9ba]">→</span>
-            <span className="text-[#142132]">New listing (sales)</span>
+        <header className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="text-sm font-semibold text-[#607387]">
+              <button type="button" className="transition hover:text-[#142132]" onClick={() => navigate('/listings')}>Listings</button>
+              <span className="mx-2 text-[#9aa9ba]">→</span>
+              {isEditListingWorkspace ? (
+                <>
+                  <span>{editorCrumbTitle}</span>
+                  <span className="mx-2 text-[#9aa9ba]">→</span>
+                </>
+              ) : null}
+              <span className="text-[#142132]">{editorTitle}</span>
+              {isEditListingWorkspace ? (
+                <span className="ml-2 rounded-full border border-[#cfe9dc] bg-[#edf9f2] px-2 py-0.5 text-xs font-bold text-[#1f7d44]">Editing</span>
+              ) : null}
+            </div>
+            <h1 className="mt-3 text-2xl font-semibold text-[#142132]">{editorHeading}</h1>
+            <p className="mt-1 text-sm text-[#607387]">{editorDescription}</p>
           </div>
-          <button
-            type="button"
-            onClick={() => navigate('/listings')}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-[10px] border border-[#dbe6f2] bg-white text-[#607387] transition hover:border-[#b7c8db] hover:text-[#22374d]"
-            aria-label="Close create listing"
-          >
-            <X size={18} />
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            {isEditListingWorkspace ? (
+              <>
+                <Button type="button" variant="secondary" onClick={cancelEditor}>Cancel</Button>
+                <Button type="submit" disabled={isListingSaving}>
+                  {isListingSaving ? <Loader2 size={16} className="animate-spin" /> : null}
+                  Save Changes
+                </Button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={cancelEditor}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-[10px] border border-[#dbe6f2] bg-white text-[#607387] transition hover:border-[#b7c8db] hover:text-[#22374d]"
+                aria-label="Close create listing"
+              >
+                <X size={18} />
+              </button>
+            )}
+          </div>
         </header>
 
         <CreateListingProgressNav
           steps={CREATE_LISTING_WORKFLOW_STEPS}
           activeStep={createListingStep}
-          maxVisitedStep={createListingMaxVisitedStep}
+          maxVisitedStep={isEditListingWorkspace ? CREATE_LISTING_WORKFLOW_STEPS.length - 1 : createListingMaxVisitedStep}
           onStepClick={openCreateListingStep}
         />
 
@@ -6180,9 +6712,11 @@ function AgentListings({ initialTab = null } = {}) {
               isSaving={isListingSaving}
               leftLabel={createListingStepIndex === 0 ? 'Cancel' : 'Back'}
               leftIcon={createListingStepIndex === 0 ? null : <ArrowLeft size={16} />}
-              onCancel={createListingStepIndex === 0 ? () => navigate('/listings') : goToPreviousCreateListingStep}
-              onSaveDraft={saveCreateListingDraftLocally}
+              onCancel={createListingStepIndex === 0 ? cancelEditor : goToPreviousCreateListingStep}
+              onSaveDraft={isEditListingWorkspace ? undefined : saveCreateListingDraftLocally}
               onContinue={goToNextCreateListingStep}
+              finalLabel={isEditListingWorkspace ? 'Save changes' : 'Create listing'}
+              showSaveDraft={!isEditListingWorkspace}
             />
           )}
         >

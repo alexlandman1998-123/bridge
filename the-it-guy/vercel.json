@@ -1,5 +1,5 @@
 {
-  "buildCommand": "npm run build:guarded",
+  "buildCommand": "npm run build",
   "env": {
     "VITE_DOCUMENT_TITLE": "Arch9 | Platform",
     "VITE_MVP_PILOT_CREATION_PAUSED": "false"

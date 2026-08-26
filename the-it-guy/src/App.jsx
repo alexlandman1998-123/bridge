@@ -2943,6 +2943,16 @@ function AppRoutes() {
                 }
               />
               <Route
+                path="/listings/:listingId/edit"
+                element={
+                  <SalesWorkspaceGuard>
+                    <RoleRoute allowedRoles={['developer', 'agent']}>
+                      <AgentListings />
+                    </RoleRoute>
+                  </SalesWorkspaceGuard>
+                }
+              />
+              <Route
                 path="/listings/:listingSection?"
                 element={
                   <SalesWorkspaceGuard>

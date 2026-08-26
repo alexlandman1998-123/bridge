@@ -11,6 +11,8 @@ export const HOME_SEEKERS_DEMO_SEED_KEY = String(DEMO_ACCOUNT.seedData?.seedKey 
 export const HOME_SEEKERS_DEMO_ORGANISATION_ID = stableUuid('home-seekers:organisation')
 export const HOME_SEEKERS_DEMO_BRANCH_ID = stableUuid('home-seekers:branch:head-office')
 export const HOME_SEEKERS_DEMO_MEMBERSHIP_ID = stableUuid('home-seekers:membership:principal')
+export const HOME_SEEKERS_DEMO_DEVELOPMENT_ID = stableUuid('home-seekers:development:demo')
+export const HOME_SEEKERS_DEMO_DEVELOPMENT_NAME = 'Home Seekers Demo Development'
 
 function normalizeText(value = '') {
   return String(value || '').trim()
@@ -376,6 +378,105 @@ function buildListingPayloads(userId, { account = HOME_SEEKERS_DEMO_ACCOUNT } = 
   })
 }
 
+function buildDevelopmentPayload({ account = HOME_SEEKERS_DEMO_ACCOUNT } = {}) {
+  const now = new Date().toISOString()
+  const organisationName = normalizeText(account.name || 'Home Seekers') || 'Home Seekers'
+
+  return {
+    id: HOME_SEEKERS_DEMO_DEVELOPMENT_ID,
+    organisation_id: HOME_SEEKERS_DEMO_ORGANISATION_ID,
+    name: HOME_SEEKERS_DEMO_DEVELOPMENT_NAME,
+    code: 'HS-DEMO',
+    planned_units: 6,
+    total_units_expected: 6,
+    location: 'Cape Town',
+    suburb: 'Cape Town CBD',
+    city: 'Cape Town',
+    province: 'Western Cape',
+    country: 'South Africa',
+    description: `${organisationName} demo development used to anchor transaction workspace data.`,
+    status: 'active',
+    developer_company: organisationName,
+    launch_date: '2026-08-21',
+    expected_completion_date: '2027-02-21',
+    assigned_attorney_id: null,
+    handover_enabled: true,
+    snag_tracking_enabled: true,
+    alterations_enabled: false,
+    onboarding_enabled: true,
+    address: 'Cape Town, Western Cape, South Africa',
+    formatted_address: 'Cape Town, Western Cape, South Africa',
+    street_address: 'Cape Town',
+    latitude: null,
+    longitude: null,
+    google_place_id: null,
+    postal_code: null,
+    created_at: now,
+    updated_at: now,
+  }
+}
+
+function buildDevelopmentSettingsPayload() {
+  const now = new Date().toISOString()
+  return {
+    development_id: HOME_SEEKERS_DEMO_DEVELOPMENT_ID,
+    client_portal_enabled: true,
+    snag_reporting_enabled: true,
+    alteration_requests_enabled: false,
+    service_reviews_enabled: false,
+    reservation_deposit_enabled_by_default: false,
+    reservation_deposit_amount: null,
+    reservation_deposit_amount_type: 'fixed',
+    reservation_deposit_treatment: 'credited_to_purchase_price',
+    reservation_deposit_payable_to: 'developer',
+    reservation_deposit_payment_details: {
+      account_holder_name: '',
+      bank_name: '',
+      account_number: '',
+      branch_code: '',
+      account_type: '',
+      payment_reference_format: '',
+      payment_instructions: '',
+      vat_treatment: 'including_vat',
+      due_trigger: 'on_reservation',
+    },
+    reservation_deposit_notification_recipients: [],
+    default_alteration_charge_treatment: 'included_in_purchase_price',
+    enabled_modules: {
+      agent: true,
+      conveyancing: true,
+      bond_originator: true,
+    },
+    stakeholder_teams: {
+      agents: [],
+      conveyancers: [],
+      bondOriginators: [],
+      developers: [],
+      rolePlayerDefaults: {
+        defaultAgentSource: 'first_agent',
+        defaultAgentRelationshipId: '',
+        defaultAgentPreferredPartnerId: '',
+        defaultAgentName: '',
+        multipleAgentsAllowed: true,
+        developerSellingDirectly: false,
+        defaultTransferAttorneySource: 'first_conveyancer',
+        defaultBondOriginatorSource: 'first_bond_originator',
+        defaultTransferAttorneyRelationshipId: '',
+        defaultTransferAttorneyPreferredPartnerId: '',
+        defaultTransferAttorneyName: '',
+        defaultBondOriginatorRelationshipId: '',
+        defaultBondOriginatorPreferredPartnerId: '',
+        defaultBondOriginatorName: '',
+        buyerAppointedBondOriginatorAllowed: true,
+        buyerAppointedBondOriginatorRequiresApproval: false,
+        autoInviteSelectedBondOriginator: true,
+      },
+    },
+    created_at: now,
+    updated_at: now,
+  }
+}
+
 export async function ensureHomeSeekersAgencyDemoWorkspace(client, {
   definitions = null,
   email = HOME_SEEKERS_DEMO_EMAIL,
@@ -420,6 +521,11 @@ export async function ensureHomeSeekersAgencyDemoWorkspace(client, {
     organisation_id: organisationId,
     branch_id: branchId,
   }
+  const developmentPayload = {
+    ...buildDevelopmentPayload({ account }),
+    organisation_id: organisationId,
+  }
+  const developmentSettingsPayload = buildDevelopmentSettingsPayload()
   const listingRows = buildListingPayloads(userId, { account }).map((row) => ({
     ...row,
     organisation_id: organisationId,
@@ -431,6 +537,8 @@ export async function ensureHomeSeekersAgencyDemoWorkspace(client, {
   await upsertRow(client, definitions, 'organisation_settings', organisationSettingsPayload, 'organisation_id')
   await upsertRow(client, definitions, 'organisation_branches', branchPayload, 'id')
   await upsertRow(client, definitions, 'organisation_users', membershipPayload, 'organisation_id,email')
+  await upsertRow(client, definitions, 'developments', developmentPayload, 'id')
+  await upsertRow(client, definitions, 'development_settings', developmentSettingsPayload, 'development_id')
   await Promise.all(listingRows.map((row) => upsertRow(client, definitions, 'private_listings', row, 'id')))
 
   const [membershipResult, usersResult, listingsResult] = await Promise.all([
@@ -475,6 +583,10 @@ export async function ensureHomeSeekersAgencyDemoWorkspace(client, {
     organisation: {
       id: organisationId,
       name: normalizeText(account.name || 'Home Seekers') || 'Home Seekers',
+    },
+    development: {
+      id: HOME_SEEKERS_DEMO_DEVELOPMENT_ID,
+      name: HOME_SEEKERS_DEMO_DEVELOPMENT_NAME,
     },
     organisationId,
     branchId,

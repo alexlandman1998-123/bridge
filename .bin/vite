@@ -1,0 +1,2 @@
+#!/bin/sh
+exec /Users/alexanderlandman/the-it-guy/node_modules/.bin/vite "$@"

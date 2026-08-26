@@ -2034,6 +2034,8 @@ function DistributionChannel({
   reference = '',
   status = 'pending',
   statusLabel = '',
+  contextTitle = '',
+  contextDetail = '',
   lastSynced = '',
   primaryAction = null,
   secondaryAction = null,
@@ -2042,10 +2044,18 @@ function DistributionChannel({
   const Icon = icon
   const statusKey = normalizeKey(status || statusLabel)
   const live = ['live', 'published', 'active', 'done', 'complete'].includes(statusKey)
-  const attention = ['draft', 'pending', 'not_published', 'not_added', 'missing'].includes(statusKey)
-  const dotClass = live ? 'bg-[#1f9d64]' : attention ? 'bg-[#8aa0b6]' : 'bg-[#d99321]'
+  const syncing = ['syncing', 'updating', 'publishing', 'loading'].includes(statusKey)
+  const attention = ['needs_attention', 'attention', 'warning', 'blocked', 'missing', 'failed', 'error'].includes(statusKey)
+  const dotClass = live ? 'bg-[#1f9d64]' : attention ? 'bg-[#d99321]' : syncing ? 'bg-[#2f6fb3]' : 'border border-[#aebdca] bg-white'
+  const statusTextClass = live
+    ? 'text-[#18713e]'
+    : attention
+      ? 'text-[#9a5b13]'
+      : syncing
+        ? 'text-[#2f6fb3]'
+        : 'text-[#526a82]'
   return (
-    <div className="grid gap-3 border-b border-[#edf2f7] px-4 py-3 last:border-b-0 md:grid-cols-[minmax(260px,1fr)_minmax(160px,210px)_auto] md:items-center">
+    <div className="grid gap-4 border-b border-[#edf2f7] px-4 py-4 last:border-b-0 lg:grid-cols-[minmax(230px,0.9fr)_minmax(150px,190px)_minmax(260px,1fr)_minmax(130px,170px)_auto] lg:items-center">
       <div className="flex min-w-0 items-center gap-3">
         <PlatformLogo src={logoSrc} icon={Icon} label={name} />
         <div className="min-w-0">
@@ -2059,11 +2069,22 @@ function DistributionChannel({
         </div>
       </div>
       <div className="min-w-0 md:justify-self-start">
-        <p className="inline-flex items-center gap-2 text-sm font-semibold text-[#243d56]">
+        <p className={`inline-flex items-center gap-2 text-sm font-semibold ${statusTextClass}`}>
           <span className={`h-2 w-2 rounded-full ${dotClass}`} />
           {statusLabel || formatStatusLabel(status)}
         </p>
-        {lastSynced ? <p className="mt-1 text-xs text-[#607387]">{lastSynced}</p> : null}
+      </div>
+      <div className="min-w-0">
+        <p className="text-sm font-semibold leading-5 text-[#243d56]">{contextTitle || 'Ready to publish'}</p>
+        {contextDetail ? <p className="mt-0.5 truncate text-xs leading-5 text-[#607387]">{contextDetail}</p> : null}
+      </div>
+      <div className="min-w-0">
+        {lastSynced ? (
+          <>
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8294aa]">Last synced</p>
+            <p className="mt-0.5 text-xs font-semibold text-[#607387]">{lastSynced}</p>
+          </>
+        ) : null}
       </div>
       <div className="flex flex-wrap items-center gap-2 md:justify-end">
         {primaryAction}
@@ -2277,6 +2298,12 @@ function formatSellerProfileValue(value, type = 'text') {
     return Number.isFinite(amount) ? `${amount}%` : humanizeProfileToken(text)
   }
   return humanizeProfileToken(text)
+}
+
+function presentSellerWorkspaceValue(value, fallback = 'Not provided') {
+  const text = String(value ?? '').trim()
+  if (!text || text === '—' || text.toLowerCase() === 'n/a' || text.toLowerCase() === 'not captured') return fallback
+  return value
 }
 
 function isSellerProfileFilled(value) {
@@ -4818,9 +4845,12 @@ function AgentListingDetail() {
   }
 
   function openPropertyDetailsFromMarketing() {
-    setPropertyDetailsReturnTarget('marketing')
-    setActiveTab('property_details')
-    setDetailError('')
+    const targetListingId = encodeURIComponent(String(listingRecord?.id || listingId || '').trim())
+    if (!targetListingId) {
+      setDetailError('Unable to open the listing editor because this listing is missing an id.')
+      return
+    }
+    navigate(`/listings/${targetListingId}/edit?step=property`)
   }
 
   function openDetailTab(tab) {
@@ -6890,7 +6920,6 @@ function AgentListingDetail() {
   const property24PreviewCounts = getProperty24ReadinessCounts(property24Preview)
   const property24ReadinessIssues = getProperty24ReadinessIssues(property24Preview)
   const property24LeadImportCounts = getProperty24LeadImportCounts(property24LeadImport)
-  const property24StatusLabel = getProperty24StatusLabel(property24StatusCheck)
   const property24StatusCheckedAt = getProperty24StatusCheckedAt(property24StatusCheck)
   const property24HasReference = Boolean(property24Reference)
   const property24CanSubmit = property24Preview?.preview?.canSubmit ?? property24Preview?.report?.preview?.canSubmit ?? null
@@ -6898,15 +6927,6 @@ function AgentListingDetail() {
   const property24SandboxAgentIdPending = hasProperty24SandboxAgentIdBlocker(property24Preview)
   const property24PublishDisabled = Boolean(property24Action) || property24CanSubmit !== true || property24HasPreviewBlockers
   const property24PrimaryActionLabel = property24HasReference ? 'Update Existing Listing' : 'Publish New Listing'
-  const property24ReadinessStatus = property24Published
-    ? { label: 'Live', tone: 'success' }
-    : property24SandboxAgentIdPending
-      ? { label: 'Sandbox only', tone: 'warning' }
-      : property24HasPreviewBlockers
-        ? { label: 'Needs attention', tone: 'warning' }
-        : property24CanSubmit === true
-          ? { label: 'Ready to publish', tone: 'success' }
-          : { label: 'Not checked', tone: 'neutral' }
   const property24NextStep = property24SandboxAgentIdPending
     ? 'Sandbox payload can be reviewed. Real publishing stays blocked until Property24 returns a usable agent ID.'
     : property24HasPreviewBlockers
@@ -7009,21 +7029,6 @@ function AgentListingDetail() {
     () => buildListingWorkspacePortalFixGuide(salesPortalReadinessSummaries, { type: 'sales' }),
     [salesPortalReadinessSummaries],
   )
-  const liveChannelCount = useMemo(() => {
-    const isLive = (value) => ['published', 'live', 'active'].includes(normalizeKey(value))
-    const liveChannels = new Set()
-    if (property24Published) liveChannels.add('property24')
-    if (privatePropertyHasChannel && isLive(marketingDraft.privatePropertyStatus)) liveChannels.add('private_property')
-    externalListingLinks.forEach((link) => {
-      if (!isLive(link.status)) return
-      const platformKey = normalizeKey(link.platform)
-      if (platformKey.includes('property24')) liveChannels.add('property24')
-      else if (platformKey.includes('private')) liveChannels.add('private_property')
-      else if (platformKey.includes('agency')) liveChannels.add('agency_website')
-      else liveChannels.add(platformKey || link.id)
-    })
-    return liveChannels.size
-  }, [externalListingLinks, marketingDraft.privatePropertyStatus, privatePropertyHasChannel, property24Published])
   const incompleteReadinessItems = listingReadinessItems.filter((item) => !item.complete)
   const marketingSellingPoints = [
     ...marketingDraft.selectedFeatures,
@@ -9078,6 +9083,174 @@ function AgentListingDetail() {
       const platformKey = normalizeKey(link.platform)
       return link.id !== agencyWebsiteLink?.id && link.id !== privatePropertyLink?.id && !platformKey.includes('private')
     })
+    const property24IssueCount = property24SandboxAgentIdPending
+      ? Math.max(1, property24ReadinessIssues.length)
+      : property24ReadinessIssues.length
+    const property24IssueDetail = property24ReadinessIssues[0] || (property24SandboxAgentIdPending ? 'Property24 agent ID needs confirmation' : '')
+    const property24ChannelStatus = property24Action
+      ? 'syncing'
+      : property24Published
+        ? 'live'
+        : property24IssueCount || property24HasPreviewBlockers || property24SandboxAgentIdPending
+          ? 'needs_attention'
+          : 'not_published'
+    const property24ChannelLabel = property24Action
+      ? 'Syncing'
+      : property24Published
+        ? 'Live'
+        : property24ChannelStatus === 'needs_attention'
+          ? 'Needs attention'
+          : 'Not published'
+    const property24ContextTitle = property24IssueCount
+      ? `${property24IssueCount} issue${property24IssueCount === 1 ? '' : 's'} preventing publication`
+      : property24Published
+        ? 'Published and up to date'
+        : property24CanSubmit === true
+          ? 'Ready to publish'
+          : 'Run readiness check before publishing'
+    const channelRows = [
+      {
+        key: 'property24',
+        icon: Building2,
+        logoSrc: '/lead-sources/property24.png',
+        name: 'Property24',
+        subtitle: "South Africa's property portal",
+        reference: property24Reference ? `Ref: ${property24Reference}` : '',
+        status: property24ChannelStatus,
+        statusLabel: property24ChannelLabel,
+        contextTitle: property24ContextTitle,
+        contextDetail: property24IssueDetail,
+        lastSynced: property24LastSyncedAt ? formatRelativeTime(property24LastSyncedAt) : '',
+        primaryAction: property24Action ? (
+          <Button type="button" size="sm" variant="secondary" disabled>
+            <Loader2 size={15} className="animate-spin" />
+            Syncing...
+          </Button>
+        ) : property24Published && marketingDraft.property24ListingUrl ? (
+          <a href={marketingDraft.property24ListingUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#35546c] hover:bg-[#f7fbff]">
+            <Eye size={15} />
+            View Live Listing
+          </a>
+        ) : property24ChannelStatus === 'needs_attention' || property24CanSubmit !== true ? (
+          <Button type="button" size="sm" variant="secondary" onClick={() => setProperty24ManageOpen(true)}>
+            <CircleAlert size={15} />
+            Review issues
+          </Button>
+        ) : (
+          <Button type="button" size="sm" onClick={publishProperty24Listing} disabled={property24PublishDisabled}>
+            {property24Action === 'publish' ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+            Publish
+          </Button>
+        ),
+        secondaryAction: property24Published || property24CanSubmit === true ? (
+          <Button type="button" size="sm" variant="secondary" onClick={() => setProperty24ManageOpen(true)} disabled={Boolean(property24Action)}>
+            Manage
+          </Button>
+        ) : null,
+        menuActions: [
+          <button key="check" type="button" onClick={previewProperty24Listing} disabled={Boolean(property24Action)} className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] transition hover:bg-[#f7fbff] disabled:cursor-not-allowed disabled:opacity-50">
+            {property24Action === 'preview' ? <Loader2 size={15} className="animate-spin" /> : <Eye size={15} />}
+            Check readiness
+          </button>,
+          <button key="more" type="button" onClick={() => setProperty24ManageOpen(true)} className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] transition hover:bg-[#f7fbff]">
+            <SlidersHorizontal size={15} />
+            More actions
+          </button>,
+        ],
+      },
+      {
+        key: 'private_property',
+        icon: Home,
+        logoSrc: '/lead-sources/private-property.jpeg',
+        name: 'Private Property',
+        subtitle: 'Property portal',
+        reference: privatePropertyReference ? `Ref: ${privatePropertyReference}` : '',
+        status: privatePropertyLive ? 'live' : 'not_published',
+        statusLabel: privatePropertyLive ? 'Live' : 'Not published',
+        contextTitle: privatePropertyLive ? 'Published and up to date' : 'Ready to publish',
+        contextDetail: privatePropertyUrl ? '' : 'Add the listing link or portal reference when available',
+        lastSynced: privatePropertyUrl ? 'Managed externally' : '',
+        primaryAction: privatePropertyLive && privatePropertyUrl ? (
+          <a href={privatePropertyUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#35546c] hover:bg-[#f7fbff]">
+            <Eye size={15} />
+            View Live Listing
+          </a>
+        ) : (
+          <Button type="button" size="sm" onClick={() => openExternalLinkPanel(privatePropertyLink, 'Private Property')}>
+            <Send size={15} />
+            Publish
+          </Button>
+        ),
+        secondaryAction: privatePropertyHasChannel ? (
+          <Button type="button" size="sm" variant="secondary" onClick={() => openExternalLinkPanel(privatePropertyLink, 'Private Property')}>
+            Manage
+          </Button>
+        ) : null,
+      },
+      ...(agencyWebsiteLink ? [{
+        key: 'agency_website',
+        icon: Globe,
+        name: 'Your Website',
+        subtitle: 'Agency website',
+        reference: '',
+        status: isExternalLinkSellerVisible(agencyWebsiteLink.status) ? 'live' : 'not_published',
+        statusLabel: isExternalLinkSellerVisible(agencyWebsiteLink.status) ? 'Live' : 'Not published',
+        contextTitle: isExternalLinkSellerVisible(agencyWebsiteLink.status) ? 'Published and up to date' : 'Not published on website',
+        contextDetail: agencyWebsiteLink.url || '',
+        lastSynced: agencyWebsiteLink.lastCheckedAt ? formatDate(agencyWebsiteLink.lastCheckedAt) : 'Manual channel',
+        primaryAction: agencyWebsiteLink.url ? (
+          <a href={agencyWebsiteLink.url} target="_blank" rel="noreferrer" className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#35546c] hover:bg-[#f7fbff]">
+            <Eye size={15} />
+            View Live Listing
+          </a>
+        ) : null,
+        secondaryAction: (
+          <Button type="button" size="sm" variant="secondary" onClick={() => openExternalLinkPanel(agencyWebsiteLink)}>
+            Manage
+          </Button>
+        ),
+      }] : []),
+      ...visibleExternalListingLinks.map((link) => {
+        const live = isExternalLinkSellerVisible(link.status)
+        return {
+          key: link.id,
+          icon: ExternalLink,
+          name: link.platform || 'Other Channel',
+          subtitle: link.url || 'Manual publishing channel',
+          reference: '',
+          status: live ? 'live' : 'not_published',
+          statusLabel: live ? 'Live' : 'Not published',
+          contextTitle: live ? 'Published and up to date' : 'Ready to publish',
+          contextDetail: link.notes || '',
+          lastSynced: link.publishedAt ? formatDate(link.publishedAt) : link.lastCheckedAt ? formatDate(link.lastCheckedAt) : 'Manual channel',
+          primaryAction: link.url ? (
+            <a href={link.url} target="_blank" rel="noreferrer" className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#35546c] hover:bg-[#f7fbff]">
+              <Eye size={15} />
+              View Live Listing
+            </a>
+          ) : (
+            <Button type="button" size="sm" variant="secondary" disabled>
+              <Eye size={15} />
+              View Live Listing
+            </Button>
+          ),
+          secondaryAction: (
+            <Button type="button" size="sm" variant="secondary" onClick={() => openExternalLinkPanel(link)}>
+              Manage
+            </Button>
+          ),
+          menuActions: [
+            <button key="remove" type="button" onClick={() => removeExternalListingLink(link.id)} className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#b42318] hover:bg-[#fff5f5]">
+              <Trash2 size={15} />
+              Remove
+            </button>,
+          ],
+        }
+      }),
+    ]
+    const marketingLiveChannelCount = channelRows.filter((channel) => normalizeKey(channel.status) === 'live').length
+    const channelCountLabel = channelRows.length ? `${marketingLiveChannelCount} / ${channelRows.length}` : String(marketingLiveChannelCount)
+    const remainingReadinessCount = incompleteReadinessItems.length
 
     return (
       <section className="space-y-5">
@@ -9094,18 +9267,18 @@ function AgentListingDetail() {
         <section className="overflow-hidden rounded-[22px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
           <div className="grid sm:grid-cols-3">
             <MarketingSummaryItem icon={CheckCircle2} value={`${listingReadinessPercent}%`} label="Listing readiness" actionLabel="View checklist" onAction={() => setReadinessChecklistOpen(true)} tone={listingReadinessPercent >= 80 ? 'success' : 'attention'} />
-            <MarketingSummaryItem icon={ExternalLink} value={liveChannelCount} label="Channels live" actionLabel="View channels" onAction={() => document.getElementById('listing-distribution-channels')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} tone={liveChannelCount ? 'success' : 'default'} />
+            <MarketingSummaryItem icon={ExternalLink} value={channelCountLabel} label="Channels live" actionLabel="View channels" onAction={() => document.getElementById('listing-distribution-channels')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} tone={marketingLiveChannelCount ? 'success' : 'default'} />
             <MarketingSummaryItem icon={RefreshCw} value={formatRelativeTime(marketingLastSyncedAt)} label="Last synced" tone="default" />
           </div>
-          {!mandateWorkspace.isSigned || incompleteReadinessItems.length ? (
+          {remainingReadinessCount ? (
             <div className="flex flex-col gap-2 border-t border-[#edf2f7] bg-[#fffaf0] px-4 py-3 text-sm text-[#8a5b13] sm:flex-row sm:items-center sm:justify-between">
-              <button type="button" onClick={() => setReadinessChecklistOpen(true)} className="inline-flex min-w-0 items-center gap-2 font-semibold">
+              <p className="inline-flex min-w-0 items-center gap-2 font-semibold">
                 <CircleAlert size={15} />
-                Listing readiness requires attention
+                Complete {remainingReadinessCount} remaining item{remainingReadinessCount === 1 ? '' : 's'} before publishing.
+              </p>
+              <button type="button" onClick={() => setReadinessChecklistOpen(true)} className="inline-flex min-h-8 w-fit items-center rounded-lg border border-[#f1dfb8] bg-white px-3 text-xs font-semibold text-[#8a5b13] transition hover:bg-[#fff8e8]">
+                View readiness items
               </button>
-              <span className="inline-flex min-w-0 rounded-full border border-[#f1dfb8] bg-white px-3 py-1 text-xs font-semibold text-[#8a5b13]">
-                <span className="truncate">{incompleteReadinessItems[0]?.label || 'Mandate not signed'}</span>
-              </span>
             </div>
           ) : null}
         </section>
@@ -9211,7 +9384,20 @@ function AgentListingDetail() {
               </div>
             </div>
             <div className="mt-4 flex flex-wrap gap-2">
-              {marketingMediaBadges.map((badge) => <CompletionBadge key={badge.key} complete={badge.complete} label={badge.label} />)}
+              {marketingMediaBadges.map((badge) => {
+                const optional = ['floorplan', 'video', 'tour'].includes(badge.key)
+                const badgeClass = badge.complete
+                  ? 'border-[#d8eddf] bg-[#ecfaf1] text-[#1f7d44]'
+                  : optional
+                    ? 'border-[#dbe6f2] bg-[#f8fbff] text-[#607387]'
+                    : 'border-[#f5dbb0] bg-[#fff8ec] text-[#9a5b13]'
+                return (
+                  <span key={badge.key} className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${badgeClass}`}>
+                    {badge.complete ? <CheckCircle2 size={12} /> : optional ? <span className="h-2 w-2 rounded-full border border-current" /> : <CircleAlert size={12} />}
+                    {badge.label}
+                  </span>
+                )
+              })}
             </div>
             <div className="mt-4 grid gap-3 md:grid-cols-2">
               <label className="grid gap-2">
@@ -9246,8 +9432,8 @@ function AgentListingDetail() {
         <article id="listing-distribution-channels" className="overflow-hidden rounded-[22px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
           <div className="flex flex-col gap-3 border-b border-[#edf2f7] p-5 md:flex-row md:items-start md:justify-between">
             <div>
-              <h3 className="text-base font-semibold text-[#142132]">Where this listing appears</h3>
-              <p className="mt-1 text-sm text-[#607387]">Distribute your listing to the right platforms and websites.</p>
+              <h3 className="text-base font-semibold text-[#142132]">Listing Channels</h3>
+              <p className="mt-1 text-sm text-[#607387]">Manage where this property is advertised.</p>
             </div>
             <Button type="button" size="sm" variant="secondary" onClick={() => openExternalLinkPanel()}>
               <Plus size={15} />
@@ -9255,113 +9441,22 @@ function AgentListingDetail() {
             </Button>
           </div>
 
-          <div className="border-b border-[#edf2f7] px-4 py-4">
-            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
-              <div className="flex min-w-0 gap-4">
-                <span className="grid h-16 w-20 shrink-0 place-items-center">
-                  <img src="/lead-sources/property24.png" alt="Property24 logo" className="max-h-14 max-w-20 object-contain" />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h4 className="text-base font-semibold text-[#142132]">Property24 readiness</h4>
-                    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${
-                      property24ReadinessStatus.tone === 'success'
-                        ? 'border-[#c7ead4] bg-[#ecfaf1] text-[#18713e]'
-                        : property24ReadinessStatus.tone === 'warning'
-                          ? 'border-[#f2d4a4] bg-[#fff8ec] text-[#9a5b13]'
-                          : 'border-[#dbe6f2] bg-[#f7fbff] text-[#526a82]'
-                    }`}>
-                      {property24ReadinessStatus.tone === 'success' ? <CheckCircle2 size={14} /> : property24ReadinessStatus.tone === 'warning' ? <CircleAlert size={14} /> : <Info size={14} />}
-                      {property24ReadinessStatus.label}
-                    </span>
-                  </div>
-                  <p className="mt-1 text-sm leading-6 text-[#607387]">{property24NextStep}</p>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <span className="rounded-full border border-[#dbe6f2] bg-[#fbfdff] px-3 py-1 text-xs font-semibold text-[#47627c]">
-                      {property24Reference ? `Ref: ${property24Reference}` : 'No Property24 ref yet'}
-                    </span>
-                    <span className="rounded-full border border-[#dbe6f2] bg-[#fbfdff] px-3 py-1 text-xs font-semibold text-[#47627c]">
-                      {property24LastSyncedAt ? `Last synced: ${formatRelativeTime(property24LastSyncedAt)}` : 'Last synced: Not checked yet'}
-                    </span>
-                    {property24Preview ? (
-                      <span className="rounded-full border border-[#dbe6f2] bg-[#fbfdff] px-3 py-1 text-xs font-semibold text-[#47627c]">
-                        {property24PreviewCounts.imagesLoaded} photo{property24PreviewCounts.imagesLoaded === 1 ? '' : 's'} checked
-                      </span>
-                    ) : null}
-                  </div>
-                  {property24ReadinessIssues.length ? (
-                    <div className="mt-3 rounded-[14px] border border-[#f2d4a4] bg-[#fffaf0] px-3 py-2">
-                      <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#9a5b13]">What to fix next</p>
-                      <ul className="mt-1 grid gap-1 text-sm leading-6 text-[#7a5518]">
-                        {property24ReadinessIssues.slice(0, 3).map((issue) => <li key={issue}>{issue}</li>)}
-                      </ul>
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-              <div className="flex flex-wrap items-center gap-2 lg:justify-end">
-                <Button type="button" size="sm" variant="secondary" onClick={previewProperty24Listing} disabled={Boolean(property24Action)}>
-                  {property24Action === 'preview' ? <Loader2 size={15} className="animate-spin" /> : <Eye size={15} />}
-                  Check Property24 readiness
-                </Button>
-                <Button type="button" size="sm" onClick={publishProperty24Listing} disabled={property24PublishDisabled}>
-                  {property24Action === 'publish' ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
-                  {property24PrimaryActionLabel}
-                </Button>
-                {marketingDraft.property24ListingUrl ? (
-                  <a href={marketingDraft.property24ListingUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#35546c] hover:bg-[#f7fbff]">
-                    <ExternalLink size={15} />
-                    View Live Listing
-                  </a>
-                ) : null}
-                <Button type="button" size="sm" variant="secondary" onClick={() => setProperty24ManageOpen(true)}>
-                  <SlidersHorizontal size={15} />
-                  More actions
-                </Button>
-              </div>
-            </div>
-          </div>
-
-          <DistributionChannel
-            icon={Home}
-            logoSrc="/lead-sources/private-property.jpeg"
-            name="Private Property"
-            subtitle={privatePropertyUrl || 'Portal listing channel'}
-            reference={privatePropertyReference ? `Ref: ${privatePropertyReference}` : ''}
-            status={privatePropertyDistributionStatus}
-            statusLabel={privatePropertyLive ? 'Live' : formatStatusLabel(privatePropertyDistributionStatus || 'not_published')}
-            lastSynced={privatePropertyUrl ? 'Managed as an external link' : 'Not published'}
-            primaryAction={privatePropertyUrl ? <a href={privatePropertyUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#35546c] hover:bg-[#f7fbff]"><Eye size={15} />View Live Listing</a> : <Button type="button" size="sm" variant="secondary" disabled><Eye size={15} />View Live Listing</Button>}
-            secondaryAction={<Button type="button" size="sm" variant="secondary" onClick={() => openExternalLinkPanel(privatePropertyLink, 'Private Property')}>Manage</Button>}
-          />
-
-          {agencyWebsiteLink ? (
+          {channelRows.map((channel) => (
             <DistributionChannel
-              icon={Globe}
-              name="Agency Website"
-              subtitle={agencyWebsiteLink.url}
-              status={agencyWebsiteLink.status}
-              statusLabel={isExternalLinkSellerVisible(agencyWebsiteLink.status) ? 'Live' : formatStatusLabel(agencyWebsiteLink.status)}
-              lastSynced={agencyWebsiteLink.lastCheckedAt ? `Last checked: ${formatDate(agencyWebsiteLink.lastCheckedAt)}` : 'Manual channel'}
-              primaryAction={<a href={agencyWebsiteLink.url} target="_blank" rel="noreferrer" className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#35546c] hover:bg-[#f7fbff]"><Eye size={15} />View Live Listing</a>}
-              secondaryAction={<Button type="button" size="sm" variant="secondary" onClick={() => openExternalLinkPanel(agencyWebsiteLink)}>Edit</Button>}
-            />
-          ) : null}
-
-          {visibleExternalListingLinks.map((link) => (
-            <DistributionChannel
-              key={link.id}
-              icon={ExternalLink}
-              name={link.platform || 'Other Channels'}
-              subtitle={link.url || 'Add a manually published listing'}
-              status={link.status}
-              statusLabel={isExternalLinkSellerVisible(link.status) ? 'Live' : formatStatusLabel(link.status)}
-              lastSynced={link.publishedAt ? `Published ${formatDate(link.publishedAt)}` : link.lastCheckedAt ? `Last checked: ${formatDate(link.lastCheckedAt)}` : 'Manual channel'}
-              primaryAction={link.url ? <a href={link.url} target="_blank" rel="noreferrer" className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#35546c] hover:bg-[#f7fbff]"><Eye size={15} />View Live Listing</a> : <Button type="button" size="sm" variant="secondary" disabled><Eye size={15} />View Live Listing</Button>}
-              secondaryAction={<Button type="button" size="sm" variant="secondary" onClick={() => openExternalLinkPanel(link)}>Edit</Button>}
-              menuActions={[
-                <button key="remove" type="button" onClick={() => removeExternalListingLink(link.id)} className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#b42318] hover:bg-[#fff5f5]"><Trash2 size={15} />Remove</button>,
-              ]}
+              key={channel.key}
+              icon={channel.icon}
+              logoSrc={channel.logoSrc}
+              name={channel.name}
+              subtitle={channel.subtitle}
+              reference={channel.reference}
+              status={channel.status}
+              statusLabel={channel.statusLabel}
+              contextTitle={channel.contextTitle}
+              contextDetail={channel.contextDetail}
+              lastSynced={channel.lastSynced}
+              primaryAction={channel.primaryAction}
+              secondaryAction={channel.secondaryAction}
+              menuActions={channel.menuActions || []}
             />
           ))}
 
@@ -12444,387 +12539,429 @@ function AgentListingDetail() {
             </section>
           ) : null}
 
-          {sellerWorkspaceTab === 'seller' ? (
-            <section className="space-y-6">
-              <div className="flex flex-col gap-4 rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)] lg:flex-row lg:items-center lg:justify-between">
-                <div className="min-w-0">
-                  <button
-                    type="button"
-                    onClick={() => navigate('/listings')}
-                    className="inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-[0.08em] text-[#5f7894] hover:text-[#1f4f78]"
-                  >
-                    <ArrowLeft size={13} />
-                    Back to Listings
-                  </button>
-                  <h2 className="mt-3 text-2xl font-semibold text-[#142132]">Seller Profile</h2>
-                </div>
-                <div className="flex flex-wrap gap-2 lg:justify-end">
-                  <Button size="sm" onClick={() => openSellerProfileBuilder('Complete the seller profile from the listing workspace.')}>
-                    <UserRound size={15} />
-                    Complete Profile
-                  </Button>
-                  <Button size="sm" onClick={openSellerPortalActivationModal} disabled={sellerPortalActivationSending || resendingSellerPortalLink || sellerPortalAccessState?.linkActive === false}>
-                    <Link2 size={15} />
-                    {sellerPortalActivationSending ? 'Sending...' : 'Send Portal Link'}
-                  </Button>
-                  <details className="group relative">
-                    <summary className="inline-flex min-h-9 cursor-pointer list-none items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#35546c] transition hover:border-[#b7c8db] hover:bg-[#f7fbff] [&::-webkit-details-marker]:hidden">
-                      <MoreVertical size={15} />
-                      Actions
-                    </summary>
-                    <div className="absolute right-0 z-30 mt-2 w-56 overflow-hidden rounded-[16px] border border-[#dbe6f2] bg-white p-1.5 shadow-[0_18px_34px_rgba(15,23,42,0.14)]">
-                      <button
-                        type="button"
-                        onClick={handleEditSellerProfile}
-                        className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] transition hover:bg-[#f7fbff]"
-                      >
-                        <FileText size={15} />
-                        Edit contact
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleDownloadSellerProfilePdf}
-                        className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] transition hover:bg-[#f7fbff]"
-                      >
-                        <Download size={15} />
-                        Download PDF
-                      </button>
-                      {!listingHasKingstonsSellerProcess ? (
+          {sellerWorkspaceTab === 'seller' ? (() => {
+            const getSection = (key) => sellerProfile.sections.find((section) => section.key === key) || { rows: [] }
+            const getRow = (sectionKey, rowKey) => getSection(sectionKey).rows.find((row) => row.key === rowKey) || null
+            const rowValue = (sectionKey, rowKey) => presentSellerWorkspaceValue(getRow(sectionKey, rowKey)?.value)
+            const rowHasValue = (sectionKey, rowKey) => isSellerProfileFilled(getRow(sectionKey, rowKey)?.rawValue)
+            const completedDocumentCount = sellerDocumentExperienceItems.filter(isListingDocumentComplete).length
+            const documentTotalCount = sellerDocumentExperienceItems.length
+            const signedMandateUrl = mandateWorkspace.signedUrl || (mandateWorkspace.isSigned ? mandateWorkspace.viewUrl : '')
+            const findDocumentComplete = (pattern) =>
+              sellerDocumentExperienceItems.some((document) => pattern.test([
+                document?.key,
+                document?.label,
+                document?.sourceLabel,
+                document?.status,
+              ].map((value) => String(value || '').toLowerCase()).join(' ')) && isListingDocumentComplete(document))
+            const onboardingItems = [
+              {
+                label: 'Seller details',
+                complete: rowHasValue('seller_details', 'fullName') && rowHasValue('seller_details', 'sellerType'),
+              },
+              {
+                label: 'Contact details',
+                complete: rowHasValue('contact_details', 'email') || rowHasValue('contact_details', 'phone'),
+              },
+              {
+                label: 'Property ownership',
+                complete: rowHasValue('property_ownership', 'propertyAddress') || rowHasValue('property_ownership', 'ownershipType'),
+              },
+              {
+                label: 'FICA information',
+                complete: overviewSellerSnapshot.ficaStatusKey === 'complete' || findDocumentComplete(/fica|identity|proof of residential address|proof of address/),
+              },
+              {
+                label: 'Property disclosure',
+                complete: findDocumentComplete(/disclosure|defects|condition/),
+              },
+              {
+                label: 'Supporting documents',
+                complete: completedDocumentCount > 0,
+              },
+              {
+                label: 'POPI consent',
+                complete: rowHasValue('mandate_details', 'popiConsent'),
+              },
+            ]
+            const onboardingCompleteCount = onboardingItems.filter((item) => item.complete).length
+            const sellerInformationGroups = [
+              {
+                title: 'Personal',
+                rows: [
+                  ['Full name', rowValue('seller_details', 'fullName')],
+                  ['ID / Registration', rowValue('seller_details', 'idNumber')],
+                  ['Seller type', rowValue('seller_details', 'sellerType')],
+                  ['Marital status', rowValue('seller_details', 'maritalStatus')],
+                ],
+              },
+              {
+                title: 'Contact',
+                rows: [
+                  ['Email', rowValue('contact_details', 'email')],
+                  ['Mobile', rowValue('contact_details', 'phone')],
+                  ['Alternative contact', rowValue('contact_details', 'alternativeContact')],
+                  ['Preferred contact', rowValue('contact_details', 'preferredContactMethod')],
+                ],
+              },
+              {
+                title: 'Property & Ownership',
+                rows: [
+                  ['Property address', rowValue('property_ownership', 'propertyAddress')],
+                  ['Ownership type', rowValue('property_ownership', 'ownershipType')],
+                  ['Title deed number', rowValue('property_ownership', 'titleDeedNumber')],
+                  ['Bond holder', rowValue('property_ownership', 'bondHolder')],
+                  ['Outstanding bond', rowValue('property_ownership', 'outstandingBond')],
+                  ['Co-owner details', rowValue('property_ownership', 'coOwnerDetails')],
+                ],
+              },
+            ]
+            const mandateRows = [
+              ['Mandate type', rowValue('mandate_details', 'mandateType')],
+              ['Asking price', rowValue('mandate_details', 'askingPrice')],
+              ['Start date', rowValue('mandate_details', 'mandateStartDate')],
+              ['Expiry date', rowValue('mandate_details', 'expiryDate')],
+              ['Commission', rowValue('mandate_details', 'commissionPreference')],
+              ['Mandate terms', rowValue('mandate_details', 'mandateTerms')],
+              ['POPI consent', rowValue('mandate_details', 'popiConsent')],
+            ]
+            const notesRows = [
+              ['Reason for selling', rowValue('notes', 'sellingReason')],
+              ['Selling timeline', rowValue('notes', 'sellingTimeline')],
+              ['Special conditions', rowValue('notes', 'specialConditions')],
+              ['Agent notes', rowValue('notes', 'notes')],
+            ]
+            const visibleDocumentRows = sellerDocumentExperienceItems.slice(0, 7)
+            const statusDotClass = (complete, required = true) => {
+              if (complete) return 'bg-[#1f9d61]'
+              return required ? 'bg-[#f29f33]' : 'bg-[#aebdca]'
+            }
+            return (
+              <section className="space-y-5">
+                <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
+                  <div className="flex flex-col gap-6 xl:flex-row xl:items-center xl:justify-between">
+                    <div className="flex min-w-0 items-start gap-4">
+                      <div className="grid h-16 w-16 shrink-0 place-items-center rounded-[22px] bg-[#073f30] text-xl font-semibold text-white shadow-[0_14px_28px_rgba(7,63,48,0.18)]">
+                        {sellerProfile.initials}
+                      </div>
+                      <div className="min-w-0">
                         <button
                           type="button"
-                          onClick={() => setMandateStartOpen(true)}
-                          className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] transition hover:bg-[#f7fbff]"
+                          onClick={() => navigate('/listings')}
+                          className="mb-2 inline-flex items-center gap-1 text-xs font-semibold text-[#5f7894] hover:text-[#1f4f78]"
                         >
-                          <FileText size={15} />
-                          Create mandate
+                          <ArrowLeft size={13} />
+                          Back to Listings
                         </button>
-                      ) : null}
-                      <div className="my-1 h-px bg-[#eef3f8]" />
-                      <button
-                        type="button"
-                        onClick={() => void handleResetSellerPortalPasswordAndResend()}
-                        disabled={resettingSellerPortalPassword || resendingSellerPortalLink || sellerPortalAccessState?.linkActive === false || !resolveSellerPortalTokenFromListing(listingRecord)}
-                        className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] transition hover:bg-[#f7fbff] disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        <ShieldCheck size={15} />
-                        {resettingSellerPortalPassword ? 'Resetting...' : 'Reset portal password'}
-                      </button>
-                    </div>
-                  </details>
-                </div>
-              </div>
-
-              <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#6b7d93]">Seller Onboarding Email Diagnostics</p>
-                    <h3 className="mt-1 text-base font-semibold text-[#142132]">Delivery health</h3>
-                    <p className="mt-1 text-sm leading-6 text-[#607387]">
-                      Tracks seller onboarding link, seller portal link, and submitted-onboarding agent notification email rows for this listing.
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <StatusPill status={sellerOnboardingEmailDiagnostics.failedCount ? 'failed' : sellerOnboardingEmailDiagnostics.totalCount ? 'sent' : 'pending'} label={sellerOnboardingEmailDiagnostics.failedCount ? 'Needs attention' : sellerOnboardingEmailDiagnostics.totalCount ? 'Tracked' : 'No rows'} />
-                  </div>
-                </div>
-                {sellerOnboardingEmailDiagnostics.totalCount ? (
-                  <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                    <MetricCard label="Tracked Rows" value={sellerOnboardingEmailDiagnostics.totalCount} meta="Seller onboarding emails" />
-                    <MetricCard label="Sent / Queued" value={sellerOnboardingEmailDiagnostics.sentCount} meta="Provider accepted rows" />
-                    <MetricCard label="Failures" value={sellerOnboardingEmailDiagnostics.failedCount} meta={sellerOnboardingEmailDiagnostics.latestFailureMessage ? `Latest failure: ${sellerOnboardingEmailDiagnostics.latestFailureMessage}` : 'No provider failure logged'} />
-                  </div>
-                ) : (
-                  <div className="mt-4 rounded-[16px] border border-dashed border-[#d3deea] bg-[#fbfcfe] p-4 text-sm text-[#607387]">
-                    No seller onboarding email delivery rows have been logged for this listing yet.
-                  </div>
-                )}
-                {sellerOnboardingEmailDiagnostics.latestFailureMessage ? (
-                  <p className="mt-3 text-xs font-semibold text-[#9a5b13]">Latest failure: {sellerOnboardingEmailDiagnostics.latestFailureMessage}</p>
-                ) : null}
-              </article>
-
-              <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#6b7d93]">Seller Mandate</p>
-                    <h3 className="mt-1 text-base font-semibold text-[#142132]">Mandate Continuity</h3>
-                    <p className="mt-1 text-sm leading-6 text-[#607387]">
-                      Confirms the signed mandate is connected across the listing, documents, seller portal and activity feed.
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <StatusPill status={mandateContinuity.ready ? 'verified' : mandateContinuity.status} label={mandateContinuity.ready ? 'Verified' : mandateContinuity.status === 'warning' ? 'Warnings' : 'Needs attention'} />
-                  </div>
-                </div>
-
-                <div className="mt-4 grid gap-3 md:grid-cols-3">
-                  <MetricCard label="Packet" value={mandateContinuity.packetId || 'Not linked'} meta="Mandate packet ID" />
-                  <MetricCard label="Checks" value={`${mandateContinuity.summary.complete}/${mandateContinuity.summary.total}`} meta="Continuity checks complete" />
-                  <MetricCard label="Portal Invite" value={formatStatusLabel(mandateContinuity.portalInviteStatus || 'not_recorded')} meta={mandateContinuity.portalInviteDetail || 'Seller portal invite status'} />
-                </div>
-
-                <div className="mt-4 grid gap-2">
-                  {mandateContinuity.checks.map((check) => (
-                    <div key={check.key} className="flex flex-col gap-2 rounded-[14px] border border-[#e1e9f2] bg-[#fbfdff] px-3 py-3 sm:flex-row sm:items-start sm:justify-between">
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold text-[#243d56]">{check.label}</p>
-                        <p className="mt-1 text-xs leading-5 text-[#607387]">{check.detail}</p>
-                      </div>
-                      <StatusPill status={check.state === 'complete' ? 'verified' : check.state === 'not_applicable' ? 'pending' : check.state} label={check.state === 'complete' ? 'Done' : check.state === 'not_applicable' ? 'N/A' : check.state === 'warning' ? 'Warning' : 'Missing'} />
-                    </div>
-                  ))}
-                </div>
-              </article>
-
-              {directListingOperationalSummary.hasIntake ? (
-                <article data-testid="direct-listing-operational-audit" className="rounded-[24px] border border-[#dbe6f2] bg-[#f7fbff] p-5 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
-                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#6b7d93]">Direct Listing Intake</p>
-                      <h3 className="mt-1 text-base font-semibold text-[#142132]">Agent-captured listing facts</h3>
-                      <p className="mt-1 text-sm leading-6 text-[#607387]">
-                        This record was added without the lead process. Listing creation is allowed, but mandate, FICA, disclosure and seller portal follow-up still need to be closed before activation or publish.
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${
-                        directListingOutstandingPostCreateActions.length
-                          ? 'border-[#f2dfbd] bg-[#fff9ec] text-[#9a5b13]'
-                          : 'border-[#d8eddf] bg-[#ecfaf1] text-[#1f7d44]'
-                      }`}>
-                        {directListingOutstandingPostCreateActions.length ? 'Post-create actions required' : 'Post-create actions clear'}
-                      </span>
-                      <span className="inline-flex rounded-full border border-[#dbe6f2] bg-white px-3 py-1 text-xs font-semibold text-[#35546c]">
-                        {directListingOperationalSummary.portalInvite.label}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                    <MetricCard label="Seller Type" value={directListingOperationalSummary.sellerTypeLabel} meta={directListingOperationalSummary.ownerModelLabel || 'Ownership model'} />
-                    <MetricCard label="Title Type" value={directListingOperationalSummary.propertyStructureLabel} meta={directListingOperationalSummary.propertyAddress || 'Address pending'} />
-                    <MetricCard label="Fact Readiness" value={`${directListingOperationalSummary.readiness.percent}%`} meta={`${directListingOperationalSummary.readiness.complete}/${directListingOperationalSummary.readiness.total || 0} captured`} />
-                    <MetricCard label="Portal Invite" value={directListingOperationalSummary.portalInvite.label} meta={directListingOperationalSummary.portalInvite.error || 'Seller portal lifecycle'} />
-                  </div>
-
-                  <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-                    <div className="grid gap-4">
-                      <div className="rounded-[18px] border border-[#dce6f2] bg-white p-4">
-                        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                          <div>
-                            <h4 className="text-sm font-semibold text-[#142132]">Declaration Summary</h4>
-                            <p className="mt-1 text-xs text-[#607387]">These are yes/no declarations from Quick Add. They do not block listing creation, but they do not replace the signed documents.</p>
-                          </div>
-                          <span className="rounded-full border border-[#dbe6f2] bg-[#fbfdff] px-2.5 py-1 text-[0.68rem] font-semibold text-[#35546c]">
-                            Not required for creation
-                          </span>
-                        </div>
-                        <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                          {directListingOperationalSummary.declarations.map((row) => (
-                            <div key={row.key} className="rounded-[14px] border border-[#e1e9f2] bg-[#fbfdff] px-3 py-3">
-                              <p className="text-xs font-semibold text-[#2d445e]">{row.label}</p>
-                              <p className={`mt-1 text-xs font-semibold ${
-                                row.held === true
-                                  ? 'text-[#1f7d44]'
-                                  : row.held === false
-                                    ? 'text-[#9a5b13]'
-                                    : 'text-[#607387]'
-                              }`}>
-                                {row.statusLabel}
-                              </p>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div className="rounded-[18px] border border-[#dce6f2] bg-white p-4">
-                        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                          <div>
-                            <h4 className="text-sm font-semibold text-[#142132]">Post-create Checklist</h4>
-                            <p className="mt-1 text-xs leading-5 text-[#607387]">Create the listing now, then close these items before activation or publish.</p>
-                          </div>
-                          <span className={`rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${
-                            directListingOutstandingPostCreateActions.length
-                              ? 'border-[#f2dfbd] bg-[#fff9ec] text-[#9a5b13]'
-                              : 'border-[#d8eddf] bg-[#ecfaf1] text-[#1f7d44]'
-                          }`}>
-                            {directListingOutstandingPostCreateActions.length} outstanding
-                          </span>
-                        </div>
-                        <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                          {directListingPostCreateActions.map((action) => (
-                            <div key={action.key} className={`rounded-[14px] border px-3 py-3 ${
-                              action.complete
-                                ? 'border-[#d8eddf] bg-[#ecfaf1]'
-                                : 'border-[#f2dfbd] bg-[#fff9ec]'
-                            }`}>
-                              <div className="flex items-start gap-2">
-                                {action.complete ? (
-                                  <CheckCircle2 size={15} className="mt-0.5 shrink-0 text-[#1f7d44]" />
-                                ) : (
-                                  <CircleAlert size={15} className="mt-0.5 shrink-0 text-[#9a5b13]" />
-                                )}
-                                <div className="min-w-0">
-                                  <p className={`text-xs font-semibold ${action.complete ? 'text-[#1f7d44]' : 'text-[#7a5a17]'}`}>{action.label}</p>
-                                  <p className={`mt-1 text-[0.68rem] font-semibold ${action.complete ? 'text-[#1f7d44]' : 'text-[#9a5b13]'}`}>{action.statusLabel}</p>
-                                </div>
-                              </div>
-                              <p className="mt-2 text-xs leading-5 text-[#607387]">{action.detail}</p>
-                            </div>
-                          ))}
-                        </div>
+                        <h2 className="break-words text-2xl font-semibold tracking-[-0.03em] text-[#142132]">{presentSellerWorkspaceValue(sellerProfile.name, 'Seller not provided')}</h2>
+                        <p className="mt-1 text-sm font-semibold text-[#607387]">{presentSellerWorkspaceValue(sellerProfile.type)}</p>
+                        <p className="mt-2 break-words text-sm leading-5 text-[#425970]">{presentSellerWorkspaceValue(sellerProfile.propertyAddress)}</p>
                       </div>
                     </div>
-
-                    <aside className="rounded-[18px] border border-[#dce6f2] bg-white p-4">
-                      <h4 className="text-sm font-semibold text-[#142132]">Attention Items</h4>
-                      <div className="mt-3 space-y-2">
-                        {directListingOperationalSummary.attentionItems.length ? directListingOperationalSummary.attentionItems.slice(0, 5).map((item) => (
-                          <div key={item} className="flex items-start gap-2 rounded-[12px] border border-[#f2dfbd] bg-[#fff9ec] px-3 py-2">
-                            <CircleAlert size={14} className="mt-0.5 shrink-0 text-[#9a5b13]" />
-                            <p className="text-xs font-semibold leading-5 text-[#7a5a17]">{item}</p>
-                          </div>
-                        )) : (
-                          <div className="flex items-start gap-2 rounded-[12px] border border-[#d8eddf] bg-[#ecfaf1] px-3 py-2">
-                            <CheckCircle2 size={14} className="mt-0.5 shrink-0 text-[#1f7d44]" />
-                            <p className="text-xs font-semibold leading-5 text-[#1f7d44]">Direct listing intake has no outstanding post-create actions.</p>
-                          </div>
-                        )}
+                    <div className="grid min-w-0 gap-5 sm:grid-cols-3 xl:min-w-[620px]">
+                      {[
+                        { label: 'Mandate type', value: sellerProfile.mandateType },
+                        { label: 'Asking price', value: sellerProfile.askingPrice },
+                        { label: 'Seller onboarding', value: `${sellerProfile.completionPercent}% complete` },
+                      ].map((item) => (
+                        <div key={item.label} className="min-w-0 border-t border-[#e5edf6] pt-3 sm:border-l sm:border-t-0 sm:pl-5 sm:pt-0">
+                          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#8294aa]">{item.label}</p>
+                          <p className="mt-1 break-words text-base font-semibold leading-6 text-[#142132]">{presentSellerWorkspaceValue(item.value)}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="mt-6 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="min-w-0 flex-1">
+                      <div className="h-2.5 overflow-hidden rounded-full bg-[#e5edf6]">
+                        <div className="h-full rounded-full bg-[#168452]" style={{ width: `${sellerProfile.completionPercent}%` }} />
                       </div>
-                    </aside>
+                    </div>
+                    <div className="flex flex-wrap gap-2 lg:justify-end">
+                      <Button size="sm" onClick={() => openSellerProfileBuilder('Complete the seller profile from the listing workspace.')}>
+                        <UserRound size={15} />
+                        Continue Seller Onboarding
+                      </Button>
+                      <Button size="sm" onClick={openSellerPortalActivationModal} disabled={sellerPortalActivationSending || resendingSellerPortalLink || sellerPortalAccessState?.linkActive === false}>
+                        <Link2 size={15} />
+                        {sellerPortalActivationSending ? 'Sending...' : 'Send Portal Link'}
+                      </Button>
+                      <details className="group relative">
+                        <summary className="inline-flex min-h-9 cursor-pointer list-none items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#35546c] transition hover:border-[#b7c8db] hover:bg-[#f7fbff] [&::-webkit-details-marker]:hidden">
+                          <MoreVertical size={15} />
+                          Actions
+                        </summary>
+                        <div className="absolute right-0 z-30 mt-2 w-56 overflow-hidden rounded-[16px] border border-[#dbe6f2] bg-white p-1.5 shadow-[0_18px_34px_rgba(15,23,42,0.14)]">
+                          <button
+                            type="button"
+                            onClick={handleEditSellerProfile}
+                            className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] transition hover:bg-[#f7fbff]"
+                          >
+                            <Pencil size={15} />
+                            Edit contact
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleDownloadSellerProfilePdf}
+                            className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] transition hover:bg-[#f7fbff]"
+                          >
+                            <Download size={15} />
+                            Download PDF
+                          </button>
+                          <div className="my-1 h-px bg-[#eef3f8]" />
+                          <button
+                            type="button"
+                            onClick={() => void handleResetSellerPortalPasswordAndResend()}
+                            disabled={resettingSellerPortalPassword || resendingSellerPortalLink || sellerPortalAccessState?.linkActive === false || !resolveSellerPortalTokenFromListing(listingRecord)}
+                            className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] transition hover:bg-[#f7fbff] disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <ShieldCheck size={15} />
+                            {resettingSellerPortalPassword ? 'Resetting...' : 'Reset portal password'}
+                          </button>
+                        </div>
+                      </details>
+                    </div>
                   </div>
                 </article>
-              ) : null}
 
-              {sellerContactEditorOpen ? (
-                <form className="rounded-[24px] border border-[#bcd5ea] bg-[#f7fbff] p-5 shadow-[0_12px_28px_rgba(15,23,42,0.045)]" onSubmit={handleSaveSellerContact}>
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <h3 className="text-base font-semibold text-[#142132]">Seller contact details</h3>
-                      <p className="mt-1 text-sm text-[#607387]">Save contact details before onboarding. A seller email or phone number is required to send the link.</p>
-                    </div>
-                    <span className="rounded-full border border-[#cfe0ee] bg-white px-3 py-1 text-xs font-semibold text-[#35546c]">No portal link required</span>
-                  </div>
-                  <div className="mt-5 grid gap-4 md:grid-cols-2">
-                    <label className="grid gap-2 text-sm font-semibold text-[#2d445e]">
-                      Contact first name
-                      <Field
-                        value={sellerContactDraft.firstName}
-                        onChange={(event) => setSellerContactDraft((previous) => ({ ...previous, firstName: event.target.value }))}
-                        placeholder="Jane"
-                      />
-                    </label>
-                    <label className="grid gap-2 text-sm font-semibold text-[#2d445e]">
-                      Contact surname
-                      <Field
-                        value={sellerContactDraft.lastName}
-                        onChange={(event) => setSellerContactDraft((previous) => ({ ...previous, lastName: event.target.value }))}
-                        placeholder="Smith"
-                      />
-                    </label>
-                    <label className="grid gap-2 text-sm font-semibold text-[#2d445e]">
-                      Email address
-                      <Field
-                        type="email"
-                        value={sellerContactDraft.email}
-                        onChange={(event) => setSellerContactDraft((previous) => ({ ...previous, email: event.target.value }))}
-                        placeholder="seller@example.com"
-                      />
-                    </label>
-                    <label className="grid gap-2 text-sm font-semibold text-[#2d445e]">
-                      Mobile or phone
-                      <Field
-                        type="tel"
-                        value={sellerContactDraft.phone}
-                        onChange={(event) => setSellerContactDraft((previous) => ({ ...previous, phone: event.target.value }))}
-                        placeholder="082 000 0000"
-                      />
-                    </label>
-                  </div>
-                  <div className="mt-5 flex flex-wrap justify-end gap-2">
-                    <Button type="button" size="sm" variant="secondary" onClick={() => setSellerContactEditorOpen(false)} disabled={sellerContactSaving}>
-                      Cancel
-                    </Button>
-                    <Button type="submit" size="sm" disabled={sellerContactSaving}>
-                      {sellerContactSaving ? 'Saving...' : 'Save Seller Contact'}
-                    </Button>
-                  </div>
-                </form>
-              ) : null}
-
-              <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
-                <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-                  <div className="flex min-w-0 items-start gap-4">
-                    <div className="grid h-16 w-16 shrink-0 place-items-center rounded-[20px] bg-[#10243a] text-xl font-semibold text-white">
-                      {sellerProfile.initials}
-                    </div>
-                    <div className="min-w-0">
-                      <h3 className="break-words text-2xl font-semibold text-[#142132]">{sellerProfile.name}</h3>
-                      <p className="mt-1 text-sm font-semibold text-[#607387]">{sellerProfile.type}</p>
-                      <p className="mt-2 break-words text-sm leading-5 text-[#425970]">{sellerProfile.propertyAddress}</p>
-                    </div>
-                  </div>
-                  <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                    {[
-                      { label: 'Mandate type', value: sellerProfile.mandateType },
-                      { label: 'Asking price', value: sellerProfile.askingPrice },
-                      { label: 'Seller status', value: sellerProfile.status },
-                      { label: 'Profile complete', value: `${sellerProfile.completionPercent}%` },
-                    ].map((item) => (
-                      <div key={item.label} className="min-w-0 rounded-[16px] border border-[#e5edf6] bg-[#fbfdff] px-4 py-3">
-                        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8294aa]">{item.label}</p>
-                        <p className="mt-1 break-words text-sm font-semibold leading-5 text-[#243d56]">{item.value}</p>
+                {sellerContactEditorOpen ? (
+                  <form className="rounded-[24px] border border-[#bcd5ea] bg-[#f7fbff] p-5 shadow-[0_12px_28px_rgba(15,23,42,0.045)]" onSubmit={handleSaveSellerContact}>
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <h3 className="text-base font-semibold text-[#142132]">Seller contact details</h3>
+                        <p className="mt-1 text-sm text-[#607387]">Save contact details before onboarding. A seller email or phone number is required to send the link.</p>
                       </div>
-                    ))}
-                  </div>
-                </div>
-                <div className="mt-5">
-                  <div className="flex items-center justify-between gap-3 text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">
-                    <span>Profile completion</span>
-                    <span>{sellerProfile.completionPercent}%</span>
-                  </div>
-                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#e5edf6]">
-                    <div className="h-full rounded-full bg-[#2f8f6b]" style={{ width: `${sellerProfile.completionPercent}%` }} />
-                  </div>
-                </div>
-              </article>
+                      <span className="rounded-full border border-[#cfe0ee] bg-white px-3 py-1 text-xs font-semibold text-[#35546c]">No portal link required</span>
+                    </div>
+                    <div className="mt-5 grid gap-4 md:grid-cols-2">
+                      <label className="grid gap-2 text-sm font-semibold text-[#2d445e]">
+                        Contact first name
+                        <Field
+                          value={sellerContactDraft.firstName}
+                          onChange={(event) => setSellerContactDraft((previous) => ({ ...previous, firstName: event.target.value }))}
+                          placeholder="Jane"
+                        />
+                      </label>
+                      <label className="grid gap-2 text-sm font-semibold text-[#2d445e]">
+                        Contact surname
+                        <Field
+                          value={sellerContactDraft.lastName}
+                          onChange={(event) => setSellerContactDraft((previous) => ({ ...previous, lastName: event.target.value }))}
+                          placeholder="Smith"
+                        />
+                      </label>
+                      <label className="grid gap-2 text-sm font-semibold text-[#2d445e]">
+                        Email address
+                        <Field
+                          type="email"
+                          value={sellerContactDraft.email}
+                          onChange={(event) => setSellerContactDraft((previous) => ({ ...previous, email: event.target.value }))}
+                          placeholder="seller@example.com"
+                        />
+                      </label>
+                      <label className="grid gap-2 text-sm font-semibold text-[#2d445e]">
+                        Mobile or phone
+                        <Field
+                          type="tel"
+                          value={sellerContactDraft.phone}
+                          onChange={(event) => setSellerContactDraft((previous) => ({ ...previous, phone: event.target.value }))}
+                          placeholder="082 000 0000"
+                        />
+                      </label>
+                    </div>
+                    <div className="mt-5 flex flex-wrap justify-end gap-2">
+                      <Button type="button" size="sm" variant="secondary" onClick={() => setSellerContactEditorOpen(false)} disabled={sellerContactSaving}>
+                        Cancel
+                      </Button>
+                      <Button type="submit" size="sm" disabled={sellerContactSaving}>
+                        {sellerContactSaving ? 'Saving...' : 'Save Seller Contact'}
+                      </Button>
+                    </div>
+                  </form>
+                ) : null}
 
-              <section className="grid items-stretch gap-5 md:grid-cols-2 min-[1320px]:grid-cols-3">
-                {sellerProfile.sections.map((section) => {
-                  const Icon = section.icon || Info
-                  return (
-                    <article key={section.title} className="flex h-full min-h-[280px] flex-col rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex min-w-0 items-start gap-3">
-                          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[14px] bg-[#eef5fb] text-[#1f4f78]">
-                            <Icon size={18} />
-                          </span>
-                          <h3 className="min-w-0 break-words text-base font-semibold text-[#142132]">{section.title}</h3>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => openSellerSectionEditor(section)}
-                          className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-[#dbe6f2] bg-white text-[#1f4f78] transition hover:border-[#b7c8db] hover:bg-[#f7fbff]"
-                          aria-label={`Edit ${section.title}`}
-                          title={`Edit ${section.title}`}
-                        >
-                          <Pencil size={15} />
-                        </button>
+                <section className="grid items-stretch gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,0.7fr)_minmax(0,0.7fr)]">
+                  <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex min-w-0 items-start gap-3">
+                        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[14px] bg-[#ecfaf1] text-[#1f7d44]">
+                          <UserRound size={18} />
+                        </span>
+                        <h3 className="min-w-0 break-words text-base font-semibold text-[#142132]">Seller Information</h3>
                       </div>
-                      <div className="mt-5 grid gap-0">
-                        {section.rows.map((row) => (
-                          <div key={`${section.title}-${row.label}`} className="grid gap-1 border-b border-[#e7edf5] py-3 last:border-b-0">
-                            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8294aa]">{row.label}</p>
-                            <p className="break-words text-sm font-semibold leading-5 text-[#243d56]">{row.value}</p>
+                      <Button type="button" size="sm" variant="secondary" onClick={() => openSellerProfileBuilder('Update seller information from the listing workspace.')}>
+                        <Pencil size={14} />
+                        Edit
+                      </Button>
+                    </div>
+                    <div className="mt-5 space-y-5">
+                      {sellerInformationGroups.map((group) => (
+                        <div key={group.title}>
+                          <h4 className="text-xs font-semibold text-[#243d56]">{group.title}</h4>
+                          <div className="mt-2 divide-y divide-[#edf2f7]">
+                            {group.rows.map(([label, value]) => (
+                              <div key={`${group.title}-${label}`} className="grid grid-cols-[minmax(0,0.85fr)_minmax(0,1fr)] gap-3 py-2">
+                                <span className="text-xs font-semibold text-[#6b7d93]">{label}</span>
+                                <span className="break-words text-right text-sm font-semibold leading-5 text-[#243d56]">{value}</span>
+                              </div>
+                            ))}
                           </div>
-                        ))}
+                        </div>
+                      ))}
+                    </div>
+                  </article>
+
+                  <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex min-w-0 items-start gap-3">
+                        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[14px] bg-[#ecfaf1] text-[#1f7d44]">
+                          <FileText size={18} />
+                        </span>
+                        <h3 className="min-w-0 break-words text-base font-semibold text-[#142132]">Mandate</h3>
                       </div>
-                    </article>
-                  )
-                })}
+                      <Button type="button" size="sm" variant="secondary" onClick={() => openSellerSectionEditor(getSection('mandate_details'))}>
+                        <Pencil size={14} />
+                        Edit
+                      </Button>
+                    </div>
+                    <div className="mt-5 divide-y divide-[#edf2f7]">
+                      {mandateRows.map(([label, value]) => (
+                        <div key={label} className="grid grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)] gap-3 py-2">
+                          <span className="text-xs font-semibold text-[#6b7d93]">{label}</span>
+                          <span className="break-words text-right text-sm font-semibold leading-5 text-[#243d56]">{value}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-5 border-t border-[#edf2f7] pt-4">
+                      <p className="text-xs font-semibold text-[#243d56]">Mandate document</p>
+                      <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-[16px] border border-[#e1e9f2] bg-[#fbfdff] px-3 py-3">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-[12px] ${mandateWorkspace.isSigned ? 'bg-[#ecfaf1] text-[#1f7d44]' : 'bg-[#f8fbff] text-[#7b8ca2]'}`}>
+                            <FileText size={16} />
+                          </span>
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold text-[#243d56]">{mandateWorkspace.isSigned ? 'Signed mandate' : 'Signed mandate not uploaded'}</p>
+                            <p className="mt-0.5 text-xs text-[#607387]">{mandateWorkspace.signedDate ? `Signed ${formatDate(mandateWorkspace.signedDate)}` : 'Upload hard-copy evidence when available'}</p>
+                          </div>
+                        </div>
+                        {signedMandateUrl ? (
+                          <button
+                            type="button"
+                            onClick={() => window.open(signedMandateUrl, '_blank', 'noopener,noreferrer')}
+                            className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#1f4f78] transition hover:border-[#b7c8db] hover:bg-[#f7fbff]"
+                          >
+                            <ExternalLink size={14} />
+                            Open
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => openSellerWorkspaceSection('documents')}
+                            className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#1f4f78] transition hover:border-[#b7c8db] hover:bg-[#f7fbff]"
+                          >
+                            <Upload size={14} />
+                            Upload
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </article>
+
+                  <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
+                    <div className="flex items-start gap-3">
+                      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[14px] bg-[#ecfaf1] text-[#1f7d44]">
+                        <ShieldCheck size={18} />
+                      </span>
+                      <div className="min-w-0">
+                        <h3 className="break-words text-base font-semibold text-[#142132]">Seller Onboarding</h3>
+                        <p className="mt-1 text-sm font-semibold text-[#243d56]">{onboardingCompleteCount} of {onboardingItems.length} completed</p>
+                      </div>
+                    </div>
+                    <div className="mt-4 h-2 overflow-hidden rounded-full bg-[#e5edf6]">
+                      <div className="h-full rounded-full bg-[#168452]" style={{ width: `${Math.round((onboardingCompleteCount / onboardingItems.length) * 100)}%` }} />
+                    </div>
+                    <div className="mt-5 space-y-3">
+                      {onboardingItems.map((item) => (
+                        <div key={item.label} className="flex items-center gap-3">
+                          {item.complete ? (
+                            <CheckCircle2 size={16} className="shrink-0 text-[#1f9d61]" />
+                          ) : (
+                            <span className="h-4 w-4 shrink-0 rounded-full border border-[#c7d5e3]" />
+                          )}
+                          <span className="text-sm font-semibold text-[#425970]">{item.label}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <Button type="button" size="sm" className="mt-6 w-full justify-center" onClick={() => openSellerProfileBuilder('Continue the seller onboarding from the listing workspace.')}>
+                      Continue Onboarding
+                    </Button>
+                  </article>
+                </section>
+
+                <section className="grid items-start gap-5 xl:grid-cols-[minmax(0,0.72fr)_minmax(0,1fr)]">
+                  <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex min-w-0 items-start gap-3">
+                        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[14px] bg-[#ecfaf1] text-[#1f7d44]">
+                          <ShieldCheck size={18} />
+                        </span>
+                        <div className="min-w-0">
+                          <h3 className="break-words text-base font-semibold text-[#142132]">Documents & Compliance</h3>
+                          <p className="mt-1 text-sm font-semibold text-[#607387]">{completedDocumentCount} of {documentTotalCount} complete</p>
+                        </div>
+                      </div>
+                      <StatusPill status={documentTotalCount && completedDocumentCount === documentTotalCount ? 'complete' : completedDocumentCount ? 'in_progress' : 'pending'} label={documentTotalCount ? `${Math.round((completedDocumentCount / documentTotalCount) * 100)}%` : 'No docs'} />
+                    </div>
+                    <div className="mt-5 divide-y divide-[#edf2f7]">
+                      {visibleDocumentRows.length ? visibleDocumentRows.map((document) => {
+                        const complete = isListingDocumentComplete(document)
+                        return (
+                          <div key={document.key || document.id || document.label} className="flex items-center justify-between gap-3 py-2">
+                            <div className="flex min-w-0 items-center gap-3">
+                              <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${statusDotClass(complete, document.required !== false)}`} />
+                              <span className="min-w-0 break-words text-sm font-semibold leading-5 text-[#243d56]">{document.label}</span>
+                            </div>
+                            <span className="shrink-0 text-xs font-semibold text-[#607387]">{complete ? 'Complete' : document.required === false ? 'Not provided' : 'Outstanding'}</span>
+                          </div>
+                        )
+                      }) : (
+                        <div className="rounded-[16px] border border-dashed border-[#d3deea] bg-[#fbfcfe] p-4 text-sm text-[#607387]">
+                          No seller documents have been requested yet.
+                        </div>
+                      )}
+                    </div>
+                    <Button type="button" size="sm" variant="secondary" className="mt-5" onClick={() => openSellerWorkspaceSection('documents')}>
+                      <Upload size={14} />
+                      Upload Documents
+                    </Button>
+                  </article>
+
+                  <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex min-w-0 items-start gap-3">
+                        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[14px] bg-[#ecfaf1] text-[#1f7d44]">
+                          <Info size={18} />
+                        </span>
+                        <h3 className="min-w-0 break-words text-base font-semibold text-[#142132]">Notes & Special Conditions</h3>
+                      </div>
+                      <Button type="button" size="sm" variant="secondary" onClick={() => openSellerSectionEditor(getSection('notes'))}>
+                        <Pencil size={14} />
+                        Edit
+                      </Button>
+                    </div>
+                    <div className="mt-5 divide-y divide-[#edf2f7]">
+                      {notesRows.map(([label, value]) => (
+                        <div key={label} className="grid grid-cols-[minmax(0,0.45fr)_minmax(0,1fr)] gap-3 py-3">
+                          <span className="text-xs font-semibold text-[#6b7d93]">{label}</span>
+                          <span className="break-words text-sm font-semibold leading-5 text-[#243d56]">{value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </article>
+                </section>
               </section>
-            </section>
-          ) : null}
+            )
+          })() : null}
 
           {sellerWorkspaceTab === 'marketing' ? renderMarketingConsole() : null}
 

@@ -4,6 +4,7 @@ import fs from 'node:fs'
 import { createClient } from '@supabase/supabase-js'
 import {
   ensureHomeSeekersAgencyDemoWorkspace,
+  HOME_SEEKERS_DEMO_DEVELOPMENT_ID,
   HOME_SEEKERS_DEMO_EMAIL,
   HOME_SEEKERS_DEMO_PASSWORD,
   HOME_SEEKERS_DEMO_SEED_KEY,
@@ -496,6 +497,7 @@ function buildRows(context) {
       buyer_id: buyerId,
       buyer_contact_id: buyerContactId,
       seller_contact_id: sellerContactId,
+      development_id: HOME_SEEKERS_DEMO_DEVELOPMENT_ID,
       listing_id: listing?.id || null,
       organisation_id: orgId,
       assigned_organisation_id: orgId,
