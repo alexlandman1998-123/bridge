@@ -52,7 +52,7 @@ function resolveDemoBrand(token = '', prospectConfig = null) {
   const agencyName = config.agencyName || 'Demo Agency'
   const logoLightUrl = config.logoLightUrl || config.logoUrl || DEMO_BRAND.logoLightUrl
   const logoDarkUrl = config.logoDarkUrl || config.logoUrl || DEMO_BRAND.logoDarkUrl || logoLightUrl
-  const logoUrl = config.logoUrl || logoLightUrl || logoDarkUrl || DEMO_BRAND.logoUrl
+  const logoUrl = logoDarkUrl || logoLightUrl || config.logoUrl || DEMO_BRAND.logoUrl
   const primaryColour = config.primaryColour || DEMO_BRAND.primaryColour
   const secondaryColour = config.secondaryColour || DEMO_BRAND.secondaryColour
   const accentColour = config.accentColour || DEMO_BRAND.accentColour
@@ -357,7 +357,7 @@ function getDemoBuyerPortalSeed(token = BUYER_PORTAL_DEMO_TOKEN, prospectConfig 
       galleryImages: DEMO_PROPERTY_GALLERY,
       agencyName: brand.agencyName,
       organisationName: brand.organisationName,
-      agencyLogoUrl: brand.logoUrl,
+      agencyLogoUrl: brand.logoDarkUrl || brand.logoUrl || brand.logoLightUrl,
       agencyLogoDarkUrl: brand.logoDarkUrl,
       agencyLogoLightUrl: brand.logoLightUrl,
       branding: brand,
@@ -1060,7 +1060,9 @@ export function getDemoBuyerOnboardingPayload(token = BUYER_ONBOARDING_DEMO_TOKE
       id: brand.organisationId,
       name: brand.organisationName,
       display_name: brand.organisationName,
-      logo_url: brand.logoUrl,
+      logo_url: brand.logoDarkUrl || brand.logoUrl || brand.logoLightUrl,
+      logo_light_url: brand.logoLightUrl,
+      logo_dark_url: brand.logoDarkUrl,
     },
     branding: brand,
     purchaserType: 'individual',

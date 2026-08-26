@@ -3423,7 +3423,7 @@ function ProspectLinkCard({ copied, label, link, onCopy }) {
 function ProspectGeneratedDemoCard({ config, copiedKey, onCopy, onEdit }) {
   const onboardingLink = buildDemoLink(config.slug, 'onboarding')
   const buyerLink = buildDemoLink(config.slug, 'buyer')
-  const logoUrl = config.logoDarkUrl || config.logoUrl || config.logoLightUrl
+  const logoUrl = config.logoLightUrl || config.logoUrl || config.logoDarkUrl
 
   return (
     <article className="prospect-history-card">
@@ -3754,14 +3754,14 @@ function ProspectDemoGeneratorView() {
                 <ProspectUploadField
                   helper="For documents and light UI surfaces"
                   id="prospect-logo-light-upload"
-                  label="Light logo"
+                  label="Logo for light backgrounds"
                   onFile={(file) => handleImageUpload('logoLightUrl', file)}
                   previewUrl={form.logoLightUrl}
                 />
                 <ProspectUploadField
                   helper="For dark headers and branded hero areas"
                   id="prospect-logo-dark-upload"
-                  label="Dark logo"
+                  label="Logo for dark backgrounds"
                   onFile={(file) => handleImageUpload('logoDarkUrl', file)}
                   previewUrl={form.logoDarkUrl}
                 />
