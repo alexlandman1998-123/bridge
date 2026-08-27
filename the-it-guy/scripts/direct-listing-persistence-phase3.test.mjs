@@ -69,13 +69,15 @@ test('listing description is persisted and rehydrated through shared aliases', (
   assert.match(agentListingsSource, /onboardingFormData\.listingDescription/)
   assert.match(agentListingsSource, /onboardingFormData\.propertyDescription/)
   assert.match(agentListingsSource, /const hasPortalDescription = Boolean\(normalizeText\(form\.listingDescription \|\| form\.notes\)\)/)
-  assert.match(agentListingsSource, /await performUpdateExistingListing\(\{\s*\n\s*navigateAfterSave: false,\s*\n\s*reloadAfterSave: false,\s*\n\s*emitListingsUpdated: false,/)
+  assert.match(agentListingsSource, /const saved = await performUpdateExistingListing\(\{\s*\n\s*navigateAfterSave: false,\s*\n\s*reloadAfterSave: false,\s*\n\s*emitListingsUpdated: false,/)
+  assert.match(agentListingsSource, /if \(!saved\) \{\s*\n\s*setIsListingSaving\(false\)\s*\n\s*return\s*\n\s*\}/)
   assert.match(agentListingDetailSource, /onboardingFormData\.listingDescription/)
   assert.match(agentListingDetailSource, /propertyDescription: String\(draft\.description/)
   assert.match(agentListingDetailSource, /listingPreviewDescription: String\(draft\.listingPreviewDescription \|\| draft\.description/)
   assert.match(agentListingDetailSource, /listingDescription: nextDraft\.description\.trim\(\)/)
   assert.match(agentListingDetailSource, /description: value,\s*\n\s*listingPreviewDescription: shouldSyncPreview \? value : previous\.listingPreviewDescription/)
   assert.match(privateListingServiceSource, /onboardingFormData\.listingDescription/)
+  assert.match(privateListingServiceSource, /const listingDescription = pickFirstText\(rowDescription, onboardingDescription, publicationDescription\)/)
 })
 
 test('listing marketing saves are not blocked by browser fallback cache or click events', () => {
@@ -84,6 +86,8 @@ test('listing marketing saves are not blocked by browser fallback cache or click
   assert.match(agentListingDetailSource, /!\('nativeEvent' in draftOverride\)/)
   assert.match(agentListingDetailSource, /!\('currentTarget' in draftOverride\)/)
   assert.doesNotMatch(agentListingDetailSource, /onClick=\{saveMarketingDraft\}/)
+  assert.match(agentListingDetailSource, /mergeListingRecord\(savedListing, updatedListing\)/)
+  assert.match(agentListingDetailSource, /listing distribution sync skipped/)
 })
 
 test('key selling points survive editor, detail workspace, and publication mapping', () => {

@@ -29,6 +29,7 @@ import {
   waiveDeveloperPartnerAgreement,
 } from '../lib/api'
 import {
+  acceptPartnerInvitation,
   createPartnerInvitation,
   fetchPartnersSnapshot,
 } from '../lib/partnersRepository'
@@ -363,10 +364,19 @@ function RowActionButton({ children, onClick, disabled = false, variant = 'secon
   )
 }
 
-function PartnerRow({ relationship, busyKey = '', onAccept, onGenerateAgreement, onSendInvite, onWaiveAgreement }) {
+function PartnerRow({
+  relationship,
+  busyKey = '',
+  onAccept,
+  onAcceptInvitation,
+  onGenerateAgreement,
+  onSendInvite,
+  onWaiveAgreement,
+}) {
   const isInvitationRow = relationship.rowType === 'invitation'
   const hasOpenAgreement = Boolean(relationship.activeAgreement)
-  const canAccept = !isInvitationRow && relationship.status === 'invited'
+  const canAcceptRelationship = !isInvitationRow && relationship.status === 'invited'
+  const canAcceptInvitation = isInvitationRow && relationship.invitationDirection === 'inbound'
   const canGenerate = !isInvitationRow && ['accepted', 'agreement_pending'].includes(relationship.status) && !hasOpenAgreement
   const canWaive = !isInvitationRow && ['accepted', 'agreement_pending'].includes(relationship.status) && relationship.agreementStatus !== 'waived'
 
@@ -391,12 +401,21 @@ function PartnerRow({ relationship, busyKey = '', onAccept, onGenerateAgreement,
       </div>
       <p className="text-sm text-[#60758d]">{formatDate(relationship.updatedAt || relationship.invitedAt)}</p>
       <div className="flex flex-wrap gap-2 xl:justify-end">
-        {isInvitationRow ? (
+        {isInvitationRow && !canAcceptInvitation ? (
           <span className="inline-flex h-9 items-center rounded-[8px] border border-dashed border-[#d8e2ef] bg-[#fbfcfe] px-3 text-xs font-semibold text-[#52677f]">
             Pending invite record
           </span>
         ) : null}
-        {canAccept ? (
+        {canAcceptInvitation ? (
+          <RowActionButton
+            variant="success"
+            disabled={busyKey === `accept-invite:${relationship.invitationId}`}
+            onClick={() => onAcceptInvitation?.(relationship)}
+          >
+            {busyKey === `accept-invite:${relationship.invitationId}` ? 'Accepting...' : 'Accept Connection'}
+          </RowActionButton>
+        ) : null}
+        {canAcceptRelationship ? (
           <RowActionButton
             disabled={busyKey === `send:${relationship.id}`}
             onClick={() => onSendInvite?.(relationship)}
@@ -409,7 +428,7 @@ function PartnerRow({ relationship, busyKey = '', onAccept, onGenerateAgreement,
             )}
           </RowActionButton>
         ) : null}
-        {canAccept ? (
+        {canAcceptRelationship ? (
           <RowActionButton
             variant="success"
             disabled={busyKey === `accept:${relationship.id}`}
@@ -1008,6 +1027,22 @@ function DeveloperPartnersPage() {
     )
   }, [runRelationshipAction])
 
+  const handleAcceptCanonicalInvitation = useCallback((relationship) => {
+    void runRelationshipAction(
+      `accept-invite:${relationship.invitationId}`,
+      async () => {
+        await acceptPartnerInvitation({
+          invitationId: relationship.invitationId,
+          organisationId: workspaceId,
+          userId: profile?.id || '',
+          workspaceType: 'developer_company',
+        })
+        setNotice(`${relationship.partnerName} is now connected to this developer workspace.`)
+      },
+      'directory',
+    )
+  }, [profile?.id, runRelationshipAction, workspaceId])
+
   const handleSendInvite = useCallback((relationship) => {
     void runRelationshipAction(
       `send:${relationship.id}`,
@@ -1110,6 +1145,7 @@ function DeveloperPartnersPage() {
           partnerOrganisation: null,
           partnerName: normalizeText(partnerName) || invitation.invitedEmail || 'Pending invite',
           partnerInvitationEmail: normalizeText(invitation.invitedEmail || invitation.recipientContactEmail),
+          invitationDirection: senderIsCurrentOrganisation ? 'outbound' : 'inbound',
           partnerType,
           partnerTypeLabel: TYPE_META[partnerType]?.label || 'Partner',
           status: 'invited',
@@ -1354,6 +1390,7 @@ function DeveloperPartnersPage() {
                   relationship={relationship}
                   busyKey={actionBusyKey}
                   onAccept={handleAcceptRelationship}
+                  onAcceptInvitation={handleAcceptCanonicalInvitation}
                   onSendInvite={handleSendInvite}
                   onGenerateAgreement={handleGenerateAgreement}
                   onWaiveAgreement={handleWaiveAgreement}

@@ -4006,8 +4006,9 @@ function AgentListingDetail() {
       }
       if (options.listingVisibility) listingPatch.listingVisibility = options.listingVisibility
       const savedListing = await updatePrivateListing(updatedListing.id, listingPatch)
+      const mergedSavedListing = savedListing?.id ? mergeListingRecord(savedListing, updatedListing) : updatedListing
       if (savedListing?.id) {
-        setPrivateListings((rows) => upsertListingRecord(rows, mergeListingRecord(updatedListing, savedListing)))
+        setPrivateListings((rows) => upsertListingRecord(rows, mergedSavedListing))
       }
       const distributionSync = await syncPrivateListingDistributionData(updatedListing.id, {
         publicationData: {
@@ -4046,13 +4047,17 @@ function AgentListingDetail() {
           virtualTourLink: draft.virtualTourLink,
         },
         externalLinks: normalizedExternalLinks,
+      }).catch((syncError) => {
+        console.warn('[AgentListingDetail] listing distribution sync skipped', syncError)
+        setDetailError('Listing content saved, but portal/distribution sync needs another attempt.')
+        return { skipped: true, reason: 'distribution_sync_failed', error: syncError }
       })
       if (distributionSync?.skipped) {
         console.warn('[AgentListingDetail] listing distribution sync skipped', distributionSync.reason)
       }
       await upsertAreaFromAddress(buildAddressAutocompleteValueFromDraft(draft), { incrementListingCount: false })
       setDetailMessage(options.successMessage || 'Listing details saved.')
-      return { ok: true, listing: savedListing || updatedListing }
+      return { ok: true, listing: mergedSavedListing }
     } catch (error) {
       console.error('[AgentListingDetail] Supabase listing save failed', error)
       setDetailError(error?.message || 'Saved locally, but Supabase could not be updated.')

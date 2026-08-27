@@ -3955,16 +3955,20 @@ function AgentListings({ initialTab = null } = {}) {
 
   async function goToNextCreateListingStep() {
     const nextIndex = Math.min(createListingStepIndex + 1, CREATE_LISTING_WORKFLOW_STEPS.length - 1)
-    if (isEditListingWorkspace && editListingRecord && !isListingSaving) {
+    if (isEditListingWorkspace && !isListingSaving) {
       setIsListingSaving(true)
       setError('')
       try {
-        await performUpdateExistingListing({
+        const saved = await performUpdateExistingListing({
           navigateAfterSave: false,
           reloadAfterSave: false,
           emitListingsUpdated: false,
           successMessage: 'Listing step saved.',
         })
+        if (!saved) {
+          setIsListingSaving(false)
+          return
+        }
       } catch (saveError) {
         console.error('[Listings] listing step save failed', saveError)
         setError(saveError?.message || 'Unable to save this listing step right now.')
