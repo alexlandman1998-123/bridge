@@ -62,6 +62,7 @@ export default function ClientPortalMatterAccountsPanel({
   loading = false,
   error = '',
   unavailable = false,
+  hideHeader = false,
   workspace = 'buyer',
   uploadingProofAccountId = '',
   proofUploadFeedback = null,
@@ -187,7 +188,7 @@ export default function ClientPortalMatterAccountsPanel({
 
   return (
     <section className="space-y-5">
-      <header className="rounded-[18px] border border-[#dbe5ef] bg-white px-6 py-6 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+      <header className={hideHeader ? 'hidden' : 'rounded-[18px] border border-[#dbe5ef] bg-white px-6 py-6 shadow-[0_10px_24px_rgba(15,23,42,0.04)]'}>
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div>
             <span className="inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-3.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#64748b]">

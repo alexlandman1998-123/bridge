@@ -65,21 +65,41 @@ import {
 import { buildBondOriginatorBuyerOfferGrantViewModel } from '../modules/bond/integrations'
 import GuidedBondApplication from '../modules/bond/application/guided/GuidedBondApplication'
 import { LatestUpdatesCard } from '../components/client-portal/ClientJourneySection'
+import {
+  BuyerPortalNavigationItem,
+  BuyerPortalSupportPanel,
+} from '../components/client-portal/BuyerPortalDesktopSidebar'
+import {
+  BuyerPortalOverviewHero as SharedBuyerPortalOverviewHero,
+  BuyerPortalOverviewShell,
+} from '../components/client-portal/BuyerPortalOverview'
+import BuyerPortalJourney from '../components/client-portal/BuyerPortalJourney'
+import {
+  buyerPortalHexToRgba as portalHexToRgba,
+  createBuyerPortalTheme,
+  normalizeBuyerPortalColour as normalizePortalBrandColour,
+} from '../components/client-portal/buyerPortalTheme'
 import ClientDocumentCentre, { buildDocumentCentreSections } from '../components/client-portal/documents/ClientDocumentCentre'
+import BuyerDocumentWorkspace, { BuyerDocumentSummary } from '../components/client-portal/documents/BuyerDocumentWorkspace'
+import BuyerFinanceWorkspace from '../components/client-portal/finance/BuyerFinanceWorkspace'
+import BuyerTeamWorkspace from '../components/client-portal/team/BuyerTeamWorkspace'
 import ClientAppointmentsSection from '../components/client-portal/appointments/ClientAppointmentsSection'
 import ClientPortalMatterAccountsPanel from '../components/client-portal/ClientPortalMatterAccountsPanel'
-import SellerOffersPage from '../components/client-portal/offers/SellerOffersPage'
 import TransactionStageWorkspace, { resolveSellerTransactionStageKey } from '../components/client-portal/seller/TransactionStageWorkspace'
 import ProgressTimeline from '../components/ProgressTimeline'
 import TransactionLifecycleProgress from '../components/TransactionLifecycleProgress'
 import MvpTransactionControlBoard from '../components/transaction/MvpTransactionControlBoard'
-import AttorneyFirmRolePlayerCard from '../components/attorney/branding/AttorneyFirmRolePlayerCard'
 import {
   buildClientJourney,
   deriveClientJourneyStatusFlag,
   resolveClientJourneyFinanceType,
   resolveClientJourneyPropertyType,
 } from '../core/clientJourney/clientJourney.utils'
+import { buildBuyerJourneyPresentationModel } from '../core/clientPortal/buyerJourneyPresentationModel'
+import { buildBuyerDocumentPresentationModel } from '../core/clientPortal/buyerDocumentPresentationModel'
+import { buildBuyerFinancePresentationModel } from '../core/clientPortal/buyerFinancePresentationModel'
+import { buildBuyerTeamPresentationModel } from '../core/clientPortal/buyerTeamPresentationModel'
+import { buildBuyerPortalCutoverReadiness } from '../core/clientPortal/buyerPortalCutoverReadiness'
 import { getSystemBanks } from '../services/bondOriginatorBankService'
 import {
   createClientPortalDocumentSignedUrl,
@@ -133,7 +153,6 @@ import {
   getMainStageFromDetailedStage,
   getMainStageIndex,
 } from '../lib/stages'
-import { getOffersForListing } from '../lib/listingOffersService'
 import { getSellerPortalStageMeta } from '../lib/sellerPortalStageMapper'
 import { buildSellerDocumentExperienceModel } from '../lib/sellerDocumentExperienceModel'
 import { buildSellerComplianceAgentStatus } from '../core/documents/sellerComplianceAgentStatusModel'
@@ -209,7 +228,6 @@ async function withClientPortalLoadTimeout(task, { phase = 'portal', timeoutMs =
 const SELLER_PORTAL_MENU = [
   { key: 'overview', label: 'Overview', icon: Home },
   { key: 'progress', label: 'Progress', icon: BarChart3 },
-  { key: 'offers', label: 'Offers', icon: HandCoins },
   { key: 'appointments', label: 'Appointments', icon: CalendarClock },
   { key: 'listing', label: 'Listing', icon: Home, section: 'overview', hash: '#seller-property-hero' },
   { key: 'marketing', label: 'Marketing', icon: Megaphone, section: 'overview', hash: '#seller-marketing-activity' },
@@ -229,7 +247,6 @@ const SELLER_PORTAL_NAV_GROUPS = [
     label: 'Your Sale',
     items: [
       { key: 'progress', label: 'Progress', icon: BarChart3 },
-      { key: 'offers', label: 'Offers', icon: HandCoins },
       { key: 'appointments', label: 'Appointments', icon: CalendarClock },
     ],
   },
@@ -314,6 +331,9 @@ const SELLER_SALE_PROGRESS_STEPS = [
 const SELLER_SALE_PROGRESS_KEY_BY_PORTAL_STAGE = {
   mandate_signed: 'otp',
   listed: 'otp',
+  signed_otp_received: 'finance',
+  otp_signed: 'finance',
+  // Historical values remain readable, but they do not recreate an Offers workspace.
   offers: 'otp',
   offer_accepted: 'finance',
   transfer: 'transfer',
@@ -579,7 +599,6 @@ function resolveSellerSaleProgressKey({
   mainStage = '',
   activeSellingContext = {},
   portal = {},
-  sellerOfferItems = [],
 } = {}) {
   const mainStageKey = normalizeSellerSaleMainStage(mainStage)
   if (mainStageKey) return mainStageKey
@@ -597,11 +616,6 @@ function resolveSellerSaleProgressKey({
   if (SELLER_SALE_PROGRESS_KEY_BY_PORTAL_STAGE[portalStageKey]) {
     return SELLER_SALE_PROGRESS_KEY_BY_PORTAL_STAGE[portalStageKey]
   }
-
-  const acceptedOffer = (Array.isArray(sellerOfferItems) ? sellerOfferItems : []).some((offer) =>
-    ['accepted', 'offer_accepted', 'signed_otp_received', 'otp_signed'].includes(normalizeSellerPortalKey(offer?.status)),
-  )
-  if (acceptedOffer) return 'finance'
 
   return 'otp'
 }
@@ -621,7 +635,6 @@ function buildSellerSaleProgressModel({
   mainStage = '',
   activeSellingContext = {},
   portal = {},
-  sellerOfferItems = [],
 } = {}) {
   const isStarted = shouldShowSellerSaleProgress({ hasDocumentsComplete, sellerStageMeta, mainStage })
   const currentKey = isStarted
@@ -630,7 +643,6 @@ function buildSellerSaleProgressModel({
         mainStage,
         activeSellingContext,
         portal,
-        sellerOfferItems,
       })
     : ''
   const currentIndex = isStarted
@@ -641,8 +653,8 @@ function buildSellerSaleProgressModel({
     state: isStarted && index < currentIndex ? 'completed' : isStarted && index === currentIndex ? 'current' : 'upcoming',
   }))
   const helperMessageByKey = {
-    otp: 'Your seller file is complete. The next milestone is OTP activity for the sale.',
-    finance: 'The OTP milestone is in place and finance is being tracked before transfer moves forward.',
+    otp: 'Your seller file is complete. The next sale milestone is receipt of the signed OTP.',
+    finance: 'The signed OTP is in place and finance is being tracked before transfer moves forward.',
     transfer: 'Finance and guarantees are moving into legal transfer milestones.',
     registration: 'Registration is the final legal close-out milestone for your sale.',
   }
@@ -654,14 +666,14 @@ function buildSellerSaleProgressModel({
     percent: isStarted ? Math.round((currentIndex / Math.max(SELLER_SALE_PROGRESS_STEPS.length - 1, 1)) * 100) : 0,
     helperMessage: isStarted
       ? helperMessageByKey[currentKey] || helperMessageByKey.otp
-      : 'Your sale workflow will begin once the listing journey is complete and the sale moves into OTP.',
+      : 'Your sale workflow will begin once the listing journey is complete and the signed OTP is received.',
     title: 'Sale Progress',
     workflowKey: 'sale',
     isStarted,
     statusLabel: isStarted ? '' : 'Not started',
     description: 'Track OTP, finance, transfer, and registration milestones for your sale.',
-    actionLabel: !isStarted || currentKey === 'otp' ? 'View offers' : 'View documents',
-    actionTo: !isStarted || currentKey === 'otp' ? 'offers' : 'documents',
+    actionLabel: !isStarted || currentKey === 'otp' ? 'View progress' : 'View documents',
+    actionTo: !isStarted || currentKey === 'otp' ? 'progress' : 'documents',
   }
 }
 
@@ -2082,26 +2094,6 @@ function pickFirstText(...values) {
   return ''
 }
 
-function normalizePortalBrandColour(value = '', fallback = '#152432') {
-  const normalized = String(value || '').trim()
-  if (/^#[0-9a-fA-F]{6}$/.test(normalized)) return normalized
-  return fallback
-}
-
-function portalHexToRgb(hex = '#152432') {
-  const safeHex = normalizePortalBrandColour(hex, '#152432').slice(1)
-  return {
-    r: parseInt(safeHex.slice(0, 2), 16),
-    g: parseInt(safeHex.slice(2, 4), 16),
-    b: parseInt(safeHex.slice(4, 6), 16),
-  }
-}
-
-function portalHexToRgba(hex = '#152432', alpha = 1) {
-  const { r, g, b } = portalHexToRgb(hex)
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`
-}
-
 const SELLER_BRAND_PLACEHOLDERS = new Set([
   'selling',
   'seller',
@@ -2116,48 +2108,6 @@ function pickSellerBrandText(...values) {
     return normalized
   }
   return ''
-}
-
-function formatSellerMoney(value) {
-  const amount = Number(value || 0)
-  if (!Number.isFinite(amount) || amount <= 0) return 'Amount to be confirmed'
-  return ZAR_CURRENCY.format(amount)
-}
-
-function normalizeSellerOfferForDisplay(offer = {}, index = 0) {
-  const nestedOffer = offer?.offer && typeof offer.offer === 'object' ? offer.offer : {}
-  const buyer = offer?.buyer && typeof offer.buyer === 'object' ? offer.buyer : {}
-  const status = normalizeSellerPortalKey(offer?.status || offer?.workflowStatus || offer?.workflow_status || 'submitted')
-  const amount = offer?.offerAmount ?? offer?.offerPrice ?? offer?.amount ?? nestedOffer?.offerAmount
-  const receivedAt = offer?.submittedAt || offer?.offerDate || offer?.createdAt || offer?.created_at || ''
-  const expiryDate = nestedOffer?.expiryDate || offer?.expiryDate || offer?.expiresAt || ''
-  const buyerName = pickFirstText(offer?.buyerName, buyer?.fullName, buyer?.name, 'Buyer')
-  const labelStatus = status === 'seller_review' || status === 'sent_to_seller'
-    ? 'Seller review'
-    : status === 'agent_review'
-      ? 'Agent review'
-      : status === 'converted_to_transaction'
-        ? 'Converted to transaction'
-        : getFriendlySellerStatusLabel(status, 'Submitted')
-  const actionNeeded =
-    ['seller_review', 'submitted', 'countered'].includes(status)
-      ? 'Review required'
-      : status === 'accepted'
-        ? 'Accepted'
-        : status === 'rejected'
-          ? 'No action needed'
-          : 'Waiting for agent update'
-
-  return {
-    id: offer?.id || `seller_offer_${index}`,
-    buyerName,
-    amountLabel: formatSellerMoney(amount),
-    status,
-    statusLabel: labelStatus,
-    receivedAt,
-    expiryDate,
-    actionNeeded,
-  }
 }
 
 const ZAR_CURRENCY = new Intl.NumberFormat('en-ZA', {
@@ -3032,15 +2982,14 @@ function resolveSellerAgentAvatarUrl({ portal = {}, activeSellingContext = {} } 
 function resolveSellerStatusLabel({
   sellerStageMeta = {},
   hasListingCreated = false,
-  sellerOfferItems = [],
   mainStage = '',
 } = {}) {
   const stageKey = sellerStageMeta?.currentStageKey || sellerStageMeta?.currentStage?.key || ''
   const normalizedMainStage = String(mainStage || '').toUpperCase()
   if (['REGISTERED', 'REG'].includes(normalizedMainStage) || stageKey === 'registered') return 'Registered'
   if (['transfer'].includes(stageKey) || normalizedMainStage === 'XFER') return 'Transfer Underway'
-  if (['offer_accepted'].includes(stageKey) || normalizedMainStage === 'FIN') return 'Offer Accepted'
-  if (sellerOfferItems.length > 0 || stageKey === 'offers') return 'Offers Received'
+  if (['offer_accepted', 'signed_otp_received', 'otp_signed'].includes(stageKey) || normalizedMainStage === 'FIN') return 'Signed OTP Received'
+  if (stageKey === 'offers') return hasListingCreated ? 'Listing Live' : 'Sale In Progress'
   if (hasListingCreated || ['listed', 'listing_live'].includes(stageKey)) return 'Listing Live'
   if (stageKey === 'mandate_signed') return 'Mandate Signed'
   return 'Sale In Progress'
@@ -6204,8 +6153,6 @@ function SellerMobilePortal({
   sellerAgentPhone,
   sellerDocumentsNeedingAttention,
   sellerDocumentTracker,
-  sellerOfferItems,
-  activeSellerOfferCount,
   sellerActivityItems,
   uploadingDocumentKey = '',
   openingDocumentPath = '',
@@ -6232,7 +6179,7 @@ function SellerMobilePortal({
   const [mobileDocumentsActionOnly, setMobileDocumentsActionOnly] = useState(false)
   const [mobileDocumentSortDirection, setMobileDocumentSortDirection] = useState('asc')
   const requestedMobileSection = activeSection === 'progress' ? 'tasks' : activeSection
-  const mobileSection = ['overview', 'tasks', 'documents', 'offers', 'team'].includes(requestedMobileSection)
+  const mobileSection = ['overview', 'tasks', 'documents', 'team'].includes(requestedMobileSection)
     ? requestedMobileSection
     : 'overview'
   const isOverviewSection = mobileSection === 'overview'
@@ -6268,13 +6215,11 @@ function SellerMobilePortal({
   })
   const primaryDocumentAction = documentActionItems[0] || null
   const previewDocuments = documentActionItems.slice(0, 4)
-  const visibleOffers = sellerOfferItems.slice(0, 3)
   const visibleActivity = sellerActivityItems.slice(0, 3)
   const bottomNavItems = [
     { key: 'overview', section: 'overview', label: 'Home', icon: Home },
     { key: 'tasks', section: 'progress', label: 'Tasks', icon: CheckCircle2 },
     { key: 'documents', section: 'documents', label: 'Documents', icon: FileText },
-    { key: 'offers', section: 'offers', label: 'Offers', icon: Tag },
     { key: 'team', section: 'team', label: 'Team', icon: Users },
   ]
   const nextActionHref = sellerNextStep?.href ||
@@ -6579,15 +6524,15 @@ function SellerMobilePortal({
             </section>
             <section className="mt-4 grid gap-3">
               <div className="grid grid-cols-2 gap-3">
-                <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, 'offers')} className="overflow-hidden rounded-[16px] border border-white/80 bg-white/95 shadow-[0_10px_26px_rgba(15,23,42,0.055)]">
+                <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, 'progress')} className="overflow-hidden rounded-[16px] border border-white/80 bg-white/95 shadow-[0_10px_26px_rgba(15,23,42,0.055)]">
                   <div className="p-4">
-                    <span className="inline-flex h-10 w-10 items-center justify-center rounded-[12px] bg-[#eff8f1] text-[#347d43]"><Tag size={20} /></span>
-                    <p className="mt-3 text-xs font-semibold uppercase tracking-[0.12em] text-[#8a94a3]">Offers</p>
-                    <strong className="mt-1 block text-2xl font-semibold text-[#101823]">{activeSellerOfferCount}</strong>
-                    <span className="mt-1 block text-xs font-medium text-[#667085]">Active offers</span>
+                    <span className="inline-flex h-10 w-10 items-center justify-center rounded-[12px] bg-[#eff8f1] text-[#347d43]"><BarChart3 size={20} /></span>
+                    <p className="mt-3 text-xs font-semibold uppercase tracking-[0.12em] text-[#8a94a3]">Sale</p>
+                    <strong className="mt-1 block text-lg font-semibold text-[#101823]">Track progress</strong>
+                    <span className="mt-1 block text-xs font-medium text-[#667085]">Signed OTP to registration</span>
                   </div>
                   <div className="flex min-h-[40px] items-center justify-between border-t border-[#edf0f3] px-4 text-xs font-semibold text-[#347d43]">
-                    <span>View offers</span>
+                    <span>View progress</span>
                     <ChevronRight size={15} />
                   </div>
                 </Link>
@@ -6672,22 +6617,11 @@ function SellerMobilePortal({
           />
         ) : null}
 
-        {mobileSection === 'offers' ? (
-          <SellerMobileListCard
-            eyebrow="Offers"
-            title={`${activeSellerOfferCount} active offer${activeSellerOfferCount === 1 ? '' : 's'}`}
-            emptyText="Offers will appear here when your agent receives them."
-            items={visibleOffers.map((offer) => ({ id: offer.id, title: offer.amountLabel || offer.offerAmountLabel || 'Offer received', description: `${offer.buyerName || 'Buyer'} - ${offer.statusLabel || 'Awaiting review'}`, to: 'offers' }))}
-            token={token}
-            workspaceNavigationScope={workspaceNavigationScope}
-          />
-        ) : null}
-
         {mobileSection === 'team' ? (
           <section className="mt-4 rounded-[28px] border border-white/80 bg-white/95 p-5 shadow-[0_14px_36px_rgba(15,23,42,0.065)]">
             <p className="text-[0.74rem] font-semibold uppercase tracking-[0.14em] text-[#7b8491]">Team</p>
             <h3 className="mt-2 text-[1.4rem] font-semibold tracking-[-0.04em] text-[#101823]">{sellerAgentName || sellerAgencyName || 'Your property team'}</h3>
-            <p className="mt-1 text-sm leading-6 text-[#667085]">Your main contact for seller updates, documents, viewings, and offers.</p>
+            <p className="mt-1 text-sm leading-6 text-[#667085]">Your main contact for seller updates, documents, viewings, and transaction progress.</p>
             <div className="mt-4 grid gap-3">
               {sellerAgentEmail ? <a href={`mailto:${sellerAgentEmail}`} className="flex min-h-[52px] items-center justify-between rounded-[18px] border border-[#e5e9ef] bg-[#fbfcfd] px-4 text-sm font-semibold text-[#10213a]"><span>Message agent</span><MessageCircle size={18} /></a> : null}
               {sellerAgentPhone ? <a href={`tel:${sellerAgentPhone}`} className="flex min-h-[52px] items-center justify-between rounded-[18px] border border-[#e5e9ef] bg-[#fbfcfd] px-4 text-sm font-semibold text-[#10213a]"><span>Call agent</span><PhoneCall size={18} /></a> : null}
@@ -7327,7 +7261,7 @@ function SellerPropertyHero({
   const statusHeadline = isListingLive
     ? 'Your property is live and everything is on track.'
     : normalizedStatus.includes('offers_received')
-      ? 'Your property is attracting buyer interest and offers are coming in.'
+      ? 'Your property is attracting buyer interest and your agent is managing the next step.'
       : normalizedStatus.includes('offer_accepted')
         ? 'Your offer is accepted and the sale is moving forward.'
         : normalizedStatus.includes('transfer')
@@ -7823,123 +7757,6 @@ function SellerPortalDashboard({
   )
 }
 
-function BuyerOverviewHero({
-  buyerFirstName,
-  buyerName,
-  developmentName,
-  unitLabel,
-  purchasePriceLabel,
-  heroStatusBadge,
-  currentStageLabel,
-  nextStageLabel,
-  progressPercent,
-  timeInStageLabel,
-  stageUpdatedDateLabel,
-  nextStepState = {},
-  primaryAction,
-  supportContact,
-  financeSectionKey = 'account',
-  token,
-  workspaceNavigationScope,
-}) {
-  const messageAction = supportContact?.email
-    ? { label: 'Message Team', href: `mailto:${supportContact.email}` }
-    : { label: 'Message Team', to: 'team' }
-  const callAction = supportContact?.phone
-    ? { label: 'Call Team', href: `tel:${supportContact.phone}` }
-    : null
-  const safeProgress = Math.max(0, Math.min(100, Number(progressPercent) || 0))
-  const actionTitle = nextStepState?.title || 'No action needed right now'
-  const actionDescription = nextStepState?.description || 'Your team will post the next step here.'
-
-  return (
-    <section className="grid gap-5 xl:grid-cols-[minmax(420px,0.84fr)_minmax(0,1.16fr)] xl:items-stretch">
-      <div className="flex min-h-[320px] min-w-0 flex-col xl:min-h-[342px]">
-        <h1 className="text-[2.1rem] font-semibold leading-[1.08] tracking-[-0.045em] text-[#102a2b] sm:text-[2.55rem]">
-          Welcome, {buyerFirstName}.
-        </h1>
-
-        <div className="mt-6 flex flex-1 items-stretch">
-          <article className={`flex h-full min-h-[214px] w-full flex-1 flex-col rounded-[20px] border border-[#dbe5ec] bg-white p-5 ${PORTAL_DESIGN_TOKENS.shadow.card}`}>
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className={`text-[0.67rem] font-semibold uppercase tracking-[0.13em] ${PORTAL_DESIGN_TOKENS.text.eyebrow}`}>Needs your attention</p>
-                <h2 className="mt-2 text-[1.35rem] font-semibold leading-tight tracking-[-0.03em] text-[#102032]">{actionTitle}</h2>
-              </div>
-              <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[0.66rem] font-semibold uppercase tracking-[0.1em] ${nextStepState?.requiresAction ? 'border-[#f0d8ae] bg-[#fff6e7] text-[#9a5b0f]' : 'border-[#cfe8d8] bg-[#f2fbf5] text-[#1f7d44]'}`}>
-                {nextStepState?.requiresAction ? 'Action needed' : 'On track'}
-              </span>
-            </div>
-            <p className="mt-3 max-w-xl text-sm leading-6 text-[#566b82]">{actionDescription}</p>
-            <div className="mt-auto flex flex-wrap gap-2 border-t border-[#e7edf2] pt-4">
-              <SellerPortalAction action={primaryAction} token={token} workspaceNavigationScope={workspaceNavigationScope} className={PORTAL_DESIGN_TOKENS.button.primary}>
-                <ArrowRight size={14} />
-                <span>{primaryAction?.label || 'Open next step'}</span>
-              </SellerPortalAction>
-              <SellerPortalAction action={messageAction} token={token} workspaceNavigationScope={workspaceNavigationScope} className={PORTAL_DESIGN_TOKENS.button.secondary}>
-                <MessageCircle size={14} />
-                <span>Message</span>
-              </SellerPortalAction>
-              {callAction ? (
-                <SellerPortalAction action={callAction} token={token} workspaceNavigationScope={workspaceNavigationScope} className={PORTAL_DESIGN_TOKENS.button.secondary}>
-                  <PhoneCall size={14} />
-                  <span>Call</span>
-                </SellerPortalAction>
-              ) : null}
-            </div>
-          </article>
-        </div>
-      </div>
-
-      <div className={`relative min-h-[320px] overflow-hidden ${PORTAL_DESIGN_TOKENS.surface.buyerHero} p-6 text-white ${PORTAL_DESIGN_TOKENS.shadow.hero} xl:min-h-[342px]`}>
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_83%_18%,rgba(255,255,255,0.2),transparent_26%),linear-gradient(180deg,rgba(5,28,34,0)_50%,rgba(5,28,34,0.64)_100%)]" aria-hidden="true" />
-        <div className="relative flex h-full min-h-[272px] flex-col">
-          <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <p className="text-sm font-medium text-[#a5d8a7]">Your purchase</p>
-              <h2 className="mt-4 max-w-xl text-[2.05rem] font-semibold leading-[1.08] tracking-[-0.04em] text-white">{developmentName}</h2>
-              <p className="mt-2 text-base font-semibold text-[#d8e7e5]">{unitLabel}</p>
-            </div>
-            <span className={`shrink-0 rounded-full border px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] ${heroStatusBadge?.className || 'border-white/20 bg-white/12 text-white'}`}>
-              {heroStatusBadge?.label || 'On Track'}
-            </span>
-          </div>
-
-          <div className="mt-auto grid gap-4 border-t border-white/[0.2] pt-5 md:grid-cols-[minmax(0,1fr)_108px] md:items-end">
-            <div className="min-w-0">
-              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#d8e7e5]">Where things stand</p>
-              <p className="mt-2 flex items-center gap-2 text-[1.2rem] font-semibold text-white">
-                <span className="h-2 w-2 rounded-full bg-[#76d46f]" />
-                <span className="min-w-0 truncate">{currentStageLabel}</span>
-              </p>
-              <p className="mt-1 text-sm font-medium text-[#d8e7e5]">Next: {nextStageLabel}</p>
-              <div className="mt-4 grid gap-2 sm:grid-cols-3">
-                {[
-                  ['Price', purchasePriceLabel],
-                  ['Active', timeInStageLabel],
-                  ['Updated', stageUpdatedDateLabel],
-                ].map(([label, value]) => (
-                  <div key={label} className="rounded-[12px] border border-white/12 bg-white/[0.08] px-3 py-2">
-                    <p className="text-[0.62rem] font-semibold uppercase tracking-[0.12em] text-[#c8dcdd]">{label}</p>
-                    <p className="mt-1 truncate text-sm font-semibold text-white">{value || 'Not set'}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="relative inline-flex h-[108px] w-[108px] shrink-0 items-center justify-center rounded-full shadow-[0_16px_30px_rgba(0,0,0,0.28)]" style={{ background: `conic-gradient(#74d46e ${safeProgress * 3.6}deg, rgba(255,255,255,0.2) 0deg)` }}>
-              <span className="absolute inset-[9px] rounded-full bg-[#10243a]/[0.94] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]" />
-              <span className="relative text-center">
-                <span className="block text-[1.55rem] font-semibold leading-none text-white">{safeProgress}%</span>
-                <span className="mt-1 block text-[0.64rem] font-semibold uppercase tracking-[0.12em] text-[#d8e7e5]">Complete</span>
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-  )
-}
-
 function BuyerOverviewActionPanel({
   actions = [],
   blockingActionCount = 0,
@@ -8235,50 +8052,46 @@ function BuyerSupportFooter({ supportContact = {}, buyerPortalAccessDescription 
 }
 
 function BuyerProgressJourney({
-  progressPercent,
-  currentStageLabel,
-  nextStageLabel,
-  steps = [],
+  journeyModel,
   primaryAction = {},
+  theme,
   token,
   workspaceNavigationScope,
+  variant = 'summary',
 }) {
-  const safeProgress = Math.max(0, Math.min(100, Number(progressPercent) || 0))
-  const currentLabel = currentStageLabel || 'Current step'
-  const nextLabel = nextStageLabel || 'Next step'
-
   return (
-    <PortalProgressJourney
-      title="Your progress"
-      subtitle="Reservation, offer, finance, transfer, registration, keys."
-      statusLabel={`${safeProgress}% complete`}
-      steps={steps.slice(0, 7)}
-      progressPercent={safeProgress}
-      helperMessage={`Now: ${currentLabel}. Next: ${nextLabel}.`}
-      actionLabel={primaryAction?.label || 'View details'}
-      actionTo={primaryAction?.to || 'progress'}
-      token={token}
-      workspaceNavigationScope={workspaceNavigationScope}
+    <BuyerPortalJourney
+      model={journeyModel}
+      theme={theme}
+      variant={variant}
+      action={(
+        <SellerPortalAction
+          action={{ ...primaryAction, label: primaryAction?.label || 'View details', to: primaryAction?.to || 'progress' }}
+          token={token}
+          workspaceNavigationScope={workspaceNavigationScope}
+          className={PORTAL_DESIGN_TOKENS.button.primary}
+        >
+          <span>{primaryAction?.label || 'View details'}</span>
+          <ArrowRight size={14} />
+        </SellerPortalAction>
+      )}
     />
   )
 }
 
 function BuyerProgressPage({
-  currentStageLabel,
-  nextStageLabel,
-  progressPercent,
-  journeySteps = [],
+  journeyModel,
   stageEducation = {},
   whatHappensNextItems = [],
   whatsHappeningSummary = [],
   primaryAction = {},
   latestUpdate = null,
+  theme,
   token,
   workspaceNavigationScope,
 }) {
-  const safeProgress = Math.max(0, Math.min(100, Number(progressPercent) || 0))
   const buyerActionCopy = stageEducation?.whatClientNeedsToDo || 'No action is needed unless your team asks for something.'
-  const nextCopy = stageEducation?.whatHappensNext || whatHappensNextItems[0] || `Your purchase is moving toward ${nextStageLabel || 'the next step'}.`
+  const nextCopy = stageEducation?.whatHappensNext || whatHappensNextItems[0] || `Your purchase is moving toward ${journeyModel?.nextStageLabel || 'the next step'}.`
   const teamCopy = whatsHappeningSummary[0] || stageEducation?.shortDescription || 'Your team is moving the purchase forward and will post updates here.'
   const latestUpdateTitle = latestUpdate?.title || latestUpdate?.authorName || 'No update yet'
   const latestUpdateCopy = latestUpdate?.message || latestUpdate?.summary || 'Your latest team update will appear here.'
@@ -8292,13 +8105,12 @@ function BuyerProgressPage({
   return (
     <section className="space-y-5">
       <BuyerProgressJourney
-        progressPercent={safeProgress}
-        currentStageLabel={currentStageLabel}
-        nextStageLabel={nextStageLabel}
-        steps={journeySteps}
+        journeyModel={journeyModel}
         primaryAction={primaryAction}
+        theme={theme}
         token={token}
         workspaceNavigationScope={workspaceNavigationScope}
+        variant="detailed"
       />
 
       <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -8351,7 +8163,6 @@ function AttorneySaysCard({ update = null, fallbackStageLabel = '' }) {
 
 function BuyerPortalDashboard({
   buyerFirstName,
-  buyerName,
   developmentName,
   unitLabel,
   purchasePriceLabel,
@@ -8361,15 +8172,9 @@ function BuyerPortalDashboard({
   progressPercent,
   timeInStageLabel,
   stageUpdatedDateLabel,
-  financeSectionKey,
   nextStepState,
   primaryAction,
-  blockingActionCount,
-  prioritizedNextActions,
-  hiddenNextActionCount,
-  metricCards,
-  buyerDocumentItems,
-  journeySteps,
+  documentModel,
   updates,
   latestUpdatesSubtitle,
   latestAttorneyUpdate,
@@ -8385,43 +8190,66 @@ function BuyerPortalDashboard({
   controlBoard,
   supportContact,
   buyerPortalAccessDescription,
+  journeyModel,
+  theme,
   token,
   workspaceNavigationScope,
 }) {
   const hasSecondaryInsight = Boolean(controlBoard || latestAttorneyUpdate)
+  const messageAction = supportContact?.email
+    ? { label: 'Message Team', href: `mailto:${supportContact.email}` }
+    : { label: 'Message Team', to: 'team' }
+  const callAction = supportContact?.phone
+    ? { label: 'Call Team', href: `tel:${supportContact.phone}` }
+    : null
 
   return (
-    <section className="space-y-6">
-      <BuyerOverviewHero
-        buyerFirstName={buyerFirstName}
-        buyerName={buyerName}
-        developmentName={developmentName}
-        unitLabel={unitLabel}
-        purchasePriceLabel={purchasePriceLabel}
-        heroStatusBadge={heroStatusBadge}
-        currentStageLabel={currentStageLabel}
-        nextStageLabel={nextStageLabel}
-        progressPercent={progressPercent}
-        timeInStageLabel={timeInStageLabel}
-        stageUpdatedDateLabel={stageUpdatedDateLabel}
-        nextStepState={nextStepState}
+    <BuyerPortalOverviewShell
+      hero={(
+        <SharedBuyerPortalOverviewHero
+          welcomeName={buyerFirstName}
+          propertyName={developmentName}
+          unitLabel={unitLabel}
+          purchasePriceLabel={purchasePriceLabel}
+          statusLabel={heroStatusBadge?.label || 'On track'}
+          statusClassName={heroStatusBadge?.className}
+          currentStageLabel={journeyModel?.currentStageLabel || currentStageLabel}
+          nextStageLabel={journeyModel?.nextStageLabel || nextStageLabel}
+          progressPercent={journeyModel?.progressPercent ?? progressPercent}
+          timeInStageLabel={timeInStageLabel}
+          stageUpdatedDateLabel={stageUpdatedDateLabel}
+          attentionTitle={nextStepState?.title}
+          attentionDescription={nextStepState?.description}
+          attentionRequired={Boolean(nextStepState?.requiresAction)}
+          attentionActions={(
+            <>
+              <SellerPortalAction action={primaryAction} token={token} workspaceNavigationScope={workspaceNavigationScope} className={PORTAL_DESIGN_TOKENS.button.primary}>
+                <ArrowRight size={14} />
+                <span>{primaryAction?.label || 'Open next step'}</span>
+              </SellerPortalAction>
+              <SellerPortalAction action={messageAction} token={token} workspaceNavigationScope={workspaceNavigationScope} className={PORTAL_DESIGN_TOKENS.button.secondary}>
+                <MessageCircle size={14} />
+                <span>Message</span>
+              </SellerPortalAction>
+              {callAction ? (
+                <SellerPortalAction action={callAction} token={token} workspaceNavigationScope={workspaceNavigationScope} className={PORTAL_DESIGN_TOKENS.button.secondary}>
+                  <PhoneCall size={14} />
+                  <span>Call</span>
+                </SellerPortalAction>
+              ) : null}
+            </>
+          )}
+          theme={theme}
+        />
+      )}
+      progress={(<BuyerProgressJourney
+        journeyModel={journeyModel}
         primaryAction={primaryAction}
-        supportContact={supportContact}
-        financeSectionKey={financeSectionKey}
+        theme={theme}
         token={token}
         workspaceNavigationScope={workspaceNavigationScope}
-      />
-      <BuyerProgressJourney
-        progressPercent={progressPercent}
-        currentStageLabel={currentStageLabel}
-        nextStageLabel={nextStageLabel}
-        steps={journeySteps}
-        primaryAction={primaryAction}
-        token={token}
-        workspaceNavigationScope={workspaceNavigationScope}
-      />
-      <section className="grid gap-5 xl:grid-cols-2 xl:items-stretch">
-        <LatestUpdatesCard
+      />)}
+      updates={(<LatestUpdatesCard
           updates={updates}
           commentDraft={commentDraft}
           saving={saving}
@@ -8432,14 +8260,19 @@ function BuyerPortalDashboard({
           subtitle={latestUpdatesSubtitle}
           showComposer={false}
           className="h-[430px] overflow-y-auto"
-        />
-        <BuyerOverviewDocumentsCard
-          documents={buyerDocumentItems}
-          token={token}
-          workspaceNavigationScope={workspaceNavigationScope}
-        />
-      </section>
-      <section className={`grid gap-5 xl:items-start ${hasSecondaryInsight ? 'xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]' : 'xl:grid-cols-1'}`}>
+      />)}
+      documents={(<BuyerDocumentSummary
+          model={documentModel}
+          compact
+          action={(
+            <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, 'documents')} className="inline-flex min-h-[40px] w-full items-center justify-center gap-2 rounded-[12px] border border-[#dbe5ef] bg-[#fbfdff] px-4 text-sm font-semibold text-[#35546c] transition hover:border-[#c8d8e7] hover:bg-white">
+              <FileText size={15} />
+              <span>Open documents</span>
+            </Link>
+          )}
+      />)}
+      insights={(<>
+        <section className={`grid gap-5 xl:items-start ${hasSecondaryInsight ? 'xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]' : 'xl:grid-cols-1'}`}>
         <BuyerStageGuide
           stageEducation={stageEducation}
           whatHappensNextItems={whatHappensNextItems}
@@ -8451,15 +8284,16 @@ function BuyerPortalDashboard({
         ) : (
           <AttorneySaysCard update={latestAttorneyUpdate} fallbackStageLabel={currentStageLabel} />
         )}
-      </section>
-      {controlBoard && latestAttorneyUpdate ? (
-        <AttorneySaysCard update={latestAttorneyUpdate} fallbackStageLabel={currentStageLabel} />
-      ) : null}
-      <BuyerSupportFooter
+        </section>
+        {controlBoard && latestAttorneyUpdate ? (
+          <AttorneySaysCard update={latestAttorneyUpdate} fallbackStageLabel={currentStageLabel} />
+        ) : null}
+      </>)}
+      support={(<BuyerSupportFooter
         supportContact={supportContact}
         buyerPortalAccessDescription={buyerPortalAccessDescription}
-      />
-    </section>
+      />)}
+    />
   )
 }
 
@@ -10450,7 +10284,7 @@ function ClientPortal() {
     overview: true,
     progress: true,
     appointments: true,
-    offers: true,
+    offers: false,
     details: true,
     account: true,
     bond_application: isOriginatorManagedPortalFinance,
@@ -10474,7 +10308,11 @@ function ClientPortal() {
     ? portal.__workspaceRoles
     : ['buyer']
   const activeWorkspace = requestedWorkspace || 'buyer'
-  const activeSection = sectionEnabled[requestedSection] ? requestedSection : 'overview'
+  const activeSection = requestedWorkspace === 'seller' && requestedSection === 'offers'
+    ? 'progress'
+    : sectionEnabled[requestedSection]
+      ? requestedSection
+      : 'overview'
   const hasSellingContext = Boolean(portal?.__hasSellingContext || availableWorkspaces.includes('seller'))
   const sellerContexts = Array.isArray(portal?.__portalContexts)
     ? portal.__portalContexts.filter((context) => normalizePortalContextType(context?.contextType || context?.context_type) === 'selling')
@@ -10754,30 +10592,8 @@ function ClientPortal() {
     portal?.activeSellingContext?.listing_id,
     portal?.unit?.id,
   )
-  const localSellerOffers = (() => {
-    if (!sellerListingId || typeof window === 'undefined') return []
-    try {
-      return getOffersForListing(sellerListingId)
-    } catch {
-      return []
-    }
-  })()
-  const rawSellerOffers = [
-    ...(Array.isArray(portal?.offers) ? portal.offers : []),
-    ...(Array.isArray(portal?.activeSellingContext?.offers) ? portal.activeSellingContext.offers : []),
-    ...(Array.isArray(activeSellingContext?.offers) ? activeSellingContext.offers : []),
-    ...localSellerOffers,
-  ]
-  const sellerOfferItems = Array.from(
-    new Map(
-      rawSellerOffers
-        .map((offer, index) => normalizeSellerOfferForDisplay(offer, index))
-        .map((offer) => [String(offer.id || '').trim(), offer]),
-    ).values(),
-  )
-  const activeSellerOfferCount = sellerOfferItems.filter((offer) =>
-    !['rejected', 'withdrawn', 'expired'].includes(normalizeSellerPortalKey(offer.status)),
-  ).length
+  // Residential offers are handled outside Arch9. Historical payload values
+  // remain readable by compatibility helpers, but never create a live portal workflow.
   const sharedSellerPortalJourney =
     workspaceData?.sellerPortalJourney ||
     portal?.sellerPortalJourney ||
@@ -10801,9 +10617,9 @@ function ClientPortal() {
     listingId: sellerListingId,
     hasListing: Boolean(sellerListingId || portal?.unit?.id),
     hasMandate: Boolean(activeSellingContext?.mandatePacketId || activeSellingContext?.mandate_packet_id || activeSellingContext?.mandatePacket || portal?.mandate?.packet),
-    offers: sellerOfferItems,
-    sellerOfferCount: activeSellerOfferCount,
-    hasOffers: activeSellerOfferCount > 0,
+    offers: [],
+    sellerOfferCount: 0,
+    hasOffers: false,
   })
   // The shared seller journey intentionally describes listing progress. Once a
   // transaction exists, the sale tracker must take its stage from the real
@@ -10829,7 +10645,6 @@ function ClientPortal() {
   const isOverview = workspaceSection === 'overview'
   const isProgress = workspaceSection === 'progress'
   const isAppointments = workspaceSection === 'appointments'
-  const isOffers = workspaceSection === 'offers'
   const isDetails = workspaceSection === 'details'
   const isAccount = workspaceSection === 'account'
   const isBondApplication = workspaceSection === 'bond_application'
@@ -10840,7 +10655,7 @@ function ClientPortal() {
   const isTeam = workspaceSection === 'team'
   const isAlterations = workspaceSection === 'alterations'
   const isReview = workspaceSection === 'review'
-  const hideSellerWorkspaceHeader = effectiveWorkspace === 'seller' && ['overview', 'progress', 'appointments', 'offers', 'documents', 'details', 'account'].includes(workspaceSection)
+  const hideSellerWorkspaceHeader = effectiveWorkspace === 'seller' && ['overview', 'progress', 'appointments', 'documents', 'details', 'account'].includes(workspaceSection)
 
   const handoverStatus = portal?.handover?.status || 'not_started'
   const handoverCompleted = handoverStatus === 'completed'
@@ -11956,6 +11771,12 @@ function ClientPortal() {
     ? Math.round((journeyCompletedSteps / clientJourneySteps.length) * 100)
     : progressPercent
   const safeJourneyProgressPercent = Math.max(0, Math.min(100, Number(journeyProgressPercent) || 0))
+  const buyerJourneyPresentationModel = buildBuyerJourneyPresentationModel({
+    steps: clientJourneySteps,
+    currentStepId,
+    progressPercent: safeJourneyProgressPercent,
+    source: 'production',
+  })
   const journeyHeroSubtext = journeyCurrentStep?.whatHappensNow
     ? String(journeyCurrentStep.whatHappensNow)
     : stageEducation?.shortDescription || `Your team is progressing ${journeyCurrentStageLabel.toLowerCase()} right now.`
@@ -12112,7 +11933,7 @@ function ClientPortal() {
       portal?.branding?.secondary_colour,
       portal?.branding?.secondary_color,
     ),
-    '#152432',
+    buyerPortalPrimaryColour,
   )
   const buyerPortalAccentColour = normalizePortalBrandColour(
     pickFirstText(
@@ -12127,15 +11948,12 @@ function ClientPortal() {
     ),
     '#74d46e',
   )
-  const buyerPortalSidebarStyle = {
-    backgroundColor: buyerPortalPrimaryColour,
-    backgroundImage: `radial-gradient(circle at 18% -6%, ${portalHexToRgba(buyerPortalAccentColour, 0.24)} 0%, transparent 34%), linear-gradient(180deg, ${buyerPortalPrimaryColour} 0%, ${buyerPortalSecondaryColour} 100%)`,
-  }
-  const buyerPortalActiveNavStyle = {
-    borderColor: 'rgba(255,255,255,0.34)',
-    backgroundColor: 'rgba(255,255,255,0.16)',
-    boxShadow: `inset 3px 0 0 ${buyerPortalAccentColour}, 0 12px 24px rgba(2,6,23,0.16)`,
-  }
+  const buyerPortalTheme = createBuyerPortalTheme({
+    primaryColour: buyerPortalPrimaryColour,
+    secondaryColour: buyerPortalSecondaryColour,
+    accentColour: buyerPortalAccentColour,
+  })
+  const buyerPortalSidebarStyle = buyerPortalTheme.sidebarStyle
   const buyerPrimaryTeamMember = {
     title: buyerPrimarySupportLabel,
     name: portalProfile?.isDevelopmentBuyerPortal
@@ -12197,6 +12015,18 @@ function ClientPortal() {
     buyerOperationsSupportMember,
   ].filter(Boolean)
   const buyerSupportContact = teamMembers.find((member) => member.email || member.phone) || teamMembers[0] || {}
+  const buyerTeamPresentationModel = buildBuyerTeamPresentationModel({
+    source: 'production',
+    members: teamMembers,
+    attorneyRolePlayers: attorneyRolePlayerCards,
+    heading: buyerTeamHeading,
+    description: buyerTeamDescription,
+    currentProcess: {
+      title: MAIN_STAGE_LABELS[mainStage] || toTitleLabel(mainStage || 'In progress'),
+      helper: portal?.transaction?.next_action || 'Your team will share the next update shortly.',
+      status: 'In progress',
+    },
+  })
   const buyerPortalMenuItems = CLIENT_PORTAL_MENU.map((item) => ({
     ...item,
     label: resolveBuyerPortalLabel(item.key, item.label),
@@ -12248,7 +12078,6 @@ function ClientPortal() {
           ? 'Published'
           : null,
     appointments: upcomingAppointmentCount > 0 ? `${upcomingAppointmentCount} upcoming` : null,
-    offers: activeSellerOfferCount > 0 ? `${activeSellerOfferCount}` : null,
     snags: sectionEnabled.snags ? `${snagOpenCount} open` : null,
   }
   const activeMenuItem = portalNavigationItems.find((item) => item.key === activeSection) || portalNavigationItems[0] || buyerPortalMenuItems[0]
@@ -12288,6 +12117,10 @@ function ClientPortal() {
       }
     : null
   const buyerMobileDocumentItems = buildBuyerMobileDocumentItems(workspaceData?.documentCenter || {})
+  const buyerDocumentPresentationModel = buildBuyerDocumentPresentationModel({
+    items: buyerMobileDocumentItems,
+    source: 'production',
+  })
     const buyerOverviewMetricCards = [
       {
         key: 'documents',
@@ -12436,17 +12269,6 @@ function ClientPortal() {
     activeSellingContext?.agentPhone,
     activeSellingContext?.agent_phone,
   )
-  const sellerOfferAskingPrice = Number(
-    activeSellingContext?.askingPrice ||
-      activeSellingContext?.asking_price ||
-      activeSellingContext?.listPrice ||
-      activeSellingContext?.list_price ||
-      portal?.activeSellingContext?.askingPrice ||
-      portal?.activeSellingContext?.asking_price ||
-      portal?.unit?.price ||
-      purchasePriceValue ||
-      0,
-  )
   const sellerOnboardingFormData =
     portal?.onboardingFormData?.formData && typeof portal.onboardingFormData.formData === 'object'
       ? portal.onboardingFormData.formData
@@ -12580,7 +12402,6 @@ function ClientPortal() {
     mainStage,
     activeSellingContext,
     portal,
-    sellerOfferItems,
   })
   const sellerDetailsSections = buildSellerPortalDetailsSections({
     formData: sellerOnboardingFormData,
@@ -12639,15 +12460,6 @@ function ClientPortal() {
         tone: 'action',
       }
     }
-    if (sellerOfferItems.some((offer) => ['seller_review', 'submitted', 'countered'].includes(normalizeSellerPortalKey(offer.status)))) {
-      return {
-        title: 'Review offers with your agent',
-        description: 'Your agent will present all offers received and advise you on the best next steps.',
-        to: 'offers',
-        label: 'View offers',
-        tone: 'action',
-      }
-    }
     if (sellerDocumentsNeedingAttention.length) {
       return {
         title: 'Upload requested document',
@@ -12673,13 +12485,6 @@ function ClientPortal() {
     })
     .slice(0, 5)
   const sellerActivityFallbackItems = [
-    activeSellerOfferCount > 0
-      ? {
-          id: 'seller-offer-activity',
-          message: activeSellerOfferCount === 1 ? 'New offer received for your property.' : `${activeSellerOfferCount} offers received for your property.`,
-          timestampLabel: formatShortPortalDate(sellerOfferItems[0]?.receivedAt, 'Recently'),
-        }
-      : null,
     ['Listed', 'Offers', 'Offer Accepted', 'Transfer', 'Registered'].includes(sellerCurrentStage)
       ? {
           id: 'seller-listed-activity',
@@ -12752,7 +12557,6 @@ function ClientPortal() {
   const sellerDashboardStatusLabel = resolveSellerStatusLabel({
     sellerStageMeta,
     hasListingCreated,
-    sellerOfferItems,
     mainStage,
   })
   const sellerAgentUpdate = buildSellerAgentUpdate({
@@ -12836,7 +12640,7 @@ function ClientPortal() {
   const sellerMobileCurrentIndex = Math.max(
     !hasSellerOnboardingSubmitted ? 0 : 1,
     sellerMobileResolvedIndex ??
-      (activeSellerOfferCount > 0 ? 3 : hasListingCreated ? 2 : hasMandateSigned ? 1 : 0),
+      (hasListingCreated ? 2 : hasMandateSigned ? 1 : 0),
   )
   const sellerMobileJourneyStages = [
     {
@@ -12864,17 +12668,9 @@ function ClientPortal() {
       owner: sellerAgentName || sellerAgencyName,
     },
     {
-      key: 'offers',
-      label: 'Offers received',
-      description: activeSellerOfferCount
-        ? 'Buyer interest is active. Review offers and keep documents up to date.'
-        : 'Offers will appear here as buyers submit them through your agent.',
-      owner: sellerAgentName || sellerAgencyName,
-    },
-    {
       key: 'contract',
-      label: 'Contract',
-      description: 'Accepted offer documents and sale instructions are prepared for the next legal step.',
+      label: 'Signed OTP',
+      description: 'The signed OTP is recorded and the transaction is moving into finance and transfer.',
       owner: 'Transaction team',
     },
     {
@@ -12908,6 +12704,72 @@ function ClientPortal() {
   const bondApplicationSectionStatusByKey = bondApplicationCompletion.sectionStatusByKey
   const missingBondApplicationSectionLabels = bondApplicationCompletion.missingSectionLabels
   const bondApplicationProgressPercent = bondApplicationCompletion.progressPercent
+  const buyerFinanceRequiredActions = isOriginatorManagedPortalFinance
+    ? !bondApplicationOtpUnlockState.unlocked
+      ? [{
+          id: 'finance-prerequisite',
+          title: bondApplicationOtpUnlockState.title,
+          description: bondApplicationOtpUnlockState.description,
+        }]
+      : !['Submitted', 'Approved'].includes(bondApplicationStatus)
+        ? [{
+            id: 'complete-bond-application',
+            title: missingBondApplicationSectionLabels.length
+              ? `Complete ${missingBondApplicationSectionLabels[0]}`
+              : 'Review and submit your bond application',
+            description: missingBondApplicationSectionLabels.length
+              ? `${missingBondApplicationSectionLabels.length} application section${missingBondApplicationSectionLabels.length === 1 ? '' : 's'} still need attention.`
+              : 'Confirm the application details before sending them to your finance team.',
+          }]
+        : []
+    : []
+  const buyerFinanceRequestedAmount = Number(
+    bondApplicationData?.summary?.bond_amount ||
+    bondApplicationData?.loan_details?.bond_amount ||
+    bondApplicationData?.summary?.loan_amount ||
+    0,
+  )
+  const buyerFinanceLoanToValue = purchasePriceValue > 0 && buyerFinanceRequestedAmount > 0
+    ? `${Math.round((buyerFinanceRequestedAmount / purchasePriceValue) * 100)}%`
+    : ''
+  const buyerFinancePresentationModel = buildBuyerFinancePresentationModel({
+    source: 'production',
+    financeType: journeyFinanceType || financeTypeForPortal,
+    status: isBondOrHybridTransaction ? buyerPortalBondApplicationStatusValue : '',
+    statusHelper: isBondOrHybridTransaction ? buyerPortalBondApplicationStatusDetail : '',
+    purchasePrice: purchasePriceValue,
+    requestedAmount: buyerFinanceRequestedAmount,
+    loanToValue: buyerFinanceLoanToValue,
+    progressPercent: bondApplicationProgressPercent,
+    manager: portal?.transaction?.bond_originator || portal?.transaction?.assigned_bond_originator_email
+      ? {
+          name: portal?.transaction?.bond_originator || 'Bond Originator',
+          company: portal?.transaction?.bond_originator_company || '',
+          avatar: portal?.transaction?.bond_originator_avatar_url || '',
+        }
+      : null,
+    requiredActions: buyerFinanceRequiredActions,
+    offers: displayedBondOfferCards,
+    accountSummary: matterAccountsState.summary || {},
+    accountCount: matterAccountsState.accounts?.length || 0,
+    loading: matterAccountsState.loading,
+    unavailable: matterAccountsState.unavailable,
+  })
+  const buyerPortalCutoverReadiness = buildBuyerPortalCutoverReadiness({
+    source: 'production',
+    models: {
+      journey: buyerJourneyPresentationModel,
+      documents: buyerDocumentPresentationModel,
+      finance: buyerFinancePresentationModel,
+      team: buyerTeamPresentationModel,
+    },
+    capabilities: {
+      documentActions: typeof handleDocumentCentreUpload === 'function' && typeof handleOpenPortalDocument === 'function',
+      financeActions: typeof handleBondApplicationSubmit === 'function' && typeof handleUploadMatterAccountProof === 'function',
+      portalComments: typeof handleSubmitPortalComment === 'function',
+      contactActions: buyerTeamPresentationModel.contactableCount > 0,
+    },
+  })
   const rawPrimaryOverviewActionTo = nextStepState.ctaTo || 'documents'
   const primaryOverviewActionTo = sectionEnabled[rawPrimaryOverviewActionTo] === false ? 'documents' : rawPrimaryOverviewActionTo
   const primaryOverviewAction = {
@@ -13515,7 +13377,12 @@ function ClientPortal() {
     paths.reduce((total, path) => total + (Number(readBondField(path, 0)) || 0), 0)
 
   return (
-    <main className="min-h-screen bg-[#f3f6fb] text-[#142132]">
+    <main
+      className="min-h-screen bg-[#f3f6fb] text-[#142132]"
+      data-buyer-portal-release={effectiveWorkspace === 'seller' ? undefined : buyerPortalCutoverReadiness.phase}
+      data-buyer-portal-aligned={effectiveWorkspace === 'seller' ? undefined : buyerPortalCutoverReadiness.releaseLabel}
+      data-buyer-portal-source={effectiveWorkspace === 'seller' ? undefined : buyerPortalCutoverReadiness.source}
+    >
       {documentActionError ? (
         <div className="fixed left-4 right-4 top-4 z-[70] mx-auto max-w-[560px] rounded-[16px] border border-[#f1d4cf] bg-white px-4 py-3 text-sm font-semibold text-[#b42318] shadow-[0_18px_44px_rgba(15,23,42,0.16)]">
           {documentActionError}
@@ -13542,8 +13409,6 @@ function ClientPortal() {
             sellerAgentPhone={sellerAgentPhone}
             sellerDocumentsNeedingAttention={sellerDocumentsNeedingAttention}
             sellerDocumentTracker={sellerDocumentTracker}
-            sellerOfferItems={sellerOfferItems}
-            activeSellerOfferCount={activeSellerOfferCount}
             sellerActivityItems={sellerActivityItems}
             uploadingDocumentKey={uploadingDocumentKey}
             openingDocumentPath={openingDocumentPath}
@@ -13617,7 +13482,7 @@ function ClientPortal() {
             openingDocumentPath={openingDocumentPath}
             onUploadBuyerDocument={handleBuyerMobileDocumentUpload}
             onOpenBuyerDocument={handleOpenPortalDocument}
-            teamMembers={teamMembers}
+            teamMembers={buyerTeamPresentationModel.members}
             enabledSections={sectionEnabled}
             portalNavigationLabels={buyerPortalNavigationLabels}
             buyerPortalStatusItems={buyerPortalStatusItems}
@@ -13638,10 +13503,13 @@ function ClientPortal() {
       )}
       <div className={isBondApplication && effectiveWorkspace !== 'seller' ? 'flex min-h-screen' : 'hidden min-h-screen lg:flex'}>
         <aside
-          className="fixed inset-y-0 left-0 z-30 hidden w-[280px] flex-col overflow-y-auto bg-[#152432] px-5 py-4 text-slate-100 [background-image:radial-gradient(circle_at_18%_-6%,rgba(108,152,193,0.18)_0%,transparent_34%),linear-gradient(180deg,#243c4f_0%,#152432_100%)] lg:flex"
+          className={`fixed inset-y-0 left-0 z-30 hidden flex-col overflow-y-auto bg-[#152432] text-slate-100 [background-image:radial-gradient(circle_at_18%_-6%,rgba(108,152,193,0.18)_0%,transparent_34%),linear-gradient(180deg,#243c4f_0%,#152432_100%)] lg:flex ${
+            effectiveWorkspace === 'seller' ? 'w-[280px] px-5 py-4' : 'w-[264px] px-6 py-6'
+          }`}
           style={effectiveWorkspace === 'seller' ? undefined : buyerPortalSidebarStyle}
+          data-buyer-portal-shell={effectiveWorkspace === 'seller' ? undefined : 'desktop-sidebar'}
         >
-          <div className="border-b border-white/10 pb-3 pt-[1.2rem]">
+          <div className={`border-b border-white/10 ${effectiveWorkspace === 'seller' ? 'pb-3 pt-[1.2rem]' : 'pb-5'}`}>
             {effectiveWorkspace === 'seller' ? (
               <div className="min-h-[72px]">
                 {sellerAgencyLogoUrl ? (
@@ -13770,64 +13638,26 @@ function ClientPortal() {
               {portalNavigationGroups.map((group) => (
                 <div key={group.label}>
                   <p className="mb-2 px-1 text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#94a9bd]">{group.label}</p>
-                  <div className="grid gap-1">
+                  <div className="grid gap-2">
                     {group.items.map((item) => {
-                      const Icon = item.icon
                       const isActive = isPortalNavigationItemActive(item, activeSection, location.hash)
                       const navStatus = sidebarStatusByKey[item.key]
 
                       return (
-                        <Link
+                        <BuyerPortalNavigationItem
                           key={item.key}
-                          to={getPortalNavigationPath(token, workspaceNavigationScope, item)}
-                          aria-current={isActive ? 'page' : undefined}
-                          className={[
-                            'relative flex min-h-[44px] items-center gap-3 rounded-[10px] border px-3 py-2 text-[0.9rem] font-medium transition duration-150 ease-out',
-                            isActive
-                              ? 'border-white/30 bg-white/15 text-white'
-                              : 'border-transparent text-slate-300 hover:border-white/10 hover:bg-white/5 hover:text-white',
-                          ].join(' ')}
-                          style={isActive ? buyerPortalActiveNavStyle : undefined}
-                        >
-                          <Icon size={16} />
-                          <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-normal [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]">
-                            {item.label}
-                          </span>
-                          {navStatus ? (
-                            <span
-                              className={`ml-auto inline-flex items-center rounded-full border px-2 py-0.5 text-[0.66rem] font-semibold ${
-                                isActive
-                                  ? 'border-white/40 bg-white/15 text-white'
-                                  : 'border-white/15 bg-[rgba(2,6,23,0.24)] text-[#c0cfde]'
-                              }`}
-                            >
-                              {navStatus}
-                            </span>
-                          ) : null}
-                        </Link>
+                          item={item}
+                          active={isActive}
+                          path={getPortalNavigationPath(token, workspaceNavigationScope, item)}
+                          status={navStatus}
+                          theme={buyerPortalTheme}
+                        />
                       )
                     })}
                   </div>
                 </div>
               ))}
-              <div className="mt-2 rounded-[14px] border border-white/12 bg-[rgba(4,30,28,0.52)] p-3">
-                <p className="text-sm font-semibold text-white">Need help?</p>
-                <p className="mt-1 truncate text-xs leading-5 text-[#c0cfde]">{buyerSupportContact.name || buyerSupportContact.title || 'Your team is available.'}</p>
-                <div className="mt-3 grid gap-2">
-                  {buyerSupportContact.email ? (
-                    <a href={`mailto:${buyerSupportContact.email}`} className="inline-flex min-h-[36px] items-center justify-center gap-2 rounded-[9px] bg-[#12a06b] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#0f855b]">
-                      <MessageCircle size={14} />
-                      Message
-                    </a>
-                  ) : null}
-                  {buyerSupportContact.phone ? (
-                    <a href={`tel:${buyerSupportContact.phone}`} className="inline-flex min-h-[36px] items-center justify-center gap-2 rounded-[9px] border border-white/12 px-3 py-2 text-xs font-semibold text-white transition hover:bg-white/5">
-                      <PhoneCall size={14} />
-                      Call
-                    </a>
-                  ) : null}
-                </div>
-              </div>
+              <BuyerPortalSupportPanel contact={buyerSupportContact} />
               <div className="mt-auto px-1 pb-2 pt-4 text-xs leading-5 text-[#d8e5ef]">
                 <p className="font-semibold text-white">{buyerPortalBrandName}</p>
                 <p className="text-[#a9bdce]">{buyerPortalBrandDescriptor}</p>
@@ -13836,7 +13666,7 @@ function ClientPortal() {
           )}
         </aside>
 
-        <div className="min-w-0 flex-1 lg:pl-[280px]">
+        <div className={`min-w-0 flex-1 ${effectiveWorkspace === 'seller' ? 'lg:pl-[280px]' : 'lg:pl-[264px]'}`}>
           <div className="border-b border-[#dbe5ef] bg-white/80 px-5 py-4 backdrop-blur lg:hidden">
             {effectiveWorkspace === 'seller' ? (
               <div className="mb-3 flex min-h-[54px] items-center gap-3">
@@ -13898,7 +13728,7 @@ function ClientPortal() {
               </p>
               <p className="mt-2 text-sm leading-6 text-[#d6e5f3]">
                 {effectiveWorkspace === 'seller'
-                  ? 'Track your sale from onboarding through mandate, offers, and transfer with clear progress updates.'
+                  ? 'Track your sale from onboarding through mandate, signed OTP, and transfer with clear progress updates.'
                   : 'Track your purchase from onboarding to registration with clear stage-by-stage guidance.'}
               </p>
             </section>
@@ -14341,7 +14171,7 @@ function ClientPortal() {
                   prioritizedNextActions={prioritizedNextActions}
                   hiddenNextActionCount={hiddenNextActionCount}
                   metricCards={buyerOverviewMetricCards}
-                  buyerDocumentItems={buyerMobileDocumentItems}
+                  documentModel={buyerDocumentPresentationModel}
                   journeyStatus={journeyStatusFlag}
                   journeySteps={clientJourneySteps}
                   expandedJourneyStepId={resolvedExpandedJourneyStepId}
@@ -14363,6 +14193,8 @@ function ClientPortal() {
                   controlBoard={workspaceData?.mvpControlBoard}
                   supportContact={buyerSupportContact}
                   buyerPortalAccessDescription={buyerPortalAccessDescription}
+                  journeyModel={buyerJourneyPresentationModel}
+                  theme={buyerPortalTheme}
                   token={token}
                   workspaceNavigationScope={workspaceNavigationScope}
                 />
@@ -14391,15 +14223,13 @@ function ClientPortal() {
 
             {isProgress && effectiveWorkspace !== 'seller' ? (
               <BuyerProgressPage
-                currentStageLabel={journeyCurrentStageLabel}
-                nextStageLabel={journeyNextStageLabel}
-                progressPercent={journeyProgressPercent}
-                journeySteps={clientJourneySteps}
+                journeyModel={buyerJourneyPresentationModel}
                 stageEducation={stageEducation}
                 whatHappensNextItems={whatHappensNextItems}
                 whatsHappeningSummary={whatsHappeningSummary}
                 primaryAction={primaryOverviewAction}
                 latestUpdate={latestJourneyFeedItems[0]}
+                theme={buyerPortalTheme}
                 token={token}
                 workspaceNavigationScope={workspaceNavigationScope}
               />
@@ -14421,20 +14251,6 @@ function ClientPortal() {
                 }}
                 onRequestReschedule={(appointment, payload) => {
                   void handleRespondToAppointment(appointment, 'reschedule', payload || {})
-                }}
-              />
-            ) : null}
-
-            {isOffers && effectiveWorkspace === 'seller' ? (
-              <SellerOffersPage
-                offers={rawSellerOffers}
-                askingPrice={sellerOfferAskingPrice}
-                transactionId={portal?.transaction?.id || ''}
-                propertyId={sellerListingId || portal?.unit?.id || ''}
-                agent={{
-                  name: sellerAgentName,
-                  email: sellerAgentEmail,
-                  phone: sellerAgentPhone,
                 }}
               />
             ) : null}
@@ -14613,10 +14429,31 @@ function ClientPortal() {
             {isBondApplication ? (
               <section
                 className="space-y-5"
-                aria-labelledby="buyer-bond-application-title"
+                aria-label="Bond application"
               >
+                <BuyerFinanceWorkspace
+                  model={buyerFinancePresentationModel}
+                  theme={buyerPortalTheme}
+                  primaryAction={buyerFinancePresentationModel.firstAction ? (
+                    <button
+                      type="button"
+                      onClick={() => setActiveBondApplicationTab('application')}
+                      className="inline-flex min-h-11 items-center justify-center rounded-[12px] bg-[#111827] px-5 text-sm font-semibold text-white transition hover:bg-black"
+                    >
+                      Continue application
+                    </button>
+                  ) : null}
+                  secondaryAction={(
+                    <Link
+                      to={getClientPortalPath(token, 'documents')}
+                      className="inline-flex min-h-11 items-center justify-center rounded-[12px] border border-[#dbe5ef] bg-white px-4 text-sm font-semibold text-[#35546c]"
+                    >
+                      Finance documents
+                    </Link>
+                  )}
+                />
                 <div className="space-y-5">
-                <header className="rounded-[18px] border border-[#dbe5ef] bg-white px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+                <header className="hidden">
                   <div className="flex flex-wrap items-start justify-between gap-4">
                     <div>
                       <span className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7b8ca2]">Finance</span>
@@ -15759,33 +15596,69 @@ function ClientPortal() {
             ) : null}
 
             {isAccount ? (
-              <ClientPortalMatterAccountsPanel
-                accounts={matterAccountsState.accounts}
-                summary={matterAccountsState.summary || {}}
-                loading={matterAccountsState.loading}
-                error={matterAccountsState.error}
-                unavailable={matterAccountsState.unavailable}
-                workspace={effectiveWorkspace === 'seller' ? 'seller' : 'buyer'}
-                uploadingProofAccountId={uploadingMatterProofAccountId}
-                proofUploadFeedback={matterProofUploadFeedback}
-                onUploadProof={handleUploadMatterAccountProof}
-                uploadingRequestId={uploadingMatterRequestId}
-                requestUploadFeedback={matterRequestUploadFeedback}
-                onUploadRequestDocument={handleUploadMatterRequestDocument}
-              />
+              effectiveWorkspace === 'seller' ? (
+                <ClientPortalMatterAccountsPanel
+                  accounts={matterAccountsState.accounts}
+                  summary={matterAccountsState.summary || {}}
+                  loading={matterAccountsState.loading}
+                  error={matterAccountsState.error}
+                  unavailable={matterAccountsState.unavailable}
+                  workspace="seller"
+                  uploadingProofAccountId={uploadingMatterProofAccountId}
+                  proofUploadFeedback={matterProofUploadFeedback}
+                  onUploadProof={handleUploadMatterAccountProof}
+                  uploadingRequestId={uploadingMatterRequestId}
+                  requestUploadFeedback={matterRequestUploadFeedback}
+                  onUploadRequestDocument={handleUploadMatterRequestDocument}
+                />
+              ) : (
+                <div className="space-y-5">
+                  <BuyerFinanceWorkspace
+                    model={buyerFinancePresentationModel}
+                    theme={buyerPortalTheme}
+                    showLenders={false}
+                  />
+                  <ClientPortalMatterAccountsPanel
+                    accounts={matterAccountsState.accounts}
+                    summary={matterAccountsState.summary || {}}
+                    loading={matterAccountsState.loading}
+                    error={matterAccountsState.error}
+                    unavailable={matterAccountsState.unavailable}
+                    workspace="buyer"
+                    hideHeader
+                    uploadingProofAccountId={uploadingMatterProofAccountId}
+                    proofUploadFeedback={matterProofUploadFeedback}
+                    onUploadProof={handleUploadMatterAccountProof}
+                    uploadingRequestId={uploadingMatterRequestId}
+                    requestUploadFeedback={matterRequestUploadFeedback}
+                    onUploadRequestDocument={handleUploadMatterRequestDocument}
+                  />
+                </div>
+              )
             ) : null}
 
       {isDocuments ? (
         <>
-          <ClientDocumentCentre
-            documentCenter={workspaceData?.documentCenter || {}}
-            workspace={effectiveWorkspace === 'seller' ? 'selling' : 'buying'}
-            uploadingDocumentKey={uploadingDocumentKey}
-            openingDocumentPath={openingDocumentPath}
-            hideHeader={effectiveWorkspace === 'seller'}
-            onUpload={handleDocumentCentreUpload}
-            onOpenDocument={handleOpenPortalDocument}
-          />
+          {effectiveWorkspace === 'seller' ? (
+            <ClientDocumentCentre
+              documentCenter={workspaceData?.documentCenter || {}}
+              workspace="selling"
+              uploadingDocumentKey={uploadingDocumentKey}
+              openingDocumentPath={openingDocumentPath}
+              hideHeader
+              onUpload={handleDocumentCentreUpload}
+              onOpenDocument={handleOpenPortalDocument}
+            />
+          ) : (
+            <BuyerDocumentWorkspace
+              model={buyerDocumentPresentationModel}
+              theme={buyerPortalTheme}
+              uploadingDocumentKey={uploadingDocumentKey}
+              openingDocumentPath={openingDocumentPath}
+              onUpload={handleDocumentCentreUpload}
+              onOpenDocument={handleOpenPortalDocument}
+            />
+          )}
 
           {effectiveWorkspace === 'seller' ? (
             <>
@@ -17237,98 +17110,7 @@ function ClientPortal() {
         </section>
       ) : null}
 
-      {isTeam ? (
-        <section className="space-y-5">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-            <div>
-              <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#64748b]">Support</p>
-              <h3 className="mt-2 text-[1.85rem] font-semibold tracking-[-0.04em] text-[#142132]">{buyerTeamHeading}</h3>
-              <p className="mt-1.5 max-w-3xl text-sm leading-6 text-[#6b7d93]">
-                {buyerTeamDescription}
-              </p>
-            </div>
-            <span className="inline-flex items-center gap-2 rounded-full border border-[#dde7f1] bg-[#fbfdff] px-4 py-2 text-sm font-semibold text-[#64748b]">
-              <Users size={16} />
-              {teamMembers.length + attorneyRolePlayerCards.length} team contacts
-            </span>
-          </div>
-
-          {attorneyRolePlayerCards.length ? (
-            <section className="rounded-[18px] border border-[#dbe5ef] bg-white px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                <div>
-                  <h4 className="text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">Legal team handling this purchase</h4>
-                  <p className="mt-1.5 max-w-3xl text-sm leading-6 text-[#6b7d93]">
-                    Your transfer and legal checks are managed by the firms below.
-                  </p>
-                </div>
-                <div className="rounded-[16px] border border-[#dce7f3] bg-white px-4 py-3 text-sm text-[#35546c]">
-                  <p className="m-0">
-                    <strong className="text-[#142132]">Current legal stage:</strong> {MAIN_STAGE_LABELS[mainStage] || toTitleLabel(mainStage || 'in_progress')}
-                  </p>
-                  <p className="m-0 mt-1.5">
-                    <strong className="text-[#142132]">Next legal action:</strong> {portal?.transaction?.next_action || 'Your legal team will share the next update shortly.'}
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-4 grid gap-4 xl:grid-cols-2">
-                {attorneyRolePlayerCards.map((rolePlayer) => (
-                  <AttorneyFirmRolePlayerCard
-                    key={rolePlayer.key}
-                    rolePlayer={rolePlayer.value}
-                    assignmentLabel={rolePlayer.label}
-                    readOnly
-                  />
-                ))}
-              </div>
-            </section>
-          ) : null}
-
-          <div className="grid gap-4 xl:grid-cols-2">
-            {teamMembers.map((member) => {
-              const canMessageMember = Boolean(member.email)
-              const canCallMember = Boolean(member.phone)
-
-              return (
-              <article key={member.title} className="rounded-[18px] border border-[#dbe5ef] bg-white px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7b8ca2]">{member.title}</span>
-                    <h4 className="mt-3 text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">{member.name}</h4>
-                    <p className="mt-2 text-sm leading-6 text-[#6b7d93]">{member.detail}</p>
-                    {member.extraDetail ? (
-                      <p className="mt-3 rounded-[14px] border border-[#d7eadf] bg-white px-3 py-2 text-sm leading-6 text-[#1f6f46]">
-                        {member.extraDetail}
-                      </p>
-                    ) : null}
-                  </div>
-                  <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[#dde7f1] bg-white text-[#35546c]">
-                    <Users size={18} />
-                  </span>
-                </div>
-                {canMessageMember || canCallMember ? (
-                  <div className="mt-4 flex flex-wrap gap-2 border-t border-[#e8eef5] pt-4">
-                    {canMessageMember ? (
-                      <a href={`mailto:${member.email}`} className="inline-flex min-h-[38px] items-center justify-center gap-2 rounded-[10px] bg-[#123f3a] px-3.5 py-2 text-xs font-semibold text-white transition hover:bg-[#0b312d]">
-                        <MessageCircle size={14} />
-                        Message
-                      </a>
-                    ) : null}
-                    {canCallMember ? (
-                      <a href={`tel:${member.phone}`} className="inline-flex min-h-[38px] items-center justify-center gap-2 rounded-[10px] border border-[#dbe5ef] bg-[#fbfdff] px-3.5 py-2 text-xs font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-white">
-                        <PhoneCall size={14} />
-                        Call
-                      </a>
-                    ) : null}
-                  </div>
-                ) : null}
-              </article>
-              )
-            })}
-          </div>
-        </section>
-      ) : null}
+      {isTeam ? <BuyerTeamWorkspace model={buyerTeamPresentationModel} theme={buyerPortalTheme} /> : null}
 
       {isAlterations ? (
         <section className="client-portal-card">

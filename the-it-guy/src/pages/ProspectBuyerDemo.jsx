@@ -27,6 +27,24 @@ import {
   UserRound,
   Users,
 } from 'lucide-react'
+import BuyerPortalDesktopSidebar from '../components/client-portal/BuyerPortalDesktopSidebar'
+import BuyerPortalJourney from '../components/client-portal/BuyerPortalJourney'
+import BuyerDocumentWorkspace, { BuyerDocumentSummary } from '../components/client-portal/documents/BuyerDocumentWorkspace'
+import BuyerFinanceWorkspace from '../components/client-portal/finance/BuyerFinanceWorkspace'
+import BuyerTeamWorkspace from '../components/client-portal/team/BuyerTeamWorkspace'
+import {
+  buyerPortalHexToRgba as hexToRgba,
+  createBuyerPortalTheme,
+} from '../components/client-portal/buyerPortalTheme'
+import {
+  BuyerPortalOverviewHero,
+  BuyerPortalOverviewShell,
+} from '../components/client-portal/BuyerPortalOverview'
+import { buildBuyerJourneyPresentationModel } from '../core/clientPortal/buyerJourneyPresentationModel'
+import { buildBuyerDocumentPresentationModel } from '../core/clientPortal/buyerDocumentPresentationModel'
+import { buildBuyerFinancePresentationModel } from '../core/clientPortal/buyerFinancePresentationModel'
+import { buildBuyerTeamPresentationModel } from '../core/clientPortal/buyerTeamPresentationModel'
+import { buildBuyerPortalCutoverReadiness } from '../core/clientPortal/buyerPortalCutoverReadiness'
 import { resolveProspectDemoConfig } from '../lib/prospectDemoConfig'
 
 const DEFAULT_BRAND = {
@@ -103,6 +121,14 @@ const DEMO_JOURNEY_STAGES = [
     nextMilestone: 'Keys and handover',
   },
 ]
+
+const DEMO_BUYER_JOURNEY_MODEL = buildBuyerJourneyPresentationModel({
+  steps: DEMO_JOURNEY_STAGES,
+  currentStepId: 'finance',
+  currentStageLabel: 'Finance',
+  nextStageLabel: 'Transfer preparation',
+  source: 'demo',
+})
 
 const DEMO_DOCUMENTS = [
   { title: 'Buyer ID Document', group: 'FICA documents', status: 'Approved', tone: 'complete', description: 'Verified copy of the buyer identity document.' },
@@ -291,6 +317,28 @@ const BUYER_DOCUMENTS = [
   },
 ]
 
+function buildDemoBuyerDocumentItems(uploadComplete = false) {
+  const statusById = {
+    'latest-payslip': uploadComplete ? 'under_review' : 'required',
+    'signed-otp': 'approved',
+    'sale-addendum': 'under_review',
+    'rates-clearance': 'under_review',
+    'conduct-rules': 'approved',
+    'levy-clearance': 'upcoming',
+  }
+  return BUYER_DOCUMENTS.map((document) => ({
+    ...document,
+    status: statusById[document.id] || document.status,
+    uploadKey: document.id === 'latest-payslip' ? 'latest_payslip' : '',
+    uploadSpec: document.id === 'latest-payslip'
+      ? { type: 'requirement', requirementKey: 'latest_payslip' }
+      : null,
+    group: document.group,
+    education: document.whatIsThis,
+    metaLine: document.statusDetail,
+  }))
+}
+
 const FINANCE_APPLICATION = {
   applicationStatus: 'Application being prepared',
   statusHelper: 'Almost ready to submit',
@@ -379,6 +427,27 @@ const FINANCE_APPLICATION = {
       latestUpdate: 'Approved offer received from Standard Bank.',
     },
   ],
+}
+
+function buildDemoBuyerFinanceModel(demoUploadComplete = false) {
+  const requiredActions = demoUploadComplete ? [] : FINANCE_APPLICATION.requiredActions
+  const offers = FINANCE_APPLICATION.bankApplications.filter((bank) => bank.approvedAmount)
+  return buildBuyerFinancePresentationModel({
+    source: 'demo',
+    financeType: 'bond',
+    status: demoUploadComplete ? 'Ready to submit to banks' : FINANCE_APPLICATION.applicationStatus,
+    statusHelper: demoUploadComplete ? 'All requested documents have been received' : FINANCE_APPLICATION.statusHelper,
+    currentStage: FINANCE_APPLICATION.currentStage,
+    purchasePrice: FINANCE_APPLICATION.purchasePrice,
+    requestedAmount: FINANCE_APPLICATION.requestedAmount,
+    loanToValue: FINANCE_APPLICATION.loanToValue,
+    progressPercent: demoUploadComplete ? 100 : 88,
+    manager: FINANCE_APPLICATION.originator,
+    nextStep: FINANCE_APPLICATION.nextStep,
+    requiredActions,
+    bankApplications: FINANCE_APPLICATION.bankApplications,
+    offers,
+  })
 }
 
 const DEMO_BOND_APPLICATION_SECTIONS = [
@@ -683,19 +752,6 @@ const CONVEYANCING_STAGES = [
   },
 ]
 
-function normalizeHex(value = '', fallback = '#152432') {
-  const normalized = String(value || '').trim()
-  return /^#[0-9a-fA-F]{6}$/.test(normalized) ? normalized : fallback
-}
-
-function hexToRgba(hex = '#152432', alpha = 1) {
-  const safeHex = normalizeHex(hex).slice(1)
-  const r = parseInt(safeHex.slice(0, 2), 16)
-  const g = parseInt(safeHex.slice(2, 4), 16)
-  const b = parseInt(safeHex.slice(4, 6), 16)
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`
-}
-
 function getDemoPath(token = '', section = 'overview') {
   const safeSection = section && section !== 'overview' ? `/${section}` : ''
   return `/demo/${token}/buyer${safeSection}`
@@ -708,11 +764,39 @@ function statusClasses(tone = 'info') {
   return 'border-sky-200 bg-sky-50 text-sky-700'
 }
 
+function ProspectBuyerDemoLoading() {
+  return (
+    <main className="min-h-screen bg-[#f3f6fb] text-[#142132]" aria-busy="true">
+      <div className="flex min-h-screen">
+        <aside className="hidden w-[264px] shrink-0 bg-[#152432] p-6 lg:block" aria-hidden="true">
+          <div className="h-12 w-36 animate-pulse rounded-[12px] bg-white/12" />
+          <div className="mt-8 grid gap-3">
+            {Array.from({ length: 6 }, (_, index) => (
+              <div className="h-11 animate-pulse rounded-[12px] bg-white/8" key={index} />
+            ))}
+          </div>
+        </aside>
+        <section className="w-full px-4 py-5 sm:px-6 lg:px-8 lg:py-8">
+          <div className="mx-auto max-w-[1280px]">
+            <div className="h-[300px] animate-pulse rounded-[24px] bg-slate-200 sm:h-[360px]" aria-hidden="true" />
+            <div className="mt-6 grid gap-5 lg:grid-cols-2" aria-hidden="true">
+              <div className="h-64 animate-pulse rounded-[22px] bg-white" />
+              <div className="h-64 animate-pulse rounded-[22px] bg-white" />
+            </div>
+            <p className="sr-only" role="status" aria-live="polite">Loading buyer portal</p>
+          </div>
+        </section>
+      </div>
+    </main>
+  )
+}
+
 export default function ProspectBuyerDemo() {
   const { token = '', section = 'overview' } = useParams()
   const activeSection = ['overview', 'progress', 'documents', 'finance', 'bond-application', 'messages', 'team'].includes(section) ? section : 'overview'
   const [config, setConfig] = useState(DEFAULT_BRAND)
   const [loading, setLoading] = useState(true)
+  const [loadedConfigToken, setLoadedConfigToken] = useState('')
   const [demoUploadComplete, setDemoUploadComplete] = useState(false)
 
   useEffect(() => {
@@ -733,6 +817,7 @@ export default function ProspectBuyerDemo() {
         samplePropertyImageUrl: resolved.samplePropertyImageUrl || DEFAULT_BRAND.samplePropertyImageUrl,
         samplePropertyAddress: resolved.samplePropertyAddress || DEFAULT_BRAND.samplePropertyAddress,
       })
+      setLoadedConfigToken(token)
       setLoading(false)
     }
     void loadConfig()
@@ -742,10 +827,12 @@ export default function ProspectBuyerDemo() {
   }, [token])
 
   const brand = useMemo(() => {
-    const primary = normalizeHex(config.primaryColour, DEFAULT_BRAND.primaryColour)
-    const secondary = normalizeHex(config.secondaryColour, primary)
-    const accent = normalizeHex(config.accentColour, DEFAULT_BRAND.accentColour)
-    return { primary, secondary, accent }
+    const theme = createBuyerPortalTheme({
+      primaryColour: config.primaryColour || DEFAULT_BRAND.primaryColour,
+      secondaryColour: config.secondaryColour || config.primaryColour || DEFAULT_BRAND.secondaryColour,
+      accentColour: config.accentColour || DEFAULT_BRAND.accentColour,
+    })
+    return theme
   }, [config.accentColour, config.primaryColour, config.secondaryColour])
   const transactionTeam = useMemo(
     () => TRANSACTION_TEAM.map((member) => ({
@@ -754,70 +841,71 @@ export default function ProspectBuyerDemo() {
     })),
     [config.agencyName],
   )
+  const buyerDocumentModel = useMemo(
+    () => buildBuyerDocumentPresentationModel({
+      items: buildDemoBuyerDocumentItems(demoUploadComplete),
+      source: 'demo',
+    }),
+    [demoUploadComplete],
+  )
+  const buyerFinanceModel = useMemo(
+    () => buildDemoBuyerFinanceModel(demoUploadComplete),
+    [demoUploadComplete],
+  )
+  const buyerTeamModel = useMemo(
+    () => buildBuyerTeamPresentationModel({
+      source: 'demo',
+      members: transactionTeam,
+      heading: 'Your transaction team',
+      description: 'The people helping you through your purchase, finance, and transfer.',
+      currentProcess: {
+        title: 'Rates & clearance figures',
+        helper: 'Waiting for the municipality response',
+        status: 'In progress',
+      },
+    }),
+    [transactionTeam],
+  )
+  const buyerPortalCutoverReadiness = buildBuyerPortalCutoverReadiness({
+    source: 'demo',
+    models: {
+      journey: DEMO_BUYER_JOURNEY_MODEL,
+      documents: buyerDocumentModel,
+      finance: buyerFinanceModel,
+      team: buyerTeamModel,
+    },
+    capabilities: {
+      documentSimulation: true,
+      financeSimulation: true,
+      contactActions: true,
+    },
+  })
   const mainContact = transactionTeam.find((member) => member.isMainContact) || transactionTeam[0]
 
   if (!token) return <Navigate to="/" replace />
+  if (loading || loadedConfigToken !== token) return <ProspectBuyerDemoLoading />
 
-  const sidebarStyle = {
-    background: `radial-gradient(circle at 18% -6%, ${hexToRgba(brand.accent, 0.24)} 0%, transparent 34%), linear-gradient(180deg, ${brand.primary} 0%, ${brand.secondary} 100%)`,
-  }
-  const heroOverlayStyle = {
-    background: `linear-gradient(135deg, ${hexToRgba(brand.primary, 0.9)} 0%, ${hexToRgba(brand.primary, 0.7)} 48%, ${hexToRgba(brand.secondary, 0.88)} 100%)`,
-  }
-
-  const documentRows = DEMO_DOCUMENTS.map((document) =>
-    document.title === 'Latest Payslip' && demoUploadComplete
-      ? { ...document, status: 'Uploaded for review', tone: 'info' }
-      : document,
-  )
+  const heroOverlayStyle = brand.heroOverlayStyle
 
   return (
-    <main className="min-h-screen bg-[#f3f6fb] text-[#142132]">
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-[264px] flex-col overflow-y-auto px-6 py-6 text-white lg:flex" style={sidebarStyle}>
-        <div className="border-b border-white/10 pb-5">
-          {config.logoDarkUrl ? (
-            <img src={config.logoDarkUrl} alt={`${config.agencyName} logo`} className="max-h-14 max-w-[190px] object-contain object-left" />
-          ) : (
-            <h1 className="text-2xl font-semibold tracking-[-0.04em]">{config.agencyName}</h1>
-          )}
-          <p className="mt-3 text-sm font-medium text-white/70">Buyer Portal Demo</p>
-        </div>
-
-        <nav className="mt-6 grid gap-2">
-          {DEMO_NAV.map((item) => {
-            const Icon = item.icon
-            const active = item.key === activeSection
-            return (
-              <Link
-                key={item.key}
-                to={getDemoPath(token, item.key)}
-                className={`flex min-h-[46px] items-center gap-3 rounded-[12px] border px-3 text-sm font-semibold transition ${
-                  active ? 'border-white/30 bg-white/15 text-white shadow-[inset_3px_0_0_rgba(255,255,255,0.8)]' : 'border-transparent text-white/75 hover:bg-white/10 hover:text-white'
-                }`}
-              >
-                <Icon size={17} />
-                {item.label}
-              </Link>
-            )
-          })}
-        </nav>
-
-        <div className="mt-auto rounded-[18px] border border-white/20 bg-white/10 p-4 text-white">
-          <p className="text-sm font-semibold text-white">Need help?</p>
-          <p className="mt-1 text-xs leading-5 text-white/75">{mainContact.name} from {mainContact.organisation} is here to help.</p>
-          {mainContact.profileImage ? <img src={mainContact.profileImage} alt={mainContact.name} className="mt-3 h-10 w-10 rounded-full object-cover" /> : null}
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <a href={`mailto:${mainContact.email}`} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-[10px] bg-white/15 text-xs font-semibold text-white transition hover:bg-white/20">
-              <MessageCircle size={14} />
-              Email
-            </a>
-            <a href={`tel:${mainContact.phone}`} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-[10px] border border-white/15 text-xs font-semibold text-white transition hover:bg-white/10">
-              <PhoneCall size={14} />
-              Call
-            </a>
-          </div>
-        </div>
-      </aside>
+    <main
+      className="min-h-screen bg-[#f3f6fb] text-[#142132]"
+      data-buyer-portal-release={buyerPortalCutoverReadiness.phase}
+      data-buyer-portal-aligned={buyerPortalCutoverReadiness.releaseLabel}
+      data-buyer-portal-source={buyerPortalCutoverReadiness.source}
+    >
+      <BuyerPortalDesktopSidebar
+        brandName={config.agencyName}
+        brandLogoUrl={config.logoDarkUrl}
+        brandDescriptor="Buyer Portal Demo"
+        theme={brand}
+        items={DEMO_NAV}
+        activeItemKey={activeSection}
+        getItemPath={(item) => getDemoPath(token, item.key)}
+        supportContact={mainContact}
+        supportCopy={`${mainContact.name} from ${mainContact.organisation} is here to help.`}
+        footerDescriptor="Buyer Portal Demo"
+      />
 
       <section className="lg:hidden">
         <MobileBuyerPortal
@@ -826,8 +914,9 @@ export default function ProspectBuyerDemo() {
           config={config}
           token={token}
           loading={loading}
-          transactionTeam={transactionTeam}
           demoUploadComplete={demoUploadComplete}
+          financeModel={buyerFinanceModel}
+          teamModel={buyerTeamModel}
           onCompleteUpload={() => setDemoUploadComplete(true)}
         />
       </section>
@@ -838,11 +927,13 @@ export default function ProspectBuyerDemo() {
             activeSection={activeSection}
             brand={brand}
             config={config}
+            token={token}
             heroOverlayStyle={heroOverlayStyle}
             loading={loading}
-            documentRows={documentRows}
-            transactionTeam={transactionTeam}
             demoUploadComplete={demoUploadComplete}
+            documentModel={buyerDocumentModel}
+            financeModel={buyerFinanceModel}
+            teamModel={buyerTeamModel}
             onCompleteUpload={() => setDemoUploadComplete(true)}
           />
         </div>
@@ -851,8 +942,8 @@ export default function ProspectBuyerDemo() {
   )
 }
 
-function MobileBuyerPortal({ activeSection, brand, config, token, loading, transactionTeam, demoUploadComplete, onCompleteUpload }) {
-  const mobileSection = activeSection === 'messages' ? 'overview' : activeSection
+function MobileBuyerPortal({ activeSection, brand, config, token, loading, demoUploadComplete, financeModel, teamModel, onCompleteUpload }) {
+  const mobileSection = activeSection === 'messages' ? 'team' : activeSection
   const pageTitles = {
     overview: '',
     progress: 'Transfer Journey',
@@ -892,9 +983,9 @@ function MobileBuyerPortal({ activeSection, brand, config, token, loading, trans
             onCompleteUpload={onCompleteUpload}
           />
         ) : null}
-        {mobileSection === 'finance' ? <MobileFinance brand={brand} demoUploadComplete={demoUploadComplete} onCompleteUpload={onCompleteUpload} token={token} /> : null}
+        {mobileSection === 'finance' ? <MobileFinance brand={brand} model={financeModel} onCompleteUpload={onCompleteUpload} token={token} /> : null}
         {mobileSection === 'bond-application' ? <MobileBondApplication brand={brand} demoUploadComplete={demoUploadComplete} token={token} /> : null}
-        {mobileSection === 'team' ? <MobileTeam brand={brand} team={transactionTeam} /> : null}
+        {mobileSection === 'team' ? <MobileTeam brand={brand} model={teamModel} /> : null}
       </div>
       <MobileBottomNav activeSection={mobileSection} brand={brand} token={token} />
     </div>
@@ -1176,13 +1267,7 @@ function MobileDocumentRow({ brand, config, document, onCompleteUpload }) {
   )
 }
 
-function MobileFinance({ brand, demoUploadComplete, onCompleteUpload, token }) {
-  const application = {
-    ...FINANCE_APPLICATION,
-    requiredActions: demoUploadComplete ? [] : FINANCE_APPLICATION.requiredActions,
-  }
-  const offers = application.bankApplications.filter((bank) => bank.approvedAmount)
-
+function MobileFinance({ brand, model, onCompleteUpload, token }) {
   return (
     <div className="space-y-4">
       <p className="-mt-2 text-sm leading-5 text-[#52657b]">Track your bond application and bank responses.</p>
@@ -1193,31 +1278,40 @@ function MobileFinance({ brand, demoUploadComplete, onCompleteUpload, token }) {
           </span>
           <div>
             <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#667085]">Bond status</p>
-            <h2 className="mt-1 text-base font-semibold text-[#142132]">{application.applicationStatus}</h2>
-            <p className="mt-1 text-sm text-[#52657b]">{application.statusHelper}</p>
-            <p className="mt-3 text-sm font-semibold text-[#142132]">{application.requestedAmount}</p>
+            <h2 className="mt-1 text-base font-semibold text-[#142132]">{model.status}</h2>
+            <p className="mt-1 text-sm text-[#52657b]">{model.statusHelper}</p>
+            <p className="mt-3 text-sm font-semibold text-[#142132]">{model.requestedAmountLabel}</p>
           </div>
         </div>
       </section>
-      <BondJourneyTracker brand={brand} currentStageIndex={0} />
-      <CurrentFinanceStatus brand={brand} application={application} demoUploadComplete={demoUploadComplete} onCompleteUpload={onCompleteUpload} />
+      <BondJourneyTracker brand={brand} currentStageIndex={model.currentStageIndex} />
+      {model.firstAction ? (
+        <section className="rounded-[18px] border border-amber-200 bg-amber-50/80 p-4">
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-amber-700">Next action</p>
+          <h2 className="mt-2 text-base font-semibold text-[#142132]">{model.firstAction.title}</h2>
+          <p className="mt-1 text-sm leading-5 text-[#52657b]">{model.firstAction.description}</p>
+          <button type="button" onClick={onCompleteUpload} className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-[12px] bg-[#05080c] text-sm font-semibold text-white"><UploadCloud size={16} />Upload payslip</button>
+        </section>
+      ) : (
+        <section className="rounded-[18px] border border-emerald-200 bg-emerald-50/80 p-4"><p className="text-sm font-semibold text-emerald-700">Finance documents received</p><p className="mt-1 text-sm leading-5 text-[#52657b]">Your application is ready for its next review.</p></section>
+      )}
       <Link to={getDemoPath(token, 'bond-application')} className="flex min-h-11 items-center justify-center rounded-[12px] text-sm font-semibold text-white" style={{ backgroundColor: brand.primary }}>
         Open bond application
       </Link>
       <section>
         <h2 className="mb-2 text-base font-semibold text-[#142132]">Your bank applications</h2>
         <div className="overflow-hidden rounded-[18px] border border-[#dbe5ef] bg-white">
-          {application.bankApplications.slice(0, demoUploadComplete ? 4 : 2).map((bank) => (
-            <MobileBankRow key={bank.bankId} bank={bank} brand={brand} />
+          {model.bankApplications.map((bank) => (
+            <MobileBankRow key={bank.id} bank={bank} brand={brand} />
           ))}
         </div>
       </section>
-      {offers.length ? (
+      {model.offers.length ? (
         <section>
           <h2 className="mb-2 text-base font-semibold text-[#142132]">Your bank offers</h2>
           <div className="space-y-3">
-            {offers.map((offer) => (
-              <OfferCard key={offer.bankId} brand={brand} offer={offer} />
+            {model.offers.map((offer) => (
+              <OfferCard key={offer.id} brand={brand} offer={offer} />
             ))}
           </div>
         </section>
@@ -1262,10 +1356,10 @@ function MobileBankRow({ bank, brand }) {
   )
 }
 
-function MobileTeam({ brand, team }) {
-  const mainContact = team.find((member) => member.isMainContact) || team[0]
-  const activeMember = team.find((member) => member.isActive) || mainContact
-  const specialists = team.filter((member) => !member.isMainContact)
+function MobileTeam({ brand, model }) {
+  const mainContact = model.mainContact
+  const activeMember = model.activeMember
+  const specialists = model.specialists
   const routes = [
     ['General questions about my purchase', `Speak to ${mainContact.name.split(' ')[0]} · Your Agent`, mainContact, MessageCircle, 'info'],
     ['My bond application or bank offers', 'Speak to Priya · Bond Originator', specialists.find((member) => member.role === 'Bond Originator'), Building2, 'complete'],
@@ -1369,13 +1463,14 @@ function MobileTeamRow({ member, brand }) {
   )
 }
 
-function DemoContent({ activeSection, brand, config, heroOverlayStyle, loading, documentRows, transactionTeam, demoUploadComplete, onCompleteUpload }) {
+function DemoContent({ activeSection, brand, config, token, heroOverlayStyle, loading, demoUploadComplete, documentModel, financeModel, teamModel, onCompleteUpload }) {
   if (activeSection === 'documents') {
     return (
       <DocumentsSection
         brand={brand}
         config={config}
         demoUploadComplete={demoUploadComplete}
+        documentModel={documentModel}
         onCompleteUpload={onCompleteUpload}
       />
     )
@@ -1385,7 +1480,8 @@ function DemoContent({ activeSection, brand, config, heroOverlayStyle, loading, 
     return (
       <FinanceSection
         brand={brand}
-        demoUploadComplete={demoUploadComplete}
+        model={financeModel}
+        token={token}
         onCompleteUpload={onCompleteUpload}
       />
     )
@@ -1401,7 +1497,24 @@ function DemoContent({ activeSection, brand, config, heroOverlayStyle, loading, 
   }
 
   if (activeSection === 'team') {
-    return <TeamSection brand={brand} config={config} team={transactionTeam} />
+    return <TeamSection brand={brand} model={teamModel} />
+  }
+
+  if (activeSection === 'messages') {
+    return <BuyerTeamWorkspace model={{ ...teamModel, heading: 'Messages & support', description: 'Choose the right person for your question and contact them securely.' }} theme={brand} />
+  }
+
+  if (activeSection === 'overview') {
+    return (
+      <DemoBuyerOverview
+        brand={brand}
+        config={config}
+        token={token}
+        demoUploadComplete={demoUploadComplete}
+        documentModel={documentModel}
+        onCompleteUpload={onCompleteUpload}
+      />
+    )
   }
 
   return (
@@ -1420,114 +1533,111 @@ function DemoContent({ activeSection, brand, config, heroOverlayStyle, loading, 
             <div className="mt-8 grid gap-3 sm:grid-cols-3">
               <HeroMetric label="Buyer" value="Mia Khumalo" />
               <HeroMetric label="Purchase price" value="R 2 850 000" />
-              <HeroMetric label="Current stage" value="Finance" />
+              <HeroMetric label="Current stage" value={DEMO_BUYER_JOURNEY_MODEL.currentStageLabel} />
             </div>
           </div>
           <div className="rounded-[24px] border border-white/20 bg-white/10 p-5 backdrop-blur">
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-white/70">Progress</p>
             <div className="mt-5 flex items-center justify-center">
-              <div className="relative flex h-36 w-36 items-center justify-center rounded-full" style={{ background: `conic-gradient(${brand.accent} 180deg, rgba(255,255,255,0.24) 0deg)` }}>
+              <div className="relative flex h-36 w-36 items-center justify-center rounded-full" style={{ background: `conic-gradient(${brand.accent} ${DEMO_BUYER_JOURNEY_MODEL.progressPercent * 3.6}deg, rgba(255,255,255,0.24) 0deg)` }}>
                 <span className="absolute inset-3 rounded-full bg-slate-950/70" />
                 <span className="relative text-center">
-                  <strong className="block text-4xl tracking-[-0.05em]">50%</strong>
+                  <strong className="block text-4xl tracking-[-0.05em]">{DEMO_BUYER_JOURNEY_MODEL.progressPercent}%</strong>
                   <span className="text-xs font-semibold uppercase tracking-[0.14em] text-white/70">Complete</span>
                 </span>
               </div>
             </div>
-            <p className="mt-5 text-sm leading-6 text-white/80">Next: transfer attorney prepares guarantees and lodgement documents.</p>
+            <p className="mt-5 text-sm leading-6 text-white/80">Next: {DEMO_BUYER_JOURNEY_MODEL.nextStageLabel}.</p>
           </div>
         </div>
       </section>
 
-      {activeSection === 'overview' ? (
-        <OverviewSection brand={brand} documentRows={documentRows} onCompleteUpload={onCompleteUpload} demoUploadComplete={demoUploadComplete} />
-      ) : null}
-      {activeSection === 'progress' ? <ConveyancingJourneySection brand={brand} /> : null}
+      {activeSection === 'progress' ? <DemoBuyerJourney brand={brand} token={token} detailed /> : null}
       {activeSection === 'messages' ? <TransactionUpdatesSection brand={brand} standalone /> : null}
     </div>
   )
 }
 
-function PurchaseJourneySection({ brand }) {
-  const currentStage = DEMO_JOURNEY_STAGES.find((stage) => stage.status === 'current') || DEMO_JOURNEY_STAGES[0]
-
+function DemoBuyerOverview({ brand, config, token, demoUploadComplete, documentModel, onCompleteUpload }) {
   return (
-    <section className="rounded-[24px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)] lg:p-6">
-      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#52657b]">Your purchase journey</p>
+    <BuyerPortalOverviewShell
+      hero={(
+        <BuyerPortalOverviewHero
+          welcomeName="Mia"
+          propertyName={config.samplePropertyAddress}
+          purchasePriceLabel="R 2 850 000"
+          statusLabel={demoUploadComplete ? 'On track' : 'Action needed'}
+          statusClassName={demoUploadComplete ? 'border-emerald-200/40 bg-emerald-400/15 text-white' : 'border-amber-200/40 bg-amber-300/15 text-white'}
+          currentStageLabel={DEMO_BUYER_JOURNEY_MODEL.currentStageLabel}
+          nextStageLabel={DEMO_BUYER_JOURNEY_MODEL.nextStageLabel}
+          progressPercent={DEMO_BUYER_JOURNEY_MODEL.progressPercent}
+          timeInStageLabel="5 days"
+          stageUpdatedDateLabel="Today"
+          attentionTitle={demoUploadComplete ? "You're all caught up" : 'Upload your latest payslip'}
+          attentionDescription={demoUploadComplete
+            ? 'Your latest payslip is with the bond originator for review.'
+            : 'Your bond originator needs an updated payslip before submitting the application pack.'}
+          attentionRequired={!demoUploadComplete}
+          attentionActions={(
+            <>
+              <button
+                type="button"
+                onClick={onCompleteUpload}
+                className="inline-flex min-h-[40px] flex-1 items-center justify-center gap-2 rounded-[11px] px-3.5 py-2 text-sm font-semibold text-white transition"
+                style={{ backgroundColor: brand.primary }}
+              >
+                <UploadCloud size={14} />
+                {demoUploadComplete ? 'Uploaded for review' : 'Upload payslip'}
+              </button>
+              <Link
+                to={getDemoPath(token, 'documents')}
+                className="inline-flex min-h-[40px] flex-1 items-center justify-center gap-2 rounded-[11px] border border-[#d7e2ea] bg-white px-3.5 py-2 text-sm font-semibold text-[#274158] transition hover:bg-[#f7fafc]"
+              >
+                <FileText size={14} />
+                Documents
+              </Link>
+            </>
+          )}
+          theme={brand}
+          propertyImageUrl={config.samplePropertyImageUrl}
+          propertyImageAlt={config.samplePropertyAddress}
+        />
+      )}
+      progress={(<DemoBuyerJourney brand={brand} token={token} />)}
+      updates={(<TransactionUpdatesSection brand={brand} />)}
+      documents={(<BuyerDocumentSummary
+        model={documentModel}
+        compact
+        action={(
+          <Link to={getDemoPath(token, 'documents')} className="inline-flex min-h-[40px] w-full items-center justify-center gap-2 rounded-[12px] border border-[#dbe5ef] bg-[#fbfdff] px-4 text-sm font-semibold text-[#35546c] transition hover:bg-white">
+            <FileText size={15} />
+            Open documents
+          </Link>
+        )}
+      />)}
+    />
+  )
+}
 
-      <div className="mt-6 overflow-x-auto pb-2">
-        <div className="grid min-w-[860px] grid-cols-6 items-start">
-          {DEMO_JOURNEY_STAGES.map((stage, index) => {
-            const isComplete = stage.status === 'complete'
-            const isCurrent = stage.status === 'current'
-            return (
-              <div key={stage.id} className="relative flex flex-col items-center px-2 text-center">
-                {index > 0 ? (
-                  <span
-                    className="absolute left-0 top-[15px] h-px w-1/2"
-                    style={{ backgroundColor: isComplete || isCurrent ? brand.primary : '#c7d1dc' }}
-                  />
-                ) : null}
-                {index < DEMO_JOURNEY_STAGES.length - 1 ? (
-                  <span
-                    className="absolute right-0 top-[15px] h-px w-1/2"
-                    style={{ backgroundColor: isComplete ? brand.primary : '#c7d1dc' }}
-                  />
-                ) : null}
-                <span
-                  className={`relative z-10 flex h-8 w-8 items-center justify-center rounded-full border-2 text-sm font-semibold ${
-                    isCurrent ? 'bg-white shadow-[0_0_0_5px_rgba(16,185,129,0.14)]' : isComplete ? 'text-white' : 'bg-white text-[#7b8ca2]'
-                  }`}
-                  style={{
-                    borderColor: isComplete || isCurrent ? brand.primary : '#98a6b6',
-                    backgroundColor: isComplete ? brand.primary : '#ffffff',
-                    color: isComplete ? '#ffffff' : isCurrent ? brand.primary : '#667085',
-                  }}
-                >
-                  {isComplete ? <CheckCircle2 size={17} /> : null}
-                </span>
-                <p className="mt-3 text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#101828]">{stage.label}</p>
-                {stage.completionDate ? <p className="mt-1 text-xs font-medium uppercase text-[#98a2b3]">{stage.completionDate}</p> : null}
-                {isCurrent ? <p className="mt-1 text-xs font-semibold uppercase" style={{ color: brand.primary }}>You are here</p> : null}
-              </div>
-            )
-          })}
-        </div>
-      </div>
-
-      <div className="mt-5 rounded-[20px] border p-5" style={{ borderColor: hexToRgba(brand.primary, 0.18), backgroundColor: hexToRgba(brand.primary, 0.045) }}>
-        <div className="grid gap-5 lg:grid-cols-[1.2fr_1fr_1fr] lg:items-center">
-          <div className="flex items-start gap-4">
-            <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border bg-white" style={{ borderColor: hexToRgba(brand.primary, 0.18), color: brand.primary }}>
-              <HandCoins size={25} />
-            </span>
-            <div>
-              <h2 className="text-xl font-semibold tracking-[-0.04em] text-[#142132]">{currentStage.label} is underway</h2>
-              <p className="mt-2 text-sm leading-6 text-[#344054]">{currentStage.description}</p>
-            </div>
-          </div>
-          <div className="border-[#d7e0ea] lg:border-l lg:pl-8">
-            <div className="flex items-start gap-3">
-              <Clock3 size={22} className="mt-1 text-[#344054]" />
-              <div>
-                <p className="text-[0.7rem] font-semibold uppercase tracking-[0.13em] text-[#667085]">Usually takes</p>
-                <p className="mt-1 text-2xl font-semibold tracking-[-0.04em] text-[#101828]">5 - 10</p>
-                <p className="text-sm text-[#344054]">business days</p>
-              </div>
-            </div>
-          </div>
-          <div className="border-[#d7e0ea] lg:border-l lg:pl-8">
-            <div className="flex items-start gap-3">
-              <Flag size={22} className="mt-1 text-[#344054]" />
-              <div>
-                <p className="text-[0.7rem] font-semibold uppercase tracking-[0.13em] text-[#667085]">Next milestone</p>
-                <p className="mt-1 text-base font-semibold leading-6 text-[#101828]">{currentStage.nextMilestone}</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
+function DemoBuyerJourney({ brand, token, detailed = false }) {
+  return (
+    <BuyerPortalJourney
+      model={DEMO_BUYER_JOURNEY_MODEL}
+      theme={brand}
+      title="Your purchase journey"
+      subtitle="One clear view of every milestone from signed offer to registration."
+      variant={detailed ? 'detailed' : 'summary'}
+      action={(
+        <Link
+          to={getDemoPath(token, detailed ? 'documents' : 'progress')}
+          className="inline-flex min-h-[40px] items-center justify-center gap-2 rounded-[11px] px-4 py-2 text-sm font-semibold text-white transition"
+          style={{ backgroundColor: brand.primary }}
+        >
+          {detailed ? 'View documents' : 'View full journey'}
+          <ChevronRight size={15} />
+        </Link>
+      )}
+    />
   )
 }
 
@@ -1739,7 +1849,7 @@ function GraduationCapIcon() {
   )
 }
 
-function DocumentCategorySummary({ brand }) {
+function DocumentCategorySummary({ brand, compact = false }) {
   return (
     <section className="rounded-[24px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1748,7 +1858,7 @@ function DocumentCategorySummary({ brand }) {
         </div>
         <span className="rounded-full bg-[#f2f4f7] px-3 py-1 text-xs font-semibold text-[#667085]">5 of 8 ready</span>
       </div>
-      <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+      <div className={`mt-5 grid gap-3 md:grid-cols-2 ${compact ? '2xl:grid-cols-2' : 'xl:grid-cols-5'}`}>
         {DOCUMENT_CATEGORY_SUMMARY.map((category) => {
           const Icon = category.icon
           return (
@@ -1811,45 +1921,22 @@ function HeroMetric({ label, value }) {
   )
 }
 
-function OverviewSection({ brand, documentRows, demoUploadComplete, onCompleteUpload }) {
+function DocumentsSection({ brand, documentModel, onCompleteUpload }) {
+  const handleDemoUpload = async () => {
+    onCompleteUpload()
+    return { success: true }
+  }
+
   return (
-    <div className="space-y-5">
-      <PurchaseJourneySection brand={brand} />
-      <div className="grid gap-5 xl:grid-cols-2">
-        <section className="rounded-[24px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#52657b]">Needs your attention</p>
-              <h2 className="mt-8 text-xl font-semibold tracking-[-0.04em] text-[#142132]">Upload your latest payslip</h2>
-              <p className="mt-2 max-w-xl text-sm leading-6 text-[#52657b]">Your bond originator needs an updated payslip before your application can be submitted to the banks.</p>
-            </div>
-            <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${demoUploadComplete ? statusClasses('info') : statusClasses('action')}`}>
-              {demoUploadComplete ? 'Uploaded' : '1 item needs you'}
-            </span>
-          </div>
-          <div className="mt-7 flex items-center gap-4">
-            <span className="hidden h-16 w-16 shrink-0 items-center justify-center rounded-full md:flex" style={{ backgroundColor: hexToRgba(brand.primary, 0.08), color: brand.primary }}>
-              <FileSignature size={28} />
-            </span>
-            <div className="flex flex-wrap gap-3">
-              <button type="button" onClick={onCompleteUpload} className="inline-flex min-h-11 items-center gap-2 rounded-[14px] px-5 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,23,42,0.12)]" style={{ backgroundColor: brand.primary }}>
-                <UploadCloud size={17} />
-                {demoUploadComplete ? 'Uploaded for review' : 'Upload payslip'}
-              </button>
-              <button type="button" className="inline-flex min-h-11 items-center gap-2 rounded-[14px] border bg-white px-5 text-sm font-semibold" style={{ borderColor: hexToRgba(brand.primary, 0.22), color: '#344054' }}>
-                View requested documents
-              </button>
-            </div>
-          </div>
-        </section>
-        <TransactionUpdatesSection brand={brand} />
-      </div>
-      <DocumentCategorySummary brand={brand} />
-    </div>
+    <BuyerDocumentWorkspace
+      model={documentModel}
+      theme={brand}
+      onUpload={handleDemoUpload}
+    />
   )
 }
 
-function DocumentsSection({ brand, config, demoUploadComplete, onCompleteUpload }) {
+function LegacyDocumentsSection({ brand, config, demoUploadComplete, onCompleteUpload }) {
   const documents = BUYER_DOCUMENTS.map((document) =>
     document.id === 'latest-payslip' && demoUploadComplete
       ? {
@@ -2129,60 +2216,27 @@ function DocumentDetailPanel({ brand, config, document, onCompleteUpload }) {
   )
 }
 
-function FinanceSection({ brand, demoUploadComplete, onCompleteUpload }) {
-  const [expandedBankId, setExpandedBankId] = useState('standard-bank')
-  const [showApplicationDetails, setShowApplicationDetails] = useState(false)
-  const application = {
-    ...FINANCE_APPLICATION,
-    requiredActions: demoUploadComplete ? [] : FINANCE_APPLICATION.requiredActions,
-  }
-  const currentStageIndex = BOND_JOURNEY_STAGES.findIndex((stage) => stage.id === application.currentStage)
-  const offers = application.bankApplications
-    .filter((bank) => bank.approvedAmount)
-    .sort((first, second) => Number(second.isRecommended) - Number(first.isRecommended))
-
+function FinanceSection({ brand, model, token, onCompleteUpload }) {
   return (
-    <div className="space-y-5">
-      <header className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <h1 className="text-3xl font-semibold tracking-[-0.06em] text-[#142132]">Finance</h1>
-          <p className="mt-2 text-base leading-6 text-[#52657b]">Track your bond application and compare bank offers.</p>
-        </div>
-        <div className="flex items-start gap-2 rounded-[14px] px-3 py-2 text-sm text-[#52657b]">
-          <Lock size={15} className="mt-1 shrink-0 text-[#142132]" />
-          <span>Your information is secure<br className="hidden lg:block" /> and encrypted.</span>
-        </div>
-      </header>
-
-      <FinanceSummary application={application} />
-
-      <section className="rounded-[24px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)] lg:p-6">
-        <h2 className="text-xl font-semibold tracking-[-0.04em] text-[#142132]">Your bond journey</h2>
-        <p className="mt-2 text-sm leading-6 text-[#52657b]">Here's where we are in the bond process.</p>
-        <BondJourneyTracker brand={brand} currentStageIndex={currentStageIndex} />
-        <CurrentFinanceStatus
-          brand={brand}
-          application={application}
-          demoUploadComplete={demoUploadComplete}
-          onCompleteUpload={onCompleteUpload}
-        />
-      </section>
-
-      <BankApplicationsSection
-        brand={brand}
-        banks={application.bankApplications}
-        expandedBankId={expandedBankId}
-        onToggleBank={(bankId) => setExpandedBankId((current) => (current === bankId ? '' : bankId))}
+    <BuyerFinanceWorkspace
+      model={model}
+      theme={brand}
+      primaryAction={model?.firstAction ? (
+        <button type="button" onClick={onCompleteUpload} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[12px] bg-[#111827] px-5 text-sm font-semibold text-white transition hover:bg-black">
+          <UploadCloud size={16} />
+          Upload payslip
+        </button>
+      ) : (
+        <Link to={getDemoPath(token, 'bond-application')} className="inline-flex min-h-11 items-center justify-center rounded-[12px] px-5 text-sm font-semibold text-white" style={{ backgroundColor: brand.primary }}>
+          Open bond application
+        </Link>
+      )}
+      secondaryAction={(
+        <Link to={getDemoPath(token, 'documents')} className="inline-flex min-h-11 items-center justify-center rounded-[12px] border border-[#dbe5ef] bg-white px-4 text-sm font-semibold text-[#35546c]">
+          Finance documents
+        </Link>
+      )}
       />
-
-      {offers.length ? <BankOffersSection brand={brand} application={application} offers={offers} /> : null}
-
-      <ApplicationDetailsSection
-        application={application}
-        expanded={showApplicationDetails}
-        onToggle={() => setShowApplicationDetails((value) => !value)}
-      />
-    </div>
   )
 }
 
@@ -2941,85 +2995,8 @@ function BankLogo({ bank }) {
   )
 }
 
-function TeamSection({ brand, team }) {
-  const mainContact = team.find((member) => member.isMainContact) || team[0]
-  const activeMember = team.find((member) => member.isActive) || mainContact
-  const specialists = team.filter((member) => !member.isMainContact)
-  const contactRoutes = [
-    {
-      id: 'general',
-      title: 'General questions about my purchase',
-      helper: `Speak to ${mainContact.name.split(' ')[0]} · Your Agent`,
-      member: mainContact,
-      icon: MessageCircle,
-      tone: 'info',
-    },
-    {
-      id: 'bond',
-      title: 'My bond application or bank offers',
-      helper: 'Speak to Priya · Bond Originator',
-      member: team.find((member) => member.role === 'Bond Originator'),
-      icon: Building2,
-      tone: 'complete',
-    },
-    {
-      id: 'transfer',
-      title: 'Transfer, signing or registration',
-      helper: `Speak to ${activeMember.name.split(' ')[0]} · Transfer Attorney`,
-      member: activeMember,
-      icon: FileSignature,
-      tone: 'info',
-    },
-    {
-      id: 'documents',
-      title: 'Documents or signing arrangements',
-      helper: 'Speak to Lerato · Secretary',
-      member: team.find((member) => member.role === 'Conveyancing Secretary'),
-      icon: FileText,
-      tone: 'action',
-    },
-  ].filter((route) => route.member)
-
-  return (
-    <div className="space-y-5">
-      <header>
-        <h1 className="text-3xl font-semibold tracking-[-0.06em] text-[#142132]">Your transaction team</h1>
-        <p className="mt-2 text-base leading-6 text-[#52657b]">The people helping you through your purchase, finance and transfer.</p>
-      </header>
-
-      <TeamContextSummary brand={brand} mainContact={mainContact} activeMember={activeMember} />
-
-      <section className="grid gap-5 xl:grid-cols-[330px_minmax(0,1fr)] xl:items-start">
-        <div>
-          <h2 className="mb-4 text-lg font-semibold tracking-[-0.04em] text-[#142132]">Your main contact</h2>
-          <TeamMemberCard brand={brand} member={mainContact} prominent />
-        </div>
-        <div>
-          <h2 className="mb-4 text-lg font-semibold tracking-[-0.04em] text-[#142132]">Your specialist team</h2>
-          <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-            {specialists.map((member) => (
-              <TeamMemberCard key={member.id} brand={brand} member={member} />
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="rounded-[24px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
-        <h2 className="text-xl font-semibold tracking-[-0.04em] text-[#142132]">Not sure who to contact?</h2>
-        <p className="mt-2 text-sm leading-6 text-[#52657b]">Here's who can help with the most common questions.</p>
-        <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {contactRoutes.map((route) => (
-            <ContactRouteCard key={route.id} brand={brand} route={route} />
-          ))}
-        </div>
-      </section>
-
-      <p className="flex items-center justify-center gap-2 text-sm text-[#52657b]">
-        <Lock size={15} />
-        Only authorised parties involved in your transaction can access your information.
-      </p>
-    </div>
-  )
+function TeamSection({ brand, model }) {
+  return <BuyerTeamWorkspace model={model} theme={brand} />
 }
 
 function TeamContextSummary({ brand, mainContact, activeMember }) {
