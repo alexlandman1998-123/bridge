@@ -10884,7 +10884,13 @@ async function resolveActiveProfileContext(client) {
       return { userId: null, role: null, email: null, fullName: null, firmId: null, firmRole: null }
     }
 
-    const user = data?.session?.user
+    let user = data?.session?.user
+    if (!user?.id && typeof client.auth.getUser === 'function') {
+      const userResult = await client.auth.getUser()
+      if (!userResult.error && userResult.data?.user?.id) {
+        user = userResult.data.user
+      }
+    }
     if (!user?.id) {
       return { userId: null, role: null, email: null, fullName: null, firmId: null, firmRole: null }
     }
@@ -29180,6 +29186,10 @@ async function persistInitialBuyerPartiesOnboardingData(
 export async function createTransactionFromWizard({ setup = {}, finance = {}, status = {}, options = {} }) {
   const client = requireClient()
   const actorProfile = await resolveActiveProfileContext(client)
+  const actorUserId = normalizeNullableUuid(actorProfile.userId)
+  if (!actorUserId) {
+    throw new Error('Please sign in again before creating a transaction.')
+  }
   const actorRole = normalizeRoleType(actorProfile.role || 'agent')
   const allowIncomplete = Boolean(options?.allowIncomplete)
 
@@ -29332,9 +29342,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
             actorProfile.organisationId ||
             '',
         ),
-        sourceUserId: normalizeTextValue(
-          sourceContext.agentUserId || sourceContext.userId || actorProfile.userId || '',
-        ),
+        sourceUserId: normalizeTextValue(sourceContext.agentUserId || sourceContext.userId || actorUserId || ''),
         sourceTeamId: normalizeTextValue(sourceContext.teamId || sourceContext.team_id || ''),
         sourceBranchId: normalizeTextValue(
           sourceContext.branchId || sourceContext.branch_id || setup.assignedBranchId || '',
@@ -29502,11 +29510,14 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     assigned_bond_originator_email: normalizeNullableText(finance.bondOriginatorEmail)?.toLowerCase() || null,
     originating_partner_organisation_id: primaryPartnerSelection?.partnerOrganisationId || null,
     referral_source_organisation_id: normalizeNullableText(options?.referralSourceOrganisationId) || null,
-    relationship_owner_user_id: actorProfile.userId || null,
+    relationship_owner_user_id: actorUserId,
     partner_relationship_id: primaryPartnerSelection?.partnerRelationshipId || null,
     assigned_region_id: assignedRegionId || null,
     assigned_branch_id: assignedBranchId || null,
-    owner_user_id: actorProfile.userId || null,
+    assigned_agent_id: ['developer', 'agent'].includes(actorRole) ? actorUserId : null,
+    assigned_user_id: actorUserId,
+    owner_user_id: actorUserId,
+    created_by: actorUserId,
     access_level: normalizeTransactionAccessLevel(
       setup.accessLevel,
       transactionType === 'private_property' ? 'private' : 'shared',
@@ -29558,7 +29569,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     assigned_bond_originator_email: normalizeNullableText(finance.bondOriginatorEmail)?.toLowerCase() || null,
     originating_partner_organisation_id: primaryPartnerSelection?.partnerOrganisationId || null,
     referral_source_organisation_id: normalizeNullableText(options?.referralSourceOrganisationId) || null,
-    relationship_owner_user_id: actorProfile.userId || null,
+    relationship_owner_user_id: actorUserId,
     partner_relationship_id: primaryPartnerSelection?.partnerRelationshipId || null,
     assigned_region_id: assignedRegionId || null,
     assigned_branch_id: assignedBranchId || null,
@@ -29578,7 +29589,10 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     agency_split_percentage_snapshot: snapshotAgencySplit,
     agent_commission_amount: snapshotAgentCommissionAmount,
     agency_commission_amount: snapshotAgencyCommissionAmount,
-    owner_user_id: actorProfile.userId || null,
+    assigned_agent_id: ['developer', 'agent'].includes(actorRole) ? actorUserId : null,
+    assigned_user_id: actorUserId,
+    owner_user_id: actorUserId,
+    created_by: actorUserId,
     access_level: normalizeTransactionAccessLevel(
       setup.accessLevel,
       transactionType === 'private_property' ? 'private' : 'shared',
@@ -29691,7 +29705,10 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       isMissingColumnError(transactionResult.error, 'listing_id') ||
       isMissingColumnError(transactionResult.error, 'current_main_stage') ||
       isMissingColumnError(transactionResult.error, 'comment') ||
+      isMissingColumnError(transactionResult.error, 'assigned_agent_id') ||
+      isMissingColumnError(transactionResult.error, 'assigned_user_id') ||
       isMissingColumnError(transactionResult.error, 'owner_user_id') ||
+      isMissingColumnError(transactionResult.error, 'created_by') ||
       isMissingColumnError(transactionResult.error, 'sale_route') ||
       isMissingColumnError(transactionResult.error, 'sale_channel') ||
       isMissingColumnError(transactionResult.error, 'seller_party_type') ||
@@ -29751,7 +29768,10 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     delete fallbackPayload.agency_split_percentage_snapshot
     delete fallbackPayload.agent_commission_amount
     delete fallbackPayload.agency_commission_amount
+    delete fallbackPayload.assigned_agent_id
+    delete fallbackPayload.assigned_user_id
     delete fallbackPayload.owner_user_id
+    delete fallbackPayload.created_by
     delete fallbackPayload.sale_route
     delete fallbackPayload.sale_channel
     delete fallbackPayload.seller_party_type
@@ -29862,7 +29882,10 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
         isMissingColumnError(transactionResult.error, 'listing_id') ||
         isMissingColumnError(transactionResult.error, 'current_main_stage') ||
         isMissingColumnError(transactionResult.error, 'comment') ||
+        isMissingColumnError(transactionResult.error, 'assigned_agent_id') ||
+        isMissingColumnError(transactionResult.error, 'assigned_user_id') ||
         isMissingColumnError(transactionResult.error, 'owner_user_id') ||
+        isMissingColumnError(transactionResult.error, 'created_by') ||
         isMissingColumnError(transactionResult.error, 'sale_route') ||
         isMissingColumnError(transactionResult.error, 'sale_channel') ||
         isMissingColumnError(transactionResult.error, 'seller_party_type') ||
@@ -29922,7 +29945,10 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       delete fallbackPayload.agency_split_percentage_snapshot
       delete fallbackPayload.agent_commission_amount
       delete fallbackPayload.agency_commission_amount
+      delete fallbackPayload.assigned_agent_id
+      delete fallbackPayload.assigned_user_id
       delete fallbackPayload.owner_user_id
+      delete fallbackPayload.created_by
       delete fallbackPayload.sale_route
       delete fallbackPayload.sale_channel
       delete fallbackPayload.seller_party_type
@@ -29987,7 +30013,10 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
         isMissingColumnError(transactionResult.error, 'listing_id') ||
         isMissingColumnError(transactionResult.error, 'current_main_stage') ||
         isMissingColumnError(transactionResult.error, 'comment') ||
+        isMissingColumnError(transactionResult.error, 'assigned_agent_id') ||
+        isMissingColumnError(transactionResult.error, 'assigned_user_id') ||
         isMissingColumnError(transactionResult.error, 'owner_user_id') ||
+        isMissingColumnError(transactionResult.error, 'created_by') ||
         isMissingColumnError(transactionResult.error, 'sale_route') ||
         isMissingColumnError(transactionResult.error, 'sale_channel') ||
         isMissingColumnError(transactionResult.error, 'seller_party_type') ||
@@ -30046,7 +30075,10 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       delete fallbackPayload.agency_split_percentage_snapshot
       delete fallbackPayload.agent_commission_amount
       delete fallbackPayload.agency_commission_amount
+      delete fallbackPayload.assigned_agent_id
+      delete fallbackPayload.assigned_user_id
       delete fallbackPayload.owner_user_id
+      delete fallbackPayload.created_by
       delete fallbackPayload.sale_route
       delete fallbackPayload.sale_channel
       delete fallbackPayload.seller_party_type

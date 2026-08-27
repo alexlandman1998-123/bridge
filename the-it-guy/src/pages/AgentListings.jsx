@@ -3499,6 +3499,9 @@ function AgentListings({ initialTab = null } = {}) {
   const isEditListingWorkspace = Boolean(editListingId && location.pathname.startsWith('/listings/') && location.pathname.endsWith('/edit'))
   const isListingEditorWorkspace = isCreateListingWorkspace || isEditListingWorkspace
   const createListingDraftStorageKey = `${CREATE_LISTING_DRAFT_STORAGE_KEY}:${normalizeText(profile?.id || profile?.email || 'local')}`
+  const listingEditorDraftStorageKey = isEditListingWorkspace && editListingId
+    ? `${CREATE_LISTING_DRAFT_STORAGE_KEY}:edit:${editListingId}`
+    : createListingDraftStorageKey
   const selectedWorkspaceOrganisationId = useMemo(
     () => resolveSelectedWorkspaceOrganisationId({ workspace, currentMembership }),
     [currentMembership, workspace],
@@ -3678,8 +3681,9 @@ function AgentListings({ initialTab = null } = {}) {
   }, [hydratedEditListingId, isEditListingWorkspace])
 
   useEffect(() => {
-    if (!isCreateListingWorkspace || typeof window === 'undefined') return
-    const stored = window.localStorage.getItem(createListingDraftStorageKey)
+    if (!isListingEditorWorkspace || typeof window === 'undefined') return
+    if (isEditListingWorkspace && !editListingRecord) return
+    const stored = window.localStorage.getItem(listingEditorDraftStorageKey)
     if (!stored) return
     try {
       const parsed = JSON.parse(stored)
@@ -3701,14 +3705,15 @@ function AgentListings({ initialTab = null } = {}) {
         }))
       }
     } catch {
-      window.localStorage.removeItem(createListingDraftStorageKey)
+      window.localStorage.removeItem(listingEditorDraftStorageKey)
     }
-  }, [createListingDraftStorageKey, isCreateListingWorkspace])
+  }, [editListingRecord, isEditListingWorkspace, isListingEditorWorkspace, listingEditorDraftStorageKey])
 
   useEffect(() => {
-    if (!isCreateListingWorkspace || typeof window === 'undefined') return
-    saveCreateListingDraftToStorage(createListingDraftStorageKey, form)
-  }, [createListingDraftStorageKey, form, isCreateListingWorkspace])
+    if (!isListingEditorWorkspace || typeof window === 'undefined') return
+    if (isEditListingWorkspace && hydratedEditListingId !== editListingId) return
+    saveCreateListingDraftToStorage(listingEditorDraftStorageKey, form)
+  }, [editListingId, form, hydratedEditListingId, isEditListingWorkspace, isListingEditorWorkspace, listingEditorDraftStorageKey])
 
   useEffect(() => {
     if (isDeveloperWorkspace) {
@@ -4095,9 +4100,9 @@ function AgentListings({ initialTab = null } = {}) {
   }
 
   function saveCreateListingDraftLocally() {
-    const saved = saveCreateListingDraftToStorage(createListingDraftStorageKey, form)
+    const saved = saveCreateListingDraftToStorage(listingEditorDraftStorageKey, form)
     setWorkflowMessage(saved
-      ? 'Draft saved. You can continue this create listing workflow later.'
+      ? 'Draft saved. You can continue this listing workflow later.'
       : 'Draft text saved where possible. Uploaded image previews are too large for browser draft storage, so add photos again before publishing.')
   }
 
@@ -4427,6 +4432,9 @@ function AgentListings({ initialTab = null } = {}) {
 
     setError('')
     setWorkflowMessage(successMessage)
+    if (typeof window !== 'undefined') {
+      window.localStorage.removeItem(listingEditorDraftStorageKey)
+    }
     if (emitListingsUpdated) {
       window.dispatchEvent(new Event('itg:listings-updated'))
     }

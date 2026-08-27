@@ -39,7 +39,7 @@ import {
   Users,
   X,
 } from 'lucide-react'
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import StartDocumentModal from '../components/documents/StartDocumentModal'
 import SellerDocumentReviewActions from '../components/documents/SellerDocumentReviewActions'
@@ -242,6 +242,7 @@ import { upsertAreaFromAddress } from '../lib/location/upsertArea'
 import { formatSouthAfricanWhatsAppNumber, sendWhatsAppNotification } from '../lib/whatsapp'
 
 const PIPELINE_STORAGE_KEY = 'itg:pipeline-leads:v1'
+const LISTING_MARKETING_DRAFT_STORAGE_KEY = 'itg:listing-marketing-draft:v1'
 
 const CLIENT_INTAKE_PREFERENCE_OPTIONS = [
   { value: CLIENT_INTAKE_PREFERENCE.DIGITAL_PORTAL, label: getClientIntakePreferenceLabel(CLIENT_INTAKE_PREFERENCE.DIGITAL_PORTAL) },
@@ -3108,6 +3109,72 @@ function buildPropertyDraft(listingRecord) {
   }
 }
 
+function getListingMarketingDraftStorageKey(listingId) {
+  const normalizedId = String(listingId || '').trim()
+  return normalizedId ? `${LISTING_MARKETING_DRAFT_STORAGE_KEY}:${normalizedId}` : ''
+}
+
+function buildLightweightMarketingDraft(draft = {}) {
+  return {
+    headline: String(draft.headline || '').trim(),
+    description: String(draft.description || '').trim(),
+    listingPreviewDescription: String(draft.listingPreviewDescription || '').trim(),
+    selectedFeatures: Array.isArray(draft.selectedFeatures) ? draft.selectedFeatures.map(String).filter(Boolean) : [],
+    amenities: Array.isArray(draft.amenities) ? draft.amenities.map(String).filter(Boolean) : [],
+    videoLink: String(draft.videoLink || '').trim(),
+    virtualTourLink: String(draft.virtualTourLink || '').trim(),
+    property24ListingUrl: String(draft.property24ListingUrl || '').trim(),
+    property24Reference: String(draft.property24Reference || '').trim(),
+    property24Status: String(draft.property24Status || '').trim(),
+    privatePropertyListingUrl: String(draft.privatePropertyListingUrl || '').trim(),
+    privatePropertyReference: String(draft.privatePropertyReference || '').trim(),
+    privatePropertyStatus: String(draft.privatePropertyStatus || '').trim(),
+    bridgeListingStatus: String(draft.bridgeListingStatus || '').trim(),
+    bridgeListingPublicUrl: String(draft.bridgeListingPublicUrl || '').trim(),
+    externalLinks: normalizeExternalListingLinks(draft.externalLinks),
+    savedAt: new Date().toISOString(),
+  }
+}
+
+function hasMeaningfulMarketingDraft(draft = {}) {
+  return Boolean(
+    String(draft.description || '').trim() ||
+      String(draft.listingPreviewDescription || '').trim() ||
+      (Array.isArray(draft.selectedFeatures) && draft.selectedFeatures.length) ||
+      (Array.isArray(draft.amenities) && draft.amenities.length),
+  )
+}
+
+function readStoredMarketingDraft(listingId) {
+  const storageKey = getListingMarketingDraftStorageKey(listingId)
+  if (!storageKey || typeof window === 'undefined') return null
+  try {
+    const stored = window.localStorage.getItem(storageKey)
+    if (!stored) return null
+    const parsed = JSON.parse(stored)
+    return parsed && typeof parsed === 'object' ? parsed : null
+  } catch {
+    window.localStorage.removeItem(storageKey)
+    return null
+  }
+}
+
+function writeStoredMarketingDraft(listingId, draft) {
+  const storageKey = getListingMarketingDraftStorageKey(listingId)
+  if (!storageKey || typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify(buildLightweightMarketingDraft(draft)))
+  } catch (storageError) {
+    console.warn('[AgentListingDetail] marketing draft cache write skipped', storageError)
+  }
+}
+
+function clearStoredMarketingDraft(listingId) {
+  const storageKey = getListingMarketingDraftStorageKey(listingId)
+  if (!storageKey || typeof window === 'undefined') return
+  window.localStorage.removeItem(storageKey)
+}
+
 function buildAddressAutocompleteValueFromDraft(draft = {}) {
   const formattedAddress = String(
     draft.formattedAddress ||
@@ -3246,6 +3313,8 @@ function AgentListingDetail() {
   const [offerNotesDraftById, setOfferNotesDraftById] = useState({})
   const [sellerReviewDeliveryModeByOfferId, setSellerReviewDeliveryModeByOfferId] = useState({})
   const [marketingDraft, setMarketingDraft] = useState(() => buildPropertyDraft(null))
+  const marketingDraftDirtyRef = useRef(false)
+  const hydratedMarketingListingIdRef = useRef('')
   const [externalLinkDraft, setExternalLinkDraft] = useState(() => createExternalLinkDraft())
   const [readinessChecklistOpen, setReadinessChecklistOpen] = useState(false)
   const [property24ManageOpen, setProperty24ManageOpen] = useState(false)
@@ -3705,12 +3774,21 @@ function AgentListingDetail() {
 
   useEffect(() => {
     if (!listingRecord) return
-    setMarketingDraft(buildPropertyDraft(listingRecord))
+    const nextListingId = String(listingRecord.id || listingId || '').trim()
+    if (marketingDraftDirtyRef.current && hydratedMarketingListingIdRef.current === nextListingId) {
+      return
+    }
+    const nextDraft = buildPropertyDraft(listingRecord)
+    const storedDraft = readStoredMarketingDraft(nextListingId)
+    const shouldRestoreStoredDraft = hydratedMarketingListingIdRef.current !== nextListingId && hasMeaningfulMarketingDraft(storedDraft)
+    setMarketingDraft(shouldRestoreStoredDraft ? { ...nextDraft, ...storedDraft } : nextDraft)
+    hydratedMarketingListingIdRef.current = nextListingId
+    marketingDraftDirtyRef.current = shouldRestoreStoredDraft
     setRolePlayersDraft({
       attorney: String(listingRecord?.rolePlayers?.attorney || 'Arch9 Conveyancing').trim(),
       bondOriginator: String(listingRecord?.rolePlayers?.bondOriginator || 'Arch9 Finance').trim(),
     })
-  }, [listingRecord])
+  }, [listingId, listingRecord])
 
   useEffect(() => {
     if (!isSupabaseConfigured) return undefined
@@ -3969,6 +4047,9 @@ function AgentListingDetail() {
     const privatePropertyExternalLink = normalizedExternalLinks.find((link) => String(link.platform || '').trim().toLowerCase().includes('private')) || null
     const updatedListing = await persistListingSnapshot(draft, { persistCoreFields: true })
     if (!updatedListing?.id || !isSupabaseConfigured) {
+      marketingDraftDirtyRef.current = false
+      hydratedMarketingListingIdRef.current = String(updatedListing?.id || listingRecord?.id || listingId || '').trim()
+      clearStoredMarketingDraft(hydratedMarketingListingIdRef.current)
       setDetailMessage('Listing details saved locally.')
       return { ok: true, localOnly: true }
     }
@@ -4056,6 +4137,9 @@ function AgentListingDetail() {
         console.warn('[AgentListingDetail] listing distribution sync skipped', distributionSync.reason)
       }
       await upsertAreaFromAddress(buildAddressAutocompleteValueFromDraft(draft), { incrementListingCount: false })
+      marketingDraftDirtyRef.current = false
+      hydratedMarketingListingIdRef.current = String(mergedSavedListing?.id || updatedListing.id || listingId || '').trim()
+      clearStoredMarketingDraft(hydratedMarketingListingIdRef.current)
       setDetailMessage(options.successMessage || 'Listing details saved.')
       return { ok: true, listing: mergedSavedListing }
     } catch (error) {
@@ -8439,16 +8523,23 @@ function AgentListingDetail() {
   }
 
   function updateMarketingDraft(key, value) {
+    marketingDraftDirtyRef.current = true
     setMarketingDraft((previous) => {
-      if (key !== 'description') return { ...previous, [key]: value }
+      if (key !== 'description') {
+        const nextDraft = { ...previous, [key]: value }
+        writeStoredMarketingDraft(listingId, nextDraft)
+        return nextDraft
+      }
       const previousDescription = String(previous.description || '').trim()
       const previousPreview = String(previous.listingPreviewDescription || '').trim()
       const shouldSyncPreview = !previousPreview || previousPreview === previousDescription
-      return {
+      const nextDraft = {
         ...previous,
         description: value,
         listingPreviewDescription: shouldSyncPreview ? value : previous.listingPreviewDescription,
       }
+      writeStoredMarketingDraft(listingId, nextDraft)
+      return nextDraft
     })
   }
 
@@ -8770,42 +8861,53 @@ function AgentListingDetail() {
   }
 
   function toggleFeature(feature) {
+    marketingDraftDirtyRef.current = true
     setMarketingDraft((previous) => {
       const exists = previous.selectedFeatures.includes(feature)
-      return {
+      const nextDraft = {
         ...previous,
         selectedFeatures: exists
           ? previous.selectedFeatures.filter((item) => item !== feature)
           : [...previous.selectedFeatures, feature],
       }
+      writeStoredMarketingDraft(listingId, nextDraft)
+      return nextDraft
     })
   }
 
   function toggleAmenity(amenity) {
+    marketingDraftDirtyRef.current = true
     setMarketingDraft((previous) => {
       const current = Array.isArray(previous.amenities) ? previous.amenities : []
       const exists = current.includes(amenity)
-      return {
+      const nextDraft = {
         ...previous,
         amenities: exists
           ? current.filter((item) => item !== amenity)
           : [...current, amenity],
       }
+      writeStoredMarketingDraft(listingId, nextDraft)
+      return nextDraft
     })
   }
 
   function updateExternalListingLink(linkId, key, value) {
-    setMarketingDraft((previous) => ({
-      ...previous,
-      externalLinks: normalizeExternalListingLinks(previous.externalLinks).map((link) => {
-        if (String(link.id) !== String(linkId)) return link
-        const nextLink = { ...link, [key]: value }
-        if (key === 'status') {
-          nextLink.visibleToSeller = isExternalLinkSellerVisible(value)
-        }
-        return nextLink
-      }),
-    }))
+    marketingDraftDirtyRef.current = true
+    setMarketingDraft((previous) => {
+      const nextDraft = {
+        ...previous,
+        externalLinks: normalizeExternalListingLinks(previous.externalLinks).map((link) => {
+          if (String(link.id) !== String(linkId)) return link
+          const nextLink = { ...link, [key]: value }
+          if (key === 'status') {
+            nextLink.visibleToSeller = isExternalLinkSellerVisible(value)
+          }
+          return nextLink
+        }),
+      }
+      writeStoredMarketingDraft(listingId, nextDraft)
+      return nextDraft
+    })
   }
 
   function openExternalLinkPanel(link = null, platform = '') {
@@ -8866,6 +8968,8 @@ function AgentListingDetail() {
   async function applyMarketingDraftAndPersist(updater, { message = '', showSaving = false } = {}) {
     const nextDraft = typeof updater === 'function' ? updater(marketingDraft) : updater
     if (!nextDraft) return null
+    marketingDraftDirtyRef.current = true
+    writeStoredMarketingDraft(listingId, nextDraft)
     if (showSaving) setGallerySaving(true)
     setDetailMessage('')
     setDetailError('')
@@ -8921,6 +9025,8 @@ function AgentListingDetail() {
         galleryImages: [...marketingDraft.galleryImages, ...uploads],
         coverImageId: marketingDraft.coverImageId || uploads[0]?.id || '',
       }
+      marketingDraftDirtyRef.current = true
+      writeStoredMarketingDraft(listingId, nextDraft)
       setMarketingDraft(nextDraft)
       await persistListingSnapshot(nextDraft, {
         message: hadFallback ? 'Images saved locally. Storage upload needs attention.' : 'Images uploaded and saved.',
@@ -8984,6 +9090,8 @@ function AgentListingDetail() {
       const uploads = await Promise.all(files.map((file, index) => buildUploadedAsset(file, 'floorplans', index)))
       const hadFallback = uploads.some((asset) => asset.uploadWarning)
       const nextDraft = { ...marketingDraft, floorplans: [...marketingDraft.floorplans, ...uploads] }
+      marketingDraftDirtyRef.current = true
+      writeStoredMarketingDraft(listingId, nextDraft)
       setMarketingDraft(nextDraft)
       await persistListingSnapshot(nextDraft, {
         message: hadFallback ? 'Floor plans saved locally. Storage upload needs attention.' : 'Floor plans uploaded and saved.',
@@ -8998,17 +9106,27 @@ function AgentListingDetail() {
   }
 
   function updateFloorplanLabel(id, label) {
-    setMarketingDraft((previous) => ({
-      ...previous,
-      floorplans: previous.floorplans.map((plan) => (String(plan.id) === String(id) ? { ...plan, label } : plan)),
-    }))
+    marketingDraftDirtyRef.current = true
+    setMarketingDraft((previous) => {
+      const nextDraft = {
+        ...previous,
+        floorplans: previous.floorplans.map((plan) => (String(plan.id) === String(id) ? { ...plan, label } : plan)),
+      }
+      writeStoredMarketingDraft(listingId, nextDraft)
+      return nextDraft
+    })
   }
 
   function removeFloorplan(id) {
-    setMarketingDraft((previous) => ({
-      ...previous,
-      floorplans: previous.floorplans.filter((plan) => String(plan.id) !== String(id)),
-    }))
+    marketingDraftDirtyRef.current = true
+    setMarketingDraft((previous) => {
+      const nextDraft = {
+        ...previous,
+        floorplans: previous.floorplans.filter((plan) => String(plan.id) !== String(id)),
+      }
+      writeStoredMarketingDraft(listingId, nextDraft)
+      return nextDraft
+    })
   }
 
   async function handleDeleteListing() {
@@ -10841,7 +10959,14 @@ function AgentListingDetail() {
                   <AddressAutocomplete
                     label="Address"
                     value={buildAddressAutocompleteValueFromDraft(marketingDraft)}
-                    onChange={(nextAddress) => setMarketingDraft((previous) => mergeAddressIntoMarketingDraft(previous, nextAddress))}
+                    onChange={(nextAddress) => {
+                      marketingDraftDirtyRef.current = true
+                      setMarketingDraft((previous) => {
+                        const nextDraft = mergeAddressIntoMarketingDraft(previous, nextAddress)
+                        writeStoredMarketingDraft(listingId, nextDraft)
+                        return nextDraft
+                      })
+                    }}
                     placeholder="12 Main Road Bedfordview"
                     description="Select the closest Google Places result, then adjust suburb or city below if needed."
                   />
