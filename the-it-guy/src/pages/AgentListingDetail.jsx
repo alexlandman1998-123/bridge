@@ -4403,6 +4403,26 @@ function AgentListingDetail() {
     return payload
   }
 
+  function getProperty24ActionContext() {
+    const listingNumber = String(
+      marketingDraft.property24Reference ||
+        listingRecord?.property24Reference ||
+        listingRecord?.property24_reference ||
+        '',
+    ).trim()
+    const property24ListingUrl = String(
+      marketingDraft.property24ListingUrl ||
+        listingRecord?.property24ListingUrl ||
+        listingRecord?.property24_listing_url ||
+        '',
+    ).trim()
+
+    return {
+      ...(listingNumber ? { listingNumber } : {}),
+      ...(property24ListingUrl ? { property24ListingUrl } : {}),
+    }
+  }
+
   async function previewProperty24Listing() {
     setProperty24Action('preview')
     setProperty24Preview(null)
@@ -4413,7 +4433,7 @@ function AgentListingDetail() {
         successMessage: '',
       })
       if (saveResult?.ok === false) throw saveResult.error || new Error('Save the listing before checking Property24 readiness.')
-      const payload = await callProperty24ListingAction('preview', {}, { fallbackMessage: 'Property24 preview failed.' })
+      const payload = await callProperty24ListingAction('preview', getProperty24ActionContext(), { fallbackMessage: 'Property24 preview failed.' })
       setProperty24Preview(payload)
       const counts = getProperty24ReadinessCounts(payload)
       setDetailError('')
@@ -4441,7 +4461,7 @@ function AgentListingDetail() {
         successMessage: '',
       })
       if (saveResult?.ok === false) throw saveResult.error || new Error('Save the listing before publishing to Property24.')
-      const payload = await callProperty24ListingAction('publish', {}, { fallbackMessage: 'Property24 publish failed.' })
+      const payload = await callProperty24ListingAction('publish', getProperty24ActionContext(), { fallbackMessage: 'Property24 publish failed.' })
       setProperty24Preview(payload)
       const listingNumber = getProperty24ListingNumberFromResponse(payload)
       setMarketingDraft((previous) => ({

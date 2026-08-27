@@ -257,6 +257,30 @@ const fallbackLoaded = await loadProperty24ImageBytesForPreview({
 assert.equal(fallbackLoaded.summary.loaded, 1)
 assert.equal(fallbackLoaded.results[0].source, 'supabase_storage')
 
+const conversionFallbackLoaded = await loadProperty24ImageBytesForPreview({
+  media: [
+    {
+      listing_id: listingId,
+      media_type: 'image',
+      file_url: 'https://cdn.arch9.test/photo.png',
+    },
+  ],
+  fetchImpl: async () => ({
+    ok: true,
+    status: 200,
+    headers: {
+      get: () => 'image/png',
+    },
+    arrayBuffer: async () => new TextEncoder().encode('not-a-real-png').buffer,
+  }),
+  convertImagesToJpeg: true,
+})
+assert.equal(conversionFallbackLoaded.summary.loaded, 1)
+assert.equal(conversionFallbackLoaded.results[0].status, 'LOADED')
+assert.equal(conversionFallbackLoaded.results[0].conversionFailedOriginalUsed, true)
+assert.equal(conversionFallbackLoaded.media[0].mimeContentType, 'image/png')
+assert.match(conversionFallbackLoaded.media[0].bytes, /^[A-Za-z0-9+/=]+$/)
+
 const submitReadyReport = createProperty24Arch9ListingPreview({
   ...bundle,
   media: loaded.media,

@@ -364,11 +364,20 @@ export async function loadProperty24ImageBytesForPreview({
       }
       const originalContentType = normalizeProperty24PreviewText(download.contentType) || guessMimeTypeFromUrl(url)
       const convertToJpeg = convertImagesToJpeg && shouldConvertProperty24ImageToJpeg(originalContentType)
-      const finalBuffer = convertToJpeg ? await convertImageBufferToJpeg(downloadedBuffer) : downloadedBuffer
+      let finalBuffer = downloadedBuffer
+      let contentType = originalContentType
+      let conversionError = ''
+      if (convertToJpeg) {
+        try {
+          finalBuffer = await convertImageBufferToJpeg(downloadedBuffer)
+          contentType = 'image/jpeg'
+        } catch (error) {
+          conversionError = formatErrorMessage(error)
+        }
+      }
       if (finalBuffer.byteLength > maxBytesPerImage) {
         throw new Error(`Image is ${finalBuffer.byteLength} bytes after conversion, above the ${maxBytesPerImage} byte safety limit.`)
       }
-      const contentType = convertToJpeg ? 'image/jpeg' : originalContentType
       nextMedia[index] = {
         ...nextMedia[index],
         bytes: finalBuffer.toString('base64'),
@@ -381,8 +390,11 @@ export async function loadProperty24ImageBytesForPreview({
         sourceUrl: sanitizeUrl(url),
         mimeContentType: contentType,
         byteLength: finalBuffer.byteLength,
-        ...(convertToJpeg
+        ...(convertToJpeg && !conversionError
           ? { convertedToJpeg: true, originalMimeContentType: originalContentType, originalByteLength }
+          : {}),
+        ...(conversionError
+          ? { conversionFailedOriginalUsed: true, conversionError, originalMimeContentType: originalContentType }
           : {}),
         source: download.source,
         ...(storageHostMismatch ? { storageHostMismatch: true } : {}),
