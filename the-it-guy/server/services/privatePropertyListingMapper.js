@@ -249,14 +249,41 @@ function resolveListingDate(listing = {}, publication = {}, options = {}) {
   return toDateOnly(firstText(options.listingDate, publication.listing_date, publication.listingDate, listing.listing_date, listing.listingDate, listing.created_at, listing.createdAt)) || toDateOnly(new Date().toISOString())
 }
 
+function splitStreetAddress(address = '') {
+  const text = normalizePrivatePropertyText(address)
+  if (!text) return { streetNumber: '', streetName: '' }
+  const line = text.split(',')[0].trim()
+  const match = line.match(/^(\d+[A-Za-z]?(?:[-/]\d+[A-Za-z]?)?)\s+(.+)$/)
+  if (!match) return { streetNumber: '', streetName: line }
+  return {
+    streetNumber: match[1],
+    streetName: match[2],
+  }
+}
+
 function resolveAvailableFrom(listing = {}, publication = {}, options = {}) {
   return toDateOnly(firstText(options.availableFrom, publication.available_from, publication.availableFrom, listing.available_from, listing.availableFrom))
 }
 
 function resolveAddress(listing = {}, publication = {}, options = {}) {
+  const explicitStreetName = firstText(options.streetName, publication.streetName, publication.street_name, listing.streetName, listing.street_name)
+  const explicitStreetNumber = firstText(options.streetNumber, publication.streetNumber, publication.street_number, listing.streetNumber, listing.street_number)
+  const combinedStreetAddress = firstText(
+    publication.streetAddress,
+    publication.street_address,
+    publication.address,
+    listing.streetAddress,
+    listing.street_address,
+    listing.address_line_1,
+    listing.addressLine1,
+    listing.formatted_address,
+    listing.formattedAddress,
+  )
+  const inferredStreetAddress = splitStreetAddress(combinedStreetAddress)
+
   return {
-    streetName: firstText(options.streetName, publication.streetName, publication.street_name, listing.streetName, listing.street_name, listing.street_address, listing.address_line_1, listing.addressLine1),
-    streetNumber: firstText(options.streetNumber, publication.streetNumber, publication.street_number, listing.streetNumber, listing.street_number),
+    streetName: firstText(explicitStreetName, inferredStreetAddress.streetName),
+    streetNumber: firstText(explicitStreetNumber, inferredStreetAddress.streetNumber),
     complexName: firstText(options.complexName, publication.complexName, publication.complex_name, listing.complexName, listing.complex_name),
     unitNumber: firstText(options.unitNumber, publication.unitNumber, publication.unit_number, listing.unitNumber, listing.unit_number),
     suburb: firstText(options.suburb, publication.suburb, listing.suburb),

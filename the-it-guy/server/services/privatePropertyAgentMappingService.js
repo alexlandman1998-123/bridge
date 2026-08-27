@@ -1,5 +1,8 @@
 import { normalizePrivatePropertyText } from './privatePropertyClient.js'
-import { resolvePrivatePropertyAgencyConfig } from './privatePropertyAgencyConfigService.js'
+import {
+  buildPrivatePropertyAgencyConfigReadiness,
+  resolvePrivatePropertyAgencyConfig,
+} from './privatePropertyAgencyConfigService.js'
 
 export const PRIVATE_PROPERTY_AGENT_MAPPING_SERVICE_VERSION = 'arch9_private_property_agent_mapping_service_v1'
 
@@ -208,6 +211,23 @@ async function fetchPrivatePropertyAgentMappingRows({ client, agencyConfigId, or
   })
 }
 
+async function fetchPrivatePropertyAgencyConfigById({ client, agencyConfigId, organisationId, environment } = {}) {
+  const normalizedAgencyConfigId = normalizePrivatePropertyText(agencyConfigId)
+  const normalizedOrganisationId = normalizePrivatePropertyText(organisationId)
+  const normalizedEnvironment = normalizeEnvironment(environment)
+  if (!normalizedAgencyConfigId || !normalizedOrganisationId) return null
+
+  return fetchOptionalSingle({
+    client,
+    table: 'private_property_agency_configs',
+    filters: [
+      ['eq', 'id', normalizedAgencyConfigId],
+      ['eq', 'organisation_id', normalizedOrganisationId],
+      ['eq', 'environment', normalizedEnvironment],
+    ],
+  })
+}
+
 async function fetchExactPrivatePropertyAgentMappingRow({ client, agencyConfigId, environment, arch9UserId, sourceReference } = {}) {
   const normalizedAgencyConfigId = normalizePrivatePropertyText(agencyConfigId)
   const normalizedEnvironment = normalizeEnvironment(environment)
@@ -375,9 +395,30 @@ export async function resolvePrivatePropertyAgentMapping({
     email: resolvedEmail,
     branchId: resolvedBranchId,
   })
+  const mappingAgencyConfigId = normalizePrivatePropertyText(match?.row?.agency_config_id || match?.row?.agencyConfigId)
+  const mappingAgencyConfig = configResolution?.config
+    ? null
+    : await fetchPrivatePropertyAgencyConfigById({
+      client,
+      agencyConfigId: mappingAgencyConfigId,
+      organisationId: resolvedOrganisationId,
+      environment,
+    })
+  const mappingConfigReadiness = mappingAgencyConfig
+    ? buildPrivatePropertyAgencyConfigReadiness(mappingAgencyConfig)
+    : null
+  const effectiveConfigResolution = mappingConfigReadiness
+    ? {
+      ready: mappingConfigReadiness.ready,
+      source: 'private_property_agency_configs.via_agent_mapping',
+      config: mappingConfigReadiness.config,
+      blockers: mappingConfigReadiness.blockers,
+      warnings: mappingConfigReadiness.warnings,
+    }
+    : configResolution
   const readiness = buildReadiness(match?.row || null, match?.source || 'none')
-  const blockers = [...(configResolution?.ready === false ? configResolution.blockers : []), ...readiness.blockers]
-  const warnings = [...(configResolution?.warnings || []), ...readiness.warnings]
+  const blockers = [...(effectiveConfigResolution?.ready === false ? effectiveConfigResolution.blockers : []), ...readiness.blockers]
+  const warnings = [...(effectiveConfigResolution?.warnings || []), ...readiness.warnings]
 
   return {
     version: PRIVATE_PROPERTY_AGENT_MAPPING_SERVICE_VERSION,
@@ -388,7 +429,7 @@ export async function resolvePrivatePropertyAgentMapping({
     branchId: resolvedBranchId || null,
     arch9UserId: resolvedArch9UserId || null,
     assignedAgentEmail: resolvedEmail,
-    agencyConfig: configResolution?.config || null,
+    agencyConfig: effectiveConfigResolution?.config || null,
     mapping: readiness.mapping,
     agentMapping: {
       agentIds: readiness.mapping?.privatePropertyAgentId || '',

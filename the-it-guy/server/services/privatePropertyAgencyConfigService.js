@@ -36,7 +36,7 @@ function normalizeConfigBaseUrl(value = '', environment = 'sandbox') {
 }
 
 function normalizeConfigRow(row = {}) {
-  if (!row || typeof row !== 'object') return null
+  if (!row || typeof row !== 'object' || Object.keys(row).length === 0) return null
   const environment = normalizeEnvironment(row.environment)
   return {
     id: normalizePrivatePropertyText(row.id),
@@ -85,7 +85,7 @@ export function redactPrivatePropertyAgencyConfig(config = {}) {
   }
 }
 
-export function buildPrivatePropertyAgencyConfigReadiness(config = {}, { allowDisabled = false } = {}) {
+export function buildPrivatePropertyAgencyConfigReadiness(config = null, { allowDisabled = false } = {}) {
   const row = normalizeConfigRow(config)
   const blockers = []
   const warnings = []
@@ -301,7 +301,7 @@ export async function resolvePrivatePropertyAgencyConfig({
   }
 }
 
-export function resolvePrivatePropertyRuntimeCredentials(config = {}, secrets = process.env) {
+export function resolvePrivatePropertyRuntimeCredentials(config = null, secrets = process.env) {
   const row = normalizeConfigRow(config)
   if (!row) return { username: '', password: '', missingSecrets: ['private_property_config'] }
 

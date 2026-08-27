@@ -80,6 +80,16 @@ export function createPrivatePropertyGoLiveReadinessReport({
 } = {}) {
   const normalizedEnvironment = normalizeEnvironment(environment)
   const agencyConfig = agentMappingResolution?.agencyConfig || agencyConfigResolution?.config || null
+  const agencyConfigResolvedViaMapping = Boolean(agentMappingResolution?.agencyConfig && !agencyConfigResolution?.config)
+  const agencyConfigCheckBlockers = agencyConfigResolvedViaMapping
+    ? []
+    : agencyConfigResolution?.blockers || agentMappingResolution?.blockers || []
+  const agencyConfigCheckWarnings = agencyConfigResolvedViaMapping
+    ? []
+    : agencyConfigResolution?.warnings || []
+  const agencyConfigCheckSource = agencyConfigResolvedViaMapping
+    ? 'private_property_agency_configs.via_agent_mapping'
+    : agencyConfigResolution?.source || 'via_agent_mapping'
   const previewOptions = buildPreviewOptions({
     agencyConfig,
     agentMapping: agentMappingResolution?.agentMapping,
@@ -111,8 +121,8 @@ export function createPrivatePropertyGoLiveReadinessReport({
   }
 
   const checks = [
-    buildCheck('agency_config', agencyConfigResolution?.blockers || agentMappingResolution?.blockers || [], agencyConfigResolution?.warnings || [], {
-      source: agencyConfigResolution?.source || 'via_agent_mapping',
+    buildCheck('agency_config', agencyConfigCheckBlockers, agencyConfigCheckWarnings, {
+      source: agencyConfigCheckSource,
       config: agencyConfig,
     }),
     buildCheck('agent_mapping', agentMappingResolution?.blockers || ['missing_private_property_agent_mapping_resolution'], agentMappingResolution?.warnings || [], {

@@ -267,6 +267,34 @@ const missingMappingReport = await buildPrivatePropertyGoLiveReadinessReport({
 assert.equal(missingMappingReport.ready, false)
 assert.ok(missingMappingReport.blockers.includes('missing_private_property_agent_mapping'))
 
+const branchlessListingReport = await buildPrivatePropertyGoLiveReadinessReport({
+  client: createFakeClient({
+    ...tables,
+    private_listings: [{
+      ...listing,
+      branch_id: null,
+      street_name: null,
+      street_number: null,
+      address_line_1: '99 Ridge Road',
+    }],
+  }),
+  listingId,
+  environment: 'sandbox',
+  secrets: {
+    PRIVATE_PROPERTY_SANDBOX_USERNAME: 'Arch9User',
+    PRIVATE_PROPERTY_SANDBOX_PASSWORD: 'private-property-password',
+  },
+  overrides: {
+    suburbId: '12345',
+  },
+})
+assert.equal(branchlessListingReport.ready, true)
+assert.deepEqual(branchlessListingReport.blockers, [])
+assert.equal(branchlessListingReport.agencyConfig.id, agencyConfigId)
+assert.equal(branchlessListingReport.agentMapping.agentIds, 'ARCH9-SANDBOX-USER-1')
+assert.equal(branchlessListingReport.preview.payloadPreview.address.streetNumber, '99')
+assert.equal(branchlessListingReport.preview.payloadPreview.address.streetName, 'Ridge Road')
+
 const serviceSource = read('server/services/privatePropertyGoLiveReadinessService.js')
 assert.match(serviceSource, /resolvePrivatePropertyAgencyConfig/)
 assert.match(serviceSource, /resolvePrivatePropertyAgentMapping/)

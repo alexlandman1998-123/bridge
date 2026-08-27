@@ -125,6 +125,46 @@ for (const blocker of [
   assert.ok(blocked.dataBlockers.includes(blocker), `expected blocker ${blocker}`)
 }
 
+const inferredAddressPlan = createPrivatePropertyListingPlan({
+  listing: {
+    id: 'inferred-street-address',
+    listing_status: 'active',
+    listing_reference: 'PP-INFER-001',
+    address_line_1: '99 Ridge Road',
+    formatted_address: '99 Ridge Road, Bartlett, Boksburg, 1472',
+    suburb: 'Bartlett',
+    city: 'Boksburg',
+    province: 'Gauteng',
+    property_type: 'House',
+    asking_price: 1000000,
+    created_at: '2026-08-26T08:00:00.000Z',
+  },
+  publication: {
+    title: 'Combined address listing',
+    listing_type: 'Sale',
+    property_type: 'House',
+    asking_price: 1000000,
+    bedrooms: 2,
+    bathrooms: 1,
+    description: 'A listing with a combined street address.',
+  },
+  media: [
+    { media_type: 'image', file_url: 'https://cdn.example.com/one.jpg' },
+    { media_type: 'image', file_url: 'https://cdn.example.com/two.jpg' },
+    { media_type: 'image', file_url: 'https://cdn.example.com/three.jpg' },
+  ],
+  agentMapping: { agentIds: 'ARCH9-SANDBOX-USER-1' },
+  options: {
+    branchGuid: 'CA167B18-C6DC-49AD-B018-2B72B187918F',
+    suburbId: '12345',
+  },
+})
+assert.equal(inferredAddressPlan.canPreview, true)
+assert.equal(inferredAddressPlan.payload.address.streetNumber, '99')
+assert.equal(inferredAddressPlan.payload.address.streetName, 'Ridge Road')
+assert.doesNotMatch(inferredAddressPlan.listingXml, /<StreetName>99 Ridge Road<\/StreetName>/)
+assert.match(inferredAddressPlan.listingXml, /<StreetNumber>99<\/StreetNumber>/)
+
 const landFixture = createPrivatePropertySandboxFixture('sale-land')
 const landPreview = createPrivatePropertyArch9ListingPreview({
   ...landFixture,

@@ -402,6 +402,34 @@ export const FIRM_ROLE_VALUES = [
 export { ATTORNEY_FIRM_ROLE_VALUES }
 export const TRANSACTION_ACCESS_LEVEL_VALUES = ['private', 'shared', 'restricted']
 export const STAKEHOLDER_STATUS_VALUES = ['draft', 'invited', 'active', 'removed']
+const STAKEHOLDER_STATUS_ALIASES = {
+  pending: 'invited',
+  pending_assignment: 'invited',
+  pending_invite: 'invited',
+  pending_invitation: 'invited',
+  pending_acceptance: 'invited',
+  awaiting_acceptance: 'invited',
+  awaiting_response: 'invited',
+  invitation_pending: 'invited',
+  sent: 'invited',
+  requested: 'invited',
+  selected: 'invited',
+  not_started: 'invited',
+  accepted: 'active',
+  connected: 'active',
+  assigned: 'active',
+  consultant_assigned: 'active',
+  staff_assigned: 'active',
+  inactive: 'removed',
+  revoked: 'removed',
+  declined: 'removed',
+  rejected: 'removed',
+  expired: 'removed',
+  cancelled: 'removed',
+  canceled: 'removed',
+  archived: 'removed',
+  deleted: 'removed',
+}
 export const ATTORNEY_LEGAL_ROLE_VALUES = ['transfer', 'bond', 'cancellation']
 export const ATTORNEY_LEGAL_ROLE_REQUIRED = ['transfer']
 export const RESERVATION_STATUSES = ['not_required', 'pending', 'paid', 'verified', 'rejected']
@@ -2019,6 +2047,9 @@ function normalizeStakeholderStatus(value, fallback = 'draft') {
   const normalized = String(value || '')
     .trim()
     .toLowerCase()
+  if (STAKEHOLDER_STATUS_ALIASES[normalized]) {
+    return STAKEHOLDER_STATUS_ALIASES[normalized]
+  }
   return STAKEHOLDER_STATUS_VALUES.includes(normalized) ? normalized : fallback
 }
 
@@ -10335,6 +10366,9 @@ async function upsertTransactionParticipantsRowsWithFallback(
     }
     if (Object.prototype.hasOwnProperty.call(row, 'assignment_source')) {
       row.assignment_source = normalizeTransactionParticipantAssignmentSource(row.assignment_source, 'transaction_direct')
+    }
+    if (Object.prototype.hasOwnProperty.call(row, 'status')) {
+      row.status = normalizeStakeholderStatus(row.status, 'draft')
     }
     return row
   })
@@ -25678,7 +25712,7 @@ async function ensureRoleplayerTransactionParticipant(
     role_type: roleType,
     legal_role: roleType === 'attorney' ? legalRole : 'none',
     transaction_role: selection.roleType,
-    status: isFirmFirstAttorneyAllocationForRoleplayer ? 'pending' : 'active',
+    status: isFirmFirstAttorneyAllocationForRoleplayer ? 'invited' : 'active',
     user_id: resolvedUserId,
     assigned_organisation_id: scope.organisationId,
     assigned_workspace_unit_id: scope.workspaceUnitId,
