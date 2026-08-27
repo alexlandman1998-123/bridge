@@ -5790,7 +5790,12 @@ export async function updatePrivateListing(listingId, payload = {}, options = {}
   if (payload.propertyType !== undefined) patch.property_type = normalizeNullableText(payload.propertyType)
   if (payload.listingCategory !== undefined) patch.listing_category = normalizeNullableText(payload.listingCategory)
   if (payload.title !== undefined) patch.title = normalizeNullableText(payload.title)
-  if (payload.description !== undefined) patch.description = normalizeNullableText(payload.description)
+  if (payload.description !== undefined) {
+    const nextDescription = normalizeNullableText(payload.description)
+    if (nextDescription || options?.allowBlankDescription === true) {
+      patch.description = nextDescription
+    }
+  }
   if (payload.askingPrice !== undefined) patch.asking_price = normalizeNumber(payload.askingPrice)
   if (payload.estimatedValue !== undefined) patch.estimated_value = normalizeNumber(payload.estimatedValue)
   if (payload.addressLine1 !== undefined) patch.address_line_1 = normalizeNullableText(payload.addressLine1)
@@ -5826,7 +5831,12 @@ export async function updatePrivateListing(listingId, payload = {}, options = {}
   if (payload.privatePropertyStatus !== undefined) patch.private_property_status = normalizeNullableText(payload.privatePropertyStatus) || 'not_published'
   if (payload.bridgeListingStatus !== undefined) patch.bridge_listing_status = normalizeNullableText(payload.bridgeListingStatus) || 'not_published'
   if (payload.bridgeListingPublicUrl !== undefined) patch.bridge_listing_public_url = normalizeNullableText(payload.bridgeListingPublicUrl)
-  if (payload.listingPreviewDescription !== undefined) patch.listing_preview_description = normalizeNullableText(payload.listingPreviewDescription)
+  if (payload.listingPreviewDescription !== undefined) {
+    const nextPreviewDescription = normalizeNullableText(payload.listingPreviewDescription)
+    if (nextPreviewDescription || options?.allowBlankDescription === true) {
+      patch.listing_preview_description = nextPreviewDescription
+    }
+  }
   if (payload.internalListingNotes !== undefined) patch.internal_listing_notes = normalizeNullableText(payload.internalListingNotes)
 
   let updateQuery = await client.from('private_listings').update(patch).eq('id', normalizedId).select('*').single()
@@ -6159,6 +6169,30 @@ export async function syncPrivateListingDistributionData(listingId, payload = {}
       notes: normalizeNullableText(item.notes),
       visible_to_seller: item.visibleToSeller,
     }))
+
+  const existingPublication = await client
+    .from('listing_publication_data')
+    .select('listing_id, description, features, amenities')
+    .eq('listing_id', normalizedId)
+    .maybeSingle()
+  if (existingPublication.error) {
+    if (isMissingTableError(existingPublication.error, 'listing_publication_data')) {
+      return { skipped: true, reason: 'distribution_tables_missing' }
+    }
+    throw existingPublication.error
+  }
+  const existingPublicationData = existingPublication.data && typeof existingPublication.data === 'object'
+    ? existingPublication.data
+    : {}
+  if (!publicationPayload.description && existingPublicationData.description) {
+    publicationPayload.description = normalizeNullableText(existingPublicationData.description)
+  }
+  if (!publicationPayload.features.length && Array.isArray(existingPublicationData.features) && existingPublicationData.features.length) {
+    publicationPayload.features = existingPublicationData.features
+  }
+  if (!publicationPayload.amenities.length && Array.isArray(existingPublicationData.amenities) && existingPublicationData.amenities.length) {
+    publicationPayload.amenities = existingPublicationData.amenities
+  }
 
   let publication = await client
     .from('listing_publication_data')

@@ -1113,6 +1113,14 @@ function isMissingFunctionError(error, functionName = '') {
 }
 
 const knownMissingSchemaColumns = new Set()
+const TRANSACTION_RLS_INSERT_GUARD_COLUMNS = new Set([
+  'organisation_id',
+  'assigned_agent_id',
+  'assigned_user_id',
+  'owner_user_id',
+  'created_by',
+  'assigned_agent_email',
+])
 const TRANSACTION_SUMMARY_SELECT_CLAUSE =
   'id, organisation_id, assigned_branch_id, lifecycle_state, matter_number, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, property_description, sales_price, purchase_price, finance_type, purchaser_type, cash_amount, bond_amount, deposit_amount, reservation_required, reservation_amount, reservation_amount_type, reservation_treatment, reservation_payable_to, alteration_charge_treatment, onboarding_status, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, next_action, comment, expected_transfer_date, bond_workspace_id, bond_region_id, bond_workspace_unit_id, primary_bond_consultant_user_id, assigned_bond_processor_user_id, assigned_bond_manager_user_id, assigned_bond_compliance_user_id, bond_assignment_status, bond_assignment_source, finance_status, compliance_status, compliance_review_required, application_prepared, submitted_to_banks, documents_complete, finance_documents_complete, documents_missing, required_documents_missing, finance_documents_missing, missing_documents_count, uploaded_documents_count, total_required_documents, bank_feedback_pending, bank_feedback_status, next_action_due_at, finance_due_at, attorney_stage, risk_status, operational_state, processor_name, assigned_bond_processor_name, compliance_name, gross_commission_percentage, gross_commission_amount, agent_split_percentage_snapshot, agency_split_percentage_snapshot, agent_commission_amount, agency_commission_amount, registered_at, completed_at, archived_at, cancelled_at, deleted_at, last_meaningful_activity_at, updated_at, created_at, is_active'
 const TRANSACTION_SUMMARY_FALLBACK_SELECT_CLAUSE =
@@ -1200,12 +1208,27 @@ function omitKnownMissingColumnsFromPayload(payload = {}) {
     const normalizedKey = String(key || '')
       .trim()
       .toLowerCase()
-    if (!normalizedKey || knownMissingSchemaColumns.has(normalizedKey)) {
+    if (
+      !normalizedKey ||
+      (knownMissingSchemaColumns.has(normalizedKey) && !TRANSACTION_RLS_INSERT_GUARD_COLUMNS.has(normalizedKey))
+    ) {
       continue
     }
     sanitized[key] = value
   }
   return sanitized
+}
+
+function deletePayloadColumnIfMissing(error, payload, columnName) {
+  if (isMissingColumnError(error, columnName)) {
+    delete payload[columnName]
+  }
+}
+
+function deletePayloadColumnsIfMissing(error, payload, columnNames = []) {
+  for (const columnName of columnNames) {
+    deletePayloadColumnIfMissing(error, payload, columnName)
+  }
 }
 
 function isPermissionDeniedError(error) {
@@ -22500,7 +22523,6 @@ export async function saveDeveloperTransactionWorkspace({
       isMissingColumnError(transactionResult.error, 'is_active'))
   ) {
     const fallbackPayload = { ...transactionPayload }
-    delete fallbackPayload.organisation_id
     delete fallbackPayload.current_main_stage
     delete fallbackPayload.current_sub_stage_summary
     delete fallbackPayload.sales_price
@@ -22511,11 +22533,14 @@ export async function saveDeveloperTransactionWorkspace({
     delete fallbackPayload.assigned_agent_email
     delete fallbackPayload.assigned_attorney_email
     delete fallbackPayload.assigned_bond_originator_email
-    delete fallbackPayload.assigned_agent_id
-    delete fallbackPayload.assigned_user_id
-    delete fallbackPayload.owner_user_id
-    delete fallbackPayload.created_by
     delete fallbackPayload.is_active
+    deletePayloadColumnsIfMissing(transactionResult.error, fallbackPayload, [
+      'organisation_id',
+      'assigned_agent_id',
+      'assigned_user_id',
+      'owner_user_id',
+      'created_by',
+    ])
 
     transactionResult = existingTransaction?.id
       ? await client
@@ -29789,10 +29814,6 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     delete fallbackPayload.agency_split_percentage_snapshot
     delete fallbackPayload.agent_commission_amount
     delete fallbackPayload.agency_commission_amount
-    delete fallbackPayload.assigned_agent_id
-    delete fallbackPayload.assigned_user_id
-    delete fallbackPayload.owner_user_id
-    delete fallbackPayload.created_by
     delete fallbackPayload.sale_route
     delete fallbackPayload.sale_channel
     delete fallbackPayload.seller_party_type
@@ -29803,6 +29824,12 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     if (isMissingColumnError(transactionResult.error, 'organisation_id')) {
       delete fallbackPayload.organisation_id
     }
+    deletePayloadColumnsIfMissing(transactionResult.error, fallbackPayload, [
+      'assigned_agent_id',
+      'assigned_user_id',
+      'owner_user_id',
+      'created_by',
+    ])
 
     transactionResult = await client
       .from('transactions')
@@ -29966,10 +29993,6 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       delete fallbackPayload.agency_split_percentage_snapshot
       delete fallbackPayload.agent_commission_amount
       delete fallbackPayload.agency_commission_amount
-      delete fallbackPayload.assigned_agent_id
-      delete fallbackPayload.assigned_user_id
-      delete fallbackPayload.owner_user_id
-      delete fallbackPayload.created_by
       delete fallbackPayload.sale_route
       delete fallbackPayload.sale_channel
       delete fallbackPayload.seller_party_type
@@ -29980,6 +30003,12 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       if (isMissingColumnError(transactionResult.error, 'organisation_id')) {
         delete fallbackPayload.organisation_id
       }
+      deletePayloadColumnsIfMissing(transactionResult.error, fallbackPayload, [
+        'assigned_agent_id',
+        'assigned_user_id',
+        'owner_user_id',
+        'created_by',
+      ])
 
       transactionResult = await client
         .from('transactions')
@@ -30096,10 +30125,6 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       delete fallbackPayload.agency_split_percentage_snapshot
       delete fallbackPayload.agent_commission_amount
       delete fallbackPayload.agency_commission_amount
-      delete fallbackPayload.assigned_agent_id
-      delete fallbackPayload.assigned_user_id
-      delete fallbackPayload.owner_user_id
-      delete fallbackPayload.created_by
       delete fallbackPayload.sale_route
       delete fallbackPayload.sale_channel
       delete fallbackPayload.seller_party_type
@@ -30110,6 +30135,12 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       if (isMissingColumnError(transactionResult.error, 'organisation_id')) {
         delete fallbackPayload.organisation_id
       }
+      deletePayloadColumnsIfMissing(transactionResult.error, fallbackPayload, [
+        'assigned_agent_id',
+        'assigned_user_id',
+        'owner_user_id',
+        'created_by',
+      ])
 
       transactionResult = await client
         .from('transactions')
@@ -35851,12 +35882,14 @@ export async function saveTransaction({
       delete fallbackPayload.cash_amount
       delete fallbackPayload.bond_amount
       delete fallbackPayload.deposit_amount
-      delete fallbackPayload.assigned_agent_id
-      delete fallbackPayload.assigned_user_id
-      delete fallbackPayload.owner_user_id
-      delete fallbackPayload.created_by
-      delete fallbackPayload.development_id
-      delete fallbackPayload.organisation_id
+      deletePayloadColumnsIfMissing(result.error, fallbackPayload, [
+        'assigned_agent_id',
+        'assigned_user_id',
+        'owner_user_id',
+        'created_by',
+        'development_id',
+        'organisation_id',
+      ])
 
       if (transactionId) {
         result = await client

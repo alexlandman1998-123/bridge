@@ -106,3 +106,15 @@ test('publication sync can still save description when feature columns are missi
   assert.match(privateListingServiceSource, /delete compatiblePublicationPayload\.amenities/)
   assert.match(privateListingServiceSource, /\.select\('listing_id, title, address, suburb, province, property_type, listing_type, asking_price, bedrooms, bathrooms, garages, parking_bays, floor_size, erf_size, rates_taxes, levies, description, status, created_at, updated_at'\)/)
 })
+
+test('blank marketing drafts do not erase persisted listing content', () => {
+  assert.match(agentListingsSource, /LISTING_MARKETING_DRAFT_STORAGE_KEY = 'itg:listing-marketing-draft:v1'/)
+  assert.match(agentListingsSource, /writeListingMarketingDraftStorage\(editListingId,\s*\{\s*\n\s*description: normalizeText\(value\)/)
+  assert.match(agentListingsSource, /const effectiveListingDescription = normalizeText\(form\.listingDescription\) \|\| normalizeText\(/)
+  assert.match(agentListingsSource, /const effectiveKeySellingPoints = keySellingPoints\.length \? keySellingPoints : existingKeySellingPoints/)
+  assert.match(agentListingDetailSource, /const effectiveDescription = draftDescription \|\| existingDescription/)
+  assert.match(agentListingDetailSource, /const effectiveDraft = \{\s*\n\s*\.\.\.draft,\s*\n\s*description: effectiveDescription,/)
+  assert.match(privateListingServiceSource, /if \(nextDescription \|\| options\?\.allowBlankDescription === true\)/)
+  assert.match(privateListingServiceSource, /if \(!publicationPayload\.description && existingPublicationData\.description\)/)
+  assert.match(privateListingServiceSource, /if \(!publicationPayload\.features\.length && Array\.isArray\(existingPublicationData\.features\) && existingPublicationData\.features\.length\)/)
+})

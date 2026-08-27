@@ -80,6 +80,7 @@ import { buildFinalListingModuleOverview } from '../services/listings/finalListi
 
 const LISTINGS_VIEW_STORAGE_KEY = 'itg:agent-listings:view-mode:v1'
 const CREATE_LISTING_DRAFT_STORAGE_KEY = 'itg:agent-listings:create-draft:v1'
+const LISTING_MARKETING_DRAFT_STORAGE_KEY = 'itg:listing-marketing-draft:v1'
 const CREATE_LISTING_DRAFT_UNSTORABLE_URL_PATTERN = /^(data|blob):/i
 const DEVELOPER_LEAD_PHASE20_CONTRACT = 'developer-leads-phase20-agent-capture-v1'
 const ACTIVE_LISTING_TABS = ['residential', 'developments']
@@ -1307,6 +1308,26 @@ function saveCreateListingDraftToStorage(storageKey = '', form = {}) {
       // Ignore cleanup failures; the draft is only a browser convenience.
     }
     return false
+  }
+}
+
+function getListingMarketingDraftStorageKey(listingId = '') {
+  const normalizedId = normalizeText(listingId)
+  return normalizedId ? `${LISTING_MARKETING_DRAFT_STORAGE_KEY}:${normalizedId}` : ''
+}
+
+function writeListingMarketingDraftStorage(listingId = '', patch = {}) {
+  const storageKey = getListingMarketingDraftStorageKey(listingId)
+  if (typeof window === 'undefined' || !storageKey || !patch || typeof patch !== 'object') return
+  try {
+    const existing = JSON.parse(window.localStorage.getItem(storageKey) || '{}')
+    window.localStorage.setItem(storageKey, JSON.stringify({
+      ...(existing && typeof existing === 'object' ? existing : {}),
+      ...patch,
+      savedAt: new Date().toISOString(),
+    }))
+  } catch (storageError) {
+    console.warn('[Listings] shared marketing draft autosave skipped', storageError)
   }
 }
 
@@ -3798,6 +3819,17 @@ function AgentListings({ initialTab = null } = {}) {
       }
       return next
     })
+    if (isEditListingWorkspace && editListingId) {
+      if (key === 'listingDescription') {
+        writeListingMarketingDraftStorage(editListingId, {
+          description: normalizeText(value),
+          listingPreviewDescription: normalizeText(value),
+        })
+      }
+      if (key === 'listingTitle') {
+        writeListingMarketingDraftStorage(editListingId, { headline: normalizeText(value) })
+      }
+    }
     if (['propertyAddress', 'sellerEmail', 'sellerPhone', 'listingStatus'].includes(key)) {
       setQuickAddDuplicateMatches([])
       setQuickAddDuplicateOverride(false)
@@ -4054,7 +4086,11 @@ function AgentListings({ initialTab = null } = {}) {
       } else {
         points.add(normalizedValue)
       }
-      return { ...previous, keySellingPoints: Array.from(points) }
+      const nextPoints = Array.from(points)
+      if (isEditListingWorkspace && editListingId) {
+        writeListingMarketingDraftStorage(editListingId, { selectedFeatures: nextPoints })
+      }
+      return { ...previous, keySellingPoints: nextPoints }
     })
   }
 
@@ -4167,6 +4203,26 @@ function AgentListings({ initialTab = null } = {}) {
     const mandateStatus = getQuickListingMandateStatus(form)
     const mandatePack = buildQuickListingMandatePack(form, mandateStatus)
     const keySellingPoints = Array.isArray(form.keySellingPoints) ? form.keySellingPoints.map(normalizeText).filter(Boolean) : []
+    const existingKeySellingPoints = normalizeDirectListingFeatureSelections(
+      listing.keySellingPoints,
+      listing.selectedFeatures,
+      listing.features,
+      listing.marketing?.selectedFeatures,
+      listing.marketing?.features,
+      listing.propertyDetails?.selectedFeatures,
+      listing.listingPublicationData?.features,
+      listing.publicationData?.features,
+    )
+    const effectiveKeySellingPoints = keySellingPoints.length ? keySellingPoints : existingKeySellingPoints
+    const effectiveListingDescription = normalizeText(form.listingDescription) || normalizeText(
+      listing.listingDescription ||
+        listing.marketing?.description ||
+        listing.propertyDetails?.description ||
+        listing.listingPublicationData?.description ||
+        listing.publicationData?.description ||
+        listing.description ||
+        listing.listingPreviewDescription,
+    )
     const uploadedImages = isSupabaseConfigured && isUuidLike(listingId)
       ? await uploadQuickListingImages(listingId, form.listingImages)
       : (Array.isArray(form.listingImages) ? form.listingImages : []).map((image) => {
@@ -4235,8 +4291,8 @@ function AgentListings({ initialTab = null } = {}) {
       latitude,
       longitude,
       googlePlaceId,
-      description: normalizeText(form.listingDescription) || stripQuickListingMetadataText(listing.description),
-      listingPreviewDescription: normalizeText(form.listingDescription || form.notes),
+      description: effectiveListingDescription || stripQuickListingMetadataText(listing.description),
+      listingPreviewDescription: normalizeText(form.listingDescription || form.notes) || normalizeText(listing.listingPreviewDescription) || effectiveListingDescription,
       internalListingNotes: nextNotes,
       sellerType: directListingPersistence.seller?.sellerLegalType || form.sellerType,
       mandateType: normalizeText(form.mandateType) || 'sole',
@@ -4260,14 +4316,14 @@ function AgentListings({ initialTab = null } = {}) {
       erfSize: form.erfSize,
       floorSize: form.floorSize,
       askingPrice,
-      propertyNotes: normalizeText(form.listingDescription),
-      propertyDescription: normalizeText(form.listingDescription),
-      listingDescription: normalizeText(form.listingDescription),
-      listingPreviewDescription: normalizeText(form.listingDescription),
+      propertyNotes: effectiveListingDescription,
+      propertyDescription: effectiveListingDescription,
+      listingDescription: effectiveListingDescription,
+      listingPreviewDescription: normalizeText(form.listingDescription || form.notes) || normalizeText(listing.listingPreviewDescription) || effectiveListingDescription,
       imageGallery: uploadedImages,
       coverImageId: normalizeText(form.coverImageId || uploadedImages[0]?.id),
-      features: buildQuickListingPublicationFeatures(form, keySellingPoints),
-      keySellingPoints,
+      features: buildQuickListingPublicationFeatures(form, effectiveKeySellingPoints),
+      keySellingPoints: effectiveKeySellingPoints,
       mandateStatus,
       mandateType: form.mandateType,
       mandateStartDate: form.mandateStartDate || '',
@@ -4309,8 +4365,8 @@ function AgentListings({ initialTab = null } = {}) {
           parkingBays: Number(form.parkingCount || 0) || null,
           floorSize: Number(form.floorSize || 0) || null,
           erfSize: Number(form.erfSize || 0) || null,
-          description: normalizeText(form.listingDescription),
-          features: buildQuickListingPublicationFeatures(form, keySellingPoints),
+          description: effectiveListingDescription,
+          features: buildQuickListingPublicationFeatures(form, effectiveKeySellingPoints),
           amenities: [],
           status: 'Draft',
         },
@@ -4361,17 +4417,17 @@ function AgentListings({ initialTab = null } = {}) {
         parkingCount: Number(form.parkingCount || 0) || 0,
         erfSize: Number(form.erfSize || 0) || null,
         floorSize: Number(form.floorSize || 0) || null,
-        listingDescription: normalizeText(form.listingDescription),
-        listingPreviewDescription: normalizeText(form.listingDescription || form.notes),
-        keySellingPoints,
+        listingDescription: effectiveListingDescription,
+        listingPreviewDescription: normalizeText(form.listingDescription || form.notes) || normalizeText(listing.listingPreviewDescription) || effectiveListingDescription,
+        keySellingPoints: effectiveKeySellingPoints,
         galleryImages: uploadedImages,
         coverImageId: normalizeText(form.coverImageId || uploadedImages[0]?.id),
         marketing: {
           ...(existingLocal.marketing || {}),
           imageGallery: uploadedImages,
           coverImageId: normalizeText(form.coverImageId || uploadedImages[0]?.id),
-          description: normalizeText(form.listingDescription),
-          features: buildQuickListingPublicationFeatures(form, keySellingPoints).join(', '),
+          description: effectiveListingDescription,
+          features: buildQuickListingPublicationFeatures(form, effectiveKeySellingPoints).join(', '),
         },
         propertyDetails: {
           ...(existingLocal.propertyDetails || {}),
@@ -4386,9 +4442,9 @@ function AgentListings({ initialTab = null } = {}) {
           postalCode,
           country,
           propertyType,
-          description: normalizeText(form.listingDescription),
-          listingPreviewDescription: normalizeText(form.listingDescription || form.notes),
-          selectedFeatures: keySellingPoints,
+          description: effectiveListingDescription,
+          listingPreviewDescription: normalizeText(form.listingDescription || form.notes) || normalizeText(listing.listingPreviewDescription) || effectiveListingDescription,
+          selectedFeatures: effectiveKeySellingPoints,
         },
         selectedSyndicationChannels: Array.isArray(form.selectedSyndicationChannels) ? form.selectedSyndicationChannels : [],
         seller: {

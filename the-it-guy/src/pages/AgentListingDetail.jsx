@@ -4047,7 +4047,44 @@ function AgentListingDetail() {
     const normalizedExternalLinks = normalizeExternalListingLinks(draft.externalLinks)
     const property24ExternalLink = normalizedExternalLinks.find((link) => String(link.platform || '').trim().toLowerCase().includes('property24')) || null
     const privatePropertyExternalLink = normalizedExternalLinks.find((link) => String(link.platform || '').trim().toLowerCase().includes('private')) || null
-    const updatedListing = await persistListingSnapshot(draft, { persistCoreFields: true })
+    const draftDescription = String(draft.description || '').trim()
+    const existingDescription = String(
+      listingRecord?.description ||
+        listingRecord?.listingDescription ||
+        listingRecord?.marketing?.description ||
+        listingRecord?.propertyDetails?.description ||
+        listingRecord?.listingPublicationData?.description ||
+        listingRecord?.publicationData?.description ||
+        '',
+    ).trim()
+    const effectiveDescription = draftDescription || existingDescription
+    const draftFeatures = normalizeListingFeatureSelections(draft.selectedFeatures)
+    const existingFeatures = normalizeListingFeatureSelections(
+      listingRecord?.keySellingPoints,
+      listingRecord?.selectedFeatures,
+      listingRecord?.features,
+      listingRecord?.marketing?.selectedFeatures,
+      listingRecord?.marketing?.features,
+      listingRecord?.propertyDetails?.selectedFeatures,
+      listingRecord?.listingPublicationData?.features,
+      listingRecord?.publicationData?.features,
+    )
+    const draftAmenities = Array.isArray(draft.amenities) ? draft.amenities.map(String).filter(Boolean) : []
+    const existingAmenities = Array.isArray(listingRecord?.propertyDetails?.amenities)
+      ? listingRecord.propertyDetails.amenities
+      : Array.isArray(listingRecord?.listingPublicationData?.amenities)
+        ? listingRecord.listingPublicationData.amenities
+        : Array.isArray(listingRecord?.publicationData?.amenities)
+          ? listingRecord.publicationData.amenities
+          : []
+    const effectiveDraft = {
+      ...draft,
+      description: effectiveDescription,
+      listingPreviewDescription: String(draft.listingPreviewDescription || listingRecord?.listingPreviewDescription || listingRecord?.propertyDetails?.listingPreviewDescription || effectiveDescription || '').trim(),
+      selectedFeatures: draftFeatures.length ? draftFeatures : existingFeatures,
+      amenities: draftAmenities.length ? draftAmenities : existingAmenities,
+    }
+    const updatedListing = await persistListingSnapshot(effectiveDraft, { persistCoreFields: true })
     if (!updatedListing?.id || !isSupabaseConfigured) {
       marketingDraftDirtyRef.current = false
       hydratedMarketingListingIdRef.current = String(updatedListing?.id || listingRecord?.id || listingId || '').trim()
@@ -4058,34 +4095,34 @@ function AgentListingDetail() {
 
     try {
       const listingPatch = {
-        title: draft.headline.trim() || updatedListing.listingTitle || '',
-        propertyType: draft.propertyType || updatedListing.propertyType || '',
-        listingStatus: draft.listingStatus || updatedListing.listingStatus || updatedListing.status || 'mandate_signed',
-        listingSource: draft.source || updatedListing.listingSource || 'private_listing',
-        description: draft.description.trim(),
-        askingPrice: Number(draft.price || 0),
-        addressLine1: draft.addressLine1.trim(),
-        formattedAddress: draft.formattedAddress.trim(),
-        streetAddress: draft.streetAddress.trim(),
-        suburb: draft.suburb.trim(),
-        city: draft.city.trim(),
-        province: draft.province.trim(),
-        country: draft.country.trim() || 'South Africa',
-        postalCode: draft.postalCode.trim(),
-        latitude: draft.latitude ?? null,
-        longitude: draft.longitude ?? null,
-        googlePlaceId: draft.googlePlaceId.trim(),
-        isActive: String(draft.listingStatus || '').trim().toLowerCase() === 'active',
-        property24ListingUrl: draft.property24ListingUrl.trim() || property24ExternalLink?.url || '',
-        property24Reference: draft.property24Reference.trim(),
-        property24Status: draft.property24Status || property24ExternalLink?.status || 'not_published',
-        privatePropertyListingUrl: draft.privatePropertyListingUrl.trim() || privatePropertyExternalLink?.url || '',
-        privatePropertyReference: draft.privatePropertyReference.trim(),
-        privatePropertyStatus: draft.privatePropertyStatus || privatePropertyExternalLink?.status || 'not_published',
-        bridgeListingStatus: draft.bridgeListingStatus,
-        bridgeListingPublicUrl: draft.bridgeListingPublicUrl.trim(),
-        listingPreviewDescription: String(draft.listingPreviewDescription || draft.description || '').trim(),
-        internalListingNotes: draft.notes.trim(),
+        title: effectiveDraft.headline.trim() || updatedListing.listingTitle || '',
+        propertyType: effectiveDraft.propertyType || updatedListing.propertyType || '',
+        listingStatus: effectiveDraft.listingStatus || updatedListing.listingStatus || updatedListing.status || 'mandate_signed',
+        listingSource: effectiveDraft.source || updatedListing.listingSource || 'private_listing',
+        description: effectiveDraft.description.trim(),
+        askingPrice: Number(effectiveDraft.price || 0),
+        addressLine1: effectiveDraft.addressLine1.trim(),
+        formattedAddress: effectiveDraft.formattedAddress.trim(),
+        streetAddress: effectiveDraft.streetAddress.trim(),
+        suburb: effectiveDraft.suburb.trim(),
+        city: effectiveDraft.city.trim(),
+        province: effectiveDraft.province.trim(),
+        country: effectiveDraft.country.trim() || 'South Africa',
+        postalCode: effectiveDraft.postalCode.trim(),
+        latitude: effectiveDraft.latitude ?? null,
+        longitude: effectiveDraft.longitude ?? null,
+        googlePlaceId: effectiveDraft.googlePlaceId.trim(),
+        isActive: String(effectiveDraft.listingStatus || '').trim().toLowerCase() === 'active',
+        property24ListingUrl: effectiveDraft.property24ListingUrl.trim() || property24ExternalLink?.url || '',
+        property24Reference: effectiveDraft.property24Reference.trim(),
+        property24Status: effectiveDraft.property24Status || property24ExternalLink?.status || 'not_published',
+        privatePropertyListingUrl: effectiveDraft.privatePropertyListingUrl.trim() || privatePropertyExternalLink?.url || '',
+        privatePropertyReference: effectiveDraft.privatePropertyReference.trim(),
+        privatePropertyStatus: effectiveDraft.privatePropertyStatus || privatePropertyExternalLink?.status || 'not_published',
+        bridgeListingStatus: effectiveDraft.bridgeListingStatus,
+        bridgeListingPublicUrl: effectiveDraft.bridgeListingPublicUrl.trim(),
+        listingPreviewDescription: String(effectiveDraft.listingPreviewDescription || effectiveDraft.description || '').trim(),
+        internalListingNotes: effectiveDraft.notes.trim(),
       }
       if (options.listingVisibility) listingPatch.listingVisibility = options.listingVisibility
       const savedListing = await updatePrivateListing(updatedListing.id, listingPatch)
@@ -4093,41 +4130,42 @@ function AgentListingDetail() {
       if (savedListing?.id) {
         setPrivateListings((rows) => upsertListingRecord(rows, mergedSavedListing))
       }
+      setMarketingDraft(effectiveDraft)
       const distributionSync = await syncPrivateListingDistributionData(updatedListing.id, {
         publicationData: {
-          title: draft.headline.trim(),
-          address: draft.addressLine1.trim(),
-          formattedAddress: draft.formattedAddress.trim(),
-          suburb: draft.suburb.trim(),
-          city: draft.city.trim(),
-          province: draft.province.trim(),
-          country: draft.country.trim() || 'South Africa',
-          postalCode: draft.postalCode.trim(),
-          latitude: draft.latitude ?? null,
-          longitude: draft.longitude ?? null,
-          googlePlaceId: draft.googlePlaceId.trim(),
-          propertyType: draft.propertyType,
-          listingType: draft.listingType,
-          askingPrice: Number(draft.price || 0),
-          bedrooms: draft.bedrooms,
-          bathrooms: draft.bathrooms,
-          garages: draft.garages,
-          parkingBays: draft.parkingBays,
-          floorSize: draft.floorSize,
-          erfSize: draft.erfSize,
-          ratesTaxes: draft.ratesTaxesNotApplicable ? null : draft.ratesTaxes,
-          levies: draft.leviesNotApplicable ? null : draft.levies,
-          description: draft.description.trim(),
-          features: draft.selectedFeatures,
-          amenities: draft.amenities,
-          status: draft.publicationStatus,
+          title: effectiveDraft.headline.trim(),
+          address: effectiveDraft.addressLine1.trim(),
+          formattedAddress: effectiveDraft.formattedAddress.trim(),
+          suburb: effectiveDraft.suburb.trim(),
+          city: effectiveDraft.city.trim(),
+          province: effectiveDraft.province.trim(),
+          country: effectiveDraft.country.trim() || 'South Africa',
+          postalCode: effectiveDraft.postalCode.trim(),
+          latitude: effectiveDraft.latitude ?? null,
+          longitude: effectiveDraft.longitude ?? null,
+          googlePlaceId: effectiveDraft.googlePlaceId.trim(),
+          propertyType: effectiveDraft.propertyType,
+          listingType: effectiveDraft.listingType,
+          askingPrice: Number(effectiveDraft.price || 0),
+          bedrooms: effectiveDraft.bedrooms,
+          bathrooms: effectiveDraft.bathrooms,
+          garages: effectiveDraft.garages,
+          parkingBays: effectiveDraft.parkingBays,
+          floorSize: effectiveDraft.floorSize,
+          erfSize: effectiveDraft.erfSize,
+          ratesTaxes: effectiveDraft.ratesTaxesNotApplicable ? null : effectiveDraft.ratesTaxes,
+          levies: effectiveDraft.leviesNotApplicable ? null : effectiveDraft.levies,
+          description: effectiveDraft.description.trim(),
+          features: effectiveDraft.selectedFeatures,
+          amenities: effectiveDraft.amenities,
+          status: effectiveDraft.publicationStatus,
         },
         media: {
-          coverImageId: draft.coverImageId,
-          galleryImages: draft.galleryImages,
-          floorplans: draft.floorplans,
-          videoLink: draft.videoLink,
-          virtualTourLink: draft.virtualTourLink,
+          coverImageId: effectiveDraft.coverImageId,
+          galleryImages: effectiveDraft.galleryImages,
+          floorplans: effectiveDraft.floorplans,
+          videoLink: effectiveDraft.videoLink,
+          virtualTourLink: effectiveDraft.virtualTourLink,
         },
         externalLinks: normalizedExternalLinks,
       }).catch((syncError) => {
@@ -4138,7 +4176,7 @@ function AgentListingDetail() {
       if (distributionSync?.skipped) {
         console.warn('[AgentListingDetail] listing distribution sync skipped', distributionSync.reason)
       }
-      await upsertAreaFromAddress(buildAddressAutocompleteValueFromDraft(draft), { incrementListingCount: false })
+      await upsertAreaFromAddress(buildAddressAutocompleteValueFromDraft(effectiveDraft), { incrementListingCount: false })
       marketingDraftDirtyRef.current = false
       hydratedMarketingListingIdRef.current = String(mergedSavedListing?.id || updatedListing.id || listingId || '').trim()
       clearStoredMarketingDraft(hydratedMarketingListingIdRef.current)
