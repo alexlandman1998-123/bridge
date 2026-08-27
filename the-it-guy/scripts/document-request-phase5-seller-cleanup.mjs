@@ -32,6 +32,7 @@ function buildReport(options = {}) {
   const serviceSource = read('src/services/documents/sellerDocumentCanonicalCleanupService.js')
   const sellerRequirementSource = read('src/services/sellerDocumentRequirementsService.js')
   const portalSource = read('src/services/clientPortalWorkspaceService.js')
+  const runtimePolicySource = read('src/core/documents/sellerDocumentRequestRuntimePolicy.js')
 
   const checks = [
     {
@@ -57,8 +58,15 @@ function buildReport(options = {}) {
     },
     {
       key: 'seller_portal_filters_deferred_uploads',
-      ok: portalSource.includes('isDeferredSellerUploadRequirement') &&
-        portalSource.includes('DEFERRED_SELLER_UPLOAD_REQUIREMENT_KEYS'),
+      ok: portalSource.includes('isSellerClientUploadRequirementAllowed') &&
+        runtimePolicySource.includes('isDeferredSellerUploadRequirement') &&
+        runtimePolicySource.includes('DEFERRED_SELLER_UPLOAD_REQUIREMENT_KEYS'),
+    },
+    {
+      key: 'seller_runtime_filters_unapproved_and_professional_requests',
+      ok: sellerRequirementSource.includes('filterSellerClientUploadRequirements') &&
+        runtimePolicySource.includes('isPendingSellerDocumentPolicyRequirement') &&
+        runtimePolicySource.includes('isProfessionalOnlySellerRequirement'),
     },
     {
       key: 'seller_containers_are_modelled',
@@ -109,6 +117,10 @@ function buildReport(options = {}) {
       {
         key: 'professional_only_separation',
         decision: 'Professional-only seller policy requests remain visible to attorney workflows, not as seller portal upload prompts.',
+      },
+      {
+        key: 'client_supply_with_agent_assistance',
+        decision: 'Seller-owned requests remain client-supplied debt; an agent may upload the evidence on the seller behalf without changing responsibility.',
       },
     ],
     gate: {

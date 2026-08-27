@@ -49,7 +49,7 @@ test('next-action capability filter removes disabled portal routes', () => {
   assert.deepEqual(actions.map((action) => action.id), ['ok-docs', 'ok-overview'])
 })
 
-test('generated buyer next actions never point to disabled portal sections', () => {
+test('generated buyer next actions fail visibly when their required section is disabled', () => {
   const actions = generateClientPortalNextActions({
     workspaceMode: 'buying',
     portalProfile: resaleProfile,
@@ -60,7 +60,9 @@ test('generated buyer next actions never point to disabled portal sections', () 
   })
 
   assert.equal(actions.some((action) => action.actionRoute === 'bond_application'), false)
-  assert.equal(actions.some((action) => action.actionRoute === 'overview'), true)
+  assert.equal(actions.some((action) => action.actionRoute === 'team'), true)
+  assert.equal(actions.some((action) => action.metadata.portalRouteUnavailable === true), true)
+  assert.equal(actions.some((action) => action.blocking), true)
   assert.equal(actions.every((action) => action.metadata.portalKind === resaleProfile.portalKind), true)
   assert.equal(actions.every((action) => action.metadata.navigationMode === resaleProfile.navigationMode), true)
 })
@@ -107,6 +109,6 @@ test('workspace payload exposes portal capabilities beside profile and context',
   assert.match(serviceSource, /portalCapabilities,\n\s+__portalCapabilities: portalCapabilities/)
   assert.match(serviceSource, /enabledSections: portalCapabilities\.enabledSections/)
   assert.match(serviceSource, /disabledSections: portalCapabilities\.disabledSections/)
-  assert.match(serviceSource, /filterNextActionsByPortalCapabilities/)
+  assert.match(serviceSource, /resolveNextActionsForPortalCapabilities/)
   assert.match(serviceSource, /filterActivityByPortalCapabilities/)
 })

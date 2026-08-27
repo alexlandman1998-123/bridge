@@ -9,14 +9,20 @@ import {
 import {
   buildDocumentRequestContainerModel,
   resolveDefaultDocumentRequestVisibility,
+  resolveDocumentRequestContainerAudience,
 } from '../src/core/documents/documentRequestContainerModel.js'
 
 const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'))
 const serviceSource = fs.readFileSync('src/services/documents/documentRequestProfessionalPropagationService.js', 'utf8')
 const apiSource = fs.readFileSync('src/lib/api.js', 'utf8')
 const laneSource = fs.readFileSync('src/services/attorneyWorkflow/attorneyWorkflowLaneService.js', 'utf8')
+const laneInsertSource = laneSource.slice(
+  laneSource.indexOf('async function insertDocumentRequest'),
+  laneSource.indexOf('async function uploadAttorneyDocumentFile'),
+)
 const docs = fs.readFileSync('docs/document-request-phase6-professional-propagation.md', 'utf8')
 const scriptSource = fs.readFileSync('scripts/document-request-phase6-professional-propagation.mjs', 'utf8')
+const migrationSource = fs.readFileSync('../supabase/migrations/20260827163336_document_request_professional_visibility_phase6.sql', 'utf8')
 
 assert.equal(
   packageJson.scripts['test:document-request-phase6-professional-propagation'],
@@ -49,19 +55,33 @@ assert.match(apiSource, /created_by_role:\s*normalizedActorRole/, 'General creat
 assert.match(apiSource, /requested_from:\s*requestedFrom/, 'General create API should persist requested_from.')
 assert.match(apiSource, /visibility_scope:/, 'General create API should persist visibility_scope.')
 assert.match(apiSource, /fetchClientVisibleAdditionalDocumentRequests/, 'Client portal should load client-visible additional requests.')
+assert.match(apiSource, /Fail closed: without these fields the client audience cannot be determined safely/, 'Client request reads should fail closed without audience columns.')
+assert.match(apiSource, /resolveDocumentRequestContainerAudience/, 'Emails and notifications should use the container audience boundary.')
+assert.match(apiSource, /Professional document request propagation is not set up/, 'Writes should reject schema fallback that loses propagation fields.')
 assert.match(laneSource, /created_by_role:\s*'attorney'/, 'Attorney lane requests should identify the requester role.')
 assert.match(laneSource, /requested_from:\s*requestAudience/, 'Attorney lane requests should persist requested_from.')
 assert.match(laneSource, /visibility_scope:\s*requestVisibility/, 'Attorney lane requests should persist visibility_scope.')
-assert.doesNotMatch(laneSource, /delete fallback\.requested_from/, 'Attorney lane fallback must not strip requested_from.')
+assert.doesNotMatch(laneInsertSource, /delete fallback\.requested_from/, 'Attorney lane fallback must not strip requested_from.')
+assert.doesNotMatch(laneInsertSource, /delete fallback\.visibility_scope/, 'Attorney lane fallback must not strip visibility_scope.')
+assert.match(migrationSource, /document_requests_visibility_scope_check/, 'Phase 6 migration should enforce supported visibility scopes.')
+assert.match(migrationSource, /shared_role_players/, 'Phase 6 migration should support professional-only visibility.')
 
 assert.equal(resolveDefaultDocumentRequestVisibility('buyer'), 'client_visible')
 assert.equal(resolveDefaultDocumentRequestVisibility('seller'), 'client_visible')
 assert.equal(resolveDefaultDocumentRequestVisibility('buyer_and_seller'), 'client_visible')
 assert.equal(resolveDefaultDocumentRequestVisibility('bond_originator'), 'shared_role_players')
+assert.deepEqual(
+  resolveDocumentRequestContainerAudience({
+    requestedFrom: 'buyer',
+    visibility: 'shared_role_players',
+    createdByRole: 'transfer_attorney',
+  }).includes('buyer'),
+  false,
+)
 
 const audit = buildDocumentRequestProfessionalPropagationAudit()
 assert.equal(audit.version, DOCUMENT_REQUEST_PROFESSIONAL_PROPAGATION_VERSION)
-assert.equal(audit.scenarioCount, 5)
+assert.equal(audit.scenarioCount, 6)
 assert.equal(audit.summary.missingAudienceCount, 0)
 assert.equal(audit.summary.leakedAudienceCount, 0)
 assert.equal(audit.summary.uploadTransitionOk, true)
@@ -91,6 +111,11 @@ assert.ok(professionalOnly.visibleAudiences.includes('bond_originator'))
 assert.ok(professionalOnly.visibleAudiences.includes('agent'))
 assert.equal(professionalOnly.visibleAudiences.includes('buyer'), false)
 assert.equal(professionalOnly.visibleAudiences.includes('seller'), false)
+
+const professionalBuyerBoundary = audit.results.find((result) => result.id === 'professional_visibility_overrides_client_target')
+assert.equal(professionalBuyerBoundary.visibleAudiences.includes('buyer'), false)
+assert.equal(professionalBuyerBoundary.visibleAudiences.includes('seller'), false)
+assert.ok(professionalBuyerBoundary.visibleAudiences.includes('transfer_attorney'))
 
 const uploadTransition = buildProfessionalDocumentRequestUploadTransition()
 assert.equal(uploadTransition.before.status, 'requested')

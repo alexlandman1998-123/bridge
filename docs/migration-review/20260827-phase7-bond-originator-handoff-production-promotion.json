@@ -1,0 +1,42 @@
+{
+  "generatedAt": "2026-08-27T17:29:09Z",
+  "repo": "/Users/alexanderlandman/the-it-guy",
+  "sourceConsolidation": "docs/migration-review/20260827-phase5-bond-originator-handoff-consolidation.json",
+  "sourceStagingPlan": "docs/migration-review/20260827-phase6-bond-originator-handoff-staging.json",
+  "productionProjectRef": "isdowlnollckzvltkasn",
+  "productionRecoveryLocked": true,
+  "status": "PRODUCTION_PROMOTION_BLOCKED_PENDING_EVIDENCE",
+  "mode": "plan",
+  "selected": {
+    "version": "20260827160000",
+    "stream": "bond_finance_runtime",
+    "file": "20260827160000_canonical_bond_originator_handoff_repair.sql",
+    "productionRoute": "production_apply_sql",
+    "stagingEvidenceFile": "docs/staging-evidence/20260827160000-bond_finance_runtime.json",
+    "productionEvidenceFile": "docs/production-evidence/20260827160000-bond_finance_runtime.json",
+    "readyForProduction": false
+  },
+  "blockers": [
+    "phase6_staging_ledger_not_recorded",
+    "phase6_catalog_checks_pending",
+    "phase6_behavior_checks_pending",
+    "phase6_rollback_or_no_residue_pending",
+    "phase6_reviewer_pending",
+    "phase6_approver_pending",
+    "phase6_captured_at_pending"
+  ],
+  "commands": [],
+  "execution": {
+    "attempted": false,
+    "ok": false,
+    "status": null,
+    "command": "",
+    "stdout": "",
+    "stderr": "",
+    "error": ""
+  },
+  "notes": [
+    "The canonical packet is the only production target for this bond-originator repair.",
+    "Production recovery is already locked; the remaining blocker is the incomplete phase 6 staging evidence packet."
+  ]
+}

@@ -135,6 +135,72 @@ function readStatusTimestamp(item: JsonRecord, status: string) {
   return { status: normalizedStatus || "sent", sent_at: eventAt, updated_at: now };
 }
 
+function extractWebhookContext(payload: JsonRecord) {
+  const entries = Array.isArray(payload.entry) ? payload.entry as JsonRecord[] : [];
+  let phoneNumberId = "";
+  let wabaId = "";
+  let displayPhoneNumber = "";
+  let businessDisplayName = "";
+  let providerMessageId = "";
+  let eventType = "unknown";
+
+  for (const entry of entries) {
+    const changes = Array.isArray(entry.changes) ? entry.changes as JsonRecord[] : [];
+    for (const change of changes) {
+      const value = safeJson((change as JsonRecord).value);
+      const metadata = safeJson(value.metadata);
+      phoneNumberId ||= text(metadata.phone_number_id) || text(metadata.phoneNumberId);
+      wabaId ||= text(metadata.waba_id) || text(metadata.wabaId);
+      displayPhoneNumber ||= text(metadata.display_phone_number) || text(metadata.displayPhoneNumber);
+      businessDisplayName ||= text(metadata.verified_name) || text(metadata.business_display_name) || text(metadata.businessDisplayName);
+
+      const statuses = Array.isArray(value.statuses) ? value.statuses as JsonRecord[] : [];
+      const messages = Array.isArray(value.messages) ? value.messages as JsonRecord[] : [];
+      if (statuses.length > 0) {
+        providerMessageId ||= text(statuses[0].id);
+        eventType = "message_status";
+      } else if (messages.length > 0) {
+        providerMessageId ||= text(messages[0].id);
+        eventType = "message";
+      }
+    }
+  }
+
+  return {
+    phoneNumberId,
+    wabaId,
+    displayPhoneNumber,
+    businessDisplayName,
+    providerMessageId,
+    eventType,
+  };
+}
+
+async function resolveWebhookConnection(supabase: any, phoneNumberId: string, wabaId: string) {
+  let query = supabase
+    .from("organisation_communication_channels")
+    .select(
+      "id, organisation_id, branch_id, provider, channel_type, waba_id, phone_number_id, display_phone_number, business_display_name, connection_status, verification_status",
+    )
+    .eq("provider", "meta")
+    .eq("channel_type", "whatsapp")
+    .eq("connection_status", "connected")
+    .order("is_default", { ascending: false })
+    .limit(1);
+
+  if (phoneNumberId) {
+    query = query.eq("phone_number_id", phoneNumberId);
+  } else if (wabaId) {
+    query = query.eq("waba_id", wabaId);
+  }
+
+  const result = await query.maybeSingle();
+  if (result.error) {
+    return null;
+  }
+  return result.data || null;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { status: 200, headers: CORS_HEADERS });
 
@@ -191,6 +257,15 @@ Deno.serve(async (req) => {
     return jsonResponse(400, { error: "Invalid webhook JSON." });
   }
 
+  const webhookContext = extractWebhookContext(payload);
+  const webhookConnection = webhookContext.phoneNumberId
+    ? await resolveWebhookConnection(
+        supabase,
+        webhookContext.phoneNumberId,
+        webhookContext.wabaId,
+      )
+    : null;
+
   const webhookEventId = text(req.headers.get("x-hub-signature-id")) ||
     text((payload.entry as JsonRecord[])?.[0]?.id) ||
     text(req.headers.get("x-request-id")) ||
@@ -200,8 +275,16 @@ Deno.serve(async (req) => {
     .insert({
       provider: "meta",
       provider_event_id: webhookEventId || "unknown",
-      event_type: "message_status",
-      provider_message_id: null,
+      event_type: webhookContext.eventType || "unknown",
+      provider_message_id: webhookContext.providerMessageId || null,
+      organisation_id: webhookConnection?.organisation_id || null,
+      branch_id: webhookConnection?.branch_id || null,
+      organisation_communication_channel_id: webhookConnection?.id || null,
+      waba_id: webhookConnection?.waba_id || webhookContext.wabaId || null,
+      phone_number_id: webhookConnection?.phone_number_id || webhookContext.phoneNumberId || null,
+      display_phone_number: webhookConnection?.display_phone_number || webhookContext.displayPhoneNumber || null,
+      business_display_name: webhookConnection?.business_display_name || webhookContext.businessDisplayName || null,
+      verification_status: webhookConnection?.verification_status || null,
       payload_json: payload,
       processing_status: "received",
     })
@@ -218,7 +301,7 @@ Deno.serve(async (req) => {
   const entries = Array.isArray(payload.entry) ? payload.entry as JsonRecord[] : [];
   let processed = false;
   let lastError = "";
-  let providerMessageId = "";
+  let providerMessageId = webhookContext.providerMessageId || "";
   const now = new Date().toISOString();
 
   for (const entry of entries) {

@@ -112,6 +112,25 @@ export const DOCUMENT_REQUEST_PROFESSIONAL_PROPAGATION_SCENARIOS = Object.freeze
     expectedVisibleTo: ['agent', 'attorney', 'bond_originator', 'internal'],
     expectedHiddenFrom: ['buyer', 'seller'],
   },
+  {
+    id: 'professional_visibility_overrides_client_target',
+    label: 'Professional-only visibility overrides a buyer target',
+    transactionId: 'phase6-professional-buyer-boundary',
+    request: {
+      id: 'phase6-professional-buyer-boundary-request',
+      title: 'Internal Buyer Evidence Review',
+      document_type: 'internal_buyer_evidence_review',
+      category: 'Additional Requests',
+      requested_from: 'buyer',
+      assigned_to_role: 'buyer',
+      visibility_scope: 'shared_role_players',
+      created_by_role: 'transfer_attorney',
+      status: 'requested',
+      priority: 'required',
+    },
+    expectedVisibleTo: ['agent', 'attorney', 'transfer_attorney', 'bond_originator', 'internal'],
+    expectedHiddenFrom: ['buyer', 'seller'],
+  },
 ])
 
 function normalizeText(value = '') {

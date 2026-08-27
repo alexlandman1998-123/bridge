@@ -31,15 +31,31 @@ assert.match(
   'seller listing activity hydration should no-op when fetched rows have not changed',
 )
 
-assert.ok(
-  agencySource.includes('const captureRouteLeadWorkspaceScroll = useCallback'),
-  'route lead workspace should capture scroll before background record merges',
+assert.doesNotMatch(
+  agencySource,
+  /captureRouteLeadWorkspaceScroll|restoreRouteLeadWorkspaceScroll|routeLeadScrollSnapshotRef/,
+  'background record merges must not replay stale scroll coordinates after the user has moved',
 )
 
-assert.ok(
-  agencySource.includes('const restoreRouteLeadWorkspaceScroll = useCallback'),
-  'route lead workspace should restore scroll after background record merges',
+assert.match(
+  agencySource,
+  /data-testid="lead-workspace" style=\{\{ overflowAnchor: 'none' \}\}/,
+  'the lead workspace should opt out of browser scroll anchoring while async sections hydrate',
 )
+
+assert.doesNotMatch(
+  agencySource,
+  /data-testid="seller-journey-rail"\]\)\?\.scrollIntoView|data-seller-document-key="signed_mandate"\]\)\?\.scrollIntoView/,
+  'seller journey actions should switch context without moving the page behind the user',
+)
+
+for (const pattern of [
+  /setMessage\('Seller onboarding sent\.'\)[\s\S]{0,180}?scheduleRecordsReload\(organisationId, 850\)/,
+  /setMessage\(`\$\{documentLabel\} uploaded\.`\)[\s\S]{0,120}?scheduleRecordsReload\(organisationId, 850\)/,
+  /setMessage\('Listing activated\.'\)[\s\S]{0,120}?scheduleRecordsReload\(organisationId, 850\)/,
+]) {
+  assert.match(agencySource, pattern, 'seller actions should reconcile in the background after updating local state')
+}
 
 assert.match(
   agencySource,

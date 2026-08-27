@@ -5,6 +5,7 @@ import {
   resolveBuyerPurchaseMode,
   resolveBuyerOnboardingFlow,
 } from './buyerOnboardingFlow.js'
+import { scopeBuyerDocumentRequirements } from '../core/documents/documentRequestParticipantScope.js'
 
 export const PURCHASER_TYPES = [
   'individual',
@@ -15,6 +16,8 @@ export const PURCHASER_TYPES = [
   'company',
   'foreign_purchaser',
 ]
+
+export const BUYER_DOCUMENT_RULE_SET_VERSION = 'buyer_document_rules_phase3_v1'
 
 export const PURCHASER_TYPE_LABELS = {
   individual: 'Individual',
@@ -1200,6 +1203,42 @@ function toDocument(definition, index) {
     allowMultiple: template.allowMultiple,
     keywords: template.keywords,
     sortOrder: template.sortOrder,
+    baseRequirementKey: definition.baseRequirementKey || template.key,
+    requirementInstanceKey: definition.requirementInstanceKey || template.key,
+    participantScopeVersion: definition.participantScopeVersion || null,
+    participantId: definition.participantId || null,
+    participantKey: definition.participantKey || null,
+    participantRole: definition.participantRole || null,
+    participantOrdinal: definition.participantOrdinal || null,
+    participantName: definition.participantName || '',
+    participantLabel: definition.participantLabel || '',
+    requestRuleSetVersion: definition.requestRuleSetVersion || BUYER_DOCUMENT_RULE_SET_VERSION,
+    requestTriggerCode: definition.requestTriggerCode || '',
+    requestTriggerFacts: definition.requestTriggerFacts || null,
+  }
+}
+
+function withBuyerDocumentDecisionMetadata(definition = {}, context = {}) {
+  const groupKey = String(definition.groupKey || '').trim().toLowerCase()
+  const requestTriggerCode = groupKey === 'finance'
+    ? `finance:${context.financeType || 'cash'}:${context.employmentType || context.purchaserType || 'unspecified'}`
+    : groupKey === 'buyer_fica'
+      ? `buyer_structure:${context.purchaserType || 'individual'}`
+      : groupKey === 'sale'
+        ? 'sale_transaction'
+        : 'transfer_workflow'
+
+  return {
+    ...definition,
+    requestRuleSetVersion: BUYER_DOCUMENT_RULE_SET_VERSION,
+    requestTriggerCode,
+    requestTriggerFacts: Object.freeze({
+      purchaserType: context.purchaserType || 'individual',
+      financeType: context.financeType || 'cash',
+      employmentType: context.employmentType || null,
+      coPurchasing: context.coPurchasing === true,
+      spouseIsCoPurchaser: context.spouseIsCoPurchaser === true,
+    }),
   }
 }
 
@@ -1267,19 +1306,19 @@ function getPurchaserDocumentDefinitions(purchaserType, values = {}) {
           groupKey: 'buyer_fica',
           description: 'Required to verify the purchaser’s residential address.',
         },
-        ...(values.spouse_full_name || isYes(values.spouse_is_co_purchaser)
+        ...(isYes(values.spouse_is_co_purchaser)
           ? [
               {
                 key: 'spouse_id_optional',
-                label: 'Spouse ID Copy',
+                label: 'Co-purchaser ID Copy',
                 groupKey: 'buyer_fica',
-                description: 'May be required because the marital structure has been disclosed.',
+                description: 'Required because the spouse is also purchasing the property.',
               },
               {
                 key: 'spouse_proof_of_address_optional',
-                label: 'Spouse Proof of Address',
+                label: 'Co-purchaser Proof of Address',
                 groupKey: 'buyer_fica',
-                description: 'May be required depending on the attorney’s compliance workflow.',
+                description: 'Required because the spouse is also purchasing the property.',
               },
             ]
           : []),
@@ -1468,10 +1507,10 @@ function getFinanceDocumentDefinitions(values = {}, financeType) {
         case 'company_director':
           documents.push(
             {
-              key: 'bank_statements_12_months',
-              label: 'Bank Statements (Last 12 Months)',
+              key: 'bank_statements_6_months',
+              label: 'Bank Statements (Last 6 Months)',
               groupKey: 'finance',
-              description: 'Used to assess income consistency.',
+              description: 'Six consecutive months are required to assess self-employed income consistency.',
             },
             {
               key: 'financial_statements',
@@ -1672,12 +1711,6 @@ function getSaleAndTransferDocuments(options = {}) {
   const reservationRequired = Boolean(options.reservationRequired)
   return [
     {
-      key: 'information_sheet',
-      label: 'Information Sheet',
-      groupKey: 'sale',
-      description: 'This structured onboarding form becomes part of the transaction file.',
-    },
-    {
       key: 'otp',
       label: 'Offer to Purchase (OTP)',
       groupKey: 'sale',
@@ -1816,7 +1849,9 @@ export function deriveOnboardingConfiguration(formData = {}, options = {}) {
     'Director',
   )
   const fundingSources = Array.isArray(formData.funding_sources) ? formData.funding_sources.filter((item) => isFilledValue(item)) : []
-  const employmentType = normalizeEmploymentType(formData.employment_type)
+  const employmentType = normalizeEmploymentType(
+    formData.employment_type || purchaserSnapshot.purchasers?.[0]?.employment_type,
+  )
   const parties = []
   const primaryName = [formData.first_name, formData.last_name].filter(Boolean).join(' ').trim()
   if (primaryName) {
@@ -1962,11 +1997,22 @@ export function deriveOnboardingConfiguration(formData = {}, options = {}) {
     },
   }
 
-  const documentDefinitions = uniqueByKey([
-    ...getSaleAndTransferDocuments({ reservationRequired }),
-    ...getPurchaserDocumentDefinitions(purchaserType, formData),
-    ...getFinanceDocumentDefinitions(formData, financeType),
-  ])
+  const documentDecisionContext = {
+    purchaserType,
+    financeType,
+    employmentType,
+    coPurchasing: isCoPurchasing(formData),
+    spouseIsCoPurchaser: isYes(formData.spouse_is_co_purchaser),
+  }
+  const documentDefinitions = scopeBuyerDocumentRequirements(
+    uniqueByKey([
+      ...getSaleAndTransferDocuments({ reservationRequired }),
+      ...getPurchaserDocumentDefinitions(purchaserType, formData),
+      ...getFinanceDocumentDefinitions(formData, financeType),
+    ]).map((definition) => withBuyerDocumentDecisionMetadata(definition, documentDecisionContext)),
+    formData,
+    purchaserType,
+  )
 
   const requiredDocuments = documentDefinitions.map((item, index) =>
     toDocument(

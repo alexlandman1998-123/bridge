@@ -74,6 +74,10 @@ function buildReport(options = {}) {
       ok: audit.summary.failedSmokeCount === 0,
     },
     {
+      key: 'all_declared_audiences_are_smoked',
+      ok: audit.summary.coveredAudienceCount === 8 && audit.summary.missingAudienceSmokeCount === 0,
+    },
+    {
       key: 'container_ids_stable_across_audiences',
       ok: audit.summary.unstableContainerIdCount === 0,
     },
@@ -106,12 +110,17 @@ function buildReport(options = {}) {
     results: audit.results,
     crossAudienceContainerIds: audit.crossAudienceContainerIds,
     failed: audit.failed,
+    missingAudienceSmokes: audit.missingAudienceSmokes,
     unstableContainerIds: audit.unstableContainerIds,
     summary: audit.summary,
     phase7Decisions: [
       {
         key: 'workspace_smoke_matrix',
-        decision: 'Phase 7 uses a synthetic but canonical transaction fixture to smoke buyer, seller, agent, attorney, bond-originator, and internal audiences.',
+        decision: 'Phase 7 uses a synthetic but canonical transaction fixture to smoke buyer, seller, agent, attorney, transfer-attorney, cancellation-attorney, bond-originator, and internal audiences.',
+      },
+      {
+        key: 'professional_visibility_boundary',
+        decision: 'Every workspace smoke preserves the Phase 6 rule that professional-only visibility overrides legacy buyer or seller targeting.',
       },
       {
         key: 'same_container_everywhere',

@@ -274,14 +274,6 @@ function appendSectionalRequirements(docs, generatedFrom) {
       generatedFrom,
     }),
     buildRequirement({
-      key: 'body_corporate_details',
-      name: 'Body Corporate / Managing Agent Details',
-      description: 'Body corporate or managing agent contact details.',
-      group: 'property',
-      visibility: 'seller_visible',
-      generatedFrom,
-    }),
-    buildRequirement({
       key: 'body_corporate_rules',
       name: 'Body Corporate Rules',
       description: 'Current conduct and management rules for the sectional-title scheme.',
@@ -308,14 +300,6 @@ function appendEstateRequirements(docs, generatedFrom) {
       key: 'hoa_levy_statement',
       name: 'HOA Levy Statement',
       description: 'Latest HOA levy statement where applicable.',
-      group: 'property',
-      visibility: 'seller_visible',
-      generatedFrom,
-    }),
-    buildRequirement({
-      key: 'hoa_contact_details',
-      name: 'HOA Details',
-      description: 'Estate / HOA contact and rules information.',
       group: 'property',
       visibility: 'seller_visible',
       generatedFrom,
@@ -411,8 +395,8 @@ function appendComplianceTriggerRequirements(docs, generatedFrom, triggers = [])
     docs.push(
       buildRequirement({
         key: 'solar_compliance_documents',
-        name: 'Solar Compliance Documents',
-        description: 'Solar / inverter compliance documents where a solar installation exists.',
+        name: 'Solar Electrical COC / SSEG Documents',
+        description: 'Electrical certificate of compliance and any applicable SSEG approval for an installed solar or inverter system.',
         group: 'property_compliance',
         visibility: 'seller_visible',
         generatedFrom,

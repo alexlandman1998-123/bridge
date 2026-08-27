@@ -1,0 +1,24 @@
+{
+  "version": "20260827102857",
+  "stream": "transaction_network",
+  "file": "20260827102857_repair_partner_pipeline_assignment_scope.sql",
+  "route": "apply_original",
+  "action": "apply_original_after_dependency_check",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "stagingLedgerRecorded": false,
+  "catalogChecks": "pending",
+  "behaviorChecks": "pending",
+  "rollbackOrNoResidue": "pending",
+  "reviewedBy": "",
+  "approvedBy": "",
+  "capturedAt": null,
+  "notes": [
+    "Apply the original migration to staging, run checks, then record the staging ledger."
+  ],
+  "commands": [
+    "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260827102857 --confirm APPLY_TO_STAGING_ONLY",
+    "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260827102857 --evidence docs/staging-evidence/20260827102857-transaction_network.json --confirm APPLY_TO_STAGING_ONLY"
+  ]
+}

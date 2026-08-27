@@ -1,0 +1,23 @@
+{
+  "version": "20260827151119",
+  "stream": "bond_finance_runtime",
+  "file": "20260827151119_repair_bond_originator_transaction_scope.sql",
+  "route": "repair_only",
+  "action": "repair_only_after_smoke",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": false,
+  "stagingLedgerRecorded": false,
+  "catalogChecks": "pending",
+  "behaviorChecks": "pending",
+  "rollbackOrNoResidue": "pending",
+  "reviewedBy": "",
+  "approvedBy": "",
+  "capturedAt": null,
+  "notes": [
+    "Do not apply SQL. Run smoke checks, then record the staging ledger."
+  ],
+  "commands": [
+    "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260827151119 --evidence docs/staging-evidence/20260827151119-bond_finance_runtime.json --confirm APPLY_TO_STAGING_ONLY"
+  ]
+}

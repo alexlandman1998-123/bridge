@@ -1,3 +1,5 @@
+import { buildTransactionPartnerHandoffContract } from './transactionPartnerHandoffContract.js'
+
 export const NEW_TRANSACTION_SETUP_HEALTH_VERSION = 'arch9_new_transaction_setup_health_v1'
 
 function text(value) {
@@ -31,6 +33,7 @@ export function buildNewTransactionSetupHealth({
   transactionType = '',
   sourceContext = {},
   completeness = null,
+  partnerHandoffContract = null,
 } = {}) {
   const warnings = Array.isArray(setupWarnings) ? setupWarnings : []
   const warningAreas = warnings.map((warning) => warning?.area).filter(Boolean)
@@ -53,6 +56,16 @@ export function buildNewTransactionSetupHealth({
   const rolePlayerCount = Array.isArray(rolePlayers) ? rolePlayers.length : 0
   const handoffStatus = handoffChecklist?.signedOtpStatus || 'pending_upload'
   const missingFollowUpItems = Array.isArray(completeness?.missingItems) ? completeness.missingItems : []
+  const resolvedPartnerHandoffContract =
+    partnerHandoffContract ||
+    buildTransactionPartnerHandoffContract({
+      rolePlayers,
+      financeType: transactionPayload.finance_type,
+      financeManagedBy: transactionPayload.finance_managed_by,
+      strict: false,
+    })
+  const partnerHandoffReady = resolvedPartnerHandoffContract.status === 'ready'
+  const partnerHandoffIssueCount = resolvedPartnerHandoffContract.issues?.length || 0
 
   const checks = [
     {
@@ -83,10 +96,17 @@ export function buildNewTransactionSetupHealth({
     {
       key: 'roleplayers',
       label: 'Role players',
-      status: handoffChecklist?.partnersCaptured || rolePlayerCount ? 'complete' : 'action_required',
+      status:
+        handoffChecklist?.partnersCaptured || rolePlayerCount
+          ? partnerHandoffReady
+            ? 'complete'
+            : 'needs_attention'
+          : 'action_required',
       detail:
         handoffChecklist?.partnersCaptured || rolePlayerCount
-          ? `${rolePlayerCount || 'Selected'} role-player ${rolePlayerCount === 1 ? 'assignment' : 'assignments'} captured.`
+          ? partnerHandoffReady
+            ? `${rolePlayerCount || 'Selected'} role-player ${rolePlayerCount === 1 ? 'assignment' : 'assignments'} captured with canonical partner handoff IDs.`
+            : `${partnerHandoffIssueCount} partner handoff ${partnerHandoffIssueCount === 1 ? 'issue needs' : 'issues need'} review.`
           : 'Transfer, bond, or cancellation role players still need review.',
     },
     {
@@ -143,6 +163,7 @@ export function buildNewTransactionSetupHealth({
     missingFollowUpItems,
     checks,
     nextAction: resolveWizardHandoffNextAction(handoffChecklist),
+    partnerHandoffContract: resolvedPartnerHandoffContract,
   }
 }
 

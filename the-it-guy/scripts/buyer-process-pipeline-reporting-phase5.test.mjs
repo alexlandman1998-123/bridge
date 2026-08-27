@@ -20,7 +20,6 @@ const canonicalBuyerStages = [
   'Qualified',
   'Viewing',
   'Transaction Setup',
-  'Offer',
   'Transaction',
   'On hold',
   'Lost',
@@ -37,7 +36,7 @@ assert.match(buyerKanbanBlock, /getBuyerProcessDefinition\(\)\.stages\.map/)
 assert.match(buyerKanbanBlock, /contacted/)
 assert.match(buyerKanbanBlock, /qualified/)
 assert.match(buyerKanbanBlock, /transaction_setup/)
-assert.match(buyerKanbanBlock, /offer/)
+assert.doesNotMatch(buyerKanbanBlock, /stageValue: 'Offer'/)
 assert.match(buyerKanbanBlock, /transaction/)
 assert.doesNotMatch(buyerKanbanBlock, /qualification:/)
 assert.doesNotMatch(buyerKanbanBlock, /Deal \/ OTP/)
@@ -78,9 +77,9 @@ try {
     leadCategory: 'buyer',
     stage: 'Ready to Generate OTP',
   })
-  assert.equal(legacyOtpPresentation.key, 'offer')
-  assert.equal(legacyOtpPresentation.label, 'Offer')
-  assert.equal(legacyOtpPresentation.columnId, 'offer')
+  assert.equal(legacyOtpPresentation.key, 'transaction_setup')
+  assert.equal(legacyOtpPresentation.label, 'Transaction Setup')
+  assert.equal(legacyOtpPresentation.columnId, 'transaction_setup')
 
   const legacyFinancePresentation = lifecycleService.resolveLeadLifecyclePresentation({
     leadCategory: 'buyer',
@@ -101,7 +100,7 @@ try {
 
   const buyerStageCounts = Object.fromEntries(reporting.buyerStageRows.map((row) => [row.key, row.count]))
   assert.equal(buyerStageCounts.captured, 1)
-  assert.equal(buyerStageCounts.offer, 1)
+  assert.equal(buyerStageCounts.transaction_setup, 1)
   assert.equal(buyerStageCounts.transaction, 1)
   assert.equal(buyerStageCounts.lost, 0)
   assert.equal(reporting.conversion.dealsCreated, 1)

@@ -2,6 +2,15 @@ import { BOND_APPLICATION_DOCUMENT_RULE_SET_VERSION, getBondApplicationDocumentM
 import { buildBondApplicationDocumentRequirementFingerprint } from './resolveBondApplicationDocumentRequirements.js'
 import { normalizeBondApplicationDocumentKey } from './bondApplicationDocumentStatus.js'
 
+function baseRequirementKey(value = '') {
+  return normalizeBondApplicationDocumentKey(String(value || '').split(':').at(-1))
+}
+
+function isManagedBondApplicationKey(value = '', managedKeys = new Set()) {
+  const normalized = normalizeBondApplicationDocumentKey(value)
+  return managedKeys.has(normalized) || managedKeys.has(baseRequirementKey(normalized))
+}
+
 export function buildBondApplicationDocumentReconciliationPlan({
   transactionId = null,
   activeRequirements = [],
@@ -14,12 +23,24 @@ export function buildBondApplicationDocumentReconciliationPlan({
       row,
     ]),
   )
+  const existingByBaseKey = new Map(
+    (existingRequiredDocuments || []).map((row) => [
+      baseRequirementKey(row.document_key || row.key || row.requirement_key),
+      row,
+    ]),
+  )
   const activeRows = activeRequirements.map((requirement, index) => {
     const normalizedKey = normalizeBondApplicationDocumentKey(requirement.key)
-    const existing = existingByKey.get(normalizedKey) || {}
+    const fallbackKey = normalizeBondApplicationDocumentKey(requirement.baseRequirementKey)
+    const existing =
+      existingByKey.get(normalizedKey) ||
+      existingByKey.get(fallbackKey) ||
+      existingByBaseKey.get(baseRequirementKey(fallbackKey)) ||
+      {}
     return {
       transaction_id: transactionId || existing.transaction_id || null,
       document_key: requirement.key,
+      canonical_document_key: requirement.canonicalDocumentType || existing.canonical_document_key || requirement.baseRequirementKey || requirement.key,
       document_label: requirement.title,
       is_required: requirement.required !== false,
       is_uploaded: Boolean(existing.is_uploaded || existing.isUploaded),
@@ -38,12 +59,16 @@ export function buildBondApplicationDocumentReconciliationPlan({
       notes: existing.notes || null,
       sort_order: Number(requirement.order || 0) || index + 1,
       canonical_requirement_instance_id: existing.canonical_requirement_instance_id || existing.canonicalRequirementInstanceId || null,
+      participant_key: requirement.participantKey || null,
+      participant_id: requirement.participantId || null,
+      participant_role: requirement.participantRole || null,
+      participant_name: requirement.participantName || null,
     }
   })
   const activeKeys = new Set(activeRows.map((row) => normalizeBondApplicationDocumentKey(row.document_key)))
   const inactiveRows = (existingRequiredDocuments || []).filter((row) => {
     const key = normalizeBondApplicationDocumentKey(row.document_key || row.key || row.requirement_key)
-    return managedKeys.has(key) && !activeKeys.has(key)
+    return isManagedBondApplicationKey(key, managedKeys) && !activeKeys.has(key)
   }).map((row) => ({
     ...row,
     is_required: false,

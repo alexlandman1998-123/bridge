@@ -185,6 +185,7 @@ export const RENTAL_LISTING_FIELD_GROUPS = Object.freeze([
       'city',
       'province',
       'postalCode',
+      'privatePropertySuburbId',
       'exactAddressVisibility',
       'propertyType',
       'bedrooms',
@@ -291,8 +292,8 @@ export const RENTAL_LISTING_FIELD_GROUPS = Object.freeze([
   {
     key: 'syndication',
     label: 'Syndication',
-    storage: 'property24_listing_syncs',
-    fields: ['property24Status', 'property24Reference', 'property24ListingUrl', 'property24PayloadPreview', 'property24Blockers'],
+    storage: 'property24_listing_syncs_and_private_property_listing_syncs',
+    fields: ['property24Status', 'property24Reference', 'property24ListingUrl', 'property24PayloadPreview', 'property24Blockers', 'privatePropertySuburbId', 'privatePropertyStatus', 'privatePropertyReference', 'privatePropertyListingUrl', 'privatePropertyBlockers'],
   },
   {
     key: 'applications',
@@ -331,6 +332,29 @@ export const PROPERTY24_RENTAL_READINESS_FIELDS = Object.freeze([
   'mandateStatus',
 ])
 
+export const PRIVATE_PROPERTY_RENTAL_READINESS_FIELDS = Object.freeze([
+  'listingType',
+  'agencyConfig',
+  'branchGuid',
+  'agentId',
+  'propertyId',
+  'privatePropertySuburbId',
+  'monthlyRent',
+  'availableFrom',
+  'streetNumber',
+  'streetName',
+  'suburb',
+  'city',
+  'province',
+  'propertyType',
+  'bedrooms',
+  'bathrooms',
+  'description',
+  'photos',
+  'mandateStatus',
+  'marketingApprovalStatus',
+])
+
 export const RENTAL_LISTING_DEFERRED_CAPABILITIES = Object.freeze([
   'rent_collection',
   'arrears',
@@ -365,6 +389,7 @@ export function getRentalListingArchitecture() {
     fieldGroups: RENTAL_LISTING_FIELD_GROUPS,
     fieldNames: getRentalListingFieldNames(),
     property24ReadinessFields: PROPERTY24_RENTAL_READINESS_FIELDS,
+    privatePropertyReadinessFields: PRIVATE_PROPERTY_RENTAL_READINESS_FIELDS,
     deferredCapabilities: RENTAL_LISTING_DEFERRED_CAPABILITIES,
   }
 }

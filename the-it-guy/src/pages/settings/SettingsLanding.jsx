@@ -33,6 +33,10 @@ function getStatusForItem(item, { branding, currentWorkspace, profile }) {
     return { tone: 'neutral', label: 'Property24 + Private Property' }
   }
 
+  if (item.label === 'Integrations') {
+    return { tone: 'neutral', label: 'WhatsApp embedded signup' }
+  }
+
   return item.status || null
 }
 

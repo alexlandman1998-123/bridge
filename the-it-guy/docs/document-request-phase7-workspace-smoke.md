@@ -36,9 +36,13 @@ The synthetic transaction includes:
 Phase 7 passes only when:
 
 - every audience smoke expectation passes;
+- all eight declared audiences have an explicit smoke expectation, including transfer- and cancellation-attorney lanes;
 - no request has multiple container ids across audiences;
 - deferred seller upload documents do not leak into any workspace;
+- `shared_role_players` requests remain hidden from client portals even when legacy target fields name a buyer or seller;
 - the client portal document centre builder returns request containers for additional document requests.
+
+The deferred-document check imports the same runtime policy used by seller requirement generation and the seller portal, preventing the QA fixture from drifting away from production filtering.
 
 ## Explicit Guard
 

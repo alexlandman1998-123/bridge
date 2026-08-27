@@ -2,10 +2,9 @@ import {
   getCanonicalDocumentRequestRequirement,
 } from './documentRequestCanonicalMatrix.js'
 
-export const DOCUMENT_REQUEST_CANONICAL_ADAPTER_VERSION = 'document_request_canonical_adapter_v1'
+export const DOCUMENT_REQUEST_CANONICAL_ADAPTER_VERSION = 'document_request_canonical_adapter_v2'
 
 const BUYER_KEY_ALIASES = Object.freeze({
-  information_sheet: 'buyer_fica_pack',
   otp: 'signed_otp',
   transfer_documents: 'transfer_documents',
   id_document: 'buyer_id_document',
@@ -60,6 +59,11 @@ const BUYER_KEY_ALIASES = Object.freeze({
   spouse_income_support: 'income_affordability_documents',
   spouse_bank_statements: 'income_affordability_documents',
 })
+
+export const DEPRECATED_LEGACY_DOCUMENT_REQUEST_KEYS = Object.freeze([
+  'information_sheet',
+])
+const DEPRECATED_LEGACY_DOCUMENT_REQUEST_KEY_SET = new Set(DEPRECATED_LEGACY_DOCUMENT_REQUEST_KEYS)
 
 const SELLER_KEY_ALIASES = Object.freeze({
   signed_mandate: 'signed_mandate',
@@ -215,6 +219,8 @@ function keyFromRequirement(requirement = {}) {
     requirement.canonicalDocumentRequestKey ||
       requirement.documentRequestCanonicalKey ||
       requirement.canonical_document_request_key ||
+      requirement.baseRequirementKey ||
+      requirement.base_requirement_key ||
       requirement.key ||
       requirement.id ||
       requirement.requirement_key ||
@@ -227,6 +233,7 @@ export function resolveCanonicalDocumentRequestKey(requirementOrKey = {}, contex
   const requirement = typeof requirementOrKey === 'string' ? { key: requirementOrKey } : requirementOrKey || {}
   const key = keyFromRequirement(requirement)
   if (!key) return ''
+  if (DEPRECATED_LEGACY_DOCUMENT_REQUEST_KEY_SET.has(key)) return ''
   if (getCanonicalDocumentRequestRequirement(key)) return key
 
   const normalizedContext = inferContext(requirement, context)
@@ -244,6 +251,7 @@ export function getCanonicalDocumentRequestMetadata(requirementOrKey = {}, optio
   const context = options.context || options.ownerRole || options.requiredFrom || ''
   const canonicalKey = resolveCanonicalDocumentRequestKey(requirementOrKey, context)
   const canonicalRequirement = canonicalKey ? getCanonicalDocumentRequestRequirement(canonicalKey) : null
+  const legacyKey = keyFromRequirement(typeof requirementOrKey === 'string' ? { key: requirementOrKey } : requirementOrKey || {})
   return Object.freeze({
     canonicalDocumentRequestKey: canonicalKey || null,
     canonicalDocumentRequestKnown: Boolean(canonicalRequirement),
@@ -252,6 +260,7 @@ export function getCanonicalDocumentRequestMetadata(requirementOrKey = {}, optio
     canonicalDocumentRequestVisibility: canonicalRequirement?.visibility || null,
     canonicalDocumentRequestBlocker: canonicalRequirement?.blocker || null,
     canonicalDocumentRequestOwnerRole: canonicalRequirement?.ownerRole || null,
+    canonicalDocumentRequestDeprecatedLegacyKey: DEPRECATED_LEGACY_DOCUMENT_REQUEST_KEY_SET.has(legacyKey),
     documentRequestCanonicalAdapterVersion: DOCUMENT_REQUEST_CANONICAL_ADAPTER_VERSION,
   })
 }

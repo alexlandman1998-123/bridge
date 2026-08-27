@@ -71,7 +71,7 @@ function getDocumentsFromInput(input = {}, uploadedDocuments = []) {
 }
 
 function withCrossModuleDocumentMetadata(requirement = {}) {
-  const reference = resolveCrossModuleDocumentReference(requirement.key, {
+  const reference = resolveCrossModuleDocumentReference(requirement.baseRequirementKey || requirement.key, {
     ownerRole: 'buyer',
     requestedFromRole: requirement.expectedFromRole || 'buyer',
     groupKey: requirement.groupKey || requirement.requirement_group,

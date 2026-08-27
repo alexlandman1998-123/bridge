@@ -1,0 +1,91 @@
+{
+  "generatedAt": "2026-08-27T14:39:10Z",
+  "repo": "/Users/alexanderlandman/the-it-guy",
+  "status": "AUGUST_27_EXECUTION_ROUTING_READY",
+  "sourceClassification": {
+    "file": "docs/migration-review/20260827-phase2-august-27-migration-classification.json",
+    "status": "AUGUST_27_CLASSIFICATION_READY"
+  },
+  "summary": {
+    "apply_original_after_dependency_check": 3,
+    "repair_only_after_smoke": 3,
+    "consolidate_into_canonical_packet": 2,
+    "total": 8
+  },
+  "rows": [
+    {
+      "order": 1,
+      "version": "20260827102857",
+      "file": "20260827102857_repair_partner_pipeline_assignment_scope.sql",
+      "phase2Bucket": "apply",
+      "route": "apply_original_after_dependency_check",
+      "note": "Anchors the batch with the earliest schema-and-backfill repair."
+    },
+    {
+      "order": 2,
+      "version": "20260827113000",
+      "file": "20260827113000_whatsapp_embedded_signup_v1.sql",
+      "phase2Bucket": "apply",
+      "route": "apply_original_after_dependency_check",
+      "note": "Adds the WhatsApp schema and function surface."
+    },
+    {
+      "order": 3,
+      "version": "20260827124137",
+      "file": "20260827124137_repair_attorney_firm_assignment_spine_access.sql",
+      "phase2Bucket": "apply",
+      "route": "apply_original_after_dependency_check",
+      "note": "Replaces the access resolver and expands firm visibility rules."
+    },
+    {
+      "order": 4,
+      "version": "20260827133506",
+      "file": "20260827133506_repair_missing_roleplayer_bond_handoffs.sql",
+      "phase2Bucket": "consolidate",
+      "route": "consolidate_into_canonical_packet",
+      "note": "First half of the bond-originator repair pair."
+    },
+    {
+      "order": 5,
+      "version": "20260827133739",
+      "file": "20260827133739_repair_missing_roleplayer_bond_handoffs_execution.sql",
+      "phase2Bucket": "consolidate",
+      "route": "consolidate_into_canonical_packet",
+      "note": "Explicit execution form of the same bond-originator repair."
+    },
+    {
+      "order": 6,
+      "version": "20260827104557",
+      "file": "20260827104557_repair_attorney_incoming_matter_visible_status.sql",
+      "phase2Bucket": "repair-only-after-smoke",
+      "route": "repair_only_after_smoke",
+      "note": "Record only after the relevant smoke evidence exists."
+    },
+    {
+      "order": 7,
+      "version": "20260827133916",
+      "file": "20260827133916_repair_roleplayer_participant_scope_alignment.sql",
+      "phase2Bucket": "repair-only-after-smoke",
+      "route": "repair_only_after_smoke",
+      "note": "Backfill-style row that should stay out of direct SQL replay."
+    },
+    {
+      "order": 8,
+      "version": "20260827151119",
+      "file": "20260827151119_repair_bond_originator_transaction_scope.sql",
+      "phase2Bucket": "repair-only-after-smoke",
+      "route": "repair_only_after_smoke",
+      "note": "Backfill-style row that should stay out of direct SQL replay."
+    }
+  ],
+  "consolidation": {
+    "name": "bond_originator_handoff_repair",
+    "versions": [
+      "20260827133506",
+      "20260827133739"
+    ],
+    "canonicalRoute": "consolidate_into_canonical_packet",
+    "canonicalOutcome": "single reviewed packet",
+    "reason": "Both files repair the same missing bond-originator workflow/application spine."
+  }
+}

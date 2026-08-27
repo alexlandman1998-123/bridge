@@ -129,7 +129,7 @@ test('resolves the married sectional title branch contract', () => {
   assert.ok(flow.required_fields.includes('property.structure_type'))
   assert.equal(flow.required_fields.includes('property.erf_number'), false)
   assert.ok(flow.document_triggers.includes('title_deed_copy'))
-  assert.ok(flow.document_triggers.includes('body_corporate_details'))
+  assert.equal(flow.document_triggers.includes('body_corporate_details'), false)
   assert.ok(flow.document_triggers.includes('gas_compliance_certificate'))
 })
 
@@ -429,7 +429,7 @@ test('generates company sectional title document requirements', () => {
   assert.ok(keys.includes('company_registration'))
   assert.ok(keys.includes('company_resolution_to_sell'))
   assert.ok(keys.includes('levy_statement'))
-  assert.ok(keys.includes('body_corporate_details'))
+  assert.equal(keys.includes('body_corporate_details'), false)
   assert.ok(keys.includes('bond_statement'))
   assert.ok(keys.includes('bond_bank_details'))
   assert.ok(keys.includes('settlement_figure'))
@@ -478,7 +478,7 @@ test('generates trust estate HOA and tenant documents', () => {
   assert.ok(keys.includes('seller_letters_of_authority'))
   assert.ok(keys.includes('trust_resolution_to_sell'))
   assert.ok(keys.includes('hoa_levy_statement'))
-  assert.ok(keys.includes('hoa_contact_details'))
+  assert.equal(keys.includes('hoa_contact_details'), false)
   assert.ok(keys.includes('lease_agreement'))
   assert.ok(keys.includes('tenant_details'))
   assert.ok(keys.includes('solar_compliance_documents'))
@@ -518,7 +518,11 @@ test('generates power of attorney and land branch documents', () => {
   assert.ok(keys.includes('principal_identity'))
   assert.ok(keys.includes('zoning_certificate'))
   assert.ok(keys.includes('sg_diagram'))
-  assert.ok(keys.includes('borehole_certificate'))
+  assert.equal(
+    keys.includes('borehole_certificate'),
+    false,
+    'A borehole installation is property information, not an automatic certificate request.',
+  )
   assert.ok(keys.includes('alteration_approvals'))
 })
 

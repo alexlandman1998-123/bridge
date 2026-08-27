@@ -1,0 +1,23 @@
+{
+  "version": "20260827133916",
+  "stream": "transaction_network",
+  "file": "20260827133916_repair_roleplayer_participant_scope_alignment.sql",
+  "route": "repair_only",
+  "action": "repair_only_after_smoke",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": false,
+  "stagingLedgerRecorded": false,
+  "catalogChecks": "pending",
+  "behaviorChecks": "pending",
+  "rollbackOrNoResidue": "pending",
+  "reviewedBy": "",
+  "approvedBy": "",
+  "capturedAt": null,
+  "notes": [
+    "Do not apply SQL. Run smoke checks, then record the staging ledger."
+  ],
+  "commands": [
+    "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260827133916 --evidence docs/staging-evidence/20260827133916-transaction_network.json --confirm APPLY_TO_STAGING_ONLY"
+  ]
+}

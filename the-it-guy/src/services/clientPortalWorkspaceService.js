@@ -8,8 +8,8 @@ import {
 import { getDemoClientPortalSeedData } from '../lib/onboardingDemoLinks'
 import { resolveProspectDemoConfig } from '../lib/prospectDemoConfig'
 import {
-  filterNextActionsByPortalCapabilities,
   generateClientPortalNextActions,
+  resolveNextActionsForPortalCapabilities,
 } from '../lib/clientPortalNextActionsEngine'
 import {
   buildClientPortalActivityFeedModel,
@@ -69,6 +69,10 @@ import {
 import { buildSellerCompliancePortalModel } from '../core/documents/sellerCompliancePortalModel.js'
 import { buildSellerComplianceDocumentModel } from '../core/documents/sellerComplianceDocumentModel.js'
 import { buildSellerComplianceAgentStatus } from '../core/documents/sellerComplianceAgentStatusModel.js'
+import {
+  isProfessionalOnlySellerRequirement,
+  isSellerClientUploadRequirementAllowed,
+} from '../core/documents/sellerDocumentRequestRuntimePolicy.js'
 
 function normalizeWorkspace(value = 'shared') {
   const normalized = String(value || 'shared').trim().toLowerCase()
@@ -1422,7 +1426,7 @@ function buildWorkflowSummary({
     ? {
         title: nextClientAction?.title || 'Next step',
         description: nextClientAction?.description || 'Please complete your next required action.',
-        actionRequired: true,
+        actionRequired: Boolean(nextClientAction?.blocking),
       }
     : nextStepFromLane
       ? {
@@ -1568,52 +1572,7 @@ function inferRequirementAudience(requirement = {}) {
 }
 
 function isClientPortalProfessionalOnlyRequirement(requirement = {}) {
-  const canonicalVisibility = normalizeValue(
-    requirement?.canonicalDocumentRequestVisibility ||
-      requirement?.canonical_document_request_visibility ||
-      requirement?.canonicalRequestVisibility ||
-      '',
-  )
-  const canonicalOwnerRole = normalizeValue(
-    requirement?.canonicalDocumentRequestOwnerRole ||
-      requirement?.canonical_document_request_owner_role ||
-      requirement?.ownerRole ||
-      requirement?.owner_role ||
-      '',
-  )
-  const canonicalKey = normalizeValue(
-    requirement?.canonicalDocumentRequestKey ||
-      requirement?.canonical_document_request_key ||
-      requirement?.documentRequestCanonicalKey ||
-      requirement?.key ||
-      '',
-  )
-  if (canonicalVisibility === 'professional_shared') return true
-  if (
-    ['signed_otp', 'transfer_documents'].includes(canonicalKey) &&
-    canonicalOwnerRole &&
-    !['buyer', 'seller'].includes(canonicalOwnerRole)
-  ) {
-    return true
-  }
-  return false
-}
-
-const DEFERRED_SELLER_UPLOAD_REQUIREMENT_KEYS = new Set([
-  'property_acquisition_record',
-  'capital_improvement_records',
-])
-
-function isDeferredSellerUploadRequirement(requirement = {}) {
-  const key = normalizeValue(
-    requirement?.key ||
-      requirement?.requirement_key ||
-      requirement?.document_key ||
-      requirement?.documentType ||
-      requirement?.document_type ||
-      '',
-  )
-  return DEFERRED_SELLER_UPLOAD_REQUIREMENT_KEYS.has(key)
+  return isProfessionalOnlySellerRequirement(requirement)
 }
 
 function filterRequiredDocumentsByWorkspace(requiredDocuments = [], workspaceMode = 'buying') {
@@ -1621,7 +1580,7 @@ function filterRequiredDocumentsByWorkspace(requiredDocuments = [], workspaceMod
     const visibility = normalizeValue(requirement?.visibilityScope || requirement?.visibility_scope || 'client')
     if (visibility === 'internal' || visibility === 'internal_only') return false
     if (isClientPortalProfessionalOnlyRequirement(requirement)) return false
-    if (workspaceMode === 'selling' && isDeferredSellerUploadRequirement(requirement)) return false
+    if (workspaceMode === 'selling' && !isSellerClientUploadRequirementAllowed(requirement)) return false
     const audience = inferRequirementAudience(requirement)
     if (workspaceMode === 'selling') return audience.seller
     if (workspaceMode === 'buying') return audience.buyer
@@ -3586,7 +3545,7 @@ function buildDemoClientPortalWorkspaceData(token, workspace = 'shared', prospec
   })
   const portalCapabilities = buildClientPortalCapabilities(portalProfile)
   const nextActions = annotateNextActionsWithEducation(
-    filterNextActionsByPortalCapabilities(Array.isArray(seed.nextActions) ? seed.nextActions : [], {
+    resolveNextActionsForPortalCapabilities(Array.isArray(seed.nextActions) ? seed.nextActions : [], {
       portalProfile,
       portalCapabilities,
     }),

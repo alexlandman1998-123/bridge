@@ -43,18 +43,16 @@ function getBuyerStageLabel(stageKey = BUYER_PROCESS_STAGE_KEYS.captured) {
 export const BUYER_WORKFLOW_STAGES = BUYER_PROCESS_DEFINITION.stages.map((stage) => stage.label)
 
 const STAGE_REQUIREMENTS = {
-  [getBuyerStageLabel(BUYER_PROCESS_STAGE_KEYS.offerReceived)]: [
+  [getBuyerStageLabel(BUYER_PROCESS_STAGE_KEYS.transaction)]: [
     {
       type: 'document',
       key: 'otp_document_uploaded',
-      message: 'Upload the signed OTP before moving to Offer.',
+      message: 'Upload the signed OTP before moving to Transaction.',
       documentTypes: ['uploaded_otp', 'buyer_otp', 'signed_otp', 'otp', 'buyer_offer', 'offer_document', 'offer_to_purchase', 'uploaded_offer', 'signed_offer'],
       acceptedStatuses: ['uploaded', 'under_review', 'approved', 'accepted', 'completed'],
       legacyOfferStatuses: ['submitted', 'agent_review', 'changes_requested', 'sent_to_seller', 'seller_viewed', 'countered', 'accepted', 'converted_to_transaction'],
     },
-  ],
-  [getBuyerStageLabel(BUYER_PROCESS_STAGE_KEYS.transaction)]: [
-    { type: 'transaction', key: 'transaction_created', message: 'Create the transaction from the received offer before moving to Transaction.' },
+    { type: 'transaction', key: 'transaction_created', message: 'Create or reuse the signed OTP transaction before moving to Transaction.' },
   ],
 }
 

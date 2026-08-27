@@ -1,25 +1,29 @@
 {
   "phase": "document_request_phase8_client_portal_container_adoption",
-  "generatedAt": "2026-08-13T19:38:43.695Z",
+  "generatedAt": "2026-08-27T16:58:00.624Z",
   "commit": false,
   "mutatedData": false,
   "strict": false,
-  "version": "document_request_client_portal_container_adoption_v1",
+  "version": "document_request_client_portal_container_adoption_v2",
   "smokeSummary": {
     "failedSmokeCount": 0,
+    "coveredAudienceCount": 8,
+    "missingAudienceSmokeCount": 0,
     "unstableContainerIdCount": 0,
     "deferredSellerUploadLeakCount": 0,
     "buyerContainerCount": 13,
     "sellerContainerCount": 17,
-    "agentContainerCount": 30,
-    "attorneyContainerCount": 30,
-    "bondOriginatorContainerCount": 5,
-    "internalContainerCount": 30
+    "agentContainerCount": 31,
+    "attorneyContainerCount": 31,
+    "bondOriginatorContainerCount": 6,
+    "transferAttorneyContainerCount": 3,
+    "cancellationAttorneyContainerCount": 1,
+    "internalContainerCount": 31
   },
   "phase8Decisions": [
     {
       "key": "container_first_rendering",
-      "decision": "The client portal additional tab now renders documentRequestContainers first and uses raw additionalDocumentRequests only as a compatibility fallback."
+      "decision": "The primary buyer, primary seller, and advanced client document views render documentRequestContainers first and use raw additionalDocumentRequests only when the container field is absent."
     },
     {
       "key": "upload_spec_drives_request_upload",
@@ -28,6 +32,10 @@
     {
       "key": "legacy_payload_compatibility",
       "decision": "Legacy request rendering remains as fallback until all environments reliably return documentRequestContainers."
+    },
+    {
+      "key": "authoritative_empty_payload_boundary",
+      "decision": "When documentRequestContainers is present but empty, the portal treats it as authoritative and does not revive legacy request rows."
     }
   ],
   "gate": {
@@ -46,6 +54,14 @@
       },
       {
         "key": "client_portal_builds_container_backed_cards",
+        "ok": true
+      },
+      {
+        "key": "primary_buyer_and_seller_workspaces_adopt_containers",
+        "ok": true
+      },
+      {
+        "key": "authoritative_empty_container_payload_is_fail_closed",
         "ok": true
       },
       {

@@ -33,6 +33,7 @@ function buildReport(options = {}) {
   const apiSource = read('src/lib/api.js')
   const privateListingSource = read('src/services/privateListingService.js')
   const clientPortalSource = read('src/pages/ClientPortal.jsx')
+  const agentWorkspaceSource = read('src/pages/UnitDetail.jsx')
   const smokeAudit = buildDocumentRequestWorkspaceSmokeAudit()
   const uploadTransition = buildProfessionalDocumentRequestUploadTransition({
     id: 'phase9-upload-linking-request',
@@ -74,6 +75,27 @@ function buildReport(options = {}) {
         privateListingSource.includes('documentRequestUpdate,'),
     },
     {
+      key: 'agent_can_upload_against_exact_request_on_behalf_of_client',
+      ok: agentWorkspaceSource.includes('Upload on behalf') &&
+        agentWorkspaceSource.includes('showRequestUploadOnBehalf') &&
+        agentWorkspaceSource.includes('resolveDocumentRequestPartyForUpload(row)') &&
+        agentWorkspaceSource.includes("source: documentRequestId ? 'professional_request_upload_on_behalf' : 'internal'") &&
+        agentWorkspaceSource.includes("documentRequestId: String(row?.documentRequestId || '').trim()"),
+    },
+    {
+      key: 'professional_upload_returns_link_result_and_audits_proxy_party',
+      ok: apiSource.includes('const documentRequestUpdate = await updateDocumentRequestFromUploadIfPossible(client,') &&
+        apiSource.includes('uploadedByParty: normalizeNullableText(uploadedByParty)') &&
+        apiSource.includes('uploadedOnBehalf: Boolean(normalizeNullableText(uploadedByParty))') &&
+        apiSource.includes('documentRequestUpdate,'),
+    },
+    {
+      key: 'schema_fallback_preserves_exact_request_match',
+      ok: apiSource.includes('fallbackRequestQuery = documentRequestId') &&
+        apiSource.includes("fallbackRequestQuery.eq('id', documentRequestId)") &&
+        apiSource.includes('assigned_to_role, requires_review, requested_document_id, created_at'),
+    },
+    {
       key: 'client_portal_passes_request_id_to_buyer_and_seller_uploads',
       ok: clientPortalSource.includes('documentRequestId: options.documentRequestId || null') &&
         clientPortalSource.includes('request.uploadSpec?.requestId') &&
@@ -112,7 +134,7 @@ function buildReport(options = {}) {
     commit: false,
     mutatedData: false,
     strict: options.strict === true,
-    version: 'document_request_upload_linking_v1',
+    version: 'document_request_upload_linking_v2',
     smokeSummary: smokeAudit.summary,
     uploadTransition,
     phase9Decisions: [
@@ -127,6 +149,14 @@ function buildReport(options = {}) {
       {
         key: 'promoted_document_preferred',
         decision: 'When a seller upload is promoted into transaction documents, the shared document id is stored on the request before falling back to the private listing document id.',
+      },
+      {
+        key: 'agent_upload_on_behalf',
+        decision: 'Open request rows in the agent transaction document library expose Upload on behalf, retain the exact request id, and record which client party the agent represented.',
+      },
+      {
+        key: 'exact_match_survives_schema_fallback',
+        decision: 'Compatibility retries preserve both transaction scope and documentRequestId instead of falling back to a broad transaction-wide match.',
       },
     ],
     gate: {

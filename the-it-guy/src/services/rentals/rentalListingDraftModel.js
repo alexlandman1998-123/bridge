@@ -15,6 +15,7 @@ export const RENTAL_LISTING_INITIAL_FORM = Object.freeze({
   city: '',
   province: '',
   postalCode: '',
+  privatePropertySuburbId: '',
   exactAddressVisibility: 'hide_street_number',
   propertyType: 'Apartment',
   bedrooms: '',
@@ -175,6 +176,10 @@ function normalizeText(value) {
   return String(value || '').trim()
 }
 
+function normalizeKey(value) {
+  return normalizeText(value).toLowerCase().replace(/[\s-]+/g, '_')
+}
+
 function normalizeNumber(value) {
   if (value === null || value === undefined || value === '') return null
   const parsed = Number(value)
@@ -202,6 +207,33 @@ function joinNonEmpty(parts, separator = ', ') {
   return parts.map(normalizeText).filter(Boolean).join(separator)
 }
 
+const PRIVATE_PROPERTY_MANDATE_READY_STATUSES = new Set(['signed', 'signed_uploaded'])
+const PRIVATE_PROPERTY_MARKETING_READY_STATUSES = new Set(['approved', 'ready'])
+
+function galleryImageCount(form = {}) {
+  return Array.isArray(form.galleryImages) ? form.galleryImages.filter(Boolean).length : 0
+}
+
+export function validateRentalPrivatePropertyRequiredFields(form = {}) {
+  const errors = []
+  if (!normalizeText(form.streetNumber)) errors.push('Street number is required for Private Property.')
+  if (!normalizeText(form.streetName)) errors.push('Street name is required for Private Property.')
+  if (!normalizeText(form.suburb)) errors.push('Suburb is required for Private Property.')
+  if (!normalizeText(form.city)) errors.push('City is required for Private Property.')
+  if (!normalizeText(form.province)) errors.push('Province is required for Private Property.')
+  if (!normalizeText(form.privatePropertySuburbId)) errors.push('Private Property suburb ID is required.')
+  if (!normalizeText(form.propertyType)) errors.push('Property type is required for Private Property.')
+  if (normalizeNumber(form.bedrooms) === null) errors.push('Bedrooms are required for Private Property.')
+  if (normalizeNumber(form.bathrooms) === null) errors.push('Bathrooms are required for Private Property.')
+  if (!normalizeText(form.description)) errors.push('Public description is required for Private Property.')
+  if (/https?:\/\/|www\./i.test(normalizeText(form.description))) errors.push('Remove web links from the public description before publishing to Private Property.')
+  if (/(?:\+?\d[\s().-]*){9,}/.test(normalizeText(form.description))) errors.push('Remove phone numbers from the public description before publishing to Private Property.')
+  if (galleryImageCount(form) < 3) errors.push('At least three listing photos are required for Private Property.')
+  if (!PRIVATE_PROPERTY_MANDATE_READY_STATUSES.has(normalizeKey(form.mandateStatus))) errors.push('A signed rental mandate is required for Private Property.')
+  if (!PRIVATE_PROPERTY_MARKETING_READY_STATUSES.has(normalizeKey(form.marketingApprovalStatus))) errors.push('Marketing approval is required for Private Property.')
+  return errors
+}
+
 export function buildRentalListingTitle(form = {}) {
   return normalizeText(form.title) ||
     joinNonEmpty([form.propertyType, form.suburb || form.city], ' in ') ||
@@ -216,6 +248,7 @@ export function validateRentalListingDraftForm(form = {}, context = {}) {
   if (!normalizeText(form.propertyAddress)) errors.push('Property address is required.')
   if (!normalizeNumber(form.monthlyRent)) errors.push('Monthly rent is required.')
   if (!normalizeText(form.availableFrom)) errors.push('Availability date is required.')
+  errors.push(...validateRentalPrivatePropertyRequiredFields(form))
   return errors
 }
 
@@ -265,11 +298,15 @@ export function buildRentalCanonicalFacts(form = {}) {
       city: normalizeText(form.city),
       province: normalizeText(form.province),
       postalCode: normalizeText(form.postalCode),
+      privatePropertySuburbId: normalizeText(form.privatePropertySuburbId),
+      private_property_suburb_id: normalizeText(form.privatePropertySuburbId),
       exactAddressVisibility: normalizeText(form.exactAddressVisibility) || 'hide_street_number',
     },
     suburb: normalizeText(form.suburb),
     city: normalizeText(form.city),
     province: normalizeText(form.province),
+    privatePropertySuburbId: normalizeText(form.privatePropertySuburbId),
+    private_property_suburb_id: normalizeText(form.privatePropertySuburbId),
     propertyProfile: {
       propertyType: normalizeText(form.propertyType) || 'Apartment',
       bedrooms: normalizeNumber(form.bedrooms),
@@ -332,6 +369,7 @@ export function buildRentalCanonicalFactReadiness(form = {}) {
     monthlyRent: Boolean(normalizeNumber(form.monthlyRent)),
     depositAmount: Boolean(normalizeNumber(form.depositAmount)),
     availableFrom: Boolean(normalizeText(form.availableFrom)),
+    privatePropertySuburbId: Boolean(normalizeText(form.privatePropertySuburbId)),
     occupationDate: Boolean(normalizeText(form.occupationDate || form.availableFrom)),
     leasePeriodMonths: Boolean(normalizeNumber(form.leasePeriodMonths)),
     depositRequirement: Boolean(normalizeText(form.depositRequirement) || normalizeNumber(form.depositAmount)),
@@ -374,6 +412,7 @@ export function buildRentalListingNotes(form = {}) {
   if (facts.propertyProfile?.openParking !== null) lines.push(`Open parking: ${facts.propertyProfile.openParking}`)
   if (facts.propertyProfile?.selectedFeatures?.length) lines.push(`Features: ${facts.propertyProfile.selectedFeatures.join(', ')}`)
   if (facts.propertyProfile?.amenities?.length) lines.push(`Amenities: ${facts.propertyProfile.amenities.join(', ')}`)
+  if (facts.privatePropertySuburbId) lines.push(`Private Property suburb ID: ${facts.privatePropertySuburbId}`)
   const capturedPortalFeatures = Object.entries(facts.propertyProfile?.portalFeatures || {})
     .filter(([, value]) => value !== null)
     .map(([key, value]) => `${key}: ${value ? 'yes' : 'no'}`)
@@ -397,6 +436,8 @@ export function buildRentalPublicationDraft(form = {}) {
     suburb: normalizeText(form.suburb),
     city: normalizeText(form.city),
     province: normalizeText(form.province),
+    privatePropertySuburbId: normalizeText(form.privatePropertySuburbId),
+    private_property_suburb_id: normalizeText(form.privatePropertySuburbId),
     propertyType: normalizeText(form.propertyType),
     listingType: 'Rental',
     askingPrice: normalizeNumber(form.monthlyRent),
@@ -452,6 +493,8 @@ export function buildRentalPrivateListingPayload(form = {}, context = {}) {
     streetName: normalizeText(form.streetName),
     unitNumber: normalizeText(form.unitNumber),
     complexName: normalizeText(form.complexName),
+    privatePropertySuburbId: normalizeText(form.privatePropertySuburbId),
+    private_property_suburb_id: normalizeText(form.privatePropertySuburbId),
     suburb: normalizeText(form.suburb),
     city: normalizeText(form.city),
     province: normalizeText(form.province),

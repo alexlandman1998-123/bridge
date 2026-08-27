@@ -28,6 +28,11 @@ test('adapter maps legacy buyer, seller and attorney keys to canonical request k
   assert.equal(resolveCanonicalDocumentRequestKey('signed_fica_declaration', 'seller'), 'seller_fica_pack')
   assert.notEqual(resolveCanonicalDocumentRequestKey('signed_mandate', 'seller'), 'seller_fica_pack')
   assert.equal(getCanonicalDocumentRequestMetadata('unknown_document', { context: 'buyer' }).canonicalDocumentRequestKnown, false)
+  assert.equal(resolveCanonicalDocumentRequestKey('information_sheet', 'buyer'), '')
+  assert.equal(
+    getCanonicalDocumentRequestMetadata('information_sheet', { context: 'buyer' }).canonicalDocumentRequestDeprecatedLegacyKey,
+    true,
+  )
 })
 
 test('buyer engine includes canonical metadata for entity beneficial ownership', () => {

@@ -12,7 +12,9 @@ import { assessMvpTestDataProtection, assertMvpTestDataProtection } from '../cor
 import { assertMvpPilotCreationAllowed } from './mvpPilotCreationFreeze.js'
 import {
   assertMvpTransactionOverrideAuthorization,
+  BUYER_ONBOARDING_INTAKE_CREATION_MODE,
   resolveTransactionCreationOverrideReason,
+  SIGNED_OTP_INTAKE_CREATION_MODE,
 } from '../core/transactions/mvpTransactionOverrideAuthorization.js'
 
 const KEY_AGENT_DEMO_TRANSACTIONS = 'itg:agent-demo-transactions:v1'
@@ -191,7 +193,14 @@ function shouldAllowIncompleteRoutingFacts(payload = {}, options = {}) {
     options?.allow_incomplete_routing_facts === true ||
     payload?.mockMode === true ||
     payload?.mock_mode === true ||
-    ['onboarding_capture', 'manual_intake', 'manual_capture', 'mock_transaction'].includes(mode)
+    [
+      'onboarding_capture',
+      'manual_intake',
+      'manual_capture',
+      BUYER_ONBOARDING_INTAKE_CREATION_MODE,
+      SIGNED_OTP_INTAKE_CREATION_MODE,
+      'mock_transaction',
+    ].includes(mode)
   )
 }
 
@@ -919,6 +928,12 @@ export async function createTransactionFromLeadOverride({
   const nextListingId = normalize(payload?.listingId || listing?.id || created?.transactionRow?.transaction?.unit_id)
   const acceptedOfferId = normalize(payload?.acceptedOfferId || payload?.accepted_offer_id || options?.acceptedOfferId)
   const allowDirectLeadConversion = options?.allowDirectLeadConversion === true
+  const creationMode = normalizeLower(
+    payload?.creationMode || payload?.creation_mode || options?.creationMode || options?.creation_mode,
+  ) || 'mvp_workflow'
+  const signedOtpIntake = !acceptedOfferId && creationMode === SIGNED_OTP_INTAKE_CREATION_MODE
+  const buyerOnboardingIntake = !acceptedOfferId && creationMode === BUYER_ONBOARDING_INTAKE_CREATION_MODE
+  const assignedBuyerIntake = signedOtpIntake || buyerOnboardingIntake
   const overrideReason = resolveTransactionCreationOverrideReason(payload, options)
   const unsafeFallbackAllowed = isUnsafeFallbackAllowed()
   const explicitMockMode = unsafeFallbackAllowed && (payload?.mockMode === true || options?.mockMode === true)
@@ -934,14 +949,17 @@ export async function createTransactionFromLeadOverride({
   if (!acceptedOfferId && !allowDirectLeadConversion) {
     throw new Error('Buyer transactions must be created from an accepted offer. Create and accept an offer before conversion.')
   }
-  const overrideAuthorization = !acceptedOfferId && allowDirectLeadConversion
+  const directCreationAuthorization = !acceptedOfferId && allowDirectLeadConversion
     ? assertMvpTransactionOverrideAuthorization({
-      actor,
-      payload,
-      options,
-      acceptedOfferId,
-    })
+        actor,
+        payload,
+        options,
+        acceptedOfferId,
+      })
     : null
+  const overrideAuthorization = assignedBuyerIntake ? null : directCreationAuthorization
+  const buyerOnboardingIntakeAuthorization = buyerOnboardingIntake ? directCreationAuthorization : null
+  const signedOtpIntakeAuthorization = signedOtpIntake ? directCreationAuthorization : null
 
   const resolvedRoutingProfile = resolveRoutingProfileForTransaction({ listing, lead, payload })
   const testDataProtection = assessMvpTestDataProtection({ payload, listing, lead })
@@ -960,6 +978,25 @@ export async function createTransactionFromLeadOverride({
           authorised: true,
         }
       : null,
+    signedOtpIntakeAuthorization: signedOtpIntakeAuthorization
+      ? {
+          version: signedOtpIntakeAuthorization.version,
+          actorId: signedOtpIntakeAuthorization.actorId,
+          actorRole: signedOtpIntakeAuthorization.actorRole,
+          assignedAgentMatch: signedOtpIntakeAuthorization.assignedAgentMatch,
+          authorised: true,
+          evidence: signedOtpIntakeAuthorization.signedOtpEvidence,
+        }
+      : null,
+    buyerOnboardingIntakeAuthorization: buyerOnboardingIntakeAuthorization
+      ? {
+          version: buyerOnboardingIntakeAuthorization.version,
+          actorId: buyerOnboardingIntakeAuthorization.actorId,
+          actorRole: buyerOnboardingIntakeAuthorization.actorRole,
+          assignedAgentMatch: buyerOnboardingIntakeAuthorization.assignedAgentMatch,
+          authorised: true,
+        }
+      : null,
   }
   const creationCommand = prepareMvpTransactionCreationCommand({
     routingProfile,
@@ -972,7 +1009,7 @@ export async function createTransactionFromLeadOverride({
     idempotencyKey: payload?.idempotencyKey || payload?.idempotency_key,
     requireAcceptedOffer: !allowDirectLeadConversion,
     allowIncompleteRoutingFacts: shouldAllowIncompleteRoutingFacts(payload, options),
-    creationMode: payload?.creationMode || payload?.creation_mode || options?.creationMode || 'mvp_workflow',
+    creationMode,
   })
 
   if (!canPersistToSupabase) {
@@ -1062,6 +1099,8 @@ export async function createTransactionFromLeadOverride({
         }),
         leadLinkageUpdated: leadLinkageResult?.updated === true,
         overrideAuthorization,
+        buyerOnboardingIntakeAuthorization,
+        signedOtpIntakeAuthorization,
         warning: !leadLinkageResult?.updated
           ? leadLinkageResult?.reason || 'existing_transaction_reused'
           : 'existing_transaction_reused',
@@ -1118,7 +1157,11 @@ export async function createTransactionFromLeadOverride({
       next_action: onboardingNextAction,
       comment: acceptedOfferId
         ? `Transaction created from accepted buyer offer. Client intake mode: ${onboardingLabel}.`
-        : `Transaction created from lead with manual override. Reason: ${overrideReason}`,
+        : signedOtpIntake
+          ? 'Transaction created from assigned-agent signed OTP intake.'
+          : buyerOnboardingIntake
+            ? `Transaction created for assigned-agent buyer onboarding. Client intake mode: ${onboardingLabel}.`
+            : `Transaction created from lead with manual override. Reason: ${overrideReason}`,
       onboarding_status: onboardingStatus,
       assigned_agent: normalize(payload?.assignedAgentName || lead?.assignedAgentName || actor?.name) || null,
       assigned_agent_email: nextAssignedAgentEmail || null,
@@ -1137,9 +1180,10 @@ export async function createTransactionFromLeadOverride({
       commission_snapshot_id: normalize(payload?.commissionSnapshotId) || null,
       creation_idempotency_key: creationCommand.idempotencyKey,
       creation_mode: creationCommand.creationMode,
-      transaction_creation_override_reason: overrideReason || null,
+      transaction_creation_override_reason: assignedBuyerIntake ? null : overrideReason || null,
       transaction_creation_override_actor_id: overrideAuthorization?.actorId || null,
       transaction_creation_override_actor_role: overrideAuthorization?.actorRole || null,
+      signed_otp_intake_evidence: signedOtpIntake ? payload?.signedOtpEvidence || payload?.signed_otp_evidence || {} : null,
       gross_commission_percentage: asNumber(payload?.grossCommissionPercentage),
       gross_commission_amount: asNumber(payload?.grossCommissionAmount),
       agent_split_percentage_snapshot: asNumber(payload?.agentSplitPercentage),
@@ -1193,7 +1237,11 @@ export async function createTransactionFromLeadOverride({
 
     appendLifecycleEvent({
       id: generateId('tx_event'),
-      eventType: 'lead_manual_override_transaction_created',
+      eventType: signedOtpIntake
+        ? 'lead_signed_otp_intake_transaction_created'
+        : buyerOnboardingIntake
+          ? 'lead_buyer_onboarding_transaction_created'
+          : 'lead_manual_override_transaction_created',
       transactionId: insertedRow.id,
       organisationId: nextOrganisationId,
       leadId: nextLeadId || null,
@@ -1218,6 +1266,8 @@ export async function createTransactionFromLeadOverride({
       existing,
       atomicCreation,
       overrideAuthorization,
+      buyerOnboardingIntakeAuthorization,
+      signedOtpIntakeAuthorization,
       warning: existing ? 'existing_transaction_reused' : null,
     }
   } catch (error) {

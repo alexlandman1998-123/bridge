@@ -1,0 +1,72 @@
+{
+  "generatedAt": "2026-08-27T14:39:10Z",
+  "repo": "/Users/alexanderlandman/the-it-guy",
+  "status": "AUGUST_27_CLASSIFICATION_READY",
+  "summary": {
+    "apply": 3,
+    "repair-only-after-smoke": 3,
+    "consolidate": 2,
+    "total": 8
+  },
+  "rows": [
+    {
+      "version": "20260827102857",
+      "file": "20260827102857_repair_partner_pipeline_assignment_scope.sql",
+      "bucket": "apply",
+      "reason": "Adds assignment columns, constraints, index coverage, and a guarded backfill for missing attorney assignment rows."
+    },
+    {
+      "version": "20260827104557",
+      "file": "20260827104557_repair_attorney_incoming_matter_visible_status.sql",
+      "bucket": "repair-only-after-smoke",
+      "reason": "Normalizes existing assignment instruction status rows and should only be ledger-repaired after the behavior smoke passes."
+    },
+    {
+      "version": "20260827113000",
+      "file": "20260827113000_whatsapp_embedded_signup_v1.sql",
+      "bucket": "apply",
+      "reason": "Introduces the WhatsApp embedded-signup schema and function surface, then backfills access tokens into secrets storage."
+    },
+    {
+      "version": "20260827124137",
+      "file": "20260827124137_repair_attorney_firm_assignment_spine_access.sql",
+      "bucket": "apply",
+      "reason": "Replaces the transaction-spine access resolver and expands firm-level visibility rules."
+    },
+    {
+      "version": "20260827133506",
+      "file": "20260827133506_repair_missing_roleplayer_bond_handoffs.sql",
+      "bucket": "consolidate",
+      "reason": "First half of the bond-originator handoff repair pair; should be merged into one canonical packet."
+    },
+    {
+      "version": "20260827133739",
+      "file": "20260827133739_repair_missing_roleplayer_bond_handoffs_execution.sql",
+      "bucket": "consolidate",
+      "reason": "Explicit execution form of the same bond-originator handoff repair; consolidate with 20260827133506."
+    },
+    {
+      "version": "20260827133916",
+      "file": "20260827133916_repair_roleplayer_participant_scope_alignment.sql",
+      "bucket": "repair-only-after-smoke",
+      "reason": "Backfills participant scope metadata from active roleplayer selections and should not be blindly replayed."
+    },
+    {
+      "version": "20260827151119",
+      "file": "20260827151119_repair_bond_originator_transaction_scope.sql",
+      "bucket": "repair-only-after-smoke",
+      "reason": "Backfills transaction scope fields from canonical bond applications and should be ledger-repaired only after smoke evidence."
+    }
+  ],
+  "consolidations": [
+    {
+      "name": "bond_originator_handoff_repair",
+      "versions": [
+        "20260827133506",
+        "20260827133739"
+      ],
+      "canonicalAction": "consolidate",
+      "reason": "Both files repair the same missing bond-originator workflow/application spine."
+    }
+  ]
+}

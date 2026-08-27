@@ -34,6 +34,7 @@ import { buildMvpDocumentRoster } from '../core/transactions/mvpDocumentRoster.j
 import { assessMvpTestDataProtection } from '../core/transactions/mvpTestDataProtection.js'
 import { buildMvpTransactionAuditRecovery } from '../core/transactions/mvpTransactionAuditRecovery.js'
 import { extractNewTransactionSetupHealthFromEvents } from '../core/transactions/newTransactionSetupHealth.js'
+import { buildAgentBuyerSellerRelationshipHealth } from '../core/transactions/agentBuyerSellerRelationshipHealth.js'
 import { getTransactionSharedProgress } from './transactionSharedProgressService.js'
 
 const READ_MODEL_WARNING_PREFIX = '[workflow-read-model]'
@@ -1102,10 +1103,17 @@ export async function getTransactionWorkflowReadModel(transactionId, options = {
     warnings,
     notificationOutbox,
   })
+  const relationshipHealth = buildAgentBuyerSellerRelationshipHealth({
+    transactionId: normalizedTransactionId,
+    truth: mvpTruth,
+    participants,
+    events,
+  })
   const mvpControlBoard = {
     ...buildMvpTransactionControlBoard(mvpTruth),
     health: mvpTransactionHealth,
     audit: mvpAudit,
+    relationshipHealth,
   }
   return {
     transaction,
@@ -1139,6 +1147,7 @@ export async function getTransactionWorkflowReadModel(transactionId, options = {
     mvpControlBoard,
     mvpTransactionHealth,
     mvpAudit,
+    relationshipHealth,
     meta: {
       generatedAt: toIsoString(new Date()),
       schemaWarnings: warnings.length,

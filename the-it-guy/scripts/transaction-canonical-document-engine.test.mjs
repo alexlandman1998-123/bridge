@@ -11,6 +11,7 @@ try {
   const {
     buildProjectedTransactionRequirementCandidates,
     buildTransactionDocumentFacts,
+    mapProjectionRowToRequirement,
     shouldDisplayRequirementAtStage,
   } = await server.ssrLoadModule('/src/services/documents/transactionCanonicalDocumentRequirementService.js')
   const { BUYER_ONBOARDING_FLOW_VERSION } = await server.ssrLoadModule('/src/lib/buyerOnboardingFlowContract.js')
@@ -308,6 +309,64 @@ try {
   assert.equal(trustBuyerKeys.includes('buyer_trust_deed'), true)
   assert.equal(trustBuyerKeys.includes('buyer_letters_of_authority'), false)
   assert.equal(trustBuyerKeys.includes('buyer_trustee_resolution'), false)
+
+  const jointBuyerCandidates = buildProjectedTransactionRequirementCandidates({
+    transaction: {
+      id: 'tx-joint-buyers',
+      finance_type: 'cash',
+      purchaser_type: 'individual',
+      current_main_stage: 'OTP',
+      stage: 'OTP Signed',
+      onboarding_status: 'Submitted',
+    },
+    formData: {
+      purchaser_type: 'individual',
+      purchase_mode: 'co_purchasing',
+      purchase_finance_type: 'cash',
+      purchasers: [
+        { first_name: 'Alex', last_name: 'Buyer' },
+        { first_name: 'Taylor', last_name: 'Buyer' },
+      ],
+    },
+    documents: [],
+    subprocesses: [],
+    rules,
+    definitions,
+  })
+  const jointIdCandidates = jointBuyerCandidates.candidates.filter((candidate) =>
+    candidate.generated.document_definition_key === 'buyer_id_document'
+  )
+  assert.equal(jointIdCandidates.length, 2)
+  assert.deepEqual(
+    jointIdCandidates.map((candidate) => candidate.generated.participant_key).sort(),
+    ['purchaser:1', 'purchaser:2'],
+  )
+  assert.deepEqual(
+    jointIdCandidates.map((candidate) => candidate.explicitMeta.documentName).sort(),
+    ['Purchaser 1 (Alex Buyer) — ID Document', 'Purchaser 2 (Taylor Buyer) — Co-purchaser ID Document'],
+  )
+  const projectedJointIds = jointIdCandidates.map((candidate, index) =>
+    mapProjectionRowToRequirement({
+      id: `joint-id-${index + 1}`,
+      transaction_id: 'tx-joint-buyers',
+      document_key: 'buyer_id_document',
+      canonical_document_key: 'buyer_id_document',
+      document_name: candidate.explicitMeta.documentName,
+      participant_key: candidate.generated.participant_key,
+      participant_role: candidate.generated.participant_role,
+      participant_name: candidate.generated.participant_name,
+      requested_from: 'buyer',
+      responsible_role: 'buyer',
+      visible_section: 'buyer_documents',
+      required: true,
+      status: 'pending',
+    }),
+  )
+  assert.deepEqual(
+    projectedJointIds.map((row) => row.key).sort(),
+    ['purchaser:1:buyer_id_document', 'purchaser:2:buyer_id_document'],
+  )
+  assert.equal(projectedJointIds.every((row) => row.baseRequirementKey === 'buyer_id_document'), true)
 
   console.log('transaction canonical document engine tests passed')
 } finally {

@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import {
+  BUYER_ONBOARDING_INTAKE_CREATION_MODE,
+  SIGNED_OTP_INTAKE_CREATION_MODE,
   assessMvpTransactionOverrideAuthorization,
   assertMvpTransactionOverrideAuthorization,
   resolveTransactionCreationOverrideReason,
@@ -11,6 +13,10 @@ const pipelineSource = readFileSync(new URL('../src/pages/agency/AgencyPipelineP
 const contract = readFileSync(new URL('../docs/lead-listing-transaction-workflow-contract-phase0.md', import.meta.url), 'utf8')
 const rpcMigration = readFileSync(
   new URL('../../supabase/migrations/20260815213628_transaction_override_boundary_phase5.sql', import.meta.url),
+  'utf8',
+)
+const signedOtpIntakeMigration = readFileSync(
+  new URL('../../supabase/migrations/20260827150150_signed_otp_intake_phase1.sql', import.meta.url),
   'utf8',
 )
 
@@ -35,6 +41,63 @@ assert.throws(
   }),
   (error) => error?.code === 'MVP_TRANSACTION_OVERRIDE_UNAUTHORISED' &&
     error.details?.issues.includes('override_actor_not_authorised'),
+)
+
+const buyerOnboardingIntake = assessMvpTransactionOverrideAuthorization({
+  actor: { id: 'agent-1', role: 'agent' },
+  payload: {
+    creationMode: BUYER_ONBOARDING_INTAKE_CREATION_MODE,
+    assignedAgentId: 'agent-1',
+  },
+})
+assert.equal(buyerOnboardingIntake.authorised, true)
+assert.equal(buyerOnboardingIntake.assignedAgentMatch, true)
+
+const signedOtpIntake = assessMvpTransactionOverrideAuthorization({
+  actor: { id: 'agent-1', role: 'agent' },
+  payload: {
+    creationMode: SIGNED_OTP_INTAKE_CREATION_MODE,
+    assignedAgentId: 'agent-1',
+    signedOtpEvidence: {
+      storagePath: 'buyer-otp-documents/lead-1/signed-otp.pdf',
+      uploadedAt: '2026-08-27T12:00:00.000Z',
+      signedByAllPartiesConfirmed: true,
+      arch9TermsIncludedConfirmed: true,
+    },
+  },
+})
+assert.equal(signedOtpIntake.authorised, true)
+assert.equal(signedOtpIntake.signedOtpEvidence.ready, true)
+
+assert.throws(
+  () => assertMvpTransactionOverrideAuthorization({
+    actor: { id: 'agent-2', role: 'agent' },
+    payload: {
+      creationMode: SIGNED_OTP_INTAKE_CREATION_MODE,
+      assignedAgentId: 'agent-1',
+      signedOtpEvidence: {
+        storagePath: 'buyer-otp-documents/lead-1/signed-otp.pdf',
+        uploadedAt: '2026-08-27T12:00:00.000Z',
+        signedByAllPartiesConfirmed: true,
+        arch9TermsIncludedConfirmed: true,
+      },
+    },
+  }),
+  (error) => error?.code === 'SIGNED_OTP_INTAKE_UNAUTHORISED' &&
+    error.details?.issues.includes('buyer_intake_actor_not_assigned'),
+)
+
+assert.throws(
+  () => assertMvpTransactionOverrideAuthorization({
+    actor: { id: 'agent-1', role: 'agent' },
+    payload: {
+      creationMode: SIGNED_OTP_INTAKE_CREATION_MODE,
+      assignedAgentId: 'agent-1',
+      signedOtpEvidence: { storagePath: 'buyer-otp-documents/lead-1/signed-otp.pdf' },
+    },
+  }),
+  (error) => error?.code === 'SIGNED_OTP_INTAKE_UNAUTHORISED' &&
+    error.details?.issues.includes('signed_otp_uploaded_at_missing'),
 )
 
 assert.throws(
@@ -63,8 +126,8 @@ assert.match(
 )
 assert.match(
   pipelineSource,
-  /transactionCreationOverrideReason:\s*'Principal authorised transaction buyer onboarding setup before accepted-offer conversion\.'/,
-  'buyer onboarding setup direct conversion should carry a written override reason',
+  /creationMode:\s*'buyer_onboarding_intake'/,
+  'buyer onboarding should reuse the transaction command through its assigned-agent intake mode',
 )
 assert.match(
   pipelineSource,
@@ -76,6 +139,36 @@ assert.match(
   rpcMigration,
   /create or replace function public\.bridge_can_create_transaction_override/,
   'database boundary should expose a dedicated transaction override role helper',
+)
+assert.match(
+  lifecycleSource,
+  /signed_otp_intake_evidence:\s*signedOtpIntake/,
+  'signed OTP evidence should cross the atomic transaction boundary',
+)
+assert.match(
+  pipelineSource,
+  /async function promoteBuyerOnboardingDraftToTransaction/,
+  'manual onboarding drafts should be promoted into the existing canonical onboarding record',
+)
+assert.match(
+  pipelineSource,
+  /persistedOtpDocument\?\.id[\s\S]+canonical transaction evidence could not be recorded/,
+  'OTP finalisation must stop if the canonical document record is unavailable',
+)
+assert.match(
+  pipelineSource,
+  /title:\s*'Complete signed OTP intake'/,
+  'an interrupted upload should create a visible recovery task',
+)
+assert.match(
+  signedOtpIntakeMigration,
+  /bridge_can_create_assigned_buyer_intake/,
+  'the database should authorise assigned-agent buyer intake from persisted assignment',
+)
+assert.match(
+  signedOtpIntakeMigration,
+  /v_creation_mode = 'signed_otp_intake'[\s\S]+Signed OTP intake requires complete upload evidence and confirmations/,
+  'the database should enforce signed OTP evidence independently of the browser',
 )
 assert.match(
   rpcMigration,

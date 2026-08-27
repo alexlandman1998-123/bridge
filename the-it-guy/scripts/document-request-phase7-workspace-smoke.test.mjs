@@ -40,7 +40,7 @@ assert.equal(
   'package.json should expose the Phase 7 verification command.',
 )
 
-assert.match(serviceSource, /document_request_workspace_smoke_v1/, 'Phase 7 service should carry a stable version.')
+assert.match(serviceSource, /document_request_workspace_smoke_v2/, 'Phase 7 service should carry the complete audience-matrix version.')
 assert.match(serviceSource, /buyer_portal_smoke/, 'Phase 7 should smoke buyer portal containers.')
 assert.match(serviceSource, /seller_portal_smoke/, 'Phase 7 should smoke seller portal containers.')
 assert.match(serviceSource, /bond_originator_workspace_smoke/, 'Phase 7 should smoke bond-originator containers.')
@@ -63,6 +63,8 @@ assert.match(attorneyTransactionSource, /additionalRequests:\s*additionalDocumen
 const audit = buildDocumentRequestWorkspaceSmokeAudit()
 assert.equal(audit.version, DOCUMENT_REQUEST_WORKSPACE_SMOKE_VERSION)
 assert.equal(audit.summary.failedSmokeCount, 0)
+assert.equal(audit.summary.coveredAudienceCount, 8)
+assert.equal(audit.summary.missingAudienceSmokeCount, 0)
 assert.equal(audit.summary.unstableContainerIdCount, 0)
 assert.equal(audit.summary.deferredSellerUploadLeakCount, 0)
 assert.ok(audit.summary.buyerContainerCount > 0)
@@ -70,7 +72,10 @@ assert.ok(audit.summary.sellerContainerCount > 0)
 assert.ok(audit.summary.agentContainerCount > audit.summary.buyerContainerCount)
 assert.ok(audit.summary.attorneyContainerCount >= audit.summary.agentContainerCount)
 assert.ok(audit.summary.bondOriginatorContainerCount > 0)
+assert.ok(audit.summary.transferAttorneyContainerCount > 0)
+assert.ok(audit.summary.cancellationAttorneyContainerCount > 0)
 assert.ok(audit.summary.internalContainerCount >= audit.summary.agentContainerCount)
+assert.equal(audit.results.length, 8)
 
 for (const result of audit.results) {
   assert.equal(result.ok, true, `${result.id} should pass.`)
@@ -97,6 +102,14 @@ const originatorSmoke = audit.results.find((result) => result.id === 'bond_origi
 assert.ok(originatorSmoke.keys.includes('bond_approval'))
 assert.ok(originatorSmoke.requestIds.includes('phase6-originator-professional-request'))
 assert.equal(originatorSmoke.requestIds.includes('phase6-cancellation-seller-request'), false)
+
+const transferAttorneySmoke = audit.results.find((result) => result.id === 'transfer_attorney_lane_smoke')
+assert.ok(transferAttorneySmoke.requestIds.includes('phase6-transfer-buyer-request'))
+assert.ok(transferAttorneySmoke.requestIds.includes('phase6-professional-buyer-boundary-request'))
+assert.equal(transferAttorneySmoke.requestIds.includes('phase6-cancellation-seller-request'), false)
+
+const cancellationAttorneySmoke = audit.results.find((result) => result.id === 'cancellation_attorney_lane_smoke')
+assert.deepEqual(cancellationAttorneySmoke.requestIds, ['phase6-cancellation-seller-request'])
 
 const fixture = buildDocumentRequestWorkspaceSmokeFixture()
 const buyerModel = buildDocumentRequestContainerModel({
@@ -156,6 +169,10 @@ assert.ok(portalModel.documentRequestContainers.length > 0)
 assert.ok(portalModel.documentRequestContainerSummary.additionalRequests >= 3)
 assert.ok(portalModel.documentRequestContainers.some((container) => container.sourceId === 'phase6-originator-buyer-request'))
 assert.equal(
+  portalModel.documentRequestContainers.some((container) => container.sourceId === 'phase6-professional-buyer-boundary-request'),
+  false,
+)
+assert.equal(
   portalModel.documentRequestContainers.some((container) => container.sourceId === 'phase6-cancellation-seller-request'),
   false,
 )
@@ -172,6 +189,8 @@ assert.equal(report.mutatedData, false)
 assert.equal(report.gate.status, 'workspace_smoke_mapped')
 assert.equal(report.gate.ok, true)
 assert.equal(report.summary.failedSmokeCount, 0)
+assert.equal(report.summary.coveredAudienceCount, 8)
+assert.equal(report.summary.missingAudienceSmokeCount, 0)
 assert.equal(report.summary.unstableContainerIdCount, 0)
 assert.equal(report.summary.deferredSellerUploadLeakCount, 0)
 

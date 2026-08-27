@@ -102,6 +102,7 @@ function getObject(...values) {
 }
 
 function getOnboarding(context = {}) {
+  context = getObject(context)
   const listing = getObject(context.listing)
   return getObject(
     context.onboarding,
@@ -112,6 +113,7 @@ function getOnboarding(context = {}) {
 }
 
 function getOnboardingFormData(context = {}) {
+  context = getObject(context)
   const onboarding = getOnboarding(context)
   return getObject(
     context.formData,
@@ -122,11 +124,13 @@ function getOnboardingFormData(context = {}) {
 }
 
 function getMandate(context = {}) {
+  context = getObject(context)
   const listing = getObject(context.listing)
   return getObject(context.mandate, listing.mandate, listing.sellerMandate, listing.seller_mandate)
 }
 
 function getMandatePacket(context = {}) {
+  context = getObject(context)
   const listing = getObject(context.listing)
   return getObject(
     context.mandatePacket,
@@ -139,6 +143,7 @@ function getMandatePacket(context = {}) {
 }
 
 function getMandateVersion(context = {}) {
+  context = getObject(context)
   const packet = getMandatePacket(context)
   return getObject(
     context.mandateVersion,
@@ -257,6 +262,7 @@ export function canCreateSellerPostMandatePortalContext(context = {}) {
 }
 
 export function isSellerPostMandateOnboardingSubmitted(context = {}) {
+  context = getObject(context)
   if (context.onboardingSubmitted === true || context.sellerOnboardingSubmitted === true) return true
   if (context.onboardingCompleted === true || context.sellerOnboardingCompleted === true) return true
   const listing = getObject(context.listing)
@@ -281,6 +287,7 @@ export function isSellerPostMandateOnboardingSubmitted(context = {}) {
 }
 
 export function isSellerPostMandateMandateSigned(context = {}) {
+  context = getObject(context)
   if (context.mandateSigned === true || context.signed === true || context.signedAt || context.mandateSignedAt) return true
   const listing = getObject(context.listing)
   const mandate = getMandate(context)
@@ -432,16 +439,17 @@ export function getSellerPostMandateOutstandingDocuments({ requirements = [], do
 }
 
 export function evaluateSellerPostMandateDocumentWorkflow(context = {}) {
-  const listingId = resolveSellerPostMandateListingId(context)
-  const mandatePacketId = resolveSellerPostMandateMandatePacketId(context)
-  const sellerEmail = resolveSellerPostMandateSellerEmail(context)
-  const portalToken = resolveSellerPostMandatePortalToken(context)
-  const onboardingSubmitted = isSellerPostMandateOnboardingSubmitted(context)
-  const mandateSigned = isSellerPostMandateMandateSigned(context)
-  const portalContextReady = Boolean(portalToken) || canCreateSellerPostMandatePortalContext(context)
+  const safeContext = getObject(context)
+  const listingId = resolveSellerPostMandateListingId(safeContext)
+  const mandatePacketId = resolveSellerPostMandateMandatePacketId(safeContext)
+  const sellerEmail = resolveSellerPostMandateSellerEmail(safeContext)
+  const portalToken = resolveSellerPostMandatePortalToken(safeContext)
+  const onboardingSubmitted = isSellerPostMandateOnboardingSubmitted(safeContext)
+  const mandateSigned = isSellerPostMandateMandateSigned(safeContext)
+  const portalContextReady = Boolean(portalToken) || canCreateSellerPostMandatePortalContext(safeContext)
   const outstandingDocuments = getSellerPostMandateOutstandingDocuments({
-    requirements: context.requirements || context.documentRequirements || context.requiredDocuments || getObject(context.listing).documentRequirements || [],
-    documents: context.documents || context.uploadedDocuments || getObject(context.listing).documents || [],
+    requirements: safeContext.requirements || safeContext.documentRequirements || safeContext.requiredDocuments || getObject(safeContext.listing).documentRequirements || [],
+    documents: safeContext.documents || safeContext.uploadedDocuments || getObject(safeContext.listing).documents || [],
     mandateSigned,
   })
 

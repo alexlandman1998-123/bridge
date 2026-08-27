@@ -4276,6 +4276,7 @@ function UnitDetail() {
   }
 
   function openUploadFromLibraryRow(row = {}) {
+    const isDocumentRequest = row?.source === 'request'
     openUploadDocumentModal({
       category: String(row?.category || row?.document?.category || 'General').trim() || 'General',
       documentType: String(row?.document?.document_type || row?.document?.documentType || row?.documentType || row?.category || '').trim(),
@@ -4285,6 +4286,7 @@ function UnitDetail() {
       requiredDocumentId: String(row?.requiredDocumentId || '').trim(),
       documentRequestId: String(row?.documentRequestId || '').trim(),
       requestTitle: String(row?.name || '').trim(),
+      uploadedByParty: isDocumentRequest ? resolveDocumentRequestPartyForUpload(row) : 'client',
     })
   }
 
@@ -4338,6 +4340,7 @@ function UnitDetail() {
         documentType: documentType || null,
         stageKey: relatedWorkflow || null,
         uploadedByParty,
+        source: documentRequestId ? 'professional_request_upload_on_behalf' : 'internal',
       })
       setUploadDocumentModalOpen(false)
       closeUploadDocumentModal()
@@ -10403,6 +10406,9 @@ function UnitDetail() {
                           normalizedStatus,
                         )
                         const showUploadAction = row.source === 'required' && normalizedStatus === 'missing'
+                        const showRequestUploadOnBehalf = row.source === 'request' &&
+                          !canOpenRow &&
+                          ['requested', 'missing', 'rejected'].includes(normalizedStatus)
                         return (
                           <tr key={row.id} className="border-b border-[#eaf0f6]">
                             <td className="py-4 pr-3 text-sm">
@@ -10457,6 +10463,15 @@ function UnitDetail() {
                                     onClick={() => openUploadFromLibraryRow(row)}
                                   >
                                     Upload
+                                  </button>
+                                ) : null}
+                                {showRequestUploadOnBehalf ? (
+                                  <button
+                                    type="button"
+                                    className="inline-flex items-center rounded-full border border-[#cfe3d7] bg-[#eef8f1] px-3 py-1.5 text-xs font-semibold text-[#2f7a51] transition hover:bg-[#e6f4ec]"
+                                    onClick={() => openUploadFromLibraryRow(row)}
+                                  >
+                                    Upload on behalf
                                   </button>
                                 ) : null}
                                 {showUploadAction && canRequestAdditionalDocuments ? (

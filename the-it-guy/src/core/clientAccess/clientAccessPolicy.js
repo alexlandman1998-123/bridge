@@ -345,6 +345,7 @@ function isManualBuyerIntake(context = {}) {
 }
 
 function buyerOnboardingComplete(context = {}) {
+  context = asObject(context)
   return Boolean(
     booleanish(context.onboardingComplete) ||
       booleanish(context.onboarding_complete) ||
@@ -356,6 +357,7 @@ function buyerOnboardingComplete(context = {}) {
 }
 
 export function hasSignedOtpEvidence(context = {}) {
+  context = asObject(context)
   return Boolean(
     booleanish(context.signedOtpUploaded) ||
       booleanish(context.signed_otp_uploaded) ||
@@ -367,6 +369,7 @@ export function hasSignedOtpEvidence(context = {}) {
 }
 
 export function hasSignedMandateEvidence(context = {}) {
+  context = asObject(context)
   const mandate = asObject(context.mandate)
   const mandatePacket = asObject(context.mandatePacket || context.mandate_packet)
   const mandatePacketVersion = asObject(mandatePacket.version)

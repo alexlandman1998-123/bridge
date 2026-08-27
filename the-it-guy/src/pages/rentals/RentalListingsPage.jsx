@@ -25,6 +25,14 @@ import {
   resolveRentalWorkspaceScope,
 } from '../../services/rentals/rentalWorkspaceScope'
 
+const RENTAL_LISTING_SORT_OPTIONS = Object.freeze([
+  { value: 'newest', label: 'Newest' },
+  { value: 'rent_desc', label: 'Rent high to low' },
+  { value: 'rent_asc', label: 'Rent low to high' },
+  { value: 'available', label: 'Availability' },
+  { value: 'status', label: 'Status' },
+])
+
 function formatCurrency(value) {
   const amount = Number(value || 0)
   if (!Number.isFinite(amount) || amount <= 0) return 'Not captured'
@@ -44,6 +52,29 @@ function formatDate(value) {
     month: 'short',
     year: 'numeric',
   }).format(date)
+}
+
+function getRentalListingSortTimestamp(row = {}) {
+  const raw = row.raw || {}
+  const value = raw.updatedAt || raw.updated_at || raw.createdAt || raw.created_at || ''
+  const time = new Date(value).getTime()
+  return Number.isFinite(time) ? time : 0
+}
+
+function sortRentalListingRows(rows = [], sortBy = 'newest') {
+  return [...(Array.isArray(rows) ? rows : [])].sort((left, right) => {
+    if (sortBy === 'rent_desc') return Number(right.monthlyRent || 0) - Number(left.monthlyRent || 0)
+    if (sortBy === 'rent_asc') return Number(left.monthlyRent || 0) - Number(right.monthlyRent || 0)
+    if (sortBy === 'available') {
+      const leftTime = new Date(left.availableFrom || 0).getTime() || Number.MAX_SAFE_INTEGER
+      const rightTime = new Date(right.availableFrom || 0).getTime() || Number.MAX_SAFE_INTEGER
+      return leftTime - rightTime
+    }
+    if (sortBy === 'status') {
+      return String(left.statusGroup || '').localeCompare(String(right.statusGroup || ''))
+    }
+    return getRentalListingSortTimestamp(right) - getRentalListingSortTimestamp(left)
+  })
 }
 
 function ListingCardImage({ src = '', alt = '' }) {
@@ -83,7 +114,7 @@ function RentalAgentAvatar({ row = {} }) {
   )
 }
 
-function RentalListingIndexCard({ row, onOpen }) {
+function RentalListingIndexCard({ row, menuOpen = false, onOpen, onToggleMenu, onOpenApplications }) {
   const facts = [
     row.bedrooms !== null && row.bedrooms !== undefined ? `${row.bedrooms} Beds` : '',
     row.bathrooms !== null && row.bathrooms !== undefined ? `${row.bathrooms} Baths` : '',
@@ -101,14 +132,42 @@ function RentalListingIndexCard({ row, onOpen }) {
           <span className={`h-2 w-2 rounded-full ${rentalDotClass(row.statusGroup)}`} />
           <span className="truncate">{formatRentalIndexStatusLabel(row.statusGroup)}</span>
         </div>
-        <button
-          type="button"
-          onClick={(event) => event.stopPropagation()}
-          className="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/45 bg-white/90 text-[#607387] shadow-[0_8px_18px_rgba(9,19,34,0.14)] transition hover:bg-white"
-          aria-label={`Open actions for ${row.title}`}
-        >
-          <MoreVertical size={16} aria-hidden="true" />
-        </button>
+        <div className="absolute right-3 top-3">
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation()
+              onToggleMenu?.()
+            }}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/45 bg-white/90 text-[#607387] shadow-[0_8px_18px_rgba(9,19,34,0.14)] transition hover:bg-white"
+            aria-label={`Open actions for ${row.title}`}
+          >
+            <MoreVertical size={16} aria-hidden="true" />
+          </button>
+          {menuOpen ? (
+            <div
+              className="absolute right-0 top-9 z-20 w-44 overflow-hidden rounded-[12px] border border-[#dce6f2] bg-white py-1 shadow-[0_14px_30px_rgba(15,23,42,0.16)]"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <button
+                type="button"
+                onClick={onOpen}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-[0.8rem] font-semibold text-[#1f4f78] transition hover:bg-[#f5f9fd]"
+              >
+                <ArrowRight size={14} aria-hidden="true" />
+                Open Listing
+              </button>
+              <button
+                type="button"
+                onClick={onOpenApplications}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-[0.8rem] font-semibold text-[#1f4f78] transition hover:bg-[#f5f9fd]"
+              >
+                <CalendarDays size={14} aria-hidden="true" />
+                Applications
+              </button>
+            </div>
+          ) : null}
+        </div>
       </div>
 
       <div className="flex flex-1 flex-col gap-3 p-4">
@@ -172,6 +231,8 @@ export default function RentalListingsPage() {
   const [successMessage, setSuccessMessage] = useState('')
   const [query, setQuery] = useState('')
   const [statusTab, setStatusTab] = useState('all')
+  const [sortBy, setSortBy] = useState('newest')
+  const [openRentalMenuId, setOpenRentalMenuId] = useState('')
 
   const rentalRows = useMemo(() => buildRentalListingIndexRows(listings), [listings])
   const summary = useMemo(() => summarizeRentalListingIndexRows(rentalRows), [rentalRows])
@@ -185,8 +246,8 @@ export default function RentalListingsPage() {
     [summary.total],
   )
   const filteredRows = useMemo(
-    () => filterRentalListingIndexRows(rentalRows, { query, status: statusTab }),
-    [query, rentalRows, statusTab],
+    () => sortRentalListingRows(filterRentalListingIndexRows(rentalRows, { query, status: statusTab }), sortBy),
+    [query, rentalRows, sortBy, statusTab],
   )
 
   const loadListings = useCallback(async () => {
@@ -237,9 +298,9 @@ export default function RentalListingsPage() {
 
         <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-            <div className="grid flex-1 gap-3 md:grid-cols-1 xl:max-w-[460px]">
+            <div className="grid flex-1 gap-3 md:grid-cols-[minmax(260px,1fr)_220px] xl:max-w-[720px]">
               <label className="grid gap-2">
-                <span className="text-[0.72rem] font-semibold uppercase text-[#7b8ca2]">Search</span>
+                <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Search</span>
                 <div className="flex h-[44px] items-center gap-2 rounded-[14px] border border-[#dce6f2] bg-white px-3">
                   <Search size={15} className="text-[#7b8ca2]" aria-hidden="true" />
                   <input
@@ -250,6 +311,18 @@ export default function RentalListingsPage() {
                   />
                 </div>
               </label>
+              <label className="grid gap-2">
+                <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Sort by</span>
+                <select
+                  value={sortBy}
+                  onChange={(event) => setSortBy(event.target.value)}
+                  className="h-[44px] rounded-[14px] border border-[#dce6f2] bg-white px-3 text-sm font-semibold text-[#142132] outline-none transition focus:border-[#7aa7cf] focus:ring-2 focus:ring-[#dbeafe]"
+                >
+                  {RENTAL_LISTING_SORT_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
             </div>
 
             <div className="flex flex-wrap items-center gap-2 xl:justify-end">
@@ -259,7 +332,7 @@ export default function RentalListingsPage() {
                 onClick={() => navigate('/agent/rentals/listings/new')}
               >
                 <Plus size={16} aria-hidden="true" />
-                Quick Add Rental
+                Add Listing
               </button>
             </div>
           </div>
@@ -320,7 +393,10 @@ export default function RentalListingsPage() {
                 <RentalListingIndexCard
                   key={row.id}
                   row={row}
+                  menuOpen={openRentalMenuId === row.id}
+                  onToggleMenu={() => setOpenRentalMenuId((previous) => (previous === row.id ? '' : row.id))}
                   onOpen={() => navigate(`/agent/rentals/listings/${encodeURIComponent(row.id)}`)}
+                  onOpenApplications={() => navigate(`/agent/rentals/listings/${encodeURIComponent(row.id)}/applications`)}
                 />
               ))}
             </div>

@@ -125,6 +125,48 @@ function parseWorkspace(context = {}) {
   return normalizeValue(context?.workspaceMode || context?.portalContext?.workspace || 'shared')
 }
 
+function hasSignedOtpEvidence(context = {}, workspace = parseWorkspace(context)) {
+  const statuses = workspace === 'selling'
+    ? [
+        context?.portalData?.activeSellingContext?.sellerOnboardingStatus,
+        context?.portalData?.activeSellingContext?.onboarding_status,
+        context?.portalData?.activeSellingContext?.onboardingStatus,
+        context?.transaction?.onboarding_status,
+        context?.transaction?.onboardingStatus,
+      ]
+    : [
+        context?.onboarding?.status,
+        context?.transaction?.onboarding_status,
+        context?.transaction?.onboardingStatus,
+        context?.portalData?.transaction?.onboarding_status,
+        context?.portalData?.transaction?.onboardingStatus,
+      ]
+  return statuses.some((status) => normalizeValue(status) === 'signed_otp_received')
+}
+
+function waitingOnRoleForAction(action = {}) {
+  if (action?.blocking) return null
+  if (action?.metadata?.waitingOnRole) return action.metadata.waitingOnRole
+  const category = normalizeValue(action?.category)
+  if (category === 'finance') return 'finance_team'
+  if (category === 'transfer') return 'legal_team'
+  return 'transaction_team'
+}
+
+function annotateActionOwnership(action = {}, workspace = 'shared') {
+  const scope = normalizeValue(action?.metadata?.workspaceScope || workspace)
+  const clientRole = scope === 'selling' ? 'seller' : scope === 'buying' ? 'buyer' : 'client'
+  return {
+    ...action,
+    metadata: {
+      ...(action?.metadata && typeof action.metadata === 'object' ? action.metadata : {}),
+      ownerRole: action?.metadata?.ownerRole || (action?.blocking ? clientRole : 'transaction_team'),
+      waitingOnRole: action?.metadata?.waitingOnRole ?? (action?.blocking ? null : waitingOnRoleForAction(action)),
+      clientRole,
+    },
+  }
+}
+
 function parseBondApplication(context = {}) {
   const formData = context?.portalData?.onboardingFormData?.formData || context?.portalData?.formData || {}
   const candidates = [
@@ -229,6 +271,50 @@ function isPortalActionRouteEnabled(action = {}, context = {}) {
 
 export function filterNextActionsByPortalCapabilities(actions = [], context = {}) {
   return (actions || []).filter((action) => isPortalActionRouteEnabled(action, context))
+}
+
+function resolveSafePortalFallbackRoute(context = {}) {
+  for (const route of ['team', 'overview', 'details', 'documents', 'appointments']) {
+    if (isPortalActionRouteEnabled({ actionRoute: route }, context)) return route
+  }
+  return 'overview'
+}
+
+export function resolveNextActionsForPortalCapabilities(actions = [], context = {}) {
+  const safeFallbackRoute = resolveSafePortalFallbackRoute(context)
+  const resolved = (actions || []).map((action) => {
+    if (isPortalActionRouteEnabled(action, context)) return action
+    if (!action?.blocking) return null
+
+    const originalActionRoute = normalizePortalActionRoute(action?.actionRoute || action?.to || action?.route)
+    return createAction({
+      ...action,
+      id: `portal_route_unavailable_${action.id || action.type || originalActionRoute || 'action'}`,
+      type: 'portal_route_unavailable',
+      category: 'support',
+      title: 'Contact your transaction team',
+      description: `“${action.title || 'Your next action'}” still needs attention, but that portal section is not currently available. Contact your transaction team for the correct existing route.`,
+      actionLabel: safeFallbackRoute === 'team' ? 'Contact team' : 'View transaction',
+      actionRoute: safeFallbackRoute,
+      metadata: {
+        ...(action?.metadata && typeof action.metadata === 'object' ? action.metadata : {}),
+        ownerRole: 'agent',
+        waitingOnRole: 'agent',
+        escalationOwnerRole: 'agent',
+        portalRouteUnavailable: true,
+        originalActionId: action?.id || '',
+        originalActionType: action?.type || '',
+        originalActionTitle: action?.title || '',
+        originalActionRoute,
+        fallbackActionRoute: safeFallbackRoute,
+      },
+      notificationEligible: false,
+    })
+  }).filter(Boolean)
+
+  return resolved.filter((action) => (
+    action?.metadata?.portalRouteUnavailable === true || isPortalActionRouteEnabled(action, context)
+  ))
 }
 
 function normalizeAppointmentStatus(value = '') {
@@ -852,6 +938,62 @@ export function getPassiveStatusActions(context = {}) {
   if (blockingCount > 0) return []
 
   const mainStage = normalizeValue(context?.lifecycle?.mainStage || context?.transaction?.current_main_stage)
+  const signedOtpReceived = hasSignedOtpEvidence(context, workspace)
+  const passiveScope = workspace === 'shared' ? 'buying' : workspace
+
+  if (signedOtpReceived && workspace === 'selling') {
+    return [
+      createAction({
+        id: 'seller_signed_otp_handoff_in_progress',
+        type: 'awaiting_internal_progress',
+        category: 'transfer',
+        title: 'Signed OTP received',
+        description: 'Your transaction team is progressing finance and transfer. Nothing is needed from you right now.',
+        priority: 'informational',
+        status: 'in_progress',
+        blocking: false,
+        actionLabel: 'View progress',
+        actionRoute: 'progress',
+        metadata: {
+          workspaceScope: 'selling',
+          ownerRole: 'transaction_team',
+          waitingOnRole: 'transaction_team',
+          handoffSource: 'signed_otp_received',
+        },
+        notificationEligible: false,
+      }),
+    ]
+  }
+
+  if (signedOtpReceived && workspace === 'buying') {
+    const financeManagedBy = resolveFinanceManagedBy(context)
+    const financeInProgress = mainStage === 'fin'
+    return [
+      createAction({
+        id: financeInProgress ? 'buyer_signed_otp_finance_in_progress' : 'buyer_signed_otp_transfer_in_progress',
+        type: 'awaiting_internal_progress',
+        category: financeInProgress ? 'finance' : 'transfer',
+        title: financeInProgress ? 'Finance handoff in progress' : 'Transfer handoff in progress',
+        description: financeInProgress
+          ? `Nothing is needed from you right now. ${financeManagedBy === 'bond_originator' ? 'Your bond originator and transaction team are' : 'Your transaction team is'} progressing the finance handoff.`
+          : 'Nothing is needed from you right now. Your transaction and legal teams are progressing transfer.',
+        priority: 'informational',
+        status: 'in_progress',
+        blocking: false,
+        actionLabel: 'View progress',
+        actionRoute: 'progress',
+        metadata: {
+          workspaceScope: 'buying',
+          ownerRole: 'transaction_team',
+          waitingOnRole: financeInProgress && financeManagedBy === 'bond_originator' ? 'bond_originator' : financeInProgress ? 'finance_team' : 'legal_team',
+          handoffSource: 'signed_otp_received',
+          financeManagedBy,
+        },
+        notificationEligible: false,
+      }),
+    ]
+  }
+
   if (mainStage === 'fin') {
     return [
       createAction({
@@ -865,7 +1007,7 @@ export function getPassiveStatusActions(context = {}) {
         blocking: false,
         actionLabel: 'View progress',
         actionRoute: 'overview',
-        metadata: { workspaceScope: workspace === 'shared' ? 'buying' : workspace },
+        metadata: { workspaceScope: passiveScope },
         notificationEligible: false,
       }),
     ]
@@ -884,7 +1026,7 @@ export function getPassiveStatusActions(context = {}) {
         blocking: false,
         actionLabel: 'View workflow',
         actionRoute: 'overview',
-        metadata: { workspaceScope: workspace === 'shared' ? 'buying' : workspace },
+        metadata: { workspaceScope: passiveScope },
         notificationEligible: false,
       }),
     ]
@@ -902,7 +1044,7 @@ export function getPassiveStatusActions(context = {}) {
       blocking: false,
       actionLabel: 'View progress',
       actionRoute: 'overview',
-      metadata: { workspaceScope: workspace === 'shared' ? 'buying' : workspace },
+      metadata: { workspaceScope: passiveScope },
       notificationEligible: false,
     }),
   ]
@@ -1009,18 +1151,17 @@ export function generateClientPortalNextActions(context = {}) {
 
   actions.push(...getWorkflowProjectionActions(context))
 
-  const normalized = filterNextActionsByPortalCapabilities(dedupeActions(actions), context)
-  const withFallbackPassive = normalized.length ? normalized : getPassiveStatusActions({ ...context, actions: normalized })
-  const finalActions = filterNextActionsByPortalCapabilities(
-    dedupeActions([...withFallbackPassive, ...getPassiveStatusActions({ ...context, actions: withFallbackPassive })]),
-    context,
-  )
-  return sortNextActions(finalActions).map((action) => ({
-    ...action,
-    metadata: {
-      ...(action?.metadata && typeof action.metadata === 'object' ? action.metadata : {}),
-      portalKind: context?.portalProfile?.portalKind || context?.portalContext?.portalKind || '',
-      navigationMode: context?.portalProfile?.navigationMode || context?.portalContext?.navigationMode || '',
-    },
-  }))
+  const normalized = resolveNextActionsForPortalCapabilities(dedupeActions(actions), context)
+  const finalActions = normalized.length ? normalized : getPassiveStatusActions({ ...context, actions: normalized })
+  return sortNextActions(finalActions).map((action) => {
+    const ownedAction = annotateActionOwnership(action, workspace)
+    return {
+      ...ownedAction,
+      metadata: {
+        ...ownedAction.metadata,
+        portalKind: context?.portalProfile?.portalKind || context?.portalContext?.portalKind || '',
+        navigationMode: context?.portalProfile?.navigationMode || context?.portalContext?.navigationMode || '',
+      },
+    }
+  })
 }

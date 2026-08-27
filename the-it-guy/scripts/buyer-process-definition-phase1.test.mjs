@@ -40,7 +40,6 @@ const defaultActiveStageKeys = [
   'qualified',
   'viewing',
   'transaction_setup',
-  'offer',
   'transaction',
 ]
 
@@ -49,7 +48,6 @@ const kingstonsActiveStageKeys = [
   'contacted',
   'qualified',
   'viewing',
-  'offer',
   'transaction_setup',
   'transaction',
 ]
@@ -185,14 +183,14 @@ const evidenceKeys = [
   assert.equal(normalizeBuyerProcessStageKey('Ready to Generate OTP'), BUYER_PROCESS_STAGE_KEYS.offerReceived)
   assert.equal(normalizeBuyerProcessStageKey('OTP Generated'), BUYER_PROCESS_STAGE_KEYS.offerReceived)
   assert.equal(normalizeBuyerProcessStageKey('Buyer Signed'), BUYER_PROCESS_STAGE_KEYS.offerReceived)
-  assert.equal(normalizeBuyerProcessStageKey('Signed by All Parties'), BUYER_PROCESS_STAGE_KEYS.offer)
+  assert.equal(normalizeBuyerProcessStageKey('Signed by All Parties'), BUYER_PROCESS_STAGE_KEYS.transactionSetup)
   assert.equal(normalizeBuyerProcessStageKey('Transaction Live'), BUYER_PROCESS_STAGE_KEYS.transaction)
   assert.equal(normalizeBuyerProcessStageKey('Finance'), BUYER_PROCESS_STAGE_KEYS.transaction)
   assert.equal(normalizeBuyerProcessStageKey('Transfer'), BUYER_PROCESS_STAGE_KEYS.transaction)
   assert.equal(normalizeBuyerProcessStageKey('Lost'), BUYER_PROCESS_STAGE_KEYS.lost)
   assert.equal(getBuyerProcessStageLabel('buyer_onboarding_sent'), 'Transaction Setup')
-  assert.equal(getBuyerProcessStageLabel('offer_submitted'), 'Offer')
-  assert.equal(getBuyerProcessStageLabel('OTP Transaction'), 'Offer')
+  assert.equal(getBuyerProcessStageLabel('offer_submitted'), 'Transaction Setup')
+  assert.equal(getBuyerProcessStageLabel('OTP Transaction'), 'Transaction Setup')
 }
 
 {
@@ -205,11 +203,8 @@ const evidenceKeys = [
   assert.equal(canTransitionBuyerProcessStage('Captured', 'Qualified'), false)
   assert.equal(canTransitionBuyerProcessStage('Contacted', 'Qualified'), true)
   assert.equal(canTransitionBuyerProcessStage('Viewing', 'Transaction Setup'), true)
-  assert.equal(canTransitionBuyerProcessStage('Viewing', 'Offer'), false)
-  assert.equal(canTransitionBuyerProcessStage('Transaction Setup', 'Offer'), true)
+  assert.equal(canTransitionBuyerProcessStage('Viewing', 'Offer'), true)
   assert.equal(canTransitionBuyerProcessStage('Offer', 'Transaction'), true)
-  assert.equal(canTransitionBuyerProcessStage('Viewing', 'Offer', { buyerProcessProfile: KINGSTONS_BUYER_PROCESS_PROFILE }), true)
-  assert.equal(canTransitionBuyerProcessStage('Offer', 'Transaction Setup', { buyerProcessProfile: KINGSTONS_BUYER_PROCESS_PROFILE }), true)
   assert.equal(canTransitionBuyerProcessStage('Transaction Setup', 'Transaction', { buyerProcessProfile: KINGSTONS_BUYER_PROCESS_PROFILE }), true)
   assert.equal(canTransitionBuyerProcessStage('Lost', 'Captured'), false)
 }
@@ -234,6 +229,7 @@ const evidenceKeys = [
   )
 
   const offerGate = definition.evidenceGates.find((gate) => gate.key === 'otp_document_uploaded')
+  assert.equal(offerGate.requiredForStage, BUYER_PROCESS_STAGE_KEYS.transaction)
   assert.deepEqual(offerGate.documentTypes, ['uploaded_otp', 'buyer_otp', 'signed_otp', 'otp', 'buyer_offer', 'offer_document', 'offer_to_purchase', 'uploaded_offer', 'signed_offer'])
   assert.equal(JSON.stringify(definition).includes('generate_otp'), false)
   assert.equal(JSON.stringify(definition).includes('otp_generated'), false)

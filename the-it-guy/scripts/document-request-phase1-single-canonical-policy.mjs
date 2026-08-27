@@ -128,6 +128,14 @@ function buildReport(options = {}) {
         key: 'legacy_keys',
         decision: 'Legacy buyer and seller keys must map through adapters/backfill; new client-visible rules must be added to canonical policy first.',
       },
+      {
+        key: 'retired_information_sheet',
+        decision: 'Information Sheet is not a document request and must not be generated or aliased to Buyer FICA Pack; historical uploaded evidence remains retained.',
+      },
+      {
+        key: 'supplier_vs_uploader',
+        decision: 'Buyer/seller responsibility is independent from the upload actor; an authorised agent may upload a client-supplied document without becoming its responsible party.',
+      },
     ],
     gate: {
       status: gateStatus,

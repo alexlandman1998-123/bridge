@@ -1,13 +1,13 @@
 {
   "phase": "document_request_phase1_single_canonical_policy",
-  "generatedAt": "2026-08-13T19:38:38.245Z",
+  "generatedAt": "2026-08-27T16:57:55.700Z",
   "commit": false,
   "mutatedData": false,
   "strictSignoff": false,
   "canonicalPolicySource": {
     "path": "config/document-request-phase1-legal-checklist.json",
-    "bytes": 17704,
-    "hash": "sha256:6300e1261699c3029dd739e91383f0eea30b1b799a531821c4e378b57a100099"
+    "bytes": 17708,
+    "hash": "sha256:6d6f7971fdf43328caa19bd7e3b692fe0218de1cbcf88149c233c00b2a1d71e5"
   },
   "policy": {
     "version": "document_request_canonical_policy_v1",
@@ -364,6 +364,14 @@
     {
       "key": "legacy_keys",
       "decision": "Legacy buyer and seller keys must map through adapters/backfill; new client-visible rules must be added to canonical policy first."
+    },
+    {
+      "key": "retired_information_sheet",
+      "decision": "Information Sheet is not a document request and must not be generated or aliased to Buyer FICA Pack; historical uploaded evidence remains retained."
+    },
+    {
+      "key": "supplier_vs_uploader",
+      "decision": "Buyer/seller responsibility is independent from the upload actor; an authorised agent may upload a client-supplied document without becoming its responsible party."
     }
   ],
   "gate": {

@@ -12,6 +12,7 @@ import {
 
 const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'))
 const clientPortalSource = fs.readFileSync('src/pages/ClientPortal.jsx', 'utf8')
+const documentCentreSource = fs.readFileSync('src/components/client-portal/documents/ClientDocumentCentre.jsx', 'utf8')
 const serviceSource = fs.readFileSync('src/services/clientPortalWorkspaceService.js', 'utf8')
 const scriptSource = fs.readFileSync('scripts/document-request-phase8-client-portal-container-adoption.mjs', 'utf8')
 const docs = fs.readFileSync('docs/document-request-phase8-client-portal-container-adoption.md', 'utf8')
@@ -50,16 +51,20 @@ assert.match(clientPortalSource, /additionalDocumentRequestCardsForWorkspace\.ma
 assert.doesNotMatch(clientPortalSource, /\{additionalDocumentRequestsForWorkspace\.map\(\(request\) =>/, 'Additional tab should not render raw request rows directly.')
 assert.match(clientPortalSource, /request\.uploadSpec\?\.requestId/, 'Container upload should use uploadSpec request id.')
 assert.match(clientPortalSource, /documentRequestId,/, 'Container upload should pass documentRequestId.')
+assert.match(documentCentreSource, /hasDocumentRequestContainerPayload/, 'The primary document centre should detect an authoritative container payload.')
+assert.match(documentCentreSource, /normalizeAdditionalRequestContainer/, 'The primary document centre should normalize request containers.')
+assert.match(documentCentreSource, /documentRequestContainerMatchesWorkspace/, 'The primary document centre should enforce buyer and seller container visibility.')
 
 const fixture = buildDocumentRequestWorkspaceSmokeFixture()
 const bundleDir = await mkdtemp(path.join(tmpdir(), 'document-request-phase8-container-adoption-'))
 const entryPath = path.join(bundleDir, 'entry.mjs')
 const bundlePath = path.join(bundleDir, 'bundle.mjs')
 const servicePath = path.join(process.cwd(), 'src/services/clientPortalWorkspaceService.js')
+const documentCentrePath = path.join(process.cwd(), 'src/components/client-portal/documents/ClientDocumentCentre.jsx')
 
 await writeFile(
   entryPath,
-  `export { buildDocumentCenter } from ${JSON.stringify(servicePath)}\n`,
+  `export { buildDocumentCenter } from ${JSON.stringify(servicePath)}\nexport { buildDocumentCentreSections } from ${JSON.stringify(documentCentrePath)}\n`,
 )
 
 await build({
@@ -74,7 +79,7 @@ await build({
   logLevel: 'silent',
 })
 
-const { buildDocumentCenter } = await import(pathToFileURL(bundlePath).href)
+const { buildDocumentCenter, buildDocumentCentreSections } = await import(pathToFileURL(bundlePath).href)
 const buyingCenter = buildDocumentCenter({
   transaction: {
     id: fixture.transactionId,
@@ -110,6 +115,57 @@ assert.equal(
 )
 assert.equal(buyingCenter.documentRequestContainerSummary.additionalRequests, 3)
 assert.equal(sellingCenter.documentRequestContainerSummary.additionalRequests, 2)
+assert.equal(
+  buyingCenter.documentRequestContainers.some((container) => container.sourceId === 'phase6-professional-buyer-boundary-request'),
+  false,
+  'Professional-only requests must not reach the buyer portal container payload.',
+)
+assert.equal(
+  sellingCenter.documentRequestContainers.some((container) => container.sourceId === 'phase6-professional-buyer-boundary-request'),
+  false,
+  'Professional-only requests must not reach the seller portal container payload.',
+)
+
+const buyingSections = buildDocumentCentreSections(buyingCenter, 'buying')
+const sellingSections = buildDocumentCentreSections(sellingCenter, 'selling')
+assert.equal(buyingSections.additionalRequests.length, 3, 'The primary buyer workspace should render its three client-visible containers.')
+assert.equal(sellingSections.additionalRequests.length, 2, 'The primary seller workspace should render its two client-visible containers.')
+assert.ok(
+  buyingSections.additionalRequests.every((item) => item.uploadSpec?.requestId === item.sourceId),
+  'Buyer container cards should preserve request IDs for upload linking.',
+)
+assert.ok(
+  sellingSections.additionalRequests.every((item) => item.uploadSpec?.requestId === item.sourceId),
+  'Seller container cards should preserve request IDs for upload linking.',
+)
+
+const hiddenLegacyRequest = {
+  id: 'professional-only-legacy-row',
+  sourceType: 'additional_request',
+  title: 'Professional-only request',
+  status: 'requested',
+  visibility: 'shared_role_players',
+}
+const authoritativeEmptySections = buildDocumentCentreSections({
+  items: [hiddenLegacyRequest],
+  additionalRequests: [hiddenLegacyRequest],
+  documentRequestContainers: [],
+}, 'buying')
+assert.equal(
+  authoritativeEmptySections.additionalRequests.length,
+  0,
+  'An authoritative empty container payload must not fall back to a legacy request row.',
+)
+
+const stalePayloadSections = buildDocumentCentreSections({
+  additionalRequests: [{
+    id: 'legacy-client-request',
+    title: 'Legacy client request',
+    status: 'requested',
+    visibility: 'client_visible',
+  }],
+}, 'buying')
+assert.equal(stalePayloadSections.additionalRequests.length, 1, 'A payload with no container field should retain the rollout fallback.')
 
 const outputPath = 'output/document-request-phase8-client-portal-container-adoption.test.json'
 execFileSync('node', ['scripts/document-request-phase8-client-portal-container-adoption.mjs', `--output=${outputPath}`], {
@@ -123,5 +179,6 @@ assert.equal(report.mutatedData, false)
 assert.equal(report.gate.status, 'client_portal_container_adoption_mapped')
 assert.equal(report.gate.ok, true)
 assert.equal(report.gate.failed.length, 0)
+assert.equal(report.version, 'document_request_client_portal_container_adoption_v2')
 
 console.log('document request phase 8 client portal container adoption tests passed')

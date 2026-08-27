@@ -4,7 +4,7 @@
 
 Phase 5 verifies that seller document requests are aligned across the agent/listing workspace, seller portal document centre, and the canonical document request policy.
 
-The phase is deliberately read-only for live data. It adds a repeatable audit and a portal guard so stale seller upload prompts do not reappear while the remaining policy gaps are resolved.
+The audit is deliberately read-only for live data. Runtime enforcement is active in both seller requirement generation and the seller portal, so stale seller upload prompts do not reappear while the remaining policy gaps are resolved.
 
 ## Scope
 
@@ -13,6 +13,18 @@ The phase is deliberately read-only for live data. It adds a repeatable audit an
 - Confirm seller-visible upload prompts produce Phase 2 request containers.
 - Keep professional-only requests out of seller upload surfaces.
 - Keep deferred acquisition/improvement records out of seller upload surfaces.
+- Suppress pending-policy rows until legal/product approval makes them requestable.
+- Preserve seller responsibility while allowing an agent to upload seller evidence on the client's behalf.
+
+## Runtime Enforcement
+
+`sellerDocumentRequestRuntimePolicy.js` is the shared guard used by the seller requirement service and seller portal projection. It rejects:
+
+- deferred acquisition and capital-improvement records;
+- professional/internal requests, including cancellation-attorney documents;
+- requirements whose canonical level is still `pending_policy_*`.
+
+Allowed seller requirements remain client-supplied. The upload-ownership model continues to include the agent as an authorised upload-on-behalf role; uploading on behalf does not transfer responsibility away from the seller.
 
 ## Explicit Deferral
 
@@ -32,6 +44,7 @@ The hard gate passes when:
 - no active seller rows are unmapped from the canonical policy or an approved canonical parent container;
 - no deferred acquisition/improvement rows appear as seller uploads;
 - seller portal filtering removes deferred rows;
+- pending-policy and professional-only rows are removed before seller persistence/projection;
 - each seller scenario produces request containers.
 
 The warnings are intentional:

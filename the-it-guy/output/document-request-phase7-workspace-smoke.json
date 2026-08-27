@@ -1,10 +1,10 @@
 {
   "phase": "document_request_phase7_workspace_smoke",
-  "generatedAt": "2026-08-13T19:38:42.657Z",
+  "generatedAt": "2026-08-27T16:57:59.854Z",
   "commit": false,
   "mutatedData": false,
   "strict": false,
-  "version": "document_request_workspace_smoke_v1",
+  "version": "document_request_workspace_smoke_v2",
   "transactionId": "phase7-workspace-smoke-transaction",
   "scenario": {
     "buyerEntityType": "trust",
@@ -22,7 +22,7 @@
   },
   "fixtureSummary": {
     "requiredDocumentCount": 25,
-    "additionalRequestCount": 5,
+    "additionalRequestCount": 6,
     "buyerPlanCount": 11,
     "sellerPlanCount": 16,
     "attorneyPlanCount": 31,
@@ -78,79 +78,80 @@
       }
     },
     "agent": {
-      "total": 30,
+      "total": 31,
       "canonicalRequired": 25,
-      "additionalRequests": 5,
-      "blocking": 30,
+      "additionalRequests": 6,
+      "blocking": 31,
       "uploaded": 0,
       "byRequestedFrom": {
-        "buyer": 12,
+        "buyer": 13,
         "seller": 16,
         "buyer_and_seller": 1,
         "bond_originator": 1
       },
       "byAudience": {
-        "agent": 30,
-        "attorney": 30,
-        "internal": 30,
+        "agent": 31,
+        "attorney": 31,
+        "internal": 31,
         "buyer": 13,
-        "bond_originator": 5,
+        "bond_originator": 6,
         "seller": 17,
-        "transfer_attorney": 2,
+        "transfer_attorney": 3,
         "cancellation_attorney": 1
       },
       "byStatus": {
         "required": 25,
-        "requested": 5
+        "requested": 6
       }
     },
     "attorney": {
-      "total": 30,
+      "total": 31,
       "canonicalRequired": 25,
-      "additionalRequests": 5,
-      "blocking": 30,
+      "additionalRequests": 6,
+      "blocking": 31,
       "uploaded": 0,
       "byRequestedFrom": {
-        "buyer": 12,
+        "buyer": 13,
         "seller": 16,
         "buyer_and_seller": 1,
         "bond_originator": 1
       },
       "byAudience": {
-        "agent": 30,
-        "attorney": 30,
-        "internal": 30,
+        "agent": 31,
+        "attorney": 31,
+        "internal": 31,
         "buyer": 13,
-        "bond_originator": 5,
+        "bond_originator": 6,
         "seller": 17,
-        "transfer_attorney": 2,
+        "transfer_attorney": 3,
         "cancellation_attorney": 1
       },
       "byStatus": {
         "required": 25,
-        "requested": 5
+        "requested": 6
       }
     },
     "transfer_attorney": {
-      "total": 2,
+      "total": 3,
       "canonicalRequired": 0,
-      "additionalRequests": 2,
-      "blocking": 2,
+      "additionalRequests": 3,
+      "blocking": 3,
       "uploaded": 0,
       "byRequestedFrom": {
-        "buyer": 1,
+        "buyer": 2,
         "buyer_and_seller": 1
       },
       "byAudience": {
-        "agent": 2,
-        "attorney": 2,
-        "internal": 2,
-        "transfer_attorney": 2,
+        "agent": 3,
+        "attorney": 3,
+        "internal": 3,
+        "transfer_attorney": 3,
         "buyer": 2,
-        "seller": 1
+        "seller": 1,
+        "bond_originator": 1
       },
       "byStatus": {
-        "requested": 2
+        "requested": 3
       }
     },
     "cancellation_attorney": {
@@ -174,52 +175,53 @@
       }
     },
     "bond_originator": {
-      "total": 5,
+      "total": 6,
       "canonicalRequired": 3,
-      "additionalRequests": 2,
-      "blocking": 5,
+      "additionalRequests": 3,
+      "blocking": 6,
       "uploaded": 0,
       "byRequestedFrom": {
-        "buyer": 4,
+        "buyer": 5,
         "bond_originator": 1
       },
       "byAudience": {
-        "agent": 5,
-        "attorney": 5,
-        "internal": 5,
+        "agent": 6,
+        "attorney": 6,
+        "internal": 6,
         "buyer": 4,
-        "bond_originator": 5
+        "bond_originator": 6,
+        "transfer_attorney": 1
       },
       "byStatus": {
         "required": 3,
-        "requested": 2
+        "requested": 3
       }
     },
     "internal": {
-      "total": 30,
+      "total": 31,
       "canonicalRequired": 25,
-      "additionalRequests": 5,
-      "blocking": 30,
+      "additionalRequests": 6,
+      "blocking": 31,
       "uploaded": 0,
       "byRequestedFrom": {
-        "buyer": 12,
+        "buyer": 13,
         "seller": 16,
         "buyer_and_seller": 1,
         "bond_originator": 1
       },
       "byAudience": {
-        "agent": 30,
-        "attorney": 30,
-        "internal": 30,
+        "agent": 31,
+        "attorney": 31,
+        "internal": 31,
         "buyer": 13,
-        "bond_originator": 5,
+        "bond_originator": 6,
         "seller": 17,
-        "transfer_attorney": 2,
+        "transfer_attorney": 3,
         "cancellation_attorney": 1
       },
       "byStatus": {
         "required": 25,
-        "requested": 5
+        "requested": 6
       }
     }
   },
@@ -294,9 +296,9 @@
     {
       "id": "agent_workspace_smoke",
       "audience": "agent",
-      "total": 30,
-      "additionalRequests": 5,
-      "blocking": 30,
+      "total": 31,
+      "additionalRequests": 6,
+      "blocking": 31,
       "keys": [
         "buyer_fica_pack",
         "buyer_source_of_funds",
@@ -325,14 +327,16 @@
         "lease_agreement",
         "updated_buyer_fica",
         "signed_clarification",
-        "bank_valuation_follow_up"
+        "bank_valuation_follow_up",
+        "internal_buyer_evidence_review"
       ],
       "requestIds": [
         "phase6-transfer-buyer-request",
         "phase6-cancellation-seller-request",
         "phase6-originator-buyer-request",
         "phase6-transfer-both-request",
-        "phase6-originator-professional-request"
+        "phase6-originator-professional-request",
+        "phase6-professional-buyer-boundary-request"
       ],
       "missingKeys": [],
       "leakedKeys": [],
@@ -344,9 +348,9 @@
     {
       "id": "attorney_workspace_smoke",
       "audience": "attorney",
-      "total": 30,
-      "additionalRequests": 5,
-      "blocking": 30,
+      "total": 31,
+      "additionalRequests": 6,
+      "blocking": 31,
       "keys": [
         "buyer_fica_pack",
         "buyer_source_of_funds",
@@ -375,14 +379,58 @@
         "lease_agreement",
         "updated_buyer_fica",
         "signed_clarification",
-        "bank_valuation_follow_up"
+        "bank_valuation_follow_up",
+        "internal_buyer_evidence_review"
       ],
       "requestIds": [
         "phase6-transfer-buyer-request",
         "phase6-cancellation-seller-request",
         "phase6-originator-buyer-request",
         "phase6-transfer-both-request",
-        "phase6-originator-professional-request"
+        "phase6-originator-professional-request",
+        "phase6-professional-buyer-boundary-request"
+      ],
+      "missingKeys": [],
+      "leakedKeys": [],
+      "missingRequests": [],
+      "leakedRequests": [],
+      "deferredSellerUploadLeak": false,
+      "ok": true
+    },
+    {
+      "id": "transfer_attorney_lane_smoke",
+      "audience": "transfer_attorney",
+      "total": 3,
+      "additionalRequests": 3,
+      "blocking": 3,
+      "keys": [
+        "updated_buyer_fica",
+        "signed_clarification",
+        "internal_buyer_evidence_review"
+      ],
+      "requestIds": [
+        "phase6-transfer-buyer-request",
+        "phase6-transfer-both-request",
+        "phase6-professional-buyer-boundary-request"
+      ],
+      "missingKeys": [],
+      "leakedKeys": [],
+      "missingRequests": [],
+      "leakedRequests": [],
+      "deferredSellerUploadLeak": false,
+      "ok": true
+    },
+    {
+      "id": "cancellation_attorney_lane_smoke",
+      "audience": "cancellation_attorney",
+      "total": 1,
+      "additionalRequests": 1,
+      "blocking": 1,
+      "keys": [
+        "bond_statement"
+      ],
+      "requestIds": [
+        "phase6-cancellation-seller-request"
       ],
       "missingKeys": [],
       "leakedKeys": [],
@@ -394,18 +442,20 @@
     {
       "id": "bond_originator_workspace_smoke",
       "audience": "bond_originator",
-      "total": 5,
-      "additionalRequests": 2,
-      "blocking": 5,
+      "total": 6,
+      "additionalRequests": 3,
+      "blocking": 6,
       "keys": [
         "bond_approval",
         "grant_signed",
         "income_affordability_documents",
-        "bank_valuation_follow_up"
+        "bank_valuation_follow_up",
+        "internal_buyer_evidence_review"
       ],
       "requestIds": [
         "phase6-originator-buyer-request",
-        "phase6-originator-professional-request"
+        "phase6-originator-professional-request",
+        "phase6-professional-buyer-boundary-request"
       ],
       "missingKeys": [],
       "leakedKeys": [],
@@ -417,9 +467,9 @@
     {
       "id": "internal_workspace_smoke",
       "audience": "internal",
-      "total": 30,
-      "additionalRequests": 5,
-      "blocking": 30,
+      "total": 31,
+      "additionalRequests": 6,
+      "blocking": 31,
       "keys": [
         "buyer_fica_pack",
         "buyer_source_of_funds",
@@ -448,14 +498,16 @@
         "lease_agreement",
         "updated_buyer_fica",
         "signed_clarification",
-        "bank_valuation_follow_up"
+        "bank_valuation_follow_up",
+        "internal_buyer_evidence_review"
       ],
       "requestIds": [
         "phase6-transfer-buyer-request",
         "phase6-cancellation-seller-request",
         "phase6-originator-buyer-request",
         "phase6-transfer-both-request",
-        "phase6-originator-professional-request"
+        "phase6-originator-professional-request",
+        "phase6-professional-buyer-boundary-request"
       ],
       "missingKeys": [],
       "leakedKeys": [],
@@ -500,25 +552,41 @@
         "request:phase6-originator-professional-request"
       ],
       "stable": true
+    },
+    {
+      "requestId": "phase6-professional-buyer-boundary-request",
+      "containerIds": [
+        "request:phase6-professional-buyer-boundary-request"
+      ],
+      "stable": true
     }
   ],
   "failed": [],
+  "missingAudienceSmokes": [],
   "unstableContainerIds": [],
   "summary": {
     "failedSmokeCount": 0,
+    "coveredAudienceCount": 8,
+    "missingAudienceSmokeCount": 0,
     "unstableContainerIdCount": 0,
     "deferredSellerUploadLeakCount": 0,
     "buyerContainerCount": 13,
     "sellerContainerCount": 17,
-    "agentContainerCount": 30,
-    "attorneyContainerCount": 30,
-    "bondOriginatorContainerCount": 5,
-    "internalContainerCount": 30
+    "agentContainerCount": 31,
+    "attorneyContainerCount": 31,
+    "bondOriginatorContainerCount": 6,
+    "transferAttorneyContainerCount": 3,
+    "cancellationAttorneyContainerCount": 1,
+    "internalContainerCount": 31
   },
   "phase7Decisions": [
     {
       "key": "workspace_smoke_matrix",
-      "decision": "Phase 7 uses a synthetic but canonical transaction fixture to smoke buyer, seller, agent, attorney, bond-originator, and internal audiences."
+      "decision": "Phase 7 uses a synthetic but canonical transaction fixture to smoke buyer, seller, agent, attorney, transfer-attorney, cancellation-attorney, bond-originator, and internal audiences."
+    },
+    {
+      "key": "professional_visibility_boundary",
+      "decision": "Every workspace smoke preserves the Phase 6 rule that professional-only visibility overrides legacy buyer or seller targeting."
     },
     {
       "key": "same_container_everywhere",
@@ -561,6 +629,10 @@
       },
       {
         "key": "workspace_smoke_passed",
+        "ok": true
+      },
+      {
+        "key": "all_declared_audiences_are_smoked",
         "ok": true
       },
       {

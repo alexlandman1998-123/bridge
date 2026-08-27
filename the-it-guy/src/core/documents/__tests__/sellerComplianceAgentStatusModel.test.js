@@ -3,6 +3,36 @@ import test from 'node:test'
 
 import { buildSellerComplianceAgentStatus } from '../sellerComplianceAgentStatusModel.js'
 
+test('keeps buyer-only portals safe when seller sources are explicitly null', () => {
+  const model = buildSellerComplianceAgentStatus({
+    listing: null,
+    activeSellingContext: null,
+    portal: null,
+  })
+
+  assert.equal(model.onboardingSubmitted, false)
+  assert.equal(model.signedMandate, false)
+  assert.equal(model.listingDraftExists, false)
+  assert.equal(model.rawListingLiveSignal, false)
+  assert.equal(model.status, 'seller_onboarding_pending')
+  assert.equal(model.nextBlocker.key, 'seller_onboarding')
+})
+
+test('ignores null seller context while preserving buyer portal data', () => {
+  const model = buildSellerComplianceAgentStatus({
+    listing: null,
+    activeSellingContext: null,
+    portal: {
+      transaction: { id: 'buyer-transaction-1' },
+      buyer: { id: 'buyer-1' },
+    },
+  })
+
+  assert.equal(model.status, 'seller_onboarding_pending')
+  assert.equal(model.canTreatListingAsCreated, false)
+  assert.equal(model.canTreatListingAsLive, false)
+})
+
 test('blocks listing live when a listing is active but the signed mandate is missing', () => {
   const model = buildSellerComplianceAgentStatus({
     sellerComplianceSigning: {

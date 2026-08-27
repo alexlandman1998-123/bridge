@@ -10,13 +10,16 @@ import {
 import {
   buildDocumentRequestContainerModel,
 } from '../../core/documents/documentRequestContainerModel.js'
+import {
+  DEFERRED_SELLER_UPLOAD_REQUIREMENT_KEYS,
+  isPendingSellerDocumentPolicyRequirement,
+  isProfessionalOnlySellerRequirement,
+  isSellerClientUploadRequirementAllowed,
+} from '../../core/documents/sellerDocumentRequestRuntimePolicy.js'
 
 export const SELLER_DOCUMENT_CANONICAL_CLEANUP_VERSION = 'seller_document_canonical_cleanup_v1'
 
-export const DEFERRED_SELLER_UPLOAD_REQUIREMENT_KEYS = Object.freeze([
-  'property_acquisition_record',
-  'capital_improvement_records',
-])
+export { DEFERRED_SELLER_UPLOAD_REQUIREMENT_KEYS }
 
 export const SELLER_DOCUMENT_CLEANUP_SCENARIOS = Object.freeze([
   {
@@ -180,11 +183,6 @@ export const SELLER_DOCUMENT_CLEANUP_SCENARIOS = Object.freeze([
   },
 ])
 
-const PROFESSIONAL_ONLY_CANONICAL_KEYS = new Set([
-  'bond_cancellation_figures',
-  'vat_status_confirmation',
-])
-
 const COVERED_NON_CATALOGUE_SELLER_KEYS = new Set([
   'signed_mandate',
 ])
@@ -257,12 +255,7 @@ function isMappedOrGranularCovered(row = {}) {
 }
 
 function isProfessionalOnlySellerRow(row = {}) {
-  const canonicalKey = canonicalKeyFor(row)
-  const visibility = normalizeKey(row.canonicalDocumentRequestVisibility)
-  const ownerRole = normalizeKey(row.canonicalDocumentRequestOwnerRole)
-  if (visibility === 'professional_shared') return true
-  if (PROFESSIONAL_ONLY_CANONICAL_KEYS.has(canonicalKey) && ownerRole && ownerRole !== 'seller') return true
-  return false
+  return isProfessionalOnlySellerRequirement(row)
 }
 
 function buildDuplicateCanonicalGroups(rows = []) {
@@ -320,18 +313,10 @@ export function buildSellerDocumentCanonicalCleanupProfile(input = {}) {
   const mappedRows = legacyRows.filter(isMappedOrGranularCovered)
   const unmappedRows = legacyRows.filter((row) => !isMappedOrGranularCovered(row))
   const professionalOnlyLegacyRows = mappedRows.filter(isProfessionalOnlySellerRow)
-  const pendingPolicyLegacyRows = mappedRows.filter((row) => normalizeKey(row.canonicalDocumentRequestLevel).startsWith('pending_policy_'))
+  const pendingPolicyLegacyRows = mappedRows.filter(isPendingSellerDocumentPolicyRequirement)
   const deferredLegacyRows = legacyRows.filter((row) => DEFERRED_SELLER_UPLOAD_REQUIREMENT_KEYS.includes(normalizeKey(row.key || row.requirement_key)))
-  const sellerClientUploadRows = mappedRows.filter((row) => {
-    if (isProfessionalOnlySellerRow(row)) return false
-    if (DEFERRED_SELLER_UPLOAD_REQUIREMENT_KEYS.includes(normalizeKey(row.key || row.requirement_key))) return false
-    const visibility = normalizeKey(row.canonicalDocumentRequestVisibility || row.visibility || row.document_visibility)
-    if (visibility === 'internal' || visibility === 'internal_only' || visibility === 'professional_shared') return false
-    return true
-  })
-  const requestableSellerClientUploadRows = sellerClientUploadRows.filter(
-    (row) => !normalizeKey(row.canonicalDocumentRequestLevel).startsWith('pending_policy_'),
-  )
+  const sellerClientUploadRows = mappedRows.filter(isSellerClientUploadRequirementAllowed)
+  const requestableSellerClientUploadRows = sellerClientUploadRows
   const mappedCanonicalKeys = unique(mappedRows.map(canonicalKeyFor))
   const requestablePlanKeys = canonicalPlan.requests.filter((request) => request.requestable).map((request) => request.key)
   const missingFromLegacyButCoveredByCanonicalPlan = requestablePlanKeys.filter((key) => !mappedCanonicalKeys.includes(key))

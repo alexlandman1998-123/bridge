@@ -7,6 +7,15 @@ import {
 
 const PHASE = 'document_request_phase10_release_readiness'
 const DEFAULT_OUTPUT_PATH = 'output/document-request-phase10-release-readiness.json'
+const ENVIRONMENT_EVIDENCE_CONTRACT = 'document_request_phase10_environment_evidence_v1'
+const REQUIRED_ENVIRONMENT_CHECKS = Object.freeze([
+  'professional_visibility_migration_applied',
+  'document_requests_rls_verified',
+  'buyer_request_upload_linked',
+  'seller_request_upload_linked',
+  'agent_upload_on_behalf_linked',
+  'professional_request_hidden_from_clients',
+])
 
 const PHASE_REPORTS = Object.freeze([
   ['phase0_freeze_and_map', 'output/document-request-phase0-freeze-and-map.json', 'document_request_phase0_freeze_and_map'],
@@ -37,11 +46,15 @@ const MANAGED_WARNING_CODES = Object.freeze(new Set([
 function parseArgs(argv = process.argv.slice(2)) {
   const options = {
     output: DEFAULT_OUTPUT_PATH,
+    environmentEvidence: '',
+    requireEnvironmentEvidence: false,
     strict: false,
     pretty: true,
   }
   for (const arg of argv) {
     if (arg.startsWith('--output=')) options.output = arg.slice('--output='.length)
+    else if (arg.startsWith('--environment-evidence=')) options.environmentEvidence = arg.slice('--environment-evidence='.length)
+    else if (arg === '--require-environment-evidence') options.requireEnvironmentEvidence = true
     else if (arg === '--strict') options.strict = true
     else if (arg === '--compact') options.pretty = false
   }
@@ -54,6 +67,70 @@ function read(relativePath) {
 
 function readJson(relativePath) {
   return JSON.parse(read(relativePath))
+}
+
+function evaluateEnvironmentEvidence(evidencePath = '') {
+  if (!evidencePath) {
+    return {
+      provided: false,
+      valid: false,
+      path: '',
+      contract: '',
+      environment: '',
+      projectRef: '',
+      observedAt: '',
+      checks: REQUIRED_ENVIRONMENT_CHECKS.map((key) => ({ key, ok: false })),
+      failures: [{ code: 'environment_evidence_not_supplied', message: 'Target-environment evidence was not supplied.' }],
+    }
+  }
+
+  try {
+    const resolvedPath = path.isAbsolute(evidencePath) ? evidencePath : path.join(process.cwd(), evidencePath)
+    const evidence = JSON.parse(fs.readFileSync(resolvedPath, 'utf8'))
+    const checkResults = REQUIRED_ENVIRONMENT_CHECKS.map((key) => ({
+      key,
+      ok: evidence?.checks?.[key] === true,
+    }))
+    const failures = []
+    if (evidence?.contract !== ENVIRONMENT_EVIDENCE_CONTRACT) {
+      failures.push({ code: 'environment_evidence_contract_mismatch', expected: ENVIRONMENT_EVIDENCE_CONTRACT, actual: evidence?.contract || '' })
+    }
+    if (!['staging', 'production'].includes(String(evidence?.environment || '').trim().toLowerCase())) {
+      failures.push({ code: 'environment_evidence_environment_invalid', message: 'Environment must be staging or production.' })
+    }
+    if (!String(evidence?.projectRef || '').trim()) {
+      failures.push({ code: 'environment_evidence_project_ref_missing' })
+    }
+    if (!evidence?.observedAt || Number.isNaN(Date.parse(evidence.observedAt))) {
+      failures.push({ code: 'environment_evidence_observed_at_invalid' })
+    }
+    failures.push(...checkResults
+      .filter((check) => !check.ok)
+      .map((check) => ({ code: 'environment_check_failed', check: check.key })))
+    return {
+      provided: true,
+      valid: failures.length === 0,
+      path: evidencePath,
+      contract: evidence?.contract || '',
+      environment: evidence?.environment || '',
+      projectRef: evidence?.projectRef || '',
+      observedAt: evidence?.observedAt || '',
+      checks: checkResults,
+      failures,
+    }
+  } catch (error) {
+    return {
+      provided: true,
+      valid: false,
+      path: evidencePath,
+      contract: '',
+      environment: '',
+      projectRef: '',
+      observedAt: '',
+      checks: REQUIRED_ENVIRONMENT_CHECKS.map((key) => ({ key, ok: false })),
+      failures: [{ code: 'environment_evidence_unreadable', message: error.message }],
+    }
+  }
 }
 
 function collectFailures(report = {}) {
@@ -91,6 +168,7 @@ function summarizeReport([key, reportPath, expectedPhase]) {
       warnings,
       warningCodes: warnings.map((warning) => warning.code || warning.severity || 'warning'),
       productionActivationReady: report.gate?.productionActivationReady === true,
+      version: report.version || '',
     }
   } catch (error) {
     return {
@@ -106,6 +184,7 @@ function summarizeReport([key, reportPath, expectedPhase]) {
       warnings: [],
       warningCodes: [],
       productionActivationReady: false,
+      version: '',
     }
   }
 }
@@ -123,6 +202,7 @@ function buildWarningInventory(phaseSummaries = []) {
 
 function buildReport(options = {}) {
   const phaseSummaries = PHASE_REPORTS.map(summarizeReport)
+  const activationEvidence = evaluateEnvironmentEvidence(options.environmentEvidence)
   const warningInventory = buildWarningInventory(phaseSummaries)
   const unmanagedWarnings = warningInventory.filter((warning) => !warning.managed)
   const hardBlockers = [
@@ -146,6 +226,12 @@ function buildReport(options = {}) {
       warningCode: warning.code,
       message: warning.message,
     })),
+    ...(options.requireEnvironmentEvidence && !activationEvidence.valid
+      ? activationEvidence.failures.map((failure) => ({
+          ...failure,
+          code: `required_${failure.code}`,
+        }))
+      : []),
   ]
 
   const smokeAudit = buildDocumentRequestWorkspaceSmokeAudit()
@@ -158,6 +244,10 @@ function buildReport(options = {}) {
   const buyerCleanupSource = read('src/services/documents/buyerDocumentCanonicalCleanupService.js')
   const sellerCleanupSource = read('src/services/documents/sellerDocumentCanonicalCleanupService.js')
   const bondModelSource = read('src/modules/bond/application/documents/bondApplicationCanonicalDocumentModel.js')
+  const agentWorkspaceSource = read('src/pages/UnitDetail.jsx')
+  const professionalVisibilityMigrationSource = read('../supabase/migrations/20260827163336_document_request_professional_visibility_phase6.sql')
+  const documentRequestSelectPolicySource = read('../supabase/migrations/202605250020_bond_rls_scoped_policy_rollout_phase5b.sql')
+  const documentRequestWritePolicySource = read('../supabase/migrations/202605250022_bond_finance_write_policy_rollout_phase5d.sql')
 
   const checks = [
     {
@@ -186,11 +276,16 @@ function buildReport(options = {}) {
     {
       key: 'container_model_covers_all_workspaces',
       ok: containerSource.includes('buildDocumentRequestContainerModel') &&
+        smokeAudit.summary.coveredAudienceCount === 8 &&
+        smokeAudit.summary.missingAudienceSmokeCount === 0 &&
         smokeAudit.summary.buyerContainerCount > 0 &&
         smokeAudit.summary.sellerContainerCount > 0 &&
         smokeAudit.summary.agentContainerCount > 0 &&
         smokeAudit.summary.attorneyContainerCount > 0 &&
-        smokeAudit.summary.bondOriginatorContainerCount > 0,
+        smokeAudit.summary.bondOriginatorContainerCount > 0 &&
+        smokeAudit.summary.transferAttorneyContainerCount > 0 &&
+        smokeAudit.summary.cancellationAttorneyContainerCount > 0 &&
+        smokeAudit.summary.internalContainerCount > 0,
     },
     {
       key: 'workspace_smoke_has_no_failures_or_deferred_leaks',
@@ -212,6 +307,33 @@ function buildReport(options = {}) {
         privateListingSource.includes('requested_document_id: normalizedDocumentId'),
     },
     {
+      key: 'agent_upload_on_behalf_links_exact_request',
+      ok: agentWorkspaceSource.includes('Upload on behalf') &&
+        agentWorkspaceSource.includes("source: documentRequestId ? 'professional_request_upload_on_behalf' : 'internal'") &&
+        apiSource.includes('uploadedByParty: normalizeNullableText(uploadedByParty)') &&
+        apiSource.includes("fallbackRequestQuery.eq('id', documentRequestId)"),
+    },
+    {
+      key: 'professional_visibility_migration_contract_is_present',
+      ok: professionalVisibilityMigrationSource.includes('requested_document_id uuid') &&
+        professionalVisibilityMigrationSource.includes('document_requests_requested_from_check') &&
+        professionalVisibilityMigrationSource.includes('document_requests_visibility_scope_check') &&
+        professionalVisibilityMigrationSource.includes('document_requests_visibility_scope_idx') &&
+        professionalVisibilityMigrationSource.includes('document_requests_requested_from_idx'),
+    },
+    {
+      key: 'document_request_rls_contract_is_present',
+      ok: documentRequestSelectPolicySource.includes('document_requests_select_phase5b_scoped') &&
+        documentRequestWritePolicySource.includes('document_requests_insert_phase5d_bond_finance') &&
+        documentRequestWritePolicySource.includes('document_requests_update_phase5d_bond_finance'),
+    },
+    {
+      key: 'latest_phase_contract_versions_are_loaded',
+      ok: phaseSummaries.find((summary) => summary.key === 'phase7_workspace_smoke')?.version === 'document_request_workspace_smoke_v2' &&
+        phaseSummaries.find((summary) => summary.key === 'phase8_client_portal_container_adoption')?.version === 'document_request_client_portal_container_adoption_v2' &&
+        phaseSummaries.find((summary) => summary.key === 'phase9_upload_linking')?.version === 'document_request_upload_linking_v2',
+    },
+    {
       key: 'phase10_verify_chain_is_registered',
       ok: packageJson.scripts?.['verify:document-request-phase10-release-readiness'] ===
         'npm run verify:document-request-phase9-upload-linking && npm run test:document-request-phase10-release-readiness && npm run report:document-request-phase10-release-readiness',
@@ -227,6 +349,15 @@ function buildReport(options = {}) {
     count: warning.count,
     requirementKey: warning.requirementKey,
   }))
+  if (!activationEvidence.valid) {
+    pendingActivationItems.push({
+      phase: 'phase10_release_readiness',
+      code: 'target_environment_evidence_required',
+      message: 'Provide verified staging or production evidence for migration, RLS, upload linking, upload-on-behalf, and client visibility boundaries.',
+      count: activationEvidence.failures.length,
+      requirementKey: null,
+    })
+  }
 
   return {
     phase: PHASE,
@@ -234,7 +365,7 @@ function buildReport(options = {}) {
     commit: false,
     mutatedData: false,
     strict: options.strict === true,
-    version: 'document_request_release_readiness_v1',
+    version: 'document_request_release_readiness_v2',
     phaseSummaries,
     warningSummary: {
       total: warningInventory.length,
@@ -246,23 +377,29 @@ function buildReport(options = {}) {
       }, {}),
     },
     pendingActivationItems,
+    activationEvidence,
     smokeSummary: smokeAudit.summary,
     releaseRecommendation: hardBlockers.length || failed.length
       ? 'blocked'
-      : warningInventory.length
-        ? 'ready_for_internal_pilot_not_production_activation'
+      : !activationEvidence.valid
+        ? 'implementation_ready_environment_validation_required'
+        : warningInventory.length
+          ? 'environment_verified_managed_warnings_remain'
         : 'ready_for_production_activation',
     gate: {
       status: hardBlockers.length || failed.length
         ? 'blocked'
         : strictFailure
           ? 'blocked_warnings'
-          : warningInventory.length
-            ? 'release_readiness_mapped_with_warnings'
+          : !activationEvidence.valid
+            ? 'implementation_ready_environment_validation_required'
+            : warningInventory.length
+              ? 'release_readiness_mapped_with_warnings'
             : 'release_readiness_mapped',
       ok: hardBlockers.length === 0 && failed.length === 0 && !strictFailure,
       mayProceedToPhase11: hardBlockers.length === 0 && failed.length === 0,
-      productionActivationReady: hardBlockers.length === 0 && failed.length === 0 && warningInventory.length === 0,
+      internalPilotReady: hardBlockers.length === 0 && failed.length === 0 && activationEvidence.valid,
+      productionActivationReady: hardBlockers.length === 0 && failed.length === 0 && activationEvidence.valid && warningInventory.length === 0,
       checks,
       failed,
       hardBlockers,

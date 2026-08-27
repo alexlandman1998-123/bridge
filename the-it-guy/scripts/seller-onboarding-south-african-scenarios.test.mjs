@@ -304,7 +304,7 @@ assertScenario({
     hoaContactName: 'Estate Manager',
     hoaContactEmail: 'hoa@example.com',
   }),
-  docKeys: ['levy_statement', 'body_corporate_details', 'hoa_levy_statement', 'hoa_contact_details'],
+  docKeys: ['levy_statement', 'hoa_levy_statement'],
   factsChecks: [
     ({ facts }) => assert.equal(facts.property.sectional_title, true),
     ({ facts }) => assert.equal(facts.property.estate_or_hoa, true),
@@ -312,7 +312,8 @@ assertScenario({
     ({ facts }) => assert.equal(facts.property.estate.name, 'The Oaks Estate'),
   ],
   flowChecks: [
-    ({ flow }) => assert.ok(flow.document_triggers.includes('body_corporate_details')),
+    ({ flow }) => assert.equal(flow.document_triggers.includes('body_corporate_details'), false),
+    ({ documents }) => assert.equal(documents.some((row) => row.requirement_key === 'hoa_contact_details'), false),
   ],
 })
 
@@ -441,7 +442,7 @@ assertScenario({
     landServicesAvailable: 'Borehole water, electricity, gravel access road',
     boreholeInstallation: true,
   }),
-  docKeys: ['zoning_certificate', 'water_source_details', 'borehole_certificate'],
+  docKeys: ['zoning_certificate', 'water_source_details'],
   factsChecks: [
     ({ facts }) => assert.equal(facts.property.branch, 'agricultural'),
     ({ facts }) => assert.equal(facts.property.land.water_source, 'Borehole'),

@@ -2465,6 +2465,11 @@ function AgentNewDealWizard({
             ...resolvedRolePlayers.filter((item) => item.roleType !== 'bond_originator' || financeManagedBy === 'bond_originator'),
           ],
           disableAutoPartnerRouting: true,
+          requireCanonicalPartnerHandoffs: true,
+          requiredPartnerRoleTypes: [
+            'transfer_attorney',
+            financeManagedBy === 'bond_originator' && isWizardBondFinance ? 'bond_originator' : null,
+          ].filter(Boolean),
           commissionSnapshot: resolvedCommissionSnapshot,
         },
       })

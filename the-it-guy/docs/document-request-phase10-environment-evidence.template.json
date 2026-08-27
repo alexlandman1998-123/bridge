@@ -1,0 +1,15 @@
+{
+  "contract": "document_request_phase10_environment_evidence_v1",
+  "environment": "staging",
+  "projectRef": "REDACTED_PROJECT_REF",
+  "observedAt": "2026-08-27T00:00:00.000Z",
+  "checks": {
+    "professional_visibility_migration_applied": false,
+    "document_requests_rls_verified": false,
+    "buyer_request_upload_linked": false,
+    "seller_request_upload_linked": false,
+    "agent_upload_on_behalf_linked": false,
+    "professional_request_hidden_from_clients": false
+  },
+  "notes": "Replace false values only after observing each check in the named environment. Do not include client names, emails, document URLs, access tokens, or service-role keys."
+}

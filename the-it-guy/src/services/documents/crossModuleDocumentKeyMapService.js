@@ -390,7 +390,7 @@ export const CROSS_MODULE_DOCUMENT_DEFINITIONS = Object.freeze([
   }),
   documentDefinition({
     canonicalKey: 'solar_compliance_documents',
-    label: 'Solar Compliance Documents',
+    label: 'Solar Electrical COC / SSEG Documents',
     ownerRole: 'seller',
     responsibleRoles: ['seller', 'transfer_attorney'],
     packKey: 'property_compliance',

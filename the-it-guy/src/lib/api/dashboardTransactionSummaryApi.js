@@ -1248,6 +1248,116 @@ async function fetchActiveTransactionIdsForOrganisation(client, organisationId =
   return (query.data || []).filter((row) => row?.id && row?.is_active !== false).map((row) => row.id)
 }
 
+async function fetchBondTransactionIdsForOrganisation(client, organisationId = '') {
+  const normalizedOrganisationId = normalizeNullableUuid(organisationId)
+  if (!normalizedOrganisationId) return []
+
+  const transactionIds = new Set()
+
+  let workspaceTransactionsQuery = await client
+    .from('transactions')
+    .select('id, is_active')
+    .eq('bond_workspace_id', normalizedOrganisationId)
+  if (workspaceTransactionsQuery.error && isMissingColumnError(workspaceTransactionsQuery.error, 'is_active')) {
+    workspaceTransactionsQuery = await client.from('transactions').select('id').eq('bond_workspace_id', normalizedOrganisationId)
+  }
+  if (
+    workspaceTransactionsQuery.error &&
+    !isMissingColumnError(workspaceTransactionsQuery.error, 'bond_workspace_id') &&
+    !isMissingSchemaError(workspaceTransactionsQuery.error)
+  ) {
+    throw workspaceTransactionsQuery.error
+  }
+  for (const row of workspaceTransactionsQuery.data || []) {
+    if (row?.is_active === false) continue
+    if (row?.id) transactionIds.add(row.id)
+  }
+
+  let roleplayerQuery = await client
+    .from('transaction_role_players')
+    .select('transaction_id, role_type, status, assignment_status, organisation_id')
+    .eq('role_type', 'bond_originator')
+    .eq('organisation_id', normalizedOrganisationId)
+  if (
+    roleplayerQuery.error &&
+    (isMissingColumnError(roleplayerQuery.error, 'status') || isMissingColumnError(roleplayerQuery.error, 'assignment_status'))
+  ) {
+    roleplayerQuery = await client
+      .from('transaction_role_players')
+      .select('transaction_id, role_type, organisation_id')
+      .eq('role_type', 'bond_originator')
+      .eq('organisation_id', normalizedOrganisationId)
+  }
+  if (
+    roleplayerQuery.error &&
+    !isMissingColumnError(roleplayerQuery.error, 'organisation_id') &&
+    !isMissingSchemaError(roleplayerQuery.error) &&
+    !isMissingTableError(roleplayerQuery.error, 'transaction_role_players') &&
+    !isPermissionDeniedError(roleplayerQuery.error)
+  ) {
+    throw roleplayerQuery.error
+  }
+  for (const row of roleplayerQuery.data || []) {
+    const status = normalizeTextValue(row?.assignment_status || row?.status || '').toLowerCase()
+    if (['removed', 'declined', 'rejected', 'inactive', 'suspended'].includes(status)) continue
+    if (row?.transaction_id) transactionIds.add(row.transaction_id)
+  }
+
+  let participantQuery = await client
+    .from('transaction_participants')
+    .select('transaction_id, role_type, status, assigned_organisation_id')
+    .eq('role_type', 'bond_originator')
+    .eq('assigned_organisation_id', normalizedOrganisationId)
+  if (participantQuery.error && isMissingColumnError(participantQuery.error, 'status')) {
+    participantQuery = await client
+      .from('transaction_participants')
+      .select('transaction_id, role_type, assigned_organisation_id')
+      .eq('role_type', 'bond_originator')
+      .eq('assigned_organisation_id', normalizedOrganisationId)
+  }
+  if (
+    participantQuery.error &&
+    !isMissingColumnError(participantQuery.error, 'assigned_organisation_id') &&
+    !isMissingSchemaError(participantQuery.error) &&
+    !isMissingTableError(participantQuery.error, 'transaction_participants') &&
+    !isPermissionDeniedError(participantQuery.error)
+  ) {
+    throw participantQuery.error
+  }
+  for (const row of participantQuery.data || []) {
+    const status = normalizeStakeholderStatus(row?.status, 'active')
+    if (['removed', 'declined', 'rejected', 'inactive', 'suspended'].includes(status)) continue
+    if (row?.transaction_id) transactionIds.add(row.transaction_id)
+  }
+
+  let bondApplicationQuery = await client
+    .from('transaction_bond_applications')
+    .select('transaction_id, assigned_organisation_id, assignment_status, status')
+    .eq('assigned_organisation_id', normalizedOrganisationId)
+  if (bondApplicationQuery.error && isMissingColumnError(bondApplicationQuery.error, 'assignment_status')) {
+    bondApplicationQuery = await client
+      .from('transaction_bond_applications')
+      .select('transaction_id, assigned_organisation_id, status')
+      .eq('assigned_organisation_id', normalizedOrganisationId)
+  }
+  if (
+    bondApplicationQuery.error &&
+    !isMissingColumnError(bondApplicationQuery.error, 'assigned_organisation_id') &&
+    !isMissingSchemaError(bondApplicationQuery.error) &&
+    !isMissingTableError(bondApplicationQuery.error, 'transaction_bond_applications') &&
+    !isPermissionDeniedError(bondApplicationQuery.error)
+  ) {
+    throw bondApplicationQuery.error
+  }
+  for (const row of bondApplicationQuery.data || []) {
+    const status = normalizeStakeholderStatus(row?.assignment_status || row?.status, 'active')
+    if (['removed', 'declined', 'rejected', 'inactive', 'suspended'].includes(status)) continue
+    if (row?.transaction_id) transactionIds.add(row.transaction_id)
+  }
+
+  return [...transactionIds]
+}
+
 async function getAccessibleTransactionIdsForUser({ userId, roleType = null, organisationId = '' } = {}) {
   const client = requireClient()
   if (!userId) return []
@@ -1291,7 +1401,7 @@ async function getAccessibleTransactionIdsForUser({ userId, roleType = null, org
       email: identity.email,
       organisationId: normalizedOrganisationId,
     })
-    if (hqMembership) return fetchActiveTransactionIdsForOrganisation(client, normalizedOrganisationId)
+    if (hqMembership) return fetchBondTransactionIdsForOrganisation(client, normalizedOrganisationId)
   }
 
   const directIds = await fetchDirectTransactionIdsForUser(client, {

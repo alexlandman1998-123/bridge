@@ -290,11 +290,11 @@ async function runDocumentDeclarationAndSnapshotTests() {
   const state = jointState()
   const primaryRequirements = resolveBondApplicationDocumentRequirements({
     applicationState: state,
-    participantContext: { participantRole: BOND_APPLICATION_PARTICIPANT_ROLES.primaryApplicant, participantKey: 'primary_applicant:1' },
+    participantContext: { participantRole: BOND_APPLICATION_PARTICIPANT_ROLES.primaryApplicant, participantKey: 'primary_applicant:1', participantName: 'Alex Buyer' },
   }).activeRequirements
   const coRequirements = resolveBondApplicationDocumentRequirements({
     applicationState: state,
-    participantContext: { participantRole: BOND_APPLICATION_PARTICIPANT_ROLES.coApplicant, participantKey: 'co_applicant:1' },
+    participantContext: { participantRole: BOND_APPLICATION_PARTICIPANT_ROLES.coApplicant, participantKey: 'co_applicant:1', participantName: 'Taylor Buyer' },
   }).activeRequirements
   assert.ok(primaryRequirements.some((requirement) => requirement.key.startsWith('primary_applicant:1:')))
   assert.ok(coRequirements.some((requirement) => requirement.key.startsWith('co_applicant:1:')))
@@ -303,17 +303,17 @@ async function runDocumentDeclarationAndSnapshotTests() {
   const primaryBankStatementRequirement = primaryRequirements.find((requirement) =>
     requirement.key === 'primary_applicant:1:bond_application_primary_applicant_bank_statements'
   )
-  assert.equal(primaryBankStatementRequirement?.title, 'Applicant 1: Latest 3 months bank statements')
+  assert.equal(primaryBankStatementRequirement?.title, 'Purchaser 1 (Alex Buyer) — Latest 3 months bank statements')
   const coPersonalBankStatementRequirement = coRequirements.find((requirement) =>
     requirement.key === 'co_applicant:1:bond_application_co_applicant_self_employed_personal_bank_statements'
   )
   const coBusinessBankStatementRequirement = coRequirements.find((requirement) =>
     requirement.key === 'co_applicant:1:bond_application_co_applicant_self_employed_business_bank_statements'
   )
-  assert.equal(coPersonalBankStatementRequirement?.title, 'Applicant 2: Latest 6 months personal bank statements')
+  assert.equal(coPersonalBankStatementRequirement?.title, 'Purchaser 2 (Taylor Buyer) — Latest 6 months personal bank statements')
   assert.equal(coPersonalBankStatementRequirement?.evidencePeriodMonths, 6)
   assert.equal(coPersonalBankStatementRequirement?.allowMultipleFiles, true)
-  assert.equal(coBusinessBankStatementRequirement?.title, 'Applicant 2: Latest 6 months business bank statements')
+  assert.equal(coBusinessBankStatementRequirement?.title, 'Purchaser 2 (Taylor Buyer) — Latest 6 months business bank statements')
   assert.equal(coBusinessBankStatementRequirement?.evidencePeriodMonths, 6)
   assert.equal(coBusinessBankStatementRequirement?.allowMultipleFiles, true)
   assert.ok(coRequirements.some((requirement) => requirement.key === 'co_applicant:1:bond_application_self_employed_accountant_letter'))

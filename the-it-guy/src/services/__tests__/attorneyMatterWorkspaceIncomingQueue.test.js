@@ -162,6 +162,54 @@ try {
   {
     const workspace = buildAttorneyMatterWorkspace({
       ...source,
+      currentUser: {
+        id: 'firm-admin',
+        role: 'firm_admin',
+        practiceQualifications: [],
+      },
+      permissions: {
+        can_view_all_firm_matters: true,
+        can_update_attorney_assignments: true,
+        can_create_attorney_assignments: true,
+      },
+      incomingMatterQueue: [
+        {
+          id: 'tuckers-style-assignment',
+          assignmentId: 'tuckers-style-assignment',
+          transactionId: 'tx-tuckers',
+          matterId: 'tx-tuckers',
+          reference: 'SAMLIN-TUCKERS-001',
+          matterType: 'Transfer',
+          status: 'awaiting_documents',
+          statusLabel: 'Awaiting Documents',
+          waitingOn: ['documents'],
+          waitingOnLabels: ['Documents'],
+          incomingSince: '2026-08-27T08:00:00.000Z',
+          buyerName: 'Buyer pending',
+          sellerName: 'Samlin Construction',
+          property: 'Junoah Estate Unit',
+          documents: {},
+          nextAction: 'Request buyer documents.',
+          assignedAttorney: { id: '', name: 'Unassigned' },
+          assignedSecretary: {},
+          assignedAdminHandler: {},
+          assignedBySource: { key: 'samlin', label: 'Samlin Construction', kind: 'entity', logoUrl: '' },
+          actionHref: '/transactions/tx-tuckers',
+        },
+      ],
+    }, {
+      view: 'active',
+      pageSize: 20,
+    })
+
+    assert.equal(workspace.tableRows.length, 1, 'firm admins without practice qualifications must still see firm-level incoming matters')
+    assert.equal(workspace.tableRows[0].matterId, 'tx-tuckers')
+    assert.equal(workspace.summary.incomingMatters, 1)
+  }
+
+  {
+    const workspace = buildAttorneyMatterWorkspace({
+      ...source,
       incomingMatterSource: { summary: { totalIncoming: 0 } },
       incomingMatterQueue: [],
     }, {

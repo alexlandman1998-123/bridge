@@ -15,7 +15,8 @@ const CORS_HEADERS = {
 
 type OrganizationConnection = {
   id: string;
-  meta_access_token: string;
+  meta_access_token?: string | null;
+  meta_access_token_secret_id?: string | null;
   phone_number_id: string;
   branch_id?: string | null;
   connection_status: string;
@@ -168,7 +169,7 @@ async function resolveOrganisationConnection(
     const branchConnection = await supabase
       .from("organisation_communication_channels")
       .select(
-        "id, meta_access_token, phone_number_id, branch_id, connection_status, verification_status, display_phone_number",
+        "id, meta_access_token, meta_access_token_secret_id, phone_number_id, branch_id, connection_status, verification_status, display_phone_number",
       )
       .eq("organisation_id", organisationId)
       .eq("branch_id", branchId)
@@ -186,7 +187,7 @@ async function resolveOrganisationConnection(
   const orgConnection = await supabase
     .from("organisation_communication_channels")
     .select(
-      "id, meta_access_token, phone_number_id, branch_id, connection_status, verification_status, display_phone_number",
+      "id, meta_access_token, meta_access_token_secret_id, phone_number_id, branch_id, connection_status, verification_status, display_phone_number",
     )
     .eq("organisation_id", organisationId)
     .is("branch_id", null)
@@ -200,6 +201,21 @@ async function resolveOrganisationConnection(
     throw new Error(orgConnection.error.message || "Unable to read WhatsApp connection.");
   }
   return orgConnection.data as OrganizationConnection | null;
+}
+
+async function resolveConnectionAccessToken(supabase: any, connection: OrganizationConnection | null) {
+  if (!supabase || !connection) return "";
+  const secretId = normalizeText(connection.meta_access_token_secret_id);
+  const fallbackToken = normalizeText(connection.meta_access_token);
+  if (!secretId && !fallbackToken) return "";
+  const tokenResult = await supabase.rpc("bridge_resolve_whatsapp_access_token", {
+    p_secret_id: secretId || null,
+    p_fallback_token: fallbackToken || null,
+  });
+  if (tokenResult.error) {
+    throw new Error(tokenResult.error.message || "Unable to resolve the WhatsApp access token.");
+  }
+  return normalizeText(tokenResult.data) || fallbackToken;
 }
 
 async function resolveTemplate(
@@ -589,7 +605,7 @@ Deno.serve(async (req) => {
     });
   }
 
-  const whatsappToken = normalizeText(connection.meta_access_token);
+  const whatsappToken = await resolveConnectionAccessToken(supabase, connection);
   const phoneNumberId = normalizeText(connection.phone_number_id);
   if (!whatsappToken || !phoneNumberId) {
     if (deliveryId) {

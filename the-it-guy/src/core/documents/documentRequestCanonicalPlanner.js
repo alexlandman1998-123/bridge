@@ -3,8 +3,9 @@ import {
   buildCanonicalDocumentRequestScenarioTokens,
   resolveCanonicalDocumentRequestsForScenario,
 } from './documentRequestCanonicalMatrix.js'
+import { resolveDocumentRequestUploadOwnership } from './documentRequestUploadOwnershipModel.js'
 
-export const DOCUMENT_REQUEST_CANONICAL_PLANNER_VERSION = 'document_request_canonical_planner_v1'
+export const DOCUMENT_REQUEST_CANONICAL_PLANNER_VERSION = 'document_request_canonical_planner_v2'
 
 const ATTORNEY_AUDIENCES = new Set(['attorney', 'transfer_attorney', 'bond_attorney', 'cancellation_attorney'])
 const CLIENT_VISIBLE = 'client_visible'
@@ -81,6 +82,12 @@ function toRequestPlanItem(requirement = {}, options = {}) {
   const requestPendingPolicy = options.requestPendingPolicy === true || options.includePendingPolicyRequests === true
   const requestable = !pendingPolicy || requestPendingPolicy
   const portalAudience = portalAudienceForRequirement(requirement)
+  const uploadOwnership = resolveDocumentRequestUploadOwnership({
+    documentKey: requirement.key,
+    ownerRole: requirement.ownerRole,
+    requestedFrom: requirement.requestedFrom,
+    visibility: requirement.visibility,
+  })
 
   return Object.freeze({
     key: requirement.key,
@@ -90,6 +97,13 @@ function toRequestPlanItem(requirement = {}, options = {}) {
     label: requirement.label,
     ownerRole: requirement.ownerRole,
     requestedFrom: requirement.requestedFrom,
+    responsiblePartyRole: uploadOwnership.responsiblePartyRole,
+    suppliedByRole: uploadOwnership.suppliedByRole,
+    clientSupplied: uploadOwnership.clientSupplied,
+    uploadableByRoles: uploadOwnership.uploadableByRoles,
+    uploadOnBehalfAllowed: uploadOwnership.uploadOnBehalfAllowed,
+    uploadOnBehalfRoles: uploadOwnership.uploadOnBehalfRoles,
+    agentMayUploadOnBehalf: uploadOwnership.agentMayUploadOnBehalf,
     appliesTo: Object.freeze([...(requirement.appliesTo || [])]),
     level: requirement.level,
     requiredLevel: requirement.level,

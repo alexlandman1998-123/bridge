@@ -33,6 +33,9 @@ The report is read-only:
 - Pending-policy rows are not requestable by default and do not block workflow stages.
 - Pending-policy rows can appear in internal/legal review reports until approved.
 - Legacy buyer/seller keys must map through the canonical adapter or migration/backfill layer.
+- `information_sheet` is a retired legacy request. Historical uploads remain readable, but it is not generated or aliased to `buyer_fica_pack`.
+- Document responsibility and upload actor are separate. A buyer- or seller-supplied document remains that client's responsibility when an authorised agent uploads an emailed copy on the client's behalf.
+- Canonical request plans expose `responsiblePartyRole`, `uploadableByRoles`, and `uploadOnBehalfRoles`; an agent upload never transfers the underlying client responsibility to the agent.
 - New client-visible document requirements must first be added to the canonical policy.
 - `property_acquisition_record` and `capital_improvement_records` remain outside canonical policy until legal approval confirms they are needed.
 

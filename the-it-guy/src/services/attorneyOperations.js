@@ -998,7 +998,7 @@ async function loadAttorneyOperationalWorkspaceData(firmId = null, userId = null
     scope: MANAGEMENT_ROLES.has(currentRole) || permissions.can_view_all_firm_matters ? 'firm' : 'user',
   })
 
-  const relevantAssignments = assignments.filter((assignment) => ['pending', 'active', 'paused'].includes(toLower(assignment.status)))
+  const relevantAssignments = assignments.filter((assignment) => ['active', 'paused'].includes(toLower(assignment.assignmentStatus || assignment.status)))
 
   const transactionIds = [...new Set(relevantAssignments.map((assignment) => assignment.transactionId).filter(Boolean))]
   const transactions = await fetchTransactions(client, transactionIds)

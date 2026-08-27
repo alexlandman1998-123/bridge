@@ -1,0 +1,24 @@
+{
+  "version": "20260827113000",
+  "stream": "notification_automation",
+  "file": "20260827113000_whatsapp_embedded_signup_v1.sql",
+  "route": "apply_original",
+  "action": "apply_original_after_dependency_check",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "stagingLedgerRecorded": false,
+  "catalogChecks": "pending",
+  "behaviorChecks": "pending",
+  "rollbackOrNoResidue": "pending",
+  "reviewedBy": "",
+  "approvedBy": "",
+  "capturedAt": null,
+  "notes": [
+    "Apply the original migration to staging, run checks, then record the staging ledger."
+  ],
+  "commands": [
+    "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260827113000 --confirm APPLY_TO_STAGING_ONLY",
+    "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260827113000 --evidence docs/staging-evidence/20260827113000-notification_automation.json --confirm APPLY_TO_STAGING_ONLY"
+  ]
+}

@@ -19,7 +19,10 @@ const readyDeveloperSale = buildNewTransactionSetupHealth({
     originLabel: 'Created via development unit',
   },
   buyerParties: [{ name: 'Alex Buyer' }],
-  rolePlayers: [{ roleType: 'transfer_attorney' }, { roleType: 'bond_originator' }],
+  rolePlayers: [
+    { roleType: 'transfer_attorney', partnerOrganisationId: 'attorney-org-1' },
+    { roleType: 'bond_originator', partnerOrganisationId: 'bond-org-1' },
+  ],
   onboardingRecord: { token: 'onboarding-token' },
   handoffChecklist: {
     signedOtpStatus: 'uploaded',
@@ -45,7 +48,7 @@ const agentListingNeedsOtpUpload = buildNewTransactionSetupHealth({
     purchase_price: 950000,
   },
   buyerParties: [{ name: 'Noah Buyer' }],
-  rolePlayers: [{ roleType: 'transfer_attorney' }],
+  rolePlayers: [{ roleType: 'transfer_attorney', partnerOrganisationId: 'attorney-org-1' }],
   onboardingRecord: { token: 'agent-token' },
   handoffChecklist: {
     signedOtpStatus: 'pending_upload',

@@ -90,7 +90,7 @@ function getTitleForType(type = '', metadata = {}) {
     seller_compliance_signer_signed: 'Seller signature completed',
     seller_compliance_pack_completed: 'Seller compliance pack completed',
     otp_ready: 'OTP ready for signature',
-    otp_signed: 'OTP signed',
+    otp_signed: 'Signed OTP received',
     finance_submitted: 'Finance submitted',
     finance_updated: 'Finance update received',
     finance_approved: 'Finance approved',
@@ -149,7 +149,7 @@ function getDescriptionForType(type = '', metadata = {}) {
     seller_compliance_signer_signed: 'A seller completed their disclosure and FICA declaration signature.',
     seller_compliance_pack_completed: 'All required seller compliance signatures have been completed.',
     otp_ready: 'Your Offer to Purchase is ready for signature.',
-    otp_signed: 'Your Offer to Purchase has been signed.',
+    otp_signed: 'The signed OTP has been received. Your transaction is now moving into the next handoff.',
     finance_submitted: 'Finance documents were submitted for review.',
     finance_updated: 'Finance progress was updated.',
     finance_approved: 'Finance approval has been received.',
@@ -193,6 +193,9 @@ function getActionForEvent(type = '', metadata = {}) {
   }
   if (type === 'otp_ready') {
     return { label: 'Sign OTP', route: 'documents' }
+  }
+  if (type === 'otp_signed') {
+    return { label: 'View Progress', route: 'progress' }
   }
   if (type === 'mandate_sent') {
     return { label: 'Review & Sign Mandate', route: 'documents' }
@@ -811,9 +814,19 @@ function buildWorkflowEvents(portalData = {}, clientRole = 'buyer') {
     }
   }
 
-  const otpState = normalize(portalData?.otpPacket?.state)
+  // Physical signed-OTP intake writes the transaction status rather than a
+  // generated signing packet. Both sources project one shared portal milestone.
+  const otpState = normalize(
+    portalData?.otpPacket?.state ||
+      transaction?.onboarding_status ||
+      transaction?.onboardingStatus,
+  )
   if (otpState) {
-    const type = otpState === 'fully_signed' ? 'otp_signed' : otpState === 'ready_for_client_signature' ? 'otp_ready' : null
+    const type = ['fully_signed', 'signed_otp_received'].includes(otpState)
+      ? 'otp_signed'
+      : otpState === 'ready_for_client_signature'
+        ? 'otp_ready'
+        : null
     if (type) {
       events.push({
         id: `otp_${otpState}_${toText(transaction?.id)}`,
@@ -822,7 +835,10 @@ function buildWorkflowEvents(portalData = {}, clientRole = 'buyer') {
         actor: 'Arch9',
         actorRole: 'System',
         visibility: 'client_visible',
-        metadata: { audience: 'buyer' },
+        metadata: {
+          audience: type === 'otp_signed' ? 'shared' : 'buyer',
+          source: portalData?.otpPacket?.state ? 'signing_packet' : 'signed_otp_intake',
+        },
       })
     }
   }

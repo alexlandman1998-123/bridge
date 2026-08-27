@@ -164,7 +164,11 @@ test('only exact compliance amenities create certificate-triggering facts', () =
   assert.equal(exactFacts.document_triggers.includes('electric_fence_certificate'), true)
   assert.equal(exactFacts.document_triggers.includes('gas_compliance_certificate'), true)
   assert.equal(exactFacts.document_triggers.includes('solar_compliance_documents'), true)
-  assert.equal(exactFacts.document_triggers.includes('borehole_certificate'), true)
+  assert.equal(
+    exactFacts.document_triggers.includes('borehole_certificate'),
+    false,
+    'A borehole feature should not create a document request without an explicit certificate requirement.',
+  )
 })
 
 test('captures split owner model, foreign metadata, and owner invite mode', () => {

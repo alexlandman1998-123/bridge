@@ -1,0 +1,22 @@
+{
+  "generatedAt": "2026-08-27T14:50:07Z",
+  "repo": "/Users/alexanderlandman/the-it-guy",
+  "status": "STAGING_READY_PENDING_EVIDENCE",
+  "canonicalVersion": "20260827160000",
+  "canonicalFile": "supabase/migrations/20260827160000_canonical_bond_originator_handoff_repair.sql",
+  "route": "apply_original_after_dependency_check",
+  "stagingRow": {
+    "version": "20260827160000",
+    "dependsOn": "stream preflight",
+    "action": "apply_original_after_dependency_check",
+    "file": "20260827160000_canonical_bond_originator_handoff_repair.sql"
+  },
+  "sourceVersions": [
+    "20260827133506",
+    "20260827133739"
+  ],
+  "stagingEvidenceFile": "docs/staging-evidence/20260827160000-bond_finance_runtime.json",
+  "notes": [
+    "The canonical packet replaces the two source rows for all later staging and production routing."
+  ]
+}

@@ -3,9 +3,12 @@ import {
 } from '../../core/documents/documentRequestCanonicalPlanner.js'
 
 export const DOCUMENT_REQUEST_CANONICAL_REQUIRED_DOCUMENT_SYNC_VERSION =
-  'document_request_canonical_required_document_sync_v1'
+  'document_request_canonical_required_document_sync_v2'
 
 const REQUIRED_DOCUMENT_SELECT =
+  'id, transaction_id, document_key, canonical_document_key, document_label, is_required, is_uploaded, status, enabled, group_key, group_label, description, required_from_role, visibility_scope, allow_multiple, uploaded_document_id, uploaded_at, verified_at, rejected_at, notes, sort_order, canonical_requirement_instance_id, participant_key, participant_id, participant_role, participant_name, created_at, updated_at'
+
+const LEGACY_REQUIRED_DOCUMENT_SELECT =
   'id, transaction_id, document_key, document_label, is_required, is_uploaded, status, enabled, group_key, group_label, description, required_from_role, visibility_scope, allow_multiple, uploaded_document_id, uploaded_at, verified_at, rejected_at, notes, sort_order, canonical_requirement_instance_id, created_at, updated_at'
 
 const PRESERVED_REQUIRED_DOCUMENT_STATUSES = new Set([
@@ -24,6 +27,8 @@ const GROUP_LABELS = Object.freeze({
   finance: 'Finance',
   transfer: 'Transfer',
 })
+
+const RETIRED_LEGACY_DOCUMENT_KEYS = new Set(['information_sheet'])
 
 function normalizeKey(value) {
   return String(value || '')
@@ -106,7 +111,8 @@ function buildRequiredDocumentRowFromRequest({ transactionId, request, existing 
 
   return {
     transaction_id: transactionId,
-    document_key: request.key,
+    document_key: request.requirementInstanceKey || request.key,
+    canonical_document_key: request.baseRequirementKey || request.key,
     document_label: request.label || request.title || request.key,
     is_required: requestable,
     is_uploaded: Boolean(existing?.is_uploaded || existing?.isUploaded || uploadedDocumentId),
@@ -116,7 +122,9 @@ function buildRequiredDocumentRowFromRequest({ transactionId, request, existing 
     group_label: GROUP_LABELS[groupKey] || 'Buyer & FICA',
     description: request.pendingPolicy
       ? 'Tracked by the legal document matrix but held until policy or attorney signoff allows requesting it.'
-      : 'Required by the canonical legal document request matrix.',
+      : request.clientSupplied && request.agentMayUploadOnBehalf
+        ? 'Client-supplied document. The client may upload it directly, or an authorised agent may upload it on the client’s behalf.'
+        : 'Required by the canonical legal document request matrix.',
     required_from_role: request.requestedFrom || request.ownerRole || 'client',
     visibility_scope: visibilityScopeFromRequest(request),
     allow_multiple: false,
@@ -128,6 +136,29 @@ function buildRequiredDocumentRowFromRequest({ transactionId, request, existing 
     sort_order: request.sortOrder || index + 1,
     canonical_requirement_instance_id:
       existing?.canonical_requirement_instance_id || existing?.canonicalRequirementInstanceId || null,
+    participant_key: request.participantKey || null,
+    participant_id: request.participantId || null,
+    participant_role: request.participantRole || null,
+    participant_name: request.participantName || null,
+  }
+}
+
+function audienceOwnsExistingRow(row = {}, audience = 'client') {
+  const requestedFrom = normalizeKey(row.required_from_role || row.requestedFrom || row.requested_from || '')
+  if (audience === 'client') return ['buyer', 'seller', 'client'].includes(requestedFrom)
+  if (audience === 'buyer') return ['buyer', 'client'].includes(requestedFrom)
+  if (audience === 'seller') return requestedFrom === 'seller'
+  return requestedFrom === audience
+}
+
+function buildRetiredRequiredDocumentRow(row = {}) {
+  const currentStatus = normalizeRequiredDocumentStatus(row.status)
+  const preserveEvidenceStatus = PRESERVED_REQUIRED_DOCUMENT_STATUSES.has(currentStatus)
+  return {
+    ...row,
+    is_required: false,
+    enabled: false,
+    status: preserveEvidenceStatus ? currentStatus : 'not_required',
   }
 }
 
@@ -157,10 +188,21 @@ export function buildCanonicalRequiredDocumentRows({
     buildRequiredDocumentRowFromRequest({
       transactionId,
       request,
-      existing: existingByKey.get(normalizeKey(request.key)) || null,
+      existing:
+        existingByKey.get(normalizeKey(request.requirementInstanceKey || request.key)) ||
+        null,
       index,
     }),
   )
+  const activeKeys = new Set(rows.map((row) => normalizeKey(row.document_key)))
+  const retiredRows = (existingRows || [])
+    .filter((row) => {
+      const key = normalizeKey(row.document_key || row.key)
+      if (!key || activeKeys.has(key)) return false
+      if (!audienceOwnsExistingRow(row, normalizedAudience)) return false
+      return RETIRED_LEGACY_DOCUMENT_KEYS.has(key)
+    })
+    .map(buildRetiredRequiredDocumentRow)
 
   return {
     version: DOCUMENT_REQUEST_CANONICAL_REQUIRED_DOCUMENT_SYNC_VERSION,
@@ -169,6 +211,8 @@ export function buildCanonicalRequiredDocumentRows({
     scenarioTokens: plan.scenarioTokens,
     requestPlan: plan,
     rows,
+    retiredRows,
+    retiredDocumentKeys: retiredRows.map((row) => normalizeKey(row.document_key || row.key)),
     skippedPendingPolicyKeys: plan.requests
       .filter((request) => request.pendingPolicy && !requests.some((rowRequest) => rowRequest.key === request.key))
       .map((request) => request.key),
@@ -176,10 +220,19 @@ export function buildCanonicalRequiredDocumentRows({
 }
 
 async function fetchExistingRequiredDocumentRows(client, transactionId) {
-  const query = await client
+  let query = await client
     .from('transaction_required_documents')
     .select(REQUIRED_DOCUMENT_SELECT)
     .eq('transaction_id', transactionId)
+
+  if (query.error) {
+    if (missingSchema(query.error) && String(query.error?.code || '') === '42703') {
+      query = await client
+        .from('transaction_required_documents')
+        .select(LEGACY_REQUIRED_DOCUMENT_SELECT)
+        .eq('transaction_id', transactionId)
+    }
+  }
 
   if (query.error) {
     if (missingSchema(query.error, 'transaction_required_documents')) return []
@@ -210,7 +263,9 @@ export async function syncCanonicalRequiredDocumentRows({
     includePendingPolicyRows,
   })
 
-  if (dryRun || !plan.rows.length) {
+  const rowsToPersist = [...plan.rows, ...plan.retiredRows]
+
+  if (dryRun || !rowsToPersist.length) {
     return {
       ...plan,
       dryRun: Boolean(dryRun),
@@ -221,7 +276,7 @@ export async function syncCanonicalRequiredDocumentRows({
 
   const write = await client
     .from('transaction_required_documents')
-    .upsert(plan.rows, { onConflict: 'transaction_id,document_key' })
+    .upsert(rowsToPersist, { onConflict: 'transaction_id,document_key' })
     .select(REQUIRED_DOCUMENT_SELECT)
 
   if (write.error) {
@@ -240,7 +295,7 @@ export async function syncCanonicalRequiredDocumentRows({
   return {
     ...plan,
     dryRun: false,
-    synced: write.data?.length || plan.rows.length,
+    synced: write.data?.length || rowsToPersist.length,
     persistedRows: write.data || [],
   }
 }

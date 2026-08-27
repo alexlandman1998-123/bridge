@@ -172,7 +172,9 @@ export function getWorkspaceHierarchy(workspaceId = '') {
 }
 
 export async function getUserBondScope(user = {}, workspaceId = '') {
-  const safeUserId = normalizeText(user.userId || user.id || user.user_id)
+  const safeUserId = normalizeText(
+    user.userId || user.id || user.user_id || user.profile?.id || user.authState?.user?.id,
+  )
   const safeWorkspaceId = normalizeText(workspaceId || user.workspaceId || user.workspace_id)
   const direct = pickMembershipFromContext(user)
   if (direct) {

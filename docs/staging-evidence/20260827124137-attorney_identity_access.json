@@ -1,0 +1,24 @@
+{
+  "version": "20260827124137",
+  "stream": "attorney_identity_access",
+  "file": "20260827124137_repair_attorney_firm_assignment_spine_access.sql",
+  "route": "apply_original",
+  "action": "apply_original_after_dependency_check",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "stagingLedgerRecorded": false,
+  "catalogChecks": "pending",
+  "behaviorChecks": "pending",
+  "rollbackOrNoResidue": "pending",
+  "reviewedBy": "",
+  "approvedBy": "",
+  "capturedAt": null,
+  "notes": [
+    "Apply the original migration to staging, run checks, then record the staging ledger."
+  ],
+  "commands": [
+    "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260827124137 --confirm APPLY_TO_STAGING_ONLY",
+    "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260827124137 --evidence docs/staging-evidence/20260827124137-attorney_identity_access.json --confirm APPLY_TO_STAGING_ONLY"
+  ]
+}

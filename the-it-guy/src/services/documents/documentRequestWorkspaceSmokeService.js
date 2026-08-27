@@ -7,8 +7,11 @@ import {
 import {
   DOCUMENT_REQUEST_PROFESSIONAL_PROPAGATION_SCENARIOS,
 } from './documentRequestProfessionalPropagationService.js'
+import {
+  isDeferredSellerUploadRequirement,
+} from '../../core/documents/sellerDocumentRequestRuntimePolicy.js'
 
-export const DOCUMENT_REQUEST_WORKSPACE_SMOKE_VERSION = 'document_request_workspace_smoke_v1'
+export const DOCUMENT_REQUEST_WORKSPACE_SMOKE_VERSION = 'document_request_workspace_smoke_v2'
 
 export const DOCUMENT_REQUEST_WORKSPACE_SMOKE_AUDIENCES = Object.freeze([
   'buyer',
@@ -21,23 +24,7 @@ export const DOCUMENT_REQUEST_WORKSPACE_SMOKE_AUDIENCES = Object.freeze([
   'internal',
 ])
 
-const DEFERRED_SELLER_UPLOAD_KEYS = new Set([
-  'property_acquisition_record',
-  'capital_improvement_records',
-])
-
 const SMOKE_TRANSACTION_ID = 'phase7-workspace-smoke-transaction'
-
-function normalizeText(value = '') {
-  return String(value || '').trim()
-}
-
-function normalizeKey(value = '') {
-  return normalizeText(value)
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-}
 
 function unique(values = []) {
   return [...new Set(values.filter(Boolean))]
@@ -85,7 +72,7 @@ export function buildDocumentRequestWorkspaceSmokeFixture() {
   const requiredDocuments = [
     ...canonicalPlanRows(buyerPlan),
     ...canonicalPlanRows(sellerPlan),
-  ].filter((row) => !DEFERRED_SELLER_UPLOAD_KEYS.has(normalizeKey(row.document_key)))
+  ].filter((row) => !isDeferredSellerUploadRequirement(row))
   const additionalRequests = DOCUMENT_REQUEST_PROFESSIONAL_PROPAGATION_SCENARIOS.map((scenario) => ({
     ...scenario.request,
     id: scenario.request.id,
@@ -127,7 +114,7 @@ function requestIdsFor(model = {}) {
 }
 
 function modelHasDeferredSellerUpload(model = {}) {
-  return (model.containers || []).some((container) => DEFERRED_SELLER_UPLOAD_KEYS.has(normalizeKey(container.documentKey || container.sourceId)))
+  return (model.containers || []).some((container) => isDeferredSellerUploadRequirement(container))
 }
 
 function evaluateExpectation({ id, audience, includes = [], excludes = [], requestIds = [], excludedRequestIds = [] }, models = {}) {
@@ -170,7 +157,11 @@ export function buildDocumentRequestWorkspaceSmokeAudit() {
       includes: ['buyer_trust_deed', 'buyer_letters_of_authority', 'bond_approval', 'grant_signed', 'income_affordability_documents'],
       excludes: ['seller_company_registration', 'seller_trust_deed', 'bond_statement'],
       requestIds: ['phase6-transfer-buyer-request', 'phase6-originator-buyer-request', 'phase6-transfer-both-request'],
-      excludedRequestIds: ['phase6-cancellation-seller-request', 'phase6-originator-professional-request'],
+      excludedRequestIds: [
+        'phase6-cancellation-seller-request',
+        'phase6-originator-professional-request',
+        'phase6-professional-buyer-boundary-request',
+      ],
     },
     {
       id: 'seller_portal_smoke',
@@ -178,7 +169,12 @@ export function buildDocumentRequestWorkspaceSmokeAudit() {
       includes: ['seller_company_registration', 'seller_company_resolution', 'seller_director_fica', 'bond_statement', 'levy_statement'],
       excludes: ['buyer_trust_deed', 'bond_approval', 'bond_cancellation_figures'],
       requestIds: ['phase6-cancellation-seller-request', 'phase6-transfer-both-request'],
-      excludedRequestIds: ['phase6-transfer-buyer-request', 'phase6-originator-buyer-request', 'phase6-originator-professional-request'],
+      excludedRequestIds: [
+        'phase6-transfer-buyer-request',
+        'phase6-originator-buyer-request',
+        'phase6-originator-professional-request',
+        'phase6-professional-buyer-boundary-request',
+      ],
     },
     {
       id: 'agent_workspace_smoke',
@@ -190,6 +186,7 @@ export function buildDocumentRequestWorkspaceSmokeAudit() {
         'phase6-originator-buyer-request',
         'phase6-transfer-both-request',
         'phase6-originator-professional-request',
+        'phase6-professional-buyer-boundary-request',
       ],
     },
     {
@@ -202,6 +199,33 @@ export function buildDocumentRequestWorkspaceSmokeAudit() {
         'phase6-originator-buyer-request',
         'phase6-transfer-both-request',
         'phase6-originator-professional-request',
+        'phase6-professional-buyer-boundary-request',
+      ],
+    },
+    {
+      id: 'transfer_attorney_lane_smoke',
+      audience: 'transfer_attorney',
+      requestIds: [
+        'phase6-transfer-buyer-request',
+        'phase6-transfer-both-request',
+        'phase6-professional-buyer-boundary-request',
+      ],
+      excludedRequestIds: [
+        'phase6-cancellation-seller-request',
+        'phase6-originator-buyer-request',
+        'phase6-originator-professional-request',
+      ],
+    },
+    {
+      id: 'cancellation_attorney_lane_smoke',
+      audience: 'cancellation_attorney',
+      requestIds: ['phase6-cancellation-seller-request'],
+      excludedRequestIds: [
+        'phase6-transfer-buyer-request',
+        'phase6-originator-buyer-request',
+        'phase6-transfer-both-request',
+        'phase6-originator-professional-request',
+        'phase6-professional-buyer-boundary-request',
       ],
     },
     {
@@ -209,7 +233,11 @@ export function buildDocumentRequestWorkspaceSmokeAudit() {
       audience: 'bond_originator',
       includes: ['bond_approval', 'grant_signed', 'income_affordability_documents'],
       excludes: ['seller_company_registration', 'seller_trust_deed', 'bond_statement'],
-      requestIds: ['phase6-originator-buyer-request', 'phase6-originator-professional-request'],
+      requestIds: [
+        'phase6-originator-buyer-request',
+        'phase6-originator-professional-request',
+        'phase6-professional-buyer-boundary-request',
+      ],
       excludedRequestIds: ['phase6-cancellation-seller-request', 'phase6-transfer-both-request'],
     },
     {
@@ -222,18 +250,17 @@ export function buildDocumentRequestWorkspaceSmokeAudit() {
         'phase6-originator-buyer-request',
         'phase6-transfer-both-request',
         'phase6-originator-professional-request',
+        'phase6-professional-buyer-boundary-request',
       ],
     },
   ]
   const results = expectations.map((expectation) => evaluateExpectation(expectation, models))
+  const coveredAudiences = unique(results.map((result) => result.audience))
+  const missingAudienceSmokes = DOCUMENT_REQUEST_WORKSPACE_SMOKE_AUDIENCES.filter(
+    (audience) => !coveredAudiences.includes(audience),
+  )
   const failed = results.filter((result) => !result.ok)
-  const sameContainerRequestIds = [
-    'phase6-transfer-buyer-request',
-    'phase6-cancellation-seller-request',
-    'phase6-originator-buyer-request',
-    'phase6-transfer-both-request',
-    'phase6-originator-professional-request',
-  ]
+  const sameContainerRequestIds = unique(fixture.additionalRequests.map((request) => request.id))
   const crossAudienceContainerIds = sameContainerRequestIds.map((requestId) => {
     const ids = DOCUMENT_REQUEST_WORKSPACE_SMOKE_AUDIENCES.flatMap((audience) =>
       (models[audience].containers || [])
@@ -267,6 +294,8 @@ export function buildDocumentRequestWorkspaceSmokeAudit() {
     crossAudienceContainerIds: Object.freeze(crossAudienceContainerIds),
     summary: Object.freeze({
       failedSmokeCount: failed.length,
+      coveredAudienceCount: coveredAudiences.length,
+      missingAudienceSmokeCount: missingAudienceSmokes.length,
       unstableContainerIdCount: unstableContainerIds.length,
       deferredSellerUploadLeakCount: results.filter((result) => result.deferredSellerUploadLeak).length,
       buyerContainerCount: models.buyer.summary.total,
@@ -274,9 +303,12 @@ export function buildDocumentRequestWorkspaceSmokeAudit() {
       agentContainerCount: models.agent.summary.total,
       attorneyContainerCount: models.attorney.summary.total,
       bondOriginatorContainerCount: models.bond_originator.summary.total,
+      transferAttorneyContainerCount: models.transfer_attorney.summary.total,
+      cancellationAttorneyContainerCount: models.cancellation_attorney.summary.total,
       internalContainerCount: models.internal.summary.total,
     }),
     failed: Object.freeze(failed),
+    missingAudienceSmokes: Object.freeze(missingAudienceSmokes),
     unstableContainerIds: Object.freeze(unstableContainerIds),
   })
 }

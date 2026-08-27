@@ -5084,7 +5084,7 @@ function BuyerProcessHandoffPanel({
         <div className="min-w-0">
           <h3 className="text-base font-semibold text-textStrong">Buyer Process Handoff</h3>
           <p className="mt-1 text-sm leading-6 text-textMuted">
-            Offer and Transaction Setup evidence carried over from the buyer journey.
+            Transaction Setup and signed OTP evidence carried over from the buyer journey.
           </p>
         </div>
         <span className={`inline-flex w-fit shrink-0 rounded-full border px-3 py-1 text-xs font-semibold ${statusTone}`}>

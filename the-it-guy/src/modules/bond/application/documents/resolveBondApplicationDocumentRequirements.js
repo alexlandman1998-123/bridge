@@ -17,6 +17,28 @@ const PARTICIPANT_PATHS = {
   surety: 'participants.sureties.0',
 }
 
+function participantDisplayName(participant = {}) {
+  const personal = participant.personal || {}
+  return String(
+    participant.displayName ||
+      participant.fullName ||
+      [personal.first_name || personal.firstName, personal.surname || personal.last_name || personal.lastName]
+        .filter(Boolean)
+        .join(' '),
+  ).trim()
+}
+
+export function resolvePrimaryApplicantDocumentParticipantContext(applicationState = {}) {
+  const primaryApplicant = applicationState?.participants?.primaryApplicant || {}
+  return Object.freeze({
+    participantRole: 'primary_applicant',
+    participantKey: primaryApplicant.participantKey || primaryApplicant.participant_key || 'purchaser:1',
+    participantPath: PARTICIPANT_PATHS.primary_applicant,
+    participantName: participantDisplayName(primaryApplicant),
+    participantId: primaryApplicant.transactionParticipantId || primaryApplicant.transaction_participant_id || null,
+  })
+}
+
 function replaceRuleParticipantPath(rule, participantPath) {
   if (rule === true || rule === false || rule === null || rule === undefined) return rule
   if (Array.isArray(rule)) return rule.map((item) => replaceRuleParticipantPath(item, participantPath))
@@ -31,15 +53,16 @@ function replaceRuleParticipantPath(rule, participantPath) {
   }, {})
 }
 
-function getParticipantDocumentTitlePrefix(participantRole, participantKey = '') {
+function getParticipantDocumentTitlePrefix(participantRole, participantKey = '', participantName = '') {
   if (!participantKey) return ''
   const ordinal = Number(String(participantKey).match(/:(\d+)$/)?.[1] || 1)
   if (participantRole === 'surety') return `Surety ${Math.max(ordinal, 1)}: `
-  if (participantRole === 'co_applicant') return `Applicant ${Math.max(ordinal + 1, 2)}: `
-  return `Applicant ${Math.max(ordinal, 1)}: `
+  const purchaserOrdinal = participantRole === 'co_applicant' ? Math.max(ordinal + 1, 2) : Math.max(ordinal, 1)
+  const label = `Purchaser ${purchaserOrdinal}${participantName ? ` (${participantName})` : ''}`
+  return `${label} — `
 }
 
-function adaptRequirementForParticipant(definition, participantRole, participantKey = '', participantPathOverride = '') {
+function adaptRequirementForParticipant(definition, participantRole, participantKey = '', participantPathOverride = '', participantName = '', participantId = null) {
   if (definition.scope !== 'participant') return definition
   const participantPath = participantPathOverride || PARTICIPANT_PATHS[participantRole] || PARTICIPANT_PATHS.primary_applicant
   const roleSuffix = participantRole === 'co_applicant'
@@ -52,9 +75,11 @@ function adaptRequirementForParticipant(definition, participantRole, participant
     ...definition,
     key: participantKey ? `${participantKey}:${baseKey}` : baseKey,
     baseRequirementKey: definition.key,
-    title: `${getParticipantDocumentTitlePrefix(participantRole, participantKey)}${definition.title}`,
+    title: `${getParticipantDocumentTitlePrefix(participantRole, participantKey, participantName)}${definition.title}`,
     participantRole,
     participantKey: participantKey || null,
+    participantId: participantId || null,
+    participantName: participantName || '',
     visibleWhen: replaceRuleParticipantPath(definition.visibleWhen, participantPath),
     requiredWhen: replaceRuleParticipantPath(definition.requiredWhen, participantPath),
     reason: definition.reason
@@ -120,6 +145,8 @@ export function resolveBondApplicationDocumentRequirements({
   const role = participantContext?.participantRole || participantRole || 'primary_applicant'
   const participantKey = participantContext?.participantKey || null
   const participantPath = participantContext?.participantPath || null
+  const participantName = participantContext?.participantName || participantContext?.displayName || participantContext?.fullName || ''
+  const participantId = participantContext?.participantId || participantContext?.id || null
   const hideSharedApplicationRequirements = Boolean(participantContext) &&
     role === 'surety' &&
     participantContext.canEditShared === false
@@ -128,7 +155,7 @@ export function resolveBondApplicationDocumentRequirements({
       if (definition.scope === 'application') return !hideSharedApplicationRequirements
       return !definition.participantRole || definition.participantRole === role || (role !== 'surety' && definition.participantRole === 'primary_applicant')
     })
-    .map((definition) => adaptRequirementForParticipant(definition, role, participantKey, participantPath))
+    .map((definition) => adaptRequirementForParticipant(definition, role, participantKey, participantPath, participantName, participantId))
     .map((definition) => normalizeRequirement(definition, applicationState))
     .sort((left, right) => (Number(left.order || 0) - Number(right.order || 0)) || String(left.key).localeCompare(String(right.key)))
 

@@ -1,0 +1,288 @@
+{
+  "phase": "property24-publish-listing",
+  "generatedAt": "2026-08-27T11:10:43.463Z",
+  "mode": "DRY_RUN",
+  "status": "DRY_RUN_READY",
+  "safety": {
+    "property24ApiCalled": false,
+    "databaseWritten": false,
+    "listingPublished": false
+  },
+  "listingId": "08080a97-b727-4522-9381-d26029902df1",
+  "preview": {
+    "canSubmit": true,
+    "dataBlockers": [],
+    "technicalBlockers": [],
+    "summary": {
+      "agencyId": 31382,
+      "contactAgentIds": [
+        77968
+      ],
+      "agentSourceReference": "ARCH9-P24-TEST-001",
+      "sandboxPayloadTestMode": false,
+      "agentMappingRequiredBeforeSubmit": false,
+      "listingNumber": 100314816,
+      "listingType": "Sale",
+      "status": "Active",
+      "price": 1000000,
+      "isPOA": false,
+      "expiryDate": "2027-02-26T00:00:00.000Z",
+      "propertyTypeId": 4,
+      "suburbId": 1987,
+      "imageCount": 6,
+      "photoPayloadCount": 6,
+      "descriptionPresent": true
+    },
+    "imageByteLoad": {
+      "summary": {
+        "requested": 6,
+        "loaded": 6,
+        "failed": 0,
+        "convertedToJpeg": 6,
+        "skipped": 0
+      },
+      "results": [
+        {
+          "index": 0,
+          "status": "LOADED",
+          "sourceUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/sign/documents/private-listings/08080a97-b727-4522-9381-d26029902df1/gallery/1787742785681-Screenshot-2025-10-20-at-10.19.54.png",
+          "mimeContentType": "image/jpeg",
+          "byteLength": 325031,
+          "convertedToJpeg": true,
+          "originalMimeContentType": "image/png",
+          "originalByteLength": 3289214,
+          "source": "url"
+        },
+        {
+          "index": 1,
+          "status": "LOADED",
+          "sourceUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/sign/documents/private-listings/08080a97-b727-4522-9381-d26029902df1/gallery/1787742785683-Screenshot-2025-10-20-at-10.20.04.png",
+          "mimeContentType": "image/jpeg",
+          "byteLength": 262409,
+          "convertedToJpeg": true,
+          "originalMimeContentType": "image/png",
+          "originalByteLength": 2848811,
+          "source": "url"
+        },
+        {
+          "index": 2,
+          "status": "LOADED",
+          "sourceUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/sign/documents/private-listings/08080a97-b727-4522-9381-d26029902df1/gallery/1787742785683-Screenshot-2025-10-20-at-10.20.12.png",
+          "mimeContentType": "image/jpeg",
+          "byteLength": 300500,
+          "convertedToJpeg": true,
+          "originalMimeContentType": "image/png",
+          "originalByteLength": 2991516,
+          "source": "url"
+        },
+        {
+          "index": 3,
+          "status": "LOADED",
+          "sourceUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/sign/documents/private-listings/08080a97-b727-4522-9381-d26029902df1/gallery/1787742785683-Screenshot-2025-10-20-at-10.20.24.png",
+          "mimeContentType": "image/jpeg",
+          "byteLength": 282849,
+          "convertedToJpeg": true,
+          "originalMimeContentType": "image/png",
+          "originalByteLength": 2782791,
+          "source": "url"
+        },
+        {
+          "index": 4,
+          "status": "LOADED",
+          "sourceUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/sign/documents/private-listings/08080a97-b727-4522-9381-d26029902df1/gallery/1787742785683-Screenshot-2025-10-20-at-10.20.33.png",
+          "mimeContentType": "image/jpeg",
+          "byteLength": 309468,
+          "convertedToJpeg": true,
+          "originalMimeContentType": "image/png",
+          "originalByteLength": 3190976,
+          "source": "url"
+        },
+        {
+          "index": 5,
+          "status": "LOADED",
+          "sourceUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/sign/documents/private-listings/08080a97-b727-4522-9381-d26029902df1/gallery/1787742785683-Screenshot-2025-10-20-at-10.20.44.png",
+          "mimeContentType": "image/jpeg",
+          "byteLength": 288975,
+          "convertedToJpeg": true,
+          "originalMimeContentType": "image/png",
+          "originalByteLength": 2902737,
+          "source": "url"
+        }
+      ]
+    }
+  },
+  "redactedPreviewPayload": {
+    "agencyId": 31382,
+    "contactAgentIds": [
+      77968
+    ],
+    "listingNumber": 100314816,
+    "listingType": "Sale",
+    "status": "Active",
+    "price": 1000000,
+    "isPOA": false,
+    "listingVisibility": "Public",
+    "expiryDate": "2027-02-26T00:00:00.000Z",
+    "description": "Combining generous proportions, exceptional security, and an unrivalled address, this is the perfect executive residence, downsizer's dream, or lock-up-and-go sanctuary in one of Pretoria's most desirable neighbourhoods.",
+    "descriptionHeader": "Modern Home",
+    "photos": [
+      {
+        "mimeContentType": "image/jpeg",
+        "caption": "Screenshot 2025-10-20 at 10.19.54.png",
+        "isFloorPlan": false,
+        "bytesLoaded": false,
+        "byteLengthApprox": 0
+      },
+      {
+        "mimeContentType": "image/jpeg",
+        "caption": "Screenshot 2025-10-20 at 10.20.04.png",
+        "isFloorPlan": false,
+        "bytesLoaded": false,
+        "byteLengthApprox": 0
+      },
+      {
+        "mimeContentType": "image/jpeg",
+        "caption": "Screenshot 2025-10-20 at 10.20.12.png",
+        "isFloorPlan": false,
+        "bytesLoaded": false,
+        "byteLengthApprox": 0
+      },
+      {
+        "mimeContentType": "image/jpeg",
+        "caption": "Screenshot 2025-10-20 at 10.20.24.png",
+        "isFloorPlan": false,
+        "bytesLoaded": false,
+        "byteLengthApprox": 0
+      },
+      {
+        "mimeContentType": "image/jpeg",
+        "caption": "Screenshot 2025-10-20 at 10.20.33.png",
+        "isFloorPlan": false,
+        "bytesLoaded": false,
+        "byteLengthApprox": 0
+      },
+      {
+        "mimeContentType": "image/jpeg",
+        "caption": "Screenshot 2025-10-20 at 10.20.44.png",
+        "isFloorPlan": false,
+        "bytesLoaded": false,
+        "byteLengthApprox": 0
+      }
+    ],
+    "propertyInfo": {
+      "showLocation": false,
+      "suburbId": 1987,
+      "streetNumber": "",
+      "streetName": "99 Ridge Road",
+      "sourceReference": "PRV-202608261113-HRSS",
+      "erf": {
+        "size": 200,
+        "areaUnit": "SquareMetres"
+      },
+      "floorArea": {
+        "size": 200,
+        "areaUnit": "SquareMetres"
+      },
+      "propertyTypeId": 4
+    },
+    "propertyFeatures": {
+      "bedrooms": 2,
+      "bathrooms": {
+        "bathrooms": 1
+      },
+      "garages": 2,
+      "garden": false,
+      "pool": false,
+      "flatlet": false,
+      "petsAllowed": "DontKnow",
+      "furnishedStatus": "No"
+    }
+  },
+  "redactedPayload": {
+    "agencyId": 31382,
+    "contactAgentIds": [
+      77968
+    ],
+    "listingNumber": 100314816,
+    "listingType": "Sale",
+    "status": "Active",
+    "price": 1000000,
+    "isPOA": false,
+    "listingVisibility": "Public",
+    "expiryDate": "2027-02-26T00:00:00.000Z",
+    "description": "Combining generous proportions, exceptional security, and an unrivalled address, this is the perfect executive residence, downsizer's dream, or lock-up-and-go sanctuary in one of Pretoria's most desirable neighbourhoods.",
+    "descriptionHeader": "Modern Home",
+    "photos": [
+      {
+        "mimeContentType": "image/jpeg",
+        "caption": "Screenshot 2025-10-20 at 10.19.54.png",
+        "isFloorPlan": false,
+        "bytesLoaded": true,
+        "byteLengthApprox": 325032
+      },
+      {
+        "mimeContentType": "image/jpeg",
+        "caption": "Screenshot 2025-10-20 at 10.20.04.png",
+        "isFloorPlan": false,
+        "bytesLoaded": true,
+        "byteLengthApprox": 262410
+      },
+      {
+        "mimeContentType": "image/jpeg",
+        "caption": "Screenshot 2025-10-20 at 10.20.12.png",
+        "isFloorPlan": false,
+        "bytesLoaded": true,
+        "byteLengthApprox": 300501
+      },
+      {
+        "mimeContentType": "image/jpeg",
+        "caption": "Screenshot 2025-10-20 at 10.20.24.png",
+        "isFloorPlan": false,
+        "bytesLoaded": true,
+        "byteLengthApprox": 282849
+      },
+      {
+        "mimeContentType": "image/jpeg",
+        "caption": "Screenshot 2025-10-20 at 10.20.33.png",
+        "isFloorPlan": false,
+        "bytesLoaded": true,
+        "byteLengthApprox": 309468
+      },
+      {
+        "mimeContentType": "image/jpeg",
+        "caption": "Screenshot 2025-10-20 at 10.20.44.png",
+        "isFloorPlan": false,
+        "bytesLoaded": true,
+        "byteLengthApprox": 288975
+      }
+    ],
+    "propertyInfo": {
+      "showLocation": false,
+      "suburbId": 1987,
+      "streetNumber": "",
+      "streetName": "99 Ridge Road",
+      "sourceReference": "PRV-202608261113-HRSS",
+      "erf": {
+        "size": 200,
+        "areaUnit": "SquareMetres"
+      },
+      "floorArea": {
+        "size": 200,
+        "areaUnit": "SquareMetres"
+      },
+      "propertyTypeId": 4
+    },
+    "propertyFeatures": {
+      "bedrooms": 2,
+      "bathrooms": {
+        "bathrooms": 1
+      },
+      "garages": 2,
+      "garden": false,
+      "pool": false,
+      "flatlet": false,
+      "petsAllowed": "DontKnow",
+      "furnishedStatus": "No"
+    }
+  }
+}

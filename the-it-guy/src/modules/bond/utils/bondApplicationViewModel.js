@@ -930,6 +930,9 @@ export function buildBondApplicationViewModel({
     lookup(data, ['purchase_price', 'sales_price', 'purchasePrice', 'loan_details.purchase_price']),
     transaction?.purchase_price,
     transaction?.sales_price,
+    unit?.current_price,
+    unit?.list_price,
+    unit?.price,
   ))
   const deposit = number(valueFrom(
     applicationState?.application?.finance?.depositAmount,

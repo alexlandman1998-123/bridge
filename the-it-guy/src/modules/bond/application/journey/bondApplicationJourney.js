@@ -401,7 +401,13 @@ export function buildBondApplicationJourneyModel({
   })
   const preApprovalOnly = isPreApprovalOnlyIntent(applicationIntent)
   const documentReadiness = resolveDocumentReadiness({ documentHealthSummary, documentProgress, missingDocuments })
-  const participants = resolveParticipantReadiness({ participantReadiness, normalizedApplication })
+  const rawParticipants = resolveParticipantReadiness({ participantReadiness, normalizedApplication })
+  const applicationDetailsMissing = !rawParticipants.enabled && documentReadiness.totalRequired === 0 && !documentReadiness.submissionReady
+  const participants = {
+    ...rawParticipants,
+    allReady: applicationDetailsMissing ? false : rawParticipants.allReady,
+    applicationDetailsMissing,
+  }
   const submittedBanks = asArray(submissionRows).filter(isSubmittedBankRow).length
   const selectedBankList = asArray(selectedBankIds).length
     ? asArray(selectedBankIds)
@@ -439,7 +445,7 @@ export function buildBondApplicationJourneyModel({
           ? participants.allReady
             ? `${participants.readyCount} of ${participants.totalRequired} participant applications ready.`
             : `${participants.outstanding.length} participant${participants.outstanding.length === 1 ? '' : 's'} still need to complete their application details.`
-          : 'No additional participant readiness gate is active.',
+          : 'Buyer application details have not been completed yet.',
       ),
       required_documents_received: buildRequirement(
         'required_documents_received',
@@ -614,10 +620,13 @@ function buildBondApplicationJourneyActions({
   }
   if (currentStage.key === BOND_APPLICATION_JOURNEY_STAGE_KEYS.documents) {
     if (participants.allReady === false) {
+      const helper = participants.enabled
+        ? `${participants.outstanding?.length || 'Some'} participant${(participants.outstanding?.length || 0) === 1 ? '' : 's'} still need to complete their details before bank submission.`
+        : 'Buyer application details still need to be completed before bank submission.'
       return [{
         key: 'complete_participant_applications',
         label: 'Complete participant applications',
-        helper: `${participants.outstanding?.length || 'Some'} participant${(participants.outstanding?.length || 0) === 1 ? '' : 's'} still need to complete their details before bank submission.`,
+        helper,
         target: 'application',
         priority: 'high',
       }]
@@ -709,11 +718,14 @@ function buildCurrentStageSummary({
   const primaryAction = nextActions[0] || {}
   if (currentStage.key === BOND_APPLICATION_JOURNEY_STAGE_KEYS.documents) {
     if (participantReadiness.allReady === false) {
+      const description = participantReadiness.enabled
+        ? `${participantReadiness.outstanding?.length || 'Some'} required participant${(participantReadiness.outstanding?.length || 0) === 1 ? '' : 's'} still need to complete their application details before this file can move to ${preApprovalOnly ? 'pre-approval assessment' : 'bank submission'}.`
+        : `Buyer application details still need to be completed before this file can move to ${preApprovalOnly ? 'pre-approval assessment' : 'bank submission'}.`
       return {
         key: currentStage.key,
         eyebrow: 'Current stage',
-        title: 'Participants outstanding',
-        description: `${participantReadiness.outstanding?.length || 'Some'} required participant${(participantReadiness.outstanding?.length || 0) === 1 ? '' : 's'} still need to complete their application details before this file can move to ${preApprovalOnly ? 'pre-approval assessment' : 'bank submission'}.`,
+        title: participantReadiness.enabled ? 'Participants outstanding' : 'Buyer details pending',
+        description,
         ctaLabel: primaryAction.label || 'Complete participant applications',
         onOpen: primaryAction.target || 'application',
         documents: [],

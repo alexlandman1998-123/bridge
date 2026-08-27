@@ -491,13 +491,80 @@ function isSignedDocumentCentreItem(item = {}) {
   return source.includes('signed') || source.includes('signature') || source.includes('otp') || source.includes('mandate')
 }
 
+function documentRequestContainerMatchesWorkspace(container = {}, workspace = 'buying') {
+  const clientRole = workspace === 'selling' ? 'seller' : 'buyer'
+  const visibleTo = toArray(container?.visibleTo || container?.visible_to)
+    .map((role) => toText(role).toLowerCase())
+  if (visibleTo.length && !visibleTo.includes(clientRole)) return false
+
+  const visibility = toText(
+    container?.visibility || container?.visibility_scope,
+  ).toLowerCase()
+  if (visibility && visibility !== 'client_visible' && visibility !== 'client') return false
+  return matchesWorkspace(container, workspace)
+}
+
+function normalizeAdditionalRequestContainer(container = {}, uploadedDocumentsById = new Map()) {
+  const requestId = toText(
+    container?.sourceId || container?.source_id || container?.uploadSpec?.requestId || container?.id,
+    'additional-request',
+  )
+  const linkedDocumentId = toText(container?.linkedDocumentId || container?.linked_document_id)
+  const linkedDocument = linkedDocumentId ? uploadedDocumentsById.get(linkedDocumentId) || null : null
+  const requesterRole = toText(
+    container?.requestedByRole || container?.requested_by_role,
+    'Transaction team',
+  ).replaceAll('_', ' ')
+  const dueDate = toText(container?.dueDate || container?.due_date)
+  const priority = toText(container?.priority)
+
+  return normalizeDocumentCentreItem({
+    ...container,
+    id: toText(container?.id, `request:${requestId}`),
+    sourceId: requestId,
+    sourceType: 'additional_request',
+    title: toText(container?.title, 'Additional document request'),
+    description: toText(
+      container?.description,
+      'An additional document has been requested for your transaction.',
+    ),
+    group: toText(container?.category, 'additional'),
+    linkedDocument,
+    hasUploadedDocument: container?.hasUploadedDocument === true || Boolean(linkedDocument),
+    uploadKey: `additional_request_${requestId}`,
+    uploadSpec: container?.uploadSpec || container?.upload_spec || null,
+    metaLine: `${requesterRole}${dueDate ? ` • Due ${dueDate}` : ''}${priority ? ` • ${priority}` : ''}`,
+    isCoreRequirement: false,
+  })
+}
+
 export function buildDocumentCentreSections(documentCenter = {}, workspace = 'buying') {
-  const typedItems = uniqueById(
+  const uploadedDocuments = toArray(documentCenter?.uploadedDocuments).filter((item) => isClientVisible(item))
+  const uploadedDocumentsById = new Map()
+  uploadedDocuments.forEach((item) => {
+    getDocumentLookupKeys(item).forEach((key) => uploadedDocumentsById.set(key, item))
+  })
+  const hasDocumentRequestContainerPayload = Array.isArray(documentCenter?.documentRequestContainers)
+  const containerAdditionalRequests = hasDocumentRequestContainerPayload
+    ? uniqueById(
+        documentCenter.documentRequestContainers
+          .filter((container) => toText(container?.source) === 'document_requests')
+          .filter((container) => documentRequestContainerMatchesWorkspace(container, workspace))
+          .map((container) => normalizeAdditionalRequestContainer(container, uploadedDocumentsById)),
+      )
+    : []
+  const normalizedTypedItems = uniqueById(
     toArray(documentCenter?.items)
       .filter((item) => isClientVisible(item))
       .filter((item) => matchesWorkspace(item, workspace))
       .map((item) => normalizeDocumentCentreItem(item)),
   )
+  const typedItems = hasDocumentRequestContainerPayload
+    ? uniqueById([
+        ...normalizedTypedItems.filter((item) => item.sourceType !== 'additional_request'),
+        ...containerAdditionalRequests,
+      ])
+    : normalizedTypedItems
 
   if (typedItems.length) {
     const requirementItems = typedItems.filter((item) =>
@@ -521,23 +588,19 @@ export function buildDocumentCentreSections(documentCenter = {}, workspace = 'bu
     }
   }
 
-  const uploadedDocuments = toArray(documentCenter?.uploadedDocuments).filter((item) => isClientVisible(item))
-  const uploadedDocumentsById = new Map()
-  uploadedDocuments.forEach((item) => {
-    getDocumentLookupKeys(item).forEach((key) => uploadedDocumentsById.set(key, item))
-  })
-
   const normalizedRequired = uniqueById(
     toArray(documentCenter?.requiredDocuments)
       .filter((item) => isClientVisible(item) && matchesWorkspace(item, workspace))
       .map((item) => normalizeRequiredDocument(item, uploadedDocumentsById, uploadedDocuments)),
   )
 
-  const normalizedAdditional = uniqueById(
-    toArray(documentCenter?.additionalRequests)
-      .filter((item) => isClientVisible(item))
-      .map((item) => normalizeAdditionalRequest(item, uploadedDocumentsById)),
-  )
+  const normalizedAdditional = hasDocumentRequestContainerPayload
+    ? containerAdditionalRequests
+    : uniqueById(
+        toArray(documentCenter?.additionalRequests)
+          .filter((item) => isClientVisible(item))
+          .map((item) => normalizeAdditionalRequest(item, uploadedDocumentsById)),
+      )
 
   const linkedUploadedDocumentKeys = new Set(
     [...normalizedRequired, ...normalizedAdditional]

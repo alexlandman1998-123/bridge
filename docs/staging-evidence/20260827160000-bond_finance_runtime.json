@@ -1,0 +1,24 @@
+{
+  "version": "20260827160000",
+  "stream": "bond_finance_runtime",
+  "file": "20260827160000_canonical_bond_originator_handoff_repair.sql",
+  "route": "apply_original",
+  "action": "apply_original_after_dependency_check",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "stagingLedgerRecorded": false,
+  "catalogChecks": "pending",
+  "behaviorChecks": "pending",
+  "rollbackOrNoResidue": "pending",
+  "reviewedBy": "",
+  "approvedBy": "",
+  "capturedAt": null,
+  "notes": [
+    "Apply the canonical migration to staging, run checks, then record the staging ledger."
+  ],
+  "commands": [
+    "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260827160000 --confirm APPLY_TO_STAGING_ONLY",
+    "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260827160000 --evidence docs/staging-evidence/20260827160000-bond_finance_runtime.json --confirm APPLY_TO_STAGING_ONLY"
+  ]
+}

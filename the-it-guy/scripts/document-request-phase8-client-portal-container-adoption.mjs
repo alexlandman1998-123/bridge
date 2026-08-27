@@ -28,6 +28,7 @@ function read(relativePath) {
 
 function buildReport(options = {}) {
   const clientPortalSource = read('src/pages/ClientPortal.jsx')
+  const documentCentreSource = read('src/components/client-portal/documents/ClientDocumentCentre.jsx')
   const serviceSource = read('src/services/clientPortalWorkspaceService.js')
   const smokeAudit = buildDocumentRequestWorkspaceSmokeAudit()
   const checks = [
@@ -47,6 +48,18 @@ function buildReport(options = {}) {
       ok: clientPortalSource.includes('additionalDocumentRequestContainersForWorkspace') &&
         clientPortalSource.includes('additionalDocumentRequestCardsForWorkspace') &&
         clientPortalSource.includes("source: 'container'"),
+    },
+    {
+      key: 'primary_buyer_and_seller_workspaces_adopt_containers',
+      ok: documentCentreSource.includes('hasDocumentRequestContainerPayload') &&
+        documentCentreSource.includes('normalizeAdditionalRequestContainer') &&
+        documentCentreSource.includes('documentRequestContainerMatchesWorkspace'),
+    },
+    {
+      key: 'authoritative_empty_container_payload_is_fail_closed',
+      ok: documentCentreSource.includes('hasDocumentRequestContainerPayload') &&
+        documentCentreSource.includes("item.sourceType !== 'additional_request'") &&
+        documentCentreSource.includes('containerAdditionalRequests'),
     },
     {
       key: 'client_portal_keeps_legacy_fallback',
@@ -88,12 +101,12 @@ function buildReport(options = {}) {
     commit: false,
     mutatedData: false,
     strict: options.strict === true,
-    version: 'document_request_client_portal_container_adoption_v1',
+    version: 'document_request_client_portal_container_adoption_v2',
     smokeSummary: smokeAudit.summary,
     phase8Decisions: [
       {
         key: 'container_first_rendering',
-        decision: 'The client portal additional tab now renders documentRequestContainers first and uses raw additionalDocumentRequests only as a compatibility fallback.',
+        decision: 'The primary buyer, primary seller, and advanced client document views render documentRequestContainers first and use raw additionalDocumentRequests only when the container field is absent.',
       },
       {
         key: 'upload_spec_drives_request_upload',
@@ -102,6 +115,10 @@ function buildReport(options = {}) {
       {
         key: 'legacy_payload_compatibility',
         decision: 'Legacy request rendering remains as fallback until all environments reliably return documentRequestContainers.',
+      },
+      {
+        key: 'authoritative_empty_payload_boundary',
+        decision: 'When documentRequestContainers is present but empty, the portal treats it as authoritative and does not revive legacy request rows.',
       },
     ],
     gate: {

@@ -471,6 +471,10 @@ function RentalListingEditPanel({ form, onChange, onCancel, onSubmit, saving, ca
           <input {...formField('province', form.province, onChange)} />
         </label>
         <label className="form-field">
+          <span>Private Property suburb ID</span>
+          <input inputMode="numeric" {...formField('privatePropertySuburbId', form.privatePropertySuburbId, onChange)} placeholder="11017" />
+        </label>
+        <label className="form-field">
           <span>Postal code</span>
           <input {...formField('postalCode', form.postalCode, onChange)} />
         </label>
@@ -674,6 +678,7 @@ function RentalTabContent({
       <DetailPanel eyebrow="Property" title="Property Details">
         <DetailRow label="Address" value={row.address} />
         <DetailRow label="Location" value={row.location} />
+        <DetailRow label="Private Property suburb ID" value={row.privatePropertySuburbId} />
         <DetailRow label="Property type" value={row.propertyType} />
         <DetailRow label="Bedrooms" value={row.bedrooms} />
         <DetailRow label="Bathrooms" value={row.bathrooms} />

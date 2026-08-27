@@ -9,6 +9,7 @@ const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'))
 const apiSource = fs.readFileSync('src/lib/api.js', 'utf8')
 const privateListingSource = fs.readFileSync('src/services/privateListingService.js', 'utf8')
 const clientPortalSource = fs.readFileSync('src/pages/ClientPortal.jsx', 'utf8')
+const agentWorkspaceSource = fs.readFileSync('src/pages/UnitDetail.jsx', 'utf8')
 const scriptSource = fs.readFileSync('scripts/document-request-phase9-upload-linking.mjs', 'utf8')
 const docs = fs.readFileSync('docs/document-request-phase9-upload-linking.md', 'utf8')
 
@@ -39,6 +40,20 @@ assert.match(apiSource, /requested_document_id:\s*documentId/, 'Buyer upload lin
 assert.match(apiSource, /completed_at:\s*nextStatus === 'completed' \? now : null/, 'Buyer upload linker should close non-review requests.')
 assert.match(apiSource, /rejected_reason:\s*null/, 'Buyer upload linker should clear rejected reasons on replacement upload.')
 assert.match(apiSource, /await updateDocumentRequestFromUploadIfPossible\(client,/, 'Buyer upload flow should invoke the linker.')
+assert.match(apiSource, /const documentRequestUpdate = await updateDocumentRequestFromUploadIfPossible\(client,/, 'Professional upload flow should retain the request update result.')
+assert.match(apiSource, /documentRequestUpdate,\s*\n\s*url:/, 'Professional upload result should expose the linked request update.')
+assert.match(apiSource, /uploadedByParty:\s*normalizeNullableText\(uploadedByParty\)/, 'Request-link audit metadata should record the represented party.')
+assert.match(apiSource, /uploadedOnBehalf:\s*Boolean\(normalizeNullableText\(uploadedByParty\)\)/, 'Request-link audit metadata should mark proxy uploads.')
+assert.match(
+  apiSource,
+  /assigned_to_role, requires_review, requested_document_id, created_at/,
+  'Request linking should load review policy and the existing linked document.',
+)
+assert.match(
+  apiSource,
+  /fallbackRequestQuery = documentRequestId[\s\S]*fallbackRequestQuery\.eq\('id', documentRequestId\)/,
+  'Schema fallback must preserve exact request-id matching.',
+)
 const clientPortalUploadSource = apiSource.slice(
   apiSource.indexOf('export async function uploadClientPortalDocument'),
   apiSource.indexOf('export async function reconcileClientPortalBondDocumentRequirements'),
@@ -79,6 +94,12 @@ assert.match(clientPortalSource, /request\.uploadSpec\?\.requestId/, 'Container 
 assert.match(clientPortalSource, /const documentRequestId = String\(request\.uploadSpec\?\.requestId \|\| requestId \|\| ''\)\.trim\(\)/, 'Container upload should derive a request id from uploadSpec.')
 assert.match(clientPortalSource, /handleUploadRequiredDocument\(/, 'Container upload should call the shared upload handler.')
 
+assert.match(agentWorkspaceSource, /Upload on behalf/, 'Agent transaction workspace should expose a direct upload-on-behalf action.')
+assert.match(agentWorkspaceSource, /showRequestUploadOnBehalf/, 'Upload-on-behalf should be limited to open request rows without a file.')
+assert.match(agentWorkspaceSource, /uploadedByParty:\s*isDocumentRequest \? resolveDocumentRequestPartyForUpload\(row\) : 'client'/, 'Agent upload preset should retain the represented buyer or seller.')
+assert.match(agentWorkspaceSource, /documentRequestId:\s*String\(row\?\.documentRequestId \|\| ''\)\.trim\(\)/, 'Agent upload preset should retain the exact request id.')
+assert.match(agentWorkspaceSource, /source:\s*documentRequestId \? 'professional_request_upload_on_behalf' : 'internal'/, 'Agent proxy uploads should carry an auditable source marker.')
+
 const transition = buildProfessionalDocumentRequestUploadTransition({
   id: 'phase9-test-request',
   transactionId: 'phase9-test-transaction',
@@ -102,5 +123,6 @@ assert.equal(report.mutatedData, false)
 assert.equal(report.gate.status, 'request_upload_linking_mapped')
 assert.equal(report.gate.ok, true)
 assert.equal(report.gate.failed.length, 0)
+assert.equal(report.version, 'document_request_upload_linking_v2')
 
 console.log('document request phase 9 upload linking tests passed')

@@ -189,6 +189,7 @@ export {
   matchBondApplicationDocumentsToRequirement,
   normalizeBondApplicationDocumentKey,
   normalizeBondApplicationDocumentStatus,
+  resolvePrimaryApplicantDocumentParticipantContext,
   resolveBondApplicationCanonicalParentKey,
   resolveBondApplicationDocumentRequirements,
   validateBondApplicationDocumentRuleContract,

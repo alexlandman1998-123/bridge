@@ -39,7 +39,12 @@ function normalizeRole(value = '', fallback = 'client') {
 function normalizeVisibility(value = '', fallback = SHARED_ROLE_PLAYERS) {
   const normalized = normalizeKey(value)
   if (!normalized) return fallback
-  if (normalized === 'client' || normalized === CLIENT_VISIBLE) return CLIENT_VISIBLE
+  if (
+    normalized === 'client' ||
+    normalized === CLIENT_VISIBLE ||
+    normalized === 'buyer_visible' ||
+    normalized === 'seller_visible'
+  ) return CLIENT_VISIBLE
   if (normalized === 'shared' || normalized === SHARED_ROLE_PLAYERS || normalized === 'professional_shared') return SHARED_ROLE_PLAYERS
   if (normalized === 'internal' || normalized === INTERNAL_ONLY) return INTERNAL_ONLY
   return normalized
@@ -91,11 +96,13 @@ export function resolveDocumentRequestContainerAudience({ requestedFrom = '', vi
 
   if (requester) audiences.push(requester)
   if (normalizedVisibility === INTERNAL_ONLY) return Object.freeze(unique(['internal', requester].filter(Boolean)))
-  if (normalizedRequestedFrom === 'buyer' || normalizedRequestedFrom === 'buyer_and_seller' || normalizedRequestedFrom === 'client') {
-    audiences.push('buyer')
-  }
-  if (normalizedRequestedFrom === 'seller' || normalizedRequestedFrom === 'buyer_and_seller' || normalizedRequestedFrom === 'client') {
-    audiences.push('seller')
+  if (normalizedVisibility === CLIENT_VISIBLE) {
+    if (normalizedRequestedFrom === 'buyer' || normalizedRequestedFrom === 'buyer_and_seller' || normalizedRequestedFrom === 'client') {
+      audiences.push('buyer')
+    }
+    if (normalizedRequestedFrom === 'seller' || normalizedRequestedFrom === 'buyer_and_seller' || normalizedRequestedFrom === 'client') {
+      audiences.push('seller')
+    }
   }
   if (normalizedRequestedFrom === 'bond_originator' || requester === 'bond_originator') {
     audiences.push('bond_originator')

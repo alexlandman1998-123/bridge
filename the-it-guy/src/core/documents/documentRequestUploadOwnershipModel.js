@@ -1,6 +1,6 @@
 import { DOCUMENT_REQUEST_CANONICAL_MATRIX } from './documentRequestCanonicalMatrix.js'
 
-export const DOCUMENT_REQUEST_UPLOAD_OWNERSHIP_MODEL_VERSION = 'document_request_upload_ownership_model_v1'
+export const DOCUMENT_REQUEST_UPLOAD_OWNERSHIP_MODEL_VERSION = 'document_request_upload_ownership_model_v2'
 
 const CLIENT_ROLES = new Set(['buyer', 'seller'])
 const ATTORNEY_ROLES = new Set(['attorney', 'transfer_attorney', 'cancellation_attorney'])
@@ -105,6 +105,9 @@ export function resolveDocumentRequestUploadOwnership(input = {}) {
   const clientUploadDebt = CLIENT_ROLES.has(responsiblePartyRole) && !professionalOnly
   const clientVisibleUploadDebt = clientUploadDebt && visibility === 'client_visible'
   const uploadOnBehalfAllowed = CLIENT_ROLES.has(responsiblePartyRole)
+  const uploadOnBehalfRoles = uploadOnBehalfAllowed
+    ? uploadableByRoles.filter((role) => role !== responsiblePartyRole)
+    : []
 
   return Object.freeze({
     version: DOCUMENT_REQUEST_UPLOAD_OWNERSHIP_MODEL_VERSION,
@@ -112,9 +115,13 @@ export function resolveDocumentRequestUploadOwnership(input = {}) {
     ownerRole: ownerRole || responsiblePartyRole,
     requestedFrom,
     responsiblePartyRole,
+    suppliedByRole: responsiblePartyRole,
+    clientSupplied: CLIENT_ROLES.has(responsiblePartyRole),
     uploadableByRoles: Object.freeze(unique(uploadableByRoles)),
     uploadOnBehalfAllowed,
+    uploadOnBehalfRoles: Object.freeze(unique(uploadOnBehalfRoles)),
     agentMayUploadOnBehalf: uploadOnBehalfAllowed,
+    uploaderDoesNotChangeResponsibleParty: true,
     clientUploadDebt,
     clientVisibleUploadDebt,
     professionalOnly,

@@ -38,6 +38,10 @@ function toArray(value) {
   return Array.isArray(value) ? value : []
 }
 
+function toObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+}
+
 function firstText(...values) {
   return values.map(text).find(Boolean) || ''
 }
@@ -117,6 +121,9 @@ function hasUploadedDocument(documents = [], canonicalKey = '') {
 }
 
 function getMandateStatusFromSources({ listing = {}, activeSellingContext = {}, portal = {} } = {}) {
+  listing = toObject(listing)
+  activeSellingContext = toObject(activeSellingContext)
+  portal = toObject(portal)
   return key(
     firstText(
       listing.mandateStatus,
@@ -137,6 +144,9 @@ function getMandateStatusFromSources({ listing = {}, activeSellingContext = {}, 
 }
 
 function hasSignedMandateEvidence({ requirements = [], documents = [], listing = {}, activeSellingContext = {}, portal = {} } = {}) {
+  listing = toObject(listing)
+  activeSellingContext = toObject(activeSellingContext)
+  portal = toObject(portal)
   const status = getMandateStatusFromSources({ listing, activeSellingContext, portal })
   return Boolean(
     hasCompletedRequirement(requirements, SELLER_BASE_PACK_KEYS.SIGNED_MANDATE) ||
@@ -150,6 +160,9 @@ function hasSignedMandateEvidence({ requirements = [], documents = [], listing =
 }
 
 function hasListingShell({ listing = {}, activeSellingContext = {}, portal = {} } = {}) {
+  listing = toObject(listing)
+  activeSellingContext = toObject(activeSellingContext)
+  portal = toObject(portal)
   return Boolean(firstText(
     listing.id,
     listing.listingId,
@@ -164,6 +177,9 @@ function hasListingShell({ listing = {}, activeSellingContext = {}, portal = {} 
 }
 
 function hasRawListingLiveSignal({ listing = {}, activeSellingContext = {}, portal = {} } = {}) {
+  listing = toObject(listing)
+  activeSellingContext = toObject(activeSellingContext)
+  portal = toObject(portal)
   const status = key(firstText(
     listing.listingStatus,
     listing.listing_status,
@@ -192,6 +208,9 @@ function hasRawListingLiveSignal({ listing = {}, activeSellingContext = {}, port
 }
 
 function hasSellerOnboardingSubmitted({ listing = {}, activeSellingContext = {}, portal = {} } = {}) {
+  listing = toObject(listing)
+  activeSellingContext = toObject(activeSellingContext)
+  portal = toObject(portal)
   const status = key(firstText(
     listing.sellerOnboardingStatus,
     listing.seller_onboarding_status,
@@ -232,11 +251,32 @@ export function buildSellerComplianceAgentStatus({
   activeSellingContext = {},
   portal = {},
 } = {}) {
+  const safeListing = toObject(listing)
+  const safeActiveSellingContext = toObject(activeSellingContext)
+  const safePortal = toObject(portal)
   const compliance = getComplianceState(sellerComplianceSigning)
-  const signedMandate = hasSignedMandateEvidence({ requirements, documents, listing, activeSellingContext, portal })
-  const onboardingSubmitted = hasSellerOnboardingSubmitted({ listing, activeSellingContext, portal })
-  const listingDraftExists = hasListingShell({ listing, activeSellingContext, portal })
-  const rawListingLiveSignal = hasRawListingLiveSignal({ listing, activeSellingContext, portal })
+  const signedMandate = hasSignedMandateEvidence({
+    requirements,
+    documents,
+    listing: safeListing,
+    activeSellingContext: safeActiveSellingContext,
+    portal: safePortal,
+  })
+  const onboardingSubmitted = hasSellerOnboardingSubmitted({
+    listing: safeListing,
+    activeSellingContext: safeActiveSellingContext,
+    portal: safePortal,
+  })
+  const listingDraftExists = hasListingShell({
+    listing: safeListing,
+    activeSellingContext: safeActiveSellingContext,
+    portal: safePortal,
+  })
+  const rawListingLiveSignal = hasRawListingLiveSignal({
+    listing: safeListing,
+    activeSellingContext: safeActiveSellingContext,
+    portal: safePortal,
+  })
   const complianceComplete = !compliance.required || compliance.complete
   const canTreatListingAsCreated = signedMandate && listingDraftExists
   const canTreatListingAsLive = signedMandate && rawListingLiveSignal

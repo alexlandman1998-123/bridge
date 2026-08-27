@@ -68,7 +68,10 @@ import {
 } from '../core/documents/documentVaultArchitecture'
 import { normalizePortalDocumentType, resolvePortalDocumentMetadata } from '../core/documents/portalDocumentMetadata'
 import { resolveClientPortalProfile } from '../core/clientPortal/clientPortalProfile.js'
-import { resolveDefaultDocumentRequestVisibility } from '../core/documents/documentRequestContainerModel.js'
+import {
+  resolveDefaultDocumentRequestVisibility,
+  resolveDocumentRequestContainerAudience,
+} from '../core/documents/documentRequestContainerModel.js'
 import {
   CANONICAL_FINANCE_TYPES,
   deriveFinanceManagedBy,
@@ -81,6 +84,10 @@ import {
   extractNewTransactionSetupHealthFromEvents,
   resolveWizardHandoffNextAction,
 } from '../core/transactions/newTransactionSetupHealth.js'
+import {
+  assertTransactionPartnerHandoffContract,
+  buildTransactionPartnerHandoffContract,
+} from '../core/transactions/transactionPartnerHandoffContract.js'
 import { resolveTransactionSaleProfile } from '../core/transactions/transactionSaleProfile.js'
 import { buildBuyerOnboardingCompletionHook } from '../core/transactions/buyerOnboardingCompletionHook.js'
 import {
@@ -168,6 +175,7 @@ import {
   projectNormalizedBondApplicationToLegacy,
   resolveBondApplicationDeclarations,
   resolveBondApplicationDocumentRequirements,
+  resolvePrimaryApplicantDocumentParticipantContext,
   resolveBondApplicationSignerIdentity,
   resolveBondApplicationSignerIdentities,
   saveNormalizedBondApplicationSection,
@@ -8328,7 +8336,8 @@ function withRequirementTraceMetadata(row = {}, context = {}) {
 function normalizeRequiredDocumentRows(rows = [], metadataByKey = {}, context = {}) {
   return rows
     .map((row) => {
-      const metadata = metadataByKey[row.document_key] || {}
+      const baseDocumentKey = row.canonical_document_key || row.document_key
+      const metadata = metadataByKey[baseDocumentKey] || metadataByKey[row.document_key] || {}
       const resolvedGroupKey = String(row.group_key || metadata.groupKey || 'buyer_fica')
       const groupMeta = getGroupByKey(resolvedGroupKey)
       const isRequired = row.is_required !== false
@@ -8337,8 +8346,8 @@ function normalizeRequiredDocumentRows(rows = [], metadataByKey = {}, context = 
       const portalMetadata = resolvePortalDocumentMetadata({
         portal_workspace_category: row.portal_workspace_category || metadata.portalWorkspaceCategory,
         group_key: groupMeta.key,
-        document_type: row.document_type || metadata.documentType || row.document_key,
-        document_key: row.document_key,
+        document_type: row.document_type || metadata.documentType || baseDocumentKey,
+        document_key: baseDocumentKey,
         label: row.document_label,
         description,
       })
@@ -8347,6 +8356,8 @@ function normalizeRequiredDocumentRows(rows = [], metadataByKey = {}, context = 
         id: row.id,
         transactionId: row.transaction_id,
         key: row.document_key,
+        requirementInstanceKey: row.document_key,
+        baseRequirementKey: baseDocumentKey,
         label: row.document_label,
         groupKey: groupMeta.key,
         groupLabel: row.group_label || metadata.groupLabel || groupMeta.label,
@@ -8370,12 +8381,16 @@ function normalizeRequiredDocumentRows(rows = [], metadataByKey = {}, context = 
         sortOrder: row.sort_order ?? 999,
         canonicalRequirementInstanceId: row.canonical_requirement_instance_id || null,
         canonical_requirement_instance_id: row.canonical_requirement_instance_id || null,
+        participantKey: row.participant_key || null,
+        participantId: row.participant_id || null,
+        participantRole: row.participant_role || null,
+        participantName: row.participant_name || null,
         portalDocumentType: portalMetadata.portalDocumentType,
         portalWorkspaceCategory: portalMetadata.portalWorkspaceCategory,
         portalMappingSource: portalMetadata.portalMappingSource,
         portalMappingConfidence: portalMetadata.portalMappingConfidence,
         portalMappingAmbiguous: portalMetadata.portalMappingAmbiguous,
-        canonicalDocumentKey: portalMetadata.canonicalDocumentKey,
+        canonicalDocumentKey: baseDocumentKey || portalMetadata.canonicalDocumentKey,
         crossModuleDocumentKey: portalMetadata.crossModuleDocumentKey,
         crossModuleDocumentMapVersion: portalMetadata.crossModuleDocumentMapVersion,
         crossModuleDocumentKnown: portalMetadata.crossModuleDocumentKnown,
@@ -8716,7 +8731,7 @@ export async function ensureTransactionRequiredDocuments(
   }, {})
   const templateMap = buildTemplateMap(templates)
   const fullRowSelect =
-    'id, transaction_id, document_key, document_label, is_required, is_uploaded, status, enabled, group_key, group_label, description, required_from_role, visibility_scope, allow_multiple, uploaded_document_id, uploaded_at, verified_at, rejected_at, notes, sort_order, canonical_requirement_instance_id, created_at, updated_at'
+    'id, transaction_id, document_key, canonical_document_key, document_label, is_required, is_uploaded, status, enabled, group_key, group_label, description, required_from_role, visibility_scope, allow_multiple, uploaded_document_id, uploaded_at, verified_at, rejected_at, notes, sort_order, canonical_requirement_instance_id, participant_key, participant_id, participant_role, participant_name, created_at, updated_at'
   const legacyRowSelect =
     'id, transaction_id, document_key, document_label, is_required, is_uploaded, uploaded_document_id, sort_order, created_at, updated_at'
 
@@ -8734,6 +8749,11 @@ export async function ensureTransactionRequiredDocuments(
       isMissingColumnError(existingRowsQuery.error, 'visibility_scope') ||
       isMissingColumnError(existingRowsQuery.error, 'allow_multiple') ||
       isMissingColumnError(existingRowsQuery.error, 'canonical_requirement_instance_id') ||
+      isMissingColumnError(existingRowsQuery.error, 'canonical_document_key') ||
+      isMissingColumnError(existingRowsQuery.error, 'participant_key') ||
+      isMissingColumnError(existingRowsQuery.error, 'participant_id') ||
+      isMissingColumnError(existingRowsQuery.error, 'participant_role') ||
+      isMissingColumnError(existingRowsQuery.error, 'participant_name') ||
       isMissingColumnError(existingRowsQuery.error, 'enabled')
     ) {
       existingRowsQuery = await client
@@ -9118,6 +9138,8 @@ function buildRequiredChecklistFromRows(requiredRows, documents) {
 
     return {
       key: row.key,
+      requirementInstanceKey: row.requirementInstanceKey || row.key,
+      baseRequirementKey: row.baseRequirementKey || row.canonicalDocumentKey || row.key,
       label: row.label,
       group: row.group || row.groupLabel || 'General',
       groupKey: row.groupKey || 'buyer_fica',
@@ -9150,6 +9172,10 @@ function buildRequiredChecklistFromRows(requiredRows, documents) {
         row.canonicalRequirementInstanceId || row.canonical_requirement_instance_id || null,
       canonical_requirement_instance_id:
         row.canonicalRequirementInstanceId || row.canonical_requirement_instance_id || null,
+      participantKey: row.participantKey || row.participant_key || null,
+      participantId: row.participantId || row.participant_id || null,
+      participantRole: row.participantRole || row.participant_role || null,
+      participantName: row.participantName || row.participant_name || null,
       owningWorkflow: row.owningWorkflow || 'Transaction Documents',
       visibleSection: row.visibleSection || 'transfer_documents',
       blockingStage: row.blockingStage || null,
@@ -14386,6 +14412,7 @@ async function updateDocumentRequestFromUploadIfPossible(
     documentRequestId = null,
     actorRole = null,
     actorUserId = null,
+    uploadedByParty = null,
   } = {},
 ) {
   if (!transactionId || !documentId) {
@@ -14401,7 +14428,7 @@ async function updateDocumentRequestFromUploadIfPossible(
 
   let requestQuery = client
     .from('document_requests')
-    .select('id, transaction_id, category, document_type, title, priority, status, assigned_to_role, created_at')
+    .select('id, transaction_id, category, document_type, title, priority, status, assigned_to_role, requires_review, requested_document_id, created_at')
     .eq('transaction_id', transactionId)
 
   if (documentRequestId) {
@@ -14423,11 +14450,14 @@ async function updateDocumentRequestFromUploadIfPossible(
       isMissingColumnError(requestsResult.error, 'request_type') ||
       isMissingColumnError(requestsResult.error, 'notes'))
   ) {
-    requestsResult = await client
+    let fallbackRequestQuery = client
       .from('document_requests')
       .select('id, transaction_id, category, document_type, title, priority, status, assigned_to_role, created_at')
       .eq('transaction_id', transactionId)
-      .order('created_at', { ascending: false })
+    fallbackRequestQuery = documentRequestId
+      ? fallbackRequestQuery.eq('id', documentRequestId)
+      : fallbackRequestQuery.in('status', ['requested', 'rejected', 'reviewed', 'under_review'])
+    requestsResult = await fallbackRequestQuery.order('created_at', { ascending: false })
   }
 
   if (requestsResult.error) {
@@ -14546,6 +14576,8 @@ async function updateDocumentRequestFromUploadIfPossible(
       requestId: normalizedUpdated.id,
       documentId,
       status: normalizedUpdated.status,
+      uploadedByParty: normalizeNullableText(uploadedByParty),
+      uploadedOnBehalf: Boolean(normalizeNullableText(uploadedByParty)),
     },
   })
 
@@ -14730,16 +14762,19 @@ async function fetchClientVisibleAdditionalDocumentRequests(client, transactionI
 
   if (
     query.error &&
-    (isMissingColumnError(query.error, 'visibility_scope') ||
-      isMissingColumnError(query.error, 'requested_from') ||
-      isMissingColumnError(query.error, 'request_type') ||
-      isMissingColumnError(query.error, 'notes'))
+    (isMissingColumnError(query.error, 'visibility_scope') || isMissingColumnError(query.error, 'requested_from'))
   ) {
+    // Fail closed: without these fields the client audience cannot be determined safely.
+    return []
+  }
+
+  if (query.error && (isMissingColumnError(query.error, 'request_type') || isMissingColumnError(query.error, 'notes'))) {
     query = await client
       .from('document_requests')
       .select(
-        'id, transaction_id, category, document_type, title, description, priority, due_date, assigned_to_role, status, created_by_role, requested_from, created_at',
+        'id, transaction_id, category, document_type, title, description, priority, due_date, assigned_to_role, status, created_by_role, requested_from, visibility_scope, created_at',
       )
+      .eq('visibility_scope', 'client_visible')
       .eq('transaction_id', transactionId)
       .order('created_at', { ascending: false })
   }
@@ -14761,12 +14796,9 @@ async function fetchClientVisibleAdditionalDocumentRequests(client, transactionI
       const category = String(request.category || '')
         .trim()
         .toLowerCase()
-      const clientScopedRole = ['client', 'buyer', 'seller'].includes(
-        normalizeRequestRoleScope(request.assignedToRole, 'client'),
-      )
       return (
         (request.requestType === 'additional_document_request' || category === 'additional requests') &&
-        (request.clientVisible || clientScopedRole)
+        request.clientVisible
       )
     })
     .map((request) => ({
@@ -15004,17 +15036,19 @@ async function sendAdditionalDocumentRequestEmails(client, { transactionId, acto
   const results = []
 
   for (const request of requests) {
-    const audience = resolveAdditionalDocumentRequestAudience(
-      request?.requested_from || request?.requestedFrom || 'buyer',
-    )
+    const visibleTo = resolveDocumentRequestContainerAudience({
+      requestedFrom: request?.requested_from || request?.requestedFrom || 'buyer',
+      visibility: request?.visibility_scope || request?.visibility || 'shared_role_players',
+      createdByRole: request?.created_by_role || request?.createdByRole || actorRole,
+    })
     const recipients = []
-    if (audience.forBuyer && buyerEmail) {
+    if (visibleTo.includes('buyer') && buyerEmail) {
       recipients.push({
         email: buyerEmail,
         name: normalizeTextValue(context.buyer?.name || transaction?.buyer_name || transaction?.buyerName || 'Buyer'),
       })
     }
-    if (audience.forSeller && sellerEmail) {
+    if (visibleTo.includes('seller') && sellerEmail) {
       recipients.push({
         email: sellerEmail,
         name: normalizeTextValue(transaction?.seller_name || transaction?.sellerName || 'Seller'),
@@ -15231,41 +15265,22 @@ export async function createTransactionDocumentRequests({
       'id, transaction_id, category, document_type, title, description, notes, priority, due_date, assigned_to_role, assigned_to_user_id, request_group_id, status, requires_review, requested_document_id, created_by, created_by_role, completed_at, rejected_reason, resend_count, last_resent_at, requested_from, visibility_scope, request_type, created_at, updated_at',
     )
 
-  if (
-    insert.error &&
-    (isMissingColumnError(insert.error, 'assigned_to_user_id') ||
-      isMissingColumnError(insert.error, 'request_group_id') ||
-      isMissingColumnError(insert.error, 'requires_review') ||
-      isMissingColumnError(insert.error, 'requested_document_id') ||
-      isMissingColumnError(insert.error, 'created_by') ||
-      isMissingColumnError(insert.error, 'created_by_role') ||
-      isMissingColumnError(insert.error, 'resend_count') ||
-      isMissingColumnError(insert.error, 'last_resent_at') ||
-      isMissingColumnError(insert.error, 'requested_from') ||
-      isMissingColumnError(insert.error, 'visibility_scope') ||
-      isMissingColumnError(insert.error, 'request_type') ||
-      isMissingColumnError(insert.error, 'notes') ||
-      isMissingColumnError(insert.error, 'updated_at'))
-  ) {
-    insert = await client
-      .from('document_requests')
-      .insert(
-        insertRows.map((row) => ({
-          transaction_id: row.transaction_id,
-          category: row.category,
-          document_type: row.document_type,
-          title: row.title,
-          description: row.description,
-          priority: row.priority,
-          due_date: row.due_date,
-          assigned_to_role: row.assigned_to_role,
-          status: row.status,
-          created_at: row.created_at,
-        })),
-      )
-      .select(
-        'id, transaction_id, category, document_type, title, description, priority, due_date, assigned_to_role, status, created_at',
-      )
+  if (insert.error && [
+    'assigned_to_user_id',
+    'request_group_id',
+    'requires_review',
+    'requested_document_id',
+    'created_by',
+    'created_by_role',
+    'resend_count',
+    'last_resent_at',
+    'requested_from',
+    'visibility_scope',
+    'request_type',
+    'notes',
+    'updated_at',
+  ].some((column) => isMissingColumnError(insert.error, column))) {
+    throw new Error('Professional document request propagation is not set up. Apply the Phase 6 document request migration and retry.')
   }
 
   if (insert.error) {
@@ -15316,6 +15331,14 @@ export async function createTransactionDocumentRequests({
 
   for (const createdRequest of insertRows) {
     const roleTarget = normalizeRequestRoleScope(createdRequest.assigned_to_role, 'client')
+    const visibleTo = resolveDocumentRequestContainerAudience({
+      requestedFrom: createdRequest.requested_from,
+      visibility: createdRequest.visibility_scope,
+      createdByRole: normalizedActorRole,
+    })
+    if (['client', 'buyer', 'seller'].includes(roleTarget) && !visibleTo.some((role) => ['buyer', 'seller'].includes(role))) {
+      continue
+    }
     const notificationTargets = await fetchNotificationTargetsByRole(client, {
       transactionId,
       roleTypes: roleTarget === 'client' ? ['buyer', 'seller', 'client'] : [roleTarget],
@@ -25691,6 +25714,31 @@ function resolveRoleplayerSelectionScope(selection = {}, assignedUserId = null) 
   }
 }
 
+function getSelectedBondOriginatorHandoff(rolePlayers = []) {
+  return (Array.isArray(rolePlayers) ? rolePlayers : []).find((item) => item?.roleType === 'bond_originator') || null
+}
+
+function buildInitialBondWorkspaceHandoff(selection = null) {
+  if (!selection) return {}
+  const scope = resolveRoleplayerSelectionScope(selection, selection.userId || null)
+  const organisationId = normalizeNullableUuid(scope.organisationId)
+  if (!organisationId) return {}
+  const assignedUserId = normalizeNullableUuid(scope.userId || selection.userId)
+  const workspaceUnitId = normalizeNullableUuid(scope.workspaceUnitId || scope.branchId || scope.teamId)
+  return {
+    bond_originator: selection.partnerName || selection.companyName || selection.contactPerson || null,
+    assigned_bond_originator_email: selection.email || null,
+    bond_workspace_id: organisationId,
+    bond_region_id: normalizeNullableUuid(scope.regionId),
+    bond_workspace_unit_id: workspaceUnitId,
+    primary_bond_consultant_user_id: assignedUserId,
+    bond_assignment_status: assignedUserId ? 'consultant_assigned' : 'workspace_assigned',
+    bond_assignment_source: 'participant_sync',
+    finance_managed_by: 'bond_originator',
+    finance_status: 'Bond originator assigned',
+  }
+}
+
 async function ensureRoleplayerTransactionParticipant(
   client,
   { transactionId, selection, actorProfile, financeManagedBy = 'bond_originator' } = {},
@@ -25838,6 +25886,10 @@ async function resolveAttorneyFirmIdForCreationRoleplayer(client, selection = {}
       throw query.error
     }
     if (query.data?.[0]?.id) return query.data[0].id
+    // Partner-directory attorney organisations are backed by attorney_firms
+    // using the same id in production. Developers may not be allowed to select
+    // the firm row directly, but the FK insert can still use the canonical id.
+    return organisationId
   }
 
   const email = normalizeEmailAddress(selection.email)
@@ -25963,7 +26015,7 @@ export function buildCreationAttorneyAssignmentPayload({
     assignment_type: assignmentType,
     attorney_role: attorneyRole,
     matter_type: assignmentType,
-    instruction_status: 'new_instruction',
+    instruction_status: 'awaiting_documents',
     assigned_organisation_id: scope.organisationId,
     assigned_workspace_unit_id: scope.workspaceUnitId,
     assigned_branch_id: scope.branchId,
@@ -26144,6 +26196,7 @@ async function ensureBondApplicationWorkspaceRecord(client, { transactionId, buy
     buyer_party_id: buyerId || null,
     application_type: 'originator_intake',
     assigned_organisation_id: scope.organisationId,
+    originator_organisation_id: scope.organisationId,
     assigned_region_id: scope.regionId,
     assigned_workspace_unit_id: scope.workspaceUnitId,
     assigned_branch_id: scope.branchId,
@@ -26183,6 +26236,14 @@ async function ensureBondApplicationWorkspaceRecord(client, { transactionId, buy
       payload,
       'id, transaction_id, workflow_id, bank_name, status, updated_at',
     )
+    await stampTransactionBondWorkspaceFromSelection(client, {
+      transactionId,
+      selection,
+      scope,
+      resolvedUserId,
+      source: 'participant_sync',
+      nowIso,
+    })
     return updated?.[0] || null
   }
 
@@ -26195,7 +26256,53 @@ async function ensureBondApplicationWorkspaceRecord(client, { transactionId, buy
     },
     'id, transaction_id, workflow_id, bank_name, status, created_at, updated_at',
   )
+  await stampTransactionBondWorkspaceFromSelection(client, {
+    transactionId,
+    selection,
+    scope,
+    resolvedUserId,
+    source: 'participant_sync',
+    nowIso,
+  })
   return inserted?.[0] || null
+}
+
+async function stampTransactionBondWorkspaceFromSelection(
+  client,
+  { transactionId, selection = {}, scope = {}, resolvedUserId = null, source = 'participant_sync', nowIso = new Date().toISOString() } = {},
+) {
+  const bondWorkspaceId = normalizeNullableUuid(
+    scope.organisationId || selection.partnerOrganisationId || selection.organisationId,
+  )
+  if (!transactionId || !bondWorkspaceId) return null
+
+  const assignedUserId = normalizeNullableUuid(scope.userId || resolvedUserId || selection.userId)
+  const bondWorkspaceUnitId = normalizeNullableUuid(scope.workspaceUnitId || scope.branchId || scope.teamId)
+  const payload = {
+    bond_originator: selection.partnerName || selection.companyName || selection.contactPerson || null,
+    assigned_bond_originator_email: selection.email || null,
+    bond_workspace_id: bondWorkspaceId,
+    bond_region_id: normalizeNullableUuid(scope.regionId),
+    bond_workspace_unit_id: bondWorkspaceUnitId,
+    primary_bond_consultant_user_id: assignedUserId,
+    bond_assignment_status: assignedUserId ? 'consultant_assigned' : 'workspace_assigned',
+    bond_assignment_source: source === 'workflow_assignment' ? 'workflow_assignment' : 'participant_sync',
+    finance_managed_by: 'bond_originator',
+    finance_status: 'Bond originator assigned',
+    updated_at: nowIso,
+  }
+
+  for (const [key, value] of Object.entries(payload)) {
+    if (value === undefined || value === null || value === '') delete payload[key]
+  }
+
+  return updateRecordByIdWithMissingColumnFallback(
+    client,
+    'transactions',
+    transactionId,
+    payload,
+    'id, bond_originator, assigned_bond_originator_email, bond_workspace_id, bond_region_id, bond_workspace_unit_id, primary_bond_consultant_user_id, bond_assignment_status, bond_assignment_source, finance_managed_by, finance_status, updated_at',
+  )
 }
 
 export const __transactionBondApplicationClassificationTestUtils = Object.freeze({
@@ -27016,6 +27123,25 @@ export async function saveTransactionRoleplayerSelections({ transactionId, rolep
     },
     'id, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, updated_at',
   )
+  if (bondOriginator && isBondFinanceType(normalizeFinanceType(transaction.finance_type || 'cash', { allowUnknown: true }))) {
+    await stampTransactionBondWorkspaceFromSelection(client, {
+      transactionId,
+      selection: {
+        ...bondOriginator,
+        partnerName: bondOriginator.companyName || bondOriginator.contactPerson || null,
+        partnerOrganisationId: bondOriginator.organisationId || null,
+      },
+      scope: resolveRoleplayerSelectionScope(
+        {
+          ...bondOriginator,
+          partnerOrganisationId: bondOriginator.organisationId || null,
+        },
+        bondOriginator.userId || null,
+      ),
+      resolvedUserId: bondOriginator.userId || null,
+      source: 'participant_sync',
+    })
+  }
 
   await propagateTransactionRoleplayersIfPossible(client, {
     transactionId,
@@ -29512,6 +29638,28 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     ? normalizeFinanceType(setup.financeType || '', { allowUnknown: true })
     : normalizeFinanceType(setup.financeType || 'cash')
   const persistedFinanceType = normalizedFinanceType === 'unknown' ? null : normalizedFinanceType
+  const initialBondOriginatorHandoff =
+    isBondFinanceType(normalizedFinanceType)
+      ? buildInitialBondWorkspaceHandoff(getSelectedBondOriginatorHandoff(mergedRolePlayerSelections))
+      : {}
+  const requireCanonicalPartnerHandoffs = Boolean(options?.requireCanonicalPartnerHandoffs)
+  const requiredPartnerRoleTypes = Array.isArray(options?.requiredPartnerRoleTypes)
+    ? options.requiredPartnerRoleTypes
+    : []
+  const partnerHandoffContract = requireCanonicalPartnerHandoffs
+    ? assertTransactionPartnerHandoffContract({
+        rolePlayers: mergedRolePlayerSelections,
+        financeType: normalizedFinanceType,
+        financeManagedBy: setup.financeManagedBy,
+        requiredPartnerRoleTypes,
+      })
+    : buildTransactionPartnerHandoffContract({
+        rolePlayers: mergedRolePlayerSelections,
+        financeType: normalizedFinanceType,
+        financeManagedBy: setup.financeManagedBy,
+        requiredPartnerRoleTypes,
+        strict: false,
+      })
   const resolvedPurchasePrice = resolvePurchasePrice({ setup })
   const explicitReservationRequired =
     typeof finance?.reservationRequired === 'boolean' ? finance.reservationRequired : null
@@ -29622,6 +29770,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     risk_status: status.riskStatus || 'On Track',
     attorney: finance.attorney || null,
     bond_originator: finance.bondOriginator || null,
+    ...initialBondOriginatorHandoff,
     bank: finance.bank || null,
     next_action: resolvedNextAction,
     comment: resolvedNextAction,
@@ -29637,7 +29786,10 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     assigned_agent_email: resolvedAssignedAgentEmail || null,
     expected_transfer_date: finance.expectedTransferDate || null,
     assigned_attorney_email: normalizeNullableText(finance.attorneyEmail)?.toLowerCase() || null,
-    assigned_bond_originator_email: normalizeNullableText(finance.bondOriginatorEmail)?.toLowerCase() || null,
+    assigned_bond_originator_email:
+      normalizeNullableText(finance.bondOriginatorEmail)?.toLowerCase() ||
+      initialBondOriginatorHandoff.assigned_bond_originator_email ||
+      null,
     originating_partner_organisation_id: primaryPartnerSelection?.partnerOrganisationId || null,
     referral_source_organisation_id: normalizeNullableText(options?.referralSourceOrganisationId) || null,
     relationship_owner_user_id: actorUserId,
@@ -29697,6 +29849,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     assigned_attorney_email: normalizeNullableText(finance.attorneyEmail)?.toLowerCase() || null,
     bond_originator: finance.bondOriginator || null,
     assigned_bond_originator_email: normalizeNullableText(finance.bondOriginatorEmail)?.toLowerCase() || null,
+    ...initialBondOriginatorHandoff,
     originating_partner_organisation_id: primaryPartnerSelection?.partnerOrganisationId || null,
     referral_source_organisation_id: normalizeNullableText(options?.referralSourceOrganisationId) || null,
     relationship_owner_user_id: actorUserId,
@@ -30329,10 +30482,13 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
             'documents',
             'transaction_events',
           ],
+      partnerHandoffContract,
       rolePlayers: mergedRolePlayerSelections.map((item) => ({
         roleType: item.roleType,
         selectionSource: item.selectionSource,
         preferredPartnerId: item.preferredPartnerId || null,
+        partnerOrganisationId: item.partnerOrganisationId || null,
+        partnerRelationshipId: item.partnerRelationshipId || null,
         partnerName: item.partnerName || null,
         email: item.email || null,
         phone: item.phone || null,
@@ -30679,11 +30835,12 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     setupWarnings,
     handoffChecklist,
     buyerParties,
-    rolePlayers: mergedRolePlayerSelections,
-    onboardingRecord,
-    transactionPayload,
-    transactionType,
-    sourceContext,
+      rolePlayers: mergedRolePlayerSelections,
+      partnerHandoffContract,
+      onboardingRecord,
+      transactionPayload,
+      transactionType,
+      sourceContext,
     completeness: options?.completeness || null,
   })
 
@@ -30697,6 +30854,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
         setupHealth,
         setupWarnings,
         handoffChecklist,
+        partnerHandoffContract,
         buyerPartyCount: buyerParties.length,
         rolePlayerCount: mergedRolePlayerSelections.length,
         originPath: options?.creationOrigin || null,
@@ -30718,6 +30876,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
         handoffChecklist,
         buyerParties,
         rolePlayers: mergedRolePlayerSelections,
+        partnerHandoffContract,
         onboardingRecord,
         transactionPayload,
         transactionType,
@@ -31083,10 +31242,151 @@ function getDirectParticipantTransactionIds(rows = [], normalizedRole = null) {
   const transactionIds = new Set()
   for (const row of rows || []) {
     if (row?.removed_at) continue
-    if (row?.status && normalizeStakeholderStatus(row.status, 'active') !== 'active') continue
+    const status = normalizeStakeholderStatus(row?.status, 'active')
+    if (!['active', 'invited'].includes(status)) continue
     if (!normalizedRole || normalizeRoleType(row.role_type) === normalizedRole) {
       if (row?.transaction_id) transactionIds.add(row.transaction_id)
     }
+  }
+  return transactionIds
+}
+
+function isVisiblePartnerAccessStatus(value = '') {
+  const normalized = normalizeStakeholderStatus(value, 'active')
+  return ['active', 'invited'].includes(normalized)
+}
+
+async function fetchActiveOrganisationMembershipsForUser(client, { userId = null, email = '' } = {}) {
+  const normalizedEmail = normalizeEmailAddress(email)
+  if (!userId && !normalizedEmail) return []
+
+  const selectClause =
+    'organisation_id, user_id, email, status, role, workspace_role, organisation_role, scope_level, workspace_type, branch_id, primary_branch_id, region_id, workspace_unit_id, team_id'
+  const queries = []
+  if (userId) {
+    queries.push(
+      client
+        .from('organisation_users')
+        .select(selectClause)
+        .eq('user_id', userId)
+        .eq('status', 'active'),
+    )
+  }
+  if (normalizedEmail) {
+    queries.push(
+      client
+        .from('organisation_users')
+        .select(selectClause)
+        .ilike('email', normalizedEmail)
+        .eq('status', 'active'),
+    )
+  }
+
+  const results = await Promise.all(queries)
+  const memberships = []
+  for (const result of results) {
+    if (
+      result.error &&
+      !isMissingSchemaError(result.error) &&
+      !isMissingTableError(result.error, 'organisation_users') &&
+      !isPermissionDeniedError(result.error)
+    ) {
+      throw result.error
+    }
+    memberships.push(...(result.data || []))
+  }
+
+  const seen = new Set()
+  return memberships.filter((membership) => {
+    const key = `${normalizeTextValue(membership?.organisation_id)}:${normalizeTextValue(membership?.user_id)}:${normalizeEmailAddress(membership?.email)}`
+    if (!normalizeTextValue(membership?.organisation_id) || seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+async function fetchOrganisationScopedParticipantTransactionIds(
+  client,
+  { organisationIds = [], roleType = null } = {},
+) {
+  const ids = [...new Set((organisationIds || []).map((item) => normalizeNullableUuid(item)).filter(Boolean))]
+  const normalizedRole = roleType ? normalizeRoleType(roleType) : null
+  if (!ids.length || !normalizedRole) return new Set()
+
+  let query = await client
+    .from('transaction_participants')
+    .select('transaction_id, role_type, status, removed_at, assigned_organisation_id')
+    .eq('role_type', normalizedRole)
+    .in('assigned_organisation_id', ids)
+
+  if (
+    query.error &&
+    (isMissingColumnError(query.error, 'status') ||
+      isMissingColumnError(query.error, 'removed_at') ||
+      isMissingColumnError(query.error, 'assigned_organisation_id'))
+  ) {
+    return new Set()
+  }
+  if (
+    query.error &&
+    !isMissingSchemaError(query.error) &&
+    !isMissingTableError(query.error, 'transaction_participants') &&
+    !isPermissionDeniedError(query.error)
+  ) {
+    throw query.error
+  }
+
+  const transactionIds = new Set()
+  for (const row of query.data || []) {
+    if (row?.removed_at) continue
+    if (!isVisiblePartnerAccessStatus(row?.status)) continue
+    if (row?.transaction_id) transactionIds.add(row.transaction_id)
+  }
+  return transactionIds
+}
+
+async function fetchRolePlayerOrganisationTransactionIds(
+  client,
+  { organisationIds = [], roleTypes = [] } = {},
+) {
+  const ids = [...new Set((organisationIds || []).map((item) => normalizeNullableUuid(item)).filter(Boolean))]
+  const roles = [...new Set((roleTypes || []).map((item) => normalizeTextValue(item)).filter(Boolean))]
+  if (!ids.length || !roles.length) return new Set()
+
+  let query = await client
+    .from('transaction_role_players')
+    .select('transaction_id, role_type, status, assignment_status, removed_at, organisation_id')
+    .in('organisation_id', ids)
+    .in('role_type', roles)
+
+  if (
+    query.error &&
+    (isMissingColumnError(query.error, 'status') ||
+      isMissingColumnError(query.error, 'assignment_status') ||
+      isMissingColumnError(query.error, 'removed_at') ||
+      isMissingColumnError(query.error, 'organisation_id'))
+  ) {
+    query = await client
+      .from('transaction_role_players')
+      .select('transaction_id, role_type, organisation_id')
+      .in('organisation_id', ids)
+      .in('role_type', roles)
+  }
+  if (
+    query.error &&
+    !isMissingSchemaError(query.error) &&
+    !isMissingTableError(query.error, 'transaction_role_players') &&
+    !isPermissionDeniedError(query.error)
+  ) {
+    throw query.error
+  }
+
+  const transactionIds = new Set()
+  for (const row of query.data || []) {
+    if (row?.removed_at) continue
+    const status = normalizeStakeholderStatus(row?.assignment_status || row?.status, 'active')
+    if (!['active', 'invited'].includes(status)) continue
+    if (row?.transaction_id) transactionIds.add(row.transaction_id)
   }
   return transactionIds
 }
@@ -31261,6 +31561,30 @@ async function fetchDirectTransactionIdsForUser(
   }
 
   if (normalizedRole === 'attorney') {
+    const organisationMemberships = await fetchActiveOrganisationMembershipsForUser(client, {
+      userId,
+      email: normalizedEmail,
+    })
+    const organisationIds = [
+      ...new Set(
+        (organisationMemberships || [])
+          .filter((membership) => {
+            const workspaceType = normalizeTextValue(membership?.workspace_type || membership?.workspaceType).toLowerCase()
+            const role = normalizeTextValue(
+              membership?.role || membership?.workspace_role || membership?.organisation_role,
+            ).toLowerCase()
+            return (
+              workspaceType === 'attorney_firm' ||
+              role.includes('attorney') ||
+              role.includes('firm') ||
+              role === 'owner'
+            )
+          })
+          .map((membership) => normalizeNullableUuid(membership?.organisation_id))
+          .filter(Boolean),
+      ),
+    ]
+
     let membershipsQuery = await client
       .from('attorney_firm_members')
       .select('firm_id, department_id, professional_role, practice_qualifications, status')
@@ -31280,18 +31604,41 @@ async function fetchDirectTransactionIdsForUser(
       if (firmId) accumulator[firmId] = membership
       return accumulator
     }, {})
+    for (const firmId of Object.keys(membershipsByFirmId)) {
+      const normalizedFirmId = normalizeNullableUuid(firmId)
+      if (normalizedFirmId && !organisationIds.includes(normalizedFirmId)) {
+        organisationIds.push(normalizedFirmId)
+      }
+    }
     const firmWideRoles = new Set(['firm_admin', 'director_partner'])
+
+    const organisationParticipantIds = await fetchOrganisationScopedParticipantTransactionIds(client, {
+      organisationIds,
+      roleType: 'attorney',
+    })
+    for (const transactionId of organisationParticipantIds) {
+      transactionIds.add(transactionId)
+    }
+
+    const organisationRolePlayerIds = await fetchRolePlayerOrganisationTransactionIds(client, {
+      organisationIds,
+      roleTypes: ['transfer_attorney', 'bond_attorney', 'cancellation_attorney'],
+    })
+    for (const transactionId of organisationRolePlayerIds) {
+      transactionIds.add(transactionId)
+    }
 
     let assignmentQuery = await client
       .from('transaction_attorney_assignments')
       .select(
-        'transaction_id, firm_id, attorney_firm_id, department_id, attorney_department_id, primary_attorney_id, attorney_user_id, preferred_attorney_user_id, secretary_id, admin_handler_id, status, assignment_status',
+        'transaction_id, firm_id, attorney_firm_id, assigned_organisation_id, department_id, attorney_department_id, primary_attorney_id, attorney_user_id, preferred_attorney_user_id, secretary_id, admin_handler_id, status, assignment_status',
       )
 
     if (
       assignmentQuery.error &&
       (isMissingColumnError(assignmentQuery.error, 'assignment_status') ||
         isMissingColumnError(assignmentQuery.error, 'attorney_firm_id') ||
+        isMissingColumnError(assignmentQuery.error, 'assigned_organisation_id') ||
         isMissingColumnError(assignmentQuery.error, 'attorney_department_id') ||
         isMissingColumnError(assignmentQuery.error, 'attorney_user_id') ||
         isMissingColumnError(assignmentQuery.error, 'preferred_attorney_user_id'))
@@ -31321,13 +31668,15 @@ async function fetchDirectTransactionIdsForUser(
         row?.secretary_id,
         row?.admin_handler_id,
       ].map((item) => normalizeTextValue(item))
-      const firmId = normalizeTextValue(row?.attorney_firm_id || row?.firm_id)
+      const firmId = normalizeTextValue(row?.attorney_firm_id || row?.firm_id || row?.assigned_organisation_id)
       const departmentId = normalizeTextValue(row?.attorney_department_id || row?.department_id)
       const membership = firmId ? membershipsByFirmId[firmId] : null
+      const organisationScopedAccess = firmId && organisationIds.includes(firmId)
       const membershipDepartmentId = normalizeTextValue(membership?.department_id)
       const membershipRole = normalizeTextValue(membership?.professional_role).toLowerCase()
       const hasAssignmentAccess =
         assignedUserIds.includes(normalizeTextValue(userId)) ||
+        organisationScopedAccess ||
         (membership && firmWideRoles.has(membershipRole)) ||
         Boolean(membership && membershipDepartmentId && departmentId && membershipDepartmentId === departmentId)
 
@@ -31733,6 +32082,70 @@ async function fetchActiveTransactionIdsForOrganisation(client, organisationId =
   return (query.data || []).filter((row) => row?.id && row?.is_active !== false).map((row) => row.id)
 }
 
+async function fetchBondTransactionIdsForOrganisation(client, organisationId = '') {
+  const normalizedOrganisationId = normalizeNullableUuid(organisationId)
+  if (!normalizedOrganisationId) return []
+
+  const transactionIds = new Set()
+
+  let workspaceTransactionsQuery = await client
+    .from('transactions')
+    .select('id, is_active')
+    .eq('bond_workspace_id', normalizedOrganisationId)
+
+  if (workspaceTransactionsQuery.error && isMissingColumnError(workspaceTransactionsQuery.error, 'is_active')) {
+    workspaceTransactionsQuery = await client
+      .from('transactions')
+      .select('id')
+      .eq('bond_workspace_id', normalizedOrganisationId)
+  }
+  if (
+    workspaceTransactionsQuery.error &&
+    !isMissingColumnError(workspaceTransactionsQuery.error, 'bond_workspace_id') &&
+    !isMissingSchemaError(workspaceTransactionsQuery.error)
+  ) {
+    throw workspaceTransactionsQuery.error
+  }
+  for (const row of workspaceTransactionsQuery.data || []) {
+    if (row?.is_active === false) continue
+    if (row?.id) transactionIds.add(row.id)
+  }
+
+  const rolePlayerIds = await fetchRolePlayerOrganisationTransactionIds(client, {
+    organisationIds: [normalizedOrganisationId],
+    roleTypes: ['bond_originator'],
+  })
+  for (const transactionId of rolePlayerIds) transactionIds.add(transactionId)
+
+  let bondApplicationQuery = await client
+    .from('transaction_bond_applications')
+    .select('transaction_id, assigned_organisation_id, assignment_status, status')
+    .eq('assigned_organisation_id', normalizedOrganisationId)
+
+  if (bondApplicationQuery.error && isMissingColumnError(bondApplicationQuery.error, 'assignment_status')) {
+    bondApplicationQuery = await client
+      .from('transaction_bond_applications')
+      .select('transaction_id, assigned_organisation_id, status')
+      .eq('assigned_organisation_id', normalizedOrganisationId)
+  }
+  if (
+    bondApplicationQuery.error &&
+    !isMissingColumnError(bondApplicationQuery.error, 'assigned_organisation_id') &&
+    !isMissingSchemaError(bondApplicationQuery.error) &&
+    !isMissingTableError(bondApplicationQuery.error, 'transaction_bond_applications') &&
+    !isPermissionDeniedError(bondApplicationQuery.error)
+  ) {
+    throw bondApplicationQuery.error
+  }
+  for (const row of bondApplicationQuery.data || []) {
+    const status = normalizeStakeholderStatus(row?.assignment_status || row?.status, 'active')
+    if (!['active', 'invited'].includes(status)) continue
+    if (row?.transaction_id) transactionIds.add(row.transaction_id)
+  }
+
+  return [...transactionIds]
+}
+
 export async function getAccessibleTransactionIdsForUser({ userId, roleType = null, organisationId = '' } = {}) {
   const client = requireClient()
   if (!userId) {
@@ -31786,7 +32199,7 @@ export async function getAccessibleTransactionIdsForUser({ userId, roleType = nu
       organisationId: normalizedOrganisationId,
     })
     if (hqMembership) {
-      return fetchActiveTransactionIdsForOrganisation(client, normalizedOrganisationId)
+      return fetchBondTransactionIdsForOrganisation(client, normalizedOrganisationId)
     }
   }
 
@@ -33169,10 +33582,10 @@ async function fetchTransactionSummaryRowsByIds(
       ? client.from('units').select('id, development_id, unit_number, phase, price, status').in('id', unitIds)
       : Promise.resolve({ data: [], error: null }),
   ])
-  if (buyersQuery.error && !isMissingSchemaError(buyersQuery.error)) {
+  if (buyersQuery.error && !isMissingSchemaError(buyersQuery.error) && !isPermissionDeniedError(buyersQuery.error)) {
     throw buyersQuery.error
   }
-  if (unitsQuery.error && !isMissingSchemaError(unitsQuery.error)) {
+  if (unitsQuery.error && !isMissingSchemaError(unitsQuery.error) && !isPermissionDeniedError(unitsQuery.error)) {
     throw unitsQuery.error
   }
 
@@ -33196,7 +33609,7 @@ async function fetchTransactionSummaryRowsByIds(
   const allDevelopmentIds = [...linkedDevelopmentIds]
   if (allDevelopmentIds.length) {
     const developmentsQuery = await client.from('developments').select('id, name, location').in('id', allDevelopmentIds)
-    if (developmentsQuery.error && !isMissingSchemaError(developmentsQuery.error)) {
+    if (developmentsQuery.error && !isMissingSchemaError(developmentsQuery.error) && !isPermissionDeniedError(developmentsQuery.error)) {
       throw developmentsQuery.error
     }
     developmentsById = (developmentsQuery.data || []).reduce((accumulator, item) => {
@@ -47496,7 +47909,7 @@ export async function uploadClientPortalDocument({
     },
   })
 
-  await updateDocumentRequestFromUploadIfPossible(client, {
+  const documentRequestUpdate = await updateDocumentRequestFromUploadIfPossible(client, {
     transactionId: link.transaction_id,
     documentId: result.data.id,
     category: result.data.category || category || 'Client Portal',
@@ -47586,6 +47999,7 @@ export async function uploadClientPortalDocument({
 
   return {
     ...result.data,
+    documentRequestUpdate,
     url: await createClientPortalDocumentSignedUrl({
       token,
       filePath: result.data.file_path,
@@ -47607,10 +48021,13 @@ export async function reconcileClientPortalBondDocumentRequirements({
 
   const activeRequirements = Array.isArray(requirements) ? requirements : []
   const activeKeys = new Set(activeRequirements.map((requirement) => String(requirement?.key || '').trim()).filter(Boolean))
-  const managedPrefix = 'bond_application_'
+  const isManagedBondRequirementKey = (value = '') => {
+    const key = String(value || '').trim()
+    return key.startsWith('bond_application_') || key.includes(':bond_application_')
+  }
   const now = new Date().toISOString()
   const fullSelect =
-    'id, transaction_id, document_key, document_label, is_required, is_uploaded, status, enabled, group_key, group_label, description, required_from_role, visibility_scope, allow_multiple, uploaded_document_id, uploaded_at, verified_at, rejected_at, notes, sort_order, canonical_requirement_instance_id, created_at, updated_at'
+    'id, transaction_id, document_key, canonical_document_key, document_label, is_required, is_uploaded, status, enabled, group_key, group_label, description, required_from_role, visibility_scope, allow_multiple, uploaded_document_id, uploaded_at, verified_at, rejected_at, notes, sort_order, canonical_requirement_instance_id, participant_key, participant_id, participant_role, participant_name, created_at, updated_at'
   const legacySelect =
     'id, transaction_id, document_key, document_label, is_required, is_uploaded, uploaded_document_id, sort_order, created_at, updated_at'
 
@@ -47628,6 +48045,11 @@ export async function reconcileClientPortalBondDocumentRequirements({
       isMissingColumnError(existingQuery.error, 'required_from_role') ||
       isMissingColumnError(existingQuery.error, 'visibility_scope') ||
       isMissingColumnError(existingQuery.error, 'allow_multiple') ||
+      isMissingColumnError(existingQuery.error, 'canonical_document_key') ||
+      isMissingColumnError(existingQuery.error, 'participant_key') ||
+      isMissingColumnError(existingQuery.error, 'participant_id') ||
+      isMissingColumnError(existingQuery.error, 'participant_role') ||
+      isMissingColumnError(existingQuery.error, 'participant_name') ||
       isMissingColumnError(existingQuery.error, 'canonical_requirement_instance_id'))
   ) {
     existingQuery = await client
@@ -47645,10 +48067,12 @@ export async function reconcileClientPortalBondDocumentRequirements({
   const existingByKey = new Map(existingRows.map((row) => [String(row.document_key || '').trim(), row]))
   const upsertRows = activeRequirements.map((requirement, index) => {
     const key = String(requirement.key || '').trim()
-    const existing = existingByKey.get(key) || {}
+    const baseKey = String(requirement.baseRequirementKey || '').trim()
+    const existing = existingByKey.get(key) || existingByKey.get(baseKey) || {}
     return {
       transaction_id: transactionId,
       document_key: key,
+      canonical_document_key: requirement.canonicalDocumentType || existing.canonical_document_key || baseKey || key,
       document_label: requirement.title || key,
       is_required: requirement.required !== false,
       is_uploaded: Boolean(existing.is_uploaded),
@@ -47659,7 +48083,11 @@ export async function reconcileClientPortalBondDocumentRequirements({
       description: requirement.description || '',
       required_from_role: 'client',
       visibility_scope: 'client',
-      allow_multiple: Number(requirement.minimumFileCount || 1) > 1,
+      allow_multiple: Boolean(
+        requirement.allowMultipleFiles ||
+        requirement.allowMultiple ||
+        Number(requirement.minimumFileCount || 1) > 1
+      ),
       uploaded_document_id: existing.uploaded_document_id || null,
       uploaded_at: existing.uploaded_at || null,
       verified_at: existing.verified_at || null,
@@ -47667,6 +48095,10 @@ export async function reconcileClientPortalBondDocumentRequirements({
       notes: existing.notes || (fingerprint ? `guided_bond_application_v2:${fingerprint}` : null),
       sort_order: Number(requirement.order || 0) || index + 1,
       canonical_requirement_instance_id: existing.canonical_requirement_instance_id || null,
+      participant_key: requirement.participantKey || null,
+      participant_id: requirement.participantId || null,
+      participant_role: requirement.participantRole || null,
+      participant_name: requirement.participantName || null,
       updated_at: now,
     }
   }).filter((row) => row.document_key)
@@ -47685,6 +48117,11 @@ export async function reconcileClientPortalBondDocumentRequirements({
         isMissingColumnError(upsertResult.error, 'required_from_role') ||
         isMissingColumnError(upsertResult.error, 'visibility_scope') ||
         isMissingColumnError(upsertResult.error, 'allow_multiple') ||
+        isMissingColumnError(upsertResult.error, 'canonical_document_key') ||
+        isMissingColumnError(upsertResult.error, 'participant_key') ||
+        isMissingColumnError(upsertResult.error, 'participant_id') ||
+        isMissingColumnError(upsertResult.error, 'participant_role') ||
+        isMissingColumnError(upsertResult.error, 'participant_name') ||
         isMissingColumnError(upsertResult.error, 'canonical_requirement_instance_id'))
     ) {
       upsertResult = await client
@@ -47709,7 +48146,7 @@ export async function reconcileClientPortalBondDocumentRequirements({
 
   const staleRows = existingRows.filter((row) => {
     const key = String(row.document_key || '').trim()
-    return key.startsWith(managedPrefix) && !activeKeys.has(key)
+    return isManagedBondRequirementKey(key) && !activeKeys.has(key)
   })
   for (const staleRow of staleRows) {
     let staleResult = await client
@@ -47755,6 +48192,11 @@ export async function reconcileClientPortalBondDocumentRequirements({
       isMissingColumnError(refreshed.error, 'required_from_role') ||
       isMissingColumnError(refreshed.error, 'visibility_scope') ||
       isMissingColumnError(refreshed.error, 'allow_multiple') ||
+      isMissingColumnError(refreshed.error, 'canonical_document_key') ||
+      isMissingColumnError(refreshed.error, 'participant_key') ||
+      isMissingColumnError(refreshed.error, 'participant_id') ||
+      isMissingColumnError(refreshed.error, 'participant_role') ||
+      isMissingColumnError(refreshed.error, 'participant_name') ||
       isMissingColumnError(refreshed.error, 'canonical_requirement_instance_id'))
   ) {
     refreshed = await client
@@ -49980,7 +50422,7 @@ export async function uploadDocument({
     },
   })
 
-  await updateDocumentRequestFromUploadIfPossible(client, {
+  const documentRequestUpdate = await updateDocumentRequestFromUploadIfPossible(client, {
     transactionId,
     documentId: result.data.id,
     category: result.data.category || category || 'General',
@@ -49988,6 +50430,7 @@ export async function uploadDocument({
     documentRequestId,
     actorRole: activeProfile.role || 'developer',
     actorUserId: activeProfile.userId || null,
+    uploadedByParty,
   })
 
   await matchAndMarkRequiredDocumentFromUpload(client, {
@@ -50008,13 +50451,16 @@ export async function uploadDocument({
     canonicalRequirementInstanceId: linkedCanonicalRequirementInstanceId,
     actorRole: activeProfile.role || 'developer',
     actorUserId: activeProfile.userId || null,
-    source: 'internal_upload',
+    source: normalizeNullableText(source) === 'internal'
+      ? 'internal_upload'
+      : normalizeNullableText(source) || 'internal_upload',
   })
 
   return {
     ...result.data,
     canonicalRequirementInstanceId: linkedCanonicalRequirementInstanceId,
     canonicalUploadResult,
+    documentRequestUpdate,
     url: await getSignedUrl(result.data.file_path),
   }
 }
@@ -53701,7 +54147,10 @@ export async function prepareClientPortalBondApplicationSubmission({
   const client = requireClientPortalTokenClient(token)
   const context = await fetchBondApplicationPortalSubmissionContext(client, token)
   const applicationState = context.applicationState
-  const resolvedDocs = resolveBondApplicationDocumentRequirements({ applicationState })
+  const resolvedDocs = resolveBondApplicationDocumentRequirements({
+    applicationState,
+    participantContext: resolvePrimaryApplicantDocumentParticipantContext(applicationState),
+  })
   const documentChecklist = buildBondApplicationDocumentChecklist({
     activeRequirements: resolvedDocs.activeRequirements,
     existingRequiredDocuments: context.requiredDocuments,

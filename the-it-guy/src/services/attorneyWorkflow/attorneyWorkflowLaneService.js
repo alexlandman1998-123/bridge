@@ -1342,7 +1342,6 @@ async function insertDocumentRequest(client, payload) {
       isMissingColumnError(insert.error, 'attorney_role') ||
       isMissingColumnError(insert.error, 'requested_by') ||
       isMissingColumnError(insert.error, 'review_status') ||
-      isMissingColumnError(insert.error, 'visibility_scope') ||
       isMissingColumnError(insert.error, 'due_date') ||
       isMissingColumnError(insert.error, 'requirement_id'))
   ) {
@@ -1351,7 +1350,6 @@ async function insertDocumentRequest(client, payload) {
     if (isMissingColumnError(insert.error, 'attorney_role')) delete fallback.attorney_role
     if (isMissingColumnError(insert.error, 'requested_by')) delete fallback.requested_by
     if (isMissingColumnError(insert.error, 'review_status')) delete fallback.review_status
-    if (isMissingColumnError(insert.error, 'visibility_scope')) delete fallback.visibility_scope
     if (isMissingColumnError(insert.error, 'due_date')) delete fallback.due_date
     if (isMissingColumnError(insert.error, 'requirement_id')) delete fallback.requirement_id
     insert = await client.from('document_requests').insert(fallback).select('id').maybeSingle()

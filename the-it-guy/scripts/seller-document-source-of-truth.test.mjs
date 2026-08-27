@@ -169,5 +169,7 @@ const agencyPipelineSource = readFileSync(new URL('../src/pages/agency/AgencyPip
 assert.match(agencyPipelineSource, /buildSellerDocumentSourceOfTruth/)
 assert.match(agencyPipelineSource, /buildSellerLeadDocumentRowsFromSource/)
 assert.match(agencyPipelineSource, /mandatePacketStatus/)
+assert.match(agencyPipelineSource, /row\?\.generatedHtml/)
+assert.match(agencyPipelineSource, /!generatedDocumentComplete/)
 
 console.log('seller document source-of-truth tests passed')

@@ -394,6 +394,7 @@ const SettingsBillingPage = lazy(() => import('./pages/settings/SettingsBillingP
 const SettingsCommissionStructuresPage = lazy(() => import('./pages/settings/SettingsCommissionStructuresPage'))
 const SettingsCommunicationsTemplatesPage = lazy(() => import('./pages/settings/SettingsCommunicationsTemplatesPage'))
 const SettingsDevelopmentsPage = lazy(() => import('./pages/settings/SettingsDevelopmentsPage'))
+const SettingsIntegrationsPage = lazy(() => import('./pages/settings/SettingsIntegrationsPage'))
 const SettingsLanding = lazy(() => import('./pages/settings/SettingsLanding'))
 const SettingsLayout = lazy(() => import('./pages/settings/SettingsLayout'))
 const SettingsLeadCapturePage = lazy(() => import('./pages/settings/SettingsLeadCapturePage'))
@@ -403,6 +404,7 @@ const SettingsPartnerProspectsPage = lazy(() => import('./pages/settings/Setting
 const SettingsPartnerRoutingRulesPage = lazy(() => import('./pages/settings/SettingsPartnerRoutingRulesPage'))
 const SettingsProperty24Page = lazy(() => import('./pages/settings/SettingsProperty24Page'))
 const SettingsPrivatePropertyPage = lazy(() => import('./pages/settings/SettingsPrivatePropertyPage'))
+const SettingsWhatsAppPage = lazy(() => import('./pages/settings/SettingsWhatsAppPage'))
 const SettingsSyndicationPage = lazy(() => import('./pages/settings/SettingsSyndicationPage'))
 const SettingsSigningTemplatesPage = lazy(() => import('./pages/settings/SettingsSigningTemplatesPage'))
 const SettingsUsersPage = lazy(() => import('./pages/settings/SettingsUsersPage'))
@@ -3336,6 +3338,26 @@ function AppRoutes() {
                     <RoleRoute allowedRoles={['agent']}>
                       <SettingsLeadCapturePage />
                     </RoleRoute>
+                  }
+                />
+                <Route
+                  path="integrations"
+                  element={
+                    <OrganisationSettingsManageRoute>
+                      <RoleRoute allowedRoles={['developer', 'agent']}>
+                        <SettingsIntegrationsPage />
+                      </RoleRoute>
+                    </OrganisationSettingsManageRoute>
+                  }
+                />
+                <Route
+                  path="integrations/whatsapp"
+                  element={
+                    <OrganisationSettingsManageRoute>
+                      <RoleRoute allowedRoles={['developer', 'agent']}>
+                        <SettingsWhatsAppPage />
+                      </RoleRoute>
+                    </OrganisationSettingsManageRoute>
                   }
                 />
                 <Route

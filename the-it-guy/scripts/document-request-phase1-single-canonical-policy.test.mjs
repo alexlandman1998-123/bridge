@@ -13,6 +13,9 @@ import {
 const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'))
 const matrixSource = fs.readFileSync('src/core/documents/documentRequestCanonicalMatrix.js', 'utf8')
 const policySource = fs.readFileSync('src/core/documents/documentRequestCanonicalPolicy.js', 'utf8')
+const adapterSource = fs.readFileSync('src/core/documents/documentRequestCanonicalAdapter.js', 'utf8')
+const ownershipSource = fs.readFileSync('src/core/documents/documentRequestUploadOwnershipModel.js', 'utf8')
+const purchaserPersonaSource = fs.readFileSync('src/lib/purchaserPersonas.js', 'utf8')
 const scriptSource = fs.readFileSync('scripts/document-request-phase1-single-canonical-policy.mjs', 'utf8')
 const docs = fs.readFileSync('docs/document-request-phase1-single-canonical-policy.md', 'utf8')
 
@@ -38,6 +41,11 @@ assert.match(policySource, /document_request_canonical_policy_v1/, 'Policy modul
 assert.match(policySource, /pending_policy_rows_are_visible_but_not_requestable_by_default/, 'Policy report should encode pending-policy requestability.')
 assert.match(policySource, /property_acquisition_record/, 'Policy module should keep acquisition records deferred.')
 assert.match(policySource, /capital_improvement_records/, 'Policy module should keep capital-improvement records deferred.')
+assert.doesNotMatch(purchaserPersonaSource, /key:\s*'information_sheet'/, 'Buyer request generation must not create an Information Sheet requirement.')
+assert.match(adapterSource, /DEPRECATED_LEGACY_DOCUMENT_REQUEST_KEYS/, 'The adapter should identify retired legacy request keys.')
+assert.doesNotMatch(adapterSource, /information_sheet:\s*'buyer_fica_pack'/, 'Information Sheet must not be disguised as Buyer FICA Pack.')
+assert.match(ownershipSource, /suppliedByRole/, 'Ownership must expose the document supplier separately from upload actors.')
+assert.match(ownershipSource, /uploadOnBehalfRoles/, 'Ownership must expose authorised upload-on-behalf roles.')
 assert.match(scriptSource, /document_request_phase1_single_canonical_policy/, 'Phase 1 script should carry a stable phase marker.')
 assert.match(scriptSource, /mutatedData:\s*false/, 'Phase 1 script should report no data mutation.')
 assert.match(scriptSource, /strictSignoff/, 'Phase 1 script should expose a strict signoff gate.')
@@ -95,6 +103,8 @@ assert.equal(report.gate.mayProceedToPhase2, true)
 assert.equal(report.gate.productionActivationReady, false)
 assert.equal(report.scenarioProofs.length, 3)
 assert.ok(report.scenarioProofs.some((proof) => proof.nonRequestablePendingPolicyKeys.length > 0))
+assert.ok(report.phase1Decisions.some((decision) => decision.key === 'retired_information_sheet'))
+assert.ok(report.phase1Decisions.some((decision) => decision.key === 'supplier_vs_uploader'))
 
 let strictFailed = false
 try {

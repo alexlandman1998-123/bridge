@@ -4,7 +4,7 @@ export const RENTAL_LISTING_CREATE_STEPS = Object.freeze([
   {
     key: 'property',
     label: 'Property',
-    fields: ['propertyAddress', 'monthlyRent', 'availableFrom'],
+    fields: ['propertyAddress', 'streetNumber', 'streetName', 'suburb', 'city', 'province', 'privatePropertySuburbId'],
   },
   {
     key: 'landlord',
@@ -14,7 +14,7 @@ export const RENTAL_LISTING_CREATE_STEPS = Object.freeze([
   {
     key: 'terms',
     label: 'Rental Terms',
-    fields: ['depositAmount', 'leasePeriodMonths', 'furnishedStatus', 'petsPolicy', 'utilitiesPolicy'],
+    fields: ['monthlyRent', 'depositAmount', 'availableFrom', 'leasePeriodMonths', 'furnishedStatus', 'petsPolicy', 'utilitiesPolicy'],
   },
   {
     key: 'readiness',
@@ -24,7 +24,7 @@ export const RENTAL_LISTING_CREATE_STEPS = Object.freeze([
   {
     key: 'portal',
     label: 'Portal Fields',
-    fields: ['garages', 'garden', 'pool', 'flatlet', 'mandateEndDate'],
+    fields: ['privatePropertySuburbId', 'garages', 'garden', 'pool', 'flatlet', 'mandateEndDate'],
   },
 ])
 

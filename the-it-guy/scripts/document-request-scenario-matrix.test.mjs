@@ -71,7 +71,6 @@ try {
         purchase_finance_type: 'bond',
       },
       expected: [
-        'information_sheet',
         'otp',
         'transfer_documents',
         'id_document',
@@ -92,7 +91,6 @@ try {
         purchase_finance_type: 'bond',
       },
       expected: [
-        'information_sheet',
         'otp',
         'transfer_documents',
         'cipc_registration',
@@ -122,22 +120,19 @@ try {
         purchase_finance_type: 'bond',
       },
       expected: [
-        'information_sheet',
         'otp',
         'transfer_documents',
         'purchaser_id',
         'purchaser_proof_of_address',
-        'spouse_id_optional',
-        'spouse_proof_of_address_optional',
         'anc_document_optional',
-        'bank_statements_12_months',
+        'bank_statements_6_months',
         'financial_statements',
         'tax_returns_latest',
         'accountant_letter',
         'bond_approval',
         'grant_signed',
       ],
-      excluded: ['payslips_3_months', 'proof_of_funds'],
+      excluded: ['payslips_3_months', 'proof_of_funds', 'spouse_id_optional', 'spouse_proof_of_address_optional'],
       derived: { purchaserType: 'married_anc', employmentType: 'self_employed', financeType: 'bond' },
     },
     {
@@ -182,12 +177,17 @@ try {
       expected: [
         'purchaser_id',
         'purchaser_proof_of_address',
-        'spouse_id_optional',
-        'spouse_proof_of_address_optional',
         'anc_document_optional',
         'proof_of_funds',
       ],
-      excluded: ['payslips_3_months', 'bank_statements_3_months', 'bond_approval', 'grant_signed'],
+      excluded: [
+        'payslips_3_months',
+        'bank_statements_3_months',
+        'bond_approval',
+        'grant_signed',
+        'spouse_id_optional',
+        'spouse_proof_of_address_optional',
+      ],
       derived: { purchaserType: 'married_anc', employmentType: 'full_time', financeType: 'cash' },
     },
     {
@@ -245,7 +245,7 @@ try {
       expected: [
         'id_document',
         'proof_of_address',
-        'bank_statements_12_months',
+        'bank_statements_6_months',
         'financial_statements',
         'tax_returns_latest',
         'accountant_letter',
@@ -292,7 +292,7 @@ try {
     purchase_finance_type: 'bond',
     employment_type: 'company director',
   })
-  assertIncludes(keys(companyDirector.requiredDocuments), ['bank_statements_12_months', 'financial_statements', 'tax_returns_latest'], 'Company director alias')
+  assertIncludes(keys(companyDirector.requiredDocuments), ['bank_statements_6_months', 'financial_statements', 'tax_returns_latest'], 'Company director alias')
   assert.equal(companyDirector.derivedFields.employment_type, 'company_director')
 
   const pensioner = deriveOnboardingConfiguration({

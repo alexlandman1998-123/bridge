@@ -1,6 +1,6 @@
 {
   "phase": "document_request_phase3_buyer_cleanup",
-  "generatedAt": "2026-08-13T19:38:40.013Z",
+  "generatedAt": "2026-08-27T16:57:57.205Z",
   "commit": false,
   "mutatedData": false,
   "strict": false,
@@ -22,10 +22,10 @@
             "buyerMaritalRegime": "individual",
             "financeType": "cash"
           },
-          "legacyRequirementCount": 6,
-          "mappedRequirementCount": 6,
-          "buyerClientUploadCount": 4,
-          "requestableBuyerClientUploadCount": 4,
+          "legacyRequirementCount": 5,
+          "mappedRequirementCount": 5,
+          "buyerClientUploadCount": 3,
+          "requestableBuyerClientUploadCount": 3,
           "canonicalPlanRequestCount": 6,
           "canonicalPlanRequestableCount": 6,
           "unmappedRows": [],
@@ -46,6 +46,7 @@
           "pendingPolicyLegacyRows": [],
           "duplicateCanonicalGroups": [],
           "missingFromLegacyButCoveredByCanonicalPlan": [
+            "buyer_fica_pack",
             "buyer_marital_status_details",
             "buyer_source_of_funds"
           ],
@@ -54,13 +55,11 @@
             "transfer_documents"
           ],
           "buyerClientUploadKeys": [
-            "buyer_fica_pack",
             "buyer_id_document",
             "buyer_proof_of_address",
             "proof_of_funds"
           ],
           "requestableBuyerClientUploadKeys": [
-            "buyer_fica_pack",
             "buyer_id_document",
             "buyer_proof_of_address",
             "proof_of_funds"
@@ -116,10 +115,10 @@
             "buyerMaritalRegime": "individual",
             "financeType": "bond"
           },
-          "legacyRequirementCount": 9,
-          "mappedRequirementCount": 9,
-          "buyerClientUploadCount": 7,
-          "requestableBuyerClientUploadCount": 7,
+          "legacyRequirementCount": 8,
+          "mappedRequirementCount": 8,
+          "buyerClientUploadCount": 6,
+          "requestableBuyerClientUploadCount": 6,
           "canonicalPlanRequestCount": 7,
           "canonicalPlanRequestableCount": 7,
           "unmappedRows": [],
@@ -148,6 +147,7 @@
             }
           ],
           "missingFromLegacyButCoveredByCanonicalPlan": [
+            "buyer_fica_pack",
             "buyer_marital_status_details"
           ],
           "extraLegacyKeysOutsideBuyerUpload": [
@@ -155,7 +155,6 @@
             "transfer_documents"
           ],
           "buyerClientUploadKeys": [
-            "buyer_fica_pack",
             "buyer_id_document",
             "buyer_proof_of_address",
             "income_affordability_documents",
@@ -163,7 +162,6 @@
             "grant_signed"
           ],
           "requestableBuyerClientUploadKeys": [
-            "buyer_fica_pack",
             "buyer_id_document",
             "buyer_proof_of_address",
             "income_affordability_documents",
@@ -224,10 +222,10 @@
             "buyerMaritalRegime": "individual",
             "financeType": "hybrid"
           },
-          "legacyRequirementCount": 12,
-          "mappedRequirementCount": 12,
-          "buyerClientUploadCount": 10,
-          "requestableBuyerClientUploadCount": 10,
+          "legacyRequirementCount": 11,
+          "mappedRequirementCount": 11,
+          "buyerClientUploadCount": 9,
+          "requestableBuyerClientUploadCount": 9,
           "canonicalPlanRequestCount": 9,
           "canonicalPlanRequestableCount": 9,
           "unmappedRows": [],
@@ -250,7 +248,7 @@
             {
               "canonicalKey": "income_affordability_documents",
               "legacyKeys": [
-                "bank_statements_12_months",
+                "bank_statements_6_months",
                 "financial_statements",
                 "tax_returns_latest",
                 "accountant_letter"
@@ -258,6 +256,7 @@
             }
           ],
           "missingFromLegacyButCoveredByCanonicalPlan": [
+            "buyer_fica_pack",
             "buyer_marital_status_details",
             "buyer_source_of_funds"
           ],
@@ -266,7 +265,6 @@
             "transfer_documents"
           ],
           "buyerClientUploadKeys": [
-            "buyer_fica_pack",
             "buyer_id_document",
             "buyer_proof_of_address",
             "income_affordability_documents",
@@ -275,7 +273,6 @@
             "proof_of_funds_cash_component"
           ],
           "requestableBuyerClientUploadKeys": [
-            "buyer_fica_pack",
             "buyer_id_document",
             "buyer_proof_of_address",
             "income_affordability_documents",
@@ -341,10 +338,10 @@
             "buyerMaritalRegime": "married_cop",
             "financeType": "bond"
           },
-          "legacyRequirementCount": 14,
-          "mappedRequirementCount": 14,
-          "buyerClientUploadCount": 12,
-          "requestableBuyerClientUploadCount": 12,
+          "legacyRequirementCount": 13,
+          "mappedRequirementCount": 13,
+          "buyerClientUploadCount": 11,
+          "requestableBuyerClientUploadCount": 11,
           "canonicalPlanRequestCount": 10,
           "canonicalPlanRequestableCount": 10,
           "unmappedRows": [],
@@ -375,6 +372,7 @@
             }
           ],
           "missingFromLegacyButCoveredByCanonicalPlan": [
+            "buyer_fica_pack",
             "buyer_marital_status_details"
           ],
           "extraLegacyKeysOutsideBuyerUpload": [
@@ -382,7 +380,6 @@
             "transfer_documents"
           ],
           "buyerClientUploadKeys": [
-            "buyer_fica_pack",
             "buyer_id_document",
             "buyer_proof_of_address",
             "buyer_spouse_id_document",
@@ -393,7 +390,6 @@
             "grant_signed"
           ],
           "requestableBuyerClientUploadKeys": [
-            "buyer_fica_pack",
             "buyer_id_document",
             "buyer_proof_of_address",
             "buyer_spouse_id_document",
@@ -463,10 +459,10 @@
             "buyerMaritalRegime": "married_anc",
             "financeType": "bond"
           },
-          "legacyRequirementCount": 14,
-          "mappedRequirementCount": 14,
-          "buyerClientUploadCount": 12,
-          "requestableBuyerClientUploadCount": 11,
+          "legacyRequirementCount": 11,
+          "mappedRequirementCount": 11,
+          "buyerClientUploadCount": 9,
+          "requestableBuyerClientUploadCount": 8,
           "canonicalPlanRequestCount": 9,
           "canonicalPlanRequestableCount": 8,
           "unmappedRows": [],
@@ -495,7 +491,7 @@
             {
               "canonicalKey": "income_affordability_documents",
               "legacyKeys": [
-                "bank_statements_12_months",
+                "bank_statements_6_months",
                 "financial_statements",
                 "tax_returns_latest",
                 "accountant_letter"
@@ -503,6 +499,7 @@
             }
           ],
           "missingFromLegacyButCoveredByCanonicalPlan": [
+            "buyer_fica_pack",
             "buyer_marital_status_details",
             "buyer_marriage_certificate"
           ],
@@ -512,22 +509,16 @@
             "anc_document_optional"
           ],
           "buyerClientUploadKeys": [
-            "buyer_fica_pack",
             "buyer_id_document",
             "buyer_proof_of_address",
-            "buyer_spouse_id_document",
-            "buyer_spouse_proof_of_address",
             "buyer_anc_document",
             "income_affordability_documents",
             "bond_approval",
             "grant_signed"
           ],
           "requestableBuyerClientUploadKeys": [
-            "buyer_fica_pack",
             "buyer_id_document",
             "buyer_proof_of_address",
-            "buyer_spouse_id_document",
-            "buyer_spouse_proof_of_address",
             "income_affordability_documents",
             "bond_approval",
             "grant_signed"
@@ -590,10 +581,10 @@
             "buyerMaritalRegime": "foreign_purchaser",
             "financeType": "cash"
           },
-          "legacyRequirementCount": 7,
-          "mappedRequirementCount": 7,
-          "buyerClientUploadCount": 5,
-          "requestableBuyerClientUploadCount": 5,
+          "legacyRequirementCount": 6,
+          "mappedRequirementCount": 6,
+          "buyerClientUploadCount": 4,
+          "requestableBuyerClientUploadCount": 4,
           "canonicalPlanRequestCount": 5,
           "canonicalPlanRequestableCount": 5,
           "unmappedRows": [],
@@ -613,20 +604,20 @@
           ],
           "pendingPolicyLegacyRows": [],
           "duplicateCanonicalGroups": [],
-          "missingFromLegacyButCoveredByCanonicalPlan": [],
+          "missingFromLegacyButCoveredByCanonicalPlan": [
+            "buyer_fica_pack"
+          ],
           "extraLegacyKeysOutsideBuyerUpload": [
             "otp",
             "transfer_documents"
           ],
           "buyerClientUploadKeys": [
-            "buyer_fica_pack",
             "buyer_passport",
             "buyer_proof_of_address",
             "buyer_source_of_funds",
             "proof_of_funds"
           ],
           "requestableBuyerClientUploadKeys": [
-            "buyer_fica_pack",
             "buyer_passport",
             "buyer_proof_of_address",
             "buyer_source_of_funds",
@@ -681,10 +672,10 @@
             "buyerMaritalRegime": "company",
             "financeType": "bond"
           },
-          "legacyRequirementCount": 14,
-          "mappedRequirementCount": 14,
-          "buyerClientUploadCount": 12,
-          "requestableBuyerClientUploadCount": 11,
+          "legacyRequirementCount": 13,
+          "mappedRequirementCount": 13,
+          "buyerClientUploadCount": 11,
+          "requestableBuyerClientUploadCount": 10,
           "canonicalPlanRequestCount": 8,
           "canonicalPlanRequestableCount": 7,
           "unmappedRows": [],
@@ -727,14 +718,15 @@
               ]
             }
           ],
-          "missingFromLegacyButCoveredByCanonicalPlan": [],
+          "missingFromLegacyButCoveredByCanonicalPlan": [
+            "buyer_fica_pack"
+          ],
           "extraLegacyKeysOutsideBuyerUpload": [
             "otp",
             "transfer_documents",
             "buyer_company_beneficial_ownership"
           ],
           "buyerClientUploadKeys": [
-            "buyer_fica_pack",
             "buyer_company_registration",
             "buyer_company_resolution",
             "buyer_director_fica",
@@ -744,7 +736,6 @@
             "grant_signed"
           ],
           "requestableBuyerClientUploadKeys": [
-            "buyer_fica_pack",
             "buyer_company_registration",
             "buyer_company_resolution",
             "buyer_director_fica",
@@ -808,10 +799,10 @@
             "buyerMaritalRegime": "trust",
             "financeType": "bond"
           },
-          "legacyRequirementCount": 15,
-          "mappedRequirementCount": 15,
-          "buyerClientUploadCount": 13,
-          "requestableBuyerClientUploadCount": 12,
+          "legacyRequirementCount": 14,
+          "mappedRequirementCount": 14,
+          "buyerClientUploadCount": 12,
+          "requestableBuyerClientUploadCount": 11,
           "canonicalPlanRequestCount": 9,
           "canonicalPlanRequestableCount": 8,
           "unmappedRows": [],
@@ -854,14 +845,15 @@
               ]
             }
           ],
-          "missingFromLegacyButCoveredByCanonicalPlan": [],
+          "missingFromLegacyButCoveredByCanonicalPlan": [
+            "buyer_fica_pack"
+          ],
           "extraLegacyKeysOutsideBuyerUpload": [
             "otp",
             "transfer_documents",
             "buyer_trust_beneficial_ownership"
           ],
           "buyerClientUploadKeys": [
-            "buyer_fica_pack",
             "buyer_trust_deed",
             "buyer_letters_of_authority",
             "buyer_trustee_resolution",
@@ -872,7 +864,6 @@
             "grant_signed"
           ],
           "requestableBuyerClientUploadKeys": [
-            "buyer_fica_pack",
             "buyer_trust_deed",
             "buyer_letters_of_authority",
             "buyer_trustee_resolution",
@@ -929,7 +920,7 @@
     "summary": {
       "unmappedCount": 0,
       "professionalOnlyLegacyCount": 16,
-      "missingCoveredByCanonicalPlanCount": 8,
+      "missingCoveredByCanonicalPlanCount": 16,
       "pendingPolicyLegacyCount": 3,
       "duplicateCanonicalGroupCount": 8
     },
@@ -1051,6 +1042,10 @@
     "missingCoveredByCanonicalPlan": [
       {
         "scenarioId": "individual_cash",
+        "key": "buyer_fica_pack"
+      },
+      {
+        "scenarioId": "individual_cash",
         "key": "buyer_marital_status_details"
       },
       {
@@ -1059,7 +1054,15 @@
       },
       {
         "scenarioId": "individual_bond_salaried",
+        "key": "buyer_fica_pack"
+      },
+      {
+        "scenarioId": "individual_bond_salaried",
         "key": "buyer_marital_status_details"
+      },
+      {
+        "scenarioId": "individual_hybrid_self_employed",
+        "key": "buyer_fica_pack"
       },
       {
         "scenarioId": "individual_hybrid_self_employed",
@@ -1071,7 +1074,15 @@
       },
       {
         "scenarioId": "married_cop_bond",
+        "key": "buyer_fica_pack"
+      },
+      {
+        "scenarioId": "married_cop_bond",
         "key": "buyer_marital_status_details"
+      },
+      {
+        "scenarioId": "married_anc_bond_self_employed",
+        "key": "buyer_fica_pack"
       },
       {
         "scenarioId": "married_anc_bond_self_employed",
@@ -1080,6 +1091,18 @@
       {
         "scenarioId": "married_anc_bond_self_employed",
         "key": "buyer_marriage_certificate"
+      },
+      {
+        "scenarioId": "foreign_cash",
+        "key": "buyer_fica_pack"
+      },
+      {
+        "scenarioId": "company_bond",
+        "key": "buyer_fica_pack"
+      },
+      {
+        "scenarioId": "trust_bond",
+        "key": "buyer_fica_pack"
       }
     ]
   },
@@ -1134,7 +1157,7 @@
       {
         "code": "canonical_overlay_adds_buyer_policy_rows",
         "message": "Canonical buyer plans include policy rows not represented as one-to-one legacy upload rows, such as marital/source-of-funds declarations.",
-        "count": 8
+        "count": 16
       }
     ]
   }

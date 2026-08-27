@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, Home, ImagePlus, Loader2, Save, Trash2 } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, Circle, Home, ImagePlus, Loader2, Save, Trash2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { createRentalListingDraft } from '../../services/rentals/rentalListingDraftService'
@@ -131,16 +131,148 @@ function SelectField({ label, name, value, options, onChange }) {
   )
 }
 
-function FormSection({ eyebrow, title, description = '', children }) {
+function FormSection({ id, eyebrow, title, description = '', children }) {
   return (
-    <section className="ui-panel ui-panel-body grid gap-4">
-      <div>
-        <p className="text-xs font-semibold uppercase text-[#607891]">{eyebrow}</p>
-        <h2 className="text-lg font-semibold text-[#18324b]">{title}</h2>
-        {description ? <p className="mt-1 text-sm text-[#607891]">{description}</p> : null}
+    <section id={id} className="scroll-mt-6 rounded-[18px] border border-[#dce6f2] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.035)] sm:p-5">
+      <div className="mb-4 flex items-start gap-3">
+        <span className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#1f6fb8] text-xs font-bold text-white">
+          {eyebrow}
+        </span>
+        <div>
+          <h2 className="text-sm font-bold uppercase tracking-[0.08em] text-[#294563]">{title}</h2>
+          {description ? <p className="mt-1 text-xs leading-5 text-[#6b7d93]">{description}</p> : null}
+        </div>
       </div>
       {children}
     </section>
+  )
+}
+
+const PRIVATE_PROPERTY_MANDATE_READY_STATUSES = new Set(['signed', 'signed_uploaded'])
+const PRIVATE_PROPERTY_MARKETING_READY_STATUSES = new Set(['approved', 'ready'])
+
+function normalizeStatusKey(value) {
+  return String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_')
+}
+
+function hasCapturedValue(value) {
+  return value !== null && value !== undefined && String(value).trim() !== ''
+}
+
+function getRentalCreateProgress(form = {}) {
+  return [
+    {
+      key: 'property',
+      label: 'Property',
+      complete: Boolean(form.title && form.propertyAddress && form.streetNumber && form.streetName && form.suburb && form.city && form.province && form.privatePropertySuburbId && form.propertyType && hasCapturedValue(form.bedrooms) && hasCapturedValue(form.bathrooms)),
+      detail: 'Address, portal ID, rooms',
+    },
+    {
+      key: 'landlord',
+      label: 'Landlord',
+      complete: Boolean(form.landlordName && (form.landlordEmail || form.landlordPhone)),
+      detail: 'Owner contact',
+    },
+    {
+      key: 'terms',
+      label: 'Rental terms',
+      complete: Boolean(form.monthlyRent && form.availableFrom),
+      detail: 'Rent, deposit, dates',
+    },
+    {
+      key: 'marketing',
+      label: 'Marketing',
+      complete: Boolean(form.description && form.galleryImages?.length >= 3),
+      detail: 'Copy and photos',
+    },
+    {
+      key: 'portal',
+      label: 'Portal fields',
+      complete: Boolean(
+        form.privatePropertySuburbId &&
+        PRIVATE_PROPERTY_MANDATE_READY_STATUSES.has(normalizeStatusKey(form.mandateStatus)) &&
+        PRIVATE_PROPERTY_MARKETING_READY_STATUSES.has(normalizeStatusKey(form.marketingApprovalStatus)),
+      ),
+      detail: 'Private Property checks',
+    },
+  ]
+}
+
+function RentalCreateProgressPanel({ steps = [] }) {
+  return (
+    <nav className="rounded-[16px] border border-[#dde6ef] bg-white px-4 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.035)]" aria-label="Rental listing capture progress">
+      <ol className="grid gap-2">
+        {steps.map((step, index) => {
+          const Icon = step.complete ? CheckCircle2 : Circle
+          return (
+            <li key={step.key}>
+              <a
+                href={`#rental-create-${step.key}`}
+                className="flex min-w-0 items-center gap-3 rounded-[12px] px-3 py-2 text-left transition hover:bg-[#f5f9fd]"
+              >
+                <span className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${
+                  step.complete ? 'bg-[#e7f7ee] text-[#1f8a4c]' : 'bg-[#eef4fa] text-[#71859b]'
+                }`}>
+                  <Icon size={15} aria-hidden="true" />
+                </span>
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-bold text-[#22374d]">{index + 1}. {step.label}</span>
+                  <span className="block truncate text-xs text-[#6b7d93]">{step.detail}</span>
+                </span>
+              </a>
+            </li>
+          )
+        })}
+      </ol>
+    </nav>
+  )
+}
+
+function RentalCreatePreview({ form = {} }) {
+  const coverImage = (Array.isArray(form.galleryImages) ? form.galleryImages : []).find((image) => String(image.id) === String(form.coverImageId)) || form.galleryImages?.[0] || null
+  const facts = [
+    form.bedrooms ? `${form.bedrooms} Beds` : '',
+    form.bathrooms ? `${form.bathrooms} Baths` : '',
+    form.parkingBays ? `${form.parkingBays} Parking` : '',
+  ].filter(Boolean)
+
+  return (
+    <article className="overflow-hidden rounded-[8px] border border-[#dce6f2] bg-white shadow-[0_6px_16px_rgba(15,23,42,0.05)]">
+      <div className="relative h-[132px] w-full overflow-hidden border-b border-[#e5edf6]">
+        {coverImage?.url ? (
+          <img src={coverImage.url} alt={coverImage.name || 'Rental listing preview'} className="h-full w-full object-cover" />
+        ) : (
+          <div className="relative h-full w-full bg-[linear-gradient(140deg,#1f4f78_0%,#4a7da8_55%,#a8c2dc_100%)]">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_22%_22%,rgba(255,255,255,0.24),transparent_52%)]" />
+            <div className="absolute bottom-3 left-3 rounded-full border border-white/35 bg-white/20 px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-white">
+              Listing image
+            </div>
+          </div>
+        )}
+        <div className="absolute left-3 right-3 top-3 inline-flex max-w-[calc(100%-1.5rem)] items-center gap-2 rounded-full border border-white/25 bg-[#091322]/58 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-white shadow-[0_8px_18px_rgba(9,19,34,0.18)] backdrop-blur">
+          <span className="h-2 w-2 rounded-full bg-[#7b8ca2]" />
+          <span className="truncate">Draft</span>
+        </div>
+      </div>
+      <div className="grid gap-3 p-4">
+        <div>
+          <h3 className="line-clamp-2 text-[1.02rem] font-semibold leading-6 text-[#142132]">
+            {form.title || 'Rental listing title'}
+          </h3>
+          <p className="mt-2 text-[1.05rem] font-semibold text-[#1f4f78]">
+            {form.monthlyRent ? new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR', maximumFractionDigits: 0 }).format(Number(form.monthlyRent)) : 'Rent pending'}
+          </p>
+          <p className="mt-1 line-clamp-1 text-xs font-semibold text-[#6d8095]">
+            {form.propertyAddress || [form.suburb, form.city].filter(Boolean).join(', ') || 'Address pending'}
+          </p>
+        </div>
+        {facts.length ? (
+          <div className="grid gap-2 rounded-[12px] border border-[#dbe6f2] bg-[#f9fbfe] px-3 py-2 text-center text-[0.76rem] font-semibold text-[#35546c]" style={{ gridTemplateColumns: `repeat(${facts.length}, minmax(0, 1fr))` }}>
+            {facts.map((fact) => <span key={fact} className="truncate">{fact}</span>)}
+          </div>
+        ) : null}
+      </div>
+    </article>
   )
 }
 
@@ -191,6 +323,8 @@ export default function RentalListingCreatePage() {
     [form, organisationId],
   )
   const canSubmit = validationErrors.length === 0 && !saving
+  const progressSteps = useMemo(() => getRentalCreateProgress(form), [form])
+  const completedSteps = progressSteps.filter((step) => step.complete).length
 
   useEffect(() => {
     galleryImagesRef.current = form.galleryImages
@@ -301,38 +435,81 @@ export default function RentalListingCreatePage() {
   return (
     <section className="page-content">
       <form onSubmit={handleSubmit} className="ui-section-stack">
-        <header className="ui-toolbar">
-          <div className="ui-toolbar-group">
-            <span className="inline-flex h-11 w-11 items-center justify-center rounded-[8px] border border-[#cfe8dc] bg-[#f2fbf5] text-[#286b43]">
-              <Home size={20} aria-hidden="true" />
-            </span>
-            <div>
-              <p className="text-xs font-semibold uppercase text-[#607891]">Rental listing</p>
-              <h1 className="text-2xl font-semibold text-[#18324b]">Create Listing</h1>
-              <p className="status-message">
-                Capture the property details, landlord information, marketing copy, images, and portal-ready amenities for this rental listing.
-              </p>
+        <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+            <div className="flex min-w-0 items-start gap-3">
+              <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[12px] border border-[#d9e8f5] bg-[#f3f8fd] text-[#1f4f78]">
+                <Home size={20} aria-hidden="true" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Rental listing</p>
+                <h1 className="text-2xl font-semibold tracking-normal text-[#142132]">Create Listing</h1>
+                <p className="mt-1 max-w-3xl text-sm leading-6 text-[#607387]">
+                  Capture the rental stock using the same listing workflow rhythm as sales, with landlord, lease, media, and portal fields tailored for rentals.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+              <button
+                type="button"
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[14px] border border-[#dce6f2] bg-white px-5 text-sm font-semibold text-[#142132] shadow-[0_8px_18px_rgba(15,23,42,0.04)] transition hover:border-[#b8c9dc] hover:bg-[#f8fbff]"
+                onClick={() => navigate('/agent/rentals/listings')}
+              >
+                <ArrowLeft size={16} aria-hidden="true" />
+                Back to Listings
+              </button>
+              <button
+                type="submit"
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[14px] border border-[#0f7a4f] bg-[#0f7a4f] px-5 text-sm font-semibold text-white shadow-[0_8px_18px_rgba(15,23,42,0.08)] transition hover:bg-[#0c6843] disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={!canSubmit}
+              >
+                {saving ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Save size={16} aria-hidden="true" />}
+                Create Listing
+              </button>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <button type="button" className="ui-pill-button" onClick={() => navigate('/agent/rentals/listings')}>
-              <ArrowLeft size={16} aria-hidden="true" />
-              Back to Listings
-            </button>
-            <button type="submit" className="ui-pill-button ui-pill-button-active" disabled={!canSubmit}>
-              {saving ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Save size={16} aria-hidden="true" />}
-              Create Listing
-            </button>
-          </div>
-        </header>
+        </section>
 
         {error ? (
           <p className="rounded-[8px] border border-[#f2c6c6] bg-[#fff7f7] px-4 py-3 text-sm font-semibold text-[#9f3131]">{error}</p>
         ) : null}
 
-        <div className="grid gap-6">
+        <div className="grid gap-5 xl:grid-cols-[280px_minmax(0,1fr)] xl:items-start">
+          <aside className="grid gap-4 xl:sticky xl:top-4">
+            <RentalCreateProgressPanel steps={progressSteps} />
+            <RentalCreatePreview form={form} />
+            <section className="rounded-[16px] border border-[#dce6f2] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.035)]">
+              <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Capture status</p>
+              <p className="mt-2 text-sm font-bold text-[#22374d]">{completedSteps}/{progressSteps.length} sections ready</p>
+              <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
+                {validationErrors[0] || 'Required rental listing fields are ready.'}
+              </p>
+              <div className="mt-4 grid gap-2">
+                <button
+                  type="submit"
+                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-[12px] border border-[#0f7a4f] bg-[#0f7a4f] px-4 text-sm font-semibold text-white transition hover:bg-[#0c6843] disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={!canSubmit}
+                >
+                  {saving ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Save size={16} aria-hidden="true" />}
+                  Create Listing
+                </button>
+                <button
+                  type="button"
+                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-[12px] border border-[#dce6f2] bg-white px-4 text-sm font-semibold text-[#142132] transition hover:border-[#b8c9dc] hover:bg-[#f8fbff]"
+                  onClick={() => navigate('/agent/rentals/listings')}
+                >
+                  <ArrowLeft size={16} aria-hidden="true" />
+                  Back
+                </button>
+              </div>
+            </section>
+          </aside>
+
+          <div className="grid gap-5">
           <FormSection
-            eyebrow="Step 1"
+            id="rental-create-property"
+            eyebrow="1"
             title="Property"
             description="Use the full width of the page to capture the core listing specs agents need before publishing."
           >
@@ -373,6 +550,10 @@ export default function RentalListingCreatePage() {
               <label className="form-field">
                 <span>Province</span>
                 <input {...formField('province', form.province, updateForm)} placeholder="Province" />
+              </label>
+              <label className="form-field">
+                <span>Private Property suburb ID</span>
+                <input inputMode="numeric" {...formField('privatePropertySuburbId', form.privatePropertySuburbId, updateForm)} placeholder="11017" />
               </label>
               <label className="form-field">
                 <span>Postal code</span>
@@ -446,7 +627,7 @@ export default function RentalListingCreatePage() {
             </div>
           </FormSection>
 
-          <FormSection eyebrow="Step 2" title="Landlord">
+          <FormSection id="rental-create-landlord" eyebrow="2" title="Landlord">
             <div className="grid gap-4 md:grid-cols-3">
               <label className="form-field">
                 <span>Landlord name</span>
@@ -474,7 +655,7 @@ export default function RentalListingCreatePage() {
             </div>
           </FormSection>
 
-          <FormSection eyebrow="Step 3" title="Rental Terms">
+          <FormSection id="rental-create-terms" eyebrow="3" title="Rental Terms">
             <div className="grid gap-4 md:grid-cols-4">
               <label className="form-field">
                 <span>Monthly rent</span>
@@ -545,7 +726,8 @@ export default function RentalListingCreatePage() {
           </FormSection>
 
           <FormSection
-            eyebrow="Step 4"
+            id="rental-create-marketing"
+            eyebrow="4"
             title="Marketing Content"
             description="Description and internal context are captured up front so the draft is ready for portal prep immediately after creation."
           >
@@ -562,7 +744,8 @@ export default function RentalListingCreatePage() {
           </FormSection>
 
           <FormSection
-            eyebrow="Step 5"
+            id="rental-create-portal"
+            eyebrow="5"
             title="Images, Features, and Amenities"
             description="Amenities follow the same portal-facing option set used elsewhere in the listing workflow, so agents can prepare Property24 and Private Property details here."
           >
@@ -683,11 +866,12 @@ export default function RentalListingCreatePage() {
             </div>
           </FormSection>
 
-          <section className="ui-panel ui-panel-body flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <section className="rounded-[18px] border border-[#dce6f2] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.035)] sm:p-5">
+            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
-              <p className="text-xs font-semibold uppercase text-[#607891]">Ready to create</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Ready to create</p>
               <h2 className="text-lg font-semibold text-[#18324b]">Save the rental draft with the full listing capture</h2>
-              <p className="mt-1 text-sm text-[#607891]">
+              <p className="mt-1 text-sm leading-6 text-[#607891]">
                 {form.galleryImages.length
                   ? `${form.galleryImages.length} image${form.galleryImages.length === 1 ? '' : 's'} will be saved to the gallery when you create this listing.`
                   : 'You can create the listing now, and add more gallery images later if needed.'}
@@ -703,7 +887,9 @@ export default function RentalListingCreatePage() {
                 Create Listing
               </button>
             </div>
+            </div>
           </section>
+          </div>
         </div>
       </form>
     </section>

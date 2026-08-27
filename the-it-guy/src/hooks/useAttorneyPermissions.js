@@ -184,8 +184,15 @@ export default function useAttorneyPermissions({ firmId = null } = {}) {
 
   const role = membership?.professionalRole || null
   const compatibilityRole = membership?.role || null
-  const permissions = role ? getAttorneyProfessionalProfilePermissions(membership) : EMPTY_PERMISSIONS
   const isActiveMembership = Boolean(membership?.isActive || membership?.status === 'active')
+  const permissions = useMemo(
+    () => (role ? getAttorneyProfessionalProfilePermissions(membership) : EMPTY_PERMISSIONS),
+    [membership, role],
+  )
+  const exposedMembership = useMemo(
+    () => (membership ? { ...membership, isActive: isActiveMembership } : null),
+    [isActiveMembership, membership],
+  )
 
   const hasPermission = useMemo(
     () => (permissionKey) => (role && isActiveMembership ? hasAttorneyProfessionalPermission(membership, permissionKey) : false),
@@ -194,7 +201,7 @@ export default function useAttorneyPermissions({ firmId = null } = {}) {
 
   return {
     firmId: resolvedFirmId || null,
-    membership: membership ? { ...membership, isActive: isActiveMembership } : null,
+    membership: exposedMembership,
     role,
     professionalRole: role,
     compatibilityRole,

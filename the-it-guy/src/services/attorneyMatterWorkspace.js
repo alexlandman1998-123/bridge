@@ -1224,6 +1224,9 @@ export async function getAttorneyMatterWorkspace(options = {}) {
       const incomingMatterSource = await getAttorneyIncomingMatterQueue({
         firmId: options.firmId || null,
         userId: options.userId || null,
+        firm: options.firm || null,
+        authUser: options.authUser || null,
+        membership: options.membership || null,
       })
       timer.mark('incoming:end', {
         rows: incomingMatterSource?.rows?.length || 0,

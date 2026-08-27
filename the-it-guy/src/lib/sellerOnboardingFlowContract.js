@@ -484,7 +484,6 @@ const PROPERTY_BRANCH_RULES = Object.freeze({
     ]),
     documentTriggers: Object.freeze([
       'sectional_levy_statement',
-      'body_corporate_details',
     ]),
   }),
   estate_hoa: Object.freeze({
@@ -514,7 +513,6 @@ const PROPERTY_BRANCH_RULES = Object.freeze({
     ]),
     documentTriggers: Object.freeze([
       'hoa_levy_statement',
-      'hoa_details',
     ]),
   }),
   commercial: Object.freeze({
@@ -679,11 +677,6 @@ const SOLAR_FEATURE_KEYS = Object.freeze([
   'solar_pv',
   'solar_installation',
   'photovoltaic',
-])
-
-const BOREHOLE_FEATURE_KEYS = Object.freeze([
-  'borehole',
-  'wellpoint',
 ])
 
 function normalizeFeatureKey(feature) {
@@ -1190,14 +1183,10 @@ function collectDynamicTriggers(form = {}, source = {}) {
     triggers.push('plumbing_certificate')
   }
   if (
-    normalizeBoolean(form?.boreholeInstallation) ||
-    normalizeBoolean(form?.borehole) ||
-    normalizeBoolean(compliance?.borehole_installation) ||
-    normalizeBoolean(compliance?.borehole) ||
-    normalizeBoolean(property?.borehole) ||
-    normalizeBoolean(source?.property?.borehole) ||
-    normalizeBoolean(source?.compliance?.borehole_installation) ||
-    hasFeature(featureSet, BOREHOLE_FEATURE_KEYS)
+    normalizeBoolean(form?.boreholeCertificateRequired) ||
+    normalizeBoolean(form?.borehole_certificate_required) ||
+    normalizeBoolean(compliance?.borehole_certificate_required) ||
+    normalizeBoolean(source?.compliance?.borehole_certificate_required)
   ) {
     triggers.push('borehole_certificate')
   }

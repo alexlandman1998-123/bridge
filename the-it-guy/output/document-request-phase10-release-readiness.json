@@ -1,10 +1,10 @@
 {
   "phase": "document_request_phase10_release_readiness",
-  "generatedAt": "2026-08-13T19:38:44.600Z",
+  "generatedAt": "2026-08-27T16:58:02.005Z",
   "commit": false,
   "mutatedData": false,
   "strict": false,
-  "version": "document_request_release_readiness_v1",
+  "version": "document_request_release_readiness_v2",
   "phaseSummaries": [
     {
       "key": "phase0_freeze_and_map",
@@ -18,7 +18,8 @@
       "failures": [],
       "warnings": [],
       "warningCodes": [],
-      "productionActivationReady": false
+      "productionActivationReady": false,
+      "version": ""
     },
     {
       "key": "phase1_single_canonical_policy",
@@ -32,7 +33,8 @@
       "failures": [],
       "warnings": [],
       "warningCodes": [],
-      "productionActivationReady": false
+      "productionActivationReady": false,
+      "version": ""
     },
     {
       "key": "phase2_containers",
@@ -46,7 +48,8 @@
       "failures": [],
       "warnings": [],
       "warningCodes": [],
-      "productionActivationReady": false
+      "productionActivationReady": false,
+      "version": ""
     },
     {
       "key": "phase3_buyer_cleanup",
@@ -67,14 +70,15 @@
         {
           "code": "canonical_overlay_adds_buyer_policy_rows",
           "message": "Canonical buyer plans include policy rows not represented as one-to-one legacy upload rows, such as marital/source-of-funds declarations.",
-          "count": 8
+          "count": 16
         }
       ],
       "warningCodes": [
         "legacy_buyer_profile_contains_professional_rows",
         "canonical_overlay_adds_buyer_policy_rows"
       ],
-      "productionActivationReady": false
+      "productionActivationReady": false,
+      "version": ""
     },
     {
       "key": "phase4_bond_model",
@@ -88,7 +92,8 @@
       "failures": [],
       "warnings": [],
       "warningCodes": [],
-      "productionActivationReady": true
+      "productionActivationReady": true,
+      "version": ""
     },
     {
       "key": "phase5_seller_cleanup",
@@ -116,7 +121,8 @@
         "legacy_seller_generator_not_full_canonical_policy",
         "legacy_rows_roll_up_to_parent_containers"
       ],
-      "productionActivationReady": false
+      "productionActivationReady": false,
+      "version": "seller_document_canonical_cleanup_v1"
     },
     {
       "key": "phase6_professional_propagation",
@@ -137,7 +143,8 @@
       "warningCodes": [
         "runtime_requires_document_request_tables"
       ],
-      "productionActivationReady": false
+      "productionActivationReady": false,
+      "version": "document_request_professional_propagation_v1"
     },
     {
       "key": "phase7_workspace_smoke",
@@ -151,7 +158,8 @@
       "failures": [],
       "warnings": [],
       "warningCodes": [],
-      "productionActivationReady": true
+      "productionActivationReady": true,
+      "version": "document_request_workspace_smoke_v2"
     },
     {
       "key": "phase8_client_portal_container_adoption",
@@ -172,7 +180,8 @@
       "warningCodes": [
         "legacy_request_fallback_retained"
       ],
-      "productionActivationReady": false
+      "productionActivationReady": false,
+      "version": "document_request_client_portal_container_adoption_v2"
     },
     {
       "key": "phase9_upload_linking",
@@ -193,7 +202,8 @@
       "warningCodes": [
         "seller_portal_request_link_permission_guard"
       ],
-      "productionActivationReady": false
+      "productionActivationReady": false,
+      "version": "document_request_upload_linking_v2"
     }
   ],
   "warningSummary": {
@@ -222,7 +232,7 @@
       "phase": "phase3_buyer_cleanup",
       "code": "canonical_overlay_adds_buyer_policy_rows",
       "message": "Canonical buyer plans include policy rows not represented as one-to-one legacy upload rows, such as marital/source-of-funds declarations.",
-      "count": 8,
+      "count": 16,
       "requirementKey": null
     },
     {
@@ -259,24 +269,77 @@
       "message": "Seller portal request-linking treats missing schema or denied direct table access as non-blocking so the physical upload is not lost.",
       "count": null,
       "requirementKey": null
+    },
+    {
+      "phase": "phase10_release_readiness",
+      "code": "target_environment_evidence_required",
+      "message": "Provide verified staging or production evidence for migration, RLS, upload linking, upload-on-behalf, and client visibility boundaries.",
+      "count": 1,
+      "requirementKey": null
     }
   ],
+  "activationEvidence": {
+    "provided": false,
+    "valid": false,
+    "path": "",
+    "contract": "",
+    "environment": "",
+    "projectRef": "",
+    "observedAt": "",
+    "checks": [
+      {
+        "key": "professional_visibility_migration_applied",
+        "ok": false
+      },
+      {
+        "key": "document_requests_rls_verified",
+        "ok": false
+      },
+      {
+        "key": "buyer_request_upload_linked",
+        "ok": false
+      },
+      {
+        "key": "seller_request_upload_linked",
+        "ok": false
+      },
+      {
+        "key": "agent_upload_on_behalf_linked",
+        "ok": false
+      },
+      {
+        "key": "professional_request_hidden_from_clients",
+        "ok": false
+      }
+    ],
+    "failures": [
+      {
+        "code": "environment_evidence_not_supplied",
+        "message": "Target-environment evidence was not supplied."
+      }
+    ]
+  },
   "smokeSummary": {
     "failedSmokeCount": 0,
+    "coveredAudienceCount": 8,
+    "missingAudienceSmokeCount": 0,
     "unstableContainerIdCount": 0,
     "deferredSellerUploadLeakCount": 0,
     "buyerContainerCount": 13,
     "sellerContainerCount": 17,
-    "agentContainerCount": 30,
-    "attorneyContainerCount": 30,
-    "bondOriginatorContainerCount": 5,
-    "internalContainerCount": 30
+    "agentContainerCount": 31,
+    "attorneyContainerCount": 31,
+    "bondOriginatorContainerCount": 6,
+    "transferAttorneyContainerCount": 3,
+    "cancellationAttorneyContainerCount": 1,
+    "internalContainerCount": 31
   },
-  "releaseRecommendation": "ready_for_internal_pilot_not_production_activation",
+  "releaseRecommendation": "implementation_ready_environment_validation_required",
   "gate": {
-    "status": "release_readiness_mapped_with_warnings",
+    "status": "implementation_ready_environment_validation_required",
     "ok": true,
     "mayProceedToPhase11": true,
+    "internalPilotReady": false,
     "productionActivationReady": false,
     "checks": [
       {
@@ -316,6 +379,22 @@
         "ok": true
       },
       {
+        "key": "agent_upload_on_behalf_links_exact_request",
+        "ok": true
+      },
+      {
+        "key": "professional_visibility_migration_contract_is_present",
+        "ok": true
+      },
+      {
+        "key": "document_request_rls_contract_is_present",
+        "ok": true
+      },
+      {
+        "key": "latest_phase_contract_versions_are_loaded",
+        "ok": true
+      },
+      {
         "key": "phase10_verify_chain_is_registered",
         "ok": true
       }
@@ -336,7 +415,7 @@
         "code": "canonical_overlay_adds_buyer_policy_rows",
         "message": "Canonical buyer plans include policy rows not represented as one-to-one legacy upload rows, such as marital/source-of-funds declarations.",
         "managed": true,
-        "count": 8,
+        "count": 16,
         "requirementKey": null
       },
       {

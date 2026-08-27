@@ -21,6 +21,7 @@ import {
   createGuidedBondApplicationMetadataPatch,
   fromLegacyBondApplication,
   resolveBondApplicationDocumentRequirements,
+  resolvePrimaryApplicantDocumentParticipantContext,
   toLegacyBondApplication,
   validateBondApplicationDocumentRuleContract,
 } from '../index.js'
@@ -197,6 +198,20 @@ function runResolutionTests() {
   assert.ok(selfEmployed.activeRequirements.some((item) => item.key === 'bond_application_self_employed_tax_documents'))
   assert.ok(selfEmployed.activeRequirements.some((item) => item.key === 'bond_application_self_employed_assets_liabilities_statement'))
   assert.equal(selfEmployed.activeRequirements.some((item) => item.key === 'bond_application_self_employed_management_accounts'), false)
+
+  const scopedSelfEmployedState = employmentState('self_employed')
+  const participantContext = resolvePrimaryApplicantDocumentParticipantContext(scopedSelfEmployedState)
+  assert.equal(participantContext.participantKey, 'purchaser:1')
+  assert.equal(participantContext.participantName, 'Sample Buyer')
+  const scopedSelfEmployed = resolveBondApplicationDocumentRequirements({
+    applicationState: scopedSelfEmployedState,
+    participantContext,
+  })
+  const scopedPersonalStatements = scopedSelfEmployed.activeRequirements.find((item) =>
+    item.key === 'purchaser:1:bond_application_primary_applicant_self_employed_personal_bank_statements'
+  )
+  assert.equal(scopedPersonalStatements?.title, 'Purchaser 1 (Sample Buyer) — Latest 6 months personal bank statements')
+  assert.equal(scopedPersonalStatements?.participantName, 'Sample Buyer')
   const oldFinancials = setPath(employmentState('self_employed'), 'participants.primaryApplicant.employment.financials_older_than_6_months', 'yes')
   const oldFinancialsResolution = resolveBondApplicationDocumentRequirements({ applicationState: oldFinancials })
   assert.ok(oldFinancialsResolution.activeRequirements.some((item) => item.key === 'bond_application_self_employed_management_accounts'))
@@ -397,6 +412,38 @@ function runProgressAndReconciliationTests() {
   )
   assert.equal(selfEmployedBankStatementRow?.allow_multiple, true)
   assert.equal(selfEmployedBusinessBankStatementRow?.allow_multiple, true)
+
+  const scopedSelfEmployedRequirements = resolveBondApplicationDocumentRequirements({
+    applicationState: employmentState('self_employed'),
+    participantContext: resolvePrimaryApplicantDocumentParticipantContext(employmentState('self_employed')),
+  }).activeRequirements
+  const scopedPlan = buildBondApplicationDocumentReconciliationPlan({
+    transactionId: 'transaction-1',
+    activeRequirements: scopedSelfEmployedRequirements,
+    existingRequiredDocuments: [{
+      id: 'legacy-personal-statements',
+      transaction_id: 'transaction-1',
+      document_key: 'bond_application_primary_applicant_self_employed_personal_bank_statements',
+      document_label: 'Latest 6 months personal bank statements',
+      is_required: true,
+      is_uploaded: true,
+      status: 'uploaded',
+      uploaded_document_id: 'document-legacy-statements',
+    }],
+  })
+  const scopedStatementRow = scopedPlan.rowsToUpsert.find((row) =>
+    row.document_key === 'purchaser:1:bond_application_primary_applicant_self_employed_personal_bank_statements'
+  )
+  assert.equal(scopedStatementRow?.canonical_document_key, 'personal_bank_statements')
+  assert.equal(scopedStatementRow?.participant_key, 'purchaser:1')
+  assert.equal(scopedStatementRow?.participant_role, 'primary_applicant')
+  assert.equal(scopedStatementRow?.participant_name, 'Sample Buyer')
+  assert.equal(scopedStatementRow?.allow_multiple, true)
+  assert.equal(scopedStatementRow?.is_uploaded, true)
+  assert.equal(scopedStatementRow?.uploaded_document_id, 'document-legacy-statements')
+  assert.ok(scopedPlan.inactiveRows.some((row) =>
+    row.document_key === 'bond_application_primary_applicant_self_employed_personal_bank_statements'
+  ))
 
   const stalePlan = buildBondApplicationDocumentReconciliationPlan({
     transactionId: 'transaction-1',

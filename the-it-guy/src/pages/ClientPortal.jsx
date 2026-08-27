@@ -2076,16 +2076,6 @@ function normalizeSellerVisibleListingLinks(items = []) {
   return [...linksByChannel.values()]
 }
 
-function getFriendlySellerStatusLabel(value = '', fallback = 'Awaiting update') {
-  const normalized = normalizeSellerPortalKey(value)
-  if (!normalized) return fallback
-  if (normalized === 'fully_signed') return 'Signed'
-  if (normalized === 'ready_for_client_signature') return 'Ready for signature'
-  if (normalized === 'generated_not_ready') return 'Preparing'
-  if (normalized === 'not_started') return 'Not started'
-  return toTitleLabel(normalized)
-}
-
 function pickFirstText(...values) {
   for (const value of values) {
     const normalized = String(value || '').trim()
@@ -7263,7 +7253,7 @@ function SellerPropertyHero({
     : normalizedStatus.includes('offers_received')
       ? 'Your property is attracting buyer interest and your agent is managing the next step.'
       : normalizedStatus.includes('offer_accepted')
-        ? 'Your offer is accepted and the sale is moving forward.'
+        ? 'The signed OTP has been received and the sale is moving forward.'
         : normalizedStatus.includes('transfer')
           ? 'Your property transfer is underway and on track.'
           : normalizedStatus.includes('registered')
@@ -7444,12 +7434,6 @@ function SellerListingPerformance({ performance = {} }) {
       icon: CalendarClock,
     },
     {
-      label: 'Offers',
-      value: formatSellerPerformanceNumber(performance.offerCount),
-      helper: `${formatSellerPerformanceNumber(performance.pendingOffers)} active / pending`,
-      icon: HandCoins,
-    },
-    {
       label: 'Days Mkt',
       value: formatSellerPerformanceNumber(performance.daysOnMarket),
       helper: performance.areaAverageDays ? `${formatSellerPerformanceNumber(performance.areaAverageDays)} day area avg` : 'Area average pending',
@@ -7460,14 +7444,14 @@ function SellerListingPerformance({ performance = {} }) {
   return (
     <article className="rounded-[18px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <SellerSectionHeading title="Listing Performance" subtitle="Buyer attention, viewings, and offer movement shared by your agent." />
+        <SellerSectionHeading title="Listing Performance" subtitle="Buyer attention, enquiries, and viewings shared by your agent." />
         {performance.updatedAt ? (
           <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-2.5 py-1 text-[0.68rem] font-semibold text-[#4f647b]">
             Updated {formatShortPortalDate(performance.updatedAt, 'recently')}
           </span>
         ) : null}
       </div>
-      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {cards.map((card) => {
           const Icon = card.icon
           return (
@@ -10906,6 +10890,8 @@ function ClientPortal() {
       return accumulator
     }, { items: [], seen: new Set() })
     .items
+  const hasDocumentRequestContainerPayload = Array.isArray(workspaceData?.documentCenter?.documentRequestContainers) ||
+    Array.isArray(portal?.documentRequestContainers)
   const documentRequestContainers = Array.isArray(workspaceData?.documentCenter?.documentRequestContainers)
     ? workspaceData.documentCenter.documentRequestContainers
     : Array.isArray(portal?.documentRequestContainers)
@@ -10921,7 +10907,7 @@ function ClientPortal() {
       return accumulator
     }, { items: [], seen: new Set() })
     .items
-  const additionalDocumentRequestCardsForWorkspace = additionalDocumentRequestContainersForWorkspace.length
+  const additionalDocumentRequestCardsForWorkspace = hasDocumentRequestContainerPayload
     ? additionalDocumentRequestContainersForWorkspace.map((container) => {
         const requestId = String(container?.sourceId || container?.source_id || container?.id || '').trim()
         return {

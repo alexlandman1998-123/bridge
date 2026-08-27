@@ -158,6 +158,7 @@ export function getDocumentReadiness(applicationIdOrContext = {}, maybeContext =
   const bankRequestedDocuments = getBankRequestedDocuments(context)
   const recentUploads = getRecentUploads(context)
   const score = calculateReadinessScore(context)
+  const hasRequirementPack = kpis.required > 0
   const hasBlockingItems = missingDocuments.length > 0 || kpis.rejected > 0
   const scoreLabel = score >= 86 ? 'Ready' : score >= 61 ? 'Good' : score >= 31 ? 'Needs Attention' : 'Critical'
 
@@ -165,9 +166,11 @@ export function getDocumentReadiness(applicationIdOrContext = {}, maybeContext =
     applicationId: context.applicationId || null,
     score,
     scoreLabel,
-    submissionReady: !hasBlockingItems,
-    blockerCount: missingDocuments.length + kpis.rejected,
-    summaryText: hasBlockingItems
+    submissionReady: hasRequirementPack && !hasBlockingItems,
+    blockerCount: hasRequirementPack ? missingDocuments.length + kpis.rejected : 1,
+    summaryText: !hasRequirementPack
+      ? 'Application document requirements not generated yet'
+      : hasBlockingItems
       ? `${missingDocuments.length + kpis.rejected} critical item${missingDocuments.length + kpis.rejected === 1 ? '' : 's'} blocking submission`
       : 'All critical documents received',
     kpis,

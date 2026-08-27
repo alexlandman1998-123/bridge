@@ -3,6 +3,7 @@ import {
   buildBondApplicationDocumentChecklist,
   buildBondApplicationDocumentReconciliationPlan,
   calculateBondApplicationDocumentProgress,
+  resolvePrimaryApplicantDocumentParticipantContext,
   resolveBondApplicationDocumentRequirements,
 } from '../../documents/index.js'
 
@@ -20,7 +21,7 @@ export function useBondApplicationDocuments({
 
   const resolved = useMemo(() => resolveBondApplicationDocumentRequirements({
     applicationState,
-    participantRole: 'primary_applicant',
+    participantContext: resolvePrimaryApplicantDocumentParticipantContext(applicationState),
   }), [applicationState])
 
   const reconciliationPlan = useMemo(() => buildBondApplicationDocumentReconciliationPlan({

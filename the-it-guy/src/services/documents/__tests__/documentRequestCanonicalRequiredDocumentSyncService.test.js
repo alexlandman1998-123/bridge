@@ -115,6 +115,7 @@ test('builds required document rows from the canonical request plan', () => {
   assert.equal(bondApproval.visibility_scope, 'client')
   assert.equal(bondApproval.status, 'missing')
   assert.equal(bondApproval.enabled, true)
+  assert.match(bondApproval.description, /agent may upload it on the client.s behalf/i)
 })
 
 test('preserves existing uploaded/review state when rebuilding canonical rows', () => {
@@ -203,6 +204,37 @@ test('sync upserts canonical rows into transaction_required_documents', async ()
   assert.equal(client.state.upsertedRows.length, result.rows.length)
   assert.equal(client.state.rows.some((row) => row.document_key === 'buyer_trust_deed'), true)
   assert.equal(client.state.rows.every((row) => row.transaction_id === 'transaction-1'), true)
+})
+
+test('retires the legacy information sheet without deleting uploaded evidence', async () => {
+  const client = createFakeClient([
+    {
+      id: 'legacy-info',
+      transaction_id: 'transaction-1',
+      document_key: 'information_sheet',
+      document_label: 'Information Sheet',
+      required_from_role: 'client',
+      is_required: true,
+      enabled: true,
+      status: 'uploaded',
+      is_uploaded: true,
+      uploaded_document_id: 'historical-document-1',
+    },
+  ])
+
+  const result = await syncCanonicalRequiredDocumentRows({
+    client,
+    transactionId: 'transaction-1',
+    scenario: MIXED_SCENARIO,
+    audience: 'buyer',
+  })
+
+  assert.deepEqual(result.retiredDocumentKeys, ['information_sheet'])
+  const retired = client.state.rows.find((row) => row.document_key === 'information_sheet')
+  assert.equal(retired.enabled, false)
+  assert.equal(retired.is_required, false)
+  assert.equal(retired.status, 'uploaded')
+  assert.equal(retired.uploaded_document_id, 'historical-document-1')
 })
 
 test('sync no-op reports zero synced rows without marking the result as dry run', async () => {

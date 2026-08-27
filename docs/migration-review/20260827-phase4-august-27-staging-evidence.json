@@ -1,0 +1,142 @@
+{
+  "generatedAt": "2026-08-27T14:45:59Z",
+  "repo": "/Users/alexanderlandman/the-it-guy",
+  "status": "AUGUST_27_STAGING_EVIDENCE_PENDING",
+  "summary": {
+    "runnerEligibleRows": 6,
+    "evidenceFilesCreated": 6,
+    "evidenceFilesExisting": 0,
+    "completeEvidenceRows": 0,
+    "pendingEvidenceRows": 6,
+    "excludedConsolidateRows": 2
+  },
+  "routes": {
+    "apply_original_after_dependency_check": 3,
+    "repair_only_after_smoke": 3
+  },
+  "rows": [
+    {
+      "version": "20260827102857",
+      "stream": "transaction_network",
+      "file": "20260827102857_repair_partner_pipeline_assignment_scope.sql",
+      "route": "apply_original_after_dependency_check",
+      "action": "apply_original_after_dependency_check",
+      "evidenceFile": "docs/staging-evidence/20260827102857-transaction_network.json",
+      "created": true,
+      "complete": false,
+      "blockers": [
+        "staging_ledger_not_recorded",
+        "catalog_checks_pending",
+        "behavior_checks_pending",
+        "rollback_or_no_residue_pending",
+        "reviewer_pending",
+        "approver_pending",
+        "captured_at_pending"
+      ]
+    },
+    {
+      "version": "20260827113000",
+      "stream": "notification_automation",
+      "file": "20260827113000_whatsapp_embedded_signup_v1.sql",
+      "route": "apply_original_after_dependency_check",
+      "action": "apply_original_after_dependency_check",
+      "evidenceFile": "docs/staging-evidence/20260827113000-notification_automation.json",
+      "created": true,
+      "complete": false,
+      "blockers": [
+        "staging_ledger_not_recorded",
+        "catalog_checks_pending",
+        "behavior_checks_pending",
+        "rollback_or_no_residue_pending",
+        "reviewer_pending",
+        "approver_pending",
+        "captured_at_pending"
+      ]
+    },
+    {
+      "version": "20260827124137",
+      "stream": "attorney_identity_access",
+      "file": "20260827124137_repair_attorney_firm_assignment_spine_access.sql",
+      "route": "apply_original_after_dependency_check",
+      "action": "apply_original_after_dependency_check",
+      "evidenceFile": "docs/staging-evidence/20260827124137-attorney_identity_access.json",
+      "created": true,
+      "complete": false,
+      "blockers": [
+        "staging_ledger_not_recorded",
+        "catalog_checks_pending",
+        "behavior_checks_pending",
+        "rollback_or_no_residue_pending",
+        "reviewer_pending",
+        "approver_pending",
+        "captured_at_pending"
+      ]
+    },
+    {
+      "version": "20260827104557",
+      "stream": "attorney_workflow_runtime",
+      "file": "20260827104557_repair_attorney_incoming_matter_visible_status.sql",
+      "route": "repair_only_after_smoke",
+      "action": "repair_only_after_smoke",
+      "evidenceFile": "docs/staging-evidence/20260827104557-attorney_workflow_runtime.json",
+      "created": true,
+      "complete": false,
+      "blockers": [
+        "staging_ledger_not_recorded",
+        "catalog_checks_pending",
+        "behavior_checks_pending",
+        "rollback_or_no_residue_pending",
+        "reviewer_pending",
+        "approver_pending",
+        "captured_at_pending"
+      ]
+    },
+    {
+      "version": "20260827133916",
+      "stream": "transaction_network",
+      "file": "20260827133916_repair_roleplayer_participant_scope_alignment.sql",
+      "route": "repair_only_after_smoke",
+      "action": "repair_only_after_smoke",
+      "evidenceFile": "docs/staging-evidence/20260827133916-transaction_network.json",
+      "created": true,
+      "complete": false,
+      "blockers": [
+        "staging_ledger_not_recorded",
+        "catalog_checks_pending",
+        "behavior_checks_pending",
+        "rollback_or_no_residue_pending",
+        "reviewer_pending",
+        "approver_pending",
+        "captured_at_pending"
+      ]
+    },
+    {
+      "version": "20260827151119",
+      "stream": "bond_finance_runtime",
+      "file": "20260827151119_repair_bond_originator_transaction_scope.sql",
+      "route": "repair_only_after_smoke",
+      "action": "repair_only_after_smoke",
+      "evidenceFile": "docs/staging-evidence/20260827151119-bond_finance_runtime.json",
+      "created": true,
+      "complete": false,
+      "blockers": [
+        "staging_ledger_not_recorded",
+        "catalog_checks_pending",
+        "behavior_checks_pending",
+        "rollback_or_no_residue_pending",
+        "reviewer_pending",
+        "approver_pending",
+        "captured_at_pending"
+      ]
+    }
+  ],
+  "excludedConsolidations": [
+    {
+      "versions": [
+        "20260827133506",
+        "20260827133739"
+      ],
+      "reason": "The bond-originator handoff repair should be consolidated before runner capture."
+    }
+  ]
+}

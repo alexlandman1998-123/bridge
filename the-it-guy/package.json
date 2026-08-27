@@ -440,6 +440,7 @@
     "test:private-property-go-live-phase7-production-launch": "node scripts/private-property-phase13-production-launch.test.mjs",
     "test:private-property-go-live-phase8-production-proof": "node scripts/private-property-phase14-production-proof.test.mjs",
     "test:private-property-browser-api": "node scripts/private-property-browser-api.test.mjs",
+    "test:rental-private-property-required-fields": "node scripts/rental-private-property-required-fields.test.mjs",
     "test:rental-private-property-backend-adapter": "node scripts/rental-private-property-backend-adapter.test.mjs",
     "test:commercial-lead-detail": "node scripts/commercial-lead-detail-foundation.test.mjs",
     "test:commercial-lead-type-switch": "node scripts/commercial-lead-type-switch.test.mjs",

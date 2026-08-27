@@ -13,7 +13,7 @@ const workflowSource = await readFile(new URL('../src/lib/workflowEngine.js', im
 assert.match(workflowSource, /buyerProcessDefinitionService/)
 assert.doesNotMatch(workflowSource, /Prepare OTP generation readiness/)
 assert.doesNotMatch(workflowSource, /before OTP generation/)
-assert.match(workflowSource, /Upload the signed OTP before moving to Offer\./)
+assert.match(workflowSource, /Upload the signed OTP before moving to Transaction\./)
 
 const server = await createServer({ root: process.cwd(), logLevel: 'silent', server: { middlewareMode: true } })
 try {
@@ -26,7 +26,6 @@ try {
     'Qualified',
     'Viewing',
     'Transaction Setup',
-    'Offer',
     'Transaction',
     'On hold',
     'Lost',
@@ -42,10 +41,10 @@ try {
   assert.equal(workflow.normalizeBuyerWorkflowStage('Qualification'), 'Qualified')
   assert.equal(workflow.normalizeBuyerWorkflowStage('Viewing Completed'), 'Viewing')
   assert.equal(workflow.normalizeBuyerWorkflowStage('Offer + Onboarding Link Sent'), 'Transaction Setup')
-  assert.equal(workflow.normalizeBuyerWorkflowStage('Offer Submitted'), 'Offer')
-  assert.equal(workflow.normalizeBuyerWorkflowStage('Ready for OTP generation'), 'Offer')
-  assert.equal(workflow.normalizeBuyerWorkflowStage('OTP Generated'), 'Offer')
-  assert.equal(workflow.normalizeBuyerWorkflowStage('Signed by All Parties'), 'Offer')
+  assert.equal(workflow.normalizeBuyerWorkflowStage('Offer Submitted'), 'Transaction Setup')
+  assert.equal(workflow.normalizeBuyerWorkflowStage('Ready for OTP generation'), 'Transaction Setup')
+  assert.equal(workflow.normalizeBuyerWorkflowStage('OTP Generated'), 'Transaction Setup')
+  assert.equal(workflow.normalizeBuyerWorkflowStage('Signed by All Parties'), 'Transaction Setup')
   assert.equal(workflow.normalizeBuyerWorkflowStage('Finance'), 'Transaction')
 
   assert.equal(workflow.isBuyerWorkflowStage('Offer Submitted'), true)
@@ -67,7 +66,7 @@ try {
   })
   assert.equal(illegal.allowed, false)
   assert.equal(illegal.allowedTargetKeys.includes(definition.BUYER_PROCESS_STAGE_KEYS.contacted), true)
-  assert.match(illegal.reason, /Captured cannot move directly to Offer/)
+  assert.match(illegal.reason, /Captured cannot move directly to Transaction Setup/)
 
   const contacted = await workflow.validateBuyerStageTransition({
     lead,
@@ -104,18 +103,15 @@ try {
   assert.equal(transactionSetup.toStage, 'Transaction Setup')
   assert.equal(transactionSetup.toStageKey, definition.BUYER_PROCESS_STAGE_KEYS.transactionSetup)
 
-  const offerReceived = await workflow.validateBuyerStageTransition({
+  const legacyOfferAlias = await workflow.validateBuyerStageTransition({
     lead: { ...lead, stage: 'Transaction Setup' },
     leadId: lead.leadId,
     fromStage: 'Transaction Setup',
     toStage: 'Ready to Generate OTP',
     actor,
   })
-  assert.equal(offerReceived.allowed, true)
-  assert.equal(offerReceived.toStage, 'Offer')
-  assert.equal(offerReceived.toStageKey, definition.BUYER_PROCESS_STAGE_KEYS.offerReceived)
-  assert.equal(offerReceived.requirements[0].requirement.key, 'otp_document_uploaded')
-  assert.equal(offerReceived.requirements[0].skipped, true)
+  assert.equal(legacyOfferAlias.allowed, false)
+  assert.match(legacyOfferAlias.reason, /already in that workflow stage/)
 
   const blockedRole = await workflow.validateBuyerStageTransition({
     lead,

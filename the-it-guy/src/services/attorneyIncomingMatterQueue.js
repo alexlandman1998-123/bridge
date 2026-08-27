@@ -75,7 +75,6 @@ const ASSIGNMENT_COLUMNS = [
 const TRANSACTION_COLUMNS = [
   'id',
   'organisation_id',
-  'seller_process_profile',
   'development_id',
   'unit_id',
   'buyer_id',
@@ -102,9 +101,6 @@ const TRANSACTION_COLUMNS = [
   'assigned_agent_email',
   'originating_partner_organisation_id',
   'referral_source_organisation_id',
-  'referral_source_organisation_name',
-  'originating_partner_organisation_name',
-  'source_organisation_name',
   'transaction_type',
   'seller_name',
   'seller_email',
@@ -1034,6 +1030,16 @@ async function fetchPreInstructionAllocations(client, firmId) {
   const code = String(result.error.code || '').toUpperCase()
   const message = String(result.error.message || '').toLowerCase()
   if (['42883', 'PGRST202'].includes(code) || message.includes('bridge_attorney_pre_instruction_pipeline')) return []
+  if (
+    code === 'P0001' ||
+    code === '42501' ||
+    message.includes('active attorney-firm membership') ||
+    message.includes('permission denied') ||
+    message.includes('row-level security')
+  ) {
+    console.warn('[Attorney Incoming Matters] Pre-instruction allocations unavailable; continuing with transaction assignments.', result.error)
+    return []
+  }
   throw result.error
 }
 

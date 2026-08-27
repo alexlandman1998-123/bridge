@@ -583,11 +583,27 @@ export function canonicalInstanceToTransactionRequiredDocument(instance = {}, ex
     ? pickStrongerLegacyStatus(existing.status, incomingStatus, LEGACY_TRANSACTION_STATUS_STRENGTH)
     : incomingStatus
 
+  const baseDocumentKey = canonicalDefinitionKeyToLegacyKey(instance.document_definition_key)
+  const documentKey = instance.participant_key ? `${instance.participant_key}:${baseDocumentKey}` : baseDocumentKey
+  const participantLabel = instance.participant_role === 'spouse_related_party'
+    ? 'Spouse'
+    : instance.participant_key
+      ? `Purchaser ${Number(String(instance.participant_key).match(/:(\d+)$/)?.[1] || 1)}`
+      : ''
+  const participantDisplayLabel = participantLabel && instance.participant_name
+    ? `${participantLabel} (${instance.participant_name})`
+    : participantLabel
+
   return {
     id: existing?.id,
     transaction_id: instance.transaction_id,
-    document_key: canonicalDefinitionKeyToLegacyKey(instance.document_definition_key),
-    document_label: getDefinitionLabel(instance),
+    document_key: documentKey,
+    canonical_document_key: baseDocumentKey,
+    document_label: participantDisplayLabel ? `${participantDisplayLabel} — ${getDefinitionLabel(instance)}` : getDefinitionLabel(instance),
+    participant_key: instance.participant_key || null,
+    participant_id: instance.participant_id || null,
+    participant_role: instance.participant_role || null,
+    participant_name: instance.participant_name || null,
     is_required: canonicalLevelToLegacyRequired(instance.requirement_level),
     is_uploaded: ['uploaded', 'under_review', 'accepted'].includes(status),
     status,
@@ -818,7 +834,8 @@ export async function syncCanonicalToTransactionRequiredDocuments({ transactionI
   const legacyByLinkOrKey = indexedBy(legacyResult.data || [], ['canonical_requirement_instance_id', 'document_key'])
   const rows = (instanceResult.data || []).map((instance) => {
     const instanceWithTransaction = { ...instance, transaction_id: instance.transaction_id || transactionId }
-    const legacyKey = canonicalDefinitionKeyToLegacyKey(instance.document_definition_key)
+    const baseLegacyKey = canonicalDefinitionKeyToLegacyKey(instance.document_definition_key)
+    const legacyKey = instance.participant_key ? `${instance.participant_key}:${baseLegacyKey}` : baseLegacyKey
     const existing = legacyByLinkOrKey.get(`canonical_requirement_instance_id:${instance.id}`) || legacyByLinkOrKey.get(`document_key:${legacyKey}`) || null
     return canonicalInstanceToTransactionRequiredDocument(instanceWithTransaction, existing)
   })

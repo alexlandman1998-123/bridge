@@ -95,9 +95,10 @@ function byKey(rows, key) {
     sectionalTitle: true,
     schemeName: 'Example Scheme',
   })
-  for (const key of ['levy_statement', 'body_corporate_details', 'body_corporate_rules', 'body_corporate_insurance_schedule']) {
+  for (const key of ['levy_statement', 'body_corporate_rules', 'body_corporate_insurance_schedule']) {
     assert.ok(byKey(requirements, key), `sectional-title matrix must include ${key}`)
   }
+  assert.equal(byKey(requirements, 'body_corporate_details'), undefined, 'Managing-agent details are captured fields, not an upload requirement.')
   assert.equal(byKey(requirements, 'body_corporate_rules').is_required, false)
 }
 

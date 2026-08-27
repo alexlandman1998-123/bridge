@@ -9,10 +9,20 @@ import {
   buildSellerDocumentCanonicalCleanupProfile,
 } from '../src/services/documents/sellerDocumentCanonicalCleanupService.js'
 import { getSellerRequiredDocuments } from '../src/services/sellerDocumentRequirementsService.js'
+import {
+  SELLER_CAPTURE_ONLY_REQUIREMENT_KEYS,
+  SELLER_DOCUMENT_REQUEST_RUNTIME_POLICY_VERSION,
+  filterSellerClientUploadRequirements,
+  isPendingSellerDocumentPolicyRequirement,
+  isProfessionalOnlySellerRequirement,
+  isSellerCaptureOnlyRequirement,
+} from '../src/core/documents/sellerDocumentRequestRuntimePolicy.js'
+import { resolveDocumentRequestUploadOwnership } from '../src/core/documents/documentRequestUploadOwnershipModel.js'
 
 const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'))
 const serviceSource = fs.readFileSync('src/services/documents/sellerDocumentCanonicalCleanupService.js', 'utf8')
 const portalSource = fs.readFileSync('src/services/clientPortalWorkspaceService.js', 'utf8')
+const runtimePolicySource = fs.readFileSync('src/core/documents/sellerDocumentRequestRuntimePolicy.js', 'utf8')
 const scriptSource = fs.readFileSync('scripts/document-request-phase5-seller-cleanup.mjs', 'utf8')
 const docs = fs.readFileSync('docs/document-request-phase5-seller-cleanup.md', 'utf8')
 
@@ -35,8 +45,12 @@ assert.equal(
 assert.match(serviceSource, /seller_document_canonical_cleanup_v1/, 'Seller cleanup service should carry a stable version.')
 assert.match(serviceSource, /DEFERRED_SELLER_UPLOAD_REQUIREMENT_KEYS/, 'Seller cleanup service should name deferred seller upload keys.')
 assert.match(serviceSource, /buildDocumentRequestContainerModel/, 'Seller cleanup should use Phase 2 request containers.')
-assert.match(portalSource, /isDeferredSellerUploadRequirement/, 'Seller portal should filter deferred seller uploads.')
-assert.match(portalSource, /workspaceMode === 'selling' && isDeferredSellerUploadRequirement\(requirement\)/, 'Seller portal deferred filter should be scoped to selling workspaces.')
+assert.match(runtimePolicySource, /isDeferredSellerUploadRequirement/, 'The shared seller policy should filter deferred uploads.')
+assert.match(runtimePolicySource, /isSellerCaptureOnlyRequirement/, 'The shared seller policy should filter structured onboarding facts.')
+assert.match(runtimePolicySource, /isPendingSellerDocumentPolicyRequirement/, 'The shared seller policy should filter unsigned policy requests.')
+assert.match(runtimePolicySource, /isProfessionalOnlySellerRequirement/, 'The shared seller policy should filter professionally owned requests.')
+assert.match(portalSource, /if \(isClientPortalProfessionalOnlyRequirement\(requirement\)\) return false/, 'Professional-only requests should remain hidden from every client workspace.')
+assert.match(portalSource, /workspaceMode === 'selling' && !isSellerClientUploadRequirementAllowed\(requirement\)/, 'Seller portal policy enforcement should be scoped to selling workspaces.')
 assert.match(scriptSource, /document_request_phase5_seller_cleanup/, 'Phase 5 script should carry a stable marker.')
 assert.match(scriptSource, /mutatedData:\s*false/, 'Phase 5 report should be read-only.')
 assert.doesNotMatch(scriptSource, /createClient/, 'Phase 5 report should not connect to Supabase.')
@@ -107,6 +121,46 @@ const staleRequiredDocuments = getSellerRequiredDocuments(staleListing, staleLis
 for (const key of DEFERRED_SELLER_UPLOAD_REQUIREMENT_KEYS) {
   assert.equal(staleRequiredDocuments.some((row) => row.key === key || row.requirement_key === key), false, `${key} should be filtered from seller requirements.`)
 }
+
+assert.equal(SELLER_DOCUMENT_REQUEST_RUNTIME_POLICY_VERSION, 'seller_document_request_runtime_policy_v1')
+const policyRows = [
+  {
+    key: 'seller_bank_account_confirmation',
+    canonicalDocumentRequestOwnerRole: 'seller',
+    canonicalDocumentRequestVisibility: 'client_visible',
+  },
+  {
+    key: 'bond_cancellation_figures',
+    canonicalDocumentRequestOwnerRole: 'cancellation_attorney',
+    canonicalDocumentRequestVisibility: 'professional_shared',
+  },
+  {
+    key: 'approved_building_plans',
+    canonicalDocumentRequestOwnerRole: 'seller',
+    canonicalDocumentRequestVisibility: 'client_visible',
+    canonicalDocumentRequestLevel: 'pending_policy_legal',
+  },
+  { key: 'capital_improvement_records', visibility: 'seller_visible' },
+  { key: 'body_corporate_details', visibility: 'seller_visible' },
+  { key: 'hoa_contact_details', visibility: 'seller_visible' },
+]
+const filteredPolicyRows = filterSellerClientUploadRequirements(policyRows)
+assert.deepEqual(filteredPolicyRows.map((row) => row.key), ['seller_bank_account_confirmation'])
+assert.equal(isProfessionalOnlySellerRequirement(policyRows[1]), true)
+assert.equal(isPendingSellerDocumentPolicyRequirement(policyRows[2]), true)
+assert.deepEqual(SELLER_CAPTURE_ONLY_REQUIREMENT_KEYS, ['body_corporate_details', 'hoa_contact_details', 'hoa_details'])
+assert.equal(isSellerCaptureOnlyRequirement(policyRows[4]), true)
+assert.equal(isSellerCaptureOnlyRequirement(policyRows[5]), true)
+
+const sellerOwnership = resolveDocumentRequestUploadOwnership({
+  documentKey: 'seller_bank_account_confirmation',
+  ownerRole: 'seller',
+  requestedFrom: 'seller',
+  visibility: 'client_visible',
+})
+assert.equal(sellerOwnership.responsiblePartyRole, 'seller')
+assert.equal(sellerOwnership.agentMayUploadOnBehalf, true)
+assert.ok(sellerOwnership.uploadableByRoles.includes('agent'))
 
 const profile = buildSellerDocumentCanonicalCleanupProfile({
   id: 'phase5-direct-profile',

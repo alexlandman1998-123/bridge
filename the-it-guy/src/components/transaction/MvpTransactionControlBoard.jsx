@@ -9,6 +9,15 @@ const HEALTH_TONES = {
   blocked: 'bg-rose-100 text-rose-800',
 }
 
+const RELATIONSHIP_TONES = {
+  action_required: 'border-amber-200 bg-amber-50 text-amber-900',
+  link_not_confirmed: 'border-rose-200 bg-rose-50 text-rose-900',
+  monitoring: 'border-sky-200 bg-sky-50 text-sky-900',
+  waiting: 'border-slate-200 bg-slate-50 text-slate-800',
+  no_action_required: 'border-emerald-200 bg-emerald-50 text-emerald-900',
+  action_required_if_requested: 'border-slate-200 bg-slate-50 text-slate-800',
+}
+
 /** A reusable, role-neutral snapshot for every transaction workspace. */
 export default function MvpTransactionControlBoard({ controlBoard = null, compact = false }) {
   if (!controlBoard) return null
@@ -16,6 +25,7 @@ export default function MvpTransactionControlBoard({ controlBoard = null, compac
   const blockers = Array.isArray(controlBoard.blockers) ? controlBoard.blockers : []
   const health = controlBoard.health || null
   const audit = controlBoard.audit || null
+  const relationshipHealth = controlBoard.relationshipHealth || null
   const attention = Array.isArray(health?.attention) ? health.attention : blockers.slice(0, 3)
   const status = health?.status || {
     label: String(controlBoard.status || 'incomplete').replaceAll('_', ' '),
@@ -70,6 +80,32 @@ export default function MvpTransactionControlBoard({ controlBoard = null, compac
           <span className="font-semibold text-slate-800">Recovery:</span> {audit.actions[0].label}
           {audit.actions.length > 1 ? ` · ${audit.actions.length - 1} more option${audit.actions.length === 2 ? '' : 's'}` : ''}
         </p>
+      ) : null}
+
+      {!compact && relationshipHealth?.roles?.length ? (
+        <div className="mt-4 border-t border-slate-100 pt-4" aria-label="Agent buyer seller relationship health">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Party handoff</p>
+              <p className="mt-1 text-sm font-medium text-slate-900">Agent, buyer and seller responsibilities</p>
+            </div>
+            <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${relationshipHealth.status === 'clear' ? HEALTH_TONES.clear : HEALTH_TONES.attention}`}>
+              {relationshipHealth.statusLabel}
+            </span>
+          </div>
+          <div className="mt-3 grid gap-2 lg:grid-cols-3">
+            {relationshipHealth.roles.map((role) => (
+              <div key={role.role} className={`rounded-xl border px-3 py-3 text-sm ${RELATIONSHIP_TONES[role.state] || RELATIONSHIP_TONES.waiting}`}>
+                <div className="flex items-center justify-between gap-2">
+                  <strong>{role.label}</strong>
+                  <span className="text-xs font-medium">{role.connectionLabel}</span>
+                </div>
+                <p className="mt-1 text-xs font-semibold">{role.stateLabel}</p>
+                <p className="mt-1 text-xs leading-5 opacity-90">{role.nextAction}</p>
+              </div>
+            ))}
+          </div>
+        </div>
       ) : null}
 
       {!compact && attention.length ? (

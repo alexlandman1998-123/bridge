@@ -71,7 +71,11 @@ assert.match(pipelineSource, /const LEAD_WORKSPACE_HYDRATION_TIMEOUT_MS = 8000/,
 assert.match(pipelineSource, /workspaceSnapshot\?\.leadWorkspaceStatus === 'not_found'[\s\S]*?setRouteLeadHydrationStatus\('not_found'\)/, 'stale lead workspace links should stop retrying and enter a not-found state')
 assert.ok(pipelineSource.includes('This lead link is stale or the lead has been removed from the selected workspace.'), 'stale lead workspace links should show an explicit recovery message')
 assert.ok(pipelineSource.includes('Back to Leads'), 'stale lead workspace links should offer a path back to the lead list')
-assert.match(pipelineSource, /const resolvedRouteLeadId = normalizeText\(snapshot\?\.resolvedLeadId \|\| snapshot\.leads\[0\]\?\.leadId\)[\s\S]*?setSelectedLeadId\(resolvedRouteLeadId\)/, 'listing-derived lead routes should pivot the selected workspace row to the resolved canonical lead id')
+assert.match(
+  pipelineSource,
+  /const resolvedRouteLeadId = normalizeText\(snapshot\?\.resolvedLeadId \|\| snapshot\.leads\[0\]\?\.leadId\)[\s\S]*?setSelectedLeadId\(\(previous\) =>[\s\S]*?resolvedRouteLeadId/,
+  'listing-derived lead routes should pivot the selected workspace row to the resolved canonical lead id without redundant state updates',
+)
 assert.match(
   pipelineSource,
   /const routeLeadWorkspaceSnapshotRef = useRef\(null\)/,

@@ -11,6 +11,9 @@ import {
   SELLER_BASE_PACK_REQUIRED_KEYS,
 } from '../lib/sellerBasePackContract.js'
 import { resolveSellerProcessProfileForOrganisation } from './sellerProcessProfileService.js'
+import {
+  filterSellerClientUploadRequirements,
+} from '../core/documents/sellerDocumentRequestRuntimePolicy.js'
 
 function normalizeText(value) {
   return String(value ?? '').trim()
@@ -1164,7 +1167,7 @@ export function getSellerRequiredDocuments(listing = {}, formData = {}) {
     : getSellerOnboardingFormData(listing)
   const persisted = filterStalePersistedRequirements(listing?.documentRequirements, listing, resolvedFormData)
   if (isKingstonsSellerDocumentContext(listing)) {
-    return buildKingstonsSellerDocumentRequirementPack(listing, resolvedFormData).requiredDocuments
+    return filterSellerClientUploadRequirements(buildKingstonsSellerDocumentRequirementPack(listing, resolvedFormData).requiredDocuments)
   }
   const hasOnboardingFacts = resolvedFormData && typeof resolvedFormData === 'object' && Object.keys(resolvedFormData).length > 0
   try {
@@ -1185,13 +1188,15 @@ export function getSellerRequiredDocuments(listing = {}, formData = {}) {
           },
         })
       : []
-    return mergeSellerRequiredDocuments(filterStaleGeneratedRequirementsAgainstDerived(persisted, derived), derived)
+    return filterSellerClientUploadRequirements(
+      mergeSellerRequiredDocuments(filterStaleGeneratedRequirementsAgainstDerived(persisted, derived), derived),
+    )
   } catch (error) {
     console.warn('[seller-document-requirements] Failed to derive seller document requirements', {
       listingId: listing?.id || null,
       error,
     })
-    return mergeSellerRequiredDocuments(persisted)
+    return filterSellerClientUploadRequirements(mergeSellerRequiredDocuments(persisted))
   }
 }
 
@@ -1200,11 +1205,11 @@ export function getExpectedSellerDocumentRequirements(listing = {}, formData = {
     ? formData
     : getSellerOnboardingFormData(listing)
   if (isKingstonsSellerDocumentContext(listing)) {
-    return buildKingstonsSellerDocumentRequirementPack(listing, resolvedFormData).requiredDocuments
+    return filterSellerClientUploadRequirements(buildKingstonsSellerDocumentRequirementPack(listing, resolvedFormData).requiredDocuments)
   }
   const requirementListing = coerceSellerDocumentLifecycle(listing, resolvedFormData)
   try {
-    return mergeSellerRequiredDocuments(generateSellerDocumentRequirements({
+    return filterSellerClientUploadRequirements(mergeSellerRequiredDocuments(generateSellerDocumentRequirements({
       ...requirementListing,
       sellerOnboarding: {
         ...(requirementListing?.sellerOnboarding && typeof requirementListing.sellerOnboarding === 'object' ? requirementListing.sellerOnboarding : {}),
@@ -1217,7 +1222,7 @@ export function getExpectedSellerDocumentRequirements(listing = {}, formData = {
         ),
         formData: resolvedFormData,
       },
-    }))
+    })))
   } catch (error) {
     console.warn('[seller-document-requirements] Failed to derive expected seller document requirements', {
       listingId: listing?.id || null,

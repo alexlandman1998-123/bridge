@@ -39,7 +39,7 @@ import { resolveTransactionFacts } from '../attorneyWorkflow/transactionFactsRes
 import { resolveLegalDocumentRequirements } from '../attorneyWorkflow/attorneyDocumentRequirementsResolver'
 
 export const TRANSACTION_CANONICAL_DOCUMENT_ENGINE_SOURCE = 'transaction_canonical_document_requirement_engine'
-export const TRANSACTION_CANONICAL_DOCUMENT_ENGINE_VERSION = 'transaction_canonical_document_requirement_engine_v1'
+export const TRANSACTION_CANONICAL_DOCUMENT_ENGINE_VERSION = 'transaction_canonical_document_requirement_engine_v2'
 export const TRANSACTION_DOCUMENT_REQUIREMENT_TABLE = 'transaction_document_requirements'
 
 const TRANSACTION_DOCUMENT_SECTION_LABELS = Object.freeze({
@@ -560,12 +560,17 @@ function buildProjectionRow({
     rule_id: normalizeText(rule?.id) || explicitMeta.ruleId || `adapter:${source}:${definitionKey}`,
     rule_version: Number(rule?.rule_version || explicitMeta.ruleVersion || 1),
     document_key: definitionKey,
-    document_name: definition.display_label || explicitMeta.documentName || definitionKey,
+    canonical_document_key: definitionKey,
+    document_name: explicitMeta.documentName || definition.display_label || definitionKey,
     document_category: definition.category || explicitMeta.documentCategory || packKey || null,
     owning_workflow: explicitMeta.owningWorkflow || normalizeText(rule?.owning_workflow) || baseMeta.owningWorkflow,
     workflow_stage: explicitMeta.workflowStage || normalizeText(rule?.workflow_stage) || baseMeta.workflowStage,
     requested_from: requestedFrom || null,
     responsible_role: responsibleRole || null,
+    participant_key: generated.participant_key || explicitMeta.participantKey || null,
+    participant_id: generated.participant_id || explicitMeta.participantId || null,
+    participant_role: generated.participant_role || explicitMeta.participantRole || null,
+    participant_name: generated.participant_name || explicitMeta.participantName || null,
     visible_section: visibleSection,
     required,
     blocking,
@@ -624,7 +629,8 @@ function buildBuyerAdapterCandidates({
   )
 
   return normalizeArray(derived.requiredDocuments).map((template) => {
-    const definitionKey = buyerAdapterCanonicalKey(template.key)
+    const baseRequirementKey = template.baseRequirementKey || template.key
+    const definitionKey = buyerAdapterCanonicalKey(baseRequirementKey)
     const definition = definitionsByKey.get(definitionKey)
     if (!definition) return null
     const packKey = definition.pack_key || GROUP_KEY_TO_PACK_KEY[normalizeKey(template.groupKey)] || 'buyer_identity_fica'
@@ -641,6 +647,10 @@ function buildBuyerAdapterCandidates({
       reviewer_role: 'agent',
       visible_to_roles: definition.default_visibility,
       uploadable_by_roles: definition.default_upload_roles,
+      participant_key: template.participantKey || null,
+      participant_id: template.participantId || null,
+      participant_role: template.participantRole || null,
+      participant_name: template.participantName || null,
     }, {
       contextType: 'transaction',
       contextId: transaction.id,
@@ -654,10 +664,22 @@ function buildBuyerAdapterCandidates({
     return {
       generated,
       definition,
-      trace: [{ adapter: 'buyer_requirement_engine', template_key: template.key }],
+      trace: [{
+        adapter: 'buyer_requirement_engine',
+        template_key: template.key,
+        requirement_instance_key: template.requirementInstanceKey || template.key,
+        request_rule_set_version: template.requestRuleSetVersion || null,
+        request_trigger_code: template.requestTriggerCode || null,
+        request_trigger_facts: template.requestTriggerFacts || null,
+      }],
       source: 'buyer_requirement_engine_adapter',
       explicitMeta: {
-        ruleId: `adapter:buyer_requirement_engine:${template.key}`,
+        ruleId: `adapter:buyer_requirement_engine:${template.requirementInstanceKey || template.key}`,
+        documentName: template.label,
+        participantKey: template.participantKey || null,
+        participantId: template.participantId || null,
+        participantRole: template.participantRole || null,
+        participantName: template.participantName || null,
         visibleSection: normalizeKey(template.groupKey) === 'finance' ? 'finance_documents' : 'buyer_documents',
         owningWorkflow: normalizeKey(template.groupKey) === 'finance' ? 'Finance' : 'OTP / Buyer Onboarding',
         workflowStage: normalizeKey(template.groupKey) === 'finance' ? 'Finance' : 'OTP',
@@ -797,10 +819,13 @@ function dedupeCandidateRows(candidates = []) {
 export function mapProjectionRowToRequirement(row = {}) {
   const required = row.required !== false
   const status = normalizeKey(row.status || REQUIREMENT_STATUSES.pending)
+  const requirementInstanceKey = row.participant_key
+    ? `${row.participant_key}:${row.document_key}`
+    : row.document_key
   const visibilityScope = row.visible_section === 'seller_documents' || row.visible_section === 'buyer_documents'
     ? 'client'
     : 'shared'
-  const documentReference = resolveCrossModuleDocumentReference(row.document_key, {
+  const documentReference = resolveCrossModuleDocumentReference(row.canonical_document_key || row.document_key, {
     groupKey: row.debug_group_key || row.group_key,
     packKey: row.group_key,
     requestedFromRole: row.requested_from || row.responsible_role,
@@ -810,7 +835,9 @@ export function mapProjectionRowToRequirement(row = {}) {
   return {
     id: row.id,
     transactionId: row.transaction_id,
-    key: row.document_key,
+    key: requirementInstanceKey,
+    requirementInstanceKey,
+    baseRequirementKey: row.canonical_document_key || row.document_key,
     canonicalDocumentKey: documentReference.canonicalDocumentKey,
     crossModuleDocumentKey: documentReference.crossModuleDocumentKey,
     crossModuleDocumentMapVersion: documentReference.crossModuleDocumentMapVersion,
@@ -820,6 +847,10 @@ export function mapProjectionRowToRequirement(row = {}) {
     documentPackKey: documentReference.documentPackKey,
     documentCategory: documentReference.documentCategory,
     label: row.document_name,
+    participantId: row.participant_id || null,
+    participantKey: row.participant_key || null,
+    participantRole: row.participant_role || null,
+    participantName: row.participant_name || '',
     groupKey: SECTION_TO_GROUP_KEY[row.visible_section] || row.debug_group_key || 'transfer',
     groupLabel: TRANSACTION_DOCUMENT_SECTION_LABELS[row.visible_section] || row.visible_section,
     group: TRANSACTION_DOCUMENT_SECTION_LABELS[row.visible_section] || row.visible_section,
@@ -900,14 +931,14 @@ async function syncProjectionRows({
 
   const existingRows = currentQuery.data || []
   const existingBySignature = new Map(existingRows.map((row) => [
-    `${row.document_key}::${row.requested_from || ''}::${row.visible_section || ''}`,
+    `${row.document_key}::${row.requested_from || ''}::${row.visible_section || ''}::${row.participant_key || ''}`,
     row,
   ]))
 
   const seenSignatures = new Set()
   const toUpsert = []
   for (const row of sortProjectionRows(projectionRows)) {
-    const signature = `${row.document_key}::${row.requested_from || ''}::${row.visible_section || ''}`
+    const signature = `${row.document_key}::${row.requested_from || ''}::${row.visible_section || ''}::${row.participant_key || ''}`
     seenSignatures.add(signature)
     const existing = existingBySignature.get(signature)
     toUpsert.push({
@@ -929,7 +960,7 @@ async function syncProjectionRows({
   }
 
   const stale = existingRows
-    .filter((row) => !seenSignatures.has(`${row.document_key}::${row.requested_from || ''}::${row.visible_section || ''}`))
+    .filter((row) => !seenSignatures.has(`${row.document_key}::${row.requested_from || ''}::${row.visible_section || ''}::${row.participant_key || ''}`))
     .map((row) => row.id)
     .filter(Boolean)
 
@@ -1001,9 +1032,17 @@ export function buildProjectedTransactionRequirementCandidates({
     explicitMeta: {},
   }))
 
+  const buyerAdapterCandidates = buildBuyerAdapterCandidates({ transaction, facts, formData, definitionsByKey })
+  const participantScopedBuyerDefinitionKeys = new Set(
+    buyerAdapterCandidates
+      .filter((candidate) => candidate.generated.participant_key)
+      .map((candidate) => candidate.generated.document_definition_key),
+  )
+  const attorneyAdapterCandidates = buildAttorneyAdapterCandidates({ transaction, facts, definitionsByKey })
+    .filter((candidate) => !participantScopedBuyerDefinitionKeys.has(candidate.generated.document_definition_key))
   const adapterCandidates = [
-    ...buildBuyerAdapterCandidates({ transaction, facts, formData, definitionsByKey }),
-    ...buildAttorneyAdapterCandidates({ transaction, facts, definitionsByKey }),
+    ...buyerAdapterCandidates,
+    ...attorneyAdapterCandidates,
   ]
 
   const candidates = dedupeCandidateRows([

@@ -18,6 +18,7 @@ export const CLIENT_PORTAL_DIAGNOSTIC_CODES = Object.freeze({
   SUPPRESSED_DEVELOPMENT_SETTING: 'suppressed_development_setting',
   DISABLED_SECTION_ACTION_LEAK: 'disabled_section_action_leak',
   DISABLED_SECTION_ACTIVITY_LEAK: 'disabled_section_activity_leak',
+  BLOCKING_ACTION_ROUTE_FALLBACK: 'blocking_action_route_fallback',
 })
 
 const DEVELOPMENT_SECTION_KEYS = Object.freeze(['handover', 'snags', 'alterations', 'review'])
@@ -262,6 +263,22 @@ export function buildClientPortalProfileDiagnostics({
       message: `Next action ${item?.id || item?.type || 'unknown'} routes to disabled section ${route}.`,
       field: 'nextActions.actionRoute',
       metadata: { actionId: item?.id || '', route },
+    }))
+  }
+
+  for (const action of (Array.isArray(nextActions) ? nextActions : []).filter((item) => item?.metadata?.portalRouteUnavailable === true)) {
+    diagnostics.push(createDiagnostic({
+      code: CLIENT_PORTAL_DIAGNOSTIC_CODES.BLOCKING_ACTION_ROUTE_FALLBACK,
+      severity: CLIENT_PORTAL_DIAGNOSTIC_SEVERITIES.WARNING,
+      title: 'Required action has no direct portal route',
+      message: `Required action ${action?.metadata?.originalActionId || action?.id || 'unknown'} was redirected from disabled section ${action?.metadata?.originalActionRoute || 'unknown'} to ${action?.actionRoute || 'overview'}.`,
+      field: 'nextActions.actionRoute',
+      metadata: {
+        actionId: action?.metadata?.originalActionId || '',
+        originalRoute: action?.metadata?.originalActionRoute || '',
+        fallbackRoute: action?.actionRoute || 'overview',
+        escalationOwnerRole: action?.metadata?.escalationOwnerRole || 'agent',
+      },
     }))
   }
 

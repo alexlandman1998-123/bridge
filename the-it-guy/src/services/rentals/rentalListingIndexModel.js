@@ -155,6 +155,7 @@ export function buildRentalListingIndexRow(listing = {}) {
     city: firstText(listing.city, publication.city, facts.city, addressProfile.city),
     province: firstText(listing.province, publication.province, facts.province, addressProfile.province),
     postalCode: firstText(listing.postalCode, listing.postal_code, publication.postalCode, publication.postal_code, addressProfile.postalCode, addressProfile.postal_code),
+    privatePropertySuburbId: firstText(listing.privatePropertySuburbId, listing.private_property_suburb_id, publication.privatePropertySuburbId, publication.private_property_suburb_id, facts.privatePropertySuburbId, facts.private_property_suburb_id, addressProfile.privatePropertySuburbId, addressProfile.private_property_suburb_id),
     exactAddressVisibility: firstText(listing.exactAddressVisibility, listing.exact_address_visibility, publication.exactAddressVisibility, addressProfile.exactAddressVisibility, addressProfile.exact_address_visibility),
     propertyType: firstText(listing.propertyType, listing.property_type, publication.propertyType, publication.property_type, facts.propertyType, facts.property_type, propertyProfile.propertyType, propertyProfile.property_type),
     bedrooms: firstNumber(listing.bedrooms, publication.bedrooms, facts.bedrooms, propertyProfile.bedrooms),

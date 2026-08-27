@@ -31,7 +31,12 @@ function buildReport(options = {}) {
   const audit = buildDocumentRequestProfessionalPropagationAudit()
   const apiSource = read('src/lib/api.js')
   const laneSource = read('src/services/attorneyWorkflow/attorneyWorkflowLaneService.js')
+  const laneInsertSource = laneSource.slice(
+    laneSource.indexOf('async function insertDocumentRequest'),
+    laneSource.indexOf('async function uploadAttorneyDocumentFile'),
+  )
   const containerSource = read('src/core/documents/documentRequestContainerModel.js')
+  const migrationSource = read('../supabase/migrations/20260827163336_document_request_professional_visibility_phase6.sql')
 
   const checks = [
     {
@@ -51,8 +56,19 @@ function buildReport(options = {}) {
     },
     {
       key: 'attorney_lane_preserves_shared_request_fields',
-      ok: laneSource.includes("if (isMissingColumnError(insert.error, 'visibility_scope')) delete fallback.visibility_scope") &&
-        !laneSource.includes('delete fallback.requested_from'),
+      ok: !laneInsertSource.includes('delete fallback.visibility_scope') &&
+        !laneInsertSource.includes('delete fallback.requested_from'),
+    },
+    {
+      key: 'visibility_is_authoritative_and_fail_closed',
+      ok: containerSource.includes('normalizedVisibility === CLIENT_VISIBLE') &&
+        apiSource.includes('Fail closed: without these fields the client audience cannot be determined safely') &&
+        apiSource.includes('Professional document request propagation is not set up'),
+    },
+    {
+      key: 'phase6_schema_contract_exists',
+      ok: migrationSource.includes('document_requests_visibility_scope_check') &&
+        migrationSource.includes('document_requests_requested_from_check'),
     },
     {
       key: 'container_model_supports_additional_requests',
@@ -107,7 +123,11 @@ function buildReport(options = {}) {
       },
       {
         key: 'professional_only_request_scope',
-        decision: 'Shared role-player requests stay out of buyer/seller portals unless explicitly targeted to a client party.',
+        decision: 'Shared role-player requests stay out of buyer/seller portals even when a legacy target field names a client party.',
+      },
+      {
+        key: 'visibility_scope_is_authoritative',
+        decision: 'A professional-only visibility scope always overrides a buyer or seller target for portal, email, and notification delivery.',
       },
     ],
     gate: {

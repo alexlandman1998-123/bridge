@@ -134,6 +134,15 @@ export const SETTINGS_NAV_GROUPS = [
         keywords: 'lead capture forwarding addresses agent activation inbound enquiry health property24 private property website parser review queue digital card qr business card',
       },
       {
+        to: '/settings/integrations',
+        label: 'Integrations',
+        description: 'Connect WhatsApp and other external platform integrations.',
+        icon: PlugZap,
+        roles: ['developer', 'agent'],
+        permission: PERMISSIONS.manageWorkspaceSettings,
+        keywords: 'integrations whatsapp meta embedded signup webhooks platform connectors',
+      },
+      {
         to: '/settings/syndication',
         label: 'Syndication',
         description: 'Property24 and Private Property publishing setup.',

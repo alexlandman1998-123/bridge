@@ -211,7 +211,7 @@ function parseMigrationRows(stdout) {
 }
 
 function runSupabase(repoRoot, args) {
-  const result = spawnSync('npx', ['--yes', 'supabase@latest', ...args], {
+  const result = spawnSync('supabase', args, {
     cwd: repoRoot,
     encoding: 'utf8',
     env: {
@@ -221,7 +221,7 @@ function runSupabase(repoRoot, args) {
   })
 
   return {
-    command: `npx supabase ${args.join(' ')}`,
+    command: `supabase ${args.join(' ')}`,
     ok: result.status === 0 && !result.error,
     status: result.status,
     stdout: result.stdout || '',

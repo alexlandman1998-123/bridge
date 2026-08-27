@@ -1,6 +1,6 @@
 {
   "phase": "document_request_phase0_freeze_and_map",
-  "generatedAt": "2026-08-13T19:38:37.742Z",
+  "generatedAt": "2026-08-27T16:57:55.205Z",
   "commit": false,
   "mutatedData": false,
   "scope": {
@@ -86,7 +86,7 @@
       "phaseRisk": "Policy has pending legal decisions; Phase 1 must convert this into the only request policy.",
       "exists": true,
       "lineCount": 97,
-      "contentHash": "sha256:6300e1261699c3029dd739e91383f0eea30b1b799a531821c4e378b57a100099",
+      "contentHash": "sha256:6d6f7971fdf43328caa19bd7e3b692fe0218de1cbcf88149c233c00b2a1d71e5",
       "missingMarkers": [],
       "readOnlyPhase0Action": "map_and_freeze"
     },
@@ -99,23 +99,23 @@
         {
           "marker": "buildCanonicalDocumentRequestPlan",
           "present": true,
-          "line": 164
+          "line": 178
         },
         {
           "marker": "pending_policy",
           "present": true,
-          "line": 35
+          "line": 36
         },
         {
           "marker": "bond_originator",
           "present": true,
-          "line": 25
+          "line": 26
         }
       ],
       "phaseRisk": "Planner visibility/requestability must remain aligned with the policy matrix.",
       "exists": true,
-      "lineCount": 198,
-      "contentHash": "sha256:acb9f2c839feeb992186e478dbf8689017ed8af7f05b231266264ddc2c5b9170",
+      "lineCount": 212,
+      "contentHash": "sha256:a8526317301e9333f7cba62e7f4e2e837196062898377d4f3cbd486819cc689d",
       "missingMarkers": [],
       "readOnlyPhase0Action": "map_and_freeze"
     },
@@ -128,23 +128,23 @@
         {
           "marker": "resolveCanonicalDocumentRequestKey",
           "present": true,
-          "line": 219
+          "line": 232
         },
         {
           "marker": "income_affordability_documents",
           "present": true,
-          "line": 42
+          "line": 41
         },
         {
           "marker": "signed_otp",
           "present": true,
-          "line": 9
+          "line": 8
         }
       ],
       "phaseRisk": "Legacy keys must keep mapping until migration and backfill are complete.",
       "exists": true,
-      "lineCount": 259,
-      "contentHash": "sha256:9d14629b6e0293bc4e932020c59b5fd24f2fe3afff72315726a52e4d7b33acbb",
+      "lineCount": 274,
+      "contentHash": "sha256:cb6586ff836ca0d95adb051e7f3b91beed1829c15a31bd1cd3596a139df1108e",
       "missingMarkers": [],
       "readOnlyPhase0Action": "map_and_freeze"
     },
@@ -181,7 +181,7 @@
         {
           "marker": "transaction_required_documents",
           "present": true,
-          "line": 180
+          "line": 224
         },
         {
           "marker": "canonical_requirement_instance_id",
@@ -191,8 +191,8 @@
       ],
       "phaseRisk": "Readiness and upload state must attach to stable canonical requirement rows.",
       "exists": true,
-      "lineCount": 247,
-      "contentHash": "sha256:22f3721afe70239f690382821510340139b15901d0507b653241b1f3edf07482",
+      "lineCount": 302,
+      "contentHash": "sha256:07aac2c172d7358efbee06c0bc8d3b4be590426d7cc7adc3cc6edb7edaf94449",
       "missingMarkers": [],
       "readOnlyPhase0Action": "map_and_freeze"
     },
@@ -221,7 +221,7 @@
       "phaseRisk": "Buyer generation still has compatibility fallback behavior; Phase 3 should remove surprises.",
       "exists": true,
       "lineCount": 473,
-      "contentHash": "sha256:342732be59ec63e921a80e3c9c8f29cab287c16799bea6722ebf14aaa39d2e16",
+      "contentHash": "sha256:5df413d7fb7e4759462544c7c2563a0574c65070095032f385bfdf0dbb3de5be",
       "missingMarkers": [],
       "readOnlyPhase0Action": "map_and_freeze"
     },
@@ -234,23 +234,23 @@
         {
           "marker": "deriveOnboardingConfiguration",
           "present": true,
-          "line": 1786
+          "line": 1819
         },
         {
           "marker": "employment_type",
           "present": true,
-          "line": 226
+          "line": 229
         },
         {
           "marker": "purchase_finance_type",
           "present": true,
-          "line": 458
+          "line": 461
         }
       ],
       "phaseRisk": "Buyer entity and employment rules must be reconciled with canonical and bond requirements.",
       "exists": true,
-      "lineCount": 2466,
-      "contentHash": "sha256:561d9c4770dede47f3b96654b7550655f2fe001703d67a9d47038d781fb20a3e",
+      "lineCount": 2512,
+      "contentHash": "sha256:b9f21390f71ad90a6bd6109f8a2f3657cb7ced221a18e95dfdb2d776fa8e1154",
       "missingMarkers": [],
       "readOnlyPhase0Action": "map_and_freeze"
     },
@@ -263,23 +263,23 @@
         {
           "marker": "BOND_APPLICATION_DOCUMENT_RULE_SET_VERSION",
           "present": true,
-          "line": 3
+          "line": 7
         },
         {
           "marker": "employment",
           "present": true,
-          "line": 28
+          "line": 37
         },
         {
           "marker": "self_employed",
           "present": true,
-          "line": 185
+          "line": 597
         }
       ],
       "phaseRisk": "Bond child requirements are more granular than the transaction-level canonical row.",
       "exists": true,
-      "lineCount": 343,
-      "contentHash": "sha256:fb8bd1609fc6411b1f08efba58106c813e3ac7858564fa9793e0d3d984326619",
+      "lineCount": 1269,
+      "contentHash": "sha256:7b7e3699062c9fa8b03baaca4a6356c17deac02023350ec77d769b049a59ac86",
       "missingMarkers": [],
       "readOnlyPhase0Action": "map_and_freeze"
     },
@@ -292,23 +292,23 @@
         {
           "marker": "getSellerRequiredDocuments",
           "present": true,
-          "line": 1123
+          "line": 1164
         },
         {
           "marker": "property_acquisition_record",
           "present": true,
-          "line": 315
+          "line": 354
         },
         {
           "marker": "capital_improvement_records",
           "present": true,
-          "line": 316
+          "line": 355
         }
       ],
       "phaseRisk": "Stale/deferred seller generated keys exist and must stay non-client-facing unless policy approves them.",
       "exists": true,
-      "lineCount": 2338,
-      "contentHash": "sha256:7241dc91295f5d9c41619fd297a3e5bb70a68142809a3df1613e6adf9e3763fe",
+      "lineCount": 2571,
+      "contentHash": "sha256:cd6c71a0bb18dc1e7c335b2a8da25d2b4dc14c1cf99e37ec6b4ff78223f4b2db",
       "missingMarkers": [],
       "readOnlyPhase0Action": "map_and_freeze"
     },
@@ -321,23 +321,23 @@
         {
           "marker": "buildDocumentCenter",
           "present": true,
-          "line": 2945
+          "line": 3132
         },
         {
           "marker": "getSellerRequiredDocuments",
           "present": true,
-          "line": 34
+          "line": 39
         },
         {
           "marker": "additionalDocumentRequests",
           "present": true,
-          "line": 1008
+          "line": 1067
         }
       ],
       "phaseRisk": "Portal projection must show the same requirement containers as internal workspaces.",
       "exists": true,
-      "lineCount": 3688,
-      "contentHash": "sha256:a5f587e0292eb6e6c777e2bb3cb85bca40b472f61e33cf008c8388af9a97cdb3",
+      "lineCount": 4023,
+      "contentHash": "sha256:aa096f7538d300ab21ef428977a70a481327b08e138ce9c9a2f04fb610c1a6a4",
       "missingMarkers": [],
       "readOnlyPhase0Action": "map_and_freeze"
     },
@@ -350,23 +350,23 @@
         {
           "marker": "normalizeAdditionalRequest",
           "present": true,
-          "line": 276
+          "line": 372
         },
         {
           "marker": "additionalRequests",
           "present": true,
-          "line": 410
+          "line": 573
         },
         {
           "marker": "upload",
           "present": true,
-          "line": 29
+          "line": 34
         }
       ],
       "phaseRisk": "Ad hoc request containers must remain uploadable from the portal.",
       "exists": true,
-      "lineCount": 754,
-      "contentHash": "sha256:3a71662da1e5fd07b038adba55fbdc1d1132069f083200013e87a0c970889a20",
+      "lineCount": 914,
+      "contentHash": "sha256:cd7146e6a846eb839738b63e11882c05abb848fa58c0416b5bd37a30b9fade37",
       "missingMarkers": [],
       "readOnlyPhase0Action": "map_and_freeze"
     },
@@ -379,23 +379,23 @@
         {
           "marker": "additionalDocumentRequestsForWorkspace",
           "present": true,
-          "line": 10060
+          "line": 10873
         },
         {
           "marker": "additionalRequestDocuments",
           "present": true,
-          "line": 10056
+          "line": 10869
         },
         {
           "marker": "documentCenter",
           "present": true,
-          "line": 3345
+          "line": 3481
         }
       ],
       "phaseRisk": "Buyer and seller portal filters must not hide valid request containers.",
       "exists": true,
-      "lineCount": 15902,
-      "contentHash": "sha256:152cf0139cbe0ac0767f3d30cc8abd4182aed3eb56d0f93c48a2a8be0fb2f3c2",
+      "lineCount": 17320,
+      "contentHash": "sha256:dc4c008bfb551a92f6347990fd507d507e623e291ae463725edb2f0f48ff2e5b",
       "missingMarkers": [],
       "readOnlyPhase0Action": "map_and_freeze"
     },
@@ -408,28 +408,28 @@
         {
           "marker": "createTransactionDocumentRequests",
           "present": true,
-          "line": 14179
+          "line": 15151
         },
         {
           "marker": "document_request_groups",
           "present": true,
-          "line": 14221
+          "line": 15193
         },
         {
           "marker": "document_requests",
           "present": true,
-          "line": 13465
+          "line": 14430
         },
         {
           "marker": "transaction_required_documents",
           "present": true,
-          "line": 7495
+          "line": 8290
         }
       ],
       "phaseRisk": "Attorney, bond-originator, and agent requests should create shared containers rather than disconnected rows.",
       "exists": true,
-      "lineCount": 50666,
-      "contentHash": "sha256:e22e69d1f86a39d3024f38345d841858924fe6f2696003899ee3943bc451f836",
+      "lineCount": 54408,
+      "contentHash": "sha256:fc2de6cf167e6f718a76bb4ba97fef343049730c899953d8bffcd318c22ce30a",
       "missingMarkers": [],
       "readOnlyPhase0Action": "map_and_freeze"
     },
@@ -442,23 +442,23 @@
         {
           "marker": "handleQuickRequestDocuments",
           "present": true,
-          "line": 13351
+          "line": 17575
         },
         {
           "marker": "createTransactionDocumentRequests",
           "present": true,
-          "line": 103
+          "line": 121
         },
         {
           "marker": "requestAttorneyWorkflowLaneDocument",
           "present": true,
-          "line": 86
+          "line": 103
         }
       ],
       "phaseRisk": "Quick request actions and lane-specific requests are not yet guaranteed to share one canonical container model.",
       "exists": true,
-      "lineCount": 19380,
-      "contentHash": "sha256:fc01bdfdb40420e61dcd1c84942ba88dfd2d5e3494182df5622613112c9f5aec",
+      "lineCount": 23762,
+      "contentHash": "sha256:63a2ea217d88dcc125e9373998cbe9690345f55c4b534ef1733d191923a63c00",
       "missingMarkers": [],
       "readOnlyPhase0Action": "map_and_freeze"
     },
@@ -471,7 +471,7 @@
         {
           "marker": "requestAttorneyWorkflowLaneDocument",
           "present": true,
-          "line": 1917
+          "line": 1915
         },
         {
           "marker": "document_requests",
@@ -481,8 +481,8 @@
       ],
       "phaseRisk": "Lane-specific requests currently write document_requests directly and need a Phase 2 alignment decision.",
       "exists": true,
-      "lineCount": 2221,
-      "contentHash": "sha256:c3869e7d94da5247abaf97850220aade8db413777b19eb514293f2e65cf835c3",
+      "lineCount": 2219,
+      "contentHash": "sha256:d5173ce1680b33cc75b7d3a34a5797f5aacf4d2ae2d8c0a6d263ead26efbe5fd",
       "missingMarkers": [],
       "readOnlyPhase0Action": "map_and_freeze"
     },
@@ -543,23 +543,23 @@
         {
           "marker": "uploadPrivateListingDocument",
           "present": true,
-          "line": 159
+          "line": 170
         },
         {
           "marker": "sellerDocumentUpload",
           "present": true,
-          "line": 2789
+          "line": 3371
         },
         {
           "marker": "requiredDocuments",
           "present": true,
-          "line": 5446
+          "line": 6599
         }
       ],
       "phaseRisk": "Agent upload-on-behalf must cover the same seller requirements exposed in the seller portal.",
       "exists": true,
-      "lineCount": 12341,
-      "contentHash": "sha256:85e19aa9d98ca1c234d7611d7bc045ccb9b71838442d30e9a1184cc0748774f5",
+      "lineCount": 14254,
+      "contentHash": "sha256:64e845bf4ab51d863812c049ffbc1ad570a0b392d816ec0f4f05544d262758a8",
       "missingMarkers": [],
       "readOnlyPhase0Action": "map_and_freeze"
     },
@@ -577,13 +577,13 @@
         {
           "marker": "getRequiredBuyerDocuments",
           "present": true,
-          "line": 87
+          "line": 88
         }
       ],
       "phaseRisk": "Development buyer document requests must be folded into the same canonical/container model.",
       "exists": true,
-      "lineCount": 11223,
-      "contentHash": "sha256:58b313e2aee4d2d96d1c46c92fd9f77eb57072c7e6f13dc9bb273120023f9888",
+      "lineCount": 11443,
+      "contentHash": "sha256:22594802e68d47299d0495517fd75bdd2316954abf61b28d7844db43fe40ffb3",
       "missingMarkers": [],
       "readOnlyPhase0Action": "map_and_freeze"
     },
@@ -626,12 +626,7 @@
         {
           "surfaceId": "seller_requirement_service",
           "path": "src/services/sellerDocumentRequirementsService.js",
-          "line": 315
-        },
-        {
-          "surfaceId": "seller_portal_projection",
-          "path": "src/services/clientPortalWorkspaceService.js",
-          "line": 1544
+          "line": 354
         }
       ],
       "currentlyPresentInSource": true
@@ -644,12 +639,7 @@
         {
           "surfaceId": "seller_requirement_service",
           "path": "src/services/sellerDocumentRequirementsService.js",
-          "line": 316
-        },
-        {
-          "surfaceId": "seller_portal_projection",
-          "path": "src/services/clientPortalWorkspaceService.js",
-          "line": 1545
+          "line": 355
         }
       ],
       "currentlyPresentInSource": true

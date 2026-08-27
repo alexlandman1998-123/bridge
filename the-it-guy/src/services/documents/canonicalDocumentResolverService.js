@@ -316,6 +316,10 @@ export function buildRequirementInstance(rule = {}, input = {}) {
     stage_gates: normalizeStringArray(rule.stage_gates),
     requested_from_role: rule.requested_from_role || null,
     requested_from_contact_id: input.requestedFromContactId || null,
+    participant_key: rule.participant_key || input.participantKey || null,
+    participant_id: rule.participant_id || input.participantId || null,
+    participant_role: rule.participant_role || input.participantRole || null,
+    participant_name: rule.participant_name || input.participantName || null,
     visible_to_roles: uniqueSorted(visibleToRoles),
     uploadable_by_roles: uniqueSorted(uploadableByRoles),
     reviewer_role: rule.reviewer_role || null,
@@ -332,6 +336,7 @@ export function buildInstanceSignature(instance = {}) {
     instance.document_definition_key || '',
     instance.requested_from_role || '',
     instance.requested_from_contact_id || '',
+    instance.participant_key || '',
   ].join('::')
 }
 
@@ -341,6 +346,10 @@ function hasSafeFieldChanges(existing = {}, generated = {}) {
     !sameNullableText(existing.requirement_level, generated.requirement_level) ||
     !sameStringArray(existing.stage_gates, generated.stage_gates) ||
     !sameNullableText(existing.requested_from_role, generated.requested_from_role) ||
+    !sameNullableText(existing.participant_key, generated.participant_key) ||
+    !sameNullableText(existing.participant_id, generated.participant_id) ||
+    !sameNullableText(existing.participant_role, generated.participant_role) ||
+    !sameNullableText(existing.participant_name, generated.participant_name) ||
     !sameStringArray(existing.visible_to_roles, generated.visible_to_roles) ||
     !sameStringArray(existing.uploadable_by_roles, generated.uploadable_by_roles) ||
     !sameNullableText(existing.reviewer_role, generated.reviewer_role) ||
@@ -359,6 +368,10 @@ function buildSafeUpdate(existing = {}, generated = {}, status = existing.status
     stage_gates: generated.stage_gates,
     requested_from_role: generated.requested_from_role,
     requested_from_contact_id: generated.requested_from_contact_id || null,
+    participant_key: generated.participant_key || null,
+    participant_id: generated.participant_id || null,
+    participant_role: generated.participant_role || null,
+    participant_name: generated.participant_name || null,
     visible_to_roles: generated.visible_to_roles,
     uploadable_by_roles: generated.uploadable_by_roles,
     reviewer_role: generated.reviewer_role,

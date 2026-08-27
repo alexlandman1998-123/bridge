@@ -2049,103 +2049,111 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
             transferAttorneyRolePlayerSelection,
             shouldRouteBondOriginator ? bondOriginatorRolePlayerSelection : null,
           ].filter(Boolean),
+          requireCanonicalPartnerHandoffs: true,
+          requiredPartnerRoleTypes: [
+            'transfer_attorney',
+            shouldRouteBondOriginator ? 'bond_originator' : null,
+          ].filter(Boolean),
         },
       })
 
-      const partnerInvitationResults = []
-      const partnerInvitationWarnings = []
-      const partnerProspectResults = []
-      for (const { roleType, prospect } of activePartnerProspects) {
-        try {
-          if (prospect.status === 'joined' && prospect.bridgeUserId) {
-            const reuseResult = await applyPartnerProspectToTransaction({
-              transactionId: result.transactionId,
-              partnerProspectId: prospect.id,
-              roleType,
-            })
-            partnerProspectResults.push({ roleType, prospect, result: reuseResult })
-            continue
-          }
+      const runPartnerInvitationAutomation = async () => {
+        const partnerInvitationResults = []
+        const partnerInvitationWarnings = []
+        const partnerProspectResults = []
+        for (const { roleType, prospect } of activePartnerProspects) {
+          try {
+            if (prospect.status === 'joined' && prospect.bridgeUserId) {
+              const reuseResult = await applyPartnerProspectToTransaction({
+                transactionId: result.transactionId,
+                partnerProspectId: prospect.id,
+                roleType,
+              })
+              partnerProspectResults.push({ roleType, prospect, result: reuseResult })
+              continue
+            }
 
-          const invitationDraft = prospectToInvitationDraft(roleType, prospect)
-          const invitationResult = await createTransactionPartnerInvitation({
-            transactionId: result.transactionId,
-            ...invitationDraft,
-            metadata: {
-              source: 'partner_prospect_reuse',
-              buyerName,
-              partnerProspectId: prospect.id,
-            },
-          })
-          partnerInvitationResults.push(invitationResult)
-          partnerProspectResults.push({ roleType, prospect, invitation: invitationResult.invitation })
-          if (invitationResult.emailResult?.sent === false || invitationResult.emailResult?.error) {
+            const invitationDraft = prospectToInvitationDraft(roleType, prospect)
+            const invitationResult = await createTransactionPartnerInvitation({
+              transactionId: result.transactionId,
+              ...invitationDraft,
+              metadata: {
+                source: 'partner_prospect_reuse',
+                buyerName,
+                partnerProspectId: prospect.id,
+              },
+            })
+            partnerInvitationResults.push(invitationResult)
+            partnerProspectResults.push({ roleType, prospect, invitation: invitationResult.invitation })
+            if (invitationResult.emailResult?.sent === false || invitationResult.emailResult?.error) {
+              partnerInvitationWarnings.push(
+                `${prospect.companyName}: prospect reused, but email delivery needs attention.`,
+              )
+            }
+          } catch (prospectError) {
             partnerInvitationWarnings.push(
-              `${prospect.companyName}: prospect reused, but email delivery needs attention.`,
+              `${prospect.companyName || prospect.email}: ${prospectError.message || 'partner prospect could not be reused.'}`,
             )
           }
-        } catch (prospectError) {
-          partnerInvitationWarnings.push(
-            `${prospect.companyName || prospect.email}: ${prospectError.message || 'partner prospect could not be reused.'}`,
-          )
         }
-      }
-      for (const draft of activePartnerInvitations) {
-        try {
-          const invitationResult = await createTransactionPartnerInvitation({
-            transactionId: result.transactionId,
-            ...draft,
-            metadata: {
-              source: 'new_transaction_wizard',
-              buyerName,
-            },
-          })
-          partnerInvitationResults.push(invitationResult)
-          if (invitationResult.emailResult?.sent === false || invitationResult.emailResult?.error) {
+        for (const draft of activePartnerInvitations) {
+          try {
+            const invitationResult = await createTransactionPartnerInvitation({
+              transactionId: result.transactionId,
+              ...draft,
+              metadata: {
+                source: 'new_transaction_wizard',
+                buyerName,
+              },
+            })
+            partnerInvitationResults.push(invitationResult)
+            if (invitationResult.emailResult?.sent === false || invitationResult.emailResult?.error) {
+              partnerInvitationWarnings.push(
+                `${draft.companyName}: invitation saved, but email delivery needs attention.`,
+              )
+            }
+          } catch (invitationError) {
             partnerInvitationWarnings.push(
-              `${draft.companyName}: invitation saved, but email delivery needs attention.`,
+              `${draft.companyName || draft.email}: ${invitationError.message || 'invitation could not be created.'}`,
             )
           }
-        } catch (invitationError) {
-          partnerInvitationWarnings.push(
-            `${draft.companyName || draft.email}: ${invitationError.message || 'invitation could not be created.'}`,
-          )
         }
-      }
-      if (shouldAutoInviteDevelopmentDefaultBondOriginator) {
-        try {
-          const invitationResult = await createTransactionPartnerInvitation({
-            transactionId: result.transactionId,
-            roleType: 'bond_originator',
-            companyName: directDevelopmentDefaultBondOriginator.companyName,
-            contactName:
-              directDevelopmentDefaultBondOriginator.contactPerson ||
-              directDevelopmentDefaultBondOriginator.companyName,
-            email: directDevelopmentDefaultBondOriginator.email,
-            phone: directDevelopmentDefaultBondOriginator.phone || '',
-            metadata: {
-              source: 'development_role_player_default',
-              buyerName,
-              developmentId: selectedDevelopment?.id || form.setup.developmentId || null,
-              defaultSource:
-                developmentRolePlayerDefaults.defaultBondOriginatorSource ||
-                developmentRolePlayerDefaults.default_bond_originator_source ||
-                'first_bond_originator',
-            },
-          })
-          partnerInvitationResults.push(invitationResult)
-          if (invitationResult.emailResult?.sent === false || invitationResult.emailResult?.error) {
+        if (shouldAutoInviteDevelopmentDefaultBondOriginator) {
+          try {
+            const invitationResult = await createTransactionPartnerInvitation({
+              transactionId: result.transactionId,
+              roleType: 'bond_originator',
+              companyName: directDevelopmentDefaultBondOriginator.companyName,
+              contactName:
+                directDevelopmentDefaultBondOriginator.contactPerson ||
+                directDevelopmentDefaultBondOriginator.companyName,
+              email: directDevelopmentDefaultBondOriginator.email,
+              phone: directDevelopmentDefaultBondOriginator.phone || '',
+              metadata: {
+                source: 'development_role_player_default',
+                buyerName,
+                developmentId: selectedDevelopment?.id || form.setup.developmentId || null,
+                defaultSource:
+                  developmentRolePlayerDefaults.defaultBondOriginatorSource ||
+                  developmentRolePlayerDefaults.default_bond_originator_source ||
+                  'first_bond_originator',
+              },
+            })
+            partnerInvitationResults.push(invitationResult)
+            if (invitationResult.emailResult?.sent === false || invitationResult.emailResult?.error) {
+              partnerInvitationWarnings.push(
+                `${directDevelopmentDefaultBondOriginator.companyName}: default originator invitation saved, but email delivery needs attention.`,
+              )
+            }
+          } catch (invitationError) {
             partnerInvitationWarnings.push(
-              `${directDevelopmentDefaultBondOriginator.companyName}: default originator invitation saved, but email delivery needs attention.`,
+              `${directDevelopmentDefaultBondOriginator.companyName || directDevelopmentDefaultBondOriginator.email}: ${
+                invitationError.message || 'default originator invitation could not be created.'
+              }`,
             )
           }
-        } catch (invitationError) {
-          partnerInvitationWarnings.push(
-            `${directDevelopmentDefaultBondOriginator.companyName || directDevelopmentDefaultBondOriginator.email}: ${
-              invitationError.message || 'default originator invitation could not be created.'
-            }`,
-          )
         }
+        return { partnerInvitationResults, partnerProspectResults, partnerInvitationWarnings }
       }
 
       const buyerDocumentsPortal = resolveBuyerDocumentsPortal(result)
@@ -2169,12 +2177,34 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
         buyerEmail: form.setup.buyerEmail.trim(),
         allowIncomplete,
         buyerDocumentsEmailSent: null,
-        partnerInvitations: partnerInvitationResults,
-        partnerProspects: partnerProspectResults,
-        partnerInvitationWarnings,
+        partnerInvitations: [],
+        partnerProspects: [],
+        partnerInvitationWarnings: [],
         setupWarnings: Array.isArray(result.setupWarnings) ? result.setupWarnings : [],
         handoffChecklist: buildHandoffChecklist(),
       })
+
+      // Do not block transaction creation UX on partner invitation automation.
+      void (async () => {
+        try {
+          const partnerAutomationResult = await runPartnerInvitationAutomation()
+          setCreatedTransaction((current) => (
+            current?.transactionId === result.transactionId
+              ? {
+                  ...current,
+                  partnerInvitations: partnerAutomationResult.partnerInvitationResults,
+                  partnerProspects: partnerAutomationResult.partnerProspectResults,
+                  partnerInvitationWarnings: partnerAutomationResult.partnerInvitationWarnings,
+                }
+              : current
+          ))
+        } catch (partnerAutomationError) {
+          console.warn(
+            '[NewTransactionWizard] partner invitation automation failed:',
+            partnerAutomationError?.message || String(partnerAutomationError),
+          )
+        }
+      })()
 
       // Do not block transaction creation UX on post-create email automation.
       void (async () => {
@@ -2220,11 +2250,14 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
               )
             } else if (reservationEmailResult?.sent === false) {
               const reason = String(reservationEmailResult?.reason || '').trim()
-              reservationDepositEmailError =
-                reservationEmailResult?.error ||
-                (reason
-                  ? `Transaction created, but reservation deposit email was skipped (${reason}).`
-                  : 'Transaction created, but reservation deposit email was skipped.')
+              const benignReservationSkip = ['already_verified', 'not_required'].includes(reason)
+              if (!benignReservationSkip) {
+                reservationDepositEmailError =
+                  reservationEmailResult?.error ||
+                  (reason
+                    ? `Transaction created, but reservation deposit email was skipped (${reason}).`
+                    : 'Transaction created, but reservation deposit email was skipped.')
+              }
             }
           }
         }

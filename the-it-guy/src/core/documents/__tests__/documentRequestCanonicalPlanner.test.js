@@ -83,6 +83,12 @@ test('buyer audience only receives buyer client-visible requests', () => {
     'buyer plan',
   )
   assert.equal(buyerPlan.requests.every((request) => request.clientVisible && request.requestedFrom === 'buyer'), true)
+  const trustDeed = buyerPlan.requests.find((request) => request.key === 'buyer_trust_deed')
+  assert.equal(trustDeed?.clientSupplied, true)
+  assert.equal(trustDeed?.responsiblePartyRole, 'buyer')
+  assert.equal(trustDeed?.agentMayUploadOnBehalf, true)
+  assert.deepEqual([...trustDeed.uploadableByRoles], ['buyer', 'agent'])
+  assert.deepEqual([...trustDeed.uploadOnBehalfRoles], ['agent'])
 })
 
 test('seller audience only receives seller client-visible requests', () => {

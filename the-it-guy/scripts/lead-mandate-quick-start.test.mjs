@@ -55,8 +55,8 @@ assert.ok(
 )
 assert.match(
   appSource,
-  /\}, \[location\.pathname, location\.search\]\)/,
-  'The shell should reset scroll on lead workspace tab query changes as well as path changes.',
+  /if \(pathname\.startsWith\('\/pipeline\/leads\/'\)\) return pathname/,
+  'Lead workspace tab query changes should keep a stable route key so the shell does not reset scroll.',
 )
 assert.ok(
   appSource.includes("window.addEventListener('focus', resetShellScrollIfLocked)") &&

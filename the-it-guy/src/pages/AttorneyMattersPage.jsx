@@ -1584,7 +1584,19 @@ function AttorneyMattersPage() {
     if (normalize(activeWorkspace?.type) === 'attorney_firm') return normalize(activeWorkspace?.id)
     return normalize(profile?.primaryAttorneyFirmId || profile?.primary_attorney_firm_id)
   }, [activeWorkspace?.id, activeWorkspace?.type, profile?.primaryAttorneyFirmId, profile?.primary_attorney_firm_id])
+  const resolvedAttorneyFirmId = attorneyFirmId || normalize(permissionsState.firmId)
+  const resolvedAttorneyFirm = useMemo(() => {
+    if (!resolvedAttorneyFirmId) return null
+    return {
+      id: resolvedAttorneyFirmId,
+      name: activeWorkspace?.name || activeWorkspace?.title || activeWorkspace?.raw?.name || 'Attorney firm',
+    }
+  }, [activeWorkspace?.name, activeWorkspace?.raw?.name, activeWorkspace?.title, resolvedAttorneyFirmId])
   const currentUserId = normalize(profile?.id || profile?.userId)
+  const currentAuthUser = useMemo(() => ({
+    id: currentUserId,
+    email: profile?.email || '',
+  }), [currentUserId, profile?.email])
 
   useEffect(() => {
     if (attorneyModuleState.loading || viewEnabled) return
@@ -1597,7 +1609,7 @@ function AttorneyMattersPage() {
 
     async function load() {
       const timer = createPerfTimer('attorney.page.matters', {
-        firmId: attorneyFirmId || null,
+        firmId: resolvedAttorneyFirmId || null,
         userId: currentUserId || null,
         view: viewKey,
         viewEnabled,
@@ -1608,14 +1620,21 @@ function AttorneyMattersPage() {
         timer.end({ outcome: 'view-disabled' })
         return
       }
+      if (permissionsState.loading && !resolvedAttorneyFirmId) {
+        timer.end({ outcome: 'awaiting-permissions-context' })
+        return
+      }
       setLoading(true)
       setError('')
       try {
         timer.mark('workspace:start')
         const workspace = await getAttorneyMatterWorkspace({
           view: viewKey,
-          firmId: attorneyFirmId || null,
+          firmId: resolvedAttorneyFirmId || null,
+          firm: resolvedAttorneyFirm,
           userId: currentUserId || null,
+          authUser: currentAuthUser,
+          membership: permissionsState.membership || null,
         })
         timer.mark('workspace:end', {
           rows: workspace?.tableRows?.length || 0,
@@ -1638,7 +1657,7 @@ function AttorneyMattersPage() {
     return () => {
       active = false
     }
-  }, [attorneyFirmId, currentUserId, viewEnabled, viewKey])
+  }, [currentAuthUser, currentUserId, permissionsState.loading, permissionsState.membership, resolvedAttorneyFirm, resolvedAttorneyFirmId, viewEnabled, viewKey])
 
   useEffect(() => {
     function handleHeaderSearch(event) {
@@ -1806,15 +1825,18 @@ function AttorneyMattersPage() {
 
   async function refreshIncomingWorkspaceAfterDecision(row = {}) {
     const timer = createPerfTimer('attorney.page.matters.refresh', {
-      firmId: attorneyFirmId || null,
+      firmId: resolvedAttorneyFirmId || null,
       userId: currentUserId || null,
       view: viewKey,
       matterId: row.matterId || row.transactionId || null,
     })
     const refreshedWorkspace = await getAttorneyMatterWorkspace({
       view: viewKey,
-      firmId: attorneyFirmId || null,
+      firmId: resolvedAttorneyFirmId || null,
+      firm: resolvedAttorneyFirm,
       userId: currentUserId || null,
+      authUser: currentAuthUser,
+      membership: permissionsState.membership || null,
     })
     timer.end({
       rows: refreshedWorkspace?.tableRows?.length || 0,

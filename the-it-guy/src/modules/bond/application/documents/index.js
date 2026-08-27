@@ -9,6 +9,7 @@ export {
 } from './bondApplicationDocumentRules.js'
 export {
   buildBondApplicationDocumentRequirementFingerprint,
+  resolvePrimaryApplicantDocumentParticipantContext,
   resolveBondApplicationDocumentRequirements,
   validateBondApplicationDocumentRuleContract,
 } from './resolveBondApplicationDocumentRequirements.js'
