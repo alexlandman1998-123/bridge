@@ -33,7 +33,6 @@ import {
   mergePartnerPersonIntoOption,
 } from '../lib/partnerPersonOptions'
 import { listOrganisationPreferredPartners, listUserPreferredPartnerRoutingRules } from '../lib/settingsApi'
-import { resolveTransactionOnboardingLink } from '../lib/onboardingLinks'
 import { useOrganisation } from '../context/OrganisationContext'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
@@ -304,6 +303,19 @@ function pickFirstValue(...values) {
   }
 
   return ''
+}
+
+function resolveBuyerDocumentsPortal(result = {}) {
+  const rawPath = normalizeLabel(result?.clientPortalPath || result?.buyerPortalPath, '')
+  const token = normalizeLabel(result?.clientPortalToken || result?.buyerPortalToken, '')
+  const path = rawPath ? (rawPath.startsWith('/') ? rawPath : `/${rawPath}`) : token ? `/client/${token}` : ''
+  const origin = typeof window === 'undefined' ? '' : window.location.origin
+
+  return {
+    token,
+    path,
+    url: path && origin ? `${origin}${path}` : '',
+  }
 }
 
 function createInitialPartnerInvitationDrafts() {
@@ -1875,18 +1887,18 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
     return Object.keys(nextErrors).length === 0
   }
 
-  const onboardingUrl = createdTransaction?.onboardingToken
-    ? `${window.location.origin}/client/onboarding/${createdTransaction.onboardingToken}`
-    : ''
+  const buyerDocumentsUrl =
+    createdTransaction?.buyerDocumentsUrl ||
+    resolveBuyerDocumentsPortal(createdTransaction).url
 
-  function handleCopyOnboardingLink() {
-    if (!onboardingUrl) {
-      setSaveError('Onboarding link is not available for this transaction yet.')
+  function handleCopyBuyerDocumentsLink() {
+    if (!buyerDocumentsUrl) {
+      setSaveError('Buyer document request link is not available for this transaction yet.')
       return
     }
 
-    navigator.clipboard.writeText(onboardingUrl).catch(() => {
-      setSaveError('Unable to copy onboarding link. Please copy it directly from the popup.')
+    navigator.clipboard.writeText(buyerDocumentsUrl).catch(() => {
+      setSaveError('Unable to copy buyer document request link. Please copy it directly from the popup.')
     })
   }
 
@@ -2026,7 +2038,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
         finance: financeForSave,
         status: {
           ...form.status,
-          nextAction: form.status.nextAction || (allowIncomplete ? 'Complete stakeholder setup and assign legal roles.' : 'Send onboarding link to client.'),
+          nextAction: form.status.nextAction || (allowIncomplete ? 'Complete stakeholder setup and assign legal roles.' : 'Request buyer documents through the buyer portal.'),
         },
         options: {
           allowIncomplete,
@@ -2136,29 +2148,11 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
         }
       }
 
-      let onboarding = result?.onboardingToken
-        ? {
-            token: result.onboardingToken,
-            url: `${window.location.origin}/client/onboarding/${result.onboardingToken}`,
-          }
-        : { token: '', url: '' }
-      if (!onboarding.token) {
-        try {
-          // Existing createTransactionFromWizard flow already creates/ensures transaction_onboarding.
-          onboarding = await resolveTransactionOnboardingLink({
-            transactionId: result.transactionId,
-            purchaserType: form.setup.purchaserType,
-          })
-        } catch (onboardingError) {
-          if (!allowIncomplete) {
-            throw onboardingError
-          }
-        }
-      }
+      const buyerDocumentsPortal = resolveBuyerDocumentsPortal(result)
 
       try {
-        if (onboarding?.url) {
-          await navigator.clipboard.writeText(onboarding.url)
+        if (buyerDocumentsPortal.url) {
+          await navigator.clipboard.writeText(buyerDocumentsPortal.url)
         }
       } catch {
         // Keep the generated link visible in the success state if clipboard access is unavailable.
@@ -2169,11 +2163,12 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
 
       setCreatedTransaction({
         ...result,
-        onboardingToken: onboarding.token,
+        buyerDocumentsToken: buyerDocumentsPortal.token,
+        buyerDocumentsUrl: buyerDocumentsPortal.url,
         buyerName,
         buyerEmail: form.setup.buyerEmail.trim(),
         allowIncomplete,
-        onboardingEmailSent: null,
+        buyerDocumentsEmailSent: null,
         partnerInvitations: partnerInvitationResults,
         partnerProspects: partnerProspectResults,
         partnerInvitationWarnings,
@@ -2183,23 +2178,23 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
 
       // Do not block transaction creation UX on post-create email automation.
       void (async () => {
-        let onboardingEmailError = ''
+        let buyerDocumentsEmailError = ''
         if (!form.setup.buyerEmail.trim()) {
-          onboardingEmailError = 'Transaction created, but onboarding email was not sent because buyer email is blank.'
+          buyerDocumentsEmailError = 'Transaction created, but buyer document request email was not sent because buyer email is blank.'
         } else if (!supabase) {
-          onboardingEmailError = 'Transaction created, but onboarding email was not sent because Supabase is not configured in this environment.'
+          buyerDocumentsEmailError = 'Transaction created, but buyer document request email was not sent because Supabase is not configured in this environment.'
         } else {
           const { error: invokeError } = await invokeEdgeFunction('send-email', {
             body: {
-              type: 'client_onboarding',
+              type: 'client_portal_link',
               transactionId: result.transactionId,
             },
           })
 
           if (invokeError) {
-            onboardingEmailError = await parseEdgeFunctionError(
+            buyerDocumentsEmailError = await parseEdgeFunctionError(
               invokeError,
-              'Transaction created, but onboarding email failed to send.',
+              'Transaction created, but buyer document request email failed to send.',
             )
           }
         }
@@ -2239,7 +2234,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
           const developmentName = normalizeLabel(selectedDevelopment?.name, 'the development')
           const unitReference = normalizeLabel(selectedUnit?.unit_number ? `Unit ${selectedUnit.unit_number}` : '', 'the property')
           const clientName = normalizeLabel(buyerName, 'Client')
-          const onboardingLink = normalizeLabel(onboarding?.url, '')
+          const buyerDocumentsLink = normalizeLabel(buyerDocumentsPortal.url, '')
           const clientPhoneFromForm = normalizeLabel(form.setup.buyerPhone, '')
           const clientPhoneFromResolvedContext = normalizeLabel(whatsappContext?.client?.phone, '')
           const resolvedClientPhoneRaw = pickFirstValue(
@@ -2278,41 +2273,38 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
             '',
             'Arch9 is your central transaction platform. It brings together your agent, developer, and attorney into one place, so you always know what’s happening and what’s required next.',
             '',
-            'To get started, please complete your onboarding here:',
-            onboardingLink || '[Onboarding link unavailable]',
+            'Please upload your buyer documents through your secure Arch9 buyer portal here:',
+            buyerDocumentsLink || '[Buyer document request link unavailable]',
             '',
-            'This onboarding will allow us to:',
-            '• Capture your details accurately',
-            '• Prepare your sale agreement (OTP)',
-            '• Begin the next steps in your transaction',
+            'This helps the transaction team collect and review the documents needed for transfer, finance, and compliance.',
             '',
             'If you have any questions along the way, you’ll be guided step-by-step.',
             '',
             '– Arch9',
           ].join('\n')
 
-          console.log('[WhatsApp Debug] client onboarding payload', {
+          console.log('[WhatsApp Debug] buyer document request payload', {
             transactionId: result.transactionId,
             clientName,
             clientPhone,
-            onboardingLink,
+            buyerDocumentsLink,
             developmentName,
             unitReference,
           })
 
-          console.log('WhatsApp trigger: onboarding link generated', {
+          console.log('WhatsApp trigger: buyer document request link generated', {
             transactionId: result.transactionId,
             clientPhone,
           })
 
           if (!clientPhone) {
-            console.warn('WhatsApp client onboarding skipped: missing phone', {
+            console.warn('WhatsApp buyer document request skipped: missing phone', {
               transactionId: result.transactionId,
               clientPhoneFromForm,
               clientPhoneFromResolvedContext,
             })
           } else {
-            console.log('WhatsApp client onboarding send attempt', {
+            console.log('WhatsApp buyer document request send attempt', {
               transactionId: result.transactionId,
               clientPhone,
             })
@@ -2322,19 +2314,19 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
               role: 'client',
             })
             if (whatsappResult?.ok) {
-              console.log('WhatsApp client onboarding sent', {
+              console.log('WhatsApp buyer document request sent', {
                 transactionId: result.transactionId,
                 clientPhone,
                 result: whatsappResult,
               })
             } else if (whatsappResult?.skipped) {
-              console.warn('WhatsApp client onboarding skipped: missing phone', {
+              console.warn('WhatsApp buyer document request skipped: missing phone', {
                 transactionId: result.transactionId,
                 clientPhone,
                 reason: whatsappResult?.reason || 'unknown',
               })
             } else {
-              console.error('WhatsApp client onboarding failed', {
+              console.error('WhatsApp buyer document request failed', {
                 transactionId: result.transactionId,
                 clientPhone,
                 error: whatsappResult?.error || whatsappResult,
@@ -2350,7 +2342,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
             })
             const transactionOwnerResult = await sendWhatsAppNotification({
               to: developerPhone,
-              message: `New transaction created for ${unitReference} at ${developmentName}.\n\nClient: ${clientName}\nAgent: ${agentName}\n\nThe client onboarding link has been generated.`,
+              message: `New transaction created for ${unitReference} at ${developmentName}.\n\nClient: ${clientName}\nAgent: ${agentName}\n\nThe buyer document request link has been generated.`,
               role: 'transaction_owner',
             })
             if (transactionOwnerResult?.ok) {
@@ -2384,7 +2376,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
           })
           await sendWhatsAppNotification({
             to: attorneyPhone,
-            message: `New transaction created for ${unitReference} at ${developmentName}.\n\nClient: ${clientName}\n\nYou will be notified once onboarding has been submitted.`,
+            message: `New transaction created for ${unitReference} at ${developmentName}.\n\nClient: ${clientName}\n\nYou will be notified once buyer documents have been uploaded.`,
             role: 'attorney',
           })
         } catch (whatsappError) {
@@ -2398,13 +2390,13 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
           current
             ? {
                 ...current,
-                onboardingEmailSent: !onboardingEmailError,
+                buyerDocumentsEmailSent: !buyerDocumentsEmailError,
               }
             : current
         ))
 
-        if (onboardingEmailError) {
-          setSaveError(onboardingEmailError)
+        if (buyerDocumentsEmailError) {
+          setSaveError(buyerDocumentsEmailError)
         } else if (reservationDepositEmailError) {
           setSaveError(reservationDepositEmailError)
         }
@@ -2510,7 +2502,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
       open={open}
       onClose={saving ? undefined : onClose}
       title="New Transaction"
-      subtitle={`${activeStepMeta.label}: ${activeStepMeta.helper}. The buyer onboarding link is generated automatically.`}
+      subtitle={`${activeStepMeta.label}: ${activeStepMeta.helper}. The buyer document request link is generated automatically.`}
       className="max-w-[1460px]"
       footer={footer}
     >
@@ -3506,7 +3498,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
                   </span>
                   <div>
                     <h5 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Review & Create</h5>
-                    <p className="mt-1 text-sm text-[#60758d]">Confirm the transaction setup before the workspace and onboarding link are generated.</p>
+                    <p className="mt-1 text-sm text-[#60758d]">Confirm the transaction setup before the workspace and buyer document request are generated.</p>
                   </div>
                 </div>
 
@@ -3542,7 +3534,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
                       </p>
                       <p className="mt-1 text-sm leading-5 text-[#355e49]">
                         {readyComplete
-                          ? 'Create Transaction will use the same stable save path as before, then generate the buyer onboarding link.'
+                          ? 'Create Transaction will use the same stable save path as before, then generate the buyer document request link.'
                           : 'Use Back or the step rail above to complete the missing source, buyer, or deal details.'}
                       </p>
                     </div>
@@ -3721,11 +3713,11 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
               <p className="text-sm leading-6 text-[#5f756a]">
                 {createdTransaction.allowIncomplete
                   ? 'Draft workspace created. You can now add stakeholders and complete missing setup details.'
-                  : createdTransaction.onboardingEmailSent === null
-                    ? 'Transaction created successfully. Finalizing client email automation in the background.'
-                  : createdTransaction.onboardingEmailSent
-                    ? 'The onboarding email was sent to the client automatically. You can still copy or open the link below.'
-                    : 'Transaction was created, but onboarding email did not send automatically. Use the link below to continue.'}
+                  : createdTransaction.buyerDocumentsEmailSent === null
+                    ? 'Transaction created successfully. Finalizing buyer document request email in the background.'
+                  : createdTransaction.buyerDocumentsEmailSent
+                    ? 'The buyer document request email was sent automatically. You can still copy or open the link below.'
+                    : 'Transaction was created, but the buyer document request email did not send automatically. Use the link below to continue.'}
               </p>
             </header>
 
@@ -3737,7 +3729,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
                   : `Unit ${createdTransaction.unitNumber} has been created.`}{' '}
                 {createdTransaction.buyerEmail
                   ? (
-                    <>The onboarding handoff is ready for <strong>{createdTransaction.buyerEmail}</strong>.</>
+                    <>The buyer document request is ready for <strong>{createdTransaction.buyerEmail}</strong>.</>
                   )
                   : (
                     <>No buyer email captured yet.</>
@@ -3796,14 +3788,14 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
               </section>
             ) : null}
 
-            {onboardingUrl ? (
+            {buyerDocumentsUrl ? (
               <section className="rounded-[20px] border border-[#cdddf0] bg-white px-4 py-3">
-                <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Client Onboarding Link</span>
-                <strong className="mt-2 block break-all text-sm text-[#142132]">{onboardingUrl}</strong>
+                <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Request Buyer Documents</span>
+                <strong className="mt-2 block break-all text-sm text-[#142132]">{buyerDocumentsUrl}</strong>
               </section>
             ) : (
               <p className="rounded-[18px] border border-[#f1c9c5] bg-[#fff5f4] px-4 py-3 text-sm font-medium text-[#b42318]">
-                The transaction was created, but the onboarding link is not available yet.
+                The transaction was created, but the buyer document request link is not available yet.
               </p>
             )}
 
@@ -3865,17 +3857,17 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
             ) : null}
 
             <div className="flex flex-wrap gap-3">
-              <Button variant="secondary" onClick={handleCopyOnboardingLink} disabled={!onboardingUrl}>
+              <Button variant="secondary" onClick={handleCopyBuyerDocumentsLink} disabled={!buyerDocumentsUrl}>
                 <Copy size={14} />
                 Copy Link
               </Button>
               <Button
                 variant="secondary"
-                onClick={() => window.open(onboardingUrl, '_blank', 'noopener,noreferrer')}
-                disabled={!onboardingUrl}
+                onClick={() => window.open(buyerDocumentsUrl, '_blank', 'noopener,noreferrer')}
+                disabled={!buyerDocumentsUrl}
               >
                 <ExternalLink size={14} />
-                Open Onboarding
+                Open Buyer Portal
               </Button>
             </div>
           </div>

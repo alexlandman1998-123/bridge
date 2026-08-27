@@ -84,6 +84,15 @@ test('keeps private property explicit even when legacy development context is pr
   assert.equal(profile.saleChannel, null)
 })
 
+test('falls back safely when sale profile context is null', () => {
+  const profile = resolveTransactionSaleProfile(null)
+
+  assert.equal(profile.transactionType, 'private_property')
+  assert.equal(profile.routingTransactionType, 'private_sale')
+  assert.equal(profile.saleRoute, 'private_property_sale')
+  assert.equal(profile.sellerPartyType, 'private_seller')
+})
+
 test('resolves developer direct sale profile', () => {
   const profile = resolveTransactionSaleProfile({
     setup: {

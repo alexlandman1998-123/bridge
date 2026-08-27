@@ -29439,6 +29439,13 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     handoffChecklist,
     status.nextAction || finance.nextAction || null,
   )
+  const initialPortalReadinessStatus = handoffChecklist.signedOtpUploaded
+    ? 'signed_otp_received'
+    : handoffChecklist.requiresSignedOtpUpload
+      ? 'awaiting_signed_otp'
+      : 'awaiting_client_onboarding'
+  const initialPortalReadinessAt =
+    initialPortalReadinessStatus === 'awaiting_client_onboarding' ? null : new Date().toISOString()
 
   const deferFinanceType = Boolean(options?.deferFinanceType)
   const rolePlayerSelections = normalizeTransactionRolePlayerInputs(options?.rolePlayers || [], {
@@ -29606,9 +29613,9 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       reservationRequired && ['paid', 'verified'].includes(reservationStatus)
         ? new Date().toISOString().slice(0, 10)
         : null,
-    onboarding_status: 'awaiting_client_onboarding',
+    onboarding_status: initialPortalReadinessStatus,
     onboarding_completed_at: null,
-    external_onboarding_submitted_at: null,
+    external_onboarding_submitted_at: initialPortalReadinessAt,
     stage: resolvedDetailedStage,
     current_main_stage: resolvedMainStage,
     stage_date: status.stageDate || null,
@@ -30381,6 +30388,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
   }
 
   let onboardingRecord = null
+  let clientPortalLink = null
   let participantRows = []
 
   try {
@@ -30490,7 +30498,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
 
   try {
     if (setup.unitId) {
-      await getOrCreateClientPortalLink({
+      clientPortalLink = await getOrCreateClientPortalLink({
         developmentId: setup.developmentId,
         unitId: setup.unitId,
         transactionId: transaction.id,
@@ -30616,7 +30624,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       onboardingToken: onboardingRecord?.token || null,
       participantCount: participantRows.length,
       requiredDocsGenerated: true,
-      clientLinkGenerated: true,
+      clientLinkGenerated: Boolean(clientPortalLink?.token),
     },
   })
 
@@ -30733,6 +30741,10 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
           'Private property matter'
         : null,
     onboardingToken: onboardingRecord?.token || null,
+    clientPortalToken: clientPortalLink?.token || null,
+    clientPortalPath: clientPortalLink?.token ? `/client/${clientPortalLink.token}` : '',
+    buyerPortalToken: clientPortalLink?.token || null,
+    buyerPortalPath: clientPortalLink?.token ? `/client/${clientPortalLink.token}` : '',
     reservationRequired: persistedReservationRequired,
     reservationAmount: persistedReservationAmount,
     reservationAmountType: transactionPayload.reservation_amount_type,

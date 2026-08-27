@@ -171,6 +171,19 @@ function normalizeText(value) {
   return String(value || '').trim()
 }
 
+function resolveBuyerDocumentsPortal(result = {}) {
+  const rawPath = normalizeText(result?.clientPortalPath || result?.buyerPortalPath)
+  const token = normalizeText(result?.clientPortalToken || result?.buyerPortalToken)
+  const path = rawPath ? (rawPath.startsWith('/') ? rawPath : `/${rawPath}`) : token ? `/client/${token}` : ''
+  const origin = typeof window === 'undefined' ? '' : window.location.origin
+
+  return {
+    token,
+    path,
+    url: path && origin ? `${origin}${path}` : '',
+  }
+}
+
 function normalizeKey(value) {
   return normalizeText(value).toLowerCase()
 }
@@ -2490,9 +2503,11 @@ function AgentNewDealWizard({
         writeAgentPrivateListings(rows)
       }
 
+      const buyerDocumentsPortal = resolveBuyerDocumentsPortal(result)
+
       setCreatedDeal({
         ...result,
-        onboardingUrl: result?.onboardingToken ? `${window.location.origin}/client/onboarding/${result.onboardingToken}` : '',
+        buyerDocumentsUrl: buyerDocumentsPortal.url,
         attorneyChangeRequested: transferSelection.mode === PARTNER_MODE_BUYER,
         externalRolePlayerCaptured: hasExternallyAppointedRolePlayer,
         handoffChecklist,
@@ -3572,10 +3587,10 @@ function AgentNewDealWizard({
               <div className="space-y-2">
                 <h4 className="text-[1.08rem] font-semibold text-[#142132]">Transaction created successfully</h4>
                 <p className="text-sm text-[#607387]">The transaction shell is live, the origin path has been logged, and any missing follow-up items are tracked against completeness.</p>
-                {createdDeal.onboardingUrl ? (
-                  <a href={createdDeal.onboardingUrl} target="_blank" rel="noreferrer" onKeyDown={activateAnchorOnSpace} className="inline-flex items-center gap-1 text-sm font-semibold text-[#1f4f78]">
+                {createdDeal.buyerDocumentsUrl ? (
+                  <a href={createdDeal.buyerDocumentsUrl} target="_blank" rel="noreferrer" onKeyDown={activateAnchorOnSpace} className="inline-flex items-center gap-1 text-sm font-semibold text-[#1f4f78]">
                     <ExternalLink size={14} />
-                    Open onboarding link
+                    Open buyer documents link
                   </a>
                 ) : null}
                 {createdDeal.attorneyChangeRequested ? (

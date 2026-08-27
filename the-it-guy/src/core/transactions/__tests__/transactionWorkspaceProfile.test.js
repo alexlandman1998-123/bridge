@@ -59,6 +59,21 @@ test('private property profile preserves seller-buyer relationship labels', () =
   assert.equal(profile.labels.seller, 'Seller')
 })
 
+test('workspace profile tolerates null transaction context', () => {
+  const profile = resolveTransactionWorkspaceProfile({
+    transaction: null,
+    unit: null,
+    workspaceRole: 'developer',
+  })
+  const menus = buildTransactionWorkspaceMenuItems(profile)
+
+  assert.equal(profile.key, 'private_property')
+  assert.equal(profile.transactionType, 'private_property')
+  assert.equal(profile.relationshipMode, 'seller_buyer')
+  assert.ok(menus.some((item) => item.id === 'overview'))
+  assert.ok(menus.some((item) => item.id === 'documents'))
+})
+
 test('agent developer sale menus use reservation finance label and legacy aliases', () => {
   const profile = resolveTransactionWorkspaceProfile({
     transaction: { transaction_type: 'developer_sale' },

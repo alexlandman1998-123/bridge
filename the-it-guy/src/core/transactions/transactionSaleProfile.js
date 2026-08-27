@@ -32,6 +32,10 @@ function firstValue(...values) {
   return ''
 }
 
+function toRecord(value) {
+  return value && typeof value === 'object' ? value : {}
+}
+
 export function normalizeStoredTransactionType(value, fallback = 'developer_sale') {
   const normalized = normalizeKey(value)
   const fallbackKey = normalizeKey(fallback)
@@ -272,13 +276,20 @@ export function resolveTransactionSaleRouteFromChannel(saleChannel, transactionT
   return 'internal_developer_sale'
 }
 
-export function resolveTransactionSaleProfile({
-  transaction = {},
-  setup = {},
-  sourceContext = {},
-  lead = {},
-  unit = {},
-} = {}) {
+export function resolveTransactionSaleProfile(input = {}) {
+  const {
+    transaction: rawTransaction = {},
+    setup: rawSetup = {},
+    sourceContext: rawSourceContext = {},
+    lead: rawLead = {},
+    unit: rawUnit = {},
+  } = toRecord(input)
+  const transaction = toRecord(rawTransaction)
+  const setup = toRecord(rawSetup)
+  const sourceContext = toRecord(rawSourceContext)
+  const lead = toRecord(rawLead)
+  const unit = toRecord(rawUnit)
+
   const explicitType = firstValue(
     transaction.transaction_type,
     transaction.transactionType,

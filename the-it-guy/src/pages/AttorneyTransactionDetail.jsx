@@ -16008,6 +16008,30 @@ function AttorneyTransactionDetail() {
       '',
     )
   }, [roleplayerForm.sellerEmail, transaction?.seller_email, transactionParticipants])
+  const activeStakeholders = useMemo(
+    () => transactionParticipants.filter((item) => item?.stakeholderStatus !== 'removed'),
+    [transactionParticipants],
+  )
+  const transferAttorney = useMemo(
+    () => activeStakeholders.find((item) => item?.roleType === 'attorney' && item?.legalRole === 'transfer') || null,
+    [activeStakeholders],
+  )
+  const bondAttorney = useMemo(
+    () => activeStakeholders.find((item) => item?.roleType === 'attorney' && item?.legalRole === 'bond') || null,
+    [activeStakeholders],
+  )
+  const cancellationAttorney = useMemo(
+    () => activeStakeholders.find((item) => item?.roleType === 'attorney' && item?.legalRole === 'cancellation') || null,
+    [activeStakeholders],
+  )
+  const assignedAgent = useMemo(
+    () => activeStakeholders.find((item) => item?.roleType === 'agent') || null,
+    [activeStakeholders],
+  )
+  const assignedBondOriginator = useMemo(
+    () => activeStakeholders.find((item) => item?.roleType === 'bond_originator') || null,
+    [activeStakeholders],
+  )
   const externalAgencyName = useMemo(() => firstPresent(
     transaction?.source_agency_name,
     transaction?.sourceAgencyName,
@@ -16342,30 +16366,6 @@ function AttorneyTransactionDetail() {
       additionalRequests: additionalDocumentRequests,
     }),
     [additionalDocumentRequests, requiredDocumentRows],
-  )
-  const activeStakeholders = useMemo(
-    () => transactionParticipants.filter((item) => item?.stakeholderStatus !== 'removed'),
-    [transactionParticipants],
-  )
-  const transferAttorney = useMemo(
-    () => activeStakeholders.find((item) => item?.roleType === 'attorney' && item?.legalRole === 'transfer') || null,
-    [activeStakeholders],
-  )
-  const bondAttorney = useMemo(
-    () => activeStakeholders.find((item) => item?.roleType === 'attorney' && item?.legalRole === 'bond') || null,
-    [activeStakeholders],
-  )
-  const cancellationAttorney = useMemo(
-    () => activeStakeholders.find((item) => item?.roleType === 'attorney' && item?.legalRole === 'cancellation') || null,
-    [activeStakeholders],
-  )
-  const assignedAgent = useMemo(
-    () => activeStakeholders.find((item) => item?.roleType === 'agent') || null,
-    [activeStakeholders],
-  )
-  const assignedBondOriginator = useMemo(
-    () => activeStakeholders.find((item) => item?.roleType === 'bond_originator') || null,
-    [activeStakeholders],
   )
   const buyerProcessHandoff = useMemo(
     () =>
