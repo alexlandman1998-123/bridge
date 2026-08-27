@@ -25,6 +25,7 @@ import {
 import {
   applyControlledProperty24ListingPublish,
   applyControlledProperty24StatusUpdate,
+  buildProperty24LifecycleState,
 } from './workflowService.js'
 import {
   fetchProperty24Leads,
@@ -163,11 +164,17 @@ function matchProperty24Route(requestUrl, routeParams = {}) {
   if (routeParts[0] === 'listings' && routeParts[2] === 'publish') {
     return { name: 'publishListing', listingId: normalizeProperty24Text(routeParams.listingId || routeParts[1]) }
   }
+  if (routeParts[0] === 'listings' && routeParts[2] === 'lifecycle') {
+    return { name: 'listingLifecycle', listingId: normalizeProperty24Text(routeParams.listingId || routeParts[1]) }
+  }
   if (routeParts[0] === 'listings' && routeParts[2] === 'status') {
     return { name: 'listingStatus', listingId: normalizeProperty24Text(routeParams.listingId || routeParts[1]) }
   }
   if (routeParts[0] === 'listings' && routeParts[2] === 'status-update') {
     return { name: 'updateListingStatus', listingId: normalizeProperty24Text(routeParams.listingId || routeParts[1]) }
+  }
+  if (routeParts[0] === 'listings' && routeParts[2] === 'withdraw') {
+    return { name: 'withdrawListing', listingId: normalizeProperty24Text(routeParams.listingId || routeParts[1]) }
   }
   if (routeParts[0] === 'listings' && routeParts[2] === 'leads') {
     return { name: 'listingLeads', listingId: normalizeProperty24Text(routeParams.listingId || routeParts[1]) }
@@ -264,7 +271,7 @@ function getBearerToken(headers = {}) {
 }
 
 function canUseBrowserProperty24ListingAuth({ headers = {}, config = {}, route = {} } = {}) {
-  return ['previewListing', 'previewRentalListing', 'publishListing', 'listingStatus', 'updateListingStatus', 'listingLeads'].includes(route?.name) &&
+  return ['previewListing', 'previewRentalListing', 'publishListing', 'listingLifecycle', 'listingStatus', 'updateListingStatus', 'withdrawListing', 'listingLeads'].includes(route?.name) &&
     Boolean(getBearerToken(headers) && config.supabaseUrl && config.serviceRoleKey)
 }
 
@@ -479,6 +486,40 @@ async function defaultFetchListingStatus({ supabase, property24, config } = {}) 
     listingNumber: listingNumber || null,
     environment: config.environment,
     portalCheck,
+    lifecycle: buildProperty24LifecycleState({
+      listing: currentListing,
+      sync: currentSync,
+      listingNumber,
+      portalCheck,
+      environment: config.environment,
+    }),
+  }
+}
+
+async function resolveProperty24StatusActionConfig({ supabase, resolvedConfig, fallbackStatus = '' } = {}) {
+  const sync = resolvedConfig.listingNumber && resolvedConfig.agencyId
+    ? null
+    : await fetchProperty24Sync({
+        supabase,
+        listingId: resolvedConfig.listingId,
+        environment: resolvedConfig.environment,
+      })
+  const listingReferenceResult = resolvedConfig.listingNumber || sync?.listing_number
+    ? null
+    : await fetchMaybeSingle(
+        supabase
+          .from('private_listings')
+          .select('id, property24_reference, property24_listing_url')
+          .eq('id', resolvedConfig.listingId),
+      )
+  if (listingReferenceResult?.error && listingReferenceResult.error.code !== 'PGRST116') throw listingReferenceResult.error
+  const listingReference = listingReferenceResult?.data || null
+  return {
+    ...resolvedConfig,
+    status: resolvedConfig.status || fallbackStatus,
+    listingNumber: resolvedConfig.listingNumber || sync?.listing_number || listingReference?.property24_reference,
+    agencyId: resolvedConfig.agencyId || sync?.agency_id,
+    property24ListingUrl: resolvedConfig.property24ListingUrl || listingReference?.property24_listing_url,
   }
 }
 
@@ -779,7 +820,7 @@ export async function createProperty24ApiResponse({
       })
     }
 
-    if (route.name === 'listingStatus') {
+    if (route.name === 'listingStatus' || route.name === 'listingLifecycle') {
       const needsProperty24 = buildProperty24ApiConfig({ env: env || getRuntimeEnv(), requestUrl, payload: {}, route }).refresh
       const missing = getMissingConfiguration(config, {
         apiToken: !canUseBrowserProperty24ListingAuth({ headers, config, route }),
@@ -793,45 +834,27 @@ export async function createProperty24ApiResponse({
       if (browserAuthFailure) return browserAuthFailure
       const property24 = config.refresh ? createProperty24(config) : null
       const status = await fetchListingStatus({ supabase, property24, config })
-      return buildJsonResponse(200, { route: route.name, status })
+      return buildJsonResponse(200, { route: route.name, status, lifecycle: status.lifecycle })
     }
 
-    if (route.name === 'updateListingStatus') {
+    if (route.name === 'updateListingStatus' || route.name === 'withdrawListing') {
       const missing = getMissingConfiguration(config, {
         apiToken: !canUseBrowserProperty24ListingAuth({ headers, config, route }),
         supabase: true,
         property24: true,
         listing: true,
       })
-      if (!config.status) missing.push('status or listingStatus')
+      if (route.name === 'updateListingStatus' && !config.status) missing.push('status or listingStatus')
       if (missing.length) return buildJsonResponse(400, { error: 'missing_configuration', missingConfiguration: missing })
       const supabase = createSupabase(config)
       const browserAuthFailure = await authenticateBrowserProperty24ListingRequest({ supabase, headers, config })
       if (browserAuthFailure) return browserAuthFailure
       const resolvedConfig = await resolvePublishConfig({ supabase, config, listingId: config.listingId })
-      const sync = resolvedConfig.listingNumber && resolvedConfig.agencyId
-        ? null
-        : await fetchProperty24Sync({
-            supabase,
-            listingId: resolvedConfig.listingId,
-            environment: resolvedConfig.environment,
-          })
-      const listingReferenceResult = resolvedConfig.listingNumber || sync?.listing_number
-        ? null
-        : await fetchMaybeSingle(
-            supabase
-              .from('private_listings')
-              .select('id, property24_reference, property24_listing_url')
-              .eq('id', resolvedConfig.listingId),
-          )
-      if (listingReferenceResult?.error && listingReferenceResult.error.code !== 'PGRST116') throw listingReferenceResult.error
-      const listingReference = listingReferenceResult?.data || null
-      const statusConfig = {
-        ...resolvedConfig,
-        listingNumber: resolvedConfig.listingNumber || sync?.listing_number || listingReference?.property24_reference,
-        agencyId: resolvedConfig.agencyId || sync?.agency_id,
-        property24ListingUrl: resolvedConfig.property24ListingUrl || listingReference?.property24_listing_url,
-      }
+      const statusConfig = await resolveProperty24StatusActionConfig({
+        supabase,
+        resolvedConfig,
+        fallbackStatus: route.name === 'withdrawListing' ? 'Withdrawn' : '',
+      })
       const resolvedMissing = getMissingConfiguration(statusConfig, { enabled: true })
       if (!statusConfig.agencyId) resolvedMissing.push('PROPERTY24_DEFAULT_AGENCY_ID or agencyId')
       if (!statusConfig.listingNumber) resolvedMissing.push('listingNumber')
@@ -853,6 +876,7 @@ export async function createProperty24ApiResponse({
       return buildJsonResponse(report.status === 'FAILED' ? 502 : 200, {
         route: route.name,
         status: report.status,
+        lifecycle: report.lifecycle || null,
         listingId: statusConfig.listingId,
         mapping: statusConfig.property24ResolvedMapping || null,
         report,

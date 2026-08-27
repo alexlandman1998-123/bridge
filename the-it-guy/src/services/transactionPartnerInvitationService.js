@@ -60,9 +60,22 @@ const INVITATION_STATUS_LABELS = Object.freeze({
 const ATTORNEY_WORKFLOW_INVITATION_ROLES = new Set(['transfer_attorney', 'bond_attorney', 'cancellation_attorney'])
 const CANONICAL_TRANSACTION_INVITE_ROLES = new Set(['transfer_attorney', 'bond_attorney', 'cancellation_attorney', 'bond_originator', 'developer'])
 const INVITATION_EXPIRY_SOON_MS = 3 * 24 * 60 * 60 * 1000
+const TRANSACTION_PARTICIPANT_ASSIGNMENT_SOURCES = new Set([
+  'transaction_direct',
+  'development_default',
+  'system_inherited',
+  'reference_only',
+])
 
 function normalizeText(value) {
   return String(value || '').trim()
+}
+
+function normalizeTransactionParticipantAssignmentSource(value, fallback = 'transaction_direct') {
+  const normalized = normalizeText(value).toLowerCase()
+  if (TRANSACTION_PARTICIPANT_ASSIGNMENT_SOURCES.has(normalized)) return normalized
+  if (['partner_invitation', 'transaction_partner_invitation'].includes(normalized)) return 'transaction_direct'
+  return TRANSACTION_PARTICIPANT_ASSIGNMENT_SOURCES.has(fallback) ? fallback : 'transaction_direct'
 }
 
 async function dispatchTransactionPartnerNotification({ transactionId, eventKind } = {}) {
@@ -526,7 +539,7 @@ async function upsertInvitedParticipant(client, { transactionId, invitation, act
     visibility_scope: 'shared',
     is_internal: false,
     participant_scope: 'transaction',
-    assignment_source: 'partner_invitation',
+    assignment_source: normalizeTransactionParticipantAssignmentSource('partner_invitation'),
     transaction_partner_invitation_id: invitation.id || null,
     partner_prospect_id: invitation.partner_prospect_id || invitation.partnerProspectId || null,
     can_view: true,

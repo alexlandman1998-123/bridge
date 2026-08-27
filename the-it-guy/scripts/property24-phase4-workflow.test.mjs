@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import {
   applyControlledProperty24ListingPublish,
   applyControlledProperty24StatusUpdate,
+  buildProperty24LifecycleState,
   createProperty24Client,
   createProperty24Hash,
   createProperty24IdempotencyKey,
@@ -185,8 +186,24 @@ const statusReport = await applyControlledProperty24StatusUpdate({
 })
 assert.equal(statusReport.status, 'SUBMITTED')
 assert.equal(statusReport.syncAttempt.status, 'succeeded')
+assert.equal(statusReport.lifecycle.state, 'withdrawn')
+assert.equal(statusReport.lifecycle.actions.canWithdraw, false)
 assert.ok(statusSupabase.operations.some((operation) => operation.table === 'property24_listing_syncs' && operation.op === 'upsert'))
 assert.ok(statusSupabase.operations.some((operation) => operation.table === 'private_listings' && operation.op === 'update'))
+
+const draftLifecycle = buildProperty24LifecycleState({
+  listing: { property24_status: 'not_published' },
+})
+assert.equal(draftLifecycle.state, 'draft')
+assert.equal(draftLifecycle.actions.primaryPublishLabel, 'Publish to Property24')
+
+const liveLifecycle = buildProperty24LifecycleState({
+  listing: { property24_status: 'published' },
+  listingNumber: 100314793,
+  portalCheck: { isOnPortal: true },
+})
+assert.equal(liveLifecycle.state, 'published')
+assert.equal(liveLifecycle.actions.primaryPublishLabel, 'Update Property24')
 
 const fetchCalls = []
 const client = createProperty24Client({

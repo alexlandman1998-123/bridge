@@ -425,6 +425,6 @@ const apiSource = read('server/property24/api.js')
 assert.match(apiSource, /resolveProperty24ListingPublishConfiguration/)
 assert.match(apiSource, /mapping: resolvedConfig\.property24ResolvedMapping/)
 assert.match(apiSource, /authenticateBrowserProperty24ListingRequest/)
-assert.match(apiSource, /\['previewListing', 'previewRentalListing', 'publishListing', 'listingStatus', 'updateListingStatus', 'listingLeads'\]/)
+assert.match(apiSource, /\['previewListing', 'previewRentalListing', 'publishListing', 'listingLifecycle', 'listingStatus', 'updateListingStatus', 'withdrawListing', 'listingLeads'\]/)
 
 console.log('Property24 publish mapping resolution contract passed')

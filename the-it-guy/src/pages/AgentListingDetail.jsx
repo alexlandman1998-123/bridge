@@ -452,6 +452,7 @@ const PROPERTY24_STATUS_UPDATE_OPTIONS = ['Active', 'Pending', 'Sold', 'Withdraw
 const ARCH9_PUBLIC_SITE_ORIGIN = 'https://www.arch9.co.za'
 const ARCH9_PUBLIC_LISTINGS_API_PATH = '/api/public/listings'
 const PROPERTY24_LISTING_API_BASE_PATH = '/api/property24/listings'
+const PRIVATE_PROPERTY_LISTING_API_BASE_PATH = '/api/private-property/listings'
 const LISTING_SYSTEM_PUBLICATION_FEATURE_KEYS = new Set([
   'estate_or_hoa',
   'sectional_title',
@@ -1056,6 +1057,68 @@ function getProperty24StatusCheckedAt(statusResult = {}) {
   return statusResult?.status?.sync?.last_checked_at ||
     statusResult?.status?.sync?.lastCheckedAt ||
     statusResult?.status?.listing?.updated_at ||
+    ''
+}
+
+function formatPrivatePropertyBlocker(value = '') {
+  return String(value || '')
+    .replace(/^missing_/, 'missing ')
+    .replace(/^private_property_/, 'Private Property ')
+    .replace(/_/g, ' ')
+}
+
+function getPrivatePropertyApiMessage(payload = {}, fallback = 'Private Property request failed.') {
+  const missing = Array.isArray(payload?.missingConfiguration) ? payload.missingConfiguration : []
+  if (missing.length) return `Private Property setup is incomplete: ${missing.join(', ')}.`
+  const preview = payload?.preview || payload?.readiness?.preview || payload?.report?.preview || {}
+  const readinessBlockers = payload?.readiness?.blockers || payload?.report?.readiness?.blockers || payload?.report?.blockers || []
+  const dataBlockers = Array.isArray(preview.dataBlockers) ? preview.dataBlockers : []
+  const technicalBlockers = Array.isArray(preview.technicalBlockers) ? preview.technicalBlockers : []
+  const blockers = [...dataBlockers, ...technicalBlockers, ...readinessBlockers].map(formatPrivatePropertyBlocker)
+  if (blockers.length) return `Private Property cannot publish yet: ${[...new Set(blockers)].join(', ')}.`
+  return String(payload?.message || payload?.error || fallback)
+}
+
+function getPrivatePropertyReferenceFromResponse(payload = {}) {
+  const values = [
+    payload?.report?.apiResponse?.privatePropertyReference,
+    payload?.report?.statusProbe?.privatePropertyRef,
+    payload?.monitor?.statusProbe?.privatePropertyRef,
+    payload?.readiness?.preview?.summary?.propertyId,
+    payload?.preview?.summary?.propertyId,
+  ]
+  for (const value of values) {
+    if (value && typeof value !== 'object') return String(value).trim()
+  }
+  return ''
+}
+
+function getPrivatePropertyReadinessCounts(payload = {}) {
+  const preview = payload?.preview || payload?.readiness?.preview || payload?.report?.preview || {}
+  return {
+    dataBlockers: Array.isArray(preview.dataBlockers) ? preview.dataBlockers.length : 0,
+    technicalBlockers: Array.isArray(preview.technicalBlockers) ? preview.technicalBlockers.length : 0,
+    readinessBlockers: Array.isArray(payload?.readiness?.blockers) ? payload.readiness.blockers.length : Array.isArray(payload?.report?.blockers) ? payload.report.blockers.length : 0,
+  }
+}
+
+function getPrivatePropertyReadinessIssues(payload = {}) {
+  const preview = payload?.preview || payload?.readiness?.preview || payload?.report?.preview || {}
+  const missingConfiguration = Array.isArray(payload?.missingConfiguration) ? payload.missingConfiguration : []
+  const blockers = [
+    ...missingConfiguration.map((item) => `Setup: ${formatPrivatePropertyBlocker(item)}`),
+    ...(Array.isArray(preview.dataBlockers) ? preview.dataBlockers.map(formatPrivatePropertyBlocker) : []),
+    ...(Array.isArray(preview.technicalBlockers) ? preview.technicalBlockers.map(formatPrivatePropertyBlocker) : []),
+    ...(Array.isArray(payload?.readiness?.blockers) ? payload.readiness.blockers.map(formatPrivatePropertyBlocker) : []),
+    ...(Array.isArray(payload?.report?.blockers) ? payload.report.blockers.map(formatPrivatePropertyBlocker) : []),
+  ]
+  return [...new Set(blockers.filter(Boolean))]
+}
+
+function getPrivatePropertyStatusCheckedAt(statusResult = {}) {
+  return statusResult?.monitor?.syncResult?.lastCheckedAt ||
+    statusResult?.monitor?.generatedAt ||
+    statusResult?.report?.generatedAt ||
     ''
 }
 
@@ -3281,6 +3344,9 @@ function AgentListingDetail() {
   const [property24StatusCheck, setProperty24StatusCheck] = useState(null)
   const [property24LeadImport, setProperty24LeadImport] = useState(null)
   const [property24StatusUpdate, setProperty24StatusUpdate] = useState(PROPERTY24_STATUS_UPDATE_OPTIONS[0])
+  const [privatePropertyAction, setPrivatePropertyAction] = useState('')
+  const [privatePropertyPreview, setPrivatePropertyPreview] = useState(null)
+  const [privatePropertyStatusCheck, setPrivatePropertyStatusCheck] = useState(null)
   const [openingSellerDocumentKey, setOpeningSellerDocumentKey] = useState('')
   const [sellerDocumentWorkflowAction, setSellerDocumentWorkflowAction] = useState('')
   const [activeListingDocumentTab, setActiveListingDocumentTab] = useState('property')
@@ -4396,6 +4462,131 @@ function AgentListingDetail() {
     }
   }
 
+  async function callPrivatePropertyListingAction(action, body = {}, options = {}) {
+    if (!listingRecord?.id) throw new Error('Open a saved listing before using Private Property.')
+    if (!isSupabaseConfigured || !supabase) throw new Error('Sign in before using Private Property publishing.')
+    const sessionResult = await supabase.auth.getSession()
+    const accessToken = sessionResult.data?.session?.access_token
+    if (!accessToken) throw new Error('Sign in again before using Private Property publishing.')
+    const method = String(options.method || 'POST').toUpperCase()
+    const query = options.query instanceof URLSearchParams ? `?${options.query.toString()}` : ''
+    const requestOptions = {
+      method,
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    }
+    if (method !== 'GET') {
+      requestOptions.headers['Content-Type'] = 'application/json'
+      requestOptions.body = JSON.stringify({
+        photosChanged: true,
+        ...body,
+      })
+    }
+    const response = await fetch(`${PRIVATE_PROPERTY_LISTING_API_BASE_PATH}/${encodeURIComponent(listingRecord.id)}/${action}${query}`, requestOptions)
+    const payload = await response.json().catch(() => ({}))
+    if (!response.ok) {
+      throw new Error(getPrivatePropertyApiMessage(payload, options.fallbackMessage || 'Private Property request failed.'))
+    }
+    return payload
+  }
+
+  async function previewPrivatePropertyListing() {
+    setPrivatePropertyAction('preview')
+    setPrivatePropertyPreview(null)
+    setDetailError('')
+    setDetailMessage('Checking Private Property readiness...')
+    try {
+      const saveResult = await saveMarketingDraft(marketingDraft, {
+        successMessage: '',
+      })
+      if (saveResult?.ok === false) throw saveResult.error || new Error('Save the listing before checking Private Property readiness.')
+      const payload = await callPrivatePropertyListingAction('preview', {}, { fallbackMessage: 'Private Property preview failed.' })
+      setPrivatePropertyPreview(payload)
+      const counts = getPrivatePropertyReadinessCounts(payload)
+      setDetailError('')
+      setDetailMessage(
+        counts.dataBlockers || counts.technicalBlockers || counts.readinessBlockers
+          ? getPrivatePropertyApiMessage(payload, 'Private Property readiness has blockers.')
+          : 'Private Property readiness passed. This listing can be submitted.',
+      )
+      return payload
+    } catch (error) {
+      setDetailMessage('')
+      setDetailError(error?.message || 'Private Property preview failed.')
+      return null
+    } finally {
+      setPrivatePropertyAction('')
+    }
+  }
+
+  async function publishPrivatePropertyListing() {
+    setPrivatePropertyAction('publish')
+    setDetailError('')
+    setDetailMessage('Submitting to Private Property...')
+    try {
+      const saveResult = await saveMarketingDraft(marketingDraft, {
+        successMessage: '',
+      })
+      if (saveResult?.ok === false) throw saveResult.error || new Error('Save the listing before publishing to Private Property.')
+      const payload = await callPrivatePropertyListingAction('publish', {}, { fallbackMessage: 'Private Property publish failed.' })
+      setPrivatePropertyPreview(payload)
+      const privatePropertyReference = getPrivatePropertyReferenceFromResponse(payload)
+      const nextStatus = payload?.report?.syncResult?.arch9Status || payload?.report?.externalStatus || 'submitted'
+      setMarketingDraft((previous) => ({
+        ...previous,
+        privatePropertyReference: privatePropertyReference || previous.privatePropertyReference,
+        privatePropertyStatus: nextStatus,
+      }))
+      await loadListingData()
+      setDetailError('')
+      setDetailMessage(privatePropertyReference
+        ? `Submitted to Private Property. Reference ${privatePropertyReference}.`
+        : 'Submitted to Private Property. Poll status until the listing activates.')
+      return payload
+    } catch (error) {
+      setDetailMessage('')
+      setDetailError(error?.message || 'Private Property publish failed.')
+      return null
+    } finally {
+      setPrivatePropertyAction('')
+    }
+  }
+
+  async function refreshPrivatePropertyListingStatus() {
+    setPrivatePropertyAction('status')
+    setDetailError('')
+    setDetailMessage('Checking Private Property live status...')
+    try {
+      const query = new URLSearchParams({ recordSync: 'true' })
+      const payload = await callPrivatePropertyListingAction('status', {}, {
+        method: 'GET',
+        query,
+        fallbackMessage: 'Private Property status check failed.',
+      })
+      setPrivatePropertyStatusCheck(payload)
+      const privatePropertyReference = getPrivatePropertyReferenceFromResponse(payload)
+      const nextStatus = payload?.monitor?.syncResult?.arch9Status || payload?.monitor?.externalStatus || ''
+      setMarketingDraft((previous) => ({
+        ...previous,
+        privatePropertyReference: privatePropertyReference || previous.privatePropertyReference,
+        privatePropertyStatus: nextStatus || previous.privatePropertyStatus,
+      }))
+      await loadListingData()
+      setDetailError('')
+      setDetailMessage(payload?.monitor?.status === 'ACTIVATED'
+        ? 'Private Property confirms this listing is active.'
+        : 'Private Property status checked. Poll again until activation completes.')
+      return payload
+    } catch (error) {
+      setDetailMessage('')
+      setDetailError(error?.message || 'Private Property status check failed.')
+      return null
+    } finally {
+      setPrivatePropertyAction('')
+    }
+  }
+
   async function refreshProperty24ListingStatus() {
     setProperty24Action('status')
     setDetailError('')
@@ -4473,6 +4664,57 @@ function AgentListingDetail() {
     } catch (error) {
       setDetailMessage('')
       setDetailError(error?.message || 'Property24 status update failed.')
+      return null
+    } finally {
+      setProperty24Action('')
+    }
+  }
+
+  async function withdrawProperty24Listing() {
+    if (!property24Reference) return null
+    const confirmed = window.confirm('Withdraw this listing from Property24? This removes it from the portal lifecycle until you publish/update it again.')
+    if (!confirmed) return null
+    setProperty24Action('withdraw')
+    setDetailError('')
+    setDetailMessage('Withdrawing from Property24...')
+    try {
+      const payload = await callProperty24ListingAction('withdraw', {
+        listingNumber: property24Reference,
+      }, {
+        fallbackMessage: 'Property24 withdraw failed.',
+      })
+      const databaseStatus = payload?.report?.databaseWrite?.property24Status || payload?.lifecycle?.state
+      const listingNumber = payload?.report?.databaseWrite?.listingNumber || payload?.report?.listingNumber || property24Reference
+      setMarketingDraft((previous) => ({
+        ...previous,
+        property24Reference: listingNumber ? String(listingNumber) : previous.property24Reference,
+        property24Status: databaseStatus || 'removed',
+      }))
+      setProperty24StatusCheck({
+        route: 'listingLifecycle',
+        status: {
+          listingNumber: listingNumber || property24Reference || null,
+          listing: {
+            property24_status: databaseStatus || 'removed',
+            updated_at: payload?.report?.generatedAt || new Date().toISOString(),
+          },
+          lifecycle: payload?.lifecycle || payload?.report?.lifecycle || null,
+          portalCheck: payload?.report?.portalCheck
+            ? {
+                ...payload.report.portalCheck,
+                isOnPortal: Boolean(payload.report.portalCheck?.data),
+                databaseWrite: payload.report.databaseWrite || null,
+              }
+            : null,
+        },
+      })
+      await loadListingData()
+      setDetailError('')
+      setDetailMessage(`Withdrawn from Property24. Listing number ${listingNumber}.`)
+      return payload
+    } catch (error) {
+      setDetailMessage('')
+      setDetailError(error?.message || 'Property24 withdraw failed.')
       return null
     } finally {
       setProperty24Action('')
@@ -7187,6 +7429,22 @@ function AgentListingDetail() {
   const privatePropertyHasChannel = Boolean(marketingDraft.privatePropertyListingUrl || marketingDraft.privatePropertyReference || (privatePropertyStatusKey && privatePropertyStatusKey !== 'not_published'))
   const privatePropertyLink = externalListingLinks.find((link) => normalizeKey(link.platform).includes('private')) || null
   const agencyWebsiteLink = externalListingLinks.find((link) => normalizeKey(link.platform).includes('agency')) || null
+  const privatePropertyPreviewCounts = getPrivatePropertyReadinessCounts(privatePropertyPreview)
+  const privatePropertyReadinessIssues = getPrivatePropertyReadinessIssues(privatePropertyPreview)
+  const privatePropertyCanSubmit = privatePropertyPreview?.ready ?? privatePropertyPreview?.readiness?.ready ?? privatePropertyPreview?.preview?.canSubmit ?? null
+  const privatePropertyHasPreviewBlockers = privatePropertyPreviewCounts.dataBlockers > 0 ||
+    privatePropertyPreviewCounts.technicalBlockers > 0 ||
+    privatePropertyPreviewCounts.readinessBlockers > 0
+  const privatePropertyExternalStatus = normalizeKey(privatePropertyStatusCheck?.monitor?.externalStatus || privatePropertyStatusCheck?.report?.externalStatus || '')
+  const privatePropertyLastSyncedAt = firstDraftValue(
+    getPrivatePropertyStatusCheckedAt(privatePropertyStatusCheck),
+    listingRecord?.privatePropertyLastSyncedAt,
+    listingRecord?.private_property_last_synced_at,
+    listingRecord?.privatePropertyUpdatedAt,
+    listingRecord?.private_property_updated_at,
+    listingRecord?.updatedAt,
+    listingRecord?.updated_at,
+  )
   const property24LastSyncedAt = firstDraftValue(
     property24StatusCheckedAt,
     listingRecord?.property24LastSyncedAt,
@@ -7230,20 +7488,24 @@ function AgentListingDetail() {
       checked: privatePropertyHasChannel,
       missingFields: privatePropertyHasChannel ? [] : ['Private Property channel is not configured on this listing yet.'],
       reference: privatePropertyPortalReference,
-      lastSynced: privatePropertyPortalUrl ? 'Managed as an external link' : '',
+      lastSynced: privatePropertyLastSyncedAt ? `Last synced: ${formatRelativeTime(privatePropertyLastSyncedAt)}` : '',
       detail: privatePropertyPortalLive
         ? 'Private Property is marked live for this listing.'
-        : privatePropertyHasChannel
-          ? 'Private Property channel details are saved. Confirm the portal status before go-live.'
-          : 'Add the Private Property channel from the marketing console when this listing is ready.',
-      actionLabel: 'Manage channel',
+        : privatePropertyHasPreviewBlockers
+          ? 'Fix the Private Property readiness blockers before publishing.'
+          : privatePropertyCanSubmit === true
+            ? 'Private Property readiness passed. This listing can be submitted.'
+            : 'Run Private Property readiness from the marketing console.',
+      actionLabel: privatePropertyCanSubmit === true ? 'Publish' : 'Check readiness',
       actionTarget: 'private_property',
     }),
   ], [
+    privatePropertyCanSubmit,
     privatePropertyHasChannel,
+    privatePropertyHasPreviewBlockers,
+    privatePropertyLastSyncedAt,
     privatePropertyPortalLive,
     privatePropertyPortalReference,
-    privatePropertyPortalUrl,
     property24CanSubmit,
     property24LastSyncedAt,
     property24NextStep,
@@ -9395,6 +9657,36 @@ function AgentListingDetail() {
         : property24CanSubmit === true
           ? 'Ready to publish'
           : 'Run readiness check before publishing'
+    const privatePropertyIssueCount = privatePropertyReadinessIssues.length
+    const privatePropertyIssueDetail = privatePropertyReadinessIssues[0] || ''
+    const privatePropertySubmitted = ['submitted', 'draft', 'pending'].includes(privatePropertyExternalStatus || privatePropertyStatusKey)
+    const privatePropertyChannelStatus = privatePropertyAction
+      ? 'syncing'
+      : privatePropertyLive
+        ? 'live'
+        : privatePropertyIssueCount || privatePropertyHasPreviewBlockers
+          ? 'needs_attention'
+          : privatePropertySubmitted
+            ? 'syncing'
+            : 'not_published'
+    const privatePropertyChannelLabel = privatePropertyAction
+      ? 'Syncing'
+      : privatePropertyLive
+        ? 'Live'
+        : privatePropertyChannelStatus === 'needs_attention'
+          ? 'Needs attention'
+          : privatePropertySubmitted
+            ? 'Submitted'
+            : 'Not published'
+    const privatePropertyContextTitle = privatePropertyIssueCount
+      ? `${privatePropertyIssueCount} issue${privatePropertyIssueCount === 1 ? '' : 's'} preventing publication`
+      : privatePropertyLive
+        ? 'Published and up to date'
+        : privatePropertySubmitted
+          ? 'Submitted, waiting for activation'
+          : privatePropertyCanSubmit === true
+            ? 'Ready to publish'
+            : 'Run readiness check before publishing'
     const channelRows = [
       {
         key: 'property24',
@@ -9452,27 +9744,57 @@ function AgentListingDetail() {
         name: 'Private Property',
         subtitle: 'Property portal',
         reference: privatePropertyReference ? `Ref: ${privatePropertyReference}` : '',
-        status: privatePropertyLive ? 'live' : 'not_published',
-        statusLabel: privatePropertyLive ? 'Live' : 'Not published',
-        contextTitle: privatePropertyLive ? 'Published and up to date' : 'Ready to publish',
-        contextDetail: privatePropertyUrl ? '' : 'Add the listing link or portal reference when available',
-        lastSynced: privatePropertyUrl ? 'Managed externally' : '',
-        primaryAction: privatePropertyLive && privatePropertyUrl ? (
+        status: privatePropertyChannelStatus,
+        statusLabel: privatePropertyChannelLabel,
+        contextTitle: privatePropertyContextTitle,
+        contextDetail: privatePropertyIssueDetail,
+        lastSynced: privatePropertyLastSyncedAt ? formatRelativeTime(privatePropertyLastSyncedAt) : '',
+        primaryAction: privatePropertyAction ? (
+          <Button type="button" size="sm" variant="secondary" disabled>
+            <Loader2 size={15} className="animate-spin" />
+            Syncing...
+          </Button>
+        ) : privatePropertyLive && privatePropertyUrl ? (
           <a href={privatePropertyUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#35546c] hover:bg-[#f7fbff]">
             <Eye size={15} />
             View Live Listing
           </a>
+        ) : privatePropertyChannelStatus === 'needs_attention' ? (
+          <Button type="button" size="sm" variant="secondary" onClick={previewPrivatePropertyListing} disabled={Boolean(privatePropertyAction)}>
+            <CircleAlert size={15} />
+            Review issues
+          </Button>
         ) : (
-          <Button type="button" size="sm" onClick={() => openExternalLinkPanel(privatePropertyLink, 'Private Property')}>
+          <Button type="button" size="sm" onClick={publishPrivatePropertyListing} disabled={Boolean(privatePropertyAction)}>
             <Send size={15} />
             Publish
           </Button>
         ),
-        secondaryAction: privatePropertyHasChannel ? (
-          <Button type="button" size="sm" variant="secondary" onClick={() => openExternalLinkPanel(privatePropertyLink, 'Private Property')}>
-            Manage
+        secondaryAction: privatePropertySubmitted || privatePropertyLive ? (
+          <Button type="button" size="sm" variant="secondary" onClick={refreshPrivatePropertyListingStatus} disabled={Boolean(privatePropertyAction)}>
+            {privatePropertyAction === 'status' ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
+            Status
           </Button>
-        ) : null,
+        ) : (
+          <Button type="button" size="sm" variant="secondary" onClick={previewPrivatePropertyListing} disabled={Boolean(privatePropertyAction)}>
+            <Eye size={15} />
+            Check
+          </Button>
+        ),
+        menuActions: [
+          <button key="check" type="button" onClick={previewPrivatePropertyListing} disabled={Boolean(privatePropertyAction)} className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] transition hover:bg-[#f7fbff] disabled:cursor-not-allowed disabled:opacity-50">
+            {privatePropertyAction === 'preview' ? <Loader2 size={15} className="animate-spin" /> : <Eye size={15} />}
+            Check readiness
+          </button>,
+          <button key="status" type="button" onClick={refreshPrivatePropertyListingStatus} disabled={Boolean(privatePropertyAction)} className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] transition hover:bg-[#f7fbff] disabled:cursor-not-allowed disabled:opacity-50">
+            {privatePropertyAction === 'status' ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
+            Refresh status
+          </button>,
+          <button key="manual" type="button" onClick={() => openExternalLinkPanel(privatePropertyLink, 'Private Property')} className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] transition hover:bg-[#f7fbff]">
+            <Link2 size={15} />
+            Add manual link
+          </button>,
+        ],
       },
       ...(agencyWebsiteLink ? [{
         key: 'agency_website',
@@ -11313,6 +11635,55 @@ function AgentListingDetail() {
                   <div className="rounded-[16px] border border-dashed border-[#d3deea] bg-[#fbfcfe] p-4 text-sm text-[#6b7d93] sm:col-span-2">
                     No gallery images uploaded yet.
                   </div>
+                )}
+              </div>
+            </section>
+
+            <section className="rounded-[24px] border border-[#cfe0ef] bg-gradient-to-br from-[#f8fbff] via-white to-[#eef6fb] p-5 shadow-[0_14px_30px_rgba(15,23,42,0.07)]">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div className="min-w-0">
+                  <p className="text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#6f839a]">Property24 lifecycle</p>
+                  <h4 className="mt-1 text-[1.05rem] font-semibold text-[#142132]">Publish, update, refresh, or withdraw this listing</h4>
+                  <p className="mt-1 max-w-2xl text-sm leading-6 text-[#607387]">
+                    Finish the content above, then run the portal workflow here. Arch9 keeps the Property24 listing number so updates do not create duplicates.
+                  </p>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-3 lg:min-w-[420px]">
+                  <InfoTile icon={Building2} label="Portal state" value={property24Published ? 'Live' : formatStatusLabel(property24StatusKey || 'not_published')} status={property24Published ? 'live' : property24StatusKey || 'pending'} />
+                  <InfoTile icon={Link2} label="P24 number" value={property24Reference || 'Not assigned'} />
+                  <InfoTile icon={RefreshCw} label="Last sync" value={formatRelativeTime(property24LastSyncedAt)} />
+                </div>
+              </div>
+
+              <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                <Button type="button" variant="secondary" className="justify-center" onClick={previewProperty24Listing} disabled={Boolean(property24Action)}>
+                  {property24Action === 'preview' ? <Loader2 size={15} className="animate-spin" /> : <Eye size={15} />}
+                  Preview
+                </Button>
+                <Button type="button" className="justify-center" onClick={publishProperty24Listing} disabled={property24PublishDisabled}>
+                  {property24Action === 'publish' ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+                  {property24PrimaryActionLabel}
+                </Button>
+                <Button type="button" variant="secondary" className="justify-center" onClick={refreshProperty24ListingStatus} disabled={Boolean(property24Action) || !property24HasReference}>
+                  {property24Action === 'status' ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
+                  Refresh
+                </Button>
+                <Button type="button" variant="secondary" className="justify-center border-[#f3c9c9] text-[#a43d35] hover:bg-[#fff5f5]" onClick={withdrawProperty24Listing} disabled={Boolean(property24Action) || !property24HasReference || property24StatusKey === 'removed' || property24StatusKey === 'withdrawn'}>
+                  {property24Action === 'withdraw' ? <Loader2 size={15} className="animate-spin" /> : <X size={15} />}
+                  Withdraw
+                </Button>
+                <Button type="button" variant="secondary" className="justify-center" onClick={() => pullProperty24ListingLeads({ applyLeads: true })} disabled={Boolean(property24Action) || !property24HasReference}>
+                  {property24Action === 'lead-import' ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
+                  Import Leads
+                </Button>
+              </div>
+
+              <div className="mt-4 rounded-[16px] border border-[#dbe6f2] bg-white/80 p-3">
+                <p className="text-sm font-semibold text-[#22374d]">{property24NextStep}</p>
+                {!property24HasReference ? (
+                  <p className="mt-1 text-xs leading-5 text-[#8a5b13]">Run Preview first. Publish unlocks once readiness passes and Property24 returns a listing number.</p>
+                ) : (
+                  <p className="mt-1 text-xs leading-5 text-[#607387]">Current Property24 listing number: {property24Reference}. Updates will reuse this reference.</p>
                 )}
               </div>
             </section>

@@ -1395,6 +1395,44 @@ function normalizeNullableText(value) {
   return text || null
 }
 
+const TRANSACTION_PARTICIPANT_ASSIGNMENT_SOURCES = new Set([
+  'transaction_direct',
+  'development_default',
+  'system_inherited',
+  'reference_only',
+])
+
+function normalizeTransactionParticipantAssignmentSource(value, fallback = 'transaction_direct') {
+  const normalized = normalizeTextValue(value).toLowerCase()
+  if (TRANSACTION_PARTICIPANT_ASSIGNMENT_SOURCES.has(normalized)) return normalized
+
+  if (
+    [
+      'agent_firm_nomination',
+      'manual',
+      'partner_invitation',
+      'stakeholder_add',
+      'transaction_partner_invitation',
+      'workflow_assignment',
+    ].includes(normalized)
+  ) {
+    return 'transaction_direct'
+  }
+
+  if (
+    [
+      'phase6_person_routing_sync',
+      'routing_rule',
+      'system',
+      'transaction_roleplayer_propagation',
+    ].includes(normalized)
+  ) {
+    return 'system_inherited'
+  }
+
+  return TRANSACTION_PARTICIPANT_ASSIGNMENT_SOURCES.has(fallback) ? fallback : 'transaction_direct'
+}
+
 function normalizeNullableUuid(value) {
   const text = normalizeNullableText(value)
   return text && isUuidLike(text) ? text : null
@@ -10240,7 +10278,7 @@ function buildDefaultParticipantRows(transaction, buyer, inheritedParticipants =
       participant_name: normalizeNullableText(item.participantName),
       participant_email: normalizeNullableText(item.participantEmail)?.toLowerCase() || null,
       participant_scope: item.participantScope || 'transaction',
-      assignment_source: item.assignmentSource || 'transaction_direct',
+      assignment_source: normalizeTransactionParticipantAssignmentSource(item.assignmentSource, 'transaction_direct'),
       user_id: item.userId || null,
       firm_id: item.firmId || null,
       invited_by_user_id: item.invitedByUserId || null,
@@ -10294,6 +10332,9 @@ async function upsertTransactionParticipantsRowsWithFallback(
         row.legal_role =
           normalizedRoleType === 'attorney' ? normalizeAttorneyLegalRole(row.legal_role, 'transfer') : 'none'
       }
+    }
+    if (Object.prototype.hasOwnProperty.call(row, 'assignment_source')) {
+      row.assignment_source = normalizeTransactionParticipantAssignmentSource(row.assignment_source, 'transaction_direct')
     }
     return row
   })
@@ -25659,7 +25700,9 @@ async function ensureRoleplayerTransactionParticipant(
     visibility_scope: 'shared',
     is_internal: isInternalStakeholderRole(roleType),
     participant_scope: 'transaction',
-    assignment_source: isFirmFirstAttorneyAllocationForRoleplayer ? 'agent_firm_nomination' : 'transaction_direct',
+    assignment_source: normalizeTransactionParticipantAssignmentSource(
+      isFirmFirstAttorneyAllocationForRoleplayer ? 'agent_firm_nomination' : 'transaction_direct',
+    ),
     ...buildStakeholderPermissionPayload(roleType, financeManagedBy),
   }
 

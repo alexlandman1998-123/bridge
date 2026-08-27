@@ -187,6 +187,60 @@ function summarizeWorkflowError(error = {}) {
   }
 }
 
+export function buildProperty24LifecycleState({ listing = null, sync = null, listingNumber = null, portalCheck = null, environment = 'exdev' } = {}) {
+  const normalizedListingStatus = normalizeProperty24Text(listing?.property24_status || listing?.property24Status).toLowerCase()
+  const normalizedSyncStatus = normalizeProperty24Text(sync?.external_status || sync?.externalStatus).toLowerCase()
+  const reference = normalizeProperty24Text(listingNumber || sync?.listing_number || listing?.property24_reference || listing?.property24Reference)
+  const isOnPortal = Boolean(portalCheck?.isOnPortal ?? sync?.is_on_portal)
+  const removed = ['removed', 'withdrawn', 'cancelled', 'cancelledsale', 'expired'].includes(normalizedSyncStatus) ||
+    ['removed', 'withdrawn'].includes(normalizedListingStatus)
+  const paused = ['paused', 'pending'].includes(normalizedSyncStatus) || ['paused', 'pending'].includes(normalizedListingStatus)
+  const failed = ['failed'].includes(normalizedSyncStatus) || ['failed', 'error'].includes(normalizedListingStatus)
+  const published = !removed && (isOnPortal || ['published', 'live', 'active'].includes(normalizedListingStatus) || normalizedSyncStatus === 'on_portal')
+  const state = !reference
+    ? 'draft'
+    : failed
+      ? 'failed'
+      : removed
+        ? 'withdrawn'
+        : paused
+          ? 'paused'
+          : published
+            ? 'published'
+            : 'submitted'
+
+  return {
+    state,
+    label: {
+      draft: 'Not Published',
+      submitted: 'Submitted',
+      published: 'Live on Property24',
+      paused: 'Paused',
+      withdrawn: 'Withdrawn',
+      failed: 'Needs Attention',
+    }[state] || 'Unknown',
+    listingNumber: reference || null,
+    environment: normalizeProperty24Text(environment || sync?.environment) || 'exdev',
+    property24ListingUrl: normalizeProperty24Text(listing?.property24_listing_url || listing?.property24ListingUrl) || null,
+    externalStatus: normalizedSyncStatus || null,
+    property24Status: normalizedListingStatus || null,
+    isOnPortal,
+    lastSyncedAt: sync?.last_successful_sync_at || sync?.lastSuccessfulSyncAt || sync?.updated_at || listing?.updated_at || null,
+    lastCheckedAt: sync?.last_checked_at || sync?.lastCheckedAt || null,
+    lastError: sync?.last_error || sync?.lastError || null,
+    actions: {
+      canPreview: true,
+      canPublish: state !== 'withdrawn',
+      canUpdate: Boolean(reference) && state !== 'withdrawn',
+      canRefreshStatus: Boolean(reference),
+      canWithdraw: Boolean(reference) && state !== 'withdrawn',
+      canImportLeads: Boolean(reference) && state !== 'withdrawn',
+      primaryPublishLabel: reference ? 'Update Property24' : 'Publish to Property24',
+      withdrawLabel: 'Withdraw from Property24',
+    },
+  }
+}
+
 export async function applyControlledProperty24ListingPublish({
   supabase,
   property24,
@@ -395,6 +449,13 @@ export async function applyControlledProperty24StatusUpdate({
       phase: 'property24-status-update',
       generatedAt: new Date().toISOString(),
       status: 'SUBMITTED',
+      lifecycle: buildProperty24LifecycleState({
+        listing: syncRecord.listing,
+        sync: syncRecord.sync,
+        listingNumber: normalizedListingNumber,
+        portalCheck,
+        environment,
+      }),
       listingId: normalizeProperty24Text(config.listingId),
       listingNumber: normalizedListingNumber,
       listingStatus: normalizedStatus,
