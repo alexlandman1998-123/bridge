@@ -22186,6 +22186,8 @@ export async function saveDeveloperTransactionWorkspace({
   salesPrice = null,
 } = {}) {
   const client = requireClient()
+  const actorProfile = await resolveActiveProfileContext(client)
+  const actorUserId = normalizeNullableUuid(actorProfile.userId)
 
   if (!unitId) {
     throw new Error('Unit is required.')
@@ -22401,6 +22403,10 @@ export async function saveDeveloperTransactionWorkspace({
     }
   }
 
+  if (!existingTransaction?.id && !actorUserId) {
+    throw new Error('Please sign in again before creating a transaction.')
+  }
+
   const subprocessLabel =
     normalizedSubprocessType === 'finance'
       ? 'Finance workflow'
@@ -22438,7 +22444,7 @@ export async function saveDeveloperTransactionWorkspace({
     current_main_stage: resolvedMainStage,
     current_sub_stage_summary: progressSummary,
     assigned_agent: existingTransaction?.assigned_agent || null,
-    assigned_agent_email: existingTransaction?.assigned_agent_email || null,
+    assigned_agent_email: existingTransaction?.assigned_agent_email || normalizeNullableText(actorProfile.email)?.toLowerCase() || null,
     attorney: existingTransaction?.attorney || null,
     assigned_attorney_email: existingTransaction?.assigned_attorney_email || null,
     bond_originator: existingTransaction?.bond_originator || null,
@@ -22448,6 +22454,13 @@ export async function saveDeveloperTransactionWorkspace({
     ...(normalizedSalesPrice !== null ? { sales_price: normalizedSalesPrice } : {}),
     is_active: normalizedMode !== 'available',
     updated_at: new Date().toISOString(),
+  }
+
+  if (!existingTransaction?.id && actorUserId) {
+    transactionPayload.assigned_agent_id = actorUserId
+    transactionPayload.assigned_user_id = actorUserId
+    transactionPayload.owner_user_id = actorUserId
+    transactionPayload.created_by = actorUserId
   }
 
   let transactionResult = existingTransaction?.id
@@ -22479,6 +22492,10 @@ export async function saveDeveloperTransactionWorkspace({
       isMissingColumnError(transactionResult.error, 'assigned_agent_email') ||
       isMissingColumnError(transactionResult.error, 'assigned_attorney_email') ||
       isMissingColumnError(transactionResult.error, 'assigned_bond_originator_email') ||
+      isMissingColumnError(transactionResult.error, 'assigned_agent_id') ||
+      isMissingColumnError(transactionResult.error, 'assigned_user_id') ||
+      isMissingColumnError(transactionResult.error, 'owner_user_id') ||
+      isMissingColumnError(transactionResult.error, 'created_by') ||
       isMissingColumnError(transactionResult.error, 'organisation_id') ||
       isMissingColumnError(transactionResult.error, 'is_active'))
   ) {
@@ -22494,6 +22511,10 @@ export async function saveDeveloperTransactionWorkspace({
     delete fallbackPayload.assigned_agent_email
     delete fallbackPayload.assigned_attorney_email
     delete fallbackPayload.assigned_bond_originator_email
+    delete fallbackPayload.assigned_agent_id
+    delete fallbackPayload.assigned_user_id
+    delete fallbackPayload.owner_user_id
+    delete fallbackPayload.created_by
     delete fallbackPayload.is_active
 
     transactionResult = existingTransaction?.id
@@ -35642,7 +35663,11 @@ export async function saveTransaction({
   const normalizedActorRole = actorRole ? normalizeRoleType(actorRole) : null
   const actorProfile = await resolveActiveProfileContext(client)
   const effectiveActorRole = normalizedActorRole || actorProfile.role || 'developer'
-  const effectiveActorUserId = actorProfile.userId || null
+  const effectiveActorUserId = normalizeNullableUuid(actorProfile.userId)
+
+  if (!transactionId && !effectiveActorUserId) {
+    throw new Error('Please sign in again before creating a transaction.')
+  }
 
   const toComparableText = (value) =>
     String(value || '')
@@ -35747,6 +35772,22 @@ export async function saveTransaction({
     updated_at: new Date().toISOString(),
   }
 
+  if (!transactionId && effectiveActorUserId) {
+    payload.assigned_agent_id = ['developer', 'agent'].includes(effectiveActorRole) ? effectiveActorUserId : null
+    payload.assigned_user_id = effectiveActorUserId
+    payload.owner_user_id = effectiveActorUserId
+    payload.created_by = effectiveActorUserId
+
+    if (unitId) {
+      const unitLookup = await client.from('units').select('id, development_id').eq('id', unitId).maybeSingle()
+      if (unitLookup.error) {
+        throw unitLookup.error
+      }
+      payload.development_id = normalizeNullableUuid(unitLookup.data?.development_id)
+      payload.organisation_id = await resolveDevelopmentOrganisationId(client, payload.development_id)
+    }
+  }
+
   if (hasPurchasePrice) {
     payload.sales_price = normalizedPurchasePrice
     payload.purchase_price = normalizedPurchasePrice
@@ -35793,7 +35834,13 @@ export async function saveTransaction({
       isMissingColumnError(result.error, 'purchase_price') ||
       isMissingColumnError(result.error, 'cash_amount') ||
       isMissingColumnError(result.error, 'bond_amount') ||
-      isMissingColumnError(result.error, 'deposit_amount')
+      isMissingColumnError(result.error, 'deposit_amount') ||
+      isMissingColumnError(result.error, 'assigned_agent_id') ||
+      isMissingColumnError(result.error, 'assigned_user_id') ||
+      isMissingColumnError(result.error, 'owner_user_id') ||
+      isMissingColumnError(result.error, 'created_by') ||
+      isMissingColumnError(result.error, 'development_id') ||
+      isMissingColumnError(result.error, 'organisation_id')
     ) {
       const fallbackPayload = { ...payload }
       delete fallbackPayload.current_main_stage
@@ -35804,6 +35851,12 @@ export async function saveTransaction({
       delete fallbackPayload.cash_amount
       delete fallbackPayload.bond_amount
       delete fallbackPayload.deposit_amount
+      delete fallbackPayload.assigned_agent_id
+      delete fallbackPayload.assigned_user_id
+      delete fallbackPayload.owner_user_id
+      delete fallbackPayload.created_by
+      delete fallbackPayload.development_id
+      delete fallbackPayload.organisation_id
 
       if (transactionId) {
         result = await client

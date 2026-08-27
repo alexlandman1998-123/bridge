@@ -3115,28 +3115,30 @@ function getListingMarketingDraftStorageKey(listingId) {
 }
 
 function buildLightweightMarketingDraft(draft = {}) {
+  const safeDraft = draft && typeof draft === 'object' ? draft : {}
   return {
-    headline: String(draft.headline || '').trim(),
-    description: String(draft.description || '').trim(),
-    listingPreviewDescription: String(draft.listingPreviewDescription || '').trim(),
-    selectedFeatures: Array.isArray(draft.selectedFeatures) ? draft.selectedFeatures.map(String).filter(Boolean) : [],
-    amenities: Array.isArray(draft.amenities) ? draft.amenities.map(String).filter(Boolean) : [],
-    videoLink: String(draft.videoLink || '').trim(),
-    virtualTourLink: String(draft.virtualTourLink || '').trim(),
-    property24ListingUrl: String(draft.property24ListingUrl || '').trim(),
-    property24Reference: String(draft.property24Reference || '').trim(),
-    property24Status: String(draft.property24Status || '').trim(),
-    privatePropertyListingUrl: String(draft.privatePropertyListingUrl || '').trim(),
-    privatePropertyReference: String(draft.privatePropertyReference || '').trim(),
-    privatePropertyStatus: String(draft.privatePropertyStatus || '').trim(),
-    bridgeListingStatus: String(draft.bridgeListingStatus || '').trim(),
-    bridgeListingPublicUrl: String(draft.bridgeListingPublicUrl || '').trim(),
-    externalLinks: normalizeExternalListingLinks(draft.externalLinks),
+    headline: String(safeDraft.headline || '').trim(),
+    description: String(safeDraft.description || '').trim(),
+    listingPreviewDescription: String(safeDraft.listingPreviewDescription || '').trim(),
+    selectedFeatures: Array.isArray(safeDraft.selectedFeatures) ? safeDraft.selectedFeatures.map(String).filter(Boolean) : [],
+    amenities: Array.isArray(safeDraft.amenities) ? safeDraft.amenities.map(String).filter(Boolean) : [],
+    videoLink: String(safeDraft.videoLink || '').trim(),
+    virtualTourLink: String(safeDraft.virtualTourLink || '').trim(),
+    property24ListingUrl: String(safeDraft.property24ListingUrl || '').trim(),
+    property24Reference: String(safeDraft.property24Reference || '').trim(),
+    property24Status: String(safeDraft.property24Status || '').trim(),
+    privatePropertyListingUrl: String(safeDraft.privatePropertyListingUrl || '').trim(),
+    privatePropertyReference: String(safeDraft.privatePropertyReference || '').trim(),
+    privatePropertyStatus: String(safeDraft.privatePropertyStatus || '').trim(),
+    bridgeListingStatus: String(safeDraft.bridgeListingStatus || '').trim(),
+    bridgeListingPublicUrl: String(safeDraft.bridgeListingPublicUrl || '').trim(),
+    externalLinks: normalizeExternalListingLinks(safeDraft.externalLinks),
     savedAt: new Date().toISOString(),
   }
 }
 
 function hasMeaningfulMarketingDraft(draft = {}) {
+  if (!draft || typeof draft !== 'object') return false
   return Boolean(
     String(draft.description || '').trim() ||
       String(draft.listingPreviewDescription || '').trim() ||
