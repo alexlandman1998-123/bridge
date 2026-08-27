@@ -6,6 +6,7 @@ import { promisify } from 'node:util'
 import { createProperty24ListingPlan } from './property24ListingMapper.js'
 
 const execFileAsync = promisify(execFile)
+let sharpImportPromise = null
 
 export function normalizeProperty24PreviewText(value = '') {
   return String(value || '').trim()
@@ -205,7 +206,16 @@ function shouldConvertProperty24ImageToJpeg(contentType = '') {
   return Boolean(type && type !== 'image/jpeg' && type !== 'image/jpg')
 }
 
-async function convertImageBufferToJpeg(buffer) {
+async function loadSharpImageConverter() {
+  if (!sharpImportPromise) {
+    sharpImportPromise = import('sharp')
+      .then((module) => module.default || module)
+      .catch(() => null)
+  }
+  return sharpImportPromise
+}
+
+async function convertImageBufferToJpegWithSips(buffer) {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'property24-image-'))
   const inputPath = path.join(tempDir, 'input')
   const outputPath = path.join(tempDir, 'output.jpg')
@@ -215,6 +225,25 @@ async function convertImageBufferToJpeg(buffer) {
     return await fs.readFile(outputPath)
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true })
+  }
+}
+
+async function convertImageBufferToJpeg(buffer) {
+  const sharp = await loadSharpImageConverter()
+  if (typeof sharp === 'function') {
+    return sharp(buffer)
+      .rotate()
+      .jpeg({ quality: 90 })
+      .toBuffer()
+  }
+
+  try {
+    return await convertImageBufferToJpegWithSips(buffer)
+  } catch (error) {
+    if (error?.code === 'ENOENT') {
+      throw new Error('Image conversion failed because sharp is unavailable and macOS sips is not installed.')
+    }
+    throw error
   }
 }
 
