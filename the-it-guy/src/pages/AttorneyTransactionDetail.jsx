@@ -14307,11 +14307,11 @@ function AgentTransactionCommandCenter({
             <p className="text-xs font-semibold uppercase tracking-[0.12em] text-textStrong">Documents</p>
             <Button type="button" variant="ghost" size="sm" onClick={onOpenDocuments}>View documents</Button>
           </div>
-          <div className="mt-2 divide-y divide-borderSoft">
+          <div className="mt-2 flex flex-1 flex-col divide-y divide-borderSoft">
             {documentRows.map((row) => {
               const Icon = row.Icon || FileText
               return (
-                <button key={row.key} type="button" className="flex w-full items-center gap-3 py-3 text-left" onClick={onOpenDocuments}>
+                <button key={row.key} type="button" className="flex min-h-16 w-full flex-1 items-center gap-3 py-3 text-left" onClick={onOpenDocuments}>
                   <span className={`inline-flex size-9 shrink-0 items-center justify-center rounded-[9px] ${row.iconClass}`}><Icon size={16} /></span>
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center justify-between gap-3"><strong className="truncate text-xs text-textStrong">{row.label}</strong><span className="shrink-0 text-xs font-semibold text-textMuted">{row.total ? row.countLabel : 'No requirements'}</span></span>
