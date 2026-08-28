@@ -156,7 +156,7 @@ import {
   SELLER_REVIEW_DELIVERY_MODE,
   updateCanonicalOfferStatus,
 } from '../lib/buyerLifecycleService'
-import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import { invokeEdgeFunction, isSupabaseConfigured, markQueryBaselineFirstUsefulContent, supabase } from '../lib/supabaseClient'
 import { isUnsafeFallbackAllowed } from '../lib/envValidation'
 import { resolveTransactionRoutingProfile } from '../services/transactionRoutingProfileService'
 import {
@@ -590,6 +590,57 @@ function upsertListingRecord(rows = [], incoming = null) {
     return mergeListingRecord(row, incoming)
   })
   return found ? nextRows : [incoming, ...nextRows]
+}
+
+const LISTING_DETAIL_SHELL_OPTIONS = Object.freeze({
+  includeOnboarding: false,
+  includeRequirementsAndDocuments: false,
+  includeDistributionData: false,
+  includeMandatePacket: false,
+  includeMedia: false,
+  includeAssignedAgent: false,
+})
+
+function getListingPanelHydrationOptions(activeTab, sellerWorkspaceTab) {
+  const options = { ...LISTING_DETAIL_SHELL_OPTIONS }
+
+  if (activeTab === 'property_details') {
+    options.includeOnboarding = true
+    options.includeDistributionData = true
+    options.includeMedia = true
+    options.includeAssignedAgent = true
+  }
+
+  if (activeTab === 'documents') {
+    options.includeOnboarding = true
+    options.includeRequirementsAndDocuments = true
+    options.includeMandatePacket = true
+  }
+
+  if (activeTab !== 'seller') return options
+
+  if (sellerWorkspaceTab === 'overview') {
+    options.includeOnboarding = true
+    options.includeRequirementsAndDocuments = true
+    options.includeMandatePacket = true
+    options.includeAssignedAgent = true
+  } else if (sellerWorkspaceTab === 'seller') {
+    options.includeOnboarding = true
+    options.includeAssignedAgent = true
+  } else if (sellerWorkspaceTab === 'documents') {
+    options.includeOnboarding = true
+    options.includeRequirementsAndDocuments = true
+    options.includeMandatePacket = true
+  } else if (sellerWorkspaceTab === 'commission') {
+    options.includeOnboarding = true
+  } else if (sellerWorkspaceTab === 'marketing') {
+    options.includeOnboarding = true
+    options.includeDistributionData = true
+    options.includeMedia = true
+    options.includeAssignedAgent = true
+  }
+
+  return options
 }
 
 function firstDraftValue(...values) {
@@ -3316,11 +3367,24 @@ function AgentListingDetail() {
       return ''
     }
   }, [encodedListingId])
+  const navigationListingShell = useMemo(() => {
+    const candidate = location.state?.listingShell
+    if (!candidate || typeof candidate !== 'object') return null
+    const candidateIds = [
+      getPrivateListingRecordId(candidate),
+      getPrivateListingRemoteRecordId(candidate),
+      candidate?.listingId,
+      candidate?.listing_id,
+    ].map((value) => String(value || '').trim()).filter(Boolean)
+    return candidateIds.includes(listingId) ? candidate : null
+  }, [listingId, location.state])
 
   const [activeTab, setActiveTab] = useState('seller')
-  const [privateListings, setPrivateListings] = useState([])
+  const [privateListings, setPrivateListings] = useState(() => (
+    navigationListingShell ? sanitizePrivateListingRows([navigationListingShell]) : []
+  ))
   const [pipelineLeads, setPipelineLeads] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(() => !navigationListingShell)
   const [activeOrganisationId, setActiveOrganisationId] = useState('')
   const [offersRefreshTick, setOffersRefreshTick] = useState(0)
   const [showSendOfferLinkForm, setShowSendOfferLinkForm] = useState(false)
@@ -3391,6 +3455,8 @@ function AgentListingDetail() {
   const [marketingDraft, setMarketingDraft] = useState(() => buildPropertyDraft(null))
   const marketingDraftDirtyRef = useRef(false)
   const hydratedMarketingListingIdRef = useRef('')
+  const listingPanelHydrationRef = useRef({ listingId: '', options: { ...LISTING_DETAIL_SHELL_OPTIONS } })
+  const listingPanelHydrationRequestRef = useRef(0)
   const [externalLinkDraft, setExternalLinkDraft] = useState(() => createExternalLinkDraft())
   const [readinessChecklistOpen, setReadinessChecklistOpen] = useState(false)
   const [property24ManageOpen, setProperty24ManageOpen] = useState(false)
@@ -3467,7 +3533,7 @@ function AgentListingDetail() {
   }, [location.search])
 
   const loadListingData = useCallback(async () => {
-    setLoading(true)
+    setLoading(!navigationListingShell)
     setDetailError('')
     if (!listingId) {
       setPrivateListings([])
@@ -3476,7 +3542,17 @@ function AgentListingDetail() {
       return
     }
 
-    const runtimeListings = sanitizePrivateListingRows(readAgentPrivateListings())
+    const storedRuntimeListings = sanitizePrivateListingRows(readAgentPrivateListings())
+    const runtimeListings = navigationListingShell
+      ? sanitizePrivateListingRows(upsertListingRecord(storedRuntimeListings, navigationListingShell))
+      : storedRuntimeListings
+    if (navigationListingShell) {
+      setPrivateListings(runtimeListings)
+      markQueryBaselineFirstUsefulContent(location.pathname, {
+        page: 'listing_detail',
+        source: 'list_summary_handoff',
+      })
+    }
     if (!isSupabaseConfigured) {
       setPipelineLeads(readPipelineLeads())
     }
@@ -3488,7 +3564,12 @@ function AgentListingDetail() {
     let nextListings = runtimeListings
     if (isSupabaseConfigured && dbLookupListingId && !listingId.startsWith('development-')) {
       try {
-        const dbListing = await getPrivateListing(dbLookupListingId)
+        listingPanelHydrationRequestRef.current += 1
+        listingPanelHydrationRef.current = {
+          listingId: dbLookupListingId,
+          options: { ...LISTING_DETAIL_SHELL_OPTIONS },
+        }
+        const dbListing = await getPrivateListing(dbLookupListingId, LISTING_DETAIL_SHELL_OPTIONS)
         const returnedListingId = getPrivateListingRecordId(dbListing)
         if (dbListing && returnedListingId !== dbLookupListingId) {
           setDetailError('This listing returned an invalid record. Refresh Listings and open it again; no changes were made.')
@@ -3507,7 +3588,8 @@ function AgentListingDetail() {
 
     setPrivateListings(sanitizePrivateListingRows(nextListings))
     setLoading(false)
-  }, [listingId, location.search, navigate])
+    markQueryBaselineFirstUsefulContent(location.pathname, { page: 'listing_detail' })
+  }, [listingId, location.pathname, location.search, navigate, navigationListingShell])
 
   useEffect(() => {
     void loadListingData()
@@ -3530,6 +3612,40 @@ function AgentListingDetail() {
   const listingRecord = useMemo(() => {
     return findPrivateListingById(privateListings, listingId)
   }, [listingId, privateListings])
+
+  useEffect(() => {
+    if (!isSupabaseConfigured || !listingRecord) return undefined
+    const remoteListingId = getPrivateListingRemoteRecordId(listingRecord) || (isUuidLike(listingId) ? listingId : '')
+    if (!remoteListingId) return undefined
+
+    const requestedOptions = getListingPanelHydrationOptions(activeTab, sellerWorkspaceTab)
+    const previousOptions = listingPanelHydrationRef.current.listingId === remoteListingId
+      ? listingPanelHydrationRef.current.options
+      : { ...LISTING_DETAIL_SHELL_OPTIONS }
+    const optionNames = Object.keys(LISTING_DETAIL_SHELL_OPTIONS)
+    const hasNewSection = optionNames.some((name) => requestedOptions[name] && !previousOptions[name])
+    if (!hasNewSection) return undefined
+
+    const nextOptions = optionNames.reduce((accumulator, name) => {
+      accumulator[name] = Boolean(previousOptions[name] || requestedOptions[name])
+      return accumulator
+    }, {})
+    listingPanelHydrationRef.current = { listingId: remoteListingId, options: nextOptions }
+    const requestId = listingPanelHydrationRequestRef.current + 1
+    listingPanelHydrationRequestRef.current = requestId
+
+    getPrivateListing(remoteListingId, nextOptions)
+      .then((hydratedListing) => {
+        if (listingPanelHydrationRequestRef.current !== requestId || !hydratedListing) return
+        setPrivateListings((currentRows) => sanitizePrivateListingRows(upsertListingRecord(currentRows, hydratedListing)))
+      })
+      .catch((error) => {
+        console.error('[AgentListingDetail] Listing panel hydration failed', error)
+        if (listingPanelHydrationRequestRef.current === requestId) {
+          listingPanelHydrationRef.current = { listingId: remoteListingId, options: previousOptions }
+        }
+      })
+  }, [activeTab, listingId, listingRecord, sellerWorkspaceTab])
 
   const sellerPortalActivationListingId = useMemo(() => {
     return getPrivateListingRemoteRecordId(listingRecord) || (isUuidLike(listingId) ? listingId : '')
@@ -3597,6 +3713,7 @@ function AgentListingDetail() {
   )
 
   useEffect(() => {
+    if (activeTab !== 'seller' || sellerWorkspaceTab !== 'seller') return undefined
     const token = resolveSellerPortalTokenFromListing(listingRecord)
     if (!token || !isSupabaseConfigured) {
       setSellerPortalAccessState(null)
@@ -3635,9 +3752,10 @@ function AgentListingDetail() {
     return () => {
       cancelled = true
     }
-  }, [listingRecord])
+  }, [activeTab, listingRecord, sellerWorkspaceTab])
 
   useEffect(() => {
+    if (activeTab !== 'offers') return undefined
     if (!listingOrganisationId || !listingRecord?.id || !isSupabaseConfigured) {
       setCanonicalListingOffers([])
       setCanonicalOffersError('')
@@ -3666,7 +3784,7 @@ function AgentListingDetail() {
     return () => {
       cancelled = true
     }
-  }, [listingOrganisationId, listingRecord?.id, offersRefreshTick])
+  }, [activeTab, listingOrganisationId, listingRecord?.id, offersRefreshTick])
 
   const refreshInterestedLeads = useCallback(async () => {
     if (!listingOrganisationId || !listingRecord?.id || !isSupabaseConfigured) {
@@ -3692,8 +3810,10 @@ function AgentListingDetail() {
   }, [listingOrganisationId, listingRecord?.id])
 
   useEffect(() => {
+    const isInterestedLeadsPanelActive = activeTab === 'pipeline' || (activeTab === 'seller' && sellerWorkspaceTab === 'leads')
+    if (!isInterestedLeadsPanelActive) return
     void refreshInterestedLeads()
-  }, [refreshInterestedLeads])
+  }, [activeTab, refreshInterestedLeads, sellerWorkspaceTab])
 
   const refreshSentProperties = useCallback(async () => {
     if (!listingOrganisationId || !listingRecord?.id || !isSupabaseConfigured) {
@@ -3726,8 +3846,10 @@ function AgentListingDetail() {
   }, [listingOrganisationId, listingRecord?.id])
 
   useEffect(() => {
+    const isCommunicationHistoryPanelActive = activeTab === 'seller' && ['activity', 'leads'].includes(sellerWorkspaceTab)
+    if (!isCommunicationHistoryPanelActive) return
     void refreshSentProperties()
-  }, [refreshSentProperties])
+  }, [activeTab, refreshSentProperties, sellerWorkspaceTab])
 
   const refreshSellerNotificationDelivery = useCallback(async () => {
     if (!listingOrganisationId || !sellerLeadId || !listingRecord?.id || !isSupabaseConfigured) {
@@ -3743,8 +3865,9 @@ function AgentListingDetail() {
   }, [listingOrganisationId, listingRecord?.id, sellerLeadId])
 
   useEffect(() => {
+    if (activeTab !== 'seller' || sellerWorkspaceTab !== 'seller') return
     void refreshSellerNotificationDelivery()
-  }, [refreshSellerNotificationDelivery])
+  }, [activeTab, refreshSellerNotificationDelivery, sellerWorkspaceTab])
 
   const refreshListingSuggestions = useCallback(async () => {
     if (!listingOrganisationId || !listingRecord?.id || !isSupabaseConfigured) {
@@ -3770,8 +3893,10 @@ function AgentListingDetail() {
   }, [listingOrganisationId, listingRecord?.id])
 
   useEffect(() => {
+    const isSuggestionsPanelActive = activeTab === 'pipeline' || (activeTab === 'seller' && sellerWorkspaceTab === 'leads')
+    if (!isSuggestionsPanelActive) return
     void refreshListingSuggestions()
-  }, [refreshListingSuggestions])
+  }, [activeTab, refreshListingSuggestions, sellerWorkspaceTab])
 
   async function handleListingSuggestionAction(action, suggestion) {
     try {
@@ -3834,7 +3959,7 @@ function AgentListingDetail() {
   }, [listingId, listingOrganisationId])
 
   useEffect(() => {
-    if (!listingId) return undefined
+    if (activeTab !== 'pipeline' || !listingId) return undefined
     void refreshListingViewings()
     const refreshViewings = () => {
       void refreshListingViewings()
@@ -3845,7 +3970,7 @@ function AgentListingDetail() {
       window.removeEventListener('itg:viewings-updated', refreshViewings)
       window.removeEventListener('itg:agency-crm-updated', refreshViewings)
     }
-  }, [listingId, refreshListingViewings])
+  }, [activeTab, listingId, refreshListingViewings])
 
   const listingAnalyticsSummary = useMemo(() => buildListingWorkspaceAnalyticsSummary({
     interests: interestedLeadRows,

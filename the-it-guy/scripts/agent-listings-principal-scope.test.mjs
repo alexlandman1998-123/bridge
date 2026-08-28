@@ -30,6 +30,26 @@ assert.match(
 )
 assert.match(
   listingsSource,
+  /getAgentPrivateListingSummaries\(profile\.id,\s*\{/,
+  'The main listings page must use the compact private-listing summary loader.',
+)
+assert.doesNotMatch(
+  listingsSource,
+  /dbPrivateListings\s*=\s*await getAgentPrivateListings\(/,
+  'The main listings page must not invoke the full collection hydrator.',
+)
+assert.match(
+  listingsSource,
+  /includeCommissionTerms:\s*false/,
+  'The initial listings screen must defer onboarding commission data.',
+)
+assert.match(
+  listingsSource,
+  /isEditListingWorkspace[\s\S]*?getPrivateListing\(remoteEditListingId\)/,
+  'The edit route must retain a targeted full-record load.',
+)
+assert.match(
+  listingsSource,
   /ORGANISATION_LISTING_SCOPE_ROLES = \['principal', 'owner', 'admin', 'hq', 'branch_manager', 'manager', 'team_lead'\]/,
   'Principal and management roles should load organisation-scoped listings.',
 )

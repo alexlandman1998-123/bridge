@@ -8929,7 +8929,7 @@ function ClientPortal() {
     transactionId: workspaceData?.transaction?.id || portal?.transaction?.id,
     onRefresh: () => loadPortal({ background: true }),
     includeNotifications: false,
-    pollingIntervalMs: portalDataWorkspace === 'seller' || isSellerPortalToken ? 15_000 : 30_000,
+    pollingIntervalMs: 60_000,
   })
 
   useEffect(() => {

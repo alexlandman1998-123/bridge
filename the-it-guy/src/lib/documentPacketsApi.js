@@ -5,7 +5,7 @@ import {
   resolveMandateSecondarySignerConfig,
   resolveMandateSpouseRequirementFromFields,
 } from './mandateSignatureRules'
-import { DOCUMENTS_BUCKET_CANDIDATES, LEGAL_TEMPLATES_BUCKET_CANDIDATES, invokeEdgeFunction, supabase } from './supabaseClient'
+import { DOCUMENTS_BUCKET_CANDIDATES, LEGAL_TEMPLATES_BUCKET_CANDIDATES, invokeEdgeFunction, isLegalDocumentEdgeFunctionRetired, supabase } from './supabaseClient'
 import { uploadToStorageCandidateBuckets } from './storageFallbacks'
 import { resolveWorkspaceFinalSignedArtifactAccess } from '../core/documents/finalSignedArtifactAccess'
 import { linkPacketToRequirement } from '../services/documents/canonicalDocumentLifecycleService'
@@ -4365,6 +4365,11 @@ export async function generateFinalSignedDocument({
   outputBucket = '',
   organisationId = null,
 } = {}) {
+  if (isLegalDocumentEdgeFunctionRetired('generate-final-signed-document')) {
+    const retiredError = new Error('The legal document system has been retired.')
+    retiredError.code = 'LEGAL_DOCUMENT_SYSTEM_RETIRED'
+    throw retiredError
+  }
   const client = requireClient()
   const { packet, context } = await fetchPacketForSigningContext(client, packetId, organisationId)
   if (!canManagePacketSigning(context, packet)) {
@@ -4455,6 +4460,14 @@ export async function generateFinalSignedDocument({
 }
 
 export async function checkDocumentConversionHealth() {
+  if (isLegalDocumentEdgeFunctionRetired('document-conversion-health')) {
+    return {
+      healthy: false,
+      status: 'retired',
+      message: 'The legal document system has been retired.',
+      details: null,
+    }
+  }
   const client = requireClient()
   const invocation = await client.functions.invoke('document-conversion-health', {
     method: 'GET',

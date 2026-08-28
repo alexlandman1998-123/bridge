@@ -13,6 +13,7 @@ import { APP_ROLE_LABELS } from './lib/appRoleMetadata'
 import { FEATURE_FLAGS, SHOW_INTELLIGENCE_BETA } from './lib/featureFlags'
 import {
   isSupabaseConfigured,
+  markQueryBaselineRouteShellVisible,
   markQueryBaselineRoute,
 } from './lib/supabaseClient'
 import { getFeatureFlags, getRuntimeEnvValidation } from './lib/envValidation'
@@ -361,7 +362,6 @@ const Documents = lazy(() => import('./pages/Documents'))
 const ExecutiveSnapshot = lazy(() => import('./pages/ExecutiveSnapshot'))
 const ExternalTransactionPortal = lazy(() => import('./pages/ExternalTransactionPortal'))
 const Financials = lazy(() => import('./pages/Financials'))
-const LegalDocumentWorkspacePage = lazy(() => import('./pages/LegalDocumentWorkspacePage'))
 const MobileDemoLayout = lazy(() => import('./components/mobile-shell/MobileDemoLayout'))
 const MobileLayout = lazy(() => import('./components/mobile-shell/MobileLayout'))
 const MobileDevelopmentDetailPage = lazy(() => import('./pages/mobile/MobileDevelopmentDetailPage'))
@@ -414,7 +414,6 @@ const SettingsProperty24Page = lazy(() => import('./pages/settings/SettingsPrope
 const SettingsPrivatePropertyPage = lazy(() => import('./pages/settings/SettingsPrivatePropertyPage'))
 const SettingsWhatsAppPage = lazy(() => import('./pages/settings/SettingsWhatsAppPage'))
 const SettingsSyndicationPage = lazy(() => import('./pages/settings/SettingsSyndicationPage'))
-const SettingsSigningTemplatesPage = lazy(() => import('./pages/settings/SettingsSigningTemplatesPage'))
 const SettingsUsersPage = lazy(() => import('./pages/settings/SettingsUsersPage'))
 const SettingsWorkflowsPage = lazy(() => import('./pages/settings/SettingsWorkflowsPage'))
 const SignerPortal = lazy(() => import('./pages/SignerPortal'))
@@ -465,6 +464,18 @@ function ReportsUnavailable() {
       <h1 className="mt-3 text-2xl font-semibold text-slate-900">Reports are currently disabled</h1>
       <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600">
         This workspace is locked while reporting is being reviewed. No report data is loaded on this route.
+      </p>
+    </section>
+  )
+}
+
+function LegalDocumentsUnavailable() {
+  return (
+    <section className="min-h-[52vh] w-full rounded-[28px] border border-slate-200/80 bg-white p-6 shadow-[0_18px_45px_rgba(15,23,42,0.08)] sm:p-8">
+      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Module retired</p>
+      <h1 className="mt-3 text-2xl font-semibold text-slate-900">Legal document generation is unavailable</h1>
+      <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600">
+        This system has been retired. No document workspace, generation job, signing reminder, or document query is loaded on this route.
       </p>
     </section>
   )
@@ -1714,6 +1725,7 @@ function RouteObservability() {
     markQueryBaselineRoute(location.pathname)
     const marker = createRoutePerformanceMarker(location.pathname)
     const frameId = window.requestAnimationFrame(() => {
+      markQueryBaselineRouteShellVisible(location.pathname)
       marker.finish({
         userId: authState.user?.id || '',
         workspaceId: authState.currentWorkspace?.id || '',
@@ -2429,9 +2441,7 @@ function AppRoutes() {
                 element={
                   <SalesWorkspaceGuard>
                     <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
-                      <AppErrorBoundary scope="legal-document-workspace" title="Legal document workspace failed to load">
-                        <LegalDocumentWorkspacePage />
-                      </AppErrorBoundary>
+                      <LegalDocumentsUnavailable />
                     </RoleRoute>
                   </SalesWorkspaceGuard>
                 }
@@ -2440,9 +2450,7 @@ function AppRoutes() {
                 path="/legal-documents/:packetId"
                 element={
                   <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
-                    <AppErrorBoundary scope="legal-document-workspace" title="Legal document workspace failed to load">
-                      <LegalDocumentWorkspacePage />
-                    </AppErrorBoundary>
+                    <LegalDocumentsUnavailable />
                   </RoleRoute>
                 }
               />
@@ -2972,9 +2980,7 @@ function AppRoutes() {
                 element={
                   <SalesWorkspaceGuard>
                     <RoleRoute allowedRoles={['developer', 'agent']}>
-                      <AppErrorBoundary scope="legal-document-workspace" title="Legal document workspace failed to load">
-                        <LegalDocumentWorkspacePage />
-                      </AppErrorBoundary>
+                      <LegalDocumentsUnavailable />
                     </RoleRoute>
                   </SalesWorkspaceGuard>
                 }
@@ -3074,9 +3080,7 @@ function AppRoutes() {
                 element={
                   <SalesWorkspaceGuard>
                     <RoleRoute allowedRoles={['agent']}>
-                      <AppErrorBoundary scope="legal-document-workspace" title="Legal document workspace failed to load">
-                        <LegalDocumentWorkspacePage />
-                      </AppErrorBoundary>
+                      <LegalDocumentsUnavailable />
                     </RoleRoute>
                   </SalesWorkspaceGuard>
                 }

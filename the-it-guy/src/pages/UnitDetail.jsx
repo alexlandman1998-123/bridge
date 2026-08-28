@@ -3413,7 +3413,7 @@ function UnitDetail() {
     transactionId: detail?.transaction?.id,
     onRefresh: () => loadDetail(),
     includeNotifications: true,
-    pollingIntervalMs: 45_000,
+    pollingIntervalMs: 60_000,
   })
 
   useEffect(() => {

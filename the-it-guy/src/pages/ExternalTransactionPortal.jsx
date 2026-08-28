@@ -9,6 +9,8 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
+import { BACKGROUND_REFRESH_INTERVALS } from '../hooks/backgroundRefreshPolicy.js'
+import useVisibilityAwarePolling from '../hooks/useVisibilityAwarePolling.js'
 import TransactionLifecycleProgress from '../components/TransactionLifecycleProgress'
 import TransactionProgressPanel from '../components/TransactionProgressPanel'
 import { financeTypeShortLabel, normalizeFinanceType } from '../core/transactions/financeType'
@@ -870,26 +872,27 @@ function ExternalTransactionPortal() {
     void loadPortal()
   }, [loadPortal])
 
-  useEffect(() => {
-    if (!accessToken) {
-      return undefined
-    }
-
-    const intervalId = window.setInterval(() => {
-      if (saving) {
-        return
-      }
-
+  useVisibilityAwarePolling(
+    async () => {
+      if (saving) return
       setIsLiveRefreshing(true)
-      void loadPortal({
-        silent: true,
-        preserveWorkspaceForm: workspaceDirty,
-        preserveCategory: true,
-      }).finally(() => setIsLiveRefreshing(false))
-    }, 15000)
-
-    return () => window.clearInterval(intervalId)
-  }, [accessToken, loadPortal, saving, workspaceDirty])
+      try {
+        await loadPortal({
+          silent: true,
+          preserveWorkspaceForm: workspaceDirty,
+          preserveCategory: true,
+        })
+      } finally {
+        setIsLiveRefreshing(false)
+      }
+    },
+    {
+      enabled: Boolean(accessToken),
+      intervalMs: BACKGROUND_REFRESH_INTERVALS.externalPortal,
+      minForegroundIntervalMs: 30_000,
+      label: 'external-transaction-portal',
+    },
+  )
 
   const uploadCategoryOptions = useMemo(() => {
     const required = (portal?.requiredDocumentChecklist || []).map((item) => item.label).filter(Boolean)

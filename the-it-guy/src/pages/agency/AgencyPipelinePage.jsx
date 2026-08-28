@@ -10,6 +10,8 @@ import AppointmentCalendarActions from '../../components/appointments/Appointmen
 import Button from '../../components/ui/Button'
 import Field from '../../components/ui/Field'
 import { useWorkspace } from '../../context/WorkspaceContext'
+import { BACKGROUND_REFRESH_INTERVALS } from '../../hooks/backgroundRefreshPolicy.js'
+import useVisibilityAwarePolling from '../../hooks/useVisibilityAwarePolling.js'
 import { isUnsafeFallbackAllowed } from '../../lib/envValidation'
 import { buildSellerLeadListingPrefill } from '../../lib/sellerLeadListingPrefill'
 import {
@@ -51,6 +53,7 @@ import {
   deleteAgencyCrmLeadRecord,
   deleteAgencyCrmLeadTask,
   ensureAgencyCrmLeadRecordPersisted,
+  fetchAgencyCrmLeadRelatedRecords,
   fetchAgencyCrmLeadRouteHydrationSeed,
   fetchAgencyCrmLeadWorkspace,
   listBuyerViewingPreferenceLinks,
@@ -82,7 +85,7 @@ import {
 } from '../../lib/agentListingStorage'
 import { createTransactionFromLeadOverride } from '../../lib/transactionLifecycleService'
 import { MOCK_DATA_ENABLED } from '../../lib/mockData'
-import { DOCUMENTS_BUCKET_CANDIDATES, assertEdgeFunctionSuccess, invokeEdgeFunction, isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
+import { DOCUMENTS_BUCKET_CANDIDATES, assertEdgeFunctionSuccess, invokeEdgeFunction, isSupabaseConfigured, markQueryBaselineFirstUsefulContent, supabase } from '../../lib/supabaseClient'
 import { allocatePrivateListingTransferAttorneyPreInstruction, getPrivateListingTransferAttorneyAllocation, instructPrivateListingTransferAttorneyAllocation, listPrivateListingTransferAttorneyAllocations } from '../../services/privateListingAttorneyAllocationService'
 import { repairSellerDocumentTransactionContinuity } from '../../services/sellerDocumentTransactionContinuityService'
 import { buildSellerJourney, getSellerJourneyMetrics } from '../../services/sellerJourneyService'
@@ -11503,6 +11506,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const reloadTimerRef = useRef(null)
   const routeLeadHydrationRef = useRef('')
   const routeLeadWorkspaceSnapshotRef = useRef(null)
+  const leadWorkspacePanelHydrationRef = useRef(new Set())
   const hasCompletedContextLoadRef = useRef(false)
   const isCalendarMode = initialViewMode === 'calendar'
   const isOverviewMode = initialViewMode === 'overview'
@@ -12449,28 +12453,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }, [organisationId, scheduleRecordsReload, selectedLeadId])
 
-  useEffect(() => {
-    if (!organisationId || !isCalendarMode || typeof window === 'undefined') return undefined
-
-    const refreshCalendarAppointments = () => {
-      scheduleRecordsReload(organisationId, 0)
-    }
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        refreshCalendarAppointments()
-      }
-    }
-
-    window.addEventListener('focus', refreshCalendarAppointments)
-    document.addEventListener('visibilitychange', handleVisibilityChange)
-    const intervalId = window.setInterval(refreshCalendarAppointments, 45000)
-
-    return () => {
-      window.removeEventListener('focus', refreshCalendarAppointments)
-      document.removeEventListener('visibilitychange', handleVisibilityChange)
-      window.clearInterval(intervalId)
-    }
-  }, [isCalendarMode, organisationId, scheduleRecordsReload])
+  useVisibilityAwarePolling(
+    () => scheduleRecordsReload(organisationId, 0),
+    {
+      enabled: Boolean(organisationId && isCalendarMode),
+      intervalMs: BACKGROUND_REFRESH_INTERVALS.agencyCalendar,
+      minForegroundIntervalMs: 60_000,
+      label: 'agency-calendar',
+    },
+  )
 
   useEffect(() => {
     if (!organisationId) return
@@ -12703,7 +12694,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     setRouteLeadHydrationStatus(hasWarmRouteSnapshot ? 'ready' : 'loading')
     recordPipelineTelemetry('lead_workspace_hydration_started', {
       leadId: routeLeadId,
-      tab: routeLeadWorkspaceTab,
       hasRouteLeadRecord: Boolean(routeLeadRecordRef.current),
       hasWarmRouteSnapshot,
     })
@@ -12822,6 +12812,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       if (!mergeRouteLeadSnapshot(snapshot)) return false
       setRouteLeadHydrationStatus('ready')
       setRouteLeadHydrationNotice(notice)
+      markQueryBaselineFirstUsefulContent(location.pathname, {
+        page: 'lead_detail',
+        source,
+        leadCount: Array.isArray(snapshot?.leads) ? snapshot.leads.length : 0,
+      })
       if (!primaryHydrationReported) {
         primaryHydrationReported = true
         recordHydrationOutcome('lead_workspace_hydration_ready', {
@@ -12842,7 +12837,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       if (!listingId) return snapshot
       try {
         const linkedListing = await withPipelineTimeout(
-          getPrivateListing(listingId, { includeRequirementsAndDocuments: false, includeDistributionData: false }),
+          getPrivateListing(listingId, {
+            includeOnboarding: false,
+            includeRequirementsAndDocuments: false,
+            includeDistributionData: false,
+            includeMandatePacket: false,
+            includeMedia: false,
+            includeAssignedAgent: false,
+          }),
           'Linked listing data is taking too long to load.',
           LEAD_WORKSPACE_HYDRATION_TIMEOUT_MS,
         )
@@ -12899,54 +12901,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         })
     }
 
-    const hydrateFullLeadWorkspaceInBackground = (reason = 'route_lead_background_workspace') => {
-      void (async () => {
-        try {
-          const workspaceSnapshot = await withPipelineTimeout(
-            fetchAgencyCrmLeadWorkspace(organisationId, routeLeadId),
-            'Lead workspace data is taking too long to load.',
-            LEAD_WORKSPACE_HYDRATION_TIMEOUT_MS,
-          )
-          if (cancelled || routeLeadHydrationRef.current !== hydrationKey) return
-          if (mergeRouteLeadSnapshot(workspaceSnapshot)) {
-            setRouteLeadHydrationStatus('ready')
-            setRouteLeadHydrationNotice('')
-            recordHydrationOutcome('lead_workspace_background_hydration_ready', {
-              reason,
-              leadCount: Array.isArray(workspaceSnapshot?.leads) ? workspaceSnapshot.leads.length : 0,
-              activityCount: Array.isArray(workspaceSnapshot?.leadActivities) ? workspaceSnapshot.leadActivities.length : 0,
-              taskCount: Array.isArray(workspaceSnapshot?.tasks) ? workspaceSnapshot.tasks.length : 0,
-            })
-            hydrateAndMergeLinkedListingInBackground(workspaceSnapshot, reason)
-            return
-          }
-          if (!routeLeadWorkspaceSnapshotRef.current?.leads?.length && workspaceSnapshot?.leadWorkspaceStatus === 'not_found') {
-            routeLeadWorkspaceSnapshotRef.current = null
-            setRouteLeadHydrationStatus('not_found')
-            setRouteLeadHydrationNotice(LEAD_WORKSPACE_STALE_LINK_COPY)
-            recordHydrationOutcome('lead_workspace_background_hydration_not_found', { reason }, 'warning')
-            return
-          }
-          if (!routeLeadWorkspaceSnapshotRef.current?.leads?.length && workspaceSnapshot?.leadWorkspaceStatus === 'unavailable') {
-            routeLeadWorkspaceSnapshotRef.current = null
-            setRouteLeadHydrationStatus('unavailable')
-            setRouteLeadHydrationNotice(LEAD_WORKSPACE_UNAVAILABLE_COPY)
-            recordHydrationOutcome('lead_workspace_background_hydration_unavailable', { reason }, 'warning')
-          }
-        } catch (workspaceError) {
-          if (cancelled || routeLeadHydrationRef.current !== hydrationKey) return
-          console.warn('[PIPELINE] lead workspace background hydration failed; keeping the fast route snapshot active.', {
-            reason,
-            error: workspaceError,
-          })
-          recordHydrationOutcome('lead_workspace_background_hydration_failed', {
-            reason,
-            errorMessage: workspaceError?.message || 'Lead workspace background hydration failed.',
-          }, 'warning')
-        }
-      })()
-    }
-
     const hydrateLeadWorkspace = async () => {
       if (cancelled || attempt >= LEAD_WORKSPACE_HYDRATION_MAX_RETRIES) return
       attempt += 1
@@ -12966,7 +12920,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           }
           if (markRouteSnapshotReady(routeRecordSnapshot, { source: 'route_record_seed' })) {
             hydrateAndMergeLinkedListingInBackground(routeRecordSnapshot, 'route_record_linked_listing')
-            hydrateFullLeadWorkspaceInBackground('route_record_followup')
             return
           }
         }
@@ -12979,7 +12932,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           if (cancelled) return
           if (markRouteSnapshotReady(seedSnapshot, { source: 'route_hydration_seed' })) {
             hydrateAndMergeLinkedListingInBackground(seedSnapshot, 'route_seed_linked_listing')
-            hydrateFullLeadWorkspaceInBackground('route_seed_followup')
             return
           }
         }
@@ -13012,7 +12964,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           return
         }
       } catch (leadWorkspaceError) {
-        console.warn('[PIPELINE] lead workspace hydration failed; full workspace refresh will continue in the background.', leadWorkspaceError)
+        console.warn('[PIPELINE] lead workspace shell hydration failed; retrying the focused lead request.', leadWorkspaceError)
         recordHydrationOutcome('lead_workspace_hydration_attempt_failed', {
           errorMessage: leadWorkspaceError?.message || 'Lead workspace hydration failed.',
           willRetry: attempt < LEAD_WORKSPACE_HYDRATION_MAX_RETRIES,
@@ -13038,12 +12990,82 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }, [
     isLeadWorkspaceRoute,
-    isSupabaseConfigured,
+    location.pathname,
     organisationId,
     recordPipelineTelemetry,
     reloadRecords,
     routeLeadId,
-    routeLeadWorkspaceTab,
+  ])
+
+  useEffect(() => {
+    if (!isLeadWorkspaceRoute || leadWorkspaceTab !== 'activity' || !organisationId || !routeLeadId || !isSupabaseConfigured) return
+    const snapshot = routeLeadWorkspaceSnapshotRef.current || readLeadWorkspaceSessionSnapshot(organisationId, routeLeadId)
+    const lead = (Array.isArray(snapshot?.leads) ? snapshot.leads : []).find((row) =>
+      normalizeLeadIdentityKey(row?.leadId || row?.lead_id) === normalizeLeadIdentityKey(routeLeadId),
+    ) || snapshot?.leads?.[0] || routeLeadRecordRef.current
+    const resolvedLeadId = normalizeText(lead?.leadId || lead?.lead_id || snapshot?.resolvedLeadId || routeLeadId)
+    if (!resolvedLeadId) return
+
+    const hydrationKey = `${organisationId}:${normalizeLeadIdentityKey(resolvedLeadId)}:activity`
+    if (leadWorkspacePanelHydrationRef.current.has(hydrationKey)) return
+    leadWorkspacePanelHydrationRef.current.add(hydrationKey)
+    const routeHydrationKey = `${organisationId}:${normalizeLeadIdentityKey(routeLeadId)}`
+
+    fetchAgencyCrmLeadRelatedRecords(organisationId, resolvedLeadId, {
+      contactId: normalizeText(lead?.contactId || lead?.contact_id),
+      includeContact: true,
+      includeActivities: true,
+      includeTasks: true,
+    })
+      .then((relatedRecords) => {
+        if (routeLeadHydrationRef.current !== routeHydrationKey) return
+        const currentSnapshot = routeLeadWorkspaceSnapshotRef.current || snapshot || {}
+        const nextSnapshot = {
+          ...currentSnapshot,
+          contacts: dedupeByKey([
+            ...(Array.isArray(currentSnapshot.contacts) ? currentSnapshot.contacts : []),
+            ...(Array.isArray(relatedRecords.contacts) ? relatedRecords.contacts : []),
+          ], (row) => row?.contactId),
+          leadActivities: dedupeByKey([
+            ...(Array.isArray(currentSnapshot.leadActivities) ? currentSnapshot.leadActivities : []),
+            ...(Array.isArray(relatedRecords.leadActivities) ? relatedRecords.leadActivities : []),
+          ], (row) => row?.activityId),
+          tasks: dedupeByKey([
+            ...(Array.isArray(currentSnapshot.tasks) ? currentSnapshot.tasks : []),
+            ...(Array.isArray(relatedRecords.tasks) ? relatedRecords.tasks : []),
+          ], (row) => row?.taskId),
+        }
+        routeLeadWorkspaceSnapshotRef.current = nextSnapshot
+        writeLeadWorkspaceSessionSnapshot(organisationId, routeLeadId, nextSnapshot)
+        if (normalizeLeadIdentityKey(resolvedLeadId) !== normalizeLeadIdentityKey(routeLeadId)) {
+          writeLeadWorkspaceSessionSnapshot(organisationId, resolvedLeadId, nextSnapshot)
+        }
+        setRecords((previous) => ({
+          ...previous,
+          contacts: dedupeByKey([...previous.contacts, ...nextSnapshot.contacts], (row) => row?.contactId),
+          leadActivities: dedupeByKey([...previous.leadActivities, ...nextSnapshot.leadActivities], (row) => row?.activityId),
+          tasks: dedupeByKey([...previous.tasks, ...nextSnapshot.tasks], (row) => row?.taskId),
+        }))
+        recordPipelineTelemetry('lead_workspace_activity_panel_hydrated', {
+          leadId: resolvedLeadId,
+          activityCount: nextSnapshot.leadActivities.length,
+          taskCount: nextSnapshot.tasks.length,
+        })
+      })
+      .catch((panelError) => {
+        leadWorkspacePanelHydrationRef.current.delete(hydrationKey)
+        console.warn('[PIPELINE] lead activity panel hydration failed.', panelError)
+        recordPipelineTelemetry('lead_workspace_activity_panel_hydration_failed', {
+          leadId: resolvedLeadId,
+          errorMessage: panelError?.message || 'Lead activity data failed to load.',
+        }, 'warning')
+      })
+  }, [
+    isLeadWorkspaceRoute,
+    leadWorkspaceTab,
+    organisationId,
+    recordPipelineTelemetry,
+    routeLeadId,
   ])
 
   useEffect(() => {
@@ -13531,7 +13553,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   ].filter(Boolean).join(':')
 
   useEffect(() => {
-    if (!selectedLeadIdentityKey || !selectedLeadIsSeller) {
+    if (leadWorkspaceTab !== 'activity' || !selectedLeadIdentityKey || !selectedLeadIsSeller) {
       setSelectedLeadPrivateListingActivities((previous) => previous.length ? [] : previous)
       return
     }
@@ -13564,6 +13586,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }, [
     isSupabaseConfigured,
+    leadWorkspaceTab,
     selectedLeadIdentityKey,
     selectedLeadPrivateListingActivityKey,
     selectedLeadIsSeller,

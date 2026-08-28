@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import {
+  DEFAULT_FALLBACK_POLLING_MS,
   DEFAULT_REALTIME_RECONCILIATION_MS,
   resolveTransactionPollReason,
 } from './transactionLiveRefreshPolicy.js'
+
+const FOREGROUND_REFRESH_MIN_INTERVAL_MS = 30_000
 
 function createChannelName(transactionId) {
   const suffix = Math.random().toString(36).slice(2, 9)
@@ -15,7 +18,7 @@ export default function useTransactionLiveRefresh({
   onRefresh,
   enabled = true,
   includeNotifications = true,
-  pollingIntervalMs = 30_000,
+  pollingIntervalMs = DEFAULT_FALLBACK_POLLING_MS,
   reconciliationIntervalMs = DEFAULT_REALTIME_RECONCILIATION_MS,
   debounceMs = 350,
 } = {}) {
@@ -64,13 +67,17 @@ export default function useTransactionLiveRefresh({
         })
       } finally {
         state.inFlight = false
-        if (state.active && state.pending) {
+        if (state.active && state.pending && document.visibilityState === 'visible') {
           state.pending = false
           queueMicrotask(() => void runRefresh('pending_change'))
         }
       }
     }
     const scheduleRefresh = (reason, payload = null) => {
+      if (document.visibilityState !== 'visible') {
+        state.pending = true
+        return
+      }
       if (state.timer) window.clearTimeout(state.timer)
       state.timer = window.setTimeout(() => {
         state.timer = null
@@ -122,14 +129,26 @@ export default function useTransactionLiveRefresh({
         now,
         lastReconciliationAt: state.lastReconciliationAt,
         reconciliationIntervalMs,
+        fallbackPollingIntervalMs: pollingIntervalMs,
       })
       if (!reason) return
       if (reason === 'poll_reconciliation') state.lastReconciliationAt = now
       scheduleRefresh(reason)
-    }, Math.max(10_000, Number(pollingIntervalMs) || 30_000))
-    const handleFocus = () => scheduleRefresh('window_focus')
+    }, Math.max(30_000, Number(pollingIntervalMs) || DEFAULT_FALLBACK_POLLING_MS))
+    const scheduleForegroundRefresh = (reason) => {
+      if (document.visibilityState !== 'visible') return
+      if (Date.now() - state.lastReconciliationAt < FOREGROUND_REFRESH_MIN_INTERVAL_MS) return
+      scheduleRefresh(reason)
+    }
+    const handleFocus = () => scheduleForegroundRefresh('window_focus')
     const handleVisibility = () => {
-      if (document.visibilityState === 'visible') scheduleRefresh('visibility_restored')
+      if (document.visibilityState !== 'visible') return
+      if (state.pending) {
+        state.pending = false
+        scheduleRefresh('pending_visible_change')
+        return
+      }
+      scheduleForegroundRefresh('visibility_restored')
     }
     window.addEventListener('focus', handleFocus)
     document.addEventListener('visibilitychange', handleVisibility)

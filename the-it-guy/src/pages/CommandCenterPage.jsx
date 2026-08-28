@@ -25,6 +25,8 @@ import {
   MissionControlTrendSection,
 } from '../components/mission-control/MissionControlMobileUi'
 import { useWorkspace } from '../context/WorkspaceContext'
+import { BACKGROUND_REFRESH_INTERVALS } from '../hooks/backgroundRefreshPolicy.js'
+import useVisibilityAwarePolling from '../hooks/useVisibilityAwarePolling.js'
 import { fetchAdminMobileDashboard, fetchMissionControlSnapshot } from '../services/hqMissionControlApi'
 import {
   getAdminMobileDashboardMockSnapshot,
@@ -411,15 +413,14 @@ export default function CommandCenterPage() {
     }
   }, [displayName, reloadKey])
 
-  useEffect(() => {
-    const intervalId = window.setInterval(() => {
-      setReloadKey((current) => current + 1)
-    }, 90000)
-
-    return () => {
-      window.clearInterval(intervalId)
-    }
-  }, [])
+  useVisibilityAwarePolling(
+    () => setReloadKey((current) => current + 1),
+    {
+      intervalMs: BACKGROUND_REFRESH_INTERVALS.commandCenter,
+      minForegroundIntervalMs: 60_000,
+      label: 'command-center',
+    },
+  )
 
   const activityItems = useMemo(() => buildActivityItems(snapshot), [snapshot])
   const alertItems = useMemo(() => buildAlertItems(snapshot), [snapshot])

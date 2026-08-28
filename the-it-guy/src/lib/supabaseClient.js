@@ -3,11 +3,31 @@ import {
   createQueryBaselineController,
   installRealtimeChannelBaseline,
 } from '../services/observability/queryBaselineTelemetry.js'
+import { TARGET_FLOW_HISTORY_STORAGE_KEY } from '../services/observability/targetFlowPerformanceBudget.js'
 import { createSupabaseRequestCoordinator } from './supabaseRequestCoordinator.js'
+import { isPerformanceTracingEnabled } from './performanceTrace.js'
 
 const viteEnv = typeof import.meta !== 'undefined' && import.meta?.env ? import.meta.env : {}
 const processEnv = typeof globalThis !== 'undefined' && globalThis?.process?.env ? globalThis.process.env : {}
 const supabaseUrl = viteEnv.VITE_SUPABASE_URL || processEnv.VITE_SUPABASE_URL || ''
+const LEGAL_DOCUMENT_RUNTIME_ENABLED = String(viteEnv.VITE_LEGAL_DOCUMENT_RUNTIME_ENABLED || '').trim().toLowerCase() === 'true'
+const RETIRED_LEGAL_DOCUMENT_EDGE_FUNCTIONS = new Set([
+  'dispatch-final-signed-document',
+  'document-conversion-health',
+  'generate-final-signed-document',
+  'generate-final-signed-otp',
+  'generate-mandate',
+  'generate-otp',
+  'legal-document-job-runner',
+  'legal-document-watchdog',
+  'retry-final-document-completion',
+  'send-mandate-signing-email',
+  'signer-signing-action',
+])
+
+export function isLegalDocumentEdgeFunctionRetired(functionName = '') {
+  return !LEGAL_DOCUMENT_RUNTIME_ENABLED && RETIRED_LEGAL_DOCUMENT_EDGE_FUNCTIONS.has(String(functionName || '').trim())
+}
 
 function normalizeConfigValue(value) {
   return String(value || '').trim()
@@ -361,6 +381,7 @@ function installAuthReadSingleFlight(client) {
 
 function resolveQueryBaselineSampled() {
   if (typeof window === 'undefined') return false
+  if (isPerformanceTracingEnabled()) return true
   const configuredRate = Number(viteEnv.VITE_QUERY_BASELINE_SAMPLE_RATE)
   const defaultRate = viteEnv.DEV ? 1 : 0.1
   const rate = Number.isFinite(configuredRate) ? Math.min(1, Math.max(0, configuredRate)) : defaultRate
@@ -407,6 +428,20 @@ const queryBaselineController = resolveQueryBaselineSampled()
           }
         })()
       },
+      onRouteLoad(summary) {
+        try {
+          const existing = JSON.parse(window.sessionStorage.getItem(TARGET_FLOW_HISTORY_STORAGE_KEY) || '[]')
+          const history = [...(Array.isArray(existing) ? existing : []), summary].slice(-30)
+          window.sessionStorage.setItem('arch9:route-performance-latest', JSON.stringify(summary))
+          window.sessionStorage.setItem(TARGET_FLOW_HISTORY_STORAGE_KEY, JSON.stringify(history))
+          window.dispatchEvent(new CustomEvent('arch9:route-performance', { detail: summary }))
+        } catch {
+          // Route telemetry is best-effort and must not interfere with navigation.
+        }
+        if (isPerformanceTracingEnabled()) {
+          console.debug('[perf] route first useful content', summary)
+        }
+      },
     })
   : null
 
@@ -433,6 +468,20 @@ if (queryBaselineController && typeof window !== 'undefined') {
 
 export function markQueryBaselineRoute(route) {
   queryBaselineController?.markRoute(route)
+}
+
+export function markQueryBaselineRouteShellVisible(route) {
+  return queryBaselineController?.markRouteShellVisible(route) ?? null
+}
+
+export function markQueryBaselineFirstUsefulContent(route, metadata = {}) {
+  if (!queryBaselineController) return null
+  const complete = () => queryBaselineController.markRouteFirstUsefulContent(route, metadata)
+  if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+    window.requestAnimationFrame(complete)
+    return null
+  }
+  return complete()
 }
 const scopedClientCache = new Map()
 
@@ -611,6 +660,15 @@ async function invokeEdgeFunctionWithAccessToken(functionName, body, accessToken
 }
 
 export async function invokeEdgeFunction(functionName, { body, headers = {}, client = supabase } = {}) {
+  if (isLegalDocumentEdgeFunctionRetired(functionName)) {
+    return {
+      data: null,
+      error: {
+        code: 'LEGAL_DOCUMENT_SYSTEM_RETIRED',
+        message: 'The legal document system has been retired.',
+      },
+    }
+  }
   if (!client) {
     return {
       data: null,

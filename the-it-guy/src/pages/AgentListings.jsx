@@ -20,7 +20,8 @@ import {
 } from '../lib/api'
 import { fetchOrganisationSettings, listOrganisationUsers } from '../lib/settingsApi'
 import { startRouteTransitionTrace } from '../lib/performanceTrace'
-import { invokeEdgeFunction } from '../lib/supabaseClient'
+import { prefetchRouteModule } from '../lib/routePrefetch'
+import { invokeEdgeFunction, markQueryBaselineFirstUsefulContent } from '../lib/supabaseClient'
 import { createAgencyCrmLeadRecord, updateAgencyCrmLeadRecord } from '../lib/agencyCrmRepository'
 import { buildLeadListingLinkPatch } from '../lib/agencyLeadSelection'
 import { assessListingSellerLink, assessSellerLeadPersistence } from '../lib/listingDataIntegrity'
@@ -50,7 +51,7 @@ import {
   getPrivateListingLifecycleState,
   getPrivateListingStatusGroup,
 } from '../lib/privateListingLifecycle'
-import { createPrivateListing, createPrivateListingActivity, deletePrivateListing, getAgentPrivateListings, persistSellerProfileOnboardingFormData, syncPrivateListingDistributionData, syncPrivateListingRequirements, updatePrivateListing, uploadPrivateListingDocument, uploadPrivateListingMediaAsset } from '../services/privateListingService'
+import { createPrivateListing, createPrivateListingActivity, deletePrivateListing, getAgentPrivateListingSummaries, getPrivateListing, persistSellerProfileOnboardingFormData, syncPrivateListingDistributionData, syncPrivateListingRequirements, updatePrivateListing, uploadPrivateListingDocument, uploadPrivateListingMediaAsset } from '../services/privateListingService'
 import {
   createAgencyIntroducedDeveloperLead,
 } from '../services/developerLeadService'
@@ -2347,6 +2348,12 @@ function formatListingAttentionLine(card = {}) {
 
 function buildListingFollowUpQueue(card = {}) {
   const listing = card.listingRecord || {}
+  if (listing?.dataHydrationLevel === 'summary') {
+    // Summary rows deliberately omit documents, onboarding form data, mandate
+    // packets and distribution records. Do not manufacture follow-up warnings
+    // from data that has not been loaded; the detail workspace owns those checks.
+    return []
+  }
   if (card.developerDirectListing || isDeveloperDirectListingRecord(listing)) {
     const queue = []
     const add = (key, label, priority = 'normal') => {
@@ -3603,16 +3610,27 @@ function AgentListings({ initialTab = null } = {}) {
         const canUseDbFirstPrivateListings = !MOCK_DATA_ENABLED && Boolean(resolvedOrganisationId && profile?.id)
         if (canUseDbFirstPrivateListings) {
           const agentAssignmentIds = resolveAgentAssignmentIds({ id: profile?.id, email: profile?.email }, userRows)
-          dbPrivateListings = await getAgentPrivateListings(profile.id, {
-            organisationId: resolvedOrganisationId,
-            assignedAgentEmail: profile?.email || '',
-            assignedAgentIds: agentAssignmentIds,
-            includeAllOrganisationListings: canAccessOrganisationListings({
-              agencyWorkflowMode,
-              currentMembership,
-              workspaceRole,
-            }),
-          })
+          if (isEditListingWorkspace) {
+            const runtimeEditListing = findListingForEditor(runtimeListings, editListingId)
+            const remoteEditListingId = isUuidLike(editListingId)
+              ? editListingId
+              : getRemotePrivateListingId(runtimeEditListing)
+            const fullListing = remoteEditListingId
+              ? await getPrivateListing(remoteEditListingId)
+              : null
+            dbPrivateListings = fullListing ? [fullListing] : []
+          } else {
+            dbPrivateListings = await getAgentPrivateListingSummaries(profile.id, {
+              organisationId: resolvedOrganisationId,
+              assignedAgentIds: agentAssignmentIds,
+              includeAllOrganisationListings: canAccessOrganisationListings({
+                agencyWorkflowMode,
+                currentMembership,
+                workspaceRole,
+              }),
+              includeCommissionTerms: false,
+            })
+          }
         }
       }
       const agentRows = Array.isArray(participantRows) ? participantRows.filter(Boolean) : []
@@ -3639,9 +3657,12 @@ function AgentListings({ initialTab = null } = {}) {
       setDeletedListingIds(locallyDeletedIds)
       setPrivateListings(mergePrivateListingRows([], readAgentPrivateListings(), locallyDeletedIds))
     } finally {
-      if (showLoading) setLoading(false)
+      if (showLoading) {
+        setLoading(false)
+        markQueryBaselineFirstUsefulContent(location.pathname, { page: 'listings' })
+      }
     }
-  }, [agencyWorkflowMode, currentMembership, isDeveloperWorkspace, profile, selectedWorkspaceOrganisationId, workspaceRole])
+  }, [agencyWorkflowMode, currentMembership, editListingId, isDeveloperWorkspace, isEditListingWorkspace, location.pathname, profile, selectedWorkspaceOrganisationId, workspaceRole])
 
   useEffect(() => {
     let cancelled = false
@@ -6193,6 +6214,32 @@ function AgentListings({ initialTab = null } = {}) {
     return getRemoteListingIdForCard(card) || normalizeText(card?.id || card?.listingRecord?.id || card?.listingRecord?.listingId)
   }
 
+  function getListingWorkspacePath(card = {}) {
+    const listingId = getListingWorkspaceIdForCard(card)
+    return listingId ? `/agent/listings/${encodeURIComponent(listingId)}` : ''
+  }
+
+  function prefetchListingWorkspace(card = {}) {
+    const path = getListingWorkspacePath(card)
+    if (path) void prefetchRouteModule(path, { role: 'agent' })
+  }
+
+  function openListingWorkspace(card = {}) {
+    const path = getListingWorkspacePath(card)
+    if (!path) return
+    startRouteTransitionTrace({
+      from: location.pathname,
+      to: path,
+      label: 'listings-list-to-listing-detail',
+    })
+    navigate(path, {
+      state: {
+        listingShell: card?.listingRecord || null,
+        fromListingsSummary: true,
+      },
+    })
+  }
+
   async function openPartnerShareModal(card, event) {
     event.stopPropagation()
     const remoteListingId = getRemoteListingIdForCard(card)
@@ -6261,13 +6308,18 @@ function AgentListings({ initialTab = null } = {}) {
       const propertyStructureType = resolvePropertyStructureType(listing)
       const lifecycleGroup = getPrivateListingStatusGroup(statusKey)
       const lifecycleNextAction = getPrivateListingLifecycleNextAction(listing)
-      const completeness = getListingCompleteness(listing)
+      const isSummaryListing = listing?.dataHydrationLevel === 'summary'
+      const completeness = isSummaryListing
+        ? { score: null, missingItems: [], completedItems: [] }
+        : getListingCompleteness(listing)
       const quickMetadata = parseQuickListingMetadata(listing?.internalListingNotes || listing?.internal_listing_notes || listing?.description)
       const developerDirectListing = isDeveloperDirectListingRecord(listing)
-      const complianceWarnings = developerDirectListing
+      const complianceWarnings = isSummaryListing
+        ? []
+        : developerDirectListing
         ? getDeveloperListingPortalWarnings(listing, completeness)
         : getListingComplianceWarnings(listing, completeness)
-      const lifecycleBlockers = developerDirectListing
+      const lifecycleBlockers = isSummaryListing || developerDirectListing
         ? []
         : evaluatePrivateListingTransitionGuards(
             listing,
@@ -6286,7 +6338,7 @@ function AgentListings({ initialTab = null } = {}) {
         complianceWarnings,
         lifecycleBlockers,
         missingRequirementsCount: developerDirectListing ? 0 : Number(listing?.readinessSummary?.missingRequirementsCount || 0),
-        readinessState: String(listing?.readinessSummary?.readinessState || ''),
+        readinessState: isSummaryListing ? 'summary' : String(listing?.readinessSummary?.readinessState || ''),
       })
       const resolvedInventoryStatus = developerDirectListing
         ? {
@@ -6333,6 +6385,7 @@ function AgentListings({ initialTab = null } = {}) {
         quickAddPrimaryAction: quickAddHandoffActions[0] || null,
         mandateStatusLabel: developerDirectListing ? 'No seller mandate required' : getMandateStatus(listing),
         completenessScore: completeness.score,
+        hasDeferredWorkspaceData: isSummaryListing,
         missingCompletenessItems: completeness.missingItems || [],
         complianceWarnings,
         sellerTypeLabel: String(listing?.sellerType || listing?.seller_type || 'individual').replace(/_/g, ' '),
@@ -7676,7 +7729,8 @@ function AgentListings({ initialTab = null } = {}) {
               {residentialListingCards.map((card) => (
                 <article
                   key={card.id}
-                  onClick={() => navigate(`/agent/listings/${encodeURIComponent(getListingWorkspaceIdForCard(card))}`)}
+                  onPointerEnter={() => prefetchListingWorkspace(card)}
+                  onClick={() => openListingWorkspace(card)}
                   className="group flex h-full cursor-pointer flex-col overflow-hidden rounded-[8px] border border-[#dce6f2] bg-white shadow-[0_6px_16px_rgba(15,23,42,0.05)] transition hover:-translate-y-0.5 hover:shadow-[0_10px_24px_rgba(15,23,42,0.09)]"
                 >
                   <div className="relative h-[132px] w-full overflow-hidden border-b border-[#e5edf6]">
@@ -7767,8 +7821,9 @@ function AgentListings({ initialTab = null } = {}) {
                       type="button"
                       onClick={(event) => {
                         event.stopPropagation()
-                        navigate(`/agent/listings/${encodeURIComponent(getListingWorkspaceIdForCard(card))}`)
+                        openListingWorkspace(card)
                       }}
+                      onFocus={() => prefetchListingWorkspace(card)}
                       className="inline-flex min-h-9 w-full min-w-0 items-center justify-center gap-1.5 rounded-full border border-[#c6d8ea] bg-white px-3 text-[0.76rem] font-semibold text-[#1f4f78] transition hover:border-[#9fb7d1] hover:bg-[#f6faff]"
                     >
                       <span className="truncate">Open</span>

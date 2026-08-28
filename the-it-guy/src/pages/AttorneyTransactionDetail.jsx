@@ -15419,7 +15419,7 @@ function AttorneyTransactionDetail() {
     transactionId: transaction?.id || transactionId,
     enabled: workspaceRole !== 'attorney' || matterAccessAllowed,
     includeNotifications: true,
-    pollingIntervalMs: 30_000,
+    pollingIntervalMs: 60_000,
     onRefresh: async () => {
       const operationsPromise = transaction?.id
         ? getAttorneyWorkflowOperationsForTransaction(transaction.id, { initialize: false }).catch(() => null)

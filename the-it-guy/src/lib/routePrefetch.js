@@ -3,6 +3,10 @@ const readyRoutes = new Set()
 
 const BLOCKED_PREFETCH_ROUTES = new Set(['/reports', '/mobile/reports'])
 
+function isRetiredLegalDocumentRoute(pathname = '') {
+  return pathname.startsWith('/legal-documents/') || pathname.includes('/legal/')
+}
+
 function normalizeRouteTarget(target = '') {
   const value = String(target || '').trim()
   if (!value) return ''
@@ -26,7 +30,7 @@ function dashboardLoader(role = '') {
 }
 
 function resolveRouteLoader(pathname, { role = '' } = {}) {
-  if (!pathname || BLOCKED_PREFETCH_ROUTES.has(pathname)) return null
+  if (!pathname || BLOCKED_PREFETCH_ROUTES.has(pathname) || isRetiredLegalDocumentRoute(pathname)) return null
   if (pathname === '/dashboard') return dashboardLoader(role)
 
   if (pathname.startsWith('/agent/rentals/tenancies')) return () => import('../pages/rentals/RentalTenanciesPage')
@@ -38,8 +42,11 @@ function resolveRouteLoader(pathname, { role = '' } = {}) {
   if (pathname.startsWith('/pipeline/enquiries')) return () => import('../pages/AgentEnquiriesPage')
   if (pathname.startsWith('/pipeline')) return () => import('../pages/Pipeline')
 
+  if (pathname.startsWith('/agent/listings/')) return () => import('../pages/AgentListingDetail')
   if (pathname.startsWith('/listings')) return () => import('../pages/AgentListings')
-  if (pathname.startsWith('/transactions') || pathname.startsWith('/units') || pathname === '/deals') return () => import('../pages/Units')
+  if (pathname.startsWith('/transactions/')) return () => import('../pages/AttorneyTransactionDetail')
+  if (pathname.startsWith('/units/')) return () => import('../pages/UnitDetail')
+  if (pathname === '/transactions' || pathname === '/units' || pathname === '/deals') return () => import('../pages/Units')
   if (pathname.startsWith('/clients') || pathname.startsWith('/bond/clients')) return () => import('../pages/Clients')
   if (pathname.startsWith('/developer/leads')) return () => import('../pages/DeveloperLeadsPage')
   if (pathname.startsWith('/developer/partners')) return () => import('../pages/DeveloperPartnersPage')
@@ -97,7 +104,7 @@ export function isRouteModuleReady(target, context = {}) {
 
 export function markRouteModuleReady(target, context = {}) {
   const pathname = normalizeRouteTarget(target)
-  if (!pathname || BLOCKED_PREFETCH_ROUTES.has(pathname)) return false
+  if (!pathname || BLOCKED_PREFETCH_ROUTES.has(pathname) || isRetiredLegalDocumentRoute(pathname)) return false
   readyRoutes.add(getRouteCacheKey(pathname, context))
   return true
 }
@@ -105,7 +112,7 @@ export function markRouteModuleReady(target, context = {}) {
 export function scheduleIdleRoutePrefetch(targets, context = {}, { delayMs = 1500, maxRoutes = 4 } = {}) {
   if (typeof window === 'undefined') return () => {}
   const uniqueTargets = [...new Set((targets || []).map(normalizeRouteTarget).filter(Boolean))]
-    .filter((target) => !BLOCKED_PREFETCH_ROUTES.has(target))
+    .filter((target) => !BLOCKED_PREFETCH_ROUTES.has(target) && !isRetiredLegalDocumentRoute(target))
     .slice(0, maxRoutes)
   if (!uniqueTargets.length) return () => {}
 

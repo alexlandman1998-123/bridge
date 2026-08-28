@@ -6,9 +6,11 @@ import { canAccessHQ } from '../auth/hqAccess'
 import { fetchMyNotifications, markAllNotificationsRead, markNotificationRead } from '../lib/api'
 import { canAccessPrincipalExperience } from '../lib/organisationAccess'
 import useDismissableMenu from '../hooks/useDismissableMenu'
+import { BACKGROUND_REFRESH_INTERVALS } from '../hooks/backgroundRefreshPolicy.js'
+import useVisibilityAwarePolling from '../hooks/useVisibilityAwarePolling.js'
 import QuickCreateDropdown from './QuickCreateDropdown'
 
-const NOTIFICATION_POLL_INTERVAL_MS = 120_000
+const NOTIFICATION_POLL_INTERVAL_MS = BACKGROUND_REFRESH_INTERVALS.notifications
 
 function getPageTitle(pathname, stateTitle, role) {
   const isAgentWorkspaceRole = role === 'agent' || role === 'principal' || role === 'headquarters'
@@ -998,28 +1000,18 @@ function HeaderBar({ onLogout, user }) {
   }, [notificationToast])
 
   useEffect(() => {
-    let active = true
-
-    async function refreshNotifications(options = {}) {
-      if (!active || document.visibilityState === 'hidden') return
-      await loadNotifications(options)
-    }
-
-    void refreshNotifications({ runReminderAutomation: true })
-    const intervalId = window.setInterval(() => {
-      void refreshNotifications()
-    }, NOTIFICATION_POLL_INTERVAL_MS)
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') void refreshNotifications()
-    }
-    document.addEventListener('visibilitychange', handleVisibilityChange)
-
-    return () => {
-      active = false
-      window.clearInterval(intervalId)
-      document.removeEventListener('visibilitychange', handleVisibilityChange)
-    }
+    if (document.visibilityState === 'visible') void loadNotifications()
   }, [role, loadNotifications])
+
+  useVisibilityAwarePolling(
+    () => loadNotifications(),
+    {
+      enabled: Boolean(role),
+      intervalMs: NOTIFICATION_POLL_INTERVAL_MS,
+      minForegroundIntervalMs: 60_000,
+      label: 'notifications',
+    },
+  )
 
   const title = getPageTitle(location.pathname, location.state?.headerTitle, role)
   const isPremiumAgentWorkspace =

@@ -17,6 +17,15 @@ export function isPerformanceTracingEnabled() {
   }
 
   try {
+    const searchParams = new URLSearchParams(window.location.search)
+    if (searchParams.get('arch9_perf') === '1') {
+      window.localStorage.setItem(PERF_DEBUG_STORAGE_KEY, '1')
+      return true
+    }
+    if (searchParams.get('arch9_perf') === '0') {
+      window.localStorage.removeItem(PERF_DEBUG_STORAGE_KEY)
+      return false
+    }
     return window.localStorage.getItem(PERF_DEBUG_STORAGE_KEY) === '1'
   } catch {
     return false

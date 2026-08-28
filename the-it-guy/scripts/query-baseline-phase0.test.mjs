@@ -62,6 +62,55 @@ test('aggregates route-load, idle, latency, errors, and schema failures', async 
   assert.doesNotMatch(JSON.stringify(summary), /private|lead_id|column does not exist/)
 })
 
+test('reports duplicate and slow requests without retaining request values', async () => {
+  let clock = 0
+  const controller = createQueryBaselineController({ now: () => clock })
+  const request = 'https://example.supabase.co/rest/v1/private_listings?seller_email=secret@example.com&select=*'
+
+  await controller.observeFetch(request, {}, async () => {
+    clock += 1200
+    return new Response('{}', { status: 200 })
+  })
+  await controller.observeFetch(request, {}, async () => {
+    clock += 25
+    return new Response('{}', { status: 200 })
+  })
+
+  const summary = controller.snapshot()
+  assert.equal(summary.duplicateRequestCount, 1)
+  assert.equal(summary.duplicateGroups[0].resource, 'private_listings')
+  assert.equal(summary.slowRequestCount, 1)
+  assert.equal(summary.slowestRequests[0].durationMs, 1200)
+  assert.doesNotMatch(JSON.stringify(summary), /secret@example\.com|seller_email/)
+})
+
+test('closes a route trace at first useful content with shell and query timings', async () => {
+  let clock = 1000
+  const routeLoads = []
+  const controller = createQueryBaselineController({
+    now: () => clock,
+    getRoute: () => '/listings',
+    onRouteLoad: (summary) => routeLoads.push(summary),
+  })
+
+  clock = 1010
+  controller.markRouteShellVisible('/listings')
+  await controller.observeFetch('https://example.supabase.co/rest/v1/private_listings?select=*', {}, async () => {
+    clock = 1060
+    return new Response('{}', { status: 200 })
+  })
+  clock = 1100
+  const report = controller.markRouteFirstUsefulContent('/listings', { page: 'listings' })
+
+  assert.equal(report.route, '/listings')
+  assert.equal(report.shellVisibleMs, 10)
+  assert.equal(report.firstUsefulContentMs, 100)
+  assert.equal(report.requestCount, 1)
+  assert.deepEqual(report.metadata, { page: 'listings' })
+  assert.equal(routeLoads.length, 1)
+  assert.equal(controller.markRouteFirstUsefulContent('/listings'), null)
+})
+
 test('observability writes are excluded from the aggregate', async () => {
   let clock = 0
   const controller = createQueryBaselineController({ now: () => clock })

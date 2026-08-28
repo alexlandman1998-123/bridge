@@ -11640,13 +11640,16 @@ async function loadBondHybridFinanceWorkflowSummariesByTransactionIds(client, tr
   const ids = [...new Set((transactionIds || []).filter(Boolean))]
   if (!ids.length) return {}
 
-  const workflowsQuery = await client
-    .from('transaction_finance_workflows')
-    .select(
-      'id, transaction_id, workflow_type, current_stage, status, last_updated_by, last_updated_at, completed_at, created_at, updated_at',
-    )
-    .eq('workflow_type', BOND_HYBRID_FINANCE_WORKFLOW_TYPE)
-    .in('transaction_id', ids)
+  const [workflowsQuery, instructionsQuery] = await Promise.all([
+    client
+      .from('transaction_finance_workflows')
+      .select(
+        'id, transaction_id, workflow_type, current_stage, status, last_updated_by, last_updated_at, completed_at, created_at, updated_at',
+      )
+      .eq('workflow_type', BOND_HYBRID_FINANCE_WORKFLOW_TYPE)
+      .in('transaction_id', ids),
+    client.from('transaction_bond_instructions').select('*').in('transaction_id', ids),
+  ])
 
   if (workflowsQuery.error) {
     if (
@@ -11658,8 +11661,6 @@ async function loadBondHybridFinanceWorkflowSummariesByTransactionIds(client, tr
     }
     throw workflowsQuery.error
   }
-
-  const instructionsQuery = await client.from('transaction_bond_instructions').select('*').in('transaction_id', ids)
 
   if (
     instructionsQuery.error &&
@@ -33437,7 +33438,7 @@ export async function getAccessibleTransactionsForUser({ userId, roleType = null
 async function fetchTransactionSummaryRowsByIds(
   client,
   transactionIds = [],
-  { organisationId = '', roleType = null } = {},
+  { organisationId = '', roleType = null, includeEnrichment = true } = {},
 ) {
   const fetchStartedAt = Date.now()
   const ids = [...new Set((transactionIds || []).filter(Boolean))]
@@ -33576,19 +33577,30 @@ async function fetchTransactionSummaryRowsByIds(
   const unitIds = [...new Set(transactionRows.map((item) => item?.unit_id).filter(Boolean))]
   const developmentIds = [...new Set(transactionRows.map((item) => item?.development_id).filter(Boolean))]
 
-  const [buyersQuery, unitsQuery] = await Promise.all([
+  const directDevelopmentsPromise = developmentIds.length
+    ? client.from('developments').select('id, name, location').in('id', developmentIds)
+    : Promise.resolve({ data: [], error: null })
+  const [buyersQuery, unitsQuery, directDevelopmentsQuery] = await Promise.all([
     buyerIds.length
       ? client.from('buyers').select('id, name, phone, email').in('id', buyerIds)
       : Promise.resolve({ data: [], error: null }),
     unitIds.length
       ? client.from('units').select('id, development_id, unit_number, phase, price, status').in('id', unitIds)
       : Promise.resolve({ data: [], error: null }),
+    directDevelopmentsPromise,
   ])
   if (buyersQuery.error && !isMissingSchemaError(buyersQuery.error) && !isPermissionDeniedError(buyersQuery.error)) {
     throw buyersQuery.error
   }
   if (unitsQuery.error && !isMissingSchemaError(unitsQuery.error) && !isPermissionDeniedError(unitsQuery.error)) {
     throw unitsQuery.error
+  }
+  if (
+    directDevelopmentsQuery.error &&
+    !isMissingSchemaError(directDevelopmentsQuery.error) &&
+    !isPermissionDeniedError(directDevelopmentsQuery.error)
+  ) {
+    throw directDevelopmentsQuery.error
   }
 
   const buyersById = (buyersQuery.data || []).reduce((accumulator, item) => {
@@ -33607,17 +33619,23 @@ async function fetchTransactionSummaryRowsByIds(
     }
   }
 
-  let developmentsById = {}
-  const allDevelopmentIds = [...linkedDevelopmentIds]
-  if (allDevelopmentIds.length) {
-    const developmentsQuery = await client.from('developments').select('id, name, location').in('id', allDevelopmentIds)
+  let developmentsById = (directDevelopmentsQuery.data || []).reduce((accumulator, item) => {
+    accumulator[item.id] = item
+    return accumulator
+  }, {})
+  const additionalDevelopmentIds = [...linkedDevelopmentIds].filter((id) => !developmentsById[id])
+  if (additionalDevelopmentIds.length) {
+    const developmentsQuery = await client
+      .from('developments')
+      .select('id, name, location')
+      .in('id', additionalDevelopmentIds)
     if (developmentsQuery.error && !isMissingSchemaError(developmentsQuery.error) && !isPermissionDeniedError(developmentsQuery.error)) {
       throw developmentsQuery.error
     }
     developmentsById = (developmentsQuery.data || []).reduce((accumulator, item) => {
       accumulator[item.id] = item
       return accumulator
-    }, {})
+    }, developmentsById)
   }
 
   const rows = transactionRows
@@ -33653,9 +33671,15 @@ async function fetchTransactionSummaryRowsByIds(
     })
     .sort((a, b) => new Date(latestTimestamp(b) || 0) - new Date(latestTimestamp(a) || 0))
 
+  if (!includeEnrichment) {
+    return rows
+  }
+
   const enrichmentStartedAt = Date.now()
-  const commissionRows = await hydrateRowsWithCommissionSnapshots(client, rows)
-  const enrichedRows = await enrichRowsWithBondIntakeContext(commissionRows)
+  const enrichedRows = await enrichTransactionListSummaryRows(rows, {
+    client,
+    roleType: normalizedRoleType,
+  })
   bondPerfLog('transaction-summary:enrichment', enrichmentStartedAt, {
     rowCount: enrichedRows.length,
     organisationId: normalizedOrganisationId,
@@ -33678,13 +33702,19 @@ function pruneParticipantSummaryResultCache(now = Date.now()) {
   }
 }
 
-export async function fetchTransactionsByParticipantSummary({ userId, roleType = null, organisationId = '' } = {}) {
+export async function fetchTransactionsByParticipantSummary({
+  userId,
+  roleType = null,
+  organisationId = '',
+  includeEnrichment = true,
+} = {}) {
   const normalizedOrganisationId = String(organisationId || '').trim()
   const normalizedRoleType = roleType ? normalizeRoleType(roleType) : ''
   const requestKey = JSON.stringify({
     userId: String(userId || ''),
     roleType: normalizedRoleType,
     organisationId: normalizedOrganisationId,
+    includeEnrichment,
   })
   const now = Date.now()
   pruneParticipantSummaryResultCache(now)
@@ -33740,6 +33770,7 @@ export async function fetchTransactionsByParticipantSummary({ userId, roleType =
     const rows = await fetchTransactionSummaryRowsByIds(client, transactionIds, {
       organisationId: normalizedOrganisationId,
       roleType,
+      includeEnrichment,
     })
     timer.mark('transaction_summary_fetch_end', { rowCount: rows.length })
     participantSummaryResultCache.set(requestKey, {
@@ -33972,12 +34003,23 @@ function rowMatchesBondWorkspaceScope(row = {}, organisationId = '') {
     .includes(target)
 }
 
-export async function enrichRowsWithBondIntakeContext(rows = []) {
+export async function enrichRowsWithBondIntakeContext(rows = [], { roleType = null } = {}) {
   const safeRows = Array.isArray(rows) ? rows : []
   if (!safeRows.length) return safeRows
 
   const transactionIds = [...new Set(safeRows.map((row) => row?.transaction?.id).filter(Boolean))]
   if (!transactionIds.length) return safeRows
+  const normalizedRoleType = normalizeRoleType(roleType)
+  const bondTransactionIds = [...new Set(
+    safeRows
+      .filter((row) => (
+        normalizedRoleType === 'bond_originator' ||
+        isBondFinanceType(row?.transaction?.finance_type) ||
+        Boolean(row?.transaction?.bond_workspace_id || row?.transaction?.bond_originator)
+      ))
+      .map((row) => row?.transaction?.id)
+      .filter(Boolean),
+  )]
 
   const client = requireClient()
 
@@ -34094,8 +34136,8 @@ export async function enrichRowsWithBondIntakeContext(rows = []) {
     }, {})
   })()
 
-  const bondApplicationsPromise = loadBondApplicationScopesByTransactionIds(client, transactionIds)
-  const bondFinanceWorkflowsPromise = loadBondHybridFinanceWorkflowSummariesByTransactionIds(client, transactionIds)
+  const bondApplicationsPromise = loadBondApplicationScopesByTransactionIds(client, bondTransactionIds)
+  const bondFinanceWorkflowsPromise = loadBondHybridFinanceWorkflowSummariesByTransactionIds(client, bondTransactionIds)
 
   const [
     onboardingByTransactionId,
@@ -34140,12 +34182,24 @@ export async function enrichRowsWithBondIntakeContext(rows = []) {
   })
 }
 
+export async function enrichTransactionListSummaryRows(
+  rows = [],
+  { client: scopedClient = null, roleType = null } = {},
+) {
+  const safeRows = Array.isArray(rows) ? rows : []
+  if (!safeRows.length) return safeRows
+  const client = scopedClient || requireClient()
+  const commissionRows = await hydrateRowsWithCommissionSnapshots(client, safeRows)
+  return enrichRowsWithBondIntakeContext(commissionRows, { roleType })
+}
+
 export async function fetchTransactionsListSummary({
   developmentId = null,
   organisationId = '',
   stage = 'all',
   financeType = 'all',
   activeTransactionsOnly = true,
+  includeEnrichment = true,
 } = {}) {
   const normalizedOrganisationId = String(organisationId || '').trim()
   const timer = createPerfTimer('api.fetchTransactionsListSummary', {
@@ -34298,13 +34352,17 @@ export async function fetchTransactionsListSummary({
   const unitIds = [...new Set(transactionRows.map((item) => item?.unit_id).filter(Boolean))]
   const developmentIds = [...new Set(transactionRows.map((item) => item?.development_id).filter(Boolean))]
 
-  const [buyersQuery, unitsQuery] = await Promise.all([
+  const directDevelopmentsPromise = developmentIds.length
+    ? client.from('developments').select('id, name, location').in('id', developmentIds)
+    : Promise.resolve({ data: [], error: null })
+  const [buyersQuery, unitsQuery, directDevelopmentsQuery] = await Promise.all([
     buyerIds.length
       ? client.from('buyers').select('id, name, phone, email').in('id', buyerIds)
       : Promise.resolve({ data: [], error: null }),
     unitIds.length
       ? client.from('units').select('id, development_id, unit_number, phase, price, status').in('id', unitIds)
       : Promise.resolve({ data: [], error: null }),
+    directDevelopmentsPromise,
   ])
 
   if (buyersQuery.error && !isMissingSchemaError(buyersQuery.error)) {
@@ -34313,6 +34371,9 @@ export async function fetchTransactionsListSummary({
   if (unitsQuery.error && !isMissingSchemaError(unitsQuery.error)) {
     throw unitsQuery.error
   }
+  if (directDevelopmentsQuery.error && !isMissingSchemaError(directDevelopmentsQuery.error)) {
+    throw directDevelopmentsQuery.error
+  }
 
   const linkedDevelopmentIds = new Set(developmentIds)
   for (const unit of unitsQuery.data || []) {
@@ -34320,9 +34381,13 @@ export async function fetchTransactionsListSummary({
       linkedDevelopmentIds.add(unit.development_id)
     }
   }
-  const allDevelopmentIds = [...linkedDevelopmentIds]
-  const developmentsQuery = allDevelopmentIds.length
-    ? await client.from('developments').select('id, name, location').in('id', allDevelopmentIds)
+  const directDevelopmentsById = (directDevelopmentsQuery.data || []).reduce((accumulator, item) => {
+    accumulator[item.id] = item
+    return accumulator
+  }, {})
+  const additionalDevelopmentIds = [...linkedDevelopmentIds].filter((id) => !directDevelopmentsById[id])
+  const developmentsQuery = additionalDevelopmentIds.length
+    ? await client.from('developments').select('id, name, location').in('id', additionalDevelopmentIds)
     : { data: [], error: null }
   if (developmentsQuery.error && !isMissingSchemaError(developmentsQuery.error)) {
     throw developmentsQuery.error
@@ -34339,7 +34404,7 @@ export async function fetchTransactionsListSummary({
   const developmentsById = (developmentsQuery.data || []).reduce((accumulator, item) => {
     accumulator[item.id] = item
     return accumulator
-  }, {})
+  }, directDevelopmentsById)
 
   let rows = transactionRows.map((transaction) => {
     const unit = transaction?.unit_id ? unitsById[transaction.unit_id] || null : null
@@ -34375,8 +34440,9 @@ export async function fetchTransactionsListSummary({
     rows = rows.filter((row) => row.stage === stage)
   }
 
-  rows = await hydrateRowsWithCommissionSnapshots(client, rows)
-  rows = await enrichRowsWithBondIntakeContext(rows)
+  if (includeEnrichment) {
+    rows = await enrichTransactionListSummaryRows(rows, { client })
+  }
   rows.sort((left, right) => new Date(latestTimestamp(right) || 0) - new Date(latestTimestamp(left) || 0))
   timer.end({ rowCount: rows.length })
   return rows

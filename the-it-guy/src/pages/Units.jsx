@@ -1,4 +1,4 @@
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
+import { startTransition, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import AttorneyTransfersTable from '../components/AttorneyTransfersTable'
 import AgentTransactionsTable from '../components/AgentTransactionsTable'
@@ -44,6 +44,7 @@ import {
 } from '../config/bondViews'
 import {
   deleteTransactionEverywhere,
+  enrichTransactionListSummaryRows,
   enrichRowsWithBondIntakeContext,
   fetchDevelopmentOptions,
   fetchTransactionsByParticipantSummary,
@@ -56,7 +57,7 @@ import { canAccessPrincipalExperience, normalizeOrganisationMembershipRole } fro
 import { createPerfTimer, startRouteTransitionTrace } from '../lib/performanceTrace'
 import { PURCHASER_ENTITY_OPTIONS } from '../lib/purchaserPersonas'
 import { MAIN_PROCESS_STAGES, MAIN_STAGE_LABELS, STAGES, getMainStageFromDetailedStage } from '../lib/stages'
-import { isSupabaseConfigured } from '../lib/supabaseClient'
+import { isSupabaseConfigured, markQueryBaselineFirstUsefulContent } from '../lib/supabaseClient'
 
 const ATTORNEY_SOURCE_OPTIONS = [
   { value: 'all', label: 'All Sources' },
@@ -650,7 +651,9 @@ function Units() {
   const [pendingDeleteCloseEditor, setPendingDeleteCloseEditor] = useState(false)
   const [unitsViewMode, setUnitsViewMode] = useState(role === 'client' ? 'cards' : 'list')
   const [attorneyListTab, setAttorneyListTab] = useState('all')
+  const [enrichmentRevision, setEnrichmentRevision] = useState(0)
   const latestLoadRequestRef = useRef(0)
+  const transactionListSnapshotRef = useRef({ key: '', rows: [], options: [] })
   const isAgentRole = role === 'agent'
   const isBondRole = role === 'bond_originator'
   const isAttorneyRole = role === 'attorney'
@@ -983,7 +986,7 @@ function Units() {
     setSelectedUnitIds((previous) => previous.filter((unitId) => rows.some((row) => row?.unit?.id === unitId)))
   }, [rows])
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async ({ force = false } = {}) => {
     const requestId = latestLoadRequestRef.current + 1
     latestLoadRequestRef.current = requestId
     const isLatestRequest = () => latestLoadRequestRef.current === requestId
@@ -993,6 +996,7 @@ function Units() {
       participantScopedRole: participantScopedRole || 'none',
       stage: filters.stage,
       financeType: filters.financeType,
+      enrichmentRevision,
     })
     if (!isSupabaseConfigured) {
       setLoading(false)
@@ -1002,19 +1006,58 @@ function Units() {
 
     try {
       setError('')
-      setLoading(true)
-      timer.mark('fetch_start')
+      const serverScopeKey = JSON.stringify(
+        participantScopedRole && profile?.id
+          ? isAgentRole && isPrincipalAgentView
+            ? {
+                source: 'principal_transactions',
+                userId: profile.id,
+                developmentId: filters.developmentId,
+              }
+            : {
+                source: 'participant_transactions',
+                userId: profile.id,
+                roleType: participantScopedRole,
+                organisationId: isBondRole && workspace.id && workspace.id !== 'all' ? workspace.id : '',
+              }
+          : isDeveloperWorkspaceRole
+            ? {
+                source: 'developer_transactions',
+                organisationId: developerOrganisationId,
+                developmentId: filters.developmentId,
+              }
+            : {
+                source: 'unit_transactions',
+                workspaceId: workspace.id,
+                developmentId: filters.developmentId,
+              },
+      )
+      if (force && transactionListSnapshotRef.current.key === serverScopeKey) {
+        transactionListSnapshotRef.current = { key: '', rows: [], options: [] }
+      }
+      const cachedSnapshot = !force && transactionListSnapshotRef.current.key === serverScopeKey
+        ? transactionListSnapshotRef.current
+        : null
+      setLoading(!cachedSnapshot)
       let unitsData = []
       let options = []
+      let shouldHydrateInBackground = false
 
-      if (participantScopedRole && profile?.id) {
+      if (cachedSnapshot) {
+        unitsData = cachedSnapshot.rows
+        options = cachedSnapshot.options
+        timer.mark('summary_snapshot_hit', { fetchedRows: unitsData.length })
+      } else if (participantScopedRole && profile?.id) {
+        timer.mark('fetch_start')
         if (isAgentRole && isPrincipalAgentView) {
           const principalTransactions = await fetchTransactionsListSummary({
             developmentId: filters.developmentId === 'all' ? null : filters.developmentId,
-            stage: filters.stage,
-            financeType: filters.financeType,
+            stage: 'all',
+            financeType: 'all',
             activeTransactionsOnly: true,
+            includeEnrichment: false,
           })
+          shouldHydrateInBackground = true
           unitsData = principalTransactions || []
           options = (unitsData || [])
             .map((row) => row?.development)
@@ -1034,7 +1077,9 @@ function Units() {
             userId: profile.id,
             roleType: participantScopedRole,
             organisationId: isBondRole && workspace.id && workspace.id !== 'all' ? workspace.id : '',
+            includeEnrichment: false,
           })
+          shouldHydrateInBackground = true
           unitsData = isAttorneyRole
             ? buildAttorneyDemoRows(agentTransactions || [])
             : isAgentRole
@@ -1057,6 +1102,7 @@ function Units() {
             }, [])
         }
       } else {
+        timer.mark('fetch_start')
         if (isDeveloperWorkspaceRole) {
           if (!developerOrganisationId) {
             unitsData = []
@@ -1066,17 +1112,21 @@ function Units() {
               fetchTransactionsListSummary({
                 organisationId: developerOrganisationId,
                 developmentId: filters.developmentId === 'all' ? null : filters.developmentId,
-                stage: filters.stage,
-                financeType: filters.financeType,
+                stage: 'all',
+                financeType: 'all',
                 activeTransactionsOnly: true,
+                includeEnrichment: false,
               }),
               fetchDevelopmentOptions({ organisationId: developerOrganisationId }),
             ])
+            shouldHydrateInBackground = true
           }
         } else {
           ;[unitsData, options] = await Promise.all([
             fetchUnitsDataSummary({
-              ...filters,
+              developmentId: filters.developmentId === 'all' ? null : filters.developmentId,
+              stage: 'all',
+              financeType: 'all',
               activeTransactionsOnly: false,
             }),
             fetchDevelopmentOptions(),
@@ -1084,9 +1134,18 @@ function Units() {
         }
       }
 
-      if (isBondRole) {
-        unitsData = await enrichRowsWithBondIntakeContext(unitsData || [])
-        options = withUnassignedDevelopmentOption(options, unitsData)
+      if (!cachedSnapshot) {
+        if (isBondRole) {
+          if (!shouldHydrateInBackground) {
+            unitsData = await enrichRowsWithBondIntakeContext(unitsData || [], { roleType: 'bond_originator' })
+          }
+          options = withUnassignedDevelopmentOption(options, unitsData)
+        }
+        transactionListSnapshotRef.current = {
+          key: serverScopeKey,
+          rows: unitsData || [],
+          options: options || [],
+        }
       }
       timer.mark('fetch_end', { fetchedRows: unitsData.length })
 
@@ -1309,6 +1368,29 @@ function Units() {
       }
       setDevelopmentOptions(options)
       timer.end({ renderedRows: isDeveloperWorkspaceRole ? activeRows.length : normalizedRows.length })
+
+      if (shouldHydrateInBackground && unitsData.length) {
+        const snapshotKey = serverScopeKey
+        const coreRows = unitsData
+        void enrichTransactionListSummaryRows(coreRows, {
+          roleType: participantScopedRole || role,
+        })
+          .then((enrichedRows) => {
+            if (!isLatestRequest() || transactionListSnapshotRef.current.key !== snapshotKey) return
+            transactionListSnapshotRef.current = {
+              ...transactionListSnapshotRef.current,
+              rows: enrichedRows,
+            }
+            startTransition(() => {
+              setEnrichmentRevision((revision) => revision + 1)
+            })
+          })
+          .catch((enrichmentError) => {
+            if (import.meta.env.DEV) {
+              console.debug('[TRANSACTIONS] background list enrichment skipped', enrichmentError)
+            }
+          })
+      }
     } catch (loadError) {
       if (isLatestRequest()) {
         setError(loadError.message)
@@ -1319,9 +1401,10 @@ function Units() {
     } finally {
       if (isLatestRequest()) {
         setLoading(false)
+        markQueryBaselineFirstUsefulContent(location.pathname, { page: 'transactions' })
       }
     }
-  }, [deferredSearch, developerOrganisationId, filters, isAgentRole, isPrincipalAgentView, isAttorneyRole, isBondRole, isDeveloperWorkspaceRole, participantScopedRole, profile, role, workspace.id])
+  }, [deferredSearch, developerOrganisationId, enrichmentRevision, filters, isAgentRole, isPrincipalAgentView, isAttorneyRole, isBondRole, isDeveloperWorkspaceRole, location.pathname, participantScopedRole, profile, role, workspace.id])
 
   useEffect(() => {
     void loadData()
@@ -1329,7 +1412,7 @@ function Units() {
 
   useEffect(() => {
     function refreshTransactions() {
-      void loadData()
+      void loadData({ force: true })
     }
 
     window.addEventListener('itg:transaction-created', refreshTransactions)
@@ -1400,7 +1483,7 @@ function Units() {
         setSelectedUnitIds((previous) => previous.filter((selectedId) => selectedId !== unitId))
       }
       window.dispatchEvent(new Event('itg:transaction-updated'))
-      await loadData()
+      await loadData({ force: true })
       return true
     } catch (deleteError) {
       setError(deleteError.message || 'Unable to delete the transaction.')
@@ -1465,7 +1548,7 @@ function Units() {
       }
       setSelectedUnitIds([])
       window.dispatchEvent(new Event('itg:transaction-updated'))
-      await loadData()
+      await loadData({ force: true })
     } catch (deleteError) {
       setError(deleteError.message || 'Unable to delete one or more selected transactions.')
     } finally {
@@ -1527,7 +1610,7 @@ function Units() {
       })
       setEditingRow(null)
       window.dispatchEvent(new Event('itg:transaction-updated'))
-      await loadData()
+      await loadData({ force: true })
     } catch (saveError) {
       setError(saveError.message || 'Unable to save the transaction update.')
     } finally {
@@ -1951,7 +2034,7 @@ function Units() {
               workspaceId: workspace.id,
             }}
             onRowClick={(row) => handleOpenBondApplication(row)}
-            onIntakeActionComplete={() => loadData()}
+            onIntakeActionComplete={() => loadData({ force: true })}
           />
         ) : isAttorneyRole ? (
           <>

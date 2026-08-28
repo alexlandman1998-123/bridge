@@ -258,6 +258,7 @@ try {
   assert.equal(rowsById.size, 2, 'the summary must retain canonical-ID and alias-ID listing rows')
   assert.equal(rowsById.get(PROFILE_LISTING_ID)?.askingPrice, 1000000, 'the summary must retain pipeline value')
   assert.equal(rowsById.get(PROFILE_LISTING_ID)?.isActive, true, 'the summary must retain active-listing state')
+  assert.equal(rowsById.get(PROFILE_LISTING_ID)?.dataHydrationLevel, 'summary', 'compact rows must identify deferred workspace data')
   assert.equal(rowsById.has(EMAIL_LISTING_ID), false, 'the summary must not broaden scope through legacy email assignments')
   assert.equal(rowsById.get(ALIAS_LISTING_ID)?.commission?.commission_percentage, '5', 'the summary must retain custom commission terms')
 

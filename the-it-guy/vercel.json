@@ -2,13 +2,13 @@
   "buildCommand": "npm run build",
   "env": {
     "VITE_DOCUMENT_TITLE": "Arch9 | Platform",
-    "VITE_MVP_PILOT_CREATION_PAUSED": "false"
+    "VITE_MVP_PILOT_CREATION_PAUSED": "true",
+    "VITE_LEGAL_DOCUMENT_RUNTIME_ENABLED": "false",
+    "VITE_LEGAL_DOCUMENT_BACKGROUND_GENERATION_ENABLED": "false",
+    "VITE_LEGAL_DOCUMENT_SERVER_PDF_GENERATION_JOB_ENABLED": "false",
+    "VITE_LEGAL_DOCUMENT_BROWSER_BACKGROUND_GENERATION_ENABLED": "false"
   },
   "crons": [
-    {
-      "path": "/api/cron/document-request-canonical-automation",
-      "schedule": "30 1 * * *"
-    },
     {
       "path": "/api/property24/leads/sync",
       "schedule": "0 * * * *"

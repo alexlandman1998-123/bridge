@@ -3412,6 +3412,8 @@ function mapPrivateListingSummaryRow(row = {}, onboardingCommissionByListingId =
   const sectionalTitleNumber = pickFirstText(canonicalPropertyFacts.sectionalTitleNumber, canonicalPropertyFacts.sectional_title_number, canonicalPropertyFacts.sectionalTitleScheme, canonicalSellerFacts.sectionalTitleNumber, canonicalSellerFacts.sectional_title_number)
 
   return {
+    dataHydrationLevel: 'summary',
+    hasDeferredWorkspaceData: true,
     id: row.id,
     organisationId: row.organisation_id || null,
     branchId: row.branch_id || null,
@@ -6419,7 +6421,15 @@ export async function getPrivateListing(listingId, options = {}) {
   return getPrivateListingById(listingId, options)
 }
 
-async function getPrivateListingById(listingId, { includeRequirementsAndDocuments = true } = {}) {
+async function getPrivateListingById(listingId, options = {}) {
+  const {
+    includeOnboarding = true,
+    includeRequirementsAndDocuments = true,
+    includeDistributionData = true,
+    includeMandatePacket = includeRequirementsAndDocuments,
+    includeMedia = true,
+    includeAssignedAgent = true,
+  } = options
   const client = requireClient()
   const normalizedId = normalizeUuid(listingId)
   if (!normalizedId) throw new Error('Listing id is required.')
@@ -6434,17 +6444,35 @@ async function getPrivateListingById(listingId, { includeRequirementsAndDocument
   }
   if (!query.data || isDeletedPrivateListingRow(query.data)) return null
   const [onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap, mandatePacketsMap, mediaMap, assignedAgentsMap] = await Promise.all([
-    fetchOnboardingRowsForListings(client, [query.data.id]),
+    includeOnboarding ? fetchOnboardingRowsForListings(client, [query.data.id]) : Promise.resolve(new Map()),
     includeRequirementsAndDocuments ? fetchRequirementRowsForListings(client, [query.data.id]) : Promise.resolve(new Map()),
     includeRequirementsAndDocuments ? fetchDocumentRowsForListings(client, [query.data.id]) : Promise.resolve(new Map()),
-    fetchExternalLinkRowsForListings(client, [query.data.id]),
-    fetchPublicationRowsForListings(client, [query.data.id]),
-    includeRequirementsAndDocuments ? fetchMandatePacketRowsForListings(client, [query.data]) : Promise.resolve(new Map()),
-    fetchMediaRowsForListings(client, [query.data.id]),
-    fetchAssignedAgentProfilesForListings(client, [query.data]),
+    includeDistributionData ? fetchExternalLinkRowsForListings(client, [query.data.id]) : Promise.resolve(new Map()),
+    includeDistributionData ? fetchPublicationRowsForListings(client, [query.data.id]) : Promise.resolve(new Map()),
+    includeMandatePacket ? fetchMandatePacketRowsForListings(client, [query.data]) : Promise.resolve(new Map()),
+    includeMedia ? fetchMediaRowsForListings(client, [query.data.id]) : Promise.resolve(new Map()),
+    includeAssignedAgent ? fetchAssignedAgentProfilesForListings(client, [query.data]) : Promise.resolve(new Map()),
   ])
   const listing = mapPrivateListingRow(query.data, onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap, mandatePacketsMap, assignedAgentsMap)
-  return attachDistributionMediaToListing(listing, mediaMap.get(String(query.data.id)) || [])
+  const hydratedListing = includeMedia
+    ? attachDistributionMediaToListing(listing, mediaMap.get(String(query.data.id)) || [])
+    : listing
+  const hydrationSections = {
+    base: true,
+    onboarding: includeOnboarding,
+    documents: includeRequirementsAndDocuments,
+    distribution: includeDistributionData,
+    mandate: includeMandatePacket,
+    media: includeMedia,
+    assignedAgent: includeAssignedAgent,
+  }
+  const isFullyHydrated = Object.values(hydrationSections).every(Boolean)
+  return {
+    ...hydratedListing,
+    dataHydrationLevel: isFullyHydrated ? 'full' : 'partial',
+    dataHydrationSections: hydrationSections,
+    hasDeferredWorkspaceData: !isFullyHydrated,
+  }
 }
 
 async function fetchMandatePacketRowsForListings(client, listingRows = []) {

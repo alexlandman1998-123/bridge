@@ -45,10 +45,9 @@ test('developer access uses canonical profile columns without failing legacy nam
 })
 
 test('notification polling pauses in hidden tabs and does not rerun heavy automation', () => {
-  assert.match(headerSource, /const NOTIFICATION_POLL_INTERVAL_MS = 120_000/)
-  assert.match(headerSource, /document\.visibilityState === 'hidden'/)
-  assert.match(headerSource, /document\.addEventListener\('visibilitychange', handleVisibilityChange\)/)
-  assert.match(headerSource, /refreshNotifications\(\{ runReminderAutomation: true \}\)/)
+  assert.match(headerSource, /const NOTIFICATION_POLL_INTERVAL_MS = BACKGROUND_REFRESH_INTERVALS\.notifications/)
+  assert.match(headerSource, /useVisibilityAwarePolling/)
+  assert.doesNotMatch(headerSource, /runReminderAutomation: true/)
 
   const notificationStart = apiSource.indexOf('export async function fetchMyNotifications')
   const notificationEnd = apiSource.indexOf('\nexport async function ', notificationStart + 1)
