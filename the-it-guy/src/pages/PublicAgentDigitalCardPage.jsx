@@ -133,7 +133,7 @@ function RoundContactLink({ icon: Icon, label, href = '', onClick = null }) {
   )
 }
 
-function IntentCta({ icon: Icon, title, subtitle, href, onClick = null, tone = 'primary', stagger = false }) {
+function IntentCta({ icon: Icon, title, subtitle, href, onClick = null, tone = 'primary' }) {
   const icon = Icon ? createElement(Icon, { size: 27, strokeWidth: 1.9 }) : null
   const toneClass = tone === 'accent'
     ? 'bg-[linear-gradient(135deg,var(--card-accent)_0%,rgba(184,134,28,0.96)_100%)] text-[var(--card-accent-text)] shadow-[0_16px_34px_rgba(184,134,28,0.24)]'
@@ -145,7 +145,7 @@ function IntentCta({ icon: Icon, title, subtitle, href, onClick = null, tone = '
     <a
       href={href}
       onClick={onClick || undefined}
-      className={`group flex min-h-[86px] min-w-0 items-center gap-4 rounded-lg px-5 py-4 transition hover:-translate-y-0.5 hover:brightness-105 focus:outline-none focus:ring-4 focus:ring-[var(--card-primary)]/20 ${toneClass} ${stagger ? 'sm:ml-4 sm:w-[calc(100%-1rem)]' : ''}`}
+      className={`group flex min-h-[86px] w-full min-w-0 items-center gap-4 rounded-lg px-5 py-4 transition hover:-translate-y-0.5 hover:brightness-105 focus:outline-none focus:ring-4 focus:ring-[var(--card-primary)]/20 ${toneClass}`}
     >
       <span className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-full border-2 ${iconBorderClass}`}>
         {icon}
@@ -378,9 +378,9 @@ export default function PublicAgentDigitalCardPage() {
         />
       </div>
 
-      <section className="relative z-10 mx-auto grid min-h-screen w-full max-w-[1600px] min-w-0 gap-5 px-4 py-5 sm:px-6 lg:grid-cols-[minmax(300px,400px)_minmax(0,1fr)] lg:items-stretch lg:px-8 lg:py-8 xl:grid-cols-[minmax(340px,420px)_minmax(0,1fr)] xl:gap-7">
+      <section className="relative z-10 mx-auto grid min-h-screen w-full max-w-[1600px] min-w-0 gap-5 px-4 py-5 sm:px-6 lg:min-h-0 lg:grid-cols-[minmax(300px,400px)_minmax(0,1fr)] lg:items-stretch lg:px-8 lg:py-5 xl:grid-cols-[minmax(340px,420px)_minmax(0,1fr)] xl:gap-7">
         <aside className="overflow-hidden rounded-lg border border-white/15 bg-white shadow-[0_30px_80px_rgba(15,23,42,0.22)] lg:sticky lg:top-10 lg:self-start">
-          <div className="px-6 pb-24 pt-7 text-white" style={{ background: theme.hero }}>
+          <div className="px-6 pb-24 pt-7 text-white lg:pb-20 lg:pt-5" style={{ background: theme.hero }}>
             <div className="flex items-center justify-center">
               {heroLogoUrl ? (
                 <img src={heroLogoUrl} alt={agencyName} className="max-h-24 w-full max-w-[340px] object-contain sm:max-h-28" />
@@ -392,7 +392,7 @@ export default function PublicAgentDigitalCardPage() {
             </div>
           </div>
 
-          <div className="px-6 pb-6">
+          <div className="px-6 pb-6 lg:pb-5">
             <div className="-mt-20 flex flex-col items-center text-center">
               {agent.avatarUrl ? (
                 <img src={agent.avatarUrl} alt="" className="h-40 w-40 rounded-full border-[6px] border-white object-cover shadow-[0_20px_44px_rgba(15,23,42,0.24)]" />
@@ -401,7 +401,7 @@ export default function PublicAgentDigitalCardPage() {
                   {agentName.slice(0, 1).toUpperCase()}
                 </div>
               )}
-              <h1 className="mt-5 text-[2.15rem] font-semibold leading-none text-slate-950">{agentName}</h1>
+              <h1 className="mt-5 text-[2.15rem] font-semibold leading-none text-slate-950 lg:mt-4">{agentName}</h1>
               <p className="mt-3 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-base">
                 <span className="font-semibold text-[var(--card-accent)]">{jobTitle}</span>
                 <span className="text-slate-300">|</span>
@@ -409,14 +409,14 @@ export default function PublicAgentDigitalCardPage() {
               </p>
             </div>
 
-            <div className="mt-7 grid grid-cols-4 gap-3">
+            <div className="mt-7 grid grid-cols-4 gap-3 lg:mt-5">
               <RoundContactLink icon={Phone} label="Call" href={normalizePhoneHref(phone)} onClick={() => trackCardEvent('call_click')} />
               <RoundContactLink icon={MessageCircle} label="WhatsApp" href={normalizeWhatsAppHref(whatsapp, shareText)} onClick={() => trackCardEvent('whatsapp_click')} />
               <RoundContactLink icon={Mail} label="Email" href={email ? `mailto:${email}` : ''} onClick={() => trackCardEvent('email_click')} />
               <RoundContactLink icon={UserPlus} label="Save" onClick={downloadVcard} />
             </div>
 
-            <div className="mt-6 grid gap-3">
+            <div className="mt-6 grid gap-3 lg:mt-5">
               <IntentCta
                 icon={Home}
                 title={intake.intake?.buyerCtaLabel || 'I am looking to buy'}
@@ -431,7 +431,6 @@ export default function PublicAgentDigitalCardPage() {
                 href={sellerUrl}
                 onClick={() => trackCardEvent('seller_cta_click')}
                 tone="accent"
-                stagger
               />
             </div>
           </div>

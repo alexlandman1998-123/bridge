@@ -34136,25 +34136,33 @@ export async function fetchTransactionById(transactionId) {
     }
 
     if (unitDetail?.transaction?.id === transactionId) {
-      const transactionEvents = await fetchTransactionEvents(transactionId)
+      const [
+        transactionEvents,
+        transactionProxyUpdates,
+        appointmentsByTransactionId,
+        buyerProcessLeadHandoff,
+        bondOriginatorAgentProgressView,
+        bondOriginatorAttorneyHandoffView,
+        rolePlayers,
+        bondApplication,
+        liveChecklist,
+      ] = await Promise.all([
+        fetchTransactionEvents(transactionId),
+        fetchTransactionProxyUpdatesWithClient(client, transactionId, { limit: 100 }),
+        fetchTransactionAppointments(client, [transactionId], { viewer: 'internal' }),
+        fetchBuyerProcessLeadHandoffForTransaction(client, transactionId),
+        fetchAgentBondOriginatorProgressView(client, transactionId),
+        fetchAttorneyBondOriginatorHandoffView(client, transactionId),
+        fetchTransactionRolePlayersIfPossible(client, transactionId),
+        fetchNormalizedBondApplicationBundle(client, transactionId),
+        buildLiveTransactionChecklistData(client, {
+          transaction: unitDetail.transaction,
+          onboardingFormData: unitDetail.onboardingFormData || null,
+          documents: unitDetail.documents || [],
+          persistedRequirements: unitDetail.transactionRequiredDocuments || [],
+        }),
+      ])
       const setupHealth = resolveTransactionSetupHealthFromEvents(transactionEvents)
-      const transactionProxyUpdates = await fetchTransactionProxyUpdatesWithClient(client, transactionId, {
-        limit: 100,
-      })
-      const appointmentsByTransactionId = await fetchTransactionAppointments(client, [transactionId], {
-        viewer: 'internal',
-      })
-      const buyerProcessLeadHandoff = await fetchBuyerProcessLeadHandoffForTransaction(client, transactionId)
-      const bondOriginatorAgentProgressView = await fetchAgentBondOriginatorProgressView(client, transactionId)
-      const bondOriginatorAttorneyHandoffView = await fetchAttorneyBondOriginatorHandoffView(client, transactionId)
-      const rolePlayers = await fetchTransactionRolePlayersIfPossible(client, transactionId)
-      const bondApplication = await fetchNormalizedBondApplicationBundle(client, transactionId)
-      const liveChecklist = await buildLiveTransactionChecklistData(client, {
-        transaction: unitDetail.transaction,
-        onboardingFormData: unitDetail.onboardingFormData || null,
-        documents: unitDetail.documents || [],
-        persistedRequirements: unitDetail.transactionRequiredDocuments || [],
-      })
       return {
         ...unitDetail,
         transactionRequiredDocuments: liveChecklist.requiredDocuments,

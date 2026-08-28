@@ -1079,18 +1079,18 @@ export default function PublicAgencyIntakePage() {
   }
 
   return (
-    <main className="relative min-h-[100dvh] overflow-hidden text-white antialiased" style={pageStyle}>
+    <main className="relative min-h-[100dvh] overflow-hidden text-white antialiased lg:h-[100dvh] lg:min-h-0" style={pageStyle}>
       <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url("${BACKGROUND_IMAGES[intent || 'buy']}")` }} />
       <div className="absolute inset-0" style={{ background: theme.overlay }} />
       <div className="absolute inset-0" style={{ background: theme.lowerOverlay }} />
 
-      <div className="relative z-10 mx-auto flex min-h-[100dvh] w-full max-w-[1240px] flex-col px-5 py-5 sm:px-8 lg:px-10">
+      <div className="relative z-10 mx-auto flex min-h-[100dvh] w-full max-w-[1240px] flex-col px-5 py-5 sm:px-8 lg:h-[100dvh] lg:min-h-0 lg:px-10">
         <header className="flex items-center justify-between gap-4">
           <BrandMark agency={intake.agency} />
           <span className="hidden text-xs font-semibold uppercase tracking-[0.16em] text-white/78 drop-shadow sm:inline">Powered by ARCH9</span>
         </header>
 
-        <section className={`grid flex-1 gap-8 ${isBuyerFlow ? 'items-start py-5 sm:py-9 lg:grid-cols-[minmax(0,0.82fr)_minmax(460px,1fr)] lg:items-center lg:gap-12' : 'items-center py-9 lg:grid-cols-[minmax(0,0.82fr)_minmax(460px,1fr)] lg:gap-12'}`}>
+        <section className={`grid min-h-0 flex-1 gap-8 lg:overflow-hidden ${isBuyerFlow ? 'items-start py-5 sm:py-9 lg:grid-cols-[minmax(0,0.82fr)_minmax(460px,1fr)] lg:items-center lg:gap-12 lg:py-5' : 'items-center py-9 lg:grid-cols-[minmax(0,0.82fr)_minmax(460px,1fr)] lg:gap-12 lg:py-5'}`}>
           <div className={`${isBuyerFlow ? 'hidden lg:block' : ''} max-w-[620px]`}>
             {intent ? (
               <button
@@ -1131,12 +1131,12 @@ export default function PublicAgencyIntakePage() {
             </div>
           </div>
 
-          <div className={`${isBuyerFlow ? 'flex min-h-[calc(100dvh-6.5rem)] w-full flex-col lg:min-h-0' : 'w-full'}`}>
+          <div className={`${isBuyerFlow ? 'flex min-h-[calc(100dvh-6.5rem)] w-full flex-col lg:min-h-0' : 'w-full lg:h-full lg:min-h-0'}`}>
             {submitted ? (
               <SuccessState agencyName={agencyName} intent={intent} duplicate={submittedDuplicate} onReset={resetFlow} />
             ) : intent ? (
-              <section className={`${isBuyerFlow ? 'flex min-h-[calc(100dvh-6.5rem)] flex-col rounded-lg border border-white/18 bg-white text-[#173238] shadow-[0_30px_90px_rgba(0,0,0,0.24)] sm:min-h-0 sm:p-6' : 'rounded-lg border border-white/18 bg-white p-5 text-[#173238] shadow-[0_30px_90px_rgba(0,0,0,0.24)] sm:p-6'}`}>
-                <form className={`${isBuyerFlow ? 'flex min-h-0 flex-1 flex-col gap-4 p-4 sm:gap-5 sm:p-0' : 'space-y-5'}`} onSubmit={handleFormSubmit} noValidate>
+              <section className={`${isBuyerFlow ? 'flex min-h-[calc(100dvh-6.5rem)] flex-col rounded-lg border border-white/18 bg-white text-[#173238] shadow-[0_30px_90px_rgba(0,0,0,0.24)] sm:min-h-0 sm:p-6' : 'rounded-lg border border-white/18 bg-white p-5 text-[#173238] shadow-[0_30px_90px_rgba(0,0,0,0.24)] sm:p-6 lg:flex lg:h-full lg:min-h-0 lg:flex-col lg:overflow-hidden'}`}>
+                <form className={`${isBuyerFlow ? 'flex min-h-0 flex-1 flex-col gap-4 p-4 sm:gap-5 sm:p-0' : 'space-y-5 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:overscroll-contain lg:pr-2'}`} onSubmit={handleFormSubmit} noValidate>
                   <div>
                     <h2 className="text-2xl font-semibold">{intent === 'sell' ? 'Selling details' : isListingCardEnquiry ? 'Property enquiry' : currentBuyerStep.title}</h2>
                     {intent === 'buy' ? (

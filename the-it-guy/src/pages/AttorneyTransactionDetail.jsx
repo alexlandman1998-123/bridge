@@ -9180,6 +9180,7 @@ function buildAttorneyDocumentsDashboardModel({
 }
 
 function ArchlineDocumentsWorkspace({
+  loading = false,
   documentHealthSummary = {},
   ficaSummary = {},
   requiredRows = [],
@@ -9220,6 +9221,39 @@ function ArchlineDocumentsWorkspace({
     : dashboardModel.parties.filter((party) => party.key === activePartyView)
   const activeCategoryFiles = activeCategory?.documents || []
   const activeCategoryRequirements = activeCategory?.requirements || []
+
+  if (loading) {
+    return (
+      <section className="archline-documents-workspace space-y-4" aria-busy="true" aria-label="Loading transaction documents">
+        <div>
+          <div className="h-6 w-32 animate-pulse rounded bg-slate-200" />
+          <div className="mt-2 h-4 w-full max-w-md animate-pulse rounded bg-slate-100" />
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+          {Array.from({ length: 6 }, (_, index) => (
+            <div key={index} className="min-h-[112px] animate-pulse rounded-lg border border-slate-200 bg-white p-4">
+              <div className="size-10 rounded-full bg-slate-100" />
+              <div className="mt-3 h-4 w-16 rounded bg-slate-200" />
+              <div className="mt-2 h-3 w-24 rounded bg-slate-100" />
+            </div>
+          ))}
+        </div>
+        <div className="grid gap-4 rounded-[16px] border border-slate-200 bg-white p-4 lg:grid-cols-2">
+          {Array.from({ length: 2 }, (_, columnIndex) => (
+            <div key={columnIndex} className="space-y-3">
+              <div className="h-5 w-28 animate-pulse rounded bg-slate-200" />
+              {Array.from({ length: 3 }, (__, rowIndex) => (
+                <div key={rowIndex} className="flex min-h-[68px] animate-pulse items-center gap-3 rounded-lg border border-slate-200 p-3">
+                  <div className="size-9 rounded-lg bg-slate-100" />
+                  <div className="min-w-0 flex-1"><div className="h-4 w-2/3 rounded bg-slate-200" /><div className="mt-2 h-3 w-1/2 rounded bg-slate-100" /></div>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      </section>
+    )
+  }
 
   return (
     <>
@@ -15848,16 +15882,9 @@ function AttorneyTransactionDetail() {
           transactionId,
           durationMs: Date.now() - startedAt,
         })
-        if (!background) {
-          setLoading(false)
-        }
       }
     } catch (coreError) {
-      if (hasCoreData) {
-        if (!background) {
-          setLoading(false)
-        }
-      } else {
+      if (!hasCoreData) {
         console.warn('[transaction-workspace] core data load deferred to full detail', {
           transactionId,
           message: coreError?.message || 'Core transaction fetch failed.',
@@ -15865,9 +15892,18 @@ function AttorneyTransactionDetail() {
       }
     }
 
+    const initialRollupRequest = !background && USE_TRANSACTION_ROLLUP_OVERVIEW
+      ? getTransactionRollup(transactionId, { actorRole: workspaceRole })
+          .then((rollup) => ({ rollup, error: null }))
+          .catch((rollupError) => ({ rollup: null, error: rollupError }))
+      : Promise.resolve(null)
+
     try {
       setHydratingDetail(true)
-      const detail = await fetchTransactionById(transactionId)
+      const [detail, initialRollupResult] = await Promise.all([
+        fetchTransactionById(transactionId),
+        initialRollupRequest,
+      ])
       if (detail) {
         setData(detail)
         setError('')
@@ -15879,6 +15915,10 @@ function AttorneyTransactionDetail() {
         setData(null)
         setError('Transaction not found.')
       }
+      if (initialRollupResult) {
+        setTransactionRollup(initialRollupResult.rollup)
+        setTransactionRollupError(initialRollupResult.error?.message || '')
+      }
     } catch (loadError) {
       if (!hasCoreData) {
         setError(loadError.message || 'Unable to load transaction.')
@@ -15887,7 +15927,7 @@ function AttorneyTransactionDetail() {
       setHydratingDetail(false)
       setLoading(false)
     }
-  }, [navigationPreviewData?.transaction, transactionId])
+  }, [navigationPreviewData?.transaction, transactionId, workspaceRole])
 
   useEffect(() => {
     setData(initialTransactionShell)
@@ -16099,6 +16139,13 @@ function AttorneyTransactionDetail() {
     }
   }, [transaction?.id, transaction?.updated_at, transaction?.updatedAt])
   const allDocuments = data?.documents ?? EMPTY_ARRAY
+  const documentDataHydrated = Boolean(
+    data &&
+    !data.__isNavigationPreview &&
+    !data.__isRouteShell &&
+    Object.prototype.hasOwnProperty.call(data, 'documents') &&
+    Object.prototype.hasOwnProperty.call(data, 'requiredDocumentChecklist'),
+  )
   const documents = useMemo(
     () => workspaceRole === 'bond_originator' ? allDocuments.filter(isBondOriginatorFinanceDocument) : allDocuments,
     [allDocuments, workspaceRole],
@@ -21234,9 +21281,7 @@ function AttorneyTransactionDetail() {
     return <p className="status-message error">Supabase is not configured for this workspace.</p>
   }
 
-  const canRenderInitialShell = Boolean(data?.transaction && (data?.__isNavigationPreview || data?.__isRouteShell))
-
-  if (workspaceRole === 'attorney' && attorneyPermissionState.loading && !canRenderInitialShell) {
+  if (workspaceRole === 'attorney' && attorneyPermissionState.loading) {
     return <LoadingSkeleton lines={8} className="panel" />
   }
 
@@ -21244,7 +21289,7 @@ function AttorneyTransactionDetail() {
     return <p className="status-message error">You do not have access to this attorney workspace.</p>
   }
 
-  if (workspaceRole === 'attorney' && !matterAccessChecked && !canRenderInitialShell) {
+  if (workspaceRole === 'attorney' && !matterAccessChecked) {
     return <LoadingSkeleton lines={8} className="panel" />
   }
 
@@ -21252,7 +21297,7 @@ function AttorneyTransactionDetail() {
     return <p className="status-message error">You do not have access to this matter.</p>
   }
 
-  if (loading && !canRenderInitialShell) {
+  if (loading) {
     return <LoadingSkeleton lines={8} className="panel" />
   }
 
@@ -21512,6 +21557,7 @@ function AttorneyTransactionDetail() {
         {(workspaceRole === 'attorney' || isTransactionOperatorView) && activeWorkspaceMenu === 'documents' ? (
           <section className="space-y-4">
             <ArchlineDocumentsWorkspace
+              loading={!documentDataHydrated}
               documentHealthSummary={documentHealthSummary}
               ficaSummary={matterDocumentWorkspaceModel.ficaSummary}
               categorySummaries={matterDocumentWorkspaceModel.categorySummaries}
