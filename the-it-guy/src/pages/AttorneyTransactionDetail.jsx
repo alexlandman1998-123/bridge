@@ -213,6 +213,7 @@ const AGENT_WORKSPACE_TABS = [
   { id: 'finance', label: 'Finance' },
   { id: 'transfer', label: 'Conveyancing' },
   { id: 'activity', label: 'Activity' },
+  { id: 'parties', label: 'Parties' },
   { id: 'stakeholders', label: 'Roleplayers' },
 ]
 
@@ -6699,33 +6700,32 @@ function ArchlineMatterHeader({
   return (
     <header className="archline-matter-header no-print -mx-3 border-b border-slate-200/70 bg-white px-3 py-5 md:-mx-4 md:px-4 lg:-mx-6 lg:px-6">
       <div className="mx-auto max-w-[1680px] space-y-5">
-        <section className="rounded-[28px] border border-[#dfe8f2] bg-white px-4 py-4 text-[#142132] shadow-[0_24px_60px_rgba(15,35,52,0.09)] md:px-6 md:py-5">
+        <section className="rounded-[24px] border border-[rgba(7,30,26,0.06)] bg-[linear-gradient(135deg,#ffffff_0%,#fbfdfc_45%,#f3faf7_100%)] px-4 py-4 text-[#142132] shadow-[0_12px_35px_rgba(7,30,26,0.05)] md:px-6 md:py-5">
           <div className="archline-matter-header-topbar flex flex-wrap items-start justify-between gap-3">
             <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
               <Link
                 to={backPath}
-                className="inline-flex min-h-10 min-w-0 items-center gap-2 rounded-[12px] border border-[#dfe8f2] bg-white px-3.5 py-2 text-sm font-semibold leading-5 text-[#142132] shadow-[0_8px_18px_rgba(15,23,42,0.04)] transition hover:border-[#cbd8e6] hover:bg-[#f8fbfd]"
+                className="inline-flex h-11 min-w-0 items-center gap-2 rounded-[13px] border border-[rgba(7,30,26,0.08)] bg-white/80 px-3.5 py-2 text-sm font-semibold leading-5 text-[#142132] shadow-[0_6px_14px_rgba(15,23,42,0.035)] transition hover:border-[rgba(7,30,26,0.16)] hover:bg-white"
               >
                 <ChevronRight size={15} className="rotate-180" />
                 <span className="min-w-0">{backLabel || 'Back to Matters'}</span>
               </Link>
               {workspaceLabel ? <span className="min-w-0 text-xs font-semibold uppercase leading-5 tracking-[0.12em] text-[#7b8ca2]">{workspaceLabel}</span> : null}
-              <TransactionSaleRouteBadge badge={saleRouteBadge} compact />
             </div>
             <div className="archline-matter-header-actions flex min-w-0 flex-wrap items-center justify-end gap-2">
-              <button type="button" className="inline-flex min-h-10 min-w-0 items-center gap-2 rounded-[12px] border border-[#dfe8f2] bg-white px-3.5 py-2 text-sm font-semibold leading-5 text-[#142132] shadow-[0_8px_18px_rgba(15,23,42,0.035)] transition hover:border-[#cbd8e6] hover:bg-[#f8fbfd]" onClick={onSharePortal}>
+              <button type="button" className="inline-flex h-11 min-w-0 items-center gap-2 rounded-[13px] border border-[rgba(7,30,26,0.08)] bg-white/80 px-3.5 py-2 text-sm font-semibold leading-5 text-[#142132] shadow-[0_6px_14px_rgba(15,23,42,0.03)] transition hover:border-[rgba(7,30,26,0.16)] hover:bg-white" onClick={onSharePortal}>
                 <Link2 size={15} className="shrink-0" />
                 <span className="min-w-0">{shareLabel}</span>
               </button>
-              <button type="button" className="inline-flex h-10 w-10 items-center justify-center rounded-[12px] border border-[#dfe8f2] bg-white text-[#526982] shadow-[0_8px_18px_rgba(15,23,42,0.035)] transition hover:border-[#cbd8e6] hover:bg-[#f8fbfd] hover:text-[#142132]" onClick={onCall} aria-label="Call primary contact" title="Call primary contact">
+              <button type="button" className="inline-flex size-11 items-center justify-center rounded-[13px] border border-[rgba(7,30,26,0.08)] bg-white/80 text-[#526982] shadow-[0_6px_14px_rgba(15,23,42,0.03)] transition hover:border-[rgba(7,30,26,0.16)] hover:bg-white hover:text-[#142132]" onClick={onCall} aria-label="Call primary contact" title="Call primary contact">
                 <Phone size={16} />
               </button>
-              <button type="button" className="inline-flex h-10 w-10 items-center justify-center rounded-[12px] border border-[#dfe8f2] bg-white text-[#526982] shadow-[0_8px_18px_rgba(15,23,42,0.035)] transition hover:border-[#cbd8e6] hover:bg-[#f8fbfd] hover:text-[#142132]" onClick={onEmail} aria-label="Email primary contact" title="Email primary contact">
+              <button type="button" className="inline-flex size-11 items-center justify-center rounded-[13px] border border-[rgba(7,30,26,0.08)] bg-white/80 text-[#526982] shadow-[0_6px_14px_rgba(15,23,42,0.03)] transition hover:border-[rgba(7,30,26,0.16)] hover:bg-white hover:text-[#142132]" onClick={onEmail} aria-label="Email primary contact" title="Email primary contact">
                 <Mail size={16} />
               </button>
               <button
                 type="button"
-                className="inline-flex min-h-10 min-w-0 items-center justify-center gap-2 rounded-[12px] border border-[#dfe8f2] bg-white px-4 py-2 text-sm font-semibold leading-5 text-[#142132] shadow-[0_8px_18px_rgba(15,23,42,0.035)] transition hover:border-[#cbd8e6] hover:bg-[#f8fbfd]"
+                className="inline-flex h-11 min-w-0 items-center justify-center gap-2 rounded-[13px] border border-[rgba(7,30,26,0.08)] bg-white/80 px-4 py-2 text-sm font-semibold leading-5 text-[#142132] shadow-[0_6px_14px_rgba(15,23,42,0.03)] transition hover:border-[rgba(7,30,26,0.16)] hover:bg-white"
                 onClick={onMoreActions}
               >
                 <span className="min-w-0">{moreActionsLabel}</span>
@@ -6734,15 +6734,18 @@ function ArchlineMatterHeader({
             </div>
           </div>
 
-          <div className="mt-5 grid gap-6 xl:grid-cols-[minmax(300px,0.38fr)_minmax(0,0.62fr)] xl:items-stretch">
-            <div className="archline-matter-header-media min-h-[220px] overflow-hidden rounded-[20px] border border-[#dfe8f2] bg-[#f4f8fb] shadow-[0_16px_34px_rgba(15,23,42,0.05)] xl:min-h-[300px]">
+          <div className="mt-5 grid gap-7 xl:grid-cols-[minmax(320px,0.36fr)_minmax(0,0.64fr)] xl:items-stretch">
+            <div className="archline-matter-header-media min-h-[230px] overflow-hidden rounded-[20px] border border-[rgba(7,30,26,0.07)] bg-[linear-gradient(145deg,#f4f9f7,#edf5f2)] shadow-[0_18px_42px_rgba(7,30,26,0.07)] xl:min-h-[300px]">
               {propertyImageUrl ? (
                 <img src={propertyImageUrl} alt={propertyPrimary} className="h-full w-full object-cover" />
               ) : (
-                <div className="grid h-full min-h-[220px] place-items-center bg-[radial-gradient(circle_at_20%_15%,rgba(8,123,75,0.12),transparent_34%),linear-gradient(135deg,#f8fbfd,#eef4f7)] p-6 text-center xl:min-h-[300px]">
+                <div className="grid h-full min-h-[230px] place-items-center bg-[linear-gradient(145deg,#f4f9f7,#edf5f2)] p-6 text-center xl:min-h-[300px]">
                   <div>
-                    <Building2 size={34} className="mx-auto text-emerald-800" />
-                    <p className="mt-3 text-xs font-semibold uppercase tracking-[0.12em] text-[#71839a]">Property image pending</p>
+                    <span className="mx-auto inline-flex size-14 items-center justify-center rounded-[18px] bg-white/70 text-emerald-800 shadow-[0_10px_22px_rgba(7,30,26,0.06)]">
+                      <Building2 size={32} />
+                    </span>
+                    <p className="mt-4 text-xs font-semibold uppercase tracking-[0.14em] text-[#71839a]">Property image pending</p>
+                    <p className="mt-1 text-sm font-medium leading-5 text-[#8a9aab]">Upload a property image to display it here</p>
                   </div>
                 </div>
               )}
@@ -6752,12 +6755,12 @@ function ArchlineMatterHeader({
               <div className="min-w-0">
                 <span className="block min-w-0 text-[0.72rem] font-semibold uppercase leading-5 tracking-[0.12em] text-[#7b8ca2]">{reference || 'Matter reference pending'}</span>
                 <div className="mt-4 flex min-w-0 items-start gap-4">
-                  <span className="inline-flex size-14 shrink-0 items-center justify-center rounded-[18px] bg-[#eef8f1] text-emerald-800">
-                    <MapPin size={24} />
+                  <span className="inline-flex size-14 shrink-0 items-center justify-center rounded-[14px] bg-[#edf8f3] text-emerald-800 shadow-[inset_0_0_0_1px_rgba(7,30,26,0.04)]">
+                    <MapPin size={23} />
                   </span>
                   <div className="min-w-0">
                     <div className="flex min-w-0 flex-wrap items-start gap-2.5">
-                      <h1 className="archline-matter-property-title text-balance text-[1.75rem] font-semibold leading-[1.12] text-[#070b14] md:text-[2.25rem]">
+                      <h1 className="archline-matter-property-title text-balance text-[1.9rem] font-bold leading-[1.08] tracking-[-0.03em] text-[#070b14] md:text-[2.35rem]">
                         {propertyPrimary}
                       </h1>
                       <button type="button" className="mt-0.5 inline-flex size-9 shrink-0 items-center justify-center rounded-full text-amber-500 transition hover:bg-amber-50" aria-label="Favourite matter" title="Favourite matter">
@@ -6769,18 +6772,23 @@ function ArchlineMatterHeader({
                   </div>
                 </div>
 
-                <div className="mt-7 grid min-w-0 gap-y-4 rounded-[18px] border border-[#e8eef5] bg-[#fbfdff] px-4 py-4 sm:grid-cols-2 xl:grid-cols-4">
-                  {metricRows.map((item, index) => {
+                <div className="mt-5 flex min-w-0 flex-wrap items-center gap-2.5">
+                  <ArchlineStatusPill>{statusLabel || 'Active'}</ArchlineStatusPill>
+                  <TransactionSaleRouteBadge badge={saleRouteBadge} compact />
+                </div>
+
+                <div className="mt-6 grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  {metricRows.map((item) => {
                     const Icon = item.icon
                     return (
-                      <article key={item.key} className={`min-w-0 ${index > 0 ? 'xl:border-l xl:border-[#dce6f0] xl:pl-5' : ''}`}>
+                      <article key={item.key} className="min-w-0 rounded-[14px] border border-[rgba(7,30,26,0.07)] bg-white/70 px-4 py-4 shadow-[0_8px_18px_rgba(7,30,26,0.035)]">
                         <div className="flex min-w-0 items-center gap-3">
-                          <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-[14px] bg-[#eef8f1] text-emerald-800">
+                          <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-[13px] bg-[#eef8f1] text-emerald-800">
                             <Icon size={17} />
                           </span>
                           <div className="min-w-0">
                             <span className="block text-[0.66rem] font-semibold uppercase leading-4 tracking-[0.1em] text-[#71839a]">{item.label}</span>
-                            <strong className="mt-1 block text-[1rem] font-semibold leading-5 text-[#142132]" title={item.value}>{item.value}</strong>
+                            <strong className={`mt-1 block leading-5 text-[#142132] ${item.key === 'price' ? 'text-[1.05rem] font-bold' : 'text-[0.96rem] font-semibold'}`} title={item.value}>{item.value}</strong>
                           </div>
                         </div>
                       </article>
@@ -6791,20 +6799,22 @@ function ArchlineMatterHeader({
 
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex min-w-0 flex-wrap items-center gap-2.5">
-                  <ArchlineStatusPill>{statusLabel || 'Active'}</ArchlineStatusPill>
                   {chips.length ? chips.map((chip) => {
                     const Icon = chip.icon || FileText
                     return (
-                      <span key={chip.key || chip.label} className="inline-flex min-h-8 min-w-0 items-center gap-2 rounded-lg bg-[#f1f5f9] px-3 py-1.5 text-xs font-semibold leading-4 text-[#526982]">
+                      <span key={chip.key || chip.label} className="inline-flex min-h-8 min-w-0 items-center gap-2 rounded-lg bg-[#eef2f6] px-3 py-1.5 text-xs font-semibold leading-4 text-[#526982]">
                         <Icon size={14} className="shrink-0" />
                         <span className="min-w-0">{chip.label}</span>
                       </span>
                     )
                   }) : null}
                 </div>
-                <button type="button" className="inline-flex min-h-12 min-w-0 items-center justify-center gap-2 rounded-[14px] bg-emerald-700 px-5 py-2 text-sm font-semibold leading-5 text-white shadow-[0_14px_28px_rgba(4,120,87,0.22)] transition hover:bg-emerald-800 sm:self-end" onClick={onViewProperty}>
-                  <span className="min-w-0">View Property</span>
-                  <ExternalLink size={15} className="shrink-0" />
+                <button type="button" className="inline-flex min-h-[58px] min-w-0 items-center justify-between gap-4 rounded-[16px] bg-emerald-700 px-5 py-3 text-left text-white shadow-[0_14px_28px_rgba(4,120,87,0.18)] transition hover:bg-emerald-800 sm:min-w-[210px] sm:self-end" onClick={onViewProperty}>
+                  <span className="min-w-0">
+                    <span className="block text-xs font-semibold uppercase leading-4 tracking-[0.12em] text-emerald-100">Property</span>
+                    <span className="mt-0.5 block text-sm font-bold leading-5">View original listing</span>
+                  </span>
+                  <ExternalLink size={16} className="shrink-0" />
                 </button>
               </div>
             </div>
@@ -6881,6 +6891,399 @@ function ArchlineMatterHeader({
         </nav>
       </div>
     </header>
+  )
+}
+
+function getPartyProfilePath(party = {}) {
+  const email = cleanDetailEmail(party.email)
+  if (email) return `/clients/${encodeURIComponent(`email:${email}`)}`
+  const phone = String(party.phone || '').replace(/\D/g, '')
+  if (phone.length >= 6) return `/clients/${encodeURIComponent(`phone:${phone}`)}`
+  const name = cleanDetailText(party.name)
+  if (name && !isPlaceholderPartyName(name)) return `/clients/${encodeURIComponent(`name:${name.toLowerCase()}`)}`
+  return ''
+}
+
+function buildTransactionPartyList({
+  side = 'buyer',
+  participants = [],
+  fallbackName = '',
+  fallbackEmail = '',
+  fallbackPhone = '',
+  fallbackType = '',
+} = {}) {
+  const roleKeys = side === 'seller'
+    ? new Set(['seller', 'vendor', 'developer'])
+    : new Set(['buyer', 'purchaser', 'client'])
+  const candidates = (participants || [])
+    .filter((participant) => {
+      const role = normalizeDetailKey(participant?.roleType || participant?.role_type || participant?.transactionRole || participant?.transaction_role)
+      return roleKeys.has(role)
+    })
+    .map((participant) => {
+      const participantName = cleanDetailText(participant?.participantName || participant?.participant_name || participant?.name)
+      return {
+        id: participant?.participantId || participant?.participant_id || participant?.userId || participant?.user_id || participant?.id || '',
+        name: participantName && !isPlaceholderPartyName(participantName) ? participantName : cleanDetailText(fallbackName),
+        email: cleanDetailEmail(participant?.participantEmail || participant?.participant_email || participant?.email),
+        phone: cleanDetailText(participant?.participantPhone || participant?.participant_phone || participant?.phone),
+        type: cleanDetailText(participant?.entityType || participant?.entity_type || participant?.participantType || participant?.participant_type || fallbackType),
+      }
+    })
+    .filter((party) => (party.name && !isPlaceholderPartyName(party.name)) || party.email || party.phone)
+
+  if (!candidates.length && ((fallbackName && !isPlaceholderPartyName(fallbackName)) || fallbackEmail || fallbackPhone)) {
+    candidates.push({
+      id: '',
+      name: cleanDetailText(fallbackName),
+      email: cleanDetailEmail(fallbackEmail),
+      phone: cleanDetailText(fallbackPhone),
+      type: cleanDetailText(fallbackType),
+    })
+  }
+
+  const seen = new Set()
+  return candidates.filter((party) => {
+    const key = party.email || String(party.phone || '').replace(/\D/g, '') || normalizeDetailKey(party.name)
+    if (!key || seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+function getPartiesStatusMeta(status = '') {
+  const key = normalizeDetailKey(status)
+  if (['complete', 'completed', 'approved', 'verified', 'clear'].includes(key)) {
+    return { label: key === 'verified' ? 'Verified' : 'Complete', pill: 'bg-emerald-50 text-emerald-700', icon: CheckCircle2 }
+  }
+  if (['in_progress', 'pending_review', 'pending', 'submitted', 'sent'].includes(key)) {
+    return { label: key === 'pending_review' ? 'Pending review' : 'In Progress', pill: 'bg-blue-50 text-blue-700', icon: Clock3 }
+  }
+  if (['attention', 'missing', 'outstanding', 'rejected', 'expired', 'partial'].includes(key)) {
+    return { label: key === 'partial' ? 'Attention' : toTitle(key), pill: 'bg-amber-50 text-amber-700', icon: AlertTriangle }
+  }
+  return { label: 'Not Started', pill: 'bg-slate-100 text-slate-600', icon: Clock3 }
+}
+
+function summarizePartyDocuments(categories = [], label = 'Documents') {
+  const tracked = categories.filter((category) => category.requiredCount > 0)
+  if (!tracked.length) {
+    return { label, description: 'No document requirements currently tracked', status: 'not_started', icon: FileText }
+  }
+  const requiredCount = tracked.reduce((total, category) => total + category.requiredCount, 0)
+  const receivedCount = tracked.reduce((total, category) => total + category.receivedCount, 0)
+  const missingCount = tracked.reduce((total, category) => total + category.missingCount, 0)
+  const pendingReviewCount = tracked.reduce((total, category) => total + category.pendingReviewCount, 0)
+  if (receivedCount >= requiredCount && !missingCount && !pendingReviewCount) {
+    return { label, description: 'All required documents received', status: 'complete', icon: FileCheck2 }
+  }
+  if (missingCount) {
+    return {
+      label,
+      description: `${missingCount} document${missingCount === 1 ? '' : 's'} outstanding`,
+      status: 'attention',
+      icon: FileText,
+    }
+  }
+  return {
+    label,
+    description: pendingReviewCount ? 'Documents awaiting verification' : `${receivedCount} of ${requiredCount} documents received`,
+    status: 'in_progress',
+    icon: FileText,
+  }
+}
+
+function PartyStatusRow({ row = {}, isLast = false }) {
+  const status = getPartiesStatusMeta(row.status)
+  const Icon = row.icon || status.icon
+  const StatusIcon = status.icon
+  return (
+    <div className={`flex min-w-0 items-center gap-3 px-3 py-3 ${isLast ? '' : 'border-b border-slate-100'}`}>
+      <span className="inline-flex size-[30px] shrink-0 items-center justify-center rounded-[9px] bg-[#eef8f3] text-emerald-700">
+        <Icon size={14} />
+      </span>
+      <span className="min-w-0 flex-1">
+        <strong className="block text-[0.78rem] font-semibold leading-4 text-slate-950">{row.label}</strong>
+        <span className="mt-0.5 block text-[0.72rem] leading-4 text-slate-500">{row.description}</span>
+      </span>
+      <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[0.68rem] font-semibold ${status.pill}`}>
+        {status.label}
+        <StatusIcon size={12} />
+      </span>
+    </div>
+  )
+}
+
+function TransactionPartyCard({
+  side = 'buyer',
+  roleName = '',
+  parties = [],
+  statusRows = [],
+  portalLabel = '',
+  portalBusy = false,
+  portalDisabled = false,
+  onPortal,
+}) {
+  const isBuyer = side === 'buyer'
+  const singularRoleLabel = roleName || (isBuyer ? 'Buyer' : 'Seller')
+  const roleLabel = parties.length > 1 ? `${singularRoleLabel}s` : singularRoleLabel
+  const primaryParty = parties[0] || null
+  const profilePath = primaryParty ? getPartyProfilePath(primaryParty) : ''
+
+  return (
+    <article className="flex min-w-0 flex-col rounded-[16px] border border-[rgba(15,23,42,0.08)] bg-white p-4">
+      <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex min-w-0 items-start gap-3">
+          <span className="inline-flex size-11 shrink-0 items-center justify-center rounded-[14px] bg-[#eef8f3] text-emerald-700">
+            <UserRound size={20} />
+          </span>
+          <div className="min-w-0">
+            <span className="block text-[0.66rem] font-semibold uppercase leading-4 text-emerald-700">{roleLabel}</span>
+            {parties.length ? (
+              <div className="mt-1 space-y-2">
+                {parties.map((party, index) => {
+                  const typeLabel = cleanDetailText(party.type) && normalizeDetailKey(party.type) !== 'unknown' ? toTitle(party.type) : ''
+                  return (
+                    <div key={party.id || party.email || party.phone || `${side}-${index}`}>
+                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+                        <strong className="min-w-0 text-[1.05rem] font-semibold leading-5 text-slate-950">{party.name || `${singularRoleLabel} not yet added`}</strong>
+                        {typeLabel ? <span className="rounded-full bg-emerald-50 px-2 py-1 text-[0.66rem] font-semibold text-emerald-700">{typeLabel}</span> : null}
+                      </div>
+                      <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[0.74rem] leading-4 text-slate-500">
+                        {party.phone ? (
+                          <a href={`tel:${party.phone}`} className="inline-flex min-w-0 items-center gap-1.5 hover:text-emerald-700">
+                            <Phone size={12} className="shrink-0" />
+                            <span className="break-all">{party.phone}</span>
+                          </a>
+                        ) : null}
+                        {party.phone && party.email ? <span aria-hidden="true">•</span> : null}
+                        {party.email ? (
+                          <a href={`mailto:${party.email}`} className="inline-flex min-w-0 items-center gap-1.5 hover:text-emerald-700">
+                            <Mail size={12} className="shrink-0" />
+                            <span className="break-all">{party.email}</span>
+                          </a>
+                        ) : null}
+                        {!party.phone && !party.email ? <span>No contact details available</span> : null}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            ) : (
+              <div className="mt-1">
+                <strong className="block text-[1.05rem] font-semibold text-slate-950">{singularRoleLabel} not yet added</strong>
+                <span className="mt-1 block text-[0.74rem] text-slate-500">No contact details available</span>
+              </div>
+            )}
+          </div>
+        </div>
+        {profilePath ? (
+          <Link
+            to={profilePath}
+            className="inline-flex min-h-9 shrink-0 items-center justify-center gap-2 rounded-[10px] border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-emerald-200 hover:bg-emerald-50/40 hover:text-emerald-800"
+          >
+            View {singularRoleLabel} Profile
+            <ExternalLink size={13} />
+          </Link>
+        ) : null}
+      </div>
+
+      <div className="mt-4 overflow-hidden rounded-[12px] border border-[rgba(15,23,42,0.08)] bg-white">
+        {statusRows.map((row, index) => (
+          <PartyStatusRow key={`${side}-${row.label}`} row={row} isLast={index === statusRows.length - 1} />
+        ))}
+      </div>
+
+      <div className="mt-auto pt-3">
+        <button
+          type="button"
+          className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-[10px] border border-slate-200 bg-slate-50/70 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-emerald-200 hover:bg-emerald-50/40 hover:text-emerald-800 disabled:cursor-not-allowed disabled:opacity-50"
+          onClick={onPortal}
+          disabled={portalDisabled || portalBusy}
+        >
+          {portalBusy ? 'Opening portal...' : portalLabel}
+          <ExternalLink size={13} />
+        </button>
+      </div>
+    </article>
+  )
+}
+
+function ArchlinePartiesWorkspace({
+  transaction = {},
+  buyerDisplayName = '',
+  buyerEmail = '',
+  buyerPhone = '',
+  sellerDisplayName = '',
+  sellerEmail = '',
+  sellerPhone = '',
+  participants = [],
+  onboardingCompleted = false,
+  lifecycleProgressState = {},
+  financeType = 'unknown',
+  financeTypeLabel = '',
+  transactionFinanceWorkflow = null,
+  documentHealthSummary = {},
+  ficaSummary = {},
+  requiredRows = [],
+  libraryRows = [],
+  missingRows = [],
+  sellerPartyLabels = {},
+  transactionTypeLabel = '',
+  buyerPortalBusy = false,
+  sellerPortalBusy = false,
+  onBuyerPortal,
+  onSellerPortal,
+}) {
+  const buyerParties = buildTransactionPartyList({
+    side: 'buyer',
+    participants,
+    fallbackName: buyerDisplayName,
+    fallbackEmail: buyerEmail,
+    fallbackPhone: buyerPhone,
+    fallbackType: transaction?.purchaser_type || transaction?.purchaserType,
+  })
+  const sellerParties = buildTransactionPartyList({
+    side: 'seller',
+    participants,
+    fallbackName: sellerDisplayName,
+    fallbackEmail: sellerEmail,
+    fallbackPhone: sellerPhone,
+    fallbackType: transaction?.seller_type || transaction?.sellerType,
+  })
+  const documentsModel = buildAttorneyDocumentsDashboardModel({
+    documentHealthSummary,
+    ficaSummary,
+    requiredRows,
+    libraryRows,
+    missingRows,
+    sellerPartyLabels,
+  })
+  const buyerDocumentCategories = documentsModel.parties.find((party) => party.key === 'buyer')?.categories || []
+  const sellerDocumentCategories = documentsModel.parties.find((party) => party.key === 'seller')?.categories || []
+  const sellerFica = sellerDocumentCategories.find((category) => category.key.includes('fica'))
+  const sellerGeneralDocuments = sellerDocumentCategories.filter((category) => !category.key.includes('fica'))
+  const sellerOnboardingComplete = Boolean(lifecycleProgressState?.flags?.sellerOnboardingComplete)
+  const sellerOnboardingSent = Boolean(lifecycleProgressState?.flags?.sellerOnboardingSent)
+  const normalizedFinance = normalizeFinanceType(financeType, { allowUnknown: true })
+  const hasFinanceApplication = Boolean(
+    transactionFinanceWorkflow?.applications?.length ||
+    transactionFinanceWorkflow?.application ||
+    lifecycleProgressState?.flags?.bondOriginatorAssigned ||
+    !['', 'not_started', 'unknown'].includes(normalizeDetailKey(transaction?.finance_status)),
+  )
+  const financeRow = normalizedFinance === 'cash'
+    ? {
+        label: 'Finance',
+        description: lifecycleProgressState?.flags?.proofOfFundsVerified ? 'Proof of funds received' : 'Proof of funds outstanding',
+        status: lifecycleProgressState?.flags?.proofOfFundsVerified ? 'complete' : 'attention',
+        icon: CircleDollarSign,
+      }
+    : ['bond', 'combination'].includes(normalizedFinance)
+      ? {
+          label: 'Finance',
+          description: lifecycleProgressState?.flags?.bondGrantUploaded
+            ? 'Bond grant received'
+            : hasFinanceApplication
+              ? 'Bond application in progress'
+              : 'Bond finance not started',
+          status: lifecycleProgressState?.flags?.bondGrantUploaded ? 'complete' : hasFinanceApplication ? 'in_progress' : 'not_started',
+          icon: CircleDollarSign,
+        }
+      : {
+          label: 'Finance',
+          description: 'Finance type not captured',
+          status: 'not_started',
+          icon: CircleDollarSign,
+        }
+  const buyerRows = [
+    {
+      label: 'Onboarding',
+      description: onboardingCompleted ? 'Buyer onboarding completed' : buyerEmail ? 'Buyer onboarding in progress' : 'Buyer onboarding not started',
+      status: onboardingCompleted ? 'complete' : buyerEmail ? 'in_progress' : 'not_started',
+      icon: UserCircle,
+    },
+    financeRow,
+    summarizePartyDocuments(buyerDocumentCategories),
+  ]
+  const sellerRows = [
+    {
+      label: 'Onboarding',
+      description: sellerOnboardingComplete ? 'Seller onboarding completed' : sellerOnboardingSent ? 'Seller onboarding in progress' : 'Seller onboarding not started',
+      status: sellerOnboardingComplete ? 'complete' : sellerOnboardingSent ? 'in_progress' : 'not_started',
+      icon: UserCircle,
+    },
+    summarizePartyDocuments(sellerGeneralDocuments),
+    sellerFica?.requiredCount
+      ? {
+          label: 'FICA',
+          description: sellerFica.status === 'complete'
+            ? 'Verification complete'
+            : sellerFica.pendingReviewCount
+              ? 'Verification in progress'
+              : `${sellerFica.missingCount || sellerFica.requiredCount - sellerFica.receivedCount} item${(sellerFica.missingCount || sellerFica.requiredCount - sellerFica.receivedCount) === 1 ? '' : 's'} outstanding`,
+          status: sellerFica.status,
+          icon: FileCheck2,
+        }
+      : {
+          label: 'FICA',
+          description: transaction?.seller_fica_status ? toTitle(transaction.seller_fica_status) : 'No FICA requirements currently tracked',
+          status: transaction?.seller_fica_status || 'not_started',
+          icon: FileCheck2,
+        },
+  ]
+  const mandateEndDate = firstPresent(transaction?.mandate_end_date, transaction?.mandate_expiry_date, transaction?.mandate_valid_until)
+  const summaryItems = [
+    transactionTypeLabel ? ['Transaction Type', transactionTypeLabel] : null,
+    buyerParties[0]?.type && normalizeDetailKey(buyerParties[0].type) !== 'unknown' ? ['Purchaser Type', toTitle(buyerParties[0].type)] : null,
+    sellerParties[0]?.type && normalizeDetailKey(sellerParties[0].type) !== 'unknown' ? ['Seller Type', toTitle(sellerParties[0].type)] : null,
+    financeTypeLabel && financeTypeLabel !== 'Not captured' ? ['Finance Type', financeTypeLabel] : null,
+    mandateEndDate ? ['Mandate', `Valid until ${formatDate(mandateEndDate, '')}`] : null,
+  ].filter(Boolean)
+
+  return (
+    <section className="archline-parties-workspace space-y-4">
+      <div>
+        <h2 className="text-xl font-semibold tracking-[-0.02em] text-slate-950">Parties</h2>
+        <p className="mt-1 text-sm leading-5 text-slate-500">The primary parties involved in this transaction.</p>
+      </div>
+
+      <div className="grid gap-[18px] xl:grid-cols-2">
+        <TransactionPartyCard
+          side="buyer"
+          parties={buyerParties}
+          statusRows={buyerRows}
+          portalLabel="View Buyer Portal"
+          portalBusy={buyerPortalBusy}
+          portalDisabled={!buyerEmail}
+          onPortal={onBuyerPortal}
+        />
+        <TransactionPartyCard
+          side="seller"
+          roleName={sellerPartyLabels.party || 'Seller'}
+          parties={sellerParties}
+          statusRows={sellerRows}
+          portalLabel={sellerPartyLabels.isDeveloperSale ? sellerPartyLabels.portalAction : 'View Seller Portal'}
+          portalBusy={sellerPortalBusy}
+          portalDisabled={!sellerPartyLabels.isDeveloperSale && !sellerEmail}
+          onPortal={onSellerPortal}
+        />
+      </div>
+
+      {summaryItems.length ? (
+        <section className="rounded-[14px] border border-[rgba(15,23,42,0.08)] bg-white px-4 py-3.5">
+          <h3 className="text-sm font-semibold text-slate-950">Party Summary</h3>
+          <div className="mt-3 grid gap-y-3 sm:grid-cols-2 xl:grid-cols-5">
+            {summaryItems.map(([label, value], index) => (
+              <div key={label} className={`min-w-0 px-1 sm:px-3 ${index ? 'xl:border-l xl:border-slate-200' : ''}`}>
+                <span className="block text-[0.66rem] font-semibold uppercase leading-4 text-slate-500">{label}</span>
+                <strong className="mt-1 block text-[0.78rem] font-semibold leading-5 text-slate-950">{value}</strong>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+    </section>
   )
 }
 
@@ -13330,23 +13733,29 @@ function buildAgentPartyRows(transactionContactRows = [], sellerPartyLabels = ge
   })
 }
 
-function buildAgentFinancialRows({ transaction = {}, displayPurchasePriceValue = 0, financeTypeLabel = '', bondAmountFallback = '', hasCapturedFinancials = false } = {}) {
+function buildAgentDealSummary({ transaction = {}, displayPurchasePriceValue = 0, financeTypeLabel = '', hasCapturedFinancials = false } = {}) {
   const depositValue = hasCapturedFinancials
     ? Number(transaction?.deposit_amount || transaction?.reservation_amount || transaction?.reservation_deposit_amount || 0)
     : 0
   const purchasePrice = Number(displayPurchasePriceValue || 0)
-  const balance = purchasePrice && Number.isFinite(depositValue) ? Math.max(0, purchasePrice - depositValue) : 0
-  const transferDuty = transaction?.transfer_duty || transaction?.transfer_duty_amount || transaction?.estimated_transfer_duty || transaction?.transferDutyAmount
+  const bondValue = hasCapturedFinancials ? Number(transaction?.bond_amount || 0) : 0
+  const hasDeposit = Number.isFinite(depositValue) && depositValue > 0
+  const hasBond = Number.isFinite(bondValue) && bondValue > 0
+  const fundingTotal = (hasDeposit ? depositValue : 0) + (hasBond ? bondValue : 0)
+  const depositPercent = fundingTotal > 0 && hasDeposit ? clampPercent((depositValue / fundingTotal) * 100) : 0
+  const bondPercent = fundingTotal > 0 && hasBond ? 100 - depositPercent : 0
 
-  return [
-    ['Purchase Price', formatCurrencyValue(displayPurchasePriceValue, 'Not captured')],
-    ['Deposit', formatCurrencyValue(depositValue, 'Not captured')],
-    ['Balance', formatCurrencyValue(balance, purchasePrice ? 'Not captured' : 'Not captured')],
-    ['Finance Type', financeTypeLabel || 'Not captured'],
-    ['Bond Amount', formatCurrencyValue(hasCapturedFinancials ? transaction?.bond_amount : 0, bondAmountFallback || 'Not captured')],
-    ['Transfer Duty', formatCurrencyValue(transferDuty, 'Not captured')],
-    ['Target Registration', formatDate(transaction?.target_registration_date || transaction?.expected_transfer_date, 'Not set')],
-  ]
+  return {
+    purchasePrice,
+    purchasePriceLabel: formatCurrencyValue(purchasePrice, 'Not captured'),
+    depositValue: hasDeposit ? depositValue : null,
+    bondValue: hasBond ? bondValue : null,
+    financeTypeLabel: financeTypeLabel && financeTypeLabel !== 'Not captured' ? financeTypeLabel : '',
+    ltv: purchasePrice > 0 && hasBond ? clampPercent((bondValue / purchasePrice) * 100) : null,
+    funding: fundingTotal > 0 && hasDeposit && hasBond
+      ? { depositPercent, bondPercent }
+      : null,
+  }
 }
 
 function AgentTransactionOverview({
@@ -13664,6 +14073,221 @@ function AgentTransactionOverview({
             View Finance
             <ChevronRight size={15} />
           </Button>
+        </article>
+      </section>
+    </section>
+  )
+}
+
+function AgentTransactionCommandCenter({
+  outstandingItems = [],
+  nextAction = null,
+  activityEntries = [],
+  discussionBody = '',
+  onDiscussionBodyChange,
+  onPublishDiscussion,
+  discussionSubmitDisabled = false,
+  publishing = false,
+  documentRows = [],
+  documentAttentionCount = 0,
+  partyRows = [],
+  dealSummary = null,
+  onOpenDocuments,
+  onOpenFinance,
+  onOpenTransfer,
+  onOpenTimeline,
+  onOpenStakeholders,
+  onOpenParties,
+}) {
+  const nextContact = nextAction?.contact || null
+  const NextActionIcon = nextAction?.Icon || FileText
+  const callHref = getAgentContactHref('phone', nextContact?.phone)
+  const whatsappHref = getAgentContactHref('whatsapp', nextContact?.phone)
+  const recommendationReasons = outstandingItems
+    .map((item) => item.description || item.title)
+    .filter(Boolean)
+    .filter((value, index, values) => values.indexOf(value) === index)
+    .slice(0, 3)
+  const visibleParties = ['buyer', 'seller', 'transfer_attorney']
+    .map((key) => partyRows.find((row) => row.key === key))
+    .filter(Boolean)
+
+  const openActionTarget = (target = nextAction?.target) => {
+    if (target === 'finance') return onOpenFinance?.()
+    if (target === 'stakeholders') return onOpenStakeholders?.()
+    if (target === 'transfer') return onOpenTransfer?.()
+    if (target === 'activity') return onOpenTimeline?.()
+    return onOpenDocuments?.()
+  }
+  const runContactAction = (type, href) => {
+    if (!href) return onOpenStakeholders?.()
+    if (type === 'whatsapp') window.open(href, '_blank', 'noopener,noreferrer')
+    else window.location.href = href
+  }
+
+  return (
+    <section className="space-y-4">
+      <section className="grid gap-4 xl:grid-cols-2">
+        <article className="flex min-h-[430px] flex-col rounded-[16px] border border-borderDefault bg-white p-5 shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">Next Best Action</p>
+            {outstandingItems.length ? <span className="rounded-[8px] bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">{outstandingItems.length} watching</span> : null}
+          </div>
+          <div className="mt-4 flex flex-1 flex-col rounded-[14px] border border-emerald-100 bg-[linear-gradient(135deg,rgba(239,250,245,0.95),rgba(250,253,252,0.95))] p-5">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+              <span className="inline-flex size-14 shrink-0 items-center justify-center rounded-[12px] border border-emerald-200 bg-white/70 text-emerald-700 shadow-sm">
+                <NextActionIcon size={24} />
+              </span>
+              <div className="min-w-0">
+                <h2 className="text-xl font-semibold text-textStrong">{nextAction?.title || 'No action needed'}</h2>
+                <p className="mt-2 text-sm leading-6 text-textMuted">{nextAction?.description || 'Everything looks good right now.'}</p>
+              </div>
+            </div>
+
+            {recommendationReasons.length ? (
+              <div className="mt-5 border-t border-emerald-100 pt-4">
+                <p className="text-xs font-medium text-textMuted">Recommended because:</p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                  {recommendationReasons.map((reason) => (
+                    <div key={reason} className="flex items-start gap-2 text-xs leading-5 text-textBody">
+                      <CheckCircle2 size={14} className="mt-0.5 shrink-0 text-emerald-600" />
+                      <span>{reason}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            <div className="mt-auto flex flex-wrap gap-2 pt-5">
+              <Button type="button" size="sm" onClick={() => openActionTarget()}>
+                <NextActionIcon size={14} />
+                {nextAction?.primaryLabel || 'Review Action'}
+              </Button>
+              <Button type="button" variant="secondary" size="sm" onClick={() => openActionTarget(nextAction?.secondaryLabel === 'View Roleplayers' ? 'stakeholders' : 'documents')}>
+                <FileText size={14} />
+                {nextAction?.secondaryLabel || 'View Documents'}
+              </Button>
+              {callHref ? <Button type="button" variant="secondary" size="sm" onClick={() => runContactAction('phone', callHref)}><Phone size={14} />Call</Button> : null}
+              {whatsappHref ? <Button type="button" variant="secondary" size="sm" onClick={() => runContactAction('whatsapp', whatsappHref)}><MessageCircle size={14} />WhatsApp</Button> : null}
+            </div>
+          </div>
+        </article>
+
+        <article className="flex h-[430px] min-h-0 flex-col overflow-hidden rounded-[16px] border border-borderDefault bg-white shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
+          <div className="flex shrink-0 items-center justify-between gap-3 px-5 py-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-textStrong">Recent Activity</p>
+            <Button type="button" variant="ghost" size="sm" onClick={onOpenTimeline}>View all</Button>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto border-y border-borderSoft px-5">
+            {activityEntries.slice(0, 6).map((entry) => {
+              const ActivityIcon = entry.meta?.Icon || Activity
+              const isSystem = entry.kind === 'system' || entry.authorName === 'Arch9'
+              const initial = String(entry.authorName || 'M').trim().charAt(0).toUpperCase()
+              return (
+                <article key={entry.id} className="flex gap-3 border-b border-borderSoft py-3 last:border-b-0">
+                  <span className={`inline-flex size-9 shrink-0 items-center justify-center rounded-full text-xs font-bold ${isSystem ? entry.meta?.icon || 'bg-slate-50 text-slate-600' : 'bg-slate-100 text-slate-700'}`}>
+                    {isSystem ? <ActivityIcon size={16} /> : initial}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                      <p className="min-w-0 text-sm font-semibold text-textStrong">{entry.authorName || 'Matter team'} <span className="font-normal text-textMuted">· {entry.roleLabel || entry.categoryLabel || 'Update'}</span></p>
+                      <time className="shrink-0 text-xs text-textMuted">{formatDateTime(entry.createdAt, '')}</time>
+                    </div>
+                    <p className="mt-1 text-sm leading-5 text-textBody">{entry.body || entry.title}</p>
+                  </div>
+                </article>
+              )
+            })}
+            {!activityEntries.length ? <p className="py-10 text-center text-sm text-textMuted">No activity yet.</p> : null}
+          </div>
+          <form onSubmit={onPublishDiscussion} className="grid shrink-0 gap-2 p-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+            <Field as="textarea" rows={2} value={discussionBody} onChange={(event) => onDiscussionBodyChange?.(event.target.value)} placeholder="Publish an update to everyone involved..." />
+            <Button type="submit" size="sm" className="self-stretch justify-center sm:self-end" disabled={discussionSubmitDisabled}>
+              {publishing ? 'Publishing...' : 'Publish'}
+              <Send size={14} />
+            </Button>
+          </form>
+        </article>
+      </section>
+
+      <section className="grid items-stretch gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <article className="flex min-h-[330px] flex-col rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-textStrong">Parties</p>
+            <Button type="button" variant="ghost" size="sm" onClick={onOpenParties}>View all</Button>
+          </div>
+          <div className="mt-2 divide-y divide-borderSoft">
+            {visibleParties.map((row) => {
+              const actions = [
+                { key: 'phone', Icon: Phone, href: getAgentContactHref('phone', row.phone), label: 'Call' },
+                { key: 'email', Icon: Mail, href: getAgentContactHref('email', row.email), label: 'Email' },
+                { key: 'whatsapp', Icon: MessageCircle, href: getAgentContactHref('whatsapp', row.phone), label: 'WhatsApp' },
+              ].filter((action) => action.href)
+              return (
+                <div key={row.key} className="flex items-center gap-3 py-3">
+                  <span className={`inline-flex size-10 shrink-0 items-center justify-center rounded-full text-sm font-bold ${row.tone}`}>{row.initials}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-xs text-textMuted">{row.role}</span>
+                    <strong className="block truncate text-sm text-textStrong">{row.contact}</strong>
+                    {row.status ? <span className={`mt-1 inline-flex rounded-[6px] px-2 py-0.5 text-[0.68rem] font-semibold ${/pending|attention|not assigned|await/i.test(row.status) ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>{row.status}</span> : null}
+                  </span>
+                  <span className="flex shrink-0 gap-1">
+                    {actions.map(({ key, Icon, href, label }) => <button key={key} type="button" title={label} aria-label={`${label} ${row.contact}`} className="inline-flex size-8 items-center justify-center rounded-[8px] border border-borderDefault bg-white text-textMuted transition hover:border-primary/30 hover:text-primary" onClick={() => runContactAction(key, href)}><Icon size={14} /></button>)}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+          {!visibleParties.length ? <p className="my-auto text-center text-sm text-textMuted">Parties have not been added yet.</p> : null}
+          <Button type="button" variant="secondary" size="sm" className="mt-auto w-full justify-center" onClick={onOpenParties}>View all parties<ChevronRight size={14} /></Button>
+        </article>
+
+        <article className="flex min-h-[330px] flex-col rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-textStrong">Deal Summary</p>
+            <Button type="button" variant="ghost" size="sm" onClick={onOpenFinance}>View finance</Button>
+          </div>
+          <strong className="mt-4 block text-2xl font-semibold text-emerald-700">{dealSummary?.purchasePriceLabel || 'Not captured'}</strong>
+          <span className="mt-1 text-xs text-textMuted">Purchase price</span>
+          <div className="mt-3 divide-y divide-borderSoft">
+            {dealSummary?.depositValue ? <div className="flex justify-between gap-4 py-2.5 text-sm"><span className="text-textMuted">Deposit</span><strong>{formatCurrencyValue(dealSummary.depositValue)}</strong></div> : null}
+            {dealSummary?.bondValue ? <div className="flex justify-between gap-4 py-2.5 text-sm"><span className="text-textMuted">Bond</span><strong>{formatCurrencyValue(dealSummary.bondValue)}</strong></div> : null}
+            {dealSummary?.financeTypeLabel ? <div className="flex justify-between gap-4 py-2.5 text-sm"><span className="text-textMuted">Finance Type</span><strong>{dealSummary.financeTypeLabel}</strong></div> : null}
+            {dealSummary?.ltv !== null && dealSummary?.ltv !== undefined ? <div className="flex justify-between gap-4 py-2.5 text-sm"><span className="text-textMuted">LTV</span><strong>{dealSummary.ltv}%</strong></div> : null}
+          </div>
+          {dealSummary?.funding ? (
+            <div className="mt-auto pt-4">
+              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-textMuted">Purchase Funding</p>
+              <div className="mt-2 flex h-5 overflow-hidden rounded-full bg-slate-100 text-[0.64rem] font-bold">
+                <span className="flex items-center justify-center bg-emerald-200 text-emerald-900" style={{ width: `${dealSummary.funding.depositPercent}%` }}>{dealSummary.funding.depositPercent}%</span>
+                <span className="flex items-center justify-center bg-emerald-700 text-white" style={{ width: `${dealSummary.funding.bondPercent}%` }}>{dealSummary.funding.bondPercent}%</span>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-textMuted"><span>Deposit ({dealSummary.funding.depositPercent}%)</span><span>Bond ({dealSummary.funding.bondPercent}%)</span></div>
+            </div>
+          ) : null}
+          {!dealSummary?.purchasePrice && !dealSummary?.depositValue && !dealSummary?.bondValue ? <p className="mt-5 text-sm text-textMuted">Finance details have not been captured.</p> : null}
+        </article>
+
+        <article className="flex min-h-[330px] flex-col rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_8px_22px_rgba(15,23,42,0.04)] md:col-span-2 xl:col-span-1">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-textStrong">Documents</p>
+            <Button type="button" variant="ghost" size="sm" onClick={onOpenDocuments}>View documents</Button>
+          </div>
+          <div className="mt-2 divide-y divide-borderSoft">
+            {documentRows.map((row) => {
+              const Icon = row.Icon || FileText
+              return (
+                <button key={row.key} type="button" className="flex w-full items-center gap-3 py-3 text-left" onClick={onOpenDocuments}>
+                  <span className={`inline-flex size-9 shrink-0 items-center justify-center rounded-[9px] ${row.iconClass}`}><Icon size={16} /></span>
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center justify-between gap-3"><strong className="truncate text-xs text-textStrong">{row.label}</strong><span className="shrink-0 text-xs font-semibold text-textMuted">{row.total ? row.countLabel : 'No requirements'}</span></span>
+                    <span className="mt-2 block h-1.5 overflow-hidden rounded-full bg-slate-100"><span className={`block h-full rounded-full ${row.barClass}`} style={{ width: `${row.percent}%` }} /></span>
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+          {documentAttentionCount > 0 ? <button type="button" className="mt-auto flex w-full items-center gap-2 rounded-[10px] border border-orange-100 bg-orange-50 px-3 py-2.5 text-left text-xs font-semibold text-orange-700" onClick={onOpenDocuments}><AlertTriangle size={15} /><span className="min-w-0 flex-1">{documentAttentionCount} document{documentAttentionCount === 1 ? '' : 's'} need attention</span><ChevronRight size={14} /></button> : null}
         </article>
       </section>
     </section>
@@ -15633,7 +16257,7 @@ function AttorneyTransactionDetail() {
     if (workspaceRole === 'bond_originator' && ['tasks', 'stakeholders'].includes(workspaceMenu)) return 'overview'
     if (workspaceMenu === 'financials' || workspaceMenu === 'bond') return 'finance'
     if (workspaceMenu === 'cancellation') return 'transfer'
-    if (isTransactionOperatorView && (workspaceMenu === 'parties' || workspaceMenu === 'tasks' || workspaceMenu === 'buyer' || workspaceMenu === 'seller')) {
+    if (isTransactionOperatorView && (workspaceMenu === 'tasks' || workspaceMenu === 'buyer' || workspaceMenu === 'seller')) {
       return 'overview'
     }
     return workspaceMenu
@@ -19142,20 +19766,25 @@ function AttorneyTransactionDetail() {
     [agentOverviewJourneyStages, agentOverviewOutstandingItems, overviewNextActions, transactionContactRows],
   )
   const agentOverviewPartyRows = useMemo(
-    () => buildAgentPartyRows(transactionContactRows, sellerPartyLabels),
-    [sellerPartyLabels, transactionContactRows],
-  )
-  const agentOverviewFinancialRows = useMemo(
     () =>
-      buildAgentFinancialRows({
+      buildAgentPartyRows(transactionContactRows, sellerPartyLabels).map((row) => {
+        if (row.key === 'buyer') {
+          return { ...row, status: onboardingCompleted ? 'Onboarding complete' : row.status === 'Pending' ? 'Onboarding pending' : row.status }
+        }
+        if (row.key === 'seller' && row.status === 'Pending') return { ...row, status: 'Needs attention' }
+        return row
+      }),
+    [onboardingCompleted, sellerPartyLabels, transactionContactRows],
+  )
+  const agentOverviewDealSummary = useMemo(
+    () =>
+      buildAgentDealSummary({
         transaction,
         displayPurchasePriceValue,
         financeTypeLabel,
-        bondAmountFallback,
         hasCapturedFinancials,
       }),
     [
-      bondAmountFallback,
       displayPurchasePriceValue,
       financeTypeLabel,
       hasCapturedFinancials,
@@ -20584,7 +21213,7 @@ function AttorneyTransactionDetail() {
       await addTransactionDiscussionComment({
         transactionId: transaction.id,
         authorName: profile?.fullName || profile?.email || 'Arch9 Conveyancing',
-        authorRole: 'attorney',
+        authorRole: workspaceRole || 'attorney',
         commentText: normalizedDiscussion,
         updateType: discussionType,
         visibilityScope: getDiscussionVisibilityScope(discussionVisibility),
@@ -21096,6 +21725,35 @@ function AttorneyTransactionDetail() {
           </section>
         ) : null}
 
+        {isTransactionOperatorView && activeWorkspaceMenu === 'parties' ? (
+          <ArchlinePartiesWorkspace
+            transaction={transaction}
+            buyerDisplayName={buyerDisplayName}
+            buyerEmail={buyerEmail}
+            buyerPhone={roleplayerForm.buyerPhone || buyer?.phone || transaction?.buyer_phone || ''}
+            sellerDisplayName={sellerDisplayName}
+            sellerEmail={sellerEmail}
+            sellerPhone={roleplayerForm.sellerPhone || transaction?.seller_phone || ''}
+            participants={transactionParticipants}
+            onboardingCompleted={onboardingCompleted}
+            lifecycleProgressState={lifecycleProgressState}
+            financeType={normalizedFinanceType}
+            financeTypeLabel={financeTypeLabel}
+            transactionFinanceWorkflow={transactionFinanceWorkflow}
+            documentHealthSummary={documentHealthSummary}
+            ficaSummary={matterDocumentWorkspaceModel.ficaSummary}
+            requiredRows={documentHealthSummary.requiredDocuments.length ? documentHealthSummary.requiredDocuments : requiredDocumentRows}
+            libraryRows={allDocumentLibraryRows.length ? allDocumentLibraryRows : documentLibraryRows}
+            missingRows={documentReadiness.missingDocuments || []}
+            sellerPartyLabels={sellerPartyLabels}
+            transactionTypeLabel={transactionSaleRouteBadge?.label || matterTypeLabel}
+            buyerPortalBusy={onboardingActionBusy}
+            sellerPortalBusy={sellerPortalBusy || documentRequestSaving}
+            onBuyerPortal={() => handleOverviewActionTarget('buyer_portal')}
+            onSellerPortal={sellerPartyLabels.isDeveloperSale ? handleRequestDeveloperDocuments : () => handleOverviewActionTarget('seller_portal')}
+          />
+        ) : null}
+
         {!isTransactionOperatorView && workspaceRole !== 'attorney' && workspaceRole !== 'bond_originator' && activeWorkspaceMenu === 'today' ? (
           <AttorneyMatterTodayView
             model={attorneyMatterToday}
@@ -21111,22 +21769,25 @@ function AttorneyTransactionDetail() {
               <div className="space-y-4">
                 {activeWorkspaceMenu === 'overview' ? (
                   isTransactionOperatorView ? (
-                    <AgentTransactionOverview
-                      journeyStages={agentOverviewJourneyStages}
-                      journeyReason={agentOverviewJourneyReason}
+                    <AgentTransactionCommandCenter
                       outstandingItems={agentOverviewOutstandingItems}
                       nextAction={agentOverviewNextAction}
+                      activityEntries={overviewConversationEntries}
+                      discussionBody={discussionBody}
+                      onDiscussionBodyChange={setDiscussionBody}
+                      onPublishDiscussion={handleAddDiscussion}
+                      discussionSubmitDisabled={discussionSubmitDisabled}
+                      publishing={saving}
                       documentRows={agentOverviewDocumentRows}
+                      documentAttentionCount={agentOverviewOutstandingItems.filter((item) => item.target === 'documents').length}
                       partyRows={agentOverviewPartyRows}
-                      financialRows={agentOverviewFinancialRows}
-                      buyerProcessHandoff={buyerProcessHandoff}
-                      setupHealth={setupHealth}
+                      dealSummary={agentOverviewDealSummary}
                       onOpenDocuments={() => openWorkspaceMenu('documents')}
                       onOpenFinance={() => openWorkspaceMenu('finance')}
                       onOpenTransfer={() => openWorkspaceMenu('transfer')}
                       onOpenTimeline={() => openWorkspaceMenu('activity')}
                       onOpenStakeholders={() => openWorkspaceMenu('stakeholders')}
-                      onOpenBuyer={() => openWorkspaceMenu('buyer')}
+                      onOpenParties={() => openWorkspaceMenu('parties')}
                     />
                   ) : (
                     <AttorneyMatterCommandCenter
@@ -21424,7 +22085,7 @@ function AttorneyTransactionDetail() {
           </section>
         ) : null}
 
-        {activeWorkspaceMenu === 'parties' ? (
+        {!isTransactionOperatorView && activeWorkspaceMenu === 'parties' ? (
           <section className="space-y-5">
             <section className="grid gap-4 lg:grid-cols-2">
               {partySections.map((section) => (

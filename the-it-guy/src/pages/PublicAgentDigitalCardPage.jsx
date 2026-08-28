@@ -90,7 +90,6 @@ function buildTheme(agency = {}) {
     secondary,
     accent,
     accentText: getContrastTextColour(accent),
-    page: `linear-gradient(145deg, ${hexToRgba(primary, 0.97)} 0%, ${hexToRgba(secondary, 0.92)} 48%, #f7f9fc 48%, #f7f9fc 100%)`,
     hero: `linear-gradient(135deg, ${hexToRgba(primary, 0.96)} 0%, ${hexToRgba(secondary, 0.88)} 100%)`,
   }
 }
@@ -146,7 +145,7 @@ function IntentCta({ icon: Icon, title, subtitle, href, onClick = null, tone = '
     <a
       href={href}
       onClick={onClick || undefined}
-      className={`group flex min-h-[86px] items-center gap-4 rounded-lg px-5 py-4 transition hover:-translate-y-0.5 hover:brightness-105 focus:outline-none focus:ring-4 focus:ring-[var(--card-primary)]/20 ${toneClass} ${stagger ? 'sm:ml-4' : ''}`}
+      className={`group flex min-h-[86px] min-w-0 items-center gap-4 rounded-lg px-5 py-4 transition hover:-translate-y-0.5 hover:brightness-105 focus:outline-none focus:ring-4 focus:ring-[var(--card-primary)]/20 ${toneClass} ${stagger ? 'sm:ml-4 sm:w-[calc(100%-1rem)]' : ''}`}
     >
       <span className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-full border-2 ${iconBorderClass}`}>
         {icon}
@@ -359,17 +358,28 @@ export default function PublicAgentDigitalCardPage() {
 
   return (
     <main
-      className="min-h-screen bg-slate-50 text-slate-950"
+      className="relative min-h-screen overflow-x-hidden text-slate-950"
       style={{
         '--card-primary': theme.primary,
         '--card-secondary': theme.secondary,
         '--card-accent': theme.accent,
         '--card-accent-text': theme.accentText,
-        background: theme.page,
+        backgroundColor: theme.primary,
       }}
     >
-      <section className="mx-auto grid min-h-screen w-full max-w-6xl gap-6 px-4 py-5 sm:px-6 lg:grid-cols-[minmax(320px,420px)_1fr] lg:items-start lg:py-10">
-        <aside className="overflow-hidden rounded-lg border border-white/15 bg-white shadow-[0_30px_80px_rgba(15,23,42,0.22)] lg:sticky lg:top-8">
+      <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+        <div
+          className="absolute -bottom-[36rem] -right-[30rem] h-[78rem] w-[78rem] rounded-full border-[8rem]"
+          style={{ borderColor: hexToRgba(theme.secondary, 0.34) }}
+        />
+        <div
+          className="absolute -bottom-[27rem] -right-[21rem] h-[60rem] w-[60rem] rounded-full border-2"
+          style={{ borderColor: hexToRgba(theme.secondary, 0.58) }}
+        />
+      </div>
+
+      <section className="relative z-10 mx-auto grid min-h-screen w-full max-w-[1600px] min-w-0 gap-5 px-4 py-5 sm:px-6 lg:grid-cols-[minmax(300px,400px)_minmax(0,1fr)] lg:items-stretch lg:px-8 lg:py-8 xl:grid-cols-[minmax(340px,420px)_minmax(0,1fr)] xl:gap-7">
+        <aside className="overflow-hidden rounded-lg border border-white/15 bg-white shadow-[0_30px_80px_rgba(15,23,42,0.22)] lg:sticky lg:top-10 lg:self-start">
           <div className="px-6 pb-24 pt-7 text-white" style={{ background: theme.hero }}>
             <div className="flex items-center justify-center">
               {heroLogoUrl ? (
@@ -427,7 +437,7 @@ export default function PublicAgentDigitalCardPage() {
           </div>
         </aside>
 
-        <section className="min-w-0 rounded-lg border border-white/25 bg-white/[0.08] p-5 shadow-[0_20px_60px_rgba(15,23,42,0.12)] backdrop-blur sm:p-6">
+        <section className="flex min-w-0 flex-col overflow-hidden rounded-lg border border-white/25 bg-white/[0.08] p-5 shadow-[0_20px_60px_rgba(15,23,42,0.12)] backdrop-blur sm:p-6 lg:h-full">
           <div>
             <div>
               <p className="text-xs font-semibold uppercase text-white/60">My Listings</p>
@@ -440,7 +450,7 @@ export default function PublicAgentDigitalCardPage() {
               <LoaderCircle className="mr-2 animate-spin" size={18} /> Loading listings...
             </div>
           ) : listings.length ? (
-            <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            <div className="mt-5 grid min-w-0 gap-4 overflow-y-auto pr-1 sm:grid-cols-2 2xl:grid-cols-3">
               {listings.map((listing) => (
                 <ListingCard key={listing.id || listing.slug} listing={listing} intakeSlug={cardSlug} onTrack={trackCardEvent} />
               ))}
@@ -453,7 +463,7 @@ export default function PublicAgentDigitalCardPage() {
             </div>
           )}
 
-          <footer className="mt-8 flex flex-col gap-3 border-t border-slate-200 pt-5 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+          <footer className="mt-auto flex flex-col gap-3 border-t border-slate-200 pt-5 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
             <span>{email || phone || agency.contactEmail || agency.contactPhone}</span>
             <span className="font-semibold text-slate-700">Powered by ARCH9</span>
           </footer>
