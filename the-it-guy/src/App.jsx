@@ -19,6 +19,7 @@ import { getFeatureFlags, getRuntimeEnvValidation } from './lib/envValidation'
 import { markRouteFirstVisibleContent, markRouteRendered } from './lib/performanceTrace'
 import { isOnboardingRoute } from './lib/onboardingRouting'
 import { buildPartnerInviteAutoAcceptPath, readPendingPartnerInvitePath } from './lib/pendingPartnerInvite'
+import { isRouteModuleReady, markRouteModuleReady } from './lib/routePrefetch'
 import { ONBOARDING_REQUIRED_REASONS } from './constants/onboardingStatuses'
 import { resolveSignupIntentRoute } from './lib/signupIntent'
 import { storePostLoginRedirect } from './lib/resolveMobileAwareRedirect'
@@ -29,12 +30,18 @@ import { createRoutePerformanceMarker } from './services/observability/performan
 import { reportError } from './services/observability/errorTracking'
 import { trackPermissionMetric } from './services/observability/monitoring'
 import {
+  cancelNavigationMeasurement,
+  completeNavigationMeasurement,
+  markNavigationFeedback,
+  startNavigationMeasurement,
+} from './services/observability/navigationPerformanceBudget'
+import {
   hasCommercialAccessMarker,
   isCommercialProfessionalMember,
 } from './lib/commercialAccess'
 import { BUSINESS_WORKSPACES, resolveBusinessWorkspaceRoute } from './lib/businessWorkspaceAccess'
 import { RENTAL_MODULES, resolveRentalModuleAvailability } from './services/rentals/rentalModuleAvailability'
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 
 const INACTIVITY_TIMEOUT_MINUTES = 15
 const WARNING_BEFORE_LOGOUT_MINUTES = 1
@@ -43,6 +50,7 @@ const WARNING_BEFORE_LOGOUT_MS = WARNING_BEFORE_LOGOUT_MINUTES * 60 * 1000
 const WARNING_DELAY_MS = Math.max(INACTIVITY_TIMEOUT_MS - WARNING_BEFORE_LOGOUT_MS, 0)
 const ACTIVITY_TIMER_RESET_THROTTLE_MS = 1000
 const RELEASE_REFRESH_STORAGE_PREFIX = 'arch9:release-refresh'
+const ROUTE_NAVIGATION_SLOW_MS = 2500
 
 const lazyNamed = (loader, exportName) => lazy(() => loader().then((module) => ({ default: module[exportName] })))
 
@@ -386,7 +394,6 @@ const PlatformDiagnosticsPage = lazy(() => import('./pages/PlatformDiagnosticsPa
 const TransactionRoutingRolloutPage = lazy(() => import('./pages/TransactionRoutingRolloutPage'))
 const WorkflowMigrationValidationPage = lazy(() => import('./pages/WorkflowMigrationValidationPage'))
 const PostDashboardSetup = lazy(() => import('./pages/PostDashboardSetup'))
-const Report = lazy(() => import('./pages/Report'))
 const RoleModuleOnboarding = lazy(() => import('./pages/RoleModuleOnboarding'))
 const SellerOnboarding = lazy(() => import('./pages/SellerOnboarding'))
 const SettingsAccountPage = lazy(() => import('./pages/settings/SettingsAccountPage'))
@@ -449,6 +456,35 @@ function PageSkeleton({ label = 'Preparing workspace' }) {
       <p className="mt-5 text-sm font-semibold text-slate-500">{label}</p>
     </section>
   )
+}
+
+function ReportsUnavailable() {
+  return (
+    <section className="min-h-[52vh] w-full rounded-[28px] border border-slate-200/80 bg-white p-6 shadow-[0_18px_45px_rgba(15,23,42,0.08)] sm:p-8">
+      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Module unavailable</p>
+      <h1 className="mt-3 text-2xl font-semibold text-slate-900">Reports are currently disabled</h1>
+      <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600">
+        This workspace is locked while reporting is being reviewed. No report data is loaded on this route.
+      </p>
+    </section>
+  )
+}
+
+function RouteCommitMarker({ routeKey, onCommit }) {
+  useEffect(() => {
+    const frameId = window.requestAnimationFrame(() => onCommit(routeKey))
+    return () => window.cancelAnimationFrame(frameId)
+  }, [onCommit, routeKey])
+
+  return null
+}
+
+function NavigationFeedbackMarker({ measurementId }) {
+  useEffect(() => {
+    if (measurementId) markNavigationFeedback(measurementId)
+  }, [measurementId])
+
+  return null
 }
 
 function ModalSkeleton() {
@@ -527,6 +563,7 @@ function AppLayout({ onLogout, session = null, user }) {
   const lastTimerResetAtRef = useRef(0)
   const resetInactivityTimerRef = useRef(null)
   const securityLogoutInProgressRef = useRef(false)
+  const pendingRouteNavigationRef = useRef(null)
   const [sessionWarningOpen, setSessionWarningOpen] = useState(false)
   const sessionWarningOpenRef = useRef(false)
   const [wizardOpen, setWizardOpen] = useState(false)
@@ -535,6 +572,8 @@ function AppLayout({ onLogout, session = null, user }) {
   const [wizardInitialUnitId, setWizardInitialUnitId] = useState('')
   const [wizardInitialPropertyMode, setWizardInitialPropertyMode] = useState('')
   const [developmentModalOpen, setDevelopmentModalOpen] = useState(false)
+  const [pendingRouteNavigation, setPendingRouteNavigation] = useState(null)
+  const [routeNavigationSlow, setRouteNavigationSlow] = useState(false)
   const isLegalWorkspaceRoute =
     /^\/transactions\/[^/]+\/legal\/[^/]+/.test(location.pathname) ||
     /^\/legal-documents\/[^/]+/.test(location.pathname) ||
@@ -549,6 +588,51 @@ function AppLayout({ onLogout, session = null, user }) {
   const isAttorneyDashboardRoute = role === 'attorney' && location.pathname === '/attorney/dashboard'
   const isDashboardRoute = location.pathname === '/dashboard' || location.pathname === '/'
   const defaultDevelopmentId = workspace.id === 'all' ? '' : workspace.id
+
+  const handleRouteNavigationStart = useCallback(({ target = '', label = '' } = {}) => {
+    const previousMeasurementId = pendingRouteNavigationRef.current?.measurementId
+    if (previousMeasurementId) cancelNavigationMeasurement(previousMeasurementId)
+    const normalizedTarget = String(target || '')
+    const measurementId = startNavigationMeasurement({
+      target: normalizedTarget,
+      label,
+      cached: isRouteModuleReady(normalizedTarget, { role }),
+    })
+    setRouteNavigationSlow(false)
+    const pendingNavigation = {
+      target: normalizedTarget,
+      label: String(label || 'workspace').trim() || 'workspace',
+      startedAt: Date.now(),
+      measurementId,
+    }
+    pendingRouteNavigationRef.current = pendingNavigation
+    setPendingRouteNavigation(pendingNavigation)
+  }, [role])
+
+  const handleRouteCommitted = useCallback((routeKey = '') => {
+    const pendingNavigation = pendingRouteNavigationRef.current
+    markRouteModuleReady(pendingNavigation?.target || routeKey, { role })
+    if (pendingNavigation?.measurementId) {
+      completeNavigationMeasurement(pendingNavigation.measurementId)
+    }
+    pendingRouteNavigationRef.current = null
+    setPendingRouteNavigation(null)
+    setRouteNavigationSlow(false)
+  }, [role])
+
+  useEffect(() => () => {
+    const measurementId = pendingRouteNavigationRef.current?.measurementId
+    if (measurementId) cancelNavigationMeasurement(measurementId)
+  }, [])
+
+  useEffect(() => {
+    if (!pendingRouteNavigation?.startedAt) return undefined
+    const elapsedMs = Date.now() - pendingRouteNavigation.startedAt
+    const timeoutId = window.setTimeout(() => {
+      setRouteNavigationSlow(true)
+    }, Math.max(ROUTE_NAVIGATION_SLOW_MS - elapsedMs, 0))
+    return () => window.clearTimeout(timeoutId)
+  }, [pendingRouteNavigation])
 
   useEffect(() => {
     const documentElement = document.documentElement
@@ -802,7 +886,10 @@ function AppLayout({ onLogout, session = null, user }) {
     <div className="min-h-screen overflow-x-hidden bg-app text-textStrong lg:h-screen lg:overflow-hidden">
       {sessionTimeoutWarning}
       <Suspense fallback={<SidebarSkeleton />}>
-        <Sidebar />
+        <Sidebar
+          onNavigateStart={handleRouteNavigationStart}
+          pendingNavigationTarget={pendingRouteNavigation?.target || ''}
+        />
       </Suspense>
 
       <div className="ui-main-region min-h-screen overflow-hidden lg:h-screen">
@@ -821,11 +908,25 @@ function AppLayout({ onLogout, session = null, user }) {
         <main ref={mainScrollRef} data-app-shell-scroll="main" className={`ui-main-content ui-page-scroll ${hideSharedHeader ? 'pt-6' : ''}`.trim()}>
           <div
             key={routeContentKey}
-            className={`ui-content-container ${isDashboardRoute ? 'ui-content-container-dashboard' : ''} ${isAttorneyDashboardRoute ? 'ui-content-container-edge' : ''}`.trim()}
+            aria-busy={Boolean(pendingRouteNavigation)}
+            className={`ui-content-container relative ${isDashboardRoute ? 'ui-content-container-dashboard' : ''} ${isAttorneyDashboardRoute ? 'ui-content-container-edge' : ''}`.trim()}
           >
-            <Suspense key={routeContentKey} fallback={<PageSkeleton label={isBondRoute ? 'Loading bond workspace' : 'Preparing workspace'} />}>
-              <Outlet key={routeContentKey} />
-            </Suspense>
+            {pendingRouteNavigation ? (
+              <div className="absolute inset-x-0 top-0 z-30 min-h-[52vh] bg-app" role="status" aria-live="polite">
+                <NavigationFeedbackMarker measurementId={pendingRouteNavigation.measurementId} />
+                <PageSkeleton
+                  label={routeNavigationSlow
+                    ? `Still opening ${pendingRouteNavigation.label}…`
+                    : `Opening ${pendingRouteNavigation.label}…`}
+                />
+              </div>
+            ) : null}
+            <div className={pendingRouteNavigation ? 'invisible pointer-events-none' : ''} aria-hidden={pendingRouteNavigation ? 'true' : undefined}>
+              <Suspense key={routeContentKey} fallback={<PageSkeleton label={isBondRoute ? 'Loading bond workspace' : 'Preparing workspace'} />}>
+                <Outlet key={routeContentKey} />
+                <RouteCommitMarker routeKey={routeContentKey} onCommit={handleRouteCommitted} />
+              </Suspense>
+            </div>
           </div>
         </main>
       </div>
@@ -1754,7 +1855,7 @@ function AppRoutes() {
                   <Route path="/mobile/notifications" element={<AppErrorBoundary scope="mobile-notifications" title="Mobile notifications failed to load"><MobileInboxPage /></AppErrorBoundary>} />
                   <Route path="/mobile/inbox" element={<AppErrorBoundary scope="mobile-inbox" title="Mobile inbox failed to load"><MobileInboxPage /></AppErrorBoundary>} />
                   <Route path="/mobile/search" element={<AppErrorBoundary scope="mobile-search" title="Mobile search failed to load"><MobileSearchPage /></AppErrorBoundary>} />
-                  <Route path="/mobile/reports" element={<AppErrorBoundary scope="mobile-reports" title="Mobile reports failed to load"><MobileModulePage moduleKey="reports" /></AppErrorBoundary>} />
+                  <Route path="/mobile/reports" element={<ReportsUnavailable />} />
                   <Route path="/mobile/matters" element={<AppErrorBoundary scope="mobile-matters" title="Mobile matters failed to load"><MobileModulePage moduleKey="matters" /></AppErrorBoundary>} />
                   <Route path="/mobile/applications" element={<AppErrorBoundary scope="mobile-applications" title="Mobile applications failed to load"><MobileModulePage moduleKey="applications" /></AppErrorBoundary>} />
                   <Route path="/mobile/pipeline" element={<AppErrorBoundary scope="mobile-pipeline" title="Mobile pipeline failed to load"><MobileModulePage moduleKey="pipeline" /></AppErrorBoundary>} />
@@ -3237,15 +3338,7 @@ function AppRoutes() {
               />
               <Route
                 path="/reports"
-                element={
-                  <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
-                    <PermissionGate capability="view_reports">
-                      <AppErrorBoundary scope="reports" title="Reports module encountered an error">
-                        <Report />
-                      </AppErrorBoundary>
-                    </PermissionGate>
-                  </RoleRoute>
-                }
+                element={<ReportsUnavailable />}
               />
               <Route path="/report" element={<Navigate to="/reports" replace />} />
               <Route

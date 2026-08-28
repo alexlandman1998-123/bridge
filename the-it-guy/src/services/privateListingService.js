@@ -68,6 +68,7 @@ import {
   resolveExactSellerRequirement,
 } from './sellerDocumentSatisfactionAssuranceService.js'
 import { normalizeSellerPortalActivationTermsConfig } from '../lib/sellerPortalActivationTerms.js'
+import { isSchemaSourceUnavailable, markSchemaSourceUnavailable } from '../lib/schemaAvailabilityRegistry.js'
 
 const LISTING_STATUSES = PRIVATE_LISTING_LIFECYCLE.STATUSES
 
@@ -1309,22 +1310,19 @@ function isStatementTimeoutError(error) {
   )
 }
 
-const MISSING_PRIVATE_LISTING_TABLE_CACHE = new Set()
-
 function getMissingTableCacheKey(tableName = '') {
   return normalizeText(tableName).toLowerCase()
 }
 
 function hasMissingTableCache(tableName = '') {
   const key = getMissingTableCacheKey(tableName)
-  return key ? MISSING_PRIVATE_LISTING_TABLE_CACHE.has(key) : false
+  return key ? isSchemaSourceUnavailable(key) : false
 }
 
 function rememberMissingTable(tableName = '') {
   const key = getMissingTableCacheKey(tableName)
   if (!key) return
-  if (!MISSING_PRIVATE_LISTING_TABLE_CACHE.has(key)) {
-    MISSING_PRIVATE_LISTING_TABLE_CACHE.add(key)
+  if (markSchemaSourceUnavailable(key)) {
     console.warn('[Private Listings] table not present in project schema; skipping further read attempts for this session.', {
       tableName,
     })
@@ -6380,9 +6378,13 @@ async function getPrivateListingById(listingId, { includeRequirementsAndDocument
   const client = requireClient()
   const normalizedId = normalizeUuid(listingId)
   if (!normalizedId) throw new Error('Listing id is required.')
+  if (hasMissingTableCache('private_listings')) return null
   const query = await client.from('private_listings').select('*').eq('id', normalizedId).maybeSingle()
   if (query.error) {
-    if (isMissingTableError(query.error, 'private_listings')) return null
+    if (isMissingTableError(query.error, 'private_listings')) {
+      rememberMissingTable('private_listings')
+      return null
+    }
     throw query.error
   }
   if (!query.data || isDeletedPrivateListingRow(query.data)) return null
@@ -6507,6 +6509,7 @@ export async function getOrganisationPrivateListings(organisationId, options = {
   const client = requireClient()
   const normalizedOrgId = normalizeUuid(organisationId)
   if (!normalizedOrgId) throw new Error('Organisation id is required.')
+  if (hasMissingTableCache('private_listings')) return []
   const query = await applyVisiblePrivateListingFilters(
     client
       .from('private_listings')
@@ -6514,7 +6517,10 @@ export async function getOrganisationPrivateListings(organisationId, options = {
       .eq('organisation_id', normalizedOrgId),
   ).order('updated_at', { ascending: false })
   if (query.error) {
-    if (isMissingTableError(query.error, 'private_listings')) return []
+    if (isMissingTableError(query.error, 'private_listings')) {
+      rememberMissingTable('private_listings')
+      return []
+    }
     throw query.error
   }
   const rows = (Array.isArray(query.data) ? query.data : []).filter((row) => !isDeletedPrivateListingRow(row))
@@ -6547,6 +6553,7 @@ export async function getAgentPrivateListings(
   const normalizedBranchId = normalizeUuid(branchId)
   const normalizedAgentIds = normalizeUuidList([normalizedAgentId, ...assignedAgentIds])
   if (!includeAllOrganisationListings && !normalizedAgentIds.length) return []
+  if (hasMissingTableCache('private_listings')) return []
 
   const buildQuery = ({ includeBranchFilter = true } = {}) => {
     const queryBuilder = applyVisiblePrivateListingFilters(client.from('private_listings').select('*'))
@@ -6574,7 +6581,10 @@ export async function getAgentPrivateListings(
     query = await buildQuery({ includeBranchFilter: false })
   }
   if (query.error) {
-    if (isMissingTableError(query.error, 'private_listings')) return []
+    if (isMissingTableError(query.error, 'private_listings')) {
+      rememberMissingTable('private_listings')
+      return []
+    }
     throw query.error
   }
   const rows = (Array.isArray(query.data) ? query.data : []).filter((row) => !isDeletedPrivateListingRow(row))
@@ -6611,6 +6621,7 @@ export async function getAgentPrivateListingSummaries(
   const normalizedOrgId = normalizeUuid(organisationId)
   const normalizedAgentIds = normalizeUuidList([normalizedAgentId, ...assignedAgentIds])
   if (!includeAllOrganisationListings && !normalizedAgentIds.length) return []
+  if (hasMissingTableCache('private_listings')) return []
 
   const createSummaryQuery = ({ includeIsActive = true } = {}) => {
     const selectColumns = [
@@ -6697,7 +6708,10 @@ export async function getAgentPrivateListingSummaries(
       query = await createSummaryQuery({ includeIsActive })
       continue
     }
-    if (isMissingTableError(query.error, 'private_listings')) return []
+    if (isMissingTableError(query.error, 'private_listings')) {
+      rememberMissingTable('private_listings')
+      return []
+    }
     throw query.error
   }
 

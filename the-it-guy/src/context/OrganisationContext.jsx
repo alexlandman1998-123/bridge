@@ -386,6 +386,17 @@ export function OrganisationProvider({ children }) {
     () => ({
       state: renderState,
       organisation: renderState?.organisation || null,
+      organisationId: normalizeText(
+        renderState?.organisation?.organisationId ||
+          renderState?.organisation?.organisation_id ||
+          renderState?.organisation?.id ||
+          getAuthWorkspaceId(authState),
+      ),
+      workspaceId: normalizeText(
+        renderState?.organisation?.workspaceId ||
+          renderState?.organisation?.workspace_id ||
+          getAuthWorkspaceId(authState),
+      ),
       organisationSettings: renderState?.organisationSettings || null,
       onboarding: renderState?.onboarding || renderState?.organisationSettings?.agencyOnboarding || null,
       membershipRole: renderState?.membershipRole || '',
@@ -396,7 +407,7 @@ export function OrganisationProvider({ children }) {
       refreshOrganisation,
       applyOrganisationState,
     }),
-    [applyOrganisationState, error, hasImmediateSnapshot, loading, refreshOrganisation, renderState],
+    [applyOrganisationState, authState, error, hasImmediateSnapshot, loading, refreshOrganisation, renderState],
   )
 
   return <OrganisationContext.Provider value={value}>{children}</OrganisationContext.Provider>

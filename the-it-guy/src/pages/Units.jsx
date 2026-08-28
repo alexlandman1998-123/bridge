@@ -28,6 +28,7 @@ import { financeTypeMatchesFilter, normalizeFinanceType } from '../core/transact
 import { SUBPROCESS_TYPES } from '../core/transactions/roleConfig'
 import { TRANSACTION_SCOPE_OPTIONS, getTransactionScopeForRow } from '../core/transactions/transactionScope'
 import { resolveTransactionWorkspaceRoute } from '../core/transactions/transactionWorkspaceRouting'
+import { useOrganisation } from '../context/OrganisationContext'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { resolveEffectiveBondAssignment } from '../services/bondAssignmentService'
 import {
@@ -54,7 +55,6 @@ import {
 import { canAccessPrincipalExperience, normalizeOrganisationMembershipRole } from '../lib/organisationAccess'
 import { createPerfTimer, startRouteTransitionTrace } from '../lib/performanceTrace'
 import { PURCHASER_ENTITY_OPTIONS } from '../lib/purchaserPersonas'
-import { fetchOrganisationSettings } from '../lib/settingsApi'
 import { MAIN_PROCESS_STAGES, MAIN_STAGE_LABELS, STAGES, getMainStageFromDetailedStage } from '../lib/stages'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 
@@ -612,6 +612,7 @@ function Units() {
   const navigate = useNavigate()
   const location = useLocation()
   const { workspace, role, profile, currentWorkspace, workspaceType, currentMembership, activeMemberships } = useWorkspace()
+  const { membershipRole: organisationMembershipRole = 'viewer' } = useOrganisation()
 
   const [rows, setRows] = useState([])
   const [developmentOptions, setDevelopmentOptions] = useState([])
@@ -649,7 +650,6 @@ function Units() {
   const [pendingDeleteCloseEditor, setPendingDeleteCloseEditor] = useState(false)
   const [unitsViewMode, setUnitsViewMode] = useState(role === 'client' ? 'cards' : 'list')
   const [attorneyListTab, setAttorneyListTab] = useState('all')
-  const [organisationMembershipRole, setOrganisationMembershipRole] = useState('viewer')
   const latestLoadRequestRef = useRef(0)
   const isAgentRole = role === 'agent'
   const isBondRole = role === 'bond_originator'
@@ -797,34 +797,6 @@ function Units() {
     },
     [location.search, navigate],
   )
-
-  useEffect(() => {
-    let active = true
-
-    async function loadMembershipRole() {
-      if (role !== 'agent') {
-        if (active) {
-          setOrganisationMembershipRole('viewer')
-        }
-        return
-      }
-
-      try {
-        const context = await fetchOrganisationSettings()
-        if (!active) return
-        setOrganisationMembershipRole(context?.membershipRole || 'viewer')
-      } catch {
-        if (active) {
-          setOrganisationMembershipRole('viewer')
-        }
-      }
-    }
-
-    void loadMembershipRole()
-    return () => {
-      active = false
-    }
-  }, [role, profile?.id])
 
   useEffect(() => {
     const params = new URLSearchParams(location.search)

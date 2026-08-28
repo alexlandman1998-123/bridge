@@ -3966,6 +3966,16 @@
     color: #1f3448;
   }
 
+  .ui-sidebar-link-pending {
+    cursor: progress;
+    background: #e9f1f7 !important;
+    color: #17324b !important;
+  }
+
+  .ui-sidebar-link-pending .ui-sidebar-link-spinner {
+    color: #315b74 !important;
+  }
+
   .ui-sidebar .ui-nav-stack {
     display: grid !important;
     gap: 0.34rem !important;

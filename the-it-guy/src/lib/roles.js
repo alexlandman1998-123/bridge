@@ -1,5 +1,5 @@
 import { Building2, CalendarDays, Handshake, KanbanSquare, Users } from 'lucide-react'
-import { SHOW_INTELLIGENCE_BETA } from './featureFlags'
+import { REPORTS_MODULE_ENABLED, SHOW_INTELLIGENCE_BETA } from './featureFlags'
 import { canAccessHQ } from '../auth/hqAccess'
 import {
   APP_ROLE_LABELS,
@@ -22,10 +22,21 @@ export {
 
 const HQ_NAV_ITEM = Object.freeze({ key: 'mission_control', label: '⌘ Mission Control', to: '/command-center', navSection: 'secondary' })
 
+const CORE_REPORT_NAV_KEYS = new Set(['reports', 'rental_reports'])
+
+function withoutDisabledReports(items = []) {
+  if (REPORTS_MODULE_ENABLED) return items
+  return items.filter((item) => {
+    const target = String(item?.to || '').split('?')[0]
+    return !CORE_REPORT_NAV_KEYS.has(item?.key) && target !== '/reports' && target !== '/mobile/reports'
+  })
+}
+
 function withHQNavItem(items = [], context = {}) {
-  if (!canAccessHQ(context)) return items
-  if (items.some((item) => item.key === HQ_NAV_ITEM.key)) return items
-  return [...items, HQ_NAV_ITEM]
+  const visibleItems = withoutDisabledReports(items)
+  if (!canAccessHQ(context)) return visibleItems
+  if (visibleItems.some((item) => item.key === HQ_NAV_ITEM.key)) return visibleItems
+  return [...visibleItems, HQ_NAV_ITEM]
 }
 
 export const APP_ROLE_MODULE_COPY = {
@@ -297,7 +308,7 @@ export function getRoleModuleCopy(role) {
 }
 
 export function getNavItemsForRole(role) {
-  return APP_NAV_BY_ROLE[normalizeAppRole(role)] || APP_NAV_BY_ROLE.developer
+  return withoutDisabledReports(APP_NAV_BY_ROLE[normalizeAppRole(role)] || APP_NAV_BY_ROLE.developer)
 }
 
 const AGENT_LEADERSHIP_KEYWORDS = ['principal', 'headquarters', 'hq', 'admin', 'branch manager', 'office manager']

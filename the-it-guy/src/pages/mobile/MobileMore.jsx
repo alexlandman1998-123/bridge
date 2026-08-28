@@ -3,7 +3,7 @@ import { useNavigate, useOutletContext } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { MobileFieldModePanel } from '../../components/mobile-shell/MobileProductivity'
 import { MobileCard } from '../../components/mobile-shell/MobileShellStates'
-import { FEATURE_FLAGS } from '../../lib/featureFlags'
+import { FEATURE_FLAGS, REPORTS_MODULE_ENABLED } from '../../lib/featureFlags'
 import { getDeviceType } from '../../lib/deviceDetection'
 import { getDesktopLandingRoute } from '../../lib/mobileAccess'
 import { setPreferDesktopOnMobile, userPrefersDesktopOnMobile } from '../../lib/mobilePreferences'
@@ -83,7 +83,7 @@ export default function MobileMore() {
       />
 
       <section className="space-y-3">
-        {MORE_ITEMS.map((item) => {
+        {MORE_ITEMS.filter((item) => REPORTS_MODULE_ENABLED || item.key !== 'insights').map((item) => {
           const Icon = item.icon
           return (
             <button

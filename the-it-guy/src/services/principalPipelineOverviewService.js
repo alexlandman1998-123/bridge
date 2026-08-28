@@ -117,7 +117,7 @@ function isUuidLike(value = '') {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalizeText(value))
 }
 
-async function safeSelect(table, selectVariants, { organisationId = '', organisationColumn = 'organisation_id', order = 'updated_at', ascending = false, limit = 1000 } = {}) {
+async function safeSelect(table, selectVariants, { organisationId = '', organisationColumn = 'organisation_id', order = 'updated_at', ascending = false, limit = 1000, signal = null } = {}) {
   if (!isSupabaseConfigured || !supabase) return []
   const variants = Array.isArray(selectVariants) ? selectVariants : [selectVariants || '*']
   let lastError = null
@@ -126,6 +126,7 @@ async function safeSelect(table, selectVariants, { organisationId = '', organisa
     if (organisationId && organisationColumn) query = query.eq(organisationColumn, organisationId)
     if (order) query = query.order(order, { ascending })
     if (limit) query = query.limit(limit)
+    if (signal) query = query.abortSignal(signal)
     const { data, error } = await query
     if (!error) return data || []
     lastError = error
@@ -135,7 +136,7 @@ async function safeSelect(table, selectVariants, { organisationId = '', organisa
   return []
 }
 
-async function safeSelectByIds(table, selectVariants, ids = [], { idColumn = 'transaction_id', order = 'updated_at', ascending = false, limit = 1000 } = {}) {
+async function safeSelectByIds(table, selectVariants, ids = [], { idColumn = 'transaction_id', order = 'updated_at', ascending = false, limit = 1000, signal = null } = {}) {
   if (!isSupabaseConfigured || !supabase) return []
   const normalizedIds = Array.from(new Set((Array.isArray(ids) ? ids : []).map(normalizeText).filter(Boolean)))
   if (!normalizedIds.length) return []
@@ -145,6 +146,7 @@ async function safeSelectByIds(table, selectVariants, ids = [], { idColumn = 'tr
     let query = supabase.from(table).select(fields).in(idColumn, normalizedIds)
     if (order) query = query.order(order, { ascending })
     if (limit) query = query.limit(limit)
+    if (signal) query = query.abortSignal(signal)
     const { data, error } = await query
     if (!error) return data || []
     lastError = error
@@ -580,6 +582,7 @@ export async function getPrincipalPipelineOverview({
   agentEmail = '',
   dateRange = 'this_month',
   canViewAll = false,
+  signal = null,
 } = {}) {
   const resolvedOrganisationId = normalizeText(organisationId)
   assertResolvedWorkspaceContext({ organisationId: resolvedOrganisationId, appRole: 'agent' }, { service: 'principalPipelineOverviewService.getPrincipalPipelineOverview' })
@@ -600,12 +603,12 @@ export async function getPrincipalPipelineOverview({
     leadActivities,
     packets,
   ] = await Promise.all([
-    remoteOrganisationId ? safeSelect('transactions', transactionFields, { organisationId: remoteOrganisationId, order: 'updated_at', limit: 1600 }) : [],
-    remoteOrganisationId ? safeSelect('leads', 'lead_id, organisation_id, assigned_user_id, assigned_agent_id, created_by, assigned_agent_email, lead_category, lead_source, stage, status, budget, estimated_value, converted_transaction_id, converted_at, property_interest, seller_property_address, created_at, updated_at', { organisationId: remoteOrganisationId, order: 'updated_at', limit: 1600 }) : [],
-    remoteOrganisationId ? safeSelect('organisation_users', 'id, organisation_id, user_id, branch_id, first_name, last_name, email, role, workspace_role, organisation_role, status, last_active_at, created_at, updated_at', { organisationId: remoteOrganisationId, order: 'updated_at', limit: 500 }) : [],
-    remoteOrganisationId ? safeSelect('organisation_branches', 'id, organisation_id, name, location, city, is_head_office, is_active, updated_at, created_at', { organisationId: remoteOrganisationId, order: 'name', ascending: true, limit: 200 }) : [],
-    remoteOrganisationId ? safeSelect('lead_activities', 'activity_id, organisation_id, lead_id, agent_id, activity_type, activity_note, activity_date, outcome, created_at', { organisationId: remoteOrganisationId, order: 'activity_date', limit: 500 }) : [],
-    remoteOrganisationId ? safeSelect('document_packets', 'id, organisation_id, transaction_id, lead_id, packet_type, title, status, sent_at, completed_at, created_at, updated_at', { organisationId: remoteOrganisationId, order: 'updated_at', limit: 1000 }) : [],
+    remoteOrganisationId ? safeSelect('transactions', transactionFields, { organisationId: remoteOrganisationId, order: 'updated_at', limit: 1600, signal }) : [],
+    remoteOrganisationId ? safeSelect('leads', 'lead_id, organisation_id, assigned_user_id, assigned_agent_id, created_by, assigned_agent_email, lead_category, lead_source, stage, status, budget, estimated_value, converted_transaction_id, converted_at, property_interest, seller_property_address, created_at, updated_at', { organisationId: remoteOrganisationId, order: 'updated_at', limit: 1600, signal }) : [],
+    remoteOrganisationId ? safeSelect('organisation_users', 'id, organisation_id, user_id, branch_id, first_name, last_name, email, role, workspace_role, organisation_role, status, last_active_at, created_at, updated_at', { organisationId: remoteOrganisationId, order: 'updated_at', limit: 500, signal }) : [],
+    remoteOrganisationId ? safeSelect('organisation_branches', 'id, organisation_id, name, location, city, is_head_office, is_active, updated_at, created_at', { organisationId: remoteOrganisationId, order: 'name', ascending: true, limit: 200, signal }) : [],
+    remoteOrganisationId ? safeSelect('lead_activities', 'activity_id, organisation_id, lead_id, agent_id, activity_type, activity_note, activity_date, outcome, created_at', { organisationId: remoteOrganisationId, order: 'activity_date', limit: 500, signal }) : [],
+    remoteOrganisationId ? safeSelect('document_packets', 'id, organisation_id, transaction_id, lead_id, packet_type, title, status, sent_at, completed_at, created_at, updated_at', { organisationId: remoteOrganisationId, order: 'updated_at', limit: 1000, signal }) : [],
   ])
 
   const users = (remoteUsers.length ? remoteUsers : []).map(normalizeAgent)
@@ -637,14 +640,14 @@ export async function getPrincipalPipelineOverview({
     .filter((row) => row.source === 'supabase' && isUuidLike(row.id))
     .map((row) => row.id)
   const [documentRequests, documents, subprocesses, appointments, tasks] = await Promise.all([
-    remoteTransactionIds.length ? safeSelectByIds('document_requests', 'id, transaction_id, category, document_type, title, due_date, assigned_to_role, status, completed_at, created_at, updated_at', remoteTransactionIds, { order: 'updated_at', limit: 1600 }) : [],
-    remoteTransactionIds.length ? safeSelectByIds('documents', 'id, transaction_id, name, category, document_type, uploaded_by_email, uploaded_by_role, created_at', remoteTransactionIds, { order: 'created_at', limit: 500 }) : [],
-    remoteTransactionIds.length ? safeSelectByIds('transaction_subprocesses', 'id, transaction_id, process_type, owner_type, status, created_at, updated_at', remoteTransactionIds, { order: 'updated_at', limit: 1600 }) : [],
-    remoteOrganisationId ? safeSelect('appointments', 'appointment_id, organisation_id, transaction_id, lead_id, agent_id, appointment_type, title, date_time, appointment_date, status, completed_at, follow_up_date, created_at, updated_at', { organisationId: remoteOrganisationId, order: 'date_time', limit: 600 }) : [],
-    remoteOrganisationId ? safeSelect('tasks', 'task_id, organisation_id, transaction_id, lead_id, assigned_agent_id, title, due_date, status, priority, created_at, updated_at', { organisationId: remoteOrganisationId, order: 'due_date', limit: 600 }) : [],
+    remoteTransactionIds.length ? safeSelectByIds('document_requests', 'id, transaction_id, category, document_type, title, due_date, assigned_to_role, status, completed_at, created_at, updated_at', remoteTransactionIds, { order: 'updated_at', limit: 1600, signal }) : [],
+    remoteTransactionIds.length ? safeSelectByIds('documents', 'id, transaction_id, name, category, document_type, uploaded_by_email, uploaded_by_role, created_at', remoteTransactionIds, { order: 'created_at', limit: 500, signal }) : [],
+    remoteTransactionIds.length ? safeSelectByIds('transaction_subprocesses', 'id, transaction_id, process_type, owner_type, status, created_at, updated_at', remoteTransactionIds, { order: 'updated_at', limit: 1600, signal }) : [],
+    remoteOrganisationId ? safeSelect('appointments', 'appointment_id, organisation_id, transaction_id, lead_id, agent_id, appointment_type, title, date_time, appointment_date, status, completed_at, follow_up_date, created_at, updated_at', { organisationId: remoteOrganisationId, order: 'date_time', limit: 600, signal }) : [],
+    remoteOrganisationId ? safeSelect('tasks', 'task_id, organisation_id, transaction_id, lead_id, assigned_agent_id, title, due_date, status, priority, created_at, updated_at', { organisationId: remoteOrganisationId, order: 'due_date', limit: 600, signal }) : [],
   ])
   const steps = subprocesses.length
-    ? await safeSelectByIds('transaction_subprocess_steps', 'id, subprocess_id, step_key, step_label, status, completed_at, owner_type, created_at, updated_at', subprocesses.map((row) => row.id).filter(isUuidLike), { idColumn: 'subprocess_id', order: 'updated_at', limit: 2000 })
+    ? await safeSelectByIds('transaction_subprocess_steps', 'id, subprocess_id, step_key, step_label, status, completed_at, owner_type, created_at, updated_at', subprocesses.map((row) => row.id).filter(isUuidLike), { idColumn: 'subprocess_id', order: 'updated_at', limit: 2000, signal })
     : []
 
   const scopedPackets = packets.filter((row) => !row.transaction_id || transactionIds.includes(normalizeText(row.transaction_id)))

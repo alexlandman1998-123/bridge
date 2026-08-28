@@ -36,9 +36,9 @@ import {
   ResidentialDashboardModeToggle,
 } from '../components/residential/ResidentialDashboard'
 import PartnerBusinessDistributionPanel from '../components/dashboard/PartnerBusinessDistributionPanel'
+import { useOrganisation } from '../context/OrganisationContext'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { canAccessPrincipalExperience } from '../lib/organisationAccess'
-import { fetchOrganisationSettings } from '../lib/settingsApi'
 import { getPrincipalDashboardData, PRINCIPAL_DASHBOARD_DATE_PRESETS } from '../services/principalDashboardService'
 import { deriveResidentialDashboardMetrics } from '../services/residentialDashboardService'
 import { resolveWorkspaceRole } from '../services/roleResolutionService'
@@ -2279,6 +2279,7 @@ function PrincipalPremiumCommandCenter({ data, mode = 'sales', dataScope = 'comp
 }
 
 function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransactions: canViewAllTransactionsOverride }) {
+  const { organisationId, loading: organisationLoading } = useOrganisation()
   const {
     profile,
     currentMembership,
@@ -2295,8 +2296,8 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransac
   const [dataScope, setDataScope] = useState('company')
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState(() => String(workspaceId || 'all').trim() || 'all')
   const [overviewMode] = useState('overview')
-  const [resolvedAgencyId, setResolvedAgencyId] = useState(agencyId)
-  const [agencyResolutionComplete, setAgencyResolutionComplete] = useState(Boolean(agencyId))
+  const resolvedAgencyId = String(agencyId || organisationId || '').trim()
+  const agencyResolutionComplete = !organisationLoading
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -2319,30 +2320,6 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransac
   )
   const canViewAllTransactions =
     typeof canViewAllTransactionsOverride === 'boolean' ? canViewAllTransactionsOverride : profileCanViewAllTransactions
-
-  useEffect(() => {
-    let active = true
-    async function resolveAgency() {
-      if (agencyId) {
-        setResolvedAgencyId(agencyId)
-        setAgencyResolutionComplete(true)
-        return
-      }
-      setAgencyResolutionComplete(false)
-      try {
-        const context = await fetchOrganisationSettings()
-        if (active) setResolvedAgencyId(String(context?.organisation?.id || '').trim())
-      } catch {
-        if (active) setResolvedAgencyId('')
-      } finally {
-        if (active) setAgencyResolutionComplete(true)
-      }
-    }
-    void resolveAgency()
-    return () => {
-      active = false
-    }
-  }, [agencyId])
 
   const loadDashboard = useCallback(async ({ forceRefresh = false } = {}) => {
     const dashboardLoadSequence = dashboardLoadSequenceRef.current + 1

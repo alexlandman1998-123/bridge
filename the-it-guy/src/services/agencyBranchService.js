@@ -11,6 +11,7 @@ import { assertResolvedWorkspaceContext } from './workspaceResolutionService'
 import { resolveWorkspaceRole } from './roleResolutionService'
 import { ENTITLEMENT_KEYS } from '../constants/workspaceEntitlements'
 import { assertWorkspaceEntitlementLimit } from './workspaceEntitlementsService'
+import { isSchemaSourceUnavailable, markSchemaSourceUnavailable } from '../lib/schemaAvailabilityRegistry'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -343,6 +344,7 @@ async function listOrganisationTransactions(client, organisationId) {
 }
 
 async function listOrganisationPrivateListings(client, organisationId) {
+  if (isSchemaSourceUnavailable('private_listings')) return []
   const query = await client
     .from('private_listings')
     .select('id, organisation_id, branch_id, assigned_agent_id, title, asking_price, estimated_value, listing_status, created_at, updated_at')
@@ -350,7 +352,10 @@ async function listOrganisationPrivateListings(client, organisationId) {
     .neq('listing_status', 'withdrawn')
 
   if (query.error) {
-    if (isMissingTableError(query.error)) return []
+    if (isMissingTableError(query.error)) {
+      markSchemaSourceUnavailable('private_listings')
+      return []
+    }
     if (isSchemaMismatchError(query.error)) {
       const fallbackQuery = await client
         .from('private_listings')
@@ -358,7 +363,11 @@ async function listOrganisationPrivateListings(client, organisationId) {
         .eq('organisation_id', organisationId)
         .neq('listing_status', 'withdrawn')
       if (fallbackQuery.error) {
-        if (isMissingTableError(fallbackQuery.error) || isSchemaMismatchError(fallbackQuery.error)) return []
+        if (isMissingTableError(fallbackQuery.error)) {
+          markSchemaSourceUnavailable('private_listings')
+          return []
+        }
+        if (isSchemaMismatchError(fallbackQuery.error)) return []
         throw fallbackQuery.error
       }
       return (fallbackQuery.data || []).filter((row) => normalizeLower(row?.listing_status || row?.stage) !== 'withdrawn')

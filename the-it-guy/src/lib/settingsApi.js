@@ -1,5 +1,6 @@
 import { getOrCreateUserProfile, updateUserProfile } from './profileApi'
 import { clearOrganisationRuntimeCache as clearOrganisationBootstrapRuntimeCache } from './organisationBootstrapApi'
+import { resolveOrganisationContextOnce } from './organisationContextRuntime'
 import { resolvePortalDocumentMetadata } from '../core/documents/portalDocumentMetadata'
 import { DEMO_PROFILE_ID } from './demoIds'
 import { normalizeOrganisationMembershipRole } from './organisationAccess'
@@ -286,10 +287,7 @@ const DEFAULT_SUBSCRIPTION = {
   paymentMethodLast4: '',
 }
 
-const ORGANISATION_CONTEXT_CACHE_TTL_MS = 60 * 1000
 const ORGANISATION_USERS_CACHE_TTL_MS = 60 * 1000
-let organisationContextCache = null
-let organisationContextInflight = null
 let organisationUsersCache = null
 let organisationUsersInflight = null
 
@@ -305,8 +303,6 @@ function isFreshCacheEntry(entry) {
 
 export function clearOrganisationRuntimeCache() {
   clearOrganisationBootstrapRuntimeCache()
-  organisationContextCache = null
-  organisationContextInflight = null
   organisationUsersCache = null
   organisationUsersInflight = null
 }
@@ -2430,7 +2426,7 @@ async function syncProfileRoleFromMembership({ userId, profile, membershipRole }
   return profile
 }
 
-async function ensureOrganisationContext(client) {
+async function loadOrganisationContext(client) {
   const user = await getAuthenticatedUser()
   let profile = await getOrCreateUserProfile({ user })
   console.debug('[ONBOARDING] org-context:start', {
@@ -2875,26 +2871,11 @@ async function ensureOrganisationContext(client) {
 }
 
 async function ensureOrganisationContextCached(client) {
-  if (isFreshCacheEntry(organisationContextCache)) {
-    return organisationContextCache.value
-  }
-  if (organisationContextInflight) {
-    return organisationContextInflight
-  }
+  return resolveOrganisationContextOnce(() => loadOrganisationContext(client))
+}
 
-  organisationContextInflight = ensureOrganisationContext(client)
-    .then((context) => {
-      organisationContextCache = {
-        value: context,
-        expiresAt: Date.now() + ORGANISATION_CONTEXT_CACHE_TTL_MS,
-      }
-      return context
-    })
-    .finally(() => {
-      organisationContextInflight = null
-    })
-
-  return organisationContextInflight
+async function ensureOrganisationContext(client) {
+  return ensureOrganisationContextCached(client)
 }
 
 function normalizeDevelopmentSettingsRecord({

@@ -18471,7 +18471,11 @@ export async function fetchDashboardOverview({
   }
 }
 
-export async function fetchReportRows({ developmentId = null, organisationId = null } = {}) {
+async function fetchReportRows({ developmentId = null, organisationId = null } = {}) {
+  void developmentId
+  void organisationId
+  throw new Error('Reports module is disabled for this release.')
+
   const client = requireClient()
   const overview = await fetchDashboardOverview({
     developmentId,

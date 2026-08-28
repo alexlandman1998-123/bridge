@@ -18,8 +18,10 @@ import {
   resolveCurrentWorkspace,
   WorkspaceContextError,
 } from '../services/workspaceResolutionService'
-
-const ORGANISATION_CONTEXT_CACHE_TTL_MS = 60 * 1000
+import {
+  invalidateOrganisationContextRuntime,
+  resolveOrganisationContextOnce,
+} from './organisationContextRuntime'
 
 const DEFAULT_DEVELOPER_PROFILE_SETTINGS = {
   entityType: 'company',
@@ -106,9 +108,6 @@ const DEFAULT_ORGANISATION_SETTINGS = {
   developerProfile: DEFAULT_DEVELOPER_PROFILE_SETTINGS,
 }
 
-let organisationContextCache = null
-let organisationContextInflight = null
-
 function normalizeText(value) {
   return String(value || '').trim()
 }
@@ -128,13 +127,8 @@ function safeJson(value, fallback) {
   }
 }
 
-function isFreshCacheEntry(entry) {
-  return Boolean(entry?.value && Number(entry?.expiresAt || 0) > Date.now())
-}
-
 export function clearOrganisationRuntimeCache() {
-  organisationContextCache = null
-  organisationContextInflight = null
+  invalidateOrganisationContextRuntime()
 }
 
 function requireClient() {
@@ -522,7 +516,7 @@ async function syncProfileRoleFromMembership({ userId, profile, membershipRole }
   return profile
 }
 
-async function ensureOrganisationContext(client) {
+async function loadOrganisationContext(client) {
   const user = await getAuthenticatedUser()
   let profile = await getOrCreateUserProfile({ user })
   console.debug('[ONBOARDING] org-context:start', {
@@ -852,26 +846,7 @@ async function ensureOrganisationContext(client) {
 }
 
 async function ensureOrganisationContextCached(client) {
-  if (isFreshCacheEntry(organisationContextCache)) {
-    return organisationContextCache.value
-  }
-  if (organisationContextInflight) {
-    return organisationContextInflight
-  }
-
-  organisationContextInflight = ensureOrganisationContext(client)
-    .then((context) => {
-      organisationContextCache = {
-        value: context,
-        expiresAt: Date.now() + ORGANISATION_CONTEXT_CACHE_TTL_MS,
-      }
-      return context
-    })
-    .finally(() => {
-      organisationContextInflight = null
-    })
-
-  return organisationContextInflight
+  return resolveOrganisationContextOnce(() => loadOrganisationContext(client))
 }
 
 function resolveBrandingAssetSource({ bucket = '', path = '', fallbackUrl = '' } = {}) {

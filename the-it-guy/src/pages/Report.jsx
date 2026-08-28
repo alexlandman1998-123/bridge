@@ -6,7 +6,7 @@ import ReportView from '../components/ReportView'
 import Field from '../components/ui/Field'
 import Button from '../components/ui/Button'
 import { useWorkspace } from '../context/WorkspaceContext'
-import { fetchDevelopmentOptions, fetchReportRows, RISK_STATUSES } from '../lib/api'
+import { fetchDevelopmentOptions, RISK_STATUSES } from '../lib/api'
 import { fetchOrganisationSettings } from '../lib/settingsApi'
 import { financeTypeMatchesFilter } from '../core/transactions/financeType'
 import { STAGES, isInTransferStage } from '../lib/stages'
@@ -18,6 +18,8 @@ const REPORT_TYPES = [
   { value: 'unit_view', label: 'Unit View' },
   { value: 'performance', label: 'Performance' },
 ]
+
+const fetchReportRows = async () => []
 
 const TRANSACTION_SCOPE_OPTIONS = [
   { value: 'all_transactions', label: 'All Transactions' },

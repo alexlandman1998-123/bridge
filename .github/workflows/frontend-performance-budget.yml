@@ -1,0 +1,30 @@
+name: Frontend performance budget
+
+on:
+  pull_request:
+    paths:
+      - 'the-it-guy/src/**'
+      - 'the-it-guy/scripts/**'
+      - 'the-it-guy/package.json'
+      - 'the-it-guy/package-lock.json'
+      - 'the-it-guy/vite.config.js'
+      - '.github/workflows/frontend-performance-budget.yml'
+  workflow_dispatch:
+
+jobs:
+  bundle-budget:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: the-it-guy
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: the-it-guy/package-lock.json
+      - run: npm ci
+      - run: npm run test:route-prefetch-phase2
+      - run: npm run build
+      - run: npm run verify:bundle-boundary-phase2

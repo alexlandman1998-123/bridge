@@ -220,7 +220,11 @@ function createDeferredAction(loadModule, actionName) {
 let transactionApiActionsPromise = null
 function loadTransactionApiActions() {
   if (!transactionApiActionsPromise) {
-    transactionApiActionsPromise = import('../../lib/api')
+    transactionApiActionsPromise = import('../../lib/api/pipelineApiActions').then((api) => ({
+      addTransactionDiscussionComment: api.addTransactionDiscussionComment,
+      finalizeCanonicalPhysicalSignedOtpWorkflow: api.finalizeCanonicalPhysicalSignedOtpWorkflow,
+      saveTransactionRoleplayerSelections: api.saveTransactionRoleplayerSelections,
+    }))
   }
   return transactionApiActionsPromise
 }

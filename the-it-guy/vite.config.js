@@ -244,6 +244,11 @@ export default defineConfig({
   plugins: [documentTitleFallbackPlugin(), releaseIntegrityPlugin(), react(), missionControlApiPlugin()],
   build: {
     chunkSizeWarningLimit: 1800,
+    minify: 'terser',
+    terserOptions: {
+      compress: { passes: 3 },
+      format: { comments: false },
+    },
     rollupOptions: {
       output: {
         manualChunks(id) {
@@ -263,6 +268,7 @@ export default defineConfig({
           if (normalizedId.includes('/fflate/')) return 'vendor-fflate'
           if (normalizedId.includes('/canvg/')) return 'vendor-canvg'
           if (normalizedId.includes('/pdfjs-dist/')) return 'vendor-pdf'
+          if (normalizedId.includes('/xlsx/')) return 'vendor-xlsx'
           if (normalizedId.includes('/lucide-react/')) return 'vendor-icons'
           if (normalizedId.includes('/motion/')) return 'vendor-motion'
           if (normalizedId.includes('/@radix-ui/') || normalizedId.includes('/cmdk/')) return 'vendor-ui'

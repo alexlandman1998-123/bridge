@@ -15,6 +15,7 @@ import {
   KeyRound,
   LayoutDashboard,
   LineChart,
+  LoaderCircle,
   ChevronDown,
   Network,
   Megaphone,
@@ -39,6 +40,7 @@ import { inferWorkspaceTypeFromAppRole } from '../constants/workspaceTypes'
 import { trackWorkspaceBrandingMetric } from '../services/observability/monitoring'
 import { filterNavigationItems } from '../auth/permissions/navigationPermissions'
 import { BUSINESS_WORKSPACES, resolveBusinessWorkspaceRoute } from '../lib/businessWorkspaceAccess'
+import { prefetchRouteModule, scheduleIdleRoutePrefetch } from '../lib/routePrefetch'
 
 const ICON_BY_KEY = {
   dashboard: LayoutDashboard,
@@ -342,13 +344,32 @@ function BusinessWorkspaceSwitcher({
   )
 }
 
-function Sidebar() {
+function Sidebar({ onNavigateStart = null, pendingNavigationTarget = '' }) {
   const workspaceContext = useWorkspace()
   const { workspace, setWorkspace, allWorkspace, role, baseRole, profile } = workspaceContext
   const { branding, loading: organisationLoading, membershipRole: organisationMembershipRole } = useOrganisation()
   const attorneyModuleState = useAttorneyModuleSettings({ enabled: role === 'attorney' })
   const location = useLocation()
   const navigate = useNavigate()
+  const navigateFromMenu = useCallback((event, target, label) => {
+    const destination = String(target || '').trim()
+    if (!destination) return false
+    if (
+      event?.button > 0 ||
+      event?.metaKey ||
+      event?.altKey ||
+      event?.ctrlKey ||
+      event?.shiftKey
+    ) {
+      return false
+    }
+    event?.preventDefault?.()
+    if (targetMatchesLocation(location, destination)) return false
+    if (pendingNavigationTarget === destination) return false
+    onNavigateStart?.({ target: destination, label })
+    navigate(destination, { flushSync: true })
+    return true
+  }, [location, navigate, onNavigateStart, pendingNavigationTarget])
   const handleBusinessWorkspaceChange = useCallback((nextWorkspaceId) => {
     workspaceContext.setBusinessWorkspace?.(nextWorkspaceId)
     const nextRoute = resolveBusinessWorkspaceRoute({
@@ -359,9 +380,10 @@ function Sidebar() {
     })
     const currentRoute = `${location.pathname}${location.search}${location.hash}`
     if (nextRoute && nextRoute !== currentRoute) {
-      navigate(nextRoute)
+      onNavigateStart?.({ target: nextRoute, label: 'workspace' })
+      navigate(nextRoute, { flushSync: true })
     }
-  }, [location.hash, location.pathname, location.search, navigate, workspaceContext])
+  }, [location.hash, location.pathname, location.search, navigate, onNavigateStart, workspaceContext])
   const inferredRoleWorkspaceType = inferWorkspaceTypeFromAppRole(role)
   const navWorkspaceType =
     inferredRoleWorkspaceType && workspaceContext.currentWorkspace?.type !== inferredRoleWorkspaceType
@@ -480,6 +502,21 @@ function Sidebar() {
       .filter((section) => section.items.length)
   }, [firmNavItems, primaryNavItems, role])
 
+  const prefetchNavigationItem = useCallback((target) => {
+    void prefetchRouteModule(target, { role })
+  }, [role])
+
+  useEffect(() => {
+    const targets = primaryNavItems.flatMap((item) => [
+      item.to,
+      ...(Array.isArray(item.children) ? item.children.map((child) => child.to) : []),
+    ])
+      .filter(Boolean)
+      .filter((target) => !targetMatchesLocation(location, target))
+
+    return scheduleIdleRoutePrefetch(targets, { role }, { maxRoutes: 4 })
+  }, [location.pathname, location.search, primaryNavItems, role])
+
   const renderNavItem = (item, { child = false } = {}) => {
     const Icon = item.icon || ICON_BY_KEY[item.key] || LayoutDashboard
     const hasChildren = item.key !== 'clients' && Array.isArray(item.children) && item.children.length > 0
@@ -494,17 +531,24 @@ function Sidebar() {
         : false
       const matchesTarget = targetMatchesLocation(location, item.to)
       const targetHasQuery = String(item.to || '').includes('?')
+      const navigationPending = pendingNavigationTarget === String(item.to || '')
       return (
         <NavLink
           key={item.label}
           to={item.to}
           end={item.to === '/dashboard'}
+          aria-busy={navigationPending}
+          aria-disabled={navigationPending}
+          onPointerEnter={() => prefetchNavigationItem(item.to)}
+          onFocus={() => prefetchNavigationItem(item.to)}
+          onClick={(event) => navigateFromMenu(event, item.to, item.label)}
           className={({ isActive }) =>
-            `ui-sidebar-link ${child ? 'ui-sidebar-link-child' : ''} ${((targetHasQuery ? matchesTarget : isActive) || matchesCustomActive || matchesTarget) ? 'ui-sidebar-link-active' : ''}`.trim()
+            `ui-sidebar-link ${child ? 'ui-sidebar-link-child' : ''} ${navigationPending ? 'ui-sidebar-link-pending' : ''} ${((targetHasQuery ? matchesTarget : isActive) || matchesCustomActive || matchesTarget) ? 'ui-sidebar-link-active' : ''}`.trim()
           }
         >
           <Icon size={child ? 13 : 15} />
           <span>{item.label}</span>
+          {navigationPending ? <LoaderCircle className="ui-sidebar-link-spinner ml-auto animate-spin" size={14} aria-hidden="true" /> : null}
         </NavLink>
       )
     }
@@ -513,24 +557,31 @@ function Sidebar() {
       <div key={item.label} className="space-y-1">
         <button
           type="button"
-          onClick={() => {
+          onPointerEnter={() => prefetchNavigationItem(item.to)}
+          onFocus={() => prefetchNavigationItem(item.to)}
+          onClick={(event) => {
             const nextExpanded = !menuExpanded
             if (item.to && nextExpanded) {
-              navigate(item.to)
+              navigateFromMenu(event, item.to, item.label)
             }
             setExpandedMenus((previous) => ({
               ...previous,
               [item.key]: nextExpanded,
             }))
           }}
-          className={`ui-sidebar-link w-full justify-between ${menuExpanded ? 'ui-sidebar-link-open' : ''}`.trim()}
+          className={`ui-sidebar-link w-full justify-between ${pendingNavigationTarget === String(item.to || '') ? 'ui-sidebar-link-pending' : ''} ${menuExpanded ? 'ui-sidebar-link-open' : ''}`.trim()}
           aria-expanded={menuExpanded}
+          aria-busy={pendingNavigationTarget === String(item.to || '')}
         >
           <span className="inline-flex items-center gap-2.5">
             <Icon size={15} />
             <span>{item.label}</span>
           </span>
-          <ChevronDown size={14} className={`transition ${menuExpanded ? 'rotate-180' : ''}`} />
+          {pendingNavigationTarget === String(item.to || '') ? (
+            <LoaderCircle className="ui-sidebar-link-spinner animate-spin" size={14} aria-hidden="true" />
+          ) : (
+            <ChevronDown size={14} className={`transition ${menuExpanded ? 'rotate-180' : ''}`} />
+          )}
         </button>
 
         {menuExpanded ? (

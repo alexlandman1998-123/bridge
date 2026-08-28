@@ -37,7 +37,7 @@ const PRIVATE_LISTINGS_STORAGE_KEY = 'itg:agent-private-listings:v1'
 let pipelineApiActionsPromise = null
 function loadPipelineApiActions() {
   if (!pipelineApiActionsPromise) {
-    pipelineApiActionsPromise = import('../lib/api').then((api) => ({
+    pipelineApiActionsPromise = import('../lib/api/pipelineApiActions').then((api) => ({
       createTransactionFromWizard: api.createTransactionFromWizard,
       fetchDevelopmentOptions: api.fetchDevelopmentOptions,
       fetchUnitsData: api.fetchUnitsData,

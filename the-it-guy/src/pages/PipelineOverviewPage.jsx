@@ -17,11 +17,12 @@ import {
   Users,
   Wallet,
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import LoadingSkeleton from '../components/LoadingSkeleton'
+import { useOrganisation } from '../context/OrganisationContext'
 import { useWorkspace } from '../context/WorkspaceContext'
+import { isRouteQueryAbortError, useRouteQueryOwner } from '../hooks/useRouteQueryOwner'
 import { canManageAgentOrganisations } from '../lib/roles'
-import { fetchOrganisationSettings } from '../lib/settingsApi'
 import { getPrincipalPipelineOverview, PIPELINE_STAGE_LABELS } from '../services/principalPipelineOverviewService'
 
 const cardClass = 'rounded-2xl border border-slate-200 bg-white shadow-sm'
@@ -359,45 +360,45 @@ function TransactionList({ rows = [], selectedLabel = '', onClear }) {
 
 export default function PipelineOverviewPage() {
   const { role, baseRole, profile } = useWorkspace()
-  const [context, setContext] = useState({ organisationId: '', membershipRole: 'viewer' })
+  const { organisationId, membershipRole } = useOrganisation()
   const [filters, setFilters] = useState({ branchId: '', agentId: '', dateRange: 'this_month' })
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [selectedStage, setSelectedStage] = useState('')
   const [selectedAlert, setSelectedAlert] = useState('')
+  const loadSequenceRef = useRef(0)
+  const runRouteQuery = useRouteQueryOwner('pipeline-overview')
 
-  const canViewAll = canManageAgentOrganisations({ role, baseRole, profile, membershipRole: context.membershipRole })
+  const canViewAll = canManageAgentOrganisations({ role, baseRole, profile, membershipRole })
   const currentAgentId = profile?.id || profile?.user_id || ''
   const currentAgentEmail = profile?.email || ''
 
   const loadOverview = useCallback(async () => {
+    const loadSequence = loadSequenceRef.current + 1
+    loadSequenceRef.current = loadSequence
+    const isLatestLoad = () => loadSequenceRef.current === loadSequence
     setLoading(true)
     setError('')
     try {
-      const settings = await fetchOrganisationSettings().catch((settingsError) => {
-        console.warn('[PipelineOverview] organisation settings unavailable, falling back to local scope.', settingsError)
-        return null
-      })
-      const organisationId = settings?.organisation?.id || context.organisationId || ''
-      const membershipRole = settings?.membershipRole || context.membershipRole || 'viewer'
-      setContext({ organisationId, membershipRole })
-      const result = await getPrincipalPipelineOverview({
+      const result = await runRouteQuery('overview', (signal) => getPrincipalPipelineOverview({
         organisationId,
         branchId: filters.branchId,
         agentId: canViewAll ? filters.agentId : currentAgentId,
         agentEmail: currentAgentEmail,
         dateRange: filters.dateRange,
         canViewAll,
-      })
-      setData(result)
+        signal,
+      }))
+      if (isLatestLoad()) setData(result)
     } catch (loadError) {
+      if (!isLatestLoad() || isRouteQueryAbortError(loadError)) return
       console.error('[PipelineOverview] load failed', loadError)
       setError(loadError?.message || 'We could not load the pipeline overview.')
     } finally {
-      setLoading(false)
+      if (isLatestLoad()) setLoading(false)
     }
-  }, [canViewAll, context.membershipRole, context.organisationId, currentAgentEmail, currentAgentId, filters.agentId, filters.branchId, filters.dateRange])
+  }, [canViewAll, currentAgentEmail, currentAgentId, filters.agentId, filters.branchId, filters.dateRange, organisationId, runRouteQuery])
 
   useEffect(() => {
     void loadOverview()

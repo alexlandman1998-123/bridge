@@ -7,8 +7,12 @@ function readBoolean(value, fallback = false) {
 }
 
 const INTELLIGENCE_MODULES_LAUNCH_DISABLED = true
+const REPORTS_MODULE_LAUNCH_DISABLED = true
 
 export const SHOW_INTELLIGENCE_BETA = INTELLIGENCE_MODULES_LAUNCH_DISABLED
   ? false
   : readBoolean(import.meta.env.VITE_FEATURE_INTELLIGENCE_BETA, false)
+export const REPORTS_MODULE_ENABLED = REPORTS_MODULE_LAUNCH_DISABLED
+  ? false
+  : readBoolean(import.meta.env.VITE_FEATURE_REPORTS_ENABLED, false)
 export const FEATURE_FLAGS = getFeatureFlags()
