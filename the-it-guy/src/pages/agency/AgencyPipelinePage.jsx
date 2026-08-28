@@ -4006,6 +4006,7 @@ function getSellerLeadDocumentStatusMeta(documentRow = {}) {
   const rawStatus = normalizeText(documentRow?.statusLabel || documentRow?.status || documentRow?.documentStatus || documentRow?.document_status)
   const status = normalizeKey(rawStatus)
   const hasFile = sellerLeadDocumentHasFileEvidence(documentRow)
+  const basePackKey = normalizeSellerBasePackKey(getSellerLeadDocumentCanonicalKey(documentRow))
 
   if (/(rejected|declined|failed|invalid)/.test(status)) {
     return {
@@ -4014,6 +4015,15 @@ function getSellerLeadDocumentStatusMeta(documentRow = {}) {
       pillClass: 'border-[#f2c9c4] bg-[#fff5f4] text-[#9f3028]',
       iconClass: 'bg-[#fff5f4] text-[#9f3028]',
       Icon: AlertTriangle,
+    }
+  }
+  if (basePackKey === SELLER_BASE_PACK_KEYS.SIGNED_MANDATE && hasFile) {
+    return {
+      state: 'complete',
+      label: 'Completed',
+      pillClass: 'border-[#c8e7d4] bg-[#effaf3] text-[#1d7a52]',
+      iconClass: 'bg-[#effaf3] text-[#1d7a52]',
+      Icon: CheckCircle2,
     }
   }
   if (hasFile && /(approved|complete|completed|signed|verified|accepted|done)/.test(status)) {
@@ -6774,6 +6784,12 @@ function normalizeAppointmentListingOption(listing = {}) {
   return {
     id,
     sourceListing: listing,
+    documents: Array.isArray(listing?.documents) ? listing.documents : [],
+    documentRequirements: Array.isArray(listing?.documentRequirements)
+      ? listing.documentRequirements
+      : Array.isArray(listing?.document_requirements)
+        ? listing.document_requirements
+        : [],
     label: buildAppointmentListingLabel(listing),
     status: status || 'active',
     title: normalizeText(listing?.listingTitle || listing?.title || listing?.propertyName || listing?.property_name),
@@ -10359,16 +10375,35 @@ function resolveLeadCategoryView(value = '') {
 }
 
 function isArchivedLead(row = {}) {
+  const rawPayload = parseLeadRawEnquiryPayload(row?.rawEnquiryPayload || row?.raw_enquiry_payload)
   const lifecycleValues = [
     row?.lifecycleState,
     row?.lifecycle_state,
     row?.archiveStatus,
     row?.archive_status,
+    rawPayload.archiveStatus,
+    rawPayload.archive_status,
     row?.status,
     row?.stage,
   ].map((value) => normalizeText(value).toLowerCase())
   return Boolean(row?.archivedAt || row?.archived_at || row?.isArchived || row?.is_archived) ||
-    lifecycleValues.some((value) => ['archived', 'deleted', 'closed_lost'].includes(value))
+    lifecycleValues.some((value) => ['archived', 'deleted', 'closed_lost', 'converted'].includes(value))
+}
+
+function resolveArchivedLeadLabel(row = {}) {
+  const rawPayload = parseLeadRawEnquiryPayload(row?.rawEnquiryPayload || row?.raw_enquiry_payload)
+  const signals = [
+    row?.archiveStatus,
+    row?.archive_status,
+    rawPayload.archiveStatus,
+    rawPayload.archive_status,
+    row?.status,
+    rawPayload.archiveReason,
+    rawPayload.archive_reason,
+  ].map((value) => normalizeText(value)).filter(Boolean)
+  const convertedSignal = signals.find((value) => normalizeKey(value).includes('converted'))
+  if (convertedSignal) return 'Converted'
+  return signals.find((value) => normalizeKey(value) !== 'archived') || 'Archived'
 }
 
 function leadCategoryLabelForView(value = '') {
@@ -11386,6 +11421,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [activeSellerFicaRoleplayerId, setActiveSellerFicaRoleplayerId] = useState('')
   const [activeBuyerFicaRoleplayerId, setActiveBuyerFicaRoleplayerId] = useState('')
   const formalValuationUploadInputRef = useRef(null)
+  const sellerLeadMandateUploadInputRef = useRef(null)
   const [kingstonsSellerPackWizardOpen, setKingstonsSellerPackWizardOpen] = useState(false)
   const [kingstonsSellerPackWizardStep, setKingstonsSellerPackWizardStep] = useState('type')
   const [kingstonsSellerPackWizardDraft, setKingstonsSellerPackWizardDraft] = useState(null)
@@ -13215,11 +13251,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }, [canvassingStore.prospects])
 
   const selectedLeadKey = normalizeLeadIdentityKey(selectedLeadId)
-  const routeLeadSnapshotLead = (() => {
+  const routeLeadSnapshotLead = useMemo(() => {
     if (!isLeadWorkspaceRoute) return null
     const pinnedSnapshot = routeLeadWorkspaceSnapshotRef.current ||
       readLeadWorkspaceSessionSnapshot(organisationId, selectedLeadId) ||
       readLeadWorkspaceSessionSnapshot(organisationId, routeLeadId)
+    if (!pinnedSnapshot && routeLeadHydrationStatus === 'loading') return null
     const snapshotLeads = Array.isArray(pinnedSnapshot?.leads) ? pinnedSnapshot.leads : []
     if (!snapshotLeads.length) return null
     const candidateKeys = [
@@ -13232,7 +13269,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       .map((value) => normalizeLeadIdentityKey(value))
       .filter(Boolean)
     return snapshotLeads.find((lead) => candidateKeys.includes(normalizeLeadIdentityKey(lead?.leadId))) || snapshotLeads[0] || null
-  })()
+  }, [
+    isLeadWorkspaceRoute,
+    organisationId,
+    routeLeadHydrationStatus,
+    routeLeadId,
+    selectedLeadId,
+    selectedLeadKey,
+  ])
   const selectedLeadRecord = selectedLeadId
     ? (allLeadById.get(selectedLeadId) || leadById.get(selectedLeadId) || allLeadById.get(selectedLeadKey) || leadById.get(selectedLeadKey) || null)
     : null
@@ -13966,8 +14010,32 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     recordPipelineTelemetry,
   ])
 
+  const selectedLeadOfferQueryKey = JSON.stringify({
+    organisationId: normalizeText(organisationId),
+    leadId: normalizeText(selectedLead?.leadId),
+    contactId: normalizeText(selectedLead?.contactId || selectedLeadContact?.contactId),
+    appointmentIds: selectedLeadAppointments
+      .map((appointment) => normalizeText(appointment?.appointmentId || appointment?.id))
+      .filter(Boolean),
+    listingIds: [
+      selectedLead?.listingId,
+      selectedLead?.listing_id,
+      ...selectedLeadAppointments.map((appointment) => appointment?.listingId || appointment?.listing_id),
+    ].map(normalizeText).filter(Boolean),
+    buyerEmail: normalizeText(selectedLeadContact?.email || selectedLead?.email),
+    buyerPhone: normalizeText(selectedLeadContact?.phone || selectedLead?.phone),
+    buyerName: [
+      selectedLeadContact?.firstName,
+      selectedLeadContact?.lastName,
+    ].map(normalizeText).filter(Boolean).join(' ') || normalizeText(selectedLead?.buyerName || selectedLead?.name),
+  })
+  const selectedLeadOfferQuery = useMemo(
+    () => JSON.parse(selectedLeadOfferQueryKey),
+    [selectedLeadOfferQueryKey],
+  )
+
   useEffect(() => {
-    const leadId = normalizeText(selectedLead?.leadId)
+    const { leadId } = selectedLeadOfferQuery
     if (!organisationId || !leadId) {
       setSelectedLeadOffers([])
       setSelectedLeadOfferPortalSessions([])
@@ -13978,36 +14046,23 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     let cancelled = false
     setSelectedLeadOffersLoading(true)
     setSelectedLeadOffersError('')
-    const selectedAppointmentIds = selectedLeadAppointments
-      .map((appointment) => normalizeText(appointment?.appointmentId || appointment?.id))
-      .filter(Boolean)
-    const selectedListingIds = [
-      selectedLead?.listingId,
-      selectedLead?.listing_id,
-      ...selectedLeadAppointments.map((appointment) => appointment?.listingId || appointment?.listing_id),
-    ].map(normalizeText).filter(Boolean)
-    const selectedBuyerName = [
-      selectedLeadContact?.firstName,
-      selectedLeadContact?.lastName,
-    ].map(normalizeText).filter(Boolean).join(' ') ||
-      normalizeText(selectedLead?.buyerName || selectedLead?.name)
 
     Promise.all([
       listCanonicalOffersForLead({
-        organisationId,
+        organisationId: selectedLeadOfferQuery.organisationId,
         leadId,
-        contactId: normalizeText(selectedLead?.contactId || selectedLeadContact?.contactId),
-        appointmentIds: selectedAppointmentIds,
-        listingIds: selectedListingIds,
-        buyerEmail: normalizeText(selectedLeadContact?.email || selectedLead?.email),
-        buyerPhone: normalizeText(selectedLeadContact?.phone || selectedLead?.phone),
-        buyerName: selectedBuyerName,
+        contactId: selectedLeadOfferQuery.contactId,
+        appointmentIds: selectedLeadOfferQuery.appointmentIds,
+        listingIds: selectedLeadOfferQuery.listingIds,
+        buyerEmail: selectedLeadOfferQuery.buyerEmail,
+        buyerPhone: selectedLeadOfferQuery.buyerPhone,
+        buyerName: selectedLeadOfferQuery.buyerName,
       }),
       listOfferPortalSessions({
-        organisationId,
+        organisationId: selectedLeadOfferQuery.organisationId,
         leadId,
-        contactId: normalizeText(selectedLead?.contactId || selectedLeadContact?.contactId),
-        appointmentIds: selectedAppointmentIds,
+        contactId: selectedLeadOfferQuery.contactId,
+        appointmentIds: selectedLeadOfferQuery.appointmentIds,
       }).catch(() => []),
     ])
       .then(([offers, sessions]) => {
@@ -14031,20 +14086,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }, [
     organisationId,
-    selectedLead?.buyerName,
-    selectedLead?.contactId,
-    selectedLead?.email,
-    selectedLead?.leadId,
-    selectedLead?.listingId,
-    selectedLead?.listing_id,
-    selectedLead?.name,
-    selectedLead?.phone,
-    selectedLeadAppointments,
-    selectedLeadContact?.contactId,
-    selectedLeadContact?.email,
-    selectedLeadContact?.firstName,
-    selectedLeadContact?.lastName,
-    selectedLeadContact?.phone,
+    selectedLeadOfferQuery,
     selectedLeadOffersRefreshTick,
   ])
 
@@ -14896,6 +14938,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const selectedLeadEffectiveLifecycleStage =
     !selectedLead
       ? ''
+      : selectedLeadIsSeller && isArchivedLead(selectedLead)
+      ? resolveArchivedLeadLabel(selectedLead)
       : selectedLeadIsSeller && selectedLeadMandateSignedEvidence
       ? 'Mandate Signed'
       : resolveLeadLifecyclePresentation(selectedLead).label
@@ -24012,6 +24056,35 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
+  function buildSelectedSellerLeadListingPrefill(listingContext = selectedLeadLinkedListing, capturedAt = '') {
+    return buildSellerLeadListingPrefill({
+      lead: selectedLead,
+      contact: selectedLeadContact,
+      listing: listingContext || {},
+      currentAgent,
+      propertyArea: selectedLeadPropertyArea,
+      propertyType: selectedLeadPropertyType,
+      valuationAddress: selectedLeadValuationAddress,
+      capturedAt: capturedAt || new Date().toISOString(),
+    })
+  }
+
+  async function hydrateSelectedSellerLeadListingForPrefill(listingId, fallbackListing = selectedLeadLinkedListing) {
+    const normalizedListingId = normalizeText(listingId)
+    if (!normalizedListingId || !isSupabaseConfigured || MOCK_DATA_ENABLED) return fallbackListing || {}
+
+    try {
+      const hydratedListing = await getPrivateListing(normalizedListingId, {
+        includeRequirementsAndDocuments: false,
+        includeDistributionData: false,
+      })
+      return hydratedListing || fallbackListing || {}
+    } catch (listingHydrationError) {
+      console.warn('[AgencyPipelinePage] seller lead listing prefill hydration skipped.', listingHydrationError)
+      return fallbackListing || {}
+    }
+  }
+
   async function handleCreateListingFromSellerLead(options = {}) {
     const actionOptions = options && typeof options === 'object' ? options : {}
     if (!selectedLead) return null
@@ -24064,20 +24137,18 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       sellerLeadPropertyAddress,
     )
     const conversionCapturedAt = new Date().toISOString()
-    const sellerLeadListingPrefill = buildSellerLeadListingPrefill({
-      lead: selectedLead,
-      contact: selectedLeadContact,
-      listing: selectedLeadLinkedListing,
-      currentAgent,
-      propertyArea: selectedLeadPropertyArea,
-      propertyType: selectedLeadPropertyType,
-      valuationAddress: selectedLeadValuationAddress,
-      capturedAt: conversionCapturedAt,
-    })
-    const prefilledListingPayload = sellerLeadListingPrefill.listingPayload || {}
-    const prefilledPublicationData = sellerLeadListingPrefill.publicationData || {}
-    const prefilledFormData = sellerLeadListingPrefill.sellerOnboardingFormData || {}
-    const prefilledForm = sellerLeadListingPrefill.form || {}
+    let sellerLeadListingPrefill = buildSelectedSellerLeadListingPrefill(selectedLeadLinkedListing, conversionCapturedAt)
+    let prefilledListingPayload = sellerLeadListingPrefill.listingPayload || {}
+    let prefilledPublicationData = sellerLeadListingPrefill.publicationData || {}
+    let prefilledFormData = sellerLeadListingPrefill.sellerOnboardingFormData || {}
+    let prefilledForm = sellerLeadListingPrefill.form || {}
+    const applySellerLeadListingPrefill = (nextPrefill = {}) => {
+      sellerLeadListingPrefill = nextPrefill || {}
+      prefilledListingPayload = sellerLeadListingPrefill.listingPayload || {}
+      prefilledPublicationData = sellerLeadListingPrefill.publicationData || {}
+      prefilledFormData = sellerLeadListingPrefill.sellerOnboardingFormData || {}
+      prefilledForm = sellerLeadListingPrefill.form || {}
+    }
     const useDbFirstListingPersistence = Boolean(isSupabaseConfigured && !MOCK_DATA_ENABLED)
     let createdListingId = ''
     let sellerPackSyncResult = null
@@ -24124,6 +24195,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         return null
       }
       if (created?.existing) {
+        applySellerLeadListingPrefill(buildSelectedSellerLeadListingPrefill(created?.listing || selectedLeadLinkedListing, conversionCapturedAt))
         await updatePrivateListing(createdListingId, {
           ...prefilledListingPayload,
           listingStatus: listingStatusForCreation,
@@ -24422,31 +24494,197 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const uploadedAt = new Date().toISOString()
       const requirementKey = normalizeText(documentRow?.requirementKey || documentRow?.requirement_key || documentRow?.key) ||
         SELLER_BASE_PACK_KEYS.SIGNED_MANDATE
+      const mandateDocumentLabel = getSellerLeadDocumentCanonicalLabel({
+        ...documentRow,
+        key: requirementKey,
+        requirementKey,
+        requirement_key: requirementKey,
+      })
       const uploadedDocument = await uploadPrivateListingDocument(targetListingId, file, {
         requirementId: normalizeText(documentRow?.requirementId || documentRow?.requirement_id || documentRow?.id),
-        requirementKey,
+        requirementKey: SELLER_BASE_PACK_KEYS.SIGNED_MANDATE,
         documentType: SELLER_BASE_PACK_KEYS.SIGNED_MANDATE,
         documentCategory: normalizeText(documentRow?.category || documentRow?.documentCategory || documentRow?.document_category) || 'legal',
-        documentName: normalizeText(file.name || documentRow?.label || documentRow?.title) || 'Signed Mandate',
+        documentName: mandateDocumentLabel || 'Signed Mandate',
         visibility: 'internal',
-        status: 'uploaded',
+        status: 'completed',
       })
+      const uploadedStoragePath = normalizeText(uploadedDocument?.storage_path || uploadedDocument?.storagePath)
+      const uploadedUrl = normalizeText(uploadedDocument?.url || uploadedDocument?.fileUrl || uploadedDocument?.file_url)
+      const uploadedDocumentId = normalizeText(uploadedDocument?.id)
+      const uploadedRow = {
+        ...documentRow,
+        id: uploadedDocumentId || normalizeText(documentRow?.id) || `${SELLER_BASE_PACK_KEYS.SIGNED_MANDATE}:${uploadedAt}`,
+        documentId: uploadedDocumentId,
+        document_id: uploadedDocumentId,
+        key: SELLER_BASE_PACK_KEYS.SIGNED_MANDATE,
+        requirementKey: SELLER_BASE_PACK_KEYS.SIGNED_MANDATE,
+        requirement_key: SELLER_BASE_PACK_KEYS.SIGNED_MANDATE,
+        requirementId: normalizeText(uploadedDocument?.requirementId || uploadedDocument?.requirement_id || documentRow?.requirementId || documentRow?.requirement_id),
+        requirement_id: normalizeText(uploadedDocument?.requirementId || uploadedDocument?.requirement_id || documentRow?.requirementId || documentRow?.requirement_id),
+        documentType: SELLER_BASE_PACK_KEYS.SIGNED_MANDATE,
+        document_type: SELLER_BASE_PACK_KEYS.SIGNED_MANDATE,
+        category: 'legal',
+        documentCategory: 'legal',
+        document_category: 'legal',
+        label: mandateDocumentLabel || 'Signed Mandate',
+        title: mandateDocumentLabel || 'Signed Mandate',
+        status: 'completed',
+        statusLabel: 'Completed',
+        uploadedAt,
+        uploaded_at: uploadedAt,
+        uploadedBy: normalizeText(currentAgent.email || currentAgent.fullName || currentAgent.id),
+        uploaded_by: normalizeText(currentAgent.email || currentAgent.fullName || currentAgent.id),
+        uploadedFileName: file.name,
+        uploaded_file_name: file.name,
+        fileName: file.name,
+        file_name: file.name,
+        fileSize: Number(file.size || 0) || null,
+        file_size: Number(file.size || 0) || null,
+        fileType: normalizeText(file.type),
+        file_type: normalizeText(file.type),
+        storagePath: uploadedStoragePath,
+        storage_path: uploadedStoragePath,
+        url: uploadedUrl,
+        fileUrl: uploadedUrl,
+        file_url: uploadedUrl,
+        downloadUrl: uploadedUrl,
+        download_url: uploadedUrl,
+      }
+      const leadSource = selectedLead || routeLeadSnapshotLead || {}
+      const rawPayload = parseLeadRawEnquiryPayload(leadSource?.rawEnquiryPayload || leadSource?.raw_enquiry_payload)
+      const existingSellerDocuments = [
+        ...(Array.isArray(rawPayload.sellerDocuments) ? rawPayload.sellerDocuments : []),
+        ...(Array.isArray(rawPayload.seller_documents) ? rawPayload.seller_documents : []),
+        ...(Array.isArray(rawPayload.sellerUploadedDocuments) ? rawPayload.sellerUploadedDocuments : []),
+        ...(Array.isArray(rawPayload.seller_uploaded_documents) ? rawPayload.seller_uploaded_documents : []),
+      ]
+      const nextSellerDocuments = dedupeSellerLeadDocumentRows([...existingSellerDocuments, uploadedRow])
+      const rawEnquiryPayload = {
+        ...rawPayload,
+        archiveStatus: 'converted',
+        archive_status: 'converted',
+        archiveReason: 'Converted after signed mandate upload',
+        archive_reason: 'Converted after signed mandate upload',
+        archivedAt: uploadedAt,
+        archived_at: uploadedAt,
+        convertedAt: uploadedAt,
+        converted_at: uploadedAt,
+        convertedListingId: targetListingId,
+        converted_listing_id: targetListingId,
+        convertedSource: 'signed_mandate_upload',
+        converted_source: 'signed_mandate_upload',
+        isArchived: true,
+        is_archived: true,
+        sellerDocuments: nextSellerDocuments,
+        seller_documents: nextSellerDocuments,
+        sellerUploadedDocuments: nextSellerDocuments,
+        seller_uploaded_documents: nextSellerDocuments,
+      }
+      const patchListingDocumentMirror = (listing = {}) => {
+        const listingId = normalizeText(listing?.id || listing?.listingId || listing?.listing_id || listing?.sourceListing?.id)
+        if (listingId !== targetListingId) return listing
+        const sourceListing = listing?.sourceListing && typeof listing.sourceListing === 'object'
+          ? listing.sourceListing
+          : listing
+        const mirroredDocuments = dedupeSellerLeadDocumentRows([
+          ...(Array.isArray(listing?.documents) ? listing.documents : []),
+          ...(Array.isArray(sourceListing?.documents) ? sourceListing.documents : []),
+          uploadedRow,
+        ])
+        return {
+          ...listing,
+          documents: mirroredDocuments,
+          sourceListing: {
+            ...sourceListing,
+            documents: mirroredDocuments,
+            mandateStatus: 'signed_uploaded',
+            mandate_status: 'signed_uploaded',
+            listingStatus: 'mandate_signed',
+            listing_status: 'mandate_signed',
+          },
+          mandateStatus: 'signed_uploaded',
+          mandate_status: 'signed_uploaded',
+          listingStatus: 'mandate_signed',
+          listing_status: 'mandate_signed',
+        }
+      }
+      setAppointmentListingOptions((previous) => (Array.isArray(previous) ? previous.map(patchListingDocumentMirror) : previous))
+      const routeSnapshot = routeLeadWorkspaceSnapshotRef.current
+      if (routeSnapshot && Array.isArray(routeSnapshot.linkedListings)) {
+        routeLeadWorkspaceSnapshotRef.current = {
+          ...routeSnapshot,
+          linkedListings: routeSnapshot.linkedListings.map(patchListingDocumentMirror),
+        }
+        writeLeadWorkspaceSessionSnapshot(organisationId, selectedLead.leadId, routeLeadWorkspaceSnapshotRef.current)
+      }
+
+      const mandateListingContext = await hydrateSelectedSellerLeadListingForPrefill(targetListingId, selectedLeadLinkedListing)
+      const mandateListingPrefill = buildSelectedSellerLeadListingPrefill(mandateListingContext, uploadedAt)
+      const mandateListingPayload = mandateListingPrefill.listingPayload || {}
+      const mandatePublicationData = mandateListingPrefill.publicationData || {}
+      const mandateFormData = mandateListingPrefill.sellerOnboardingFormData || {}
+      const mandateForm = mandateListingPrefill.form || {}
 
       await updatePrivateListing(targetListingId, {
+        ...mandateListingPayload,
         listingStatus: 'mandate_signed',
         listingVisibility: 'internal',
         isActive: false,
         mandateStatus: 'signed_uploaded',
       }, { includeRequirementsAndDocuments: false }).catch((listingUpdateError) => {
-        console.warn('[AgencyPipelinePage] signed mandate upload listing status sync skipped.', listingUpdateError)
+        console.warn('[AgencyPipelinePage] signed mandate upload listing prefill/status sync skipped.', listingUpdateError)
+        return null
+      })
+      await persistSellerProfileOnboardingFormData({
+        listingId: targetListingId,
+        token: normalizeText(selectedLead?.sellerOnboardingToken || selectedLead?.sellerOnboarding?.token || mandateListingContext?.sellerOnboarding?.token),
+        formData: mandateFormData,
+        status: normalizeText(selectedLead?.sellerOnboardingStatus || mandateListingContext?.sellerOnboardingStatus || mandateListingContext?.sellerOnboarding?.status || '').toLowerCase() === 'completed'
+          ? 'completed'
+          : normalizeText(selectedLead?.sellerOnboardingToken || selectedLead?.sellerOnboarding?.token || mandateListingContext?.sellerOnboarding?.token)
+            ? 'in_progress'
+            : 'not_started',
+        sellerType: mandateListingPrefill.directListingIntake?.seller?.sellerLegalType || mandateForm.sellerType,
+        ownershipStructure: mandateListingPrefill.directListingIntake?.seller?.ownerStructureType || mandateForm.ownershipType,
+      }).catch((prefillPersistenceError) => {
+        console.warn('[AgencyPipelinePage] signed mandate upload seller prefill persistence skipped.', prefillPersistenceError)
+        return null
+      })
+      await syncPrivateListingDistributionData(targetListingId, {
+        publicationData: {
+          ...mandatePublicationData,
+          status: 'Draft',
+        },
+        media: mandateListingPrefill.media || {},
+        externalLinks: [],
+      }).catch((distributionError) => {
+        console.warn('[AgencyPipelinePage] signed mandate upload listing draft distribution prefill skipped.', distributionError)
         return null
       })
 
       const leadPatch = {
-        stage: 'Mandate Signed',
-        status: 'Signed',
+        stage: 'Archived',
+        status: 'Converted',
+        archiveStatus: 'converted',
+        archive_status: 'converted',
+        archiveReason: 'Converted after signed mandate upload',
+        archive_reason: 'Converted after signed mandate upload',
+        archivedAt: uploadedAt,
+        archived_at: uploadedAt,
+        isArchived: true,
+        is_archived: true,
+        convertedAt: uploadedAt,
+        converted_at: uploadedAt,
+        convertedListingId: targetListingId,
+        converted_listing_id: targetListingId,
         mandateStatus: 'signed_uploaded',
         mandateSignedAt: uploadedAt,
+        rawEnquiryPayload,
+        sellerDocuments: nextSellerDocuments,
+        seller_documents: nextSellerDocuments,
+        sellerUploadedDocuments: nextSellerDocuments,
+        seller_uploaded_documents: nextSellerDocuments,
         listingId: targetListingId,
         sellerOnboarding: {
           ...(selectedLead?.sellerOnboarding || {}),
@@ -24463,6 +24701,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         outcome: 'Hard-copy mandate signed',
         activityDate: uploadedAt,
       }, { actor: currentAgent })
+      await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
+        agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+        activityType: 'Seller Lead Converted',
+        activityNote: 'Seller lead archived as converted after signed mandate upload.',
+        outcome: 'Converted',
+        activityDate: uploadedAt,
+      }, { actor: currentAgent }).catch((conversionActivityError) => {
+        console.warn('[AgencyPipelinePage] signed mandate conversion activity sync skipped.', conversionActivityError)
+      })
       await createPrivateListingActivity({
         privateListingId: targetListingId,
         activityType: 'mandate_signed',
@@ -24478,7 +24725,58 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         },
       }).catch(() => null)
 
-      setMessage('Signed hard-copy mandate uploaded. Listing draft is ready to complete and review.')
+      let sellerPortalAutoSent = false
+      let sellerPortalAutoSendError = ''
+      const sellerEmail = normalizeText(selectedLeadContact?.email || selectedLead?.sellerEmail || selectedLead?.email)
+      if (isValidEmail(sellerEmail)) {
+        try {
+          await activateSellerPortalForListing({
+            listingId: targetListingId,
+            activationSource: SELLER_PORTAL_ACTIVATION_SOURCES.existingListing,
+            sellerContactEmail: sellerEmail,
+            sellerContactPhone: normalizeText(selectedLeadContact?.phone || selectedLead?.sellerPhone || selectedLead?.phone),
+            sellerFirstName: normalizeText(selectedLeadContact?.firstName || selectedLead?.sellerName),
+            sellerSurname: normalizeText(selectedLeadContact?.lastName || selectedLead?.sellerSurname),
+            performedBy: normalizeText(currentAgent?.id || profile?.id),
+            agentName: normalizeText(currentAgent?.fullName || currentAgent?.name || currentAgent?.email),
+            agentEmail: normalizeText(currentAgent?.email),
+            agentPhone: normalizeText(currentAgent?.phone || currentAgent?.mobile || currentAgent?.contactNumber || currentAgent?.contact_number),
+            organisationId,
+            agencyName: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
+            propertyAddress: normalizeText(
+              selectedLeadLinkedListing?.propertyAddress ||
+                selectedLeadLinkedListing?.formattedAddress ||
+                mandateListingPayload?.propertyAddress ||
+                mandateListingPayload?.formattedAddress ||
+                selectedLead?.sellerPropertyAddress ||
+                selectedLeadPropertyArea ||
+                selectedLead?.propertyInterest,
+            ),
+          })
+          sellerPortalAutoSent = true
+          await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
+            agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+            activityType: 'Seller Portal Link Sent',
+            activityNote: `Seller Portal link was sent to ${sellerEmail} after signed mandate upload.`,
+            outcome: 'Seller Portal link sent',
+            activityDate: uploadedAt,
+          }, { actor: currentAgent }).catch((activityError) => {
+            console.warn('[Seller Portal] lead activity write skipped after signed mandate portal send.', activityError)
+          })
+        } catch (portalError) {
+          sellerPortalAutoSendError = portalError?.message || 'Seller Portal link could not be sent after signed mandate upload.'
+          console.warn('[Seller Portal] automatic portal send skipped after signed mandate upload.', portalError)
+        }
+      } else {
+        sellerPortalAutoSendError = 'Add a valid seller email before sending the Seller Portal link.'
+      }
+
+      if (sellerPortalAutoSendError) {
+        setError(`Signed mandate uploaded, but Seller Portal link needs attention. ${sellerPortalAutoSendError}`)
+      }
+      setMessage(sellerPortalAutoSent
+        ? `Signed hard-copy mandate uploaded. Seller lead archived as converted, listing draft is ready, and Seller Portal link sent to ${sellerEmail}.`
+        : 'Signed hard-copy mandate uploaded. Seller lead archived as converted, and the listing draft is ready to complete and review.')
       scheduleRecordsReload(organisationId, 850)
     } catch (uploadError) {
       setError(uploadError?.message || 'Unable to upload the signed mandate right now.')
@@ -25047,15 +25345,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       return
     }
     if (id === 'record_hard_copy_mandate' || id === 'upload_signed_mandate') {
-      handleLeadWorkspaceTabSelection('documents')
-      setMessage('Upload the signed hard-copy mandate from the Signed Mandate row.')
-      if (!normalizeText(selectedLeadLinkedListing?.id || selectedLead?.listingId || selectedLead?.listing_id)) {
-        void handleCreateListingFromSellerLead({
-          successMessage: 'Listing draft created. Upload the signed hard-copy mandate from the Signed Mandate row.',
-        }).catch((draftError) => {
-          setError(draftError?.message || 'Unable to create a listing draft for the signed mandate upload.')
-        })
-      }
+      if (sellerLeadMandateUploading) return
+      setError('')
+      sellerLeadMandateUploadInputRef.current?.click?.()
       return
     }
     if (id === 'create_listing') {
@@ -30047,6 +30339,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         disabled={formalValuationUploading}
         onChange={(event) => void handleKingstonsFormalValuationUpload(event)}
       />
+      <input
+        ref={sellerLeadMandateUploadInputRef}
+        type="file"
+        className="sr-only"
+        accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+        aria-label="Upload signed mandate"
+        disabled={sellerLeadMandateUploading}
+        onChange={(event) => void handleSellerLeadSignedMandateUpload(event)}
+      />
 
       {error ? <div className="rounded-[18px] border border-[#f6d4d4] bg-[#fff4f4] px-4 py-3 text-sm text-[#9f1d1d]">{error}</div> : null}
       {message ? <div className="rounded-[18px] border border-[#d4e8dc] bg-[#eef9f1] px-4 py-3 text-sm text-[#1a6e3a]">{message}</div> : null}
@@ -30938,7 +31239,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         const sellerReadiness = isSeller
                           ? buildSellerReadinessSummary({ lead, contact: leadContact || {}, appointments: sellerAppointments, listing: linkedListing, journey: sellerJourney })
                           : null
-                        const sellerStageLabel = sellerJourney?.status?.summary || sellerJourney?.stage?.label || 'Contacted'
+                        const sellerStageLabel = isArchivedLead(lead)
+                          ? resolveArchivedLeadLabel(lead)
+                          : sellerJourney?.status?.summary || sellerJourney?.stage?.label || 'Contacted'
                         const sellerPropertyLabel = sellerJourney?.kpis?.find((item) => item.key === 'property')?.value || normalizeText(lead?.sellerPropertyAddress || lead?.propertyInterest)
                         const opportunity = getLeadOpportunityPreview(lead, linkedTransaction, isSeller, linkedListing)
                         const actionMeta = getLeadNextActionMeta(lead, leadTasks, linkedAppointment, nextStep)
@@ -31165,7 +31468,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         ? splitPropertyLines(opportunity.title, opportunity.subtitle || opportunity.specs)
                         : splitPropertyLines('', '')
                     const stageLabel = isSeller
-                      ? sellerJourney?.status?.summary || sellerJourney?.stage?.label || 'Contacted'
+                      ? isArchivedLead(lead)
+                        ? resolveArchivedLeadLabel(lead)
+                        : sellerJourney?.status?.summary || sellerJourney?.stage?.label || 'Contacted'
                       : lifecyclePresentation.label
                     const stagePresentation = getLeadStagePresentation(stageLabel)
                     const latestActivityTitle = normalizeText(latestActivity?.activityType || latestActivity?.activityNote || linkedAppointment?.title)

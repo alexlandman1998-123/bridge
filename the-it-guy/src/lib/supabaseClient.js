@@ -1,4 +1,9 @@
 import { createClient } from '@supabase/supabase-js'
+import {
+  createQueryBaselineController,
+  installRealtimeChannelBaseline,
+} from '../services/observability/queryBaselineTelemetry.js'
+import { createSupabaseRequestCoordinator } from './supabaseRequestCoordinator.js'
 
 const viteEnv = typeof import.meta !== 'undefined' && import.meta?.env ? import.meta.env : {}
 const processEnv = typeof globalThis !== 'undefined' && globalThis?.process?.env ? globalThis.process.env : {}
@@ -354,7 +359,81 @@ function installAuthReadSingleFlight(client) {
   return client
 }
 
-export const supabase = isSupabaseConfigured ? installAuthReadSingleFlight(createClient(supabaseUrl, supabaseKey)) : null
+function resolveQueryBaselineSampled() {
+  if (typeof window === 'undefined') return false
+  const configuredRate = Number(viteEnv.VITE_QUERY_BASELINE_SAMPLE_RATE)
+  const defaultRate = viteEnv.DEV ? 1 : 0.1
+  const rate = Number.isFinite(configuredRate) ? Math.min(1, Math.max(0, configuredRate)) : defaultRate
+  const storageKey = 'arch9:query-baseline-sampled'
+  try {
+    const stored = window.sessionStorage.getItem(storageKey)
+    if (stored === 'true' || stored === 'false') return stored === 'true'
+    const sampled = Math.random() < rate
+    window.sessionStorage.setItem(storageKey, String(sampled))
+    return sampled
+  } catch {
+    return Math.random() < rate
+  }
+}
+
+let queryBaselineClient = null
+const queryBaselineController = resolveQueryBaselineSampled()
+  ? createQueryBaselineController({
+      onWindow(summary) {
+        try {
+          window.sessionStorage.setItem('arch9:query-baseline-latest', JSON.stringify(summary))
+          window.dispatchEvent(new CustomEvent('arch9:query-baseline-window', { detail: summary }))
+        } catch {
+          // Browser storage and CustomEvent may be unavailable in restricted contexts.
+        }
+        void (async () => {
+          try {
+            if (!queryBaselineClient) return
+            const { data } = await queryBaselineClient.auth.getSession()
+            const userId = data?.session?.user?.id
+            if (!userId) return
+            const { error } = await queryBaselineClient.from('performance_metrics').insert({
+              user_id: userId,
+              metric_name: 'query_baseline.window',
+              route: summary.route,
+              duration_ms: summary.requestP95Ms,
+              value: summary.requestsPerMinute,
+              unit: 'requests/minute',
+              metadata: summary,
+            })
+            if (error && viteEnv.DEV) console.warn('[QUERY_BASELINE] metric write failed.', error.message)
+          } catch (error) {
+            if (viteEnv.DEV) console.warn('[QUERY_BASELINE] metric write failed.', error)
+          }
+        })()
+      },
+    })
+  : null
+
+const instrumentedFetch = queryBaselineController
+  ? (input, init) => queryBaselineController.observeFetch(input, init, globalThis.fetch.bind(globalThis))
+  : globalThis.fetch.bind(globalThis)
+const coordinatedSupabaseFetch = createSupabaseRequestCoordinator(instrumentedFetch)
+
+export const supabase = isSupabaseConfigured
+  ? installAuthReadSingleFlight(
+      installRealtimeChannelBaseline(
+        createClient(supabaseUrl, supabaseKey, { global: { fetch: coordinatedSupabaseFetch } }),
+        queryBaselineController,
+      ),
+    )
+  : null
+
+queryBaselineClient = supabase
+
+if (queryBaselineController && typeof window !== 'undefined') {
+  window.setInterval(() => queryBaselineController.flush(), 5 * 60 * 1000)
+  window.addEventListener('pagehide', () => queryBaselineController.flush())
+}
+
+export function markQueryBaselineRoute(route) {
+  queryBaselineController?.markRoute(route)
+}
 const scopedClientCache = new Map()
 
 function getSupabaseProjectRef() {
@@ -638,6 +717,7 @@ export function createScopedSupabaseClient(headers = {}) {
     },
     global: {
       headers: Object.fromEntries(normalizedEntries),
+      fetch: coordinatedSupabaseFetch,
     },
   })
   scopedClientCache.set(cacheKey, scopedClient)

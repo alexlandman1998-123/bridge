@@ -104,9 +104,53 @@ test('seller lead prefill creates a reviewable draft without portal publication'
 test('agency seller conversion persists aligned prefill and draft distribution data', () => {
   const agencySource = readFileSync(new URL('../src/pages/agency/AgencyPipelinePage.jsx', import.meta.url), 'utf8')
   assert.match(agencySource, /buildSellerLeadListingPrefill\(/)
+  assert.match(agencySource, /function buildSelectedSellerLeadListingPrefill\(/)
   assert.match(agencySource, /persistSellerProfileOnboardingFormData\(\{\s*[\s\S]*formData: prefilledFormData/)
   assert.match(agencySource, /syncPrivateListingDistributionData\(createdListingId,\s*\{\s*[\s\S]*publicationData:\s*\{\s*[\s\S]*status: 'Draft'/)
   assert.match(agencySource, /externalLinks: \[\]/)
+})
+
+test('existing seller lead draft shells are re-prefilled from hydrated onboarding data', () => {
+  const agencySource = readFileSync(new URL('../src/pages/agency/AgencyPipelinePage.jsx', import.meta.url), 'utf8')
+  assert.match(
+    agencySource,
+    /if \(created\?\.existing\) \{\s*applySellerLeadListingPrefill\(buildSelectedSellerLeadListingPrefill\(created\?\.listing/,
+    'Existing draft shells must rebuild prefill from the hydrated listing returned by createPrivateListing.',
+  )
+  assert.match(
+    agencySource,
+    /const mandateListingContext = await hydrateSelectedSellerLeadListingForPrefill\(targetListingId, selectedLeadLinkedListing\)/,
+    'Signed mandate uploads must hydrate the linked listing before writing prefilled listing fields.',
+  )
+  assert.match(
+    agencySource,
+    /await updatePrivateListing\(targetListingId, \{\s*[\s\S]*\.\.\.mandateListingPayload[\s\S]*listingStatus: 'mandate_signed'/,
+    'Signed mandate uploads must write onboarding-derived listing payload fields, not just mandate status.',
+  )
+  assert.match(
+    agencySource,
+    /syncPrivateListingDistributionData\(targetListingId,\s*\{\s*[\s\S]*\.\.\.mandatePublicationData/,
+    'Signed mandate uploads must also sync public draft publication data from seller onboarding.',
+  )
+})
+
+test('private listing mapper falls back to submitted onboarding facts for draft card display', () => {
+  const privateListingSource = readFileSync(new URL('../src/services/privateListingService.js', import.meta.url), 'utf8')
+  assert.match(
+    privateListingSource,
+    /const fallbackListingTitle = pickFirstText\(\s*row\.title,[\s\S]*onboardingFormData\.listingTitle,[\s\S]*addressLine1,[\s\S]*formattedAddress/,
+    'Listing cards should not show Untitled when submitted onboarding has address/title data.',
+  )
+  assert.match(
+    privateListingSource,
+    /const askingPrice = Number\(row\.asking_price \|\| 0\) \|\|[\s\S]*normalizeNumber\(onboardingFormData\.askingPrice\)/,
+    'Listing cards should show onboarding asking price when the listing shell still has zero price.',
+  )
+  assert.match(
+    privateListingSource,
+    /listingTitle: fallbackListingTitle \|\| 'Untitled listing'/,
+    'The final Untitled fallback must only be used after row and onboarding title/address fallbacks fail.',
+  )
 })
 
 console.log('seller lead listing prefill alignment tests passed')

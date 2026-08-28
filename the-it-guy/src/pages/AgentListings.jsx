@@ -1853,7 +1853,7 @@ function normalizeDocumentCategoryKey(value) {
 }
 
 function isUuidLike(value) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(String(value || '').trim())
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || '').trim())
 }
 
 function getRemotePrivateListingId(row = {}) {
@@ -6184,6 +6184,10 @@ function AgentListings({ initialTab = null } = {}) {
     return getRemotePrivateListingId(card?.listingRecord || card)
   }
 
+  function getListingWorkspaceIdForCard(card = {}) {
+    return getRemoteListingIdForCard(card) || normalizeText(card?.id || card?.listingRecord?.id || card?.listingRecord?.listingId)
+  }
+
   async function openPartnerShareModal(card, event) {
     event.stopPropagation()
     const remoteListingId = getRemoteListingIdForCard(card)
@@ -6812,7 +6816,7 @@ function AgentListings({ initialTab = null } = {}) {
   }
 
   function buildListingMandateWorkspacePath(card = {}) {
-    const listingId = normalizeText(card?.id || card?.listingRecord?.id || card?.listingRecord?.listing_id)
+    const listingId = getListingWorkspaceIdForCard(card)
     if (!listingId) return ''
 
     const params = new URLSearchParams()
@@ -7667,7 +7671,7 @@ function AgentListings({ initialTab = null } = {}) {
               {residentialListingCards.map((card) => (
                 <article
                   key={card.id}
-                  onClick={() => navigate(`/agent/listings/${encodeURIComponent(card.id)}`)}
+                  onClick={() => navigate(`/agent/listings/${encodeURIComponent(getListingWorkspaceIdForCard(card))}`)}
                   className="group flex h-full cursor-pointer flex-col overflow-hidden rounded-[8px] border border-[#dce6f2] bg-white shadow-[0_6px_16px_rgba(15,23,42,0.05)] transition hover:-translate-y-0.5 hover:shadow-[0_10px_24px_rgba(15,23,42,0.09)]"
                 >
                   <div className="relative h-[132px] w-full overflow-hidden border-b border-[#e5edf6]">
@@ -7758,7 +7762,7 @@ function AgentListings({ initialTab = null } = {}) {
                       type="button"
                       onClick={(event) => {
                         event.stopPropagation()
-                        navigate(`/agent/listings/${encodeURIComponent(card.id)}`)
+                        navigate(`/agent/listings/${encodeURIComponent(getListingWorkspaceIdForCard(card))}`)
                       }}
                       className="inline-flex min-h-9 w-full min-w-0 items-center justify-center gap-1.5 rounded-full border border-[#c6d8ea] bg-white px-3 text-[0.76rem] font-semibold text-[#1f4f78] transition hover:border-[#9fb7d1] hover:bg-[#f6faff]"
                     >

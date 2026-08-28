@@ -168,6 +168,10 @@ function mapSupabaseContact(row = {}) {
 }
 
 function mapSupabaseLead(row = {}) {
+  const rawEnquiryPayload = row?.raw_enquiry_payload == null ? null : row.raw_enquiry_payload
+  const rawPayloadObject = rawEnquiryPayload && typeof rawEnquiryPayload === 'object' && !Array.isArray(rawEnquiryPayload)
+    ? rawEnquiryPayload
+    : {}
   const lead = {
     leadId: normalizeText(row?.lead_id),
     organisationId: normalizeText(row?.organisation_id),
@@ -216,7 +220,13 @@ function mapSupabaseLead(row = {}) {
     enquiredPropertyAddress: normalizeText(row?.enquired_property_address),
     enquiredPropertyPrice: row?.enquired_property_price == null || row?.enquired_property_price === '' ? null : Number(row?.enquired_property_price) || null,
     sourceReferenceId: normalizeText(row?.source_reference_id),
-    rawEnquiryPayload: row?.raw_enquiry_payload == null ? null : row.raw_enquiry_payload,
+    rawEnquiryPayload,
+    archiveStatus: normalizeText(rawPayloadObject.archiveStatus || rawPayloadObject.archive_status),
+    archiveReason: normalizeText(rawPayloadObject.archiveReason || rawPayloadObject.archive_reason),
+    archivedAt: rawPayloadObject.archivedAt || rawPayloadObject.archived_at || null,
+    isArchived: Boolean(rawPayloadObject.isArchived || rawPayloadObject.is_archived),
+    convertedAt: rawPayloadObject.convertedAt || rawPayloadObject.converted_at || null,
+    convertedListingId: normalizeText(rawPayloadObject.convertedListingId || rawPayloadObject.converted_listing_id),
     createdAt: row?.created_at || new Date().toISOString(),
     updatedAt: row?.updated_at || new Date().toISOString(),
     convertedDealId: normalizeText(row?.converted_transaction_id) || null,

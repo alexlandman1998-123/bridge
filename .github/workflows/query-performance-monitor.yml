@@ -1,0 +1,45 @@
+name: Query performance monitor
+
+on:
+  schedule:
+    - cron: '23 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: query-performance-production
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    defaults:
+      run:
+        working-directory: the-it-guy
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_PRODUCTION_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_PRODUCTION_SERVICE_ROLE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: the-it-guy/package-lock.json
+      - run: npm ci
+      - name: Capture and govern query performance
+        run: npm run monitor:query-performance-phase6 -- --strict --period-hours=24 --output=output/query-performance/phase6-latest.json --summary=output/query-performance/phase6-summary.md
+      - name: Upload query performance governance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: query-performance-governance-${{ github.run_id }}
+          path: |
+            the-it-guy/output/query-performance/phase6-latest.json
+            the-it-guy/output/query-performance/phase6-summary.md
+          if-no-files-found: error
+          retention-days: 90

@@ -3037,6 +3037,49 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
   const sectionalTitleNumber = pickFirstText(canonicalPropertyFacts.sectionalTitleNumber, canonicalPropertyFacts.sectional_title_number, canonicalPropertyFacts.sectionalTitleScheme, canonicalSellerFacts.sectionalTitleNumber, canonicalSellerFacts.sectional_title_number)
   const streetNumber = pickFirstText(row.street_number, onboardingFormData.streetNumber, onboardingFormData.street_number, canonicalPropertyFacts.streetNumber, canonicalPropertyFacts.street_number)
   const streetName = pickFirstText(row.street_name, onboardingFormData.streetName, onboardingFormData.street_name, onboardingFormData.route, canonicalPropertyFacts.streetName, canonicalPropertyFacts.street_name, canonicalPropertyFacts.route)
+  const addressLine1 = pickFirstText(
+    row.address_line_1,
+    onboardingFormData.addressLine1,
+    onboardingFormData.address_line_1,
+    onboardingFormData.streetAddress,
+    onboardingFormData.street_address,
+    onboardingFormData.propertyAddress,
+    onboardingFormData.property_address,
+    canonicalPropertyFacts.addressLine1,
+    canonicalPropertyFacts.address_line_1,
+    canonicalPropertyFacts.streetAddress,
+    canonicalPropertyFacts.street_address,
+    canonicalPropertyFacts.address,
+  )
+  const formattedAddress = pickFirstText(
+    row.formatted_address,
+    onboardingFormData.formattedAddress,
+    onboardingFormData.formatted_address,
+    onboardingFormData.propertyAddress,
+    onboardingFormData.property_address,
+    canonicalPropertyFacts.formattedAddress,
+    canonicalPropertyFacts.formatted_address,
+    canonicalPropertyFacts.address,
+    addressLine1,
+  )
+  const suburb = pickFirstText(row.suburb, onboardingFormData.suburb, onboardingFormData.property_suburb, canonicalPropertyFacts.suburb)
+  const city = pickFirstText(row.city, onboardingFormData.city, onboardingFormData.property_city, canonicalPropertyFacts.city)
+  const province = pickFirstText(row.province, onboardingFormData.province, onboardingFormData.property_province, canonicalPropertyFacts.province)
+  const postalCode = pickFirstText(row.postal_code, onboardingFormData.postalCode, onboardingFormData.postal_code, canonicalPropertyFacts.postalCode, canonicalPropertyFacts.postal_code)
+  const fallbackListingTitle = pickFirstText(
+    row.title,
+    onboardingFormData.listingTitle,
+    onboardingFormData.listing_title,
+    addressLine1,
+    formattedAddress,
+  )
+  const askingPrice = Number(row.asking_price || 0) ||
+    normalizeNumber(onboardingFormData.askingPrice) ||
+    normalizeNumber(onboardingFormData.listingPrice) ||
+    normalizeNumber(onboardingFormData.estimatedAskingPrice) ||
+    Number(row.estimated_value || 0) ||
+    0
+  const estimatedValue = Number(row.estimated_value || 0) || askingPrice
 
   const mapped = {
     id: row.id,
@@ -3063,23 +3106,23 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     propertyStructureType: normalizePropertyStructureType(row.property_structure_type || row.ownership_structure || row.property_type, { fallback: 'other' }),
     propertyType: row.property_type || '',
     listingCategory: row.listing_category || 'private_sale',
-    title: row.title || '',
+    title: fallbackListingTitle,
     description: listingDescription,
-    askingPrice: Number(row.asking_price || 0) || 0,
-    estimatedValue: Number(row.estimated_value || 0) || 0,
-    addressLine1: row.address_line_1 || '',
-    formattedAddress: row.formatted_address || '',
+    askingPrice,
+    estimatedValue,
+    addressLine1,
+    formattedAddress,
     streetNumber,
     street_number: streetNumber,
     streetName,
     street_name: streetName,
-    streetAddress: row.street_address || row.address_line_1 || '',
+    streetAddress: pickFirstText(row.street_address, addressLine1),
     addressLine2: row.address_line_2 || '',
-    suburb: row.suburb || '',
-    city: row.city || '',
-    province: row.province || '',
+    suburb,
+    city,
+    province,
     country: row.country || 'South Africa',
-    postalCode: row.postal_code || '',
+    postalCode,
     latitude: row.latitude === null || row.latitude === undefined ? null : Number(row.latitude),
     longitude: row.longitude === null || row.longitude === undefined ? null : Number(row.longitude),
     googlePlaceId: row.google_place_id || '',
@@ -3150,8 +3193,8 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     listingPreviewDescription,
     internalListingNotes: row.internal_listing_notes || onboardingNotes,
     // Compatibility shape used by existing listing UI while migration is underway.
-    listingTitle: row.title || row.address_line_1 || 'Untitled listing',
-    propertyAddress: [row.address_line_1, row.address_line_2].filter(Boolean).join(', '),
+    listingTitle: fallbackListingTitle || 'Untitled listing',
+    propertyAddress: [addressLine1, row.address_line_2].filter(Boolean).join(', ') || formattedAddress,
     status: listingStatus,
     listingStatusLegacy: listingStatus,
     lifecycleStatus: listingStatus,
@@ -3180,20 +3223,20 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
       listingExternalLinks: externalListingLinks,
     },
     propertyDetails: {
-      headline: row.title || '',
+      headline: fallbackListingTitle,
       propertyType: row.property_type || '',
       listingStatus,
-      addressLine1: row.address_line_1 || '',
-      formattedAddress: row.formatted_address || '',
+      addressLine1,
+      formattedAddress,
       streetNumber,
       streetName,
-      streetAddress: row.street_address || row.address_line_1 || '',
-      postalCode: row.postal_code || '',
+      streetAddress: pickFirstText(row.street_address, addressLine1),
+      postalCode,
       country: row.country || 'South Africa',
       googlePlaceId: row.google_place_id || '',
-      suburb: row.suburb || '',
-      city: row.city || '',
-      province: row.province || '',
+      suburb,
+      city,
+      province,
       bedrooms: normalizeNumber(onboardingFormData.bedrooms) ?? 0,
       bathrooms: normalizeNumber(onboardingFormData.bathrooms) ?? 0,
       garages: normalizeNumber(onboardingFormData.garages) ?? 0,
@@ -3201,7 +3244,7 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
       openParking: normalizeNumber(onboardingFormData.parkingOpen) ?? 0,
       erfSize: normalizeNumber(onboardingFormData.erfSize) ?? 0,
       floorSize: normalizeNumber(onboardingFormData.floorSize) ?? 0,
-      price: normalizeNumber(onboardingFormData.askingPrice) ?? (Number(row.asking_price || 0) || 0),
+      price: askingPrice,
       levies: normalizeNumber(onboardingFormData.levies) ?? 0,
       leviesNotApplicable: Boolean(onboardingFormData.leviesNotApplicable),
       ratesTaxes: normalizeNumber(onboardingFormData.ratesTaxes) ?? 0,

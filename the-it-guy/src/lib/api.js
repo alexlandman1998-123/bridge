@@ -5081,27 +5081,10 @@ export async function fetchDeveloperAccessOptions() {
   const client = requireClient()
   const options = []
 
-  let profilesQuery = await client
+  const profilesQuery = await client
     .from('profiles')
-    .select('id, email, full_name, name, company, role')
+    .select('id, email, full_name, first_name, last_name, company_name, role')
     .order('full_name', { ascending: true })
-
-  if (
-    profilesQuery.error &&
-    (isMissingColumnError(profilesQuery.error, 'full_name') ||
-      isMissingColumnError(profilesQuery.error, 'name') ||
-      isMissingColumnError(profilesQuery.error, 'company') ||
-      isMissingColumnError(profilesQuery.error, 'role'))
-  ) {
-    profilesQuery = await client.from('profiles').select('id, email, name, role').order('name', { ascending: true })
-  }
-
-  if (
-    profilesQuery.error &&
-    (isMissingColumnError(profilesQuery.error, 'name') || isMissingColumnError(profilesQuery.error, 'role'))
-  ) {
-    profilesQuery = await client.from('profiles').select('id, email')
-  }
 
   if (!profilesQuery.error) {
     for (const row of profilesQuery.data || []) {
@@ -5111,8 +5094,8 @@ export async function fetchDeveloperAccessOptions() {
       }
 
       const email = normalizeEmailAddress(row?.email)
-      const name = String(row?.full_name || row?.name || email || 'Developer').trim()
-      const company = String(row?.company || '').trim()
+      const name = String(row?.full_name || [row?.first_name, row?.last_name].filter(Boolean).join(' ') || email || 'Developer').trim()
+      const company = String(row?.company_name || '').trim()
       options.push({
         id: String(row?.id || email || '').trim(),
         userId: row?.id || null,
@@ -14402,6 +14385,19 @@ async function runOverdueMissingDocsReminderAutomation(client, { userId, role } 
   }
 }
 
+function claimOverdueReminderAutomationRun(userId) {
+  if (typeof window === 'undefined' || !window.sessionStorage) return true
+  const day = new Date().toISOString().slice(0, 10)
+  const key = `arch9:overdue-reminder-automation:${userId}:${day}`
+  try {
+    if (window.sessionStorage.getItem(key) === 'claimed') return false
+    window.sessionStorage.setItem(key, 'claimed')
+    return true
+  } catch {
+    return true
+  }
+}
+
 async function updateDocumentRequestFromUploadIfPossible(
   client,
   {
@@ -16644,17 +16640,19 @@ export async function getFinalReportData(transactionId) {
   }
 }
 
-export async function fetchMyNotifications({ limit = 25, unreadOnly = false } = {}) {
+export async function fetchMyNotifications({ limit = 25, unreadOnly = false, runReminderAutomation = false } = {}) {
   const client = requireClient()
   const activeProfile = await resolveActiveProfileContext(client)
   if (!activeProfile.userId) {
     return { notifications: [], unreadCount: 0 }
   }
 
-  await runOverdueMissingDocsReminderAutomation(client, {
-    userId: activeProfile.userId,
-    role: activeProfile.role,
-  })
+  if (runReminderAutomation && claimOverdueReminderAutomationRun(activeProfile.userId)) {
+    await runOverdueMissingDocsReminderAutomation(client, {
+      userId: activeProfile.userId,
+      role: activeProfile.role,
+    })
+  }
 
   let query = client
     .from('transaction_notifications')

@@ -1,5 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import {
+  DEFAULT_REALTIME_RECONCILIATION_MS,
+  resolveTransactionPollReason,
+} from './transactionLiveRefreshPolicy.js'
 
 function createChannelName(transactionId) {
   const suffix = Math.random().toString(36).slice(2, 9)
@@ -12,6 +16,7 @@ export default function useTransactionLiveRefresh({
   enabled = true,
   includeNotifications = true,
   pollingIntervalMs = 30_000,
+  reconciliationIntervalMs = DEFAULT_REALTIME_RECONCILIATION_MS,
   debounceMs = 350,
 } = {}) {
   const refreshRef = useRef(onRefresh)
@@ -29,7 +34,14 @@ export default function useTransactionLiveRefresh({
       return undefined
     }
 
-    const state = { active: true, inFlight: false, pending: false, timer: null }
+    const state = {
+      active: true,
+      inFlight: false,
+      pending: false,
+      timer: null,
+      realtimeState: 'connecting',
+      lastReconciliationAt: Date.now(),
+    }
     setConnectionState('connecting')
     const runRefresh = async (reason, payload = null) => {
       if (!state.active) return
@@ -40,7 +52,10 @@ export default function useTransactionLiveRefresh({
       state.inFlight = true
       try {
         await refreshRef.current?.({ reason, payload })
-        if (state.active) setLastRefreshAt(new Date().toISOString())
+        if (state.active) {
+          state.lastReconciliationAt = Date.now()
+          setLastRefreshAt(new Date().toISOString())
+        }
       } catch (error) {
         console.warn('[transaction-live-refresh] Background refresh failed.', {
           transactionId: normalizedTransactionId,
@@ -91,11 +106,26 @@ export default function useTransactionLiveRefresh({
 
     channel.subscribe((status) => {
       if (!state.active) return
-      setConnectionState(status === 'SUBSCRIBED' ? 'live' : status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' ? 'polling' : 'connecting')
+      state.realtimeState = status === 'SUBSCRIBED'
+        ? 'live'
+        : ['CHANNEL_ERROR', 'TIMED_OUT', 'CLOSED'].includes(status)
+          ? 'polling'
+          : 'connecting'
+      setConnectionState(state.realtimeState)
     })
 
     const interval = window.setInterval(() => {
-      if (document.visibilityState === 'visible') scheduleRefresh('poll_interval')
+      const now = Date.now()
+      const reason = resolveTransactionPollReason({
+        visibilityState: document.visibilityState,
+        realtimeState: state.realtimeState,
+        now,
+        lastReconciliationAt: state.lastReconciliationAt,
+        reconciliationIntervalMs,
+      })
+      if (!reason) return
+      if (reason === 'poll_reconciliation') state.lastReconciliationAt = now
+      scheduleRefresh(reason)
     }, Math.max(10_000, Number(pollingIntervalMs) || 30_000))
     const handleFocus = () => scheduleRefresh('window_focus')
     const handleVisibility = () => {
@@ -113,7 +143,7 @@ export default function useTransactionLiveRefresh({
       document.removeEventListener('visibilitychange', handleVisibility)
       void supabase.removeChannel(channel)
     }
-  }, [debounceMs, enabled, includeNotifications, pollingIntervalMs, transactionId])
+  }, [debounceMs, enabled, includeNotifications, pollingIntervalMs, reconciliationIntervalMs, transactionId])
 
   return { connectionState, lastRefreshAt }
 }

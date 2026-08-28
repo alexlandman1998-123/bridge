@@ -13,6 +13,7 @@ import { APP_ROLE_LABELS } from './lib/appRoleMetadata'
 import { FEATURE_FLAGS, SHOW_INTELLIGENCE_BETA } from './lib/featureFlags'
 import {
   isSupabaseConfigured,
+  markQueryBaselineRoute,
 } from './lib/supabaseClient'
 import { getFeatureFlags, getRuntimeEnvValidation } from './lib/envValidation'
 import { markRouteFirstVisibleContent, markRouteRendered } from './lib/performanceTrace'
@@ -1609,6 +1610,7 @@ function RouteObservability() {
   const { authState } = useAuthSession()
 
   useEffect(() => {
+    markQueryBaselineRoute(location.pathname)
     const marker = createRoutePerformanceMarker(location.pathname)
     const frameId = window.requestAnimationFrame(() => {
       marker.finish({

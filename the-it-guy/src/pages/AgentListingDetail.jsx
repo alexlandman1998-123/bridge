@@ -116,7 +116,13 @@ import {
   writeAgentPrivateListings,
 } from '../lib/agentListingStorage'
 import { buildDirectListingOperationalSummary } from '../lib/directListingOperationalSummary'
-import { findPrivateListingById, getPrivateListingRecordId, sanitizePrivateListingRows } from '../lib/privateListingRecordIntegrity'
+import {
+  findPrivateListingById,
+  getPrivateListingIdentityCandidates,
+  getPrivateListingRecordId,
+  getPrivateListingRemoteRecordId,
+  sanitizePrivateListingRows,
+} from '../lib/privateListingRecordIntegrity'
 import {
   completeViewingRequest,
   formatViewingStatusLabel,
@@ -368,7 +374,7 @@ function getSellerWorkspaceTabFromSearch(search = '') {
 }
 
 function isUuidLike(value) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(String(value || '').trim())
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || '').trim())
 }
 
 function normalizeKey(value) {
@@ -575,9 +581,11 @@ function mergeListingRecord(existing = {}, incoming = {}) {
 
 function upsertListingRecord(rows = [], incoming = null) {
   if (!incoming?.id) return rows
+  const incomingIdentityKeys = new Set(getPrivateListingIdentityCandidates(incoming))
   let found = false
   const nextRows = sanitizePrivateListingRows(rows).map((row) => {
-    if (String(row?.id || '') !== String(incoming.id)) return row
+    const rowMatchesIncoming = getPrivateListingIdentityCandidates(row).some((key) => incomingIdentityKeys.has(key))
+    if (!rowMatchesIncoming) return row
     found = true
     return mergeListingRecord(row, incoming)
   })
@@ -3473,15 +3481,23 @@ function AgentListingDetail() {
       setPipelineLeads(readPipelineLeads())
     }
 
+    const runtimeListing = findPrivateListingById(runtimeListings, listingId)
+    const remoteListingId = getPrivateListingRemoteRecordId(runtimeListing)
+    const dbLookupListingId = isUuidLike(listingId) ? listingId : remoteListingId
+
     let nextListings = runtimeListings
-    if (isSupabaseConfigured && listingId && !listingId.startsWith('development-')) {
+    if (isSupabaseConfigured && dbLookupListingId && !listingId.startsWith('development-')) {
       try {
-        const dbListing = await getPrivateListing(listingId)
+        const dbListing = await getPrivateListing(dbLookupListingId)
         const returnedListingId = getPrivateListingRecordId(dbListing)
-        if (dbListing && returnedListingId !== listingId) {
+        if (dbListing && returnedListingId !== dbLookupListingId) {
           setDetailError('This listing returned an invalid record. Refresh Listings and open it again; no changes were made.')
         } else if (returnedListingId) {
           nextListings = upsertListingRecord(runtimeListings, dbListing)
+          if (listingId !== returnedListingId && isUuidLike(returnedListingId)) {
+            const nextSearch = location.search || ''
+            navigate(`/agent/listings/${encodeURIComponent(returnedListingId)}${nextSearch}`, { replace: true })
+          }
         }
       } catch (error) {
         console.error('[AgentListingDetail] Supabase listing load failed', error)
@@ -3491,7 +3507,7 @@ function AgentListingDetail() {
 
     setPrivateListings(sanitizePrivateListingRows(nextListings))
     setLoading(false)
-  }, [listingId])
+  }, [listingId, location.search, navigate])
 
   useEffect(() => {
     void loadListingData()
@@ -3514,6 +3530,10 @@ function AgentListingDetail() {
   const listingRecord = useMemo(() => {
     return findPrivateListingById(privateListings, listingId)
   }, [listingId, privateListings])
+
+  const sellerPortalActivationListingId = useMemo(() => {
+    return getPrivateListingRemoteRecordId(listingRecord) || (isUuidLike(listingId) ? listingId : '')
+  }, [listingId, listingRecord])
 
   const listingOrganisationId = useMemo(
     () => String(listingRecord?.organisationId || listingRecord?.organisation_id || activeOrganisationId || '').trim(),
@@ -7957,7 +7977,7 @@ function AgentListingDetail() {
 
   async function handleActivateSellerPortal(event) {
     event.preventDefault()
-    if (!listingRecord?.id) return
+    if (!listingRecord?.id && !sellerPortalActivationListingId) return
     const firstName = toCleanText(sellerPortalActivationDraft.firstName)
     const lastName = toCleanText(sellerPortalActivationDraft.lastName)
     const email = toCleanText(sellerPortalActivationDraft.email).toLowerCase()
@@ -7966,7 +7986,7 @@ function AgentListingDetail() {
       setDetailError('Add a valid seller email before sending the Seller Portal invitation.')
       return
     }
-    if (!isSupabaseConfigured || !isUuidLike(listingRecord.id)) {
+    if (!isSupabaseConfigured || !sellerPortalActivationListingId) {
       setDetailError('Seller Portal activation requires a Supabase-backed listing.')
       return
     }
@@ -8006,14 +8026,14 @@ function AgentListingDetail() {
         sellerEmail: true,
         sellerPhone: Boolean(phone),
       }
-      await updatePrivateListing(listingRecord.id, {
+      await updatePrivateListing(sellerPortalActivationListingId, {
         sellerCanonicalFacts,
         sellerCanonicalFactReadiness,
         sellerCanonicalFactsUpdatedAt: new Date().toISOString(),
       }, { includeRequirementsAndDocuments: false }).catch(() => null)
 
       const result = await activateSellerPortalForListing({
-        listingId: listingRecord.id,
+        listingId: sellerPortalActivationListingId,
         activationSource: SELLER_PORTAL_ACTIVATION_SOURCES.existingListing,
         sellerContactEmail: email,
         sellerContactPhone: phone,

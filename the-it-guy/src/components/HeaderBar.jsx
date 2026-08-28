@@ -8,6 +8,8 @@ import { canAccessPrincipalExperience } from '../lib/organisationAccess'
 import useDismissableMenu from '../hooks/useDismissableMenu'
 import QuickCreateDropdown from './QuickCreateDropdown'
 
+const NOTIFICATION_POLL_INTERVAL_MS = 120_000
+
 function getPageTitle(pathname, stateTitle, role) {
   const isAgentWorkspaceRole = role === 'agent' || role === 'principal' || role === 'headquarters'
 
@@ -929,7 +931,7 @@ function HeaderBar({ onLogout, user }) {
     }
   }, [location.pathname])
 
-  const loadNotifications = useCallback(async ({ unreadOnly = false } = {}) => {
+  const loadNotifications = useCallback(async ({ unreadOnly = false, runReminderAutomation = false } = {}) => {
     setNotificationState((previous) => ({
       ...previous,
       loading: true,
@@ -937,7 +939,7 @@ function HeaderBar({ onLogout, user }) {
     }))
 
     try {
-      const payload = await fetchMyNotifications({ limit: 25, unreadOnly })
+      const payload = await fetchMyNotifications({ limit: 25, unreadOnly, runReminderAutomation })
       setNotificationState({
         notifications: payload.notifications || [],
         unreadCount: Number(payload.unreadCount || 0),
@@ -998,21 +1000,24 @@ function HeaderBar({ onLogout, user }) {
   useEffect(() => {
     let active = true
 
-    async function refreshNotifications() {
-      if (!active) {
-        return
-      }
-      await loadNotifications()
+    async function refreshNotifications(options = {}) {
+      if (!active || document.visibilityState === 'hidden') return
+      await loadNotifications(options)
     }
 
-    void refreshNotifications()
+    void refreshNotifications({ runReminderAutomation: true })
     const intervalId = window.setInterval(() => {
       void refreshNotifications()
-    }, 45000)
+    }, NOTIFICATION_POLL_INTERVAL_MS)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') void refreshNotifications()
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
 
     return () => {
       active = false
       window.clearInterval(intervalId)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
   }, [role, loadNotifications])
 
