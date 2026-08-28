@@ -6255,14 +6255,24 @@ export async function syncPrivateListingDistributionData(listingId, payload = {}
     throw publication.error
   }
 
-  const deleteMedia = await client.from('listing_media').delete().eq('listing_id', normalizedId)
-  if (deleteMedia.error) {
-    if (isMissingTableError(deleteMedia.error, 'listing_media')) return { skipped: true, reason: 'distribution_tables_missing' }
-    throw deleteMedia.error
+  const existingMedia = await client
+    .from('listing_media')
+    .select('id, media_type, file_url')
+    .eq('listing_id', normalizedId)
+  if (existingMedia.error) {
+    if (isMissingTableError(existingMedia.error, 'listing_media')) return { skipped: true, reason: 'distribution_tables_missing' }
+    throw existingMedia.error
   }
+  let insertedMediaRows = []
   if (mediaRows.length) {
-    const insertMedia = await client.from('listing_media').insert(mediaRows)
+    const insertMedia = await client.from('listing_media').insert(mediaRows).select('id, media_type, file_url')
     if (insertMedia.error) throw insertMedia.error
+    insertedMediaRows = insertMedia.data || []
+  }
+  const previousMediaIds = (existingMedia.data || []).map((row) => row.id).filter(Boolean)
+  if (previousMediaIds.length) {
+    const deleteMedia = await client.from('listing_media').delete().in('id', previousMediaIds)
+    if (deleteMedia.error) throw deleteMedia.error
   }
 
   const deleteLinks = await client.from('listing_external_links').delete().eq('listing_id', normalizedId)
@@ -6275,10 +6285,45 @@ export async function syncPrivateListingDistributionData(listingId, payload = {}
     if (insertLinks.error) throw insertLinks.error
   }
 
+  const [persistedPublication, persistedMedia] = await Promise.all([
+    client
+      .from('listing_publication_data')
+      .select('listing_id, description, features, amenities')
+      .eq('listing_id', normalizedId)
+      .single(),
+    client
+      .from('listing_media')
+      .select('id, media_type, file_url, sort_order, is_cover')
+      .eq('listing_id', normalizedId)
+      .order('sort_order', { ascending: true }),
+  ])
+  if (persistedPublication.error) throw persistedPublication.error
+  if (persistedMedia.error) throw persistedMedia.error
+  const expectedDescription = normalizeText(publicationPayload.description)
+  const actualDescription = normalizeText(persistedPublication.data?.description)
+  if (expectedDescription !== actualDescription) {
+    throw new Error('Listing description did not persist. Your browser draft has been kept so you can retry.')
+  }
+  const normalizePersistedSelections = (value) => (
+    Array.isArray(value) ? value.map(normalizeText).filter(Boolean).sort() : []
+  )
+  if (JSON.stringify(normalizePersistedSelections(publicationPayload.features)) !== JSON.stringify(normalizePersistedSelections(persistedPublication.data?.features))) {
+    throw new Error('Listing selling points did not persist. Your browser draft has been kept so you can retry.')
+  }
+  if (JSON.stringify(normalizePersistedSelections(publicationPayload.amenities)) !== JSON.stringify(normalizePersistedSelections(persistedPublication.data?.amenities))) {
+    throw new Error('Listing amenities did not persist. Your browser draft has been kept so you can retry.')
+  }
+  const persistedUrls = new Set((persistedMedia.data || []).map((row) => normalizeText(row.file_url)).filter(Boolean))
+  const missingMediaUrl = mediaRows.find((row) => !persistedUrls.has(normalizeText(row.file_url)))
+  if (missingMediaUrl || persistedUrls.size !== mediaRows.length) {
+    throw new Error('One or more listing images did not persist. Your browser draft has been kept so you can retry.')
+  }
+
   return {
     skipped: false,
-    publication: publication.data,
-    mediaCount: mediaRows.length,
+    publication: persistedPublication.data,
+    media: persistedMedia.data || insertedMediaRows,
+    mediaCount: (persistedMedia.data || []).length,
     externalLinkCount: externalLinkRows.length,
   }
 }

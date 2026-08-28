@@ -4102,11 +4102,7 @@ function AgentListingDetail() {
       return localListing
     }
 
-    const savedOnboarding = await updatePrivateListingOnboardingFormData(listingRecord.id, buildListingSnapshotFormData(nextDraft)).catch((error) => {
-      console.warn('[AgentListingDetail] listing snapshot save skipped', error)
-      setDetailError(error?.message || 'Saved locally, but Supabase could not be updated.')
-      return null
-    })
+    const savedOnboarding = await updatePrivateListingOnboardingFormData(listingRecord.id, buildListingSnapshotFormData(nextDraft))
     if (savedOnboarding?.form_data) {
       setPrivateListings((rows) => upsertListingRecord(rows, {
         ...localListing,
@@ -4170,7 +4166,14 @@ function AgentListingDetail() {
       selectedFeatures: draftFeatures.length ? draftFeatures : existingFeatures,
       amenities: draftAmenities.length ? draftAmenities : existingAmenities,
     }
-    const updatedListing = await persistListingSnapshot(effectiveDraft, { persistCoreFields: true })
+    let updatedListing = null
+    try {
+      updatedListing = await persistListingSnapshot(effectiveDraft, { persistCoreFields: true })
+    } catch (error) {
+      console.error('[AgentListingDetail] onboarding snapshot save failed', error)
+      setDetailError(error?.message || 'The listing could not be saved. Your edits are still available to retry.')
+      return { ok: false, error }
+    }
     if (!updatedListing?.id || !isSupabaseConfigured) {
       marketingDraftDirtyRef.current = false
       hydratedMarketingListingIdRef.current = String(updatedListing?.id || listingRecord?.id || listingId || '').trim()
@@ -4212,6 +4215,15 @@ function AgentListingDetail() {
       }
       if (options.listingVisibility) listingPatch.listingVisibility = options.listingVisibility
       const savedListing = await updatePrivateListing(updatedListing.id, listingPatch)
+      if (
+        String(savedListing?.title || '').trim() !== String(listingPatch.title || '').trim() ||
+        String(savedListing?.description || '').trim() !== String(listingPatch.description || '').trim() ||
+        String(savedListing?.addressLine1 || '').trim() !== String(listingPatch.addressLine1 || '').trim() ||
+        String(savedListing?.propertyType || '').trim() !== String(listingPatch.propertyType || '').trim() ||
+        Number(savedListing?.askingPrice || 0) !== Number(listingPatch.askingPrice || 0)
+      ) {
+        throw new Error('The listing fields did not persist. Your edits are still available to retry.')
+      }
       const mergedSavedListing = savedListing?.id ? mergeListingRecord(savedListing, updatedListing) : updatedListing
       if (savedListing?.id) {
         setPrivateListings((rows) => upsertListingRecord(rows, mergedSavedListing))
@@ -4254,13 +4266,9 @@ function AgentListingDetail() {
           virtualTourLink: effectiveDraft.virtualTourLink,
         },
         externalLinks: normalizedExternalLinks,
-      }).catch((syncError) => {
-        console.warn('[AgentListingDetail] listing distribution sync skipped', syncError)
-        setDetailError('Listing content saved, but portal/distribution sync needs another attempt.')
-        return { skipped: true, reason: 'distribution_sync_failed', error: syncError }
       })
       if (distributionSync?.skipped) {
-        console.warn('[AgentListingDetail] listing distribution sync skipped', distributionSync.reason)
+        throw new Error('Listing distribution storage is unavailable. Your edits were not cleared; please retry.')
       }
       await upsertAreaFromAddress(buildAddressAutocompleteValueFromDraft(effectiveDraft), { incrementListingCount: false })
       marketingDraftDirtyRef.current = false

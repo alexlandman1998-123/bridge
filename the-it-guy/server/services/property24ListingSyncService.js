@@ -1,4 +1,5 @@
 import { normalizeProperty24ListingText, toProperty24Integer } from './property24ListingMapper.js'
+import { syncSellerLeadForLiveListing } from './sellerListingLiveSyncService.js'
 
 export function resolveArch9Property24Status({ isOnPortal = false, externalStatus = '' } = {}) {
   const status = normalizeProperty24ListingText(externalStatus).toLowerCase()
@@ -176,6 +177,23 @@ export async function recordProperty24ListingSync({
     }
   }
 
+  let sellerJourneySync = null
+  let sellerJourneySyncWarning = null
+  if (statusListing?.property24_status === 'published') {
+    try {
+      sellerJourneySync = await syncSellerLeadForLiveListing({
+        client,
+        listingId: privateListingId,
+        source: 'property24',
+      })
+    } catch (error) {
+      sellerJourneySyncWarning = {
+        message: error?.message || 'Seller journey could not be synchronized after Property24 activation.',
+        code: error?.code || null,
+      }
+    }
+  }
+
   return {
     sync,
     listing: statusListing,
@@ -183,5 +201,7 @@ export async function recordProperty24ListingSync({
     statusUpdateWarning,
     externalLink,
     externalLinkWarning,
+    sellerJourneySync,
+    sellerJourneySyncWarning,
   }
 }

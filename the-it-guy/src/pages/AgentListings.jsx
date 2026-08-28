@@ -990,22 +990,21 @@ async function uploadQuickListingImages(listingId = '', images = []) {
   const uploaded = await Promise.all((Array.isArray(images) ? images : []).map(async (image, index) => {
     const file = typeof File !== 'undefined' && image?.file instanceof File ? image.file : null
     if (!file) return image
-    try {
-      const asset = await uploadPrivateListingMediaAsset(file, { listingId, type: 'gallery' })
-      return {
-        id: asset.path || image.id || `listing-image-${index + 1}`,
-        name: asset.fileName || image.name || `Image ${index + 1}`,
-        url: asset.url || asset.signedUrl || asset.publicUrl || image.url || '',
-        signedUrl: asset.signedUrl || '',
-        publicUrl: asset.publicUrl || '',
-        path: asset.path || '',
-        bucket: asset.bucket || '',
-        contentType: asset.contentType || image.contentType || '',
-        size: asset.size || image.size || 0,
-      }
-    } catch (error) {
-      console.warn('[Listings] quick listing image upload failed; keeping local preview', error)
-      return image
+    const asset = await uploadPrivateListingMediaAsset(file, { listingId, type: 'gallery' })
+    const persistentUrl = asset.url || asset.signedUrl || asset.publicUrl || ''
+    if (!persistentUrl) {
+      throw new Error(`Image ${image.name || index + 1} uploaded without a persistent URL.`)
+    }
+    return {
+      id: asset.path || image.id || `listing-image-${index + 1}`,
+      name: asset.fileName || image.name || `Image ${index + 1}`,
+      url: persistentUrl,
+      signedUrl: asset.signedUrl || '',
+      publicUrl: asset.publicUrl || '',
+      path: asset.path || '',
+      bucket: asset.bucket || '',
+      contentType: asset.contentType || image.contentType || '',
+      size: asset.size || image.size || 0,
     }
   }))
 
@@ -4337,6 +4336,15 @@ function AgentListings({ initialTab = null } = {}) {
 
     if (isSupabaseConfigured && isUuidLike(listingId)) {
       const savedListing = await updatePrivateListing(listingId, listingPatch, { includeRequirementsAndDocuments: false })
+      if (
+        normalizeText(savedListing?.title) !== listingTitle ||
+        normalizeText(savedListing?.description) !== normalizeText(listingPatch.description) ||
+        normalizeText(savedListing?.addressLine1) !== propertyAddress ||
+        normalizeText(savedListing?.propertyType) !== propertyType ||
+        Number(savedListing?.askingPrice || 0) !== askingPrice
+      ) {
+        throw new Error('The listing fields did not persist. Your edits were not cleared; please retry.')
+      }
       if (savedListing?.id) {
         setPrivateListings((rows) => mergePrivateListingRows([savedListing], rows, deletedListingIds))
       }
@@ -4346,11 +4354,8 @@ function AgentListings({ initialTab = null } = {}) {
         status: listing.sellerOnboardingStatus || listing.seller_onboarding_status || 'in_progress',
         sellerType: form.sellerType,
         ownershipStructure: form.sellerType,
-      }).catch((persistenceError) => {
-        console.warn('[Listings] listing editor onboarding form persistence skipped', persistenceError)
-        return null
       })
-      await syncPrivateListingDistributionData(listingId, {
+      const distributionSync = await syncPrivateListingDistributionData(listingId, {
         publicationData: {
           title: listingTitle,
           address: formattedAddress || propertyAddress,
@@ -4376,10 +4381,10 @@ function AgentListings({ initialTab = null } = {}) {
           floorplans: listing.marketing?.floorplans || listing.propertyDetails?.floorplans || [],
         },
         externalLinks: distributionLinks,
-      }).catch((syncError) => {
-        console.warn('[Listings] listing editor distribution sync skipped', syncError)
-        return null
       })
+      if (distributionSync?.skipped) {
+        throw new Error('Listing distribution storage is unavailable. Your edits were not cleared; please retry.')
+      }
       await createPrivateListingActivity({
         privateListingId: listingId,
         activityType: 'listing_editor_saved',

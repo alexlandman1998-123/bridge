@@ -1,4 +1,5 @@
 import { normalizePrivatePropertyText } from './privatePropertyClient.js'
+import { syncSellerLeadForLiveListing } from './sellerListingLiveSyncService.js'
 
 function normalizeJsonObject(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
@@ -212,6 +213,22 @@ export async function recordPrivatePropertyListingSync({
     status: arch9Status,
     now,
   })
+  let sellerJourneySync = null
+  let sellerJourneySyncWarning = null
+  if (arch9Status === 'published') {
+    try {
+      sellerJourneySync = await syncSellerLeadForLiveListing({
+        client,
+        listingId: privateListingId,
+        source: 'private_property',
+      })
+    } catch (error) {
+      sellerJourneySyncWarning = {
+        message: error?.message || 'Seller journey could not be synchronized after Private Property activation.',
+        code: error?.code || null,
+      }
+    }
+  }
 
   return {
     sync,
@@ -220,5 +237,7 @@ export async function recordPrivatePropertyListingSync({
     externalLink,
     externalLinkWarning,
     arch9Status,
+    sellerJourneySync,
+    sellerJourneySyncWarning,
   }
 }

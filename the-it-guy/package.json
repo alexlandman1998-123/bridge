@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "vite",
     "build": "NODE_OPTIONS=--max-old-space-size=8192 vite build",
+    "test:listing-editor-verified-persistence": "node scripts/listing-editor-verified-persistence.test.mjs",
     "test:query-baseline-phase0": "node --test scripts/query-baseline-phase0.test.mjs",
     "test:reports-phase0-containment": "node --test scripts/reports-phase0-containment.test.mjs",
     "test:menu-navigation-phase1": "node --test scripts/menu-navigation-phase1.test.mjs",

@@ -87,7 +87,8 @@ test('listing marketing saves are not blocked by browser fallback cache or click
   assert.match(agentListingDetailSource, /!\('currentTarget' in draftOverride\)/)
   assert.doesNotMatch(agentListingDetailSource, /onClick=\{saveMarketingDraft\}/)
   assert.match(agentListingDetailSource, /mergeListingRecord\(savedListing, updatedListing\)/)
-  assert.match(agentListingDetailSource, /listing distribution sync skipped/)
+  assert.match(agentListingDetailSource, /Listing distribution storage is unavailable\. Your edits were not cleared/)
+  assert.doesNotMatch(agentListingDetailSource, /listing distribution sync skipped/)
 })
 
 test('key selling points survive editor, detail workspace, and publication mapping', () => {
