@@ -3,6 +3,7 @@ import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supab
 const EVENT_LEADS_TABLE = 'launch_event_leads'
 const REFERRAL_CLICKS_TABLE = 'launch_event_referral_clicks'
 const LOCAL_STORAGE_KEY = 'arch9:launch-event-leads:v1'
+const ATTRIBUTION_SESSION_KEY = 'arch9:personalised-demo-attribution:v1'
 
 function normalizeText(value = '') {
   return String(value || '').trim()
@@ -20,15 +21,29 @@ function normalizeSelectionList(value = []) {
   return text ? [text] : []
 }
 
-function readUtmParams() {
+function readCurrentAttribution() {
   if (typeof window === 'undefined') return {}
   const params = new URLSearchParams(window.location.search || '')
   return {
-    source: normalizeText(params.get('utm_source')),
-    medium: normalizeText(params.get('utm_medium')),
-    campaign: normalizeText(params.get('utm_campaign')),
-    content: normalizeText(params.get('utm_content')),
-    term: normalizeText(params.get('utm_term')),
+    source: normalizeText(params.get('source') || params.get('utm_source')),
+    utm_source: normalizeText(params.get('utm_source')),
+    utm_medium: normalizeText(params.get('utm_medium')),
+    utm_campaign: normalizeText(params.get('utm_campaign')),
+    utm_content: normalizeText(params.get('utm_content')),
+    utm_term: normalizeText(params.get('utm_term')),
+  }
+}
+
+export function captureLaunchAttribution() {
+  if (typeof window === 'undefined' || !window.sessionStorage) return readCurrentAttribution()
+  try {
+    const stored = JSON.parse(window.sessionStorage.getItem(ATTRIBUTION_SESSION_KEY) || 'null')
+    if (stored) return stored
+    const attribution = readCurrentAttribution()
+    window.sessionStorage.setItem(ATTRIBUTION_SESSION_KEY, JSON.stringify(attribution))
+    return attribution
+  } catch {
+    return readCurrentAttribution()
   }
 }
 
@@ -80,15 +95,21 @@ function shouldUseLocalLaunchCapture() {
 }
 
 export function buildLaunchEventLeadPayload(form = {}) {
-  const name = normalizeText(form.fullName || form.name)
+  const firstName = normalizeText(form.firstName)
+  const lastName = normalizeText(form.lastName)
+  const name = normalizeText(form.fullName || form.name || `${firstName} ${lastName}`)
   const phone = normalizeText(form.phone)
   const email = normalizeEmail(form.email)
-  const roleType = normalizeText(form.roleType || form.interest)
-  const discussionFocusSelections = normalizeSelectionList(form.discussionFocus)
+  const roleType = normalizeText(form.role || form.roleType || form.interest)
+  const discussionFocusSelections = normalizeSelectionList(form.interests || form.discussionFocus)
   const discussionFocus = discussionFocusSelections.join('; ')
-  const preferredTime = normalizeText(form.preferredTime || form.preferredWindow)
-  const note = normalizeText(form.notes || form.note)
+  const preferredTime = normalizeText(form.preferredNextAction || form.preferredTime || form.preferredWindow)
+  const note = normalizeText(form.frustration || form.notes || form.note)
   const company = normalizeText(form.company)
+  const businessSize = normalizeText(form.businessSize)
+  const monthlyTransactions = normalizeText(form.monthlyTransactions)
+  const attribution = form.attribution || captureLaunchAttribution()
+  const createdAt = new Date().toISOString()
 
   return {
     event_slug: 'arch9-launch-2026-06-24',
@@ -107,8 +128,28 @@ export function buildLaunchEventLeadPayload(form = {}) {
     status: 'new',
     source: 'arch9_launch_qr',
     metadata: {
-      utm: readUtmParams(),
+      utm: attribution,
       device: readDeviceContext(),
+      personalisedDemo: {
+        source: attribution.source || attribution.utm_source || 'arch9_launch_qr',
+        utm_source: attribution.utm_source || '',
+        utm_medium: attribution.utm_medium || '',
+        utm_campaign: attribution.utm_campaign || '',
+        utm_content: attribution.utm_content || '',
+        utm_term: attribution.utm_term || '',
+        role: roleType,
+        first_name: firstName,
+        last_name: lastName,
+        email,
+        phone,
+        company,
+        business_size: businessSize,
+        monthly_transactions: monthlyTransactions,
+        interests: discussionFocusSelections,
+        frustration: note,
+        preferred_next_action: preferredTime,
+        created_at: createdAt,
+      },
       followUpRequest: {
         fullName: name,
         email: email || '',
@@ -119,7 +160,7 @@ export function buildLaunchEventLeadPayload(form = {}) {
         discussionFocusSelections,
         notes: note,
         preferredTime,
-        source: 'arch9_launch_qr',
+        source: attribution.source || attribution.utm_source || 'arch9_launch_qr',
         eventName: 'Arch9 Launch',
         eventDate: '2026-06-24',
         status: 'new',
@@ -131,14 +172,14 @@ export function buildLaunchEventLeadPayload(form = {}) {
 export function validateLaunchEventLead(form = {}) {
   const errors = {}
   const email = normalizeEmail(form.email)
-  if (!normalizeText(form.fullName || form.name)) errors.name = 'Tell us your name.'
+  if (!normalizeText(form.fullName || form.name || form.firstName)) errors.name = 'Tell us your name.'
   if (!normalizeText(form.phone)) errors.phone = 'Add a phone number so the team can reach you.'
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.email = 'Enter a valid email address.'
-  if (!normalizeText(form.roleType || form.interest)) errors.roleType = 'Choose what best describes you.'
-  const discussionFocusCount = normalizeSelectionList(form.discussionFocus).length
+  if (!normalizeText(form.role || form.roleType || form.interest)) errors.roleType = 'Choose what best describes you.'
+  const discussionFocusCount = normalizeSelectionList(form.interests || form.discussionFocus).length
   if (!discussionFocusCount) errors.discussionFocus = 'Choose at least one option.'
-  if (discussionFocusCount > 2) errors.discussionFocus = 'Select up to 2.'
-  if (!normalizeText(form.preferredTime || form.preferredWindow)) errors.preferredTime = 'Choose a preferred time.'
+  if (!form.interests && discussionFocusCount > 2) errors.discussionFocus = 'Select up to 2.'
+  if (!normalizeText(form.preferredNextAction || form.preferredTime || form.preferredWindow)) errors.preferredTime = 'Choose how you would like to continue.'
   return errors
 }
 
