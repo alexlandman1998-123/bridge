@@ -22,6 +22,7 @@ const PUBLIC_LISTING_FIELDS = [
   'province',
   'property_type',
   'asking_price',
+  'created_by',
   'created_at',
   'updated_at',
 ].join(', ')
@@ -295,14 +296,15 @@ export function isPublicListingEligible({ listing = {}, publication = {}, media 
   )
 }
 
-function isAgencyIntakeListingEligible({ listing = {} } = {}) {
+function isAgencyIntakeListingEligible({ listing = {}, allowAgentCardDrafts = false } = {}) {
   const visibility = normalizeLower(listing.listing_visibility)
   const listingStatus = normalizeToken(listing.listing_status)
   const title = normalizeText(listing.title || listing.listing_reference || listing.address_line_1)
   const price = toNumber(listing.asking_price)
+  const hasCardVisibleState = allowAgentCardDrafts && visibility === 'internal' && !['seller_lead', 'onboarding_sent', 'onboarding_completed'].includes(listingStatus)
 
   return Boolean(
-    visibility === 'active_market' &&
+    (visibility === 'active_market' || hasCardVisibleState) &&
       !['archived', 'withdrawn', 'sold', 'transaction_created'].includes(listingStatus) &&
       title &&
       price !== null &&
@@ -534,6 +536,30 @@ function matchesFilters(item = {}, filters = {}) {
   return true
 }
 
+function createAgentCardListingMatcher(agencyScope = {}) {
+  const metadata = agencyScope.metadata_json && typeof agencyScope.metadata_json === 'object' ? agencyScope.metadata_json : {}
+  const cardAgent = metadata.agentDigitalCard && typeof metadata.agentDigitalCard === 'object' && metadata.agentDigitalCard.agent && typeof metadata.agentDigitalCard.agent === 'object'
+    ? metadata.agentDigitalCard.agent
+    : {}
+  const agentId = normalizeText(agencyScope.default_assigned_agent_id || cardAgent.userId)
+  const agentEmail = normalizeLower(cardAgent.email)
+  const agentName = normalizeLower(cardAgent.name)
+  if (!agentId && !agentEmail && !agentName) return () => true
+
+  return (listing = {}) => {
+    if (agentId && (
+      normalizeText(listing.assigned_agent_id) === agentId ||
+      normalizeText(listing.created_by) === agentId ||
+      normalizeText(listing.agent_user_id) === agentId ||
+      normalizeText(listing.assigned_agent_user_id) === agentId
+    )) return true
+
+    if (agentEmail && normalizeLower(listing.assigned_agent_email || listing.agent_email) === agentEmail) return true
+    if (agentName && normalizeLower(listing.assigned_agent_name || listing.assigned_agent || listing.agent_name) === agentName) return true
+    return false
+  }
+}
+
 function createAgencyIntakeFilterOptions(filters = {}) {
   const minPrice = toOptionalNumber(filters.minPrice)
   const maxPrice = toOptionalNumber(filters.maxPrice)
@@ -575,10 +601,9 @@ export async function getPublicListings(options = {}) {
       .from('private_listings')
       .select(PUBLIC_LISTING_FIELDS)
       .eq('organisation_id', agencyScope.organisation_id)
-      .eq('listing_visibility', 'active_market')
 
-    if (isAgentCardAudience && agencyScope.default_assigned_agent_id) {
-      listingsQuery = listingsQuery.eq('assigned_agent_id', agencyScope.default_assigned_agent_id)
+    if (!isAgentCardAudience) {
+      listingsQuery = listingsQuery.eq('listing_visibility', 'active_market')
     }
 
     const listingsResult = await listingsQuery
@@ -625,14 +650,16 @@ export async function getPublicListings(options = {}) {
     const onboardingByListingId = groupOnboardingByListingId(onboardingResult.error ? [] : onboardingResult.data || [])
     const metadata = agencyMetadata.get(normalizeText(agencyScope.organisation_id)) || {}
     const filterOptions = createAgencyIntakeFilterOptions(options)
+    const matchesAgentCardListing = createAgentCardListingMatcher(agencyScope)
     const items = listingRows
+      .filter((row) => !isAgentCardAudience || matchesAgentCardListing(row))
       .map((row) => {
         const listing = {
           ...row,
           agency_public_intake_slug: isAgentCardAudience ? agencyScope.slug : metadata.agencySlug || agencyScope.slug || agencySlug,
           agency_public_name: metadata.agencyName || '',
         }
-        if (!isAgencyIntakeListingEligible({ listing })) return null
+        if (!isAgencyIntakeListingEligible({ listing, allowAgentCardDrafts: isAgentCardAudience })) return null
         const publication = createAgencyIntakePublication(listing, publicationsByListingId.get(normalizeText(listing.id)) || {})
         const onboarding = onboardingByListingId.get(normalizeText(listing.id)) || {}
         const onboardingMedia = extractFormDataMediaRows(onboarding.form_data, listing)

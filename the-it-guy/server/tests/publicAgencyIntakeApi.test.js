@@ -74,6 +74,45 @@ assert.equal(contract.config.buyer.budgetRequired, true)
 assert.equal(contract.organisation_id, undefined)
 assert.equal(contract.agency.organisationId, undefined)
 
+const liveAgentContract = buildAgencyPublicIntakeContract({
+  host: 'https://app.arch9.co.za/',
+  link: {
+    slug: 'kingstons-atlantic',
+    enabled_intents: ['buy', 'sell'],
+    metadata_json: {
+      surface: 'agent_digital_card',
+      version: 1,
+      agentDigitalCard: {
+        agent: {
+          userId: '33333333-3333-4333-8333-333333333333',
+          name: 'Snapshot Agent',
+          email: 'snapshot@kingstons.test',
+          phone: '082 000 0000',
+          jobTitle: 'Agent',
+          avatarUrl: '',
+        },
+        features: { listings: true },
+      },
+    },
+  },
+  organisation: { name: 'Kingstons Realty' },
+  agent: {
+    id: '33333333-3333-4333-8333-333333333333',
+    email: 'john@kingstons.test',
+    first_name: 'John',
+    last_name: 'Smith',
+    phone_number: '082 123 4567',
+    title: 'Principal',
+    avatar_url: 'https://cdn.example.com/current-profile.jpg',
+  },
+})
+
+assert.equal(liveAgentContract.card.agent.name, 'John Smith')
+assert.equal(liveAgentContract.card.agent.email, 'john@kingstons.test')
+assert.equal(liveAgentContract.card.agent.phone, '082 123 4567')
+assert.equal(liveAgentContract.card.agent.jobTitle, 'Principal')
+assert.equal(liveAgentContract.card.agent.avatarUrl, 'https://cdn.example.com/current-profile.jpg')
+
 const validSubmission = validateAgencyIntakeSubmission({
   slug: 'kingstons-atlantic',
   intent: 'buy',

@@ -141,6 +141,29 @@ function isMissingNotificationOutboxError(error = {}) {
   return code === '42P01' || message.includes('notification_events')
 }
 
+function isMissingRelationError(error = {}, relationName = '') {
+  const code = normalizeText(error.code).toUpperCase()
+  const message = normalizeLower([error.message, error.details, error.hint].filter(Boolean).join(' '))
+  const relation = normalizeLower(relationName)
+  return (
+    code === '42P01' ||
+    code === 'PGRST205' ||
+    message.includes('schema cache') ||
+    (relation && message.includes(relation) && message.includes('does not exist'))
+  )
+}
+
+function isMissingColumnError(error = {}, columnName = '') {
+  const code = normalizeText(error.code).toUpperCase()
+  const message = normalizeLower([error.message, error.details, error.hint].filter(Boolean).join(' '))
+  const column = normalizeLower(columnName)
+  return (
+    code === '42703' ||
+    code === 'PGRST204' ||
+    (column && message.includes('column') && message.includes(column))
+  )
+}
+
 function parseEnvFile(filePath) {
   if (!fs.existsSync(filePath)) return {}
   return Object.fromEntries(
@@ -301,6 +324,18 @@ function getAgentDigitalCardMetadata(link = {}) {
   return safeObject(safeObject(safeObject(link.metadata_json).agentDigitalCard).agent)
 }
 
+function getLiveAgentProfileAvatarUrl(agent = {}) {
+  return normalizeText(
+    agent.avatar_url ||
+      agent.avatarUrl ||
+      agent.profile_photo_url ||
+      agent.profilePhotoUrl ||
+      agent.photo_url ||
+      agent.photoUrl ||
+      agent.profile?.avatar_url,
+  )
+}
+
 function buildAgentAcknowledgementContact({ agent = {}, link = {} } = {}) {
   const cardAgent = getAgentDigitalCardMetadata(link)
   const email = normalizeEmail(agent.email || cardAgent.email)
@@ -312,7 +347,7 @@ function buildAgentAcknowledgementContact({ agent = {}, link = {} } = {}) {
     email,
     phone: normalizeText(agent.phone || agent.mobile_phone || agent.contact_phone || cardAgent.phone || cardAgent.whatsapp),
     jobTitle: normalizeText(agent.job_title || agent.jobTitle || agent.title || cardAgent.jobTitle) || 'Property Practitioner',
-    avatarUrl: normalizeText(agent.avatar_url || agent.avatarUrl || cardAgent.avatarUrl),
+    avatarUrl: normalizeText(getLiveAgentProfileAvatarUrl(agent) || cardAgent.avatarUrl),
   }
 }
 
@@ -608,13 +643,29 @@ export async function resolveAgencyPublicBranding(client, organisation = {}, set
   }
 }
 
-export function buildAgencyPublicIntakeContract({ link = {}, organisation = {}, branding = {}, host = '' } = {}) {
+function mergeAgentDigitalCardProfile(snapshotAgent = {}, liveAgent = {}) {
+  const email = normalizeEmail(liveAgent.email || snapshotAgent.email)
+  const liveDisplayName = displayName(liveAgent, '')
+  const name = (liveDisplayName && liveDisplayName !== email ? liveDisplayName : '') || normalizeText(snapshotAgent.name) || liveDisplayName
+  return {
+    userId: normalizeText(liveAgent.user_id || liveAgent.id || snapshotAgent.userId),
+    name,
+    email,
+    phone: normalizeText(liveAgent.phone_number || liveAgent.phone || liveAgent.mobile_phone || liveAgent.contact_phone || snapshotAgent.phone),
+    whatsapp: normalizeText(liveAgent.whatsapp || liveAgent.whatsApp || snapshotAgent.whatsapp),
+    jobTitle: normalizeText(liveAgent.title || liveAgent.job_title || liveAgent.jobTitle || liveAgent.role || snapshotAgent.jobTitle),
+    avatarUrl: normalizeText(getLiveAgentProfileAvatarUrl(liveAgent) || snapshotAgent.avatarUrl),
+  }
+}
+
+export function buildAgencyPublicIntakeContract({ link = {}, organisation = {}, branding = {}, host = '', agent = null } = {}) {
   const slug = normalizeAgencyIntakeSlug(link.slug)
   const enabledIntents = normalizeEnabledIntents(link.enabled_intents)
   const intakeUrl = `${normalizeText(host).replace(/\/+$/g, '') || 'https://app.arch9.co.za'}/intake/${encodeURIComponent(slug)}`
   const metadata = safeObject(link.metadata_json)
   const agentDigitalCard = safeObject(metadata.agentDigitalCard)
   const agentCardAgent = safeObject(agentDigitalCard.agent)
+  const resolvedAgent = mergeAgentDigitalCardProfile(agentCardAgent, safeObject(agent))
   const isAgentDigitalCard = metadata.surface === 'agent_digital_card'
 
   return {
@@ -626,15 +677,7 @@ export function buildAgencyPublicIntakeContract({ link = {}, organisation = {}, 
       enabled: isAgentDigitalCard,
       surface: normalizeText(metadata.surface),
       version: Number(metadata.version || 0) || null,
-      agent: {
-        userId: normalizeText(agentCardAgent.userId),
-        name: normalizeText(agentCardAgent.name),
-        email: normalizeText(agentCardAgent.email),
-        phone: normalizeText(agentCardAgent.phone),
-        whatsapp: normalizeText(agentCardAgent.whatsapp),
-        jobTitle: normalizeText(agentCardAgent.jobTitle),
-        avatarUrl: normalizeText(agentCardAgent.avatarUrl),
-      },
+      agent: resolvedAgent,
       features: safeObject(agentDigitalCard.features),
     },
     agency: {
@@ -670,6 +713,45 @@ export function buildAgencyPublicIntakeContract({ link = {}, organisation = {}, 
   }
 }
 
+async function fetchLiveAgentDigitalCardProfile(client, link = {}) {
+  const metadataAgent = getAgentDigitalCardMetadata(link)
+  const agentUserId = normalizeText(link.default_assigned_agent_id || metadataAgent.userId)
+  const agentEmail = normalizeEmail(metadataAgent.email)
+  if (!agentUserId && !agentEmail) return null
+
+  if (agentUserId) {
+    const profileResult = await client
+      .from('profiles')
+      .select('id, email, first_name, last_name, full_name, phone_number, avatar_url, title, role')
+      .eq('id', agentUserId)
+      .maybeSingle()
+    if (!profileResult.error && profileResult.data) return profileResult.data
+    if (
+      profileResult.error &&
+      !isMissingRelationError(profileResult.error, 'profiles') &&
+      !isMissingColumnError(profileResult.error)
+    ) throw profileResult.error
+  }
+
+  const memberQuery = client
+    .from('organisation_users')
+    .select('user_id, first_name, last_name, email, role, status')
+    .eq('organisation_id', link.organisation_id)
+    .in('status', ['active', 'accepted'])
+    .limit(1)
+
+  const memberResult = agentUserId
+    ? await memberQuery.eq('user_id', agentUserId)
+    : await memberQuery.eq('email', agentEmail)
+
+  if (memberResult.error) {
+    if (isMissingRelationError(memberResult.error, 'organisation_users') || isMissingColumnError(memberResult.error)) return null
+    throw memberResult.error
+  }
+
+  return memberResult.data?.[0] || null
+}
+
 export async function resolveAgencyPublicIntake(client, slug = '', { host = '' } = {}) {
   const slugCandidates = resolveAgencyPublicIntakeSlugCandidates(slug)
   if (!slugCandidates.length) return null
@@ -699,7 +781,10 @@ export async function resolveAgencyPublicIntake(client, slug = '', { host = '' }
   if (!organisationResult.data || normalizeLower(organisationResult.data.status) !== 'active') return null
 
   const settings = safeObject(settingsResult.data?.settings_json)
-  const branding = await resolveAgencyPublicBranding(client, organisationResult.data, settings, safeObject(link.branding_config_json))
+  const [branding, agent] = await Promise.all([
+    resolveAgencyPublicBranding(client, organisationResult.data, settings, safeObject(link.branding_config_json)),
+    fetchLiveAgentDigitalCardProfile(client, link),
+  ])
 
   return {
     link,
@@ -708,6 +793,7 @@ export async function resolveAgencyPublicIntake(client, slug = '', { host = '' }
       link,
       organisation: organisationResult.data,
       branding,
+      agent,
       host,
     }),
   }

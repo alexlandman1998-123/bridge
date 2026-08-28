@@ -267,8 +267,67 @@ assert.deepEqual(
   cardScopedClient.calls
     .find((call) => call.table === 'private_listings')
     .filters
-    .find((filter) => filter[0] === 'eq' && filter[1] === 'assigned_agent_id'),
-  ['eq', 'assigned_agent_id', 'agent-1'],
+    .filter((filter) => filter[0] === 'eq' && filter[1] === 'assigned_agent_id'),
+  [],
+  'agent-card listing selection should not rely on assigned_agent_id being populated before mock/draft listings appear',
+)
+
+const cardCreatedByClient = createFakePublicListingsClient({
+  agencyScope: {
+    organisation_id: 'org-1',
+    slug: 'kingstons-john-smith',
+    default_assigned_agent_id: 'agent-1',
+    metadata_json: { surface: 'agent_digital_card', agentDigitalCard: { agent: { userId: 'agent-1' } } },
+  },
+  overrides: {
+    private_listings: {
+      data: [
+        {
+          ...validListing,
+          assigned_agent_id: null,
+          created_by: 'agent-1',
+          listing_visibility: 'internal',
+          listing_status: 'mandate_signed',
+          title: 'Draft Agent Listing',
+          asking_price: 2250000,
+        },
+        {
+          ...validListing,
+          id: '33333333-3333-4444-5555-666666666666',
+          assigned_agent_id: null,
+          created_by: 'someone-else',
+          listing_visibility: 'internal',
+          listing_status: 'mandate_signed',
+          title: 'Other Agent Listing',
+          asking_price: 2750000,
+        },
+        {
+          ...validListing,
+          id: '44444444-3333-4444-5555-666666666666',
+          assigned_agent_id: 'agent-1',
+          created_by: 'agent-1',
+          listing_visibility: 'internal',
+          listing_status: 'onboarding_sent',
+          title: 'Incomplete Agent Listing',
+          asking_price: 0,
+        },
+      ],
+      error: null,
+    },
+  },
+})
+const cardCreatedByListings = await getPublicListings({
+  client: cardCreatedByClient,
+  cardSlug: 'kingstons-john-smith',
+  audience: 'agent-card',
+  host: 'https://www.arch9.co.za',
+})
+
+assert.equal(cardCreatedByListings.count, 1)
+assert.equal(
+  cardCreatedByListings.items[0].title,
+  'Draft Agent Listing',
+  'agent cards should include active-market draft/mock listings created by the card agent when no assigned agent was stored',
 )
 
 const scopedListingsWithUnsetFilters = await getPublicListings({
