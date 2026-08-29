@@ -34,6 +34,7 @@ import TransactionLifecycleProgress from '../components/TransactionLifecycleProg
 import TransactionWorkspaceHeader from '../components/TransactionWorkspaceHeader'
 import TransactionWorkspaceMenu from '../components/TransactionWorkspaceMenu'
 import TransactionFinanceCommandCenter from '../components/transaction/TransactionFinanceCommandCenter'
+import TransactionJourneyTracker from '../components/transaction/TransactionJourneyTracker'
 import TransferWorkflowLane from '../components/TransferWorkflowLane'
 import StartDocumentModal from '../components/documents/StartDocumentModal'
 import Button from '../components/ui/Button'
@@ -107,6 +108,7 @@ import {
   formatTransactionRollupStatusLabel,
   USE_TRANSACTION_ROLLUP_OVERVIEW,
 } from '../core/transactions/transactionLifecycle'
+import { buildTransactionJourneyPresentation } from '../core/transactions/transactionJourneyPresentation'
 import {
   getDocumentStatusLabel,
   getDocumentStatusTone,
@@ -6054,6 +6056,12 @@ function UnitDetail() {
     fallbackUpdatedAt: transaction?.updated_at || transaction?.created_at || null,
   })
   const usingTransactionRollupOverview = USE_TRANSACTION_ROLLUP_OVERVIEW && Boolean(rollupLifecycleSummary)
+  const transactionJourneyModel = transactionRollup?.transactionJourneySnapshot
+    ? buildTransactionJourneyPresentation({ snapshot: transactionRollup.transactionJourneySnapshot })
+    : null
+  const transactionJourneyLoading = Boolean(
+    USE_TRANSACTION_ROLLUP_OVERVIEW && transaction?.id && !transactionJourneyModel && !transactionRollupError,
+  )
 
   async function handleCreateAlteration(payload) {
     if (!transaction?.id || !unit) {
@@ -8619,24 +8627,27 @@ function UnitDetail() {
 
         {isAgentWorkspace ? (
           <>
-            <TransactionLifecycleProgress
-              summary={usingTransactionRollupOverview ? rollupLifecycleSummary : null}
-              transaction={transaction}
-              mainStage={mainStage}
-              subprocesses={transactionSubprocesses || []}
-              framed
-              compact
-              premium
-              helperText={
-                usingTransactionRollupOverview
-                  ? transactionRollup?.blockers?.[0]?.message ||
-                    transactionRollup?.nextAction?.label ||
-                    `${displayedMatterHealthLabel} workflow status from the backend roll-up.`
-                  : stageProgressModel.currentStageBlockers.length
-                  ? `Blockers: ${stageProgressModel.currentStageBlockers.slice(0, 2).join(' • ')}`
-                  : `${mainStageLabel} is currently healthy.`
-              }
-            />
+            {transactionJourneyModel || transactionJourneyLoading ? (
+              <TransactionJourneyTracker
+                model={transactionJourneyModel}
+                loading={transactionJourneyLoading}
+                audience="developer-agent"
+                title="Transaction journey"
+                subtitle="The same milestone view shared with every participant in this transaction."
+                variant="detailed"
+              />
+            ) : (
+              <TransactionLifecycleProgress
+                summary={usingTransactionRollupOverview ? rollupLifecycleSummary : null}
+                transaction={transaction}
+                mainStage={mainStage}
+                subprocesses={transactionSubprocesses || []}
+                framed
+                compact
+                premium
+                helperText={transactionRollupError || `${mainStageLabel} is currently healthy.`}
+              />
+            )}
           </>
         ) : null}
 
@@ -8644,22 +8655,25 @@ function UnitDetail() {
           <section className="rounded-[28px] border border-[#e5e7eb] bg-[#f7f8fa] p-6 shadow-[0_16px_34px_rgba(15,23,42,0.05)]">
             <div>
               <div className="rounded-[24px] border border-[#e5e7eb] bg-white px-4 py-5 shadow-[0_8px_18px_rgba(15,23,42,0.04)] md:px-5">
-                <TransactionLifecycleProgress
-                  summary={usingTransactionRollupOverview ? rollupLifecycleSummary : null}
-                  transaction={transaction}
-                  mainStage={mainStage}
-                  subprocesses={transactionSubprocesses || []}
-                  framed={false}
-                  helperText={
-                    usingTransactionRollupOverview
-                      ? transactionRollup?.blockers?.[0]?.message ||
-                        transactionRollup?.nextAction?.label ||
-                        `${displayedMatterHealthLabel} workflow status from the backend roll-up.`
-                      : stageProgressModel.currentStageBlockers.length
-                      ? `Blockers: ${stageProgressModel.currentStageBlockers.slice(0, 2).join(' • ')}`
-                      : `${mainStageLabel} is currently healthy.`
-                  }
-                />
+                {transactionJourneyModel || transactionJourneyLoading ? (
+                  <TransactionJourneyTracker
+                    model={transactionJourneyModel}
+                    loading={transactionJourneyLoading}
+                    audience="developer"
+                    title="Transaction journey"
+                    subtitle="The shared milestone view for the agent, client, and professional teams."
+                    variant="detailed"
+                  />
+                ) : (
+                  <TransactionLifecycleProgress
+                    summary={usingTransactionRollupOverview ? rollupLifecycleSummary : null}
+                    transaction={transaction}
+                    mainStage={mainStage}
+                    subprocesses={transactionSubprocesses || []}
+                    framed={false}
+                    helperText={transactionRollupError || `${mainStageLabel} is currently healthy.`}
+                  />
+                )}
                 <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[#e5e7eb] pt-4">
                   <p className="text-sm text-[#4b5563]">
                     {canEditMainStage

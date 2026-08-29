@@ -26,6 +26,7 @@ import {
   resolveRequiredAttorneyLanes,
 } from './attorneyLaneResolver.js'
 import { normaliseFinanceType, resolveFinanceWorkflowKey } from './financeWorkflowResolver.js'
+import { buildTransactionJourneySnapshot } from './transactionJourneySnapshot.js'
 
 const TRANSACTION_SELECT =
   'id, finance_type, onboarding_status, seller_onboarding_status, current_main_stage, stage, lifecycle_state, purchaser_type, transaction_type, property_type, development_id, sale_route, sale_channel, lead_owner, ownership_model, source_agency_org_id, seller_has_existing_bond, existing_bond, cancellation_required, registration_date, title_deed_number, registration_confirmation_document_id, created_at, updated_at, completed_at, cancelled_at, last_meaningful_activity_at'
@@ -1377,12 +1378,27 @@ function buildRollupResult({
     activeWorkflow,
     blockers,
   })
+  const progressPercent = calculateProgressPercent(parentWorkflows)
+  const resolvedDerivedAt = toIsoString(derivedAt || transaction.updated_at || Date.now())
+  const transactionJourneySnapshot = buildTransactionJourneySnapshot({
+    transactionId,
+    transaction,
+    parentStage,
+    parentStatus,
+    progressPercent,
+    activeWorkflow,
+    activeStep,
+    workflows: allWorkflows,
+    blockers,
+    derivedAt: resolvedDerivedAt,
+    actorRole,
+  })
 
   return {
     transactionId,
     parentStage,
     parentStatus,
-    progressPercent: calculateProgressPercent(parentWorkflows),
+    progressPercent,
     activeWorkflowKey: activeWorkflow?.workflowKey || null,
     activeStepKey: activeStep?.key || null,
     completedStages: collectCompletedStages(parentWorkflows, transaction),
@@ -1402,7 +1418,8 @@ function buildRollupResult({
       supportingDocumentsConfigured,
     }),
     supportingDocumentsConfigured,
-    derivedAt: toIsoString(derivedAt || transaction.updated_at || Date.now()),
+    derivedAt: resolvedDerivedAt,
+    transactionJourneySnapshot,
     evidenceUsed: unique(evidenceUsed),
     derivedFrom,
     usedLegacyFallback: fallback.usedLegacyFallback,

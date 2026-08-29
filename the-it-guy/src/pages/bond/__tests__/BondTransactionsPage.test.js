@@ -28,6 +28,7 @@ try {
       matchesApplicationWorkspaceTab,
       matchesHqApplicationWorkspaceTab,
       ReferralCommissionReconciliationPanel,
+      resolveBondApplicationTransactionId,
     } = page
     const { bondViews, getBondTransactionView } = config
 
@@ -157,6 +158,20 @@ try {
     assert.equal(matchesApplicationWorkspaceTab({ financeStageKey: 'submitted_to_banks' }, 'processing'), true)
     assert.equal(matchesApplicationWorkspaceTab({ status: 'registered' }, 'registered'), true)
     assert.equal(matchesApplicationWorkspaceTab({ status: 'cancelled' }, 'declined'), true)
+    assert.equal(
+      resolveBondApplicationTransactionId({
+        id: 'bond-application-id',
+        transaction: { id: 'transaction-id' },
+      }),
+      'transaction-id',
+    )
+    assert.equal(
+      resolveBondApplicationTransactionId({
+        id: 'bond-application-id',
+        sourceRow: { transaction: { id: 'source-transaction-id' } },
+      }),
+      'source-transaction-id',
+    )
 
     const rowMarkup = renderToStaticMarkup(
       React.createElement(HqApplicationsTable, {

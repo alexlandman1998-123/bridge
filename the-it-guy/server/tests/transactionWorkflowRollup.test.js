@@ -59,6 +59,12 @@ try {
   assert.equal(financeRollup.blockers.some((item) => item.code === 'BOND_APPROVAL_REQUIRED'), true)
   assert.equal(financeRollup.legacy.mappedParentStage, 'SALES_OTP')
   assert.equal(financeRollup.progressPercent > 20, true)
+  assert.equal(financeRollup.transactionJourneySnapshot.schemaVersion, 1)
+  assert.equal(financeRollup.transactionJourneySnapshot.currentMilestoneKey, 'finance')
+  assert.equal(financeRollup.transactionJourneySnapshot.currentWorkflowItem.key, 'bond_approval')
+  assert.equal(financeRollup.transactionJourneySnapshot.currentWorkflowItem.workflowKey, 'finance_bond')
+  assert.equal(financeRollup.transactionJourneySnapshot.progressPercent, financeRollup.progressPercent)
+  assert.equal(financeRollup.transactionJourneySnapshot.derivedAt, financeRollup.derivedAt)
 
   const comparison = buildLegacyRollupComparison(financeRollup)
   assert.equal(comparison.differences[0].field, 'parentStage')
@@ -240,6 +246,13 @@ try {
   assert.equal(completeRollup.parentStatus, 'complete')
   assert.equal(completeRollup.progressPercent, 100)
   assert.equal(completeRollup.activeWorkflowKey, null)
+  assert.equal(completeRollup.transactionJourneySnapshot.status, 'complete')
+  assert.equal(completeRollup.transactionJourneySnapshot.currentMilestoneKey, null)
+  assert.equal(completeRollup.transactionJourneySnapshot.currentWorkflowItem, null)
+  assert.equal(
+    completeRollup.transactionJourneySnapshot.milestones.every((milestone) => milestone.status === 'complete'),
+    true,
+  )
 
   console.log('transactionWorkflowRollup tests passed')
 } finally {

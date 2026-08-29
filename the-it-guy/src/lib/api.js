@@ -147,11 +147,14 @@ import {
   BOND_APPLICATION_PARTICIPANT_ROLES,
   BOND_APPLICATION_PARTICIPANT_STATUSES,
   BOND_APPLICATION_STATUSES,
+  buildAgentBondApplicationWorkspace,
   buildApplicationStateFromNormalizedApplication,
+  buildBondApplicationIdentity,
   buildLegacyBondApplicationPersistencePayload,
   buildPreApprovalConversionPersistencePayload,
   buildBondApplicationDeclarationEvidence,
   buildBondApplicationDocumentChecklist,
+  buildBondApplicationDocumentReconciliationPlan,
   buildJointBondApplicationSubmissionSnapshot,
   buildJointSignerManifest,
   buildNormalizedBondApplicationFromState,
@@ -8370,6 +8373,32 @@ function normalizeRequiredDocumentRows(rows = [], metadataByKey = {}, context = 
         sortOrder: row.sort_order ?? 999,
         canonicalRequirementInstanceId: row.canonical_requirement_instance_id || null,
         canonical_requirement_instance_id: row.canonical_requirement_instance_id || null,
+        requirementIdentity: row.requirement_identity || null,
+        requirement_identity: row.requirement_identity || null,
+        requirementIdentityVersion: row.requirement_identity_version || null,
+        requirement_identity_version: row.requirement_identity_version || null,
+        requirementBaseKey: row.requirement_base_key || null,
+        requirement_base_key: row.requirement_base_key || null,
+        participantRole: row.participant_role || null,
+        participant_role: row.participant_role || null,
+        participantKey: row.participant_key || null,
+        participant_key: row.participant_key || null,
+        requirementBaselineVersion: row.requirement_baseline_version || null,
+        requirement_baseline_version: row.requirement_baseline_version || null,
+        originatorProfileKey: row.originator_profile_key || null,
+        originator_profile_key: row.originator_profile_key || null,
+        originatorProfileVersion: row.originator_profile_version || null,
+        originator_profile_version: row.originator_profile_version || null,
+        requirementProfileFingerprint: row.requirement_profile_fingerprint || null,
+        requirement_profile_fingerprint: row.requirement_profile_fingerprint || null,
+        decisionFingerprint: row.decision_fingerprint || null,
+        decision_fingerprint: row.decision_fingerprint || null,
+        reconciliationFingerprint: row.reconciliation_fingerprint || null,
+        reconciliation_fingerprint: row.reconciliation_fingerprint || null,
+        reconciliationSource: row.reconciliation_source || null,
+        reconciliation_source: row.reconciliation_source || null,
+        reconciledAt: row.reconciled_at || null,
+        reconciled_at: row.reconciled_at || null,
         portalDocumentType: portalMetadata.portalDocumentType,
         portalWorkspaceCategory: portalMetadata.portalWorkspaceCategory,
         portalMappingSource: portalMetadata.portalMappingSource,
@@ -17556,6 +17585,34 @@ async function fetchTransactionRowById(client, transactionId) {
   }
 
   return query.data || null
+}
+
+async function resolveTransactionIdFromBondApplicationId(client, applicationId) {
+  const normalizedApplicationId = normalizeTextValue(applicationId)
+  if (!normalizedApplicationId) return ''
+
+  const query = await client
+    .from('transaction_bond_applications')
+    .select('transaction_id')
+    .eq('id', normalizedApplicationId)
+    .maybeSingle()
+
+  if (query.error) {
+    if (
+      isMissingTableError(query.error, 'transaction_bond_applications') ||
+      isMissingSchemaError(query.error) ||
+      isPermissionDeniedError(query.error)
+    ) {
+      return ''
+    }
+    console.warn('[transaction-detail] unable to resolve bond application route id', {
+      applicationId: normalizedApplicationId,
+      message: query.error?.message || 'Unknown bond application lookup failure.',
+    })
+    return ''
+  }
+
+  return normalizeTextValue(query.data?.transaction_id)
 }
 
 async function fetchBuyerProcessLeadHandoffForTransaction(client, transactionId) {
@@ -33987,7 +34044,19 @@ export async function fetchTransactionCoreById(transactionId) {
   if (!transactionId) {
     return null
   }
-  return fetchUnitWorkspaceShell(transactionId)
+
+  const coreDetail = await fetchUnitWorkspaceShell(transactionId)
+  if (coreDetail) {
+    return coreDetail
+  }
+
+  const client = requireClient()
+  const resolvedTransactionId = await resolveTransactionIdFromBondApplicationId(client, transactionId)
+  if (!resolvedTransactionId || resolvedTransactionId === transactionId) {
+    return null
+  }
+
+  return fetchUnitWorkspaceShell(resolvedTransactionId)
 }
 
 export async function getTransactionRollup(transactionId, options = {}) {
@@ -33999,10 +34068,19 @@ export async function getTransactionRollup(transactionId, options = {}) {
   const activeProfile = await resolveActiveProfileContext(client)
   const actorRole = normalizeRoleType(options.actorRole || activeProfile.role || 'developer')
   const { resolveTransactionRollup } = await loadTransactionWorkflowRollup()
-  const rollup = await resolveTransactionRollup(transactionId, {
+  let rollup = await resolveTransactionRollup(transactionId, {
     client,
     actorRole,
   })
+  if (!rollup) {
+    const resolvedTransactionId = await resolveTransactionIdFromBondApplicationId(client, transactionId)
+    if (resolvedTransactionId && resolvedTransactionId !== transactionId) {
+      rollup = await resolveTransactionRollup(resolvedTransactionId, {
+        client,
+        actorRole,
+      })
+    }
+  }
   if (!rollup) {
     return null
   }
@@ -34099,16 +34177,25 @@ export async function fetchTransactionById(transactionId) {
   }
 
   const client = requireClient()
-  const transaction = await fetchTransactionRowById(client, transactionId)
+  let resolvedTransactionId = transactionId
+  let transaction = await fetchTransactionRowById(client, resolvedTransactionId)
+  if (!transaction) {
+    const applicationTransactionId = await resolveTransactionIdFromBondApplicationId(client, transactionId)
+    if (applicationTransactionId && applicationTransactionId !== resolvedTransactionId) {
+      resolvedTransactionId = applicationTransactionId
+      transaction = await fetchTransactionRowById(client, resolvedTransactionId)
+    }
+  }
   if (!transaction || transaction?.is_active === false) {
     return null
   }
+  const canonicalTransactionId = transaction.id || resolvedTransactionId
 
   const activeProfile = await resolveActiveProfileContext(client)
   if (normalizeRoleType(activeProfile.role) === 'attorney' && activeProfile.userId) {
     const allowed = await canUserAccessTransaction({
       userId: activeProfile.userId,
-      transactionId,
+      transactionId: canonicalTransactionId,
       roleType: 'attorney',
     })
     if (!allowed) {
@@ -34135,26 +34222,30 @@ export async function fetchTransactionById(transactionId) {
       }
     }
 
-    if (unitDetail?.transaction?.id === transactionId) {
+    if (unitDetail?.transaction?.id === canonicalTransactionId) {
       const [
         transactionEvents,
         transactionProxyUpdates,
         appointmentsByTransactionId,
         buyerProcessLeadHandoff,
         bondOriginatorAgentProgressView,
+        serverBondApplicationIdentity,
+        serverBondApplicationWorkspaceView,
         bondOriginatorAttorneyHandoffView,
         rolePlayers,
         bondApplication,
         liveChecklist,
       ] = await Promise.all([
-        fetchTransactionEvents(transactionId),
-        fetchTransactionProxyUpdatesWithClient(client, transactionId, { limit: 100 }),
-        fetchTransactionAppointments(client, [transactionId], { viewer: 'internal' }),
-        fetchBuyerProcessLeadHandoffForTransaction(client, transactionId),
-        fetchAgentBondOriginatorProgressView(client, transactionId),
-        fetchAttorneyBondOriginatorHandoffView(client, transactionId),
-        fetchTransactionRolePlayersIfPossible(client, transactionId),
-        fetchNormalizedBondApplicationBundle(client, transactionId),
+        fetchTransactionEvents(canonicalTransactionId),
+        fetchTransactionProxyUpdatesWithClient(client, canonicalTransactionId, { limit: 100 }),
+        fetchTransactionAppointments(client, [canonicalTransactionId], { viewer: 'internal' }),
+        fetchBuyerProcessLeadHandoffForTransaction(client, canonicalTransactionId),
+        fetchAgentBondOriginatorProgressView(client, canonicalTransactionId),
+        fetchAgentBondApplicationIdentity(client, canonicalTransactionId),
+        fetchAgentBondApplicationWorkspaceView(client, canonicalTransactionId),
+        fetchAttorneyBondOriginatorHandoffView(client, canonicalTransactionId),
+        fetchTransactionRolePlayersIfPossible(client, canonicalTransactionId),
+        fetchNormalizedBondApplicationBundle(client, canonicalTransactionId),
         buildLiveTransactionChecklistData(client, {
           transaction: unitDetail.transaction,
           onboardingFormData: unitDetail.onboardingFormData || null,
@@ -34163,6 +34254,21 @@ export async function fetchTransactionById(transactionId) {
         }),
       ])
       const setupHealth = resolveTransactionSetupHealthFromEvents(transactionEvents)
+      const bondApplicationIdentity = buildBondApplicationIdentity({
+        transaction: unitDetail.transaction || transaction,
+        bondApplication,
+        originatorProgress: bondOriginatorAgentProgressView,
+        financeWorkflow: unitDetail.transactionFinanceWorkflow || null,
+        serverIdentity: serverBondApplicationIdentity,
+      })
+      const bondApplicationWorkspace = buildAgentBondApplicationWorkspace({
+        workspaceView: serverBondApplicationWorkspaceView,
+        transaction: unitDetail.transaction || transaction,
+        bondApplication,
+        originatorProgress: bondOriginatorAgentProgressView,
+        financeWorkflow: unitDetail.transactionFinanceWorkflow || null,
+        serverIdentity: serverBondApplicationIdentity,
+      })
       return {
         ...unitDetail,
         transactionRequiredDocuments: liveChecklist.requiredDocuments,
@@ -34176,9 +34282,11 @@ export async function fetchTransactionById(transactionId) {
         setupHealth,
         newTransactionSetupHealth: setupHealth,
         transactionProxyUpdates,
-        appointments: appointmentsByTransactionId[transactionId] || [],
+        appointments: appointmentsByTransactionId[canonicalTransactionId] || [],
         buyerProcessLeadHandoff,
         bondOriginatorAgentProgressView,
+        bondApplicationIdentity,
+        bondApplicationWorkspace,
         bondOriginatorAttorneyHandoffView,
         bondApplication,
         normalizedBondApplication: bondApplication,
@@ -34211,23 +34319,23 @@ export async function fetchTransactionById(transactionId) {
     client
       .from('transaction_participants')
       .select(TRANSACTION_PARTICIPANT_FULL_SELECT)
-      .eq('transaction_id', transactionId),
-    fetchTransactionRolePlayersIfPossible(client, transactionId),
-    fetchTransactionDiscussion(transactionId, {
+      .eq('transaction_id', canonicalTransactionId),
+    fetchTransactionRolePlayersIfPossible(client, canonicalTransactionId),
+    fetchTransactionDiscussion(canonicalTransactionId, {
       unitId: transaction.unit_id || null,
       viewer: 'internal',
       includeLegacy: true,
       limit: 250,
     }),
-    fetchTransactionEvents(transactionId),
-    fetchTransactionProxyUpdatesWithClient(client, transactionId, {
+    fetchTransactionEvents(canonicalTransactionId),
+    fetchTransactionProxyUpdatesWithClient(client, canonicalTransactionId, {
       limit: 100,
     }),
-    fetchOnboardingFormDataForTransaction(client, transactionId, transaction?.purchaser_type || 'individual'),
-    fetchTransactionAppointments(client, [transactionId], {
+    fetchOnboardingFormDataForTransaction(client, canonicalTransactionId, transaction?.purchaser_type || 'individual'),
+    fetchTransactionAppointments(client, [canonicalTransactionId], {
       viewer: 'internal',
     }),
-    fetchBuyerProcessLeadHandoffForTransaction(client, transactionId),
+    fetchBuyerProcessLeadHandoffForTransaction(client, canonicalTransactionId),
   ])
 
   if (unitQuery.error && !isMissingSchemaError(unitQuery.error)) {
@@ -34255,14 +34363,14 @@ export async function fetchTransactionById(transactionId) {
     participantsQuery = await client
       .from('transaction_participants')
       .select(TRANSACTION_PARTICIPANT_LEGACY_SELECT)
-      .eq('transaction_id', transactionId)
+      .eq('transaction_id', canonicalTransactionId)
   }
   if (participantsQuery.error && !isMissingSchemaError(participantsQuery.error)) {
     throw participantsQuery.error
   }
 
   const documents = await loadSharedDocuments(client, {
-    transactionIds: [transactionId],
+    transactionIds: [canonicalTransactionId],
     viewer: 'internal',
   })
   const transactionSubprocesses = await ensureTransactionSubprocesses(client, transaction.id)
@@ -34274,7 +34382,7 @@ export async function fetchTransactionById(transactionId) {
     })
   }
   try {
-    await ensureTransactionChecklistItems({ transactionId })
+    await ensureTransactionChecklistItems({ transactionId: canonicalTransactionId })
   } catch (ensureError) {
     if (!isMissingSchemaError(ensureError)) {
       throw ensureError
@@ -34286,12 +34394,12 @@ export async function fetchTransactionById(transactionId) {
     issueOverridesByTransactionId,
     transactionRequirementsByTransactionId,
   ] = await Promise.all([
-    loadTransactionDocumentRequestsByIds(client, [transactionId]),
-    loadTransactionChecklistItemsByIds(client, [transactionId]),
-    loadTransactionIssueOverridesByIds(client, [transactionId]),
-    fetchTransactionRequiredDocumentsByTransactionIds(client, [transactionId]),
+    loadTransactionDocumentRequestsByIds(client, [canonicalTransactionId]),
+    loadTransactionChecklistItemsByIds(client, [canonicalTransactionId]),
+    loadTransactionIssueOverridesByIds(client, [canonicalTransactionId]),
+    fetchTransactionRequiredDocumentsByTransactionIds(client, [canonicalTransactionId]),
   ])
-  const transactionRequiredDocuments = transactionRequirementsByTransactionId[transactionId] || []
+  const transactionRequiredDocuments = transactionRequirementsByTransactionId[canonicalTransactionId] || []
   const liveChecklist = await buildLiveTransactionChecklistData(client, {
     transaction,
     onboardingFormData: onboardingFormData || null,
@@ -34328,9 +34436,26 @@ export async function fetchTransactionById(transactionId) {
     liveChecklist.requiredDocumentChecklist,
   )
   const stageKey = resolveAttorneyOperationalStageKey({ transaction })
-  const bondOriginatorAgentProgressView = await fetchAgentBondOriginatorProgressView(client, transactionId)
-  const bondOriginatorAttorneyHandoffView = await fetchAttorneyBondOriginatorHandoffView(client, transactionId)
-  const bondApplication = await fetchNormalizedBondApplicationBundle(client, transactionId)
+  const bondOriginatorAgentProgressView = await fetchAgentBondOriginatorProgressView(client, canonicalTransactionId)
+  const serverBondApplicationIdentity = await fetchAgentBondApplicationIdentity(client, canonicalTransactionId)
+  const serverBondApplicationWorkspaceView = await fetchAgentBondApplicationWorkspaceView(client, canonicalTransactionId)
+  const bondOriginatorAttorneyHandoffView = await fetchAttorneyBondOriginatorHandoffView(client, canonicalTransactionId)
+  const bondApplication = await fetchNormalizedBondApplicationBundle(client, canonicalTransactionId)
+  const bondApplicationIdentity = buildBondApplicationIdentity({
+    transaction,
+    bondApplication,
+    originatorProgress: bondOriginatorAgentProgressView,
+    financeWorkflow: transactionFinanceWorkflow,
+    serverIdentity: serverBondApplicationIdentity,
+  })
+  const bondApplicationWorkspace = buildAgentBondApplicationWorkspace({
+    workspaceView: serverBondApplicationWorkspaceView,
+    transaction,
+    bondApplication,
+    originatorProgress: bondOriginatorAgentProgressView,
+    financeWorkflow: transactionFinanceWorkflow,
+    serverIdentity: serverBondApplicationIdentity,
+  })
   const setupHealth = resolveTransactionSetupHealthFromEvents(transactionEvents)
   const normalizedTransactionParticipants = (participantsQuery.data || []).map((row) => normalizeTransactionParticipantRow(row))
   const buyerOperationalAudit = buildTransactionBuyerOperationalAudit({
@@ -34391,13 +34516,13 @@ export async function fetchTransactionById(transactionId) {
       finance: buyerFinanceReadiness,
       transfer: transferReadinessFromBuyerDocs,
     },
-    documentRequests: documentRequestsByTransactionId[transactionId] || [],
-    documentRequestSummary: summarizeDocumentRequests(documentRequestsByTransactionId[transactionId] || []),
-    transactionChecklistItems: checklistItemsByTransactionId[transactionId] || [],
-    checklistSummary: summarizeChecklistItems(checklistItemsByTransactionId[transactionId] || [], {
+    documentRequests: documentRequestsByTransactionId[canonicalTransactionId] || [],
+    documentRequestSummary: summarizeDocumentRequests(documentRequestsByTransactionId[canonicalTransactionId] || []),
+    transactionChecklistItems: checklistItemsByTransactionId[canonicalTransactionId] || [],
+    checklistSummary: summarizeChecklistItems(checklistItemsByTransactionId[canonicalTransactionId] || [], {
       stageKey,
     }),
-    issueOverrides: issueOverridesByTransactionId[transactionId] || [],
+    issueOverrides: issueOverridesByTransactionId[canonicalTransactionId] || [],
     stage: normalizeStage(transaction?.stage, unitQuery.data?.status || 'Available'),
     mainStage: normalizeMainStage(
       transaction?.current_main_stage,
@@ -34407,9 +34532,11 @@ export async function fetchTransactionById(transactionId) {
     setupHealth,
     newTransactionSetupHealth: setupHealth,
     transactionProxyUpdates,
-    appointments: appointmentsByTransactionId[transactionId] || [],
+    appointments: appointmentsByTransactionId[canonicalTransactionId] || [],
     buyerProcessLeadHandoff,
     bondOriginatorAgentProgressView,
+    bondApplicationIdentity,
+    bondApplicationWorkspace,
     bondOriginatorAttorneyHandoffView,
     bondApplication,
     normalizedBondApplication: bondApplication,
@@ -34417,6 +34544,7 @@ export async function fetchTransactionById(transactionId) {
   } catch (loadError) {
     console.warn('[transaction-detail] full detail load failed; leaving core shell in place', {
       transactionId,
+      canonicalTransactionId,
       message: loadError?.message || 'Unknown transaction detail load failure.',
     })
     return null
@@ -39047,6 +39175,7 @@ export async function fetchTransactionStatusByToken(token) {
   if (!transaction) {
     throw new Error('Transaction not found.')
   }
+  const transactionJourneySnapshotPromise = fetchTokenScopedTransactionJourneySnapshot(client, transaction.id)
 
   const [unitQuery, buyerQuery] = await Promise.all([
     client
@@ -39088,6 +39217,7 @@ export async function fetchTransactionStatusByToken(token) {
   const bondSummary = subprocesses.find((item) => item.process_type === 'bond')?.summary || null
   const stage = normalizeStage(transaction.stage, unitQuery.data?.status)
   const mainStage = normalizeMainStage(transaction.current_main_stage, stage)
+  const transactionJourneySnapshot = await transactionJourneySnapshotPromise
 
   return {
     link,
@@ -39101,6 +39231,7 @@ export async function fetchTransactionStatusByToken(token) {
     attorneySummary: transferSummary,
     transferSummary,
     bondSummary,
+    transactionJourneySnapshot,
     discussion,
     latestDiscussion,
     latestStatusComment:
@@ -39119,6 +39250,22 @@ export async function fetchTransactionStatusByToken(token) {
       bondSummary?.waitingStep?.step_label ||
       'No next action set.',
     updatedAt: transaction.updated_at || transaction.created_at || null,
+  }
+}
+
+async function fetchTokenScopedTransactionJourneySnapshot(client, transactionId) {
+  if (!client || !transactionId) return null
+
+  try {
+    const { resolveTransactionRollup } = await loadTransactionWorkflowRollup()
+    const rollup = await resolveTransactionRollup(transactionId, {
+      client,
+      actorRole: 'external_share',
+      preferLegacy: true,
+    })
+    return rollup?.transactionJourneySnapshot || null
+  } catch {
+    return null
   }
 }
 
@@ -39489,6 +39636,7 @@ async function fetchExternalTransactionWorkspace(client, transactionId, { viewer
   if (!transaction) {
     throw new Error('Transaction not found.')
   }
+  const transactionJourneySnapshotPromise = fetchTokenScopedTransactionJourneySnapshot(client, transaction.id)
 
   const { data: unit, error: unitError } = await client
     .from('units')
@@ -39566,6 +39714,7 @@ async function fetchExternalTransactionWorkspace(client, transactionId, { viewer
   const checklistResult = requiredDocuments.length
     ? buildRequiredChecklistFromRows(requiredDocuments, documents)
     : buildDocumentChecklist(requirements, documents)
+  const transactionJourneySnapshot = await transactionJourneySnapshotPromise
 
   return {
     transaction,
@@ -39579,6 +39728,7 @@ async function fetchExternalTransactionWorkspace(client, transactionId, { viewer
     requiredDocuments,
     requiredDocumentChecklist: checklistResult.checklist,
     documentSummary: checklistResult.summary,
+    transactionJourneySnapshot,
     stage: normalizeStage(transaction.stage, unit?.status),
   }
 }
@@ -39726,6 +39876,50 @@ async function fetchAgentBondOriginatorProgressView(client, transactionId) {
   }
 
   return rpc.data
+}
+
+async function fetchAgentBondApplicationIdentity(client, transactionId, bondApplicationId = null) {
+  if (!transactionId) return null
+
+  const rpc = await client.rpc('bridge_agent_bond_application_identity', {
+    p_transaction_id: transactionId,
+    p_bond_application_id: bondApplicationId || null,
+  })
+
+  if (rpc.error) {
+    if (
+      isMissingRpcFunctionError(rpc.error, 'bridge_agent_bond_application_identity') ||
+      isMissingSchemaError(rpc.error) ||
+      isPermissionDeniedError(rpc.error)
+    ) {
+      return null
+    }
+    throw rpc.error
+  }
+
+  return rpc.data && typeof rpc.data === 'object' ? rpc.data : null
+}
+
+async function fetchAgentBondApplicationWorkspaceView(client, transactionId, bondApplicationId = null) {
+  if (!transactionId) return null
+
+  const rpc = await client.rpc('bridge_agent_bond_application_workspace_view', {
+    p_transaction_id: transactionId,
+    p_bond_application_id: bondApplicationId || null,
+  })
+
+  if (rpc.error) {
+    if (
+      isMissingRpcFunctionError(rpc.error, 'bridge_agent_bond_application_workspace_view') ||
+      isMissingSchemaError(rpc.error) ||
+      isPermissionDeniedError(rpc.error)
+    ) {
+      return null
+    }
+    throw rpc.error
+  }
+
+  return rpc.data && typeof rpc.data === 'object' ? rpc.data : null
 }
 
 async function fetchAttorneyBondOriginatorHandoffView(client, transactionId) {
@@ -45299,6 +45493,20 @@ export async function fetchClientPortalByToken(token) {
   }
 }
 
+export async function fetchClientPortalJourneySnapshotByToken(token, actorRole = 'buyer') {
+  const client = requireClientPortalTokenClient(token)
+  const link = await resolveClientPortalLinkByToken(client, token)
+  if (!link?.transaction_id) return null
+
+  const { resolveTransactionRollup } = await loadTransactionWorkflowRollup()
+  const rollup = await resolveTransactionRollup(link.transaction_id, {
+    client,
+    actorRole: normalizeRoleType(actorRole || 'buyer'),
+    preferLegacy: true,
+  })
+  return rollup?.transactionJourneySnapshot || null
+}
+
 export async function fetchClientPortalCoreByToken(token) {
   const client = requireClientPortalTokenClient(token)
   const link = await resolveClientPortalLinkByToken(client, token)
@@ -47614,18 +47822,41 @@ export async function reconcileClientPortalBondDocumentRequirements({
   if (!transactionId) return []
 
   const activeRequirements = Array.isArray(requirements) ? requirements : []
-  const activeKeys = new Set(activeRequirements.map((requirement) => String(requirement?.key || '').trim()).filter(Boolean))
-  const managedPrefix = 'bond_application_'
   const now = new Date().toISOString()
+  const phase3ColumnNames = [
+    'requirement_identity',
+    'requirement_identity_version',
+    'requirement_base_key',
+    'participant_role',
+    'participant_key',
+    'requirement_baseline_version',
+    'originator_profile_key',
+    'originator_profile_version',
+    'requirement_profile_fingerprint',
+    'decision_fingerprint',
+    'reconciliation_fingerprint',
+    'reconciliation_source',
+    'reconciled_at',
+  ]
   const fullSelect =
     'id, transaction_id, document_key, document_label, is_required, is_uploaded, status, enabled, group_key, group_label, description, required_from_role, visibility_scope, allow_multiple, uploaded_document_id, uploaded_at, verified_at, rejected_at, notes, sort_order, canonical_requirement_instance_id, created_at, updated_at'
+  const phase3Select = `${fullSelect}, ${phase3ColumnNames.join(', ')}`
   const legacySelect =
     'id, transaction_id, document_key, document_label, is_required, is_uploaded, uploaded_document_id, sort_order, created_at, updated_at'
 
   let existingQuery = await client
     .from('transaction_required_documents')
-    .select(fullSelect)
+    .select(phase3Select)
     .eq('transaction_id', transactionId)
+  let phase3ColumnsAvailable = true
+
+  if (existingQuery.error && phase3ColumnNames.some((column) => isMissingColumnError(existingQuery.error, column))) {
+    phase3ColumnsAvailable = false
+    existingQuery = await client
+      .from('transaction_required_documents')
+      .select(fullSelect)
+      .eq('transaction_id', transactionId)
+  }
 
   if (
     existingQuery.error &&
@@ -47650,39 +47881,38 @@ export async function reconcileClientPortalBondDocumentRequirements({
   }
 
   const existingRows = existingQuery.data || []
-  const existingByKey = new Map(existingRows.map((row) => [String(row.document_key || '').trim(), row]))
-  const upsertRows = activeRequirements.map((requirement, index) => {
-    const key = String(requirement.key || '').trim()
-    const existing = existingByKey.get(key) || {}
-    return {
-      transaction_id: transactionId,
-      document_key: key,
-      document_label: requirement.title || key,
-      is_required: requirement.required !== false,
-      is_uploaded: Boolean(existing.is_uploaded),
-      status: existing.status || (existing.is_uploaded ? 'uploaded' : 'missing'),
-      enabled: true,
-      group_key: 'bond_application_documents',
-      group_label: requirement.category || 'Bond application documents',
-      description: requirement.description || '',
-      required_from_role: 'client',
-      visibility_scope: 'client',
-      allow_multiple: Number(requirement.minimumFileCount || 1) > 1,
-      uploaded_document_id: existing.uploaded_document_id || null,
-      uploaded_at: existing.uploaded_at || null,
-      verified_at: existing.verified_at || null,
-      rejected_at: existing.rejected_at || null,
-      notes: existing.notes || (fingerprint ? `guided_bond_application_v2:${fingerprint}` : null),
-      sort_order: Number(requirement.order || 0) || index + 1,
-      canonical_requirement_instance_id: existing.canonical_requirement_instance_id || null,
+  const reconciliationPlan = buildBondApplicationDocumentReconciliationPlan({
+    transactionId,
+    activeRequirements,
+    existingRequiredDocuments: existingRows,
+  })
+  const reconciliationFingerprint = fingerprint || reconciliationPlan.fingerprint
+  const upsertRows = reconciliationPlan.rowsToUpsert
+    .filter((row) => row.document_key)
+    .map((row) => ({
+      ...row,
+      notes: row.notes || (reconciliationFingerprint ? `guided_bond_application_v2:${reconciliationFingerprint}` : null),
+      reconciliation_fingerprint: reconciliationFingerprint || null,
+      reconciled_at: now,
       updated_at: now,
-    }
-  }).filter((row) => row.document_key)
+    }))
+  const compatibleUpsertRows = upsertRows.map((row) => {
+    const compatible = { ...row }
+    phase3ColumnNames.forEach((column) => delete compatible[column])
+    return compatible
+  })
 
   if (upsertRows.length) {
     let upsertResult = await client
       .from('transaction_required_documents')
-      .upsert(upsertRows, { onConflict: 'transaction_id,document_key' })
+      .upsert(phase3ColumnsAvailable ? upsertRows : compatibleUpsertRows, { onConflict: 'transaction_id,document_key' })
+
+    if (upsertResult.error && phase3ColumnNames.some((column) => isMissingColumnError(upsertResult.error, column))) {
+      phase3ColumnsAvailable = false
+      upsertResult = await client
+        .from('transaction_required_documents')
+        .upsert(compatibleUpsertRows, { onConflict: 'transaction_id,document_key' })
+    }
 
     if (
       upsertResult.error &&
@@ -47697,7 +47927,7 @@ export async function reconcileClientPortalBondDocumentRequirements({
     ) {
       upsertResult = await client
         .from('transaction_required_documents')
-        .upsert(upsertRows.map((row) => ({
+        .upsert(compatibleUpsertRows.map((row) => ({
           transaction_id: row.transaction_id,
           document_key: row.document_key,
           document_label: row.document_label,
@@ -47715,19 +47945,22 @@ export async function reconcileClientPortalBondDocumentRequirements({
     }
   }
 
-  const staleRows = existingRows.filter((row) => {
-    const key = String(row.document_key || '').trim()
-    return key.startsWith(managedPrefix) && !activeKeys.has(key)
-  })
+  const staleRows = reconciliationPlan.inactiveRows
   for (const staleRow of staleRows) {
+    const stalePatch = {
+      is_required: false,
+      enabled: false,
+      status: staleRow.is_uploaded || staleRow.uploaded_document_id ? staleRow.status || 'uploaded' : 'not_required',
+      updated_at: now,
+    }
+    if (phase3ColumnsAvailable) {
+      stalePatch.reconciliation_fingerprint = reconciliationFingerprint || null
+      stalePatch.reconciled_at = now
+      stalePatch.reconciliation_source = 'bond_application_document_reconciliation'
+    }
     let staleResult = await client
       .from('transaction_required_documents')
-      .update({
-        is_required: false,
-        enabled: false,
-        status: staleRow.is_uploaded ? staleRow.status || 'uploaded' : 'not_required',
-        updated_at: now,
-      })
+      .update(stalePatch)
       .eq('id', staleRow.id)
 
     if (
@@ -47750,9 +47983,18 @@ export async function reconcileClientPortalBondDocumentRequirements({
 
   let refreshed = await client
     .from('transaction_required_documents')
-    .select(fullSelect)
+    .select(phase3ColumnsAvailable ? phase3Select : fullSelect)
     .eq('transaction_id', transactionId)
     .order('sort_order', { ascending: true })
+
+  if (refreshed.error && phase3ColumnNames.some((column) => isMissingColumnError(refreshed.error, column))) {
+    phase3ColumnsAvailable = false
+    refreshed = await client
+      .from('transaction_required_documents')
+      .select(fullSelect)
+      .eq('transaction_id', transactionId)
+      .order('sort_order', { ascending: true })
+  }
 
   if (
     refreshed.error &&

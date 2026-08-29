@@ -7,6 +7,10 @@ import {
   BOND_APPLICATION_DOCUMENT_SATISFACTION_MODES,
   BOND_APPLICATION_DOCUMENT_TIMING,
 } from './bondApplicationDocumentRules.js'
+import {
+  applyBondOriginatorRequirementProfile,
+  resolveBondOriginatorRequirementProfile,
+} from '../originatorRequirements/bondOriginatorRequirementProfiles.js'
 
 const VALID_TIMINGS = new Set(Object.values(BOND_APPLICATION_DOCUMENT_TIMING))
 const VALID_SATISFACTION_MODES = new Set(Object.values(BOND_APPLICATION_DOCUMENT_SATISFACTION_MODES))
@@ -116,25 +120,50 @@ export function resolveBondApplicationDocumentRequirements({
   participantRole = 'primary_applicant',
   participantContext = null,
 } = {}) {
-  const diagnostics = validateBondApplicationDocumentRuleContract(documentRuleContract).diagnostics
+  const requirementProfileResolution = applicationState?.requirementProfile || resolveBondOriginatorRequirementProfile()
+  const profiledContract = applyBondOriginatorRequirementProfile({
+    baselineRules: documentRuleContract,
+    profileResolution: requirementProfileResolution,
+  })
+  const interpretationIssues = Array.isArray(applicationState?.interpretation?.blockingIssues)
+    ? applicationState.interpretation.blockingIssues.map((item) => ({
+        ...item,
+        code: item.code || 'interpretation_blocker',
+        source: 'canonical_application_interpreter',
+      }))
+    : []
+  const diagnostics = [
+    ...validateBondApplicationDocumentRuleContract(profiledContract.rules).diagnostics,
+    ...profiledContract.diagnostics.map((item) => ({ ...item, source: 'originator_requirement_profile' })),
+    ...interpretationIssues,
+  ]
   const role = participantContext?.participantRole || participantRole || 'primary_applicant'
   const participantKey = participantContext?.participantKey || null
   const participantPath = participantContext?.participantPath || null
   const hideSharedApplicationRequirements = Boolean(participantContext) &&
     role === 'surety' &&
     participantContext.canEditShared === false
-  const resolved = documentRuleContract
+  const resolved = profiledContract.rules
     .filter((definition) => {
       if (definition.scope === 'application') return !hideSharedApplicationRequirements
       return !definition.participantRole || definition.participantRole === role || (role !== 'surety' && definition.participantRole === 'primary_applicant')
     })
     .map((definition) => adaptRequirementForParticipant(definition, role, participantKey, participantPath))
     .map((definition) => normalizeRequirement(definition, applicationState))
+    .map((requirement) => ({
+      ...requirement,
+      decisionFingerprint: applicationState?.interpretation?.decisionFingerprint || null,
+    }))
     .sort((left, right) => (Number(left.order || 0) - Number(right.order || 0)) || String(left.key).localeCompare(String(right.key)))
 
   const activeRequirements = resolved.filter((requirement) => requirement.active)
   return {
     ruleSetVersion: BOND_APPLICATION_DOCUMENT_RULE_SET_VERSION,
+    interpretationVersion: applicationState?.interpretation?.version || null,
+    interpretationTrusted: interpretationIssues.length === 0,
+    decisionFingerprint: applicationState?.interpretation?.decisionFingerprint || null,
+    requirementProfile: profiledContract.metadata,
+    requirementProfileTrusted: profiledContract.trusted,
     activeRequirements,
     inactiveRequirements: resolved.filter((requirement) => !requirement.active),
     requiredRequirements: activeRequirements.filter((requirement) => requirement.required),
@@ -153,6 +182,10 @@ export function buildBondApplicationDocumentRequirementFingerprint(requirements 
       requirement.satisfactionMode || '',
       requirement.minimumFileCount || 1,
       requirement.allowMultipleFiles ? 'multiple_files' : 'single_file',
+      requirement.requirementBaselineVersion || '',
+      requirement.originatorProfileKey || '',
+      requirement.originatorProfileVersion || '',
+      requirement.requirementProfileFingerprint || '',
       requirement.evidencePeriodMonths || '',
       requirement.evidencePeriodYears || '',
       requirement.required ? 'required' : 'optional',

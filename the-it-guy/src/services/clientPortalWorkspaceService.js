@@ -3,6 +3,7 @@ import {
   fetchClientPortalByToken,
   fetchClientPortalContextsByToken,
   fetchClientPortalCoreByToken,
+  fetchClientPortalJourneySnapshotByToken,
   fetchClientPortalMandatePacketSummaryByToken,
 } from '../lib/api'
 import { getDemoClientPortalSeedData } from '../lib/onboardingDemoLinks'
@@ -3747,6 +3748,15 @@ export async function getClientPortalWorkspaceData(token, workspace = 'shared', 
   })
 
   const clientRole = workspaceMode === 'selling' ? 'seller' : 'buyer'
+  const transactionJourneySnapshotPromise = mode !== 'core' && !isSellerOnboardingToken(token)
+    ? fetchClientPortalJourneySnapshotByToken(token, clientRole).catch((error) => {
+        console.warn('[client-portal-journey] Canonical snapshot unavailable', {
+          clientRole,
+          error,
+        })
+        return null
+      })
+    : Promise.resolve(null)
   let portalData = await fetchPortalDataForWorkspace(token, mode, {
     sellerPortalAccessToken: options?.sellerPortalAccessToken,
     clientRole,
@@ -3828,18 +3838,22 @@ export async function getClientPortalWorkspaceData(token, workspace = 'shared', 
   })
   const portalCapabilities = buildClientPortalCapabilities(portalProfile)
   let workflowReadModel = null
+  let transactionJourneySnapshot = null
   try {
     if (mode !== 'core' && portalData?.transaction?.id) {
-      workflowReadModel = await getTransactionWorkflowReadModel(portalData.transaction.id, {
-        viewerRole: clientRole,
-        canViewPrivate: false,
-      }).catch((error) => {
-        console.warn('[client-portal-workflow] Read-model unavailable', {
-          transactionId: portalData?.transaction?.id || null,
-          error,
-        })
-        return null
-      })
+      ;[workflowReadModel, transactionJourneySnapshot] = await Promise.all([
+        getTransactionWorkflowReadModel(portalData.transaction.id, {
+          viewerRole: clientRole,
+          canViewPrivate: false,
+        }).catch((error) => {
+          console.warn('[client-portal-workflow] Read-model unavailable', {
+            transactionId: portalData?.transaction?.id || null,
+            error,
+          })
+          return null
+        }),
+        transactionJourneySnapshotPromise,
+      ])
     }
   } catch (workflowError) {
     console.warn('[client-portal-workflow] Failed to resolve read-model', {
@@ -4029,6 +4043,7 @@ export async function getClientPortalWorkspaceData(token, workspace = 'shared', 
       readiness: portalData?.buyerReadiness?.finance || null,
     },
     workflowSummary,
+    transactionJourneySnapshot,
     mvpControlBoard: workflowReadModel?.mvpControlBoard || null,
     mvpTransactionHealth: workflowReadModel?.mvpTransactionHealth || null,
     attorneyUpdates: Array.isArray(portalData?.attorneyLaneUpdates) ? portalData.attorneyLaneUpdates : [],

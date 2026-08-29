@@ -17,6 +17,9 @@ export default function useTransactionLiveRefresh({
   const refreshRef = useRef(onRefresh)
   const [connectionState, setConnectionState] = useState('idle')
   const [lastRefreshAt, setLastRefreshAt] = useState(null)
+  const [lastRefreshReason, setLastRefreshReason] = useState(null)
+  const [lastErrorAt, setLastErrorAt] = useState(null)
+  const [lastErrorMessage, setLastErrorMessage] = useState('')
 
   useEffect(() => {
     refreshRef.current = onRefresh
@@ -40,8 +43,17 @@ export default function useTransactionLiveRefresh({
       state.inFlight = true
       try {
         await refreshRef.current?.({ reason, payload })
-        if (state.active) setLastRefreshAt(new Date().toISOString())
+        if (state.active) {
+          setLastRefreshAt(new Date().toISOString())
+          setLastRefreshReason(reason)
+          setLastErrorAt(null)
+          setLastErrorMessage('')
+        }
       } catch (error) {
+        if (state.active) {
+          setLastErrorAt(new Date().toISOString())
+          setLastErrorMessage(error?.message || 'Background refresh failed.')
+        }
         console.warn('[transaction-live-refresh] Background refresh failed.', {
           transactionId: normalizedTransactionId,
           reason,
@@ -115,5 +127,11 @@ export default function useTransactionLiveRefresh({
     }
   }, [debounceMs, enabled, includeNotifications, pollingIntervalMs, transactionId])
 
-  return { connectionState, lastRefreshAt }
+  return {
+    connectionState,
+    lastRefreshAt,
+    lastRefreshReason,
+    lastErrorAt,
+    lastErrorMessage,
+  }
 }

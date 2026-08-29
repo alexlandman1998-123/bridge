@@ -11,7 +11,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import TransactionLifecycleProgress from '../components/TransactionLifecycleProgress'
 import TransactionProgressPanel from '../components/TransactionProgressPanel'
+import TransactionJourneyTracker from '../components/transaction/TransactionJourneyTracker'
 import { financeTypeShortLabel, normalizeFinanceType } from '../core/transactions/financeType'
+import { buildTransactionJourneyPresentation } from '../core/transactions/transactionJourneyPresentation'
 import { MAIN_STAGE_LABELS, STAGES, getClientStageExplainer, getMainStageFromDetailedStage } from '../core/transactions/stageConfig'
 import { getTransactionRoleLabel } from '../core/transactions/roleConfig'
 import { buildClientSafeExternalWorkspace, getExternalRolePresentation } from '../core/transactions/externalWorkspaceAdapter'
@@ -897,6 +899,12 @@ function ExternalTransactionPortal() {
   }, [portal?.requiredDocumentChecklist])
 
   const safePortal = useMemo(() => (portal ? buildClientSafeExternalWorkspace(portal) : null), [portal])
+  const transactionJourneyModel = useMemo(
+    () => safePortal?.transactionJourneySnapshot
+      ? buildTransactionJourneyPresentation({ snapshot: safePortal.transactionJourneySnapshot })
+      : null,
+    [safePortal?.transactionJourneySnapshot],
+  )
 
   async function uploadForCategory(file, uploadCategory, requiredDocumentKey = null) {
     if (!file || !accessToken) {
@@ -1312,12 +1320,22 @@ function ExternalTransactionPortal() {
               <p>One timeline everyone can trust, from reservation to registration.</p>
             </div>
           </div>
-          <TransactionLifecycleProgress
-            transaction={safePortal.transaction}
-            mainStage={mainStage}
-            subprocesses={safePortal.subprocesses || []}
-            framed={false}
-          />
+          {transactionJourneyModel ? (
+            <TransactionJourneyTracker
+              model={transactionJourneyModel}
+              audience="external-portal"
+              title="Transaction journey"
+              subtitle="The same milestone and current status shared across the transaction team."
+              variant="detailed"
+            />
+          ) : (
+            <TransactionLifecycleProgress
+              transaction={safePortal.transaction}
+              mainStage={mainStage}
+              subprocesses={safePortal.subprocesses || []}
+              framed={false}
+            />
+          )}
         </section>
 
         {error ? <p className="status-message error">{error}</p> : null}

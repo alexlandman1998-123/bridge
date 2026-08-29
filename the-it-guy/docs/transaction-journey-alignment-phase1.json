@@ -1,0 +1,237 @@
+{
+  "schemaVersion": 1,
+  "phase": "phase_1_audit_and_stabilise",
+  "status": "complete",
+  "canonicalAuthority": {
+    "service": "server/services/transactionWorkflowRollup.js",
+    "entryPoint": "resolveTransactionRollup",
+    "clientEntryPoint": "getTransactionRollup",
+    "clientPath": "src/lib/api.js",
+    "rule": "All live transaction journey surfaces must consume one transaction-scoped rollup. Presentation code may translate copy for an audience but may not infer or advance workflow state."
+  },
+  "targetMilestones": [
+    { "key": "otp_signed", "label": "OTP Signed" },
+    { "key": "finance", "label": "Finance" },
+    { "key": "guarantees", "label": "Guarantees" },
+    { "key": "transfer", "label": "Transfer" },
+    { "key": "lodgement", "label": "Lodgement" },
+    { "key": "registration", "label": "Registration" }
+  ],
+  "milestoneRules": [
+    {
+      "milestoneKey": "otp_signed",
+      "parentStages": ["SETUP", "SALES_OTP"],
+      "stepKeys": ["collect_buyer_details", "collect_seller_details", "generate_otp", "sign_otp", "collect_supporting_documents"]
+    },
+    {
+      "milestoneKey": "finance",
+      "parentStages": ["FINANCE"],
+      "stepKeys": ["finance_type_confirmed", "proof_of_funds", "bond_application", "submitted_to_banks", "bank_review", "waiting_for_bank_quotes", "quote_received", "quote_accepted", "bond_approval", "cash_portion_confirmation"]
+    },
+    {
+      "milestoneKey": "guarantees",
+      "parentStages": ["FINANCE", "TRANSFER"],
+      "stepKeys": ["guarantees", "guarantees_issued", "guarantees_received", "guarantees_confirmed", "guarantees_accepted", "guarantee_wording_accepted", "transfer_guarantees_accepted", "cancellation_guarantees_requested", "cancellation_guarantees_received", "cancellation_guarantees_accepted"]
+    },
+    {
+      "milestoneKey": "transfer",
+      "parentStages": ["TRANSFER"],
+      "stepKeys": ["transfer_documents_prepared", "transfer_documents_signed", "clearance_figures_requested", "rates_figures_requested", "rates_clearance_requested", "clearance_figures_received", "rates_clearance_uploaded"]
+    },
+    {
+      "milestoneKey": "lodgement",
+      "parentStages": ["TRANSFER", "REGISTRATION"],
+      "stepKeys": ["ready_for_lodgement", "lodgement_ready", "lodgement_pack_prepared", "bond_lodgement_ready", "bond_lodgement_pack_prepared", "cancellation_lodgement_ready", "lodged", "lodgement_submitted", "bond_lodged", "bond_lodgement_submitted", "cancellation_lodged", "all_required_matters_lodged"]
+    },
+    {
+      "milestoneKey": "registration",
+      "parentStages": ["REGISTRATION", "COMPLETE"],
+      "stepKeys": ["registration_confirmed", "bond_registered", "registration", "complete"]
+    }
+  ],
+  "alignmentAudiences": [
+    "agent",
+    "buyer",
+    "seller",
+    "transfer_attorney",
+    "bond_originator",
+    "bond_attorney",
+    "cancellation_attorney",
+    "developer",
+    "external_share"
+  ],
+  "surfaceInventory": [
+    {
+      "key": "agent_transaction_overview",
+      "audiences": ["agent"],
+      "sourcePath": "src/pages/AttorneyTransactionDetail.jsx",
+      "renderer": "AgentTransactionCommandCenter",
+      "stateBuilder": "buildAgentJourneyStages",
+      "currentAuthority": "mixed_rollup_lifecycle_and_regex_fallback",
+      "currentMilestones": ["confirmed", "otp", "finance", "transfer", "registration"],
+      "targetAuthority": "transaction_workflow_rollup",
+      "gap": "Five local milestones and regex inference can disagree with the buyer journey and active workflow step."
+    },
+    {
+      "key": "buyer_portal",
+      "audiences": ["buyer"],
+      "sourcePath": "src/pages/ClientPortal.jsx",
+      "renderer": "BuyerPortalJourney",
+      "stateBuilder": "buildClientJourney",
+      "currentAuthority": "legacy_main_stage_plus_portal_processes",
+      "currentMilestones": ["reservation_deposit", "offer_accepted", "otp", "finance", "transfer_preparation", "transfer_registration"],
+      "targetAuthority": "transaction_workflow_rollup",
+      "gap": "Six buyer-specific steps are derived independently from the live rollup and combine lodgement with registration."
+    },
+    {
+      "key": "seller_transaction_portal",
+      "audiences": ["seller"],
+      "sourcePath": "src/components/client-portal/seller/TransactionStageWorkspace.jsx",
+      "renderer": "TransactionStageWorkspace",
+      "stateBuilder": "resolveSellerTransactionStageKey",
+      "currentAuthority": "seller_transaction_stage_fields",
+      "currentMilestones": ["otp", "offer_accepted", "instruction_sent", "attorney_opening_file", "fica_verification", "transfer_documents", "bond_approval", "guarantees", "lodgement", "registration", "completed"],
+      "targetAuthority": "transaction_workflow_rollup",
+      "gap": "The seller portal owns an eleven-stage model that can advance separately from buyer and internal workspaces."
+    },
+    {
+      "key": "transaction_lifecycle_component",
+      "audiences": ["agent", "transfer_attorney", "bond_attorney", "cancellation_attorney", "developer"],
+      "sourcePath": "src/components/TransactionLifecycleProgress.jsx",
+      "renderer": "TransactionLifecycleProgress",
+      "stateBuilder": "buildTransactionLifecycleSummary",
+      "currentAuthority": "optional_rollup_summary_or_legacy_transaction_fields",
+      "currentMilestones": ["confirmed", "otp", "finance", "transfer", "registration"],
+      "targetAuthority": "transaction_workflow_rollup",
+      "gap": "The renderer accepts either a rollup summary or legacy fields, so callers can display different truths."
+    },
+    {
+      "key": "development_unit_workspace",
+      "audiences": ["developer", "agent"],
+      "sourcePath": "src/pages/UnitDetail.jsx",
+      "renderer": "TransactionLifecycleProgress",
+      "stateBuilder": "buildTransactionLifecycleSummaryFromRollup_when_enabled",
+      "currentAuthority": "feature_flagged_rollup_with_legacy_fallback",
+      "currentMilestones": ["confirmed", "otp", "finance", "transfer", "registration"],
+      "targetAuthority": "transaction_workflow_rollup",
+      "gap": "The rollup is already available, but legacy fallback and a five-stage display remain."
+    },
+    {
+      "key": "external_transaction_portal",
+      "audiences": ["external_share"],
+      "sourcePath": "src/pages/ExternalTransactionPortal.jsx",
+      "renderer": "TransactionLifecycleProgress",
+      "stateBuilder": "buildTransactionLifecycleSummary",
+      "currentAuthority": "portal_transaction_fields_and_subprocesses",
+      "currentMilestones": ["confirmed", "otp", "finance", "transfer", "registration"],
+      "targetAuthority": "transaction_workflow_rollup",
+      "gap": "The public-facing portal recomputes progress from its payload instead of receiving a canonical journey snapshot."
+    },
+    {
+      "key": "transaction_status_share",
+      "audiences": ["external_share"],
+      "sourcePath": "src/pages/TransactionStatusShare.jsx",
+      "renderer": "TransactionLifecycleProgress",
+      "stateBuilder": "buildTransactionLifecycleSummary",
+      "currentAuthority": "shared_status_payload_fields",
+      "currentMilestones": ["confirmed", "otp", "finance", "transfer", "registration"],
+      "targetAuthority": "transaction_workflow_rollup",
+      "gap": "The status-share page can disagree with authenticated portals because its payload is interpreted locally."
+    },
+    {
+      "key": "bond_originator_specialist_view",
+      "audiences": ["bond_originator", "agent"],
+      "sourcePath": "src/components/bond/BondOriginatorAgentProgressView.jsx",
+      "renderer": "BondOriginatorAgentProgressView",
+      "stateBuilder": "buildBondOriginatorAgentProgressViewModel",
+      "currentAuthority": "bond_export_package",
+      "currentMilestones": ["bond_domain_specific"],
+      "targetAuthority": "transaction_workflow_rollup_for_macro_journey",
+      "gap": "The finance-specific tracker is useful detail but has no shared macro transaction tracker above it."
+    },
+    {
+      "key": "buyer_demo_reference",
+      "audiences": ["buyer"],
+      "sourcePath": "src/pages/ProspectBuyerDemo.jsx",
+      "renderer": "BuyerPortalJourney",
+      "stateBuilder": "DEMO_BUYER_JOURNEY_MODEL",
+      "currentAuthority": "static_demo_fixture",
+      "currentMilestones": ["otp_signed", "finance", "guarantees", "transfer", "lodgement", "registration"],
+      "targetAuthority": "static_fixture_using_canonical_contract",
+      "gap": "This is the visual reference from the supplied screenshot, not a live transaction source."
+    }
+  ],
+  "parityScenarios": [
+    {
+      "key": "bond_waiting_for_quotes",
+      "milestone": "finance",
+      "workflowItem": "feedback_received",
+      "ownerRole": "bond_originator",
+      "externalSummary": "Your bond application is being progressed and the team is waiting for bank quotes."
+    },
+    {
+      "key": "guarantees_being_issued",
+      "milestone": "guarantees",
+      "workflowItem": "guarantees_issued",
+      "ownerRole": "bond_attorney",
+      "externalSummary": "The appointed attorneys are preparing the required guarantees."
+    },
+    {
+      "key": "rates_clearance_requested",
+      "milestone": "transfer",
+      "workflowItem": "clearance_figures_requested",
+      "ownerRole": "transfer_attorney",
+      "externalSummary": "The transfer team is waiting for municipal clearance figures."
+    },
+    {
+      "key": "simultaneous_lodgement_preparation",
+      "milestone": "lodgement",
+      "workflowItem": "ready_for_lodgement",
+      "ownerRole": "transfer_attorney",
+      "externalSummary": "The legal teams are coordinating readiness for lodgement."
+    },
+    {
+      "key": "lodged_at_deeds_office",
+      "milestone": "lodgement",
+      "workflowItem": "all_required_matters_lodged",
+      "ownerRole": "transfer_attorney",
+      "externalSummary": "The matter has been lodged and is progressing through the Deeds Office."
+    },
+    {
+      "key": "registration_confirmed",
+      "milestone": "registration",
+      "workflowItem": "registration_confirmed",
+      "ownerRole": "transfer_attorney",
+      "externalSummary": "Registration has been confirmed."
+    },
+    {
+      "key": "cash_purchase_funds_verification",
+      "milestone": "finance",
+      "workflowItem": "proof_of_funds",
+      "ownerRole": "agent",
+      "externalSummary": "Proof of funds is being verified before transfer continues."
+    },
+    {
+      "key": "blocked_otp_signature",
+      "milestone": "otp_signed",
+      "workflowItem": "sign_otp",
+      "ownerRole": "agent",
+      "externalSummary": "The signed Offer to Purchase is still required before the transaction can progress."
+    }
+  ],
+  "invariants": [
+    "A transaction snapshot has exactly one current milestone unless it is complete.",
+    "Milestone state is monotonic; parallel specialist work may change the current workflow item but may not regress the macro milestone.",
+    "All audiences receive the same milestone key, workflow item key, progress percentage, version, and derived timestamp for a transaction snapshot.",
+    "Audience-specific copy may redact internal notes, personal data, bank values, and operational assignee details without changing semantic state.",
+    "The buyer demo is a visual fixture and must never be treated as production workflow authority.",
+    "No portal may derive journey state with regex matching once the canonical journey snapshot is available."
+  ],
+  "phase2EntryCriteria": [
+    "Transaction workspace releases its full-page loading state when core transaction data resolves.",
+    "Foreground transaction loads are deduplicated for the same transaction id.",
+    "The workflow rollup and buyer presentation baseline tests pass.",
+    "Every alignment audience is represented by at least one inventoried surface.",
+    "Every parity scenario has a milestone, direct workflow item, owner role, and audience-safe summary."
+  ]
+}

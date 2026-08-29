@@ -3,6 +3,19 @@ import test from 'node:test'
 
 import { buildSellerComplianceAgentStatus } from '../sellerComplianceAgentStatusModel.js'
 
+test('treats unresolved portal sources as empty state instead of throwing', () => {
+  const model = buildSellerComplianceAgentStatus({
+    listing: null,
+    activeSellingContext: null,
+    portal: null,
+  })
+
+  assert.equal(model.status, 'seller_onboarding_pending')
+  assert.equal(model.signedMandate, false)
+  assert.equal(model.listingDraftExists, false)
+  assert.equal(model.rawListingLiveSignal, false)
+})
+
 test('blocks listing live when a listing is active but the signed mandate is missing', () => {
   const model = buildSellerComplianceAgentStatus({
     sellerComplianceSigning: {

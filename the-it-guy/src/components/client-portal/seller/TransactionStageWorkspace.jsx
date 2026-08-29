@@ -22,6 +22,7 @@ import {
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
+import TransactionJourneyTracker from '../../transaction/TransactionJourneyTracker'
 
 const COMMON_RESOURCES = [
   { title: 'Understanding the conveyancing process', href: '/bridge/resources#seller-guides' },
@@ -295,6 +296,7 @@ function ParticipantCard({ participant }) {
 }
 
 export default function TransactionStageWorkspace({
+  journeyModel = null,
   currentStageKey,
   startedAt,
   completedAt,
@@ -342,6 +344,16 @@ export default function TransactionStageWorkspace({
           <ArrowLeft size={15} /> Back to Overview
         </Link>
       </header>
+
+      {journeyModel ? (
+        <TransactionJourneyTracker
+          model={journeyModel}
+          title="Your sale journey"
+          subtitle="The same transaction milestones shared with your agent and transaction team."
+          variant="detailed"
+          audience="seller"
+        />
+      ) : null}
 
       <article className="rounded-[18px] border border-[#dce5ed] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.05)] md:p-7">
         <div className="grid gap-6 lg:grid-cols-[1.45fr_0.85fr] lg:items-center">
@@ -405,7 +417,7 @@ export default function TransactionStageWorkspace({
         </article>
       </section>
 
-      <article className="rounded-[16px] border border-[#dce5ed] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+      {!journeyModel ? <article className="rounded-[16px] border border-[#dce5ed] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
         <h3 className="text-sm font-semibold text-[#173047]">What’s next?</h3>
         <div className="mt-5 overflow-x-auto pb-2">
           <div className="relative flex min-w-[1040px] justify-between px-2">
@@ -419,7 +431,7 @@ export default function TransactionStageWorkspace({
             ))}
           </div>
         </div>
-      </article>
+      </article> : null}
 
       <article className="rounded-[16px] border border-[#dce5ed] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
         <h3 className="text-sm font-semibold text-[#173047]">Frequently asked at this stage</h3>

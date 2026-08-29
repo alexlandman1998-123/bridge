@@ -5,10 +5,11 @@ import test from 'node:test'
 const root = new URL('../', import.meta.url)
 const read = (path) => readFile(new URL(path, root), 'utf8')
 
-test('production derives buyer presentation from live workflow output', async () => {
+test('production derives buyer presentation from the canonical snapshot with a live fallback', async () => {
   const source = await read('src/pages/ClientPortal.jsx')
 
-  assert.match(source, /buildBuyerJourneyPresentationModel\(\{[\s\S]*?steps: clientJourneySteps,[\s\S]*?currentStepId,[\s\S]*?source: 'production'/)
+  assert.match(source, /legacyBuyerJourneyPresentationModel = buildBuyerJourneyPresentationModel\(\{[\s\S]*?steps: clientJourneySteps,[\s\S]*?currentStepId,[\s\S]*?source: 'production'/)
+  assert.match(source, /buildTransactionJourneyPresentation\(\{[\s\S]*?snapshot: workspaceData\?\.transactionJourneySnapshot[\s\S]*?fallbackModel: legacyBuyerJourneyPresentationModel/)
   assert.match(source, /journeyModel=\{buyerJourneyPresentationModel\}/)
   assert.match(source, /function BuyerProgressJourney[\s\S]*?<BuyerPortalJourney/)
   assert.doesNotMatch(source, /function BuyerProgressJourney[\s\S]{0,800}<PortalProgressJourney/)
@@ -24,13 +25,15 @@ test('demo overview and progress use the same canonical fixture model', async ()
 })
 
 test('shared model and renderer remain presentation-only boundaries', async () => {
-  const [model, renderer] = await Promise.all([
+  const [model, buyerRenderer, sharedRenderer] = await Promise.all([
     read('src/core/clientPortal/buyerJourneyPresentationModel.js'),
     read('src/components/client-portal/BuyerPortalJourney.jsx'),
+    read('src/components/transaction/TransactionJourneyTracker.jsx'),
   ])
 
   assert.doesNotMatch(model, /services\/|supabase|fetch\(|localStorage|sessionStorage/)
-  assert.doesNotMatch(renderer, /services\/|supabase|buildClientJourney|DEMO_JOURNEY_STAGES/)
-  assert.match(renderer, /data-buyer-journey="shared"/)
-  assert.match(renderer, /data-journey-status=\{step\.status\}/)
+  assert.doesNotMatch(buyerRenderer, /services\/|supabase|buildClientJourney|DEMO_JOURNEY_STAGES/)
+  assert.doesNotMatch(sharedRenderer, /services\/|supabase|buildClientJourney|DEMO_JOURNEY_STAGES/)
+  assert.match(buyerRenderer, /data-buyer-journey="shared"/)
+  assert.match(sharedRenderer, /data-journey-status=\{step\.status\}/)
 })

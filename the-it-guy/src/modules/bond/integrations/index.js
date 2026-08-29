@@ -132,3 +132,9 @@ export {
   supersedeBondApplicationExportPackage,
   validateBondApplicationRecipientFormatProfile,
 } from './packages/bondApplicationExportPackages.js'
+export {
+  CONTROLLED_BOND_ORIGINATOR_HANDOFF_VERSION,
+  buildControlledBondOriginatorHandoffIdentity,
+  prepareControlledBondOriginatorHandoff,
+  recordControlledBondOriginatorHandoffReceipt,
+} from './handoff/controlledBondOriginatorHandoff.js'

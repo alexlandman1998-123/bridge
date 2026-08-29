@@ -876,6 +876,14 @@ function row(label, value) {
   return `<tr><th>${escapeHtml(label)}</th><td>${escapeHtml(value || 'Not captured')}</td></tr>`
 }
 
+function entityPersonNames(value = []) {
+  const records = Array.isArray(value) ? value : value ? [value] : []
+  return records.map((person) => {
+    if (typeof person === 'string') return text(person)
+    return text(person?.name || person?.fullName || person?.full_name || [person?.firstName || person?.first_name, person?.lastName || person?.last_name || person?.surname].filter(Boolean).join(' '))
+  }).filter(Boolean)
+}
+
 export function buildBondApplicationViewModel({
   transaction = {},
   buyer = {},
@@ -903,6 +911,7 @@ export function buildBondApplicationViewModel({
     bondApplication,
   })
   const applicationState = canonical.state || {}
+  const buyerEntity = applicationState?.application?.buyerEntity || {}
   const fieldAlignment = buildOriginatorFieldAlignment(applicationState)
   const buyerConfirmationConfidence = buildBuyerConfirmationConfidence(data, fieldAlignment)
   const primaryApplicant = buildApplicantViewModel(
@@ -1042,6 +1051,8 @@ export function buildBondApplicationViewModel({
       preApproval: applicationState?.application?.preApproval || null,
       applicantStructure: applicationState?.application?.applicantStructure || (applicants.length > 1 ? 'joint' : 'sole'),
       selectedBankIds: applicationState?.application?.selectedBankIds || [],
+      buyerEntity,
+      participantEntityCompleteness: applicationState?.participantEntityCompleteness || null,
     },
     applicants,
     primaryApplicantDetail,
@@ -1051,6 +1062,20 @@ export function buildBondApplicationViewModel({
       email,
       phone,
       employmentStatus,
+    },
+    purchaserEntity: {
+      type: text(buyerEntity.entityType || 'individual'),
+      name: text(buyerEntity.name),
+      registrationNumber: text(buyerEntity.registrationNumber),
+      directors: entityPersonNames(buyerEntity.company?.directors),
+      shareholders: entityPersonNames(buyerEntity.company?.shareholders),
+      companySignatories: entityPersonNames(buyerEntity.company?.authorisedSignatories),
+      trustees: entityPersonNames(buyerEntity.trust?.trustees),
+      trustSignatories: entityPersonNames(buyerEntity.trust?.authorisedSignatories),
+      companyResolutionProvided: present(buyerEntity.company?.resolution),
+      lettersOfAuthorityProvided: present(buyerEntity.trust?.lettersOfAuthority),
+      trustDeedProvided: present(buyerEntity.trust?.trustDeed),
+      trustResolutionProvided: present(buyerEntity.trust?.resolution),
     },
     application: {
       id: text(reference || transaction?.bond_application_id || transaction?.bondApplicationId || transaction?.application_reference || transaction?.id) || 'Pending',
@@ -1120,6 +1145,7 @@ export function buildBondApplicationPdfHtml(viewModel, generatedAt = new Date().
   const referringAgency = options.referringAgency || vm.referringAgency || {}
   const bondBrand = options.bondBrand || {}
   const bondBrandName = text(bondBrand.name || 'BetterBond')
+  const packManifest = options.packManifest || vm.packManifest || null
   const referringAgencyName = text(referringAgency.name || 'Referring Agency')
   const applicantRows = (Array.isArray(vm.applicants) && vm.applicants.length ? vm.applicants : [vm.applicant || {}])
     .map((applicant, index) => {
@@ -1208,9 +1234,31 @@ export function buildBondApplicationPdfHtml(viewModel, generatedAt = new Date().
     .map((item) => row(item.title, `${item.priority} priority - ${item.description}`))
     .join('')
   const factors = (vm.risk?.factors || []).map((factor) => `<li>${escapeHtml(factor)}</li>`).join('')
+  const entity = vm.purchaserEntity || {}
+  const entityType = text(entity.type || 'individual').toLowerCase()
+  const entityRows = entityType === 'company'
+    ? [
+        row('Entity', entity.name),
+        row('Registration number', entity.registrationNumber),
+        row('Directors', (entity.directors || []).join(', ')),
+        row('Shareholders / beneficial owners', (entity.shareholders || []).join(', ')),
+        row('Authorised signatories', (entity.companySignatories || []).join(', ')),
+        row('Borrowing resolution', entity.companyResolutionProvided ? 'Provided' : 'Outstanding'),
+      ].join('')
+    : entityType === 'trust'
+      ? [
+          row('Trust', entity.name),
+          row('Trust number', entity.registrationNumber),
+          row('Trustees', (entity.trustees || []).join(', ')),
+          row('Authorised signatories', (entity.trustSignatories || []).join(', ')),
+          row('Letters of Authority', entity.lettersOfAuthorityProvided ? 'Provided' : 'Outstanding'),
+          row('Trust deed', entity.trustDeedProvided ? 'Provided' : 'Outstanding'),
+          row('Borrowing resolution', entity.trustResolutionProvided ? 'Provided' : 'Outstanding'),
+        ].join('')
+      : ''
   const bondLogo = text(bondBrand.logoUrl)
     ? `<img class="brand-logo-img" src="${escapeHtml(bondBrand.logoUrl)}" crossorigin="anonymous" alt="${escapeHtml(bondBrandName)} logo" />`
-    : `<span class="betterbond-mark" aria-hidden="true"><i></i><b></b></span><strong class="betterbond-word" aria-label="BetterBond"><span>Better</span>Bond</strong>`
+    : `<span class="agency-initials">${escapeHtml(initialsFor(bondBrandName))}</span><strong class="brand-name">${escapeHtml(bondBrandName)}</strong>`
   const referringAgencyLogo = text(referringAgency.logoUrl)
     ? `<img class="agency-logo-img" src="${escapeHtml(referringAgency.logoUrl)}" crossorigin="anonymous" alt="${escapeHtml(referringAgencyName)} logo" />`
     : `<span class="agency-initials">${escapeHtml(initialsFor(referringAgencyName))}</span>`
@@ -1231,16 +1279,12 @@ export function buildBondApplicationPdfHtml(viewModel, generatedAt = new Date().
     .bond-brand, .agency-brand { display: flex; align-items: center; min-width: 0; gap: 12px; }
     .agency-brand { justify-content: flex-end; text-align: right; }
     .brand-logo-img, .agency-logo-img { max-width: 156px; max-height: 58px; object-fit: contain; }
-    .betterbond-mark { position: relative; display: inline-block; width: 48px; height: 38px; flex: 0 0 auto; }
-    .betterbond-mark i, .betterbond-mark b { position: absolute; display: block; width: 29px; height: 29px; border: 6px solid #0f2f63; border-radius: 999px; content: ""; }
-    .betterbond-mark i { left: 3px; top: 6px; }
-    .betterbond-mark b { right: 3px; top: 1px; border-color: #e2202d; background: transparent; }
-    .betterbond-word { display: block; color: #172e5e; font-size: 24px; line-height: 1; letter-spacing: -0.02em; }
-    .betterbond-word span { font-weight: 900; }
     .agency-initials { display: inline-flex; width: 48px; height: 48px; align-items: center; justify-content: center; border-radius: 14px; background: #eef7f2; color: #08704f; font-size: 15px; font-weight: 900; }
     .agency-meta { min-width: 0; }
     .agency-meta span, .brand-caption { display: block; color: #60758d; font-size: 10px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
     .agency-meta strong { display: block; max-width: 210px; overflow: hidden; color: #101827; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+    .brand-name { color: #101827; font-size: 17px; }
+    .draft-banner { margin-bottom: 12px; border: 1px solid #f1dfbd; border-radius: 12px; padding: 9px 12px; background: #fff9ec; color: #8a641d; font-size: 10px; font-weight: 900; letter-spacing: .08em; text-align: center; text-transform: uppercase; }
     .hero { padding: 26px 28px 28px; color: #ffffff; background: linear-gradient(135deg, #003b34, #08704f 58%, #0f8f68); }
     h1 { margin: 0 0 10px; font-size: 30px; line-height: 1.08; letter-spacing: -0.02em; }
     h2 { margin: 0; color: #0d1b2f; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; }
@@ -1284,6 +1328,7 @@ export function buildBondApplicationPdfHtml(viewModel, generatedAt = new Date().
 <body>
   <main class="page" data-bond-application-pdf-page="true">
     <div class="page-inner">
+      ${packManifest && packManifest.status !== 'ready' ? `<div class="draft-banner">Draft application pack - ${escapeHtml(packManifest.blockers?.length || 0)} readiness item(s) outstanding</div>` : ''}
       <section class="cover">
         <div class="brand-row">
           <div class="bond-brand">
@@ -1338,6 +1383,7 @@ export function buildBondApplicationPdfHtml(viewModel, generatedAt = new Date().
         </article>
       </div>
       <div class="section">${applicantRows}</div>
+      ${entityRows ? `<div class="section"><article class="section-card"><div class="section-title-row"><h2>Purchaser Entity and Authority</h2><span class="badge">${escapeHtml(entityType)}</span></div><table><tbody>${entityRows}</tbody></table></article></div>` : ''}
       <div class="section grid">
         <article class="card metric"><span class="label">Purchase Price</span><span class="value">${escapeHtml(vm.financials?.purchasePrice?.display)}</span></article>
         <article class="card metric"><span class="label">Deposit</span><span class="value">${escapeHtml(vm.financials?.deposit?.display)} ${escapeHtml(vm.financials?.deposit?.secondary || '')}</span></article>
@@ -1414,7 +1460,7 @@ export function buildBondApplicationPdfHtml(viewModel, generatedAt = new Date().
         </article>
       </div>
       </section>
-      <p class="footer">Generated by Arch9 for bond application processing. Confirm captured information before bank submission.</p>
+      <p class="footer">Generated by Arch9 for ${escapeHtml(bondBrandName)}. Pack ${escapeHtml(packManifest?.version || 'unversioned')} · ${escapeHtml(packManifest?.fingerprint || 'draft')}. Confirm captured information before bank submission.</p>
     </div>
   </main>
 </body>

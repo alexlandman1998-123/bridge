@@ -52,8 +52,12 @@ import BondOriginatorAgentProgressView from '../components/bond/BondOriginatorAg
 import BondOriginatorAttorneyHandoffView from '../components/bond/BondOriginatorAttorneyHandoffView'
 import TransactionFinanceCommandCenter from '../components/transaction/TransactionFinanceCommandCenter'
 import TransactionNotificationDeliveryPanel from '../components/transaction/TransactionNotificationDeliveryPanel'
-import { BOND_APPLICATION_INTENTS, buildBondApplicationJourneyModel } from '../modules/bond/application'
-import TransactionLifecycleProgress from '../components/TransactionLifecycleProgress'
+import TransactionJourneyTracker from '../components/transaction/TransactionJourneyTracker'
+import {
+  BOND_APPLICATION_INTENTS,
+  buildBondApplicationJourneyModel,
+  buildBondApplicationOriginatorPackManifest,
+} from '../modules/bond/application'
 import FinanceProgressBar from '../components/finance/FinanceProgressBar'
 import FinanceReadinessDashboard from '../components/finance/FinanceReadinessDashboard'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
@@ -91,6 +95,7 @@ import {
   TRANSACTION_LIFECYCLE_STAGE_ORDER,
   USE_TRANSACTION_ROLLUP_OVERVIEW,
 } from '../core/transactions/transactionLifecycle'
+import { buildTransactionJourneyPresentation } from '../core/transactions/transactionJourneyPresentation'
 import { JOURNEY_ENTITY_TYPES } from '../core/journey/journeyStagePolicy.js'
 import { applyJourneyStageOverrides } from '../core/journey/journeyStageOverrideState.js'
 import { resolveTransactionBuyerAccessPolicy } from '../core/transactions/transactionBuyersPolicy'
@@ -154,6 +159,7 @@ import { fetchPartnersSnapshot, getPartnerAssignmentOptions } from '../lib/partn
 import { listUserPreferredPartnerRoutingRules } from '../lib/settingsApi'
 import { MAIN_STAGE_LABELS, getMainStageFromDetailedStage } from '../lib/stages'
 import { resendTransactionProgressNotification } from '../services/transactionSharedProgressService'
+import { trackBondApplicationFinanceWorkspaceState } from '../services/bondApplicationFinanceTelemetryService.js'
 import { fetchJourneyStageOverrides } from '../services/journeyStageOverrideService.js'
 import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { getFinanceReadiness } from '../services/bondFinanceReadinessService'
@@ -2251,6 +2257,7 @@ function AttorneyDailyActionQueue({
 }
 
 function AttorneyMatterCommandCenter({
+  journeyModel = null,
   workflows = [],
   roleplayerItems = [],
   conversationEntries = [],
@@ -2329,7 +2336,15 @@ function AttorneyMatterCommandCenter({
   }
 
   return (
-    <section className="archline-matter-command-center rounded-[20px] border border-borderDefault bg-white p-5 shadow-[0_14px_32px_rgba(15,23,42,0.05)]">
+    <div className="space-y-5">
+      <TransactionJourneyTracker
+        model={journeyModel}
+        audience="attorney"
+        title="Transaction journey"
+        subtitle="The shared transaction milestone and current cross-party workflow status."
+        variant="detailed"
+      />
+      <section className="archline-matter-command-center rounded-[20px] border border-borderDefault bg-white p-5 shadow-[0_14px_32px_rgba(15,23,42,0.05)]">
       <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -2642,7 +2657,8 @@ function AttorneyMatterCommandCenter({
           </section>
         </aside>
       </div>
-    </section>
+      </section>
+    </div>
   )
 }
 
@@ -4807,6 +4823,42 @@ function getParticipantMediaUrl(participant = {}, type = 'avatar') {
     snapshot?.photoUrl,
     snapshot?.photo_url,
   )
+}
+
+function resolveBondApplicationPdfBondBrand({
+  assignedBondOriginator = null,
+  savedBondOriginatorRoleplayer = null,
+  transaction = {},
+  workspace = null,
+} = {}) {
+  const workspaceType = String(workspace?.workspaceType || workspace?.workspace_type || workspace?.type || '').trim().toLowerCase()
+  const workspaceLogoUrl = workspaceType === 'bond_originator'
+    ? firstPresent(workspace?.logoUrl, workspace?.logo_url, workspace?.branding?.logoUrl, workspace?.branding?.logo_url)
+    : ''
+  return {
+    name: firstPresent(
+      assignedBondOriginator?.organisationName,
+      assignedBondOriginator?.organisation_name,
+      assignedBondOriginator?.companyName,
+      savedBondOriginatorRoleplayer?.organisationName,
+      savedBondOriginatorRoleplayer?.organisation_name,
+      savedBondOriginatorRoleplayer?.partnerName,
+      savedBondOriginatorRoleplayer?.partner_name,
+      transaction?.bond_originator_company,
+      transaction?.assigned_bond_originator_company,
+      transaction?.bond_originator,
+      'BetterBond',
+    ),
+    logoUrl: firstPresent(
+      getParticipantMediaUrl(assignedBondOriginator, 'logo'),
+      getParticipantMediaUrl(savedBondOriginatorRoleplayer, 'logo'),
+      transaction?.bond_originator_logo_url,
+      transaction?.assigned_bond_originator_logo_url,
+      transaction?.bond_originator_company_logo_url,
+      transaction?.bond_originator_branding_logo_url,
+      workspaceLogoUrl,
+    ),
+  }
 }
 
 function ProfileAvatar({ name = '', imageUrl = '', className = '', imageClassName = '' }) {
@@ -10777,6 +10829,7 @@ function buildBondCurrentStage(args = {}) {
 }
 
 function BondConsultantOverviewWorkspace({
+  journeyModel = null,
   consultantAction = null,
   applicationViewModel = null,
   applicationType = 'Bond Application',
@@ -10838,6 +10891,13 @@ function BondConsultantOverviewWorkspace({
 
   return (
     <section className="space-y-5">
+      <TransactionJourneyTracker
+        model={journeyModel}
+        audience="bond-originator"
+        title="Transaction journey"
+        subtitle="The shared property transaction milestone; application detail remains below."
+        variant="detailed"
+      />
       <section className="rounded-[18px] border border-borderDefault bg-white px-5 py-5 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
         <h2 className="text-base font-semibold text-textStrong">{isPreApprovalOnly ? 'Pre-approval journey' : 'Application journey'}</h2>
         <ol className={`mt-5 grid gap-4 ${isPreApprovalOnly ? 'lg:grid-cols-5' : 'lg:grid-cols-7'}`}>
@@ -14114,6 +14174,7 @@ function AgentTransactionOverview({
 }
 
 function AgentTransactionCommandCenter({
+  journeyModel = null,
   outstandingItems = [],
   nextAction = null,
   activityEntries = [],
@@ -14161,6 +14222,13 @@ function AgentTransactionCommandCenter({
 
   return (
     <section className="space-y-4">
+      <TransactionJourneyTracker
+        model={journeyModel}
+        title="Transaction Journey"
+        subtitle="The same milestone view shared with every party in this transaction."
+        action={<Button type="button" variant="secondary" size="sm" onClick={onOpenTimeline}>View full journey<ChevronRight size={14} /></Button>}
+        audience="agent"
+      />
       <section className="grid gap-4 xl:grid-cols-2">
         <article className="flex min-h-[430px] flex-col rounded-[16px] border border-borderDefault bg-white p-5 shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
           <div className="flex items-center justify-between gap-3">
@@ -14336,8 +14404,6 @@ function MatterOverviewHeader({
   subtitle,
   clientTitle = '',
   transactionStageLabel = '',
-  transaction = null,
-  mainStage = '',
   buyerName,
   sellerName,
   sellerLabel = 'Seller',
@@ -14568,13 +14634,6 @@ function MatterOverviewHeader({
         })}
       </section>
 
-      <TransactionLifecycleProgress
-        transaction={transaction}
-        mainStage={mainStage}
-        framed
-        compact
-        helperText={`Transfer status: ${transactionStageLabel || currentStage.label}`}
-      />
     </div>
   )
 }
@@ -15840,6 +15899,7 @@ function AttorneyTransactionDetail() {
   const [bondApplicationDetailSection, setBondApplicationDetailSection] = useState('applicants')
   const [activityFilter, setActivityFilter] = useState('all')
   const processedBondConsultantDeepLinkRef = useRef('')
+  const foregroundLoadTransactionRef = useRef('')
 
   useEffect(() => {
     if (!location.state?.openBuyerOnboardingRoleplayers) return
@@ -15853,6 +15913,13 @@ function AttorneyTransactionDetail() {
     if (!isSupabaseConfigured) {
       setLoading(false)
       return
+    }
+
+    if (!background && foregroundLoadTransactionRef.current === transactionId) {
+      return
+    }
+    if (!background) {
+      foregroundLoadTransactionRef.current = transactionId
     }
 
     const startedAt = Date.now()
@@ -15882,6 +15949,9 @@ function AttorneyTransactionDetail() {
           transactionId,
           durationMs: Date.now() - startedAt,
         })
+        if (!background) {
+          setLoading(false)
+        }
       }
     } catch (coreError) {
       if (!hasCoreData) {
@@ -15923,9 +15993,15 @@ function AttorneyTransactionDetail() {
       if (!hasCoreData) {
         setError(loadError.message || 'Unable to load transaction.')
       }
+      if (background) {
+        throw loadError
+      }
     } finally {
       setHydratingDetail(false)
       setLoading(false)
+      if (!background && foregroundLoadTransactionRef.current === transactionId) {
+        foregroundLoadTransactionRef.current = ''
+      }
     }
   }, [navigationPreviewData?.transaction, transactionId, workspaceRole])
 
@@ -16083,7 +16159,7 @@ function AttorneyTransactionDetail() {
     transactionId: transaction?.id || transactionId,
     enabled: workspaceRole !== 'attorney' || matterAccessAllowed,
     includeNotifications: true,
-    pollingIntervalMs: 30_000,
+    pollingIntervalMs: workspaceRole === 'agent' ? 15_000 : 30_000,
     onRefresh: async () => {
       const operationsPromise = transaction?.id
         ? getAttorneyWorkflowOperationsForTransaction(transaction.id, { initialize: false }).catch(() => null)
@@ -16236,6 +16312,12 @@ function AttorneyTransactionDetail() {
     [documentRequests],
   )
   const transactionFinanceWorkflow = data?.transactionFinanceWorkflow || null
+  const bondApplicationWorkspace =
+    data?.bondApplicationWorkspace ||
+    data?.bond_application_workspace ||
+    transaction?.bondApplicationWorkspace ||
+    transaction?.bond_application_workspace ||
+    null
   const bondOriginatorAgentProgressView =
     data?.bondOriginatorAgentProgressView ||
     data?.bond_originator_agent_progress_view ||
@@ -16820,6 +16902,30 @@ function AttorneyTransactionDetail() {
   })
   const agentShouldUseOriginatorFinanceTracker =
     isAgentTransactionView && isBondOrHybridFinance && financeManagedByForTransaction === 'bond_originator'
+  useEffect(() => {
+    if (!agentShouldUseOriginatorFinanceTracker || !bondApplicationWorkspace) return
+    void trackBondApplicationFinanceWorkspaceState({
+      workspace: bondApplicationWorkspace,
+      liveState: {
+        connectionState: transactionLiveState.connectionState,
+        lastRefreshAt: transactionLiveState.lastRefreshAt,
+        lastErrorAt: transactionLiveState.lastErrorAt,
+      },
+      userId: profile?.id || profile?.userId || '',
+      workspaceId: workspaceOrganisationId,
+      route: location.pathname,
+    })
+  }, [
+    agentShouldUseOriginatorFinanceTracker,
+    bondApplicationWorkspace,
+    location.pathname,
+    profile?.id,
+    profile?.userId,
+    transactionLiveState.connectionState,
+    transactionLiveState.lastErrorAt,
+    transactionLiveState.lastRefreshAt,
+    workspaceOrganisationId,
+  ])
   const displayPurchasePriceValue = hasCapturedFinancials ? Number(transaction?.purchase_price || transaction?.sales_price || 0) : 0
   const bondAmountFallback = hasCapturedFinanceType ? (financeRequiresBondSupport ? 'Pending' : 'N/A') : 'Not captured'
   const propertyAddress = buildPropertyAddress(transaction, data?.onboardingFormData)
@@ -17615,8 +17721,9 @@ function AttorneyTransactionDetail() {
       const { default: html2pdf } = await import('html2pdf.js/src/index.js')
       const pdfDocument = new window.DOMParser().parseFromString(
         buildBondApplicationPdfHtml(bondApplicationViewModel, new Date().toISOString(), {
-          bondBrand: { name: 'BetterBond' },
+          bondBrand: bondApplicationPdfBondBrand,
           referringAgency: bondHeaderReferringAgency,
+          packManifest: bondApplicationOriginatorPackManifest,
         }),
         'text/html',
       )
@@ -19694,6 +19801,34 @@ function AttorneyTransactionDetail() {
     phone: firstPresent(assignedBondOriginator?.participantPhone, transaction?.assigned_bond_originator_phone),
     avatarUrl: getParticipantMediaUrl(assignedBondOriginator),
   }
+  const bondApplicationPdfBondBrand = useMemo(
+    () => resolveBondApplicationPdfBondBrand({
+      assignedBondOriginator,
+      savedBondOriginatorRoleplayer,
+      transaction,
+      workspace,
+    }),
+    [assignedBondOriginator, savedBondOriginatorRoleplayer, transaction, workspace],
+  )
+  const bondApplicationOriginatorPackManifest = useMemo(
+    () => buildBondApplicationOriginatorPackManifest({
+      applicationState: {
+        schemaVersion: bondApplicationViewModel.canonical?.schemaVersion,
+        application: {
+          transactionId: transaction?.id || null,
+          buyerEntity: bondApplicationViewModel.canonical?.buyerEntity || {},
+        },
+        participantEntityCompleteness: bondApplicationViewModel.canonical?.participantEntityCompleteness || null,
+      },
+      snapshot: {
+        transaction: { id: transaction?.id || null },
+        participants: bondApplicationViewModel.applicants || [],
+      },
+      brand: bondApplicationPdfBondBrand,
+      mode: bondApplicationViewModel.canonical?.participantEntityCompleteness?.complete === false ? 'draft' : 'originator_ready',
+    }),
+    [bondApplicationPdfBondBrand, bondApplicationViewModel, transaction?.id],
+  )
   const bondOverviewTeamMembers = transactionContactRows
     .filter((row) => ['buyer', 'agent', 'bond_originator', 'transfer_attorney', 'bond_attorney'].includes(row.key))
     .map((row) => {
@@ -19783,6 +19918,15 @@ function AttorneyTransactionDetail() {
       transferStageKey,
       transferStageLabel,
     ],
+  )
+  const agentOverviewJourneyModel = useMemo(
+    () => buildTransactionJourneyPresentation({
+      snapshot: transactionRollup?.transactionJourneySnapshot || null,
+      fallbackSteps: agentOverviewJourneyStages,
+      fallbackProgressPercent: displayedLifecycleProgress?.progressPercent,
+      fallbackSource: 'agent-legacy',
+    }),
+    [agentOverviewJourneyStages, displayedLifecycleProgress?.progressPercent, transactionRollup?.transactionJourneySnapshot],
   )
   const agentOverviewJourneyReason = useMemo(
     () =>
@@ -21383,8 +21527,6 @@ function AttorneyTransactionDetail() {
               title={workspaceReference}
               clientTitle={buyerDisplayName}
               transactionStageLabel={transferStageLabel}
-              transaction={transaction}
-              mainStage={mainStage}
               statusLabel={displayedLifecycleLabel}
               statusClassName={displayedLifecycleStatusClassName}
               propertyLabel={isAgentTransactionView ? (propertyAddress || matterHeadline) : matterHeadline}
@@ -21428,6 +21570,7 @@ function AttorneyTransactionDetail() {
       <div className="space-y-6">
         {workspaceRole === 'bond_originator' && activeWorkspaceMenu === 'overview' ? (
           <BondConsultantOverviewWorkspace
+            journeyModel={agentOverviewJourneyModel}
             consultantAction={bondConsultantWorkspaceAction}
             applicationViewModel={bondApplicationViewModel}
             applicationType={bondApplicationTypeLabel}
@@ -21816,6 +21959,7 @@ function AttorneyTransactionDetail() {
                 {activeWorkspaceMenu === 'overview' ? (
                   isTransactionOperatorView ? (
                     <AgentTransactionCommandCenter
+                      journeyModel={agentOverviewJourneyModel}
                       outstandingItems={agentOverviewOutstandingItems}
                       nextAction={agentOverviewNextAction}
                       activityEntries={overviewConversationEntries}
@@ -21837,6 +21981,7 @@ function AttorneyTransactionDetail() {
                     />
                   ) : (
                     <AttorneyMatterCommandCenter
+                      journeyModel={agentOverviewJourneyModel}
                       workflows={legalWorkflowModels}
                       roleplayerItems={roleplayerStripItems}
                       conversationEntries={overviewConversationEntries}
@@ -23141,6 +23286,8 @@ function AttorneyTransactionDetail() {
           <section className="space-y-5">
             {agentShouldUseOriginatorFinanceTracker ? (
               <BondOriginatorAgentProgressView
+                applicationWorkspace={bondApplicationWorkspace}
+                liveState={transactionLiveState}
                 progressView={bondOriginatorAgentProgressView}
                 financeWorkflow={transactionFinanceWorkflow}
                 transaction={transaction}
@@ -23148,6 +23295,7 @@ function AttorneyTransactionDetail() {
                 onOpenDocuments={() => openWorkspaceMenu('documents')}
                 onOpenActivity={() => openWorkspaceMenu('activity')}
                 onOpenDeepLink={openBondOriginatorEvidenceLink}
+                onRefresh={() => loadData({ background: true }).catch(() => null)}
               />
             ) : financeCommandCenterPanel}
           </section>

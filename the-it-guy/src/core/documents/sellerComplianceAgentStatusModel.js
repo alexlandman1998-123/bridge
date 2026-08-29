@@ -232,11 +232,16 @@ export function buildSellerComplianceAgentStatus({
   activeSellingContext = {},
   portal = {},
 } = {}) {
+  const sources = {
+    listing: listing || {},
+    activeSellingContext: activeSellingContext || {},
+    portal: portal || {},
+  }
   const compliance = getComplianceState(sellerComplianceSigning)
-  const signedMandate = hasSignedMandateEvidence({ requirements, documents, listing, activeSellingContext, portal })
-  const onboardingSubmitted = hasSellerOnboardingSubmitted({ listing, activeSellingContext, portal })
-  const listingDraftExists = hasListingShell({ listing, activeSellingContext, portal })
-  const rawListingLiveSignal = hasRawListingLiveSignal({ listing, activeSellingContext, portal })
+  const signedMandate = hasSignedMandateEvidence({ requirements, documents, ...sources })
+  const onboardingSubmitted = hasSellerOnboardingSubmitted(sources)
+  const listingDraftExists = hasListingShell(sources)
+  const rawListingLiveSignal = hasRawListingLiveSignal(sources)
   const complianceComplete = !compliance.required || compliance.complete
   const canTreatListingAsCreated = signedMandate && listingDraftExists
   const canTreatListingAsLive = signedMandate && rawListingLiveSignal

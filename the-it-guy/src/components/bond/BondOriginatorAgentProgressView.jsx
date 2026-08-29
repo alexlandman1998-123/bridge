@@ -1,5 +1,9 @@
-import { ArrowRight, CheckCircle2, Clock3, ExternalLink, FileText, Landmark, ListChecks } from 'lucide-react'
+import { ArrowRight, CheckCircle2, CircleDollarSign, Clock3, ExternalLink, FileCheck2, FileText, Hourglass, Landmark, ListChecks, RefreshCw, UsersRound, Wifi } from 'lucide-react'
 import { useMemo } from 'react'
+import {
+  buildAgentBondApplicationJourney,
+  buildAgentBondApplicationWorkspaceHealth,
+} from '../../modules/bond/application/workspace/bondApplicationWorkspacePresentation.js'
 import { buildBondOriginatorAgentProgressViewModel } from '../../modules/bond/integrations'
 import Button from '../ui/Button'
 import StatusBadge from '../ui/StatusBadge'
@@ -148,6 +152,105 @@ function StatusPill({ value }) {
   )
 }
 
+const JOURNEY_ICONS = {
+  application_received: CheckCircle2,
+  documents_received: FileCheck2,
+  submitted_to_banks: Landmark,
+  quotes_received: FileText,
+  grant_accepted: CircleDollarSign,
+  attorney_instruction: UsersRound,
+  complete: CheckCircle2,
+}
+
+const WORKSPACE_HEALTH_CLASSES = {
+  success: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  warning: 'border-amber-200 bg-amber-50 text-amber-700',
+  danger: 'border-rose-200 bg-rose-50 text-rose-700',
+  muted: 'border-borderDefault bg-mutedBg text-textMuted',
+}
+
+function JourneyStage({ stage, first, last }) {
+  const Icon = JOURNEY_ICONS[stage.key] || CheckCircle2
+  const completed = stage.state === 'completed'
+  const current = stage.state === 'in_progress'
+  return (
+    <li className="relative min-w-[145px] flex-1 text-center">
+      {!first ? <span className={`absolute left-0 right-1/2 top-5 h-px ${completed || current ? 'bg-primary' : 'bg-borderDefault'}`} aria-hidden="true" /> : null}
+      {!last ? <span className={`absolute left-1/2 right-0 top-5 h-px ${completed ? 'bg-primary' : 'bg-borderDefault'}`} aria-hidden="true" /> : null}
+      <span className={`relative z-10 mx-auto inline-flex h-10 w-10 items-center justify-center rounded-full border-2 ${
+        completed
+          ? 'border-primary bg-primary text-white'
+          : current
+            ? 'border-[#8bb7f0] bg-primarySoft text-primary ring-4 ring-[#dceafe]'
+            : 'border-borderDefault bg-white text-textMuted'
+      }`}>
+        <Icon size={17} aria-hidden="true" />
+      </span>
+      <strong className="mt-3 block text-xs font-semibold text-textStrong">{stage.label}</strong>
+      <span className={`mt-2 block text-xs font-medium ${completed || current ? 'text-primary' : 'text-textMuted'}`}>
+        {stage.date ? formatShortDate(stage.date) : completed ? 'Completed' : current ? 'In progress' : 'Pending'}
+      </span>
+    </li>
+  )
+}
+
+function BondApplicationJourney({ stages = [] }) {
+  return (
+    <section className="mt-5 rounded-[12px] border border-borderDefault bg-white p-4" aria-labelledby="bond-application-journey-title">
+      <h4 id="bond-application-journey-title" className="text-sm font-semibold text-textStrong">Bond application journey</h4>
+      <div className="mt-4 overflow-x-auto pb-1">
+        <ol className="flex min-w-[980px]">
+          {stages.map((stage, index) => (
+            <JourneyStage key={stage.key} stage={stage} first={index === 0} last={index === stages.length - 1} />
+          ))}
+        </ol>
+      </div>
+    </section>
+  )
+}
+
+function WhereWeAre({ presentation }) {
+  return (
+    <section className="mt-5 rounded-[12px] border border-[#bdd7fb] bg-[#f8fbff] p-4" aria-labelledby="bond-where-we-are-title">
+      <div className="flex items-center gap-2">
+        <Hourglass size={17} className="text-[#1d5fca]" aria-hidden="true" />
+        <h4 id="bond-where-we-are-title" className="text-sm font-semibold text-textStrong">Where we are</h4>
+      </div>
+      <p className="mt-2 text-sm leading-6 text-textMuted">{presentation.summary}</p>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-6">
+        {presentation.waitingSteps.map((step) => {
+          const active = step.state === 'active'
+          const completed = step.state === 'completed'
+          return (
+            <article
+              key={step.key}
+              className={`min-w-0 rounded-[9px] border px-3 py-3 ${
+                active
+                  ? 'border-[#4f86dc] bg-white shadow-[0_0_0_1px_rgba(79,134,220,0.08)]'
+                  : completed
+                    ? 'border-emerald-200 bg-emerald-50/60'
+                    : 'border-borderDefault bg-white/80'
+              }`}
+              aria-current={active ? 'step' : undefined}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <strong className={`text-xs font-semibold ${active ? 'text-[#1d5fca]' : completed ? 'text-emerald-700' : 'text-textStrong'}`}>
+                  {step.label}
+                </strong>
+                {completed ? <CheckCircle2 size={14} className="shrink-0 text-emerald-600" aria-label="Completed" /> : null}
+                {active && step.count ? (
+                  <span className="shrink-0 rounded bg-[#1d5fca] px-1.5 py-0.5 text-[0.65rem] font-semibold text-white">{step.count} open</span>
+                ) : null}
+              </div>
+              <span className="mt-2 block text-xs leading-5 text-textMuted">{step.detail}</span>
+            </article>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
 function buildBankRows({ applications = [], offers = [], offerCaptures = [] } = {}) {
   if (applications.length) {
     return applications.slice(0, 5).map((application) => {
@@ -261,6 +364,8 @@ function buildRecentEvents({ modelEvents = [], applications = [], offers = [], g
 }
 
 function BondOriginatorAgentProgressView({
+  applicationWorkspace = null,
+  liveState = null,
   progressView = null,
   financeWorkflow = null,
   transaction = null,
@@ -269,11 +374,30 @@ function BondOriginatorAgentProgressView({
   onOpenDocuments = null,
   onOpenActivity = null,
   onOpenDeepLink = null,
+  onRefresh = null,
   compact = false,
 }) {
+  const scopedWorkspace = applicationWorkspace || transaction?.bondApplicationWorkspace || null
   const progressSource = useMemo(
-    () => resolveProgressSource(progressView, transaction) || {},
-    [progressView, transaction],
+    () => scopedWorkspace?.originator || resolveProgressSource(progressView, transaction) || {},
+    [progressView, scopedWorkspace, transaction],
+  )
+  const resolvedFinanceWorkflow = scopedWorkspace?.finance || financeWorkflow
+  const presentationWorkspace = useMemo(() => scopedWorkspace || {
+    available: Boolean(progressSource?.package || financeWorkflow?.workflow),
+    valid: true,
+    application: transaction?.bondApplication || transaction?.normalizedBondApplication || (progressSource?.package ? { id: progressSource.package.canonicalBondApplicationId || progressSource.package.bond_application_id } : null),
+    originator: progressSource,
+    finance: financeWorkflow || {},
+    guarantees: { steps: [] },
+  }, [financeWorkflow, progressSource, scopedWorkspace, transaction])
+  const journeyPresentation = useMemo(
+    () => buildAgentBondApplicationJourney(presentationWorkspace),
+    [presentationWorkspace],
+  )
+  const workspaceHealth = useMemo(
+    () => buildAgentBondApplicationWorkspaceHealth({ workspace: presentationWorkspace, liveState }),
+    [liveState, presentationWorkspace],
   )
   const model = useMemo(
     () => buildBondOriginatorAgentProgressViewModel({
@@ -282,7 +406,7 @@ function BondOriginatorAgentProgressView({
     [progressSource],
   )
   const progressArrays = useMemo(() => getProgressSourceArrays(progressSource), [progressSource])
-  const workflowArrays = useMemo(() => getWorkflowArrays(financeWorkflow), [financeWorkflow])
+  const workflowArrays = useMemo(() => getWorkflowArrays(resolvedFinanceWorkflow), [resolvedFinanceWorkflow])
   const documentSummary =
     progressSource?.documentRequestSummary ||
     progressSource?.document_request_summary ||
@@ -302,11 +426,12 @@ function BondOriginatorAgentProgressView({
     documentRequests: progressArrays.documentRequests,
     documentSummary,
   })
-  const hasFinanceWorkflow = Boolean(financeWorkflow?.workflow || workflowArrays.applications.length || workflowArrays.offers.length)
-  const available = model.available || hasFinanceWorkflow || bankRows.length || documentRows.length
+  const hasFinanceWorkflow = Boolean(resolvedFinanceWorkflow?.workflow || workflowArrays.applications.length || workflowArrays.offers.length)
+  const available = journeyPresentation.available || model.available || hasFinanceWorkflow || bankRows.length || documentRows.length
   const latestUpdate = getLatestDate(
     model.lastUpdatedAt,
-    financeWorkflow?.workflow?.lastUpdatedAt || financeWorkflow?.workflow?.last_updated_at,
+    scopedWorkspace?.lastUpdatedAt,
+    resolvedFinanceWorkflow?.workflow?.lastUpdatedAt || resolvedFinanceWorkflow?.workflow?.last_updated_at,
     progressArrays.documentRequests.map((request) => request.updatedAt || request.updated_at || request.reviewedAt || request.reviewed_at || request.createdAt || request.created_at),
     progressArrays.offerCaptures.map((offer) => offer.buyerDecisionAt || offer.buyer_decision_at || offer.publishedAt || offer.published_at || offer.capturedAt || offer.captured_at),
     progressArrays.grantCaptures.map((grant) => grant.publishedAt || grant.published_at || grant.capturedAt || grant.captured_at),
@@ -320,13 +445,14 @@ function BondOriginatorAgentProgressView({
   const documentCount = progressArrays.documentRequests.length || getSummaryNumber(documentSummary, 'open')
   const grantLabel = buildGrantLabel({
     grantCaptures: progressArrays.grantCaptures,
-    instruction: financeWorkflow?.instruction,
+    instruction: resolvedFinanceWorkflow?.instruction,
   })
-  const nextAction =
-    model.nextActions?.[0] ||
-    financeWorkflow?.summary?.nextAction ||
-    financeWorkflow?.workflow?.currentStageLabel ||
-    'Wait for the originator to record the next update.'
+  const nextAction = journeyPresentation.available
+    ? journeyPresentation.summary
+    : model.nextActions?.[0] ||
+      resolvedFinanceWorkflow?.summary?.nextAction ||
+      resolvedFinanceWorkflow?.workflow?.currentStageLabel ||
+      'Wait for the originator to record the next update.'
   const summary = available
     ? 'Live read-only view of the bond originator package, bank feedback, document requests, offers and grants connected to this transaction.'
     : model.summary
@@ -347,7 +473,7 @@ function BondOriginatorAgentProgressView({
       key: 'next_action',
       label: 'Next action',
       value: nextAction,
-      detail: financeWorkflow?.workflow?.currentStageLabel || model.statusLabel,
+      detail: journeyPresentation.available ? journeyPresentation.statusLabel : resolvedFinanceWorkflow?.workflow?.currentStageLabel || model.statusLabel,
     },
     {
       key: 'document_requests',
@@ -361,7 +487,7 @@ function BondOriginatorAgentProgressView({
     applications: workflowArrays.applications,
     offers: workflowArrays.offers.length ? workflowArrays.offers : progressArrays.offerCaptures,
     grantCaptures: progressArrays.grantCaptures,
-    instruction: financeWorkflow?.instruction,
+    instruction: resolvedFinanceWorkflow?.instruction,
   })
 
   const statusTone = available ? 'transaction-chip-watch' : 'transaction-chip-muted'
@@ -383,19 +509,33 @@ function BondOriginatorAgentProgressView({
               <Landmark size={18} aria-hidden="true" />
             </span>
             <StatusBadge className={`transaction-workflow-chip ${statusTone}`.trim()}>
-              {available ? model.statusLabel || financeWorkflow?.workflow?.currentStageLabel || 'Live originator feed' : model.statusLabel}
+              {available ? journeyPresentation.statusLabel || model.statusLabel || resolvedFinanceWorkflow?.workflow?.currentStageLabel || 'Live originator feed' : model.statusLabel}
             </StatusBadge>
             <span className="inline-flex items-center rounded-full border border-borderDefault bg-mutedBg px-3 py-1 text-helper font-semibold text-textMuted">
               Read only
+            </span>
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-helper font-semibold ${WORKSPACE_HEALTH_CLASSES[workspaceHealth.tone] || WORKSPACE_HEALTH_CLASSES.muted}`}
+              title={workspaceHealth.summary}
+            >
+              <Wifi size={12} aria-hidden="true" />
+              {workspaceHealth.label}
             </span>
           </div>
           <h3 className="mt-3 text-section-title font-semibold text-textStrong">Bond Originator Progress</h3>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-textMuted">{summary}</p>
           <p className="mt-2 text-helper font-medium text-textMuted">
             Originator: {model.recipientName || transaction?.bond_originator || 'Bond originator'} · Last update: {formatDateTime(latestUpdate)}
+            {workspaceHealth.lastCheckedAt ? ` · Last checked: ${formatDateTime(workspaceHealth.lastCheckedAt)}` : ''}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          {onRefresh ? (
+            <Button type="button" variant="secondary" size="sm" onClick={onRefresh}>
+              <RefreshCw size={14} />
+              Refresh
+            </Button>
+          ) : null}
           {onOpenDocuments || sourceLinks.documents?.href ? (
             <Button type="button" variant="secondary" size="sm" onClick={() => openSourceLink(sourceLinks.documents, onOpenDocuments)}>
               <FileText size={14} />
@@ -416,6 +556,8 @@ function BondOriginatorAgentProgressView({
           ) : null}
         </div>
       </div>
+
+      {journeyPresentation.available ? <BondApplicationJourney stages={journeyPresentation.journey} /> : null}
 
       {available ? (
         <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -438,6 +580,8 @@ function BondOriginatorAgentProgressView({
           })}
         </div>
       ) : null}
+
+      {journeyPresentation.available ? <WhereWeAre presentation={journeyPresentation} /> : null}
 
       <div className={`mt-5 grid gap-4 ${recentEvents.length ? 'xl:grid-cols-[minmax(0,2fr)_minmax(300px,0.9fr)]' : ''}`}>
         <div className="space-y-4">

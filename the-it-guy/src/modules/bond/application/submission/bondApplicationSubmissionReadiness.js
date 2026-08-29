@@ -92,6 +92,41 @@ export function validateBondApplicationSubmissionReadiness({
   reviewContextHash = null,
 } = {}) {
   const issues = []
+  const interpretationIssues = Array.isArray(applicationState?.interpretation?.blockingIssues)
+    ? applicationState.interpretation.blockingIssues
+    : []
+  interpretationIssues.forEach((item) => {
+    issues.push(issue({
+      category: 'interpretation',
+      code: item.code || 'interpretation_blocker',
+      message: item.message || 'Review this application value before submission.',
+      path: item.path || null,
+      target: item.rawValue ?? null,
+    }))
+  })
+  const requirementProfileIssues = Array.isArray(applicationState?.requirementProfile?.blockingIssues)
+    ? applicationState.requirementProfile.blockingIssues
+    : []
+  requirementProfileIssues.forEach((item) => {
+    issues.push(issue({
+      category: 'requirement_profile',
+      code: item.code || 'requirement_profile_blocker',
+      message: item.message || 'Resolve the originator requirement profile before submission.',
+      target: applicationState?.requirementProfile?.identity?.company || null,
+    }))
+  })
+  const participantEntityIssues = Array.isArray(applicationState?.participantEntityCompleteness?.blockingIssues)
+    ? applicationState.participantEntityCompleteness.blockingIssues
+    : []
+  participantEntityIssues.forEach((item) => {
+    issues.push(issue({
+      category: 'participant_entity',
+      code: item.code || 'participant_entity_incomplete',
+      message: item.message || 'Complete the participant or purchaser entity information.',
+      path: item.path || null,
+      target: item.target || null,
+    }))
+  })
   const answerValidation = validateBondApplicationSteps({ applicationState, throughStepOrder: 6 })
   answerValidation.issues.forEach((item) => {
     issues.push(issue({

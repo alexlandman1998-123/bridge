@@ -77,6 +77,20 @@ export function createEmptyBondApplicationState() {
         entityType: 'individual',
         name: null,
         registrationNumber: null,
+        company: {
+          directors: [],
+          shareholders: [],
+          authorisedSignatories: [],
+          resolution: {},
+        },
+        trust: {
+          trustees: [],
+          beneficialOwners: [],
+          authorisedSignatories: [],
+          lettersOfAuthority: {},
+          trustDeed: {},
+          resolution: {},
+        },
       },
       property: {
         developmentId: null,

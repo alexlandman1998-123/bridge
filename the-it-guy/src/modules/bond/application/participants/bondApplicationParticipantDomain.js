@@ -5,6 +5,7 @@ import {
 } from '../bondApplicationState.js'
 import { fromLegacyBondApplication, toLegacyBondApplication } from '../legacy/bondApplicationLegacyAdapter.js'
 import { hashCanonicalBondApplicationPayload } from '../submission/bondApplicationSnapshotHash.js'
+import { buildBondApplicationParticipantEntityCompleteness } from './bondApplicationParticipantEntityCompleteness.js'
 
 export const GUIDED_BOND_APPLICATION_PARTICIPANTS_FLAG = 'guided_bond_application_participants_v1'
 export const GUIDED_BOND_APPLICATION_PARTICIPANTS_ENV = 'VITE_FEATURE_GUIDED_BOND_APPLICATION_PARTICIPANTS_V1'
@@ -638,6 +639,7 @@ export function buildApplicationStateFromNormalizedApplication(normalizedApplica
       state.participants.primaryApplicant = merged
     }
   })
+  state.participantEntityCompleteness = buildBondApplicationParticipantEntityCompleteness(state)
   return state
 }
 

@@ -8,6 +8,9 @@ import {
 } from '../bondApplicationState.js'
 import { getPurchaserEntityType, normalizePurchaserType } from '../../../../lib/purchaserPersonas.js'
 import { buildBondApplicationPrefillDraft } from '../prefill/bondApplicationPrefillBuilder.js'
+import { interpretBondApplicationState } from '../interpretation/bondApplicationInterpreter.js'
+import { resolveBondOriginatorRequirementProfile } from '../originatorRequirements/bondOriginatorRequirementProfiles.js'
+import { buildBondApplicationParticipantEntityCompleteness } from '../participants/bondApplicationParticipantEntityCompleteness.js'
 
 const KNOWN_LEGACY_TOP_LEVEL_PATHS = new Set([
   'status',
@@ -36,6 +39,8 @@ const KNOWN_LEGACY_TOP_LEVEL_PATHS = new Set([
   '_meta',
   'prefill_metadata',
   '_guided_repeatables',
+  'company',
+  'trust',
 ])
 
 function diagnostic(type, path, message) {
@@ -419,6 +424,9 @@ export function fromLegacyBondApplication(legacyApplication = {}, options = {}) 
     requestedBondAmount: legacy.loan_details?.amount_to_be_registered ?? null,
     financeType: legacy.summary?.finance_type ?? null,
   }
+  const onboarding = options.portal?.onboardingFormData?.formData || {}
+  const company = legacy.company || onboarding.company || {}
+  const trust = legacy.trust || onboarding.trust || {}
   state.application.buyerEntity = {
     entityType: normalizeBuyerEntityType(firstPresentValue(
       legacy.summary?.buyer_entity_type,
@@ -445,6 +453,20 @@ export function fromLegacyBondApplication(legacyApplication = {}, options = {}) 
       options.portal?.onboardingFormData?.formData?.trust_registration_number,
       options.portal?.onboardingFormData?.formData?.registration_number,
     ) || null,
+    company: {
+      directors: cloneBondApplicationValue(company.directors || company.director_names || onboarding.company_directors || onboarding.director_names || []),
+      shareholders: cloneBondApplicationValue(company.shareholders || company.shareholding_structure || onboarding.company_shareholders || onboarding.shareholding_structure || []),
+      authorisedSignatories: cloneBondApplicationValue(company.authorised_signatories || company.authorized_signatories || onboarding.company_authorised_signatories || []),
+      resolution: cloneBondApplicationValue(company.resolution || company.resolution_document || onboarding.company_resolution || onboarding.company_resolution_document || {}),
+    },
+    trust: {
+      trustees: cloneBondApplicationValue(trust.trustees || trust.trustee_names || onboarding.trustees || onboarding.trustee_names || []),
+      beneficialOwners: cloneBondApplicationValue(trust.beneficial_owners || onboarding.trust_beneficial_owners || []),
+      authorisedSignatories: cloneBondApplicationValue(trust.authorised_signatories || trust.authorized_signatories || onboarding.trust_authorised_signatories || []),
+      lettersOfAuthority: cloneBondApplicationValue(trust.lettersOfAuthority || trust.letters_of_authority || onboarding.letters_of_authority || {}),
+      trustDeed: cloneBondApplicationValue(trust.trustDeed || trust.trust_deed || onboarding.trust_deed || {}),
+      resolution: cloneBondApplicationValue(trust.resolution || trust.resolution_document || onboarding.trust_resolution || {}),
+    },
   }
   state.application.selectedBankIds = Array.isArray(legacy.selected_banks)
     ? cloneBondApplicationValue(legacy.selected_banks)
@@ -659,6 +681,26 @@ function applyKnownMappedState(legacy, state) {
   }
   if (shouldWriteIntent) legacy.application_intent = intent
   if (shouldWritePreApproval) legacy.pre_approval = serializePreApprovalForLegacy(preApproval)
+  if (buyerEntityType === 'company') {
+    legacy.company = {
+      ...(legacy.company || {}),
+      director_names: cloneBondApplicationValue(buyerEntity.company?.directors || []),
+      shareholding_structure: cloneBondApplicationValue(buyerEntity.company?.shareholders || []),
+      authorised_signatories: cloneBondApplicationValue(buyerEntity.company?.authorisedSignatories || []),
+      resolution_document: cloneBondApplicationValue(buyerEntity.company?.resolution || {}),
+    }
+  }
+  if (buyerEntityType === 'trust') {
+    legacy.trust = {
+      ...(legacy.trust || {}),
+      trustee_names: cloneBondApplicationValue(buyerEntity.trust?.trustees || []),
+      beneficial_owners: cloneBondApplicationValue(buyerEntity.trust?.beneficialOwners || []),
+      authorised_signatories: cloneBondApplicationValue(buyerEntity.trust?.authorisedSignatories || []),
+      letters_of_authority: cloneBondApplicationValue(buyerEntity.trust?.lettersOfAuthority || {}),
+      trust_deed: cloneBondApplicationValue(buyerEntity.trust?.trustDeed || {}),
+      resolution_document: cloneBondApplicationValue(buyerEntity.trust?.resolution || {}),
+    }
+  }
 
   const applicants = Array.isArray(legacy.applicants) ? cloneBondApplicationValue(legacy.applicants) : []
   const primaryContact = state?.participants?.primaryApplicant?.contact || {}
@@ -719,12 +761,28 @@ export function toLegacyBondApplication(applicationState = {}) {
 }
 
 export function buildBondApplicationState(portal, options = {}) {
-  const legacyDraft = buildBondApplicationPrefillDraft(portal).application
-  return fromLegacyBondApplication(legacyDraft, {
+  const prefill = buildBondApplicationPrefillDraft(portal)
+  const legacyDraft = prefill.application
+  const applicationState = fromLegacyBondApplication(legacyDraft, {
     ...options,
     portal,
     transactionId: options.transactionId ?? portal?.transaction?.id ?? null,
     unitId: options.unitId ?? portal?.unit?.id ?? null,
     developmentId: options.developmentId ?? portal?.development?.id ?? portal?.unit?.development?.id ?? null,
   })
+  const interpretedState = interpretBondApplicationState({
+    applicationState,
+    rawApplication: legacyDraft,
+    prefillMetadata: prefill.metadata,
+  }).applicationState
+  interpretedState.requirementProfile = resolveBondOriginatorRequirementProfile({
+    portal,
+    originator: options.originator,
+    profile: options.originatorProfile,
+    registry: options.originatorProfileRegistry,
+    asOf: options.originatorProfileAsOf,
+    requireOriginatorProfile: options.requireOriginatorProfile,
+  })
+  interpretedState.participantEntityCompleteness = buildBondApplicationParticipantEntityCompleteness(interpretedState)
+  return interpretedState
 }

@@ -87,7 +87,6 @@ import ClientAppointmentsSection from '../components/client-portal/appointments/
 import ClientPortalMatterAccountsPanel from '../components/client-portal/ClientPortalMatterAccountsPanel'
 import TransactionStageWorkspace, { resolveSellerTransactionStageKey } from '../components/client-portal/seller/TransactionStageWorkspace'
 import ProgressTimeline from '../components/ProgressTimeline'
-import TransactionLifecycleProgress from '../components/TransactionLifecycleProgress'
 import MvpTransactionControlBoard from '../components/transaction/MvpTransactionControlBoard'
 import {
   buildClientJourney,
@@ -96,6 +95,7 @@ import {
   resolveClientJourneyPropertyType,
 } from '../core/clientJourney/clientJourney.utils'
 import { buildBuyerJourneyPresentationModel } from '../core/clientPortal/buyerJourneyPresentationModel'
+import { buildTransactionJourneyPresentation } from '../core/transactions/transactionJourneyPresentation'
 import { buildBuyerDocumentPresentationModel } from '../core/clientPortal/buyerDocumentPresentationModel'
 import { buildBuyerFinancePresentationModel } from '../core/clientPortal/buyerFinancePresentationModel'
 import { buildBuyerTeamPresentationModel } from '../core/clientPortal/buyerTeamPresentationModel'
@@ -3335,36 +3335,62 @@ function PortalProgressJourney({
   )
 }
 
-function SellerProgressJourney({ listingProgressModel, saleProgressModel, token, workspaceNavigationScope }) {
+function SellerProgressJourney({ listingProgressModel, saleProgressModel, transactionJourneyModel, token, workspaceNavigationScope }) {
   const defaultWorkflowKey = saleProgressModel?.isStarted ? 'sale' : 'listing'
   const [activeWorkflowKey, setActiveWorkflowKey] = useState(defaultWorkflowKey)
   const progressModel = activeWorkflowKey === 'sale' ? saleProgressModel : listingProgressModel
   const steps = Array.isArray(progressModel?.steps) ? progressModel.steps : []
 
+  if (activeWorkflowKey === 'sale' && transactionJourneyModel) {
+    return (
+      <section className="space-y-4">
+        <div className="inline-flex min-h-[44px] rounded-[12px] border border-[#dbe5ef] bg-white p-1 shadow-sm" role="tablist" aria-label="Seller journey progress">
+          <button type="button" role="tab" aria-selected="false" className="min-h-[44px] rounded-[9px] px-4 py-2 text-sm font-semibold text-[#52657b] transition hover:bg-[#f4f8f6]" onClick={() => setActiveWorkflowKey('listing')}>Listing Progress</button>
+          <button type="button" role="tab" aria-selected="true" className="min-h-[44px] rounded-[9px] bg-[#e9f6f0] px-4 py-2 text-sm font-semibold text-[#087955]" onClick={() => setActiveWorkflowKey('sale')}>Sale Progress</button>
+        </div>
+        <TransactionJourneyTracker
+          model={transactionJourneyModel}
+          title="Sale Progress"
+          subtitle="OTP, finance, guarantees, transfer, lodgement, and registration."
+          action={<Link to={getPortalWorkspacePath(token, workspaceNavigationScope, 'progress')} className={PORTAL_DESIGN_TOKENS.button.link}>View full journey<ArrowRight size={15} /></Link>}
+          audience="seller"
+        />
+      </section>
+    )
+  }
+
   return (
-    <PortalProgressJourney
-      title={progressModel?.title || 'Your Progress'}
-      subtitle={progressModel?.description || 'A simple view of where your property sale stands.'}
-      statusLabel={progressModel?.statusLabel || `${progressModel?.percent || 0}% complete`}
-      steps={steps}
-      currentIndex={Math.max(Number(progressModel?.currentIndex || 0), 0)}
-      progressPercent={progressModel?.percent || 0}
-      isStarted={progressModel?.isStarted !== false}
-      helperMessage={progressModel?.helperMessage || 'Your seller portal will keep you updated as the sale progresses.'}
-      actionLabel={progressModel?.actionLabel || 'View documents'}
-      actionTo={progressModel?.actionTo || 'documents'}
-      tabs={[
-        { key: 'listing', label: 'Listing Progress' },
-        { key: 'sale', label: 'Sale Progress', badge: saleProgressModel?.isStarted === false ? 'Next' : '' },
-      ]}
-      activeTabKey={activeWorkflowKey}
-      onTabChange={setActiveWorkflowKey}
-      tabAriaLabel="Seller journey progress"
-      shadowClassName={PORTAL_DESIGN_TOKENS.shadow.strong}
-      stepLabelClassName={`mt-3 max-w-[88px] text-[0.84rem] font-semibold leading-5 ${PORTAL_DESIGN_TOKENS.text.heading}`}
-      token={token}
-      workspaceNavigationScope={workspaceNavigationScope}
-    />
+    <section className="space-y-4">
+      {transactionJourneyModel ? (
+        <div className="inline-flex min-h-[44px] rounded-[12px] border border-[#dbe5ef] bg-white p-1 shadow-sm" role="tablist" aria-label="Seller journey progress">
+          <button type="button" role="tab" aria-selected="true" className="min-h-[44px] rounded-[9px] bg-[#e9f6f0] px-4 py-2 text-sm font-semibold text-[#087955]" onClick={() => setActiveWorkflowKey('listing')}>Listing Progress</button>
+          <button type="button" role="tab" aria-selected="false" className="min-h-[44px] rounded-[9px] px-4 py-2 text-sm font-semibold text-[#52657b] transition hover:bg-[#f4f8f6]" onClick={() => setActiveWorkflowKey('sale')}>Sale Progress</button>
+        </div>
+      ) : null}
+      <PortalProgressJourney
+        title={progressModel?.title || 'Your Progress'}
+        subtitle={progressModel?.description || 'A simple view of where your property sale stands.'}
+        statusLabel={progressModel?.statusLabel || `${progressModel?.percent || 0}% complete`}
+        steps={steps}
+        currentIndex={Math.max(Number(progressModel?.currentIndex || 0), 0)}
+        progressPercent={progressModel?.percent || 0}
+        isStarted={progressModel?.isStarted !== false}
+        helperMessage={progressModel?.helperMessage || 'Your seller portal will keep you updated as the sale progresses.'}
+        actionLabel={progressModel?.actionLabel || 'View documents'}
+        actionTo={progressModel?.actionTo || 'documents'}
+        tabs={transactionJourneyModel ? [] : [
+          { key: 'listing', label: 'Listing Progress' },
+          { key: 'sale', label: 'Sale Progress', badge: saleProgressModel?.isStarted === false ? 'Next' : '' },
+        ]}
+        activeTabKey={activeWorkflowKey}
+        onTabChange={setActiveWorkflowKey}
+        tabAriaLabel="Seller journey progress"
+        shadowClassName={PORTAL_DESIGN_TOKENS.shadow.strong}
+        stepLabelClassName={`mt-3 max-w-[88px] text-[0.84rem] font-semibold leading-5 ${PORTAL_DESIGN_TOKENS.text.heading}`}
+        token={token}
+        workspaceNavigationScope={workspaceNavigationScope}
+      />
+    </section>
   )
 }
 
@@ -7683,6 +7709,7 @@ function SellerPortalDashboard({
   sellerHealth,
   sellerListingProgressModel,
   sellerSaleProgressModel,
+  sellerTransactionJourneyModel,
   sellerListingPerformance,
   sellerMarketingChannels,
   sellerAgentUpdate,
@@ -7723,6 +7750,7 @@ function SellerPortalDashboard({
       <SellerProgressJourney
         listingProgressModel={sellerListingProgressModel}
         saleProgressModel={sellerSaleProgressModel}
+        transactionJourneyModel={sellerTransactionJourneyModel}
         token={token}
         workspaceNavigationScope={workspaceNavigationScope}
       />
@@ -11771,11 +11799,16 @@ function ClientPortal() {
     ? Math.round((journeyCompletedSteps / clientJourneySteps.length) * 100)
     : progressPercent
   const safeJourneyProgressPercent = Math.max(0, Math.min(100, Number(journeyProgressPercent) || 0))
-  const buyerJourneyPresentationModel = buildBuyerJourneyPresentationModel({
+  const legacyBuyerJourneyPresentationModel = buildBuyerJourneyPresentationModel({
     steps: clientJourneySteps,
     currentStepId,
     progressPercent: safeJourneyProgressPercent,
     source: 'production',
+  })
+  const buyerJourneyPresentationModel = buildTransactionJourneyPresentation({
+    snapshot: workspaceData?.transactionJourneySnapshot || null,
+    fallbackModel: legacyBuyerJourneyPresentationModel,
+    fallbackSource: 'buyer-legacy',
   })
   const journeyHeroSubtext = journeyCurrentStep?.whatHappensNow
     ? String(journeyCurrentStep.whatHappensNow)
@@ -12403,6 +12436,14 @@ function ClientPortal() {
     activeSellingContext,
     portal,
   })
+  const sellerTransactionJourneyModel = hasLinkedSellerTransaction
+    ? buildTransactionJourneyPresentation({
+        snapshot: effectiveWorkspace === 'seller' ? workspaceData?.transactionJourneySnapshot || null : null,
+        fallbackSteps: sellerSaleProgressModel.steps,
+        fallbackProgressPercent: sellerSaleProgressModel.percent,
+        fallbackSource: 'seller-legacy',
+      })
+    : null
   const sellerDetailsSections = buildSellerPortalDetailsSections({
     formData: sellerOnboardingFormData,
     propertyAddress: sellerPropertyTitle,
@@ -12567,6 +12608,7 @@ function ClientPortal() {
   })
   const sellerTimelineItems = buildSellerJourneyTimelineItems(sellerActivityItems)
   const sellerTransactionStageKey = resolveSellerTransactionStageKey(
+    workspaceData?.transactionJourneySnapshot?.currentMilestoneKey,
     portal?.transaction?.stage,
     portal?.transaction?.detailed_stage,
     portal?.transaction?.current_stage,
@@ -13918,27 +13960,12 @@ function ClientPortal() {
                     </div>
                   </article>
 
-                  <article className="rounded-[20px] border border-[#dbe5ef] bg-[#fbfdff] px-4 py-4">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <span className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">
-                        {progressPercent}% complete
-                      </span>
-                      <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-white px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#64748b]">
-                        Current: {MAIN_STAGE_LABELS[mainStage]} • Next: {nextStage}
-                      </span>
-                    </div>
-                    <div className="mt-3">
-                      <TransactionLifecycleProgress
-                        transaction={portal?.transaction}
-                        mainStage={mainStage}
-                        subprocesses={portal?.subprocesses || []}
-                        compact
-                        premium
-                        framed={false}
-                        showCurrentSummary={false}
-                      />
-                    </div>
-                  </article>
+                  <TransactionJourneyTracker
+                    model={buyerJourneyPresentationModel}
+                    title="Your purchase journey"
+                    subtitle="The same transaction milestones shared with your agent and professional team."
+                    audience="buyer-overview"
+                  />
 
                   <article className="rounded-[20px] border border-[#dbe5ef] bg-white px-4 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
                     <div className="flex flex-wrap items-center justify-between gap-3">
@@ -14076,6 +14103,7 @@ function ClientPortal() {
                       sellerHealth={sellerHealth}
                       sellerListingProgressModel={sellerListingProgressModel}
                       sellerSaleProgressModel={sellerSaleProgressModel}
+                      sellerTransactionJourneyModel={sellerTransactionJourneyModel}
                       sellerListingPerformance={sellerListingPerformance}
                       sellerMarketingChannels={sellerMarketingChannels}
                       sellerAgentUpdate={sellerAgentUpdate}
@@ -14204,6 +14232,8 @@ function ClientPortal() {
 
             {isProgress && effectiveWorkspace === 'seller' ? (
               <TransactionStageWorkspace
+                key={sellerTransactionStageKey}
+                journeyModel={workspaceData?.transactionJourneySnapshot ? sellerTransactionJourneyModel : null}
                 currentStageKey={sellerTransactionStageKey}
                 startedAt={
                   portal?.transaction?.stage_updated_at ||

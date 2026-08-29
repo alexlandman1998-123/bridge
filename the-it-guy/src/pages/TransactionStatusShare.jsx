@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import TransactionLifecycleProgress from '../components/TransactionLifecycleProgress'
 import TransactionProgressPanel from '../components/TransactionProgressPanel'
+import TransactionJourneyTracker from '../components/transaction/TransactionJourneyTracker'
+import { buildTransactionJourneyPresentation } from '../core/transactions/transactionJourneyPresentation'
 import { fetchTransactionStatusByToken } from '../lib/api'
 import { MAIN_STAGE_LABELS, getClientStageExplainer } from '../lib/stages'
 
@@ -116,6 +118,9 @@ function TransactionStatusShare() {
   } = statusData
   const resolvedTransferSummary = transferSummary || attorneySummary || null
   const stageExplainer = getClientStageExplainer(mainStage || stage)
+  const transactionJourneyModel = statusData.transactionJourneySnapshot
+    ? buildTransactionJourneyPresentation({ snapshot: statusData.transactionJourneySnapshot })
+    : null
 
   const externalProgressItems = [
     latestStatusComment
@@ -154,7 +159,17 @@ function TransactionStatusShare() {
         </section>
 
         <section className="status-share-timeline">
-          <TransactionLifecycleProgress transaction={statusData} mainStage={mainStage} framed={false} />
+          {transactionJourneyModel ? (
+            <TransactionJourneyTracker
+              model={transactionJourneyModel}
+              audience="status-share"
+              title="Transaction journey"
+              subtitle="A shared view of the current milestone and what the transaction team is working on."
+              variant="detailed"
+            />
+          ) : (
+            <TransactionLifecycleProgress transaction={statusData} mainStage={mainStage} framed={false} />
+          )}
         </section>
 
         <TransactionProgressPanel

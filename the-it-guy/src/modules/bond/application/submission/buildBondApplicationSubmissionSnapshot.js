@@ -66,6 +66,7 @@ export function buildBondApplicationSubmissionSnapshot({
 } = {}) {
   const primary = applicationState?.participants?.primaryApplicant || {}
   const coApplicant = applicationState?.participants?.coApplicant || null
+  const sureties = Array.isArray(applicationState?.participants?.sureties) ? applicationState.participants.sureties : []
   const activeDocumentItems = Array.isArray(documentChecklist.items) ? documentChecklist.items : []
   const resolvedSignerManifest = signerManifest || buildBondApplicationSignerManifest(signerIdentity)
   const participantSnapshots = participants || [
@@ -109,6 +110,27 @@ export function buildBondApplicationSubmissionSnapshot({
         credit: cloneBondApplicationValue(coApplicant.credit || {}),
       },
     }] : []),
+    ...sureties.map((surety, index) => ({
+      participantRole: 'surety',
+      participantKey: surety.participantKey || `surety:${index + 1}`,
+      answers: {
+        personal: cloneBondApplicationValue(surety.personal || {}),
+        contact: cloneBondApplicationValue(surety.contact || {}),
+        address: cloneBondApplicationValue(surety.address || {}),
+        marital: cloneBondApplicationValue(surety.marital || {}),
+        employment: cloneBondApplicationValue(surety.employment || {}),
+        incomeSources: cloneBondApplicationValue(surety.incomeSources || []),
+        expenses: cloneBondApplicationValue(surety.expenses || {}),
+        monthlyCommitments: cloneBondApplicationValue(surety.monthlyCommitments || []),
+        bankAccounts: cloneBondApplicationValue(surety.bankAccounts || []),
+        debts: cloneBondApplicationValue(surety.debts || []),
+        assets: cloneBondApplicationValue(surety.assets || []),
+        liabilities: cloneBondApplicationValue(surety.liabilities || []),
+        credit: cloneBondApplicationValue(surety.credit || {}),
+        relationship: cloneBondApplicationValue(surety.relationship || {}),
+        suretyTerms: cloneBondApplicationValue(surety.suretyTerms || {}),
+      },
+    })),
   ]
   return {
     snapshotSchemaVersion: coApplicant || participantSnapshots.length > 1 ? '2' : '1',
@@ -118,6 +140,7 @@ export function buildBondApplicationSubmissionSnapshot({
       reference: transaction?.reference || transaction?.transaction_reference || null,
     },
     property: cloneBondApplicationValue(applicationState?.application?.property || {}),
+    purchaserEntity: cloneBondApplicationValue(applicationState?.application?.buyerEntity || {}),
     finance: cloneBondApplicationValue(applicationState?.application?.finance || {}),
     applicant: {
       role: 'primary_applicant',
@@ -157,6 +180,8 @@ export function buildBondApplicationSubmissionSnapshot({
       flowVersion: BOND_APPLICATION_SUBMISSION_FLOW_VERSION,
       documentRuleSetVersion: BOND_APPLICATION_DOCUMENT_RULE_SET_VERSION,
       declarationContractVersion: BOND_APPLICATION_DECLARATION_CONTRACT_VERSION,
+      participantEntityCompletenessVersion: applicationState?.participantEntityCompleteness?.version || null,
+      originatorRequirementProfileVersion: applicationState?.requirementProfile?.profile?.version || applicationState?.requirementProfile?.version || null,
     },
     createdAt,
   }

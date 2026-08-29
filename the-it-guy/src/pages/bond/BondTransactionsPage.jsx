@@ -37,6 +37,26 @@ function normalizeText(value) {
   return String(value || '').trim()
 }
 
+export function resolveBondApplicationTransactionId(row = {}) {
+  return normalizeText(
+    row?.transactionId ||
+      row?.transaction_id ||
+      row?.transaction?.id ||
+      row?.sourceRow?.transactionId ||
+      row?.sourceRow?.transaction_id ||
+      row?.sourceRow?.transaction?.id ||
+      row?.bondApplication?.transactionId ||
+      row?.bondApplication?.transaction_id ||
+      row?.normalizedBondApplication?.transactionId ||
+      row?.normalizedBondApplication?.transaction_id ||
+      row?.transactionBondApplication?.transactionId ||
+      row?.transactionBondApplication?.transaction_id ||
+      row?.application?.transactionId ||
+      row?.application?.transaction_id ||
+      row?.id,
+  )
+}
+
 function resolveWorkspaceId(workspaceContext = {}) {
   return normalizeText(
     workspaceContext.workspaceId ||
@@ -518,6 +538,7 @@ function riskLabelFromKey(key) {
 
 export function buildHqApplicationRegisterRows(rows = [], now = Date.now()) {
   return parseRowsForQuery(rows).map((row) => {
+    const transactionId = resolveBondApplicationTransactionId(row)
     const statusKey = resolveHqApplicationStatus(row)
     const riskKey = normalizeRiskKey(row, now)
     const stageIndex = Math.max(0, APPLICATION_PIPELINE_STAGES.findIndex((stage) => stage.key === statusKey))
@@ -525,7 +546,7 @@ export function buildHqApplicationRegisterRows(rows = [], now = Date.now()) {
     const progressPercent = Math.round(((resolvedStageIndex + 1) / APPLICATION_PIPELINE_STAGES.length) * 100)
     const bondValue = getBondValue(row)
     const applicationReference = safeDisplayText(row.applicationReference || row.transactionReference || row.bondApplicationId, '')
-    const readableReference = applicationReference || (row.transactionId ? `BND-${normalizeText(row.transactionId).slice(-4).toUpperCase()}` : 'Reference pending')
+    const readableReference = applicationReference || (transactionId ? `BND-${transactionId.slice(-4).toUpperCase()}` : 'Reference pending')
     const propertyDisplay = resolvePortalPropertyLabel(row, {
       fallback: [row.developmentName, row.unitLabel].map((item) => safeDisplayText(item)).filter(Boolean).join(' • ') || 'Property pending',
     })
@@ -557,7 +578,7 @@ export function buildHqApplicationRegisterRows(rows = [], now = Date.now()) {
       primaryActionReason: consultantAction?.reason || '',
       openHref: consultantAction
         ? buildBondConsultantActionHref(row, consultantAction)
-        : row.transactionId ? `/bond/files/${encodeURIComponent(row.transactionId)}` : '/bond/pipeline?view=all',
+        : transactionId ? `/bond/files/${encodeURIComponent(transactionId)}` : '/bond/pipeline?view=all',
     }
   })
 }
@@ -1173,7 +1194,7 @@ export default function BondTransactionsPage({
 
   const handleOpenApplication = useCallback(
     (row) => {
-      const transactionId = normalizeText(row.transactionId || row.id)
+      const transactionId = resolveBondApplicationTransactionId(row)
       navigate(row.openHref || (transactionId ? `/bond/files/${encodeURIComponent(transactionId)}` : '/bond/pipeline?view=all'))
     },
     [navigate],
