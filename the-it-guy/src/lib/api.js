@@ -34377,7 +34377,11 @@ export async function fetchTransactionById(transactionId) {
     transactionIds: [canonicalTransactionId],
     viewer: 'internal',
   })
-  const transactionSubprocesses = await ensureTransactionSubprocesses(client, transaction.id)
+  // Detail hydration is a read path. Keep missing workflow rows virtual so opening a
+  // workspace never waits on writes or fails because the viewer cannot insert them.
+  const transactionSubprocesses = await ensureTransactionSubprocesses(client, transaction.id, {
+    createIfMissing: false,
+  })
   let transactionFinanceWorkflow = null
   if (isBondFinanceType(transaction.finance_type)) {
     transactionFinanceWorkflow = await getTransactionFinanceWorkflow(transaction.id, {

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 import { createServer } from 'vite'
 
 const server = await createServer({
@@ -107,6 +108,17 @@ const fakeClient = {
 }
 
 try {
+  const apiSource = await readFile(new URL('../src/lib/api.js', import.meta.url), 'utf8')
+  const transactionDetailSource = apiSource.slice(
+    apiSource.indexOf('export async function fetchTransactionById'),
+    apiSource.indexOf('export async function getMissingBuyerRequirements'),
+  )
+  assert.match(
+    transactionDetailSource,
+    /ensureTransactionSubprocesses\(client, transaction\.id,\s*\{\s*createIfMissing:\s*false,?\s*\}\)/,
+    'transaction detail hydration must remain read-only and use virtual workflow rows',
+  )
+
   const { ensureTransactionSubprocesses } = await server.ssrLoadModule('/src/lib/api.js')
   const subprocesses = await ensureTransactionSubprocesses(fakeClient, TRANSACTION_ID, { createIfMissing: false })
 
