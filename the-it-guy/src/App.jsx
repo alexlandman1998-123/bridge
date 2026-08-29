@@ -34,6 +34,8 @@ import {
 import { BUSINESS_WORKSPACES, resolveBusinessWorkspaceRoute } from './lib/businessWorkspaceAccess'
 import { RENTAL_MODULES, resolveRentalModuleAvailability } from './services/rentals/rentalModuleAvailability'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import TransactionsRouteShell from './components/transactions/TransactionsRouteShell'
+import { loadTransactionsRouteModule } from './routes/transactionsRouteLoader'
 
 const INACTIVITY_TIMEOUT_MINUTES = 15
 const WARNING_BEFORE_LOGOUT_MINUTES = 1
@@ -415,7 +417,7 @@ const Team = lazy(() => import('./pages/Team'))
 const TransactionStatusShare = lazy(() => import('./pages/TransactionStatusShare'))
 const TransactionPartnerInvitePage = lazy(() => import('./pages/TransactionPartnerInvitePage'))
 const UnitDetail = lazy(() => import('./pages/UnitDetail'))
-const Units = lazy(() => import('./pages/Units'))
+const Units = lazy(loadTransactionsRouteModule)
 
 function PageSkeleton({ label = 'Preparing workspace' }) {
   return (
@@ -3680,7 +3682,9 @@ function ClientAwareTransactions() {
 
   return (
     <RoleRoute allowedRoles={['developer', 'agent', 'attorney']}>
-      <Units />
+      <Suspense fallback={<TransactionsRouteShell />}>
+        <Units />
+      </Suspense>
     </RoleRoute>
   )
 }

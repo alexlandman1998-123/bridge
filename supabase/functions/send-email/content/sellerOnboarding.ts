@@ -64,6 +64,12 @@ export function buildSellerOnboardingSubject(
   emailKind = "onboarding",
 ) {
   const normalizedKind = String(emailKind || "").trim().toLowerCase();
+  if (normalizedKind === "onboarding_follow_up") {
+    const propertyLabel = resolvePropertyLabel(propertyTitle, propertyType);
+    return propertyLabel && !isGenericPropertyLabel(propertyLabel)
+      ? `Reminder: complete your seller profile for ${propertyLabel}`
+      : "Reminder: complete your seller profile";
+  }
   if (normalizedKind === "existing_listing") {
     const propertyLabel = resolvePropertyLabel(propertyTitle, propertyType);
     return `Activate your Seller Portal for ${
@@ -677,6 +683,7 @@ export function buildSellerOnboardingEmailHtml({
   const existingListingMode = normalizedKind === "existing_listing";
 
   if (!portalDocumentsMode) {
+    const followUpMode = normalizedKind === "onboarding_follow_up";
     return buildPremiumSellerOnboardingInvitationHtml({
       sellerName,
       agencyName: pickText(
@@ -692,9 +699,9 @@ export function buildSellerOnboardingEmailHtml({
       referenceLabel,
       agentEmail: resolveFirstText(agentEmail, supportEmail),
       agentPhone: resolveFirstText(agentPhone, supportPhone),
-      ctaLabel: templateOverrides?.ctaLabel,
-      preheader: templateOverrides?.preheader,
-      title: templateOverrides?.title,
+      ctaLabel: followUpMode ? "Continue seller onboarding" : templateOverrides?.ctaLabel,
+      preheader: followUpMode ? `${agentLabel} is following up on your outstanding seller details.` : templateOverrides?.preheader,
+      title: followUpMode ? "A quick reminder from your agent" : templateOverrides?.title,
       branding,
     });
   }
@@ -888,6 +895,25 @@ export function buildSellerOnboardingEmailText({
   if (!portalDocumentsMode) {
     const agencyName = pickText(organisationName, "Your agency");
     const days = resolveExpiryDays(expiryDays, expiresAt);
+    if (normalizedKind === "onboarding_follow_up") {
+      return [
+        "SELLER ONBOARDING REMINDER",
+        "",
+        `Hi ${sellerName || "there"},`,
+        "",
+        `${agentLabel} is following up on the seller information still needed for your property sale.`,
+        "Please use your secure link below to continue where you left off.",
+        "",
+        "Continue seller onboarding:",
+        onboardingLink,
+        "",
+        propertyLabel && !isGenericPropertyLabel(propertyLabel) ? `Property: ${propertyLabel}` : null,
+        agentName ? `Agent: ${agentName}` : null,
+        formatExpiryCopy(days),
+        "",
+        "If you have already completed this, no further action is needed.",
+      ].filter(Boolean).join("\n");
+    }
     const resolvedCtaLabel = pickSellerInvitationCta(
       templateOverrides?.ctaLabel,
     );

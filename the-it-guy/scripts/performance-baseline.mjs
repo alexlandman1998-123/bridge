@@ -7,7 +7,14 @@ import { gzipSync } from 'node:zlib'
 import { fileURLToPath } from 'node:url'
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const defaultRoutes = ['/bridge', '/auth', '/dashboard']
+const defaultRoutes = [
+  '/dashboard',
+  '/transactions',
+  '/transactions/__performance_baseline__',
+  '/client/__performance_baseline__',
+  '/units/__performance_baseline__',
+  '/developments/__performance_baseline__',
+]
 const defaultChromePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 const heavyFirstLoadPattern = /vendor-(jspdf|pdf|fflate|canvg|html2canvas)|html2pdf|xlsx|pdf\.worker/i
 
@@ -376,7 +383,63 @@ async function measureRoute(browser, baseUrl, route) {
 
     await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => {})
 
-    const metrics = await page.evaluate(() => {
+    const metrics = await readPageMetrics(page)
+    const coldMeasuredMs = Date.now() - startedAt
+    const warmStartedAt = Date.now()
+    await page.reload({ waitUntil: 'domcontentloaded', timeout: 45_000 })
+    await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => {})
+    const warmMetrics = await readPageMetrics(page)
+
+    return {
+      route,
+      requestedUrl: url,
+      finalUrl: metrics.finalUrl,
+      status: response?.status() ?? null,
+      ok: response?.ok() ?? false,
+      measuredMs: coldMeasuredMs,
+      title: metrics.title,
+      firstPaintMs: metrics.paints['first-paint'] ?? null,
+      firstContentfulPaintMs: metrics.paints['first-contentful-paint'] ?? null,
+      milestones: metrics.milestones,
+      navigation: metrics.navigation,
+      transferredBytes: totalResourceBytes(metrics.resources, 'transferSize'),
+      decodedBytes: totalResourceBytes(metrics.resources, 'decodedBodySize'),
+      resourcesByKind: summarizeBrowserResources(metrics.resources),
+      requestSummary: summarizeRouteRequests(metrics.resources),
+      largestResources: largestBrowserResources(metrics.resources, 10),
+      warm: {
+        measuredMs: Date.now() - warmStartedAt,
+        firstPaintMs: warmMetrics.paints['first-paint'] ?? null,
+        firstContentfulPaintMs: warmMetrics.paints['first-contentful-paint'] ?? null,
+        milestones: warmMetrics.milestones,
+        navigation: warmMetrics.navigation,
+        transferredBytes: totalResourceBytes(warmMetrics.resources, 'transferSize'),
+        decodedBytes: totalResourceBytes(warmMetrics.resources, 'decodedBodySize'),
+        resourcesByKind: summarizeBrowserResources(warmMetrics.resources),
+        requestSummary: summarizeRouteRequests(warmMetrics.resources),
+      },
+      consoleErrors,
+      failedRequests,
+      bodyTextLength: metrics.bodyTextLength,
+      rootChildCount: metrics.rootChildCount,
+      hasViteErrorOverlay: metrics.hasViteErrorOverlay,
+    }
+  } catch (error) {
+    return {
+      route,
+      requestedUrl: url,
+      error: error instanceof Error ? error.message : String(error),
+      measuredMs: Date.now() - startedAt,
+      consoleErrors,
+      failedRequests,
+    }
+  } finally {
+    await page.close()
+  }
+}
+
+async function readPageMetrics(page) {
+  return page.evaluate(() => {
       const navigation = performance.getEntriesByType('navigation')[0]
       const paints = Object.fromEntries(
         performance.getEntriesByType('paint').map((entry) => [entry.name, Math.round(entry.startTime)]),
@@ -388,7 +451,14 @@ async function measureRoute(browser, baseUrl, route) {
         encodedBodySize: entry.encodedBodySize,
         decodedBodySize: entry.decodedBodySize,
         duration: Math.round(entry.duration),
+        startTime: Math.round(entry.startTime),
       }))
+      const milestones = Object.fromEntries(
+        performance
+          .getEntriesByType('mark')
+          .filter((entry) => entry.name.startsWith('arch9:route:'))
+          .map((entry) => [entry.name.replace('arch9:route:', ''), Math.round(entry.startTime)]),
+      )
       const root = document.querySelector('#root')
       const overlay = document.querySelector('vite-error-overlay, .vite-error-overlay')
 
@@ -408,43 +478,10 @@ async function measureRoute(browser, baseUrl, route) {
             }
           : null,
         paints,
+        milestones,
         resources,
       }
-    })
-
-    return {
-      route,
-      requestedUrl: url,
-      finalUrl: metrics.finalUrl,
-      status: response?.status() ?? null,
-      ok: response?.ok() ?? false,
-      measuredMs: Date.now() - startedAt,
-      title: metrics.title,
-      firstPaintMs: metrics.paints['first-paint'] ?? null,
-      firstContentfulPaintMs: metrics.paints['first-contentful-paint'] ?? null,
-      navigation: metrics.navigation,
-      transferredBytes: totalResourceBytes(metrics.resources, 'transferSize'),
-      decodedBytes: totalResourceBytes(metrics.resources, 'decodedBodySize'),
-      resourcesByKind: summarizeBrowserResources(metrics.resources),
-      largestResources: largestBrowserResources(metrics.resources, 10),
-      consoleErrors,
-      failedRequests,
-      bodyTextLength: metrics.bodyTextLength,
-      rootChildCount: metrics.rootChildCount,
-      hasViteErrorOverlay: metrics.hasViteErrorOverlay,
-    }
-  } catch (error) {
-    return {
-      route,
-      requestedUrl: url,
-      error: error instanceof Error ? error.message : String(error),
-      measuredMs: Date.now() - startedAt,
-      consoleErrors,
-      failedRequests,
-    }
-  } finally {
-    await page.close()
-  }
+  })
 }
 
 function totalResourceBytes(resources, field) {
@@ -473,6 +510,29 @@ function summarizeBrowserResources(resources) {
   }
 
   return totals
+}
+
+function summarizeRouteRequests(resources = []) {
+  const requests = resources.filter((resource) => ['fetch', 'xmlhttprequest'].includes(resource.initiatorType))
+  const endpointCounts = {}
+  let supabaseRequestCount = 0
+  for (const request of requests) {
+    let endpoint = request.name
+    try {
+      const url = new URL(request.name)
+      endpoint = `${url.origin}${url.pathname}`
+      if (/supabase\.(co|in)|\/rest\/v1\//i.test(request.name)) supabaseRequestCount += 1
+    } catch {
+      endpoint = String(request.name || '').split('?')[0]
+    }
+    endpointCounts[endpoint] = (endpointCounts[endpoint] || 0) + 1
+  }
+  return {
+    requestCount: requests.length,
+    supabaseRequestCount,
+    duplicateRequestCount: Object.values(endpointCounts).reduce((total, count) => total + Math.max(0, count - 1), 0),
+    endpointCounts,
+  }
 }
 
 function browserResourceKind(resource) {
@@ -553,7 +613,7 @@ function renderMarkdown(report) {
   const lines = [
     '# Performance Baseline',
     '',
-    'Phase 0 diagnostic artifact. This file records the current platform performance baseline and does not enforce budgets.',
+    'Phase 0 diagnostic artifact. This file records cold and warm route timings, milestones, request counts, and build output.',
     '',
     `Generated: ${report.generatedAt}`,
     `Dist: \`${report.distDir}\``,
@@ -564,10 +624,11 @@ function renderMarkdown(report) {
     'npm run baseline:performance',
     '```',
     '',
-    'Phase 1 guardrails compare future builds to this baseline:',
+    'Phase 0 guardrails compare future builds to this baseline and enforce hotspot chunk ceilings:',
     '',
     '```bash',
     'npm run test:performance-budget',
+    'npm run test:performance-phase0',
     'npm run build:guarded',
     '```',
     '',
@@ -620,6 +681,12 @@ function renderMarkdown(report) {
         route.status ?? 'error',
         route.finalUrl ? `\`${new URL(route.finalUrl).pathname}\`` : '',
         route.firstContentfulPaintMs == null ? '' : `${route.firstContentfulPaintMs} ms`,
+        route.warm?.firstContentfulPaintMs == null ? '' : `${route.warm.firstContentfulPaintMs} ms`,
+        route.milestones?.shell_ready == null ? '' : `${route.milestones.shell_ready} ms`,
+        route.milestones?.core_ready == null ? '' : `${route.milestones.core_ready} ms`,
+        route.milestones?.interactive_ready == null ? '' : `${route.milestones.interactive_ready} ms`,
+        route.requestSummary?.requestCount ?? 0,
+        route.requestSummary?.duplicateRequestCount ?? 0,
         formatBytes(route.transferredBytes ?? 0),
         formatBytes(route.decodedBytes ?? 0),
         route.consoleErrors?.length ?? 0,
@@ -629,7 +696,7 @@ function renderMarkdown(report) {
 
       lines.push(
         markdownTable(
-          ['Route', 'Status', 'Final path', 'FCP', 'Transfer', 'Decoded', 'Console errors', 'Failed requests', 'Overlay'],
+          ['Route', 'Status', 'Final path', 'Cold FCP', 'Warm FCP', 'Shell', 'Core', 'Interactive', 'Requests', 'Duplicates', 'Transfer', 'Decoded', 'Console errors', 'Failed requests', 'Overlay'],
           routeRows,
         ),
         '',

@@ -1,13 +1,8 @@
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import AttorneyTransfersTable from '../components/AttorneyTransfersTable'
-import AgentTransactionsTable from '../components/AgentTransactionsTable'
-import BondApplicationsTable from '../components/BondApplicationsTable'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import OpenOnboardingButton from '../components/OpenOnboardingButton'
 import PageActionBar from '../components/PageActionBar'
-import UnitCardsView from '../components/UnitCardsView'
-import UnitsTable from '../components/UnitsTable'
 import Button from '../components/ui/Button'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
 import Field from '../components/ui/Field'
@@ -50,13 +45,19 @@ import {
   fetchUnitsDataSummary,
   prefetchUnitWorkspaceShell,
   saveDeveloperTransactionWorkspace,
-} from '../lib/api'
+} from '../lib/transactionsListApi'
 import { canAccessPrincipalExperience, normalizeOrganisationMembershipRole } from '../lib/organisationAccess'
-import { createPerfTimer, startRouteTransitionTrace } from '../lib/performanceTrace'
+import { createPerfTimer, markRouteMilestone, startRouteTransitionTrace } from '../lib/performanceTrace'
 import { PURCHASER_ENTITY_OPTIONS } from '../lib/purchaserPersonas'
 import { fetchOrganisationSettings } from '../lib/settingsApi'
 import { MAIN_PROCESS_STAGES, MAIN_STAGE_LABELS, STAGES, getMainStageFromDetailedStage } from '../lib/stages'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
+
+const AgentTransactionsTable = lazy(() => import('../components/AgentTransactionsTable'))
+const AttorneyTransfersTable = lazy(() => import('../components/AttorneyTransfersTable'))
+const BondApplicationsTable = lazy(() => import('../components/BondApplicationsTable'))
+const UnitCardsView = lazy(() => import('../components/UnitCardsView'))
+const UnitsTable = lazy(() => import('../components/UnitsTable'))
 
 const ATTORNEY_SOURCE_OPTIONS = [
   { value: 'all', label: 'All Sources' },
@@ -1117,6 +1118,7 @@ function Units() {
         options = withUnassignedDevelopmentOption(options, unitsData)
       }
       timer.mark('fetch_end', { fetchedRows: unitsData.length })
+      markRouteMilestone('core_ready', location.pathname)
 
       const normalizedSearch = String(deferredSearch || '')
         .trim()
@@ -1337,6 +1339,7 @@ function Units() {
       }
       setDevelopmentOptions(options)
       timer.end({ renderedRows: isDeveloperWorkspaceRole ? activeRows.length : normalizedRows.length })
+      markRouteMilestone('interactive_ready', location.pathname)
     } catch (loadError) {
       if (isLatestRequest()) {
         setError(loadError.message)
@@ -1349,7 +1352,7 @@ function Units() {
         setLoading(false)
       }
     }
-  }, [deferredSearch, developerOrganisationId, filters, isAgentRole, isPrincipalAgentView, isAttorneyRole, isBondRole, isDeveloperWorkspaceRole, participantScopedRole, profile, role, workspace.id])
+  }, [deferredSearch, developerOrganisationId, filters, isAgentRole, isPrincipalAgentView, isAttorneyRole, isBondRole, isDeveloperWorkspaceRole, location.pathname, participantScopedRole, profile, role, workspace.id])
 
   useEffect(() => {
     void loadData()
@@ -1960,7 +1963,8 @@ function Units() {
       ) : null}
 
       {!showInitialTransactionsLoading && isSupabaseConfigured ? (
-        isBondRole ? (
+        <Suspense fallback={<LoadingSkeleton lines={8} className="rounded-[24px] border border-borderDefault bg-surface shadow-panel" />}>
+          {isBondRole ? (
           <BondApplicationsTable
             rows={rows}
             title={selectedBondPipelineView === 'all' ? 'Pipeline Applications' : `${getBondPipelineView(selectedBondPipelineView).label} Pipeline`}
@@ -2075,7 +2079,8 @@ function Units() {
               navigateToDeveloperTransactionWorkspace(row, unitId, unitNumber)
             }}
           />
-        )
+          )}
+        </Suspense>
       ) : null}
 
       <Drawer

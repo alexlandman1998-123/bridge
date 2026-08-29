@@ -42,16 +42,10 @@ import {
   Workflow,
   X,
 } from 'lucide-react'
-import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createElement, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import SharedTransactionShell from '../components/SharedTransactionShell'
-import AttorneyAssignmentSection from '../components/attorney/assignments/AttorneyAssignmentSection'
-import AttorneyMatterAccountsPanel from '../components/AttorneyMatterAccountsPanel'
-import BondOriginatorAgentProgressView from '../components/bond/BondOriginatorAgentProgressView'
-import BondOriginatorAttorneyHandoffView from '../components/bond/BondOriginatorAttorneyHandoffView'
-import TransactionFinanceCommandCenter from '../components/transaction/TransactionFinanceCommandCenter'
-import TransactionNotificationDeliveryPanel from '../components/transaction/TransactionNotificationDeliveryPanel'
 import TransactionJourneyTracker from '../components/transaction/TransactionJourneyTracker'
 import {
   BOND_APPLICATION_INTENTS,
@@ -161,16 +155,17 @@ import {
   updateBondHybridFinanceStage,
   updateTransactionStakeholderContacts,
   uploadDocument,
-} from '../lib/api'
+} from '../lib/transactionWorkspaceApi'
 import { buildSellerClientPortalLink } from '../lib/agentListingStorage'
 import { canAccessAttorneyMatter } from '../lib/attorneyPermissions'
 import { parseEdgeFunctionError } from '../lib/edgeFunctions'
 import { fetchPartnersSnapshot, getPartnerAssignmentOptions } from '../lib/partnersRepository'
-import { listUserPreferredPartnerRoutingRules } from '../lib/settingsApi'
+import { listUserPreferredPartnerRoutingRules } from '../lib/transactionWorkspaceSecondaryApi'
 import { MAIN_STAGE_LABELS, getMainStageFromDetailedStage } from '../lib/stages'
 import { resendTransactionProgressNotification } from '../services/transactionSharedProgressService'
 import { trackBondApplicationFinanceWorkspaceState } from '../services/bondApplicationFinanceTelemetryService.js'
 import { createTransactionWorkspacePerformanceBaseline } from '../services/observability/transactionWorkspacePerformanceBaseline.js'
+import { markRouteMilestone } from '../lib/performanceTrace.js'
 import { fetchJourneyStageOverrides } from '../services/journeyStageOverrideService.js'
 import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { getFinanceReadiness } from '../services/bondFinanceReadinessService'
@@ -185,10 +180,7 @@ import {
   resolveBondConsultantAction,
 } from '../services/bondConsultantActionService'
 import { buildBondOriginatorEvidenceDeepLinks } from '../services/attorneyWorkflow/bondOriginatorEvidenceLinks'
-import {
-  markBondGrantMilestone,
-  markBondInstructionSent,
-} from '../services/transactionFinanceService'
+import { markBondGrantMilestone, markBondInstructionSent } from '../lib/transactionFinanceActions'
 import {
   buildTransactionRoutingDiagnostics,
   getTransactionRoutingStatusLabel,
@@ -211,6 +203,23 @@ import {
   resolvePortalPropertyLabel,
   resolvePortalSellerName,
 } from '../services/portalCanonicalFieldFallbacks'
+
+const AttorneyMatterAccountsPanel = lazy(() => import('../components/AttorneyMatterAccountsPanel'))
+const TransactionFinanceCommandCenter = lazy(() => import('../components/transaction/TransactionFinanceCommandCenter'))
+function lazyWorkspacePanel(loader, rows = 5) {
+  const Component = lazy(loader)
+  return function DeferredWorkspacePanel(props) {
+    return (
+      <Suspense fallback={<LoadingSkeleton rows={rows} />}>
+        <Component {...props} />
+      </Suspense>
+    )
+  }
+}
+const AttorneyAssignmentSection = lazyWorkspacePanel(() => import('../components/attorney/assignments/AttorneyAssignmentSection'))
+const BondOriginatorAgentProgressView = lazyWorkspacePanel(() => import('../components/bond/BondOriginatorAgentProgressView'), 6)
+const BondOriginatorAttorneyHandoffView = lazyWorkspacePanel(() => import('../components/bond/BondOriginatorAttorneyHandoffView'), 6)
+const TransactionNotificationDeliveryPanel = lazyWorkspacePanel(() => import('../components/transaction/TransactionNotificationDeliveryPanel'))
 
 const ATTORNEY_WORKSPACE_TABS = [
   { id: 'today', label: 'Today' },
@@ -16092,6 +16101,7 @@ function AttorneyTransactionDetail() {
           transactionId,
           durationMs: Date.now() - startedAt,
         })
+        markRouteMilestone('core_ready')
         void transactionPerformanceBaselineRef.current?.baseline?.recordCheckpoint({
           checkpoint: 'core_ready',
           userId: telemetryUserId,
@@ -16130,6 +16140,7 @@ function AttorneyTransactionDetail() {
       if (!background && foregroundLoadTransactionRef.current === transactionId) {
         foregroundLoadTransactionRef.current = ''
       }
+      markRouteMilestone('interactive_ready')
       return null
     }
 
@@ -16175,6 +16186,7 @@ function AttorneyTransactionDetail() {
       if (!background && foregroundLoadTransactionRef.current === transactionId) {
         foregroundLoadTransactionRef.current = ''
       }
+      if (!background) markRouteMilestone('interactive_ready')
       if (backgroundSpan) {
         void backgroundSpan.finish({
           userId: telemetryUserId,
@@ -18198,18 +18210,21 @@ function AttorneyTransactionDetail() {
     if (url) window.open(url, '_blank', 'noopener,noreferrer')
   }
   const financeCommandCenterPanel = (
-    <TransactionFinanceCommandCenter
+    <Suspense fallback={<LoadingSkeleton rows={5} />}>
+      <TransactionFinanceCommandCenter
       transaction={transaction || {}}
       workflowData={transactionFinanceWorkflow}
       requiredDocumentChecklist={requiredDocumentChecklist}
       documents={documents}
       financeReadinessHandoff={financeReadinessHandoff}
       matterAccountsPanel={workspaceRole === 'attorney' && transaction?.id ? (
-        <AttorneyMatterAccountsPanel
-          transactionId={transaction.id}
-          buyerName={buyerDisplayName}
-          sellerName={sellerDisplayName}
-        />
+        <Suspense fallback={<LoadingSkeleton rows={3} />}>
+          <AttorneyMatterAccountsPanel
+            transactionId={transaction.id}
+            buyerName={buyerDisplayName}
+            sellerName={sellerDisplayName}
+          />
+        </Suspense>
       ) : null}
       handoffPanel={workspaceRole === 'attorney' ? (
         <BondOriginatorAttorneyHandoffView
@@ -18234,7 +18249,8 @@ function AttorneyTransactionDetail() {
       onMarkGrantMilestone={(payload) => void handleMarkBondHybridGrantMilestone(payload)}
       onMarkInstructionSent={(payload) => void handleMarkBondHybridInstructionSent(payload)}
       onOpenDocument={handleOpenFinanceDocument}
-    />
+      />
+    </Suspense>
   )
   const activeWorkflowLane = useMemo(
     () => workflowLanes.find((lane) => lane.laneKey === workflowDrawerLaneKey) || null,

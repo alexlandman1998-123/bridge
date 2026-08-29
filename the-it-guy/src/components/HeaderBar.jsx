@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { canAccessHQ } from '../auth/hqAccess'
-import { fetchMyNotifications, markAllNotificationsRead, markNotificationRead } from '../lib/api'
+import { fetchMyNotifications, markAllNotificationsRead, markNotificationRead, runHeaderNotificationMaintenance } from '../lib/headerNotificationsApi'
 import { canAccessPrincipalExperience } from '../lib/organisationAccess'
 import useDismissableMenu from '../hooks/useDismissableMenu'
 import QuickCreateDropdown from './QuickCreateDropdown'
@@ -1255,7 +1255,7 @@ function HeaderBar({ onLogout, user }) {
           const nextOpen = !notificationsOpen
           setNotificationsOpen(nextOpen)
           if (nextOpen) {
-            void loadNotifications()
+            void runHeaderNotificationMaintenance().finally(() => loadNotifications())
           }
         }}
       >

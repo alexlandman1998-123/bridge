@@ -16761,6 +16761,16 @@ export async function fetchMyNotifications({ limit = 25, unreadOnly = false } = 
   }
 }
 
+export async function runMyNotificationReminderAutomation() {
+  const client = requireClient()
+  const activeProfile = await resolveActiveProfileContext(client)
+  if (!activeProfile.userId) return null
+  return runOverdueMissingDocsReminderAutomation(client, {
+    userId: activeProfile.userId,
+    role: activeProfile.role,
+  })
+}
+
 export async function markNotificationRead(notificationId) {
   const client = requireClient()
   if (!notificationId) {

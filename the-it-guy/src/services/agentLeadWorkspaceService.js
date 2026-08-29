@@ -18,6 +18,7 @@ import { getPrivateListing } from './privateListingService'
 import { listOrganisationUsers } from '../lib/settingsApi'
 import { resolveSellerProcessProfileForOrganisation } from './sellerProcessProfileService.js'
 import { attachSellerProcessShadowIntegration } from './sellerProcessWorkspaceIntegrationService.js'
+import { listLeadCollaborators } from './leadCollaboratorService.js'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const LEAD_WORKSPACE_CAN_VIEW_ALL_ROLES = new Set(['owner', 'principal', 'admin', 'admin_staff'])
@@ -146,12 +147,15 @@ function isLeadVisibleToActor(row = {}, actor = {}) {
   const createdBy = normalizeLower(readId(row, ['createdBy', 'created_by']))
   const ownerUserId = normalizeLower(readId(row, ['ownerUserId', 'owner_user_id']))
   const ownerEmail = normalizeLower(readId(row, ['ownerAgentEmail', 'owner_agent_email']))
+  const collaboratorIds = (Array.isArray(row?.collaboratorAgentIds) ? row.collaboratorAgentIds : [])
+    .map(normalizeLower)
   return (
     actorIdsLower.has(assignedAgentId) ||
     actorIdsLower.has(assignedAgentEmail) ||
     actorIdsLower.has(ownerUserId) ||
     actorIdsLower.has(ownerEmail) ||
-    actorIdsLower.has(createdBy)
+    actorIdsLower.has(createdBy) ||
+    collaboratorIds.some((identity) => actorIdsLower.has(identity))
   )
 }
 
@@ -555,6 +559,7 @@ export function buildAgentLeadRows({
   propertyShares = [],
   documentPackets = [],
   assignmentHistory = [],
+  collaboratorAssignments = [],
   agentDirectory = {},
 } = {}) {
   const contactsById = new Map(contacts.map((contact) => [readId(contact, ['contactId', 'contact_id', 'id']), contact]).filter(([id]) => id))
@@ -652,11 +657,18 @@ export function buildAgentLeadRows({
     const relatedAssignmentHistory = assignmentHistory
       .filter((assignment) => getLeadId(assignment) === leadId || readId(assignment, ['leadId', 'lead_id']) === leadId)
       .sort((left, right) => new Date(right.createdAt || right.created_at || 0).getTime() - new Date(left.createdAt || left.created_at || 0).getTime())
+    const relatedCollaboratorAssignments = collaboratorAssignments
+      .filter((assignment) => readId(assignment, ['leadId', 'lead_id']) === leadId)
+    const collaboratorAgentIds = relatedCollaboratorAssignments
+      .map((assignment) => readId(assignment, ['userId', 'user_id']))
+      .filter(Boolean)
     const communicationTimeline = buildCommunicationTimeline({
       communications: relatedCommunications,
       communicationDeliveries: relatedCommunicationDeliveries,
       leadActivities: relatedActivities,
       assignmentHistory: relatedAssignmentHistory,
+      collaboratorAssignments: relatedCollaboratorAssignments,
+      collaboratorAgentIds,
       tasks: relatedTasks,
       appointments: relatedAppointments,
       offers: relatedOffers,
@@ -1092,7 +1104,7 @@ export async function listAgentLeadWorkspaceRows({ organisationId = '', actor = 
   const snapshot = await listAgencyCrmLeadContacts(organisationId)
   const directory = await listOrganisationUsers().catch(() => [])
   const directoryLookup = buildAgentDirectoryLookup(directory)
-  const [appointments, offers, transactions, listings, listingInterests, requirements, recommendations, savedSearches, propertyShares, communicationDeliveries, communicationPreferences, ownershipRows] = await Promise.all([
+  const [appointments, offers, transactions, listings, listingInterests, requirements, recommendations, savedSearches, propertyShares, communicationDeliveries, communicationPreferences, ownershipRows, collaboratorAssignments] = await Promise.all([
     safeReadAppointments(organisationId),
     safeReadAllOffers(organisationId),
     safeReadTransactions(organisationId),
@@ -1105,6 +1117,7 @@ export async function listAgentLeadWorkspaceRows({ organisationId = '', actor = 
     listCommunicationDeliveries({ organisationId }).catch(() => []),
     safeReadLeadCommunicationPreferences(organisationId),
     safeReadLeadOwnershipRows(organisationId),
+    listLeadCollaborators({ organisationId }).catch(() => []),
   ])
   const rows = buildAgentLeadRows({
     leads: enrichLeadsWithOwnership(snapshot.leads, ownershipRows),
@@ -1123,6 +1136,7 @@ export async function listAgentLeadWorkspaceRows({ organisationId = '', actor = 
     communicationDeliveries,
     communicationPreferences,
     agentDirectory: directoryLookup,
+    collaboratorAssignments,
   })
   const scopedRows = canViewAllWorkspaceLeads(actor || {})
     ? rows
@@ -1185,7 +1199,7 @@ export async function fetchAgentLeadWorkspace({
     listingId: getListingId(lead) || resolvedWorkspaceListingId,
     convertedTransactionId: readId(lead, ['convertedTransactionId', 'converted_transaction_id', 'convertedDealId']),
   }
-  const [allAppointments, transactions, listings, documentPackets, listingInterests, requirements, communications, suggestions, recommendations, savedSearches, propertyShares, communicationDeliveries, communicationPreferences, assignmentHistory, ownershipRows] = await Promise.all([
+  const [allAppointments, transactions, listings, documentPackets, listingInterests, requirements, communications, suggestions, recommendations, savedSearches, propertyShares, communicationDeliveries, communicationPreferences, assignmentHistory, ownershipRows, collaboratorAssignments] = await Promise.all([
     safeReadAppointments(organisationId),
     safeReadTransactions(organisationId, context),
     safeReadPrivateListings(organisationId),
@@ -1201,6 +1215,7 @@ export async function fetchAgentLeadWorkspace({
     safeReadLeadCommunicationPreferences(organisationId),
     listLeadAssignmentHistory({ organisationId, leadId: context.leadId }).catch(() => []),
     safeReadLeadOwnershipRows(organisationId),
+    listLeadCollaborators({ organisationId, leadId: context.leadId }).catch(() => []),
   ])
   const directory = await listOrganisationUsers().catch(() => [])
   const directoryLookup = buildAgentDirectoryLookup(directory)
@@ -1307,6 +1322,7 @@ export async function fetchAgentLeadWorkspace({
     communicationDeliveries,
     communicationPreferences,
     assignmentHistory,
+    collaboratorAssignments,
     agentDirectory: directoryLookup,
   })
   if (!canViewAllWorkspaceLeads(actor) && !isLeadVisibleToActor(rows[0] || {}, actor || {})) {

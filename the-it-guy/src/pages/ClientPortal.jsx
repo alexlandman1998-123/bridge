@@ -35,7 +35,7 @@ import {
   Wrench,
   X,
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import '../App.css'
 import { normalizePortalWorkspaceCategory, resolvePortalDocumentMetadata } from '../core/documents/portalDocumentMetadata'
@@ -63,7 +63,7 @@ import {
   getBondApplicationPrefillFieldReview,
 } from '../modules/bond/application/prefill/bondApplicationPrefillReviewModel'
 import { buildBondOriginatorBuyerOfferGrantViewModel } from '../modules/bond/integrations'
-import GuidedBondApplication from '../modules/bond/application/guided/GuidedBondApplication'
+import LoadingSkeleton from '../components/LoadingSkeleton'
 import { LatestUpdatesCard } from '../components/client-portal/ClientJourneySection'
 import {
   BuyerPortalNavigationItem,
@@ -81,10 +81,6 @@ import {
 } from '../components/client-portal/buyerPortalTheme'
 import ClientDocumentCentre, { buildDocumentCentreSections } from '../components/client-portal/documents/ClientDocumentCentre'
 import BuyerDocumentWorkspace, { BuyerDocumentSummary } from '../components/client-portal/documents/BuyerDocumentWorkspace'
-import BuyerFinanceWorkspace from '../components/client-portal/finance/BuyerFinanceWorkspace'
-import BuyerTeamWorkspace from '../components/client-portal/team/BuyerTeamWorkspace'
-import ClientAppointmentsSection from '../components/client-portal/appointments/ClientAppointmentsSection'
-import ClientPortalMatterAccountsPanel from '../components/client-portal/ClientPortalMatterAccountsPanel'
 import TransactionStageWorkspace, { resolveSellerTransactionStageKey } from '../components/client-portal/seller/TransactionStageWorkspace'
 import ProgressTimeline from '../components/ProgressTimeline'
 import MvpTransactionControlBoard from '../components/transaction/MvpTransactionControlBoard'
@@ -121,12 +117,13 @@ import {
   submitClientIssue,
   submitClientSellerInterestRequest,
   submitServiceReview,
-} from '../lib/api'
+} from '../lib/clientPortalApi'
 import {
   getClientPortalWorkspaceData,
   getProspectDemoClientPortalWorkspaceData,
 } from '../services/clientPortalWorkspaceService'
 import useTransactionLiveRefresh from '../hooks/useTransactionLiveRefresh'
+import { markRouteMilestone } from '../lib/performanceTrace'
 import {
   clearSellerPortalAccessToken,
   completeSellerPortalPasswordRecovery,
@@ -141,12 +138,12 @@ import {
   setSellerPortalPassword,
   uploadSellerClientPortalDocument,
   verifySellerPortalPassword,
-} from '../services/privateListingService'
+} from '../lib/sellerPortalApi'
 import {
   dismissClientPortalNotification,
   markAllClientPortalNotificationsRead,
   markClientPortalNotificationRead,
-} from '../services/clientPortalNotificationsService'
+} from '../lib/clientPortalNotificationActions'
 import {
   MAIN_PROCESS_STAGES,
   MAIN_STAGE_LABELS,
@@ -166,6 +163,23 @@ import {
   getSellerPortalActivationTermsConfig,
 } from '../lib/sellerPortalActivationTerms'
 import { FEATURE_FLAGS } from '../lib/featureFlags'
+
+function lazyPortalPanel(loader, rows = 5) {
+  const Component = lazy(loader)
+  return function DeferredPortalPanel(props) {
+    return (
+      <Suspense fallback={<LoadingSkeleton rows={rows} />}>
+        <Component {...props} />
+      </Suspense>
+    )
+  }
+}
+
+const GuidedBondApplication = lazyPortalPanel(() => import('../modules/bond/application/guided/GuidedBondApplication'), 8)
+const BuyerFinanceWorkspace = lazyPortalPanel(() => import('../components/client-portal/finance/BuyerFinanceWorkspace'), 6)
+const BuyerTeamWorkspace = lazyPortalPanel(() => import('../components/client-portal/team/BuyerTeamWorkspace'), 5)
+const ClientAppointmentsSection = lazyPortalPanel(() => import('../components/client-portal/appointments/ClientAppointmentsSection'), 5)
+const ClientPortalMatterAccountsPanel = lazyPortalPanel(() => import('../components/client-portal/ClientPortalMatterAccountsPanel'), 5)
 
 const ISSUE_CATEGORIES = [
   'Paint / Finishes',
@@ -8711,6 +8725,7 @@ function ClientPortal() {
       setSellerPortalAuth(null)
       hasCoreData = Boolean(coreData?.legacyPortalData)
       setLoading(false)
+      markRouteMilestone('core_ready')
       console.log('[perf][client-portal] core data loaded', {
         token,
         durationMs: Date.now() - startedAt,
@@ -8765,6 +8780,7 @@ function ClientPortal() {
         token,
         durationMs: Date.now() - startedAt,
       })
+      markRouteMilestone('interactive_ready')
     } catch (loadError) {
       if (!isCurrentLoad()) return
       if (isSellerPortalAuthRequiredError(loadError)) {

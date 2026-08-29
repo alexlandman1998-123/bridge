@@ -1,4 +1,5 @@
 const PERF_DEBUG_STORAGE_KEY = 'itg:perf-debug'
+const ROUTE_MILESTONE_PREFIX = 'arch9:route'
 
 function getNow() {
   if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
@@ -53,6 +54,16 @@ export function createPerfTimer(scope, context = {}) {
   }
 }
 
+export function markRouteMilestone(milestone = '', pathname = '') {
+  if (typeof performance === 'undefined' || typeof performance.mark !== 'function') return
+  const normalizedMilestone = String(milestone || '').trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '_')
+  if (!normalizedMilestone) return
+  const normalizedPath = String(pathname || (typeof window !== 'undefined' ? window.location.pathname : '') || '/')
+  performance.mark(`${ROUTE_MILESTONE_PREFIX}:${normalizedMilestone}`, {
+    detail: { pathname: normalizedPath },
+  })
+}
+
 export function bondPerfLog(label = '', startedAt = 0, payload = {}) {
   if (!isPerformanceTracingEnabled()) return
   const now = startedAt > 1_000_000_000_000 ? Date.now() : getNow()
@@ -78,6 +89,7 @@ export function startRouteTransitionTrace({ from = '', to = '', label = 'route-t
 }
 
 export function markRouteRendered(pathname = '') {
+  markRouteMilestone('route_rendered', pathname)
   if (!isPerformanceTracingEnabled() || typeof window === 'undefined') {
     return
   }
@@ -104,6 +116,7 @@ export function markRouteRendered(pathname = '') {
 }
 
 export function markRouteFirstVisibleContent(pathname = '') {
+  markRouteMilestone('shell_ready', pathname)
   if (!isPerformanceTracingEnabled() || typeof window === 'undefined') {
     return
   }

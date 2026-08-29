@@ -34,10 +34,8 @@ import {
   Workflow,
   XCircle,
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { lazy, useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import DevelopmentAttorneyCommercialSetup from '../components/DevelopmentAttorneyCommercialSetup'
-import DevelopmentBondCommercialSetup from '../components/DevelopmentBondCommercialSetup'
 import Button from '../components/ui/Button'
 import Drawer from '../components/ui/Drawer'
 import Field from '../components/ui/Field'
@@ -70,10 +68,14 @@ import {
   updateTransactionLifecycleStage,
   updateDevelopmentSettings,
   upsertTransactionHandover,
-} from '../lib/api'
+} from '../lib/developmentDetailApi'
 import { fetchOrganisationSettings, listOrganisationUsers, normalizeOrganisationDeveloperProfile } from '../lib/settingsApi'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
+import { markRouteMilestone } from '../lib/performanceTrace'
 import { listDeveloperLeadIntake } from '../services/developerLeadService'
+
+const DevelopmentAttorneyCommercialSetup = lazy(() => import('../components/DevelopmentAttorneyCommercialSetup'))
+const DevelopmentBondCommercialSetup = lazy(() => import('../components/DevelopmentBondCommercialSetup'))
 
 const currency = new Intl.NumberFormat('en-ZA', {
   style: 'currency',
@@ -2375,6 +2377,8 @@ function DevelopmentDetail() {
       ])
       setData(response)
       setDevelopmentRequirements(requirements)
+      markRouteMilestone('core_ready')
+      markRouteMilestone('interactive_ready')
     } catch (loadError) {
       setError(loadError.message)
     } finally {

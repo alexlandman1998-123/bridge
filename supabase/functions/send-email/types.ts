@@ -1023,7 +1023,11 @@ export type SendOrganisationPartnerInvitationPayload = {
 };
 
 export type SendSellerOnboardingPayload = {
-  type: "seller_onboarding" | "seller_onboarding_link" | "seller_portal_link";
+  type:
+    | "seller_onboarding"
+    | "seller_onboarding_link"
+    | "seller_onboarding_follow_up"
+    | "seller_portal_link";
   to: string;
   organisationId?: string;
   leadId?: string;

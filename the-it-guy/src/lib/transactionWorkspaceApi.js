@@ -1,0 +1,103 @@
+let workspaceApiPromise = null
+
+export function preloadTransactionWorkspaceApi() {
+  workspaceApiPromise ||= import('./api')
+  return workspaceApiPromise
+}
+
+async function call(method, ...args) {
+  const api = await preloadTransactionWorkspaceApi()
+  return api[method](...args)
+}
+
+const METHODS = [
+  'addAttorneyTransactionUpdate',
+  'addTransactionDiscussionComment',
+  'addBondApplication',
+  'addBondQuote',
+  'approveBondQuote',
+  'archiveTransactionLifecycle',
+  'cancelTransactionLifecycle',
+  'convertTransactionPreApprovalToBondApplication',
+  'createTransactionDocumentRequests',
+  'createTransactionWorkspaceHydrationContext',
+  'declineBondQuote',
+  'fetchTransactionActivityWorkspace',
+  'fetchTransactionCoreById',
+  'fetchTransactionDocumentsWorkspace',
+  'fetchTransactionFinanceWorkspace',
+  'fetchTransactionPartnersWorkspace',
+  'fetchTransactionById',
+  'fetchTransactionWorkflowWorkspace',
+  'fetchTransactionReferralIncentive',
+  'getCompletionBlockers',
+  'getFinalReportData',
+  'getTransactionRollup',
+  'getTransactionFinanceWorkflow',
+  'getOrCreateTransactionOnboarding',
+  'getRegistrationBlockers',
+  'markTransactionCompleted',
+  'markTransactionRegistered',
+  'recordTransactionPreApprovalOutcome',
+  'recordBuyerOnboardingSent',
+  'reassignDeclinedTransferAttorneyInstruction',
+  'reviewCanonicalDocumentRequirement',
+  'runWorkflowAction',
+  'saveTransactionRoleplayerSelections',
+  'saveTransactionRoutingProfile',
+  'saveTransactionReferralIncentive',
+  'transitionTransactionReferralIncentive',
+  'undoTransactionRegistration',
+  'unarchiveTransactionLifecycle',
+  'updateBondApplication',
+  'updateBondHybridFinanceStage',
+  'updateTransactionStakeholderContacts',
+  'uploadDocument',
+]
+
+const operations = Object.fromEntries(METHODS.map((method) => [method, (...args) => call(method, ...args)]))
+
+export const {
+  addAttorneyTransactionUpdate,
+  addTransactionDiscussionComment,
+  addBondApplication,
+  addBondQuote,
+  approveBondQuote,
+  archiveTransactionLifecycle,
+  cancelTransactionLifecycle,
+  convertTransactionPreApprovalToBondApplication,
+  createTransactionDocumentRequests,
+  createTransactionWorkspaceHydrationContext,
+  declineBondQuote,
+  fetchTransactionActivityWorkspace,
+  fetchTransactionCoreById,
+  fetchTransactionDocumentsWorkspace,
+  fetchTransactionFinanceWorkspace,
+  fetchTransactionPartnersWorkspace,
+  fetchTransactionById,
+  fetchTransactionWorkflowWorkspace,
+  fetchTransactionReferralIncentive,
+  getCompletionBlockers,
+  getFinalReportData,
+  getTransactionRollup,
+  getTransactionFinanceWorkflow,
+  getOrCreateTransactionOnboarding,
+  getRegistrationBlockers,
+  markTransactionCompleted,
+  markTransactionRegistered,
+  recordTransactionPreApprovalOutcome,
+  recordBuyerOnboardingSent,
+  reassignDeclinedTransferAttorneyInstruction,
+  reviewCanonicalDocumentRequirement,
+  runWorkflowAction,
+  saveTransactionRoleplayerSelections,
+  saveTransactionRoutingProfile,
+  saveTransactionReferralIncentive,
+  transitionTransactionReferralIncentive,
+  undoTransactionRegistration,
+  unarchiveTransactionLifecycle,
+  updateBondApplication,
+  updateBondHybridFinanceStage,
+  updateTransactionStakeholderContacts,
+  uploadDocument,
+} = operations

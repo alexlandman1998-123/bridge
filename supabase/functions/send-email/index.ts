@@ -330,7 +330,7 @@ Deno.serve(async (req: Request) => {
     }
 
     if (
-      ["seller_onboarding", "seller_onboarding_link", "seller_portal_link"]
+      ["seller_onboarding", "seller_onboarding_link", "seller_onboarding_follow_up", "seller_portal_link"]
         .includes(type)
     ) {
       console.log("[send-email] routing template", {

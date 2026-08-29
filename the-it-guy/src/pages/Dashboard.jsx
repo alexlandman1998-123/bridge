@@ -28,11 +28,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import QuickCreateDropdown from '../components/QuickCreateDropdown'
 import SummaryCards from '../components/SummaryCards'
-import ConveyancerDashboardPage from '../components/ConveyancerDashboardPage'
-import BridgeCommandCenterDashboard from '../components/dashboard/BridgeCommandCenterDashboard'
-import ActivePipelineCarousel from '../components/pipeline/ActivePipelineCarousel'
 import { PillToggle } from '../components/ui/FilterBar'
-import { ResidentialCommandCenterGrid } from '../components/residential/ResidentialDashboard'
 import '../styles/developerCommand.css'
 import {
   STAGE_AGING_BUCKETS,
@@ -70,9 +66,7 @@ import {
   fetchTransactionsListSummary,
 } from '../lib/api/dashboardApi'
 import { getAgentModuleSharedData } from '../lib/agentDataService'
-import { getAgencyPipelineSnapshot, getAppointmentsDashboardSummaryAsync } from '../lib/agencyPipelineService'
 import { CANVASSING_UPDATED_EVENT, listCanvassingWorkspace } from '../lib/canvassingRepository'
-import { listOrganisationUserAssignmentAliases } from '../lib/settingsApi'
 import {
   getDashboardPipelineValue,
   getDashboardTransactionPrice,
@@ -80,10 +74,17 @@ import {
   logDashboardPipelineDiagnostics,
 } from '../lib/dashboardTransactionIntegrity'
 import { resolveAgentDashboardViewMode } from '../lib/dashboardRoleView'
-import { startRouteTransitionTrace } from '../lib/performanceTrace'
+import { markRouteMilestone, startRouteTransitionTrace } from '../lib/performanceTrace'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
-import { getAgentCommissionTracker } from '../services/commissionService'
-import { getAgentPrivateListingSummaries } from '../services/privateListingService'
+import {
+  getAgencyPipelineSnapshot,
+  getAppointmentsDashboardSummaryAsync,
+  getAgentCommissionTracker,
+  getAgentPrivateListingSummaries,
+  listOrganisationUserAssignmentAliases,
+  loadAgencyAgentCardInsights,
+  loadAgencyAgentCardLink,
+} from '../lib/dashboardSecondaryApi'
 import { deriveResidentialDashboardMetrics } from '../services/residentialDashboardService'
 import {
   resolvePortalBuyerName,
@@ -103,11 +104,7 @@ import {
   normalizePropertyCategory,
   normalizePropertyStructureType,
 } from '../lib/propertyTaxonomy'
-import {
-  buildAgencyAgentCardUrls,
-  loadAgencyAgentCardInsights,
-  loadAgencyAgentCardLink,
-} from '../services/agencyPublicIntakeLinkService'
+import { buildAgencyAgentCardUrls } from '../services/agencyPublicIntakeLinkService'
 import {
   buildAgentDigitalCardFileBaseName,
   buildAgentDigitalCardShareText,
@@ -159,6 +156,10 @@ const PRINCIPAL_TIME_FILTER_OPTIONS = [
   { key: 'this_month', label: 'This Month' },
 ]
 const PrincipalDashboard = lazy(() => import('./PrincipalDashboard'))
+const ConveyancerDashboardPage = lazy(() => import('../components/ConveyancerDashboardPage'))
+const BridgeCommandCenterDashboard = lazy(() => import('../components/dashboard/BridgeCommandCenterDashboard'))
+const ActivePipelineCarousel = lazy(() => import('../components/pipeline/ActivePipelineCarousel'))
+const ResidentialCommandCenterGrid = lazy(() => import('../components/residential/ResidentialDashboard').then((module) => ({ default: module.ResidentialCommandCenterGrid })))
 
 function formatPercent(value) {
   if (!Number.isFinite(value)) {
@@ -2368,6 +2369,8 @@ function Dashboard() {
         })
       }
       setLoading(false)
+      markRouteMilestone('core_ready', location.pathname)
+      markRouteMilestone('interactive_ready', location.pathname)
     }
   }, [currentMembership?.id, currentMembership?.userId, currentOrganisationId, developerDashboardOrganisationId, isPrincipalAgentView, location.pathname, organisationLoading, profile?.email, profile?.id, profile?.userId, role, workspace.id])
 
@@ -2458,7 +2461,7 @@ function Dashboard() {
     let active = true
     const refreshSnapshots = async () => {
       try {
-        const crm = getAgencyPipelineSnapshot(organisationIdForAppointments)
+        const crm = await getAgencyPipelineSnapshot(organisationIdForAppointments)
         const canvassing = await listCanvassingWorkspace(organisationIdForAppointments)
         if (!active) return
         setPrincipalCrmSnapshot({

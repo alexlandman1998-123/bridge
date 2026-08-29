@@ -1,4 +1,4 @@
-import { Component, useCallback, useEffect, useRef, useState } from 'react'
+import { Component, lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   BadgeDollarSign,
@@ -20,10 +20,7 @@ import {
   UploadCloud,
   UserRound,
 } from 'lucide-react'
-import AlterationRequestsPanel from '../components/AlterationRequestsPanel'
-import AttorneyCloseoutPanel from '../components/AttorneyCloseoutPanel'
 import BondWorkflowLane from '../components/BondWorkflowLane'
-import ClientIssuesPanel from '../components/ClientIssuesPanel'
 import FinanceWorkflowLane from '../components/FinanceWorkflowLane'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import ProgressTimeline from '../components/ProgressTimeline'
@@ -33,7 +30,6 @@ import StageAgingChip from '../components/StageAgingChip'
 import TransactionLifecycleProgress from '../components/TransactionLifecycleProgress'
 import TransactionWorkspaceHeader from '../components/TransactionWorkspaceHeader'
 import TransactionWorkspaceMenu from '../components/TransactionWorkspaceMenu'
-import TransactionFinanceCommandCenter from '../components/transaction/TransactionFinanceCommandCenter'
 import TransactionJourneyTracker from '../components/transaction/TransactionJourneyTracker'
 import TransferWorkflowLane from '../components/TransferWorkflowLane'
 import StartDocumentModal from '../components/documents/StartDocumentModal'
@@ -75,7 +71,7 @@ import {
   updateTransactionRequiredDocumentStatus,
   updateTransactionSubprocessStep,
   uploadDocument,
-} from '../lib/api'
+} from '../lib/unitDetailApi'
 import {
   CLIENT_INTAKE_PREFERENCE,
   getClientIntakePreferenceLabel,
@@ -84,7 +80,7 @@ import {
 import { MAIN_PROCESS_STAGES, MAIN_STAGE_LABELS } from '../lib/stages'
 import { DOCUMENTS_BUCKET_CANDIDATES, invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { parseEdgeFunctionError } from '../lib/edgeFunctions'
-import { createPerfTimer } from '../lib/performanceTrace'
+import { createPerfTimer, markRouteMilestone } from '../lib/performanceTrace'
 import { getPurchaserTypeOptions, getPurchaserTypeLabel, normalizePurchaserType } from '../lib/purchaserPersonas'
 import { getRequiredBuyerDocuments } from '../lib/buyerRequirementEngine'
 import { normalizeFinanceManagedBy, normalizeFinanceType } from '../core/transactions/financeType'
@@ -101,7 +97,7 @@ import {
   updateFinanceBlockerStatus,
   uploadFinanceDocument,
   verifyFinanceProofOfFunds,
-} from '../services/transactionFinanceService'
+} from '../lib/unitFinanceActions'
 import { resolveFinanceWorkflowSnapshot } from '../core/transactions/financeWorkflow'
 import {
   buildTransactionLifecycleSummaryFromRollup,
@@ -160,6 +156,11 @@ import { resolveSellerProcessProfileForOrganisation } from '../services/sellerPr
 import { listPacketTemplates } from '../core/documents/packetService'
 import { resolveDocumentPacketActionState, resolveDocumentPacketStatus } from '../core/documents/packetStatusResolver'
 import { createDocumentPacket, listDocumentPackets } from '../lib/documentPacketsApi'
+
+const AlterationRequestsPanel = lazy(() => import('../components/AlterationRequestsPanel'))
+const AttorneyCloseoutPanel = lazy(() => import('../components/AttorneyCloseoutPanel'))
+const ClientIssuesPanel = lazy(() => import('../components/ClientIssuesPanel'))
+const TransactionFinanceCommandCenter = lazy(() => import('../components/transaction/TransactionFinanceCommandCenter'))
 
 const currency = new Intl.NumberFormat('en-ZA', {
   style: 'currency',
@@ -3342,6 +3343,7 @@ function UnitDetail() {
         detailLoadedRef.current = true
         setLoading(false)
         timer.mark('shell_render_ready')
+        markRouteMilestone('core_ready')
       } else {
         timer.mark('shell_empty_fallback_to_full')
       }
@@ -3391,6 +3393,7 @@ function UnitDetail() {
         hasDetail: Boolean(data),
         transactionId: data?.transaction?.id || null,
       })
+      markRouteMilestone('interactive_ready')
     } catch (loadError) {
       if (requestId === loadRequestRef.current) {
         setError(loadError.message)
@@ -6651,7 +6654,8 @@ function UnitDetail() {
     </WorkspacePanel>
   ) : null
   const financeCommandCenterPanel = (
-    <TransactionFinanceCommandCenter
+    <Suspense fallback={<LoadingSkeleton rows={5} />}>
+      <TransactionFinanceCommandCenter
       transaction={transaction}
       workflowData={transactionFinanceWorkflow}
       requiredDocumentChecklist={requiredDocumentChecklist || []}
@@ -6672,7 +6676,8 @@ function UnitDetail() {
       onVerifyProofOfFunds={() => void handleVerifyCashProofOfFunds()}
       onUpdateBlockers={(payload) => void handleUpdateFinanceCommand(payload)}
       onOpenDocument={handleOpenFinanceDocument}
-    />
+      />
+    </Suspense>
   )
   const onboardingBondApplication =
     onboardingFormData?.formData?.bond_application &&

@@ -39,6 +39,7 @@ import { inferWorkspaceTypeFromAppRole } from '../constants/workspaceTypes'
 import { trackWorkspaceBrandingMetric } from '../services/observability/monitoring'
 import { filterNavigationItems } from '../auth/permissions/navigationPermissions'
 import { BUSINESS_WORKSPACES, resolveBusinessWorkspaceRoute } from '../lib/businessWorkspaceAccess'
+import { preloadAgentTransactionsRoute } from '../routes/transactionsRouteLoader'
 
 const ICON_BY_KEY = {
   dashboard: LayoutDashboard,
@@ -494,11 +495,17 @@ function Sidebar() {
         : false
       const matchesTarget = targetMatchesLocation(location, item.to)
       const targetHasQuery = String(item.to || '').includes('?')
+      const shouldPreloadTransactions = role === 'agent' && item.key === 'transactions'
+      const preloadTransactions = shouldPreloadTransactions
+        ? () => void preloadAgentTransactionsRoute().catch(() => {})
+        : undefined
       return (
         <NavLink
           key={item.label}
           to={item.to}
           end={item.to === '/dashboard'}
+          onMouseEnter={preloadTransactions}
+          onFocus={preloadTransactions}
           className={({ isActive }) =>
             `ui-sidebar-link ${child ? 'ui-sidebar-link-child' : ''} ${((targetHasQuery ? matchesTarget : isActive) || matchesCustomActive || matchesTarget) ? 'ui-sidebar-link-active' : ''}`.trim()
           }

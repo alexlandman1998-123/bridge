@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowLeft, ArrowUpRight, Bath, BedDouble, Bold, Bookmark, Box, Building2, CalendarDays, Car, CheckCircle2, CheckSquare, ChevronDown, ChevronRight, Clock3, Columns3, Copy, Download, ExternalLink, Eye, FileText, Filter, Gauge, Home, ImageIcon, Italic, Link2, List, Lock, Mail, MapPin, MessageCircle, MoreHorizontal, Paperclip, Pencil, Phone, Plus, RefreshCw, Ruler, Search, Send, Settings, ShieldCheck, Smile, Star, Table2, Tag, Trash2, TrendingUp, Upload, UserRound, X, Zap } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, ArrowUpRight, Bath, BedDouble, Bold, Bookmark, Box, Building2, CalendarDays, Car, Check, CheckCircle2, CheckSquare, ChevronDown, ChevronRight, Clock3, Columns3, Copy, Download, ExternalLink, Eye, FileText, Filter, Gauge, Home, ImageIcon, Italic, Link2, List, Lock, Mail, MapPin, MessageCircle, MoreHorizontal, Paperclip, Pencil, Phone, Plus, RefreshCw, Ruler, Search, Send, Settings, ShieldCheck, Smile, Star, Table2, Tag, Trash2, TrendingUp, Upload, UserRound, X, Zap } from 'lucide-react'
 import { Suspense, createElement, lazy, useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import LoadingSkeleton from '../../components/LoadingSkeleton'
@@ -7,6 +7,7 @@ import AddressAutocomplete from '../../components/location/AddressAutocomplete'
 import AreaAutocomplete from '../../components/location/AreaAutocomplete'
 import AreaMultiSelect from '../../components/location/AreaMultiSelect'
 import AppointmentCalendarActions from '../../components/appointments/AppointmentCalendarActions'
+import LeadDocumentWorkspace from '../../components/documents/LeadDocumentWorkspace'
 import Button from '../../components/ui/Button'
 import Field from '../../components/ui/Field'
 import { useWorkspace } from '../../context/WorkspaceContext'
@@ -234,6 +235,8 @@ const LeadListPage = lazy(() => import('./LeadListPage'))
 const LeadActivityWorkspace = lazy(loadLeadActivityWorkspace)
 const BuyerLeadAppointmentsWorkspace = lazy(loadBuyerAppointmentsWorkspace)
 const KingstonsSellerAppointmentsWorkspace = lazy(loadSellerAppointmentsWorkspace)
+const SellerFicaVerification = lazy(() => import('../../components/compliance/SellerFicaVerification'))
+const BuyerFicaVerification = lazy(() => import('../../components/compliance/BuyerFicaVerification'))
 function createDeferredAction(loadModule, actionName) {
   return async (...args) => {
     const module = await loadModule()
@@ -250,6 +253,9 @@ function loadTransactionApiActions() {
 const addTransactionDiscussionComment = createDeferredAction(loadTransactionApiActions, 'addTransactionDiscussionComment')
 const finalizeCanonicalPhysicalSignedOtpWorkflow = createDeferredAction(loadTransactionApiActions, 'finalizeCanonicalPhysicalSignedOtpWorkflow')
 const saveTransactionRoleplayerSelections = createDeferredAction(loadTransactionApiActions, 'saveTransactionRoleplayerSelections')
+const reassignLead = createDeferredAction(() => import('../../services/leadAssignmentService'), 'reassignLead')
+const addLeadCollaborator = createDeferredAction(() => import('../../services/leadCollaboratorService'), 'addLeadCollaborator')
+const removeLeadCollaborator = createDeferredAction(() => import('../../services/leadCollaboratorService'), 'removeLeadCollaborator')
 let packetServiceActionsPromise = null
 function loadPacketServiceActions() {
   if (!packetServiceActionsPromise) {
@@ -786,6 +792,12 @@ const BUYER_AGENT_DOCUMENT_TYPES = [
   { key: 'proof_of_funds', label: 'Proof of funds' },
   { key: 'bank_statements', label: 'Bank statements' },
   { key: 'bond_pre_approval', label: 'Bond pre-approval' },
+]
+const BUYER_LEAD_DOCUMENT_CATEGORY_CONFIG = [
+  { key: 'buyer', label: 'Buyer Documents', description: 'Identity and buyer verification', Icon: UserRound, iconClass: 'border-[#dbeafe] bg-[#eff6ff] text-[#2563a6]' },
+  { key: 'finance', label: 'Finance Documents', description: 'Bond and proof-of-funds documentation', Icon: Gauge, iconClass: 'border-[#d8e4f4] bg-[#f2f7fc] text-[#315b7a]' },
+  { key: 'property', label: 'Property Documents', description: 'Documents associated with the purchase', Icon: Home, iconClass: 'border-[#cdeef4] bg-[#eefcff] text-[#147c8f]' },
+  { key: 'legal', label: 'Legal Documents', description: 'Offers and transaction agreements', Icon: FileText, iconClass: 'border-[#caead9] bg-[#eefaf3] text-[#148a58]' },
 ]
 const KINGSTONS_SELLER_PACK_LISTING_HANDOFF_SOURCE = 'kingstons_seller_pack_phase4_listing_handoff'
 const KINGSTONS_SELLER_PACK_TRANSACTION_HANDOFF_SOURCE = 'kingstons_seller_pack_phase5_transaction_handoff'
@@ -5127,6 +5139,54 @@ function buildBuyerOnboardingProfileModel({ lead = {}, contact = {}, formData = 
     updatedAt: normalizeText(onboarding?.updated_at || onboarding?.updatedAt || transaction?.updated_at || lead?.updatedAt),
     branding,
     agent,
+  }
+}
+
+function buildBuyerFicaVerificationModel(profileModel = {}) {
+  const formData = asRecord(profileModel.formData)
+  const rawType = normalizeKey(formData.purchaser_entity_type || formData.purchaser_type || 'individual')
+  const entityType = rawType === 'company' || rawType === 'trust' ? rawType : 'individual'
+  const company = asRecord(formData.company)
+  const trust = asRecord(formData.trust)
+  const directors = Array.isArray(company.directors) ? company.directors : Array.isArray(formData.directors) ? formData.directors : []
+  const trustees = Array.isArray(trust.trustees) ? trust.trustees : Array.isArray(formData.trustees) ? formData.trustees : []
+  const isCompany = entityType === 'company'
+  const isTrust = entityType === 'trust'
+  const name = isCompany
+    ? normalizeText(company.company_name || formData.company_name || profileModel.buyerName)
+    : isTrust
+      ? normalizeText(trust.trust_name || formData.trust_name || profileModel.buyerName)
+      : normalizeText(profileModel.buyerName)
+  const idNumber = isCompany
+    ? normalizeText(company.company_registration_number || formData.company_registration_number)
+    : isTrust
+      ? normalizeText(trust.trust_registration_number || trust.trust_number || formData.trust_registration_number || formData.trust_number)
+      : normalizeText(formData.id_number || formData.identity_number || formData.passport_number)
+  const residentialAddress = normalizeText(
+    (isCompany ? company.registered_address || formData.company_registered_address : isTrust ? trust.registered_address || formData.trust_registered_address : formData.residential_address) ||
+    formData.street_address,
+  )
+  const nationality = normalizeText(formData.nationality || (isCompany || isTrust ? 'South Africa' : ''))
+  const missingFields = []
+  if (!name) missingFields.push(isCompany ? 'Company name' : isTrust ? 'Trust name' : 'Full name')
+  if (!idNumber) missingFields.push(isCompany ? 'Company registration number' : isTrust ? 'Trust registration number' : 'ID number / passport')
+  if (!residentialAddress) missingFields.push(isCompany || isTrust ? 'Registered address' : 'Residential address')
+  if (!nationality && entityType === 'individual') missingFields.push('Nationality')
+  if (isCompany && !directors.length) missingFields.push('Director or beneficial owner')
+  if (isTrust && !trustees.length) missingFields.push('Trustee or beneficial owner')
+  return {
+    entityType,
+    buyerName: name || profileModel.buyerName || 'Buyer',
+    missingFields,
+    subject: {
+      fullName: name,
+      idNumber,
+      nationality,
+      residentialAddress,
+      financeType: normalizeText(formData.purchase_finance_type),
+      sourceOfFunds: normalizeText(formData.source_of_funds || formData.deposit_source || formData.funds_source),
+      beneficialOwners: isCompany ? directors : isTrust ? trustees : [],
+    },
   }
 }
 
@@ -11536,12 +11596,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [selectedLeadId, setSelectedLeadId] = useState('')
   const [selectedLeadJourneyOverrides, setSelectedLeadJourneyOverrides] = useState([])
   const [routeLeadHydrationNotice, setRouteLeadHydrationNotice] = useState('')
-  const [routeLeadHydrationStatus, setRouteLeadHydrationStatus] = useState('idle')
+  const [routeLeadHydrationStatus, setRouteLeadHydrationStatus] = useState(() => routeLeadId ? 'loading' : 'idle')
   const [leadActionsMenuOpen, setLeadActionsMenuOpen] = useState(false)
   const leadActionsMenuRef = useRef(null)
   const [sellerAssignmentMenuOpen, setSellerAssignmentMenuOpen] = useState(false)
   const [sellerAssignmentSearch, setSellerAssignmentSearch] = useState('')
   const [sellerAssignmentSaving, setSellerAssignmentSaving] = useState(false)
+  const [sellerCollaboratorSavingId, setSellerCollaboratorSavingId] = useState('')
   const sellerAssignmentMenuRef = useRef(null)
   const [leadListActionsMenuId, setLeadListActionsMenuId] = useState('')
   const [leadArchiveModal, setLeadArchiveModal] = useState({
@@ -11697,6 +11758,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [appointmentManualParticipantOpen, setAppointmentManualParticipantOpen] = useState(false)
   const [appointmentDeselectedParticipantKeys, setAppointmentDeselectedParticipantKeys] = useState([])
   const [isSellerOnboardingSending, setIsSellerOnboardingSending] = useState(false)
+  const [sellerFollowUpSending, setSellerFollowUpSending] = useState(false)
   const [sellerAttorneyPickerOpen, setSellerAttorneyPickerOpen] = useState(false)
   const [sellerPreferredAttorneys, setSellerPreferredAttorneys] = useState([])
   const [sellerPreferredAttorneysLoading, setSellerPreferredAttorneysLoading] = useState(false)
@@ -13418,7 +13480,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       : selectedLeadRecord,
     [isLeadWorkspaceRoute, routeLeadSnapshotLead, selectedLeadRecord],
   )
-  const selectedLeadWorkspaceRouteHydrating = Boolean(isLeadWorkspaceRoute && routeLeadId && routeLeadHydrationStatus === 'loading' && !selectedLead)
+  const selectedLeadWorkspaceRouteHydrating = Boolean(
+    isLeadWorkspaceRoute &&
+      routeLeadId &&
+      !selectedLead &&
+      !['not_found', 'unavailable'].includes(routeLeadHydrationStatus),
+  )
 
   useEffect(() => {
     if (!isLeadWorkspaceRoute || !organisationId || routeLeadHydrationStatus !== 'ready' || !selectedLead) return
@@ -13691,6 +13758,45 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     ].join(' ')).includes(searchKey))
   }, [currentWorkspace?.type, eligibleSellerAssignmentOptions, sellerAssignmentSearch, workspace?.type])
 
+  const selectedLeadCollaboratorIds = useMemo(() => new Set(
+    (Array.isArray(selectedLead?.collaboratorAgentIds) ? selectedLead.collaboratorAgentIds : [])
+      .map(normalizeKey)
+      .filter(Boolean),
+  ), [selectedLead?.collaboratorAgentIds])
+  const selectedLeadCollaboratorAgents = useMemo(() => agentOptions.filter((agent) => (
+    selectedLeadCollaboratorIds.has(normalizeKey(agent.userId || agent.id))
+  )), [agentOptions, selectedLeadCollaboratorIds])
+
+  async function handleSellerLeadCollaboratorToggle(agent) {
+    if (!selectedLead || !organisationId || sellerCollaboratorSavingId || !canReassignSelectedSellerLead) return
+    const leadId = normalizeText(selectedLead.leadId)
+    const userId = normalizeText(agent?.userId || agent?.id)
+    if (!leadId || !userId) return
+    const isPrimaryOwner = normalizeKey(selectedLeadAssignedAgent?.userId || selectedLeadAssignedAgent?.id) === normalizeKey(userId)
+    if (isPrimaryOwner) return
+    const isAssigned = selectedLeadCollaboratorIds.has(normalizeKey(userId))
+    const nextIds = isAssigned
+      ? [...selectedLeadCollaboratorIds].filter((id) => id !== normalizeKey(userId))
+      : [...selectedLeadCollaboratorIds, userId]
+    setSellerCollaboratorSavingId(userId)
+    setError('')
+    patchSelectedLeadRecord({ collaboratorAgentIds: nextIds }, leadId)
+    try {
+      if (isAssigned) {
+        await removeLeadCollaborator({ organisationId, leadId, userId })
+      } else {
+        await addLeadCollaborator({ organisationId, leadId, userId })
+      }
+      const action = isAssigned ? 'removed from' : 'added to'
+      setMessage(`${agent.name} ${action} this lead.`)
+    } catch (collaboratorError) {
+      patchSelectedLeadRecord({ collaboratorAgentIds: [...selectedLeadCollaboratorIds] }, leadId)
+      setError(collaboratorError?.message || 'Unable to update the lead team right now.')
+    } finally {
+      setSellerCollaboratorSavingId('')
+    }
+  }
+
   async function handleSellerLeadReassignment(nextAgent) {
     if (!selectedLead || !organisationId || sellerAssignmentSaving) return
     if (!canReassignSelectedSellerLead) {
@@ -13743,22 +13849,25 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
     let assignmentPersisted = false
     try {
-      await updateAgencyCrmLeadRecord(organisationId, leadId, {
-        ...assignmentPatch,
-        leadName: selectedLeadDisplayName,
-        propertyLabel: selectedLeadPropertyLabel,
-        assignmentReason: `Reassigned by ${currentAgent.fullName}`,
-      })
-      assignmentPersisted = true
-      const activityNote = `${currentAgent.fullName} reassigned this lead from ${previousOwner} to ${nextOwner}.`
-      const createdActivity = await createAgencyCrmLeadActivity(organisationId, leadId, {
-        agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
-        activityType: 'Lead Reassigned',
-        activityNote,
-        outcome: `Previous owner: ${previousOwner} · New owner: ${nextOwner}`,
-        activityDate: changedAt,
+      const assignmentResult = await reassignLead({
+        organisationId,
+        leadId,
+        agentId: eligibleAgent.userId || eligibleAgent.id,
+        reason: `Reassigned by ${currentAgent.fullName}`,
       }, { actor: currentAgent })
-      const activityRow = createdActivity || {
+      assignmentPersisted = true
+      if (selectedLeadCollaboratorIds.has(normalizeKey(eligibleAgent.userId || eligibleAgent.id))) {
+        await removeLeadCollaborator({
+          organisationId,
+          leadId,
+          userId: eligibleAgent.userId || eligibleAgent.id,
+        })
+        patchSelectedLeadRecord({
+          collaboratorAgentIds: [...selectedLeadCollaboratorIds].filter((id) => id !== normalizeKey(eligibleAgent.userId || eligibleAgent.id)),
+        }, leadId)
+      }
+      const activityNote = `${currentAgent.fullName} reassigned this lead from ${previousOwner} to ${nextOwner}.`
+      const activityRow = assignmentResult?.notification || {
         activityId: `lead-reassigned:${leadId}:${changedAt}`,
         organisationId,
         leadId,
@@ -14982,6 +15091,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLeadLinkedTransactionId,
     workspace,
   ])
+  const selectedLeadBuyerFicaVerificationModel = useMemo(
+    () => buildBuyerFicaVerificationModel(selectedLeadBuyerProfileModel),
+    [selectedLeadBuyerProfileModel],
+  )
   const selectedLeadFinanceReadinessSummary = useMemo(() => getFinanceReadinessSummary({
     transaction: selectedLeadLinkedTransaction?.transaction || selectedLeadLinkedTransaction || {
       id: selectedLeadLinkedTransactionId,
@@ -16715,6 +16828,42 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     ],
   )
 
+  const selectedBuyerDocumentCategories = useMemo(() => {
+    const uploadedByKey = new Map(selectedLeadAgentUploadedBuyerDocuments.map((row) => [
+      normalizeKey(row.key || row.requirementKey || row.requirement_key || row.documentType || row.document_type),
+      row,
+    ]))
+    const ficaRows = selectedBuyerFicaRoleplayerModel.flatMap((group) => group.items || [])
+    const ficaByKey = new Map(ficaRows.map((row) => [normalizeKey(row.key || row.requirementKey || row.requirement_key), row]))
+    const configuredRows = BUYER_AGENT_DOCUMENT_TYPES.map((definition) => ({
+      key: definition.key,
+      requirementKey: definition.key,
+      label: definition.label,
+      required: true,
+      status: 'missing',
+      statusLabel: 'Missing',
+      ...(ficaByKey.get(definition.key) || {}),
+      ...(uploadedByKey.get(definition.key) || {}),
+    }))
+    const categoryForKey = (key = '') => ['proof_of_funds', 'bank_statements', 'bond_pre_approval'].includes(normalizeKey(key)) ? 'finance' : 'buyer'
+    const buyerRows = configuredRows.filter((row) => categoryForKey(row.key) === 'buyer')
+    const financeRows = configuredRows.filter((row) => categoryForKey(row.key) === 'finance')
+    ficaRows.forEach((row) => {
+      const key = normalizeKey(row.key || row.requirementKey || row.requirement_key)
+      if (!configuredRows.some((candidate) => normalizeKey(candidate.key || candidate.requirementKey) === key)) buyerRows.push(row)
+    })
+    const legalRows = [{
+      key: 'uploaded_otp',
+      requirementKey: 'uploaded_otp',
+      label: 'Offer to Purchase',
+      required: true,
+      status: selectedLeadBuyerOfferDocumentUploaded ? 'uploaded' : 'missing',
+      statusLabel: selectedLeadBuyerOfferDocumentUploaded ? 'Uploaded' : 'Missing',
+    }]
+    const rowsByCategory = { buyer: buyerRows, finance: financeRows, property: [], legal: legalRows }
+    return BUYER_LEAD_DOCUMENT_CATEGORY_CONFIG.map((category) => ({ ...category, items: rowsByCategory[category.key] || [] }))
+  }, [selectedBuyerFicaRoleplayerModel, selectedLeadAgentUploadedBuyerDocuments, selectedLeadBuyerOfferDocumentUploaded])
+
   useEffect(() => {
     const firstId = selectedSellerFicaRoleplayerModel[0]?.id || ''
     if (!firstId) {
@@ -16820,6 +16969,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }
     }
 
+    if (normalizeKey(fallbackAction.id) === 'open_seller_portal') {
+      return {
+        title: 'Follow up with client',
+        copy: 'Send the seller a reminder to complete their outstanding onboarding details.',
+        actionId: 'follow_up_with_seller',
+        label: sellerFollowUpSending ? 'Sending…' : 'Follow Up With Client',
+        disabled: sellerFollowUpSending,
+      }
+    }
+
     const fallbackBlocker = selectedSellerReadiness.blockers?.[0] || fallbackAction.blocker || null
     return {
       title: fallbackAction.label || 'Review seller journey',
@@ -16840,6 +16999,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedSellerJourney.stage?.key,
     selectedSellerReadiness.blockers,
     selectedSellerReadiness.nextAction,
+    sellerFollowUpSending,
   ])
 
   const selectedSellerProcessPanelModel = useMemo(() => {
@@ -16872,12 +17032,23 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const selectedLeadHasKingstonsSellerProcess = selectedSellerProcessPanelModel?.visible === true
   const selectedKingstonsProcessAction = useMemo(() => {
     const action = getKingstonsPipelineActionMeta(selectedSellerProcessPanelModel || {})
+    if (normalizeKey(action.actionId) === 'open_seller_portal' || normalizeKey(action.label).includes('track seller onboarding')) {
+      return {
+        ...action,
+        title: 'Follow up with client',
+        copy: 'Send the seller a reminder to complete their outstanding onboarding details.',
+        actionId: 'follow_up_with_seller',
+        label: sellerFollowUpSending ? 'Sending…' : 'Follow Up With Client',
+        disabled: sellerFollowUpSending,
+      }
+    }
     if (['complete_seller_pack', 'seller_pack_signed'].includes(action.actionId)) {
       return action
     }
     return action
   }, [
     selectedSellerProcessPanelModel,
+    sellerFollowUpSending,
   ])
   const selectedKingstonsRailSteps = useMemo(
     () => buildKingstonsPipelineRailSteps(selectedSellerProcessPanelModel || {}),
@@ -17329,7 +17500,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             ['SA Resident', field(onboarding?.saResident, onboarding?.sa_resident, onboarding?.taxResident)],
             ['Tax Number', field(onboarding?.incomeTaxNumber, onboarding?.income_tax_number, onboarding?.sellerTaxNumber, onboarding?.taxNumber, onboarding?.tax_number)],
             ['VAT Registered', field(onboarding?.vatRegistered, onboarding?.vat_registered)],
-            ['FICA Status', field(onboarding?.ficaStatus, onboarding?.fica_status, selectedLeadOnboardingCompleted ? 'Verified' : '')],
             ['POPI Consent', field(onboarding?.popiConsent, onboarding?.popi_consent, onboarding?.popiConsentAccepted || onboarding?.popi_consent_accepted ? 'Accepted' : '', selectedLeadOnboardingCompleted ? 'Accepted' : '')],
           ],
         },
@@ -17370,6 +17540,34 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           rows: propertyRows,
         },
       ].filter(Boolean),
+      verification: (() => {
+        const subject = {
+          fullName: sellerFullName,
+          idNumber: firstWorkspaceText(onboarding?.idNumber, onboarding?.id_number, onboarding?.sellerIdNumber, lead?.sellerIdNumber, lead?.idNumber, onboarding?.foreignPassportNumber),
+          dateOfBirth: firstWorkspaceText(onboarding?.dateOfBirth, onboarding?.date_of_birth, onboarding?.birthDate),
+          nationality: firstWorkspaceText(onboarding?.nationality, lead?.nationality, onboarding?.foreignOwnerCountry),
+          street: firstWorkspaceText(onboarding?.residentialStreet, onboarding?.streetAddress, lead?.streetAddress, propertyDetails?.streetAddress, onboarding?.companyRegisteredAddress, onboarding?.trustRegisteredAddress),
+          suburb: firstWorkspaceText(onboarding?.residentialSuburb, onboarding?.suburb, lead?.suburb, propertyDetails?.suburb),
+          city: firstWorkspaceText(onboarding?.residentialCity, onboarding?.city, lead?.city, propertyDetails?.city),
+          province: firstWorkspaceText(onboarding?.residentialProvince, onboarding?.province, lead?.province, propertyDetails?.province),
+          postalCode: firstWorkspaceText(onboarding?.residentialPostalCode, onboarding?.postalCode, lead?.postalCode, propertyDetails?.postalCode),
+          country: firstWorkspaceText(onboarding?.residentialCountry, onboarding?.country, lead?.country, propertyDetails?.country, onboarding?.foreignOwnerCountry, 'South Africa'),
+          email: firstWorkspaceText(selectedLeadContact?.email, lead?.sellerEmail, lead?.email),
+          phone: firstWorkspaceText(selectedLeadContact?.phone, lead?.sellerPhone, lead?.phone),
+          sellerType: profileKind,
+        }
+        const requirements = [
+          ['Full legal name', subject.fullName],
+          [isForeignSellerProfile ? 'Passport number' : isNaturalSellerProfile ? 'ID number' : 'Registration number', subject.idNumber || (isCompanySellerProfile ? firstWorkspaceText(onboarding?.companyRegistrationNumber, company?.registrationNumber) : isTrustSellerProfile ? firstWorkspaceText(onboarding?.trustRegistrationNumber, trust?.registrationNumber) : '')],
+          ['Nationality / jurisdiction', subject.nationality],
+          ['Residential / registered address', subject.street],
+          ['Country', subject.country],
+          ['Email address', subject.email],
+          ['Mobile number', subject.phone],
+          ['Seller type', subject.sellerType],
+        ]
+        return { subject, missingFields: requirements.filter(([, value]) => !firstWorkspaceText(value)).map(([label]) => label), entityType: profileKind || 'individual' }
+      })(),
       features: selectedLeadPropertyWorkspace.characteristics.features,
       defects: [
         ['Roof', field(onboarding?.roofDefect, onboarding?.roof_defect, onboarding?.roofCondition)],
@@ -25396,8 +25594,71 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
+  async function handleSellerClientFollowUp() {
+    if (!selectedLead || !organisationId || sellerFollowUpSending) return
+    const sellerEmail = normalizeText(selectedLeadContact?.email || selectedLead?.sellerEmail || selectedLead?.email).toLowerCase()
+    const token = normalizeText(selectedLead?.sellerOnboardingToken || selectedLead?.seller_onboarding_token || selectedLeadLinkedListing?.sellerOnboarding?.token)
+    const onboardingLink = token ? buildSellerOnboardingLink(token) : ''
+    if (!isValidEmail(sellerEmail)) {
+      setError('Add a valid seller email address before sending a follow-up.')
+      return
+    }
+    if (!onboardingLink) {
+      setError('Send seller onboarding before sending a follow-up reminder.')
+      return
+    }
+
+    const sentAt = new Date().toISOString()
+    const sellerName = normalizeText(selectedLeadContactName || selectedLeadDisplayName || selectedLead?.name) || 'there'
+    setSellerFollowUpSending(true)
+    setError('')
+    setMessage('Sending seller follow-up…')
+    try {
+      const emailResponse = await invokeEdgeFunction('send-email', {
+        body: {
+          type: 'seller_onboarding_follow_up',
+          emailKind: 'onboarding_follow_up',
+          to: sellerEmail,
+          organisationId,
+          leadId: normalizeText(selectedLead.leadId),
+          listingId: normalizeText(selectedLeadLinkedListing?.id || selectedLead?.listingId || selectedLead?.listing_id),
+          sellerName,
+          propertyTitle: normalizeText(selectedLeadPropertyLabel || selectedLead?.sellerPropertyAddress || 'your property'),
+          propertyType: normalizeText(selectedLeadPropertyType),
+          onboardingLink,
+          onboardingUrl: onboardingLink,
+          agentName: normalizeText(currentAgent.fullName || currentAgent.email),
+          agentEmail: normalizeText(currentAgent.email).toLowerCase(),
+          agentPhone: normalizeText(currentAgent.phone || currentAgent.mobile || currentAgent.contactNumber || currentAgent.contact_number),
+          organisationName: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
+          resend: true,
+          idempotencyKey: `seller-onboarding-follow-up:${organisationId}:${selectedLead.leadId}:${sentAt}`,
+          deliveryMetadata: { source: 'seller_lead_workspace', action: 'follow_up_with_client' },
+        },
+      })
+      assertEdgeFunctionSuccess(emailResponse, 'Unable to send the seller follow-up email.')
+      await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
+        agent: currentAgent,
+        activityType: 'Seller Follow-Up Sent',
+        activityNote: `Seller onboarding follow-up sent to ${sellerEmail}.`,
+        outcome: 'seller_onboarding_follow_up_sent',
+        activityDate: sentAt,
+      }, { actor: currentAgent })
+      setMessage(`Follow-up email sent to ${sellerEmail}.`)
+      scheduleRecordsReload(organisationId, 850)
+    } catch (followUpError) {
+      setError(followUpError?.message || 'Unable to send the seller follow-up right now.')
+    } finally {
+      setSellerFollowUpSending(false)
+    }
+  }
+
   function handleSellerJourneyAction(actionId) {
     const id = normalizeText(actionId)
+    if (id === 'follow_up_with_seller') {
+      void handleSellerClientFollowUp()
+      return
+    }
     if (id === 'contact_seller') {
       openSellerContactFeedbackModal()
       return
@@ -30429,7 +30690,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     },
     tax: {
       title: 'Edit Tax & Compliance',
-      subtitle: 'Update tax, FICA, and POPI readiness details.',
+      subtitle: 'Update tax and POPI details. FICA verification is managed from the central verification record.',
     },
     ownership: {
       title: 'Edit Property Ownership',
@@ -32216,13 +32477,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 		                                          },
 		                                        },
 		                                        {
-		                                          label: 'Track Seller Onboarding',
-		                                          Icon: ExternalLink,
+		                                          label: sellerFollowUpSending ? 'Sending Follow-Up…' : 'Follow Up With Client',
+		                                          Icon: Mail,
 	                                          tone: 'text-[#29435d]',
-	                                          disabled: !normalizeText(selectedLead?.sellerOnboardingToken || selectedLeadLinkedListing?.sellerOnboarding?.token),
+	                                          disabled: sellerFollowUpSending || !normalizeText(selectedLead?.sellerOnboardingToken || selectedLeadLinkedListing?.sellerOnboarding?.token),
 	                                          onClick: () => {
 	                                            setLeadActionsMenuOpen(false)
-	                                            handleSellerJourneyAction('open_seller_portal')
+	                                            handleSellerJourneyAction('follow_up_with_seller')
 	                                          },
 	                                        },
 		                                        {
@@ -32393,7 +32654,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                    </div>
 
                     <div className="min-w-0">
-                      {!selectedLead ? (
+                      {selectedLeadWorkspaceRouteHydrating ? (
+                        <div className="space-y-3" aria-hidden="true">
+                          <div className="h-4 w-24 animate-pulse rounded-full bg-[#dfe8f1]" />
+                          <div className="h-10 w-64 max-w-full animate-pulse rounded-[12px] bg-[#e8eef5]" />
+                          <div className="h-4 w-44 animate-pulse rounded-full bg-[#edf2f7]" />
+                        </div>
+                      ) : !selectedLead ? (
                         <h1 className="text-[1.875rem] font-bold leading-tight tracking-[-0.035em] text-[#102033] sm:text-[2.25rem] lg:text-[2.5rem]">
                           Lead Workspace
                         </h1>
@@ -33142,7 +33409,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
                             <h3 className="text-base font-semibold text-[#102033]">Lead Assigned To</h3>
-                            <p className="mt-1 text-xs text-[#758aa0]">Current owner of this seller lead</p>
+                            <p className="mt-1 text-xs text-[#758aa0]">Primary owner and supporting agents</p>
                           </div>
                           {canReassignSelectedSellerLead ? (
                             <Button
@@ -33150,13 +33417,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               size="sm"
                               variant="secondary"
                               className="h-9 shrink-0 rounded-[12px] px-3 text-xs"
-                              disabled={sellerAssignmentSaving}
+                              disabled={sellerAssignmentSaving || Boolean(sellerCollaboratorSavingId)}
                               aria-expanded={sellerAssignmentMenuOpen}
                               aria-haspopup="listbox"
                               onClick={() => setSellerAssignmentMenuOpen((open) => !open)}
                             >
                               {sellerAssignmentSaving ? <RefreshCw className="h-4 w-4 animate-spin" /> : null}
-                              {sellerAssignmentSaving ? 'Saving' : 'Reassign Lead'}
+                              {sellerAssignmentSaving ? 'Saving' : 'Manage Team'}
                               {!sellerAssignmentSaving ? <ChevronDown className="h-4 w-4" /> : null}
                             </Button>
                           ) : null}
@@ -33170,7 +33437,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             </span>
                           )}
                           <div className="min-w-0">
-                            <p className="truncate text-base font-semibold text-[#18324b]">{selectedLeadAssignedAgentLabel}</p>
+                            <div className="flex min-w-0 items-center gap-2">
+                              <p className="truncate text-base font-semibold text-[#18324b]">{selectedLeadAssignedAgentLabel}</p>
+                              <span className="shrink-0 rounded-full bg-[#eaf6ef] px-2 py-0.5 text-[0.65rem] font-bold uppercase tracking-[0.08em] text-[#167149]">Primary</span>
+                            </div>
                             {selectedLeadAssignedAgent ? (
                               <>
                                 <p className="mt-0.5 truncate text-sm text-[#60758b]">{selectedLeadAssignedAgent.email || 'Email not available'}</p>
@@ -33185,8 +33455,21 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             )}
                           </div>
                         </div>
+                        {selectedLeadCollaboratorAgents.length ? (
+                          <div className="mt-4 border-t border-[#edf3f8] pt-4">
+                            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7890a7]">Also assigned</p>
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {selectedLeadCollaboratorAgents.map((agent) => (
+                                <span key={`${agent.id}:assigned-chip`} className="inline-flex items-center gap-2 rounded-full border border-[#dbe7f2] bg-[#fbfdff] py-1 pl-1 pr-2.5 text-xs font-semibold text-[#31506b]">
+                                  <span className="grid h-6 w-6 place-items-center rounded-full bg-[#eaf6ef] text-[0.62rem] font-bold text-[#167149]">{getInitials(agent.name)}</span>
+                                  {agent.name}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
                         {sellerAssignmentMenuOpen ? (
-                          <div className="absolute left-4 right-4 top-[64px] z-30 overflow-hidden rounded-[16px] border border-[#cfdeea] bg-white shadow-[0_18px_42px_rgba(16,32,51,0.18)]" role="listbox" aria-label="Eligible lead owners">
+                          <div className="absolute left-4 right-4 top-[64px] z-30 overflow-hidden rounded-[16px] border border-[#cfdeea] bg-white shadow-[0_18px_42px_rgba(16,32,51,0.18)]" aria-label="Manage assigned agents">
                             <div className="border-b border-[#e8eef5] p-3">
                               <label className="flex h-10 items-center gap-2 rounded-[11px] border border-[#d7e2ed] bg-[#fbfdff] px-3 focus-within:border-[#168154] focus-within:ring-2 focus-within:ring-[#d8f1e4]">
                                 <Search className="h-4 w-4 shrink-0 text-[#7890a7]" />
@@ -33204,14 +33487,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             <div className="max-h-64 overflow-y-auto p-2">
                               {filteredSellerAssignmentOptions.length ? filteredSellerAssignmentOptions.map((agent) => {
                                 const isCurrentOwner = normalizeKey(selectedLeadAssignedAgent?.userId || selectedLeadAssignedAgent?.id) === normalizeKey(agent.userId || agent.id)
+                                const isCollaborator = selectedLeadCollaboratorIds.has(normalizeKey(agent.userId || agent.id))
+                                const isSavingAgent = normalizeKey(sellerCollaboratorSavingId) === normalizeKey(agent.userId || agent.id)
                                 return (
-                                  <button
+                                  <div
                                     key={`${agent.id}:${agent.email}:seller-assignment`}
-                                    type="button"
-                                    role="option"
-                                    aria-selected={isCurrentOwner}
-                                    className="flex min-h-12 w-full items-center gap-3 rounded-[11px] px-3 py-2 text-left transition hover:bg-[#f2f8f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#168154]"
-                                    onClick={() => void handleSellerLeadReassignment(agent)}
+                                    className="flex min-h-14 w-full items-center gap-3 rounded-[11px] px-3 py-2 text-left transition hover:bg-[#f2f8f5]"
                                   >
                                     {agent.avatarUrl ? (
                                       <img className="h-9 w-9 shrink-0 rounded-full object-cover" src={agent.avatarUrl} alt="" />
@@ -33222,8 +33503,31 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                       <span className="block truncate text-sm font-semibold text-[#18324b]">{agent.name}</span>
                                       <span className="block truncate text-xs text-[#71869b]">{agent.jobTitle || getOrganisationRoleLabel(agent.role, currentWorkspace?.type || workspace?.type || 'agency')}</span>
                                     </span>
-                                    {isCurrentOwner ? <CheckCircle2 className="h-4 w-4 shrink-0 text-[#168154]" /> : null}
-                                  </button>
+                                    {isCurrentOwner ? (
+                                      <span className="rounded-full bg-[#eaf6ef] px-2 py-1 text-[0.65rem] font-bold uppercase text-[#167149]">Primary</span>
+                                    ) : (
+                                      <div className="flex shrink-0 items-center gap-2">
+                                        <button
+                                          type="button"
+                                          className={`grid h-8 w-8 place-items-center rounded-[10px] border transition ${isCollaborator ? 'border-[#168154] bg-[#eaf6ef] text-[#168154]' : 'border-[#cfdeea] bg-white text-[#91a2b4]'}`}
+                                          aria-label={`${isCollaborator ? 'Remove' : 'Add'} ${agent.name} ${isCollaborator ? 'from' : 'to'} lead team`}
+                                          aria-pressed={isCollaborator}
+                                          disabled={Boolean(sellerCollaboratorSavingId) || sellerAssignmentSaving}
+                                          onClick={() => void handleSellerLeadCollaboratorToggle(agent)}
+                                        >
+                                          {isSavingAgent ? <RefreshCw className="h-4 w-4 animate-spin" /> : isCollaborator ? <Check className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="rounded-[9px] border border-[#cfdeea] bg-white px-2.5 py-1.5 text-[0.68rem] font-semibold text-[#31506b] hover:border-[#168154] hover:text-[#167149]"
+                                          disabled={Boolean(sellerCollaboratorSavingId) || sellerAssignmentSaving}
+                                          onClick={() => void handleSellerLeadReassignment(agent)}
+                                        >
+                                          Make primary
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
                                 )
                               }) : (
                                 <p className="px-3 py-6 text-center text-sm text-[#71869b]">No eligible team members found.</p>
@@ -36142,6 +36446,31 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         ) : null}
                       </section>
 
+                      <Suspense fallback={<div className="h-56 animate-pulse rounded-[20px] border border-[#dce7f2] bg-[#f5f8fb]" />}>
+                        <BuyerFicaVerification
+                          organisationId={organisationId}
+                          clientContactId={normalizeText(selectedLead?.contactId || selectedLeadContact?.contactId)}
+                          buyerName={selectedLeadBuyerFicaVerificationModel.buyerName}
+                          entityType={selectedLeadBuyerFicaVerificationModel.entityType}
+                          subject={selectedLeadBuyerFicaVerificationModel.subject}
+                          missingFields={selectedLeadBuyerFicaVerificationModel.missingFields}
+                          canView={can(PERMISSIONS.viewClients, assignmentPermissionContext)}
+                          canRun={can(PERMISSIONS.editClients, assignmentPermissionContext)}
+                          onCompleteInformation={() => document.getElementById('buyer-profile-onboarding-form')?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })}
+                          onAuditActivity={(activityType, verificationRun) => {
+                            void createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
+                              agent: currentAgent,
+                              activityType,
+                              activityNote: `${activityType}. Buyer reference: ${verificationRun?.providerReference || 'pending'}.`,
+                              outcome: normalizeKey(activityType).replace(/\s+/g, '_'),
+                              activityDate: new Date().toISOString(),
+                            }, { actor: currentAgent }).catch((activityError) => {
+                              console.warn('[Buyer FICA verification] lead activity sync skipped.', activityError)
+                            })
+                          }}
+                        />
+                      </Suspense>
+
                       <form id="buyer-profile-onboarding-form" className="grid gap-5" onSubmit={handleSaveBuyerProfile}>
                         {selectedLeadBuyerProfileModel.sections.map((section) => (
                           <section key={section.key} className="rounded-[22px] border border-[#dce7f2] bg-white p-5 shadow-[0_12px_30px_rgba(31,54,78,0.045)] sm:p-6">
@@ -37613,6 +37942,33 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         </Button>
                       </div>
 
+                      <Suspense fallback={<div className="mt-5 h-56 animate-pulse rounded-[20px] border border-[#dce7f2] bg-[#f5f8fb]" />}>
+                        <SellerFicaVerification
+                          organisationId={organisationId}
+                          clientContactId={normalizeText(selectedLead?.contactId || selectedLeadContact?.contactId)}
+                          sellerName={selectedLeadDisplayName}
+                          entityType={selectedSellerProfileWorkspace.verification?.entityType}
+                          subject={selectedSellerProfileWorkspace.verification?.subject}
+                          missingFields={selectedSellerProfileWorkspace.verification?.missingFields}
+                          canView={can(PERMISSIONS.viewClients, assignmentPermissionContext)}
+                          canRun={can(PERMISSIONS.editClients, assignmentPermissionContext)}
+                          onCompleteInformation={() => openSellerLeadEditModal(
+                            selectedSellerProfileWorkspace.verification?.missingFields?.some((label) => label.toLowerCase().includes('address')) ? 'address' : 'personal',
+                          )}
+                          onAuditActivity={(activityType, verificationRun) => {
+                            void createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
+                              agent: currentAgent,
+                              activityType,
+                              activityNote: `${activityType}. Reference: ${verificationRun?.providerReference || 'pending'}.`,
+                              outcome: normalizeKey(activityType).replace(/\s+/g, '_'),
+                              activityDate: new Date().toISOString(),
+                            }, { actor: currentAgent }).catch((activityError) => {
+                              console.warn('[FICA verification] lead activity sync skipped.', activityError)
+                            })
+                          }}
+                        />
+                      </Suspense>
+
                       <div className="mt-5 grid gap-4 lg:grid-cols-2">
                         {selectedSellerProfileWorkspace.cards.map((card) => (
                           <section key={card.key} className="rounded-[16px] border border-[#dfe8f2] bg-white p-4 shadow-[0_8px_20px_rgba(31,54,78,0.025)]">
@@ -37881,7 +38237,55 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         Document uploads are available while the rest of this lead workspace keeps syncing in the background.
                       </div>
                     ) : null}
-                    {selectedLeadIsSeller ? (
+                    <LeadDocumentWorkspace
+                      partyType={selectedLeadIsSeller ? 'seller' : 'buyer'}
+                      partyName={selectedLeadDisplayName}
+                      categories={selectedLeadIsSeller ? selectedSellerDocumentCategories : selectedBuyerDocumentCategories}
+                      getStatusMeta={getSellerLeadDocumentStatusMeta}
+                      portalAction={selectedLeadIsSeller ? handleSellerOnboardingCommand : () => setLeadWorkspaceTab(BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY)}
+                      portalActionLabel={selectedLeadIsSeller ? selectedLeadSellerOnboardingCommandLabel : 'Buyer Portal Workflow'}
+                      renderActions={(documentRow, category) => {
+                        const documentKey = normalizeKey(documentRow.key || documentRow.requirementKey || documentRow.requirement_key)
+                        const documentUrl = documentRow.url || documentRow.fileUrl || documentRow.file_url || documentRow.downloadUrl || documentRow.download_url
+                        const documentStoragePath = normalizeText(documentRow.storagePath || documentRow.storage_path)
+                        const generatedHtml = normalizeText(documentRow.generatedHtml || documentRow.generated_html)
+                        const hasFile = sellerLeadDocumentHasFileEvidence(documentRow)
+                        if (!selectedLeadIsSeller) {
+                          if (hasFile && documentUrl) return <a href={documentUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-9 items-center gap-1.5 rounded-[11px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#315b7a]"><Download className="h-3.5 w-3.5" /> Download</a>
+                          if (documentKey === 'uploaded_otp') return <button type="button" onClick={() => setLeadWorkspaceTab(BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY)} className="inline-flex min-h-9 items-center rounded-[11px] border border-[#cfdceb] bg-white px-3 text-xs font-semibold text-[#315b7a]">{hasFile ? 'View' : 'Upload'}</button>
+                          return <button type="button" disabled={agentBuyerDocumentUploading} onClick={() => { setAgentBuyerDocumentType(documentKey); agentBuyerDocumentUploadInputRef.current?.click?.() }} className="inline-flex min-h-9 items-center gap-1.5 rounded-[11px] border border-[#cfdceb] bg-white px-3 text-xs font-semibold text-[#315b7a] disabled:opacity-60"><Upload className="h-3.5 w-3.5" />{agentBuyerDocumentUploading && agentBuyerDocumentType === documentKey ? 'Uploading...' : hasFile ? 'Replace' : 'Upload'}</button>
+                        }
+                        const basePackDocumentKey = normalizeSellerBasePackKey(documentKey)
+                        const isFormalValuation = selectedLeadHasKingstonsPipelineSignal && documentKey === 'valuation_document'
+                        const requirementLane = normalizeKey(documentRow.requirementLane || documentRow.requirement_lane)
+                        const requirementSection = normalizeKey(documentRow.documentRequirementSection || documentRow.document_requirement_section)
+                        const isOwnershipDriven = selectedLeadHasKingstonsPipelineSignal && (requirementLane === 'ownership_driven' || requirementSection === 'seller_identity_fica')
+                        const isPackDocument = selectedLeadHasKingstonsPipelineSignal && KINGSTONS_SELLER_PACK_KEY_SET.has(basePackDocumentKey || documentKey)
+                        const isFicaDocument = basePackDocumentKey === SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION || isOwnershipDriven
+                        const detailsCaptured = hasKingstonsSellerPackDetailsCompletionSignal(selectedKingstonsSellerPack)
+                        const canUseKingstonsUpload = isFormalValuation || ((isPackDocument || isOwnershipDriven) && (!isFicaDocument || detailsCaptured))
+                        const isSignedMandate = !selectedLeadHasKingstonsPipelineSignal && basePackDocumentKey === SELLER_BASE_PACK_KEYS.SIGNED_MANDATE
+                        const uploadKey = normalizeText(documentRow.id || documentRow.requirementId || documentRow.requirement_id || documentKey || documentRow.label)
+                        const uploadBusy = sellerLeadDocumentUploadingKey === uploadKey || (isFormalValuation ? formalValuationUploading : sellerPackUploadingKey === documentKey)
+                        return <>
+                          {hasFile || generatedHtml || documentRow.canonicalFinalArtifact ? <button type="button" disabled={openingSellerLeadDocumentId === normalizeText(documentRow.id || documentRow.key)} onClick={() => {
+                            if (generatedHtml && !documentStoragePath && !documentUrl) void handleDownloadGeneratedSellerLeadDocument(documentRow, generatedHtml)
+                            else if (documentRow.canonicalFinalArtifact && !documentStoragePath && !documentUrl) void handleOpenSellerLeadFinalSignedDocument(documentRow)
+                            else void handleDownloadSellerLeadDocumentUrl(documentRow)
+                          }} className="inline-flex min-h-9 items-center gap-1.5 rounded-[11px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#315b7a] disabled:opacity-60"><Download className="h-3.5 w-3.5" /> Download</button> : null}
+                          {isFicaDocument && !detailsCaptured ? <button type="button" onClick={() => openKingstonsSellerPackWizard(selectedKingstonsSellerPackSummary.sellerTypeCaptured ? 'details' : 'type')} className="inline-flex min-h-9 items-center rounded-[11px] bg-[#13784f] px-3 text-xs font-semibold text-white">Capture details</button> : null}
+                          {(!isFicaDocument || detailsCaptured) ? <label className={`inline-flex min-h-9 items-center gap-1.5 rounded-[11px] border px-3 text-xs font-semibold ${uploadBusy || sellerLeadMandateUploading ? 'cursor-not-allowed border-[#e5edf5] text-[#a0afbf]' : 'cursor-pointer border-[#cfdceb] text-[#315b7a]'}`}><Upload className="h-3.5 w-3.5" />{uploadBusy || (isSignedMandate && sellerLeadMandateUploading) ? 'Uploading...' : hasFile ? 'Replace' : 'Upload'}<input type="file" className="sr-only" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx" disabled={uploadBusy || sellerLeadMandateUploading} onChange={(event) => {
+                            if (isSignedMandate) void handleSellerLeadSignedMandateUpload(event, documentRow)
+                            else if (canUseKingstonsUpload) {
+                              if (isFormalValuation) void handleKingstonsFormalValuationUpload(event)
+                              else void handleKingstonsSellerPackUpload(documentKey, event, documentRow)
+                            } else void handleSellerLeadDocumentUpload(event, documentRow, category)
+                          }} /></label> : null}
+                        </>
+                      }}
+                    />
+                    {!selectedLeadIsSeller ? <input ref={agentBuyerDocumentUploadInputRef} type="file" className="sr-only" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx" disabled={agentBuyerDocumentUploading} onChange={(event) => void uploadAgentBuyerLeadDocument(event)} /> : null}
+                    {routeLeadHydrationStatus === '__legacy_document_workspace__' && (selectedLeadIsSeller ? (
                       <section className="overflow-hidden rounded-[30px] border border-[#dbe7f2] bg-white shadow-[0_18px_44px_rgba(31,54,78,0.07)]">
                         <div className="border-b border-[#e6eef7] bg-[#fbfdff] px-5 py-5 sm:px-6">
                           <div className="flex flex-wrap items-start justify-between gap-4">
@@ -38364,7 +38768,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           ))}
                         </div>
                       </section>
-                    )}
+                    ))}
                   </div>
                   ) : null}
 
@@ -38372,7 +38776,35 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
                 </div>
               ) : (
-                routeLeadId && ['not_found', 'unavailable'].includes(routeLeadHydrationStatus) ? (
+                selectedLeadWorkspaceRouteHydrating ? (
+                  <div className="mt-6 space-y-6" role="status" aria-live="polite" aria-label="Loading lead workspace" data-testid="lead-workspace-loading-shell">
+                    <span className="sr-only">Loading lead workspace</span>
+                    <section className="overflow-hidden rounded-[24px] border border-[#dbe7f2] bg-white shadow-[0_16px_42px_rgba(31,54,78,0.06)]">
+                      <div className="grid lg:grid-cols-[minmax(0,1.32fr)_minmax(390px,0.92fr)]">
+                        <div className="min-h-[300px] animate-pulse bg-[#e7eef5] p-8">
+                          <div className="h-6 w-28 rounded-full bg-white/70" />
+                          <div className="mt-10 h-11 w-72 max-w-full rounded-[12px] bg-white/80" />
+                          <div className="mt-5 h-5 w-56 max-w-full rounded-full bg-white/60" />
+                        </div>
+                        <div className="space-y-5 p-8">
+                          <div className="h-4 w-32 animate-pulse rounded-full bg-[#dfe8f1]" />
+                          <div className="h-36 animate-pulse rounded-[18px] bg-[#edf2f7]" />
+                          <div className="h-16 animate-pulse rounded-[16px] bg-[#f2f6fa]" />
+                        </div>
+                      </div>
+                    </section>
+                    <div className="grid grid-cols-3 gap-3 sm:grid-cols-6">
+                      {[0, 1, 2, 3, 4, 5].map((item) => (
+                        <div key={item} className="h-14 animate-pulse rounded-[16px] border border-[#e2ebf4] bg-white" />
+                      ))}
+                    </div>
+                    <div className="grid gap-5 lg:grid-cols-3">
+                      {[0, 1, 2].map((item) => (
+                        <div key={item} className="h-44 animate-pulse rounded-[22px] border border-[#e2ebf4] bg-white" />
+                      ))}
+                    </div>
+                  </div>
+                ) : routeLeadId && ['not_found', 'unavailable'].includes(routeLeadHydrationStatus) ? (
                   <div className="mt-3 rounded-[14px] border border-dashed border-[#d7e2ef] bg-[#f9fbfe] px-4 py-5 text-sm text-[#6f839c]">
                     <p className="font-semibold text-[#20364c]">
                       {routeLeadHydrationStatus === 'not_found' ? 'Lead not found' : 'Lead workspace unavailable'}
@@ -38775,7 +39207,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 <Field placeholder="SA resident" value={sellerProfileEditForm.saResident} onChange={(event) => updateSellerProfileEditField('saResident', event.target.value)} />
                 <Field placeholder="Income tax number" value={sellerProfileEditForm.incomeTaxNumber} onChange={(event) => updateSellerProfileEditField('incomeTaxNumber', event.target.value)} />
                 <Field placeholder="VAT registered" value={sellerProfileEditForm.vatRegistered} onChange={(event) => updateSellerProfileEditField('vatRegistered', event.target.value)} />
-                <Field placeholder="FICA status" value={sellerProfileEditForm.ficaStatus} onChange={(event) => updateSellerProfileEditField('ficaStatus', event.target.value)} />
                 <Field placeholder="POPI consent" value={sellerProfileEditForm.popiConsent} onChange={(event) => updateSellerProfileEditField('popiConsent', event.target.value)} />
               </div>
             ) : null}

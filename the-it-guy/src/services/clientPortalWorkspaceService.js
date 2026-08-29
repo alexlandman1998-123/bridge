@@ -5,7 +5,7 @@ import {
   fetchClientPortalCoreByToken,
   fetchClientPortalJourneySnapshotByToken,
   fetchClientPortalMandatePacketSummaryByToken,
-} from '../lib/api'
+} from '../lib/clientPortalApi'
 import { getDemoClientPortalSeedData } from '../lib/onboardingDemoLinks'
 import { resolveProspectDemoConfig } from '../lib/prospectDemoConfig'
 import {
@@ -20,7 +20,7 @@ import {
   getClientPortalNotifications,
   syncNotificationsFromActivityFeed,
   syncNotificationsFromNextActions,
-} from './clientPortalNotificationsService'
+} from '../lib/clientPortalNotificationActions'
 import {
   buildClientPortalEducationalContent,
   getEducationalContentForAction,
@@ -34,7 +34,7 @@ import {
   getPrivateListingActivity,
   getSellerOnboardingByToken,
   resolveSellerClientPortalFinalSignedDocumentAccess,
-} from './privateListingService'
+} from '../lib/sellerPortalApi'
 import { buildSellerJourney } from './sellerJourneyService.js'
 import { buildSellerReadinessSummary } from './sellerReadinessService.js'
 import { getSellerRequiredDocuments } from './sellerDocumentRequirementsService.js'
