@@ -28052,13 +28052,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     ).toLowerCase()
     const nowIso = normalizeText(uploadedAt) || new Date().toISOString()
     const nextAction = otpAttorneyInstructionContext?.sendInstruction === true
-      ? 'Signed OTP uploaded. Transfer instruction requested for the nominated attorney.'
-      : 'Signed OTP uploaded. Continue transfer workflow.'
+      ? 'Begin finance processing. Transfer instruction requested for the nominated attorney.'
+      : 'Begin finance processing from the signed OTP handoff.'
     const payload = {
       onboarding_status: 'signed_otp_received',
-      stage: 'OTP Uploaded',
-      current_main_stage: 'OTP',
-      current_sub_stage_summary: 'Signed OTP received',
+      stage: 'Finance In Progress',
+      current_main_stage: 'FIN',
+      current_sub_stage_summary: 'Signed OTP received · Finance started',
       attorney: attorneyName || null,
       assigned_attorney_email: attorneyEmail || null,
       next_action: nextAction,
@@ -28076,7 +28076,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       updated: Array.isArray(updatedRows) ? updatedRows.length > 0 : Boolean(updatedRows),
       transactionId: scopedTransactionId,
       onboardingStatus: 'signed_otp_received',
-      stage: 'OTP Uploaded',
+      stage: 'Finance In Progress',
       documentId: normalizeText(persistedDocument?.id || uploadedDocument?.id || uploadedDocument?.documentId) || null,
       uploadedAt: nowIso,
       attorneyName: attorneyName || null,
@@ -29042,7 +29042,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               transactionCreationOverrideActorRole: membershipRole || role,
               creationMode: 'onboarding_capture',
               allowIncompleteRoutingFacts: true,
-              stage: 'OTP Uploaded',
+              stage: 'Finance In Progress',
               idempotencyKey: `otp-upload:${organisationId}:${canonicalBuyerLeadId || selectedLead.leadId}:${selectedListingId}`,
               otpDocumentUploadedAt: uploadedAt,
               kingstonsBuyerOtpTerms: otpAttorneyInstructionContext?.terms || null,

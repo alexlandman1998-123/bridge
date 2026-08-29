@@ -101,7 +101,7 @@ const RESERVATION_STATUS_OPTIONS = [
 ]
 
 const SIGNED_OTP_STATUS_OPTIONS = [
-  { value: 'uploaded', label: 'Signed OTP uploaded', caption: 'The signed OTP is already in the file pack or available for review.' },
+  { value: 'uploaded', label: 'Signed OTP uploaded', caption: 'The signed OTP is already available, so this transaction will start in Finance.' },
   { value: 'pending_upload', label: 'Signed OTP to upload', caption: 'The signed OTP exists, but must be uploaded after creation.' },
   { value: 'not_signed', label: 'OTP not signed yet', caption: 'Create the workspace and use onboarding/OTP signing as the next action.' },
 ]

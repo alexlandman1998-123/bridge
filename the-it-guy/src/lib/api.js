@@ -80,6 +80,7 @@ import {
   buildNewTransactionSetupHealth,
   extractNewTransactionSetupHealthFromEvents,
   resolveWizardHandoffNextAction,
+  resolveWizardInitialTransactionStage,
 } from '../core/transactions/newTransactionSetupHealth.js'
 import { resolveTransactionSaleProfile } from '../core/transactions/transactionSaleProfile.js'
 import { buildBuyerOnboardingCompletionHook } from '../core/transactions/buyerOnboardingCompletionHook.js'
@@ -29532,20 +29533,22 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
         ? finance?.bondOriginator?.trim() || 'Bond Team'
         : resolvedAssignedAgent || 'Sales Team'
 
-  const resolvedDetailedStage = status.stage || 'Reserved'
-  const resolvedMainStage = normalizeMainStage(status.mainStage, resolvedDetailedStage)
   const purchaserType = normalizePurchaserType(setup.purchaserType)
   const buyerParties = resolveWizardBuyerParties(setup, purchaserType)
   const handoffChecklist = normalizeWizardHandoffChecklist(options?.handoffChecklist || setup?.handoffChecklist || {})
+  const requestedDetailedStage = status.stage || 'Reserved'
+  const requestedMainStage = normalizeMainStage(status.mainStage, requestedDetailedStage)
+  const initialTransactionStage = resolveWizardInitialTransactionStage(handoffChecklist, {
+    stage: requestedDetailedStage,
+    mainStage: requestedMainStage,
+  })
+  const resolvedDetailedStage = initialTransactionStage.stage
+  const resolvedMainStage = initialTransactionStage.mainStage || requestedMainStage
   const resolvedNextAction = resolveWizardHandoffNextAction(
     handoffChecklist,
     status.nextAction || finance.nextAction || null,
   )
-  const initialPortalReadinessStatus = handoffChecklist.signedOtpUploaded
-    ? 'signed_otp_received'
-    : handoffChecklist.requiresSignedOtpUpload
-      ? 'awaiting_signed_otp'
-      : 'awaiting_client_onboarding'
+  const initialPortalReadinessStatus = initialTransactionStage.onboardingStatus
   const initialPortalReadinessAt =
     initialPortalReadinessStatus === 'awaiting_client_onboarding' ? null : new Date().toISOString()
 

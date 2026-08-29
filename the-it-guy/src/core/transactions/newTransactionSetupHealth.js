@@ -10,7 +10,7 @@ function hasValue(...values) {
 
 export function resolveWizardHandoffNextAction(handoffChecklist = {}, fallbackNextAction = '') {
   if (handoffChecklist?.signedOtpStatus === 'uploaded') {
-    return 'Review signed OTP and confirm the transaction handoff pack.'
+    return 'Begin finance processing from the signed OTP handoff.'
   }
   if (handoffChecklist?.signedOtpStatus === 'pending_upload') {
     return 'Upload the signed OTP to the transaction documents.'
@@ -19,6 +19,24 @@ export function resolveWizardHandoffNextAction(handoffChecklist = {}, fallbackNe
     return 'Send or complete buyer onboarding so the OTP can be prepared and signed.'
   }
   return fallbackNextAction || null
+}
+
+export function resolveWizardInitialTransactionStage(handoffChecklist = {}, fallback = {}) {
+  if (handoffChecklist?.signedOtpStatus === 'uploaded') {
+    return {
+      stage: 'Finance In Progress',
+      mainStage: 'FIN',
+      onboardingStatus: 'signed_otp_received',
+    }
+  }
+
+  return {
+    stage: text(fallback.stage) || 'Reserved',
+    mainStage: text(fallback.mainStage) || '',
+    onboardingStatus: handoffChecklist?.signedOtpStatus === 'pending_upload'
+      ? 'awaiting_signed_otp'
+      : 'awaiting_client_onboarding',
+  }
 }
 
 export function buildNewTransactionSetupHealth({

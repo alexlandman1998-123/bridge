@@ -83,7 +83,7 @@ const SIGNED_OTP_STATUS_OPTIONS = [
   {
     value: 'uploaded',
     label: 'Signed OTP uploaded',
-    caption: 'The signed OTP is already in the file pack or available for review.',
+    caption: 'The signed OTP is already available, so this transaction will start in Finance.',
   },
   {
     value: 'pending_upload',
@@ -3558,7 +3558,7 @@ function AgentNewDealWizard({
                       'Transaction will be created and linked to the selected property.',
                       `${getOriginLabel(form.propertyMode)} will be logged on the activity timeline.`,
                       effectiveSignedOtpStatus === 'uploaded'
-                        ? 'The first action will be to review the signed OTP and confirm the handoff pack.'
+                        ? 'The transaction will start in Finance because the signed OTP is already available.'
                         : effectiveSignedOtpStatus === 'pending_upload'
                           ? 'The first action will be to upload the signed OTP to transaction documents.'
                           : 'The first action will be to complete OTP signing before partner handoff.',

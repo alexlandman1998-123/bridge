@@ -263,6 +263,7 @@ function resolveInitialMainStage(stageValue) {
   const normalized = normalize(stageValue).toLowerCase()
   if (!normalized || normalized === 'available') return 'AVAIL'
   if (normalized === 'registered') return 'REG'
+  if (normalized.includes('finance') || normalized.includes('bond')) return 'FIN'
   if (normalized.includes('otp') || normalized.includes('onboarding')) return 'OTP'
   return 'DEP'
 }

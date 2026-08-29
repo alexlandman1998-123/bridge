@@ -4,7 +4,18 @@ import {
   buildNewTransactionSetupHealth,
   extractNewTransactionSetupHealthFromEvents,
   resolveWizardHandoffNextAction,
+  resolveWizardInitialTransactionStage,
 } from '../newTransactionSetupHealth.js'
+
+assert.deepEqual(
+  resolveWizardInitialTransactionStage({ signedOtpStatus: 'uploaded' }, { stage: 'Reserved', mainStage: 'OTP' }),
+  { stage: 'Finance In Progress', mainStage: 'FIN', onboardingStatus: 'signed_otp_received' },
+)
+assert.deepEqual(
+  resolveWizardInitialTransactionStage({ signedOtpStatus: 'pending_upload' }, { stage: 'Reserved', mainStage: 'OTP' }),
+  { stage: 'Reserved', mainStage: 'OTP', onboardingStatus: 'awaiting_signed_otp' },
+)
+assert.match(resolveWizardHandoffNextAction({ signedOtpStatus: 'uploaded' }) || '', /finance processing/i)
 
 const readyDeveloperSale = buildNewTransactionSetupHealth({
   transactionType: 'developer_sale',

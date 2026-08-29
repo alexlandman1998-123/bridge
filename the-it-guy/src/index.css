@@ -6137,7 +6137,9 @@
   min-height: 84px !important;
 }
 
+/* Release fingerprint: invalidate the 2026-08-29 stylesheet cached before its asset was available. */
 .ui-sidebar .ui-sidebar-brand-logo {
+  width: auto !important;
   max-width: 100% !important;
   max-height: 80px !important;
 }
