@@ -14,28 +14,28 @@ function getEffectContaining(needle) {
   return pipeline.slice(effectStart, nextEffect === -1 ? pipeline.length : nextEffect)
 }
 
-const offersEffect = getEffectContaining('listCanonicalOffersForLead({')
+const offersEffect = getEffectContaining('loadBuyerOfferWorkspaceData({')
 assert.match(
   offersEffect,
-  /if \(!organisationId \|\| !leadId \|\| selectedLeadIsSeller\) \{[\s\S]*setSelectedLeadOffers\(\[\]\)[\s\S]*return/,
+  /shouldLoadLeadWorkspaceRequest\([\s\S]*LEAD_WORKSPACE_REQUEST_FAMILIES\.offers[\s\S]*if \(!organisationId \|\| !leadId \|\| !shouldLoadOffers\) \{[\s\S]*setSelectedLeadOffers\(\[\]\)[\s\S]*return/,
   'seller leads should clear buyer offer state and exit before buyer offer queries',
 )
 assert.ok(
-  offersEffect.indexOf('selectedLeadIsSeller') < offersEffect.indexOf('listCanonicalOffersForLead({'),
+  offersEffect.indexOf('shouldLoadLeadWorkspaceRequest') < offersEffect.indexOf('loadBuyerOfferWorkspaceData({'),
   'the seller category gate must run before the canonical offer request',
 )
-assert.match(offersEffect, /selectedLeadIsSeller,[\s\S]*selectedLeadOffersRefreshTick/)
+assert.match(offersEffect, /selectedLeadCategory,[\s\S]*selectedLeadOffersRefreshTick/)
 
-const lifecycleEffect = getEffectContaining('getBuyerLeadLifecycleDiagnostic({')
+const lifecycleEffect = getEffectContaining('loadBuyerFinanceTransactionData({')
 assert.match(
   lifecycleEffect,
-  /if \(!organisationId \|\| !leadId \|\| selectedLeadIsSeller \|\| \(!offerId && !selectedLeadLinkedTransactionId\)\) \{/,
+  /LEAD_WORKSPACE_REQUEST_FAMILIES\.lifecycleDiagnostic[\s\S]*if \(!organisationId \|\| !leadId \|\| !shouldLoadLifecycleDiagnostic \|\| \(!offerId && !selectedLeadLinkedTransactionId\)\) \{/,
   'seller leads should exit before buyer lifecycle diagnostics',
 )
 assert.ok(
-  lifecycleEffect.indexOf('selectedLeadIsSeller') < lifecycleEffect.indexOf('getBuyerLeadLifecycleDiagnostic({'),
+  lifecycleEffect.indexOf('shouldLoadLeadWorkspaceRequest') < lifecycleEffect.indexOf('loadBuyerFinanceTransactionData({'),
   'the seller category gate must run before the buyer lifecycle request',
 )
-assert.match(lifecycleEffect, /selectedLeadLinkedTransactionId,[\s\S]*selectedLeadIsSeller/)
+assert.match(lifecycleEffect, /selectedLeadLinkedTransactionId,[\s\S]*selectedLeadCategory/)
 
 console.log('seller leads category hydration phase 7 checks passed (buyer-only requests skipped for sellers)')

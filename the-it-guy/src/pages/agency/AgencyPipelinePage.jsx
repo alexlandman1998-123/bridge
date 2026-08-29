@@ -1,5 +1,5 @@
 import { AlertTriangle, ArrowLeft, ArrowUpRight, Bath, BedDouble, Bold, Bookmark, Box, Building2, CalendarDays, Car, CheckCircle2, CheckSquare, ChevronDown, ChevronRight, Clock3, Columns3, Copy, Download, ExternalLink, Eye, FileText, Filter, Gauge, Home, ImageIcon, Italic, Link2, List, Lock, Mail, MapPin, MessageCircle, MoreHorizontal, Paperclip, Pencil, Phone, Plus, RefreshCw, Ruler, Search, Send, Settings, ShieldCheck, Smile, Star, Table2, Tag, Trash2, TrendingUp, Upload, UserRound, X, Zap } from 'lucide-react'
-import { Suspense, createElement, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, createElement, lazy, useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import LoadingSkeleton from '../../components/LoadingSkeleton'
 import JourneyStageOverrideActions from '../../components/journey/JourneyStageOverrideActions'
@@ -110,6 +110,7 @@ import {
   getBuyerProcessDefinition,
   normalizeBuyerProcessStageKey,
 } from '../../services/buyerProcessDefinitionService'
+import { buildBuyerJourneyAlignmentModel } from '../../services/buyerJourneyAlignmentService'
 import {
   buildBuyerIntakeNotes,
   buildBuyerQualificationIntake,
@@ -156,11 +157,8 @@ import {
   createOfferSellerReviewSession,
   createTransactionFromAcceptedCanonicalOffer,
   getClientIntakePreferenceLabel,
-  getBuyerLeadLifecycleDiagnostic,
   getSellerOfferReviewDeliveryModeLabel,
   listAppointmentViewedListings,
-  listCanonicalOffersForLead,
-  listOfferPortalSessions,
   normalizeClientIntakePreference,
   normalizeSellerReviewDeliveryMode,
   recordBuyerLeadActivity,
@@ -204,11 +202,23 @@ import {
   recordPipelineOperationalEvent,
 } from '../../services/pipelineOperationalTelemetryService'
 import { createSellerLeadsPerformanceBaseline } from '../../services/observability/sellerLeadsPerformanceBaseline'
+import { createBuyerLeadsPerformanceBaseline } from '../../services/observability/buyerLeadsPerformanceBaseline'
+import {
+  LEAD_WORKSPACE_REQUEST_FAMILIES,
+  shouldLoadLeadWorkspaceRequest,
+} from '../../services/buyerLeadWorkspaceRequestPolicy'
 import {
   loadLeadActivityWorkspace,
+  loadBuyerAppointmentsWorkspace,
   loadSellerAppointmentsWorkspace,
   preloadAgencyLeadWorkspaceTab,
 } from './agencyLeadWorkspaceTabLoader'
+import { loadBuyerLeadWorkspaceData } from './buyerLeadWorkspaceDataLoader'
+import { loadBuyerOfferWorkspaceData } from './buyerOfferWorkspaceDataLoader'
+import {
+  loadBuyerFinanceTransactionData,
+  shouldLoadBuyerFinanceTransactionTab,
+} from './buyerFinanceTransactionDataLoader'
 
 const PIPELINE_CONTEXT_TIMEOUT_MS = 8000
 const PIPELINE_RECORDS_TIMEOUT_MS = 10000
@@ -221,6 +231,7 @@ const PIPELINE_MANDATE_SIGNING_EMAIL_TIMEOUT_MS = 20000
 const LEGACY_LEAD_LIST_RENDER_ENABLED = false
 const LeadListPage = lazy(() => import('./LeadListPage'))
 const LeadActivityWorkspace = lazy(loadLeadActivityWorkspace)
+const BuyerLeadAppointmentsWorkspace = lazy(loadBuyerAppointmentsWorkspace)
 const KingstonsSellerAppointmentsWorkspace = lazy(loadSellerAppointmentsWorkspace)
 function createDeferredAction(loadModule, actionName) {
   return async (...args) => {
@@ -11381,8 +11392,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const sellerLeadsRenderCountRef = useRef(0)
   sellerLeadsRenderCountRef.current += 1
   const sellerLeadsPerformanceBaselineRef = useRef(null)
+  const buyerLeadsPerformanceBaselineRef = useRef(null)
   if (!sellerLeadsPerformanceBaselineRef.current) {
     sellerLeadsPerformanceBaselineRef.current = createSellerLeadsPerformanceBaseline({ route: location.pathname })
+  }
+  if (!buyerLeadsPerformanceBaselineRef.current) {
+    buyerLeadsPerformanceBaselineRef.current = createBuyerLeadsPerformanceBaseline({ route: location.pathname })
   }
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -11431,6 +11446,18 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }, [currentWorkspace?.type, location.pathname, organisationId, profile?.id, role, workspace?.type])
   const recordSellerLeadsPerformance = useCallback((checkpoint, workspaceId = '', metadata = {}) => {
     void sellerLeadsPerformanceBaselineRef.current?.recordCheckpoint({
+      checkpoint,
+      userId: normalizeText(profile?.id),
+      workspaceId: normalizeText(workspaceId),
+      metadata: {
+        surface: isLeadWorkspaceRoute ? 'lead_workspace' : 'lead_list',
+        renderCount: sellerLeadsRenderCountRef.current,
+        ...metadata,
+      },
+    })
+  }, [isLeadWorkspaceRoute, profile?.id])
+  const recordBuyerLeadsPerformance = useCallback((checkpoint, workspaceId = '', metadata = {}) => {
+    void buyerLeadsPerformanceBaselineRef.current?.recordCheckpoint({
       checkpoint,
       userId: normalizeText(profile?.id),
       workspaceId: normalizeText(workspaceId),
@@ -11496,6 +11523,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [draggingPipelineCardId, setDraggingPipelineCardId] = useState('')
   const draggingPipelineCardRef = useRef('')
   const [leadWorkspaceTab, setLeadWorkspaceTab] = useState('overview')
+  const [pendingBuyerWorkspaceTab, setPendingBuyerWorkspaceTab] = useState('')
+  const [isBuyerWorkspaceTabTransitionPending, startBuyerWorkspaceTabTransition] = useTransition()
   const [buyerJourneyActionStage, setBuyerJourneyActionStage] = useState(BUYER_PROCESS_STAGE_KEYS.qualified)
   const [leadFilter, setLeadFilter] = useState(DEFAULT_LEAD_FILTER)
   const [leadTablePage, setLeadTablePage] = useState(1)
@@ -12808,6 +12837,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }, severity)
     }
 
+    const fetchFullRouteLeadWorkspace = (snapshot = null) => {
+      const routeLead = (Array.isArray(snapshot?.leads) ? snapshot.leads[0] : null) || routeLeadRecordRef.current
+      const routeLeadCategory = routeLead ? resolveLeadCategoryView(routeLead) : ''
+      return routeLeadCategory === 'buyer'
+        ? loadBuyerLeadWorkspaceData({ organisationId, leadId: routeLeadId })
+        : fetchAgencyCrmLeadWorkspace(organisationId, routeLeadId)
+    }
+
     const mergeRouteLeadSnapshot = (snapshot) => {
       if (!snapshot?.leads?.length) return false
       const resolvedRouteLeadId = normalizeText(snapshot?.resolvedLeadId || snapshot.leads[0]?.leadId)
@@ -12994,11 +13031,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         })
     }
 
-    const hydrateFullLeadWorkspaceInBackground = (reason = 'route_lead_background_workspace') => {
+    const hydrateFullLeadWorkspaceInBackground = (reason = 'route_lead_background_workspace', snapshot = null) => {
       void (async () => {
         try {
           const workspaceSnapshot = await withPipelineTimeout(
-            fetchAgencyCrmLeadWorkspace(organisationId, routeLeadId),
+            fetchFullRouteLeadWorkspace(snapshot),
             'Lead workspace data is taking too long to load.',
             LEAD_WORKSPACE_HYDRATION_TIMEOUT_MS,
           )
@@ -13061,7 +13098,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           }
           if (markRouteSnapshotReady(routeRecordSnapshot, { source: 'route_record_seed' })) {
             hydrateAndMergeLinkedListingInBackground(routeRecordSnapshot, 'route_record_linked_listing')
-            hydrateFullLeadWorkspaceInBackground('route_record_followup')
+            hydrateFullLeadWorkspaceInBackground('route_record_followup', routeRecordSnapshot)
             return
           }
         }
@@ -13074,12 +13111,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           if (cancelled) return
           if (markRouteSnapshotReady(seedSnapshot, { source: 'route_hydration_seed' })) {
             hydrateAndMergeLinkedListingInBackground(seedSnapshot, 'route_seed_linked_listing')
-            hydrateFullLeadWorkspaceInBackground('route_seed_followup')
+            hydrateFullLeadWorkspaceInBackground('route_seed_followup', seedSnapshot)
             return
           }
         }
         const workspaceSnapshot = await withPipelineTimeout(
-          fetchAgencyCrmLeadWorkspace(organisationId, routeLeadId),
+          fetchFullRouteLeadWorkspace(),
           'Lead workspace data is taking too long to load.',
           LEAD_WORKSPACE_HYDRATION_TIMEOUT_MS,
         )
@@ -13383,11 +13420,18 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   useEffect(() => {
     if (!isLeadWorkspaceRoute || !organisationId || routeLeadHydrationStatus !== 'ready' || !selectedLead) return
-    recordSellerLeadsPerformance('workspace_ready', organisationId, {
+    const category = resolveLeadCategoryView(selectedLead)
+    const checkpointMetadata = {
       workspaceTab: routeLeadWorkspaceTab,
       warmSnapshot: Boolean(routeLeadWorkspaceSnapshotRef.current?.leads?.length),
-    })
-  }, [isLeadWorkspaceRoute, organisationId, recordSellerLeadsPerformance, routeLeadHydrationStatus, routeLeadWorkspaceTab, selectedLead])
+      leadCategory: category,
+    }
+    if (category === 'seller') {
+      recordSellerLeadsPerformance('workspace_ready', organisationId, checkpointMetadata)
+      return
+    }
+    recordBuyerLeadsPerformance('workspace_ready', organisationId, checkpointMetadata)
+  }, [isLeadWorkspaceRoute, organisationId, recordBuyerLeadsPerformance, recordSellerLeadsPerformance, routeLeadHydrationStatus, routeLeadWorkspaceTab, selectedLead])
 
   useEffect(() => {
     if (!isLeadWorkspaceRoute || !organisationId || !selectedLead) return
@@ -13559,7 +13603,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       .sort((a, b) => new Date(a.dueDate || a.createdAt || 0) - new Date(b.dueDate || b.createdAt || 0))
   }, [records.tasks, selectedLead])
 
-  const selectedLeadIsSeller = resolveLeadCategoryView(selectedLead) === 'seller'
+  const selectedLeadCategory = resolveLeadCategoryView(selectedLead)
+  const selectedLeadIsSeller = selectedLeadCategory === 'seller'
   const assignmentPermissionContext = useMemo(() => ({
     profile,
     appRole: role,
@@ -13842,7 +13887,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   ].filter(Boolean).join(':')
 
   useEffect(() => {
-    if (!selectedLeadIdentityKey || !selectedLeadIsSeller) {
+    const shouldLoadPrivateListingActivity = shouldLoadLeadWorkspaceRequest({
+      leadCategory: selectedLeadCategory,
+      requestFamily: LEAD_WORKSPACE_REQUEST_FAMILIES.privateListingActivity,
+    })
+    if (!selectedLeadIdentityKey || !shouldLoadPrivateListingActivity) {
       setSelectedLeadPrivateListingActivities((previous) => previous.length ? [] : previous)
       return
     }
@@ -13877,7 +13926,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     isSupabaseConfigured,
     selectedLeadIdentityKey,
     selectedLeadPrivateListingActivityKey,
-    selectedLeadIsSeller,
+    selectedLeadCategory,
     selectedLeadLinkedListingId,
   ])
 
@@ -13917,7 +13966,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const reloadBuyerViewingPreferenceLinks = useCallback(async ({ showMessage = false } = {}) => {
     const workspaceId = normalizeWorkspaceUuid(organisationId)
     const selectedLeadUuid = normalizeLeadUuidFromLead(selectedLead)
-    if (!workspaceId || !selectedLead || selectedLeadIsSeller || !selectedLeadUuid) {
+    const shouldLoadViewingPreferences = shouldLoadLeadWorkspaceRequest({
+      leadCategory: selectedLeadCategory,
+      requestFamily: LEAD_WORKSPACE_REQUEST_FAMILIES.buyerViewingPreferences,
+    })
+    if (!workspaceId || !selectedLead || !shouldLoadViewingPreferences || !selectedLeadUuid) {
       setBuyerViewingPreferenceLinks([])
       setBuyerViewingPreferenceLinksError('')
       return []
@@ -13940,12 +13993,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     } finally {
       setBuyerViewingPreferenceLinksLoading(false)
     }
-  }, [organisationId, selectedLead, selectedLeadIsSeller])
+  }, [organisationId, selectedLead, selectedLeadCategory])
 
   const reloadSellerViewingCoordinationLinks = useCallback(async ({ showMessage = false } = {}) => {
     const workspaceId = normalizeWorkspaceUuid(organisationId)
     const selectedLeadUuid = normalizeLeadUuidFromLead(selectedLead)
-    if (!workspaceId || !selectedLead || selectedLeadIsSeller || !selectedLeadUuid) {
+    const shouldLoadSellerCoordination = shouldLoadLeadWorkspaceRequest({
+      leadCategory: selectedLeadCategory,
+      requestFamily: LEAD_WORKSPACE_REQUEST_FAMILIES.sellerViewingCoordination,
+    })
+    if (!workspaceId || !selectedLead || !shouldLoadSellerCoordination || !selectedLeadUuid) {
       setSellerViewingCoordinationLinks([])
       setSellerViewingCoordinationLinksError('')
       return []
@@ -13968,7 +14025,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     } finally {
       setSellerViewingCoordinationLinksLoading(false)
     }
-  }, [organisationId, selectedLead, selectedLeadIsSeller])
+  }, [organisationId, selectedLead, selectedLeadCategory])
 
   const selectedLeadAppointments = useMemo(() => {
     if (!selectedLead) return []
@@ -14327,7 +14384,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   useEffect(() => {
     const leadId = normalizeText(selectedLead?.leadId)
-    if (!organisationId || !leadId || selectedLeadIsSeller) {
+    const buyerWorkspaceTab = resolveBuyerWorkspaceTabKey(leadWorkspaceTab)
+    const shouldLoadOffers = shouldLoadLeadWorkspaceRequest({
+      leadCategory: selectedLeadCategory,
+      requestFamily: LEAD_WORKSPACE_REQUEST_FAMILIES.offers,
+    }) && buyerWorkspaceTab === BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY
+    if (!organisationId || !leadId || !shouldLoadOffers) {
       setSelectedLeadOffers([])
       setSelectedLeadOfferPortalSessions([])
       setSelectedLeadOffersError('')
@@ -14351,25 +14413,18 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     ].map(normalizeText).filter(Boolean).join(' ') ||
       normalizeText(selectedLead?.buyerName || selectedLead?.name)
 
-    Promise.all([
-      listCanonicalOffersForLead({
-        organisationId,
-        leadId,
-        contactId: normalizeText(selectedLead?.contactId || selectedLeadContact?.contactId),
-        appointmentIds: selectedAppointmentIds,
-        listingIds: selectedListingIds,
-        buyerEmail: normalizeText(selectedLeadContact?.email || selectedLead?.email),
-        buyerPhone: normalizeText(selectedLeadContact?.phone || selectedLead?.phone),
-        buyerName: selectedBuyerName,
-      }),
-      listOfferPortalSessions({
-        organisationId,
-        leadId,
-        contactId: normalizeText(selectedLead?.contactId || selectedLeadContact?.contactId),
-        appointmentIds: selectedAppointmentIds,
-      }).catch(() => []),
-    ])
-      .then(([offers, sessions]) => {
+    loadBuyerOfferWorkspaceData({
+      organisationId,
+      leadId,
+      contactId: normalizeText(selectedLead?.contactId || selectedLeadContact?.contactId),
+      appointmentIds: selectedAppointmentIds,
+      listingIds: selectedListingIds,
+      buyerEmail: normalizeText(selectedLeadContact?.email || selectedLead?.email),
+      buyerPhone: normalizeText(selectedLeadContact?.phone || selectedLead?.phone),
+      buyerName: selectedBuyerName,
+      revision: selectedLeadOffersRefreshTick,
+    })
+      .then(({ offers, sessions }) => {
         if (!cancelled) {
           setSelectedLeadOffers(Array.isArray(offers) ? offers : [])
           setSelectedLeadOfferPortalSessions(Array.isArray(sessions) ? sessions : [])
@@ -14404,7 +14459,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLeadContact?.firstName,
     selectedLeadContact?.lastName,
     selectedLeadContact?.phone,
-    selectedLeadIsSeller,
+    selectedLeadCategory,
+    leadWorkspaceTab,
     selectedLeadOffersRefreshTick,
   ])
 
@@ -14470,7 +14526,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   useEffect(() => {
     const leadId = normalizeText(selectedLead?.leadId)
     const offerId = normalizeText(selectedLeadLifecycleDiagnosticOffer?.id)
-    if (!organisationId || !leadId || selectedLeadIsSeller || (!offerId && !selectedLeadLinkedTransactionId)) {
+    const buyerWorkspaceTab = resolveBuyerWorkspaceTabKey(leadWorkspaceTab)
+    const shouldLoadLifecycleDiagnostic = shouldLoadLeadWorkspaceRequest({
+      leadCategory: selectedLeadCategory,
+      requestFamily: LEAD_WORKSPACE_REQUEST_FAMILIES.lifecycleDiagnostic,
+    }) && shouldLoadBuyerFinanceTransactionTab(buyerWorkspaceTab)
+    if (!organisationId || !leadId || !shouldLoadLifecycleDiagnostic || (!offerId && !selectedLeadLinkedTransactionId)) {
       setSelectedLeadLifecycleDiagnostic(null)
       setSelectedLeadLifecycleDiagnosticError('')
       setSelectedLeadLifecycleDiagnosticLoading(false)
@@ -14480,11 +14541,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     let cancelled = false
     setSelectedLeadLifecycleDiagnosticLoading(true)
     setSelectedLeadLifecycleDiagnosticError('')
-    getBuyerLeadLifecycleDiagnostic({
+    loadBuyerFinanceTransactionData({
       organisationId,
       leadId,
       offerId,
       transactionId: selectedLeadLinkedTransactionId,
+      revision: selectedLeadOffersRefreshTick,
     })
       .then((diagnostic) => {
         if (!cancelled) setSelectedLeadLifecycleDiagnostic(diagnostic)
@@ -14505,9 +14567,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }, [
     organisationId,
     selectedLead?.leadId,
+    leadWorkspaceTab,
     selectedLeadLifecycleDiagnosticOffer?.id,
     selectedLeadLinkedTransactionId,
-    selectedLeadIsSeller,
+    selectedLeadCategory,
     selectedLeadOffersRefreshTick,
   ])
 
@@ -14967,9 +15030,36 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
 	  const handleLeadWorkspaceTabSelection = useCallback((tabKey) => {
 	    const nextTab = normalizeLeadWorkspaceTabKey(tabKey) || 'overview'
-	    setLeadWorkspaceTab(nextTab)
-	    if (isLeadWorkspaceRoute) replaceLeadWorkspaceTabInUrl(nextTab)
-	  }, [isLeadWorkspaceRoute])
+      if (selectedLeadIsSeller) {
+        setLeadWorkspaceTab(nextTab)
+        if (isLeadWorkspaceRoute) replaceLeadWorkspaceTabInUrl(nextTab)
+        return
+      }
+
+      const currentTab = resolveBuyerWorkspaceTabKey(leadWorkspaceTab)
+      if (currentTab === nextTab) {
+        setPendingBuyerWorkspaceTab('')
+        return
+      }
+
+      captureRouteLeadWorkspaceScroll()
+      setPendingBuyerWorkspaceTab(nextTab)
+      void preloadAgencyLeadWorkspaceTab(nextTab)
+      if (isLeadWorkspaceRoute) replaceLeadWorkspaceTabInUrl(nextTab)
+      startBuyerWorkspaceTabTransition(() => {
+        setLeadWorkspaceTab(nextTab)
+      })
+	  }, [captureRouteLeadWorkspaceScroll, isLeadWorkspaceRoute, leadWorkspaceTab, selectedLeadIsSeller])
+
+  useEffect(() => {
+    if (selectedLeadIsSeller || !pendingBuyerWorkspaceTab) return
+    if (resolveBuyerWorkspaceTabKey(leadWorkspaceTab) !== pendingBuyerWorkspaceTab) return
+    restoreRouteLeadWorkspaceScroll()
+    setPendingBuyerWorkspaceTab('')
+  }, [leadWorkspaceTab, pendingBuyerWorkspaceTab, restoreRouteLeadWorkspaceScroll, selectedLeadIsSeller])
+
+  const buyerWorkspaceVisualTab = pendingBuyerWorkspaceTab || resolveBuyerWorkspaceTabKey(leadWorkspaceTab)
+  const buyerWorkspaceTabIsSettling = Boolean(pendingBuyerWorkspaceTab) || isBuyerWorkspaceTabTransitionPending
 
   const selectedLeadFinanceIntelligenceSource = useMemo(() => ({
     transaction: selectedLeadLinkedTransaction?.transaction || selectedLeadLinkedTransaction || {
@@ -18372,7 +18462,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         ? 'Complete & Mark Lost'
         : 'Save Completion'
 
-  const selectedLeadBuyerJourneyStages = useMemo(() => {
+  const selectedLeadBuyerJourneyModel = useMemo(() => {
     const stageKey = normalizeText(selectedLeadEffectiveLifecycleStage || selectedLead?.stage).toLowerCase()
     const progressedBeyondContact = ['qualified', 'viewing', 'offer', 'otp', 'transaction', 'converted'].some((token) => stageKey.includes(token))
     const contacted = Boolean(
@@ -18387,57 +18477,48 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const viewingStarted = selectedLeadViewingAppointments.length > 0 || stageKey.includes('viewing')
     const viewingCompleted = selectedLeadViewingAppointments.some((appointment) => normalizeText(appointment?.status).toLowerCase() === 'completed') || stageKey.includes('viewing completed')
     const offerStarted = selectedLeadBuyerOfferDocumentUploaded || selectedLeadOfferSummary.total > 0 || stageKey.includes('offer') || stageKey.includes('otp')
-    const offerComplete = selectedLeadBuyerOfferDocumentUploaded || Boolean(selectedLeadAcceptedOffer) || stageKey.includes('offer')
-	    const transactionDone = Boolean(selectedLeadLinkedTransactionId) && (stageKey.includes('transaction') || stageKey.includes('converted'))
-    const transactionSetupStage = {
-      key: BUYER_PROCESS_STAGE_KEYS.transactionSetup,
-      label: 'Transaction Setup',
-      detail: selectedLeadTransactionSetupComplete
-        ? 'Setup complete'
-        : selectedLeadTransactionSetupStarted
-          ? 'In progress'
-          : 'Not started',
-      done: selectedLeadTransactionSetupComplete,
-      started: selectedLeadTransactionSetupStarted,
-    }
-    const offerStage = {
-      key: BUYER_PROCESS_STAGE_KEYS.offer,
-      label: 'Offer',
-      detail: offerComplete ? 'Signed OTP uploaded' : offerStarted ? 'In progress' : 'Not uploaded',
-      done: offerComplete,
-      started: offerStarted,
-    }
-    const rawStages = [
-      { key: 'captured', label: 'Captured', detail: formatDateShort(selectedLead?.createdAt), done: Boolean(selectedLead) },
-      { key: 'contacted', label: 'Contacted', detail: contacted ? formatDateShort(selectedLeadLastContactedAt || selectedLeadLastActiveAt || selectedLead?.updatedAt) : 'Not reached', done: contacted },
-      {
-        key: BUYER_PROCESS_STAGE_KEYS.qualified,
-        label: 'Qualified',
-        detail: qualified
+    const offerComplete = selectedLeadBuyerOfferDocumentUploaded || Boolean(selectedLeadAcceptedOffer)
+    const transactionDone = Boolean(selectedLeadLinkedTransactionId)
+    return buildBuyerJourneyAlignmentModel({
+      persistedStage: stageKey,
+      inPersonOtpFlow: selectedLeadUsesKingstonsInPersonOtpFlow,
+      evidence: {
+        leadCaptured: Boolean(selectedLead),
+        contacted,
+        qualificationStarted,
+        qualified,
+        viewingStarted,
+        viewingCompleted,
+        transactionSetupStarted: selectedLeadTransactionSetupStarted,
+        transactionSetupComplete: selectedLeadTransactionSetupComplete,
+        offerStarted,
+        offerComplete,
+        transactionCreated: transactionDone,
+      },
+      details: {
+        [BUYER_PROCESS_STAGE_KEYS.captured]: formatDateShort(selectedLead?.createdAt),
+        [BUYER_PROCESS_STAGE_KEYS.contacted]: contacted ? formatDateShort(selectedLeadLastContactedAt || selectedLeadLastActiveAt || selectedLead?.updatedAt) : 'Not reached',
+        [BUYER_PROCESS_STAGE_KEYS.qualified]: qualified
           ? `${selectedLeadBuyerQualificationEvidence.answeredCount} captured`
           : qualificationStarted
             ? `${selectedLeadBuyerQualificationEvidence.answeredCount}/${selectedLeadBuyerQualificationEvidence.minimumCount} captured`
             : 'Pending',
-        done: qualified,
-        started: qualificationStarted,
+        [BUYER_PROCESS_STAGE_KEYS.viewing]: viewingCompleted ? 'Completed' : viewingStarted ? 'Upcoming' : 'Not booked',
+        [BUYER_PROCESS_STAGE_KEYS.transactionSetup]: selectedLeadTransactionSetupComplete
+          ? 'Setup complete'
+          : selectedLeadTransactionSetupStarted
+            ? 'In progress'
+            : 'Not started',
+        [BUYER_PROCESS_STAGE_KEYS.offer]: offerComplete ? 'Signed OTP uploaded' : offerStarted ? 'In progress' : 'Not uploaded',
+        [BUYER_PROCESS_STAGE_KEYS.transaction]: transactionDone ? 'Created' : 'Not started',
       },
-      { key: 'viewing', label: 'Viewing', detail: viewingCompleted ? 'Completed' : viewingStarted ? 'Upcoming' : 'Not booked', done: viewingCompleted, started: viewingStarted },
-      ...(selectedLeadUsesKingstonsInPersonOtpFlow
-        ? [offerStage, transactionSetupStage]
-        : [offerStage, transactionSetupStage]),
-      { key: 'transaction', label: 'Transaction', detail: transactionDone ? 'Created' : 'Not started', done: transactionDone },
-    ]
-    return applyJourneyStageOverrides({
-      entityType: JOURNEY_ENTITY_TYPES.buyerLead,
-      stages: rawStages,
       overrides: selectedLeadJourneyOverrides,
     })
   }, [
 	    selectedLead,
-	    selectedLeadAcceptedOffer,
+    selectedLeadAcceptedOffer,
       selectedLeadBuyerOfferDocumentUploaded,
-      selectedLeadBuyerOnboardingSubmitted,
-	      selectedLeadContactActivities.length,
+    selectedLeadContactActivities.length,
     selectedLeadBuyerQualificationEvidence,
     selectedLeadTransactionSetupComplete,
     selectedLeadTransactionSetupStarted,
@@ -18450,6 +18531,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLeadViewingAppointments,
     selectedLeadJourneyOverrides,
   ])
+  const selectedLeadBuyerJourneyStages = selectedLeadBuyerJourneyModel.stages
 
   useEffect(() => {
     const currentStage = selectedLeadBuyerJourneyStages.find((stage) => stage.state === 'current') || selectedLeadBuyerJourneyStages[selectedLeadBuyerJourneyStages.length - 1]
@@ -19865,6 +19947,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         }
       })
       setBuyerProfileForm(canonicalFormData)
+      setSelectedLeadOffersRefreshTick((value) => value + 1)
       setError('')
       setMessage('Buyer profile saved.')
       scheduleRecordsReload(organisationId, 250)
@@ -28625,7 +28708,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           : 'buyer_appointment_onboarding_workspace',
       })
       if (result?.successMessage) setMessage(result.successMessage)
-      await reloadRecords(organisationId)
+      scheduleRecordsReload(organisationId)
     } catch (onboardingError) {
       setError(onboardingError?.message || 'Unable to send the buyer onboarding link.')
     } finally {
@@ -29194,7 +29277,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           : transactionId ? 'OTP uploaded. Buyer process moved to Offer.' : 'OTP uploaded. Buyer process updated.')
       }
       setBuyerOtpAttorneyInstructionContext(null)
-      await reloadRecords(organisationId)
+      scheduleRecordsReload(organisationId)
     } catch (uploadError) {
       setError(uploadError?.message || 'Unable to upload the OTP.')
     } finally {
@@ -29366,7 +29449,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setSelectedLeadOffersRefreshTick((value) => value + 1)
       setMessage(`Offer moved to ${nextStatus.replaceAll('_', ' ')}.`)
       setError('')
-      await reloadRecords(organisationId)
+      scheduleRecordsReload(organisationId)
     } catch (statusError) {
       setError(statusError?.message || 'Unable to update this offer.')
     } finally {
@@ -29567,7 +29650,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             : `Seller review prepared for ${preparation.deliveryModeLabel.toLowerCase()}.`,
       )
       setError('')
-      await reloadRecords(organisationId)
+      scheduleRecordsReload(organisationId)
     } catch (sendError) {
       if (createdReviewSession?.id) {
         await updateCanonicalOfferStatus(offer.id, 'agent_review', {
@@ -29762,7 +29845,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           ? 'Buyer onboarding was resent for the existing transaction.'
           : 'Transaction created from accepted offer and buyer onboarding was sent.')
       setError('')
-      await reloadRecords(organisationId)
+      scheduleRecordsReload(organisationId)
     } catch (conversionError) {
       setError(conversionError?.message || 'Unable to create a transaction from this offer.')
     } finally {
@@ -29799,7 +29882,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       })
       if (result?.successMessage) setMessage(result.successMessage)
       setError('')
-      await reloadRecords(organisationId)
+      scheduleRecordsReload(organisationId)
     } catch (sendError) {
       setError(sendError?.message || 'Unable to send buyer onboarding right now.')
     } finally {
@@ -30044,10 +30127,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }, {
         actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
       })
-      setError('')
+	      setError('')
 	      setMessage('Offer draft created. Buyer lead stage updated to Offer Draft.')
 	      setLeadWorkspaceTab(BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY)
-	      await reloadRecords(organisationId)
+	      scheduleRecordsReload(organisationId)
 	      return true
 	    } catch (offerError) {
 	      setError(offerError?.message || 'Unable to create offer draft.')
@@ -30114,7 +30197,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	        setMessage('Buyer moved to Transaction. Transaction workspace is ready.')
 	        if (transactionContext.transactionId) navigate(`/transactions/${transactionContext.transactionId}`)
 	      }
-	      await reloadRecords(organisationId)
+	      scheduleRecordsReload(organisationId)
 	    } catch (conversionError) {
 	      setError(conversionError?.message || 'Unable to move this buyer to Transaction.')
 	    } finally {
@@ -32551,7 +32634,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         { key: 'documents', label: 'Documents', meta: selectedLeadAgentUploadedBuyerDocuments.length },
                         { key: 'activity', label: 'Activity', meta: selectedLeadUnifiedTimeline.length },
                       ].map((tab) => {
-                        const isActive = resolveBuyerWorkspaceTabKey(leadWorkspaceTab) === tab.key
+                        const isActive = buyerWorkspaceVisualTab === tab.key
+                        const isSettling = buyerWorkspaceTabIsSettling && pendingBuyerWorkspaceTab === tab.key
                         return (
                           <button
                             key={tab.key}
@@ -32562,12 +32646,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             onClick={() => handleLeadWorkspaceTabSelection(tab.key)}
                             role="tab"
                             aria-selected={isActive}
+                            aria-busy={isSettling}
+                            data-pending={isSettling ? 'true' : undefined}
                             className={`relative flex min-h-[52px] items-center justify-center gap-2 whitespace-nowrap rounded-[16px] px-4 text-sm transition ${
                               isActive
                                 ? 'bg-white font-semibold text-[#102033] shadow-[0_8px_20px_rgba(31,54,78,0.06)] ring-1 ring-[#d9e6f2]'
                                 : 'font-medium text-[#60758b] hover:bg-white/80 hover:text-[#163247]'
-                            }`}
+                            } ${isSettling ? 'cursor-progress' : ''}`}
                           >
+                            {isSettling ? <RefreshCw className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : null}
                             <span>{tab.label}</span>
                             {tab.meta !== '' ? (
                               <span className={`rounded-full px-2 py-0.5 text-[0.72rem] ${isActive ? 'bg-[#e8f2fb] text-[#1f5f8a]' : 'bg-white text-[#8aa0b7]'}`}>{tab.meta}</span>
@@ -32587,7 +32674,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     <div>
                       <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#6d839b]">Buyer Journey</p>
                       <h2 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-[#102033]">
-                        {selectedLeadEffectiveLifecycleStage || 'Buyer Timeline'}
+                        {selectedLeadBuyerJourneyModel.currentStage?.label || 'Buyer Timeline'}
                       </h2>
                     </div>
                     <span className="rounded-full border border-[#cbdcf5] bg-[#eef5ff] px-3 py-1 text-xs font-bold uppercase tracking-[0.1em] text-[#24568f]">
@@ -32759,12 +32846,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       </div>
                       <div className="mt-4 rounded-[16px] border border-[#dceafe] bg-[#f8fbff] p-4">
                         <p className="text-sm font-semibold text-[#18324b]">
-                          {selectedLeadOpenActions.nextDueAction?.label || selectedLeadFinanceReadinessSummary.nextRecommendedAction || 'Keep buyer momentum warm'}
+                          {selectedLeadBuyerJourneyModel.nextAction.title}
                         </p>
                         <p className="mt-2 text-sm leading-6 text-[#60758b]">
-                          {selectedLeadOpenActions.nextDueAction?.meta ||
-                            selectedLeadFinanceInsights.recommendations?.[0] ||
-                            'Review the buyer brief, send matching listings, or schedule the next viewing.'}
+                          {selectedLeadBuyerJourneyModel.nextAction.description}
                         </p>
                       </div>
                       <div className="mt-4 grid gap-2">
@@ -32860,18 +32945,25 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         { key: 'documents', label: 'Documents', meta: selectedLeadAgentUploadedBuyerDocuments.length },
                         { key: 'activity', label: 'Activity', meta: selectedLeadUnifiedTimeline.length },
                       ].map((tab) => {
-                        const isActive = resolveBuyerWorkspaceTabKey(leadWorkspaceTab) === tab.key
+                        const isActive = buyerWorkspaceVisualTab === tab.key
+                        const isSettling = buyerWorkspaceTabIsSettling && pendingBuyerWorkspaceTab === tab.key
                         return (
                           <button
                             key={tab.key}
                             type="button"
+                            onPointerEnter={() => void preloadAgencyLeadWorkspaceTab(tab.key)}
+                            onPointerDown={() => void preloadAgencyLeadWorkspaceTab(tab.key)}
+                            onFocus={() => void preloadAgencyLeadWorkspaceTab(tab.key)}
                             onClick={() => handleLeadWorkspaceTabSelection(tab.key)}
                             role="tab"
                             aria-selected={isActive}
+                            aria-busy={isSettling}
+                            data-pending={isSettling ? 'true' : undefined}
                             className={`relative flex min-h-[64px] items-center justify-center gap-2 whitespace-nowrap px-4 text-sm transition ${
                               isActive ? 'font-semibold text-[#123955]' : 'font-medium text-[#60758b] hover:text-[#163247]'
-                            }`}
+                            } ${isSettling ? 'cursor-progress' : ''}`}
                           >
+                            {isSettling ? <RefreshCw className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : null}
                             <span>{tab.label}</span>
                             {tab.meta !== '' ? (
                               <span className={`rounded-full px-2 py-0.5 text-[0.72rem] ${isActive ? 'bg-[#e8f2fb] text-[#1f5f8a]' : 'bg-[#f6f9fc] text-[#8aa0b7]'}`}>{tab.meta}</span>
@@ -34093,45 +34185,20 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             task: findViewingAutomationTask('Post-viewing buyer follow-up'),
                           },
                         ]
-                        const buyerHasViewingScheduled = selectedLeadViewingAppointments.length > 0
-                        const buyerJourneyWhatsNext = !buyerOverviewQualification.hasContacted
-                          ? {
-                              icon: Phone,
-                              title: 'Mark as contacted',
-                              description: 'Confirm first contact, move the buyer into Qualified, and open the qualification questions.',
-                              actions: [
-                                { key: 'mark-contacted', label: 'Mark contacted', icon: CheckCircle2, primary: true, onClick: () => void handleBuyerJourneyMarkContactedAndQualify() },
-                              ],
-                            }
-                          : !buyerOverviewQualification.hasQualificationSignal
-                            ? {
-                                icon: CheckSquare,
-                                title: 'Qualify lead',
-                                description: 'Open the buyer qualification editor. Saving a complete qualification moves the buyer into Viewing.',
-                                actions: [
-                                  { key: 'qualify', label: 'Qualify lead', icon: Pencil, primary: true, onClick: handleOpenBuyerQualificationAction },
-                                ],
-                              }
-                            : !buyerHasViewingScheduled
-                              ? {
-                                  icon: CalendarDays,
-                                  title: 'Schedule viewing',
-                                  description: 'Open the viewing planner, select the property, and confirm the RSVP path.',
-                                  actions: [
-                                    { key: 'schedule-viewing', label: 'Schedule viewing', icon: CalendarDays, primary: true, onClick: () => handleBuyerJourneyScheduleViewingAction() },
-                                  ],
-                                }
-                              : {
-                                  icon: CalendarDays,
-                                  title: 'Viewing scheduled',
-                                  description: selectedLeadUsesKingstonsInPersonOtpFlow
-                                    ? 'Keep the buyer in Viewing until you upload the signed OTP or set another viewing.'
-                                    : 'Keep the buyer in Viewing until you send an offer link or set another viewing.',
-                                  actions: [
-	                                    { key: 'make-offer', label: selectedLeadUsesKingstonsInPersonOtpFlow ? 'Upload signed OTP' : 'Send buyer onboarding link', icon: FileText, primary: true, onClick: () => void handleBuyerJourneyMakeOfferAction() },
-                                    { key: 'another-viewing', label: 'Set another viewing', icon: CalendarDays, primary: false, onClick: () => handleBuyerJourneyScheduleViewingAction({ another: true }) },
-                                  ],
-                                }
+                        const journeyAction = selectedLeadBuyerJourneyModel.nextAction
+                        const buyerJourneyWhatsNext = (() => {
+                          if (journeyAction.key === 'mark_contacted') return { ...journeyAction, icon: Phone, actions: [{ key: journeyAction.key, label: 'Mark contacted', icon: CheckCircle2, primary: true, onClick: () => void handleBuyerJourneyMarkContactedAndQualify() }] }
+                          if (journeyAction.key === 'qualify') return { ...journeyAction, icon: CheckSquare, actions: [{ key: journeyAction.key, label: 'Qualify lead', icon: Pencil, primary: true, onClick: handleOpenBuyerQualificationAction }] }
+                          if (journeyAction.key === 'schedule_viewing') return { ...journeyAction, icon: CalendarDays, actions: [{ key: journeyAction.key, label: 'Schedule viewing', icon: CalendarDays, primary: true, onClick: () => handleBuyerJourneyScheduleViewingAction() }] }
+                          if (journeyAction.key === 'progress_from_viewing') return { ...journeyAction, icon: CalendarDays, actions: [
+                            { key: journeyAction.key, label: selectedLeadUsesKingstonsInPersonOtpFlow ? 'Upload signed OTP' : 'Open transaction setup', icon: FileText, primary: true, onClick: () => void handleBuyerJourneyMakeOfferAction() },
+                            { key: 'another_viewing', label: 'Set another viewing', icon: CalendarDays, primary: false, onClick: () => handleBuyerJourneyScheduleViewingAction({ another: true }) },
+                          ] }
+                          if (journeyAction.key === 'complete_transaction_setup') return { ...journeyAction, icon: UserRound, actions: [{ key: journeyAction.key, label: 'Complete setup', icon: UserRound, primary: true, onClick: () => setLeadWorkspaceTab(BUYER_PROFILE_WORKSPACE_TAB_KEY) }] }
+                          if (journeyAction.key === 'upload_signed_otp') return { ...journeyAction, icon: FileText, actions: [{ key: journeyAction.key, label: 'Upload signed OTP', icon: FileText, primary: true, onClick: openOtpUploadWizard }] }
+                          if (journeyAction.key === 'create_transaction') return { ...journeyAction, icon: ArrowUpRight, actions: [{ key: journeyAction.key, label: 'Create transaction', icon: ArrowUpRight, primary: true, onClick: () => void handleBuyerCommandConvertToTransaction() }] }
+                          return { ...journeyAction, icon: ArrowUpRight, actions: [{ key: journeyAction.key, label: 'Open transaction', icon: ArrowUpRight, primary: true, onClick: () => selectedLeadLinkedTransactionId && navigate(`/transactions/${selectedLeadLinkedTransactionId}`) }] }
+                        })()
 	                        const showViewingCompletedFeedbackOverride = false
                         const buyerQualificationIconByLabel = {
                           Budget: Tag,
@@ -37094,8 +37161,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         />
                       </Suspense>
                     ) : (
-                  <>
-                    <LeadAppointmentsPanel
+                      <Suspense
+                        fallback={<div className="rounded-[20px] border border-[#dce7f2] bg-white p-6"><div className="h-4 w-52 animate-pulse rounded-full bg-slate-200" /><div className="mt-4 h-40 animate-pulse rounded-[16px] bg-slate-100" /></div>}
+                      >
+                    <BuyerLeadAppointmentsWorkspace
                       appointments={selectedLeadAppointments}
                       appointmentFilter={buyerAppointmentFilter}
                       appointmentFilterOptions={selectedLeadAppointmentFilterOptions}
@@ -37106,8 +37175,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       resolveAppointmentListingLabel={resolveAppointmentListingLabel}
                       formatDateLabel={formatDate}
                       formatTimeRange={formatAppointmentTimeRange}
+                      getAppointmentTypeLabel={getAppointmentTypeLabel}
                     />
-                  </>
+                      </Suspense>
                     )
                   ) : null}
 

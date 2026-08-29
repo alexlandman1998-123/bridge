@@ -1,5 +1,6 @@
 let activityWorkspacePromise = null
 let sellerAppointmentsWorkspacePromise = null
+let buyerAppointmentsWorkspacePromise = null
 
 function loadCached(currentPromise, setPromise, importer) {
   if (currentPromise) return currentPromise
@@ -27,8 +28,17 @@ export function loadSellerAppointmentsWorkspace() {
   )
 }
 
+export function loadBuyerAppointmentsWorkspace() {
+  return loadCached(
+    buyerAppointmentsWorkspacePromise,
+    (value) => { buyerAppointmentsWorkspacePromise = value },
+    () => import('../../components/appointments/BuyerLeadAppointmentsWorkspace'),
+  )
+}
+
 export function preloadAgencyLeadWorkspaceTab(tabKey = '', { seller = false } = {}) {
   if (tabKey === 'activity') return loadLeadActivityWorkspace().catch(() => null)
   if (tabKey === 'appointments' && seller) return loadSellerAppointmentsWorkspace().catch(() => null)
+  if (tabKey === 'appointments' && !seller) return loadBuyerAppointmentsWorkspace().catch(() => null)
   return Promise.resolve(null)
 }
