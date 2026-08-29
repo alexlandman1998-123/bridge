@@ -33,7 +33,7 @@ export default function useTransactionLiveRefresh({
       return undefined
     }
 
-    const state = { active: true, inFlight: false, pending: false, timer: null }
+    const state = { active: true, inFlight: false, pending: false, timer: null, reconciling: false }
     setConnectionState('connecting')
     const runRefresh = async (reason, payload = null) => {
       if (!state.active) return
@@ -78,22 +78,33 @@ export default function useTransactionLiveRefresh({
 
     const handleVersionSignal = (payload) => {
       const nextVersion = Number(payload?.new?.version || payload?.record?.version || 0)
-      if (nextVersion && lastVersionRef.current !== null && nextVersion <= lastVersionRef.current) return
-      if (nextVersion) lastVersionRef.current = nextVersion
+      if (!nextVersion) return
+      if (lastVersionRef.current === null) {
+        lastVersionRef.current = nextVersion
+        return
+      }
+      if (nextVersion <= lastVersionRef.current) return
+      lastVersionRef.current = nextVersion
       scheduleRefresh('transaction_version_changed', payload)
     }
     const reconcileVersion = async () => {
-      const result = await supabase
-        .from('transaction_refresh_signals')
-        .select('version,changed_at')
-        .eq('transaction_id', normalizedTransactionId)
-        .maybeSingle()
-      if (result.error || !result.data) return
-      const remoteVersion = Number(result.data.version || 0)
-      if (lastVersionRef.current !== null && remoteVersion > lastVersionRef.current) {
-        scheduleRefresh('transaction_version_reconciled', result.data)
+      if (state.reconciling) return
+      state.reconciling = true
+      try {
+        const result = await supabase
+          .from('transaction_refresh_signals')
+          .select('version,changed_at')
+          .eq('transaction_id', normalizedTransactionId)
+          .maybeSingle()
+        if (result.error || !result.data || !state.active) return
+        const remoteVersion = Number(result.data.version || 0)
+        if (lastVersionRef.current !== null && remoteVersion > lastVersionRef.current) {
+          scheduleRefresh('transaction_version_reconciled', result.data)
+        }
+        lastVersionRef.current = remoteVersion
+      } finally {
+        state.reconciling = false
       }
-      lastVersionRef.current = remoteVersion
     }
 
     const channel = supabase
@@ -118,7 +129,7 @@ export default function useTransactionLiveRefresh({
           table: 'notification_events',
           filter: `transaction_id=eq.${normalizedTransactionId}`,
         },
-        (payload) => scheduleRefresh('notification_delivery_changed', payload),
+        () => void reconcileVersion(),
       )
     }
 
@@ -129,11 +140,11 @@ export default function useTransactionLiveRefresh({
     })
 
     const interval = window.setInterval(() => {
-      if (document.visibilityState === 'visible') scheduleRefresh('poll_interval')
+      if (document.visibilityState === 'visible') void reconcileVersion()
     }, Math.max(10_000, Number(pollingIntervalMs) || 30_000))
-    const handleFocus = () => scheduleRefresh('window_focus')
+    const handleFocus = () => void reconcileVersion()
     const handleVisibility = () => {
-      if (document.visibilityState === 'visible') scheduleRefresh('visibility_restored')
+      if (document.visibilityState === 'visible') void reconcileVersion()
     }
     window.addEventListener('focus', handleFocus)
     document.addEventListener('visibilitychange', handleVisibility)

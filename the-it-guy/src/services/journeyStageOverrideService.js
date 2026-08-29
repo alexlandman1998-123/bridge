@@ -2,6 +2,17 @@ import { serializeJourneyStageOverrideForDatabase } from '../core/journey/journe
 import { normalizeJourneyStageOverrideRow } from '../core/journey/journeyStageOverrideState.js'
 import { supabase } from '../lib/supabaseClient.js'
 
+let journeyStageOverridesSchemaAvailable = true
+
+function isUnavailableJourneyStageOverridesSchema(error) {
+  const code = String(error?.code || '').trim().toUpperCase()
+  const message = String(error?.message || error?.details || '').toLowerCase()
+  return (
+    ['42P01', 'PGRST204', 'PGRST205'].includes(code) ||
+    (message.includes('journey_stage_overrides') && /does not exist|schema cache|could not find/i.test(message))
+  )
+}
+
 function requireClient(client = null) {
   const resolvedClient = client || supabase
   if (!resolvedClient) {
@@ -23,7 +34,7 @@ export async function fetchJourneyStageOverrides({
   const resolvedClient = requireClient(client)
   const normalizedEntityType = normalizeText(entityType)
   const normalizedEntityId = normalizeText(entityId)
-  if (!normalizedEntityType || !normalizedEntityId) return []
+  if (!normalizedEntityType || !normalizedEntityId || !journeyStageOverridesSchemaAvailable) return []
 
   let query = resolvedClient
     .from('journey_stage_overrides')
@@ -42,6 +53,10 @@ export async function fetchJourneyStageOverrides({
 
   const result = await query
   if (result.error) {
+    if (isUnavailableJourneyStageOverridesSchema(result.error)) {
+      journeyStageOverridesSchemaAvailable = false
+      return []
+    }
     throw result.error
   }
 

@@ -64,15 +64,6 @@ function getSummaryNumber(summary = {}, key = '') {
   return Number.isFinite(numeric) ? Math.max(0, numeric) : 0
 }
 
-function getLatestDate(...values) {
-  return values
-    .flat()
-    .filter(Boolean)
-    .map((value) => new Date(value))
-    .filter((date) => !Number.isNaN(date.getTime()))
-    .sort((left, right) => right.getTime() - left.getTime())[0]?.toISOString() || null
-}
-
 function getCardIcon(key) {
   if (key === 'document_requests') return FileText
   if (key === 'offers') return Landmark
@@ -434,16 +425,6 @@ function BondOriginatorAgentProgressView({
   })
   const hasFinanceWorkflow = Boolean(resolvedFinanceWorkflow?.workflow || workflowArrays.applications.length || workflowArrays.offers.length)
   const available = journeyPresentation.available || model.available || hasFinanceWorkflow || bankRows.length || documentRows.length
-  const latestUpdate = getLatestDate(
-    model.lastUpdatedAt,
-    scopedWorkspace?.lastUpdatedAt,
-    resolvedFinanceWorkflow?.workflow?.lastUpdatedAt || resolvedFinanceWorkflow?.workflow?.last_updated_at,
-    progressArrays.documentRequests.map((request) => request.updatedAt || request.updated_at || request.reviewedAt || request.reviewed_at || request.createdAt || request.created_at),
-    progressArrays.offerCaptures.map((offer) => offer.buyerDecisionAt || offer.buyer_decision_at || offer.publishedAt || offer.published_at || offer.capturedAt || offer.captured_at),
-    progressArrays.grantCaptures.map((grant) => grant.publishedAt || grant.published_at || grant.capturedAt || grant.captured_at),
-    workflowArrays.applications.map((application) => application.updatedAt || application.updated_at || application.submittedAt || application.submitted_at || application.createdAt || application.created_at),
-    workflowArrays.offers.map((offer) => offer.decisionAt || offer.decision_at || offer.quoteReceivedAt || offer.quote_received_at || offer.createdAt || offer.created_at),
-  )
   const offersCount = progressArrays.offerCaptures.length || workflowArrays.offers.length || getSummaryNumber(offerSummary, 'published')
   const acceptedOffers = getSummaryNumber(offerSummary, 'accepted') || workflowArrays.offers.filter((offer) =>
     ['accepted', 'approved_by_buyer'].includes(String(offer.offerStatus || offer.quoteStatus || offer.quote_status || '').toLowerCase()),
@@ -459,9 +440,6 @@ function BondOriginatorAgentProgressView({
       resolvedFinanceWorkflow?.summary?.nextAction ||
       resolvedFinanceWorkflow?.workflow?.currentStageLabel ||
       'Wait for the originator to record the next update.'
-  const summary = available
-    ? 'Live read-only view of the bond originator package, bank feedback, document requests, offers and grants connected to this transaction.'
-    : model.summary
   const cards = [
     {
       key: 'applications',
@@ -529,13 +507,8 @@ function BondOriginatorAgentProgressView({
             </span>
           </div>
           <h3 className="mt-3 text-section-title font-semibold text-textStrong">Bond Originator Progress</h3>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-textMuted">{summary}</p>
-          <p className="mt-2 text-helper font-medium text-textMuted">
-            Originator: {model.recipientName || transaction?.bond_originator || 'Bond originator'} · Last update: {formatDateTime(latestUpdate)}
-            {workspaceHealth.lastCheckedAt ? ` · Last checked: ${formatDateTime(workspaceHealth.lastCheckedAt)}` : ''}
-          </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 lg:shrink-0 lg:flex-nowrap">
           {onRefresh ? (
             <Button type="button" variant="secondary" size="sm" onClick={onRefresh}>
               <RefreshCw size={14} />

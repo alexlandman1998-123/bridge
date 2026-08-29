@@ -16243,6 +16243,7 @@ function AttorneyTransactionDetail() {
     const requestKey = `${requestedTransactionId}:${dataset}`
     const activeRequest = workspaceDatasetRequestRef.current.get(requestKey)
     if (!force && activeRequest?.promise) return activeRequest.promise
+    if (!force && activeRequest?.value) return activeRequest.value
 
     const sequence = (activeRequest?.sequence || 0) + 1
     setWorkspaceDatasetLoads((previous) => ({
@@ -16264,7 +16265,12 @@ function AttorneyTransactionDetail() {
           getAttorneyWorkflowOperationsForTransaction(requestedTransactionId, { initialize: false }).catch(() => null),
         ]).then(([detail, operations]) => ({ detail, operations }))
       : loader(requestedTransactionId, { hydrationContext }).then((detail) => ({ detail, operations: null })))
-    workspaceDatasetRequestRef.current.set(requestKey, { promise, sequence })
+    workspaceDatasetRequestRef.current.set(requestKey, {
+      promise,
+      sequence,
+      value: activeRequest?.value || null,
+      resolvedAt: activeRequest?.resolvedAt || 0,
+    })
 
     try {
       const result = await promise
@@ -16280,6 +16286,11 @@ function AttorneyTransactionDetail() {
         setWorkflowOperations(result.operations)
         setWorkflowOperationsTransactionId(requestedTransactionId)
       }
+      workspaceDatasetRequestRef.current.set(requestKey, {
+        ...latestRequest,
+        value: result.detail,
+        resolvedAt: Date.now(),
+      })
       setWorkspaceDatasetLoads((previous) => ({
         ...previous,
         [dataset]: { transactionId: requestedTransactionId, status: 'ready', error: '' },
@@ -16514,7 +16525,7 @@ function AttorneyTransactionDetail() {
 
   const transactionLiveState = useTransactionLiveRefresh({
     transactionId: transaction?.id || transactionId,
-    enabled: workspaceRole !== 'attorney' || matterAccessAllowed,
+    enabled: Boolean(data?.__coreHydrated && !loading && (workspaceRole !== 'attorney' || matterAccessAllowed)),
     includeNotifications: true,
     pollingIntervalMs: workspaceRole === 'agent' ? 15_000 : 30_000,
     onRefresh: async ({ reason = 'unknown' } = {}) => {
@@ -16968,41 +16979,23 @@ function AttorneyTransactionDetail() {
   }, [availableDiscussionVisibilityOptions, discussionVisibility])
 
   useEffect(() => {
-    let active = true
+    if (!transaction?.id) {
+      setWorkflowOperations(null)
+      setWorkflowOperationsTransactionId('')
+      return
+    }
+    if (workflowOperations && workflowOperationsTransactionId === transaction.id) return
 
-    async function loadWorkflowOperations() {
-      if (!transaction?.id) {
-        setWorkflowOperations(null)
-        setWorkflowOperationsTransactionId('')
-        return
-      }
-      if (workflowOperations && workflowOperationsTransactionId === transaction.id) {
-        return
-      }
-
-      try {
-        setWorkflowLoading(true)
-        setWorkflowError('')
-        const operations = await getAttorneyWorkflowOperationsForTransaction(transaction.id)
-        if (!active) return
-        setWorkflowOperations(operations)
-        setWorkflowOperationsTransactionId(transaction.id)
-      } catch (workflowLoadError) {
-        if (!active) return
+    setWorkflowLoading(true)
+    setWorkflowError('')
+    void loadWorkspaceDataset('workflow')
+      .catch((workflowLoadError) => {
         setWorkflowOperations(null)
         setWorkflowOperationsTransactionId('')
         setWorkflowError(workflowLoadError?.message || 'Unable to load attorney workflow lanes.')
-      } finally {
-        if (active) setWorkflowLoading(false)
-      }
-    }
-
-    void loadWorkflowOperations()
-
-    return () => {
-      active = false
-    }
-  }, [transaction?.id, workflowOperations, workflowOperationsTransactionId])
+      })
+      .finally(() => setWorkflowLoading(false))
+  }, [loadWorkspaceDataset, transaction?.id, workflowOperations, workflowOperationsTransactionId])
 
   useEffect(() => {
     if (!isTransactionOperatorView || !workspaceOrganisationId) {

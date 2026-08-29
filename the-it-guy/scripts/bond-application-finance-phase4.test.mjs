@@ -76,8 +76,10 @@ const liveRefreshSource = fs.readFileSync(path.join(PROJECT_ROOT, 'src/hooks/use
 assert.match(liveRefreshSource, /lastRefreshReason/)
 assert.match(liveRefreshSource, /lastErrorAt/)
 assert.match(liveRefreshSource, /lastErrorMessage/)
-assert.match(liveRefreshSource, /poll_interval/)
-assert.match(liveRefreshSource, /visibility_restored/)
+assert.match(liveRefreshSource, /const handleFocus = \(\) => void reconcileVersion\(\)/)
+assert.match(liveRefreshSource, /document\.visibilityState === 'visible'\) void reconcileVersion\(\)/)
+assert.doesNotMatch(liveRefreshSource, /scheduleRefresh\('poll_interval'/)
+assert.doesNotMatch(liveRefreshSource, /scheduleRefresh\('visibility_restored'/)
 
 for (const sensitiveTable of [
   'bond_applications',
@@ -105,7 +107,7 @@ try {
     }),
   )
   assert.ok(markup.includes('Live sync'))
-  assert.ok(markup.includes('Last checked:'))
+  assert.ok(!markup.includes('Last checked:'))
   assert.ok(markup.includes('Refresh'))
 
   const transactionDetail = fs.readFileSync(path.join(PROJECT_ROOT, 'src/pages/AttorneyTransactionDetail.jsx'), 'utf8')
