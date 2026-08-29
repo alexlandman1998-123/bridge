@@ -221,6 +221,8 @@ function buildWaitingSteps(signals) {
   const active = steps[activeIndex]
   const summary = signals.complete
     ? 'The bond finance workflow is complete.'
+    : !signals.applicationReceived
+      ? 'A bond originator is assigned, but the bond application has not been created or linked to this transaction yet.'
     : active.key === 'documents'
       ? 'We are waiting for the bond application documents to be completed and accepted by the originator.'
       : active.key === 'banks'
@@ -243,10 +245,13 @@ export function buildAgentBondApplicationJourney(workspace = {}) {
   const currentJourneyStage = journey.find((stage) => stage.state === 'in_progress') || journey.at(-1)
   return Object.freeze({
     version: AGENT_BOND_APPLICATION_JOURNEY_VERSION,
-    available: workspace.available === true && workspace.valid !== false && signals.applicationReceived,
+    available: workspace.valid !== false && (workspace.available === true || workspace.originatorAssigned === true),
+    correlated: signals.applicationReceived,
     journey,
     currentJourneyStage,
-    statusLabel: currentJourneyStage?.state === 'completed' ? 'Complete' : currentJourneyStage?.label || 'Application pending',
+    statusLabel: !signals.applicationReceived
+      ? 'Awaiting Application'
+      : currentJourneyStage?.state === 'completed' ? 'Complete' : currentJourneyStage?.label || 'Application pending',
     waitingSteps: waiting.steps,
     activeWaitingKey: waiting.activeKey,
     summary: waiting.summary,

@@ -17,6 +17,10 @@ export const PERFORMANCE_BUDGETS_MS = Object.freeze({
   'seller_leads.route.background_settled': 3500,
   'seller_leads.workspace.ready': 2500,
   'buyer_leads.workspace.ready': 2500,
+  'transaction_workspace.core_ready': 1000,
+  'transaction_workspace.full_ready': 4000,
+  'transaction_workspace.dataset_ready': 2000,
+  'transaction_workspace.background_refresh': 3000,
 })
 
 function normalizeText(value) {

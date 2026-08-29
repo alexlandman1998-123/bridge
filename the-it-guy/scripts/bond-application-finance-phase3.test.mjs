@@ -57,6 +57,23 @@ function workspace(overrides = {}) {
 }
 
 {
+  const presentation = buildAgentBondApplicationJourney({
+    available: false,
+    valid: true,
+    originatorAssigned: true,
+    application: null,
+    originator: {},
+    finance: {},
+    guarantees: { steps: [] },
+  })
+  assert.equal(presentation.available, true)
+  assert.equal(presentation.correlated, false)
+  assert.equal(presentation.statusLabel, 'Awaiting Application')
+  assert.equal(presentation.journey[0].state, 'in_progress')
+  assert.match(presentation.summary, /has not been created or linked/i)
+}
+
+{
   const packageBackedWorkspace = buildAgentBondApplicationWorkspace({
     transaction: { id: 'transaction-1' },
     bondApplication: null,
@@ -147,6 +164,28 @@ try {
     assert.ok(markup.includes(label), `expected Finance tab markup to include "${label}"`)
   }
   assert.match(markup, /aria-current="step"[^>]*>[\s\S]*?Waiting on banks/)
+
+  const awaitingApplicationMarkup = ReactDOMServer.renderToStaticMarkup(
+    React.createElement(componentModule.default, {
+      applicationWorkspace: {
+        available: false,
+        valid: true,
+        originatorAssigned: true,
+        application: null,
+        originator: {},
+        finance: {},
+        guarantees: { steps: [] },
+      },
+      transaction: {
+        id: 'transaction-awaiting-application',
+        bond_originator: 'BetterBond Demo Desk',
+        finance_managed_by: 'bond_originator',
+      },
+    }),
+  )
+  assert.ok(awaitingApplicationMarkup.includes('Bond application journey'))
+  assert.ok(awaitingApplicationMarkup.includes('Awaiting Application'))
+  assert.ok(awaitingApplicationMarkup.includes('has not been created or linked'))
 
   const transactionDetail = fs.readFileSync(path.join(PROJECT_ROOT, 'src/pages/AttorneyTransactionDetail.jsx'), 'utf8')
   assert.match(transactionDetail, /const bondApplicationWorkspace =/)

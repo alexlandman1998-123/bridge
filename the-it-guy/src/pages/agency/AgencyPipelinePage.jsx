@@ -102,6 +102,7 @@ import { buildSellerProcessWorkspacePanelModel } from '../../services/sellerProc
 import { fetchJourneyStageOverrides } from '../../services/journeyStageOverrideService'
 import { resolveLeadNextStep } from '../../services/leadNextActionService'
 import { buildAppointmentSaveFeedback } from '../../services/appointmentSaveFeedbackService'
+import { captureShowDayLeadBatch, parseShowDayVisitorRows } from '../../services/showDayLeadCaptureService'
 import { notifyAppointmentParticipants } from '../../services/appointmentNotificationService'
 import { sendKingstonsValuationDownloadEmailForPresentation } from '../../services/kingstonsValuationDownloadEmailService'
 import { normalizeLeadLifecycleStageKey, resolveLeadLifecyclePresentation } from '../../services/leadLifecyclePresentationService'
@@ -11688,6 +11689,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [canonicalOfferNotesById, setCanonicalOfferNotesById] = useState({})
   const [sellerReviewDeliveryModeByOfferId, setSellerReviewDeliveryModeByOfferId] = useState({})
   const [appointmentListingOptions, setAppointmentListingOptions] = useState([])
+  const [showDayImportBusy, setShowDayImportBusy] = useState(false)
   const [appointmentSchedulingIntegrity, setAppointmentSchedulingIntegrity] = useState(null)
   const [appointmentSchedulingLoading, setAppointmentSchedulingLoading] = useState(false)
   const [appointmentSchedulingSubmitting, setAppointmentSchedulingSubmitting] = useState(false)
@@ -22046,6 +22048,35 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     })
   }
 
+  async function handleImportShowDayVisitors({ listingId, showDayDate, visitorText }) {
+    if (!organisationId) throw new Error('The organisation context is not ready yet.')
+    const visitors = parseShowDayVisitorRows(visitorText)
+    if (!visitors.length) throw new Error('Add at least one valid visitor row.')
+    const listing = appointmentListingOptions.find((row) => normalizeText(row?.id || row?.listingId) === normalizeText(listingId))
+    setShowDayImportBusy(true)
+    try {
+      const result = await captureShowDayLeadBatch({
+        shared: {
+          organisationId,
+          listingId,
+          listingReference: normalizeText(listing?.reference || listing?.label || listing?.title),
+          propertyInterest: normalizeText(listing?.label || listing?.title),
+          showDayDate,
+          showDayTime: '12:00',
+          assignedAgent: currentAgent,
+        },
+        visitors,
+      }, { actor: currentAgent })
+      if (!result.ok && !result.processed && !result.duplicates) throw new Error(result.error || 'The visitor book could not be imported.')
+      setError('')
+      setMessage(`Show Day intake complete: ${result.processed} added, ${result.duplicates} duplicate${result.duplicates === 1 ? '' : 's'}${result.failed ? `, ${result.failed} failed` : ''}.`)
+      await reloadRecords(organisationId, { applyLocalSnapshot: false })
+      return result
+    } finally {
+      setShowDayImportBusy(false)
+    }
+  }
+
   async function handleAddActivity(event, overrides = {}) {
     event.preventDefault()
     if (!selectedLead || !organisationId) return
@@ -30558,6 +30589,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             onMoveLead={(leadId, columnId) => void handleMovePipelineCard(leadId, columnId)}
             onOpenShowDayQueue={openShowDayFollowUpQueue}
             onOpenShowDayLead={openShowDayLead}
+            showDayListings={appointmentListingOptions}
+            publicIntakeBaseUrl={typeof window !== 'undefined' ? `${window.location.origin}/intake/${encodeURIComponent(normalizeText(currentWorkspace?.slug || workspace?.slug || organisationId))}` : ''}
+            showDayImportBusy={showDayImportBusy}
+            onImportShowDayVisitors={handleImportShowDayVisitors}
           />
         </Suspense>
       ) : null}

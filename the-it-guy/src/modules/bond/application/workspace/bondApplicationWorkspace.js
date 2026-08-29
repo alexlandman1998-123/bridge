@@ -270,6 +270,14 @@ export function buildAgentBondApplicationWorkspace({
     identity,
     application,
     applicationSource: persistedApplication ? 'canonical_application' : application ? 'originator_package_reference' : 'unavailable',
+    originatorAssigned: Boolean(
+      transaction?.bond_originator ||
+      transaction?.bondOriginator ||
+      transaction?.assigned_bond_originator_email ||
+      transaction?.assignedBondOriginatorEmail ||
+      transaction?.finance_managed_by === 'bond_originator' ||
+      transaction?.financeManagedBy === 'bond_originator'
+    ),
     originator,
     finance,
     guarantees: {

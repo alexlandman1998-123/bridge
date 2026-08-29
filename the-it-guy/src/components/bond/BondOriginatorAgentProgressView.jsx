@@ -390,6 +390,12 @@ function BondOriginatorAgentProgressView({
     originator: progressSource,
     finance: financeWorkflow || {},
     guarantees: { steps: [] },
+    originatorAssigned: Boolean(
+      transaction?.bond_originator ||
+      transaction?.bondOriginator ||
+      transaction?.finance_managed_by === 'bond_originator' ||
+      transaction?.financeManagedBy === 'bond_originator'
+    ),
   }, [financeWorkflow, progressSource, scopedWorkspace, transaction])
   const journeyPresentation = useMemo(
     () => buildAgentBondApplicationJourney(presentationWorkspace),

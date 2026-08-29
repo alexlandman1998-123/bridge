@@ -160,6 +160,20 @@ function fixture() {
 }
 
 {
+  const workspace = buildAgentBondApplicationWorkspace({
+    transaction: {
+      id: 'transaction-awaiting-application',
+      finance_managed_by: 'bond_originator',
+      bond_originator: 'BetterBond Demo Desk',
+    },
+  })
+  assert.equal(workspace.application, null)
+  assert.equal(workspace.originatorAssigned, true)
+  assert.equal(workspace.available, false)
+  assert.equal(workspace.valid, true)
+}
+
+{
   const base = fixture()
   const workspace = buildAgentBondApplicationWorkspace({
     ...base,

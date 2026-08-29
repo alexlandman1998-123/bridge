@@ -128,9 +128,15 @@ import {
   cancelTransactionLifecycle,
   convertTransactionPreApprovalToBondApplication,
   createTransactionDocumentRequests,
+  createTransactionWorkspaceHydrationContext,
   declineBondQuote,
+  fetchTransactionActivityWorkspace,
   fetchTransactionCoreById,
+  fetchTransactionDocumentsWorkspace,
+  fetchTransactionFinanceWorkspace,
+  fetchTransactionPartnersWorkspace,
   fetchTransactionById,
+  fetchTransactionWorkflowWorkspace,
   fetchTransactionReferralIncentive,
   getCompletionBlockers,
   getFinalReportData,
@@ -164,6 +170,7 @@ import { listUserPreferredPartnerRoutingRules } from '../lib/settingsApi'
 import { MAIN_STAGE_LABELS, getMainStageFromDetailedStage } from '../lib/stages'
 import { resendTransactionProgressNotification } from '../services/transactionSharedProgressService'
 import { trackBondApplicationFinanceWorkspaceState } from '../services/bondApplicationFinanceTelemetryService.js'
+import { createTransactionWorkspacePerformanceBaseline } from '../services/observability/transactionWorkspacePerformanceBaseline.js'
 import { fetchJourneyStageOverrides } from '../services/journeyStageOverrideService.js'
 import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { getFinanceReadiness } from '../services/bondFinanceReadinessService'
@@ -9237,6 +9244,8 @@ function buildAttorneyDocumentsDashboardModel({
 
 function ArchlineDocumentsWorkspace({
   loading = false,
+  error = '',
+  onRetry,
   documentHealthSummary = {},
   ficaSummary = {},
   requiredRows = [],
@@ -9303,6 +9312,20 @@ function ArchlineDocumentsWorkspace({
             </div>
           ))}
         </div>
+      </section>
+    )
+  }
+
+  if (error) {
+    return (
+      <section className="rounded-[16px] border border-rose-200 bg-white p-6" role="alert">
+        <h3 className="text-base font-semibold text-textStrong">Documents could not be loaded</h3>
+        <p className="mt-2 text-sm text-textMuted">{error}</p>
+        {onRetry ? (
+          <Button type="button" variant="secondary" className="mt-4" onClick={onRetry}>
+            Try again
+          </Button>
+        ) : null}
       </section>
     )
   }
@@ -15861,6 +15884,12 @@ function AttorneyTransactionDetail() {
   const [detailPanelOpen, setDetailPanelOpen] = useState(false)
   const [detailPanelKey, setDetailPanelKey] = useState('matter')
   const [hydratingDetail, setHydratingDetail] = useState(false)
+  const [documentWorkspaceLoad, setDocumentWorkspaceLoad] = useState({
+    transactionId: '',
+    status: 'idle',
+    error: '',
+  })
+  const [_workspaceDatasetLoads, setWorkspaceDatasetLoads] = useState({})
   const [workflowOperations, setWorkflowOperations] = useState(null)
   const [workflowOperationsTransactionId, setWorkflowOperationsTransactionId] = useState('')
   const [, setWorkflowLoading] = useState(false)
@@ -15892,6 +15921,17 @@ function AttorneyTransactionDetail() {
   const [activityFilter, setActivityFilter] = useState('all')
   const processedBondConsultantDeepLinkRef = useRef('')
   const foregroundLoadTransactionRef = useRef('')
+  const documentWorkspaceRequestRef = useRef({ key: '', promise: null, sequence: 0 })
+  const workspaceDatasetRequestRef = useRef(new Map())
+  const workspaceHydrationContextRef = useRef({ key: '', promise: null, value: null })
+  const backgroundRefreshHandlerRef = useRef(null)
+  const transactionPerformanceBaselineRef = useRef(null)
+  if (transactionPerformanceBaselineRef.current?.transactionKey !== transactionId) {
+    transactionPerformanceBaselineRef.current = {
+      transactionKey: transactionId,
+      baseline: createTransactionWorkspacePerformanceBaseline({ route: location.pathname }),
+    }
+  }
   const transactionRollupRequestRef = useRef({
     key: '',
     promise: null,
@@ -15900,6 +15940,29 @@ function AttorneyTransactionDetail() {
     resolvedAt: 0,
   })
   const transactionRollupRequestSequenceRef = useRef(0)
+
+  const requestWorkspaceHydrationContext = useCallback(async () => {
+    const contextKey = String(transactionId || '').trim()
+    if (!contextKey) return null
+    const cached = workspaceHydrationContextRef.current
+    if (cached.key === contextKey && cached.value) return cached.value
+    if (cached.key === contextKey && cached.promise) return cached.promise
+
+    const promise = createTransactionWorkspaceHydrationContext(contextKey)
+    workspaceHydrationContextRef.current = { key: contextKey, promise, value: null }
+    try {
+      const value = await promise
+      if (workspaceHydrationContextRef.current.key === contextKey) {
+        workspaceHydrationContextRef.current = { key: contextKey, promise: null, value }
+      }
+      return value
+    } catch (contextError) {
+      if (workspaceHydrationContextRef.current.key === contextKey) {
+        workspaceHydrationContextRef.current = { key: '', promise: null, value: null }
+      }
+      throw contextError
+    }
+  }, [transactionId])
 
   const requestTransactionRollup = useCallback(async (requestedTransactionId, { force = false } = {}) => {
     const normalizedTransactionId = String(requestedTransactionId || '').trim()
@@ -15972,7 +16035,10 @@ function AttorneyTransactionDetail() {
     })
   }, [location.pathname, location.state, navigate])
 
-  const loadData = useCallback(async ({ background = false } = {}) => {
+  const loadData = useCallback(async ({ background = false, refreshReason = '', fullRefresh = false } = {}) => {
+    if (background && !fullRefresh && backgroundRefreshHandlerRef.current) {
+      return backgroundRefreshHandlerRef.current({ reason: refreshReason || 'legacy_background_refresh' })
+    }
     if (!isSupabaseConfigured) {
       setLoading(false)
       return
@@ -15986,6 +16052,12 @@ function AttorneyTransactionDetail() {
     }
 
     const startedAt = Date.now()
+    const telemetryUserId = profile?.id || ''
+    const telemetryWorkspaceId = workspace?.id || currentMembership?.organisation_id || currentMembership?.organisationId || ''
+    const backgroundSpan = background
+      ? transactionPerformanceBaselineRef.current?.baseline?.startBackgroundRefresh({ reason: refreshReason || 'unspecified' })
+      : null
+    let backgroundStatus = 'success'
     let hasCoreData = Boolean(navigationPreviewData?.transaction)
     try {
       if (!background && !hasCoreData) {
@@ -15997,7 +16069,12 @@ function AttorneyTransactionDetail() {
         hasCoreData = true
         setData((previous) => {
           if (!previous) {
-            return coreDetail
+            return {
+              ...coreDetail,
+              __isNavigationPreview: false,
+              __isRouteShell: false,
+              __coreHydrated: true,
+            }
           }
           return {
             ...previous,
@@ -16006,11 +16083,20 @@ function AttorneyTransactionDetail() {
             unit: coreDetail.unit || previous.unit,
             development: coreDetail.development || previous.development,
             buyer: coreDetail.buyer || previous.buyer,
+            __isNavigationPreview: false,
+            __isRouteShell: false,
+            __coreHydrated: true,
           }
         })
         console.log('[perf][transaction-workspace] core data loaded', {
           transactionId,
           durationMs: Date.now() - startedAt,
+        })
+        void transactionPerformanceBaselineRef.current?.baseline?.recordCheckpoint({
+          checkpoint: 'core_ready',
+          userId: telemetryUserId,
+          workspaceId: telemetryWorkspaceId,
+          metadata: { background },
         })
         if (!background) {
           setLoading(false)
@@ -16031,10 +16117,27 @@ function AttorneyTransactionDetail() {
           .catch((rollupError) => ({ rollup: null, error: rollupError }))
       : Promise.resolve(null)
 
+    if (!fullRefresh) {
+      const initialRollupResult = await initialRollupRequest
+      if (initialRollupResult) {
+        setTransactionRollupError(initialRollupResult.error?.message || '')
+      }
+      if (!hasCoreData) {
+        setError('Unable to load the transaction workspace core data.')
+      }
+      setHydratingDetail(false)
+      setLoading(false)
+      if (!background && foregroundLoadTransactionRef.current === transactionId) {
+        foregroundLoadTransactionRef.current = ''
+      }
+      return null
+    }
+
     try {
       setHydratingDetail(true)
+      const hydrationContext = await requestWorkspaceHydrationContext()
       const [detail, initialRollupResult] = await Promise.all([
-        fetchTransactionById(transactionId),
+        fetchTransactionById(transactionId, { hydrationContext }),
         initialRollupRequest,
       ])
       if (detail) {
@@ -16044,7 +16147,14 @@ function AttorneyTransactionDetail() {
           transactionId,
           durationMs: Date.now() - startedAt,
         })
+        void transactionPerformanceBaselineRef.current?.baseline?.recordCheckpoint({
+          checkpoint: 'full_ready',
+          userId: telemetryUserId,
+          workspaceId: telemetryWorkspaceId,
+          metadata: { background },
+        })
       } else if (!hasCoreData) {
+        backgroundStatus = 'empty'
         setData(null)
         setError('Transaction not found.')
       }
@@ -16052,6 +16162,7 @@ function AttorneyTransactionDetail() {
         setTransactionRollupError(initialRollupResult.error?.message || '')
       }
     } catch (loadError) {
+      backgroundStatus = 'failed'
       if (!hasCoreData) {
         setError(loadError.message || 'Unable to load transaction.')
       }
@@ -16064,13 +16175,197 @@ function AttorneyTransactionDetail() {
       if (!background && foregroundLoadTransactionRef.current === transactionId) {
         foregroundLoadTransactionRef.current = ''
       }
+      if (backgroundSpan) {
+        void backgroundSpan.finish({
+          userId: telemetryUserId,
+          workspaceId: telemetryWorkspaceId,
+          status: backgroundStatus,
+        })
+      }
     }
-  }, [navigationPreviewData?.transaction, requestTransactionRollup, transactionId])
+  }, [currentMembership?.organisationId, currentMembership?.organisation_id, navigationPreviewData?.transaction, profile?.id, requestTransactionRollup, requestWorkspaceHydrationContext, transactionId, workspace?.id])
+
+  const loadDocumentsWorkspace = useCallback(async ({ force = false } = {}) => {
+    const requestedTransactionId = String(transactionId || '').trim()
+    if (!isSupabaseConfigured || !requestedTransactionId) return null
+
+    const activeRequest = documentWorkspaceRequestRef.current
+    if (!force && activeRequest.key === requestedTransactionId && activeRequest.promise) {
+      return activeRequest.promise
+    }
+
+    const sequence = activeRequest.sequence + 1
+    const startedAt = Date.now()
+    setDocumentWorkspaceLoad({ transactionId: requestedTransactionId, status: 'loading', error: '' })
+    const promise = requestWorkspaceHydrationContext()
+      .then((hydrationContext) => fetchTransactionDocumentsWorkspace(requestedTransactionId, { hydrationContext }))
+    documentWorkspaceRequestRef.current = { key: requestedTransactionId, promise, sequence }
+
+    try {
+      const documentDetail = await promise
+      const latestRequest = documentWorkspaceRequestRef.current
+      if (latestRequest.key !== requestedTransactionId || latestRequest.sequence !== sequence) return documentDetail
+      if (!documentDetail) throw new Error('Transaction documents were not found.')
+
+      setData((previous) => ({
+        ...(previous || {}),
+        ...documentDetail,
+        transaction: previous?.transaction || documentDetail.transaction || null,
+        __documentsHydrated: true,
+      }))
+      setDocumentWorkspaceLoad({ transactionId: requestedTransactionId, status: 'ready', error: '' })
+      console.log('[perf][transaction-workspace] documents data loaded', {
+        transactionId: requestedTransactionId,
+        durationMs: Date.now() - startedAt,
+      })
+      return documentDetail
+    } catch (documentError) {
+      const latestRequest = documentWorkspaceRequestRef.current
+      if (latestRequest.key === requestedTransactionId && latestRequest.sequence === sequence) {
+        setDocumentWorkspaceLoad({
+          transactionId: requestedTransactionId,
+          status: 'error',
+          error: documentError?.message || 'Unable to load transaction documents.',
+        })
+      }
+      throw documentError
+    } finally {
+      const latestRequest = documentWorkspaceRequestRef.current
+      if (latestRequest.key === requestedTransactionId && latestRequest.sequence === sequence) {
+        documentWorkspaceRequestRef.current = { ...latestRequest, promise: null }
+      }
+    }
+  }, [requestWorkspaceHydrationContext, transactionId])
+
+  const loadWorkspaceDataset = useCallback(async (dataset, { force = false } = {}) => {
+    const requestedTransactionId = String(transactionId || '').trim()
+    if (!isSupabaseConfigured || !requestedTransactionId || !dataset) return null
+    const requestKey = `${requestedTransactionId}:${dataset}`
+    const activeRequest = workspaceDatasetRequestRef.current.get(requestKey)
+    if (!force && activeRequest?.promise) return activeRequest.promise
+
+    const sequence = (activeRequest?.sequence || 0) + 1
+    setWorkspaceDatasetLoads((previous) => ({
+      ...previous,
+      [dataset]: { transactionId: requestedTransactionId, status: 'loading', error: '' },
+    }))
+    const apiLoaders = {
+      activity: fetchTransactionActivityWorkspace,
+      finance: fetchTransactionFinanceWorkspace,
+      partners: fetchTransactionPartnersWorkspace,
+      workflow: fetchTransactionWorkflowWorkspace,
+    }
+    const loader = apiLoaders[dataset]
+    if (!loader) return null
+    const startedAt = Date.now()
+    const promise = requestWorkspaceHydrationContext().then((hydrationContext) => dataset === 'workflow'
+      ? Promise.all([
+          loader(requestedTransactionId, { hydrationContext }),
+          getAttorneyWorkflowOperationsForTransaction(requestedTransactionId, { initialize: false }).catch(() => null),
+        ]).then(([detail, operations]) => ({ detail, operations }))
+      : loader(requestedTransactionId, { hydrationContext }).then((detail) => ({ detail, operations: null })))
+    workspaceDatasetRequestRef.current.set(requestKey, { promise, sequence })
+
+    try {
+      const result = await promise
+      const latestRequest = workspaceDatasetRequestRef.current.get(requestKey)
+      if (latestRequest?.sequence !== sequence) return result.detail
+      if (!result.detail) throw new Error(`Transaction ${dataset} data was not found.`)
+      setData((previous) => ({
+        ...(previous || {}),
+        ...result.detail,
+        [`__${dataset}Hydrated`]: true,
+      }))
+      if (result.operations) {
+        setWorkflowOperations(result.operations)
+        setWorkflowOperationsTransactionId(requestedTransactionId)
+      }
+      setWorkspaceDatasetLoads((previous) => ({
+        ...previous,
+        [dataset]: { transactionId: requestedTransactionId, status: 'ready', error: '' },
+      }))
+      console.log(`[perf][transaction-workspace] ${dataset} data loaded`, {
+        transactionId: requestedTransactionId,
+        durationMs: Date.now() - startedAt,
+      })
+      return result.detail
+    } catch (datasetError) {
+      if (workspaceDatasetRequestRef.current.get(requestKey)?.sequence === sequence) {
+        setWorkspaceDatasetLoads((previous) => ({
+          ...previous,
+          [dataset]: {
+            transactionId: requestedTransactionId,
+            status: 'error',
+            error: datasetError?.message || `Unable to load transaction ${dataset} data.`,
+          },
+        }))
+      }
+      throw datasetError
+    } finally {
+      const latestRequest = workspaceDatasetRequestRef.current.get(requestKey)
+      if (latestRequest?.sequence === sequence) {
+        workspaceDatasetRequestRef.current.set(requestKey, { ...latestRequest, promise: null })
+      }
+    }
+  }, [requestWorkspaceHydrationContext, transactionId])
+
+  const refreshTransactionDatasets = useCallback(async (datasets, { reason = 'targeted_refresh' } = {}) => {
+    const uniqueDatasets = [...new Set((Array.isArray(datasets) ? datasets : [datasets]).filter(Boolean))]
+    if (!uniqueDatasets.length) return []
+    const backgroundSpan = transactionPerformanceBaselineRef.current?.baseline?.startBackgroundRefresh({
+      reason,
+      datasets: uniqueDatasets,
+    })
+    let status = 'success'
+    try {
+      return await Promise.all(uniqueDatasets.map((dataset) => (
+        dataset === 'documents'
+          ? loadDocumentsWorkspace({ force: true })
+          : loadWorkspaceDataset(dataset, { force: true })
+      )))
+    } catch (refreshError) {
+      status = 'failed'
+      throw refreshError
+    } finally {
+      void backgroundSpan?.finish({
+        userId: profile?.id || '',
+        workspaceId: workspace?.id || currentMembership?.organisation_id || currentMembership?.organisationId || '',
+        status,
+        metadata: { datasets: uniqueDatasets },
+      })
+    }
+  }, [currentMembership?.organisationId, currentMembership?.organisation_id, loadDocumentsWorkspace, loadWorkspaceDataset, profile?.id, workspace?.id])
+
+  const refreshActiveWorkspaceDataset = useCallback(async ({ reason = 'active_workspace_refresh' } = {}) => {
+    const requestedMenu = String(workspaceMenu || '').toLowerCase()
+    const dataset = requestedMenu === 'documents'
+      ? 'documents'
+      : ['finance', 'bond', 'application', 'quotes_grant', 'reconciliation'].includes(requestedMenu)
+        ? 'finance'
+        : requestedMenu === 'activity'
+          ? 'activity'
+          : ['stakeholders', 'parties'].includes(requestedMenu)
+            ? 'partners'
+            : ['today', 'tasks', 'transfer', 'workflow'].includes(requestedMenu)
+              ? 'workflow'
+              : 'activity'
+    return refreshTransactionDatasets([dataset], { reason })
+  }, [refreshTransactionDatasets, workspaceMenu])
+  backgroundRefreshHandlerRef.current = refreshActiveWorkspaceDataset
 
   useEffect(() => {
     setData(initialTransactionShell)
     setError('')
     setHydratingDetail(false)
+    setDocumentWorkspaceLoad({ transactionId: '', status: 'idle', error: '' })
+    setWorkspaceDatasetLoads({})
+    workspaceDatasetRequestRef.current.clear()
+    workspaceHydrationContextRef.current = { key: '', promise: null, value: null }
+    documentWorkspaceRequestRef.current = {
+      key: '',
+      promise: null,
+      sequence: documentWorkspaceRequestRef.current.sequence + 1,
+    }
     setWorkflowOperations(null)
     setWorkflowOperationsTransactionId('')
     setWorkflowError('')
@@ -16150,17 +16445,6 @@ function AttorneyTransactionDetail() {
         setMatterAccessAllowed(true)
         setError('')
 
-        try {
-          const operations = await getAttorneyWorkflowOperationsForTransaction(transactionId, { initialize: false })
-          if (!active) return
-          setWorkflowOperations(operations)
-          setWorkflowOperationsTransactionId(transactionId)
-        } catch (workflowAccessError) {
-          if (!active) return
-          console.warn('[attorney-matter] workflow operations access deferred', workflowAccessError)
-          setWorkflowOperations(null)
-          setWorkflowOperationsTransactionId('')
-        }
       } catch (accessError) {
         if (!active) return
         setWorkflowOperations(null)
@@ -16233,18 +16517,8 @@ function AttorneyTransactionDetail() {
     enabled: workspaceRole !== 'attorney' || matterAccessAllowed,
     includeNotifications: true,
     pollingIntervalMs: workspaceRole === 'agent' ? 15_000 : 30_000,
-    onRefresh: async () => {
-      const operationsPromise = transaction?.id
-        ? getAttorneyWorkflowOperationsForTransaction(transaction.id, { initialize: false }).catch(() => null)
-        : Promise.resolve(null)
-      const [, operations] = await Promise.all([
-        loadData({ background: true }),
-        operationsPromise,
-      ])
-      if (operations) {
-        setWorkflowOperations(operations)
-        setWorkflowOperationsTransactionId(transaction?.id || transactionId || '')
-      }
+    onRefresh: async ({ reason = 'unknown' } = {}) => {
+      await refreshActiveWorkspaceDataset({ reason: `live:${reason}` })
     },
   })
 
@@ -16289,11 +16563,12 @@ function AttorneyTransactionDetail() {
   }, [transaction?.id, transaction?.updated_at, transaction?.updatedAt])
   const allDocuments = data?.documents ?? EMPTY_ARRAY
   const documentDataHydrated = Boolean(
-    data &&
-    !data.__isNavigationPreview &&
-    !data.__isRouteShell &&
-    Object.prototype.hasOwnProperty.call(data, 'documents') &&
-    Object.prototype.hasOwnProperty.call(data, 'requiredDocumentChecklist'),
+    data?.__documentsHydrated ||
+    (data &&
+      !data.__isNavigationPreview &&
+      !data.__isRouteShell &&
+      Object.prototype.hasOwnProperty.call(data, 'documents') &&
+      Object.prototype.hasOwnProperty.call(data, 'requiredDocumentChecklist')),
   )
   const documents = useMemo(
     () => workspaceRole === 'bond_originator' ? allDocuments.filter(isBondOriginatorFinanceDocument) : allDocuments,
@@ -16474,6 +16749,54 @@ function AttorneyTransactionDetail() {
     : workspaceRole === 'attorney'
       ? 'today'
       : 'overview'
+  useEffect(() => {
+    if (activeWorkspaceMenu !== 'documents' || documentDataHydrated) return
+    if (workspaceRole === 'attorney' && (!matterAccessAllowed || matterAccessKey !== currentMatterAccessKey)) return
+    void loadDocumentsWorkspace().catch(() => {})
+  }, [activeWorkspaceMenu, currentMatterAccessKey, documentDataHydrated, loadDocumentsWorkspace, matterAccessAllowed, matterAccessKey, workspaceRole])
+  useEffect(() => {
+    const dataset = activeWorkspaceMenu === 'activity'
+      ? 'activity'
+      : activeWorkspaceMenu === 'finance'
+        ? 'finance'
+        : ['stakeholders', 'parties'].includes(activeWorkspaceMenu)
+          ? 'partners'
+          : ['today', 'tasks', 'transfer'].includes(activeWorkspaceMenu)
+            ? 'workflow'
+            : ''
+    const fullDatasetFields = {
+      activity: 'transactionEvents',
+      finance: 'transactionFinanceWorkflow',
+      partners: 'transactionParticipants',
+      workflow: 'transactionSubprocesses',
+    }
+    const datasetHydrated = Boolean(
+      data?.[`__${dataset}Hydrated`] ||
+      (data && !data.__isNavigationPreview && !data.__isRouteShell && Object.prototype.hasOwnProperty.call(data, fullDatasetFields[dataset])),
+    )
+    if (!dataset || datasetHydrated) return
+    if (workspaceRole === 'attorney' && (!matterAccessAllowed || matterAccessKey !== currentMatterAccessKey)) return
+    void loadWorkspaceDataset(dataset).catch(() => {})
+  }, [activeWorkspaceMenu, currentMatterAccessKey, data, loadWorkspaceDataset, matterAccessAllowed, matterAccessKey, workspaceRole])
+  useEffect(() => {
+    const detailReady = Boolean(data && !data.__isNavigationPreview && !data.__isRouteShell && !hydratingDetail)
+    const datasetReady = activeWorkspaceMenu === 'documents' ? documentDataHydrated : detailReady
+    if (!datasetReady) return
+    const dataset = activeWorkspaceMenu === 'stakeholders'
+      ? 'partners'
+      : activeWorkspaceMenu === 'transfer'
+        ? 'workflow'
+        : activeWorkspaceMenu
+    void transactionPerformanceBaselineRef.current?.baseline?.recordDatasetReady({
+      dataset,
+      userId: profile?.id || '',
+      workspaceId: workspace?.id || currentMembership?.organisation_id || currentMembership?.organisationId || '',
+      metadata: {
+        documentCount: dataset === 'documents' ? allDocuments.length : undefined,
+        requiredDocumentCount: dataset === 'documents' ? requiredDocumentChecklist.length : undefined,
+      },
+    })
+  }, [activeWorkspaceMenu, allDocuments.length, currentMembership?.organisationId, currentMembership?.organisation_id, data, documentDataHydrated, hydratingDetail, profile?.id, requiredDocumentChecklist.length, workspace?.id])
   const bondConsultantDeepLink = useMemo(() => {
     if (workspaceRole !== 'bond_originator') return null
     const params = new URLSearchParams(location.search || '')
@@ -17932,7 +18255,7 @@ function AttorneyTransactionDetail() {
       const operations = await getAttorneyWorkflowOperationsForTransaction(transaction.id)
       setWorkflowOperations(operations)
     }
-    void loadData({ background: true })
+    void refreshTransactionDatasets(['workflow', 'activity'], { reason: 'workflow_mutation' })
   }
 
   async function handleResendProgressNotification(delivery) {
@@ -18020,7 +18343,7 @@ function AttorneyTransactionDetail() {
       setError('')
       const result = await updateBondHybridFinanceStage(transaction.id, stageKey, { actorRole: workspaceRole })
       await refreshBondHybridFinanceWorkflow(result)
-      await loadData({ background: true })
+      await refreshTransactionDatasets(['finance', 'activity'], { reason: 'finance_stage_changed' })
     } catch (workflowActionError) {
       setError(workflowActionError?.message || 'Unable to update bond finance workflow.')
     } finally {
@@ -18508,7 +18831,7 @@ function AttorneyTransactionDetail() {
       })
       setRequestDocumentModalOpen(false)
       window.dispatchEvent(new Event('itg:transaction-updated'))
-      await loadData({ background: true })
+      await refreshTransactionDatasets(['documents', 'activity'], { reason: 'document_request_created' })
     } catch (requestError) {
       setError(requestError?.message || 'Unable to request this document.')
     } finally {
@@ -18770,7 +19093,7 @@ function AttorneyTransactionDetail() {
         throw new Error((result?.blockers || []).map((item) => item.message).filter(Boolean).join(' • ') || 'Workflow action is blocked.')
       }
       window.dispatchEvent(new Event('itg:transaction-updated'))
-      await loadData({ background: true })
+      await refreshTransactionDatasets(['workflow', 'activity'], { reason: 'overview_workflow_action' })
       if (USE_TRANSACTION_ROLLUP_OVERVIEW) {
         try {
           await requestTransactionRollup(transaction.id, { force: true })
@@ -21773,7 +22096,9 @@ function AttorneyTransactionDetail() {
         {(workspaceRole === 'attorney' || isTransactionOperatorView) && activeWorkspaceMenu === 'documents' ? (
           <section className="space-y-4">
             <ArchlineDocumentsWorkspace
-              loading={!documentDataHydrated}
+              loading={!documentDataHydrated && documentWorkspaceLoad.status !== 'error'}
+              error={!documentDataHydrated ? documentWorkspaceLoad.error : ''}
+              onRetry={() => void loadDocumentsWorkspace({ force: true }).catch(() => {})}
               documentHealthSummary={documentHealthSummary}
               ficaSummary={matterDocumentWorkspaceModel.ficaSummary}
               categorySummaries={matterDocumentWorkspaceModel.categorySummaries}

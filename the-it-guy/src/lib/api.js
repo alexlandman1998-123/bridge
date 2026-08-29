@@ -1098,6 +1098,27 @@ function isMissingTableError(error, tableName) {
   )
 }
 
+const knownMissingOptionalRelations = new Set()
+
+function isOptionalRelationKnownMissing(relationName) {
+  return knownMissingOptionalRelations.has(String(relationName || '').trim().toLowerCase())
+}
+
+function rememberMissingOptionalRelation(relationName, error) {
+  const normalizedRelationName = String(relationName || '').trim().toLowerCase()
+  if (!normalizedRelationName || !isMissingTableError(error, normalizedRelationName)) return false
+  knownMissingOptionalRelations.add(normalizedRelationName)
+  return true
+}
+
+export function getKnownMissingOptionalRelations() {
+  return [...knownMissingOptionalRelations]
+}
+
+export function resetKnownMissingOptionalRelations() {
+  knownMissingOptionalRelations.clear()
+}
+
 function isMissingColumnError(error, columnName) {
   if (!error) {
     return false
@@ -3703,6 +3724,13 @@ export async function ensureTransactionSubprocesses(client, transactionId, { cre
     throw transactionMetaQuery.error
   }
 
+  if (isOptionalRelationKnownMissing('transaction_subprocesses')) {
+    return buildDefaultSubprocessState(transactionId, {
+      financeType: transactionFinanceType,
+      includeLevyClearanceSteps,
+    })
+  }
+
   let subprocessQuery = await client
     .from('transaction_subprocesses')
     .select('id, transaction_id, process_type, owner_type, status, created_at, updated_at')
@@ -3710,7 +3738,7 @@ export async function ensureTransactionSubprocesses(client, transactionId, { cre
     .order('created_at', { ascending: true })
 
   if (subprocessQuery.error) {
-    if (isMissingSchemaError(subprocessQuery.error)) {
+    if (rememberMissingOptionalRelation('transaction_subprocesses', subprocessQuery.error) || isMissingSchemaError(subprocessQuery.error)) {
       return buildDefaultSubprocessState(transactionId, {
         financeType: transactionFinanceType,
         includeLevyClearanceSteps,
@@ -7295,6 +7323,9 @@ async function logReferralIncentiveEvent(client, { incentiveId, transactionId, e
 export async function fetchTransactionReferralIncentive(transactionId) {
   const client = requireClient()
   if (!transactionId) return { incentive: null, events: [], schemaAvailable: false }
+  if (isOptionalRelationKnownMissing('transaction_referral_incentives')) {
+    return { incentive: null, events: [], schemaAvailable: false }
+  }
 
   const { data, error } = await client
     .from('transaction_referral_incentives')
@@ -7303,7 +7334,7 @@ export async function fetchTransactionReferralIncentive(transactionId) {
     .maybeSingle()
 
   if (error) {
-    if (isMissingSchemaError(error) || isMissingTableError(error, 'transaction_referral_incentives') || isPermissionDeniedError(error)) {
+    if (rememberMissingOptionalRelation('transaction_referral_incentives', error) || isMissingSchemaError(error) || isPermissionDeniedError(error)) {
       return { incentive: null, events: [], schemaAvailable: false }
     }
     throw error
@@ -7312,11 +7343,18 @@ export async function fetchTransactionReferralIncentive(transactionId) {
   const incentive = normalizeReferralIncentiveRow(data)
   if (!incentive?.id) return { incentive: null, events: [], schemaAvailable: true }
 
-  const { data: eventRows, error: eventsError } = await client
-    .from('transaction_referral_incentive_events')
-    .select(REFERRAL_INCENTIVE_EVENT_SELECT)
-    .eq('incentive_id', incentive.id)
-    .order('created_at', { ascending: false })
+  let eventRows = []
+  let eventsError = null
+  if (!isOptionalRelationKnownMissing('transaction_referral_incentive_events')) {
+    const eventsResult = await client
+      .from('transaction_referral_incentive_events')
+      .select(REFERRAL_INCENTIVE_EVENT_SELECT)
+      .eq('incentive_id', incentive.id)
+      .order('created_at', { ascending: false })
+    eventRows = eventsResult.data || []
+    eventsError = eventsResult.error
+    rememberMissingOptionalRelation('transaction_referral_incentive_events', eventsError)
+  }
 
   if (eventsError && !isMissingSchemaError(eventsError) && !isMissingTableError(eventsError, 'transaction_referral_incentive_events') && !isPermissionDeniedError(eventsError)) {
     throw eventsError
@@ -9049,6 +9087,7 @@ async function fetchTransactionRequiredDocumentsByTransactionIds(client, transac
 }
 
 async function fetchTransactionRequiredDocumentsByTransactionIdsLegacy(client, transactionIds = []) {
+  if (isOptionalRelationKnownMissing('transaction_required_documents')) return {}
   let query = await client
     .from('transaction_required_documents')
     .select(
@@ -9079,7 +9118,7 @@ async function fetchTransactionRequiredDocumentsByTransactionIdsLegacy(client, t
 
   if (query.error) {
     if (
-      isMissingTableError(query.error, 'transaction_required_documents') ||
+      rememberMissingOptionalRelation('transaction_required_documents', query.error) ||
       isMissingColumnError(query.error, 'document_key') ||
       isMissingColumnError(query.error, 'document_label')
     ) {
@@ -10872,6 +10911,7 @@ async function fetchTransactionProxyUpdatesWithClient(client, transactionId, { l
   if (!transactionId) {
     return []
   }
+  if (isOptionalRelationKnownMissing('transaction_proxy_updates')) return []
 
   const query = await client
     .from('transaction_proxy_updates')
@@ -10883,7 +10923,7 @@ async function fetchTransactionProxyUpdatesWithClient(client, transactionId, { l
     .limit(limit)
 
   if (query.error) {
-    if (isMissingTableError(query.error, 'transaction_proxy_updates') || isMissingSchemaError(query.error)) {
+    if (rememberMissingOptionalRelation('transaction_proxy_updates', query.error) || isMissingSchemaError(query.error)) {
       return []
     }
     throw query.error
@@ -13476,6 +13516,7 @@ async function fetchTransactionAppointments(client, transactionIds = [], options
   const { viewer = 'internal' } = options
   const ids = [...new Set((transactionIds || []).filter(Boolean))]
   if (!ids.length) return {}
+  if (isOptionalRelationKnownMissing('appointments')) return {}
 
   let query = await client
     .from('appointments')
@@ -13513,7 +13554,7 @@ async function fetchTransactionAppointments(client, transactionIds = [], options
   }
 
   if (query.error) {
-    if (isMissingTableError(query.error, 'appointments') || isMissingSchemaError(query.error)) {
+    if (rememberMissingOptionalRelation('appointments', query.error) || isMissingSchemaError(query.error)) {
       return {}
     }
     throw query.error
@@ -14686,6 +14727,7 @@ function summarizeChecklistItems(rows = [], { stageKey = null } = {}) {
 async function loadTransactionDocumentRequestsByIds(client, transactionIds = []) {
   const ids = [...new Set((transactionIds || []).filter(Boolean))]
   if (!ids.length) return {}
+  if (isOptionalRelationKnownMissing('document_requests')) return {}
 
   let query = await client
     .from('document_requests')
@@ -14719,7 +14761,7 @@ async function loadTransactionDocumentRequestsByIds(client, transactionIds = [])
   }
 
   if (query.error) {
-    if (isMissingTableError(query.error, 'document_requests') || isMissingSchemaError(query.error)) {
+    if (rememberMissingOptionalRelation('document_requests', query.error) || isMissingSchemaError(query.error)) {
       return {}
     }
     throw query.error
@@ -14808,6 +14850,7 @@ async function fetchClientVisibleAdditionalDocumentRequests(client, transactionI
 async function loadTransactionChecklistItemsByIds(client, transactionIds = []) {
   const ids = [...new Set((transactionIds || []).filter(Boolean))]
   if (!ids.length) return {}
+  if (isOptionalRelationKnownMissing('transaction_checklist_items')) return {}
 
   let query = await client
     .from('transaction_checklist_items')
@@ -14840,7 +14883,7 @@ async function loadTransactionChecklistItemsByIds(client, transactionIds = []) {
   }
 
   if (query.error) {
-    if (isMissingTableError(query.error, 'transaction_checklist_items') || isMissingSchemaError(query.error)) {
+    if (rememberMissingOptionalRelation('transaction_checklist_items', query.error) || isMissingSchemaError(query.error)) {
       return {}
     }
     throw query.error
@@ -14860,6 +14903,7 @@ async function loadTransactionChecklistItemsByIds(client, transactionIds = []) {
 async function loadTransactionIssueOverridesByIds(client, transactionIds = []) {
   const ids = [...new Set((transactionIds || []).filter(Boolean))]
   if (!ids.length) return {}
+  if (isOptionalRelationKnownMissing('transaction_issue_overrides')) return {}
 
   let query = await client
     .from('transaction_issue_overrides')
@@ -14883,7 +14927,7 @@ async function loadTransactionIssueOverridesByIds(client, transactionIds = []) {
   }
 
   if (query.error) {
-    if (isMissingTableError(query.error, 'transaction_issue_overrides') || isMissingSchemaError(query.error)) {
+    if (rememberMissingOptionalRelation('transaction_issue_overrides', query.error) || isMissingSchemaError(query.error)) {
       return {}
     }
     throw query.error
@@ -34167,16 +34211,118 @@ export async function getWorkflowEngineHealth(options = {}) {
   })
 }
 
-export async function fetchTransactionById(transactionId) {
-  if (!transactionId) {
-    return null
-  }
+export async function fetchTransactionDocumentsWorkspace(transactionId, options = {}) {
+  if (!transactionId) return null
 
   const mockDetail = getAttorneyMockTransactionDetail(transactionId)
   if (mockDetail) {
-    return mockDetail
+    return {
+      transaction: mockDetail.transaction || null,
+      documents: mockDetail.documents || [],
+      onboardingFormData: mockDetail.onboardingFormData || null,
+      transactionRequiredDocuments: mockDetail.transactionRequiredDocuments || [],
+      requiredDocumentChecklist: mockDetail.requiredDocumentChecklist || [],
+      documentSummary: mockDetail.documentSummary || null,
+      documentChecklistInsights: mockDetail.documentChecklistInsights || null,
+      buyerRequirementProfile: mockDetail.buyerRequirementProfile || null,
+      buyerRequirementSummary: mockDetail.buyerRequirementSummary || null,
+      missingBuyerRequirements: mockDetail.missingBuyerRequirements || null,
+      requiredTransactionActions: mockDetail.requiredTransactionActions || [],
+      buyerReadiness: mockDetail.buyerReadiness || null,
+      documentRequests: mockDetail.documentRequests || [],
+      documentRequestSummary: mockDetail.documentRequestSummary || null,
+      transactionChecklistItems: mockDetail.transactionChecklistItems || [],
+      checklistSummary: mockDetail.checklistSummary || null,
+      issueOverrides: mockDetail.issueOverrides || [],
+    }
   }
 
+  const context = options.hydrationContext || await resolveTransactionWorkspaceReadContext(transactionId)
+  if (!context) return null
+  const { client, transaction, canonicalTransactionId } = context
+
+  const [
+    documents,
+    onboardingFormData,
+    documentRequestsByTransactionId,
+    checklistItemsByTransactionId,
+    issueOverridesByTransactionId,
+    transactionRequirementsByTransactionId,
+  ] = await Promise.all([
+    loadSharedDocuments(client, { transactionIds: [canonicalTransactionId], viewer: 'internal' }),
+    fetchOnboardingFormDataForTransaction(client, canonicalTransactionId, transaction?.purchaser_type || 'individual'),
+    loadTransactionDocumentRequestsByIds(client, [canonicalTransactionId]),
+    loadTransactionChecklistItemsByIds(client, [canonicalTransactionId]),
+    loadTransactionIssueOverridesByIds(client, [canonicalTransactionId]),
+    fetchTransactionRequiredDocumentsByTransactionIds(client, [canonicalTransactionId]),
+  ])
+
+  const transactionRequiredDocuments = transactionRequirementsByTransactionId[canonicalTransactionId] || []
+  const liveChecklist = await buildLiveTransactionChecklistData(client, {
+    transaction,
+    onboardingFormData: onboardingFormData || null,
+    documents,
+    persistedRequirements: transactionRequiredDocuments,
+  })
+  const buyerRequirementProfile = getBuyerRequirementProfile({
+    transaction,
+    onboardingFormData,
+    requiredDocumentChecklist: liveChecklist.requiredDocumentChecklist,
+  })
+  const buyerRequirementMissing = getMissingBuyerRequirementsFromProfile(
+    buyerRequirementProfile,
+    liveChecklist.requiredDocumentChecklist,
+  )
+  const buyerRequirementActions = getRequiredTransactionActions(
+    buyerRequirementProfile,
+    liveChecklist.requiredDocumentChecklist,
+  )
+
+  return {
+    transaction,
+    documents,
+    onboardingFormData: onboardingFormData || null,
+    transactionRequiredDocuments: liveChecklist.requiredDocuments,
+    requiredDocumentChecklist: liveChecklist.requiredDocumentChecklist,
+    documentSummary: liveChecklist.documentSummary,
+    documentChecklistInsights: liveChecklist.documentChecklistInsights,
+    buyerRequirementProfile,
+    buyerRequirementSummary: {
+      buyerType: buyerRequirementProfile.buyerType,
+      buyerTypeLabel: buyerRequirementProfile.buyerTypeLabel,
+      financeType: buyerRequirementProfile.financeType,
+      financeTypeLabel: buyerRequirementProfile.financeTypeLabel,
+      missingRequiredCount: buyerRequirementMissing.totalMissingCritical,
+      missingCount: buyerRequirementMissing.totalMissing,
+      totalRequiredCount: buyerRequirementMissing.totalRequired,
+      hasOutstanding: buyerRequirementMissing.hasOutstanding,
+    },
+    missingBuyerRequirements: buyerRequirementMissing,
+    requiredTransactionActions: buyerRequirementActions,
+    buyerReadiness: {
+      fica: getBuyerFicaReadinessFromProfile(buyerRequirementProfile, liveChecklist.requiredDocumentChecklist),
+      finance: getBuyerFinanceReadinessFromProfile(buyerRequirementProfile, liveChecklist.requiredDocumentChecklist),
+      transfer: getTransferReadinessFromBuyerDocsFromProfile(
+        {
+          ...buyerRequirementProfile,
+          onboardingStatus: onboardingFormData?.status || null,
+          onboarding: onboardingFormData || null,
+        },
+        liveChecklist.requiredDocumentChecklist,
+      ),
+    },
+    documentRequests: documentRequestsByTransactionId[canonicalTransactionId] || [],
+    documentRequestSummary: summarizeDocumentRequests(documentRequestsByTransactionId[canonicalTransactionId] || []),
+    transactionChecklistItems: checklistItemsByTransactionId[canonicalTransactionId] || [],
+    checklistSummary: summarizeChecklistItems(checklistItemsByTransactionId[canonicalTransactionId] || [], {
+      stageKey: resolveAttorneyOperationalStageKey({ transaction }),
+    }),
+    issueOverrides: issueOverridesByTransactionId[canonicalTransactionId] || [],
+  }
+}
+
+async function resolveTransactionWorkspaceReadContext(transactionId) {
+  if (!transactionId) return null
   const client = requireClient()
   let resolvedTransactionId = transactionId
   let transaction = await fetchTransactionRowById(client, resolvedTransactionId)
@@ -34187,11 +34333,9 @@ export async function fetchTransactionById(transactionId) {
       transaction = await fetchTransactionRowById(client, resolvedTransactionId)
     }
   }
-  if (!transaction || transaction?.is_active === false) {
-    return null
-  }
-  const canonicalTransactionId = transaction.id || resolvedTransactionId
+  if (!transaction || transaction?.is_active === false) return null
 
+  const canonicalTransactionId = transaction.id || resolvedTransactionId
   const activeProfile = await resolveActiveProfileContext(client)
   if (normalizeRoleType(activeProfile.role) === 'attorney' && activeProfile.userId) {
     const allowed = await canUserAccessTransaction({
@@ -34199,10 +34343,132 @@ export async function fetchTransactionById(transactionId) {
       transactionId: canonicalTransactionId,
       roleType: 'attorney',
     })
-    if (!allowed) {
-      throw new Error('You do not have access to this transaction. Refresh Transactions and try again.')
-    }
+    if (!allowed) throw new Error('You do not have access to this transaction. Refresh Transactions and try again.')
   }
+  return { client, transaction, canonicalTransactionId, activeProfile }
+}
+
+export async function createTransactionWorkspaceHydrationContext(transactionId) {
+  return resolveTransactionWorkspaceReadContext(transactionId)
+}
+
+export async function fetchTransactionActivityWorkspace(transactionId, options = {}) {
+  const context = options.hydrationContext || await resolveTransactionWorkspaceReadContext(transactionId)
+  if (!context) return null
+  const { client, transaction, canonicalTransactionId } = context
+  const [transactionDiscussion, transactionEvents, transactionProxyUpdates] = await Promise.all([
+    fetchTransactionDiscussion(canonicalTransactionId, {
+      unitId: transaction.unit_id || null,
+      viewer: 'internal',
+      includeLegacy: true,
+      limit: 250,
+    }),
+    fetchTransactionEvents(canonicalTransactionId),
+    fetchTransactionProxyUpdatesWithClient(client, canonicalTransactionId, { limit: 100 }),
+  ])
+  return { transactionDiscussion, transactionEvents, transactionProxyUpdates }
+}
+
+export async function fetchTransactionPartnersWorkspace(transactionId, options = {}) {
+  const context = options.hydrationContext || await resolveTransactionWorkspaceReadContext(transactionId)
+  if (!context) return null
+  const { client, canonicalTransactionId } = context
+  let [participantsQuery, rolePlayers, buyerProcessLeadHandoff] = await Promise.all([
+    client.from('transaction_participants').select(TRANSACTION_PARTICIPANT_FULL_SELECT).eq('transaction_id', canonicalTransactionId),
+    fetchTransactionRolePlayersIfPossible(client, canonicalTransactionId),
+    fetchBuyerProcessLeadHandoffForTransaction(client, canonicalTransactionId),
+  ])
+  if (participantsQuery.error && isMissingTransactionParticipantExtendedColumn(participantsQuery.error)) {
+    participantsQuery = await client
+      .from('transaction_participants')
+      .select(TRANSACTION_PARTICIPANT_LEGACY_SELECT)
+      .eq('transaction_id', canonicalTransactionId)
+  }
+  if (participantsQuery.error && !isMissingSchemaError(participantsQuery.error)) throw participantsQuery.error
+  const transactionParticipants = (participantsQuery.data || []).map((row) => normalizeTransactionParticipantRow(row))
+  return {
+    transactionParticipants,
+    rolePlayers,
+    transactionRolePlayers: rolePlayers,
+    transaction_role_players: rolePlayers,
+    buyerProcessLeadHandoff,
+  }
+}
+
+export async function fetchTransactionFinanceWorkspace(transactionId, options = {}) {
+  const context = options.hydrationContext || await resolveTransactionWorkspaceReadContext(transactionId)
+  if (!context) return null
+  const { client, transaction, canonicalTransactionId } = context
+  const financeWorkflowPromise = isBondFinanceType(transaction.finance_type)
+    ? getTransactionFinanceWorkflow(canonicalTransactionId, { client, createIfMissing: false })
+    : Promise.resolve(null)
+  const [
+    transactionFinanceWorkflow,
+    bondOriginatorAgentProgressView,
+    serverBondApplicationIdentity,
+    serverBondApplicationWorkspaceView,
+    bondOriginatorAttorneyHandoffView,
+    bondApplication,
+    transactionSync,
+  ] = await Promise.all([
+    financeWorkflowPromise,
+    fetchAgentBondOriginatorProgressView(client, canonicalTransactionId),
+    fetchAgentBondApplicationIdentity(client, canonicalTransactionId),
+    fetchAgentBondApplicationWorkspaceView(client, canonicalTransactionId),
+    fetchAttorneyBondOriginatorHandoffView(client, canonicalTransactionId),
+    fetchNormalizedBondApplicationBundle(client, canonicalTransactionId),
+    getAgentTransactionSyncReadModel(canonicalTransactionId, { client }),
+  ])
+  const bondApplicationIdentity = buildBondApplicationIdentity({
+    transaction,
+    bondApplication,
+    originatorProgress: bondOriginatorAgentProgressView,
+    financeWorkflow: transactionFinanceWorkflow,
+    serverIdentity: serverBondApplicationIdentity,
+  })
+  return {
+    transactionFinanceWorkflow,
+    bondOriginatorAgentProgressView,
+    bondApplicationIdentity,
+    bondApplicationWorkspace: buildAgentBondApplicationWorkspace({
+      workspaceView: serverBondApplicationWorkspaceView,
+      transaction,
+      bondApplication,
+      originatorProgress: bondOriginatorAgentProgressView,
+      financeWorkflow: transactionFinanceWorkflow,
+      serverIdentity: serverBondApplicationIdentity,
+    }),
+    bondOriginatorAttorneyHandoffView,
+    bondApplication,
+    normalizedBondApplication: bondApplication,
+    transactionSync,
+  }
+}
+
+export async function fetchTransactionWorkflowWorkspace(transactionId, options = {}) {
+  const context = options.hydrationContext || await resolveTransactionWorkspaceReadContext(transactionId)
+  if (!context) return null
+  const { client, canonicalTransactionId } = context
+  return {
+    transactionSubprocesses: await ensureTransactionSubprocesses(client, canonicalTransactionId, {
+      createIfMissing: false,
+    }),
+  }
+}
+
+export async function fetchTransactionById(transactionId, options = {}) {
+  if (!transactionId) {
+    return null
+  }
+
+  const mockDetail = getAttorneyMockTransactionDetail(transactionId)
+  if (mockDetail) {
+    return mockDetail
+  }
+
+  const context = options.hydrationContext || await resolveTransactionWorkspaceReadContext(transactionId)
+  if (!context) return null
+  const { client, transaction, canonicalTransactionId } = context
 
   try {
   if (transaction.listing_id) {
