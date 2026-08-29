@@ -57,13 +57,14 @@ export default function SellerFicaVerification({ organisationId, clientContactId
   }, [canView, clientContactId, organisationId])
 
   const run = snapshot.run
+  const storageUnavailable = snapshot.unavailable === true
   const status = running ? 'in_progress' : run?.status || 'not_started'
   const checks = run?.checks?.length ? run.checks : DEFAULT_CHECKS
   const partyLabel = partyType === 'buyer' ? 'Buyer' : 'Seller'
   const displayName = clientName || sellerName
   const state = presentation(status, missingFields, partyLabel)
   const risk = run?.riskRating || 'unknown'
-  const canStart = canRun && !missingFields.length && !running && status !== 'in_progress'
+  const canStart = canRun && !storageUnavailable && !missingFields.length && !running && status !== 'in_progress'
   const address = subject.residentialAddress || [subject.street, subject.suburb, subject.city, subject.province, subject.country].filter(Boolean).join(', ')
   const maskedId = subject.idNumber ? `${'•'.repeat(Math.max(6, String(subject.idNumber).length - 4))}${String(subject.idNumber).slice(-4)}` : 'Not captured'
   const cardClass = state.tone === 'green' ? 'border-[#b9ddca] bg-[linear-gradient(135deg,#f6fcf8_0%,#fbfefd_100%)]' : state.tone === 'amber' ? 'border-[#ead7ae] bg-[#fffdf8]' : state.tone === 'red' ? 'border-[#ecc9c5] bg-[#fffafa]' : 'border-[#d5e3ed] bg-[linear-gradient(135deg,#f8fbfd_0%,#ffffff_100%)]'
@@ -104,6 +105,7 @@ export default function SellerFicaVerification({ organisationId, clientContactId
               <h4 className="mt-1 text-xl font-semibold tracking-[-0.03em] text-[#102033]">{loading ? 'Loading verification status…' : state.title}</h4>
               <p className="mt-2 text-sm leading-6 text-[#526b82]">{state.copy}</p>
               {partyType === 'buyer' ? <p className="mt-3 rounded-[12px] border border-[#dce8e2] bg-white/70 px-3 py-2 text-xs leading-5 text-[#526b82]">Buyer CDD covers identity, address, sanctions, prominent-person and risk screening. Company and trust purchasers also require beneficial-owner and control-person verification.</p> : null}
+              {storageUnavailable ? <p className="mt-3 rounded-[12px] border border-[#f0d9a5] bg-[#fff8e8] px-3 py-2 text-xs font-semibold leading-5 text-[#8a641d]">FICA verification storage is being activated for this workspace. Verification cannot be run yet.</p> : null}
               {missingFields.length ? <p className="mt-3 text-xs font-semibold text-[#8a641d]">Missing: {missingFields.join(' · ')}</p> : null}
               <p className="mt-5 text-xs text-[#71869b]">Verification powered by <span className="font-semibold text-[#31506b]">{run?.provider || 'configured provider'}</span></p>
             </div>

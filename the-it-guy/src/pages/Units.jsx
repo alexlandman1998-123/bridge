@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import OpenOnboardingButton from '../components/OpenOnboardingButton'
 import PageActionBar from '../components/PageActionBar'
+import TransactionsRouteShell from '../components/transactions/TransactionsRouteShell'
 import Button from '../components/ui/Button'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
 import Field from '../components/ui/Field'
@@ -43,13 +44,13 @@ import {
   fetchTransactionsByParticipantSummary,
   fetchTransactionsListSummary,
   fetchUnitsDataSummary,
+  invalidateTransactionsListCache,
   prefetchUnitWorkspaceShell,
   saveDeveloperTransactionWorkspace,
 } from '../lib/transactionsListApi'
 import { canAccessPrincipalExperience, normalizeOrganisationMembershipRole } from '../lib/organisationAccess'
 import { createPerfTimer, markRouteMilestone, startRouteTransitionTrace } from '../lib/performanceTrace'
 import { PURCHASER_ENTITY_OPTIONS } from '../lib/purchaserPersonas'
-import { fetchOrganisationSettings } from '../lib/settingsApi'
 import { MAIN_PROCESS_STAGES, MAIN_STAGE_LABELS, STAGES, getMainStageFromDetailedStage } from '../lib/stages'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 
@@ -139,6 +140,20 @@ function withUnassignedDevelopmentOption(options = []) {
     { id: NO_DEVELOPMENT_ID, name: 'No Development Assigned', location: '' },
     ...options.filter((option) => option.id !== NO_DEVELOPMENT_ID),
   ]
+}
+
+function developmentOptionsFromRows(rows = []) {
+  const byId = new Map()
+  for (const row of rows || []) {
+    const development = row?.development
+    if (!development?.id || !development?.name || byId.has(development.id)) continue
+    byId.set(development.id, {
+      id: development.id,
+      name: development.name,
+      location: development.location || '',
+    })
+  }
+  return [...byId.values()]
 }
 
 const MAIN_STAGE_PROGRESS = {
@@ -612,7 +627,16 @@ function isBondPipelineLifecycleRow(row) {
 function Units() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { workspace, role, profile, currentWorkspace, workspaceType, currentMembership, activeMemberships } = useWorkspace()
+  const {
+    workspace,
+    role,
+    profile,
+    currentWorkspace,
+    workspaceType,
+    currentMembership,
+    activeMemberships,
+    organisationMembershipRole,
+  } = useWorkspace()
 
   const [rows, setRows] = useState([])
   const [developmentOptions, setDevelopmentOptions] = useState([])
@@ -650,13 +674,24 @@ function Units() {
   const [pendingDeleteCloseEditor, setPendingDeleteCloseEditor] = useState(false)
   const [unitsViewMode, setUnitsViewMode] = useState(role === 'client' ? 'cards' : 'list')
   const [attorneyListTab, setAttorneyListTab] = useState('all')
-  const [organisationMembershipRole, setOrganisationMembershipRole] = useState('viewer')
   const latestLoadRequestRef = useRef(0)
   const isAgentRole = role === 'agent'
   const isBondRole = role === 'bond_originator'
   const isAttorneyRole = role === 'attorney'
   const isClientRole = role === 'client'
   const isDeveloperWorkspaceRole = role === 'developer' || role === 'internal_admin'
+  const activeAgentOrganisationId = isAgentRole
+    ? String(
+        currentWorkspace?.organisationId ||
+          currentWorkspace?.organisation_id ||
+          currentWorkspace?.raw?.organisation_id ||
+          currentMembership?.organisationId ||
+          currentMembership?.organisation_id ||
+          currentWorkspace?.id ||
+          workspace.id ||
+          '',
+      ).trim()
+    : ''
   const resolvedWorkspaceType = currentWorkspace?.type || workspaceType || workspace?.type || ''
   const developerOrganisationId = useMemo(() => {
     if (!isDeveloperWorkspaceRole) return ''
@@ -798,34 +833,6 @@ function Units() {
     },
     [location.search, navigate],
   )
-
-  useEffect(() => {
-    let active = true
-
-    async function loadMembershipRole() {
-      if (role !== 'agent') {
-        if (active) {
-          setOrganisationMembershipRole('viewer')
-        }
-        return
-      }
-
-      try {
-        const context = await fetchOrganisationSettings()
-        if (!active) return
-        setOrganisationMembershipRole(context?.membershipRole || 'viewer')
-      } catch {
-        if (active) {
-          setOrganisationMembershipRole('viewer')
-        }
-      }
-    }
-
-    void loadMembershipRole()
-    return () => {
-      active = false
-    }
-  }, [role, profile?.id])
 
   useEffect(() => {
     const params = new URLSearchParams(location.search)
@@ -1038,31 +1045,31 @@ function Units() {
 
       if (participantScopedRole && profile?.id) {
         if (isAgentRole && isPrincipalAgentView) {
-          const principalTransactions = await fetchTransactionsListSummary({
-            developmentId: filters.developmentId === 'all' ? null : filters.developmentId,
-            stage: filters.stage,
-            financeType: filters.financeType,
-            activeTransactionsOnly: true,
-          })
+          const principalTransactions = activeAgentOrganisationId && activeAgentOrganisationId !== 'all'
+            ? await fetchTransactionsListSummary({
+                organisationId: activeAgentOrganisationId,
+                developmentId: filters.developmentId === 'all' ? null : filters.developmentId,
+                stage: filters.stage,
+                financeType: filters.financeType,
+                activeTransactionsOnly: true,
+              })
+            : []
           unitsData = principalTransactions || []
-          options = (unitsData || [])
-            .map((row) => row?.development)
-            .filter((development) => development?.id && development?.name)
-            .reduce((accumulator, development) => {
-              if (!accumulator.some((item) => item.id === development.id)) {
-                accumulator.push({
-                  id: development.id,
-                  name: development.name,
-                  location: development.location || '',
-                })
-              }
-              return accumulator
-            }, [])
+          options = developmentOptionsFromRows(unitsData)
         } else {
           const agentTransactions = await fetchTransactionsByParticipantSummary({
             userId: profile.id,
             roleType: participantScopedRole,
-            organisationId: isBondRole && workspace.id && workspace.id !== 'all' ? workspace.id : '',
+            organisationId:
+              isAgentRole && activeAgentOrganisationId !== 'all'
+                ? activeAgentOrganisationId
+                : isBondRole && workspace.id && workspace.id !== 'all'
+                  ? workspace.id
+                  : '',
+            identityContext: {
+              email: profile.email || '',
+              fullName: profile.fullName || profile.full_name || profile.name || '',
+            },
           })
           unitsData = isAttorneyRole
             ? buildAttorneyDemoRows(agentTransactions || [])
@@ -1071,19 +1078,7 @@ function Units() {
               : isBondRole
                 ? buildBondDemoRows(agentTransactions || [])
                 : agentTransactions
-          options = (unitsData || [])
-            .map((row) => row?.development)
-            .filter((development) => development?.id && development?.name)
-            .reduce((accumulator, development) => {
-              if (!accumulator.some((item) => item.id === development.id)) {
-                accumulator.push({
-                  id: development.id,
-                  name: development.name,
-                  location: development.location || '',
-                })
-              }
-              return accumulator
-            }, [])
+          options = developmentOptionsFromRows(unitsData)
         }
       } else {
         if (isDeveloperWorkspaceRole) {
@@ -1091,16 +1086,14 @@ function Units() {
             unitsData = []
             options = []
           } else {
-            ;[unitsData, options] = await Promise.all([
-              fetchTransactionsListSummary({
-                organisationId: developerOrganisationId,
-                developmentId: filters.developmentId === 'all' ? null : filters.developmentId,
-                stage: filters.stage,
-                financeType: filters.financeType,
-                activeTransactionsOnly: true,
-              }),
-              fetchDevelopmentOptions({ organisationId: developerOrganisationId }),
-            ])
+            unitsData = await fetchTransactionsListSummary({
+              organisationId: developerOrganisationId,
+              developmentId: filters.developmentId === 'all' ? null : filters.developmentId,
+              stage: filters.stage,
+              financeType: filters.financeType,
+              activeTransactionsOnly: true,
+            })
+            options = developmentOptionsFromRows(unitsData)
           }
         } else {
           ;[unitsData, options] = await Promise.all([
@@ -1352,7 +1345,7 @@ function Units() {
         setLoading(false)
       }
     }
-  }, [deferredSearch, developerOrganisationId, filters, isAgentRole, isPrincipalAgentView, isAttorneyRole, isBondRole, isDeveloperWorkspaceRole, location.pathname, participantScopedRole, profile, role, workspace.id])
+  }, [activeAgentOrganisationId, deferredSearch, developerOrganisationId, filters, isAgentRole, isPrincipalAgentView, isAttorneyRole, isBondRole, isDeveloperWorkspaceRole, location.pathname, participantScopedRole, profile, role, workspace.id])
 
   useEffect(() => {
     void loadData()
@@ -1360,6 +1353,7 @@ function Units() {
 
   useEffect(() => {
     function refreshTransactions() {
+      invalidateTransactionsListCache()
       void loadData()
     }
 
@@ -1637,6 +1631,10 @@ function Units() {
   }
 
   const showInitialTransactionsLoading = loading && rows.length === 0
+
+  if (showInitialTransactionsLoading && isTransactionsRoute) {
+    return <TransactionsRouteShell />
+  }
 
   return (
     <section className="flex flex-col gap-6">

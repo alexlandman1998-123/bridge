@@ -34,7 +34,7 @@ import { useWorkspace } from '../context/WorkspaceContext'
 import useAttorneyModuleSettings from '../hooks/useAttorneyModuleSettings'
 import { filterAttorneyModuleNavigationItems } from '../lib/attorneyModuleSettings'
 import { getRoleNavItems } from '../lib/roles'
-import { normalizeOrganisationMembershipRole } from '../lib/organisationAccess'
+import { canAccessPrincipalExperience, normalizeOrganisationMembershipRole } from '../lib/organisationAccess'
 import { inferWorkspaceTypeFromAppRole } from '../constants/workspaceTypes'
 import { trackWorkspaceBrandingMetric } from '../services/observability/monitoring'
 import { filterNavigationItems } from '../auth/permissions/navigationPermissions'
@@ -497,7 +497,30 @@ function Sidebar() {
       const targetHasQuery = String(item.to || '').includes('?')
       const shouldPreloadTransactions = role === 'agent' && item.key === 'transactions'
       const preloadTransactions = shouldPreloadTransactions
-        ? () => void preloadAgentTransactionsRoute().catch(() => {})
+        ? () => {
+            const activeOrganisationId = String(
+              workspaceContext.currentWorkspace?.organisationId ||
+                workspaceContext.currentWorkspace?.organisation_id ||
+                workspaceContext.currentWorkspace?.raw?.organisation_id ||
+                workspaceContext.currentMembership?.organisationId ||
+                workspaceContext.currentMembership?.organisation_id ||
+                workspaceContext.currentWorkspace?.id ||
+                workspace.id ||
+                '',
+            ).trim()
+            void preloadAgentTransactionsRoute({
+              userId: profile?.id || '',
+              organisationId: activeOrganisationId === 'all' ? '' : activeOrganisationId,
+              identityContext: {
+                email: profile?.email || '',
+                fullName: profile?.fullName || profile?.full_name || profile?.name || '',
+              },
+              principalView: canAccessPrincipalExperience({
+                appRole: role,
+                membershipRole,
+              }),
+            }).catch(() => {})
+          }
         : undefined
       return (
         <NavLink

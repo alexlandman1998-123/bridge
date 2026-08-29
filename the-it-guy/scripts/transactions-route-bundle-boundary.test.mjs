@@ -20,6 +20,7 @@ for (const component of [
   assert.match(units, new RegExp(`const ${component} = lazy\\(`))
 }
 assert.match(units, /<Suspense fallback=\{<LoadingSkeleton/)
+assert.match(units, /return <TransactionsRouteShell \/>/)
 
 for (const query of [
   'fetchTransactionsByParticipantSummary',
@@ -28,16 +29,20 @@ for (const query of [
 ]) {
   assert.match(dataApi, new RegExp(`export(?: async)? function ${query}\\(`))
 }
-assert.match(dataApi, /from ['"]\.\/supabaseClient['"]/) 
+assert.match(dataApi, /from ['"]\.\/supabaseClient['"]/)
+assert.match(dataApi, /buyer:buyers\(id, name, phone, email\)/)
+assert.match(dataApi, /transactionIds = await resolveAccessibleTransactionIds/)
 assert.match(dataApi, /Mutations and detail prefetches are loaded only after an explicit user action/)
 assert.match(routeLoader, /loadTransactionsRouteModule\(\)/)
-assert.doesNotMatch(routeLoader, /preloadTransactionsListApi/)
+assert.match(routeLoader, /preloadTransactionsListApi/)
+assert.match(routeLoader, /Promise\.all\(\[routePromise, dataPromise\]\)/)
 
 assert.match(app, /<Suspense fallback=\{<TransactionsRouteShell \/>\}>/)
 assert.match(routeShell, /Loading transactions/)
 assert.match(routeShell, />Transactions</)
 
 assert.match(sidebar, /role === 'agent' && item\.key === 'transactions'/)
+assert.match(sidebar, /organisationId: activeOrganisationId === 'all' \? '' : activeOrganisationId/)
 assert.match(sidebar, /onMouseEnter=\{preloadTransactions\}/)
 assert.match(sidebar, /onFocus=\{preloadTransactions\}/)
 

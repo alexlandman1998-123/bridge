@@ -161,6 +161,15 @@ const BridgeCommandCenterDashboard = lazy(() => import('../components/dashboard/
 const ActivePipelineCarousel = lazy(() => import('../components/pipeline/ActivePipelineCarousel'))
 const ResidentialCommandCenterGrid = lazy(() => import('../components/residential/ResidentialDashboard').then((module) => ({ default: module.ResidentialCommandCenterGrid })))
 
+function DashboardWidgetFallback({ lines = 4, className = '' }) {
+  return (
+    <LoadingSkeleton
+      lines={lines}
+      className={`rounded-[22px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.06)] ${className}`.trim()}
+    />
+  )
+}
+
 function formatPercent(value) {
   if (!Number.isFinite(value)) {
     return '0%'
@@ -1962,6 +1971,8 @@ function Dashboard() {
     rows: [],
   })
   const [loading, setLoading] = useState(true)
+  const [secondaryLoading, setSecondaryLoading] = useState(false)
+  const [secondaryError, setSecondaryError] = useState('')
   const [error, setError] = useState('')
   const [activeWorkflowTab, setActiveWorkflowTab] = useState('finance')
   const [transactionScope, setTransactionScope] = useState('all')
@@ -1999,7 +2010,37 @@ function Dashboard() {
   const dashboardHasLoadedRef = useRef(false)
   const dashboardLoadKeyRef = useRef('')
   const agentPrivateListingLoadRef = useRef(0)
+  const dashboardSecondaryLoadRef = useRef(0)
   const agentDigitalCardFeedbackTimerRef = useRef(null)
+
+  const loadDashboardSecondaryData = useCallback((coreRows, dashboardLoadKey) => {
+    const safeRows = Array.isArray(coreRows) ? coreRows : []
+    const hasTransactions = safeRows.some((row) => row?.transaction?.id)
+    const requestId = dashboardSecondaryLoadRef.current + 1
+    dashboardSecondaryLoadRef.current = requestId
+    setSecondaryError('')
+    setSecondaryLoading(hasTransactions)
+    if (!hasTransactions) return
+
+    void import('../lib/api/dashboardSecondaryDataApi.js')
+      .then(({ enrichDashboardSummaryRows }) => enrichDashboardSummaryRows(safeRows))
+      .then((enrichedRows) => {
+        if (
+          dashboardSecondaryLoadRef.current !== requestId ||
+          dashboardLoadKeyRef.current !== dashboardLoadKey
+        ) {
+          return
+        }
+        setOverview((current) => ({ ...current, rows: enrichedRows }))
+      })
+      .catch((secondaryLoadError) => {
+        if (dashboardSecondaryLoadRef.current !== requestId) return
+        setSecondaryError(secondaryLoadError?.message || 'Detailed dashboard data is temporarily unavailable.')
+      })
+      .finally(() => {
+        if (dashboardSecondaryLoadRef.current === requestId) setSecondaryLoading(false)
+      })
+  }, [])
 
   const navigateWithTrace = useCallback(
     (to, label = 'dashboard-navigation') => {
@@ -2070,6 +2111,7 @@ function Dashboard() {
       agentDigitalCardFeedbackTimerRef.current = null
     }
     return () => {
+      dashboardSecondaryLoadRef.current += 1
       if (agentDigitalCardFeedbackTimerRef.current) {
         clearTimeout(agentDigitalCardFeedbackTimerRef.current)
       }
@@ -2186,6 +2228,9 @@ function Dashboard() {
     if (isPrincipalAgentView) {
       dashboardHasLoadedRef.current = false
       dashboardLoadKeyRef.current = ''
+      dashboardSecondaryLoadRef.current += 1
+      setSecondaryLoading(false)
+      setSecondaryError('')
       agentPrivateListingLoadRef.current += 1
       setAgentPrivateListingRows([])
       setLoading(false)
@@ -2195,6 +2240,9 @@ function Dashboard() {
     if (!isSupabaseConfigured) {
       dashboardHasLoadedRef.current = false
       dashboardLoadKeyRef.current = ''
+      dashboardSecondaryLoadRef.current += 1
+      setSecondaryLoading(false)
+      setSecondaryError('')
       agentPrivateListingLoadRef.current += 1
       setAgentPrivateListingRows([])
       setLoading(false)
@@ -2211,6 +2259,9 @@ function Dashboard() {
     if ((role === 'agent' || role === 'developer') && !currentOrganisationId) {
       dashboardHasLoadedRef.current = false
       dashboardLoadKeyRef.current = ''
+      dashboardSecondaryLoadRef.current += 1
+      setSecondaryLoading(false)
+      setSecondaryError('')
       agentPrivateListingLoadRef.current += 1
       setAgentPrivateListingRows([])
       setOverview({
@@ -2246,6 +2297,7 @@ function Dashboard() {
             developmentId: workspace.id === 'all' ? null : workspace.id,
             activeTransactionsOnly: false,
             organisationId: currentOrganisationId,
+            includeSecondaryData: false,
           })
         } else if (profile?.id) {
           if (role === 'agent') {
@@ -2258,6 +2310,14 @@ function Dashboard() {
             userId: profile.id,
             roleType,
             organisationId: role === 'agent' ? currentOrganisationId : '',
+            includeSecondaryData: false,
+            identityContext: {
+              id: profile.id,
+              userId: profile.userId,
+              email: profile.email,
+              fullName: profile.fullName || profile.full_name || profile.name,
+            },
+            actorRole: role,
           })
           if (role === 'agent') {
             agentSummaryResultCount = Array.isArray(participantRows) ? participantRows.length : 0
@@ -2293,7 +2353,7 @@ function Dashboard() {
           ? getScopedDashboardTransactions(filteredRows, { organisationId: currentOrganisationId })
           : filteredRows
 
-        setOverview({
+        const coreOverview = {
           metrics: {
             totalDevelopments: new Set(
               filteredRows.map((row) => row?.development?.id || row?.unit?.development_id).filter(Boolean),
@@ -2313,9 +2373,11 @@ function Dashboard() {
           },
           developmentSummaries: [],
           rows: filteredRows,
-        })
+        }
+        setOverview(coreOverview)
         dashboardHasLoadedRef.current = true
         dashboardLoadKeyRef.current = dashboardLoadKey
+        loadDashboardSecondaryData(filteredRows, dashboardLoadKey)
         if (shouldLoadAgentPrivateListings) {
           const privateListingLoadId = agentPrivateListingLoadRef.current + 1
           agentPrivateListingLoadRef.current = privateListingLoadId
@@ -2341,10 +2403,12 @@ function Dashboard() {
         const data = await fetchDashboardOverview({
           developmentId: workspace.id === 'all' ? null : workspace.id,
           organisationId: role === 'developer' ? developerDashboardOrganisationId : null,
+          includeSecondaryData: false,
         })
         setOverview(data)
         dashboardHasLoadedRef.current = true
         dashboardLoadKeyRef.current = dashboardLoadKey
+        loadDashboardSecondaryData(data?.rows || [], dashboardLoadKey)
       }
     } catch (loadError) {
       if (agentSummaryTrace) agentSummaryOutcome = 'failed'
@@ -2372,7 +2436,7 @@ function Dashboard() {
       markRouteMilestone('core_ready', location.pathname)
       markRouteMilestone('interactive_ready', location.pathname)
     }
-  }, [currentMembership?.id, currentMembership?.userId, currentOrganisationId, developerDashboardOrganisationId, isPrincipalAgentView, location.pathname, organisationLoading, profile?.email, profile?.id, profile?.userId, role, workspace.id])
+  }, [currentMembership?.id, currentMembership?.userId, currentOrganisationId, developerDashboardOrganisationId, isPrincipalAgentView, loadDashboardSecondaryData, location.pathname, organisationLoading, profile?.email, profile?.fullName, profile?.full_name, profile?.id, profile?.name, profile?.userId, role, workspace.id])
 
   useEffect(() => {
     void loadDashboard()
@@ -4716,7 +4780,8 @@ function renderActiveTransactionsBlock({
     const pipelineValue = activeTransactionCards.reduce((sum, item) => sum + Number(item?.dealValue || 0), 0)
 
     return (
-      <ActivePipelineCarousel
+      <Suspense fallback={<DashboardWidgetFallback lines={5} />}>
+        <ActivePipelineCarousel
         title={title}
         subtitle={description === 'Live deal execution progress by unit and stage.' ? 'Track your active deals and progress.' : description}
         mode="residential_sales"
@@ -4733,7 +4798,7 @@ function renderActiveTransactionsBlock({
           onAction: () => navigateWithTrace(`${transactionsListPath}${transactionsListQuery}`, 'dashboard-to-transactions-list'),
         }}
         viewAllLabel="View all transactions"
-        emptyState={(
+          emptyState={(
           <div className="rounded-[20px] border border-dashed border-[#d8e2ee] bg-white px-6 py-10 text-center">
             <h4 className="text-[1rem] font-semibold tracking-[-0.02em] text-[#1d3146]">No active transactions yet.</h4>
             <p className="mt-2 text-sm leading-6 text-[#6b7d93]">{emptyText}</p>
@@ -4747,8 +4812,9 @@ function renderActiveTransactionsBlock({
               </button>
             ) : null}
           </div>
-        )}
-      />
+          )}
+        />
+      </Suspense>
     )
   }
 
@@ -5116,6 +5182,16 @@ function renderActiveTransactionsBlock({
 
       {error ? <p className="rounded-[16px] border border-[#f3d2cc] bg-[#fef3f2] px-5 py-4 text-sm text-[#b42318]">{error}</p> : null}
       {loading ? <LoadingSkeleton lines={8} className="rounded-[22px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.06)]" /> : null}
+      {!loading && secondaryLoading ? (
+        <p className="mb-2 inline-flex w-fit items-center rounded-full border border-[#d9e7fb] bg-[#f8fbff] px-3 py-1.5 text-xs font-semibold text-[#617a94]" role="status">
+          Updating detailed workflow data…
+        </p>
+      ) : null}
+      {!loading && secondaryError ? (
+        <p className="mb-2 rounded-[14px] border border-[#f1dfb8] bg-[#fffbeb] px-4 py-3 text-sm text-[#8a641f]">
+          Core dashboard data is ready. {secondaryError}
+        </p>
+      ) : null}
 
       {!loading && isSupabaseConfigured ? (
         <>
@@ -5127,11 +5203,13 @@ function renderActiveTransactionsBlock({
           ) : null}
 
           {!isRoleScopedDashboard && !isDeveloperRole ? (
-            <BridgeCommandCenterDashboard
-              rows={rows}
-              profile={profile}
-              onNavigate={(target) => navigate(target)}
-            />
+            <Suspense fallback={<DashboardWidgetFallback lines={6} className="mt-6" />}>
+              <BridgeCommandCenterDashboard
+                rows={rows}
+                profile={profile}
+                onNavigate={(target) => navigate(target)}
+              />
+            </Suspense>
           ) : null}
 
           {!isAgentRole && !isAttorneyRole && !isBondRole && isRoleScopedDashboard ? (
@@ -5179,28 +5257,30 @@ function renderActiveTransactionsBlock({
                       />
                     </div>
 
-                    <ResidentialCommandCenterGrid
-                      model={agentResidentialModel}
-                      scope="agent"
-                      mode={residentialMode}
-                      kpiIcons={[ArrowRightLeft, Building2, Banknote, TrendingUp, Users]}
-                      organisationId={organisationIdForAppointments}
-                      userId={String(profile?.id || '').trim()}
-                      userEmail={String(profile?.email || '').trim()}
-                      includeAllAppointments={false}
-                      canManageAppointments={false}
-                      appointmentRefreshKey={`${organisationIdForAppointments}:${String(profile?.id || profile?.email || '').trim()}:${agentAppointmentSummary.rows.length}:${residentialMode}:${residentialDateRange}`}
-                      commissionTracker={agentCommissionTracker}
-                      onViewTransactions={() => navigate('/transactions')}
-                      onOpenTransaction={(record) => {
-                        if (record?.id) navigate(`/transactions/${record.id}`)
-                      }}
-                      onViewCalendar={() => navigate('/pipeline/calendar')}
-                      onOpenCalendar={() => navigate('/pipeline/calendar')}
-                      onManageAppointment={() => navigate('/pipeline/calendar')}
-                      onOpenAppointment={() => navigate('/pipeline/calendar')}
-                      onScheduleAppointment={() => navigate('/pipeline/calendar')}
-                    />
+                    <Suspense fallback={<DashboardWidgetFallback lines={6} />}>
+                      <ResidentialCommandCenterGrid
+                        model={agentResidentialModel}
+                        scope="agent"
+                        mode={residentialMode}
+                        kpiIcons={[ArrowRightLeft, Building2, Banknote, TrendingUp, Users]}
+                        organisationId={organisationIdForAppointments}
+                        userId={String(profile?.id || '').trim()}
+                        userEmail={String(profile?.email || '').trim()}
+                        includeAllAppointments={false}
+                        canManageAppointments={false}
+                        appointmentRefreshKey={`${organisationIdForAppointments}:${String(profile?.id || profile?.email || '').trim()}:${agentAppointmentSummary.rows.length}:${residentialMode}:${residentialDateRange}`}
+                        commissionTracker={agentCommissionTracker}
+                        onViewTransactions={() => navigate('/transactions')}
+                        onOpenTransaction={(record) => {
+                          if (record?.id) navigate(`/transactions/${record.id}`)
+                        }}
+                        onViewCalendar={() => navigate('/pipeline/calendar')}
+                        onOpenCalendar={() => navigate('/pipeline/calendar')}
+                        onManageAppointment={() => navigate('/pipeline/calendar')}
+                        onOpenAppointment={() => navigate('/pipeline/calendar')}
+                        onScheduleAppointment={() => navigate('/pipeline/calendar')}
+                      />
+                    </Suspense>
                   </div>
                 </section>
               ) : null}
@@ -6181,7 +6261,9 @@ function renderActiveTransactionsBlock({
               ) : null}
             </>
           ) : isAttorneyRole ? (
-            <ConveyancerDashboardPage rows={rows} profileEmail={profile?.email || ''} />
+            <Suspense fallback={<DashboardWidgetFallback lines={6} className="mt-6" />}>
+              <ConveyancerDashboardPage rows={rows} profileEmail={profile?.email || ''} />
+            </Suspense>
           ) : isBondRole ? (
             <>
               <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>

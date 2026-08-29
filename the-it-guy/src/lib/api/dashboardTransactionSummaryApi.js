@@ -86,6 +86,11 @@ const TRANSACTION_SUMMARY_SELECT_CLAUSE =
 const TRANSACTION_SUMMARY_FALLBACK_SELECT_CLAUSE =
   'id, organisation_id, bond_workspace_id, development_id, unit_id, buyer_id, finance_type, purchaser_type, purchase_price, sales_price, cash_amount, bond_amount, deposit_amount, reservation_required, reservation_amount, reservation_amount_type, reservation_treatment, reservation_payable_to, alteration_charge_treatment, onboarding_status, stage, attorney, bond_originator, next_action, updated_at, created_at'
 
+const DASHBOARD_CORE_TRANSACTION_SELECT_CLAUSE =
+  'id, organisation_id, assigned_branch_id, lifecycle_state, matter_number, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, property_description, sales_price, purchase_price, finance_type, purchaser_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, next_action, comment, expected_transfer_date, finance_status, attorney_stage, risk_status, operational_state, missing_documents_count, uploaded_documents_count, total_required_documents, gross_commission_percentage, gross_commission_amount, agent_commission_amount, agency_commission_amount, registered_at, completed_at, archived_at, cancelled_at, last_meaningful_activity_at, updated_at, created_at, is_active'
+const DASHBOARD_CORE_TRANSACTION_FALLBACK_SELECT_CLAUSE =
+  'id, organisation_id, development_id, unit_id, buyer_id, finance_type, purchaser_type, purchase_price, sales_price, stage, attorney, bond_originator, next_action, updated_at, created_at'
+
 const TRANSACTION_SUMMARY_OPTIONAL_COLUMNS = [
   'matter_number',
   'transaction_reference',
@@ -399,8 +404,13 @@ async function fetchDirectParticipantRowsByIdentity(
       'transaction_id',
       'role_type',
       ...(includeStatus ? ['status', 'removed_at'] : []),
+      ...(normalizedOrganisationId ? ['transaction:transactions!inner(organisation_id)'] : []),
     ].join(', ')
-    return client.from('transaction_participants').select(selectFields).eq(identityColumn, identityValue)
+    let builder = client.from('transaction_participants').select(selectFields).eq(identityColumn, identityValue)
+    if (normalizedOrganisationId) {
+      builder = builder.eq('transaction.organisation_id', normalizedOrganisationId)
+    }
+    return builder
   }
 
   const runWithSchemaFallback = async () => {
@@ -416,7 +426,7 @@ async function fetchDirectParticipantRowsByIdentity(
 
   const query = await runWithSchemaFallback()
   if (query.error && !isMissingSchemaError(query.error)) throw query.error
-  return { rows: query.data || [], requiresOrganisationFilter: Boolean(normalizedOrganisationId) }
+  return { rows: query.data || [], requiresOrganisationFilter: false }
 }
 
 async function filterTransactionIdsToOrganisation(client, transactionIds = [], organisationId = '') {
@@ -1248,15 +1258,32 @@ async function fetchActiveTransactionIdsForOrganisation(client, organisationId =
   return (query.data || []).filter((row) => row?.id && row?.is_active !== false).map((row) => row.id)
 }
 
-async function getAccessibleTransactionIdsForUser({ userId, roleType = null, organisationId = '' } = {}) {
+async function getAccessibleTransactionIdsForUser({
+  userId,
+  roleType = null,
+  organisationId = '',
+  identityContext = null,
+  actorRole = null,
+} = {}) {
   const client = requireClient()
   if (!userId) return []
 
   const normalizedRole = roleType ? normalizeRoleType(roleType) : null
   const normalizedOrganisationId = String(organisationId || '').trim()
+  const suppliedIdentity = identityContext && typeof identityContext === 'object'
+    ? {
+        userId: identityContext.userId || identityContext.id || userId,
+        email: normalizeEmailAddress(identityContext.email),
+        fullName: normalizeTextValue(
+          identityContext.fullName || identityContext.full_name || identityContext.name,
+        ),
+      }
+    : null
   const [identity, actorProfile] = await Promise.all([
-    resolveProfileIdentityByUserId(client, userId),
-    resolveActiveProfileContext(client),
+    suppliedIdentity ? Promise.resolve(suppliedIdentity) : resolveProfileIdentityByUserId(client, userId),
+    actorRole
+      ? Promise.resolve({ userId, role: normalizeRoleType(actorRole), firmId: null, firmRole: null })
+      : resolveActiveProfileContext(client),
   ])
 
   if (normalizeRoleType(actorProfile.role) === 'internal_admin') {
@@ -1803,7 +1830,7 @@ async function enrichRowsWithBondIntakeContext(rows = []) {
 async function fetchTransactionSummaryRowsByIds(
   client,
   transactionIds = [],
-  { organisationId = '', roleType = null } = {},
+  { organisationId = '', roleType = null, includeSecondaryData = true } = {},
 ) {
   const fetchStartedAt = Date.now()
   const ids = [...new Set((transactionIds || []).filter(Boolean))]
@@ -1815,7 +1842,11 @@ async function fetchTransactionSummaryRowsByIds(
 
   let transactionsBuilder = client
     .from('transactions')
-    .select(selectWithoutKnownMissingColumns(TRANSACTION_SUMMARY_SELECT_CLAUSE))
+    .select(
+      selectWithoutKnownMissingColumns(
+        includeSecondaryData ? TRANSACTION_SUMMARY_SELECT_CLAUSE : DASHBOARD_CORE_TRANSACTION_SELECT_CLAUSE,
+      ),
+    )
     .in('id', ids)
   if (filterWorkspaceInDatabase) transactionsBuilder = transactionsBuilder.eq(workspaceScopeColumn, normalizedOrganisationId)
   let transactionsQuery = await transactionsBuilder
@@ -1825,7 +1856,13 @@ async function fetchTransactionSummaryRowsByIds(
     registerKnownMissingColumns(transactionsQuery.error, TRANSACTION_SUMMARY_OPTIONAL_COLUMNS)
     let fallbackBuilder = client
       .from('transactions')
-      .select(selectWithoutKnownMissingColumns(TRANSACTION_SUMMARY_FALLBACK_SELECT_CLAUSE))
+      .select(
+        selectWithoutKnownMissingColumns(
+          includeSecondaryData
+            ? TRANSACTION_SUMMARY_FALLBACK_SELECT_CLAUSE
+            : DASHBOARD_CORE_TRANSACTION_FALLBACK_SELECT_CLAUSE,
+        ),
+      )
       .in('id', ids)
     if (filterWorkspaceInDatabase) fallbackBuilder = fallbackBuilder.eq(workspaceScopeColumn, normalizedOrganisationId)
     transactionsQuery = await fallbackBuilder
@@ -1857,7 +1894,7 @@ async function fetchTransactionSummaryRowsByIds(
   const unitIds = [...new Set(transactionRows.map((item) => item?.unit_id).filter(Boolean))]
   const developmentIds = [...new Set(transactionRows.map((item) => item?.development_id).filter(Boolean))]
   const [buyersQuery, unitsQuery] = await Promise.all([
-    buyerIds.length ? client.from('buyers').select('id, name, phone, email').in('id', buyerIds) : Promise.resolve({ data: [], error: null }),
+    buyerIds.length ? client.from('buyers').select('id, name, email').in('id', buyerIds) : Promise.resolve({ data: [], error: null }),
     unitIds.length ? client.from('units').select('id, development_id, unit_number, phase, price, status').in('id', unitIds) : Promise.resolve({ data: [], error: null }),
   ])
   if (buyersQuery.error && !isMissingSchemaError(buyersQuery.error)) throw buyersQuery.error
@@ -1910,6 +1947,20 @@ async function fetchTransactionSummaryRowsByIds(
     })
     .sort((a, b) => new Date(latestTimestamp(b) || 0) - new Date(latestTimestamp(a) || 0))
 
+  if (!includeSecondaryData) {
+    const coreRows = rows.map((row) => ({
+      ...row,
+      documentSummary: {
+        uploadedCount: Number(row?.transaction?.uploaded_documents_count || 0),
+        totalRequired: Number(row?.transaction?.total_required_documents || 0),
+        missingCount: Number(row?.transaction?.missing_documents_count || 0),
+      },
+    }))
+    return normalizedOrganisationId && normalizedRoleType === 'bond_originator'
+      ? coreRows.filter((row) => rowMatchesBondWorkspaceScope(row, normalizedOrganisationId))
+      : coreRows
+  }
+
   const enrichmentStartedAt = Date.now()
   const commissionRows = await hydrateRowsWithCommissionSnapshots(client, rows)
   const enrichedRows = await enrichRowsWithBondIntakeContext(commissionRows)
@@ -1933,13 +1984,22 @@ function pruneParticipantSummaryResultCache(now = Date.now()) {
   }
 }
 
-export async function fetchTransactionsByParticipantSummary({ userId, roleType = null, organisationId = '' } = {}) {
+export async function fetchTransactionsByParticipantSummary({
+  userId,
+  roleType = null,
+  organisationId = '',
+  includeSecondaryData = true,
+  identityContext = null,
+  actorRole = null,
+} = {}) {
   const normalizedOrganisationId = String(organisationId || '').trim()
   const normalizedRoleType = roleType ? normalizeRoleType(roleType) : ''
   const requestKey = JSON.stringify({
     userId: String(userId || ''),
     roleType: normalizedRoleType,
     organisationId: normalizedOrganisationId,
+    includeSecondaryData,
+    actorRole: normalizeRoleType(actorRole || ''),
   })
   const now = Date.now()
   pruneParticipantSummaryResultCache(now)
@@ -1981,6 +2041,8 @@ export async function fetchTransactionsByParticipantSummary({ userId, roleType =
       userId,
       roleType,
       organisationId: normalizedOrganisationId,
+      identityContext,
+      actorRole,
     })
     timer.mark('resolve_access_end', { transactionCount: transactionIds.length })
     bondPerfLog('resolve-access', accessStartedAt, {
@@ -1993,6 +2055,7 @@ export async function fetchTransactionsByParticipantSummary({ userId, roleType =
     const rows = await fetchTransactionSummaryRowsByIds(client, transactionIds, {
       organisationId: normalizedOrganisationId,
       roleType,
+      includeSecondaryData,
     })
     timer.mark('transaction_summary_fetch_end', { rowCount: rows.length })
     participantSummaryResultCache.set(requestKey, {
@@ -2017,6 +2080,7 @@ export async function fetchTransactionsListSummary({
   stage = 'all',
   financeType = 'all',
   activeTransactionsOnly = true,
+  includeSecondaryData = true,
 } = {}) {
   const normalizedOrganisationId = String(organisationId || '').trim()
   const timer = createPerfTimer('api.fetchTransactionsListSummary', {
@@ -2140,9 +2204,55 @@ export async function fetchTransactionsListSummary({
   })
 
   if (stage !== 'all') rows = rows.filter((row) => row.stage === stage)
-  rows = await hydrateRowsWithCommissionSnapshots(client, rows)
-  rows = await enrichRowsWithBondIntakeContext(rows)
+  if (includeSecondaryData) {
+    rows = await hydrateRowsWithCommissionSnapshots(client, rows)
+    rows = await enrichRowsWithBondIntakeContext(rows)
+  }
   rows.sort((left, right) => new Date(latestTimestamp(right) || 0) - new Date(latestTimestamp(left) || 0))
   timer.end({ rowCount: rows.length })
   return rows
+}
+
+const dashboardSecondaryRequests = new Map()
+const dashboardSecondaryCache = new Map()
+const DASHBOARD_SECONDARY_CACHE_TTL_MS = 90 * 1000
+
+export async function enrichDashboardSummaryRows(rows = []) {
+  const safeRows = Array.isArray(rows) ? rows : []
+  const transactionRows = safeRows.filter((row) => row?.transaction?.id)
+  if (!transactionRows.length) return safeRows
+
+  const requestKey = transactionRows
+    .map((row) => `${row.transaction.id}:${row.transaction.updated_at || row.transaction.created_at || ''}`)
+    .sort()
+    .join('|')
+  const now = Date.now()
+  const cached = dashboardSecondaryCache.get(requestKey)
+  if (cached?.expiresAt > now) return cached.rows
+  if (dashboardSecondaryRequests.has(requestKey)) return dashboardSecondaryRequests.get(requestKey)
+
+  const request = (async () => {
+    const client = requireClient()
+    const commissionRows = await hydrateRowsWithCommissionSnapshots(client, transactionRows)
+    const enrichedTransactionRows = await enrichRowsWithBondIntakeContext(commissionRows)
+    const enrichedById = new Map(
+      enrichedTransactionRows.map((row) => [String(row?.transaction?.id || ''), row]),
+    )
+    const enrichedRows = safeRows.map((row) => {
+      const transactionId = String(row?.transaction?.id || '')
+      return transactionId ? enrichedById.get(transactionId) || row : row
+    })
+    dashboardSecondaryCache.set(requestKey, {
+      rows: enrichedRows,
+      expiresAt: Date.now() + DASHBOARD_SECONDARY_CACHE_TTL_MS,
+    })
+    return enrichedRows
+  })()
+
+  dashboardSecondaryRequests.set(requestKey, request)
+  try {
+    return await request
+  } finally {
+    if (dashboardSecondaryRequests.get(requestKey) === request) dashboardSecondaryRequests.delete(requestKey)
+  }
 }

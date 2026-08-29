@@ -1,5 +1,5 @@
 import { AlertTriangle, ArrowLeft, ArrowUpRight, Bath, BedDouble, Bold, Bookmark, Box, Building2, CalendarDays, Car, Check, CheckCircle2, CheckSquare, ChevronDown, ChevronRight, Clock3, Columns3, Copy, Download, ExternalLink, Eye, FileText, Filter, Gauge, Home, ImageIcon, Italic, Link2, List, Lock, Mail, MapPin, MessageCircle, MoreHorizontal, Paperclip, Pencil, Phone, Plus, RefreshCw, Ruler, Search, Send, Settings, ShieldCheck, Smile, Star, Table2, Tag, Trash2, TrendingUp, Upload, UserRound, X, Zap } from 'lucide-react'
-import { Suspense, createElement, lazy, useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
+import { Suspense, createElement, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import LoadingSkeleton from '../../components/LoadingSkeleton'
 import JourneyStageOverrideActions from '../../components/journey/JourneyStageOverrideActions'
@@ -11585,7 +11585,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const draggingPipelineCardRef = useRef('')
   const [leadWorkspaceTab, setLeadWorkspaceTab] = useState('overview')
   const [pendingBuyerWorkspaceTab, setPendingBuyerWorkspaceTab] = useState('')
-  const [isBuyerWorkspaceTabTransitionPending, startBuyerWorkspaceTabTransition] = useTransition()
   const [buyerJourneyActionStage, setBuyerJourneyActionStage] = useState(BUYER_PROCESS_STAGE_KEYS.qualified)
   const [leadFilter, setLeadFilter] = useState(DEFAULT_LEAD_FILTER)
   const [leadTablePage, setLeadTablePage] = useState(1)
@@ -15143,8 +15142,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     setLeadWorkspaceTab('overview')
   }, [hasExplicitLeadWorkspaceTab, routeLeadId, selectedLeadIsSeller])
 
-	  const handleLeadWorkspaceTabSelection = useCallback((tabKey) => {
-	    const nextTab = normalizeLeadWorkspaceTabKey(tabKey) || 'overview'
+  const handleLeadWorkspaceTabSelection = useCallback((tabKey) => {
+    const nextTab = normalizeLeadWorkspaceTabKey(tabKey) || 'overview'
       if (selectedLeadIsSeller) {
         setLeadWorkspaceTab(nextTab)
         if (isLeadWorkspaceRoute) replaceLeadWorkspaceTabInUrl(nextTab)
@@ -15159,12 +15158,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
       captureRouteLeadWorkspaceScroll()
       setPendingBuyerWorkspaceTab(nextTab)
+      setLeadWorkspaceTab(nextTab)
       void preloadAgencyLeadWorkspaceTab(nextTab)
       if (isLeadWorkspaceRoute) replaceLeadWorkspaceTabInUrl(nextTab)
-      startBuyerWorkspaceTabTransition(() => {
-        setLeadWorkspaceTab(nextTab)
-      })
-	  }, [captureRouteLeadWorkspaceScroll, isLeadWorkspaceRoute, leadWorkspaceTab, selectedLeadIsSeller])
+  }, [captureRouteLeadWorkspaceScroll, isLeadWorkspaceRoute, leadWorkspaceTab, selectedLeadIsSeller])
 
   useEffect(() => {
     if (selectedLeadIsSeller || !pendingBuyerWorkspaceTab) return
@@ -15174,7 +15171,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }, [leadWorkspaceTab, pendingBuyerWorkspaceTab, restoreRouteLeadWorkspaceScroll, selectedLeadIsSeller])
 
   const buyerWorkspaceVisualTab = pendingBuyerWorkspaceTab || resolveBuyerWorkspaceTabKey(leadWorkspaceTab)
-  const buyerWorkspaceTabIsSettling = Boolean(pendingBuyerWorkspaceTab) || isBuyerWorkspaceTabTransitionPending
+  const buyerWorkspaceTabIsSettling = Boolean(pendingBuyerWorkspaceTab)
 
   const selectedLeadFinanceIntelligenceSource = useMemo(() => ({
     transaction: selectedLeadLinkedTransaction?.transaction || selectedLeadLinkedTransaction || {

@@ -32,7 +32,16 @@ import {
   isCommercialProfessionalMember,
 } from './lib/commercialAccess'
 import { BUSINESS_WORKSPACES, resolveBusinessWorkspaceRoute } from './lib/businessWorkspaceAccess'
-import { RENTAL_MODULES, resolveRentalModuleAvailability } from './services/rentals/rentalModuleAvailability'
+import {
+  RENTAL_MODULES,
+  RentalApplicationsPage,
+  RentalListingCreatePage,
+  RentalListingDetailPage,
+  RentalListingsPage,
+  RentalModuleBoundary,
+  RentalTenanciesPage,
+  resolveRentalModuleAvailability,
+} from './modules/rentals'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import TransactionsRouteShell from './components/transactions/TransactionsRouteShell'
 import { loadTransactionsRouteModule } from './routes/transactionsRouteLoader'
@@ -238,11 +247,6 @@ const Auth = lazy(() => import('./pages/Auth'))
 const AuthCallback = lazy(() => import('./pages/AuthCallback'))
 const ResetPassword = lazy(() => import('./pages/ResetPassword'))
 const Arch9LaunchConcierge = lazy(() => import('./pages/Arch9LaunchConcierge'))
-const RentalApplicationsPage = lazy(() => import('./pages/rentals/RentalApplicationsPage'))
-const RentalListingCreatePage = lazy(() => import('./pages/rentals/RentalListingCreatePage'))
-const RentalListingDetailPage = lazy(() => import('./pages/rentals/RentalListingDetailPage'))
-const RentalListingsPage = lazy(() => import('./pages/rentals/RentalListingsPage'))
-const RentalTenanciesPage = lazy(() => import('./pages/rentals/RentalTenanciesPage'))
 const BridgeAgentsPage = lazyNamed(() => import('./pages/BridgeLanding'), 'BridgeAgentsPage')
 const BridgeAboutPage = lazyNamed(() => import('./pages/BridgeLanding'), 'BridgeAboutPage')
 const BridgeBuyPage = lazyNamed(() => import('./pages/BridgeLanding'), 'BridgeBuyPage')
@@ -1315,7 +1319,7 @@ function RentalWorkspacePlaceholder({ title, description }) {
 
 function RentalModuleGate({ moduleId = RENTAL_MODULES.dashboard, children }) {
   const availability = resolveRentalModuleAvailability(getFeatureFlags(), moduleId)
-  if (availability.enabled) return children
+  if (availability.enabled) return <RentalModuleBoundary>{children}</RentalModuleBoundary>
   return (
     <RentalWorkspacePlaceholder
       title={availability.title}

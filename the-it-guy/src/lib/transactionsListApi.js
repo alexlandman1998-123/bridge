@@ -4,14 +4,19 @@ import { supabase } from './supabaseClient'
 
 const SELECT = 'id, organisation_id, owner_user_id, matter_number, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, suburb, city, property_description, sales_price, purchase_price, finance_type, purchaser_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, next_action, expected_transfer_date, finance_status, attorney_stage, risk_status, operational_state, missing_documents_count, uploaded_documents_count, total_required_documents, updated_at, created_at, is_active'
 const FALLBACK_SELECT = 'id, organisation_id, development_id, unit_id, buyer_id, finance_type, purchaser_type, purchase_price, sales_price, stage, attorney, bond_originator, next_action, updated_at, created_at'
+const SUMMARY_RELATIONS = 'buyer:buyers(id, name, phone, email), unit:units(id, development_id, unit_number, phase, price, status, development:developments(id, name, location)), development:developments(id, name, location)'
+const SUMMARY_SELECT = `${SELECT}, ${SUMMARY_RELATIONS}`
+const SUMMARY_FALLBACK_SELECT = `${FALLBACK_SELECT}, ${SUMMARY_RELATIONS}`
 const TTL_MS = 60_000
 const cache = new Map()
 const inflight = new Map()
+let cacheGeneration = 0
 
 const text = (value) => String(value || '').trim()
 const comparable = (value) => text(value).toLowerCase()
-const missingSchema = (error) => ['42P01', '42703', 'PGRST204'].includes(text(error?.code).toUpperCase()) || comparable(error?.message).includes('does not exist') || comparable(error?.message).includes('schema cache')
-const index = (rows) => Object.fromEntries((rows || []).filter((row) => row?.id).map((row) => [row.id, row]))
+const missingSchema = (error) => ['42P01', '42703', 'PGRST200', 'PGRST204', 'PGRST205'].includes(text(error?.code).toUpperCase()) || comparable(error?.message).includes('does not exist') || comparable(error?.message).includes('schema cache')
+const missingColumn = (error, column) => missingSchema(error) && comparable(error?.message).includes(comparable(column))
+const one = (value) => Array.isArray(value) ? value[0] || null : value || null
 
 function stageFor(stage, status = 'Available') {
   const primary = normalizeStageLabel(stage)
@@ -25,100 +30,256 @@ function mainStageFor(mainStage, stage) {
   return MAIN_PROCESS_STAGES.includes(normalized) ? normalized : getMainStageFromDetailedStage(stage)
 }
 
-async function cached(key, loader) {
+async function cached(key, loader, { forceRefresh = false } = {}) {
   const hit = cache.get(key)
-  if (hit?.expiresAt > Date.now()) return hit.rows
+  if (!forceRefresh && hit?.expiresAt > Date.now()) return hit.rows
   if (inflight.has(key)) return inflight.get(key)
+  const requestGeneration = cacheGeneration
   const request = loader().then((rows) => {
-    cache.set(key, { rows, expiresAt: Date.now() + TTL_MS })
+    if (requestGeneration === cacheGeneration) {
+      cache.set(key, { rows, expiresAt: Date.now() + TTL_MS })
+    }
     return rows
-  }).finally(() => inflight.delete(key))
+  }).finally(() => {
+    if (inflight.get(key) === request) inflight.delete(key)
+  })
   inflight.set(key, request)
   return request
 }
 
-async function transactionRows({ developmentId = null, organisationId = '' } = {}) {
-  let query = supabase.from('transactions').select(SELECT)
+function normalizedIdentity(identityContext = {}) {
+  return {
+    email: comparable(identityContext.email),
+    fullName: text(identityContext.fullName || identityContext.full_name || identityContext.name),
+  }
+}
+
+function participantCacheKey(options = {}) {
+  const identity = normalizedIdentity(options.identityContext)
+  return `participant:${text(options.userId)}:${comparable(options.roleType)}:${text(options.organisationId)}:${identity.email}:${comparable(identity.fullName)}`
+}
+
+function listCacheKey(options = {}) {
+  return `list:${JSON.stringify({
+    organisationId: text(options.organisationId),
+    developmentId: options.developmentId || null,
+    stage: options.stage || 'all',
+    financeType: options.financeType || 'all',
+    activeTransactionsOnly: options.activeTransactionsOnly !== false,
+  })}`
+}
+
+async function resolveIdentity(client, userId, identityContext = {}) {
+  const supplied = normalizedIdentity(identityContext)
+  if (supplied.email || supplied.fullName) return supplied
+  const result = await client.from('profiles').select('email, full_name').eq('id', userId).maybeSingle()
+  if (result.error && !missingSchema(result.error)) throw result.error
+  return normalizedIdentity(result.data || {})
+}
+
+async function participantTransactionIds(client, { identityColumn, identityValue, roleType, organisationId }) {
+  if (!identityColumn || !identityValue) return []
+  const relation = organisationId ? ', transaction:transactions!inner(organisation_id)' : ''
+  const run = async (includeStatus = true) => {
+    let query = client
+      .from('transaction_participants')
+      .select(`transaction_id, role_type${includeStatus ? ', status, removed_at' : ''}${relation}`)
+      .eq(identityColumn, identityValue)
+    if (roleType) query = query.eq('role_type', roleType)
+    if (organisationId) query = query.eq('transaction.organisation_id', organisationId)
+    return query
+  }
+  let result = await run(true)
+  if (result.error && (missingColumn(result.error, 'status') || missingColumn(result.error, 'removed_at'))) {
+    result = await run(false)
+  }
+  if (result.error) {
+    if (missingSchema(result.error)) return []
+    throw result.error
+  }
+  return (result.data || [])
+    .filter((row) => !row?.removed_at && comparable(row?.status || 'active') !== 'removed')
+    .map((row) => row?.transaction_id)
+    .filter(Boolean)
+}
+
+async function assignedTransactionIds(client, { column, value, organisationId, comparison = 'eq' }) {
+  if (!column || !value) return []
+  let query = client.from('transactions').select('id')
+  if (organisationId) query = query.eq('organisation_id', organisationId)
+  query = comparison === 'ilike' ? query.ilike(column, value) : query.eq(column, value)
+  const result = await query
+  if (result.error) {
+    if (missingSchema(result.error)) return []
+    throw result.error
+  }
+  return (result.data || []).map((row) => row?.id).filter(Boolean)
+}
+
+async function resolveAccessibleTransactionIds(client, {
+  userId,
+  roleType = null,
+  organisationId = '',
+  identityContext = {},
+} = {}) {
+  const role = comparable(roleType)
+  const scopedOrganisationId = text(organisationId)
+  if (!userId || (role === 'agent' && !scopedOrganisationId)) return []
+
+  const byUserPromise = participantTransactionIds(client, {
+    identityColumn: 'user_id',
+    identityValue: userId,
+    roleType: role,
+    organisationId: scopedOrganisationId,
+  })
+  const identity = await resolveIdentity(client, userId, identityContext)
+  const assignmentColumns = {
+    agent: { email: 'assigned_agent_email', name: 'assigned_agent' },
+    attorney: { email: 'assigned_attorney_email', name: 'attorney' },
+    bond_originator: { email: 'assigned_bond_originator_email', name: 'bond_originator' },
+  }[role] || {}
+  const idGroups = await Promise.all([
+    byUserPromise,
+    participantTransactionIds(client, {
+      identityColumn: 'participant_email',
+      identityValue: identity.email,
+      roleType: role,
+      organisationId: scopedOrganisationId,
+    }),
+    assignedTransactionIds(client, {
+      column: 'owner_user_id',
+      value: userId,
+      organisationId: scopedOrganisationId,
+    }),
+    assignedTransactionIds(client, {
+      column: assignmentColumns.email,
+      value: identity.email,
+      organisationId: scopedOrganisationId,
+      comparison: 'ilike',
+    }),
+    assignedTransactionIds(client, {
+      column: assignmentColumns.name,
+      value: identity.fullName,
+      organisationId: scopedOrganisationId,
+      comparison: 'ilike',
+    }),
+  ])
+  return [...new Set(idGroups.flat().filter(Boolean))]
+}
+
+function normalizeSummaryRows(transactions = []) {
+  return transactions.map((source) => {
+    const buyer = one(source?.buyer)
+    const rawUnit = one(source?.unit)
+    const nestedDevelopment = one(rawUnit?.development)
+    const directDevelopment = one(source?.development)
+    const unit = rawUnit ? { ...rawUnit } : null
+    if (unit) delete unit.development
+    const transaction = { ...source }
+    delete transaction.buyer
+    delete transaction.unit
+    delete transaction.development
+    const development = directDevelopment || nestedDevelopment
+    const stage = stageFor(transaction.stage, unit?.status)
+    return {
+      unit,
+      development,
+      transaction,
+      buyer,
+      stage,
+      mainStage: mainStageFor(transaction.current_main_stage, stage),
+      handover: null,
+      snagSummary: { totalCount: 0, openCount: 0, latestUpdatedAt: null, status: 'clear' },
+      onboarding: null,
+      documentSummary: {
+        uploadedCount: Number(transaction.uploaded_documents_count || 0),
+        totalRequired: Number(transaction.total_required_documents || 0),
+        missingCount: Number(transaction.missing_documents_count || 0),
+      },
+    }
+  }).sort((a, b) => new Date(b.transaction?.updated_at || b.transaction?.created_at || 0) - new Date(a.transaction?.updated_at || a.transaction?.created_at || 0))
+}
+
+async function transactionRows(client, {
+  transactionIds = null,
+  developmentId = null,
+  organisationId = '',
+  activeTransactionsOnly = true,
+} = {}) {
+  if (Array.isArray(transactionIds) && transactionIds.length === 0) return []
+  let query = client.from('transactions').select(SUMMARY_SELECT)
+  if (Array.isArray(transactionIds)) query = query.in('id', transactionIds)
   if (developmentId) query = query.eq('development_id', developmentId)
   if (organisationId) query = query.eq('organisation_id', organisationId)
+  if (activeTransactionsOnly) query = query.eq('is_active', true)
   let result = await query
   if (result.error && missingSchema(result.error)) {
-    let fallback = supabase.from('transactions').select(FALLBACK_SELECT)
+    let fallback = client.from('transactions').select(SUMMARY_FALLBACK_SELECT)
+    if (Array.isArray(transactionIds)) fallback = fallback.in('id', transactionIds)
     if (developmentId) fallback = fallback.eq('development_id', developmentId)
     if (organisationId) fallback = fallback.eq('organisation_id', organisationId)
     result = await fallback
   }
   if (result.error) throw result.error
-  return (result.data || []).filter((row) => row?.is_active !== false)
-}
-
-async function hydrate(transactions) {
-  const buyerIds = [...new Set(transactions.map((row) => row?.buyer_id).filter(Boolean))]
-  const unitIds = [...new Set(transactions.map((row) => row?.unit_id).filter(Boolean))]
-  const developmentIds = new Set(transactions.map((row) => row?.development_id).filter(Boolean))
-  const [buyerResult, unitResult] = await Promise.all([
-    buyerIds.length ? supabase.from('buyers').select('id, name, phone, email').in('id', buyerIds) : { data: [], error: null },
-    unitIds.length ? supabase.from('units').select('id, development_id, unit_number, phase, price, status').in('id', unitIds) : { data: [], error: null },
-  ])
-  if (buyerResult.error && !missingSchema(buyerResult.error)) throw buyerResult.error
-  if (unitResult.error && !missingSchema(unitResult.error)) throw unitResult.error
-  for (const unit of unitResult.data || []) if (unit.development_id) developmentIds.add(unit.development_id)
-  const developmentResult = developmentIds.size ? await supabase.from('developments').select('id, name, location').in('id', [...developmentIds]) : { data: [], error: null }
-  if (developmentResult.error && !missingSchema(developmentResult.error)) throw developmentResult.error
-  const buyers = index(buyerResult.data)
-  const units = index(unitResult.data)
-  const developments = index(developmentResult.data)
-  return transactions.map((transaction) => {
-    const unit = units[transaction.unit_id] || null
-    const development = developments[transaction.development_id || unit?.development_id] || null
-    const stage = stageFor(transaction.stage, unit?.status)
-    return { unit, development, transaction, buyer: buyers[transaction.buyer_id] || null, stage, mainStage: mainStageFor(transaction.current_main_stage, stage), handover: null, snagSummary: { totalCount: 0, openCount: 0, latestUpdatedAt: null, status: 'clear' }, onboarding: null, documentSummary: { uploadedCount: Number(transaction.uploaded_documents_count || 0), totalRequired: Number(transaction.total_required_documents || 0), missingCount: Number(transaction.missing_documents_count || 0) } }
-  }).sort((a, b) => new Date(b.transaction?.updated_at || b.transaction?.created_at || 0) - new Date(a.transaction?.updated_at || a.transaction?.created_at || 0))
+  return normalizeSummaryRows((result.data || []).filter((row) => row?.is_active !== false))
 }
 
 function filtered(rows, { stage = 'all', financeType = 'all', activeTransactionsOnly = true } = {}) {
   return rows.filter((row) => (!activeTransactionsOnly || row.transaction?.is_active !== false) && (stage === 'all' || row.stage === stage) && (financeType === 'all' || financeTypeMatchesFilter(row.transaction?.finance_type, financeType)))
 }
 
-export function preloadTransactionsListApi() {
-  return Promise.resolve()
+export function preloadTransactionsListApi({ mode = 'participant', ...options } = {}) {
+  return mode === 'organisation'
+    ? fetchTransactionsListSummary(options)
+    : fetchTransactionsByParticipantSummary(options)
+}
+
+export function invalidateTransactionsListCache() {
+  cacheGeneration += 1
+  cache.clear()
+  inflight.clear()
 }
 
 export function fetchTransactionsListSummary(options = {}) {
+  const client = options.client || supabase
   const normalized = { ...options, organisationId: text(options.organisationId) }
-  return cached(`list:${JSON.stringify(normalized)}`, async () => filtered(await hydrate(await transactionRows(normalized)), normalized))
+  return cached(
+    listCacheKey(normalized),
+    async () => filtered(await transactionRows(client, normalized), normalized),
+    { forceRefresh: options.forceRefresh === true },
+  )
 }
 
-export async function fetchTransactionsByParticipantSummary({ userId, roleType = null, organisationId = '' } = {}) {
+export async function fetchTransactionsByParticipantSummary(options = {}) {
+  const {
+    userId,
+    roleType = null,
+    organisationId = '',
+    identityContext = {},
+  } = options
   if (!userId) return []
-  return cached(`participant:${userId}:${roleType}:${organisationId}`, async () => {
-    const [profileResult, participantResult, rows] = await Promise.all([
-      supabase.from('profiles').select('id, email, full_name, role').eq('id', userId).maybeSingle(),
-      supabase.from('transaction_participants').select('transaction_id, status, removed_at').eq('user_id', userId),
-      fetchTransactionsListSummary({ organisationId, activeTransactionsOnly: true }),
-    ])
-    if (profileResult.error && !missingSchema(profileResult.error)) throw profileResult.error
-    if (participantResult.error && !missingSchema(participantResult.error)) throw participantResult.error
-    const profile = profileResult.data || { id: userId }
-    const ids = new Set((participantResult.data || []).filter((row) => !row.removed_at && comparable(row.status || 'active') !== 'removed').map((row) => row.transaction_id))
-    const role = comparable(roleType || profile.role)
-    if (['admin', 'internal_admin', 'platform_admin'].includes(role)) return rows
-    return rows.filter(({ transaction }) => {
-      if (ids.has(transaction.id) || transaction.owner_user_id === userId) return true
-      const email = comparable(profile.email)
-      const name = comparable(profile.full_name)
-      if (role === 'agent') return (email && comparable(transaction.assigned_agent_email) === email) || (name && comparable(transaction.assigned_agent) === name)
-      if (role === 'attorney') return (email && comparable(transaction.assigned_attorney_email) === email) || (name && comparable(transaction.attorney) === name)
-      if (role === 'bond_originator') return (email && comparable(transaction.assigned_bond_originator_email) === email) || (name && comparable(transaction.bond_originator) === name)
-      return false
+  const client = options.client || supabase
+  const normalized = {
+    userId,
+    roleType: comparable(roleType),
+    organisationId: text(organisationId),
+    identityContext,
+  }
+  return cached(participantCacheKey(normalized), async () => {
+    const transactionIds = await resolveAccessibleTransactionIds(client, normalized)
+    return transactionRows(client, {
+      transactionIds,
+      organisationId: normalized.organisationId,
+      activeTransactionsOnly: true,
     })
-  })
+  }, { forceRefresh: options.forceRefresh === true })
 }
 
 export async function fetchUnitsDataSummary(options = {}) {
+  const client = options.client || supabase
   const rows = await fetchTransactionsListSummary(options)
   if (options.activeTransactionsOnly) return rows
-  let query = supabase.from('units').select('id, development_id, unit_number, phase, price, status')
+  let query = client.from('units').select('id, development_id, unit_number, phase, price, status')
   if (options.developmentId) query = query.eq('development_id', options.developmentId)
   const result = await query
   if (result.error) throw result.error

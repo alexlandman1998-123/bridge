@@ -34,6 +34,10 @@ const TRANSACTION_COMMISSION_SNAPSHOTS_ENABLED = import.meta.env.VITE_ENABLE_TRA
 const knownMissingSchemaColumns = new Set()
 let transactionCommissionSnapshotsAvailable = TRANSACTION_COMMISSION_SNAPSHOTS_ENABLED
 
+function scopeQueryToUnitIds(query, unitIds = []) {
+  return query.in('unit_id', unitIds)
+}
+
 export function requireClient() {
   if (!supabase) {
     throw new Error('Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_KEY to .env.')
@@ -456,7 +460,7 @@ async function queryClientIssues(client, { unitId = null, unitIds = [] } = {}) {
     if (unitId) {
       query = query.eq('unit_id', unitId)
     } else if (unitIds.length) {
-      query = query.in('unit_id', unitIds)
+      query = scopeQueryToUnitIds(query, unitIds)
     }
 
     const result = await query
@@ -480,7 +484,7 @@ async function queryClientIssues(client, { unitId = null, unitIds = [] } = {}) {
   return { data: null, error: lastError }
 }
 
-async function fetchUnitsBase(client, developmentId = null) {
+async function fetchUnitsBase(client, developmentId = null, developmentIds = []) {
   let query = client
     .from('units')
     .select(
@@ -489,6 +493,8 @@ async function fetchUnitsBase(client, developmentId = null) {
 
   if (developmentId && developmentId !== 'all') {
     query = query.eq('development_id', developmentId)
+  } else if (developmentIds.length) {
+    query = query.in('development_id', developmentIds)
   }
 
   let result = await query.order('unit_number', { ascending: true })
@@ -507,6 +513,12 @@ async function fetchUnitsBase(client, developmentId = null) {
         .from('units')
         .select('id, development_id, unit_number, phase, price, status, development:developments(id, name)')
         .eq('development_id', developmentId)
+        .order('unit_number', { ascending: true })
+    } else if (developmentIds.length) {
+      result = await client
+        .from('units')
+        .select('id, development_id, unit_number, phase, price, status, development:developments(id, name)')
+        .in('development_id', developmentIds)
         .order('unit_number', { ascending: true })
     }
   }
@@ -528,15 +540,14 @@ async function fetchActiveTransactionsForUnitIds(client, unitIds) {
     return []
   }
 
-  const baseQuery = client
-    .from('transactions')
-    .select(
+  const baseQuery = scopeQueryToUnitIds(
+    client.from('transactions').select(
       selectWithoutKnownMissingColumns(
         'id, unit_id, buyer_id, finance_type, purchaser_type, stage, current_main_stage, current_sub_stage_summary, risk_status, sales_price, purchase_price, cash_amount, bond_amount, deposit_amount, bank, attorney, bond_originator, next_action, comment, owner_user_id, access_level, lifecycle_state, attorney_stage, operational_state, waiting_on_role, registration_date, title_deed_number, registered_at, completed_at, archived_at, cancelled_at, last_meaningful_activity_at, final_report_generated_at, updated_at, created_at',
       ),
-    )
-    .in('unit_id', unitIds)
-    .order('updated_at', { ascending: false })
+    ),
+    unitIds,
+  ).order('updated_at', { ascending: false })
 
   const withActiveFlag = await baseQuery.eq('is_active', true)
   if (!withActiveFlag.error) {
@@ -603,15 +614,14 @@ async function fetchActiveTransactionsForUnitIds(client, unitIds) {
     'final_report_generated_at',
   ])
 
-  let fallbackQuery = await client
-    .from('transactions')
-    .select(
+  let fallbackQuery = await scopeQueryToUnitIds(
+    client.from('transactions').select(
       selectWithoutKnownMissingColumns(
         'id, unit_id, buyer_id, finance_type, purchaser_type, stage, current_main_stage, current_sub_stage_summary, sales_price, purchase_price, cash_amount, bond_amount, deposit_amount, bank, attorney, bond_originator, next_action, comment, owner_user_id, access_level, lifecycle_state, attorney_stage, operational_state, waiting_on_role, registration_date, title_deed_number, registered_at, completed_at, archived_at, cancelled_at, last_meaningful_activity_at, final_report_generated_at, updated_at, created_at',
       ),
-    )
-    .in('unit_id', unitIds)
-    .order('updated_at', { ascending: false })
+    ),
+    unitIds,
+  ).order('updated_at', { ascending: false })
 
   if (
     fallbackQuery.error &&
@@ -666,13 +676,12 @@ async function fetchActiveTransactionsForUnitIds(client, unitIds) {
       'last_meaningful_activity_at',
       'final_report_generated_at',
     ])
-    fallbackQuery = await client
-      .from('transactions')
-      .select(
+    fallbackQuery = await scopeQueryToUnitIds(
+      client.from('transactions').select(
         'id, unit_id, buyer_id, finance_type, stage, attorney, bond_originator, next_action, updated_at, created_at',
-      )
-      .in('unit_id', unitIds)
-      .order('updated_at', { ascending: false })
+      ),
+      unitIds,
+    ).order('updated_at', { ascending: false })
   }
 
   if (fallbackQuery.error) {
@@ -680,6 +689,51 @@ async function fetchActiveTransactionsForUnitIds(client, unitIds) {
   }
 
   return (fallbackQuery.data || []).filter((item) => normalizeStage(item?.stage, null) !== 'Available')
+}
+
+async function fetchDashboardCoreTransactionsForUnitIds(client, unitIds) {
+  if (!unitIds.length) return []
+
+  const coreSelect =
+    'id, organisation_id, transaction_reference, transaction_type, property_type, unit_id, buyer_id, property_address_line_1, suburb, city, property_description, finance_type, purchaser_type, stage, current_main_stage, sales_price, purchase_price, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, next_action, updated_at, created_at, is_active'
+  let result = await scopeQueryToUnitIds(
+    client.from('transactions').select(selectWithoutKnownMissingColumns(coreSelect)),
+    unitIds,
+  )
+    .eq('is_active', true)
+    .order('updated_at', { ascending: false })
+
+  if (result.error && isMissingColumnError(result.error)) {
+    registerKnownMissingColumns(result.error, [
+      'organisation_id',
+      'transaction_reference',
+      'transaction_type',
+      'property_type',
+      'property_address_line_1',
+      'suburb',
+      'city',
+      'property_description',
+      'purchaser_type',
+      'current_main_stage',
+      'sales_price',
+      'purchase_price',
+      'assigned_agent',
+      'assigned_agent_email',
+      'assigned_attorney_email',
+      'assigned_bond_originator_email',
+      'bank',
+      'is_active',
+    ])
+    result = await scopeQueryToUnitIds(
+      client.from('transactions').select(selectWithoutKnownMissingColumns(coreSelect)),
+      unitIds,
+    ).order('updated_at', { ascending: false })
+  }
+
+  if (result.error) throw result.error
+  return (result.data || [])
+    .filter((item) => item?.is_active !== false)
+    .filter((item) => normalizeStage(item?.stage, null) !== 'Available')
 }
 
 function getDefaultHandoverRecord({ developmentId = null, unitId = null, transaction = null, buyer = null } = {}) {
@@ -741,7 +795,9 @@ async function hydrateUnitRows(client, units, { includeOperationalSignals = true
   }
 
   const unitIds = units.map((unit) => unit.id)
-  const transactions = await fetchActiveTransactionsForUnitIds(client, unitIds)
+  const transactions = includeOperationalSignals
+    ? await fetchActiveTransactionsForUnitIds(client, unitIds)
+    : await fetchDashboardCoreTransactionsForUnitIds(client, unitIds)
 
   const latestByUnit = {}
   for (const transaction of transactions) {
@@ -910,7 +966,14 @@ export async function fetchDevelopmentIdsForOrganisation(client, organisationId 
   const normalizedOrganisationId = String(organisationId || '').trim()
   if (!normalizedOrganisationId) return []
 
-  const directQuery = await client.from('developments').select('id').eq('organisation_id', normalizedOrganisationId)
+  const [directQuery, transactionQuery] = await Promise.all([
+    client.from('developments').select('id').eq('organisation_id', normalizedOrganisationId),
+    client
+      .from('transactions')
+      .select('development_id')
+      .eq('organisation_id', normalizedOrganisationId)
+      .not('development_id', 'is', null),
+  ])
 
   const directIds = !directQuery.error
     ? (directQuery.data || []).map((row) => String(row?.id || '').trim()).filter(Boolean)
@@ -923,12 +986,6 @@ export async function fetchDevelopmentIdsForOrganisation(client, organisationId 
   ) {
     throw directQuery.error
   }
-
-  const transactionQuery = await client
-    .from('transactions')
-    .select('development_id')
-    .eq('organisation_id', normalizedOrganisationId)
-    .not('development_id', 'is', null)
 
   if (transactionQuery.error) {
     if (
@@ -1055,6 +1112,7 @@ export async function fetchDashboardOverview({
   developmentId = null,
   client: scopedClient = null,
   organisationId = null,
+  includeSecondaryData = true,
 } = {}) {
   const client = scopedClient || requireClient()
   const normalizedOrganisationId = String(organisationId || '').trim()
@@ -1084,14 +1142,22 @@ export async function fetchDashboardOverview({
     }
   }
 
-  let units = await fetchUnitsBase(client, developmentId)
+  let units = await fetchUnitsBase(
+    client,
+    developmentId,
+    allowedDevelopmentIds ? [...allowedDevelopmentIds] : [],
+  )
   if (allowedDevelopmentIds) {
     units = units.filter((unit) =>
       allowedDevelopmentIds.has(String(unit?.development_id || unit?.development?.id || '').trim()),
     )
   }
-  const baseRows = dedupeTransactionRows(await hydrateUnitRows(client, units))
-  const rows = await hydrateRowsWithCommissionSnapshots(client, baseRows)
+  const baseRows = dedupeTransactionRows(
+    await hydrateUnitRows(client, units, { includeOperationalSignals: includeSecondaryData }),
+  )
+  const rows = includeSecondaryData
+    ? await hydrateRowsWithCommissionSnapshots(client, baseRows)
+    : baseRows
 
   const developmentSummaries = buildDevelopmentSummaries(rows)
 

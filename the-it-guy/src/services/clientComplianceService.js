@@ -3,6 +3,14 @@ import { getComplianceProvider } from './complianceProviderRegistry'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const CHECK_ORDER = ['identity', 'address', 'sanctions', 'pep', 'risk']
+const COMPLIANCE_STORAGE_TABLES = [
+  'compliance_profiles',
+  'compliance_verification_runs',
+  'compliance_verification_checks',
+  'compliance_verification_audit_events',
+]
+
+let complianceStorageUnavailable = false
 
 function text(value) { return String(value ?? '').trim() }
 function uuid(value, label) {
@@ -13,6 +21,36 @@ function uuid(value, label) {
 function client() {
   if (!isSupabaseConfigured || !supabase) throw new Error('Secure compliance storage is unavailable.')
   return supabase
+}
+
+function isComplianceStorageMissing(error) {
+  const code = text(error?.code).toUpperCase()
+  const message = `${text(error?.message)} ${text(error?.details)}`.toLowerCase()
+  return (
+    code === '42P01' ||
+    code === 'PGRST205' ||
+    COMPLIANCE_STORAGE_TABLES.some((table) => message.includes(table))
+  )
+}
+
+function markComplianceStorageUnavailable(error) {
+  if (isComplianceStorageMissing(error)) {
+    complianceStorageUnavailable = true
+    return true
+  }
+  return false
+}
+
+function unavailableSnapshot() {
+  return { profile: null, run: null, unavailable: true }
+}
+
+function unavailableStorageError() {
+  return new Error('FICA verification storage is not available for this workspace yet.')
+}
+
+export function clearComplianceStorageAvailabilityCache() {
+  complianceStorageUnavailable = false
 }
 
 function normalizeCheck(row = {}) {
@@ -44,17 +82,29 @@ export async function getClientComplianceVerification({ organisationId = '', cli
   const db = client()
   const orgId = uuid(organisationId, 'organisation')
   const contactId = uuid(clientContactId, 'client contact')
+  if (complianceStorageUnavailable) return unavailableSnapshot()
+
   const profileResult = await db.from('compliance_profiles').select('*').eq('organisation_id', orgId).eq('client_contact_id', contactId).maybeSingle()
-  if (profileResult.error) throw profileResult.error
+  if (profileResult.error) {
+    if (markComplianceStorageUnavailable(profileResult.error)) return unavailableSnapshot()
+    throw profileResult.error
+  }
   const runResult = await db.from('compliance_verification_runs').select('*').eq('organisation_id', orgId).eq('client_contact_id', contactId).order('created_at', { ascending: false }).limit(1).maybeSingle()
-  if (runResult.error) throw runResult.error
+  if (runResult.error) {
+    if (markComplianceStorageUnavailable(runResult.error)) return unavailableSnapshot()
+    throw runResult.error
+  }
   if (!runResult.data) return { profile: profileResult.data || null, run: null }
   const checksResult = await db.from('compliance_verification_checks').select('*').eq('verification_run_id', runResult.data.id)
-  if (checksResult.error) throw checksResult.error
+  if (checksResult.error) {
+    if (markComplianceStorageUnavailable(checksResult.error)) return unavailableSnapshot()
+    throw checksResult.error
+  }
   return { profile: profileResult.data || null, run: normalizeRun(runResult.data, checksResult.data || []) }
 }
 
 export async function recordComplianceAuditEvent({ organisationId, clientContactId, runId = '', action, providerReference = '', metadata = {} } = {}) {
+  if (complianceStorageUnavailable) return { unavailable: true }
   const db = client()
   const result = await db.from('compliance_verification_audit_events').insert({
     organisation_id: uuid(organisationId, 'organisation'),
@@ -64,16 +114,23 @@ export async function recordComplianceAuditEvent({ organisationId, clientContact
     provider_reference: text(providerReference) || null,
     metadata_json: metadata && typeof metadata === 'object' ? metadata : {},
   })
-  if (result.error) throw result.error
+  if (result.error) {
+    if (markComplianceStorageUnavailable(result.error)) return { unavailable: true }
+    throw result.error
+  }
 }
 
 export async function startClientComplianceVerification({ organisationId = '', clientContactId = '', entityType = 'individual', subject = {}, providerKey = 'mock', rerun = false } = {}) {
   const db = client()
   const orgId = uuid(organisationId, 'organisation')
   const contactId = uuid(clientContactId, 'client contact')
+  if (complianceStorageUnavailable) throw unavailableStorageError()
   const provider = getComplianceProvider(providerKey)
   const active = await db.from('compliance_verification_runs').select('id').eq('organisation_id', orgId).eq('client_contact_id', contactId).eq('status', 'in_progress').limit(1).maybeSingle()
-  if (active.error) throw active.error
+  if (active.error) {
+    if (markComplianceStorageUnavailable(active.error)) throw unavailableStorageError()
+    throw active.error
+  }
   if (active.data) throw new Error('A verification is already in progress for this client.')
 
   const profileResult = await db.from('compliance_profiles').upsert({
@@ -83,7 +140,10 @@ export async function startClientComplianceVerification({ organisationId = '', c
     current_status: 'in_progress',
     updated_at: new Date().toISOString(),
   }, { onConflict: 'organisation_id,client_contact_id' }).select('*').single()
-  if (profileResult.error) throw profileResult.error
+  if (profileResult.error) {
+    if (markComplianceStorageUnavailable(profileResult.error)) throw unavailableStorageError()
+    throw profileResult.error
+  }
   const runResult = await db.from('compliance_verification_runs').insert({
     organisation_id: orgId,
     client_contact_id: contactId,
