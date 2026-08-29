@@ -15,12 +15,12 @@ assert.match(loader, /workspaceModulePromise = null[\s\S]{0,40}throw error/)
 assert.match(loader, /export function preloadAgencyLeadWorkspace/)
 assert.match(loader, /loadAgencyLeadWorkspace\(\)\.catch\(\(\) => null\)/)
 assert.match(route, /const AgencyPipelinePage = lazy\(loadAgencyLeadWorkspace\)/)
-assert.match(route, /<Suspense fallback=\{<LeadWorkspaceSkeleton \/>\}>/)
+assert.match(route, /<Suspense fallback=\{<AgencyLeadWorkspaceShellPage loadingTab=\{activeTab !== 'overview'\} \/>\}>/)
 assert.doesNotMatch(route, /import AgencyPipelinePage from/, 'the route entry must not statically import the heavy controller')
-assert.match(listRoute, /onLeadIntent=\{preloadAgencyLeadWorkspace\}/)
-assert.match(listRoute, /void preloadAgencyLeadWorkspace\(\)[\s\S]{0,100}navigate\(`/)
-assert.match(listPage, /onPointerEnter=\{onLeadIntent\}/)
-assert.match(listPage, /onPointerDown=\{onLeadIntent\}/)
+assert.match(listRoute, /onLeadIntent=\{handleLeadIntent\}/)
+assert.match(listRoute, /preloadAgencyLeadCoreRecord\(organisationId, leadId\)/)
+assert.match(listPage, /onPointerEnter=\{\(\) => onLeadIntent\(row\.id\)\}/)
+assert.match(listPage, /onPointerDown=\{\(\) => onLeadIntent\(row\.id\)\}/)
 
 const bundle = await build({
   entryPoints: [

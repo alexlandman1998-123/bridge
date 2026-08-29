@@ -3,6 +3,7 @@ export const RENTAL_MODULES = Object.freeze({
   leads: 'leads',
   calendar: 'calendar',
   listings: 'listings',
+  properties: 'properties',
   applications: 'applications',
   tenancies: 'tenancies',
   management: 'management',

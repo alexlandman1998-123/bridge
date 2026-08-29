@@ -1,5 +1,6 @@
 let transactionsRouteModulePromise = null
 let transactionsListApiPromise = null
+let agentTransactionsTableModulePromise = null
 
 export function loadTransactionsRouteModule() {
   transactionsRouteModulePromise ||= import('../pages/Units')
@@ -11,6 +12,16 @@ function loadTransactionsListApi() {
   return transactionsListApiPromise
 }
 
+export function loadAgentTransactionsTableModule() {
+  if (!agentTransactionsTableModulePromise) {
+    agentTransactionsTableModulePromise = import('../components/AgentTransactionsTable').catch((error) => {
+      agentTransactionsTableModulePromise = null
+      throw error
+    })
+  }
+  return agentTransactionsTableModulePromise
+}
+
 export function preloadAgentTransactionsRoute({
   userId = '',
   organisationId = '',
@@ -18,8 +29,12 @@ export function preloadAgentTransactionsRoute({
   principalView = false,
 } = {}) {
   const routePromise = loadTransactionsRouteModule()
-  if (!userId || !organisationId) return routePromise
-  const dataPromise = loadTransactionsListApi().then((api) => api.preloadTransactionsListApi({
+  const tablePromise = loadAgentTransactionsTableModule()
+  const apiPromise = loadTransactionsListApi()
+  if (!userId || !organisationId) {
+    return Promise.all([routePromise, tablePromise, apiPromise]).then(([routeModule]) => routeModule)
+  }
+  const dataPromise = apiPromise.then((api) => api.preloadTransactionsListApi({
     mode: principalView ? 'organisation' : 'participant',
     userId,
     roleType: 'agent',
@@ -29,5 +44,5 @@ export function preloadAgentTransactionsRoute({
     stage: 'all',
     financeType: 'all',
   }))
-  return Promise.all([routePromise, dataPromise])
+  return Promise.all([routePromise, tablePromise, dataPromise]).then(([routeModule]) => routeModule)
 }

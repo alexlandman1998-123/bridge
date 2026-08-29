@@ -76,9 +76,12 @@ const capabilityDefinitions = Object.freeze({
 
 export const RENTAL_RLS_ENTITY_CONTRACTS = Object.freeze([
   'rental_portfolios',
+  'rental_portfolio_properties',
   'rental_properties',
   'rental_units',
+  'rental_unit_status_history',
   'rental_property_landlords',
+  'rental_property_mandates',
   'rental_vacancies',
   'rental_vacancy_listings',
   'rental_lead_links',
@@ -97,9 +100,12 @@ export const RENTAL_RLS_ENTITY_CONTRACTS = Object.freeze([
   'rental_renewals',
   'rental_notices',
   'rental_entity_documents',
+  'rental_activity_projections',
   'rental_event_outbox',
   'rental_event_consumer_receipts',
   'rental_job_runs',
+  'rental_party_relationships',
+  'rental_party_workflow_snapshots',
 ])
 
 function normalizeRole(context = {}) {

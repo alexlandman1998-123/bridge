@@ -1,13 +1,16 @@
 import { RefreshCw, X } from 'lucide-react'
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import LoadingSkeleton from '../../components/LoadingSkeleton'
+import LeadsRouteShell from '../../components/leads/LeadsRouteShell'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { canAccessPrincipalExperience } from '../../lib/organisationAccess'
 import { createSellerLeadsPerformanceBaseline } from '../../services/observability/sellerLeadsPerformanceBaseline'
 import LeadListPage from './LeadListPage'
-import { listAgencyLeadListRecords } from './agencyLeadListReadRepository'
-import { preloadAgencyLeadWorkspace } from './agencyLeadWorkspaceLoader'
+import {
+  invalidateAgencyLeadListCache,
+  listAgencyLeadListRecords,
+  preloadAgencyLeadCoreRecord,
+} from './agencyLeadListReadRepository'
 import {
   AGENCY_LEAD_CATEGORY_TABS,
   DEFAULT_AGENCY_LEAD_FILTERS,
@@ -35,7 +38,6 @@ let leadMutationActionsPromise = null
 function loadSettingsActions() {
   if (!settingsActionsPromise) {
     settingsActionsPromise = import('../../lib/settingsApi').then((module) => ({
-      fetchOrganisationSettings: module.fetchOrganisationSettings,
       listOrganisationUsers: module.listOrganisationUsers,
     }))
   }
@@ -74,6 +76,18 @@ function resolveMembershipRole(currentMembership = {}, fallback = '') {
     currentMembership?.role ||
     fallback,
   ) || 'agent'
+}
+
+function resolveWorkspaceId({ currentWorkspace = {}, currentMembership = {}, workspace = {} } = {}) {
+  return normalizeText(
+    currentWorkspace?.organisationId ||
+    currentWorkspace?.organisation_id ||
+    currentWorkspace?.raw?.organisation_id ||
+    currentMembership?.organisationId ||
+    currentMembership?.organisation_id ||
+    currentWorkspace?.id ||
+    workspace?.id,
+  )
 }
 
 function mapAgent(row = {}) {
@@ -133,7 +147,7 @@ function LeadCreateDialog({ open, category, agents, currentAgent, saving, error,
 export default function AgencyLeadListRoutePage() {
   const navigate = useNavigate()
   const { role, profile, currentWorkspace, currentMembership, workspace, organisationMembershipRole } = useWorkspace()
-  const [organisationId, setOrganisationId] = useState(normalizeText(currentWorkspace?.id || workspace?.id))
+  const [organisationId, setOrganisationId] = useState(() => resolveWorkspaceId({ currentWorkspace, currentMembership, workspace }))
   const [membershipRole, setMembershipRole] = useState(resolveMembershipRole(currentMembership, organisationMembershipRole))
   const [records, setRecords] = useState(EMPTY_RECORDS)
   const [agents, setAgents] = useState([])
@@ -163,23 +177,26 @@ export default function AgencyLeadListRoutePage() {
   const isPrincipal = canAccessPrincipalExperience({ appRole: role, membershipRole })
   const deferredFilters = useDeferredValue(filters)
 
-  const loadLeads = useCallback(async ({ backgroundOnly = false } = {}) => {
+  useEffect(() => {
+    const workspaceId = resolveWorkspaceId({ currentWorkspace, currentMembership, workspace })
+    if (workspaceId) setOrganisationId(workspaceId)
+    setMembershipRole(resolveMembershipRole(currentMembership, organisationMembershipRole))
+  }, [currentMembership, currentWorkspace, organisationMembershipRole, workspace])
+
+  const loadLeads = useCallback(async ({ backgroundOnly = false, forceRefresh = false } = {}) => {
     const requestId = ++loadRequestRef.current
     if (!backgroundOnly) setRefreshing(true)
     setError('')
     try {
-      let workspaceId = normalizeText(organisationId || currentWorkspace?.id || workspace?.id)
+      let workspaceId = normalizeText(organisationId || resolveWorkspaceId({ currentWorkspace, currentMembership, workspace }))
       if (!workspaceId) {
-        const { fetchOrganisationSettings } = await loadSettingsActions()
-        const context = await fetchOrganisationSettings()
-        workspaceId = normalizeText(context?.organisation?.id)
-        setMembershipRole(resolveMembershipRole(currentMembership, context?.membershipRole))
+        setLoading(true)
+        return
       }
-      if (!workspaceId) throw new Error('Select an organisation before opening the lead pipeline.')
       setOrganisationId(workspaceId)
 
       if (!backgroundOnly) {
-        const primary = await listAgencyLeadListRecords(workspaceId, { includeRelatedRecords: false })
+        const primary = await listAgencyLeadListRecords(workspaceId, { includeRelatedRecords: false, forceRefresh })
         if (requestId !== loadRequestRef.current) return
         setRecords((previous) => ({
           ...previous,
@@ -190,9 +207,9 @@ export default function AgencyLeadListRoutePage() {
         void performanceRef.current?.recordCheckpoint({ checkpoint: 'first_data', userId: profile?.id, workspaceId, metadata: { surface: 'lead_list', leadCount: primary?.leads?.length || 0 } })
       }
 
-      const organisationUsersPromise = loadSettingsActions()
-        .then(({ listOrganisationUsers }) => listOrganisationUsers())
-        .catch(() => [])
+      const organisationUsersPromise = isPrincipal
+        ? loadSettingsActions().then(({ listOrganisationUsers }) => listOrganisationUsers()).catch(() => [])
+        : Promise.resolve([])
       const [related, organisationUsers] = await Promise.all([
         listAgencyLeadListRecords(workspaceId, { includePrimaryRecords: false, includeRelatedRecords: true }),
         organisationUsersPromise,
@@ -213,7 +230,7 @@ export default function AgencyLeadListRoutePage() {
     } finally {
       if (requestId === loadRequestRef.current) setRefreshing(false)
     }
-  }, [currentAgent, currentMembership, currentWorkspace?.id, organisationId, profile?.id, workspace?.id])
+  }, [currentAgent, currentMembership, currentWorkspace, isPrincipal, organisationId, profile?.id, workspace])
 
   useEffect(() => { void loadLeads() }, [loadLeads])
 
@@ -259,7 +276,8 @@ export default function AgencyLeadListRoutePage() {
       setCreateDialog((previous) => ({ ...previous, open: false }))
       setCategory(form.category)
       setMessage('Lead created.')
-      await loadLeads()
+      invalidateAgencyLeadListCache(organisationId)
+      await loadLeads({ forceRefresh: true })
     } catch (createError) {
       setError(createError?.message || 'Unable to create this lead.')
     } finally {
@@ -273,7 +291,8 @@ export default function AgencyLeadListRoutePage() {
       const { updateAgencyCrmLeadRecord } = await loadLeadMutationActions()
       await updateAgencyCrmLeadRecord(organisationId, leadId, { stage: 'Archived', status: 'Archived' })
       setMessage('Lead archived.')
-      await loadLeads()
+      invalidateAgencyLeadListCache(organisationId, leadId)
+      await loadLeads({ forceRefresh: true })
     } catch (archiveError) {
       setError(archiveError?.message || 'Unable to archive this lead.')
     }
@@ -285,7 +304,8 @@ export default function AgencyLeadListRoutePage() {
       const { deleteAgencyCrmLeadRecord } = await loadLeadMutationActions()
       await deleteAgencyCrmLeadRecord(organisationId, leadId)
       setMessage('Lead deleted.')
-      await loadLeads()
+      invalidateAgencyLeadListCache(organisationId, leadId)
+      await loadLeads({ forceRefresh: true })
     } catch (deleteError) {
       setError(deleteError?.message || 'Unable to delete this lead.')
     }
@@ -301,19 +321,25 @@ export default function AgencyLeadListRoutePage() {
       await updateAgencyCrmLeadRecord(organisationId, leadId, { stage: target.stageValue, status: target.stageValue })
       await createAgencyCrmLeadActivity(organisationId, leadId, { agent: currentAgent, activityType: 'Stage Change', activityNote: `Pipeline stage moved to ${target.label}`, outcome: target.stageValue }, { actor: currentAgent }).catch(() => null)
       setMessage(`Moved to ${target.label}.`)
+      invalidateAgencyLeadListCache(organisationId, leadId)
     } catch (moveError) {
       setRecords((snapshot) => ({ ...snapshot, leads: previous }))
       setError(moveError?.message || 'Unable to move this lead.')
     }
   }
 
-  if (loading) return <section className="rounded-[20px] border border-[#dde4ee] bg-white p-6"><LoadingSkeleton lines={10} /></section>
+  const handleLeadIntent = useCallback((leadId) => {
+    if (!organisationId || !leadId) return
+    void preloadAgencyLeadCoreRecord(organisationId, leadId).catch(() => {})
+  }, [organisationId])
+
+  if (loading) return <LeadsRouteShell />
 
   return (
     <section className="min-w-0 space-y-4">
       <div className="flex min-h-10 items-center justify-between gap-3">
         <div className="min-w-0">{error ? <p className="rounded-[14px] border border-[#f2cccc] bg-[#fff5f4] px-4 py-2 text-sm text-[#9f3028]">{error}</p> : message ? <p className="rounded-[14px] border border-[#cfe8dc] bg-[#effaf3] px-4 py-2 text-sm text-[#26724c]">{message}</p> : null}</div>
-        <button type="button" disabled={refreshing} className="inline-flex h-10 shrink-0 items-center gap-2 rounded-[12px] border border-[#dbe4ee] bg-white px-3 text-sm font-semibold text-[#405b75] disabled:opacity-60" onClick={() => void loadLeads()}><RefreshCw size={15} className={refreshing ? 'animate-spin' : ''} /> Refresh</button>
+        <button type="button" disabled={refreshing} className="inline-flex h-10 shrink-0 items-center gap-2 rounded-[12px] border border-[#dbe4ee] bg-white px-3 text-sm font-semibold text-[#405b75] disabled:opacity-60" onClick={() => void loadLeads({ forceRefresh: true })}><RefreshCw size={15} className={refreshing ? 'animate-spin' : ''} /> Refresh</button>
       </div>
       <LeadListPage
         metrics={summaryModel.metrics}
@@ -346,9 +372,9 @@ export default function AgencyLeadListRoutePage() {
         onViewModeChange={setViewMode}
         onPageChange={setPage}
         onAddLead={(nextCategory) => { setError(''); setCreateDialog({ open: true, category: nextCategory === 'seller' ? 'seller' : 'buyer' }) }}
-        onLeadIntent={preloadAgencyLeadWorkspace}
+        onLeadIntent={handleLeadIntent}
         onOpenLead={(leadId) => {
-          void preloadAgencyLeadWorkspace()
+          handleLeadIntent(leadId)
           navigate(`/pipeline/leads/${encodeURIComponent(leadId)}`)
         }}
         onArchiveLead={(leadId) => void handleArchiveLead(leadId)}
@@ -356,8 +382,9 @@ export default function AgencyLeadListRoutePage() {
         onMoveLead={(leadId, columnId) => void handleMoveLead(leadId, columnId)}
         onOpenShowDayQueue={() => setFilters((previous) => ({ ...previous, source: 'Show Day' }))}
         onOpenShowDayLead={(row, tab) => {
-          void preloadAgencyLeadWorkspace()
-          navigate(`/pipeline/leads/${encodeURIComponent(row.leadId || row.id)}?tab=${encodeURIComponent(tab || 'activity')}`)
+          const leadId = row.leadId || row.id
+          handleLeadIntent(leadId)
+          navigate(`/pipeline/leads/${encodeURIComponent(leadId)}?tab=${encodeURIComponent(tab || 'activity')}`)
         }}
       />
       {createDialog.open ? <LeadCreateDialog open category={createDialog.category} agents={agentOptions} currentAgent={currentAgent} saving={creating} error={error} onClose={() => setCreateDialog((previous) => ({ ...previous, open: false }))} onSave={(form) => void handleCreateLead(form)} /> : null}

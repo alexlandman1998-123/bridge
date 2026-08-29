@@ -54,10 +54,30 @@ export {
 } from './shared/observability/rentalPerformanceTelemetry.js'
 
 export {
+  RENTAL_PARTY_RELATIONSHIP_CONTRACT_VERSION,
+  RENTAL_PARTY_RELATIONSHIP_ENTITIES,
+  RENTAL_PARTY_RLS_ENTITY_CONTRACTS,
+  RENTAL_PARTY_ROLES,
+  assertNoDuplicateActiveRentalPartyRelationship,
+  buildRentalPartyRelationshipKey,
+  buildRentalPartyRlsContract,
+  canAttachRentalPartyRole,
+  createRentalPartyRelationship,
+  createRentalPartyWorkflowSnapshot,
+} from './shared/parties/rentalPartyRelationships.js'
+export { RentalPartySelector } from './shared/parties/RentalPartySelector.jsx'
+export { RentalLandlordMandatePanel } from './shared/landlords/RentalLandlordMandatePanel.jsx'
+export { RentalPropertyEvidencePanel } from './shared/evidence/RentalPropertyEvidencePanel.jsx'
+
+export {
   RentalApplicationsPage,
   RentalListingCreatePage,
   RentalListingDetailPage,
   RentalListingsPage,
+  RentalPropertiesPage,
+  RentalPropertyDetailPage,
+  RentalPortfoliosPage,
+  RentalPortfolioDetailPage,
   RentalTenanciesPage,
 } from './shell/rentalRouteLoaders.js'
 

@@ -8,7 +8,7 @@ const app = readFileSync(resolve(root, 'src/App.jsx'), 'utf8')
 const route = readFileSync(resolve(root, 'src/pages/agency/AgencyLeadListRoutePage.jsx'), 'utf8')
 const model = readFileSync(resolve(root, 'src/pages/agency/agencyLeadListModel.js'), 'utf8')
 
-assert.match(app, /const AgencyLeadListRoutePage = lazy\(\(\) => import\('\.\/pages\/agency\/AgencyLeadListRoutePage'\)\)/)
+assert.match(app, /const AgencyLeadListRoutePage = lazy\(loadAgencyLeadListRouteModule\)/)
 const listRouteStart = app.indexOf('path="/pipeline/leads"')
 const legalRouteStart = app.indexOf('path="/pipeline/leads/:leadId/legal/:packetType"', listRouteStart)
 const listRoute = app.slice(listRouteStart, legalRouteStart)
@@ -19,7 +19,7 @@ const enquiriesRouteStart = app.indexOf('path="/pipeline/enquiries"', detailRout
 const detailRoute = app.slice(detailRouteStart, enquiriesRouteStart)
 assert.match(detailRoute, /<AgencyLeadWorkspaceRoutePage \/>/, 'lead details should retain the mature workspace through its dedicated entry')
 
-assert.match(route, /listAgencyLeadListRecords\(workspaceId, \{ includeRelatedRecords: false \}\)/)
+assert.match(route, /listAgencyLeadListRecords\(workspaceId, \{ includeRelatedRecords: false, forceRefresh \}\)/)
 assert.match(route, /listAgencyLeadListRecords\(workspaceId, \{ includePrimaryRecords: false, includeRelatedRecords: true \}\)/)
 assert.ok(
   route.indexOf('includeRelatedRecords: false') < route.indexOf('includePrimaryRecords: false, includeRelatedRecords: true'),

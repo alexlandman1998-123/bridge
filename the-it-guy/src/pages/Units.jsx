@@ -53,8 +53,9 @@ import { createPerfTimer, markRouteMilestone, startRouteTransitionTrace } from '
 import { PURCHASER_ENTITY_OPTIONS } from '../lib/purchaserPersonas'
 import { MAIN_PROCESS_STAGES, MAIN_STAGE_LABELS, STAGES, getMainStageFromDetailedStage } from '../lib/stages'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
+import { loadAgentTransactionsTableModule } from '../routes/transactionsRouteLoader'
 
-const AgentTransactionsTable = lazy(() => import('../components/AgentTransactionsTable'))
+const AgentTransactionsTable = lazy(loadAgentTransactionsTableModule)
 const AttorneyTransfersTable = lazy(() => import('../components/AttorneyTransfersTable'))
 const BondApplicationsTable = lazy(() => import('../components/BondApplicationsTable'))
 const UnitCardsView = lazy(() => import('../components/UnitCardsView'))
@@ -1019,6 +1020,11 @@ function Units() {
     setSelectedUnitIds((previous) => previous.filter((unitId) => rows.some((row) => row?.unit?.id === unitId)))
   }, [rows])
 
+  useEffect(() => {
+    if (!isTransactionsRoute || !isAgentRole) return
+    void loadAgentTransactionsTableModule().catch(() => {})
+  }, [isAgentRole, isTransactionsRoute])
+
   const loadData = useCallback(async () => {
     const requestId = latestLoadRequestRef.current + 1
     latestLoadRequestRef.current = requestId
@@ -1961,7 +1967,7 @@ function Units() {
       ) : null}
 
       {!showInitialTransactionsLoading && isSupabaseConfigured ? (
-        <Suspense fallback={<LoadingSkeleton lines={8} className="rounded-[24px] border border-borderDefault bg-surface shadow-panel" />}>
+        <Suspense fallback={isTransactionsRoute ? <TransactionsRouteShell /> : <LoadingSkeleton lines={8} className="rounded-[24px] border border-borderDefault bg-surface shadow-panel" />}>
           {isBondRole ? (
           <BondApplicationsTable
             rows={rows}

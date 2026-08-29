@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { updateUserProfile } from '../lib/profileApi'
 import { useAuthSession } from './AuthSessionContext'
 import { deriveOnboardingSetupState } from '../lib/onboardingRouting'
@@ -19,12 +19,10 @@ import {
   resolveOrganisationMembershipRole,
 } from '../lib/organisationMembershipResolution'
 import { resolveCurrentWorkspaceAppRole } from '../services/roleResolutionService'
+import { WorkspaceContext } from './WorkspaceContextBase'
 
-const WORKSPACE_CONTEXT_GLOBAL_KEY = '__arch9WorkspaceContextV1'
-const WorkspaceContext =
-  typeof globalThis !== 'undefined'
-    ? (globalThis[WORKSPACE_CONTEXT_GLOBAL_KEY] ||= createContext(null))
-    : createContext(null)
+export { useWorkspace } from './WorkspaceContextBase'
+
 const AGENCY_WORKFLOW_MODE_STORAGE_KEY = 'itg:agency-workflow-mode:v1'
 const BUSINESS_WORKSPACE_STORAGE_KEY = 'arch9:business-workspace:v1'
 const DEFAULT_AGENCY_WORKFLOW_MODE = 'agent'
@@ -528,12 +526,4 @@ export function WorkspaceProvider({ children }) {
   )
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>
-}
-
-export function useWorkspace() {
-  const context = useContext(WorkspaceContext)
-  if (!context) {
-    throw new Error('useWorkspace must be used within WorkspaceProvider')
-  }
-  return context
 }

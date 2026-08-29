@@ -7,7 +7,6 @@ import AddressAutocomplete from '../../components/location/AddressAutocomplete'
 import AreaAutocomplete from '../../components/location/AreaAutocomplete'
 import AreaMultiSelect from '../../components/location/AreaMultiSelect'
 import AppointmentCalendarActions from '../../components/appointments/AppointmentCalendarActions'
-import LeadDocumentWorkspace from '../../components/documents/LeadDocumentWorkspace'
 import Button from '../../components/ui/Button'
 import Field from '../../components/ui/Field'
 import { useWorkspace } from '../../context/WorkspaceContext'
@@ -211,6 +210,7 @@ import {
 } from '../../services/buyerLeadWorkspaceRequestPolicy'
 import {
   loadLeadActivityWorkspace,
+  loadLeadDocumentWorkspace,
   loadBuyerAppointmentsWorkspace,
   loadSellerAppointmentsWorkspace,
   preloadAgencyLeadWorkspaceTab,
@@ -233,6 +233,7 @@ const PIPELINE_MANDATE_SIGNING_EMAIL_TIMEOUT_MS = 20000
 const LEGACY_LEAD_LIST_RENDER_ENABLED = false
 const LeadListPage = lazy(() => import('./LeadListPage'))
 const LeadActivityWorkspace = lazy(loadLeadActivityWorkspace)
+const LeadDocumentWorkspace = lazy(loadLeadDocumentWorkspace)
 const BuyerLeadAppointmentsWorkspace = lazy(loadBuyerAppointmentsWorkspace)
 const KingstonsSellerAppointmentsWorkspace = lazy(loadSellerAppointmentsWorkspace)
 const SellerFicaVerification = lazy(() => import('../../components/compliance/SellerFicaVerification'))
@@ -3897,6 +3898,7 @@ const OFFER_UPLOAD_SUCCESS_PREFIX = 'Offer upload '
 const SELLER_LEAD_WORKSPACE_TAB_KEYS = new Set(['overview', 'seller', 'property', 'appointments', 'documents', 'activity'])
 const BUYER_PROFILE_WORKSPACE_TAB_KEY = 'buyer_profile'
 const BUYER_LEAD_WORKSPACE_TAB_KEYS = new Set(['overview', BUYER_PROFILE_WORKSPACE_TAB_KEY, BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY, 'properties', 'appointments', 'documents', 'activity'])
+const LEAD_WORKSPACE_ROUTE_PATTERN = /^\/pipeline\/leads\/[^/]+\/?$/
 
 function normalizeLeadWorkspaceTabKey(tabKey = '') {
   const normalized = normalizeKey(tabKey)
@@ -3919,13 +3921,14 @@ function resolveLeadWorkspaceTabFromSearch(search = '') {
   return 'overview'
 }
 
-function replaceLeadWorkspaceTabInUrl(tab = '') {
-  if (typeof window === 'undefined') return
+function buildLeadWorkspaceTabUrl({ pathname = '', search = '', hash = '', tab = '' } = {}) {
+  if (!LEAD_WORKSPACE_ROUTE_PATTERN.test(pathname)) return ''
   const nextTab = normalizeLeadWorkspaceTabKey(tab) || 'overview'
-  const nextUrl = new URL(window.location.href)
-  nextUrl.searchParams.set('tab', nextTab)
-  nextUrl.searchParams.delete('sellerWorkspace')
-  window.history.replaceState(window.history.state, '', `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`)
+  const nextParams = new URLSearchParams(search)
+  nextParams.set('tab', nextTab)
+  nextParams.delete('sellerWorkspace')
+  const nextSearch = nextParams.toString()
+  return `${pathname}${nextSearch ? `?${nextSearch}` : ''}${hash}`
 }
 
 const SELLER_LEAD_DOCUMENT_CATEGORY_CONFIG = [
@@ -11444,6 +11447,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const { leadId: routeLeadIdParam = '' } = useParams()
   const routeLeadId = normalizeText(routeLeadIdParam)
   const routeLeadWorkspaceTab = useMemo(() => resolveLeadWorkspaceTabFromSearch(location.search), [location.search])
+  const replaceLeadWorkspaceTabInUrl = useCallback((tab = '') => {
+    const nextUrl = buildLeadWorkspaceTabUrl({
+      pathname: location.pathname,
+      search: location.search,
+      hash: location.hash,
+      tab,
+    })
+    if (!nextUrl || nextUrl === `${location.pathname}${location.search}${location.hash}`) return
+    navigate(nextUrl, { replace: true })
+  }, [location.hash, location.pathname, location.search, navigate])
   const hasExplicitLeadWorkspaceTab = useMemo(() => {
     const params = new URLSearchParams(location.search)
     return params.has('tab') || params.has('sellerWorkspace')
@@ -12426,6 +12439,30 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     try {
       if (shouldUseBlockingLoader) setLoading(true)
       setError('')
+      const contextWorkspaceId = normalizeText(
+        currentWorkspace?.organisationId ||
+        currentWorkspace?.organisation_id ||
+        currentMembership?.organisationId ||
+        currentMembership?.organisation_id ||
+        currentWorkspace?.id ||
+        workspace?.id,
+      )
+      const contextMembershipRole = normalizeText(
+        currentMembership?.workspaceRole ||
+        currentMembership?.workspace_role ||
+        currentMembership?.organisationRole ||
+        currentMembership?.organisation_role ||
+        currentMembership?.role,
+      )
+      const workspaceContextSeed = isUuidLike(contextWorkspaceId)
+        ? {
+            organisation: {
+              id: contextWorkspaceId,
+              displayName: normalizeText(currentWorkspace?.name || workspace?.name),
+            },
+            membershipRole: contextMembershipRole,
+          }
+        : null
       const usersPromise = withPipelineTimeout(
         listOrganisationUsers(),
         'Team directory is taking too long to load.',
@@ -12434,7 +12471,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         (reason) => ({ status: 'rejected', reason }),
       )
       const [contextResult] = await Promise.allSettled([
-        withPipelineTimeout(fetchOrganisationSettings(), 'Organisation context is taking too long to load.'),
+        workspaceContextSeed || withPipelineTimeout(fetchOrganisationSettings(), 'Organisation context is taking too long to load.'),
       ])
       const contextError = contextResult.status === 'rejected' ? contextResult.reason : null
       const contextDenied = isPermissionDeniedError(contextError)
@@ -12444,7 +12481,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }
 
       const context = contextResult.status === 'fulfilled' ? contextResult.value : null
-      const rawOrganisationId = normalizeText(context?.organisation?.id || currentWorkspace?.id)
+      const rawOrganisationId = normalizeText(context?.organisation?.id || contextWorkspaceId)
       const resolvedOrgId = isUuidLike(rawOrganisationId) ? rawOrganisationId : ''
       if (!resolvedOrgId) {
         throw new Error('A resolved workspace is required before loading agency pipeline data.')
@@ -12452,7 +12489,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const storageOrgId = resolveAgencyPipelineStorageScope(resolvedOrgId)
       const effectiveOrgId = resolvedOrgId
       const fallbackMembershipRole = role === 'agent' ? 'agent' : 'viewer'
-      const resolvedMembershipRole = normalizeText(context?.membershipRole || fallbackMembershipRole) || fallbackMembershipRole
+      const resolvedMembershipRole = normalizeText(context?.membershipRole || contextMembershipRole || fallbackMembershipRole) || fallbackMembershipRole
 
       setOrganisationId(effectiveOrgId)
       setOrganisationName(
@@ -12460,7 +12497,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           context?.organisation?.display_name ||
             context?.organisation?.displayName ||
             context?.organisation?.name ||
-            currentWorkspace?.name,
+            currentWorkspace?.name || workspace?.name,
         ),
       )
       setMembershipRole(resolvedMembershipRole)
@@ -12524,7 +12561,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       hasCompletedContextLoadRef.current = true
       setLoading(false)
     }
-  }, [currentAgent.email, currentAgent.fullName, currentAgent.id, currentWorkspace?.id, currentWorkspace?.name, isCalendarMode, isLeadWorkspaceRoute, profile?.firstName, profile?.lastName, reloadRecords, role, routeLeadId, scheduleRecordsReload])
+  }, [currentAgent.email, currentAgent.fullName, currentAgent.id, currentMembership, currentWorkspace, isCalendarMode, isLeadWorkspaceRoute, profile?.firstName, profile?.lastName, reloadRecords, role, routeLeadId, scheduleRecordsReload, workspace])
 
   useEffect(() => {
     void loadContext()
@@ -13694,15 +13731,17 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     userId: currentAgent.userId || currentAgent.id,
   }), [currentAgent.id, currentAgent.userId, currentMembership, currentWorkspace, membershipRole, organisationId, profile, role, workspace])
 
-  const canReassignSelectedSellerLead = useMemo(() => (
-    selectedLeadIsSeller && Boolean(selectedLead) && canAccessWorkspaceRecord(
+  const canReassignSelectedLead = useMemo(() => (
+    Boolean(selectedLead) && canAccessWorkspaceRecord(
       PERMISSIONS.assignLeads,
       assignmentPermissionContext,
       selectedLead,
     )
-  ), [assignmentPermissionContext, selectedLead, selectedLeadIsSeller])
+  ), [assignmentPermissionContext, selectedLead])
 
-  const eligibleSellerAssignmentOptions = useMemo(() => {
+  const canReassignSelectedSellerLead = selectedLeadIsSeller && canReassignSelectedLead
+
+  const eligibleLeadAssignmentOptions = useMemo(() => {
     const activeStatuses = new Set(['active', 'accepted'])
     return agentOptions.filter((agent) => {
       if (!activeStatuses.has(normalizeKey(agent.status))) return false
@@ -13746,16 +13785,18 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     })
   }, [agentOptions, assignmentPermissionContext, currentWorkspace, organisationId, role, workspace])
 
-  const filteredSellerAssignmentOptions = useMemo(() => {
+  const filteredLeadAssignmentOptions = useMemo(() => {
     const searchKey = normalizeKey(sellerAssignmentSearch)
-    if (!searchKey) return eligibleSellerAssignmentOptions
-    return eligibleSellerAssignmentOptions.filter((agent) => normalizeKey([
+    if (!searchKey) return eligibleLeadAssignmentOptions
+    return eligibleLeadAssignmentOptions.filter((agent) => normalizeKey([
       agent.name,
       agent.email,
       agent.jobTitle,
       getOrganisationRoleLabel(agent.role, currentWorkspace?.type || workspace?.type || 'agency'),
     ].join(' ')).includes(searchKey))
-  }, [currentWorkspace?.type, eligibleSellerAssignmentOptions, sellerAssignmentSearch, workspace?.type])
+  }, [currentWorkspace?.type, eligibleLeadAssignmentOptions, sellerAssignmentSearch, workspace?.type])
+
+  const filteredSellerAssignmentOptions = filteredLeadAssignmentOptions
 
   const selectedLeadCollaboratorIds = useMemo(() => new Set(
     (Array.isArray(selectedLead?.collaboratorAgentIds) ? selectedLead.collaboratorAgentIds : [])
@@ -13796,17 +13837,17 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
-  async function handleSellerLeadReassignment(nextAgent) {
+  async function handleLeadReassignment(nextAgent) {
     if (!selectedLead || !organisationId || sellerAssignmentSaving) return
-    if (!canReassignSelectedSellerLead) {
-      setError('You do not have permission to reassign this seller lead.')
+    if (!canReassignSelectedLead) {
+      setError('You do not have permission to reassign this lead.')
       return
     }
-    const eligibleAgent = eligibleSellerAssignmentOptions.find((agent) => (
+    const eligibleAgent = eligibleLeadAssignmentOptions.find((agent) => (
       normalizeKey(agent.userId || agent.id) === normalizeKey(nextAgent?.userId || nextAgent?.id)
     ))
     if (!eligibleAgent) {
-      setError('This team member is not eligible to own seller leads.')
+      setError('This team member is not eligible to own leads.')
       return
     }
     if (normalizeKey(selectedLeadAssignedAgent?.userId || selectedLeadAssignedAgent?.id) === normalizeKey(eligibleAgent.userId || eligibleAgent.id)) {
@@ -13895,7 +13936,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     } catch (assignmentError) {
       if (!assignmentPersisted) {
         patchSelectedLeadRecord(rollbackPatch, leadId)
-        setError(assignmentError?.message || 'Unable to reassign this seller lead right now.')
+        setError(assignmentError?.message || 'Unable to reassign this lead right now.')
       } else {
         setMessage(`Lead reassigned to ${nextOwner}.`)
         setError('The reassignment was saved, but its activity entry could not be recorded. Please retry from Activity.')
@@ -15135,7 +15176,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setLeadWorkspaceTab('overview')
       if (isLeadWorkspaceRoute) replaceLeadWorkspaceTabInUrl('overview')
     }
-  }, [isLeadWorkspaceRoute, leadWorkspaceTab, selectedLead, selectedLeadHasKingstonsPipelineSignal, selectedLeadIsSeller])
+  }, [isLeadWorkspaceRoute, leadWorkspaceTab, replaceLeadWorkspaceTabInUrl, selectedLead, selectedLeadHasKingstonsPipelineSignal, selectedLeadIsSeller])
 
   useEffect(() => {
     if (!routeLeadId || hasExplicitLeadWorkspaceTab || !selectedLeadIsSeller) return
@@ -15161,7 +15202,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setLeadWorkspaceTab(nextTab)
       void preloadAgencyLeadWorkspaceTab(nextTab)
       if (isLeadWorkspaceRoute) replaceLeadWorkspaceTabInUrl(nextTab)
-  }, [captureRouteLeadWorkspaceScroll, isLeadWorkspaceRoute, leadWorkspaceTab, selectedLeadIsSeller])
+  }, [captureRouteLeadWorkspaceScroll, isLeadWorkspaceRoute, leadWorkspaceTab, replaceLeadWorkspaceTabInUrl, selectedLeadIsSeller])
 
   useEffect(() => {
     if (selectedLeadIsSeller || !pendingBuyerWorkspaceTab) return
@@ -18105,6 +18146,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       title: displayTitle,
       address: displayAddress,
       priceLabel: priceAmount > 0 ? formatCurrency(priceAmount) : listingPrice > 0 ? formatCurrency(listingPrice) : '',
+      imageUrl: resolveListingImageUrl(linkedListing),
+      bedrooms: Number(linkedListing?.bedrooms || selectedLead?.bedrooms || 0) || 0,
+      bathrooms: Number(linkedListing?.bathrooms || selectedLead?.bathrooms || 0) || 0,
+      parking: Number(linkedListing?.parking || linkedListing?.garages || selectedLead?.parking || 0) || 0,
+      statusLabel: normalizeText(linkedListing?.listingStatus || linkedListing?.listing_status || linkedListing?.status),
       originalTitle: enquiryTitle,
       originalAddress: enquiryAddress,
       reference: normalizeText(selectedLead?.sourceReferenceId || selectedLead?.source_reference_id || selectedLead?.listingReference || selectedLead?.listing_reference),
@@ -33518,7 +33564,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                           type="button"
                                           className="rounded-[9px] border border-[#cfdeea] bg-white px-2.5 py-1.5 text-[0.68rem] font-semibold text-[#31506b] hover:border-[#168154] hover:text-[#167149]"
                                           disabled={Boolean(sellerCollaboratorSavingId) || sellerAssignmentSaving}
-                                          onClick={() => void handleSellerLeadReassignment(agent)}
+                                          onClick={() => void handleLeadReassignment(agent)}
                                         >
                                           Make primary
                                         </button>
@@ -34557,8 +34603,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
 	                        return (
                           <>
-                            <div className="grid gap-5 xl:grid-cols-[minmax(460px,0.55fr)_minmax(0,0.45fr)] xl:items-stretch">
-                              <form className="flex h-full flex-col rounded-[20px] border border-[#dce7f2] bg-white p-4 shadow-[0_12px_34px_rgba(31,54,78,0.045)] sm:p-5" onSubmit={handleSaveBuyerQualification}>
+                            <div className="grid gap-5 xl:grid-cols-[minmax(0,0.65fr)_minmax(320px,0.35fr)] xl:items-stretch">
+                              <form className="order-2 flex h-full flex-col rounded-[20px] border border-[#dce7f2] bg-white p-4 shadow-[0_12px_34px_rgba(31,54,78,0.045)] sm:p-5 xl:order-none xl:col-start-1 xl:row-span-2 xl:row-start-1" onSubmit={handleSaveBuyerQualification}>
                                 <div className="flex flex-wrap items-start justify-between gap-3">
                                   <div>
                                     <p className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#6d839b]">Buyer Qualification</p>
@@ -34708,8 +34754,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                 )}
                               </form>
 
-                              <div className="flex h-full min-w-0 flex-col gap-4">
-                              <section className="rounded-[20px] border border-[#17364d] bg-[#102033] p-5 text-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_14px_34px_rgba(16,32,51,0.14)]">
+                              <>
+                              <section className="order-1 rounded-[20px] border border-[#17364d] bg-[#102033] p-5 text-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_14px_34px_rgba(16,32,51,0.14)] xl:order-none xl:col-start-2 xl:row-start-1">
                                 <div className="flex flex-wrap items-start justify-between gap-4">
                                   <div className="min-w-0">
                                     <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#a8bfd3]">What’s next</p>
@@ -34736,7 +34782,185 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                                </div>
 	                              </section>
 
-                              <section className="flex w-full flex-1 flex-col rounded-[20px] border border-[#dce7f2] bg-white p-4 shadow-[0_12px_34px_rgba(31,54,78,0.045)]">
+                              <section className="relative order-3 flex w-full flex-col rounded-[20px] border border-[#dce7f2] bg-white p-5 shadow-[0_12px_34px_rgba(31,54,78,0.045)] xl:order-none xl:col-start-2 xl:row-start-2" ref={sellerAssignmentMenuRef}>
+                                <div className="flex items-start justify-between gap-3">
+                                  <div>
+                                    <p className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#6d839b]">Lead Assigned To</p>
+                                    <p className="mt-1 text-xs text-[#758aa0]">Primary owner for this buyer lead</p>
+                                  </div>
+                                  {canReassignSelectedLead ? (
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="secondary"
+                                      className="h-9 shrink-0 rounded-[12px] px-3 text-xs"
+                                      disabled={sellerAssignmentSaving}
+                                      aria-expanded={sellerAssignmentMenuOpen}
+                                      aria-haspopup="listbox"
+                                      onClick={() => setSellerAssignmentMenuOpen((open) => !open)}
+                                    >
+                                      {sellerAssignmentSaving ? <RefreshCw className="h-4 w-4 animate-spin" /> : null}
+                                      {sellerAssignmentSaving ? 'Reassigning' : 'Reassign'}
+                                      {!sellerAssignmentSaving ? <ChevronDown className="h-4 w-4" /> : null}
+                                    </Button>
+                                  ) : null}
+                                </div>
+                                <div className="mt-5 flex min-w-0 items-center gap-3">
+                                  {selectedLeadAssignedAgent?.avatarUrl ? (
+                                    <img className="h-14 w-14 shrink-0 rounded-full object-cover" src={selectedLeadAssignedAgent.avatarUrl} alt="" />
+                                  ) : (
+                                    <span className="grid h-14 w-14 shrink-0 place-items-center rounded-full bg-[#eaf6ef] text-sm font-bold text-[#167149]" aria-hidden="true">
+                                      {getInitials(selectedLeadAssignedAgentLabel)}
+                                    </span>
+                                  )}
+                                  <div className="min-w-0">
+                                    <p className="truncate text-base font-semibold text-[#18324b]">{selectedLeadAssignedAgentLabel}</p>
+                                    {selectedLeadAssignedAgent ? (
+                                      <>
+                                        <p className="mt-0.5 truncate text-sm text-[#60758b]">
+                                          {selectedLeadAssignedAgent.jobTitle || (selectedLeadAssignedAgent.role
+                                            ? getOrganisationRoleLabel(selectedLeadAssignedAgent.role, currentWorkspace?.type || workspace?.type || 'agency')
+                                            : 'Agent')}
+                                          {organisationName ? ` · ${organisationName}` : ''}
+                                        </p>
+                                        <p className="mt-1 truncate text-xs font-medium text-[#7890a7]">{selectedLeadAssignedAgent.email || 'Email not available'}</p>
+                                      </>
+                                    ) : (
+                                      <p className="mt-1 text-sm text-[#60758b]">No team member has been assigned yet.</p>
+                                    )}
+                                  </div>
+                                </div>
+                                {sellerAssignmentMenuOpen ? (
+                                  <div className="absolute left-4 right-4 top-[64px] z-40 overflow-hidden rounded-[16px] border border-[#cfdeea] bg-white shadow-[0_18px_42px_rgba(16,32,51,0.18)]" role="listbox" aria-label="Reassign buyer lead">
+                                    <div className="border-b border-[#e8eef5] p-3">
+                                      <label className="flex h-10 items-center gap-2 rounded-[11px] border border-[#d7e2ed] bg-[#fbfdff] px-3 focus-within:border-[#168154] focus-within:ring-2 focus-within:ring-[#d8f1e4]">
+                                        <Search className="h-4 w-4 shrink-0 text-[#7890a7]" />
+                                        <span className="sr-only">Search agents by name or email</span>
+                                        <input
+                                          autoFocus
+                                          type="search"
+                                          value={sellerAssignmentSearch}
+                                          onChange={(event) => setSellerAssignmentSearch(event.target.value)}
+                                          placeholder="Search name or email"
+                                          className="min-w-0 flex-1 bg-transparent text-sm text-[#18324b] outline-none placeholder:text-[#91a2b4]"
+                                        />
+                                      </label>
+                                    </div>
+                                    <div className="max-h-64 overflow-y-auto p-2">
+                                      {filteredLeadAssignmentOptions.length ? filteredLeadAssignmentOptions.map((agent) => {
+                                        const isCurrentOwner = normalizeKey(selectedLeadAssignedAgent?.userId || selectedLeadAssignedAgent?.id) === normalizeKey(agent.userId || agent.id)
+                                        return (
+                                          <button
+                                            key={`${agent.id}:${agent.email}:buyer-assignment`}
+                                            type="button"
+                                            role="option"
+                                            aria-selected={isCurrentOwner}
+                                            disabled={isCurrentOwner || sellerAssignmentSaving}
+                                            className="flex min-h-14 w-full items-center gap-3 rounded-[11px] px-3 py-2 text-left transition hover:bg-[#f2f8f5] disabled:cursor-default disabled:opacity-70"
+                                            onClick={() => void handleLeadReassignment(agent)}
+                                          >
+                                            {agent.avatarUrl ? (
+                                              <img className="h-9 w-9 shrink-0 rounded-full object-cover" src={agent.avatarUrl} alt="" />
+                                            ) : (
+                                              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#eaf6ef] text-xs font-bold text-[#167149]" aria-hidden="true">{getInitials(agent.name)}</span>
+                                            )}
+                                            <span className="min-w-0 flex-1">
+                                              <span className="block truncate text-sm font-semibold text-[#18324b]">{agent.name}</span>
+                                              <span className="block truncate text-xs text-[#71869b]">{agent.email || agent.jobTitle || getOrganisationRoleLabel(agent.role, currentWorkspace?.type || workspace?.type || 'agency')}</span>
+                                              <span className="block truncate text-[0.68rem] text-[#91a2b4]">{agent.jobTitle || getOrganisationRoleLabel(agent.role, currentWorkspace?.type || workspace?.type || 'agency')}{organisationName ? ` · ${organisationName}` : ''}</span>
+                                            </span>
+                                            {isCurrentOwner ? <Check className="h-4 w-4 shrink-0 text-[#168154]" /> : null}
+                                          </button>
+                                        )
+                                      }) : (
+                                        <p className="px-3 py-6 text-center text-sm text-[#71869b]">No eligible agents found.</p>
+                                      )}
+                                    </div>
+                                  </div>
+                                ) : null}
+	                              </section>
+                              </>
+                            </div>
+
+                            <div className="grid min-w-0 gap-5 lg:grid-cols-2 lg:items-stretch">
+                              <section className="relative z-20 flex min-w-0 flex-col overflow-visible rounded-[20px] border border-[#dce7f2] bg-white p-5 shadow-[0_12px_34px_rgba(31,54,78,0.045)]" data-testid="buyer-property-enquiry">
+                                <p className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#6d839b]">Property Enquiry</p>
+                                <div className={`mt-3 grid min-w-0 gap-4 ${selectedLeadEnquiryPropertyContext.imageUrl ? 'sm:grid-cols-[minmax(0,1fr)_minmax(180px,0.7fr)]' : ''}`}>
+                                  <div className="min-w-0">
+                                    <h3 className="text-xl font-semibold tracking-[-0.03em] text-[#102033]">{selectedLeadEnquiryPropertyContext.title}</h3>
+                                    {selectedLeadEnquiryPropertyContext.address ? (
+                                      <p className="mt-1 flex min-w-0 items-center gap-1.5 text-sm text-[#60758b]">
+                                        <MapPin className="h-4 w-4 shrink-0 text-[#157a4d]" />
+                                        <span className="truncate">{selectedLeadEnquiryPropertyContext.address}</span>
+                                      </p>
+                                    ) : null}
+                                    {selectedLeadEnquiryPropertyContext.priceLabel ? (
+                                      <p className="mt-3 text-lg font-semibold text-[#102033]">{selectedLeadEnquiryPropertyContext.priceLabel}</p>
+                                    ) : null}
+                                    {[selectedLeadEnquiryPropertyContext.bedrooms, selectedLeadEnquiryPropertyContext.bathrooms, selectedLeadEnquiryPropertyContext.parking].some(Boolean) ? (
+                                      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs font-semibold text-[#60758b]">
+                                        {selectedLeadEnquiryPropertyContext.bedrooms ? <span className="inline-flex items-center gap-1"><BedDouble className="h-4 w-4" />{selectedLeadEnquiryPropertyContext.bedrooms} Bed</span> : null}
+                                        {selectedLeadEnquiryPropertyContext.bathrooms ? <span className="inline-flex items-center gap-1"><Bath className="h-4 w-4" />{selectedLeadEnquiryPropertyContext.bathrooms} Bath</span> : null}
+                                        {selectedLeadEnquiryPropertyContext.parking ? <span className="inline-flex items-center gap-1"><Car className="h-4 w-4" />{selectedLeadEnquiryPropertyContext.parking} Parking</span> : null}
+                                      </div>
+                                    ) : null}
+                                    <div className="mt-4 flex flex-wrap gap-2">
+                                      {selectedLeadEnquiryPropertyContext.statusLabel ? (
+                                        <span className="rounded-full bg-[#eaf6ef] px-2.5 py-1 text-[0.68rem] font-semibold text-[#167149]">{selectedLeadEnquiryPropertyContext.statusLabel}</span>
+                                      ) : null}
+                                      {selectedLeadEnquiryPropertyContext.hasOriginalEnquiry ? (
+                                        <span className="rounded-full bg-[#eef4f9] px-2.5 py-1 text-[0.68rem] font-semibold text-[#526a85]">Original enquiry</span>
+                                      ) : null}
+                                    </div>
+                                  </div>
+                                  {selectedLeadEnquiryPropertyContext.imageUrl ? (
+                                    <img
+                                      src={selectedLeadEnquiryPropertyContext.imageUrl}
+                                      alt={selectedLeadEnquiryPropertyContext.title}
+                                      className="h-40 w-full rounded-[14px] object-cover sm:h-full sm:min-h-[150px]"
+                                    />
+                                  ) : null}
+                                </div>
+                                {selectedLeadEnquiryPropertyContext.linkedDiffersFromOriginal ? (
+                                  <p className="mt-3 flex min-w-0 items-start gap-1.5 text-xs font-medium text-[#7c91a8]">
+                                    <Link2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                                    <span>Originally enquired about {selectedLeadEnquiryPropertyContext.originalTitle || selectedLeadEnquiryPropertyContext.originalAddress}</span>
+                                  </p>
+                                ) : null}
+                                <div className="mt-auto border-t border-[#edf3f8] pt-4">
+                                  <div className="flex flex-wrap items-end justify-between gap-3">
+                                    <div className="min-w-[220px] flex-1">
+                                      <ListingPicker
+                                        listings={appointmentListingOptions}
+                                        value={selectedLeadEnquiryPropertyContext.linkedListingId}
+                                        onChange={handleLinkBuyerEnquiryListing}
+                                        label="Linked property"
+                                      />
+                                    </div>
+                                    {selectedLeadEnquiryPropertyContext.hasLinkedListing ? (
+                                      <button
+                                        type="button"
+                                        className="inline-flex min-h-10 items-center gap-1.5 rounded-[12px] px-3 text-xs font-semibold text-[#17643a] transition hover:bg-[#f0f8f4]"
+                                        onClick={() => navigate(`/listings/${selectedLeadEnquiryPropertyContext.linkedListingId}`)}
+                                      >
+                                        View listing
+                                        <ArrowUpRight className="h-3.5 w-3.5" />
+                                      </button>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        className="inline-flex min-h-10 items-center gap-1.5 rounded-[12px] px-3 text-xs font-semibold text-[#17643a] transition hover:bg-[#f0f8f4]"
+                                        onClick={() => handleLeadWorkspaceTabSelection('properties')}
+                                      >
+                                        Find listing
+                                        <ArrowUpRight className="h-3.5 w-3.5" />
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              </section>
+
+                              <section className="flex min-w-0 flex-col rounded-[20px] border border-[#dce7f2] bg-white p-4 shadow-[0_12px_34px_rgba(31,54,78,0.045)]" data-testid="buyer-activity-logger">
                                 <div className="flex flex-wrap items-start justify-between gap-3">
                                   <div>
                                     <p className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#6d839b]">Activity Logger</p>
@@ -34744,9 +34968,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                   </div>
                                   <Zap className="h-5 w-5 text-[#2f7b9e]" />
                                 </div>
-
-                                <div className="mt-3">
-                                  <div className="grid gap-1 rounded-[14px] bg-[#f3f7fb] p-1" style={{ gridTemplateColumns: `repeat(${activityQuickTypes.length}, minmax(0, 1fr))` }}>
+                                <div className="mt-3 min-w-0 overflow-x-auto pb-1">
+                                  <div className="grid min-w-[430px] gap-1 rounded-[14px] bg-[#f3f7fb] p-1" style={{ gridTemplateColumns: `repeat(${activityQuickTypes.length}, minmax(0, 1fr))` }}>
                                     {activityQuickTypes.map((type) => {
                                       const ActivityIcon = activityIconByType[type] || Columns3
                                       const active = activityComposerMode === 'note' ? type === 'Note' : activityForm.activityType === type && activityComposerMode === 'activity'
@@ -34761,154 +34984,74 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                           }}
                                         >
                                           {createElement(ActivityIcon, { className: 'h-4 w-4' })}
-                                          <span className="hidden sm:inline">{type}</span>
+                                          <span>{type}</span>
                                         </button>
                                       )
                                     })}
                                   </div>
-
-                                  <form className="mt-3 space-y-3" onSubmit={handleUnifiedActivitySubmit}>
-                                    {activityComposerMode === 'follow_up' || activityComposerMode === 'task' ? (
-                                      <div className="grid gap-3 sm:grid-cols-3">
-                                        <Field placeholder="Next action title" value={taskForm.title} onChange={(event) => setTaskForm((previous) => ({ ...previous, title: event.target.value }))} />
-                                        <Field type="date" value={taskForm.dueDate} onChange={(event) => setTaskForm((previous) => ({ ...previous, dueDate: event.target.value }))} />
-                                        <Field as="select" value={taskForm.priority} onChange={(event) => setTaskForm((previous) => ({ ...previous, priority: event.target.value }))}>
-                                          {TASK_PRIORITIES.map((option) => (
-                                            <option key={option} value={option}>{option}</option>
-                                          ))}
-                                        </Field>
-                                      </div>
-                                    ) : (
-                                      <div className="grid gap-3 sm:grid-cols-2">
-                                        <Field as="select" value={activityForm.activityType} onChange={(event) => setActivityForm((previous) => ({ ...previous, activityType: event.target.value }))}>
-                                          {ACTIVITY_TYPES.map((option) => (
-                                            <option key={option} value={option}>{option}</option>
-                                          ))}
-                                        </Field>
-                                        <Field as="select" value={activityForm.outcome} onChange={(event) => setActivityForm((previous) => ({ ...previous, outcome: event.target.value }))}>
-                                          {activityOutcomeOptions.map((option) => (
-                                            <option key={option || 'empty-outcome'} value={option}>{option || 'Outcome'}</option>
-                                          ))}
-                                        </Field>
-                                      </div>
-                                    )}
-                                    <Field
-                                      as="textarea"
-                                      rows={3}
-                                      placeholder={activityComposerMode === 'follow_up' || activityComposerMode === 'task' ? 'Describe the next action...' : 'Add notes about this activity...'}
-                                      value={activityComposerMode === 'follow_up' || activityComposerMode === 'task' ? taskForm.description : activityForm.activityNote}
-                                      onChange={(event) => {
-                                        if (activityComposerMode === 'follow_up' || activityComposerMode === 'task') {
-                                          setTaskForm((previous) => ({ ...previous, description: event.target.value }))
-                                        } else {
-                                          setActivityForm((previous) => ({ ...previous, activityNote: event.target.value }))
-                                        }
-                                      }}
-                                    />
-                                    <div className="flex flex-wrap items-center justify-between gap-3">
-                                      <label className="inline-flex items-center gap-2 text-xs font-semibold text-[#60758b]">
-                                        <input
-                                          type="checkbox"
-                                          className="h-4 w-4 rounded border-[#cbd8e6]"
-                                          checked={activityComposerMode === 'follow_up' || activityComposerMode === 'task'}
-                                          onChange={(event) => handleActivityComposerModeChange(event.target.checked ? 'follow_up' : 'activity')}
-                                        />
-                                        Set as next action
-                                      </label>
-                                      <div className="flex flex-wrap gap-2">
-                                        {selectedLeadContact?.phone || selectedLead?.phone ? (
-                                          <a className="inline-flex h-9 items-center justify-center gap-1.5 rounded-[12px] border border-[#dbe7f2] px-3 text-xs font-semibold text-[#20364c]" href={`tel:${selectedLeadContact?.phone || selectedLead?.phone}`}>
-                                            <Phone className="h-4 w-4" />
-                                            Call
-                                          </a>
-                                        ) : null}
-                                        {selectedLeadContact?.email || selectedLead?.email ? (
-                                          <a className="inline-flex h-9 items-center justify-center gap-1.5 rounded-[12px] border border-[#dbe7f2] px-3 text-xs font-semibold text-[#20364c]" href={`mailto:${selectedLeadContact?.email || selectedLead?.email}`}>
-                                            <Mail className="h-4 w-4" />
-                                            Email
-                                          </a>
-                                        ) : null}
-                                        <Button type="submit" size="sm">
-                                          {activityComposerMode === 'follow_up' || activityComposerMode === 'task' ? 'Create Follow-up' : 'Log Activity'}
-                                        </Button>
-	                                      </div>
-	                                    </div>
-	                                  </form>
-	                                </div>
-	                              </section>
-                              </div>
-                            </div>
-
-                            <section className="relative z-20 overflow-visible rounded-[20px] border border-[#dce7f2] bg-white px-4 py-3 shadow-[0_12px_34px_rgba(31,54,78,0.045)]">
-                              <span className="absolute inset-y-0 left-0 w-1 bg-[#157a4d]" aria-hidden="true" />
-                              <div className="flex flex-wrap items-center justify-between gap-4 pl-1">
-                                <div className="flex min-w-0 items-center gap-3">
-                                  <span className="grid h-11 w-11 shrink-0 place-items-center rounded-[13px] bg-[#eef8f3] text-[#157a4d]">
-                                    <Home className="h-5 w-5" />
-                                  </span>
-                                  <div className="min-w-0">
-                                    <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#6d839b]">Property enquiry</p>
-                                    <div className="mt-1 flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
-                                      <h3 className="truncate text-base font-semibold tracking-[-0.02em] text-[#102033]">{selectedLeadEnquiryPropertyContext.title}</h3>
-                                      {selectedLeadEnquiryPropertyContext.priceLabel ? (
-                                        <span className="shrink-0 text-base font-semibold text-[#102033]">{selectedLeadEnquiryPropertyContext.priceLabel}</span>
-                                      ) : null}
+                                </div>
+                                <form className="mt-3 flex flex-1 flex-col gap-3" onSubmit={handleUnifiedActivitySubmit}>
+                                  {activityComposerMode === 'follow_up' || activityComposerMode === 'task' ? (
+                                    <div className="grid gap-3 sm:grid-cols-3">
+                                      <Field placeholder="Next action title" value={taskForm.title} onChange={(event) => setTaskForm((previous) => ({ ...previous, title: event.target.value }))} />
+                                      <Field type="date" value={taskForm.dueDate} onChange={(event) => setTaskForm((previous) => ({ ...previous, dueDate: event.target.value }))} />
+                                      <Field as="select" value={taskForm.priority} onChange={(event) => setTaskForm((previous) => ({ ...previous, priority: event.target.value }))}>
+                                        {TASK_PRIORITIES.map((option) => <option key={option} value={option}>{option}</option>)}
+                                      </Field>
                                     </div>
-                                    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-[#60758b]">
-                                      {selectedLeadEnquiryPropertyContext.address ? (
-                                        <span className="inline-flex min-w-0 items-center gap-1.5">
-                                          <MapPin className="h-4 w-4 shrink-0 text-[#157a4d]" />
-                                          <span className="truncate">{selectedLeadEnquiryPropertyContext.address}</span>
-                                        </span>
+                                  ) : (
+                                    <div className="grid gap-3 sm:grid-cols-2">
+                                      <Field as="select" value={activityForm.activityType} onChange={(event) => setActivityForm((previous) => ({ ...previous, activityType: event.target.value }))}>
+                                        {ACTIVITY_TYPES.map((option) => <option key={option} value={option}>{option}</option>)}
+                                      </Field>
+                                      <Field as="select" value={activityForm.outcome} onChange={(event) => setActivityForm((previous) => ({ ...previous, outcome: event.target.value }))}>
+                                        {activityOutcomeOptions.map((option) => <option key={option || 'empty-outcome'} value={option}>{option || 'Outcome'}</option>)}
+                                      </Field>
+                                    </div>
+                                  )}
+                                  <Field
+                                    as="textarea"
+                                    rows={3}
+                                    className="min-h-[96px] flex-1"
+                                    placeholder={activityComposerMode === 'follow_up' || activityComposerMode === 'task' ? 'Describe the next action...' : 'Add notes about this activity...'}
+                                    value={activityComposerMode === 'follow_up' || activityComposerMode === 'task' ? taskForm.description : activityForm.activityNote}
+                                    onChange={(event) => {
+                                      if (activityComposerMode === 'follow_up' || activityComposerMode === 'task') {
+                                        setTaskForm((previous) => ({ ...previous, description: event.target.value }))
+                                      } else {
+                                        setActivityForm((previous) => ({ ...previous, activityNote: event.target.value }))
+                                      }
+                                    }}
+                                  />
+                                  <div className="flex flex-wrap items-center justify-between gap-3">
+                                    <label className="inline-flex min-h-10 items-center gap-2 text-xs font-semibold text-[#60758b]">
+                                      <input
+                                        type="checkbox"
+                                        className="h-4 w-4 rounded border-[#cbd8e6]"
+                                        checked={activityComposerMode === 'follow_up' || activityComposerMode === 'task'}
+                                        onChange={(event) => handleActivityComposerModeChange(event.target.checked ? 'follow_up' : 'activity')}
+                                      />
+                                      Set as next action
+                                    </label>
+                                    <div className="flex flex-wrap gap-2">
+                                      {selectedLeadContact?.phone || selectedLead?.phone ? (
+                                        <a className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-[12px] border border-[#dbe7f2] px-3 text-xs font-semibold text-[#20364c]" href={`tel:${selectedLeadContact?.phone || selectedLead?.phone}`}>
+                                          <Phone className="h-4 w-4" /> Call
+                                        </a>
                                       ) : null}
-                                      {selectedLeadEnquiryPropertyContext.linkedDiffersFromOriginal ? (
-                                        <span className="inline-flex min-w-0 items-center gap-1.5 text-xs font-medium text-[#7c91a8]">
-                                          <Link2 className="h-3.5 w-3.5 shrink-0" />
-                                          <span className="truncate">Originally enquired about {selectedLeadEnquiryPropertyContext.originalTitle || selectedLeadEnquiryPropertyContext.originalAddress}</span>
-                                        </span>
+                                      {selectedLeadContact?.email || selectedLead?.email ? (
+                                        <a className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-[12px] border border-[#dbe7f2] px-3 text-xs font-semibold text-[#20364c]" href={`mailto:${selectedLeadContact?.email || selectedLead?.email}`}>
+                                          <Mail className="h-4 w-4" /> Email
+                                        </a>
                                       ) : null}
+                                      <Button type="submit" size="sm">
+                                        {activityComposerMode === 'follow_up' || activityComposerMode === 'task' ? 'Create Follow-up' : 'Log Activity'}
+                                      </Button>
                                     </div>
                                   </div>
-                                </div>
-                                <div className="flex shrink-0 flex-wrap items-center gap-2">
-                                  <span className={`inline-flex h-8 items-center rounded-full border px-3 text-xs font-semibold ${selectedLeadEnquiryPropertyContext.hasLinkedListing ? 'border-[#bfe5cf] bg-[#f7fcf9] text-[#157a4d]' : 'border-[#fed7aa] bg-[#fffaf2] text-[#b45309]'}`}>
-                                    {selectedLeadEnquiryPropertyContext.hasLinkedListing ? (
-                                      <>
-                                        <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
-                                        Linked listing
-                                      </>
-                                    ) : 'Needs listing link'}
-                                  </span>
-                                  {selectedLeadEnquiryPropertyContext.hasLinkedListing ? (
-                                    <button
-                                      type="button"
-                                      className="inline-flex h-8 items-center gap-1.5 rounded-full px-2.5 text-xs font-semibold text-[#17643a] transition hover:bg-[#f0f8f4]"
-                                      onClick={() => navigate(`/listings/${selectedLeadEnquiryPropertyContext.linkedListingId}`)}
-                                    >
-                                      View listing
-                                      <ArrowUpRight className="h-3.5 w-3.5" />
-                                    </button>
-                                  ) : (
-                                    <button
-                                      type="button"
-                                      className="inline-flex h-8 items-center gap-1.5 rounded-full px-2.5 text-xs font-semibold text-[#17643a] transition hover:bg-[#f0f8f4]"
-                                      onClick={() => handleLeadWorkspaceTabSelection('properties')}
-                                    >
-                                      Link listing
-                                      <ArrowUpRight className="h-3.5 w-3.5" />
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-                              <div className="mt-4 max-w-xl pl-1">
-                                <ListingPicker
-                                  listings={appointmentListingOptions}
-                                  value={selectedLeadEnquiryPropertyContext.linkedListingId}
-                                  onChange={handleLinkBuyerEnquiryListing}
-                                  label="Link to listing"
-                                />
-                              </div>
-                            </section>
+                                </form>
+                              </section>
+                            </div>
 
                             {(latestBuyerViewingPreferenceLink || buyerViewingPreferenceLinksLoading || buyerViewingPreferenceLinksError) ? (
                               <section className="rounded-[20px] border border-[#cbe7d7] bg-[#f4fbf7] p-5 shadow-[0_12px_34px_rgba(31,54,78,0.045)]" data-testid="buyer-submitted-viewing-times">
@@ -38234,6 +38377,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         Document uploads are available while the rest of this lead workspace keeps syncing in the background.
                       </div>
                     ) : null}
+                    <Suspense fallback={<div className="rounded-[20px] border border-[#dce7f2] bg-white p-6"><div className="h-4 w-48 animate-pulse rounded-full bg-slate-200" /><div className="mt-4 h-40 animate-pulse rounded-[16px] bg-slate-100" /></div>}>
                     <LeadDocumentWorkspace
                       partyType={selectedLeadIsSeller ? 'seller' : 'buyer'}
                       partyName={selectedLeadDisplayName}
@@ -38281,6 +38425,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         </>
                       }}
                     />
+                    </Suspense>
                     {!selectedLeadIsSeller ? <input ref={agentBuyerDocumentUploadInputRef} type="file" className="sr-only" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx" disabled={agentBuyerDocumentUploading} onChange={(event) => void uploadAgentBuyerLeadDocument(event)} /> : null}
                     {routeLeadHydrationStatus === '__legacy_document_workspace__' && (selectedLeadIsSeller ? (
                       <section className="overflow-hidden rounded-[30px] border border-[#dbe7f2] bg-white shadow-[0_18px_44px_rgba(31,54,78,0.07)]">

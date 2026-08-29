@@ -39,11 +39,17 @@ import {
   RentalListingDetailPage,
   RentalListingsPage,
   RentalModuleBoundary,
+  RentalPortfolioDetailPage,
+  RentalPortfoliosPage,
+  RentalPropertiesPage,
+  RentalPropertyDetailPage,
   RentalTenanciesPage,
   resolveRentalModuleAvailability,
 } from './modules/rentals'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import LeadsRouteShell from './components/leads/LeadsRouteShell'
 import TransactionsRouteShell from './components/transactions/TransactionsRouteShell'
+import { loadAgencyLeadListRouteModule, loadAgencyLeadWorkspaceRouteModule } from './routes/leadsRouteLoader'
 import { loadTransactionsRouteModule } from './routes/transactionsRouteLoader'
 
 const INACTIVITY_TIMEOUT_MINUTES = 15
@@ -379,8 +385,8 @@ const NewTransactionPage = lazy(() => import('./pages/NewTransactionPage'))
 const OnboardingProfileSetup = lazy(() => import('./pages/OnboardingProfileSetup'))
 const OnboardingLinksDemoPage = lazy(() => import('./pages/OnboardingLinksDemoPage'))
 const Pipeline = lazy(() => import('./pages/Pipeline'))
-const AgencyLeadListRoutePage = lazy(() => import('./pages/agency/AgencyLeadListRoutePage'))
-const AgencyLeadWorkspaceRoutePage = lazy(() => import('./pages/agency/AgencyLeadWorkspaceRoutePage'))
+const AgencyLeadListRoutePage = lazy(loadAgencyLeadListRouteModule)
+const AgencyLeadWorkspaceRoutePage = lazy(loadAgencyLeadWorkspaceRouteModule)
 const PipelineCanvassingPage = lazy(() => import('./pages/PipelineCanvassingPage'))
 const PipelineOverviewPage = lazy(() => import('./pages/PipelineOverviewPage'))
 const PlaceholderPage = lazy(() => import('./pages/PlaceholderPage'))
@@ -2825,6 +2831,54 @@ function AppRoutes() {
                 }
               />
               <Route
+                path="/agent/rentals/portfolio/:portfolioId"
+                element={
+                  <RoleRoute allowedRoles={['agent']}>
+                    <RentalWorkspaceGuard>
+                      <RentalModuleGate moduleId={RENTAL_MODULES.properties}>
+                        <RentalPortfolioDetailPage />
+                      </RentalModuleGate>
+                    </RentalWorkspaceGuard>
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/agent/rentals/portfolio/properties/:propertyId"
+                element={
+                  <RoleRoute allowedRoles={['agent']}>
+                    <RentalWorkspaceGuard>
+                      <RentalModuleGate moduleId={RENTAL_MODULES.properties}>
+                        <RentalPropertyDetailPage />
+                      </RentalModuleGate>
+                    </RentalWorkspaceGuard>
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/agent/rentals/portfolio"
+                element={
+                  <RoleRoute allowedRoles={['agent']}>
+                    <RentalWorkspaceGuard>
+                      <RentalModuleGate moduleId={RENTAL_MODULES.properties}>
+                        <RentalPortfoliosPage />
+                      </RentalModuleGate>
+                    </RentalWorkspaceGuard>
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/agent/rentals/portfolio/properties"
+                element={
+                  <RoleRoute allowedRoles={['agent']}>
+                    <RentalWorkspaceGuard>
+                      <RentalModuleGate moduleId={RENTAL_MODULES.properties}>
+                        <RentalPropertiesPage />
+                      </RentalModuleGate>
+                    </RentalWorkspaceGuard>
+                  </RoleRoute>
+                }
+              />
+              <Route
                 path="/agent/rentals/listings/new"
                 element={
                   <RoleRoute allowedRoles={['agent']}>
@@ -2865,7 +2919,9 @@ function AppRoutes() {
                 element={
                   <SalesWorkspaceGuard>
                     <RoleRoute allowedRoles={['agent']}>
-                      <AgencyLeadListRoutePage />
+                      <Suspense fallback={<LeadsRouteShell />}>
+                        <AgencyLeadListRoutePage />
+                      </Suspense>
                     </RoleRoute>
                   </SalesWorkspaceGuard>
                 }
@@ -2887,7 +2943,9 @@ function AppRoutes() {
                 element={
                   <SalesWorkspaceGuard>
                     <RoleRoute allowedRoles={['agent']}>
-                      <AgencyLeadWorkspaceRoutePage />
+                      <Suspense fallback={<LeadsRouteShell detail />}>
+                        <AgencyLeadWorkspaceRoutePage />
+                      </Suspense>
                     </RoleRoute>
                   </SalesWorkspaceGuard>
                 }
@@ -3587,7 +3645,7 @@ function AppRoutes() {
 
 function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter unstable_useTransitions={false}>
       <ReleaseFreshnessGuard />
       <AuthSessionProvider>
         <AppRoutes />

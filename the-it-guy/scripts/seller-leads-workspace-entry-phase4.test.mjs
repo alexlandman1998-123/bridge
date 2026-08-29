@@ -9,7 +9,7 @@ const route = readFileSync(resolve(root, 'src/pages/agency/AgencyLeadWorkspaceRo
 const loader = readFileSync(resolve(root, 'src/pages/agency/agencyLeadWorkspaceLoader.js'), 'utf8')
 const performanceBaseline = readFileSync(resolve(root, 'src/services/observability/sellerLeadsPerformanceBaseline.js'), 'utf8')
 
-assert.match(app, /const AgencyLeadWorkspaceRoutePage = lazy\(\(\) => import\('\.\/pages\/agency\/AgencyLeadWorkspaceRoutePage'\)\)/)
+assert.match(app, /const AgencyLeadWorkspaceRoutePage = lazy\(loadAgencyLeadWorkspaceRouteModule\)/)
 const detailRouteStart = app.indexOf('path="/pipeline/leads/:leadId"')
 const enquiriesRouteStart = app.indexOf('path="/pipeline/enquiries"', detailRouteStart)
 const detailRoute = app.slice(detailRouteStart, enquiriesRouteStart)
@@ -17,6 +17,8 @@ assert.match(detailRoute, /<AgencyLeadWorkspaceRoutePage \/>/)
 assert.doesNotMatch(detailRoute, /<Pipeline/, 'lead details should bypass the legacy Pipeline compatibility module')
 
 assert.match(route, /const AgencyPipelinePage = lazy\(loadAgencyLeadWorkspace\)/)
+assert.doesNotMatch(route, /if \(activeTab === 'overview'\) return <AgencyLeadWorkspaceShellPage \/>/)
+assert.match(route, /fallback=\{<AgencyLeadWorkspaceShellPage loadingTab=\{activeTab !== 'overview'\} \/>\}/)
 assert.match(loader, /import\('\.\/AgencyPipelinePage'\)/)
 assert.match(route, /key=\{`lead-workspace:\$\{location\.pathname\}`\}/)
 assert.match(route, /initialViewMode="leads"/)

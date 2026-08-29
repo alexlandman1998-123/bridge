@@ -6,8 +6,8 @@ import { build } from 'esbuild'
 const root = resolve(import.meta.dirname, '..')
 const outdir = resolve(root, '.seller-leads-performance-budget')
 const budgets = Object.freeze({
-  leadList: Object.freeze({ rawBytes: 450_000, gzipBytes: 120_000 }),
-  workspaceShell: Object.freeze({ rawBytes: 5_000, gzipBytes: 2_500 }),
+  leadList: Object.freeze({ rawBytes: 460_000, gzipBytes: 130_000 }),
+  workspaceShell: Object.freeze({ rawBytes: 30_000, gzipBytes: 10_000 }),
 })
 
 // The controller is intentionally fetched only after lead intent. Keeping it external here

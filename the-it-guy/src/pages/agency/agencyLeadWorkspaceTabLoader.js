@@ -1,4 +1,5 @@
 let activityWorkspacePromise = null
+let documentWorkspacePromise = null
 let sellerAppointmentsWorkspacePromise = null
 let buyerAppointmentsWorkspacePromise = null
 
@@ -20,6 +21,14 @@ export function loadLeadActivityWorkspace() {
   )
 }
 
+export function loadLeadDocumentWorkspace() {
+  return loadCached(
+    documentWorkspacePromise,
+    (value) => { documentWorkspacePromise = value },
+    () => import('../../components/documents/LeadDocumentWorkspace'),
+  )
+}
+
 export function loadSellerAppointmentsWorkspace() {
   return loadCached(
     sellerAppointmentsWorkspacePromise,
@@ -38,6 +47,7 @@ export function loadBuyerAppointmentsWorkspace() {
 
 export function preloadAgencyLeadWorkspaceTab(tabKey = '', { seller = false } = {}) {
   if (tabKey === 'activity') return loadLeadActivityWorkspace().catch(() => null)
+  if (tabKey === 'documents') return loadLeadDocumentWorkspace().catch(() => null)
   if (tabKey === 'appointments' && seller) return loadSellerAppointmentsWorkspace().catch(() => null)
   if (tabKey === 'appointments' && !seller) return loadBuyerAppointmentsWorkspace().catch(() => null)
   return Promise.resolve(null)

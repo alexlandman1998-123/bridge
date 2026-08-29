@@ -1,5 +1,10 @@
 import { inferLeadCategoryFromRecord } from '../../lib/leadCategory'
 import { isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
+import {
+  deleteAgencyLeadCoreCache,
+  readAgencyLeadCoreCache,
+  writeAgencyLeadCoreCache,
+} from './agencyLeadCoreCache'
 
 const LEGACY_LEAD_FIELDS =
   'lead_id, organisation_id, assigned_agent_id, contact_id, lead_category, lead_direction, lead_source, stage, status, priority, budget, area_interest, property_interest, seller_property_address, estimated_value, notes, converted_transaction_id, created_at, updated_at'
@@ -12,6 +17,10 @@ const LEAD_FIELDS_ASSIGNMENT = `${LEAD_FIELDS_LOCATION}, assigned_at, first_cont
 const CONTACT_FIELDS = 'contact_id, organisation_id, assigned_agent_id, first_name, last_name, phone, email, contact_type, notes, created_at, updated_at'
 const ACTIVITY_FIELDS = 'activity_id, organisation_id, lead_id, agent_id, activity_type, activity_note, activity_date, outcome, created_at'
 const TASK_FIELDS = 'task_id, organisation_id, lead_id, assigned_agent_id, title, description, due_date, status, priority, created_at, updated_at'
+const PRIMARY_RECORDS_CACHE_TTL_MS = 60_000
+const primaryRecordsCache = new Map()
+const leadCoreRequestCache = new Map()
+let compatibleLeadFields = null
 
 function normalizeText(value = '') {
   return String(value || '').trim()
@@ -41,7 +50,7 @@ function isUnavailable(error) {
   return status === 403 || code === '42501' || code === '42P01' || code === 'PGRST205' || message.includes('permission denied') || message.includes('row-level security') || message.includes('does not exist')
 }
 
-async function selectCompatibleLeads(workspaceId) {
+async function selectCompatibleLeads(workspaceId, leadId = '') {
   const fieldSets = [
     LEAD_FIELDS_ASSIGNMENT,
     LEAD_FIELDS_LOCATION,
@@ -51,10 +60,22 @@ async function selectCompatibleLeads(workspaceId) {
     LEAD_FIELDS,
     LEGACY_LEAD_FIELDS,
   ]
+  const candidates = compatibleLeadFields
+    ? [compatibleLeadFields, ...fieldSets.filter((fields) => fields !== compatibleLeadFields)]
+    : fieldSets
   let result = { data: [], error: null }
-  for (const fields of fieldSets) {
-    result = await supabase.from('leads').select(fields).eq('organisation_id', workspaceId).order('updated_at', { ascending: false })
-    if (!result.error || !isMissingColumn(result.error)) return result
+  for (const fields of candidates) {
+    let query = supabase.from('leads').select(fields).eq('organisation_id', workspaceId)
+    query = leadId
+      ? query.eq('lead_id', leadId).limit(1).maybeSingle()
+      : query.order('updated_at', { ascending: false })
+    result = await query
+    if (!result.error) {
+      compatibleLeadFields = fields
+      return result
+    }
+    if (!isMissingColumn(result.error)) return result
+    if (compatibleLeadFields === fields) compatibleLeadFields = null
   }
   return result
 }
@@ -168,6 +189,120 @@ function mapTask(row = {}) {
   }
 }
 
+function readFreshCache(cache, key) {
+  const entry = cache.get(key)
+  if (!entry) return null
+  if (entry.expiresAt <= Date.now()) {
+    cache.delete(key)
+    return null
+  }
+  return entry
+}
+
+async function fetchPrimaryRecords(workspaceId, { forceRefresh = false } = {}) {
+  if (!forceRefresh) {
+    const cached = readFreshCache(primaryRecordsCache, workspaceId)
+    if (cached?.data) return cached.data
+    if (cached?.promise) return cached.promise
+  }
+
+  const promise = Promise.all([
+    selectCompatibleLeads(workspaceId),
+    supabase.from('contacts').select(CONTACT_FIELDS).eq('organisation_id', workspaceId).order('updated_at', { ascending: false }),
+  ]).then(([leads, contacts]) => {
+    for (const result of [leads, contacts]) {
+      if (result.error && !isUnavailable(result.error)) throw result.error
+    }
+    const data = {
+      leads: Array.isArray(leads.data) ? leads.data.map(mapLead) : [],
+      contacts: Array.isArray(contacts.data) ? contacts.data.map(mapContact) : [],
+    }
+    primaryRecordsCache.set(workspaceId, {
+      data,
+      expiresAt: Date.now() + PRIMARY_RECORDS_CACHE_TTL_MS,
+    })
+    return data
+  }).catch((error) => {
+    primaryRecordsCache.delete(workspaceId)
+    throw error
+  })
+
+  primaryRecordsCache.set(workspaceId, {
+    promise,
+    expiresAt: Date.now() + PRIMARY_RECORDS_CACHE_TTL_MS,
+  })
+  return promise
+}
+
+function findLeadCoreInPrimaryCache(workspaceId, leadId) {
+  const cached = readFreshCache(primaryRecordsCache, workspaceId)?.data
+  if (!cached) return null
+  const lead = cached.leads.find((row) => normalizeText(row?.leadId) === leadId)
+  if (!lead) return null
+  const contact = cached.contacts.find((row) => normalizeText(row?.contactId) === normalizeText(lead?.contactId)) || null
+  return { lead, contact, source: 'primary-cache' }
+}
+
+export function readCachedAgencyLeadCoreRecord(organisationId, leadId) {
+  const workspaceId = normalizeText(organisationId)
+  const resolvedLeadId = normalizeText(leadId)
+  if (!workspaceId || !resolvedLeadId) return null
+  const primary = findLeadCoreInPrimaryCache(workspaceId, resolvedLeadId)
+  if (primary) return primary
+  return readAgencyLeadCoreCache(workspaceId, resolvedLeadId)
+}
+
+export async function preloadAgencyLeadCoreRecord(organisationId, leadId) {
+  const workspaceId = requireWorkspaceId(organisationId)
+  const resolvedLeadId = normalizeText(leadId)
+  if (!resolvedLeadId) return null
+  const cached = readCachedAgencyLeadCoreRecord(workspaceId, resolvedLeadId)
+  if (cached) return writeAgencyLeadCoreCache(workspaceId, resolvedLeadId, cached)
+
+  const cacheKey = `${workspaceId}:${resolvedLeadId}`
+  if (leadCoreRequestCache.has(cacheKey)) return leadCoreRequestCache.get(cacheKey)
+
+  const promise = selectCompatibleLeads(workspaceId, resolvedLeadId).then(async (leadResult) => {
+    if (leadResult.error && !isUnavailable(leadResult.error)) throw leadResult.error
+    if (!leadResult.data) return null
+    const lead = mapLead(leadResult.data)
+    let contact = null
+    if (lead.contactId) {
+      const contactResult = await supabase
+        .from('contacts')
+        .select(CONTACT_FIELDS)
+        .eq('organisation_id', workspaceId)
+        .eq('contact_id', lead.contactId)
+        .limit(1)
+        .maybeSingle()
+      if (contactResult.error && !isUnavailable(contactResult.error)) throw contactResult.error
+      contact = contactResult.data ? mapContact(contactResult.data) : null
+    }
+    const data = { lead, contact, source: 'remote-core' }
+    return writeAgencyLeadCoreCache(workspaceId, resolvedLeadId, data)
+  }).catch((error) => {
+    throw error
+  }).finally(() => {
+    leadCoreRequestCache.delete(cacheKey)
+  })
+
+  leadCoreRequestCache.set(cacheKey, promise)
+  return promise
+}
+
+export function preloadAgencyLeadListRecords(organisationId) {
+  const workspaceId = requireWorkspaceId(organisationId)
+  return fetchPrimaryRecords(workspaceId).catch(() => null)
+}
+
+export function invalidateAgencyLeadListCache(organisationId, leadId = '') {
+  const workspaceId = normalizeText(organisationId)
+  if (!workspaceId) return
+  primaryRecordsCache.delete(workspaceId)
+  const resolvedLeadId = normalizeText(leadId)
+  if (resolvedLeadId) deleteAgencyLeadCoreCache(workspaceId, resolvedLeadId)
+}
+
 export async function listAgencyLeadListRecords(organisationId, options = {}) {
   const workspaceId = requireWorkspaceId(organisationId)
   if (!isSupabaseConfigured || !supabase) throw new Error('Supabase is required before loading agency CRM data.')
@@ -176,10 +311,7 @@ export async function listAgencyLeadListRecords(organisationId, options = {}) {
   const includeRelatedRecords = options.includeRelatedRecords !== false
   const empty = Promise.resolve({ data: [], error: null })
   const requests = [
-    includePrimaryRecords ? selectCompatibleLeads(workspaceId) : empty,
-    includePrimaryRecords
-      ? supabase.from('contacts').select(CONTACT_FIELDS).eq('organisation_id', workspaceId).order('updated_at', { ascending: false })
-      : empty,
+    includePrimaryRecords ? fetchPrimaryRecords(workspaceId, { forceRefresh: options.forceRefresh === true }) : Promise.resolve({ leads: [], contacts: [] }),
     includeRelatedRecords
       ? supabase.from('lead_activities').select(ACTIVITY_FIELDS).eq('organisation_id', workspaceId).order('activity_date', { ascending: false })
       : empty,
@@ -187,15 +319,15 @@ export async function listAgencyLeadListRecords(organisationId, options = {}) {
       ? supabase.from('tasks').select(TASK_FIELDS).eq('organisation_id', workspaceId).order('updated_at', { ascending: false })
       : empty,
   ]
-  const [leads, contacts, activities, tasks] = await Promise.all(requests)
+  const [primary, activities, tasks] = await Promise.all(requests)
 
-  for (const result of [leads, contacts, activities, tasks]) {
+  for (const result of [activities, tasks]) {
     if (result.error && !isUnavailable(result.error)) throw result.error
   }
 
   return {
-    leads: Array.isArray(leads.data) ? leads.data.map(mapLead) : [],
-    contacts: Array.isArray(contacts.data) ? contacts.data.map(mapContact) : [],
+    leads: Array.isArray(primary.leads) ? primary.leads : [],
+    contacts: Array.isArray(primary.contacts) ? primary.contacts : [],
     leadActivities: Array.isArray(activities.data) ? activities.data.map(mapActivity) : [],
     tasks: Array.isArray(tasks.data) ? tasks.data.map(mapTask) : [],
     source: 'remote',
