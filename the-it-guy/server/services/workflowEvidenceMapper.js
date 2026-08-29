@@ -5,6 +5,7 @@ import { resolveWorkflowEvidenceMappings } from '../workflows/workflowEvidenceMa
 import { writeWorkflowEvidence } from './workflowEvidenceService.js'
 import { applyWorkflowStepStatus, ensureWorkflowStep } from './workflowStepService.js'
 import { publishWorkflowChanged } from './workflowRecomputeService.js'
+import { commitTransactionModuleAction } from '../../src/services/transactionSyncActionAdapters.js'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -164,6 +165,26 @@ export async function processWorkflowEvidence({
       mappings: results.map((item) => item.mapping),
     },
   })
+
+  const sourceEvidence = results.map((item) => item.evidence).find((item) => item?.id) || null
+  if (sourceEvidence?.id) {
+    await commitTransactionModuleAction({
+      client,
+      transactionId: normalizedTransactionId,
+      actionKey: 'SYSTEM_EVIDENCE_RECONCILED',
+      sourceRecordId: sourceEvidence.id,
+      revision: normalizeText(status),
+      professionalTitle: 'Workflow evidence reconciled',
+      professionalDescription: 'Canonical workflow evidence was reconciled against the transaction spine.',
+      eventData: {
+        evidenceType: normalizeText(evidenceType),
+        evidenceKey: normalizeText(evidenceKey),
+        status: normalizeText(status),
+        mappedWorkflowKeys: [...new Set(results.map((item) => item.mapping?.workflowKey).filter(Boolean))],
+      },
+      optionalUntilMigrated: true,
+    })
+  }
 
   return {
     mapped: true,

@@ -62,6 +62,9 @@ import {
 } from '../../lib/agencyCrmRepository'
 import { listOrganisationPreferredPartners, listOrganisationUsers, fetchOrganisationSettings } from '../../lib/settingsApi'
 import { canAccessPrincipalExperience, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
+import { getOrganisationRoleLabel } from '../../lib/organisationRoleGovernance'
+import { can, canAccessWorkspaceRecord } from '../../auth/permissions/permissionResolver'
+import { PERMISSIONS } from '../../auth/permissions/permissionRegistry'
 import { resolveOnboardingBranding } from '../../lib/onboardingBranding'
 import { filterPreferredPartners } from '../../lib/preferredPartners'
 import { fetchPartnersSnapshot, getPartnerAssignmentOptions } from '../../lib/partnersRepository'
@@ -200,6 +203,12 @@ import {
   getPipelineTelemetryNow,
   recordPipelineOperationalEvent,
 } from '../../services/pipelineOperationalTelemetryService'
+import { createSellerLeadsPerformanceBaseline } from '../../services/observability/sellerLeadsPerformanceBaseline'
+import {
+  loadLeadActivityWorkspace,
+  loadSellerAppointmentsWorkspace,
+  preloadAgencyLeadWorkspaceTab,
+} from './agencyLeadWorkspaceTabLoader'
 
 const PIPELINE_CONTEXT_TIMEOUT_MS = 8000
 const PIPELINE_RECORDS_TIMEOUT_MS = 10000
@@ -209,8 +218,10 @@ const PIPELINE_APPOINTMENT_ROLLING_PAST_DAYS = 45
 const PIPELINE_APPOINTMENT_ROLLING_FUTURE_DAYS = 180
 const PIPELINE_CALENDAR_RANGE_PADDING_DAYS = 7
 const PIPELINE_MANDATE_SIGNING_EMAIL_TIMEOUT_MS = 20000
-const LeadActivityWorkspace = lazy(() => import('../../components/lead-activity/LeadActivityWorkspace'))
-const KingstonsSellerAppointmentsWorkspace = lazy(() => import('../../components/appointments/KingstonsSellerAppointmentsWorkspace'))
+const LEGACY_LEAD_LIST_RENDER_ENABLED = false
+const LeadListPage = lazy(() => import('./LeadListPage'))
+const LeadActivityWorkspace = lazy(loadLeadActivityWorkspace)
+const KingstonsSellerAppointmentsWorkspace = lazy(loadSellerAppointmentsWorkspace)
 function createDeferredAction(loadModule, actionName) {
   return async (...args) => {
     const module = await loadModule()
@@ -11367,6 +11378,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }, [location.search])
   const isLeadWorkspaceRoute = !initialViewMode || (initialViewMode !== 'calendar' && routeLeadId.length > 0)
   const { role, profile, currentWorkspace, currentMembership, workspace } = useWorkspace()
+  const sellerLeadsRenderCountRef = useRef(0)
+  sellerLeadsRenderCountRef.current += 1
+  const sellerLeadsPerformanceBaselineRef = useRef(null)
+  if (!sellerLeadsPerformanceBaselineRef.current) {
+    sellerLeadsPerformanceBaselineRef.current = createSellerLeadsPerformanceBaseline({ route: location.pathname })
+  }
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
@@ -11412,6 +11429,18 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       },
     })
   }, [currentWorkspace?.type, location.pathname, organisationId, profile?.id, role, workspace?.type])
+  const recordSellerLeadsPerformance = useCallback((checkpoint, workspaceId = '', metadata = {}) => {
+    void sellerLeadsPerformanceBaselineRef.current?.recordCheckpoint({
+      checkpoint,
+      userId: normalizeText(profile?.id),
+      workspaceId: normalizeText(workspaceId),
+      metadata: {
+        surface: isLeadWorkspaceRoute ? 'lead_workspace' : 'lead_list',
+        renderCount: sellerLeadsRenderCountRef.current,
+        ...metadata,
+      },
+    })
+  }, [isLeadWorkspaceRoute, profile?.id])
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined
@@ -11480,6 +11509,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [routeLeadHydrationStatus, setRouteLeadHydrationStatus] = useState('idle')
   const [leadActionsMenuOpen, setLeadActionsMenuOpen] = useState(false)
   const leadActionsMenuRef = useRef(null)
+  const [sellerAssignmentMenuOpen, setSellerAssignmentMenuOpen] = useState(false)
+  const [sellerAssignmentSearch, setSellerAssignmentSearch] = useState('')
+  const [sellerAssignmentSaving, setSellerAssignmentSaving] = useState(false)
+  const sellerAssignmentMenuRef = useRef(null)
   const [leadListActionsMenuId, setLeadListActionsMenuId] = useState('')
   const [leadArchiveModal, setLeadArchiveModal] = useState({
     open: false,
@@ -11692,6 +11725,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         email: normalizeText(row?.email).toLowerCase(),
         avatarUrl: normalizeText(row?.avatarUrl || row?.avatar_url || row?.profilePhotoUrl || row?.profile_photo_url || row?.photoUrl || row?.photo_url || row?.profile?.avatar_url),
         branchId: normalizeText(row?.branchId),
+        departmentId: normalizeText(row?.departmentId),
+        teamId: normalizeText(row?.teamId),
+        workspaceUnitId: normalizeText(row?.workspaceUnitId),
+        role: normalizeText(row?.workspaceRole || row?.organisationRole || row?.role) || 'viewer',
+        jobTitle: normalizeText(row?.jobTitle),
+        status: normalizeText(row?.membershipStatus || row?.status) || 'invited',
       }))
       .filter((row) => row.id)
 
@@ -11706,11 +11745,17 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         email: currentAgent.email,
         avatarUrl: currentAgent.avatarUrl,
         branchId: currentAgent.branchId,
+        departmentId: '',
+        teamId: '',
+        workspaceUnitId: '',
+        role: membershipRole || 'agent',
+        jobTitle: '',
+        status: 'active',
       })
     }
 
     return normalized
-  }, [currentAgent.avatarUrl, currentAgent.branchId, currentAgent.email, currentAgent.fullName, currentAgent.id, currentAgent.userId, users])
+  }, [currentAgent.avatarUrl, currentAgent.branchId, currentAgent.email, currentAgent.fullName, currentAgent.id, currentAgent.userId, membershipRole, users])
 
   const resolveAgentById = useCallback(
     (id) => {
@@ -12004,6 +12049,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const markPrimaryRecordsReady = () => {
         if (primaryRecordsReady) return
         primaryRecordsReady = true
+        recordSellerLeadsPerformance('first_data', orgId, {
+          leadCount: Array.isArray(mergedSnapshot?.leads) ? mergedSnapshot.leads.length : 0,
+          contactCount: Array.isArray(mergedSnapshot?.contacts) ? mergedSnapshot.contacts.length : 0,
+        })
         if (typeof onPrimaryRecordsReady === 'function') {
           onPrimaryRecordsReady()
         }
@@ -12020,6 +12069,36 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }
       if (isSupabaseConfigured && supabase && isUuidLike(orgId)) {
         try {
+          const crmSnapshot = await withPipelineTimeout(
+            listAgencyCrmLeadContacts(orgId, {
+              includeRelatedRecords: false,
+            }),
+            'Lead data is taking too long to load.',
+            PIPELINE_CRM_RECORDS_TIMEOUT_MS,
+          )
+
+          const crmContacts = Array.isArray(crmSnapshot.contacts) ? crmSnapshot.contacts : []
+          const crmLeads = filterDeletedAgencyLeadRows(
+            orgId,
+            crmSnapshot.leads || [],
+            crmContacts,
+          )
+          mergedSnapshot = {
+            ...crmSnapshot,
+            contacts: crmContacts,
+            leads: crmLeads,
+            leadActivities: Array.isArray(crmSnapshot.leadActivities) ? crmSnapshot.leadActivities : [],
+            tasks: Array.isArray(crmSnapshot.tasks) ? crmSnapshot.tasks : [],
+            inboundLeadEmails: [],
+          }
+          if (requestId === reloadRequestRef.current) {
+            applySnapshotRecords(mergedSnapshot)
+            markPrimaryRecordsReady()
+          }
+
+          // The list only needs leads and contacts for its first useful paint.
+          // Start enrichment after those rows are visible so optional requests
+          // cannot starve the critical query on a cold connection.
           const inboundLeadEmailsPromise = withPipelineTimeout(
             listInboundLeadEmails(orgId, { limit: 200 }),
             'Captured enquiry data is taking too long to load.',
@@ -12047,34 +12126,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             console.warn('[PIPELINE] lead activity/task load failed; continuing with primary lead rows only.', relatedLoadError)
             return { leadActivities: [], tasks: [] }
           })
-          const crmSnapshot = await withPipelineTimeout(
-            listAgencyCrmLeadContacts(orgId, {
-              includeRelatedRecords: false,
-            }),
-            'Lead data is taking too long to load.',
-            PIPELINE_CRM_RECORDS_TIMEOUT_MS,
-          )
-
-          const crmContacts = Array.isArray(crmSnapshot.contacts) ? crmSnapshot.contacts : []
-          const crmLeads = filterDeletedAgencyLeadRows(
-            orgId,
-            crmSnapshot.leads || [],
-            crmContacts,
-          )
-          mergedSnapshot = {
-            ...crmSnapshot,
-            contacts: crmContacts,
-            leads: crmLeads,
-            leadActivities: Array.isArray(crmSnapshot.leadActivities) ? crmSnapshot.leadActivities : [],
-            tasks: Array.isArray(crmSnapshot.tasks) ? crmSnapshot.tasks : [],
-            inboundLeadEmails: [],
-          }
-          if (requestId === reloadRequestRef.current) {
-            applySnapshotRecords(mergedSnapshot)
-            if (crmLeads.length) {
-              markPrimaryRecordsReady()
-            }
-          }
 
           const [inboundLeadEmails, privateListings] = await Promise.all([
             inboundLeadEmailsPromise,
@@ -12177,8 +12228,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       ]))
       applySnapshotRecords(mergedSnapshot, appointmentRows, { preserveAppointmentsOutsideRange: true })
       markPrimaryRecordsReady()
+      recordSellerLeadsPerformance('background_settled', orgId, {
+        leadCount: Array.isArray(mergedSnapshot?.leads) ? mergedSnapshot.leads.length : 0,
+        contactCount: Array.isArray(mergedSnapshot?.contacts) ? mergedSnapshot.contacts.length : 0,
+        activityCount: Array.isArray(mergedSnapshot?.leadActivities) ? mergedSnapshot.leadActivities.length : 0,
+        taskCount: Array.isArray(mergedSnapshot?.tasks) ? mergedSnapshot.tasks.length : 0,
+        appointmentCount: Array.isArray(appointmentRows) ? appointmentRows.length : 0,
+      })
     },
-    [captureRouteLeadWorkspaceScroll, isLeadWorkspaceRoute, currentAgent, isPrincipal, restoreRouteLeadWorkspaceScroll, routeLeadId],
+    [captureRouteLeadWorkspaceScroll, isLeadWorkspaceRoute, currentAgent, isPrincipal, recordSellerLeadsPerformance, restoreRouteLeadWorkspaceScroll, routeLeadId],
   )
 
   const scheduleRecordsReload = useCallback(
@@ -12236,8 +12294,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }, [organisationId])
 
   useEffect(() => {
-    void reloadCanvassingStore(organisationId)
-  }, [organisationId, reloadCanvassingStore])
+    if (!organisationId || loading || typeof window === 'undefined') return undefined
+    const timer = window.setTimeout(() => {
+      void reloadCanvassingStore(organisationId)
+    }, 750)
+    return () => window.clearTimeout(timer)
+  }, [loading, organisationId, reloadCanvassingStore])
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined
@@ -12272,24 +12334,24 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     try {
       if (shouldUseBlockingLoader) setLoading(true)
       setError('')
-      const [contextResult, usersResult] = await Promise.allSettled([
+      const usersPromise = withPipelineTimeout(
+        listOrganisationUsers(),
+        'Team directory is taking too long to load.',
+      ).then(
+        (value) => ({ status: 'fulfilled', value }),
+        (reason) => ({ status: 'rejected', reason }),
+      )
+      const [contextResult] = await Promise.allSettled([
         withPipelineTimeout(fetchOrganisationSettings(), 'Organisation context is taking too long to load.'),
-        withPipelineTimeout(listOrganisationUsers(), 'Team directory is taking too long to load.'),
       ])
       const contextError = contextResult.status === 'rejected' ? contextResult.reason : null
-      const usersError = usersResult.status === 'rejected' ? usersResult.reason : null
       const contextDenied = isPermissionDeniedError(contextError)
-      const usersDenied = isPermissionDeniedError(usersError)
 
       if (contextError && !contextDenied && (!isAuthSessionMissingError(contextError) || !normalizeText(currentWorkspace?.id))) {
         console.warn('[PIPELINE] organisation context load failed.', contextError)
       }
-      if (usersError && !usersDenied) {
-        console.warn('[PIPELINE] team directory load failed; using current user fallback.', usersError)
-      }
 
       const context = contextResult.status === 'fulfilled' ? contextResult.value : null
-      const organisationUsers = usersResult.status === 'fulfilled' ? usersResult.value : []
       const rawOrganisationId = normalizeText(context?.organisation?.id || currentWorkspace?.id)
       const resolvedOrgId = isUuidLike(rawOrganisationId) ? rawOrganisationId : ''
       if (!resolvedOrgId) {
@@ -12317,7 +12379,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           setMessage(`Recovered ${recovery.leads || 0} lead(s) from legacy workspace scope.`)
         }
       }
-      setUsers(Array.isArray(organisationUsers) && organisationUsers.length ? organisationUsers : [{
+      const currentUserFallback = [{
         id: currentAgent.id,
         userId: currentAgent.id,
         firstName: normalizeText(profile?.firstName),
@@ -12326,7 +12388,19 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         email: currentAgent.email,
         role: resolvedMembershipRole,
         status: 'active',
-      }])
+      }]
+      setUsers(currentUserFallback)
+      void usersPromise
+        .then((usersResult) => {
+          if (usersResult.status === 'fulfilled' && Array.isArray(usersResult.value) && usersResult.value.length) {
+            setUsers(usersResult.value)
+            return
+          }
+          const usersError = usersResult.status === 'rejected' ? usersResult.reason : null
+          if (usersError && !isPermissionDeniedError(usersError)) {
+            console.warn('[PIPELINE] team directory load failed; using current user fallback.', usersError)
+          }
+        })
       setSelectedAgentId((previous) => previous || normalizeText(currentAgent.id || currentAgent.email))
       if (isCalendarMode) {
         await reloadRecords(storageOrgId)
@@ -12640,6 +12714,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   useEffect(() => {
     setLeadActionsMenuOpen(false)
     setLeadListActionsMenuId('')
+    setSellerAssignmentMenuOpen(false)
+    setSellerAssignmentSearch('')
   }, [selectedLeadId])
 
   useEffect(() => {
@@ -12658,6 +12734,26 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       document.removeEventListener('keydown', handleKeyDown)
     }
   }, [leadActionsMenuOpen])
+
+  useEffect(() => {
+    if (!sellerAssignmentMenuOpen || typeof document === 'undefined') return undefined
+    const handlePointerDown = (event) => {
+      if (sellerAssignmentMenuRef.current?.contains(event.target)) return
+      setSellerAssignmentMenuOpen(false)
+      setSellerAssignmentSearch('')
+    }
+    const handleKeyDown = (event) => {
+      if (event.key !== 'Escape') return
+      setSellerAssignmentMenuOpen(false)
+      setSellerAssignmentSearch('')
+    }
+    document.addEventListener('mousedown', handlePointerDown)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [sellerAssignmentMenuOpen])
 
   useEffect(() => {
     if (!routeLeadId || !records.leads.length) return
@@ -13286,6 +13382,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const selectedLeadWorkspaceRouteHydrating = Boolean(isLeadWorkspaceRoute && routeLeadId && routeLeadHydrationStatus === 'loading' && !selectedLead)
 
   useEffect(() => {
+    if (!isLeadWorkspaceRoute || !organisationId || routeLeadHydrationStatus !== 'ready' || !selectedLead) return
+    recordSellerLeadsPerformance('workspace_ready', organisationId, {
+      workspaceTab: routeLeadWorkspaceTab,
+      warmSnapshot: Boolean(routeLeadWorkspaceSnapshotRef.current?.leads?.length),
+    })
+  }, [isLeadWorkspaceRoute, organisationId, recordSellerLeadsPerformance, routeLeadHydrationStatus, routeLeadWorkspaceTab, selectedLead])
+
+  useEffect(() => {
     if (!isLeadWorkspaceRoute || !organisationId || !selectedLead) return
     const leadId = selectedLead.leadId || selectedLead.lead_id || routeLeadId || selectedLeadId
     const currentSnapshot = routeLeadWorkspaceSnapshotRef.current ||
@@ -13396,10 +13500,33 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       'No property linked'
   }, [selectedLead])
 
-  const selectedLeadAssignedAgentLabel = useMemo(() => {
-    if (!selectedLead) return 'Unassigned'
-    return normalizeText(selectedLead.assignedAgentName || selectedLead.assignedAgentEmail || currentAgent.fullName) || 'Unassigned'
-  }, [currentAgent.fullName, selectedLead])
+  const selectedLeadAssignedAgent = useMemo(() => {
+    if (!selectedLead) return null
+    const assignedKeys = [selectedLead.assignedAgentId, selectedLead.assignedUserId, selectedLead.assignedAgentEmail]
+      .map((value) => normalizeKey(value))
+      .filter(Boolean)
+    const matchedAgent = agentOptions.find((agent) => assignedKeys.some((key) => (
+      normalizeKey(agent.id) === key || normalizeKey(agent.userId) === key || normalizeKey(agent.email) === key
+    )))
+    if (matchedAgent) return matchedAgent
+
+    const assignedName = normalizeText(selectedLead.assignedAgentName)
+    const assignedEmail = normalizeText(selectedLead.assignedAgentEmail).toLowerCase()
+    const assignedId = normalizeText(selectedLead.assignedAgentId || selectedLead.assignedUserId)
+    if (!assignedName && !assignedEmail && !assignedId) return null
+    return {
+      id: assignedId || assignedEmail,
+      userId: assignedId,
+      name: assignedName || assignedEmail || 'Assigned user',
+      email: assignedEmail,
+      avatarUrl: '',
+      role: '',
+      jobTitle: '',
+      status: '',
+    }
+  }, [agentOptions, selectedLead])
+
+  const selectedLeadAssignedAgentLabel = selectedLeadAssignedAgent?.name || 'Unassigned'
 
   const selectedLeadActivities = useMemo(() => {
     if (!selectedLead) return []
@@ -13433,6 +13560,197 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }, [records.tasks, selectedLead])
 
   const selectedLeadIsSeller = resolveLeadCategoryView(selectedLead) === 'seller'
+  const assignmentPermissionContext = useMemo(() => ({
+    profile,
+    appRole: role,
+    organisationRole: membershipRole,
+    membershipRole,
+    membershipStatus: currentMembership?.status || 'active',
+    currentMembership: currentMembership?.id
+      ? currentMembership
+      : {
+          id: currentAgent.id || 'current-membership',
+          role: membershipRole,
+          status: 'active',
+          workspaceId: organisationId,
+          workspaceType: currentWorkspace?.type || workspace?.type || 'agency',
+          workspace: currentWorkspace || workspace,
+        },
+    currentWorkspace: currentWorkspace || workspace,
+    workspaceType: currentWorkspace?.type || workspace?.type || 'agency',
+    userId: currentAgent.userId || currentAgent.id,
+  }), [currentAgent.id, currentAgent.userId, currentMembership, currentWorkspace, membershipRole, organisationId, profile, role, workspace])
+
+  const canReassignSelectedSellerLead = useMemo(() => (
+    selectedLeadIsSeller && Boolean(selectedLead) && canAccessWorkspaceRecord(
+      PERMISSIONS.assignLeads,
+      assignmentPermissionContext,
+      selectedLead,
+    )
+  ), [assignmentPermissionContext, selectedLead, selectedLeadIsSeller])
+
+  const eligibleSellerAssignmentOptions = useMemo(() => {
+    const activeStatuses = new Set(['active', 'accepted'])
+    return agentOptions.filter((agent) => {
+      if (!activeStatuses.has(normalizeKey(agent.status))) return false
+      const targetMembership = {
+        id: agent.id || agent.userId,
+        userId: agent.userId || agent.id,
+        role: agent.role,
+        workspaceRole: agent.role,
+        organisationRole: agent.role,
+        status: agent.status,
+        branchId: agent.branchId,
+        departmentId: agent.departmentId,
+        teamId: agent.teamId,
+        workspaceUnitId: agent.workspaceUnitId,
+        workspaceId: organisationId,
+        workspaceType: currentWorkspace?.type || workspace?.type || 'agency',
+        workspace: currentWorkspace || workspace,
+      }
+      const targetCanOwnLeads = can(PERMISSIONS.editLeads, {
+        profile: { id: agent.userId || agent.id, role },
+        appRole: role,
+        organisationRole: agent.role,
+        membershipRole: agent.role,
+        membershipStatus: agent.status,
+        currentMembership: targetMembership,
+        currentWorkspace: currentWorkspace || workspace,
+        workspaceType: currentWorkspace?.type || workspace?.type || 'agency',
+        userId: agent.userId || agent.id,
+      })
+      const actorCanReachTarget = canAccessWorkspaceRecord(
+        PERMISSIONS.assignLeads,
+        assignmentPermissionContext,
+        {
+          branchId: agent.branchId,
+          departmentId: agent.departmentId,
+          teamId: agent.teamId,
+          assignedUserId: agent.userId || agent.id,
+        },
+      )
+      return targetCanOwnLeads && actorCanReachTarget
+    })
+  }, [agentOptions, assignmentPermissionContext, currentWorkspace, organisationId, role, workspace])
+
+  const filteredSellerAssignmentOptions = useMemo(() => {
+    const searchKey = normalizeKey(sellerAssignmentSearch)
+    if (!searchKey) return eligibleSellerAssignmentOptions
+    return eligibleSellerAssignmentOptions.filter((agent) => normalizeKey([
+      agent.name,
+      agent.email,
+      agent.jobTitle,
+      getOrganisationRoleLabel(agent.role, currentWorkspace?.type || workspace?.type || 'agency'),
+    ].join(' ')).includes(searchKey))
+  }, [currentWorkspace?.type, eligibleSellerAssignmentOptions, sellerAssignmentSearch, workspace?.type])
+
+  async function handleSellerLeadReassignment(nextAgent) {
+    if (!selectedLead || !organisationId || sellerAssignmentSaving) return
+    if (!canReassignSelectedSellerLead) {
+      setError('You do not have permission to reassign this seller lead.')
+      return
+    }
+    const eligibleAgent = eligibleSellerAssignmentOptions.find((agent) => (
+      normalizeKey(agent.userId || agent.id) === normalizeKey(nextAgent?.userId || nextAgent?.id)
+    ))
+    if (!eligibleAgent) {
+      setError('This team member is not eligible to own seller leads.')
+      return
+    }
+    if (normalizeKey(selectedLeadAssignedAgent?.userId || selectedLeadAssignedAgent?.id) === normalizeKey(eligibleAgent.userId || eligibleAgent.id)) {
+      setSellerAssignmentMenuOpen(false)
+      setSellerAssignmentSearch('')
+      return
+    }
+
+    const leadId = normalizeText(selectedLead.leadId)
+    const changedAt = new Date().toISOString()
+    const previousOwner = selectedLeadAssignedAgentLabel
+    const nextOwner = eligibleAgent.name
+    const assignmentPatch = {
+      assignedAgentId: eligibleAgent.userId || eligibleAgent.id,
+      assignedUserId: eligibleAgent.userId || eligibleAgent.id,
+      assignedAgentName: eligibleAgent.name,
+      assignedAgentEmail: eligibleAgent.email,
+      branchId: eligibleAgent.branchId || selectedLead.branchId || null,
+      assignedAt: changedAt,
+      ownershipStatus: 'assigned',
+      updatedAt: changedAt,
+    }
+    const rollbackPatch = {
+      assignedAgentId: selectedLead.assignedAgentId || null,
+      assignedUserId: selectedLead.assignedUserId || null,
+      assignedAgentName: selectedLead.assignedAgentName || '',
+      assignedAgentEmail: selectedLead.assignedAgentEmail || '',
+      branchId: selectedLead.branchId || null,
+      assignedAt: selectedLead.assignedAt || null,
+      ownershipStatus: selectedLead.ownershipStatus || null,
+      updatedAt: selectedLead.updatedAt,
+    }
+
+    setSellerAssignmentSaving(true)
+    setSellerAssignmentMenuOpen(false)
+    setSellerAssignmentSearch('')
+    setError('')
+    patchSelectedLeadRecord(assignmentPatch, leadId)
+
+    let assignmentPersisted = false
+    try {
+      await updateAgencyCrmLeadRecord(organisationId, leadId, {
+        ...assignmentPatch,
+        leadName: selectedLeadDisplayName,
+        propertyLabel: selectedLeadPropertyLabel,
+        assignmentReason: `Reassigned by ${currentAgent.fullName}`,
+      })
+      assignmentPersisted = true
+      const activityNote = `${currentAgent.fullName} reassigned this lead from ${previousOwner} to ${nextOwner}.`
+      const createdActivity = await createAgencyCrmLeadActivity(organisationId, leadId, {
+        agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+        activityType: 'Lead Reassigned',
+        activityNote,
+        outcome: `Previous owner: ${previousOwner} · New owner: ${nextOwner}`,
+        activityDate: changedAt,
+      }, { actor: currentAgent })
+      const activityRow = createdActivity || {
+        activityId: `lead-reassigned:${leadId}:${changedAt}`,
+        organisationId,
+        leadId,
+        agentId: currentAgent.id,
+        agentName: currentAgent.fullName,
+        agentEmail: currentAgent.email,
+        activityType: 'Lead Reassigned',
+        activityNote,
+        outcome: `Previous owner: ${previousOwner} · New owner: ${nextOwner}`,
+        activityDate: changedAt,
+        createdAt: changedAt,
+      }
+      const routeSnapshot = routeLeadWorkspaceSnapshotRef.current
+      if (routeSnapshot) {
+        routeLeadWorkspaceSnapshotRef.current = {
+          ...routeSnapshot,
+          leadActivities: dedupeByKey([activityRow, ...(Array.isArray(routeSnapshot.leadActivities) ? routeSnapshot.leadActivities : [])], (row) => row?.activityId),
+        }
+      }
+      setRecords((previous) => ({
+        ...previous,
+        leadActivities: dedupeByKey([activityRow, ...(Array.isArray(previous.leadActivities) ? previous.leadActivities : [])], (row) => row?.activityId),
+      }))
+      setMessage(`Lead reassigned to ${nextOwner}.`)
+      scheduleRecordsReload(organisationId, 850)
+    } catch (assignmentError) {
+      if (!assignmentPersisted) {
+        patchSelectedLeadRecord(rollbackPatch, leadId)
+        setError(assignmentError?.message || 'Unable to reassign this seller lead right now.')
+      } else {
+        setMessage(`Lead reassigned to ${nextOwner}.`)
+        setError('The reassignment was saved, but its activity entry could not be recorded. Please retry from Activity.')
+      }
+      scheduleRecordsReload(organisationId, 250)
+    } finally {
+      setSellerAssignmentSaving(false)
+    }
+  }
+
   const selectedLeadHasKingstonsPipelineSignal = useMemo(() => {
     if (!selectedLeadIsSeller) return false
     return hasKingstonsPipelineSignal({
@@ -14009,7 +14327,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   useEffect(() => {
     const leadId = normalizeText(selectedLead?.leadId)
-    if (!organisationId || !leadId) {
+    if (!organisationId || !leadId || selectedLeadIsSeller) {
       setSelectedLeadOffers([])
       setSelectedLeadOfferPortalSessions([])
       setSelectedLeadOffersError('')
@@ -14086,6 +14404,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLeadContact?.firstName,
     selectedLeadContact?.lastName,
     selectedLeadContact?.phone,
+    selectedLeadIsSeller,
     selectedLeadOffersRefreshTick,
   ])
 
@@ -14151,7 +14470,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   useEffect(() => {
     const leadId = normalizeText(selectedLead?.leadId)
     const offerId = normalizeText(selectedLeadLifecycleDiagnosticOffer?.id)
-    if (!organisationId || !leadId || (!offerId && !selectedLeadLinkedTransactionId)) {
+    if (!organisationId || !leadId || selectedLeadIsSeller || (!offerId && !selectedLeadLinkedTransactionId)) {
       setSelectedLeadLifecycleDiagnostic(null)
       setSelectedLeadLifecycleDiagnosticError('')
       setSelectedLeadLifecycleDiagnosticLoading(false)
@@ -14188,6 +14507,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLead?.leadId,
     selectedLeadLifecycleDiagnosticOffer?.id,
     selectedLeadLinkedTransactionId,
+    selectedLeadIsSeller,
     selectedLeadOffersRefreshTick,
   ])
 
@@ -15124,13 +15444,17 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
     for (const activity of selectedLeadActivities) {
       const sourceType = classifyActivity(activity)
+      const activityAgent = agentOptions.find((agent) => (
+        normalizeKey(agent.userId || agent.id) === normalizeKey(activity.agentId) ||
+        normalizeKey(agent.email) === normalizeKey(activity.agentEmail)
+      ))
       timelineRows.push({
         id: `activity:${activity.activityId}`,
         sourceType,
         sourceLabel: getActivitySourceLabel(activity, sourceType),
         title: normalizeText(activity.activityType) || 'Lead update',
         description: normalizeText(activity.activityNote),
-        actorName: normalizeText(activity.agentName || activity.agentEmail) || (sourceType === 'system' ? 'System Update' : currentAgent.fullName || 'Agent'),
+        actorName: normalizeText(activity.agentName || activityAgent?.name || activity.agentEmail) || (sourceType === 'system' ? 'System Update' : currentAgent.fullName || 'Agent'),
         timestamp: activity.activityDate || activity.createdAt || new Date().toISOString(),
         outcome: normalizeText(activity.outcome),
         original: activity,
@@ -15452,6 +15776,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       return (Number.isFinite(rightTime) ? rightTime : 0) - (Number.isFinite(leftTime) ? leftTime : 0)
     })
   }, [
+    agentOptions,
     currentAgent.fullName,
     selectedLead,
     selectedLeadActivities,
@@ -30015,6 +30340,68 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const sellerLeadEditTitle = sellerLeadEditMeta.title
   const sellerLeadEditSubtitle = sellerLeadEditMeta.subtitle
   const showLegacyActivityComposer = false
+  const buildLeadListPresentationRow = (lead) => {
+    const leadId = normalizeLeadIdentityKey(lead?.leadId)
+    const leadProspect = canvassingProspectById.get(normalizeText(lead?.canvassingProspectId))
+    const leadContact = resolveLeadContactSnapshot(
+      lead,
+      contactById.get(normalizeText(lead?.contactId)),
+      leadProspect,
+    )
+    const leadTasks = leadTasksByLeadId.get(leadId) || []
+    const leadActivities = leadActivitiesByLeadId.get(leadId) || []
+    const latestActivity = [...leadActivities]
+      .sort((left, right) => new Date(right?.activityDate || right?.createdAt || 0) - new Date(left?.activityDate || left?.createdAt || 0))[0]
+    const linkedDeal = linkedDealByLeadId.get(leadId)
+    const leadAppointments = records.appointments.filter((row) => normalizeLeadIdentityKey(row?.leadId || row?.relatedEntityId) === leadId)
+    const isSeller = resolveLeadCategoryView(lead) === 'seller'
+    const linkedListing = resolveLeadLinkedListing(lead)
+    const sellerJourney = isSeller
+      ? buildSellerJourney({ lead, contact: leadContact || {}, appointments: leadAppointments, listing: linkedListing })
+      : null
+    const lifecyclePresentation = resolveLeadLifecyclePresentation(lead, { linkedDeal })
+    const opportunity = getLeadOpportunityPreview(lead, linkedDeal, isSeller, linkedListing)
+    const propertyLines = isSeller
+      ? splitPropertyLines(
+          sellerJourney?.kpis?.find((item) => item.key === 'property')?.value || normalizeText(lead?.sellerPropertyAddress || lead?.propertyInterest),
+          opportunity.subtitle,
+        )
+      : opportunity.hasListing
+        ? splitPropertyLines(opportunity.title, opportunity.subtitle || opportunity.specs)
+        : splitPropertyLines(normalizeText(lead?.propertyInterest || lead?.areaInterest), '')
+    const activityReference = latestActivity?.activityDate || latestActivity?.createdAt || lead?.updatedAt || lead?.createdAt
+
+    return {
+      id: leadId,
+      name: resolveLeadDisplayName(lead, leadContact, leadProspect, 'Unnamed lead'),
+      phone: normalizeText(leadContact?.phone || lead?.phone),
+      email: normalizeText(leadContact?.email || lead?.email),
+      source: normalizeText(lead?.leadSource || lead?.source) || 'Unknown source',
+      propertyTitle: propertyLines.title || 'No property address yet',
+      propertySubtitle: propertyLines.subtitle || 'Property details pending',
+      stage: isSeller
+        ? sellerJourney?.status?.summary || sellerJourney?.stage?.label || 'Contacted'
+        : lifecyclePresentation.label,
+      assignedAgent: normalizeText(lead?.assignedAgentName || lead?.assignedAgentEmail) || 'Unassigned',
+      lastActivity: formatRelativeTime(activityReference),
+      nextStep: resolveLeadNextStep(lead, leadTasks, leadAppointments, { contact: leadContact }),
+    }
+  }
+  const shouldRenderLeadListPage = !isCalendarMode && !isLeadWorkspaceRoute
+  const leadListPresentationSource = shouldRenderLeadListPage
+    ? (pipelineViewMode === 'kanban' ? filteredLeads : leadTableRows)
+    : []
+  const leadListPresentationRows = leadListPresentationSource.map(buildLeadListPresentationRow)
+  const leadListPresentationById = new Map(leadListPresentationRows.map((row) => [row.id, row]))
+  const leadListPageRows = shouldRenderLeadListPage ? leadTableRows
+    .map((lead) => leadListPresentationById.get(normalizeLeadIdentityKey(lead?.leadId)))
+    .filter(Boolean) : []
+  const leadListKanbanColumns = shouldRenderLeadListPage && pipelineViewMode === 'kanban' ? kanbanColumns.map((column) => ({
+    ...column,
+    cards: column.cards
+      .map((lead) => leadListPresentationById.get(normalizeLeadIdentityKey(lead?.leadId)))
+      .filter(Boolean),
+  })) : []
 
   return (
     <section className="min-w-0 max-w-full space-y-5 overflow-hidden">
@@ -30032,6 +30419,67 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       {message ? <div className="rounded-[18px] border border-[#d4e8dc] bg-[#eef9f1] px-4 py-3 text-sm text-[#1a6e3a]">{message}</div> : null}
 
       {!isCalendarMode && !isLeadWorkspaceRoute ? (
+        <Suspense fallback={<LoadingSkeleton rows={8} />}>
+          <LeadListPage
+            metrics={{
+              newLeads: metrics.newLeads,
+              newThisWeek: leadPageSummary.newThisWeek,
+              needAttention: leadOperationalSummary.needAttention,
+              overdue: leadOperationalSummary.overdue,
+              followUpsToday: metrics.followUpsDueToday,
+              overdueTasks: metrics.overdueTasks,
+              convertedMtd: leadOperationalSummary.convertedMtd || metrics.dealsCreated,
+              active: metrics.activeOpportunities,
+            }}
+            filters={leadFilter}
+            sources={availableLeadSources}
+            stages={getLeadStageOptionsForType(activeLeadCategoryView)}
+            agents={agentOptions}
+            isPrincipal={isPrincipal}
+            category={leadTypeView}
+            categoryLabel={activeLeadCategoryLabel}
+            categoryTitle={leadTypeViewTitle}
+            categoryCounts={leadCategoryCounts}
+            categoryTabs={LEAD_CATEGORY_VIEW_TABS.map(({ key, label }) => ({ key, label }))}
+            summary={leadPageSummary}
+            sellerJourneyMetrics={sellerJourneyMetrics}
+            operationalSummary={leadOperationalSummary}
+            showDaySummary={{
+              ...showDayFollowUpSummary,
+              queue: showDayFollowUpSummary.queue.map((row) => ({
+                ...row,
+                dueLabel: row.dueDate ? `Due ${formatDateShort(row.dueDate)}` : '',
+              })),
+            }}
+            showDayPrompt={SHOW_DAY_FOLLOW_UP_PROMPT}
+            rows={leadListPageRows}
+            kanbanColumns={leadListKanbanColumns}
+            viewMode={pipelineViewMode}
+            currentPage={leadTableCurrentPage}
+            totalPages={leadTableTotalPages}
+            visiblePages={leadTableVisiblePages}
+            pageStart={leadTableStart}
+            pageEnd={leadTableEnd}
+            onFiltersChange={(patch) => setLeadFilter((previous) => ({ ...previous, ...patch }))}
+            onResetFilters={() => setLeadFilter({ ...DEFAULT_LEAD_FILTER })}
+            onCategoryChange={setLeadTypeView}
+            onViewModeChange={setPipelineViewMode}
+            onPageChange={setLeadTablePage}
+            onAddLead={openLeadForm}
+            onOpenLead={(leadId) => {
+              setSelectedLeadId(leadId)
+              navigate(`/pipeline/leads/${leadId}`)
+            }}
+            onArchiveLead={openArchiveLeadModal}
+            onDeleteLead={openDeleteLeadModal}
+            onMoveLead={(leadId, columnId) => void handleMovePipelineCard(leadId, columnId)}
+            onOpenShowDayQueue={openShowDayFollowUpQueue}
+            onOpenShowDayLead={openShowDayLead}
+          />
+        </Suspense>
+      ) : null}
+
+      {LEGACY_LEAD_LIST_RENDER_ENABLED ? (
         <section className="grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-5">
           {[
             { label: 'New Leads', value: metrics.newLeads, detail: `${leadPageSummary.newThisWeek} this week`, compare: '↑ 12% vs yesterday', icon: UserRound, tone: 'text-[#315f8f] bg-[#edf5ff]' },
@@ -30060,7 +30508,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         </section>
       ) : null}
 
-      {!isCalendarMode && !isLeadWorkspaceRoute && showDayFollowUpSummary.captured > 0 ? (
+      {LEGACY_LEAD_LIST_RENDER_ENABLED ? (
         <section className="rounded-[18px] border border-[#dce7f2] bg-white p-4 shadow-[0_12px_30px_rgba(31,54,78,0.05)]">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
@@ -30522,7 +30970,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         </section>
                         ) : (
         <>
-          {!isLeadWorkspaceRoute ? (
+          {LEGACY_LEAD_LIST_RENDER_ENABLED ? (
           <section id="agency-lead-filters" className="min-w-0 rounded-[16px] border border-[#e4ebf2] bg-white/90 p-2.5 shadow-[0_10px_26px_rgba(24,45,68,0.045)] backdrop-blur">
             <div className="flex min-w-0 flex-col gap-2 xl:flex-row xl:items-center">
               <label className="flex min-h-[38px] min-w-0 flex-1 items-center gap-2.5 rounded-[12px] border border-[#dbe6f1] bg-[#f8fbfe] px-3 transition focus-within:border-[#9db7cf] focus-within:bg-white">
@@ -30588,7 +31036,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           ) : null}
 
           <section className="grid gap-4">
-            {!isLeadWorkspaceRoute ? (
+            {LEGACY_LEAD_LIST_RENDER_ENABLED ? (
             <article className="flex min-h-[680px] min-w-0 flex-col overflow-hidden rounded-[18px] border border-[rgba(15,23,42,0.06)] bg-white shadow-[0_16px_42px_rgba(15,23,42,0.045)]">
               <div className="border-b border-[rgba(15,23,42,0.06)] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] px-4 py-4 sm:px-5 sm:py-5">
                 <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
@@ -32066,6 +32514,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               <button
                                 key={tab.key}
                                 type="button"
+                                onPointerEnter={() => void preloadAgencyLeadWorkspaceTab(tab.key, { seller: true })}
+                                onPointerDown={() => void preloadAgencyLeadWorkspaceTab(tab.key, { seller: true })}
+                                onFocus={() => void preloadAgencyLeadWorkspaceTab(tab.key, { seller: true })}
                                 onClick={() => handleLeadWorkspaceTabSelection(tab.key)}
                                 role="tab"
                                 aria-selected={isActive}
@@ -32105,6 +32556,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           <button
                             key={tab.key}
                             type="button"
+                            onPointerEnter={() => void preloadAgencyLeadWorkspaceTab(tab.key)}
+                            onPointerDown={() => void preloadAgencyLeadWorkspaceTab(tab.key)}
+                            onFocus={() => void preloadAgencyLeadWorkspaceTab(tab.key)}
                             onClick={() => handleLeadWorkspaceTabSelection(tab.key)}
                             role="tab"
                             aria-selected={isActive}
@@ -32522,80 +32976,173 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       ) : null}
                     </section>
 
-                    <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,0.85fr)_minmax(0,0.85fr)_minmax(0,0.8fr)] 2xl:grid-cols-[minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,0.8fr)]">
-                      <div className="flex min-h-[430px] min-w-0 flex-col gap-4 self-stretch">
-                        <section className="rounded-[20px] border border-[#17364d] bg-[#102033] p-5 text-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_14px_34px_rgba(16,32,51,0.14)]">
-                          <div className="flex flex-wrap items-start justify-between gap-4">
-                            <div className="min-w-0">
-                              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#a8bfd3]">Next Best Action</p>
-                              <h3 className="mt-2 line-clamp-2 text-lg font-semibold leading-6 tracking-[-0.03em] text-white">
-                                {selectedLeadHasKingstonsSellerProcess
-                                  ? selectedKingstonsProcessAction.title
-	                                  : selectedSellerNextBestActionModel.title}
-                              </h3>
-                              <p className="mt-2 line-clamp-2 text-sm leading-5 text-[#c7d5e2]">
-                                {selectedLeadHasKingstonsSellerProcess
-                                  ? selectedKingstonsProcessAction.copy
-                                  : selectedSellerNextBestActionModel.copy}
-                              </p>
-                            </div>
+                    <div className="grid min-w-0 gap-4 lg:grid-cols-2 xl:min-h-[620px] xl:grid-cols-[minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,0.8fr)] xl:grid-rows-[auto_minmax(0,1fr)] 2xl:grid-cols-[minmax(0,0.95fr)_minmax(0,0.95fr)_minmax(0,0.8fr)]">
+                      <section className="min-w-0 rounded-[20px] border border-[#17364d] bg-[#102033] p-5 text-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_14px_34px_rgba(16,32,51,0.14)] lg:col-start-1 lg:row-start-1">
+                        <div className="flex h-full flex-wrap items-start justify-between gap-4">
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#a8bfd3]">Next Best Action</p>
+                            <h3 className="mt-2 line-clamp-2 text-lg font-semibold leading-6 tracking-[-0.03em] text-white">
+                              {selectedLeadHasKingstonsSellerProcess
+                                ? selectedKingstonsProcessAction.title
+	                                : selectedSellerNextBestActionModel.title}
+                            </h3>
+                            <p className="mt-2 line-clamp-2 text-sm leading-5 text-[#c7d5e2]">
+                              {selectedLeadHasKingstonsSellerProcess
+                                ? selectedKingstonsProcessAction.copy
+                                : selectedSellerNextBestActionModel.copy}
+                            </p>
+                          </div>
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="min-h-10 shrink-0 bg-white px-4 text-[#102033] hover:bg-[#edf4fa]"
+                            onClick={() => handleSellerJourneyAction(
+                              selectedLeadHasKingstonsSellerProcess
+                                ? selectedKingstonsProcessAction.actionId
+                                : selectedSellerNextBestActionModel.actionId,
+                            )}
+                            disabled={selectedLeadHasKingstonsSellerProcess ? selectedKingstonsProcessAction.disabled : selectedSellerNextBestActionModel.disabled}
+                          >
+                            <CheckCircle2 className="h-4 w-4" />
+                            {selectedLeadHasKingstonsSellerProcess
+                              ? selectedKingstonsProcessAction.label
+                              : selectedSellerNextBestActionModel.label}
+                          </Button>
+                        </div>
+                      </section>
+
+                      <section className="relative min-w-0 rounded-[20px] border border-[#dbe7f2] bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_34px_rgba(31,54,78,0.05)] lg:col-start-2 lg:row-start-1" ref={sellerAssignmentMenuRef}>
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <h3 className="text-base font-semibold text-[#102033]">Lead Assigned To</h3>
+                            <p className="mt-1 text-xs text-[#758aa0]">Current owner of this seller lead</p>
+                          </div>
+                          {canReassignSelectedSellerLead ? (
                             <Button
                               type="button"
                               size="sm"
-                              className="min-h-10 shrink-0 bg-white px-4 text-[#102033] hover:bg-[#edf4fa]"
-                              onClick={() => handleSellerJourneyAction(
-                                selectedLeadHasKingstonsSellerProcess
-                                  ? selectedKingstonsProcessAction.actionId
-                                  : selectedSellerNextBestActionModel.actionId,
-                              )}
-                              disabled={selectedLeadHasKingstonsSellerProcess ? selectedKingstonsProcessAction.disabled : selectedSellerNextBestActionModel.disabled}
+                              variant="secondary"
+                              className="h-9 shrink-0 rounded-[12px] px-3 text-xs"
+                              disabled={sellerAssignmentSaving}
+                              aria-expanded={sellerAssignmentMenuOpen}
+                              aria-haspopup="listbox"
+                              onClick={() => setSellerAssignmentMenuOpen((open) => !open)}
                             >
-                              <CheckCircle2 className="h-4 w-4" />
-                              {selectedLeadHasKingstonsSellerProcess
-                                ? selectedKingstonsProcessAction.label
-                                : selectedSellerNextBestActionModel.label}
+                              {sellerAssignmentSaving ? <RefreshCw className="h-4 w-4 animate-spin" /> : null}
+                              {sellerAssignmentSaving ? 'Saving' : 'Reassign Lead'}
+                              {!sellerAssignmentSaving ? <ChevronDown className="h-4 w-4" /> : null}
                             </Button>
+                          ) : null}
+                        </div>
+                        <div className="mt-5 flex min-w-0 items-center gap-3">
+                          {selectedLeadAssignedAgent?.avatarUrl ? (
+                            <img className="h-14 w-14 shrink-0 rounded-full object-cover" src={selectedLeadAssignedAgent.avatarUrl} alt="" />
+                          ) : (
+                            <span className="grid h-14 w-14 shrink-0 place-items-center rounded-full bg-[#eaf6ef] text-sm font-bold text-[#167149]" aria-hidden="true">
+                              {getInitials(selectedLeadAssignedAgentLabel)}
+                            </span>
+                          )}
+                          <div className="min-w-0">
+                            <p className="truncate text-base font-semibold text-[#18324b]">{selectedLeadAssignedAgentLabel}</p>
+                            {selectedLeadAssignedAgent ? (
+                              <>
+                                <p className="mt-0.5 truncate text-sm text-[#60758b]">{selectedLeadAssignedAgent.email || 'Email not available'}</p>
+                                <p className="mt-1 truncate text-xs font-semibold text-[#7890a7]">
+                                  {selectedLeadAssignedAgent.jobTitle || (selectedLeadAssignedAgent.role
+                                    ? getOrganisationRoleLabel(selectedLeadAssignedAgent.role, currentWorkspace?.type || workspace?.type || 'agency')
+                                    : 'Role not available')}
+                                </p>
+                              </>
+                            ) : (
+                              <p className="mt-1 text-sm text-[#60758b]">No team member has been assigned yet.</p>
+                            )}
                           </div>
-                        </section>
-
-                        <section className="flex min-h-[318px] min-w-0 flex-1 flex-col overflow-hidden rounded-[24px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_34px_rgba(31,54,78,0.05)]">
-                          <div className="flex items-center justify-between gap-3 border-b border-[#edf3f8] px-5 py-4">
-                            <h3 className="text-lg font-semibold tracking-[-0.03em] text-[#102033]">Documents</h3>
-                            <Button type="button" size="sm" variant="secondary" className="min-h-10 rounded-[14px] px-4 text-sm" onClick={() => handleLeadWorkspaceTabSelection('documents')}>
-                              View All Documents
-                            </Button>
-                          </div>
-                          <div className="min-h-0 flex-1 px-4 py-4">
-                            <div className="grid h-full min-h-0 auto-rows-fr gap-2.5">
-                              {selectedSellerDocumentCategories.map((category) => {
-                                const chartColor = category.progress >= 100 ? '#0f8f59' : '#315b7a'
+                        </div>
+                        {sellerAssignmentMenuOpen ? (
+                          <div className="absolute left-4 right-4 top-[64px] z-30 overflow-hidden rounded-[16px] border border-[#cfdeea] bg-white shadow-[0_18px_42px_rgba(16,32,51,0.18)]" role="listbox" aria-label="Eligible lead owners">
+                            <div className="border-b border-[#e8eef5] p-3">
+                              <label className="flex h-10 items-center gap-2 rounded-[11px] border border-[#d7e2ed] bg-[#fbfdff] px-3 focus-within:border-[#168154] focus-within:ring-2 focus-within:ring-[#d8f1e4]">
+                                <Search className="h-4 w-4 shrink-0 text-[#7890a7]" />
+                                <span className="sr-only">Search team members</span>
+                                <input
+                                  autoFocus
+                                  type="search"
+                                  value={sellerAssignmentSearch}
+                                  onChange={(event) => setSellerAssignmentSearch(event.target.value)}
+                                  placeholder="Search team members"
+                                  className="min-w-0 flex-1 bg-transparent text-sm text-[#18324b] outline-none placeholder:text-[#91a2b4]"
+                                />
+                              </label>
+                            </div>
+                            <div className="max-h-64 overflow-y-auto p-2">
+                              {filteredSellerAssignmentOptions.length ? filteredSellerAssignmentOptions.map((agent) => {
+                                const isCurrentOwner = normalizeKey(selectedLeadAssignedAgent?.userId || selectedLeadAssignedAgent?.id) === normalizeKey(agent.userId || agent.id)
                                 return (
-                                  <div key={category.key} className="grid min-h-[68px] min-w-0 grid-cols-[minmax(0,1fr)_44px] items-center gap-3 rounded-[16px] border border-[#e4edf6] bg-[#fbfdff] px-3 py-2.5 shadow-[0_8px_20px_rgba(31,54,78,0.025)]">
-                                    <div className="min-w-0">
-                                      <p className="truncate text-sm font-semibold leading-5 text-[#20364c]" title={category.label}>{category.label}</p>
-                                      <p className="mt-1 text-xs font-semibold leading-4 text-[#6d839b]">{category.completed} of {category.total} complete</p>
-                                      <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[#e4ebf3]">
-                                        <span className={`block h-full rounded-full ${category.progress >= 100 ? 'bg-[#0f8f59]' : 'bg-[#315b7a]'}`} style={{ width: `${category.progress}%` }} />
-                                      </div>
-                                    </div>
-                                    <span
-                                      className="grid h-11 w-11 place-items-center rounded-full p-1"
-                                      style={{ background: `conic-gradient(${chartColor} ${category.progress * 3.6}deg, #e5ecf5 0deg)` }}
-                                      aria-label={`${category.label} ${category.progress}% complete`}
-                                    >
-                                      <span className="grid h-full w-full place-items-center rounded-full bg-white text-center text-[0.68rem] font-semibold leading-none text-[#102033] shadow-[inset_0_0_18px_rgba(31,54,78,0.025)]">
-                                        {category.progress}%
-                                      </span>
+                                  <button
+                                    key={`${agent.id}:${agent.email}:seller-assignment`}
+                                    type="button"
+                                    role="option"
+                                    aria-selected={isCurrentOwner}
+                                    className="flex min-h-12 w-full items-center gap-3 rounded-[11px] px-3 py-2 text-left transition hover:bg-[#f2f8f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#168154]"
+                                    onClick={() => void handleSellerLeadReassignment(agent)}
+                                  >
+                                    {agent.avatarUrl ? (
+                                      <img className="h-9 w-9 shrink-0 rounded-full object-cover" src={agent.avatarUrl} alt="" />
+                                    ) : (
+                                      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#eaf6ef] text-xs font-bold text-[#167149]" aria-hidden="true">{getInitials(agent.name)}</span>
+                                    )}
+                                    <span className="min-w-0 flex-1">
+                                      <span className="block truncate text-sm font-semibold text-[#18324b]">{agent.name}</span>
+                                      <span className="block truncate text-xs text-[#71869b]">{agent.jobTitle || getOrganisationRoleLabel(agent.role, currentWorkspace?.type || workspace?.type || 'agency')}</span>
                                     </span>
-                                  </div>
+                                    {isCurrentOwner ? <CheckCircle2 className="h-4 w-4 shrink-0 text-[#168154]" /> : null}
+                                  </button>
                                 )
-                              })}
+                              }) : (
+                                <p className="px-3 py-6 text-center text-sm text-[#71869b]">No eligible team members found.</p>
+                              )}
                             </div>
                           </div>
-                        </section>
-                      </div>
+                        ) : null}
+                      </section>
 
-                      <section className="flex min-h-[430px] min-w-0 flex-col overflow-hidden rounded-[20px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_34px_rgba(31,54,78,0.05)]">
+                      <section className="flex min-h-[318px] min-w-0 flex-col overflow-hidden rounded-[20px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_34px_rgba(31,54,78,0.05)] lg:col-start-1 lg:row-start-2">
+                        <div className="flex items-center justify-between gap-3 border-b border-[#edf3f8] px-5 py-4">
+                          <h3 className="text-lg font-semibold tracking-[-0.03em] text-[#102033]">Documents</h3>
+                          <Button type="button" size="sm" variant="secondary" className="min-h-10 rounded-[14px] px-4 text-sm" onClick={() => handleLeadWorkspaceTabSelection('documents')}>
+                            View All Documents
+                          </Button>
+                        </div>
+                        <div className="min-h-0 flex-1 px-4 py-4">
+                          <div className="grid h-full min-h-0 auto-rows-fr gap-2.5">
+                            {selectedSellerDocumentCategories.map((category) => {
+                              const chartColor = category.progress >= 100 ? '#0f8f59' : '#315b7a'
+                              return (
+                                <div key={category.key} className="grid min-h-[68px] min-w-0 grid-cols-[minmax(0,1fr)_44px] items-center gap-3 rounded-[16px] border border-[#e4edf6] bg-[#fbfdff] px-3 py-2.5 shadow-[0_8px_20px_rgba(31,54,78,0.025)]">
+                                  <div className="min-w-0">
+                                    <p className="truncate text-sm font-semibold leading-5 text-[#20364c]" title={category.label}>{category.label}</p>
+                                    <p className="mt-1 text-xs font-semibold leading-4 text-[#6d839b]">{category.completed} of {category.total} complete</p>
+                                    <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[#e4ebf3]">
+                                      <span className={`block h-full rounded-full ${category.progress >= 100 ? 'bg-[#0f8f59]' : 'bg-[#315b7a]'}`} style={{ width: `${category.progress}%` }} />
+                                    </div>
+                                  </div>
+                                  <span
+                                    className="grid h-11 w-11 place-items-center rounded-full p-1"
+                                    style={{ background: `conic-gradient(${chartColor} ${category.progress * 3.6}deg, #e5ecf5 0deg)` }}
+                                    aria-label={`${category.label} ${category.progress}% complete`}
+                                  >
+                                    <span className="grid h-full w-full place-items-center rounded-full bg-white text-center text-[0.68rem] font-semibold leading-none text-[#102033] shadow-[inset_0_0_18px_rgba(31,54,78,0.025)]">
+                                      {category.progress}%
+                                    </span>
+                                  </span>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      </section>
+
+                      <section className="flex min-h-[318px] min-w-0 flex-col overflow-hidden rounded-[20px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_34px_rgba(31,54,78,0.05)] lg:col-start-2 lg:row-start-2">
                         <div className="flex items-center justify-between gap-3 border-b border-[#edf3f8] px-5 py-4">
                           <h3 className="text-base font-semibold text-[#102033]">Lead Activity</h3>
                           <Button type="button" size="sm" variant="secondary" className="h-9 rounded-[12px] px-3 text-xs" onClick={() => handleLeadWorkspaceTabSelection('activity')}>
@@ -32609,12 +33156,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                 <div key={group.key}>
                                   <p className="mb-3 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#8aa0b7]">{group.label}</p>
                                   <div className="space-y-0">
-                                    {group.rows.slice(0, 4).map((item, index) => {
+                                    {group.rows.map((item, index) => {
                                       const presentation = getLeadActivityPresentation(`${item.sourceLabel} ${item.title} ${item.sourceType}`)
                                       const ActivityIcon = presentation.Icon
                                       return (
                                         <article key={item.id || `${group.key}-${index}`} className="relative grid grid-cols-[34px_minmax(0,1fr)] gap-3 pb-5 last:pb-0">
-                                          {index < group.rows.slice(0, 4).length - 1 ? <span className="absolute left-[16px] top-8 bottom-0 w-px bg-[#e8eef5]" /> : null}
+                                          {index < group.rows.length - 1 ? <span className="absolute left-[16px] top-8 bottom-0 w-px bg-[#e8eef5]" /> : null}
                                           <span className={`relative z-10 grid h-8 w-8 place-items-center rounded-full ${presentation.rail}`}>
                                             <ActivityIcon className="h-4 w-4" />
                                           </span>
@@ -32623,7 +33170,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                               <p className="min-w-0 truncate text-sm font-semibold text-[#20364c]">{item.sourceLabel || item.title || 'Lead update'}</p>
                                               <span className="shrink-0 text-xs font-medium text-[#8aa0b7]">{formatRelativeTime(item.timestamp || item.dueDate)}</span>
                                             </div>
-                                            <p className="mt-1 line-clamp-2 text-sm text-[#60758b]">{item.title || item.description || 'No note captured.'}</p>
+                                            <p className="mt-1 line-clamp-2 text-sm text-[#60758b]">{item.description || item.title || 'No note captured.'}</p>
                                           </div>
                                         </article>
                                       )
@@ -32640,14 +33187,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         </div>
                       </section>
 
-                      <section className="flex min-h-[430px] min-w-0 flex-col overflow-hidden rounded-[20px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_34px_rgba(31,54,78,0.05)]">
+                      <section className="flex min-h-[430px] min-w-0 flex-col overflow-hidden rounded-[20px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_34px_rgba(31,54,78,0.05)] lg:col-span-2 lg:row-start-3 xl:col-span-1 xl:col-start-3 xl:row-span-2 xl:row-start-1">
                         <div className="flex items-center justify-between gap-3 border-b border-[#edf3f8] px-5 py-4">
                           <h3 className="text-base font-semibold text-[#102033]">Seller Summary</h3>
                           <Button type="button" size="sm" variant="secondary" className="h-9 rounded-[12px] px-3 text-xs" onClick={() => handleLeadWorkspaceTabSelection('seller')}>
                             Edit
                           </Button>
                         </div>
-                        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-5">
+                        <div className="min-h-0 flex-1 space-y-3 px-5 py-5">
                           {selectedSellerSummarySections.map((section) => (
                             <div key={section.key} className="min-h-[126px] rounded-[14px] border border-[#e4edf6] bg-[#fbfdff] p-4">
                               <p className="text-sm font-semibold text-[#20364c]">{section.title}</p>

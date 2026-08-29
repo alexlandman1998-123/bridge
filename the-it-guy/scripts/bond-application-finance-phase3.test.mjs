@@ -6,7 +6,10 @@ import React from 'react'
 import ReactDOMServer from 'react-dom/server'
 import { createServer } from 'vite'
 
-import { buildAgentBondApplicationJourney } from '../src/modules/bond/application/workspace/index.js'
+import {
+  buildAgentBondApplicationJourney,
+  buildAgentBondApplicationWorkspace,
+} from '../src/modules/bond/application/workspace/index.js'
 
 const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -51,6 +54,27 @@ function workspace(overrides = {}) {
   assert.equal(presentation.journey.find((stage) => stage.key === 'submitted_to_banks')?.state, 'in_progress')
   assert.equal(presentation.activeWaitingKey, 'banks')
   assert.match(presentation.summary, /waiting for bank feedback/i)
+}
+
+{
+  const packageBackedWorkspace = buildAgentBondApplicationWorkspace({
+    transaction: { id: 'transaction-1' },
+    bondApplication: null,
+    originatorProgress: {
+      id: 'package-1',
+      transaction_id: 'transaction-1',
+      bond_application_id: 'application-1',
+      status: 'accepted_by_originator',
+      package_ready_at: '2026-08-20T08:00:00Z',
+    },
+  })
+  const presentation = buildAgentBondApplicationJourney(packageBackedWorkspace)
+  assert.equal(packageBackedWorkspace.applicationSource, 'originator_package_reference')
+  assert.equal(presentation.available, true)
+  assert.equal(presentation.journey[0].key, 'application_received')
+  assert.equal(presentation.journey[0].state, 'completed')
+  assert.equal(presentation.journey[1].key, 'documents_received')
+  assert.equal(presentation.journey[1].state, 'in_progress')
 }
 
 {

@@ -35,6 +35,7 @@ import { assessMvpTestDataProtection } from '../core/transactions/mvpTestDataPro
 import { buildMvpTransactionAuditRecovery } from '../core/transactions/mvpTransactionAuditRecovery.js'
 import { extractNewTransactionSetupHealthFromEvents } from '../core/transactions/newTransactionSetupHealth.js'
 import { getTransactionSharedProgress } from './transactionSharedProgressService.js'
+import { getTransactionSyncReadModel } from './transactionSyncReadModelService.js'
 
 const READ_MODEL_WARNING_PREFIX = '[workflow-read-model]'
 const ATTORNEY_ASSIGNMENTS_MIGRATION_HINT = 'transaction_attorney_assignments table missing. Run migration 202605090011_transaction_attorney_assignments_foundation.sql.'
@@ -1107,7 +1108,7 @@ export async function getTransactionWorkflowReadModel(transactionId, options = {
     health: mvpTransactionHealth,
     audit: mvpAudit,
   }
-  return {
+  const workflowReadModel = {
     transaction,
     mainStage: {
       key: normalizeMainStage(transaction.currentMainStage),
@@ -1143,5 +1144,19 @@ export async function getTransactionWorkflowReadModel(transactionId, options = {
       generatedAt: toIsoString(new Date()),
       schemaWarnings: warnings.length,
     },
+  }
+
+  const transactionSync = await getTransactionSyncReadModel(normalizedTransactionId, {
+    client,
+    viewerRole: options.viewerRole,
+    workflowReadModel,
+  }).catch((error) => {
+    appendWarning(warnings, `Canonical transaction sync read-model unavailable: ${error?.message || 'Unknown error'}`)
+    return null
+  })
+
+  return {
+    ...workflowReadModel,
+    transactionSync,
   }
 }

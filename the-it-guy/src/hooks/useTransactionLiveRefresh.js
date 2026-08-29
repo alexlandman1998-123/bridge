@@ -15,6 +15,7 @@ export default function useTransactionLiveRefresh({
   debounceMs = 350,
 } = {}) {
   const refreshRef = useRef(onRefresh)
+  const lastVersionRef = useRef(null)
   const [connectionState, setConnectionState] = useState('idle')
   const [lastRefreshAt, setLastRefreshAt] = useState(null)
   const [lastRefreshReason, setLastRefreshReason] = useState(null)
@@ -75,6 +76,26 @@ export default function useTransactionLiveRefresh({
       }, Math.max(0, Number(debounceMs) || 0))
     }
 
+    const handleVersionSignal = (payload) => {
+      const nextVersion = Number(payload?.new?.version || payload?.record?.version || 0)
+      if (nextVersion && lastVersionRef.current !== null && nextVersion <= lastVersionRef.current) return
+      if (nextVersion) lastVersionRef.current = nextVersion
+      scheduleRefresh('transaction_version_changed', payload)
+    }
+    const reconcileVersion = async () => {
+      const result = await supabase
+        .from('transaction_refresh_signals')
+        .select('version,changed_at')
+        .eq('transaction_id', normalizedTransactionId)
+        .maybeSingle()
+      if (result.error || !result.data) return
+      const remoteVersion = Number(result.data.version || 0)
+      if (lastVersionRef.current !== null && remoteVersion > lastVersionRef.current) {
+        scheduleRefresh('transaction_version_reconciled', result.data)
+      }
+      lastVersionRef.current = remoteVersion
+    }
+
     const channel = supabase
       .channel(createChannelName(normalizedTransactionId))
       .on(
@@ -82,10 +103,10 @@ export default function useTransactionLiveRefresh({
         {
           event: '*',
           schema: 'public',
-          table: 'transaction_shared_progress',
+          table: 'transaction_refresh_signals',
           filter: `transaction_id=eq.${normalizedTransactionId}`,
         },
-        (payload) => scheduleRefresh('shared_progress_changed', payload),
+        handleVersionSignal,
       )
 
     if (includeNotifications) {
@@ -104,6 +125,7 @@ export default function useTransactionLiveRefresh({
     channel.subscribe((status) => {
       if (!state.active) return
       setConnectionState(status === 'SUBSCRIBED' ? 'live' : status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' ? 'polling' : 'connecting')
+      if (status === 'SUBSCRIBED') void reconcileVersion()
     })
 
     const interval = window.setInterval(() => {
@@ -119,6 +141,7 @@ export default function useTransactionLiveRefresh({
     return () => {
       state.active = false
       state.pending = false
+      lastVersionRef.current = null
       if (state.timer) window.clearTimeout(state.timer)
       window.clearInterval(interval)
       window.removeEventListener('focus', handleFocus)

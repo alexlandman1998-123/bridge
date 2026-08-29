@@ -125,9 +125,11 @@ async function fetchSellerBrandingListing(client, listingId = '') {
   if (!normalizedListingId) return null
 
   const selectAttempts = [
-    'id, organisation_id, listing_status, status, listing_visibility, seller_lead_id, deleted_at',
-    'id, organisation_id, listing_status, listing_visibility, seller_lead_id, deleted_at',
+    // Production private listings use the canonical lifecycle columns. Keep
+    // this first so every branding request does not deliberately trigger two
+    // PostgREST 400s before reaching the compatible shape.
     'id, organisation_id, listing_status, listing_visibility, seller_lead_id',
+    'id, organisation_id, status, listing_visibility, seller_lead_id, deleted_at',
   ]
 
   let lastError = null
@@ -140,7 +142,7 @@ async function fetchSellerBrandingListing(client, listingId = '') {
 
     if (!error) return data || null
     lastError = error
-    if (!isMissingColumnError(error, 'status') && !isMissingColumnError(error, 'deleted_at')) {
+    if (!isMissingColumnError(error)) {
       throw error
     }
   }

@@ -245,6 +245,7 @@ import { getCanonicalDocumentRolloutMode } from '../services/documents/canonical
 import { resolveCrossModuleDocumentReference } from '../services/documents/crossModuleDocumentKeyMapService.js'
 import { resolveTransactionRoutingProfile } from '../services/transactionRoutingProfileService'
 import { publishTransactionSharedProgress } from '../services/transactionSharedProgressService.js'
+import { getAgentTransactionSyncReadModel } from '../services/transactionSyncReadModelService.js'
 import { buildTransactionRoutingBackfillPlan } from '../services/transactionRoutingGovernanceService'
 import {
   inferUniversalPartnerRoutingRoleTypes,
@@ -34235,6 +34236,7 @@ export async function fetchTransactionById(transactionId) {
         rolePlayers,
         bondApplication,
         liveChecklist,
+        transactionSync,
       ] = await Promise.all([
         fetchTransactionEvents(canonicalTransactionId),
         fetchTransactionProxyUpdatesWithClient(client, canonicalTransactionId, { limit: 100 }),
@@ -34252,6 +34254,7 @@ export async function fetchTransactionById(transactionId) {
           documents: unitDetail.documents || [],
           persistedRequirements: unitDetail.transactionRequiredDocuments || [],
         }),
+        getAgentTransactionSyncReadModel(canonicalTransactionId, { client }),
       ])
       const setupHealth = resolveTransactionSetupHealthFromEvents(transactionEvents)
       const bondApplicationIdentity = buildBondApplicationIdentity({
@@ -34290,6 +34293,7 @@ export async function fetchTransactionById(transactionId) {
         bondOriginatorAttorneyHandoffView,
         bondApplication,
         normalizedBondApplication: bondApplication,
+        transactionSync,
       }
     }
   }
@@ -34441,6 +34445,7 @@ export async function fetchTransactionById(transactionId) {
   const serverBondApplicationWorkspaceView = await fetchAgentBondApplicationWorkspaceView(client, canonicalTransactionId)
   const bondOriginatorAttorneyHandoffView = await fetchAttorneyBondOriginatorHandoffView(client, canonicalTransactionId)
   const bondApplication = await fetchNormalizedBondApplicationBundle(client, canonicalTransactionId)
+  const transactionSync = await getAgentTransactionSyncReadModel(canonicalTransactionId, { client })
   const bondApplicationIdentity = buildBondApplicationIdentity({
     transaction,
     bondApplication,
@@ -34540,6 +34545,7 @@ export async function fetchTransactionById(transactionId) {
     bondOriginatorAttorneyHandoffView,
     bondApplication,
     normalizedBondApplication: bondApplication,
+    transactionSync,
   }
   } catch (loadError) {
     console.warn('[transaction-detail] full detail load failed; leaving core shell in place', {

@@ -13,6 +13,9 @@ export const PERFORMANCE_BUDGETS_MS = Object.freeze({
   'legal_document.signing.signer_readiness': 8000,
   'legal_document.signing.email_delivery': 10000,
   'legal_document.signing.total': 15000,
+  'seller_leads.route.first_data': 1500,
+  'seller_leads.route.background_settled': 3500,
+  'seller_leads.workspace.ready': 2500,
 })
 
 function normalizeText(value) {

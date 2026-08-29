@@ -194,6 +194,8 @@ function pickOriginator(progress = null) {
       packageReadyAt: value(progress, 'packageReadyAt', 'package_ready_at'),
       acceptedAt: value(progress, 'acceptedAt', 'accepted_at'),
       lastDownloadedAt: value(progress, 'lastDownloadedAt', 'last_downloaded_at'),
+      createdAt: value(progress, 'createdAt', 'created_at'),
+      updatedAt: value(progress, 'updatedAt', 'updated_at'),
       downloadCount: value(progress, 'downloadCount', 'download_count') || 0,
     },
     progressEvents: array(progress.progressEvents || progress.progress_events),
@@ -205,6 +207,25 @@ function pickOriginator(progress = null) {
   }
 }
 
+function buildPackageApplicationReference(originator = {}, transaction = null) {
+  const packageRecord = originator?.package
+  const canonicalApplicationId = value(packageRecord, 'canonicalBondApplicationId', 'bond_application_id')
+  if (!packageRecord || !canonicalApplicationId) return null
+  return {
+    id: canonicalApplicationId,
+    transactionId: value(packageRecord, 'transactionId', 'transaction_id') || value(transaction, 'transactionId', 'id'),
+    status: packageRecord.status || null,
+    activeSubmissionId: value(packageRecord, 'activeSubmissionId', 'submission_id'),
+    submittedAt: value(packageRecord, 'packageReadyAt', 'package_ready_at'),
+    createdAt: value(packageRecord, 'createdAt', 'created_at') || value(packageRecord, 'packageReadyAt', 'package_ready_at'),
+    updatedAt: value(packageRecord, 'updatedAt', 'updated_at') || value(packageRecord, 'acceptedAt', 'accepted_at'),
+    participants: [],
+    documentRequirements: [],
+    participantSummary: { total: 0, ready: 0, outstanding: 0 },
+    documentRequirementSummary: { total: 0, satisfied: 0, outstanding: 0 },
+  }
+}
+
 export function buildAgentBondApplicationWorkspace({
   workspaceView = null,
   transaction = null,
@@ -213,8 +234,9 @@ export function buildAgentBondApplicationWorkspace({
   financeWorkflow = null,
   serverIdentity = null,
 } = {}) {
-  const application = pickApplication(workspaceView?.application || bondApplication)
   const originator = pickOriginator(workspaceView?.originator || originatorProgress)
+  const persistedApplication = pickApplication(workspaceView?.application || bondApplication)
+  const application = persistedApplication || buildPackageApplicationReference(originator, transaction)
   const finance = pickFinance(workspaceView?.finance || financeWorkflow)
   const identity = buildBondApplicationIdentity({
     transaction,
@@ -247,6 +269,7 @@ export function buildAgentBondApplicationWorkspace({
     valid: identity.valid,
     identity,
     application,
+    applicationSource: persistedApplication ? 'canonical_application' : application ? 'originator_package_reference' : 'unavailable',
     originator,
     finance,
     guarantees: {

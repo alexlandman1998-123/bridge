@@ -39,13 +39,13 @@ assert.ok(
 )
 assert.match(
   appSource,
-  /path="\/pipeline\/leads"[\s\S]{0,180}<Pipeline initialAgentViewMode="leads" \/>/,
-  'The canonical leads list route should use the unified pipeline workspace.',
+  /path="\/pipeline\/leads"[\s\S]{0,180}<AgencyLeadListRoutePage \/>/,
+  'The canonical leads list route should use the dedicated lead-list entry.',
 )
 assert.match(
   appSource,
-  /path="\/pipeline\/leads\/:leadId"[\s\S]{0,180}<Pipeline initialAgentViewMode="leads" \/>/,
-  'The canonical lead detail route should use the unified pipeline workspace.',
+  /path="\/pipeline\/leads\/:leadId"[\s\S]{0,180}<AgencyLeadWorkspaceRoutePage \/>/,
+  'The canonical lead detail route should use the dedicated workspace entry.',
 )
 assert.ok(
   appSource.includes('function resetLockedShellWindowScroll') &&
@@ -55,8 +55,13 @@ assert.ok(
 )
 assert.match(
   appSource,
-  /\}, \[location\.pathname, location\.search\]\)/,
-  'The shell should reset scroll on lead workspace tab query changes as well as path changes.',
+  /if \(pathname\.startsWith\('\/pipeline\/leads\/'\)\) return pathname/,
+  'Lead workspace query changes should retain the current scroll container instead of remounting it.',
+)
+assert.match(
+  appSource,
+  /resetLockedShellWindowScroll\(\)[\s\S]{0,180}\}, \[routeContentKey\]\)/,
+  'The shell should reset scroll when its stable route content key changes.',
 )
 assert.ok(
   appSource.includes("window.addEventListener('focus', resetShellScrollIfLocked)") &&

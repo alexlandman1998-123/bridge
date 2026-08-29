@@ -373,6 +373,8 @@ const NewTransactionPage = lazy(() => import('./pages/NewTransactionPage'))
 const OnboardingProfileSetup = lazy(() => import('./pages/OnboardingProfileSetup'))
 const OnboardingLinksDemoPage = lazy(() => import('./pages/OnboardingLinksDemoPage'))
 const Pipeline = lazy(() => import('./pages/Pipeline'))
+const AgencyLeadListRoutePage = lazy(() => import('./pages/agency/AgencyLeadListRoutePage'))
+const AgencyLeadWorkspaceRoutePage = lazy(() => import('./pages/agency/AgencyLeadWorkspaceRoutePage'))
 const PipelineCanvassingPage = lazy(() => import('./pages/PipelineCanvassingPage'))
 const PipelineOverviewPage = lazy(() => import('./pages/PipelineOverviewPage'))
 const PlaceholderPage = lazy(() => import('./pages/PlaceholderPage'))
@@ -2857,7 +2859,7 @@ function AppRoutes() {
                 element={
                   <SalesWorkspaceGuard>
                     <RoleRoute allowedRoles={['agent']}>
-                      <Pipeline initialAgentViewMode="leads" />
+                      <AgencyLeadListRoutePage />
                     </RoleRoute>
                   </SalesWorkspaceGuard>
                 }
@@ -2879,7 +2881,7 @@ function AppRoutes() {
                 element={
                   <SalesWorkspaceGuard>
                     <RoleRoute allowedRoles={['agent']}>
-                      <Pipeline initialAgentViewMode="leads" />
+                      <AgencyLeadWorkspaceRoutePage />
                     </RoleRoute>
                   </SalesWorkspaceGuard>
                 }

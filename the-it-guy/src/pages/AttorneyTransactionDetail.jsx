@@ -96,6 +96,10 @@ import {
   USE_TRANSACTION_ROLLUP_OVERVIEW,
 } from '../core/transactions/transactionLifecycle'
 import { buildTransactionJourneyPresentation } from '../core/transactions/transactionJourneyPresentation'
+import {
+  hasCanonicalTransactionJourney,
+  selectStableTransactionRollup,
+} from '../core/transactions/stableTransactionRollup'
 import { JOURNEY_ENTITY_TYPES } from '../core/journey/journeyStagePolicy.js'
 import { applyJourneyStageOverrides } from '../core/journey/journeyStageOverrideState.js'
 import { resolveTransactionBuyerAccessPolicy } from '../core/transactions/transactionBuyersPolicy'
@@ -9277,10 +9281,6 @@ function ArchlineDocumentsWorkspace({
   if (loading) {
     return (
       <section className="archline-documents-workspace space-y-4" aria-busy="true" aria-label="Loading transaction documents">
-        <div>
-          <div className="h-6 w-32 animate-pulse rounded bg-slate-200" />
-          <div className="mt-2 h-4 w-full max-w-md animate-pulse rounded bg-slate-100" />
-        </div>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
           {Array.from({ length: 6 }, (_, index) => (
             <div key={index} className="min-h-[112px] animate-pulse rounded-lg border border-slate-200 bg-white p-4">
@@ -9310,56 +9310,33 @@ function ArchlineDocumentsWorkspace({
   return (
     <>
       <section className="archline-documents-workspace space-y-4">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <h2 className="text-xl font-semibold tracking-[-0.02em] text-slate-950">Documents</h2>
-            <p className="mt-1 text-sm leading-6 text-slate-600">Manage, review and request documents for this matter.</p>
-          </div>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center lg:justify-end">
-            <Button type="button" variant="secondary" size="sm" onClick={onRequest} className="min-w-0 justify-center whitespace-normal">
-              <FileText size={14} />
-              Request Document
-            </Button>
-            <Button type="button" size="sm" onClick={onUpload} className="min-w-0 justify-center whitespace-normal">
-              <Upload size={14} />
-              Upload Document
-            </Button>
-          </div>
-        </div>
-
-        <div className="space-y-3">
-          <div>
-            <h3 className="text-base font-semibold text-slate-950">Document Health</h3>
-            <p className="mt-1 text-sm text-slate-500">Live status across required, missing, review, and received document rows.</p>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-            {dashboardModel.summaryCards.map((card) => {
-              const Icon = card.icon
-              return (
-                <button
-                  key={card.label}
-                  type="button"
-                  className="min-h-[112px] rounded-lg border border-slate-200 bg-white p-4 text-left shadow-[0_14px_30px_rgba(15,23,42,0.035)] transition hover:border-emerald-200 hover:bg-emerald-50/30"
-                  onClick={() => onFilterChange?.(card.filter)}
-                >
-                  <div className="flex items-start gap-3">
-                    <span className={`inline-flex size-10 shrink-0 items-center justify-center rounded-full ${card.tone}`}>
-                      <Icon size={17} />
-                    </span>
-                    <span className="min-w-0">
-                      <strong className="block text-xl font-semibold leading-6 text-slate-950">{card.value}</strong>
-                      <span className="mt-1 block text-xs font-semibold text-slate-950">{card.label}</span>
-                      <span className="mt-1 block text-xs leading-5 text-slate-500">{card.helper}</span>
-                    </span>
-                  </div>
-                </button>
-              )
-            })}
-          </div>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+          {dashboardModel.summaryCards.map((card) => {
+            const Icon = card.icon
+            return (
+              <button
+                key={card.label}
+                type="button"
+                className="min-h-[112px] rounded-lg border border-slate-200 bg-white p-4 text-left shadow-[0_14px_30px_rgba(15,23,42,0.035)] transition hover:border-emerald-200 hover:bg-emerald-50/30"
+                onClick={() => onFilterChange?.(card.filter)}
+              >
+                <div className="flex items-start gap-3">
+                  <span className={`inline-flex size-10 shrink-0 items-center justify-center rounded-full ${card.tone}`}>
+                    <Icon size={17} />
+                  </span>
+                  <span className="min-w-0">
+                    <strong className="block text-xl font-semibold leading-6 text-slate-950">{card.value}</strong>
+                    <span className="mt-1 block text-xs font-semibold text-slate-950">{card.label}</span>
+                    <span className="mt-1 block text-xs leading-5 text-slate-500">{card.helper}</span>
+                  </span>
+                </div>
+              </button>
+            )
+          })}
         </div>
 
         <ArchlinePanel className="overflow-hidden">
-          <div className="border-b border-slate-200 p-4">
+          <div className="flex flex-col gap-3 border-b border-slate-200 p-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="inline-flex w-full rounded-lg border border-slate-200 bg-slate-50 p-1 sm:w-auto">
               {[
                 ['all', 'All'],
@@ -9377,6 +9354,16 @@ function ArchlineDocumentsWorkspace({
                   {label}
                 </button>
               ))}
+            </div>
+            <div className="flex w-full gap-2 sm:w-auto sm:justify-end">
+              <Button type="button" variant="secondary" size="sm" onClick={onRequest} className="min-w-0 justify-center whitespace-normal flex-1 sm:flex-none">
+                <FileText size={14} />
+                Request Document
+              </Button>
+              <Button type="button" size="sm" onClick={onUpload} className="min-w-0 justify-center whitespace-normal flex-1 sm:flex-none">
+                <Upload size={14} />
+                Upload Document
+              </Button>
             </div>
           </div>
 
@@ -14175,6 +14162,7 @@ function AgentTransactionOverview({
 
 function AgentTransactionCommandCenter({
   journeyModel = null,
+  journeyLoading = false,
   outstandingItems = [],
   nextAction = null,
   activityEntries = [],
@@ -14224,6 +14212,7 @@ function AgentTransactionCommandCenter({
     <section className="space-y-4">
       <TransactionJourneyTracker
         model={journeyModel}
+        loading={journeyLoading}
         title="Transaction Journey"
         subtitle="The same milestone view shared with every party in this transaction."
         action={<Button type="button" variant="secondary" size="sm" onClick={onOpenTimeline}>View full journey<ChevronRight size={14} /></Button>}
@@ -15877,6 +15866,9 @@ function AttorneyTransactionDetail() {
   const [, setWorkflowLoading] = useState(false)
   const [, setWorkflowError] = useState('')
   const [transactionRollup, setTransactionRollup] = useState(null)
+  const [transactionRollupLoading, setTransactionRollupLoading] = useState(
+    () => Boolean(USE_TRANSACTION_ROLLUP_OVERVIEW && transactionId),
+  )
   const [, setTransactionRollupError] = useState('')
   const [workflowDrawerLaneKey, setWorkflowDrawerLaneKey] = useState('')
   const [workflowFocusedStepKey, setWorkflowFocusedStepKey] = useState('')
@@ -15900,6 +15892,77 @@ function AttorneyTransactionDetail() {
   const [activityFilter, setActivityFilter] = useState('all')
   const processedBondConsultantDeepLinkRef = useRef('')
   const foregroundLoadTransactionRef = useRef('')
+  const transactionRollupRequestRef = useRef({
+    key: '',
+    promise: null,
+    sequence: 0,
+    value: null,
+    resolvedAt: 0,
+  })
+  const transactionRollupRequestSequenceRef = useRef(0)
+
+  const requestTransactionRollup = useCallback(async (requestedTransactionId, { force = false } = {}) => {
+    const normalizedTransactionId = String(requestedTransactionId || '').trim()
+    if (!USE_TRANSACTION_ROLLUP_OVERVIEW || !normalizedTransactionId) return null
+
+    const requestKey = `${normalizedTransactionId}:${workspaceRole || 'unknown'}`
+    const activeRequest = transactionRollupRequestRef.current
+    if (activeRequest.key === requestKey && activeRequest.promise) {
+      return activeRequest.promise
+    }
+    if (
+      !force &&
+      activeRequest.key === requestKey &&
+      activeRequest.value &&
+      Date.now() - activeRequest.resolvedAt < 2000
+    ) {
+      return activeRequest.value
+    }
+
+    const sequence = transactionRollupRequestSequenceRef.current + 1
+    transactionRollupRequestSequenceRef.current = sequence
+    setTransactionRollupLoading(true)
+    const promise = getTransactionRollup(normalizedTransactionId, { actorRole: workspaceRole })
+    transactionRollupRequestRef.current = {
+      key: requestKey,
+      promise,
+      sequence,
+      value: activeRequest.key === requestKey ? activeRequest.value : null,
+      resolvedAt: activeRequest.key === requestKey ? activeRequest.resolvedAt : 0,
+    }
+
+    try {
+      const rollup = await promise
+      const latestRequest = transactionRollupRequestRef.current
+      if (latestRequest.key === requestKey && latestRequest.sequence === sequence) {
+        transactionRollupRequestRef.current = {
+          ...latestRequest,
+          value: rollup || latestRequest.value,
+          resolvedAt: Date.now(),
+        }
+        setTransactionRollup((previous) =>
+          selectStableTransactionRollup(previous, rollup, { transactionId: normalizedTransactionId }),
+        )
+        setTransactionRollupError('')
+      }
+      return rollup
+    } catch (rollupError) {
+      const latestRequest = transactionRollupRequestRef.current
+      if (latestRequest.key === requestKey && latestRequest.sequence === sequence) {
+        setTransactionRollupError(rollupError?.message || 'Unable to load transaction roll-up.')
+      }
+      throw rollupError
+    } finally {
+      const latestRequest = transactionRollupRequestRef.current
+      if (latestRequest.key === requestKey && latestRequest.sequence === sequence) {
+        transactionRollupRequestRef.current = {
+          ...latestRequest,
+          promise: null,
+        }
+        setTransactionRollupLoading(false)
+      }
+    }
+  }, [workspaceRole])
 
   useEffect(() => {
     if (!location.state?.openBuyerOnboardingRoleplayers) return
@@ -15963,7 +16026,7 @@ function AttorneyTransactionDetail() {
     }
 
     const initialRollupRequest = !background && USE_TRANSACTION_ROLLUP_OVERVIEW
-      ? getTransactionRollup(transactionId, { actorRole: workspaceRole })
+      ? requestTransactionRollup(transactionId)
           .then((rollup) => ({ rollup, error: null }))
           .catch((rollupError) => ({ rollup: null, error: rollupError }))
       : Promise.resolve(null)
@@ -15986,7 +16049,6 @@ function AttorneyTransactionDetail() {
         setError('Transaction not found.')
       }
       if (initialRollupResult) {
-        setTransactionRollup(initialRollupResult.rollup)
         setTransactionRollupError(initialRollupResult.error?.message || '')
       }
     } catch (loadError) {
@@ -16003,7 +16065,7 @@ function AttorneyTransactionDetail() {
         foregroundLoadTransactionRef.current = ''
       }
     }
-  }, [navigationPreviewData?.transaction, transactionId, workspaceRole])
+  }, [navigationPreviewData?.transaction, requestTransactionRollup, transactionId])
 
   useEffect(() => {
     setData(initialTransactionShell)
@@ -16017,6 +16079,17 @@ function AttorneyTransactionDetail() {
     setWorkflowInlineStepDraft(null)
     setLocalLegalWorkflowDetailKey('')
     setMatterAccessKey(workspaceRole !== 'attorney' ? currentMatterAccessKey : '')
+    transactionRollupRequestSequenceRef.current += 1
+    transactionRollupRequestRef.current = {
+      key: '',
+      promise: null,
+      sequence: transactionRollupRequestSequenceRef.current,
+      value: null,
+      resolvedAt: 0,
+    }
+    setTransactionRollup(null)
+    setTransactionRollupError('')
+    setTransactionRollupLoading(Boolean(USE_TRANSACTION_ROLLUP_OVERVIEW && transactionId))
     setLoading(true)
   }, [currentMatterAccessKey, initialTransactionShell, transactionId, workspaceRole])
 
@@ -16551,13 +16624,10 @@ function AttorneyTransactionDetail() {
       }
 
       try {
-        const rollup = await getTransactionRollup(transaction.id, { actorRole: workspaceRole })
+        await requestTransactionRollup(transaction.id)
         if (!active) return
-        setTransactionRollup(rollup)
-        setTransactionRollupError('')
       } catch (rollupError) {
         if (!active) return
-        setTransactionRollup(null)
         setTransactionRollupError(rollupError?.message || 'Unable to load transaction roll-up.')
       }
     }
@@ -16566,7 +16636,7 @@ function AttorneyTransactionDetail() {
     return () => {
       active = false
     }
-  }, [transaction?.current_main_stage, transaction?.id, transaction?.stage, transaction?.updated_at, workspaceRole])
+  }, [requestTransactionRollup, transaction?.current_main_stage, transaction?.id, transaction?.stage, transaction?.updated_at])
 
   useEffect(() => {
     if (!availableDiscussionVisibilityOptions.length) return
@@ -18703,11 +18773,8 @@ function AttorneyTransactionDetail() {
       await loadData({ background: true })
       if (USE_TRANSACTION_ROLLUP_OVERVIEW) {
         try {
-          const refreshedRollup = await getTransactionRollup(transaction.id, { actorRole: workspaceRole })
-          setTransactionRollup(refreshedRollup)
-          setTransactionRollupError('')
+          await requestTransactionRollup(transaction.id, { force: true })
         } catch (rollupError) {
-          setTransactionRollup(null)
           setTransactionRollupError(rollupError?.message || 'Unable to load transaction roll-up.')
         }
       }
@@ -19927,6 +19994,12 @@ function AttorneyTransactionDetail() {
       fallbackSource: 'agent-legacy',
     }),
     [agentOverviewJourneyStages, displayedLifecycleProgress?.progressPercent, transactionRollup?.transactionJourneySnapshot],
+  )
+  const agentOverviewJourneyLoading = Boolean(
+    USE_TRANSACTION_ROLLUP_OVERVIEW &&
+      transaction?.id &&
+      transactionRollupLoading &&
+      !hasCanonicalTransactionJourney(transactionRollup),
   )
   const agentOverviewJourneyReason = useMemo(
     () =>
@@ -21960,6 +22033,7 @@ function AttorneyTransactionDetail() {
                   isTransactionOperatorView ? (
                     <AgentTransactionCommandCenter
                       journeyModel={agentOverviewJourneyModel}
+                      journeyLoading={agentOverviewJourneyLoading}
                       outstandingItems={agentOverviewOutstandingItems}
                       nextAction={agentOverviewNextAction}
                       activityEntries={overviewConversationEntries}

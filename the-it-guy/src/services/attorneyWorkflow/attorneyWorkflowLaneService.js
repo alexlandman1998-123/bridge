@@ -41,6 +41,11 @@ import {
 import { buildAttorneyMatterScopeAudit } from '../../core/transactions/attorneyMatterScopeAudit.js'
 import { canAdvanceWorkflowStage } from '../documents/canonicalWorkflowGateService'
 import {
+  buildTransactionSyncIdempotencyKey,
+} from '../transactionSyncCommandService.js'
+import { commitTransactionModuleAction } from '../transactionSyncActionAdapters.js'
+import { getAttorneyTransactionSyncReadModel } from '../transactionSyncReadModelService.js'
+import {
   getTransactionProgressNotifications,
   publishTransactionSharedProgress,
 } from '../transactionSharedProgressService.js'
@@ -1229,6 +1234,15 @@ export async function getAttorneyWorkflowOperationsForTransaction(transactionId,
     }),
   }))
 
+  const transactionSync = await getAttorneyTransactionSyncReadModel(normalizedTransactionId, {
+    client,
+    workflowReadModel: {
+      mainStage: { key: transaction.current_main_stage || null },
+      detailedStage: { key: transaction.stage || null },
+      lanes,
+    },
+  }).catch(() => null)
+
   return scopeAttorneyWorkflowOperations({
     transaction,
     workflow,
@@ -1240,6 +1254,7 @@ export async function getAttorneyWorkflowOperationsForTransaction(transactionId,
     missingRequiredRoles: workflow.missingRequiredRoles,
     assignments,
     notificationDeliveries,
+    transactionSync,
     notificationSummary: {
       total: notificationDeliveries.length,
       queued: notificationDeliveries.filter((item) => ['prepared', 'queued', 'processing'].includes(item.status)).length,
@@ -1547,6 +1562,7 @@ export async function updateAttorneyWorkflowLaneStage({
   note = '',
   laneStatus = 'in_progress',
   visibility = 'internal',
+  idempotencyKey = '',
 } = {}) {
   const client = requireClient()
   const actor = await getAuthenticatedUser(client)
@@ -1692,6 +1708,43 @@ export async function updateAttorneyWorkflowLaneStage({
     sourceId: lane.id,
   })
 
+  const actionKey = normalizedLaneKey === 'bond'
+    ? 'BOND_ATTORNEY_STAGE_UPDATED'
+    : normalizedLaneKey === 'cancellation'
+      ? 'CANCELLATION_ATTORNEY_STAGE_UPDATED'
+      : normalizedStageKey === 'registration_confirmed'
+        ? 'TRANSFER_REGISTRATION_CONFIRMED'
+        : 'TRANSFER_ATTORNEY_STAGE_UPDATED'
+  const professionalTitle = `${LANE_META[normalizedLaneKey].label}: ${getStageLabel(normalizedStageKey, normalizedLaneKey)}`
+  const professionalDescription = `${LANE_META[normalizedLaneKey].label} moved to ${getStageLabel(normalizedStageKey, normalizedLaneKey)}.`
+  await commitTransactionModuleAction({
+    client,
+    transactionId: normalizedTransactionId,
+    actionKey,
+    idempotencyKey: idempotencyKey || buildTransactionSyncIdempotencyKey({
+      transactionId: normalizedTransactionId,
+      actionKey,
+      sourceRecordId: lane.id,
+      revision: nowIso,
+    }),
+    sourceRecordId: lane.id,
+    visibility: normalizeVisibility(visibility),
+    audience: normalizeVisibility(visibility) === 'client_visible' ? ['buyer', 'seller'] : [
+      'agent', 'bond_originator', 'transfer_attorney', 'bond_attorney', 'cancellation_attorney',
+    ],
+    professionalTitle,
+    professionalDescription,
+    clientTitle: 'Your transaction has progressed',
+    clientDescription: `Your transaction has moved to ${getStageLabel(normalizedStageKey, normalizedLaneKey)}.`,
+    eventData: {
+      laneKey: normalizedLaneKey,
+      previousStage: currentStage || null,
+      newStage: normalizedStageKey,
+      status: nextLaneStatus,
+    },
+    optionalUntilMigrated: true,
+  })
+
   return getAttorneyWorkflowOperationsForTransaction(normalizedTransactionId, { initialize: false })
 }
 
@@ -1799,6 +1852,7 @@ export async function addAttorneyTransactionUpdate({
   documentId = null,
   signingPacketId = null,
   workPacket = null,
+  idempotencyKey = '',
 } = {}) {
   const client = requireClient()
   const actor = await getAuthenticatedUser(client)
@@ -1836,6 +1890,33 @@ export async function addAttorneyTransactionUpdate({
   })
   assertCanPublishVisibility(permissionContext, normalizedVisibility)
   const lane = await fetchLaneForUpdate(client, normalizedTransactionId, normalizedLaneKey)
+
+  if (isGenericInternalNote && normalizedVisibility === 'internal') {
+    const actionKey = normalizedLaneKey === 'bond'
+      ? 'BOND_ATTORNEY_COMMENT_ADDED'
+      : normalizedLaneKey === 'cancellation'
+        ? 'CANCELLATION_ATTORNEY_COMMENT_ADDED'
+        : 'TRANSFER_ATTORNEY_COMMENT_ADDED'
+    const stableKey = idempotencyKey || buildTransactionSyncIdempotencyKey({
+      transactionId: normalizedTransactionId,
+      actionKey,
+      sourceRecordId: lane.id,
+      revision: globalThis.crypto?.randomUUID?.() || `${Date.now()}`,
+    })
+    const atomicComment = await client.rpc('bridge_add_attorney_comment_and_sync_phase3', {
+      p_transaction_id: normalizedTransactionId,
+      p_lane_key: normalizedLaneKey,
+      p_message: normalizedMessage,
+      p_idempotency_key: stableKey,
+    })
+    if (!atomicComment.error) {
+      return getAttorneyWorkflowOperationsForTransaction(normalizedTransactionId, { initialize: false })
+    }
+    const atomicMessage = `${atomicComment.error?.message || ''} ${atomicComment.error?.details || ''}`.toLowerCase()
+    const phase3Unavailable = atomicComment.error?.code === 'PGRST202' || atomicComment.error?.code === '42883' ||
+      (atomicMessage.includes('bridge_add_attorney_comment_and_sync_phase3') && atomicMessage.includes('not found'))
+    if (!phase3Unavailable) throw atomicComment.error
+  }
 
   const payload = {
     transaction_id: normalizedTransactionId,

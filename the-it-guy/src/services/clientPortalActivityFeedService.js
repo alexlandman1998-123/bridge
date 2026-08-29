@@ -1165,7 +1165,25 @@ function buildRawClientPortalActivityEvents(transactionIdOrContext, clientRole =
 
   const portalData = context?.portalData || {}
   const resolvedClientRole = normalize(clientRole) === 'seller' ? 'seller' : 'buyer'
+  const canonicalSyncEvents = (context?.workflowReadModel?.transactionSync?.activity || []).map((activity) => ({
+    id: `transaction_sync_${activity.id}`,
+    type: activity.eventType || 'transaction_update',
+    timestamp: activity.occurredAt,
+    actor: 'Transaction Team',
+    actorRole: 'Professional',
+    visibility: activity.visibility,
+    relatedEntityType: 'transaction_sync_activity',
+    relatedEntityId: activity.canonicalEventId || activity.id,
+    metadata: {
+      ...(activity.payload || {}),
+      title: activity.title,
+      description: activity.description,
+      audience: resolvedClientRole,
+      category: activity.laneKey || 'transaction',
+    },
+  }))
   const allEvents = [
+    ...canonicalSyncEvents,
     ...buildOnboardingEvents(portalData, resolvedClientRole),
     ...buildDocumentEvents(portalData, resolvedClientRole),
     ...buildSellerComplianceEvents(portalData, resolvedClientRole),

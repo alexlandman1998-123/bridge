@@ -109,6 +109,7 @@ import {
   USE_TRANSACTION_ROLLUP_OVERVIEW,
 } from '../core/transactions/transactionLifecycle'
 import { buildTransactionJourneyPresentation } from '../core/transactions/transactionJourneyPresentation'
+import { selectStableTransactionRollup } from '../core/transactions/stableTransactionRollup'
 import {
   getDocumentStatusLabel,
   getDocumentStatusTone,
@@ -3488,11 +3489,12 @@ function UnitDetail() {
       try {
         const rollup = await getTransactionRollup(transactionId, { actorRole: actingRole })
         if (!active) return
-        setTransactionRollup(rollup)
+        setTransactionRollup((previous) =>
+          selectStableTransactionRollup(previous, rollup, { transactionId }),
+        )
         setTransactionRollupError('')
       } catch (rollupError) {
         if (!active) return
-        setTransactionRollup(null)
         setTransactionRollupError(rollupError?.message || 'Unable to load transaction roll-up.')
       }
     }
@@ -3677,10 +3679,11 @@ function UnitDetail() {
       if (USE_TRANSACTION_ROLLUP_OVERVIEW) {
         try {
           const refreshedRollup = await getTransactionRollup(detail.transaction.id, { actorRole: actingRole })
-          setTransactionRollup(refreshedRollup)
+          setTransactionRollup((previous) =>
+            selectStableTransactionRollup(previous, refreshedRollup, { transactionId: detail.transaction.id }),
+          )
           setTransactionRollupError('')
         } catch (rollupError) {
-          setTransactionRollup(null)
           setTransactionRollupError(rollupError?.message || 'Unable to load transaction roll-up.')
         }
       }

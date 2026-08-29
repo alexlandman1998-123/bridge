@@ -44,17 +44,21 @@ assert.ok(
 )
 assert.match(
   app,
-  /path="\/pipeline\/leads"[\s\S]{0,180}<Pipeline initialAgentViewMode="leads" \/>/,
-  'The lead list route should use the unified pipeline workspace.',
+  /path="\/pipeline\/leads"[\s\S]{0,180}<AgencyLeadListRoutePage \/>/,
+  'The lead list route should use the dedicated lead-list entry.',
 )
 assert.match(
   app,
-  /path="\/pipeline\/leads\/:leadId"[\s\S]{0,180}<Pipeline initialAgentViewMode="leads" \/>/,
-  'The lead detail route should use the unified pipeline workspace.',
+  /path="\/pipeline\/leads\/:leadId"[\s\S]{0,180}<AgencyLeadWorkspaceRoutePage \/>/,
+  'The lead detail route should use the dedicated workspace entry.',
 )
+const legalRouteStart = app.indexOf('path="/pipeline/leads/:leadId/legal/:packetType"')
+const detailRouteStart = app.indexOf('path="/pipeline/leads/:leadId"', legalRouteStart + 1)
+assert.notEqual(legalRouteStart, -1, 'The explicit legal document route should remain registered.')
+assert.notEqual(detailRouteStart, -1, 'The lead detail route should follow the legal document route.')
 assert.match(
-  app,
-  /path="\/pipeline\/leads\/:leadId\/legal\/:packetType"[\s\S]{0,280}?<LegalDocumentWorkspacePage \/>/,
+  app.slice(legalRouteStart, detailRouteStart),
+  /<LegalDocumentWorkspacePage \/>/,
   'Explicit legal document URLs should still open the legal workspace.',
 )
 

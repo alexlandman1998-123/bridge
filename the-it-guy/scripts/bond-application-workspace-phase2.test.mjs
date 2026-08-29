@@ -176,6 +176,34 @@ function fixture() {
   assert.equal(workspace.valid, false, 'a mismatched server application must invalidate the workspace')
 }
 
+{
+  const base = fixture()
+  const workspace = buildAgentBondApplicationWorkspace({
+    ...base,
+    bondApplication: null,
+  })
+  assert.equal(workspace.valid, true)
+  assert.equal(workspace.available, true)
+  assert.equal(workspace.applicationSource, 'originator_package_reference')
+  assert.equal(workspace.application.id, 'canonical-application-1')
+  assert.equal(workspace.application.transactionId, 'transaction-1')
+}
+
+{
+  const base = fixture()
+  const workspace = buildAgentBondApplicationWorkspace({
+    ...base,
+    bondApplication: null,
+    originatorProgress: {
+      ...base.originatorProgress,
+      bond_application_id: null,
+    },
+    serverIdentity: null,
+  })
+  assert.equal(workspace.application, null, 'an uncorrelated package must not invent an application reference')
+  assert.equal(workspace.applicationSource, 'unavailable')
+}
+
 const migration = fs.readFileSync(migrationPath, 'utf8')
 assert.match(migration, /bridge_agent_bond_application_workspace_view/)
 assert.match(migration, /bridge_can_access_transaction_spine\(p_transaction_id\)/)

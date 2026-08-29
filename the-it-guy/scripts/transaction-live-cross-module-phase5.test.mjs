@@ -10,7 +10,10 @@ const progressService = await readFile('src/services/transactionSharedProgressSe
 const readModelService = await readFile('src/services/transactionWorkflowReadModelService.js', 'utf8')
 const clientWorkspaceService = await readFile('src/services/clientPortalWorkspaceService.js', 'utf8')
 
-assert.match(hook, /table: 'transaction_shared_progress'/)
+assert.match(hook, /table: 'transaction_refresh_signals'/)
+assert.match(hook, /transaction_version_changed/)
+assert.match(hook, /transaction_version_reconciled/)
+assert.match(hook, /lastVersionRef/)
 assert.match(hook, /filter: `transaction_id=eq\.\$\{normalizedTransactionId\}`/)
 assert.match(hook, /table: 'notification_events'/)
 assert.match(hook, /poll_interval/)

@@ -187,12 +187,14 @@ async function processSingleTransaction(transaction = {}, options = {}) {
     createdBy: options.createdBy || null,
   })
 
-  const compatibility = await syncTransactionCompatibilityFields(transactionId, canonicalRollup, {
-    client,
-    transaction,
-    createdBy: options.createdBy || null,
-    source,
-  })
+  const compatibility = options.syncCompatibilityFields === false
+    ? null
+    : await syncTransactionCompatibilityFields(transactionId, canonicalRollup, {
+        client,
+        transaction,
+        createdBy: options.createdBy || null,
+        source,
+      })
 
   const validation = buildTransactionRollupValidation({
     transaction,
