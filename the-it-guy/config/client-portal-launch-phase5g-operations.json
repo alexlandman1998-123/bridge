@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "contractId": "arch9-client-portal-launch-phase5g-v1",
+  "candidate": {
+    "commit": "9a1aeb8fcfdf4c90e0a61086db1f7176c8346a1c",
+    "deploymentId": "dpl_AiLLY2V2LsDBcYvMo7YntaB1PQne",
+    "url": "https://bridge-im7c0rxji-alexs-projects-f5496a21.vercel.app"
+  },
+  "owners": {
+    "monitoringOwner": "",
+    "supportOwner": "",
+    "rollbackOwner": "",
+    "productOwner": ""
+  },
+  "monitoring": {
+    "status": "pending",
+    "baseline": {
+      "vercelRuntimeLogsAvailable": true,
+      "clientPortalLaunchMetricsAvailable": true,
+      "externalIntegrationsObserved": []
+    },
+    "requiredSignals": [
+      "route-crashes",
+      "function-errors",
+      "buyer-useful-content",
+      "seller-useful-content",
+      "cumulative-layout-shift",
+      "primary-task-failures",
+      "confirmed-data-exposure"
+    ],
+    "alertTestResult": "pending",
+    "dashboardUrl": "",
+    "evidenceUrl": ""
+  },
+  "support": {
+    "status": "pending",
+    "criticalAcknowledgementMinutes": 15,
+    "highAcknowledgementMinutes": 60,
+    "supportChannel": "",
+    "escalationChannel": "",
+    "runbookUrl": "",
+    "evidenceUrl": ""
+  },
+  "rollback": {
+    "status": "pending",
+    "strategy": "Promote the last verified Vercel production deployment or run vercel rollback against the explicit deployment ID.",
+    "triggers": [
+      "any critical portal defect",
+      "any confirmed client data exposure",
+      "route crash rate above zero in the pilot",
+      "buyer or seller primary task failure",
+      "sustained mobile useful-content budget breach"
+    ],
+    "rehearsalEnvironment": "preview",
+    "rehearsalResult": "pending",
+    "recoveryTimeMinutes": null,
+    "testedBy": "",
+    "testedAt": "",
+    "evidenceUrl": ""
+  },
+  "pilot": {
+    "maximumAgencies": 1,
+    "automaticExpansion": false,
+    "observationHours": 72,
+    "dailyReviewOwner": ""
+  }
+}
