@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "contractId": "arch9-client-portal-launch-phase5e-v1",
+  "standard": "WCAG 2.2 AA",
+  "candidate": {
+    "commit": "e57255094ff5d900f9e71e86a31c78245ce439f7",
+    "deploymentId": "dpl_3RNeX37gGJvcX5fLZD7kdCiZuU2P",
+    "url": "https://bridge-pnmoiq13o-alexs-projects-f5496a21.vercel.app"
+  },
+  "personas": ["buyer", "seller"],
+  "requiredChecks": {
+    "keyboard": {
+      "requirements": ["logical-tab-order", "visible-focus", "no-keyboard-trap", "all-actions-operable", "dialog-focus-return"],
+      "buyerResult": "pending",
+      "sellerResult": "pending",
+      "testedBy": "",
+      "testedAt": "",
+      "evidenceUrl": ""
+    },
+    "screenReader": {
+      "requirements": ["landmarks", "headings", "control-names", "state-announcements", "errors-and-recovery", "active-navigation"],
+      "assistiveTechnologies": ["VoiceOver with Safari", "TalkBack with Chrome"],
+      "buyerResult": "pending",
+      "sellerResult": "pending",
+      "testedBy": "",
+      "testedAt": "",
+      "evidenceUrl": ""
+    },
+    "contrast": {
+      "requirements": ["body-text-4.5-to-1", "large-text-3-to-1", "controls-3-to-1", "focus-indicator-3-to-1", "semantic-colours-preserved"],
+      "buyerResult": "pending",
+      "sellerResult": "pending",
+      "testedBy": "",
+      "testedAt": "",
+      "evidenceUrl": ""
+    },
+    "touchTargets": {
+      "requirements": ["minimum-44px-launch-contract", "no-overlapping-targets", "safe-area-clearance"],
+      "buyerResult": "pending",
+      "sellerResult": "pending",
+      "testedBy": "",
+      "testedAt": "",
+      "evidenceUrl": ""
+    },
+    "zoomAndTextScaling": {
+      "requirements": ["browser-zoom-200-percent", "mobile-text-size-200-percent", "content-reflows", "no-lost-actions", "no-horizontal-page-scroll-at-320px"],
+      "buyerResult": "pending",
+      "sellerResult": "pending",
+      "testedBy": "",
+      "testedAt": "",
+      "evidenceUrl": ""
+    },
+    "reducedMotion": {
+      "requirements": ["prefers-reduced-motion-respected", "no-essential-information-in-motion", "loading-state-understandable"],
+      "buyerResult": "pending",
+      "sellerResult": "pending",
+      "testedBy": "",
+      "testedAt": "",
+      "evidenceUrl": ""
+    },
+    "errorsAndStatus": {
+      "requirements": ["loading-announced", "offline-announced", "validation-associated", "error-recovery-operable", "expired-and-unauthorised-distinct"],
+      "buyerResult": "pending",
+      "sellerResult": "pending",
+      "testedBy": "",
+      "testedAt": "",
+      "evidenceUrl": ""
+    }
+  },
+  "openCritical": null,
+  "openHigh": null
+}

@@ -98,7 +98,11 @@ export function ClientPortalStatePanel({ state = 'error', title = '', descriptio
   const Icon = copy.icon
   return (
     <main className="client-portal-state-shell min-h-screen bg-[var(--portal-canvas,#f3f6fb)] px-4 py-8 sm:px-6" data-client-portal-state={state}>
-      <section className="mx-auto max-w-[760px] rounded-[24px] border border-[var(--portal-border,#dbe5ef)] bg-white px-5 py-7 text-center shadow-[0_16px_34px_rgba(15,23,42,0.06)] sm:px-7">
+      <section
+        className="mx-auto max-w-[760px] rounded-[24px] border border-[var(--portal-border,#dbe5ef)] bg-white px-5 py-7 text-center shadow-[0_16px_34px_rgba(15,23,42,0.06)] sm:px-7"
+        role={state === 'error' || state === 'expired' || state === 'unauthorised' ? 'alert' : 'status'}
+        aria-live={state === 'loading' ? 'polite' : undefined}
+      >
         <span className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-[16px] bg-[var(--portal-surface-muted,#f2f4f7)] text-[var(--portal-primary,#2f5478)]">
           <Icon size={22} aria-hidden="true" />
         </span>
