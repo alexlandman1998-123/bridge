@@ -1,9 +1,8 @@
 import {
   AlertTriangle,
   ArrowRight,
-  Bell,
   BriefcaseBusiness,
-  CheckCircle2,
+  ChevronRight,
   CircleDollarSign,
   CalendarDays,
   FileCheck2,
@@ -18,7 +17,7 @@ import {
   UsersRound,
   WalletCards,
 } from 'lucide-react'
-import { createElement, useEffect, useMemo, useState } from 'react'
+import { createElement, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, Navigate, useLocation } from 'react-router-dom'
 import { useWorkspace } from '../context/WorkspaceContext'
 import useAttorneyPermissions from '../hooks/useAttorneyPermissions'
@@ -95,19 +94,6 @@ function formatCurrency(value) {
   return `R${formatNumber(amount)}`
 }
 
-function formatShortDate(value) {
-  const parsed = new Date(value || '')
-  if (Number.isNaN(parsed.getTime())) return 'TBC'
-  return parsed.toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' })
-}
-
-function getFirstName(profile = {}) {
-  const explicit = String(profile.firstName || profile.first_name || '').trim()
-  if (explicit) return explicit
-  const fullName = String(profile.fullName || profile.full_name || profile.name || '').trim()
-  return fullName ? fullName.split(/\s+/)[0] : 'there'
-}
-
 function clampPercentage(value) {
   return Math.max(0, Math.min(100, Number(value || 0)))
 }
@@ -120,31 +106,6 @@ function StatePanel({ children, tone = 'neutral' }) {
         <p className={`text-sm ${toneClass}`}>{children}</p>
       </div>
     </section>
-  )
-}
-
-function DashboardIntro({ profile = {}, stats = {} }) {
-  const firstName = getFirstName(profile)
-  const attentionToday = Number(stats.delayedMatters || 0) + Number(stats.awaitingSignatures || 0)
-  const registrationsThisWeek = Number(stats.registrationsThisWeek || 0)
-
-  return (
-    <header className="grid gap-3">
-      <div className="min-w-0">
-        <h1 className="text-2xl font-semibold tracking-[-0.02em] text-slate-950 sm:text-3xl">Good morning, {firstName}</h1>
-        <div className="mt-4 flex flex-wrap gap-3 text-sm text-slate-600">
-          <span className="inline-flex items-center gap-2">
-            <Bell size={15} className="text-slate-500" />
-            <strong className="font-semibold text-slate-800">{formatNumber(attentionToday)}</strong> require attention today
-          </span>
-          <span className="hidden h-5 w-px bg-slate-200 sm:inline-block" />
-          <span className="inline-flex items-center gap-2">
-            <CheckCircle2 size={15} className="text-slate-500" />
-            <strong className="font-semibold text-slate-800">{formatNumber(registrationsThisWeek)}</strong> registrations expected this week
-          </span>
-        </div>
-      </div>
-    </header>
   )
 }
 
@@ -167,19 +128,19 @@ function KpiCards({ stats = {}, performance = {} }) {
       tone: 'amber',
     },
     {
+      key: 'lodgement',
+      label: 'Lodgements',
+      value: formatNumber(stats.lodgementsToday || stats.lodgementsPending || 0),
+      helper: stats.lodgementsToday ? `${formatNumber(stats.lodgementsToday)} today` : 'Pending',
+      icon: Upload,
+      tone: 'green',
+    },
+    {
       key: 'registration',
       label: 'Registrations',
       value: formatNumber(performance?.registrationForecast?.thisWeek || stats.registrationsThisWeek || 0),
       helper: 'This week',
       icon: Flag,
-      tone: 'green',
-    },
-    {
-      key: 'lodgement',
-      label: 'Lodgements',
-      value: formatNumber(stats.lodgementsToday || stats.lodgementsPending || 0),
-      helper: stats.lodgementsToday ? 'Today' : 'Pending',
-      icon: Upload,
       tone: 'green',
     },
     {
@@ -193,24 +154,25 @@ function KpiCards({ stats = {}, performance = {} }) {
   ]
 
   return (
-    <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
-      {cards.map((card) => {
+    <section className={`${surfaceClass} overflow-x-auto overflow-y-hidden`} aria-label="Matter summary">
+      <div className="flex min-w-max divide-x divide-slate-200/90 px-3 py-4 sm:px-4 lg:grid lg:min-w-0 lg:grid-cols-5 lg:px-5 lg:py-6">
+        {cards.map((card) => {
         const Icon = card.icon
+        const href = card.key === 'active' ? '/attorney/matters/active' : card.key === 'client' ? '/attorney/matters/delayed' : card.key === 'registration' ? '/attorney/matters/registered' : '/attorney/matters'
         return (
-          <article key={card.key} className={`${surfaceClass} min-h-[146px] p-4`}>
-            <div className="flex items-start gap-3">
+          <Link key={card.key} to={href} className="group min-w-[166px] px-4 py-2 first:pl-2 last:pr-2 transition hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 lg:min-w-0 lg:px-5">
+            <span className="flex items-center gap-3">
               <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-full bg-[#e5f1ed] text-[#1c6b55]">
-                <Icon size={18} />
+                <Icon size={17} />
               </span>
-            </div>
-            <p className="mt-4 text-sm font-semibold text-slate-800">{card.label}</p>
-            <strong className="mt-2 block text-3xl font-semibold leading-none tracking-[-0.03em] text-slate-950">{card.value}</strong>
-            <span className={card.tone === 'amber' ? 'mt-3 block text-xs font-semibold text-amber-700' : 'mt-3 block text-xs font-semibold text-[#1c6b55]'}>
-              {card.helper}
+              <span className="truncate text-[13px] font-semibold text-slate-700">{card.label}</span>
             </span>
-          </article>
+            <strong className="mt-3 block text-[30px] font-semibold leading-none tracking-[-0.04em] text-slate-950">{card.value}</strong>
+            <span className={card.tone === 'amber' ? 'mt-3 block text-xs font-semibold text-amber-700' : 'mt-3 block text-xs font-semibold text-[#1c6b55]'}>{card.helper}</span>
+          </Link>
         )
       })}
+      </div>
     </section>
   )
 }
@@ -291,10 +253,15 @@ function getMatterProgressTone(progress = 0, riskTone = '') {
   return '#64748b'
 }
 
-function getMatterRiskClasses(riskTone = '') {
-  if (riskTone === 'high') return 'border-red-200 bg-red-50 text-red-700'
-  if (riskTone === 'attention') return 'border-amber-200 bg-amber-50 text-amber-700'
-  return 'border-emerald-200 bg-emerald-50 text-[#1c6b55]'
+function getMatterStatusClasses(statusLabel = '', riskTone = '') {
+  const status = String(statusLabel || '').toLowerCase()
+  if (status.includes('fica')) return 'bg-amber-50 text-amber-700'
+  if (status.includes('doc')) return 'bg-sky-50 text-sky-700'
+  if (status.includes('bank')) return 'bg-violet-50 text-violet-700'
+  if (status.includes('lodg') || status.includes('track')) return 'bg-emerald-50 text-[#1c6b55]'
+  if (riskTone === 'high') return 'bg-red-50 text-red-700'
+  if (riskTone === 'attention') return 'bg-amber-50 text-amber-700'
+  return 'bg-emerald-50 text-[#1c6b55]'
 }
 
 function getMatterPreview(matter = {}) {
@@ -341,17 +308,55 @@ function formatProfessionalRole(role = '') {
 
 function ActiveMatterStrip({ lanes = {} }) {
   const rows = getActiveMatterRows(lanes)
+  const railRef = useRef(null)
+  const [canScrollNext, setCanScrollNext] = useState(false)
+
+  useEffect(() => {
+    const rail = railRef.current
+    if (!rail) return undefined
+
+    const updateOverflow = () => {
+      setCanScrollNext(rail.scrollWidth - rail.clientWidth - rail.scrollLeft > 4)
+    }
+    updateOverflow()
+    rail.addEventListener('scroll', updateOverflow, { passive: true })
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updateOverflow)
+    observer?.observe(rail)
+    return () => {
+      rail.removeEventListener('scroll', updateOverflow)
+      observer?.disconnect()
+    }
+  }, [rows.length])
+
+  const scrollNext = () => {
+    const rail = railRef.current
+    if (!rail) return
+    rail.scrollBy({ left: Math.min(rail.clientWidth * 0.8, 340), behavior: 'smooth' })
+  }
+
+  const handleWheel = (event) => {
+    const rail = railRef.current
+    if (!rail || !event.deltaY || event.deltaX) return
+    if (rail.scrollWidth <= rail.clientWidth) return
+    event.preventDefault()
+    rail.scrollLeft += event.deltaY
+  }
 
   return (
-    <section className="grid gap-3">
-      <div className="flex justify-end">
-        <Link to="/attorney/matters" className="inline-flex items-center gap-1 text-xs font-semibold text-slate-600 hover:text-slate-950">
-          View all matters <ArrowRight size={13} />
+    <section className={`${surfaceClass} overflow-hidden`} aria-labelledby="active-matters-heading">
+      <header className="flex h-14 items-center justify-between gap-4 border-b border-slate-100 px-5">
+        <h2 id="active-matters-heading" className="text-[15px] font-semibold tracking-[-0.01em] text-slate-950">Active Matters</h2>
+        <Link to="/attorney/matters/active" className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-slate-600 transition hover:text-slate-950">
+          View all matters <ArrowRight size={14} />
         </Link>
-      </div>
+      </header>
       {rows.length ? (
-        <div className="-mx-1 overflow-x-auto overflow-y-hidden px-1 pb-2">
-          <div className="flex min-w-full gap-4">
+        <div className="relative">
+          <div
+            ref={railRef}
+            onWheel={handleWheel}
+            className="flex snap-x snap-proximity gap-3 overflow-x-auto overflow-y-hidden px-5 py-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          >
             {rows.map((matter) => {
               const progress = clampPercentage(matter.progress || 0)
               const progressTone = getMatterProgressTone(progress, matter.riskTone)
@@ -363,74 +368,60 @@ function ActiveMatterStrip({ lanes = {} }) {
                   key={matter.id}
                   to={matter.href || '/attorney/matters'}
                   state={{ matterPreview: getMatterPreview(matter) }}
-                  className={`${surfaceClass} group flex min-h-[278px] w-[342px] shrink-0 flex-col overflow-hidden transition duration-200 hover:-translate-y-px hover:border-[#b8d8cc] hover:shadow-[0_14px_30px_rgba(15,23,42,0.075)]`}
+                  className="group flex min-h-[246px] w-[84vw] shrink-0 snap-start flex-col rounded-[13px] border border-slate-200 bg-white p-5 shadow-[0_3px_10px_rgba(15,23,42,0.035)] transition duration-200 hover:-translate-y-px hover:border-slate-300 hover:shadow-[0_10px_22px_rgba(15,23,42,0.07)] focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 sm:w-[320px]"
                 >
-                  <header className="border-b border-[#0d273a] bg-gradient-to-r from-[#102f46] to-[#1c5261] px-5 py-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <span className="min-w-0">
-                        <strong className="block truncate text-[0.95rem] font-semibold tracking-[-0.01em] text-white">{matter.reference}</strong>
-                        <span className="mt-1 block truncate text-xs font-semibold text-[#c6ded7]">{roleLabel}</span>
-                      </span>
-                      <span className={`inline-flex shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-semibold shadow-sm ${getMatterRiskClasses(matter.riskTone)}`}>
+                  <header className="flex items-start justify-between gap-3">
+                    <span className="min-w-0">
+                      <strong className="block truncate text-sm font-semibold tracking-[-0.01em] text-slate-950">{matter.reference}</strong>
+                      <span className="mt-2 block truncate text-xs font-medium text-slate-500">{roleLabel}</span>
+                    </span>
+                    <span className={`inline-flex shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${getMatterStatusClasses(statusLabel, matter.riskTone)}`}>
                         {statusLabel}
-                      </span>
-                    </div>
+                    </span>
                   </header>
 
-                  <div className="flex flex-1 flex-col gap-4 px-5 py-4">
-                    <section className="min-w-0">
-                      <p className="line-clamp-2 min-h-[40px] text-sm font-semibold leading-5 text-slate-900">{matter.propertyAddress || 'Property pending'}</p>
-                      <p className="mt-2 truncate text-xs font-medium text-slate-500">{matter.buyerSellerName || matter.buyerName || 'Client pending'}</p>
-                    </section>
+                  <section className="mt-4 min-w-0">
+                    <p className="line-clamp-2 min-h-[40px] text-sm font-semibold leading-5 text-slate-900">{matter.propertyAddress || 'Property address pending'}</p>
+                    <p className="mt-1.5 truncate text-xs font-medium text-slate-500">{matter.buyerSellerName || matter.buyerName || 'Client pending'}</p>
+                  </section>
 
-                    <section className="grid grid-cols-2 gap-2">
-                      <span className="rounded-lg border border-slate-200 bg-white px-3 py-2">
-                        <span className="block text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-400">Value</span>
-                        <strong className="mt-1 block truncate text-sm font-semibold text-slate-900">{formatCurrency(matter.value || matter.purchasePrice)}</strong>
-                      </span>
-                      <span className="rounded-lg border border-slate-200 bg-white px-3 py-2">
-                        <span className="block text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-400">Assigned</span>
-                        <strong className="mt-1 block truncate text-sm font-semibold text-slate-900">{matter.assignedStaff || 'Unassigned'}</strong>
-                      </span>
-                    </section>
+                  <section className="mt-4 grid grid-cols-2 divide-x divide-slate-200">
+                    <span className="min-w-0 pr-4">
+                      <strong className="block truncate text-sm font-semibold text-slate-950">{formatCurrency(matter.value || matter.purchasePrice)}</strong>
+                      <span className="mt-1 block text-[11px] font-medium text-slate-500">Value</span>
+                    </span>
+                    <span className="min-w-0 pl-4">
+                      <strong className="block truncate text-sm font-semibold text-slate-950">{matter.assignedStaff || 'Unassigned'}</strong>
+                      <span className="mt-1 block text-[11px] font-medium text-slate-500">Attorney</span>
+                    </span>
+                  </section>
 
-                    {matter.referralPartnerName ? (
-                      <section className="flex min-w-0 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2" aria-label={`${matter.referralLabel} ${matter.referralPartnerName}`}>
-                        {matter.referralPartnerLogoUrl ? (
-                          <img src={matter.referralPartnerLogoUrl} alt="" className="size-6 shrink-0 rounded-md border border-slate-200 bg-white object-contain" />
-                        ) : (
-                          <span className="inline-flex size-6 shrink-0 items-center justify-center rounded-md bg-[#dbece7] text-[10px] font-bold text-[#155844]">{getInitials(matter.referralPartnerName)}</span>
-                        )}
-                        <span className="min-w-0 truncate text-xs font-medium text-slate-500">
-                          {matter.referralLabel} <strong className="font-semibold text-slate-700">{matter.referralPartnerName}</strong>
-                        </span>
-                      </section>
-                    ) : null}
-
-                    <section className="mt-auto rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="min-w-0 truncate text-xs font-semibold text-slate-600">{matter.currentStage || 'Stage pending'}</span>
-                        <strong className="text-xs font-semibold text-slate-900">{Math.round(progress)}%</strong>
-                      </div>
-                      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200">
-                        <span className="block h-full rounded-full transition-all duration-200" style={{ width: `${Math.max(progress, 8)}%`, backgroundColor: progressTone }} />
-                      </div>
-                    </section>
-
-                    <footer className="flex items-center justify-between gap-3 border-t border-slate-100 pt-3 text-xs">
-                      <span className="font-medium text-slate-500">Instructed {formatShortDate(matter.instructedAt)}</span>
-                      <span className="inline-flex items-center gap-1 font-semibold text-[#1c6b55] transition group-hover:gap-1.5">
-                        Open matter <ArrowRight size={14} />
-                      </span>
-                    </footer>
-                  </div>
+                  <section className="mt-auto pt-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="min-w-0 truncate text-xs font-semibold text-slate-700">{matter.currentStage || 'Stage pending'}</span>
+                      <strong className="text-xs font-semibold text-slate-900">{Math.round(progress)}%</strong>
+                    </div>
+                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200">
+                      <span className="block h-full rounded-full bg-[#16805f] transition-all duration-200" style={{ width: `${Math.max(progress, 8)}%`, backgroundColor: progressTone }} />
+                    </div>
+                  </section>
                 </Link>
               )
             })}
           </div>
+          {canScrollNext ? (
+            <button
+              type="button"
+              onClick={scrollNext}
+              className="absolute right-3 top-1/2 inline-flex size-10 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-800 shadow-[0_5px_15px_rgba(15,23,42,0.12)] transition hover:border-slate-300 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+              aria-label="Scroll active matters forward"
+            >
+              <ChevronRight size={20} />
+            </button>
+          ) : null}
         </div>
       ) : (
-        <div className={`${surfaceClass} flex min-h-[86px] items-center px-4 py-3`}>
+        <div className="flex min-h-[86px] items-center px-5 py-4">
           <p className="text-sm font-medium text-slate-500">No active matters yet.</p>
         </div>
       )}
@@ -834,6 +825,23 @@ function AttorneyAnalyticsSection({ partnerAnalytics, matterHealth, conveyancing
   )
 }
 
+function AttorneyAnalyticsSkeleton() {
+  return (
+    <section
+      className="grid gap-4"
+      aria-busy="true"
+      aria-label="Loading dashboard analytics"
+      data-testid="attorney-dashboard-analytics-skeleton"
+    >
+      <div className="grid gap-4 xl:grid-cols-2">
+        <div className={`${surfaceClass} h-56 animate-pulse bg-slate-100`} />
+        <div className={`${surfaceClass} h-56 animate-pulse bg-slate-100`} />
+      </div>
+      <div className={`${surfaceClass} h-72 animate-pulse bg-slate-100`} />
+    </section>
+  )
+}
+
 function AttorneyDashboardPage() {
   const { role, profile, workspace: activeWorkspace } = useWorkspace()
   const permissionsState = useAttorneyPermissions()
@@ -842,6 +850,7 @@ function AttorneyDashboardPage() {
   const [error, setError] = useState('')
   const [dashboard, setDashboard] = useState(EMPTY_DASHBOARD)
   const [selectedTeamMember, setSelectedTeamMember] = useState(null)
+  const [analyticsReady, setAnalyticsReady] = useState(false)
 
   const roleView = useMemo(() => {
     const value = new URLSearchParams(location.search).get('roleView') || 'all'
@@ -896,6 +905,27 @@ function AttorneyDashboardPage() {
     }
   }, [attorneyFirmId, currentUserId, roleView])
 
+  useEffect(() => {
+    let active = true
+    const revealAnalytics = () => {
+      if (active) setAnalyticsReady(true)
+    }
+    const idleCallbackId = typeof window.requestIdleCallback === 'function'
+      ? window.requestIdleCallback(revealAnalytics, { timeout: 1800 })
+      : null
+    const timeoutId = idleCallbackId === null
+      ? window.setTimeout(revealAnalytics, 0)
+      : null
+
+    return () => {
+      active = false
+      if (idleCallbackId !== null && typeof window.cancelIdleCallback === 'function') {
+        window.cancelIdleCallback(idleCallbackId)
+      }
+      if (timeoutId !== null) window.clearTimeout(timeoutId)
+    }
+  }, [])
+
   if (role !== 'attorney') return <Navigate to="/dashboard" replace />
   if (permissionsState.loading) return <StatePanel>Loading attorney permissions...</StatePanel>
   if (permissionsState.error) return <StatePanel tone="danger">{permissionsState.error}</StatePanel>
@@ -945,7 +975,6 @@ function AttorneyDashboardPage() {
     <section className={shellClass}>
       {error ? <div className={`${surfaceClass} p-4`}><p className="text-sm text-red-700">{error}</p></div> : null}
 
-      <DashboardIntro profile={profile} stats={stats} />
       <KpiCards stats={stats} performance={performance} />
       <ActiveMatterStrip lanes={lanes} />
       {canViewTeamOverview ? (
@@ -959,11 +988,13 @@ function AttorneyDashboardPage() {
         </>
       ) : null}
       <NeedsAttentionSection metrics={dashboard.attentionMetrics || []} />
-      <AttorneyAnalyticsSection
-        partnerAnalytics={dashboard.partnerAnalytics || EMPTY_DASHBOARD.partnerAnalytics}
-        matterHealth={dashboard.matterHealth || EMPTY_DASHBOARD.matterHealth}
-        conveyancingPerformance={performance}
-      />
+      {analyticsReady ? (
+        <AttorneyAnalyticsSection
+          partnerAnalytics={dashboard.partnerAnalytics || EMPTY_DASHBOARD.partnerAnalytics}
+          matterHealth={dashboard.matterHealth || EMPTY_DASHBOARD.matterHealth}
+          conveyancingPerformance={performance}
+        />
+      ) : <AttorneyAnalyticsSkeleton />}
     </section>
   )
 }

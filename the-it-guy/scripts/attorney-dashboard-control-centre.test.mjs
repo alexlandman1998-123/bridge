@@ -5,7 +5,6 @@ const pageSource = readFileSync(new URL('../src/pages/AttorneyDashboardPage.jsx'
 const serviceSource = readFileSync(new URL('../src/services/attorneyDashboard.js', import.meta.url), 'utf8')
 
 const requiredPageCopy = [
-  'Good morning',
   'Active Matters',
   'Awaiting Client',
   'Registrations',
@@ -35,6 +34,7 @@ const requiredPageCopy = [
   'Performance statistics will appear once the firm starts registering matters.',
   'Partner analytics updates automatically as matters are linked.',
   'Matter health is automatically calculated based on deadlines, activity and risks.',
+  'Scroll active matters forward',
 ]
 
 for (const expected of requiredPageCopy) {
@@ -58,8 +58,16 @@ assert.ok(
   'Attorney dashboard KPI cards should not render decorative static trend lines.',
 )
 assert.ok(
-  pageSource.includes('2xl:grid-cols-5'),
-  'Attorney dashboard KPI cards should fill the header row as five columns on wide screens.',
+  pageSource.includes('lg:grid-cols-5'),
+  'Attorney dashboard KPI strip should fill the header row as five columns on wide screens.',
+)
+assert.ok(
+  pageSource.includes('overflow-x-auto overflow-y-hidden') && pageSource.includes('snap-x snap-proximity'),
+  'Attorney dashboard should render Active Matters as a horizontal snap-scrolling rail.',
+)
+assert.ok(
+  !pageSource.includes('Good morning,'),
+  'Attorney dashboard should not render a greeting above the KPI strip.',
 )
 
 const removedPageCopy = [

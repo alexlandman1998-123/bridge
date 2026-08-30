@@ -9,6 +9,11 @@ import {
   createDashboardPerformanceTrace,
   persistDashboardPerformanceTrace,
 } from '../services/observability/dashboardPerformanceTelemetry'
+import {
+  applyLastGoodOrganisationBranding,
+  readLastGoodOrganisationBranding,
+  writeLastGoodOrganisationBranding,
+} from './organisationBrandingCache'
 
 const EMPTY_ORGANISATION_BRANDING = Object.freeze({
   logoUrl: '',
@@ -185,8 +190,18 @@ function shouldUseWorkspaceBranding(authState) {
 function buildImmediateOrganisationSnapshot(authState = {}) {
   if (authState.status !== 'authenticated' || !authState.user?.id) return null
   if (isDevAuthOrganisation(authState)) return buildAuthOrganisationSnapshot(authState)
-  if (shouldUseWorkspaceBranding(authState)) return buildWorkspaceOrganisationSnapshot(authState)
-  if (getAuthWorkspaceId(authState)) return buildWorkspaceOrganisationSnapshot(authState)
+  if (shouldUseWorkspaceBranding(authState)) {
+    return applyLastGoodOrganisationBranding(
+      buildWorkspaceOrganisationSnapshot(authState),
+      readLastGoodOrganisationBranding(authState),
+    )
+  }
+  if (getAuthWorkspaceId(authState)) {
+    return applyLastGoodOrganisationBranding(
+      buildWorkspaceOrganisationSnapshot(authState),
+      readLastGoodOrganisationBranding(authState),
+    )
+  }
   return null
 }
 
@@ -213,15 +228,22 @@ export function OrganisationProvider({ children }) {
   const [state, setState] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const immediateSnapshot = useMemo(
-    () => buildImmediateOrganisationSnapshot(authState),
-    [authState],
-  )
   const renderState = useMemo(
     () => resolveOrganisationRenderState(authState, state),
     [authState, state],
   )
-  const hasImmediateSnapshot = Boolean(immediateSnapshot)
+  const hasRenderableBranding = Boolean(renderState?.branding?.logoUrl)
+  const authWorkspaceId = getAuthWorkspaceId(authState)
+  const hydratedWorkspaceId = getOrganisationSnapshotWorkspaceId(state)
+  const organisationHydrationPending = Boolean(
+    authState.status === 'authenticated' &&
+      authState.user?.id &&
+      authWorkspaceId &&
+      !isDevAuthOrganisation(authState) &&
+      !shouldUseWorkspaceBranding(authState) &&
+      !error &&
+      authWorkspaceId !== hydratedWorkspaceId,
+  )
 
   const applyOrganisationState = useCallback((nextState) => {
     const normalized = normalizeOrganisationSnapshot(nextState)
@@ -382,6 +404,12 @@ export function OrganisationProvider({ children }) {
     }
   }, [applyOrganisationState, authState])
 
+  useEffect(() => {
+    if (!state?.branding?.logoUrl) return
+    if (!authWorkspaceId || authWorkspaceId !== hydratedWorkspaceId) return
+    writeLastGoodOrganisationBranding(authState, state.branding)
+  }, [authState, authWorkspaceId, hydratedWorkspaceId, state?.branding])
+
   const value = useMemo(
     () => ({
       state: renderState,
@@ -391,12 +419,20 @@ export function OrganisationProvider({ children }) {
       membershipRole: renderState?.membershipRole || '',
       membershipStatus: renderState?.membershipStatus || '',
       branding: renderState?.branding || EMPTY_ORGANISATION_BRANDING,
-      loading: loading && !hasImmediateSnapshot,
+      loading: !hasRenderableBranding && (loading || organisationHydrationPending),
       error,
       refreshOrganisation,
       applyOrganisationState,
     }),
-    [applyOrganisationState, error, hasImmediateSnapshot, loading, refreshOrganisation, renderState],
+    [
+      applyOrganisationState,
+      error,
+      hasRenderableBranding,
+      loading,
+      organisationHydrationPending,
+      refreshOrganisation,
+      renderState,
+    ],
   )
 
   return <OrganisationContext.Provider value={value}>{children}</OrganisationContext.Provider>

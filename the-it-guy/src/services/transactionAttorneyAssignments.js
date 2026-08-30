@@ -905,7 +905,7 @@ export async function getAttorneyAssignmentsForTransaction(transactionId, option
   return getTransactionAttorneyAssignments(transactionId, options)
 }
 
-export async function getFirmAttorneyAssignments(firmId, { includeInactive = false } = {}) {
+export async function getFirmAttorneyAssignments(firmId, { includeInactive = false, enrich = true } = {}) {
   const client = requireClient()
   const normalizedFirmId = normalizeText(firmId)
   if (!normalizedFirmId) {
@@ -935,7 +935,7 @@ export async function getFirmAttorneyAssignments(firmId, { includeInactive = fal
   }
 
   const mapped = (result.data || []).map(mapAssignmentRow)
-  return enrichAssignments(client, mapped)
+  return enrich ? enrichAssignments(client, mapped) : mapped
 }
 
 export async function getAttorneyAssignmentsForFirm(firmId, options = {}) {

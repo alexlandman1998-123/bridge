@@ -948,11 +948,11 @@ function QuickCreateModal({
   )
 }
 
-function QuickCreateDropdown({ className = '' }) {
+function QuickCreateDropdown({ className = '', initialOpen = false }) {
   const location = useLocation()
   const navigate = useNavigate()
   const { agencyWorkflowMode, profile, role } = useWorkspace()
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(initialOpen)
   const [pendingCreateKind, setPendingCreateKind] = useState('')
   const [pendingCreateInitialForm, setPendingCreateInitialForm] = useState({})
   const [activeType, setActiveType] = useState('')

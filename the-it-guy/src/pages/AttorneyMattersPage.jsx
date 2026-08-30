@@ -22,7 +22,7 @@ import {
   X,
   XCircle,
 } from 'lucide-react'
-import { createElement, useEffect, useMemo, useState } from 'react'
+import { createElement, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useWorkspace } from '../context/WorkspaceContext'
 import useAttorneyModuleSettings from '../hooks/useAttorneyModuleSettings'
@@ -30,10 +30,17 @@ import { isAttorneyMatterViewEnabled } from '../lib/attorneyModuleSettings'
 import useAttorneyPermissions from '../hooks/useAttorneyPermissions'
 import { createPerfTimer } from '../lib/performanceTrace'
 import {
+  ATTORNEY_MATTER_PERFORMANCE_METRICS,
+  createAttorneyMatterPerformanceBaseline,
+} from '../services/observability/attorneyMatterPerformanceBaseline'
+import {
   ATTORNEY_MATTER_PAGE_SIZES,
   buildAttorneyMatterWorkspace,
+  buildAttorneyMatterWorkspaceFromSnapshot,
   getAttorneyMatterWorkspace,
 } from '../services/attorneyMatterWorkspace'
+import { getAttorneyMatterListSnapshot } from '../services/attorneyMatterListSnapshotService'
+import { getAttorneyMatterSnapshotRolloutStatus } from '../services/attorneyMatterSnapshotRolloutService'
 import {
   acceptAttorneyIncomingMatterInstruction,
   declineAttorneyIncomingMatterInstruction,
@@ -1561,6 +1568,8 @@ function AttorneyMattersPage() {
   const permissionsState = useAttorneyPermissions()
   const attorneyModuleState = useAttorneyModuleSettings()
   const [source, setSource] = useState(null)
+  const [matterSnapshot, setMatterSnapshot] = useState(null)
+  const [snapshotRollout, setSnapshotRollout] = useState({ checked: false, enabled: false, reason: 'initializing' })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
@@ -1577,14 +1586,26 @@ function AttorneyMattersPage() {
   const [incomingAction, setIncomingAction] = useState({ pendingId: '', error: '' })
   const [declineDialog, setDeclineDialog] = useState({ row: null, reason: '' })
   const [assignmentDialog, setAssignmentDialog] = useState({ row: null })
+  const performanceBaselineRef = useRef({ key: '', baseline: null })
 
   const viewKey = normalize(matterType || 'all')
+  const usesSnapshotReadModel = ['all', 'transfer', 'bond', 'cancellation'].includes(viewKey)
+  const snapshotPage = usesSnapshotReadModel ? page : 1
+  const snapshotPageSize = usesSnapshotReadModel ? pageSize : 20
+  const snapshotSearchTerm = usesSnapshotReadModel ? searchTerm : ''
   const viewEnabled = isAttorneyMatterViewEnabled(viewKey, attorneyModuleState.modules)
   const attorneyFirmId = useMemo(() => {
     if (normalize(activeWorkspace?.type) === 'attorney_firm') return normalize(activeWorkspace?.id)
     return normalize(profile?.primaryAttorneyFirmId || profile?.primary_attorney_firm_id)
   }, [activeWorkspace?.id, activeWorkspace?.type, profile?.primaryAttorneyFirmId, profile?.primary_attorney_firm_id])
   const currentUserId = normalize(profile?.id || profile?.userId)
+  const performanceBaselineKey = `${viewKey}:${attorneyFirmId || 'no-firm'}:${currentUserId || 'no-user'}`
+  if (performanceBaselineRef.current.key !== performanceBaselineKey) {
+    performanceBaselineRef.current = {
+      key: performanceBaselineKey,
+      baseline: createAttorneyMatterPerformanceBaseline({ route: location.pathname }),
+    }
+  }
 
   useEffect(() => {
     if (attorneyModuleState.loading || viewEnabled) return
@@ -1594,8 +1615,33 @@ function AttorneyMattersPage() {
 
   useEffect(() => {
     let active = true
+    if (!usesSnapshotReadModel || !attorneyFirmId) {
+      setSnapshotRollout({ checked: true, enabled: false, reason: 'not_applicable' })
+      return () => {
+        active = false
+      }
+    }
+
+    setSnapshotRollout({ checked: false, enabled: false, reason: 'checking' })
+    void getAttorneyMatterSnapshotRolloutStatus(attorneyFirmId)
+      .then((status) => {
+        if (!active) return
+        setSnapshotRollout({ ...status, checked: true, enabled: status?.enabled === true })
+      })
+      .catch(() => {
+        if (active) setSnapshotRollout({ checked: true, enabled: false, reason: 'rollout_status_unavailable' })
+      })
+
+    return () => {
+      active = false
+    }
+  }, [attorneyFirmId, usesSnapshotReadModel])
+
+  useEffect(() => {
+    let active = true
 
     async function load() {
+      const baseline = performanceBaselineRef.current.baseline
       const timer = createPerfTimer('attorney.page.matters', {
         firmId: attorneyFirmId || null,
         userId: currentUserId || null,
@@ -1608,10 +1654,47 @@ function AttorneyMattersPage() {
         timer.end({ outcome: 'view-disabled' })
         return
       }
+      if (usesSnapshotReadModel && !snapshotRollout.checked) {
+        setLoading(true)
+        timer.end({ outcome: 'rollout-checking' })
+        return
+      }
       setLoading(true)
       setError('')
       try {
         timer.mark('workspace:start')
+        if (usesSnapshotReadModel && snapshotRollout.enabled) {
+          const snapshot = await getAttorneyMatterListSnapshot({
+            firmId: attorneyFirmId,
+            view: viewKey,
+            page: snapshotPage,
+            pageSize: snapshotPageSize,
+            search: snapshotSearchTerm,
+            filters,
+          })
+          if (snapshot) {
+            if (!active) return
+            setMatterSnapshot(snapshot)
+            setSource(null)
+            timer.mark('snapshot:end', {
+              rows: snapshot?.rows?.length || 0,
+              totalRows: snapshot?.pagination?.totalRows || 0,
+            })
+            void baseline?.record(ATTORNEY_MATTER_PERFORMANCE_METRICS.listReady, {
+              userId: currentUserId,
+              workspaceId: attorneyFirmId,
+              metadata: {
+                view: viewKey,
+                outcome: 'success',
+                rowCount: snapshot?.rows?.length || 0,
+                totalRowCount: snapshot?.pagination?.totalRows || 0,
+                source: 'rpc',
+                rolloutReason: snapshotRollout.reason || '',
+              },
+            })
+            return
+          }
+        }
         const workspace = await getAttorneyMatterWorkspace({
           view: viewKey,
           firmId: attorneyFirmId || null,
@@ -1624,10 +1707,26 @@ function AttorneyMattersPage() {
         })
         if (!active) return
         setSource(workspace.source)
+        setMatterSnapshot(null)
+        void baseline?.record(ATTORNEY_MATTER_PERFORMANCE_METRICS.listReady, {
+          userId: currentUserId,
+          workspaceId: attorneyFirmId,
+          metadata: {
+            view: viewKey,
+            outcome: 'success',
+            rowCount: workspace?.tableRows?.length || 0,
+            totalRowCount: workspace?.pagination?.totalRows || 0,
+          },
+        })
       } catch (loadError) {
         outcome = 'failed'
         if (!active) return
         setError(loadError?.message || 'Unable to load attorney matters.')
+        void baseline?.record(ATTORNEY_MATTER_PERFORMANCE_METRICS.listReady, {
+          userId: currentUserId,
+          workspaceId: attorneyFirmId,
+          metadata: { view: viewKey, outcome: 'failed' },
+        })
       } finally {
         timer.end({ outcome })
         if (active) setLoading(false)
@@ -1638,7 +1737,7 @@ function AttorneyMattersPage() {
     return () => {
       active = false
     }
-  }, [attorneyFirmId, currentUserId, viewEnabled, viewKey])
+  }, [attorneyFirmId, currentUserId, filters, snapshotPage, snapshotPageSize, snapshotSearchTerm, snapshotRollout.checked, snapshotRollout.enabled, snapshotRollout.reason, usesSnapshotReadModel, viewEnabled, viewKey])
 
   useEffect(() => {
     function handleHeaderSearch(event) {
@@ -1667,6 +1766,15 @@ function AttorneyMattersPage() {
   }, [viewKey])
 
   const workspace = useMemo(() => {
+    if (matterSnapshot) {
+      return buildAttorneyMatterWorkspaceFromSnapshot(matterSnapshot, {
+        view: viewKey,
+        page,
+        pageSize,
+        firmId: attorneyFirmId,
+        userId: currentUserId,
+      })
+    }
     if (!source) return null
     return buildAttorneyMatterWorkspace(source, {
       view: viewKey,
@@ -1676,7 +1784,7 @@ function AttorneyMattersPage() {
       page,
       pageSize,
     })
-  }, [filters, page, pageSize, searchTerm, source, viewKey])
+  }, [attorneyFirmId, currentUserId, filters, matterSnapshot, page, pageSize, searchTerm, source, viewKey])
 
   useEffect(() => {
     if (!workspace?.view?.key || workspace.view.key === viewKey) return

@@ -34098,23 +34098,69 @@ export async function fetchTransactionsByParticipant({ userId, roleType = null }
   return rows
 }
 
+async function buildTransactionWorkspaceShellFromTransaction(client, transaction, { cacheKey, timer = null } = {}) {
+  const [buyerQuery, developmentQuery] = await Promise.all([
+    transaction?.buyer_id
+      ? client.from('buyers').select('id, name, phone, email').eq('id', transaction.buyer_id).maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    transaction?.development_id
+      ? client.from('developments').select('id, name, location').eq('id', transaction.development_id).maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+  ])
+  timer?.mark('transaction_shell_relations_ready')
+  if (buyerQuery.error && !isMissingSchemaError(buyerQuery.error)) throw buyerQuery.error
+  if (developmentQuery.error && !isMissingSchemaError(developmentQuery.error)) throw developmentQuery.error
+
+  const buyer = buyerQuery.data || null
+  const stage = normalizeStage(transaction.stage, transaction.stage || 'Transfer in Progress')
+  const mainStage = normalizeMainStage(transaction.current_main_stage, stage)
+  const attorneyStage = resolveAttorneyOperationalStageKey({ transaction })
+  const shell = {
+    unit: null,
+    development: developmentQuery.data || null,
+    transaction,
+    buyer,
+    documents: [], clientPortalLinks: [], clientIssues: [], alterationRequests: [], serviceReviews: [],
+    trustInvestmentForm: getDefaultTrustInvestmentForm({ developmentId: transaction.development_id || null, unitId: null, transaction, buyer }),
+    handover: getDefaultHandoverRecord({ developmentId: transaction.development_id || null, unitId: null, transaction, buyer }),
+    occupationalRent: getDefaultOccupationalRentRecord({ developmentId: transaction.development_id || null, unitId: null, transaction, buyer }),
+    transactionSubprocesses: buildDefaultSubprocessState(transaction.id, { financeType: transaction.finance_type }),
+    onboarding: null, onboardingFormData: null,
+    purchaserType: normalizePurchaserType(transaction.purchaser_type),
+    purchaserTypeLabel: getPurchaserTypeLabel(transaction.purchaser_type),
+    transactionRequiredDocuments: [], transactionParticipants: [],
+    activeViewerRole: 'developer',
+    activeViewerPermissions: getRolePermissions({ role: 'developer', financeManagedBy: transaction.finance_managed_by }),
+    transactionDiscussion: [], transactionStatusLink: null, transactionEvents: [],
+    documentRequests: [], documentRequestSummary: summarizeDocumentRequests([]),
+    transactionChecklistItems: [], checklistSummary: summarizeChecklistItems([], { stageKey: attorneyStage }),
+    issueOverrides: [], developmentSettings: DEFAULT_DEVELOPMENT_SETTINGS,
+    requiredDocumentChecklist: [], documentSummary: { uploadedCount: 0, totalRequired: 0, missingCount: 0 },
+    stage, mainStage, __isShell: true, __loadedAt: new Date().toISOString(),
+  }
+  if (cacheKey) writeTimedCache(unitWorkspaceShellCache, cacheKey, shell)
+  return shell
+}
+
 export async function fetchTransactionCoreById(transactionId) {
   if (!transactionId) {
     return null
   }
 
-  const coreDetail = await fetchUnitWorkspaceShell(transactionId)
-  if (coreDetail) {
-    return coreDetail
-  }
-
+  const normalizedTransactionId = String(transactionId).trim()
+  const cached = readTimedCache(unitWorkspaceShellCache, normalizedTransactionId, UNIT_WORKSPACE_SHELL_CACHE_TTL_MS)
+  if (cached) return cached
   const client = requireClient()
+  const transaction = await fetchTransactionRowById(client, normalizedTransactionId)
+  if (transaction?.id && transaction.is_active !== false) {
+    return buildTransactionWorkspaceShellFromTransaction(client, transaction, { cacheKey: normalizedTransactionId })
+  }
   const resolvedTransactionId = await resolveTransactionIdFromBondApplicationId(client, transactionId)
   if (!resolvedTransactionId || resolvedTransactionId === transactionId) {
     return null
   }
 
-  return fetchUnitWorkspaceShell(resolvedTransactionId)
+  return fetchTransactionCoreById(resolvedTransactionId)
 }
 
 export async function getTransactionRollup(transactionId, options = {}) {

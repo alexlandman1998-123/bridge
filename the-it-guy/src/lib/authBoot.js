@@ -32,6 +32,7 @@ const AUTH_BOOT_WORKSPACE_STEP_TIMEOUT_MS = 12000
 const AUTH_BOOT_TRANSIENT_SCHEMA_RETRY_DELAYS_MS = [750, 1750, 3500]
 const DEGRADED_WORKSPACE_BOOT_STORAGE_KEY = 'arch9:last-good-auth-boot:v1'
 const DEGRADED_WORKSPACE_BOOT_MAX_AGE_MS = 24 * 60 * 60 * 1000
+const bridgeAuthBootInflight = new Map()
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -123,7 +124,7 @@ export function persistLastGoodBridgeAuthState(state = {}) {
   }
 }
 
-export function buildDegradedBridgeAuthState({ session = null, selectedWorkspaceId = '', error = null } = {}) {
+export function buildCachedBridgeAuthState({ session = null, selectedWorkspaceId = '' } = {}) {
   const snapshot = readLastGoodBridgeAuthSnapshot()
   const userId = normalizeText(session?.user?.id)
   if (!snapshot || !userId || normalizeText(snapshot.userId) !== userId) return null
@@ -146,13 +147,12 @@ export function buildDegradedBridgeAuthState({ session = null, selectedWorkspace
       : buildEmptyMembershipContexts()
   const diagnostics = {
     degraded: true,
-    reason: 'workspace_boot_timeout',
+    reason: 'workspace_boot_refreshing',
     recoveredFromCache: true,
     sourceCapturedAt: snapshot.capturedAt,
-    originalError: error?.message || '',
-    warnings: ['workspace_boot_degraded_from_last_good_snapshot'],
+    originalError: '',
+    warnings: ['workspace_boot_refreshing_from_last_good_snapshot'],
   }
-  markBackendDegraded({ ttlMs: 120_000 })
 
   return {
     status: 'authenticated',
@@ -188,17 +188,38 @@ export function buildDegradedBridgeAuthState({ session = null, selectedWorkspace
     permissions: snapshot.permissions && typeof snapshot.permissions === 'object' ? snapshot.permissions : {},
     workspaceResolution: {
       ok: true,
-      status: 'degraded',
+      status: 'refreshing',
       reason: '',
       diagnostics,
     },
     workspaceDiagnostics: diagnostics,
     workspaceAccessDegraded: true,
-    workspaceDegradedReason: 'workspace_boot_timeout',
+    workspaceDegradedReason: 'workspace_boot_refreshing',
     workspaceDegradedMessage: 'Workspace data is refreshing from the last successful session while Arch9 reconnects to the backend.',
     onboardingComplete: snapshot.onboardingComplete !== false,
     onboardingRequiredReason: normalizeText(snapshot.onboardingRequiredReason),
     bootError: '',
+  }
+}
+
+export function buildDegradedBridgeAuthState({ session = null, selectedWorkspaceId = '', error = null } = {}) {
+  const cachedState = buildCachedBridgeAuthState({ session, selectedWorkspaceId })
+  if (!cachedState) return null
+
+  markBackendDegraded({ ttlMs: 120_000 })
+  return {
+    ...cachedState,
+    workspaceResolution: {
+      ...cachedState.workspaceResolution,
+      status: 'degraded',
+    },
+    workspaceDiagnostics: {
+      ...cachedState.workspaceDiagnostics,
+      reason: 'workspace_boot_timeout',
+      originalError: error?.message || '',
+      warnings: ['workspace_boot_degraded_from_last_good_snapshot'],
+    },
+    workspaceDegradedReason: 'workspace_boot_timeout',
   }
 }
 
@@ -537,7 +558,7 @@ export function shouldIgnoreStaleMembershipRecovery({
   return RESOLVED_WORKSPACE_STALE_RECOVERY_REASONS.has(recoveryReason)
 }
 
-export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } = {}) {
+async function loadBridgeAuthStateUncoalesced({ session, selectedWorkspaceId = '' } = {}) {
   clearActiveAuthBootStepDiagnostics()
   if (!isSupabaseConfigured || !supabase) {
     throw new Error('Supabase is not configured. Arch9 auth requires Supabase in this environment.')
@@ -988,4 +1009,28 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
       : onboarding.onboardingRequiredReason,
     bootError: '',
   }
+}
+
+/**
+ * A bridge boot can be requested by session restoration, a token refresh and a
+ * workspace re-render at nearly the same time. Share that read-only resolution
+ * work for the same session instead of issuing duplicate profile, workspace and
+ * onboarding requests.
+ */
+export function loadBridgeAuthState({ session, selectedWorkspaceId = '' } = {}) {
+  const userId = normalizeText(session?.user?.id)
+  if (!userId) return loadBridgeAuthStateUncoalesced({ session, selectedWorkspaceId })
+
+  const requestKey = `${userId}:${normalizeText(selectedWorkspaceId)}:${normalizeText(session?.access_token)}`
+  const existing = bridgeAuthBootInflight.get(requestKey)
+  if (existing) return existing
+
+  const request = loadBridgeAuthStateUncoalesced({ session, selectedWorkspaceId })
+    .finally(() => {
+      if (bridgeAuthBootInflight.get(requestKey) === request) {
+        bridgeAuthBootInflight.delete(requestKey)
+      }
+    })
+  bridgeAuthBootInflight.set(requestKey, request)
+  return request
 }

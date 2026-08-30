@@ -422,8 +422,15 @@ function normalizeTransaction(row = {}) {
 
 function normalizeListing(row = {}) {
   const listingId = getListingId(row) || readId(row, ['id'])
-  const sellerOnboarding = row?.sellerOnboarding || row?.seller_onboarding || null
+  const sellerOnboardingSource = row?.sellerOnboarding || row?.seller_onboarding || null
   const onboardingFormData = getSellerOnboardingFormData(row)
+  const sellerOnboarding = sellerOnboardingSource && isPlainObject(sellerOnboardingSource)
+    ? {
+        ...sellerOnboardingSource,
+        formData: onboardingFormData,
+        form_data: onboardingFormData,
+      }
+    : null
   const propertyAddress = normalizeText(
     row?.title ||
       row?.listingTitle ||
@@ -458,6 +465,8 @@ function normalizeListing(row = {}) {
     listingVisibility: normalizeText(row?.listingVisibility || row?.listing_visibility),
     mandateStatus: normalizeText(row?.mandateStatus || row?.mandate_status),
     mandatePacketId: readId(row, ['mandatePacketId', 'mandate_packet_id']),
+    sellerOnboarding,
+    seller_onboarding: sellerOnboarding,
     sellerOnboardingStatus,
     status: normalizeText(row?.listingStatus || row?.listing_status || row?.status),
     title: propertyAddress || normalizeText(row?.suburb),

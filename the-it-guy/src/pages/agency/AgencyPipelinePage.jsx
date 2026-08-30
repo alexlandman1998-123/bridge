@@ -7777,11 +7777,16 @@ function describeOtpTemplateReadiness(templateResolution = {}, policy = {}) {
 }
 
 function getListingSellerFormData(listing = {}) {
-  const onboardingFormData = listing?.sellerOnboarding?.formData && typeof listing.sellerOnboarding.formData === 'object'
-    ? listing.sellerOnboarding.formData
+  const onboarding = listing?.sellerOnboarding && typeof listing.sellerOnboarding === 'object'
+    ? listing.sellerOnboarding
+    : listing?.seller_onboarding && typeof listing.seller_onboarding === 'object'
+      ? listing.seller_onboarding
+      : {}
+  const onboardingFormData = onboarding?.formData && typeof onboarding.formData === 'object'
+    ? onboarding.formData
     : {}
-  const rawOnboardingFormData = listing?.sellerOnboarding?.form_data && typeof listing.sellerOnboarding.form_data === 'object'
-    ? listing.sellerOnboarding.form_data
+  const rawOnboardingFormData = onboarding?.form_data && typeof onboarding.form_data === 'object'
+    ? onboarding.form_data
     : {}
   return {
     ...rawOnboardingFormData,
@@ -17529,7 +17534,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         ['ID Number', field(onboarding?.idNumber, onboarding?.id_number, onboarding?.sellerIdNumber, lead?.sellerIdNumber, lead?.idNumber)],
         ['Date of Birth', dateField(onboarding?.dateOfBirth, onboarding?.date_of_birth, onboarding?.birthDate)],
         ['Nationality', field(onboarding?.nationality, lead?.nationality)],
-        ['Marital Status', field(onboarding?.maritalStatus, onboarding?.marital_status, lead?.maritalStatus)],
+        ['Marital Status', field(onboarding?.maritalStatus, onboarding?.marital_status, onboarding?.maritalRegime, onboarding?.marital_regime, onboarding?.ownershipType, lead?.maritalStatus)],
         ['Email', field(selectedLeadContact?.email, lead?.sellerEmail, lead?.email)],
         ['Mobile', field(selectedLeadContact?.phone, lead?.sellerPhone, lead?.phone)],
         ['Alternative Number', field(onboarding?.alternativeNumber, onboarding?.alternative_number, onboarding?.alternatePhone)],
@@ -17580,12 +17585,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       key: 'address',
       title: 'Residential Address',
       rows: [
-        ['Street', field(onboarding?.residentialStreet, onboarding?.streetAddress, lead?.streetAddress, propertyDetails?.streetAddress)],
-        ['Suburb', field(onboarding?.residentialSuburb, onboarding?.suburb, lead?.suburb, propertyDetails?.suburb)],
-        ['City', field(onboarding?.residentialCity, onboarding?.city, lead?.city, propertyDetails?.city)],
-        ['Province', field(onboarding?.residentialProvince, onboarding?.province, lead?.province, propertyDetails?.province)],
-        ['Postal Code', field(onboarding?.residentialPostalCode, onboarding?.postalCode, lead?.postalCode, propertyDetails?.postalCode)],
-        ['Country', field(onboarding?.residentialCountry, onboarding?.country, lead?.country, propertyDetails?.country, 'South Africa')],
+        ['Street', field(onboarding?.residentialStreet, onboarding?.residentialAddressDetails?.line1, onboarding?.residentialAddress, onboarding?.sellerResidentialAddress, onboarding?.streetAddress, lead?.streetAddress, propertyDetails?.streetAddress)],
+        ['Suburb', field(onboarding?.residentialSuburb, onboarding?.residentialAddressDetails?.suburb, onboarding?.suburb, lead?.suburb, propertyDetails?.suburb)],
+        ['City', field(onboarding?.residentialCity, onboarding?.residentialAddressDetails?.city, onboarding?.city, lead?.city, propertyDetails?.city)],
+        ['Province', field(onboarding?.residentialProvince, onboarding?.residentialAddressDetails?.province, onboarding?.province, lead?.province, propertyDetails?.province)],
+        ['Postal Code', field(onboarding?.residentialPostalCode, onboarding?.residentialAddressDetails?.postalCode, onboarding?.residentialAddressDetails?.postal_code, onboarding?.postalCode, lead?.postalCode, propertyDetails?.postalCode)],
+        ['Country', field(onboarding?.residentialCountry, onboarding?.residentialAddressDetails?.country, onboarding?.country, lead?.country, propertyDetails?.country, 'South Africa')],
       ],
     } : null
     const taxTitle = isCompanySellerProfile ? 'Company Tax & Compliance' : isTrustSellerProfile ? 'Trust Tax & Compliance' : 'Tax & Compliance'
@@ -17624,6 +17629,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             ['Ownership Scheme', field(
               onboarding?.ownershipScheme,
               onboarding?.ownership_scheme,
+              onboarding?.ownerStructureType,
+              onboarding?.owner_structure_type,
               onboarding?.propertyStructureType,
               onboarding?.property_structure_type,
               onboarding?.propertyTitleType,

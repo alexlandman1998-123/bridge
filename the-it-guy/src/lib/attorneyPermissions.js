@@ -57,6 +57,13 @@ export const ATTORNEY_FIRM_DEPARTMENT_TYPES = ['transfer', 'bond', 'admin', 'man
 
 export const ATTORNEY_INVITATION_STATUS_VALUES = ['pending', 'accepted', 'expired', 'cancelled']
 
+// Both the route permission gate and the dashboard loader need the same
+// membership row during startup. Share that short-lived read so they do not
+// issue duplicate requests while the initial view is being assembled.
+const ATTORNEY_MEMBERSHIP_CACHE_TTL_MS = 15_000
+const attorneyMembershipCache = new Map()
+const attorneyMembershipInflight = new Map()
+
 
 export function normalizeAttorneyFirmMemberStatus(value, fallback = 'active') {
   const normalized = String(value || '').trim().toLowerCase()
@@ -151,15 +158,11 @@ async function resolveFirmIdFromProfile(client, userId) {
   return normalizeText(query.data?.primary_attorney_firm_id) || null
 }
 
-export async function getCurrentUserAttorneyMembership(firmId = null, userId = null) {
-  const client = requireClient()
-  const resolvedUserId = await resolveAuthenticatedUserId(client, userId)
-  let resolvedFirmId = normalizeText(firmId) || (await resolveFirmIdFromProfile(client, resolvedUserId))
+function getAttorneyMembershipCacheKey(firmId = '', userId = '') {
+  return `${normalizeText(firmId)}:${normalizeText(userId)}`
+}
 
-  if (!resolvedFirmId && isAttorneyDemoContextEnabled()) {
-    resolvedFirmId = ATTORNEY_DEMO_FIRM_ID
-  }
-
+async function loadCurrentUserAttorneyMembership(client, { resolvedFirmId, resolvedUserId }) {
   if (!resolvedFirmId) {
     return null
   }
@@ -217,6 +220,58 @@ export async function getCurrentUserAttorneyMembership(firmId = null, userId = n
     ...membership,
     isActive: membership.status === 'active',
   }
+}
+
+export function clearAttorneyMembershipCache({ firmId = '', userId = '' } = {}) {
+  const normalizedFirmId = normalizeText(firmId)
+  const normalizedUserId = normalizeText(userId)
+  if (!normalizedFirmId && !normalizedUserId) {
+    attorneyMembershipCache.clear()
+    attorneyMembershipInflight.clear()
+    return
+  }
+
+  for (const key of [...attorneyMembershipCache.keys(), ...attorneyMembershipInflight.keys()]) {
+    const [cachedFirmId, cachedUserId] = key.split(':')
+    if (normalizedFirmId && cachedFirmId !== normalizedFirmId) continue
+    if (normalizedUserId && cachedUserId !== normalizedUserId) continue
+    attorneyMembershipCache.delete(key)
+    attorneyMembershipInflight.delete(key)
+  }
+}
+
+export async function getCurrentUserAttorneyMembership(firmId = null, userId = null) {
+  const client = requireClient()
+  const resolvedUserId = await resolveAuthenticatedUserId(client, userId)
+  let resolvedFirmId = normalizeText(firmId) || (await resolveFirmIdFromProfile(client, resolvedUserId))
+
+  if (!resolvedFirmId && isAttorneyDemoContextEnabled()) {
+    resolvedFirmId = ATTORNEY_DEMO_FIRM_ID
+  }
+
+  if (!resolvedFirmId) return null
+
+  const cacheKey = getAttorneyMembershipCacheKey(resolvedFirmId, resolvedUserId)
+  const cached = attorneyMembershipCache.get(cacheKey)
+  if (cached && cached.expiresAt > Date.now()) return cached.membership
+
+  const inflight = attorneyMembershipInflight.get(cacheKey)
+  if (inflight) return inflight
+
+  const loadPromise = loadCurrentUserAttorneyMembership(client, { resolvedFirmId, resolvedUserId })
+    .then((membership) => {
+      attorneyMembershipCache.set(cacheKey, {
+        membership,
+        expiresAt: Date.now() + ATTORNEY_MEMBERSHIP_CACHE_TTL_MS,
+      })
+      return membership
+    })
+    .finally(() => {
+      attorneyMembershipInflight.delete(cacheKey)
+    })
+
+  attorneyMembershipInflight.set(cacheKey, loadPromise)
+  return loadPromise
 }
 
 export async function canAccessAttorneyFirm(firmId, userId = null) {
@@ -538,7 +593,7 @@ export async function getUserAttorneyRolesForTransaction(userId, transactionId) 
   ]
 }
 
-export async function canAccessAttorneyMatter(transactionId, firmId = null, userId = null) {
+export async function canAccessAttorneyMatter(transactionId, firmId = null, userId = null, { membership: suppliedMembership = null } = {}) {
   const client = requireClient()
   const resolvedTransactionId = normalizeText(transactionId)
   if (!resolvedTransactionId) return false
@@ -582,21 +637,41 @@ export async function canAccessAttorneyMatter(transactionId, firmId = null, user
   const scopedFirmIds = [...new Set(scopedAssignments.map((assignment) => assignment.attorney_firm_id || assignment.firm_id).filter(Boolean))]
   if (!scopedFirmIds.length) return false
 
-  const membershipsQuery = await client
-    .from('attorney_firm_members')
-    .select('id, firm_id, user_id, department_id, role, professional_role, practice_qualifications, status, invited_by, joined_at, created_at, updated_at')
-    .eq('user_id', resolvedUserId)
-    .in('firm_id', scopedFirmIds)
-    .eq('status', 'active')
+  const normalizedSuppliedMembership = normalizeMembershipRow(suppliedMembership && {
+    ...suppliedMembership,
+    firm_id: suppliedMembership.firm_id || suppliedMembership.firmId,
+    user_id: suppliedMembership.user_id || suppliedMembership.userId,
+    department_id: suppliedMembership.department_id || suppliedMembership.departmentId,
+    professional_role: suppliedMembership.professional_role || suppliedMembership.professionalRole,
+    practice_qualifications: suppliedMembership.practice_qualifications || suppliedMembership.practiceQualifications,
+  })
+  const suppliedMembershipIsUsable = Boolean(
+    normalizedSuppliedMembership &&
+    normalizedSuppliedMembership.status === 'active' &&
+    normalizedSuppliedMembership.userId === resolvedUserId &&
+    scopedFirmIds.includes(normalizedSuppliedMembership.firmId),
+  )
+  const missingFirmIds = scopedFirmIds.filter((scopedFirmId) => scopedFirmId !== normalizedSuppliedMembership?.firmId)
+  let membershipRows = suppliedMembershipIsUsable ? [normalizedSuppliedMembership] : []
 
-  if (membershipsQuery.error) {
-    if (isMissingTableError(membershipsQuery.error, 'attorney_firm_members')) {
-      return false
+  if (missingFirmIds.length) {
+    const membershipsQuery = await client
+      .from('attorney_firm_members')
+      .select('id, firm_id, user_id, department_id, role, professional_role, practice_qualifications, status, invited_by, joined_at, created_at, updated_at')
+      .eq('user_id', resolvedUserId)
+      .in('firm_id', missingFirmIds)
+      .eq('status', 'active')
+
+    if (membershipsQuery.error) {
+      if (isMissingTableError(membershipsQuery.error, 'attorney_firm_members')) {
+        return false
+      }
+      throw membershipsQuery.error
     }
-    throw membershipsQuery.error
+    membershipRows = [...membershipRows, ...(membershipsQuery.data || [])]
   }
 
-  const membershipsByFirmId = (membershipsQuery.data || []).reduce((accumulator, row) => {
+  const membershipsByFirmId = membershipRows.reduce((accumulator, row) => {
     const membership = normalizeMembershipRow(row)
     if (membership?.firmId) {
       accumulator[membership.firmId] = membership

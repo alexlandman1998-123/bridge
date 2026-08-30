@@ -1104,6 +1104,98 @@ function buildKpis(rows = [], { usesIncomingQueue = false } = {}) {
   ]
 }
 
+function buildSnapshotKpis(kpis = {}) {
+  const values = {
+    activeMatters: Number(kpis.activeMatters || 0),
+    awaitingClient: Number(kpis.awaitingClient || 0),
+    lodgementToday: Number(kpis.lodgementToday || 0),
+    registrationThisWeek: Number(kpis.registrationThisWeek || 0),
+    delayedMatters: Number(kpis.delayedMatters || 0),
+  }
+  return [
+    { key: 'active_matters', label: 'Active Matters', value: values.activeMatters, helper: 'Current firm scope', tone: 'emerald', sparkline: createSparkline(values.activeMatters) },
+    { key: 'awaiting_client', label: 'Awaiting Client', value: values.awaitingClient, helper: 'Action needed', tone: 'amber', sparkline: createSparkline(values.awaitingClient, 2) },
+    { key: 'lodgement_today', label: 'Lodgement Today', value: values.lodgementToday, helper: 'Due today', tone: 'blue', sparkline: createSparkline(values.lodgementToday, 2) },
+    { key: 'registration_this_week', label: 'Registration This Week', value: values.registrationThisWeek, helper: 'Upcoming', tone: 'violet', sparkline: createSparkline(values.registrationThisWeek) },
+    { key: 'delayed', label: 'Delayed', value: values.delayedMatters, helper: 'Require attention', tone: 'red', sparkline: createSparkline(values.delayedMatters, 2) },
+  ]
+}
+
+function normalizeSnapshotMatterRow(row = {}) {
+  const risk = normalize(row.riskStatus)
+  return normalizeMatterRow({
+    id: row.transactionId,
+    matterId: row.transactionId,
+    transactionId: row.transactionId,
+    assignmentId: row.assignmentId,
+    matterNumber: row.matterNumber,
+    matterReference: row.matterNumber,
+    matterType: row.matterType,
+    currentStage: row.stage,
+    nextAction: row.nextAction,
+    nextActionDueAt: row.nextActionDueAt,
+    expectedRegistrationDate: row.targetRegistrationDate,
+    waitingOnRole: row.waitingOnRole,
+    buyerName: row.buyerName,
+    propertyAddress: row.propertyLabel,
+    propertyDescription: row.propertyLabel,
+    matterValue: row.value,
+    purchasePrice: row.value,
+    salesPrice: row.value,
+    lastUpdated: row.updatedAt,
+    createdAt: row.updatedAt,
+    flags: {
+      delayed: ['at_risk', 'at risk', 'delayed', 'red'].includes(risk),
+      lodgementPending: normalize(row.stage).includes('lodgement'),
+    },
+    actionHref: row.transactionId ? `/transactions/${encodeURIComponent(row.transactionId)}` : '',
+    raw: row,
+  })
+}
+
+/**
+ * Converts the paged SQL snapshot into the existing table presentation model.
+ * It never assembles data or computes aggregate KPIs from browser-side queues.
+ */
+export function buildAttorneyMatterWorkspaceFromSnapshot(snapshot = {}, options = {}) {
+  const viewConfig = getAttorneyMatterViewConfig(options.view || snapshot.view || 'all')
+  const rows = (Array.isArray(snapshot.rows) ? snapshot.rows : []).map(normalizeSnapshotMatterRow)
+  const pagination = snapshot.pagination || {}
+  const firmId = options.firmId || ''
+  const scope = {
+    canViewAllMatterLists: snapshot.access?.scope === 'firm',
+    listLaneKeys: viewConfig.lockedMatterType ? [viewConfig.lockedMatterType] : ['transfer', 'bond', 'cancellation'],
+    defaultMatterViewKey: viewConfig.key,
+  }
+
+  return {
+    source: null,
+    firm: firmId ? { id: firmId } : null,
+    currentUser: { id: options.userId || '' },
+    permissions: {},
+    scope,
+    requestedViewKey: viewConfig.key,
+    view: viewConfig,
+    summary: {},
+    filters: buildFilterPayload({ availableFilters: { members: [] } }, rows, { view: viewConfig.key }),
+    kpis: buildSnapshotKpis(snapshot.kpis),
+    savedViews: SAVED_VIEWS,
+    quickFilters: QUICK_FILTERS,
+    tableRows: rows,
+    allRows: rows,
+    filteredRows: rows,
+    pagination: {
+      page: Math.max(1, Number(pagination.page || options.page || 1)),
+      pageSize: Math.max(1, Number(pagination.pageSize || options.pageSize || 20)),
+      pageSizeOptions: ATTORNEY_MATTER_PAGE_SIZES,
+      totalRows: Math.max(0, Number(pagination.totalRows || 0)),
+      totalPages: Math.max(1, Math.ceil(Number(pagination.totalRows || 0) / Math.max(1, Number(pagination.pageSize || options.pageSize || 20)))),
+      showingFrom: rows.length ? ((Math.max(1, Number(pagination.page || options.page || 1)) - 1) * Math.max(1, Number(pagination.pageSize || options.pageSize || 20))) + 1 : 0,
+      showingTo: rows.length ? ((Math.max(1, Number(pagination.page || options.page || 1)) - 1) * Math.max(1, Number(pagination.pageSize || options.pageSize || 20))) + rows.length : 0,
+    },
+  }
+}
+
 function buildFilterPayload(operational = {}, rows = [], { view = 'all' } = {}) {
   const viewConfig = getAttorneyMatterViewConfig(view)
   const memberOptions = (operational.availableFilters?.members || []).map((member) => ({

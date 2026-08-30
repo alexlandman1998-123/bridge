@@ -88,6 +88,12 @@ assert.match(
   'background bridge revalidation should keep an already authenticated workspace mounted',
 )
 
+assert.match(
+  source,
+  /buildCachedBridgeAuthState\(\{ session, selectedWorkspaceId \}\)[\s\S]*?if \(!keepCurrentWorkspace && cachedBridgeState\) \{[\s\S]*?return cachedBridgeState/,
+  'initial bridge validation should immediately restore a matching last-good workspace while it refreshes',
+)
+
 const degradedStateIndex = source.indexOf('const degradedState = retryReason')
 const retryAttemptsIndex = source.indexOf('const retryAttemptsUsed = bridgeRetryScopeRef.current.attempts || 0')
 assert.ok(degradedStateIndex > -1, 'retryable bridge boot failures should attempt a last-good degraded workspace recovery')
@@ -163,6 +169,24 @@ assert.match(
   authBootSource,
   /label: 'workspace\.resolveCurrentWorkspace'[\s\S]*?timeoutMs: AUTH_BOOT_WORKSPACE_STEP_TIMEOUT_MS/,
   'initial workspace resolution should be bounded by the workspace step timeout',
+)
+
+assert.match(
+  authBootSource,
+  /const bridgeAuthBootInflight = new Map\(\)/,
+  'bridge boot should keep a module-scoped single-flight registry',
+)
+
+assert.match(
+  authBootSource,
+  /const existing = bridgeAuthBootInflight\.get\(requestKey\)[\s\S]*?if \(existing\) return existing/,
+  'matching bridge boots should share the same in-flight workspace resolution',
+)
+
+assert.match(
+  authBootSource,
+  /export function buildCachedBridgeAuthState[\s\S]*?workspaceDegradedReason: 'workspace_boot_refreshing'/,
+  'a verified cached workspace should be marked as refreshing until live validation completes',
 )
 
 console.log('auth bridge bootstrap timeout contract ok')

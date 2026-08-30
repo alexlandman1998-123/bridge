@@ -165,6 +165,10 @@ import { MAIN_STAGE_LABELS, getMainStageFromDetailedStage } from '../lib/stages'
 import { resendTransactionProgressNotification } from '../services/transactionSharedProgressService'
 import { trackBondApplicationFinanceWorkspaceState } from '../services/bondApplicationFinanceTelemetryService.js'
 import { createTransactionWorkspacePerformanceBaseline } from '../services/observability/transactionWorkspacePerformanceBaseline.js'
+import {
+  ATTORNEY_MATTER_PERFORMANCE_METRICS,
+  createAttorneyMatterPerformanceBaseline,
+} from '../services/observability/attorneyMatterPerformanceBaseline.js'
 import { markRouteMilestone } from '../lib/performanceTrace.js'
 import { fetchJourneyStageOverrides } from '../services/journeyStageOverrideService.js'
 import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
@@ -15900,8 +15904,6 @@ function AttorneyTransactionDetail() {
   })
   const [_workspaceDatasetLoads, setWorkspaceDatasetLoads] = useState({})
   const [workflowOperations, setWorkflowOperations] = useState(null)
-  const [workflowOperationsTransactionId, setWorkflowOperationsTransactionId] = useState('')
-  const [, setWorkflowLoading] = useState(false)
   const [, setWorkflowError] = useState('')
   const [transactionRollup, setTransactionRollup] = useState(null)
   const [transactionRollupLoading, setTransactionRollupLoading] = useState(
@@ -15935,10 +15937,17 @@ function AttorneyTransactionDetail() {
   const workspaceHydrationContextRef = useRef({ key: '', promise: null, value: null })
   const backgroundRefreshHandlerRef = useRef(null)
   const transactionPerformanceBaselineRef = useRef(null)
+  const attorneyMatterPerformanceBaselineRef = useRef(null)
   if (transactionPerformanceBaselineRef.current?.transactionKey !== transactionId) {
     transactionPerformanceBaselineRef.current = {
       transactionKey: transactionId,
       baseline: createTransactionWorkspacePerformanceBaseline({ route: location.pathname }),
+    }
+  }
+  if (attorneyMatterPerformanceBaselineRef.current?.transactionKey !== transactionId) {
+    attorneyMatterPerformanceBaselineRef.current = {
+      transactionKey: transactionId,
+      baseline: createAttorneyMatterPerformanceBaseline({ route: location.pathname }),
     }
   }
   const transactionRollupRequestRef = useRef({
@@ -16110,6 +16119,16 @@ function AttorneyTransactionDetail() {
         })
         if (!background) {
           setLoading(false)
+        }
+        if (!background && workspaceRole === 'attorney') {
+          void attorneyMatterPerformanceBaselineRef.current?.baseline?.record(
+            ATTORNEY_MATTER_PERFORMANCE_METRICS.detailCoreReady,
+            {
+              userId: telemetryUserId,
+              workspaceId: telemetryWorkspaceId,
+              metadata: { outcome: 'success', navigationPreview: Boolean(navigationPreviewData?.transaction) },
+            },
+          )
         }
       }
     } catch (coreError) {
@@ -16296,7 +16315,6 @@ function AttorneyTransactionDetail() {
       }))
       if (result.operations) {
         setWorkflowOperations(result.operations)
-        setWorkflowOperationsTransactionId(requestedTransactionId)
       }
       workspaceDatasetRequestRef.current.set(requestKey, {
         ...latestRequest,
@@ -16390,7 +16408,6 @@ function AttorneyTransactionDetail() {
       sequence: documentWorkspaceRequestRef.current.sequence + 1,
     }
     setWorkflowOperations(null)
-    setWorkflowOperationsTransactionId('')
     setWorkflowError('')
     setWorkflowDrawerLaneKey('')
     setWorkflowFocusedStepKey('')
@@ -16428,6 +16445,10 @@ function AttorneyTransactionDetail() {
     let active = true
 
     async function checkMatterAccess() {
+      const accessStartedAt = typeof performance !== 'undefined' && typeof performance.now === 'function'
+        ? performance.now()
+        : Date.now()
+      let accessOutcome = 'failed'
       if (workspaceRole !== 'attorney') {
         if (!active) return
         setMatterAccessAllowed(true)
@@ -16453,11 +16474,11 @@ function AttorneyTransactionDetail() {
           transactionId,
           attorneyPermissionState.firmId,
           profile?.id || profile?.userId || null,
+          { membership: attorneyPermissionState.membership },
         )
         if (!active) return
         if (!hasMatterAccess) {
           setWorkflowOperations(null)
-          setWorkflowOperationsTransactionId('')
           setMatterAccessKey('')
           setError('You do not have access to this matter.')
           setMatterAccessAllowed(false)
@@ -16467,15 +16488,26 @@ function AttorneyTransactionDetail() {
         setMatterAccessKey(currentMatterAccessKey)
         setMatterAccessAllowed(true)
         setError('')
+        accessOutcome = 'success'
 
       } catch (accessError) {
         if (!active) return
         setWorkflowOperations(null)
-        setWorkflowOperationsTransactionId('')
         setMatterAccessKey('')
         setError(accessError?.message || 'You do not have access to this matter.')
         setMatterAccessAllowed(false)
       } finally {
+        if (workspaceRole === 'attorney') {
+          void attorneyMatterPerformanceBaselineRef.current?.baseline?.record(
+            ATTORNEY_MATTER_PERFORMANCE_METRICS.accessCheck,
+            {
+              spanStartedAt: typeof accessStartedAt === 'number' ? accessStartedAt : undefined,
+              userId: profile?.id || profile?.userId || '',
+              workspaceId: attorneyPermissionState.firmId || '',
+              metadata: { outcome: accessOutcome },
+            },
+          )
+        }
         if (active) setMatterAccessChecked(true)
       }
     }
@@ -16494,6 +16526,7 @@ function AttorneyTransactionDetail() {
   }, [
     attorneyPermissionState.firmId,
     attorneyPermissionState.loading,
+    attorneyPermissionState.membership,
     attorneyPermissionState.membership?.isActive,
     currentMatterAccessKey,
     profile?.id,
@@ -16819,7 +16852,18 @@ function AttorneyTransactionDetail() {
         requiredDocumentCount: dataset === 'documents' ? requiredDocumentChecklist.length : undefined,
       },
     })
-  }, [activeWorkspaceMenu, allDocuments.length, currentMembership?.organisationId, currentMembership?.organisation_id, data, documentDataHydrated, hydratingDetail, profile?.id, requiredDocumentChecklist.length, workspace?.id])
+    if (workspaceRole === 'attorney') {
+      void attorneyMatterPerformanceBaselineRef.current?.baseline?.record(
+        ATTORNEY_MATTER_PERFORMANCE_METRICS.datasetReady,
+        {
+          userId: profile?.id || '',
+          workspaceId: workspace?.id || currentMembership?.organisation_id || currentMembership?.organisationId || '',
+          metadata: { dataset, outcome: 'success' },
+          dedupeKey: `dataset:${dataset}`,
+        },
+      )
+    }
+  }, [activeWorkspaceMenu, allDocuments.length, currentMembership?.organisationId, currentMembership?.organisation_id, data, documentDataHydrated, hydratingDetail, profile?.id, requiredDocumentChecklist.length, workspace?.id, workspaceRole])
   const bondConsultantDeepLink = useMemo(() => {
     if (workspaceRole !== 'bond_originator') return null
     const params = new URLSearchParams(location.search || '')
@@ -16989,25 +17033,6 @@ function AttorneyTransactionDetail() {
     if (availableDiscussionVisibilityOptions.some((item) => item.key === discussionVisibility)) return
     setDiscussionVisibility(availableDiscussionVisibilityOptions[0].key)
   }, [availableDiscussionVisibilityOptions, discussionVisibility])
-
-  useEffect(() => {
-    if (!transaction?.id) {
-      setWorkflowOperations(null)
-      setWorkflowOperationsTransactionId('')
-      return
-    }
-    if (workflowOperations && workflowOperationsTransactionId === transaction.id) return
-
-    setWorkflowLoading(true)
-    setWorkflowError('')
-    void loadWorkspaceDataset('workflow')
-      .catch((workflowLoadError) => {
-        setWorkflowOperations(null)
-        setWorkflowOperationsTransactionId('')
-        setWorkflowError(workflowLoadError?.message || 'Unable to load attorney workflow lanes.')
-      })
-      .finally(() => setWorkflowLoading(false))
-  }, [loadWorkspaceDataset, transaction?.id, workflowOperations, workflowOperationsTransactionId])
 
   useEffect(() => {
     if (!isTransactionOperatorView || !workspaceOrganisationId) {

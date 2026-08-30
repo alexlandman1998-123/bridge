@@ -778,9 +778,9 @@ function getOldestInactiveDays(matters = [], predicate = () => false) {
 }
 
 function buildAttentionMetrics({ uniqueMatters = [], kpis = {} } = {}) {
-  const clearanceCount = uniqueMatters.filter((matter) => isAwaitingClearance(matter.transaction)).length
-  const invoiceCount = uniqueMatters.filter((matter) => isInvoiceOutstanding(matter.transaction)).length
-  const stalledCount = uniqueMatters.filter((matter) => isMatterStalled(matter)).length
+  const clearanceCount = Number(kpis.clearanceCertificates ?? uniqueMatters.filter((matter) => isAwaitingClearance(matter.transaction)).length)
+  const invoiceCount = Number(kpis.invoicesOverdue ?? uniqueMatters.filter((matter) => isInvoiceOutstanding(matter.transaction)).length)
+  const stalledCount = Number(kpis.stalledMatters ?? uniqueMatters.filter((matter) => isMatterStalled(matter)).length)
 
   return [
     {
@@ -1101,6 +1101,177 @@ export async function getAttorneyManagementDashboardData(firmId = null, { roleVi
   return loadPromise
 }
 
+function isMissingDashboardSnapshotRpc(error) {
+  const code = String(error?.code || '').toLowerCase()
+  const message = String(error?.message || '').toLowerCase()
+  return code === 'pgrst202' || message.includes('get_attorney_dashboard_snapshot') || message.includes('could not find the function')
+}
+
+function mapDashboardSnapshotKpis(kpis = {}) {
+  return {
+    activeMatters: Number(kpis.active_matters || 0),
+    newThisWeek: Number(kpis.new_this_week || 0),
+    transferMatters: Number(kpis.transfer_matters || 0),
+    bondMatters: Number(kpis.bond_matters || 0),
+    cancellationMatters: Number(kpis.cancellation_matters || 0),
+    lodgementsPending: Number(kpis.lodgements_pending || 0),
+    lodgementsToday: Number(kpis.lodgements_today || 0),
+    registrationsThisWeek: Number(kpis.registrations_this_week || 0),
+    delayedMatters: Number(kpis.delayed_matters || 0),
+    awaitingFica: Number(kpis.awaiting_fica || 0),
+    awaitingSignatures: Number(kpis.awaiting_signatures || 0),
+    awaitingGuarantees: Number(kpis.awaiting_guarantees || 0),
+    clearanceCertificates: Number(kpis.clearance_certificates || 0),
+    invoicesOverdue: Number(kpis.invoices_overdue || 0),
+    stalledMatters: Number(kpis.stalled_matters || 0),
+    documentRequestsOutstanding: Number(kpis.awaiting_fica || 0) + Number(kpis.awaiting_signatures || 0),
+    revenuePipelineValue: Number(kpis.revenue_pipeline_value || 0),
+    averageTransferTimeDays: 0,
+    lodgedThisWeek: 0,
+    registeredThisMonth: 0,
+  }
+}
+
+function buildAttorneyDashboardFromSnapshot(snapshot = {}, { roleView = 'all' } = {}) {
+  const transactions = Array.isArray(snapshot.matters) ? snapshot.matters : []
+  const members = Array.isArray(snapshot.members) ? snapshot.members : []
+  const departments = Array.isArray(snapshot.departments) ? snapshot.departments : []
+  const kpis = mapDashboardSnapshotKpis(snapshot.kpis)
+  const memberProfilesById = members.reduce((byId, member) => {
+    if (member?.userId) byId[member.userId] = { id: member.userId, fullName: member.fullName || 'Team Member', email: '' }
+    return byId
+  }, {})
+  const matterUnits = transactions.flatMap((transaction) => {
+    const roles = Array.isArray(transaction.roles) && transaction.roles.length ? transaction.roles : ['transfer_attorney']
+    const flags = resolveMatterIssueFlags(transaction)
+    const issue = resolveAttentionIssue(flags)
+    return roles.map((attorneyRole) => ({
+      key: `${transaction.id}-${attorneyRole}`,
+      transactionId: transaction.id,
+      assignmentId: null,
+      assignmentType: attorneyRole === 'bond_attorney' ? 'bond' : attorneyRole === 'cancellation_attorney' ? 'cancellation' : 'transfer',
+      attorneyRole,
+      assignmentStatus: 'active',
+      departmentId: transaction.department_id || null,
+      primaryAttorneyId: transaction.primary_attorney_id || null,
+      secretaryId: transaction.secretary_id || null,
+      adminHandlerId: transaction.admin_handler_id || null,
+      transaction,
+      matterType: attorneyRole === 'bond_attorney' ? 'bond' : attorneyRole === 'cancellation_attorney' ? 'cancellation' : 'transfer',
+      flags,
+      issue,
+    }))
+  })
+  const matterRoleSummaries = buildMatterRoleSummaries(matterUnits)
+  const uniqueMatters = matterRoleSummaries
+    .map((summary) => summary.units?.[0])
+    .filter(Boolean)
+  const departmentsById = departments.reduce((byId, department) => ({ ...byId, [department.id]: department }), {})
+  const assignmentByUserId = matterUnits.reduce((byUserId, matter) => {
+    ;[matter.primaryAttorneyId, matter.secretaryId, matter.adminHandlerId].filter(Boolean).forEach((userId) => {
+      if (!byUserId[userId]) byUserId[userId] = []
+      byUserId[userId].push(matter)
+    })
+    return byUserId
+  }, {})
+  const staffWorkload = getStaffWorkload({
+    staff: members.map((member) => {
+      const assigned = assignmentByUserId[member.userId] || []
+      const delayedMatters = assigned.filter((matter) => matter.flags?.delayed).length
+      return {
+        memberId: member.id,
+        userId: member.userId,
+        fullName: member.fullName || 'Team Member',
+        role: member.role,
+        professionalRole: member.professionalRole || member.role,
+        departmentName: departmentsById[member.departmentId]?.name || 'Unassigned',
+        assignedMatters: assigned.length,
+        delayedMatters,
+        status: resolveMemberStatusFromWorkload({ assignedMatters: assigned.length, delayedMatters }),
+        activeMatters: assigned.slice(0, 6).map((matter) => ({
+          id: matter.transactionId,
+          reference: getMatterReference(matter.transaction, matter.transactionId),
+          propertyAddress: resolvePortalPropertyLabel({ transaction: matter.transaction }, { fallback: 'Property pending' }),
+          href: `/transactions/${encodeURIComponent(matter.transactionId)}`,
+        })),
+      }
+    }),
+    matterUnits,
+  })
+  const matterLanes = buildOperationalMatterLanes({
+    matterRoleSummaries,
+    buyersById: {},
+    memberProfilesById,
+    organisationsById: {},
+  })
+  const todayCalendar = (Array.isArray(snapshot.appointments) ? snapshot.appointments : [])
+    .map((appointment) => ({
+      id: appointment.appointment_id,
+      dateTime: getAppointmentDateTime(appointment),
+      type: formatAppointmentType(appointment.appointment_type || appointment.title),
+      matterReference: getMatterReference(transactions.find((matter) => matter.id === appointment.transaction_id), appointment.transaction_id),
+      duration: getAppointmentDuration(appointment),
+      status: appointment.status || '',
+    }))
+    .slice(0, 5)
+  const businessIntelligence = buildBusinessIntelligence({ uniqueMatters, matterRoleSummaries, organisationNamesById: {} })
+  const rawConveyancingPerformance = getConveyancingPerformance({ uniqueMatters, businessIntelligence })
+
+  return {
+    firm: snapshot.firm || null,
+    currentUserRole: snapshot.currentUserRole || null,
+    currentUserProfessionalRole: snapshot.currentUserProfessionalRole || snapshot.currentUserRole || null,
+    canViewFirmDashboard: Boolean(snapshot.canViewFirmDashboard),
+    departments,
+    members,
+    kpis,
+    filterContext: { roleView, totalMatters: matterRoleSummaries.length, scopedMatters: matterRoleSummaries.length },
+    firmSummary: { name: snapshot.firm?.name || '', status: 'Operational', primaryRole: snapshot.currentUserRole || 'firm_admin', otherRoles: [] },
+    matterStats: getAttorneyMatterStats({ kpis, matterRoleSummaries }),
+    criticalAlerts: getCriticalAlerts({ uniqueMatters, kpis }),
+    matterPipeline: ['instruction', 'fica', 'drafting', 'signing', 'guarantees', 'lodgement', 'registration'].map((stage) => ({
+      key: stage,
+      label: stage === 'fica' ? 'FICA' : stage.charAt(0).toUpperCase() + stage.slice(1),
+      count: uniqueMatters.filter((matter) => resolvePipelineStage(matter.transaction) === stage).length,
+      trend: '—',
+      status: 'on_track',
+    })),
+    mattersByRole: getMattersByLegalRole({ matterRoleSummaries }),
+    departmentOverview: getDepartmentOverview({ departments: departments.map((department) => ({
+      departmentId: department.id,
+      departmentName: department.name,
+      departmentType: department.departmentType,
+      activeMatters: matterUnits.filter((matter) => matter.departmentId === department.id).length,
+      assignedStaff: members.filter((member) => member.departmentId === department.id).length,
+      delayedMatters: matterUnits.filter((matter) => matter.departmentId === department.id && matter.flags?.delayed).length,
+    })) }),
+    staffWorkload,
+    mattersRequiringAttention: uniqueMatters.filter((matter) => matter.issue).slice(0, 25).map((matter) => ({
+      matterId: matter.transactionId,
+      matterReference: getMatterReference(matter.transaction, matter.transactionId),
+      clientName: 'Client pending',
+      department: departmentsById[matter.departmentId]?.name || 'Attorney Department',
+      currentStage: matter.transaction?.current_sub_stage_summary || matter.transaction?.stage || 'Unknown',
+      assignedUser: memberProfilesById[matter.primaryAttorneyId]?.fullName || matter.transaction?.assigned_attorney_email || 'Unassigned',
+      issue: matter.issue,
+      daysInactive: daysSince(matter.transaction?.last_meaningful_activity_at || matter.transaction?.updated_at || matter.transaction?.created_at),
+      lastUpdated: matter.transaction?.updated_at || matter.transaction?.created_at || null,
+      actionLabel: 'Open Transaction',
+      actionHref: `/transactions/${encodeURIComponent(matter.transactionId)}`,
+    })),
+    recentActivity: [],
+    upcomingKeyDates: getUpcomingKeyDates({ kpis }),
+    todayCalendar,
+    financialSnapshot: getFinancialSnapshot(),
+    matterLanes,
+    businessIntelligence,
+    attentionMetrics: buildAttentionMetrics({ uniqueMatters, kpis }),
+    partnerAnalytics: getPartnerAnalytics({ uniqueMatters, organisationNamesById: {} }),
+    conveyancingPerformance: rawConveyancingPerformance,
+    matterHealth: calculateMatterHealth({ uniqueMatters }),
+  }
+}
+
 async function loadAttorneyManagementDashboardData(firmId = null, { roleView = 'all', client: scopedClient = null, authUser: scopedAuthUser = null, resolvedFirm: scopedFirm = null, userId = null, timer: scopedTimer = null } = {}) {
   const client = scopedClient || requireClient()
   const timer = scopedTimer || createPerfTimer('attorney.service.dashboard.load', {
@@ -1172,12 +1343,38 @@ async function loadAttorneyManagementDashboardData(firmId = null, { roleView = '
     }
   }
 
+  // The hot path is a single firm-scoped RPC: it calculates aggregate KPIs in
+  // Postgres and returns only a capped matter queue. Keep the older client-side
+  // assembler below as a temporary compatibility fallback for environments that
+  // have not received the migration yet.
+  timer.mark('snapshot:load:start')
+  const snapshotResult = await client.rpc('get_attorney_dashboard_snapshot', {
+    p_firm_id: resolvedFirm.id,
+    p_role_view: roleView,
+    // KPI counts are calculated across the full firm server-side. Fifty recent
+    // records give the operational rail and attention queue enough context
+    // without serialising a large matter catalogue into the first view.
+    p_detail_limit: 50,
+  })
+  if (!snapshotResult.error) {
+    timer.mark('snapshot:load:end', {
+      matters: snapshotResult.data?.matters?.length || 0,
+      members: snapshotResult.data?.members?.length || 0,
+    })
+    return buildAttorneyDashboardFromSnapshot(snapshotResult.data || {}, { roleView })
+  }
+  if (!isMissingDashboardSnapshotRpc(snapshotResult.error)) {
+    throw snapshotResult.error
+  }
+  console.warn('[Attorney Dashboard] snapshot RPC is unavailable; using legacy dashboard loader until the migration is applied.', snapshotResult.error)
+  timer.mark('snapshot:unavailable')
+
   const [departmentsRaw, membersRaw, invitesRaw, transactionsRaw, assignmentRows] = await Promise.all([
     readDashboardDependency('departments', getAttorneyFirmDepartments(resolvedFirm.id), []),
     readDashboardDependency('members', getAttorneyFirmMembers(resolvedFirm.id), []),
     readDashboardDependency('invitations', getAttorneyFirmInvitations(resolvedFirm.id), []),
     readDashboardDependency('transactions', fetchTransactionsForDashboard(client), []),
-    readDashboardDependency('assignments', getFirmAttorneyAssignments(resolvedFirm.id, { includeInactive: true }), []),
+    readDashboardDependency('assignments', getFirmAttorneyAssignments(resolvedFirm.id, { includeInactive: true, enrich: false }), []),
   ])
   timer.mark('primaryDependencies:loaded', {
     departments: departmentsRaw?.length || 0,

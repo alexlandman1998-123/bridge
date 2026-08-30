@@ -21,6 +21,10 @@ export const PERFORMANCE_BUDGETS_MS = Object.freeze({
   'transaction_workspace.full_ready': 4000,
   'transaction_workspace.dataset_ready': 2000,
   'transaction_workspace.background_refresh': 3000,
+  'attorney_matters.list_ready': 4000,
+  'attorney_matters.access_check': 1500,
+  'attorney_matters.detail_core_ready': 3000,
+  'attorney_matters.dataset_ready': 2000,
 })
 
 function normalizeText(value) {

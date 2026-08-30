@@ -37,11 +37,11 @@ async function currentUserId() {
   return result.data?.user?.id || null
 }
 
-export async function fetchMyNotifications({ limit = 25, unreadOnly = false } = {}) {
+export async function fetchMyNotifications({ limit = 25, unreadOnly = false, userId: suppliedUserId = null } = {}) {
   if (!unreadOnly && cachedResult && Date.now() - cachedAt < CACHE_TTL_MS) return cachedResult
   if (!unreadOnly && inFlight) return inFlight
   const loader = async () => {
-    const userId = await currentUserId()
+    const userId = String(suppliedUserId || '').trim() || await currentUserId()
     if (!userId) return { notifications: [], unreadCount: 0 }
     let list = supabase.from('transaction_notifications').select(SELECT).eq('user_id', userId).order('created_at', { ascending: false }).limit(Math.max(1, Number(limit) || 25))
     if (unreadOnly) list = list.eq('is_read', false)

@@ -6,7 +6,7 @@ import { canAccessHQ } from '../auth/hqAccess'
 import { fetchMyNotifications, markAllNotificationsRead, markNotificationRead, runHeaderNotificationMaintenance } from '../lib/headerNotificationsApi'
 import { canAccessPrincipalExperience } from '../lib/organisationAccess'
 import useDismissableMenu from '../hooks/useDismissableMenu'
-import QuickCreateDropdown from './QuickCreateDropdown'
+import LazyQuickCreateDropdown from './LazyQuickCreateDropdown'
 
 function getPageTitle(pathname, stateTitle, role) {
   const isAgentWorkspaceRole = role === 'agent' || role === 'principal' || role === 'headquarters'
@@ -894,6 +894,7 @@ function HeaderBar({ onLogout, user }) {
   const location = useLocation()
   const workspaceContext = useWorkspace()
   const { role, agencyWorkflowMode } = workspaceContext
+  const notificationUserId = user?.id || workspaceContext.profile?.id || null
   const [open, setOpen] = useState(false)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [activeNotificationFilter, setActiveNotificationFilter] = useState('all')
@@ -937,7 +938,7 @@ function HeaderBar({ onLogout, user }) {
     }))
 
     try {
-      const payload = await fetchMyNotifications({ limit: 25, unreadOnly })
+      const payload = await fetchMyNotifications({ limit: 25, unreadOnly, userId: notificationUserId })
       setNotificationState({
         notifications: payload.notifications || [],
         unreadCount: Number(payload.unreadCount || 0),
@@ -951,7 +952,7 @@ function HeaderBar({ onLogout, user }) {
         error: error?.message || 'Unable to load notifications.',
       }))
     }
-  }, [])
+  }, [notificationUserId])
 
   useDismissableMenu({
     open,
@@ -998,21 +999,37 @@ function HeaderBar({ onLogout, user }) {
   useEffect(() => {
     let active = true
 
-    async function refreshNotifications() {
-      if (!active) {
-        return
-      }
-      await loadNotifications()
+    let intervalId = null
+    let idleCallbackId = null
+    let fallbackTimeoutId = null
+
+    const refreshNotifications = () => {
+      if (!active) return
+      void loadNotifications()
     }
 
-    void refreshNotifications()
-    const intervalId = window.setInterval(() => {
-      void refreshNotifications()
-    }, 45000)
+    const beginBackgroundRefresh = () => {
+      if (!active) return
+      refreshNotifications()
+      intervalId = window.setInterval(refreshNotifications, 45000)
+    }
+
+    // The dashboard gets first use of the main thread and network. The bell
+    // still refreshes immediately when opened, but its background data work
+    // should not contend with the first visible route.
+    if (typeof window.requestIdleCallback === 'function') {
+      idleCallbackId = window.requestIdleCallback(beginBackgroundRefresh, { timeout: 2500 })
+    } else {
+      fallbackTimeoutId = window.setTimeout(beginBackgroundRefresh, 1500)
+    }
 
     return () => {
       active = false
-      window.clearInterval(intervalId)
+      if (intervalId !== null) window.clearInterval(intervalId)
+      if (idleCallbackId !== null && typeof window.cancelIdleCallback === 'function') {
+        window.cancelIdleCallback(idleCallbackId)
+      }
+      if (fallbackTimeoutId !== null) window.clearTimeout(fallbackTimeoutId)
     }
   }, [role, loadNotifications])
 
@@ -1418,7 +1435,7 @@ function HeaderBar({ onLogout, user }) {
               placeholder="Search matters, clients, documents..."
             />
           </div>
-          {!hideQuickCreateInHeader ? <QuickCreateDropdown /> : null}
+          {!hideQuickCreateInHeader ? <LazyQuickCreateDropdown /> : null}
           {notificationsControl}
           {avatarControl}
         </div>
@@ -1464,7 +1481,7 @@ function HeaderBar({ onLogout, user }) {
               placeholder="Search unit, buyer, stage..."
             />
           </div>
-          {!hideQuickCreateInHeader ? <QuickCreateDropdown /> : null}
+          {!hideQuickCreateInHeader ? <LazyQuickCreateDropdown /> : null}
           {notificationsControl}
           {avatarControl}
         </div>
@@ -1539,7 +1556,7 @@ function HeaderBar({ onLogout, user }) {
             <kbd>⌘K</kbd>
           </div>
 
-          {!hideQuickCreateInHeader ? <QuickCreateDropdown /> : null}
+          {!hideQuickCreateInHeader ? <LazyQuickCreateDropdown /> : null}
 
           {notificationsControl}
           {avatarControl}
@@ -1591,7 +1608,7 @@ function HeaderBar({ onLogout, user }) {
           <div className="flex-1" />
         )}
 
-        {!hideQuickCreateInHeader ? <QuickCreateDropdown /> : null}
+        {!hideQuickCreateInHeader ? <LazyQuickCreateDropdown /> : null}
 
         {notificationsControl}
         {avatarControl}

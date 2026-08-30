@@ -4,6 +4,7 @@ import { clearStoredDevAuthRole, createDevAuthSession, getStoredDevAuthRole, isD
 import { getDevBypassWorkspaceId } from '../lib/demoIds'
 import {
   buildDegradedBridgeAuthState,
+  buildCachedBridgeAuthState,
   getActiveAuthBootStepDiagnostics,
   loadBridgeAuthState,
   persistLastGoodBridgeAuthState,
@@ -304,6 +305,7 @@ export function AuthSessionProvider({ children }) {
   const [bootAttempt, setBootAttempt] = useState(0)
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState('')
   const bridgeRetryScopeRef = useRef({ key: '', attempts: 0 })
+  const cachedBridgeBootRef = useRef({ key: '', restored: false })
   const productionSafetyViolation = getProductionSafetyViolation()
   const sessionUserId = session?.user?.id || ''
 
@@ -480,12 +482,22 @@ export function AuthSessionProvider({ children }) {
       let bridgeRetryReason = ''
       let bridgeBootHealthStatus = ''
       let bridgeBreadcrumbCount = 0
+      const cachedBridgeBootKey = `${session.user.id}:${selectedWorkspaceId || ''}:${session.access_token || ''}`
+      const cachedBridgeState = cachedBridgeBootRef.current.key === cachedBridgeBootKey && cachedBridgeBootRef.current.restored
+        ? null
+        : buildCachedBridgeAuthState({ session, selectedWorkspaceId })
+      if (cachedBridgeState) {
+        cachedBridgeBootRef.current = { key: cachedBridgeBootKey, restored: true }
+      }
       setAuthState((previous) => {
         const keepCurrentWorkspace = canKeepAuthenticatedWorkspaceDuringBridgeBoot(
           previous,
           session,
           selectedWorkspaceId,
         )
+        if (!keepCurrentWorkspace && cachedBridgeState) {
+          return cachedBridgeState
+        }
         return {
           ...previous,
           status: keepCurrentWorkspace ? 'authenticated' : 'loading',
@@ -800,7 +812,7 @@ export function AuthSessionProvider({ children }) {
     return () => {
       active = false
     }
-  }, [bootAttempt, devAuthRole, productionSafetyViolation, selectedWorkspaceId, sessionLoading, sessionUserId])
+  }, [bootAttempt, devAuthRole, productionSafetyViolation, selectedWorkspaceId, session, sessionLoading, sessionUserId])
 
   const refreshAuthState = useCallback(() => {
     bridgeRetryScopeRef.current = { key: '', attempts: 0 }

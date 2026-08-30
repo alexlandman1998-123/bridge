@@ -1,7 +1,7 @@
 import { Bell, ChevronDown, Search } from 'lucide-react'
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import QuickCreateDropdown from '../../../components/QuickCreateDropdown'
+import LazyQuickCreateDropdown from '../../../components/LazyQuickCreateDropdown'
 import useDismissableMenu from '../../../hooks/useDismissableMenu'
 import {
   COMMERCIAL_MOBILE_MORE_NAV_ITEMS,
@@ -248,7 +248,7 @@ function CommercialLayout({ onLogout = null, user = null }) {
             </div>
           </div>
           <div className="mt-3 flex items-center gap-2">
-            <QuickCreateDropdown />
+            <LazyQuickCreateDropdown />
             <div className="flex min-h-10 min-w-0 flex-1 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-500">
               <Search size={15} className="shrink-0" />
               <input
@@ -333,7 +333,7 @@ function CommercialLayout({ onLogout = null, user = null }) {
               </div>
             </div>
             <div className="ml-auto flex items-center gap-3">
-              <QuickCreateDropdown className="relative z-[80]" />
+              <LazyQuickCreateDropdown className="relative z-[80]" />
               <button type="button" className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-blue-200 hover:text-blue-600" aria-label="Notifications">
                 <Bell size={17} />
               </button>
