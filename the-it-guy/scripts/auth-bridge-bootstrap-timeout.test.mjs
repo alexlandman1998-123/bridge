@@ -156,7 +156,19 @@ assert.match(
 assert.match(
   authBootSource,
   /'bootHealth\.probe'[\s\S]*?probeAuthBootHealth\(\{ user, client: supabase \}\)/,
-  'bridge auth boot should run a lightweight health probe before workspace resolution',
+  'bridge auth boot should run a lightweight health probe for diagnostics',
+)
+
+assert.match(
+  authBootSource,
+  /const profile = await profileBootstrap[\s\S]*?void bootHealthBootstrap[\s\S]*?\.then\(recordBootHealth\)/,
+  'the health probe should report in the background after required profile access is resolved',
+)
+
+assert.match(
+  authBootSource,
+  /const requiresSignupIntentForAccess = profile\?\.onboardingCompleted !== true[\s\S]*?void finalizeSignupIntent\(\)\.catch/,
+  'established users should refresh signup intent in the background instead of blocking route access',
 )
 
 assert.match(

@@ -659,32 +659,61 @@ async function loadBridgeAuthStateUncoalesced({ session, selectedWorkspaceId = '
     { userId: user.id },
   )
 
-  const [profile, loadedSignupIntent, bootHealth] = await Promise.all([
-    profileBootstrap,
-    signupIntentBootstrap,
-    bootHealthBootstrap,
-  ])
+  // Profile and workspace resolution decide whether the user can enter the app.
+  // Health telemetry and a completed user's historic signup intent must never
+  // keep the dashboard behind a loading screen.
+  const profile = await profileBootstrap
 
-  if (!bootHealth.ok) {
-    markBackendDegraded({ ttlMs: 120_000 })
-    console.warn('[AUTH] boot health probe reported degraded backend access', {
-      userId: user.id,
-      status: bootHealth.status,
-      durationMs: bootHealth.durationMs,
-      errorCode: bootHealth.errorCode,
-      errorMessage: bootHealth.errorMessage,
-    })
-  } else {
+  const recordBootHealth = (bootHealth) => {
+    if (!bootHealth?.ok) {
+      markBackendDegraded({ ttlMs: 120_000 })
+      console.warn('[AUTH] boot health probe reported degraded backend access', {
+        userId: user.id,
+        status: bootHealth?.status || 'probe_failed',
+        durationMs: bootHealth?.durationMs || 0,
+        errorCode: bootHealth?.errorCode || null,
+        errorMessage: bootHealth?.errorMessage || null,
+      })
+      return
+    }
     clearBackendDegraded()
   }
 
-  const signupIntent = loadedSignupIntent && loadedSignupIntent.status !== SIGNUP_INTENT_STATUSES.readyForOnboarding
-    ? await runAuthBootStep(
-        'signupIntent.markReady',
-        () => markSignupIntentReadyForOnboarding({ user, intent: loadedSignupIntent }),
-        { userId: user.id },
-      )
-    : loadedSignupIntent || null
+  void bootHealthBootstrap
+    .then(recordBootHealth)
+    .catch((error) => recordBootHealth(buildAuthBootHealthProbeResult({
+      ok: false,
+      status: 'probe_failed',
+      error,
+    })))
+
+  const finalizeSignupIntent = async () => {
+    const loadedSignupIntent = await signupIntentBootstrap
+    return loadedSignupIntent && loadedSignupIntent.status !== SIGNUP_INTENT_STATUSES.readyForOnboarding
+      ? runAuthBootStep(
+          'signupIntent.markReady',
+          () => markSignupIntentReadyForOnboarding({ user, intent: loadedSignupIntent }),
+          { userId: user.id },
+        )
+      : loadedSignupIntent || null
+  }
+
+  // A new or incomplete user still needs their invitation/setup intent to choose
+  // the correct onboarding route. Established users do not, so resolve it after
+  // the app is usable instead of delaying every dashboard visit.
+  const requiresSignupIntentForAccess = profile?.onboardingCompleted !== true
+  const signupIntent = requiresSignupIntentForAccess
+    ? await finalizeSignupIntent()
+    : null
+  if (!requiresSignupIntentForAccess) {
+    void finalizeSignupIntent().catch((error) => {
+      console.warn('[AUTH] background signup intent refresh failed', {
+        userId: user.id,
+        error,
+      })
+    })
+  }
+  const bootHealth = null
   const appRole = normalizeCanonicalAppRole(profile?.role)
 
   if (!isCanonicalAppRole(appRole)) {
