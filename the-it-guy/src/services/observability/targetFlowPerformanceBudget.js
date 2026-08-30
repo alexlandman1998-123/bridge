@@ -1,4 +1,6 @@
 const CONTRACT_VERSION = 'arch9-target-flow-performance-budget-v1'
+const EVIDENCE_CONTRACT_VERSION = 'arch9-target-flow-performance-evidence-v1'
+const VERIFICATION_CONTRACT_VERSION = 'arch9-target-flow-performance-verification-v1'
 export const TARGET_FLOW_HISTORY_STORAGE_KEY = 'arch9:route-performance-history'
 
 const REQUIRED_TARGET_FLOWS = Object.freeze([
@@ -86,4 +88,43 @@ export function readTargetFlowReleaseGate(storage = typeof window !== 'undefined
   }
 }
 
-export { CONTRACT_VERSION, REQUIRED_TARGET_FLOWS }
+export function readTargetFlowPerformanceHistory(storage = typeof window !== 'undefined' ? window.sessionStorage : null) {
+  if (!storage?.getItem) return []
+  try {
+    const history = JSON.parse(storage.getItem(TARGET_FLOW_HISTORY_STORAGE_KEY) || '[]')
+    return Array.isArray(history) ? history : []
+  } catch {
+    return []
+  }
+}
+
+function sanitizeEvidenceSample(sample = {}) {
+  const metadata = sample?.metadata && typeof sample.metadata === 'object' ? sample.metadata : {}
+  const summary = {
+    route: String(sample.route || ''),
+    firstUsefulContentMs: finiteNumber(sample.firstUsefulContentMs),
+    requestCount: finiteNumber(sample.requestCount),
+    duplicateRequestCount: finiteNumber(sample.duplicateRequestCount),
+    schemaErrorCount: finiteNumber(sample.schemaErrorCount),
+    slowRequestCount: finiteNumber(sample.slowRequestCount),
+    routeChunkBytes: finiteNumber(sample.routeChunkBytes),
+    routeChunkCount: finiteNumber(sample.routeChunkCount),
+    metadata: { page: String(metadata.page || ''), source: String(metadata.source || '') },
+  }
+  return { ...summary, targetBudget: evaluateTargetFlowPerformanceBudget(summary) }
+}
+
+export function buildTargetFlowPerformanceEvidence(history = [], options = {}) {
+  const samples = (Array.isArray(history) ? history : []).map(sanitizeEvidenceSample).filter((sample) => sample.targetBudget.targeted)
+  return { contract: EVIDENCE_CONTRACT_VERSION, generatedAt: new Date().toISOString(), source: 'bounded_session_telemetry', gate: evaluateTargetFlowReleaseGate(samples, options), samples }
+}
+
+export function verifyTargetFlowPerformanceEvidence(evidence = {}, options = {}) {
+  if (evidence?.contract !== EVIDENCE_CONTRACT_VERSION || !Array.isArray(evidence?.samples)) {
+    return { contract: VERIFICATION_CONTRACT_VERSION, status: 'INVALID_EVIDENCE', ready: false, gate: evaluateTargetFlowReleaseGate([], options) }
+  }
+  const gate = evaluateTargetFlowReleaseGate(evidence.samples.map(sanitizeEvidenceSample), options)
+  return { contract: VERIFICATION_CONTRACT_VERSION, status: gate.status, ready: gate.ready && gate.status === 'PASS', gate }
+}
+
+export { CONTRACT_VERSION, EVIDENCE_CONTRACT_VERSION, REQUIRED_TARGET_FLOWS, VERIFICATION_CONTRACT_VERSION }
