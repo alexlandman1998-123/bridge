@@ -31,10 +31,10 @@ function AgentAvatar({ agent, className = 'h-10 w-10' }) {
   )
 }
 
-function AgentOptionContent({ agent, selected = false }) {
+function AgentOptionContent({ agent, selected = false, compact = false, showSelectionIndicator = true }) {
   return (
     <>
-      <AgentAvatar agent={agent} />
+      <AgentAvatar agent={agent} className={compact ? 'h-9 w-9' : 'h-10 w-10'} />
       <span className="min-w-0 flex-1">
         <span className="flex min-w-0 items-center gap-2">
           <span className="truncate text-sm font-semibold text-[#162334]">{getAgentDisplayName(agent)}</span>
@@ -44,20 +44,22 @@ function AgentOptionContent({ agent, selected = false }) {
             </span>
           ) : null}
         </span>
-        <span className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs font-medium text-[#6b7d93]">
-          <span className="truncate">{agent.email || 'No email on profile'}</span>
+        <span className={`mt-0.5 flex min-w-0 items-center gap-x-2 gap-y-1 text-xs font-medium text-[#6b7d93] ${compact ? 'flex-nowrap' : 'flex-wrap'}`}>
+          <span className="min-w-0 flex-1 truncate" title={agent.email || 'No email on profile'}>{agent.email || 'No email on profile'}</span>
           <span className="hidden text-[#a3b2c2] sm:inline">•</span>
           <span className="shrink-0">{agent.roleLabel || 'Agent'}</span>
         </span>
       </span>
-      <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition ${selected ? 'bg-[#0f2742] text-white' : 'bg-[#eef4fb] text-[#8aa0b4]'}`}>
-        {selected ? <Check size={14} /> : <UserPlus size={13} />}
-      </span>
+      {showSelectionIndicator ? (
+        <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition ${selected ? 'bg-[#0f2742] text-white' : 'bg-[#eef4fb] text-[#8aa0b4]'}`}>
+          {selected ? <Check size={14} /> : <UserPlus size={13} />}
+        </span>
+      ) : null}
     </>
   )
 }
 
-export default function AgentAssignmentSelect({ value = '', agents = [], loading = false, onChange }) {
+export default function AgentAssignmentSelect({ value = '', agents = [], loading = false, compact = false, onChange }) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef(null)
   const selectedAgent =
@@ -78,17 +80,17 @@ export default function AgentAssignmentSelect({ value = '', agents = [], loading
   }, [])
 
   return (
-    <div ref={rootRef} className="relative">
+    <div ref={rootRef} className="relative min-w-0">
       <button
         type="button"
-        className="flex min-h-[58px] w-full items-center gap-3 rounded-[14px] border border-[#cfdae6] bg-gradient-to-b from-white to-[#f8fbfd] px-3 py-2 text-left shadow-[0_1px_0_rgba(255,255,255,0.88)] outline-none transition hover:border-[#b7c6d5] focus:border-[#22445e] focus:ring-2 focus:ring-[#22445e]/10 disabled:cursor-not-allowed disabled:opacity-70"
+        className={`flex w-full min-w-0 items-center overflow-hidden border border-[#cfdae6] bg-gradient-to-b from-white to-[#f8fbfd] px-3 text-left shadow-[0_1px_0_rgba(255,255,255,0.88)] outline-none transition hover:border-[#b7c6d5] focus:border-[#22445e] focus:ring-2 focus:ring-[#22445e]/10 disabled:cursor-not-allowed disabled:opacity-70 ${compact ? 'min-h-11 gap-2.5 rounded-[12px] py-1.5' : 'min-h-[58px] gap-3 rounded-[14px] py-2'}`}
         onClick={() => setOpen((previous) => !previous)}
         disabled={loading && !agents.length}
         aria-haspopup="listbox"
         aria-expanded={open}
       >
         {selectedAgent ? (
-          <AgentOptionContent agent={selectedAgent} selected />
+          <AgentOptionContent agent={selectedAgent} selected compact={compact} showSelectionIndicator={!compact} />
         ) : (
           <>
             <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#eef4fb] text-[#49657c]">
@@ -136,7 +138,7 @@ export default function AgentAssignmentSelect({ value = '', agents = [], loading
                   setOpen(false)
                 }}
               >
-                <AgentOptionContent agent={agent} selected={selected} />
+                <AgentOptionContent agent={agent} selected={selected} compact={compact} />
               </button>
             )
           })}

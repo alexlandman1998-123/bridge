@@ -135,44 +135,51 @@ function buildVisiblePages(currentPage, totalPages) {
 function LeadCreateDialog({ open, category, agents, currentAgent, saving, error, onClose, onSave }) {
   const [form, setForm] = useState({ ...EMPTY_FORM, category })
 
+  useEffect(() => {
+    if (open) setForm({ ...EMPTY_FORM, category, agentId: currentAgent.id })
+  }, [category, currentAgent.id, open])
+
   if (!open) return null
   const setField = (key, value) => setForm((previous) => ({ ...previous, [key]: value }))
 
   return (
-    <div className="fixed inset-0 z-[120] grid place-items-center bg-[#102033]/45 p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
-      <section className="w-full max-w-xl overflow-hidden rounded-[22px] border border-[#dbe7f2] bg-white shadow-[0_30px_80px_rgba(16,32,51,0.24)]" role="dialog" aria-modal="true" aria-labelledby="create-lead-title">
-        <header className="flex items-start justify-between gap-3 border-b border-[#e7eef5] px-5 py-4">
-          <div>
-            <h2 id="create-lead-title" className="text-xl font-semibold text-[#142132]">Add {category === 'seller' ? 'Seller' : 'Buyer'} Lead</h2>
-            <p className="mt-1 text-sm text-[#60758b]">Capture the essentials now. The full workspace remains available after creation.</p>
+    <div className="fixed inset-0 z-[120] grid place-items-center bg-[#102033]/50 p-3 backdrop-blur-[2px] sm:p-6" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
+      <section className="flex max-h-[calc(100vh-1.5rem)] w-full max-w-2xl flex-col overflow-hidden rounded-[22px] border border-[#dbe7f2] bg-white shadow-[0_30px_80px_rgba(16,32,51,0.24)] sm:max-h-[calc(100vh-3rem)]" role="dialog" aria-modal="true" aria-labelledby="create-lead-title">
+        <header className="flex shrink-0 items-start justify-between gap-4 border-b border-[#e7eef5] bg-[#fbfdff] px-5 py-4 sm:px-6">
+          <div className="min-w-0">
+            <h2 id="create-lead-title" className="text-xl font-semibold tracking-[-0.025em] text-[#142132]">Add {category === 'seller' ? 'Seller' : 'Buyer'} Lead</h2>
+            <p className="mt-1 text-sm leading-5 text-[#60758b]">Capture the contact details now and complete the full workspace afterwards.</p>
           </div>
-          <button type="button" className="grid h-10 w-10 place-items-center rounded-[12px] border border-[#dbe4ee]" onClick={onClose} aria-label="Close"><X size={17} /></button>
+          <button type="button" className="grid h-9 w-9 shrink-0 place-items-center rounded-[11px] border border-[#dbe4ee] bg-white text-[#31506b] transition hover:border-[#b9cde3] hover:bg-[#f5f8fb]" onClick={onClose} aria-label="Close"><X size={17} /></button>
         </header>
-        <form className="grid gap-4 p-5" onSubmit={(event) => { event.preventDefault(); onSave(form) }}>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">First name<input required className="h-11 rounded-[12px] border border-[#dbe4ee] px-3 font-normal" value={form.firstName} onChange={(event) => setField('firstName', event.target.value)} /></label>
-            <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">Last name<input required className="h-11 rounded-[12px] border border-[#dbe4ee] px-3 font-normal" value={form.lastName} onChange={(event) => setField('lastName', event.target.value)} /></label>
-            <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">Mobile<input required className="h-11 rounded-[12px] border border-[#dbe4ee] px-3 font-normal" value={form.phone} onChange={(event) => setField('phone', event.target.value)} /></label>
-            <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">Email<input required type="email" className="h-11 rounded-[12px] border border-[#dbe4ee] px-3 font-normal" value={form.email} onChange={(event) => setField('email', event.target.value)} /></label>
-            <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">
-              Lead source
-              <select required className="h-11 rounded-[12px] border border-[#dbe4ee] bg-white px-3 font-normal text-[#29435d] outline-none transition focus:border-[#22445e] focus:ring-2 focus:ring-[#22445e]/10" value={form.source} onChange={(event) => setField('source', event.target.value)}>
-                {LEAD_SOURCE_OPTIONS.map((source) => <option key={source} value={source}>{source}</option>)}
-              </select>
-            </label>
-            <div className="grid gap-1.5 text-sm font-semibold text-[#29435d]">
-              <span>Assigned to</span>
-              <AgentAssignmentSelect
-                value={form.agentId || currentAgent.id}
-                agents={agents}
-                onChange={(agent) => setField('agentId', agent?.userId || agent?.id || agent?.email || '')}
-              />
+        <form className="flex min-h-0 flex-1 flex-col" onSubmit={(event) => { event.preventDefault(); onSave(form) }}>
+          <div className="grid min-h-0 gap-4 overflow-y-auto px-5 py-5 sm:px-6">
+            <div className="grid gap-3.5 sm:grid-cols-2">
+              <label className="grid min-w-0 gap-1.5 text-sm font-semibold text-[#29435d]">First name<input required autoFocus className="h-10 min-w-0 rounded-[11px] border border-[#dbe4ee] px-3 font-normal outline-none transition focus:border-[#22445e] focus:ring-2 focus:ring-[#22445e]/10" value={form.firstName} onChange={(event) => setField('firstName', event.target.value)} /></label>
+              <label className="grid min-w-0 gap-1.5 text-sm font-semibold text-[#29435d]">Last name<input required className="h-10 min-w-0 rounded-[11px] border border-[#dbe4ee] px-3 font-normal outline-none transition focus:border-[#22445e] focus:ring-2 focus:ring-[#22445e]/10" value={form.lastName} onChange={(event) => setField('lastName', event.target.value)} /></label>
+              <label className="grid min-w-0 gap-1.5 text-sm font-semibold text-[#29435d]">Mobile<input required inputMode="tel" className="h-10 min-w-0 rounded-[11px] border border-[#dbe4ee] px-3 font-normal outline-none transition focus:border-[#22445e] focus:ring-2 focus:ring-[#22445e]/10" value={form.phone} onChange={(event) => setField('phone', event.target.value)} /></label>
+              <label className="grid min-w-0 gap-1.5 text-sm font-semibold text-[#29435d]">Email<input required type="email" className="h-10 min-w-0 rounded-[11px] border border-[#dbe4ee] px-3 font-normal outline-none transition focus:border-[#22445e] focus:ring-2 focus:ring-[#22445e]/10" value={form.email} onChange={(event) => setField('email', event.target.value)} /></label>
+              <label className="grid min-w-0 gap-1.5 text-sm font-semibold text-[#29435d]">
+                Lead source
+                <select required className="h-10 min-w-0 rounded-[11px] border border-[#dbe4ee] bg-white px-3 font-normal text-[#29435d] outline-none transition focus:border-[#22445e] focus:ring-2 focus:ring-[#22445e]/10" value={form.source} onChange={(event) => setField('source', event.target.value)}>
+                  {LEAD_SOURCE_OPTIONS.map((source) => <option key={source} value={source}>{source}</option>)}
+                </select>
+              </label>
+              <div className="grid min-w-0 gap-1.5 text-sm font-semibold text-[#29435d]">
+                <span>Assigned to</span>
+                <AgentAssignmentSelect
+                  compact
+                  value={form.agentId || currentAgent.id}
+                  agents={agents}
+                  onChange={(agent) => setField('agentId', agent?.userId || agent?.id || agent?.email || '')}
+                />
+              </div>
             </div>
+            <label className="grid min-w-0 gap-1.5 text-sm font-semibold text-[#29435d]">{category === 'seller' ? 'Property address' : 'Property or area of interest'} <span className="sr-only">optional</span><input className="h-10 min-w-0 rounded-[11px] border border-[#dbe4ee] px-3 font-normal outline-none transition focus:border-[#22445e] focus:ring-2 focus:ring-[#22445e]/10" value={form.property} onChange={(event) => setField('property', event.target.value)} /></label>
+            <label className="grid min-w-0 gap-1.5 text-sm font-semibold text-[#29435d]"><span className="flex items-center justify-between gap-3"><span>Notes</span><span className="text-xs font-normal text-[#8295a9]">Optional</span></span><textarea rows={3} className="min-h-20 resize-y rounded-[11px] border border-[#dbe4ee] p-3 font-normal outline-none transition focus:border-[#22445e] focus:ring-2 focus:ring-[#22445e]/10" value={form.notes} onChange={(event) => setField('notes', event.target.value)} /></label>
+            {error ? <p className="rounded-[12px] border border-[#f2cccc] bg-[#fff5f4] px-3 py-2 text-sm text-[#9f3028]">{error}</p> : null}
           </div>
-          <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">{category === 'seller' ? 'Property address' : 'Property or area of interest'}<input className="h-11 rounded-[12px] border border-[#dbe4ee] px-3 font-normal" value={form.property} onChange={(event) => setField('property', event.target.value)} /></label>
-          <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">Notes<textarea className="min-h-24 rounded-[12px] border border-[#dbe4ee] p-3 font-normal" value={form.notes} onChange={(event) => setField('notes', event.target.value)} /></label>
-          {error ? <p className="rounded-[12px] border border-[#f2cccc] bg-[#fff5f4] px-3 py-2 text-sm text-[#9f3028]">{error}</p> : null}
-          <div className="flex justify-end gap-2"><button type="button" className="h-11 rounded-[12px] border border-[#dbe4ee] px-4 text-sm font-semibold" onClick={onClose}>Cancel</button><button type="submit" disabled={saving} className="inline-flex h-11 items-center gap-2 rounded-[12px] bg-[#0f2743] px-5 text-sm font-semibold text-white disabled:opacity-60">{saving ? <RefreshCw size={15} className="animate-spin" /> : null}{saving ? 'Creating' : 'Create Lead'}</button></div>
+          <footer className="flex shrink-0 flex-col-reverse gap-2 border-t border-[#e7eef5] bg-[#fbfdff] px-5 py-4 sm:flex-row sm:justify-end sm:px-6"><button type="button" className="h-10 rounded-[11px] border border-[#dbe4ee] bg-white px-4 text-sm font-semibold text-[#29435d] transition hover:bg-[#f5f8fb]" onClick={onClose}>Cancel</button><button type="submit" disabled={saving} className="inline-flex h-10 items-center justify-center gap-2 rounded-[11px] bg-[#0f2743] px-5 text-sm font-semibold text-white shadow-[0_8px_18px_rgba(15,39,67,0.18)] transition hover:bg-[#173a5d] disabled:opacity-60">{saving ? <RefreshCw size={15} className="animate-spin" /> : null}{saving ? 'Creating' : 'Create Lead'}</button></footer>
         </form>
       </section>
     </div>
