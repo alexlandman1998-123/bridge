@@ -14,7 +14,6 @@ function createPerformanceApi() {
       { name: 'https://example.supabase.co/rest/v1/contacts', startTime: 140, duration: 240, transferSize: 2800 },
       { name: 'https://app.arch9.co.za/logo.svg', startTime: 150, duration: 30, transferSize: 1000 },
     ],
-    longtask: [{ startTime: 160, duration: 75 }],
   }
   return {
     now: () => now,
@@ -29,8 +28,8 @@ assert.deepEqual(resourceSummary, {
   requestCount: 3,
   supabaseRequestCount: 2,
   transferredBytes: 7000,
-  longTaskCount: 1,
-  longTaskDurationMs: 75,
+  longTaskCount: 0,
+  longTaskDurationMs: 0,
   routeChunkDurationMs: 480,
   routeChunkTransferBytes: 260000,
 })

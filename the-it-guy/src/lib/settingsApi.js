@@ -292,6 +292,7 @@ let organisationContextCache = null
 let organisationContextInflight = null
 let organisationUsersCache = null
 let organisationUsersInflight = null
+const organisationUsersByWorkspaceCache = new Map()
 
 const ROUTING_RULE_DEFAULT_PRIORITY = 500
 const ROUTING_RULE_SOURCE_TYPES = new Set(Object.values(PARTNER_ROUTING_SOURCE_TYPES))
@@ -309,6 +310,7 @@ export function clearOrganisationRuntimeCache() {
   organisationContextInflight = null
   organisationUsersCache = null
   organisationUsersInflight = null
+  organisationUsersByWorkspaceCache.clear()
 }
 
 function requireClient() {
@@ -5607,6 +5609,62 @@ export async function listOrganisationUsers() {
     })
 
   return organisationUsersInflight
+}
+
+// Use this only when the caller already has a trusted workspace from
+// WorkspaceContext. It deliberately avoids ensureOrganisationContext(), which
+// calls auth.getUser() and repeats the full workspace bootstrap.
+export async function listOrganisationUsersForWorkspace({ organisationId = '' } = {}) {
+  if (!isSupabaseConfigured || !supabase) return []
+
+  const normalizedOrganisationId = normalizeText(organisationId)
+  if (!normalizedOrganisationId) return []
+
+  const cached = organisationUsersByWorkspaceCache.get(normalizedOrganisationId)
+  if (isFreshCacheEntry(cached)) return cached.value
+  if (cached?.inflight) return cached.inflight
+
+  const client = requireClient()
+  const canonicalSelectColumns = 'id, organisation_id, user_id, branch_id, first_name, last_name, email, role, workspace_role, workspace_type, organisation_role, organization_role, job_title, status, membership_status'
+  const legacySelectColumns = 'id, organisation_id, user_id, branch_id, first_name, last_name, email, role, workspace_role, organisation_role, organization_role, status, membership_status'
+  const inflight = (async () => {
+    let usersQuery = await client
+      .from('organisation_users')
+      .select(canonicalSelectColumns)
+      .eq('organisation_id', normalizedOrganisationId)
+      .order('created_at', { ascending: true })
+
+    if (usersQuery.error && (
+      isMissingColumnError(usersQuery.error, 'job_title') ||
+      isMissingColumnError(usersQuery.error, 'workspace_type')
+    )) {
+      usersQuery = await client
+        .from('organisation_users')
+        .select(legacySelectColumns)
+        .eq('organisation_id', normalizedOrganisationId)
+        .order('created_at', { ascending: true })
+    }
+
+    if (usersQuery.error) {
+      if (isMissingTableError(usersQuery.error, 'organisation_users')) return []
+      throw usersQuery.error
+    }
+
+    return (usersQuery.data || []).map((row) => normalizeOrganisationUserRow(row))
+  })()
+
+  organisationUsersByWorkspaceCache.set(normalizedOrganisationId, { inflight })
+  try {
+    const users = await inflight
+    organisationUsersByWorkspaceCache.set(normalizedOrganisationId, {
+      value: users,
+      expiresAt: Date.now() + ORGANISATION_USERS_CACHE_TTL_MS,
+    })
+    return users
+  } catch (error) {
+    organisationUsersByWorkspaceCache.delete(normalizedOrganisationId)
+    throw error
+  }
 }
 
 // This is intentionally narrower than listOrganisationUsers: dashboard KPI

@@ -57,7 +57,7 @@ let leadMutationActionsPromise = null
 function loadSettingsActions() {
   if (!settingsActionsPromise) {
     settingsActionsPromise = import('../../lib/settingsApi').then((module) => ({
-      listOrganisationUsers: module.listOrganisationUsers,
+      listOrganisationUsersForWorkspace: module.listOrganisationUsersForWorkspace,
     }))
   }
   return settingsActionsPromise
@@ -250,14 +250,20 @@ export default function AgencyLeadListRoutePage() {
       setLoading(false)
       void performanceRef.current?.recordCheckpoint({ checkpoint: 'first_data', userId: profile?.id, workspaceId, metadata: { surface: 'lead_list', leadCount: primary?.leads?.length || 0, totalLeadCount: primary?.totalCount || 0, page: requestedPage } })
 
-      const organisationUsersPromise = isPrincipal
-        ? loadSettingsActions().then(({ listOrganisationUsers }) => listOrganisationUsers()).catch(() => [])
-        : Promise.resolve([])
-      const organisationUsers = await organisationUsersPromise
-      if (requestId !== loadRequestRef.current) return
-      const mappedAgents = (Array.isArray(organisationUsers) ? organisationUsers : []).map(mapAgent).filter((agent) => agent.id)
-      setAgents(mappedAgents.length ? mappedAgents : [currentAgent])
-      void performanceRef.current?.recordCheckpoint({ checkpoint: 'background_settled', userId: profile?.id, workspaceId, metadata: { surface: 'lead_list', deferredRelatedRecords: true } })
+      if (isPrincipal) {
+        void loadSettingsActions()
+          .then(({ listOrganisationUsersForWorkspace }) => listOrganisationUsersForWorkspace({ organisationId: workspaceId }))
+          .then((organisationUsers) => {
+            if (requestId !== loadRequestRef.current) return
+            const mappedAgents = (Array.isArray(organisationUsers) ? organisationUsers : []).map(mapAgent).filter((agent) => agent.id)
+            setAgents(mappedAgents.length ? mappedAgents : [currentAgent])
+          })
+          .catch(() => {
+            // The current user remains a safe assignment fallback when the
+            // optional directory request is unavailable.
+          })
+      }
+      void performanceRef.current?.recordCheckpoint({ checkpoint: 'background_settled', userId: profile?.id, workspaceId, metadata: { surface: 'lead_list', deferredRelatedRecords: true, directoryDeferred: isPrincipal } })
     } catch (loadError) {
       if (requestId !== loadRequestRef.current) return
       setError(loadError?.message || 'Unable to load leads right now.')

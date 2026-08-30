@@ -51,9 +51,10 @@ export function summarizeSellerLeadsPerformanceResources({ performanceApi, start
     : []
   const checkpointResources = resourceEntries.filter((entry) => Number(entry?.startTime) >= Number(startedAt || 0))
   const routeAsset = [...resourceEntries].reverse().find((entry) => isPipelineRouteAsset(entry?.name)) || null
-  const longTasks = typeof performanceApi?.getEntriesByType === 'function'
-    ? (performanceApi.getEntriesByType('longtask') || []).filter((entry) => Number(entry?.startTime) >= Number(startedAt || 0))
-    : []
+  // `longtask` is observer-only in Chromium. Asking getEntriesByType for it
+  // produces a browser deprecation warning, so this baseline records the
+  // supported resource timings only.
+  const longTasks = []
 
   return {
     requestCount: checkpointResources.length,
