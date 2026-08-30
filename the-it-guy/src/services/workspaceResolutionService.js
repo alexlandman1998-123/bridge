@@ -977,7 +977,7 @@ function appendProfileAttorneyFirmMembership(rows = [], user = null, profile = n
   ]
 }
 
-function normalizeWorkspaceResolutionRpcContext(context = null, { user = null, profile = null } = {}) {
+export function normalizeWorkspaceResolutionRpcContext(context = null, { user = null, profile = null } = {}) {
   const normalizedProfile = normalizeProfile(profile || context?.profile)
   const normalizedUser = user && !user.email && normalizedProfile?.email
     ? { ...user, email: normalizedProfile.email }
@@ -999,7 +999,7 @@ function normalizeWorkspaceResolutionRpcContext(context = null, { user = null, p
   }
 }
 
-async function fetchWorkspaceResolutionContextRpc(client, { userId = '', user = null, requestedWorkspaceId = '', timeoutMs } = {}) {
+export async function fetchWorkspaceResolutionContextRpc(client, { userId = '', user = null, requestedWorkspaceId = '', timeoutMs } = {}) {
   const safeUserId = normalizeText(userId || user?.id)
   if (!safeUserId || typeof client?.rpc !== 'function') return null
 

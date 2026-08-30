@@ -6,7 +6,11 @@ import { inferWorkspaceTypeFromAppRole } from '../constants/workspaceTypes'
 import { SIGNUP_INTENT_STATUSES } from '../constants/signupIntents'
 import { loadSignupIntentForUser, markSignupIntentReadyForOnboarding } from './signupIntent'
 import { getOnboardingState } from '../services/onboarding/onboardingEngine'
-import { resolveCurrentWorkspace } from '../services/workspaceResolutionService'
+import {
+  fetchWorkspaceResolutionContextRpc,
+  normalizeWorkspaceResolutionRpcContext,
+  resolveCurrentWorkspace,
+} from '../services/workspaceResolutionService'
 import { clearBackendDegraded, markBackendDegraded } from '../services/observability/backendDegradation'
 
 const AUTO_REPAIRABLE_ONBOARDING_REASONS = new Set([
@@ -603,9 +607,39 @@ async function loadBridgeAuthStateUncoalesced({ session, selectedWorkspaceId = '
       ))?.data?.user
   if (!user?.id) throw new Error('Authenticated Supabase user could not be resolved.')
 
+  // The consolidated RPC returns the established user's profile and workspace
+  // context in one authenticated round trip. Keep profile creation as a fallback
+  // for a genuinely new account, or while an older environment rolls out the RPC.
+  const workspaceContextBootstrap = runAuthBootStep(
+    'workspace.context.load',
+    () => fetchWorkspaceResolutionContextRpc(supabase, {
+      userId: user.id,
+      user,
+      requestedWorkspaceId: selectedWorkspaceId,
+      timeoutMs: AUTH_BOOT_WORKSPACE_STEP_TIMEOUT_MS,
+    }),
+    { userId: user.id, requestedWorkspaceId: normalizeText(selectedWorkspaceId) || null },
+  )
+  const workspaceContextResult = workspaceContextBootstrap
+    .then((context) => ({ context, error: null }))
+    .catch((error) => ({ context: null, error }))
+
   const profileBootstrap = runAuthBootStep(
-    'profile.getOrCreate',
+    'profile.load',
     async () => {
+      const { context: workspaceContext, error: workspaceContextError } = await workspaceContextResult
+      const rpcProfile = workspaceContext
+        ? normalizeWorkspaceResolutionRpcContext(workspaceContext, { user }).profile
+        : null
+      if (rpcProfile?.id) return rpcProfile
+
+      if (workspaceContextError) {
+        console.warn('[AUTH] consolidated startup context unavailable; using legacy profile bootstrap.', {
+          userId: user.id,
+          error: workspaceContextError,
+        })
+      }
+
       try {
         return await withTransientSchemaRetry(
           () => withStepTimeout(getOrCreateUserProfile({ user }), {
@@ -715,6 +749,7 @@ async function loadBridgeAuthStateUncoalesced({ session, selectedWorkspaceId = '
   }
   const bootHealth = null
   const appRole = normalizeCanonicalAppRole(profile?.role)
+  const { context: workspaceContext } = await workspaceContextResult
 
   if (!isCanonicalAppRole(appRole)) {
     console.warn('[AUTH] profile role requires repair before dashboard access', {
@@ -731,6 +766,7 @@ async function loadBridgeAuthStateUncoalesced({ session, selectedWorkspaceId = '
           client: supabase,
           user,
           profile,
+          workspaceContext,
           requestedWorkspaceId: selectedWorkspaceId,
         }),
         {
