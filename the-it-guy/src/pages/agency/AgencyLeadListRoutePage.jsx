@@ -206,6 +206,8 @@ export default function AgencyLeadListRoutePage() {
   const [message, setMessage] = useState('')
   const [createDialog, setCreateDialog] = useState({ open: false, category: 'buyer' })
   const [creating, setCreating] = useState(false)
+  const [archiveDialog, setArchiveDialog] = useState({ open: false, leadId: '' })
+  const [archiving, setArchiving] = useState(false)
   const [deleteDialog, setDeleteDialog] = useState({ open: false, leadId: '' })
   const [deleting, setDeleting] = useState(false)
   const loadRequestRef = useRef(0)
@@ -366,15 +368,20 @@ export default function AgencyLeadListRoutePage() {
   }
 
   const handleArchiveLead = async (leadId) => {
-    if (!window.confirm('Archive this lead?')) return
+    if (!leadId || archiving) return
+    setArchiving(true)
+    setError('')
     try {
       const { updateAgencyCrmLeadRecord } = await loadLeadMutationActions()
       await updateAgencyCrmLeadRecord(organisationId, leadId, { stage: 'Archived', status: 'Archived' })
+      setArchiveDialog({ open: false, leadId: '' })
       setMessage('Lead archived.')
       invalidateAgencyLeadListCache(organisationId, leadId)
       await loadLeads({ forceRefresh: true })
     } catch (archiveError) {
       setError(archiveError?.message || 'Unable to archive this lead.')
+    } finally {
+      setArchiving(false)
     }
   }
 
@@ -467,7 +474,7 @@ export default function AgencyLeadListRoutePage() {
           handleLeadIntent(leadId)
           navigate(`/pipeline/leads/${encodeURIComponent(leadId)}`)
         }}
-        onArchiveLead={(leadId) => void handleArchiveLead(leadId)}
+        onArchiveLead={(leadId) => { setError(''); setArchiveDialog({ open: true, leadId }) }}
         onDeleteLead={(leadId) => { setError(''); setDeleteDialog({ open: true, leadId }) }}
         onMoveLead={(leadId, columnId) => void handleMoveLead(leadId, columnId)}
         onOpenShowDayQueue={() => setFilters((previous) => ({ ...previous, source: 'Show Day' }))}
@@ -478,6 +485,15 @@ export default function AgencyLeadListRoutePage() {
         }}
       />
       {createDialog.open ? <LeadCreateDialog open category={createDialog.category} agents={agentOptions} currentAgent={currentAgent} saving={creating} error={error} onClose={() => setCreateDialog((previous) => ({ ...previous, open: false }))} onSave={(form) => void handleCreateLead(form)} /> : null}
+      <ConfirmDialog
+        open={archiveDialog.open}
+        title={`Archive ${category === 'seller' ? 'seller' : 'buyer'} lead?`}
+        description="This removes the lead from active pipeline views while preserving its CRM history."
+        confirmLabel="Archive lead"
+        confirming={archiving}
+        onCancel={() => setArchiveDialog({ open: false, leadId: '' })}
+        onConfirm={() => void handleArchiveLead(archiveDialog.leadId)}
+      />
       <ConfirmDialog
         open={deleteDialog.open}
         title={`Delete ${category === 'seller' ? 'seller' : 'buyer'} lead?`}

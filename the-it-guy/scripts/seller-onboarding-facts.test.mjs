@@ -205,7 +205,7 @@ test('captures split owner model, foreign metadata, and owner invite mode', () =
   assert.equal(foreignFacts.seller.foreign.country, 'United Kingdom')
   assert.equal(validateSellerOnboardingFacts(foreignFacts, { draft: false }).ok, true)
 
-  const inviteOwnerFacts = transformSellerOnboardingToFacts({
+  const multipleOwnerFacts = transformSellerOnboardingToFacts({
     sellerFirstName: 'Alex',
     sellerSurname: 'Owner',
     email: 'alex@example.com',
@@ -213,13 +213,12 @@ test('captures split owner model, foreign metadata, and owner invite mode', () =
     ownerEntityType: 'natural_person',
     ownerStructureType: 'multiple_owners',
     ownershipType: 'multiple_owners',
-    multipleOwnerCaptureMode: 'send_onboarding',
     taxNumber: '8888888888',
     taxResident: 'sa_resident',
     popiConsent: true,
     multipleOwners: [
-      { name: 'Alex', surname: 'Owner', email: 'alex@example.com', ownershipShare: '50' },
-      { name: 'Kim', surname: 'Owner', email: 'kim@example.com', ownershipShare: '50' },
+      { name: 'Alex', surname: 'Owner', email: 'alex@example.com', idNumber: '9001015009083', ownershipShare: '50', consentToSell: true },
+      { name: 'Kim', surname: 'Owner', email: 'kim@example.com', idNumber: '9001015009084', ownershipShare: '50', consentToSell: true },
     ],
     propertyCategory: 'residential',
     propertyStructureType: 'freehold',
@@ -235,10 +234,10 @@ test('captures split owner model, foreign metadata, and owner invite mode', () =
     },
   }, listing)
 
-  assert.equal(inviteOwnerFacts.seller_branch, 'multiple_owners')
-  assert.equal(inviteOwnerFacts.seller.multiple_owner_capture_mode, 'send_onboarding')
-  assert.equal(inviteOwnerFacts.seller.owners.length, 2)
-  assert.equal(validateSellerOnboardingFacts(inviteOwnerFacts, { draft: false }).ok, true)
+  assert.equal(multipleOwnerFacts.seller_branch, 'multiple_owners')
+  assert.equal(multipleOwnerFacts.seller.multiple_owner_capture_mode, 'capture_now')
+  assert.equal(multipleOwnerFacts.seller.owners.length, 2)
+  assert.equal(validateSellerOnboardingFacts(multipleOwnerFacts, { draft: false }).ok, true)
 })
 
 test('captures land-specific details in canonical facts', () => {

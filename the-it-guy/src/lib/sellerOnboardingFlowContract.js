@@ -375,14 +375,13 @@ const SELLER_BRANCH_RULES = Object.freeze({
     label: 'Multiple Owners',
     aliases: Object.freeze(['multiple_owners', 'multiple_individuals', 'multiple', 'joint']),
     sellerFacingQuestions: Object.freeze([
-      'seller.multiple_owner_capture_mode',
       'seller.owners',
       'seller.owners[].ownership_share',
       'seller.owners[].consent_to_sell',
     ]),
     requiredFields: Object.freeze([
-      'seller.multiple_owner_capture_mode',
       'seller.owners',
+      'seller.owners[].consent_to_sell',
     ]),
     optionalFields: Object.freeze([
       'seller.owners[].ownership_share',

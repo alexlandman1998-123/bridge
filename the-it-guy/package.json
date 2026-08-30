@@ -927,6 +927,7 @@
     "test:lead-workspace-release-gate-phase5": "node src/services/observability/__tests__/leadWorkspaceReleaseGate.test.js && node scripts/lead-workspace-release-gate-phase5.test.mjs",
     "verify:lead-workspace-release-gate-phase5:browser": "LEAD_WORKSPACE_PHASE5_RELEASE_GATE=1 node scripts/agency-lead-workspace-hydration-smoke.mjs",
     "test:lead-workspace-operational-monitoring-phase6": "node src/services/observability/__tests__/leadWorkspaceOperationalHealth.test.js && node scripts/lead-workspace-operational-monitoring-phase6.test.mjs",
+    "test:lead-list-archive-dialog": "node scripts/lead-list-archive-dialog.test.mjs",
     "verify:lead-workspace-operational-monitoring-phase6:browser": "LEAD_WORKSPACE_PHASE6_OPERATIONAL_MONITORING=1 node scripts/agency-lead-workspace-hydration-smoke.mjs",
     "verify:lead-workspace-loading": "npm run test:lead-workspace-loading-observability-phase1 && npm run test:lead-workspace-loading-shell-phase2 && npm run test:lead-workspace-single-hydration-phase3 && npm run test:lead-workspace-progressive-enrichment-phase4 && npm run test:lead-workspace-release-gate-phase5 && npm run test:lead-workspace-operational-monitoring-phase6 && npm run verify:seller-leads-bundle-budget && npm run verify:lead-workspace-operational-monitoring-phase6:browser",
     "verify:seller-leads-bundle-budget": "node scripts/seller-leads-performance-budget.mjs",

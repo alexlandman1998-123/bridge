@@ -230,14 +230,34 @@ function requirementIsActive(requirement = {}) {
 
 export function mergeSellerRequiredDocuments(...requirementLists) {
   const merged = []
-  const seen = new Set()
+  const indexByIdentity = new Map()
   for (const requirement of requirementLists.flat()) {
     if (!requirement || typeof requirement !== 'object') continue
     if (isEmbeddedSellerSigningRequirement(requirement)) continue
     if (!requirementIsActive(requirement)) continue
     const identity = requirementIdentity(requirement)
-    if (identity && seen.has(identity)) continue
-    if (identity) seen.add(identity)
+    if (identity && indexByIdentity.has(identity)) {
+      const index = indexByIdentity.get(identity)
+      const existing = merged[index]
+      // Keep persisted completion/upload state, but let the current
+      // onboarding-derived requirement provide its current name/category.
+      // This prevents stale "Owner 1" labels and old category assignments
+      // from surviving after seller details have been captured.
+      merged[index] = {
+        ...requirement,
+        ...existing,
+        label: requirement.label || requirement.requirement_name || existing.label,
+        name: requirement.name || requirement.requirement_name || existing.name,
+        requirement_name: requirement.requirement_name || requirement.name || existing.requirement_name,
+        description: requirement.description || requirement.requirement_description || existing.description,
+        requirement_description: requirement.requirement_description || requirement.description || existing.requirement_description,
+        category: requirement.category || existing.category,
+        group: requirement.group || requirement.requirement_group || existing.group,
+        requirement_group: requirement.requirement_group || requirement.group || existing.requirement_group,
+      }
+      continue
+    }
+    if (identity) indexByIdentity.set(identity, merged.length)
     merged.push(requirement)
   }
   return merged

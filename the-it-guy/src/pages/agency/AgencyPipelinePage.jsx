@@ -4012,6 +4012,7 @@ function getSellerLeadDocumentCategoryKey(documentRow = {}) {
     documentRow?.title,
   ].filter(Boolean).join(' '))
 
+  if (/(owner|seller|spouse|director|trustee|member)_\d+_(id_document|proof_of_address|proof_of_residential_address)/.test(source)) return 'seller'
   if (/(seller_identity_fica|owner_fica|director_fica|trustee_fica|member_fica|spouse_fica)/.test(source)) return 'seller'
   if (/(authority_documents|resolution_to_sell|company_resolution|close_corporation_resolution|trust_resolution|letters_of_authority|trust_deed|spouse_consent|owner_authority_consent|all_owner_authority_consent|resolution|authority|consent)/.test(source)) return 'legal'
   if (/(marketing|asset|photo|image|gallery|brochure|floor|plan|media|campaign|listing_photo|property_photo)/.test(source)) return 'marketing'
@@ -4095,6 +4096,7 @@ function getSellerLeadDocumentCanonicalKey(row = {}) {
   const basePackKey = normalizeSellerBasePackKey(source)
   if (basePackKey) return basePackKey
   if (isStaleSellerLeadDocumentRequirement(row)) return source
+  if (/(all_)?owner_authority(_|\s)*(consent|confirmation)?/.test(source)) return 'all_owner_authority_consent'
   if (
     source.includes('rates_account') ||
     source.includes('municipal_rates_account') ||
@@ -11539,6 +11541,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [agentBuyerDocumentType, setAgentBuyerDocumentType] = useState(BUYER_AGENT_DOCUMENT_TYPES[0]?.key || '')
   const [activeSellerFicaRoleplayerId, setActiveSellerFicaRoleplayerId] = useState('')
   const [activeBuyerFicaRoleplayerId, setActiveBuyerFicaRoleplayerId] = useState('')
+  const [activeSellerProfileRoleplayerId, setActiveSellerProfileRoleplayerId] = useState('')
   const formalValuationUploadInputRef = useRef(null)
   const [kingstonsSellerPackWizardOpen, setKingstonsSellerPackWizardOpen] = useState(false)
   const [kingstonsSellerPackWizardStep, setKingstonsSellerPackWizardStep] = useState('type')
@@ -17628,6 +17631,56 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const isCompanySellerProfile = isCompanyKingstonsSellerProfileKind(profileKind)
     const isTrustSellerProfile = isTrustKingstonsSellerProfileKind(profileKind)
     const isForeignSellerProfile = isForeignKingstonsSellerProfileKind(profileKind)
+    const roleplayerSource = isCompanySellerProfile
+      ? firstWorkspaceValue(onboarding?.companyDirectors, onboarding?.company_directors, onboarding?.directors, company?.directors)
+      : isTrustSellerProfile
+        ? firstWorkspaceValue(onboarding?.trustees, onboarding?.trust_trustees, trust?.trustees)
+        : firstWorkspaceValue(
+            onboarding?.multipleOwners,
+            onboarding?.multiple_owners,
+            onboarding?.owners,
+            onboarding?.canonicalFacts?.seller?.owners,
+            onboarding?.canonical_facts?.seller?.owners,
+            onboarding?.canonicalSellerFacts?.seller?.owners,
+            listing?.sellerCanonicalFacts?.seller?.owners,
+            listing?.seller_canonical_facts?.seller?.owners,
+            lead?.sellerCanonicalFacts?.seller?.owners,
+            lead?.seller_canonical_facts?.seller?.owners,
+          )
+    const roleplayerRole = isCompanySellerProfile ? 'Director' : isTrustSellerProfile ? 'Trustee' : 'Owner'
+    const roleplayers = (Array.isArray(roleplayerSource) ? roleplayerSource : [])
+      .map((person, index) => {
+        const record = isPlainObject(person) ? person : { fullName: person }
+        const name = firstWorkspaceText(
+          record?.fullName,
+          record?.full_name,
+          [record?.firstName || record?.first_name || record?.name, record?.surname || record?.lastName || record?.last_name].filter(Boolean).join(' '),
+          record?.name,
+        ) || `${roleplayerRole} ${index + 1}`
+        const id = normalizeKey(record?.id || `${roleplayerRole}-${name}-${index + 1}`)
+        return {
+          id,
+          name,
+          roleLabel: roleplayerRole,
+          card: {
+            key: `roleplayer-${id}`,
+            title: `${name} · ${roleplayerRole}`,
+            rows: [
+              ['Full Name', name],
+              ['ID Number / Passport', field(record?.idNumber, record?.id_number, record?.passportNumber, record?.passport_number)],
+              ['Date of Birth', dateField(record?.dateOfBirth, record?.date_of_birth, record?.birthDate)],
+              ['Nationality', field(record?.nationality)],
+              ['Marital Status', field(record?.maritalStatus, record?.marital_status, record?.maritalRegime, record?.marital_regime)],
+              ['Email', field(record?.email)],
+              ['Mobile', field(record?.phone, record?.mobile)],
+              ['Residential Address', field(record?.residentialAddress, record?.residential_address, record?.address)],
+              ...(roleplayerRole === 'Owner' ? [['Ownership Share', field(record?.ownershipShare, record?.ownership_share)]] : []),
+              ...(roleplayerRole === 'Owner' ? [['Consent to Sell', field(record?.consentToSell === true ? 'Confirmed' : record?.consent_to_sell === true ? 'Confirmed' : record?.consentToSell)]] : []),
+            ],
+          },
+        }
+      })
+      .filter((roleplayer) => roleplayer.id)
     const personalCard = isNaturalSellerProfile ? {
       key: 'personal',
       title: 'Personal Information',
@@ -17707,6 +17760,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       ['Estimated Asking Price', currencyField(listing?.askingPrice, listing?.asking_price, lead?.estimatedValue, onboarding?.askingPrice)],
     ]
     return {
+      roleplayers,
       cards: [
         personalCard,
         companyCard,
@@ -17811,6 +17865,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLeadPropertyWorkspace,
     selectedSellerJourney.mandateStatus,
   ])
+
+  const activeSellerProfileRoleplayer = selectedSellerProfileWorkspace.roleplayers?.find(
+    (roleplayer) => roleplayer.id === activeSellerProfileRoleplayerId,
+  ) || selectedSellerProfileWorkspace.roleplayers?.[0] || null
+  const selectedSellerProfileCards = activeSellerProfileRoleplayer
+    ? [
+        activeSellerProfileRoleplayer.card,
+        ...selectedSellerProfileWorkspace.cards.filter((card) => !['personal', 'address'].includes(card.key)),
+      ]
+    : selectedSellerProfileWorkspace.cards
 
   const resolveAppointmentListingLabel = useCallback(
     (listingId) => {
@@ -25667,7 +25731,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         listingId: targetListingId,
       }
       patchSelectedLeadRecord(leadPatch, selectedLead.leadId)
-      await Promise.all([
+      // The document is safely stored at this point. Do not leave the upload
+      // action spinning while non-critical CRM/activity mirrors wait on a
+      // slow network response; the local workspace now reflects the upload.
+      setMessage(`${documentLabel} uploaded.`)
+      void Promise.all([
         updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, leadPatch).catch((leadUpdateError) => {
           console.warn('[AgencyPipelinePage] Seller document upload saved, but lead mirror sync is still pending.', leadUpdateError)
           return null
@@ -25683,8 +25751,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           return null
         }),
       ])
-
-      setMessage(`${documentLabel} uploaded.`)
     } catch (uploadError) {
       setError(uploadError?.message || `Unable to upload ${documentLabel}.`)
     } finally {
@@ -38398,6 +38464,35 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         </Button>
                       </div>
 
+                      {selectedSellerProfileWorkspace.roleplayers?.length > 0 ? (
+                        <section className="mt-5 rounded-[16px] border border-[#dfe8f2] bg-[#f8fbfe] p-4">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                              <p className="text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[#6f849a]">People on this seller profile</p>
+                              <p className="mt-1 text-sm text-[#60758b]">Choose a person to view their own identity and contact details.</p>
+                            </div>
+                            <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-[#405b75]">{selectedSellerProfileWorkspace.roleplayers.length} {activeSellerProfileRoleplayer?.roleLabel?.toLowerCase() || 'people'}</span>
+                          </div>
+                          <div className="mt-3 flex flex-wrap gap-2" role="tablist" aria-label="Seller profile people">
+                            {selectedSellerProfileWorkspace.roleplayers.map((roleplayer) => {
+                              const active = roleplayer.id === activeSellerProfileRoleplayer?.id
+                              return (
+                                <button
+                                  key={roleplayer.id}
+                                  type="button"
+                                  role="tab"
+                                  aria-selected={active}
+                                  onClick={() => setActiveSellerProfileRoleplayerId(roleplayer.id)}
+                                  className={`rounded-full border px-3 py-2 text-sm font-semibold transition ${active ? 'border-[#13784f] bg-[#eaf7ef] text-[#126946]' : 'border-[#dbe7f2] bg-white text-[#607891] hover:border-[#b9cde3]'}`}
+                                >
+                                  {roleplayer.name}
+                                </button>
+                              )
+                            })}
+                          </div>
+                        </section>
+                      ) : null}
+
                       <Suspense fallback={<div className="mt-5 h-56 animate-pulse rounded-[20px] border border-[#dce7f2] bg-[#f5f8fb]" />}>
                         <SellerFicaVerification
                           organisationId={organisationId}
@@ -38426,7 +38521,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       </Suspense>
 
                       <div className="mt-5 grid gap-4 lg:grid-cols-2">
-                        {selectedSellerProfileWorkspace.cards.map((card) => (
+                        {selectedSellerProfileCards.map((card) => (
                           <section key={card.key} className="rounded-[16px] border border-[#dfe8f2] bg-white p-4 shadow-[0_8px_20px_rgba(31,54,78,0.025)]">
                             <div className="flex items-center justify-between gap-3">
                               <h4 className="text-sm font-semibold text-[#102033]">{card.title}</h4>

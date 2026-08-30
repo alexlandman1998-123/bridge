@@ -194,11 +194,6 @@ const OWNER_STRUCTURE_TYPES_BY_ENTITY = {
   ],
 }
 
-const MULTIPLE_OWNER_CAPTURE_MODES = [
-  { value: 'capture_now', label: 'Capture all details now', description: 'Enter every owner, share, ID/passport, and consent in this form.' },
-  { value: 'send_onboarding', label: 'Send owner onboarding', description: 'Capture contact details now and let the team send owner follow-up links.' },
-]
-
 const OWNERSHIP_OPTION_ICONS = {
   individual: UserRound,
   married_cop: BadgeCheck,
@@ -1553,11 +1548,9 @@ function normalizeFormData(listing) {
   const ownerEntityType = deriveOwnerEntityType(ownershipType, existing, canonicalFacts)
   const ownerStructureType = deriveOwnerStructureType(ownershipType, ownerEntityType, existing, canonicalFacts)
   const foreignOwner = isForeignOwnerModel(ownerEntityType, ownerStructureType)
-  const multipleOwnerCaptureMode =
-    existing.multipleOwnerCaptureMode ||
-    existing.multiple_owner_capture_mode ||
-    canonicalFacts?.seller?.multiple_owner_capture_mode ||
-    'capture_now'
+  // Multiple owners are captured in this one shared form for the MVP. Older
+  // drafts that selected the retired per-owner onboarding route stay editable.
+  const multipleOwnerCaptureMode = 'capture_now'
   const ownershipBranch = getOwnershipBranch(ownershipType)
   const isVatEligibleOwnership = ['company', 'trust'].includes(ownershipBranch)
   const resolvedSectionNumber =
@@ -1596,6 +1589,7 @@ function normalizeFormData(listing) {
     foreignRegistrationNumber: existing.foreignRegistrationNumber || existing.foreign_registration_number || existing.foreign?.registrationNumber || existing.foreign?.registration_number || canonicalFacts?.seller?.foreign?.registration_number || '',
     foreignResidencyStatus: existing.foreignResidencyStatus || existing.foreign_residency_status || existing.residencyStatus || existing.foreign?.residencyStatus || existing.foreign?.residency_status || canonicalFacts?.seller?.foreign?.residency_status || '',
     multipleOwnerCaptureMode,
+    primaryContactIsOwnerOne: Boolean(existing.primaryContactIsOwnerOne || existing.primary_contact_is_owner_one),
     sellerTaxNumber: existing.sellerTaxNumber || existing.incomeTaxNumber || existing.income_tax_number || canonicalFacts?.seller?.tax_number || existing.taxNumber || existing.tax_number || '',
     saResident: normalizeYesNoValue(existing.saResident ?? existing.sa_resident ?? existing.taxResident ?? existing.tax_resident ?? canonicalFacts?.seller?.sa_resident ?? canonicalFacts?.seller?.tax_resident),
     popiConsent: normalizeAcceptedValue(existing.popiConsentAccepted ?? existing.popi_consent_accepted ?? existing.popiConsent ?? existing.popi_consent ?? canonicalFacts?.seller?.popi_consent_accepted ?? canonicalFacts?.seller?.popi_consent),
@@ -2366,6 +2360,7 @@ function PropertyDisclosureSection({
   activeSigner = null,
   signingStatus = null,
   hasRequestedSigner = false,
+  signatureOnly = false,
   onAnswerChange,
   onNoteChange,
   onDownload,
@@ -2388,8 +2383,8 @@ function PropertyDisclosureSection({
   return (
     <StepShell
       eyebrow="Property Disclosure"
-      title="Declaration by Seller - Annexure A"
-      description="Complete the disclosure in the same structure as the mandate annexure. It can be downloaded as its own PDF afterwards."
+      title={signatureOnly ? 'Review and sign your seller declaration' : 'Declaration by Seller - Annexure A'}
+      description={signatureOnly ? 'This secure link is for your signature only. The seller intake and disclosure answers are already complete.' : 'Complete the disclosure in the same structure as the mandate annexure. It can be downloaded as its own PDF afterwards.'}
     >
       <div className="space-y-5">
         {activeSigner ? (
@@ -2404,7 +2399,7 @@ function PropertyDisclosureSection({
             </p>
           </section>
         ) : null}
-        <FormSection
+        {!signatureOnly ? (<FormSection
           icon={ShieldCheck}
           title="Annexure A questions"
           description="Answer each item Yes, No, or Unsure. Use the comments section for explanations where needed."
@@ -2558,7 +2553,12 @@ function PropertyDisclosureSection({
               />
             </label>
           </MobileQuestionPane>
-        </FormSection>
+        </FormSection>) : (
+          <section className="rounded-[18px] border border-[#dbe6f2] bg-[#f8fbff] p-4 text-sm leading-6 text-[#35546c]">
+            <p className="font-semibold text-[#172334]">Disclosure details are ready for signature</p>
+            <p className="mt-1">{answerSummary.answered} of {answerSummary.total} disclosure questions have been completed by the primary contact. This signing link cannot change the seller intake or disclosure answers.</p>
+          </section>
+        )}
 
         {answerSummary.answered ? (
           <FormSection
@@ -2579,6 +2579,7 @@ function PropertyDisclosureSection({
                   <input
                     type="checkbox"
                     checked={termsAcceptance.accepted}
+                    disabled={signatureOnly}
                     onChange={(event) => {
                       const nextAcceptance = event.target.checked
                         ? buildArch9SellerTermsAcceptance()
@@ -2601,6 +2602,7 @@ function PropertyDisclosureSection({
                   <input
                     type="checkbox"
                     checked={Boolean(normalized.declarationAccepted)}
+                    disabled={signatureOnly}
                     onChange={(event) => onDisclosureChange('declarationAccepted', event.target.checked)}
                     className="mt-1 h-4 w-4"
                   />
@@ -3239,6 +3241,21 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     }
     setForm((previous) => {
       const next = { ...(previous || {}), [key]: value }
+      if (next.primaryContactIsOwnerOne && ['sellerFirstName', 'sellerSurname', 'email', 'phone', 'dateOfBirth', 'nationality'].includes(key)) {
+        const owners = Array.isArray(next.multipleOwners) ? [...next.multipleOwners] : []
+        if (owners[0]) {
+          const ownerField = {
+            sellerFirstName: 'name',
+            sellerSurname: 'surname',
+            email: 'email',
+            phone: 'phone',
+            dateOfBirth: 'dateOfBirth',
+            nationality: 'nationality',
+          }[key]
+          owners[0] = { ...owners[0], [ownerField]: value }
+          next.multipleOwners = owners
+        }
+      }
       if (key === 'propertyCategory') {
         const propertyOptions = getPropertyTypeOptionsByCategory(value)
         if (!propertyOptions.some((option) => option.value === next.propertyType)) {
@@ -3462,10 +3479,21 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     })
   }
 
-  function handleMultipleOwnerCaptureModeChange(value) {
+  function handlePrimaryContactOwnerOneChange(checked) {
     setForm((previous) => ({
       ...(previous || {}),
-      multipleOwnerCaptureMode: value,
+      primaryContactIsOwnerOne: checked,
+      multipleOwners: checked && Array.isArray(previous?.multipleOwners) && previous.multipleOwners[0]
+        ? [{
+            ...previous.multipleOwners[0],
+            name: previous.sellerFirstName || '',
+            surname: previous.sellerSurname || '',
+            email: previous.email || '',
+            phone: previous.phone || '',
+            dateOfBirth: previous.dateOfBirth || '',
+            nationality: previous.nationality || '',
+          }, ...previous.multipleOwners.slice(1)]
+        : previous?.multipleOwners,
     }))
   }
 
@@ -3946,7 +3974,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         form.ownerStructureType === 'foreign_individual' ||
         ownershipBranch === 'individual' ||
         ownershipBranch === 'married'
-      const multipleOwnerCaptureMode = form.multipleOwnerCaptureMode || 'capture_now'
       const companyDirectors = Array.isArray(form.companyDirectors) ? form.companyDirectors : []
       const trustTrustees = Array.isArray(form.trustees) ? form.trustees : []
       const multipleOwners = Array.isArray(form.multipleOwners) ? form.multipleOwners : []
@@ -4038,16 +4065,9 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         if (multipleOwners.length < 2) {
           return 'Please add at least two owners.'
         }
-        if (multipleOwnerCaptureMode === 'send_onboarding') {
-          const incompleteOwner = multipleOwners.find((owner) => !owner.name || !owner.surname || !owner.email)
-          if (incompleteOwner) {
-            return 'Each owner needs a name, surname, and email address before onboarding links can be sent.'
-          }
-        } else {
-          const incompleteOwner = multipleOwners.find((owner) => !owner.name || !owner.surname || !owner.idNumber || !owner.consentToSell)
-          if (incompleteOwner) {
-            return 'Each owner needs a name, surname, ID/passport number, and consent to sell.'
-          }
+        const incompleteOwner = multipleOwners.find((owner) => !owner.name || !owner.surname || !owner.idNumber || !owner.consentToSell)
+        if (incompleteOwner) {
+          return 'Each owner needs a name, surname, ID/passport number, and consent to sell.'
         }
       }
 
@@ -4135,7 +4155,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       const companyDirectors = Array.isArray(form.companyDirectors) ? form.companyDirectors : []
       const trustTrustees = Array.isArray(form.trustees) ? form.trustees : []
       const multipleOwners = Array.isArray(form.multipleOwners) ? form.multipleOwners : []
-      const multipleOwnerCaptureMode = form.multipleOwnerCaptureMode || 'capture_now'
 
       if (activeMobilePaneIndex === sellerPaneIndexes.ownership) {
         if (!ownershipType) return 'Please select ownership structure.'
@@ -4209,13 +4228,9 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         }
         if (ownershipBranch === 'multiple_owners') {
           if (multipleOwners.length < 2) return 'Please add at least two owners.'
-          const incompleteOwner = multipleOwnerCaptureMode === 'send_onboarding'
-            ? multipleOwners.find((owner) => !owner.name || !owner.surname || !owner.email)
-            : multipleOwners.find((owner) => !owner.name || !owner.surname || !owner.idNumber || !owner.consentToSell)
+          const incompleteOwner = multipleOwners.find((owner) => !owner.name || !owner.surname || !owner.idNumber || !owner.consentToSell)
           if (incompleteOwner) {
-            return multipleOwnerCaptureMode === 'send_onboarding'
-              ? 'Each owner needs a name, surname, and email address before onboarding links can be sent.'
-              : 'Each owner needs a name, surname, ID/passport number, and consent to sell.'
+            return 'Each owner needs a name, surname, ID/passport number, and consent to sell.'
           }
         }
       }
@@ -4655,8 +4670,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   const ownershipFieldLabels = getOwnershipFieldLabels(form.ownershipType)
   const sellerResidentialAddress = resolveSellerResidentialAddress(form)
   const canCopySellerResidentialAddressToProperty = Boolean(sellerResidentialAddress)
-  const multipleOwnerCaptureMode = form.multipleOwnerCaptureMode || 'capture_now'
-  const isMultipleOwnerInviteMode = isMultipleOwners && multipleOwnerCaptureMode === 'send_onboarding'
   const showSectionalTitleDetails = propertyBranch === 'sectional_title'
   const hasEstateSignals = Boolean(form.estateOrHoa || form.estateName || form.estateComplexName)
   const showEstateDetails = propertyBranch === 'estate_hoa' || hasEstateSignals
@@ -4807,8 +4820,8 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     ? form.directListingComplianceSummary
     : []
 
-  const shouldShowWelcome = !embedded && !isCompleted && showWelcome
-  const onboardingActions = !embedded && !isCompleted ? (
+  const shouldShowWelcome = !embedded && !isCompleted && !hasRequestedComplianceSigner && showWelcome
+  const onboardingActions = !embedded && !isCompleted && !hasRequestedComplianceSigner ? (
     <div className="rounded-[24px] border border-white/70 bg-white/95 p-3 shadow-[0_14px_32px_rgba(15,23,42,0.08)] backdrop-blur-xl">
       <div className="grid gap-2 md:hidden">
         <div className="flex min-w-0 items-center justify-between gap-2">
@@ -4886,7 +4899,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
 
   const formContent = (
     <div className={PAGE_STACK_CLASS}>
-      {!isCompleted ? (
+      {!isCompleted && !hasRequestedComplianceSigner ? (
         <>
           <SellerOnboardingHero brand={agencyBrand} listing={listing} form={form} statusLabel={statusLabel} />
         </>
@@ -4896,7 +4909,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         <SellerCompletedState listing={listing} form={form} brand={agencyBrand} onDownloadDisclosure={handleDownloadDisclosurePdf} />
       ) : (
         <section className={SECTION_CARD_CLASS}>
-        <SellerStepProgress currentStep={currentStep} progress={progress} />
+        {!hasRequestedComplianceSigner ? <SellerStepProgress currentStep={currentStep} progress={progress} /> : null}
 
         {error ? (
           <p
@@ -5442,30 +5455,10 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                 {isMultipleOwners ? (
                   <div className="mt-4 space-y-4">
                     <article className="rounded-[14px] border border-[#dce6f2] bg-[#f8fbff] p-4">
-                      <div className="mb-4 rounded-[12px] border border-[#dbe6f2] bg-white p-3">
-                        <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#60748b]">Owner capture mode</p>
-                        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                          {MULTIPLE_OWNER_CAPTURE_MODES.map((item) => (
-                            <button
-                              key={item.value}
-                              type="button"
-                              onClick={() => handleMultipleOwnerCaptureModeChange(item.value)}
-                              className={choiceCardClass(multipleOwnerCaptureMode === item.value)}
-                            >
-                              <span className="block text-sm font-semibold">{item.label}</span>
-                              <span className="mt-1 block text-xs leading-5 text-[#60748b]">{item.description}</span>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <div>
                           <h3 className="text-sm font-semibold text-[#22364a]">Owner cards</h3>
-                          <p className="mt-1 text-sm leading-5 text-[#60748b]">
-                            {isMultipleOwnerInviteMode
-                              ? 'Capture each owner name and email so follow-up onboarding links can be sent.'
-                              : 'Capture each owner, their share, and their consent to sell. At least two owners are required.'}
-                          </p>
+                          <p className="mt-1 text-sm leading-5 text-[#60748b]">Capture every owner in this shared form. At least two owners are required; signatures are requested only after the form is complete.</p>
                         </div>
                         <Button type="button" variant="secondary" size="sm" onClick={addMultipleOwner}>
                           <Plus size={14} />
@@ -5487,6 +5480,12 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                               ) : null}
                             </div>
                             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                              {index === 0 ? (
+                                <label className="flex min-h-[52px] items-center gap-2 rounded-[12px] border border-[#cfe6da] bg-[#f3fbf6] px-3 py-2 text-sm font-semibold text-[#245c3d] md:col-span-2">
+                                  <input type="checkbox" checked={Boolean(form.primaryContactIsOwnerOne)} onChange={(event) => handlePrimaryContactOwnerOneChange(event.target.checked)} />
+                                  The primary contact details above are for Owner 1
+                                </label>
+                              ) : null}
                               <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                                 First name
                                 <input className={DETAIL_INPUT_CLASS} value={owner.name} onChange={(event) => updateMultipleOwner(owner.id, 'name', event.target.value)} />
@@ -5496,7 +5495,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                                 <input className={DETAIL_INPUT_CLASS} value={owner.surname} onChange={(event) => updateMultipleOwner(owner.id, 'surname', event.target.value)} />
                               </label>
                               <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                                {isMultipleOwnerInviteMode ? 'ID / Passport Number (optional)' : 'ID / Passport Number'}
+                                ID / Passport Number
                                 <input className={DETAIL_INPUT_CLASS} value={owner.idNumber} onChange={(event) => updateMultipleOwner(owner.id, 'idNumber', event.target.value)} />
                               </label>
                               <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
@@ -5511,12 +5510,10 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                                 Phone (optional)
                                 <input className={DETAIL_INPUT_CLASS} value={owner.phone} onChange={(event) => updateMultipleOwner(owner.id, 'phone', event.target.value)} />
                               </label>
-                              {isMultipleOwnerInviteMode ? null : (
-                                <label className="flex min-h-[52px] items-center gap-2 rounded-[12px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm font-medium text-[#2a4057] md:col-span-2">
-                                  <input type="checkbox" checked={Boolean(owner.consentToSell)} onChange={(event) => updateMultipleOwner(owner.id, 'consentToSell', event.target.checked)} />
-                                  Consent to sell
-                                </label>
-                              )}
+                              <label className="flex min-h-[52px] items-center gap-2 rounded-[12px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm font-medium text-[#2a4057] md:col-span-2">
+                                <input type="checkbox" checked={Boolean(owner.consentToSell)} onChange={(event) => updateMultipleOwner(owner.id, 'consentToSell', event.target.checked)} />
+                                Consent to sell
+                              </label>
                             </div>
                           </article>
                         ))}
@@ -6269,6 +6266,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
               activeSigner={activeComplianceSigner}
               signingStatus={sellerComplianceSigning}
               hasRequestedSigner={hasRequestedComplianceSigner}
+              signatureOnly={hasRequestedComplianceSigner}
               onAnswerChange={handleDisclosureAnswerChange}
               onNoteChange={handleDisclosureNoteChange}
               onDownload={handleDownloadDisclosurePdf}

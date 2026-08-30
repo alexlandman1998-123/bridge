@@ -231,15 +231,14 @@ test('resolves split seller owner entity and structure fields', () => {
   assert.ok(foreignCompanyFlow.optional_fields.includes('seller.foreign_owner_country'))
   assert.ok(foreignCompanyFlow.document_triggers.includes('company_registration'))
 
-  const inviteOwnersFlow = resolveSellerOnboardingFlowContract(
+  const multipleOwnersFlow = resolveSellerOnboardingFlowContract(
     {
       ownerEntityType: 'natural_person',
       ownerStructureType: 'multiple_owners',
       ownershipType: 'multiple_owners',
-      multipleOwnerCaptureMode: 'send_onboarding',
       multipleOwners: [
-        { name: 'Alex', surname: 'Owner', email: 'alex@example.com' },
-        { name: 'Kim', surname: 'Owner', email: 'kim@example.com' },
+        { name: 'Alex', surname: 'Owner', idNumber: '9001015009083', consentToSell: true },
+        { name: 'Kim', surname: 'Owner', idNumber: '9001015009084', consentToSell: true },
       ],
       propertyCategory: 'residential',
       propertyStructureType: 'freehold',
@@ -247,9 +246,9 @@ test('resolves split seller owner entity and structure fields', () => {
     listing,
   )
 
-  assert.equal(inviteOwnersFlow.seller_branch, 'multiple_owners')
-  assert.ok(inviteOwnersFlow.required_fields.includes('seller.multiple_owner_capture_mode'))
-  assert.equal(inviteOwnersFlow.required_fields.includes('seller.owners[].consent_to_sell'), false)
+  assert.equal(multipleOwnersFlow.seller_branch, 'multiple_owners')
+  assert.equal(multipleOwnersFlow.required_fields.includes('seller.multiple_owner_capture_mode'), false)
+  assert.ok(multipleOwnersFlow.required_fields.includes('seller.owners[].consent_to_sell'))
 })
 
 test('shares visible and required fields through the flow helper', () => {
@@ -381,8 +380,8 @@ test('captures authority details and consent for estate, poa, and multiple owner
     },
     listing,
   )
-  assert.ok(ownersFlow.required_fields.includes('seller.multiple_owner_capture_mode'))
-  assert.equal(ownersFlow.required_fields.includes('seller.owners[].consent_to_sell'), false)
+  assert.equal(ownersFlow.required_fields.includes('seller.multiple_owner_capture_mode'), false)
+  assert.ok(ownersFlow.required_fields.includes('seller.owners[].consent_to_sell'))
   assert.ok(ownersFlow.visible_fields.includes('seller.owners[].ownership_share'))
 })
 

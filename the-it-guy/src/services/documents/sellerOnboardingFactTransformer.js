@@ -462,10 +462,7 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
   const ownerStructureCandidate = normalizeKey(form.ownerStructureType || form.owner_structure_type || form.ownershipType)
   const ownerStructureType = ownerStructureCandidate || (sellerLegalType === 'individual' ? 'individual' : sellerLegalType)
   const foreignOwner = normalizeBoolean(form.foreignOwner ?? form.foreign_owner, false) || ownerEntityType === 'foreign' || ownerStructureType.startsWith('foreign_')
-  const multipleOwnerCaptureModeCandidate = normalizeKey(form.multipleOwnerCaptureMode || form.multiple_owner_capture_mode)
-  const multipleOwnerCaptureMode = ['capture_now', 'send_onboarding'].includes(multipleOwnerCaptureModeCandidate)
-    ? multipleOwnerCaptureModeCandidate
-    : 'capture_now'
+  const multipleOwnerCaptureMode = 'capture_now'
   const popiConsentAccepted =
     normalizeBoolean(form.popiConsentAccepted ?? form.popi_consent_accepted ?? form.popiConsent ?? form.popi_consent, false) ||
     normalizeBoolean(form.arch9TermsAccepted ?? form.arch9_terms_accepted, false) ||
@@ -845,7 +842,6 @@ export function validateSellerOnboardingFacts(facts = {}, { draft = false } = {}
 
   const sellerBranch = resolveSellerBranchForValidation(facts)
   const propertyBranch = resolvePropertyBranch(facts)
-  const multipleOwnerInviteMode = facts.seller?.multiple_owner_capture_mode === 'send_onboarding'
 
   push(missingIf(!facts.seller?.first_name, 'seller_first_name_missing', 'Seller name is required.'))
   push(missingIf(!facts.seller?.surname, 'seller_surname_missing', 'Seller surname is required.'))
@@ -888,15 +884,6 @@ export function validateSellerOnboardingFacts(facts = {}, { draft = false } = {}
   push(missingIf(sellerBranch === 'multiple_owners' && !(Array.isArray(facts.seller?.owners) && facts.seller.owners.length >= 2), 'multiple_owners_missing', 'At least two owners must be captured for multiple-owner sellers.'))
   push(missingIf(
     sellerBranch === 'multiple_owners' &&
-      multipleOwnerInviteMode &&
-      Array.isArray(facts.seller?.owners) &&
-      facts.seller.owners.some((owner) => !owner.email),
-    'owner_invite_email_missing',
-    'Each owner needs an email address when owner onboarding links are requested.',
-  ))
-  push(missingIf(
-    sellerBranch === 'multiple_owners' &&
-      !multipleOwnerInviteMode &&
       Array.isArray(facts.seller?.owners) &&
       facts.seller.owners.some((owner) => !owner.consent_to_sell),
     'owner_consent_missing',
@@ -957,7 +944,6 @@ function sectionScore(items = []) {
 export function calculateSellerFactReadiness(facts = {}) {
   const sellerBranch = resolveSellerBranchForValidation(facts)
   const propertyBranch = resolvePropertyBranch(facts)
-  const multipleOwnerInviteMode = facts.seller?.multiple_owner_capture_mode === 'send_onboarding'
 
   const sections = {
     seller_identity: sectionScore([
@@ -1009,7 +995,7 @@ export function calculateSellerFactReadiness(facts = {}) {
         ? Boolean(
             Array.isArray(facts.seller?.owners) &&
               facts.seller.owners.length >= 2 &&
-              facts.seller.owners.every((owner) => (multipleOwnerInviteMode ? owner.email : owner.consent_to_sell)),
+              facts.seller.owners.every((owner) => owner.consent_to_sell),
           )
         : true,
     ]),

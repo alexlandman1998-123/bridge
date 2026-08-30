@@ -160,6 +160,34 @@ assert.deepEqual(source.summary, {
   },
 })
 
+const multiOwnerSource = buildSellerDocumentSourceOfTruth({
+  listing: {
+    id: 'listing-multi-owner',
+    sellerOnboarding: {
+      status: 'completed',
+      formData: {
+        ownershipType: 'multiple_owners',
+        multipleOwners: [
+          { id: 'owner-a', name: 'Jane', surname: 'Smith' },
+          { id: 'owner-b', name: 'John', surname: 'Mokoena' },
+        ],
+      },
+    },
+  },
+})
+assert.equal(
+  multiOwnerSource.rows.find((row) => row.key === 'owner_1_id_document')?.label,
+  'Jane Smith ID Document / Passport',
+)
+assert.equal(
+  multiOwnerSource.rows.find((row) => row.key === 'owner_2_proof_of_address')?.label,
+  'John Mokoena Proof Of Address',
+)
+assert.equal(
+  multiOwnerSource.rows.filter((row) => row.key === 'all_owner_authority_consent').length,
+  1,
+)
+
 const listingDetailSource = readFileSync(new URL('../src/pages/AgentListingDetail.jsx', import.meta.url), 'utf8')
 assert.match(listingDetailSource, /buildSellerDocumentSourceOfTruth/)
 assert.match(listingDetailSource, /mapSellerDocumentSourceRowForListing/)

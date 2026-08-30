@@ -142,7 +142,7 @@ function resolveOwners(formData = {}) {
   return owners
     .map((owner) => ({
       ...owner,
-      name: owner.name || owner.firstName,
+      name: owner.name || [owner.firstName, owner.surname].filter(Boolean).join(' '),
       idNumber: owner.idNumber || owner.id_number,
     }))
     .filter((owner) => hasValue(owner.name) || hasValue(owner.surname) || hasValue(owner.idNumber))
@@ -1211,19 +1211,20 @@ export function getRequiredSellerDocuments(requirementProfile = {}) {
     const owners = Array.from({ length: Math.max(profile.ownerCount || 2, 2) }, (_, index) => profile.owners?.[index] || { id: `owner-${index + 1}`, maritalRegime: 'single' })
     owners.forEach((owner, index) => {
       const seq = index + 1
+      const ownerLabel = normalizeText([owner.name, owner.surname].filter(Boolean).join(' ')) || `Owner ${seq}`
       docs.push(
         buildRequirement({
           key: `owner_${seq}_id_document`,
-          name: `Owner ${seq} ID Document / Passport`,
-          description: `Identity document for owner ${seq}.`,
+          name: `${ownerLabel} ID Document / Passport`,
+          description: `Identity document for ${ownerLabel}.`,
           group: 'seller_identity',
           visibility: 'seller_visible',
           generatedFrom: { ...generatedFrom, ownerId: owner.id },
         }),
         buildRequirement({
           key: `owner_${seq}_proof_of_address`,
-          name: `Owner ${seq} Proof of Address`,
-          description: `Proof of address for owner ${seq}.`,
+          name: `${ownerLabel} Proof of Address`,
+          description: `Proof of address for ${ownerLabel}.`,
           group: 'fica',
           visibility: 'seller_visible',
           generatedFrom: { ...generatedFrom, ownerId: owner.id },
@@ -1233,8 +1234,8 @@ export function getRequiredSellerDocuments(requirementProfile = {}) {
         docs.push(
           buildRequirement({
             key: `owner_${seq}_marriage_certificate`,
-            name: `Owner ${seq} Marriage Certificate`,
-            description: `Marriage certificate for owner ${seq}.`,
+            name: `${ownerLabel} Marriage Certificate`,
+            description: `Marriage certificate for ${ownerLabel}.`,
             group: 'marital',
             visibility: 'seller_visible',
             generatedFrom: { ...generatedFrom, ownerId: owner.id },

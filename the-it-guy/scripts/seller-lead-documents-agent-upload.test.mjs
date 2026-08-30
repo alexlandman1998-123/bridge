@@ -68,8 +68,8 @@ assert.match(
 
 assert.match(
   genericUploadBlock,
-  /await Promise\.all\(\[/,
-  'lead mirror and activity persistence should run together after the local document update',
+  /void Promise\.all\(\[/,
+  'lead mirror and activity persistence should continue in the background after the local document update',
 )
 
 console.log('seller lead documents agent upload contract passed')

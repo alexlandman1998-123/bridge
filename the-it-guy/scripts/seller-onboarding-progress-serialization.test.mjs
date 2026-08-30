@@ -40,6 +40,21 @@ assert.match(
   /setSaving\(true\)[\s\S]*?finally \{[\s\S]*?setSaving\(false\)/,
   'silent autosaves must participate in the saving lifecycle',
 )
+assert.doesNotMatch(
+  onboardingSource,
+  /send_onboarding/,
+  'multiple-owner onboarding must not offer a separate owner-onboarding route in the MVP.',
+)
+assert.match(
+  onboardingSource,
+  /handlePrimaryContactOwnerOneChange[\s\S]*?The primary contact details above are for Owner 1/,
+  'multiple-owner onboarding should let the primary contact reuse their details for Owner 1.',
+)
+assert.match(
+  onboardingSource,
+  /This secure link is for your signature only[\s\S]*?signatureOnly=\{hasRequestedComplianceSigner\}/,
+  'a signer link must render as a dedicated declaration-signing experience instead of normal onboarding.',
+)
 assert.match(
   pipelineSource,
   /function hasExplicitSellerOnboardingSubmissionEvidence\([\s\S]*?SELLER_ONBOARDING_SUBMITTED_STATUS_KEYS\.has\(status\)/,

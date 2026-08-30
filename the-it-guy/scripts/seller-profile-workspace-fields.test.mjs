@@ -85,4 +85,23 @@ assert.match(
   'seller profile save data should retain HOA / estate for listing prefill',
 )
 
+assert.ok(
+  workspaceSource.includes('const roleplayers ='),
+  'seller profile should resolve each owner, director, or trustee as a person-specific profile.',
+)
+
+for (const roleplayerSource of ['onboarding?.multipleOwners', 'onboarding?.companyDirectors', 'onboarding?.trustees']) {
+  assert.ok(workspaceSource.includes(roleplayerSource), `seller profile should resolve ${roleplayerSource} roleplayers.`)
+}
+
+assert.ok(
+  agencySource.includes('People on this seller profile') && agencySource.includes('role="tablist"'),
+  'seller profile should render named person tabs when roleplayers are present.',
+)
+
+assert.ok(
+  agencySource.includes('setActiveSellerProfileRoleplayerId(roleplayer.id)'),
+  'seller profile person tabs should switch the displayed roleplayer.',
+)
+
 console.log('seller profile workspace fields contract passed')
