@@ -33910,14 +33910,20 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         </div>
                       </section>
 
-                      <section className="flex min-h-[318px] min-w-0 flex-col overflow-hidden rounded-[20px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_34px_rgba(31,54,78,0.05)] lg:col-start-2 lg:row-start-2">
+                      <section className="flex h-[430px] min-h-[318px] max-h-[430px] min-w-0 flex-col overflow-hidden rounded-[20px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_34px_rgba(31,54,78,0.05)] lg:col-start-2 lg:row-start-2" data-testid="seller-lead-activity-card">
                         <div className="flex items-center justify-between gap-3 border-b border-[#edf3f8] px-5 py-4">
                           <h3 className="text-base font-semibold text-[#102033]">Lead Activity</h3>
                           <Button type="button" size="sm" variant="secondary" className="h-9 rounded-[12px] px-3 text-xs" onClick={() => handleLeadWorkspaceTabSelection('activity')}>
                             View All Activity
                           </Button>
                         </div>
-                        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+                        <div
+                          className="min-h-0 flex-1 overscroll-contain overflow-y-auto px-5 py-5"
+                          role="region"
+                          aria-label="Recent lead activity"
+                          tabIndex={0}
+                          data-testid="seller-lead-activity-scroll-region"
+                        >
                           {selectedLeadActivityGroups.length ? (
                             <div className="space-y-6">
                               {selectedLeadActivityGroups.map((group) => (
