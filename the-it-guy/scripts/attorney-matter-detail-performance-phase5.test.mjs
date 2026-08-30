@@ -32,6 +32,7 @@ assert.match(detailSource, /if \(initialDetailLoadKeyRef\.current === currentMat
 assert.doesNotMatch(detailSource, /attorneyPermissionState\.membership,\s*attorneyPermissionState\.membership\?\.isActive,/)
 assert.match(permissionHookSource, /const bootMembershipKey = getMembershipStabilityKey\(bootMembership\)/)
 assert.match(permissionHookSource, /membership: stableMembership/)
+assert.match(permissionHookSource, /const role = normalizeText\(membership\.rawRole \|\| membership\.raw\?\.role \|\| membership\.role \|\| membership\.workspaceRole\)/)
 assert.doesNotMatch(permissionHookSource, /bootMembershipKey,[\s\S]{0,400}?\n\s*currentMembership,\n/)
 assert.doesNotMatch(permissionHookSource, /bootMembershipKey,[\s\S]{0,400}?\n\s*membershipContexts\?\.attorneyFirm,\n/)
 

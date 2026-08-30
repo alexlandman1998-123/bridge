@@ -46,7 +46,7 @@ function getMembershipStabilityKey(membership = null) {
     getMembershipUserId(membership),
     normalizeText(membership.departmentId || membership.department_id || membership.raw?.department_id),
     normalizeText(membership.status || membership.raw?.status).toLowerCase(),
-    normalizeText(membership.role || membership.workspaceRole || membership.rawRole || membership.raw?.role),
+    normalizeText(membership.rawRole || membership.raw?.role || membership.role || membership.workspaceRole),
     normalizeText(membership.professionalRole || membership.professional_role || membership.raw?.professional_role),
     normalizedQualifications,
     normalizeText(membership.updatedAt || membership.updated_at || membership.raw?.updated_at),
@@ -69,7 +69,10 @@ function membershipMatchesContext(membership = null, { firmId = '', userId = '' 
 function normalizeOperationalMembership(membership = null, { firmId = '', userId = '' } = {}) {
   if (!membership) return null
   const status = String(membership.status || '').trim().toLowerCase()
-  const role = normalizeText(membership.role || membership.workspaceRole || membership.rawRole || membership.raw?.role)
+  // Attorney memberships are also projected into the generic workspace role
+  // model (for example firm_admin -> owner). Authorization must use the
+  // preserved attorney role, otherwise a firm administrator becomes a viewer.
+  const role = normalizeText(membership.rawRole || membership.raw?.role || membership.role || membership.workspaceRole)
   const professionalProfile = deriveAttorneyProfessionalProfile({
     role,
     professionalRole: membership.professionalRole || membership.professional_role || membership.raw?.professional_role,
