@@ -33,9 +33,10 @@ export default function LeadDocumentWorkspace({
     const completed = normalizedCategories.reduce((sum, category) => sum + category.completed, 0)
     return { total, completed, outstanding: Math.max(total - completed, 0), progress: total ? Math.round((completed / total) * 100) : 0 }
   }, [normalizedCategories])
-  const requirementRows = useMemo(() => normalizedCategories.flatMap((category) => (
-    (category.items || []).map((row) => ({ row, category }))
-  )), [normalizedCategories])
+  const populatedCategories = useMemo(
+    () => normalizedCategories.filter((category) => (category.items || []).length > 0),
+    [normalizedCategories],
+  )
 
   return (
     <section className="overflow-hidden rounded-[26px] border border-[#dbe7f2] bg-white shadow-[0_18px_44px_rgba(31,54,78,0.06)]" data-testid={`${partyType}-document-workspace`}>
@@ -76,37 +77,54 @@ export default function LeadDocumentWorkspace({
           })}
         </div>
 
-        <section className="mt-5 overflow-hidden rounded-[20px] border border-[#e3edf7] bg-white shadow-[0_8px_22px_rgba(31,54,78,0.04)]" data-testid={`${partyType}-documents-list`}>
+        <section className="mt-5 overflow-hidden rounded-[20px] border border-[#e3edf7] bg-[#f7fafc] shadow-[0_8px_22px_rgba(31,54,78,0.04)]" data-testid={`${partyType}-documents-list`}>
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e8eff6] px-5 py-4">
             <div>
-              <h5 className="text-base font-semibold text-[#102033]">Document requirements</h5>
-              <p className="mt-1 text-xs text-[#7890a8]">All documents requested for this {partyType}, grouped into one working list.</p>
+              <h5 className="text-base font-semibold text-[#102033]">Document categories</h5>
+              <p className="mt-1 text-xs text-[#7890a8]">Documents requested for this {partyType}, organised by purpose.</p>
             </div>
             <span className="rounded-full bg-[#eef3f7] px-3 py-1.5 text-xs font-semibold text-[#607891]">{summary.outstanding} outstanding</span>
           </div>
-          {requirementRows.length ? (
-            <>
-              <div className="hidden grid-cols-[minmax(0,1.4fr)_minmax(140px,0.7fr)_auto_auto] gap-4 bg-[#fbfdff] px-5 py-2 text-[0.62rem] font-semibold uppercase tracking-[0.1em] text-[#8295a9] lg:grid">
-                <span>Requirement</span><span>Category</span><span>Status</span><span>Action</span>
-              </div>
-              <div className="divide-y divide-[#edf2f7]">
-                {requirementRows.map(({ row, category }) => {
-                  const status = getStatusMeta(row)
-                  const id = rowIdentity(row, category.key)
-                  return (
-                    <div id={`lead-document-${category.key}-${id}`} tabIndex={-1} key={`${category.key}-${id}`} className="grid gap-3 px-5 py-4 outline-none transition focus:bg-[#f4faf7] lg:grid-cols-[minmax(0,1.4fr)_minmax(140px,0.7fr)_auto_auto] lg:items-center lg:gap-4">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-[#20364c]" title={row.label || row.title}>{row.label || row.title}</p>
-                        <p className="mt-0.5 text-xs text-[#7b8fa5]">{row.required === false ? 'Optional' : 'Required'}{row.uploadedAt ? ` · ${new Date(row.uploadedAt).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' })}` : ''}</p>
+          {populatedCategories.length ? (
+            <div className="space-y-4 p-4 sm:p-5">
+              {populatedCategories.map((category) => {
+                const CategoryIcon = category.Icon || FileText
+                const outstanding = Math.max(category.total - category.completed, 0)
+                return (
+                  <section key={category.key} className="overflow-hidden rounded-[18px] border border-[#e1eaf3] bg-white" data-testid={`${partyType}-document-category-${category.key}`}>
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e8eff6] bg-[#fbfdff] px-4 py-3.5 sm:px-5">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-[12px] border ${category.iconClass || 'border-[#dbe7f2] bg-[#f4f8fb] text-[#315b7a]'}`}><CategoryIcon className="h-4 w-4" /></span>
+                        <div className="min-w-0">
+                          <h6 className="truncate text-sm font-semibold text-[#102033]">{category.label}</h6>
+                          <p className="mt-0.5 text-xs text-[#71869b]">{category.description || `${partyLabel} document requirements`}</p>
+                        </div>
                       </div>
-                      <p className="text-xs font-semibold text-[#607891]">{category.label}</p>
-                      <span className={`w-fit rounded-full border px-2.5 py-1 text-xs font-semibold ${status.pillClass}`}>{status.label}</span>
-                      <div className="flex flex-wrap items-center gap-2 lg:justify-end">{renderActions?.(row, category, status)}</div>
+                      <span className="rounded-full border border-[#dbe7f2] bg-white px-3 py-1 text-xs font-semibold text-[#607891]">{outstanding ? `${outstanding} outstanding` : 'Complete'}</span>
                     </div>
-                  )
-                })}
-              </div>
-            </>
+                    <div className="hidden grid-cols-[minmax(0,1fr)_auto_auto] gap-4 border-b border-[#edf2f7] px-5 py-2 text-[0.62rem] font-semibold uppercase tracking-[0.1em] text-[#8295a9] lg:grid">
+                      <span>Requirement</span><span>Status</span><span>Action</span>
+                    </div>
+                    <div className="divide-y divide-[#edf2f7]">
+                      {(category.items || []).map((row) => {
+                        const status = getStatusMeta(row)
+                        const id = rowIdentity(row, category.key)
+                        return (
+                          <div id={`lead-document-${category.key}-${id}`} tabIndex={-1} key={`${category.key}-${id}`} className="grid gap-3 px-4 py-4 outline-none transition focus:bg-[#f4faf7] sm:px-5 lg:grid-cols-[minmax(0,1fr)_auto_auto] lg:items-center lg:gap-4">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-semibold text-[#20364c]" title={row.label || row.title}>{row.label || row.title}</p>
+                              <p className="mt-0.5 text-xs text-[#7b8fa5]">{row.required === false ? 'Optional' : 'Required'}{row.uploadedAt ? ` · ${new Date(row.uploadedAt).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' })}` : ''}</p>
+                            </div>
+                            <span className={`w-fit rounded-full border px-2.5 py-1 text-xs font-semibold ${status.pillClass}`}>{status.label}</span>
+                            <div className="flex flex-wrap items-center gap-2 lg:justify-end">{renderActions?.(row, category, status)}</div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </section>
+                )
+              })}
+            </div>
           ) : (
             <div className="px-5 py-10 text-center"><FolderOpen className="mx-auto h-7 w-7 text-[#7b8fa5]" /><p className="mt-2 text-sm font-medium text-[#6d8298]">No document requirements requested yet.</p></div>
           )}

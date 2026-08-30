@@ -209,6 +209,16 @@ function requirementIdentity(requirement = {}) {
   return normalizeSellerBasePackKey(rawKey) || normalizeKey(rawKey)
 }
 
+export function isManualSignedFicaDeclarationRequirement(requirement = {}) {
+  return requirementIdentity(requirement) === SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION
+}
+
+export function filterSellerDocumentRequirementsForOnboarding(requirements = [], { onboardingSubmitted = false } = {}) {
+  const rows = Array.isArray(requirements) ? requirements.filter(Boolean) : []
+  if (!onboardingSubmitted) return rows
+  return rows.filter((requirement) => !isManualSignedFicaDeclarationRequirement(requirement))
+}
+
 function requirementIsActive(requirement = {}) {
   const status = normalizeSellerDocumentRequirementStatus(
     requirement?.status || requirement?.requiredDocumentStatus || requirement?.required_document_status,

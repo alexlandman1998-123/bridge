@@ -92,7 +92,10 @@ import { repairSellerDocumentTransactionContinuity } from '../../services/seller
 import { buildSellerJourney, getSellerJourneyMetrics } from '../../services/sellerJourneyService'
 import { selectAuthoritativeListingOptionSource } from '../../services/listingOptionAuthorityService'
 import { buildSellerReadinessSummary } from '../../services/sellerReadinessService'
-import { buildSellerDocumentSourceOfTruth } from '../../services/sellerDocumentRequirementsService'
+import {
+  buildSellerDocumentSourceOfTruth,
+  filterSellerDocumentRequirementsForOnboarding,
+} from '../../services/sellerDocumentRequirementsService'
 import { buildSellerComplianceAgentStatus } from '../../core/documents/sellerComplianceAgentStatusModel'
 import { getSellerProcessDefinition } from '../../services/sellerProcessDefinitionService'
 import {
@@ -16914,6 +16917,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         ...(selectedLeadHasKingstonsPipelineSignal ? selectedKingstonsSellerPackRows : []),
         ...usableSourceRows,
       ])
+      const visibleRows = filterSellerDocumentRequirementsForOnboarding(mergedRows, {
+        onboardingSubmitted: selectedLeadOnboardingCompleted,
+      })
       if (
         selectedLeadHasKingstonsPipelineSignal &&
         selectedKingstonsFormalValuationRow &&
@@ -16922,10 +16928,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         const valuationKey = getSellerLeadDocumentCanonicalKey(selectedKingstonsFormalValuationRow) || KINGSTONS_FORMAL_VALUATION_DOCUMENT.key
         return buildSellerLeadDocumentCategories([
           selectedKingstonsFormalValuationRow,
-          ...mergedRows.filter((row) => getSellerLeadDocumentCanonicalKey(row) !== valuationKey),
+          ...visibleRows.filter((row) => getSellerLeadDocumentCanonicalKey(row) !== valuationKey),
         ])
       }
-      return buildSellerLeadDocumentCategories(mergedRows)
+      return buildSellerLeadDocumentCategories(visibleRows)
     },
     [
       mandatePacketStatus,
@@ -16934,6 +16940,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       selectedLead,
       selectedLeadHasKingstonsPipelineSignal,
       selectedLeadLinkedListing,
+      selectedLeadOnboardingCompleted,
       selectedSellerJourney,
     ],
   )
