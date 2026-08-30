@@ -11072,7 +11072,7 @@ async function resolveActiveProfileContext(client) {
 
     let profileQuery = await client
       .from('profiles')
-      .select('id, role, firm_id, firm_role, full_name, first_name, last_name, name')
+      .select('id, role, firm_id, firm_role, full_name, first_name, last_name')
       .eq('id', user.id)
       .limit(1)
       .maybeSingle()
@@ -11080,8 +11080,7 @@ async function resolveActiveProfileContext(client) {
       profileQuery.error &&
       (isMissingColumnError(profileQuery.error, 'full_name') ||
         isMissingColumnError(profileQuery.error, 'first_name') ||
-        isMissingColumnError(profileQuery.error, 'last_name') ||
-        isMissingColumnError(profileQuery.error, 'name'))
+        isMissingColumnError(profileQuery.error, 'last_name'))
     ) {
       profileQuery = await client
         .from('profiles')
@@ -11099,7 +11098,6 @@ async function resolveActiveProfileContext(client) {
 
     const profileName =
       normalizeTextValue(profileQuery.data?.full_name) ||
-      normalizeTextValue(profileQuery.data?.name) ||
       [profileQuery.data?.first_name, profileQuery.data?.last_name].map(normalizeTextValue).filter(Boolean).join(' ') ||
       metadataName
 
