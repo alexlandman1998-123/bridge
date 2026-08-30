@@ -1,5 +1,6 @@
 import { MessageCircle, PhoneCall } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import AgencyBrandMark from './AgencyBrandMark'
 
 function navigationGroups(groups = [], items = []) {
   if (Array.isArray(groups) && groups.length) return groups
@@ -84,11 +85,7 @@ export default function BuyerPortalDesktopSidebar({
     >
       <div className="border-b border-white/10 pb-5">
         <div className="min-h-[56px]">
-          {brandLogoUrl ? (
-            <img src={brandLogoUrl} alt={`${brandName} logo`} className="max-h-14 max-w-[190px] object-contain object-left" />
-          ) : (
-            <h1 className="text-2xl font-semibold tracking-[-0.04em] text-white">{brandName}</h1>
-          )}
+          <AgencyBrandMark name={brandName} logoUrl={brandLogoUrl} inverse imageClassName="max-h-14 max-w-[190px]" />
         </div>
         <p className="mt-3 text-sm font-medium text-white/70">{brandDescriptor}</p>
         {headerControls}

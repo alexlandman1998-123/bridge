@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "rolloutId": "client-portal-v1",
+  "status": "disabled",
+  "allowedCohorts": ["internal", "approved-pilot"],
+  "maximumPilotAgencies": 1,
+  "automaticExpansion": false,
+  "rollbackTriggers": [
+    "any critical portal defect",
+    "any confirmed client data exposure",
+    "route crash rate above zero in the pilot",
+    "buyer or seller primary task failure",
+    "sustained mobile useful-content budget breach"
+  ],
+  "requiredObservationHoursBeforeExpansion": 72
+}

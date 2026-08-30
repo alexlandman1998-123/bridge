@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "contractId": "client-portal-launch-v1",
+  "phase": 5,
+  "candidateBuild": "",
+  "productionEnvironment": "",
+  "evidence": {
+    "productionPerformance": {
+      "status": "pending",
+      "buyerUsefulContentMs": null,
+      "sellerUsefulContentMs": null,
+      "slowNetworkCoreContentMs": null,
+      "cachedNavigationMs": null,
+      "maximumCumulativeLayoutShift": null,
+      "evidenceUrl": ""
+    },
+    "physicalDevices": {
+      "status": "pending",
+      "ios": { "device": "", "osVersion": "", "browser": "", "result": "pending" },
+      "android": { "device": "", "osVersion": "", "browser": "", "result": "pending" },
+      "evidenceUrl": ""
+    },
+    "capabilityParity": {
+      "status": "pending",
+      "buyerResult": "pending",
+      "sellerResult": "pending",
+      "evidenceUrl": ""
+    },
+    "accessibility": {
+      "status": "pending",
+      "keyboardResult": "pending",
+      "screenReaderResult": "pending",
+      "contrastResult": "pending",
+      "evidenceUrl": ""
+    },
+    "operations": {
+      "status": "pending",
+      "monitoringOwner": "",
+      "supportOwner": "",
+      "rollbackOwner": "",
+      "rollbackTestResult": "pending",
+      "evidenceUrl": ""
+    },
+    "defects": {
+      "status": "pending",
+      "openCritical": null,
+      "openHigh": null,
+      "evidenceUrl": ""
+    },
+    "productOwnerSignoff": {
+      "status": "pending",
+      "signedOffBy": "",
+      "signedOffAt": "",
+      "evidenceUrl": ""
+    }
+  }
+}

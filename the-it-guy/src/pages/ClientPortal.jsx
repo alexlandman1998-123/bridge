@@ -65,6 +65,13 @@ import {
 import { buildBondOriginatorBuyerOfferGrantViewModel } from '../modules/bond/integrations'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import { LatestUpdatesCard } from '../components/client-portal/ClientJourneySection'
+import AgencyBrandMark from '../components/client-portal/AgencyBrandMark'
+import PortalResilienceStatus from '../components/client-portal/PortalResilienceStatus'
+import {
+  ClientPortalBottomNavigation,
+  ClientPortalResponsiveShell,
+  ClientPortalStatePanel,
+} from '../components/client-portal/ClientPortalResponsiveFoundation'
 import {
   BuyerPortalNavigationItem,
   BuyerPortalSupportPanel,
@@ -74,6 +81,7 @@ import {
   BuyerPortalOverviewShell,
 } from '../components/client-portal/BuyerPortalOverview'
 import BuyerPortalJourney from '../components/client-portal/BuyerPortalJourney'
+import TransactionJourneyTracker from '../components/transaction/TransactionJourneyTracker'
 import {
   buyerPortalHexToRgba as portalHexToRgba,
   createBuyerPortalTheme,
@@ -123,6 +131,7 @@ import {
   getProspectDemoClientPortalWorkspaceData,
 } from '../services/clientPortalWorkspaceService'
 import useTransactionLiveRefresh from '../hooks/useTransactionLiveRefresh'
+import useClientPortalLaunchMetrics from '../hooks/useClientPortalLaunchMetrics'
 import { markRouteMilestone } from '../lib/performanceTrace'
 import {
   clearSellerPortalAccessToken,
@@ -3989,11 +3998,6 @@ function BuyerMobilePortal({
     backgroundColor: portalHexToRgba(mobileSecondaryColour, 0.44),
     color: '#ffffff',
   }
-  const mobileBottomNavActiveStyle = {
-    backgroundColor: portalHexToRgba(mobilePrimaryColour, 0.1),
-    color: mobilePrimaryColour,
-  }
-
   useEffect(() => {
     if (!selectedBuyerUploadIsImage || !selectedBuyerUploadFileBlob) {
       return undefined
@@ -4225,8 +4229,8 @@ function BuyerMobilePortal({
   }
 
   return (
-    <main className="min-h-screen bg-[#f4f7f6] font-sans text-[#101823]">
-      <div className="mx-auto min-h-screen w-full max-w-[430px] px-4 pb-44 pt-5">
+    <ClientPortalResponsiveShell persona="buyer" className="font-sans">
+      <div className="contents">
         <header className="flex min-h-[44px] items-center justify-between gap-3">
           <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, 'overview')} className="inline-flex min-h-11 min-w-0 items-center" aria-label={`${brandName || 'Agency'} home`}>
             {brandLogoUrl ? (
@@ -5394,27 +5398,15 @@ function BuyerMobilePortal({
         </div>
       ) : null}
 
-      <nav className="fixed inset-x-3 bottom-2 z-40 mx-auto max-w-[430px] rounded-[22px] border border-[#dfe7ee] bg-white/95 px-1.5 py-0.5 shadow-[0_18px_40px_rgba(15,23,42,0.16)] backdrop-blur lg:hidden" aria-label="Buyer portal mobile navigation">
-        <div className="grid grid-cols-5 gap-1">
-          {bottomNavItems.map((item) => {
-            const Icon = item.icon
-            const isActive = item.key === mobileSection || (item.key === 'more' && mobileSection === 'appointments')
-            return (
-              <Link
-                key={item.key}
-                to={getPortalWorkspacePath(token, workspaceNavigationScope, item.section)}
-                aria-current={isActive ? 'page' : undefined}
-                className={`flex min-h-[42px] flex-col items-center justify-center gap-0.5 rounded-[16px] text-[0.66rem] font-semibold transition ${isActive ? 'bg-[#e9f8ef] text-[#063f34]' : 'text-[#667085] hover:bg-[#f7f8fa] hover:text-[#344054]'}`}
-                style={isActive ? mobileBottomNavActiveStyle : undefined}
-              >
-                <Icon size={18} strokeWidth={isActive ? 2.4 : 2} />
-                <span>{item.label}</span>
-              </Link>
-            )
-          })}
-        </div>
-      </nav>
-    </main>
+      <ClientPortalBottomNavigation
+        ariaLabel="Buyer portal mobile navigation"
+        activeKey={mobileSection === 'appointments' ? 'more' : mobileSection}
+        items={bottomNavItems.map((item) => ({
+          ...item,
+          to: getPortalWorkspacePath(token, workspaceNavigationScope, item.section),
+        }))}
+      />
+    </ClientPortalResponsiveShell>
   )
 }
 
@@ -6181,6 +6173,7 @@ function SellerMobilePortal({
   documentCenter = {},
   sellerAgencyName,
   sellerAgencyLogoUrl,
+  sellerTheme,
   sellerPropertyTitle,
   sellerPropertyImageUrl,
   sellerStatusLabel,
@@ -6276,10 +6269,10 @@ function SellerMobilePortal({
     'Everything needed from you is currently up to date. Your property team will update this space when the next action is ready.'
   const heroBackgroundStyle = sellerPropertyImageUrl
     ? {
-        backgroundImage: `linear-gradient(90deg, rgba(5, 28, 34, 0.96) 0%, rgba(5, 28, 34, 0.78) 45%, rgba(5, 28, 34, 0.2) 100%), url("${sellerPropertyImageUrl}")`,
+        backgroundImage: `linear-gradient(90deg, ${portalHexToRgba(sellerTheme?.primary, 0.96)} 0%, ${portalHexToRgba(sellerTheme?.primary, 0.8)} 45%, ${portalHexToRgba(sellerTheme?.secondary, 0.22)} 100%), url("${sellerPropertyImageUrl}")`,
       }
     : {
-        backgroundImage: 'linear-gradient(135deg, #062b2b 0%, #15395a 58%, #5f7c67 100%)',
+        backgroundImage: sellerTheme?.heroOverlayStyle?.background || 'linear-gradient(135deg, #062b2b 0%, #15395a 58%, #5f7c67 100%)',
       }
   const selectedUploadTarget = selectedDocumentAction
     ? resolveSellerMobileDocumentUploadTarget(selectedDocumentAction)
@@ -6408,18 +6401,12 @@ function SellerMobilePortal({
   }
 
   return (
-    <main className="min-h-screen bg-[#f5f6f7] font-sans text-[#101823]">
-      <div className="mx-auto min-h-screen w-full max-w-[430px] px-4 pb-28 pt-5">
+    <ClientPortalResponsiveShell persona="seller" className="font-sans" style={sellerTheme?.cssVariables}>
+      <div className="contents">
         <header className="flex items-center justify-between gap-4">
           <div className="min-w-0">
-            {sellerAgencyLogoUrl ? (
-              <img src={sellerAgencyLogoUrl} alt={`${sellerAgencyName || 'Agency'} logo`} className="max-h-12 max-w-[180px] object-contain object-left" />
-            ) : (
-              <div>
-                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[#88929f]">Seller Portal</p>
-                <h1 className="mt-1 truncate text-[1.05rem] font-semibold tracking-[-0.02em] text-[#101823]">{sellerAgencyName || 'Arch9'}</h1>
-              </div>
-            )}
+            <p className="mb-1 text-[0.66rem] font-semibold uppercase tracking-[0.18em] text-[#88929f]">Seller Portal</p>
+            <AgencyBrandMark name={sellerAgencyName || 'Arch9'} logoUrl={sellerAgencyLogoUrl} compact imageClassName="max-h-10 max-w-[180px]" />
           </div>
           <div className="flex shrink-0 items-center gap-2">
             {sellerAgentEmail ? (
@@ -6694,20 +6681,14 @@ function SellerMobilePortal({
         }}
       />
 
-      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-[#e4e7ec] bg-white px-3 pb-[max(0.7rem,env(safe-area-inset-bottom))] pt-2 lg:hidden" aria-label="Seller portal mobile navigation">
-        <div className="mx-auto grid max-w-[430px] grid-cols-5 gap-1">
-          {bottomNavItems.map((item) => {
-            const Icon = item.icon
-            const isActive = item.key === mobileSection || (item.key === 'overview' && mobileSection === 'overview')
-            return (
-              <Link key={item.key} to={getPortalWorkspacePath(token, workspaceNavigationScope, item.section)} className={`flex min-h-[58px] flex-col items-center justify-center gap-1 rounded-[18px] text-[0.72rem] font-semibold transition ${isActive ? 'bg-[#eef8f1] text-[#063f34]' : 'text-[#667085] hover:bg-[#f7f8fa] hover:text-[#344054]'}`}>
-                <Icon size={21} strokeWidth={isActive ? 2.4 : 2} />
-                <span>{item.label}</span>
-              </Link>
-            )
-          })}
-        </div>
-      </nav>
+      <ClientPortalBottomNavigation
+        ariaLabel="Seller portal mobile navigation"
+        activeKey={mobileSection}
+        items={bottomNavItems.map((item) => ({
+          ...item,
+          to: getPortalWorkspacePath(token, workspaceNavigationScope, item.section),
+        }))}
+      />
 
       {mobileDocumentUploadPickerOpen ? (
         <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-labelledby="seller-mobile-upload-picker-title">
@@ -6905,7 +6886,7 @@ function SellerMobilePortal({
           </section>
         </div>
       ) : null}
-    </main>
+    </ClientPortalResponsiveShell>
   )
 }
 
@@ -7368,7 +7349,7 @@ function SellerPropertyHero({
 
       <div className="relative min-h-[360px] overflow-hidden rounded-[20px] border border-[#dbe5ef] bg-[#0b2e2a] shadow-[0_18px_38px_rgba(15,23,42,0.13)] xl:min-h-[410px]">
         {sellerPropertyImageUrl ? (
-          <img src={sellerPropertyImageUrl} alt={sellerPropertyTitle || 'Property listing'} className="absolute inset-0 h-full w-full object-cover" />
+          <img src={sellerPropertyImageUrl} alt={sellerPropertyTitle || 'Property listing'} className="absolute inset-0 h-full w-full object-cover" fetchPriority="high" decoding="async" />
         ) : (
           <div className="absolute inset-0 grid place-items-center bg-[linear-gradient(135deg,#0b2e2a_0%,#173f55_58%,#f3f8f5_58%,#f3f8f5_100%)]">
             <div className="rounded-[16px] border border-white/20 bg-white/85 px-4 py-3 text-center shadow-[0_12px_28px_rgba(15,23,42,0.16)]">
@@ -8578,6 +8559,10 @@ function ClientPortal() {
   const isDemoRoute = useMemo(() => location.pathname.startsWith('/demo/'), [location.pathname])
   const isSellerPortalToken = useMemo(() => String(token || '').trim().toLowerCase().startsWith('seller-'), [token])
   const isDemoMode = isDemoRoute || Boolean(workspaceData?.permissions?.demoOnly)
+  useClientPortalLaunchMetrics({
+    persona: portalDataWorkspace === 'seller' || isSellerPortalToken ? 'seller' : 'buyer',
+    ready: Boolean(portal),
+  })
 
   const requestedSection = useMemo(
     () => getPortalSectionFromRoute(location.pathname, routeSection),
@@ -8730,6 +8715,10 @@ function ClientPortal() {
         token,
         durationMs: Date.now() - startedAt,
       })
+      if (isDemoRoute && hasCoreData) {
+        markRouteMilestone('interactive_ready')
+        return
+      }
     } catch (coreError) {
       if (!isCurrentLoad()) return
       if (isSellerPortalAuthRequiredError(coreError)) {
@@ -10563,16 +10552,7 @@ function ClientPortal() {
   }, [activeSection, effectiveWorkspace, navigate, portal, requestedSection, token])
 
   if (loading) {
-    return (
-      <main className="min-h-screen bg-[#f3f6fb] px-5 py-8 md:px-8">
-        <section className="mx-auto max-w-[760px] rounded-[24px] border border-[#dbe5ef] bg-white px-6 py-7 text-center shadow-[0_16px_34px_rgba(15,23,42,0.06)]">
-          <h1 className="text-[1.2rem] font-semibold tracking-[-0.02em] text-[#142132]">Preparing your portal</h1>
-          <p className="mt-2 text-sm leading-6 text-[#5f7288]">
-            We are loading your portal and latest updates.
-          </p>
-        </section>
-      </main>
-    )
+    return <ClientPortalStatePanel state="loading" />
   }
 
   if (sellerPortalAuth?.authRequired) {
@@ -10593,34 +10573,21 @@ function ClientPortal() {
   }
 
   if (!portal) {
+    const normalizedLoadError = String(error || '').toLowerCase()
+    const portalState = normalizedLoadError.includes('expired')
+      ? 'expired'
+      : normalizedLoadError.includes('unauthor') || normalizedLoadError.includes('access')
+        ? 'unauthorised'
+        : 'error'
     return (
-      <main className="min-h-screen bg-[#f3f6fb] px-5 py-8 md:px-8">
-        <section className="mx-auto max-w-[760px] rounded-[24px] border border-[#f1d4cf] bg-white px-6 py-7 shadow-[0_16px_34px_rgba(15,23,42,0.06)]">
-          <h1 className="text-[1.2rem] font-semibold tracking-[-0.02em] text-[#142132]">We could not load your client portal</h1>
-          <p className="mt-2 text-sm leading-6 text-[#b42318]">
-            {error || 'Your portal link may be invalid, expired, or temporarily unavailable.'}
-          </p>
-          <p className="mt-1 text-sm leading-6 text-[#5f7288]">
-            Please retry now. If this continues, contact your property representative for a new secure link.
-          </p>
-          <div className="mt-4 flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => void loadPortal()}
-              className="inline-flex min-h-[40px] items-center justify-center rounded-[12px] bg-[#2f5478] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#244463]"
-            >
-              Retry
-            </button>
-            <button
-              type="button"
-              onClick={() => navigate('/')}
-              className="inline-flex min-h-[40px] items-center justify-center rounded-[12px] border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff]"
-            >
-              Go to Home
-            </button>
-          </div>
-        </section>
-      </main>
+      <ClientPortalStatePanel
+        state={portalState}
+        description={error || ''}
+        actions={[
+          { label: 'Retry', onClick: () => void loadPortal() },
+          { label: 'Go to Home', onClick: () => navigate('/') },
+        ]}
+      />
     )
   }
 
@@ -12298,6 +12265,47 @@ function ClientPortal() {
     activeSellingContext?.agencyLogoUrl,
     activeSellingContext?.agency_logo_url,
   )
+  const sellerPortalPrimaryColour = normalizePortalBrandColour(
+    pickFirstText(
+      portal?.listing?.branding?.primaryColour,
+      portal?.listing?.branding?.primaryColor,
+      portal?.listing?.branding?.primary_colour,
+      activeSellingContext?.branding?.primaryColour,
+      activeSellingContext?.branding?.primaryColor,
+      portal?.branding?.primaryColour,
+      portal?.branding?.primaryColor,
+    ),
+    '#0b3b3c',
+  )
+  const sellerPortalSecondaryColour = normalizePortalBrandColour(
+    pickFirstText(
+      portal?.listing?.branding?.secondaryColour,
+      portal?.listing?.branding?.secondaryColor,
+      portal?.listing?.branding?.secondary_colour,
+      activeSellingContext?.branding?.secondaryColour,
+      activeSellingContext?.branding?.secondaryColor,
+      portal?.branding?.secondaryColour,
+      portal?.branding?.secondaryColor,
+    ),
+    '#152432',
+  )
+  const sellerPortalAccentColour = normalizePortalBrandColour(
+    pickFirstText(
+      portal?.listing?.branding?.accentColour,
+      portal?.listing?.branding?.accentColor,
+      portal?.listing?.branding?.accent_colour,
+      activeSellingContext?.branding?.accentColour,
+      activeSellingContext?.branding?.accentColor,
+      portal?.branding?.accentColour,
+      portal?.branding?.accentColor,
+    ),
+    '#2fd18a',
+  )
+  const sellerPortalTheme = createBuyerPortalTheme({
+    primaryColour: sellerPortalPrimaryColour,
+    secondaryColour: sellerPortalSecondaryColour,
+    accentColour: sellerPortalAccentColour,
+  })
   const sellerAgentName = pickFirstText(
     portal?.transaction?.assigned_agent,
     activeSellingContext?.assignedAgentName,
@@ -13436,11 +13444,14 @@ function ClientPortal() {
 
   return (
     <main
-      className="min-h-screen bg-[#f3f6fb] text-[#142132]"
+      className="agency-client-portal min-h-screen bg-[#f3f6fb] text-[#142132]"
+      style={effectiveWorkspace === 'seller' ? sellerPortalTheme.cssVariables : buyerPortalTheme.cssVariables}
+      data-client-portal-theme="agency"
       data-buyer-portal-release={effectiveWorkspace === 'seller' ? undefined : buyerPortalCutoverReadiness.phase}
       data-buyer-portal-aligned={effectiveWorkspace === 'seller' ? undefined : buyerPortalCutoverReadiness.releaseLabel}
       data-buyer-portal-source={effectiveWorkspace === 'seller' ? undefined : buyerPortalCutoverReadiness.source}
     >
+      <PortalResilienceStatus refreshing={hydratingPortal} />
       {documentActionError ? (
         <div className="fixed left-4 right-4 top-4 z-[70] mx-auto max-w-[560px] rounded-[16px] border border-[#f1d4cf] bg-white px-4 py-3 text-sm font-semibold text-[#b42318] shadow-[0_18px_44px_rgba(15,23,42,0.16)]">
           {documentActionError}
@@ -13455,6 +13466,7 @@ function ClientPortal() {
             documentCenter={workspaceData?.documentCenter || {}}
             sellerAgencyName={sellerAgencyName}
             sellerAgencyLogoUrl={sellerAgencyLogoUrl}
+            sellerTheme={sellerPortalTheme}
             sellerPropertyTitle={sellerPropertyTitle}
             sellerPropertyImageUrl={sellerPropertyImageUrl}
             sellerStatusLabel={sellerDashboardStatusLabel}
@@ -13564,7 +13576,7 @@ function ClientPortal() {
           className={`fixed inset-y-0 left-0 z-30 hidden flex-col overflow-y-auto bg-[#152432] text-slate-100 [background-image:radial-gradient(circle_at_18%_-6%,rgba(108,152,193,0.18)_0%,transparent_34%),linear-gradient(180deg,#243c4f_0%,#152432_100%)] lg:flex ${
             effectiveWorkspace === 'seller' ? 'w-[280px] px-5 py-4' : 'w-[264px] px-6 py-6'
           }`}
-          style={effectiveWorkspace === 'seller' ? undefined : buyerPortalSidebarStyle}
+          style={effectiveWorkspace === 'seller' ? sellerPortalTheme.sidebarStyle : buyerPortalSidebarStyle}
           data-buyer-portal-shell={effectiveWorkspace === 'seller' ? undefined : 'desktop-sidebar'}
         >
           <div className={`border-b border-white/10 ${effectiveWorkspace === 'seller' ? 'pb-3 pt-[1.2rem]' : 'pb-5'}`}>
@@ -13643,9 +13655,10 @@ function ClientPortal() {
                           className={[
                             'relative flex min-h-[44px] items-center gap-3 rounded-[10px] border px-3 py-2 text-[0.9rem] font-medium transition duration-150 ease-out',
                             isActive
-                              ? 'border-[rgba(52,211,153,0.42)] bg-[rgba(22,95,76,0.5)] text-white shadow-[inset_3px_0_0_#2fd18a]'
+                              ? 'border-white/30 bg-white/15 text-white'
                               : 'border-transparent text-slate-300 hover:border-white/10 hover:bg-white/5 hover:text-white',
                           ].join(' ')}
+                          style={isActive ? sellerPortalTheme.activeNavigationStyle : undefined}
                         >
                           <Icon size={16} />
                           <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-normal [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]">
@@ -13673,13 +13686,13 @@ function ClientPortal() {
                 <p className="mt-1 text-xs leading-5 text-[#c0cfde]">We&apos;re here for you.</p>
                 <div className="mt-3 grid gap-2">
                   {sellerAgentEmail ? (
-                    <a href={`mailto:${sellerAgentEmail}`} className="inline-flex min-h-[36px] items-center justify-center gap-2 rounded-[9px] bg-[#12a06b] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#0f855b]">
+                    <a href={`mailto:${sellerAgentEmail}`} className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-[10px] px-3 py-2 text-xs font-semibold transition hover:brightness-105" style={sellerPortalTheme.accentActionStyle}>
                       <MessageCircle size={14} />
                       Message Agent
                     </a>
                   ) : null}
                   {sellerAgentPhone ? (
-                    <a href={`tel:${sellerAgentPhone}`} className="inline-flex min-h-[36px] items-center justify-center gap-2 rounded-[9px] border border-white/12 px-3 py-2 text-xs font-semibold text-white transition hover:bg-white/5">
+                    <a href={`tel:${sellerAgentPhone}`} className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-[10px] border border-white/12 px-3 py-2 text-xs font-semibold text-white transition hover:bg-white/5">
                       <PhoneCall size={14} />
                       Call Agent
                     </a>

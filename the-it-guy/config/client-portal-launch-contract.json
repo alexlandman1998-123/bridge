@@ -1,0 +1,142 @@
+{
+  "schemaVersion": 1,
+  "contractId": "client-portal-launch-v1",
+  "status": "phase-0-approved",
+  "principles": {
+    "capabilityParity": "required",
+    "identicalLayout": false,
+    "canonicalDataPerCapability": true,
+    "mobileFirstMinimumWidthPx": 360,
+    "minimumTouchTargetPx": 44
+  },
+  "personas": ["buyer", "seller"],
+  "viewports": {
+    "mobileSmall": { "width": 360, "height": 800 },
+    "mobileStandard": { "width": 390, "height": 844 },
+    "tablet": { "width": 768, "height": 1024 },
+    "desktop": { "width": 1440, "height": 900 }
+  },
+  "performanceBudgets": {
+    "mobileUsefulContentMs": 1500,
+    "mobileSlowNetworkCoreContentMs": 2500,
+    "cachedNavigationResponseMs": 100,
+    "maximumCumulativeLayoutShift": 0.1,
+    "routeCrashCount": 0,
+    "deadControlCount": 0
+  },
+  "branding": {
+    "requiredTokens": [
+      "agencyName",
+      "logoLightUrl",
+      "logoDarkUrl",
+      "primaryColour",
+      "secondaryColour",
+      "accentColour",
+      "supportContact"
+    ],
+    "systemControlledSemanticTokens": [
+      "success",
+      "warning",
+      "error",
+      "information",
+      "focus"
+    ],
+    "requirements": [
+      "Agency identity is visible on every primary portal screen.",
+      "Agency colours never override semantic status meaning.",
+      "Every supported theme meets WCAG AA contrast for body text and controls.",
+      "Missing or invalid brand assets fall back without breaking layout."
+    ]
+  },
+  "globalStates": ["loading", "ready", "empty", "error", "offline", "expired-link", "unauthorised"],
+  "surfaces": [
+    {
+      "id": "overview",
+      "personas": ["buyer", "seller"],
+      "primaryNavigation": true,
+      "requiredCapabilities": ["property-summary", "current-stage", "next-action", "progress-summary", "latest-update", "support-entry"],
+      "requiredActions": ["open-current-stage", "complete-next-action", "open-all-updates", "contact-support"]
+    },
+    {
+      "id": "journey",
+      "personas": ["buyer", "seller"],
+      "primaryNavigation": true,
+      "requiredCapabilities": ["all-stages", "current-stage", "completed-dates", "stage-explanations", "blockers", "next-step"],
+      "requiredActions": ["inspect-stage", "open-related-action"]
+    },
+    {
+      "id": "documents",
+      "personas": ["buyer", "seller"],
+      "primaryNavigation": true,
+      "requiredCapabilities": ["requirements", "document-status", "request-reason", "deadline", "review-state", "document-history"],
+      "requiredActions": ["upload", "replace", "view", "download", "retry-failed-upload"]
+    },
+    {
+      "id": "finance",
+      "personas": ["buyer"],
+      "primaryNavigation": true,
+      "requiredCapabilities": ["application-status", "application-progress", "bank-submissions", "bank-responses", "offers", "required-actions"],
+      "requiredActions": ["open-bond-application", "complete-required-action", "review-offer", "open-required-documents"]
+    },
+    {
+      "id": "bond-application",
+      "personas": ["buyer"],
+      "primaryNavigation": false,
+      "requiredCapabilities": ["section-progress", "prefilled-values", "validation", "save-state", "submission-readiness"],
+      "requiredActions": ["edit-section", "save-and-continue", "save-and-exit", "submit-when-ready"]
+    },
+    {
+      "id": "offers",
+      "personas": ["seller"],
+      "primaryNavigation": true,
+      "requiredCapabilities": ["offer-list", "offer-status", "commercial-summary", "conditions", "comparison", "decision-history"],
+      "requiredActions": ["open-offer", "review-offer", "record-decision", "contact-agent"]
+    },
+    {
+      "id": "appointments",
+      "personas": ["buyer", "seller"],
+      "primaryNavigation": false,
+      "requiredCapabilities": ["upcoming", "past", "appointment-details", "contact", "location-or-call-link"],
+      "requiredActions": ["open-appointment", "contact-organiser", "open-location-or-call"]
+    },
+    {
+      "id": "messages",
+      "personas": ["buyer", "seller"],
+      "primaryNavigation": false,
+      "requiredCapabilities": ["conversation", "sender-identity", "timestamps", "unread-state", "delivery-state"],
+      "requiredActions": ["read-message", "send-message", "retry-failed-message"]
+    },
+    {
+      "id": "team",
+      "personas": ["buyer", "seller"],
+      "primaryNavigation": false,
+      "requiredCapabilities": ["main-contact", "role-players", "roles", "organisations", "current-responsibility"],
+      "requiredActions": ["call", "email", "message"]
+    },
+    {
+      "id": "support",
+      "personas": ["buyer", "seller"],
+      "primaryNavigation": false,
+      "requiredCapabilities": ["agency-contact", "main-contact", "contextual-help", "recovery-guidance"],
+      "requiredActions": ["call", "email", "message", "retry"]
+    }
+  ],
+  "responsiveRules": [
+    "Every required capability and action is reachable on mobile and desktop.",
+    "A mobile composition may differ from desktop but must use the same canonical data and status meaning.",
+    "No primary task requires horizontal page scrolling.",
+    "Wide timelines, comparisons, and steppers must provide an obvious mobile interaction or responsive alternative.",
+    "Navigation exposes the active location and every required surface in no more than two interactions.",
+    "Fixed navigation does not obscure content or controls and respects safe-area insets.",
+    "Long names, addresses, values, and translated labels wrap or truncate without losing the underlying value."
+  ],
+  "releaseGates": [
+    "Missing required evidence blocks release.",
+    "All contract surfaces have approved buyer/seller desktop and mobile evidence where applicable.",
+    "Every global state has an approved presentation and recovery action.",
+    "No critical or high-severity accessibility, navigation, parity, performance, or runtime defects remain.",
+    "Brand theme fixtures pass contrast and missing-asset tests.",
+    "Physical-device smoke tests pass on current iOS and Android devices.",
+    "Product owner signs off the buyer and seller task scripts."
+  ]
+}

@@ -26,8 +26,15 @@ import {
   UploadCloud,
   UserRound,
   Users,
+  X,
 } from 'lucide-react'
 import BuyerPortalDesktopSidebar from '../components/client-portal/BuyerPortalDesktopSidebar'
+import AgencyBrandMark from '../components/client-portal/AgencyBrandMark'
+import PortalResilienceStatus from '../components/client-portal/PortalResilienceStatus'
+import {
+  ClientPortalBottomNavigation,
+  ClientPortalResponsiveShell,
+} from '../components/client-portal/ClientPortalResponsiveFoundation'
 import BuyerPortalJourney from '../components/client-portal/BuyerPortalJourney'
 import BuyerDocumentWorkspace, { BuyerDocumentSummary } from '../components/client-portal/documents/BuyerDocumentWorkspace'
 import BuyerFinanceWorkspace from '../components/client-portal/finance/BuyerFinanceWorkspace'
@@ -46,6 +53,7 @@ import { buildBuyerFinancePresentationModel } from '../core/clientPortal/buyerFi
 import { buildBuyerTeamPresentationModel } from '../core/clientPortal/buyerTeamPresentationModel'
 import { buildBuyerPortalCutoverReadiness } from '../core/clientPortal/buyerPortalCutoverReadiness'
 import { resolveProspectDemoConfig } from '../lib/prospectDemoConfig'
+import useClientPortalLaunchMetrics from '../hooks/useClientPortalLaunchMetrics'
 
 const DEFAULT_BRAND = {
   agencyName: 'Demo Agency',
@@ -68,7 +76,7 @@ const DEMO_NAV = [
   { key: 'team', label: 'Your Team', icon: Users },
 ]
 
-const MOBILE_DEMO_NAV = DEMO_NAV.filter((item) => item.key !== 'messages')
+const MOBILE_DEMO_NAV = DEMO_NAV.filter((item) => ['overview', 'progress', 'documents', 'finance'].includes(item.key))
 
 const DEMO_JOURNEY_STAGES = [
   {
@@ -764,40 +772,13 @@ function statusClasses(tone = 'info') {
   return 'border-sky-200 bg-sky-50 text-sky-700'
 }
 
-function ProspectBuyerDemoLoading() {
-  return (
-    <main className="min-h-screen bg-[#f3f6fb] text-[#142132]" aria-busy="true">
-      <div className="flex min-h-screen">
-        <aside className="hidden w-[264px] shrink-0 bg-[#152432] p-6 lg:block" aria-hidden="true">
-          <div className="h-12 w-36 animate-pulse rounded-[12px] bg-white/12" />
-          <div className="mt-8 grid gap-3">
-            {Array.from({ length: 6 }, (_, index) => (
-              <div className="h-11 animate-pulse rounded-[12px] bg-white/8" key={index} />
-            ))}
-          </div>
-        </aside>
-        <section className="w-full px-4 py-5 sm:px-6 lg:px-8 lg:py-8">
-          <div className="mx-auto max-w-[1280px]">
-            <div className="h-[300px] animate-pulse rounded-[24px] bg-slate-200 sm:h-[360px]" aria-hidden="true" />
-            <div className="mt-6 grid gap-5 lg:grid-cols-2" aria-hidden="true">
-              <div className="h-64 animate-pulse rounded-[22px] bg-white" />
-              <div className="h-64 animate-pulse rounded-[22px] bg-white" />
-            </div>
-            <p className="sr-only" role="status" aria-live="polite">Loading buyer portal</p>
-          </div>
-        </section>
-      </div>
-    </main>
-  )
-}
-
 export default function ProspectBuyerDemo() {
   const { token = '', section = 'overview' } = useParams()
   const activeSection = ['overview', 'progress', 'documents', 'finance', 'bond-application', 'messages', 'team'].includes(section) ? section : 'overview'
   const [config, setConfig] = useState(DEFAULT_BRAND)
-  const [loading, setLoading] = useState(true)
-  const [loadedConfigToken, setLoadedConfigToken] = useState('')
+  const [loading, setLoading] = useState(false)
   const [demoUploadComplete, setDemoUploadComplete] = useState(false)
+  useClientPortalLaunchMetrics({ persona: 'buyer', ready: true })
 
   useEffect(() => {
     let cancelled = false
@@ -817,7 +798,6 @@ export default function ProspectBuyerDemo() {
         samplePropertyImageUrl: resolved.samplePropertyImageUrl || DEFAULT_BRAND.samplePropertyImageUrl,
         samplePropertyAddress: resolved.samplePropertyAddress || DEFAULT_BRAND.samplePropertyAddress,
       })
-      setLoadedConfigToken(token)
       setLoading(false)
     }
     void loadConfig()
@@ -883,17 +863,18 @@ export default function ProspectBuyerDemo() {
   const mainContact = transactionTeam.find((member) => member.isMainContact) || transactionTeam[0]
 
   if (!token) return <Navigate to="/" replace />
-  if (loading || loadedConfigToken !== token) return <ProspectBuyerDemoLoading />
-
   const heroOverlayStyle = brand.heroOverlayStyle
 
   return (
     <main
-      className="min-h-screen bg-[#f3f6fb] text-[#142132]"
+      className="agency-client-portal min-h-screen bg-[#f3f6fb] text-[#142132]"
+      style={brand.cssVariables}
+      data-client-portal-theme="agency"
       data-buyer-portal-release={buyerPortalCutoverReadiness.phase}
       data-buyer-portal-aligned={buyerPortalCutoverReadiness.releaseLabel}
       data-buyer-portal-source={buyerPortalCutoverReadiness.source}
     >
+      <PortalResilienceStatus refreshing={loading} />
       <BuyerPortalDesktopSidebar
         brandName={config.agencyName}
         brandLogoUrl={config.logoDarkUrl}
@@ -943,25 +924,27 @@ export default function ProspectBuyerDemo() {
 }
 
 function MobileBuyerPortal({ activeSection, brand, config, token, loading, demoUploadComplete, financeModel, teamModel, onCompleteUpload }) {
-  const mobileSection = activeSection === 'messages' ? 'team' : activeSection
+  const [menuOpen, setMenuOpen] = useState(false)
+  const mobileSection = activeSection
   const pageTitles = {
     overview: '',
     progress: 'Transfer Journey',
     documents: 'Your documents',
     finance: 'Finance',
     'bond-application': 'Bond application',
+    messages: 'Messages',
     team: 'Your team',
   }
 
   return (
-    <div className="min-h-screen bg-[#f7f9fc] pb-[calc(88px+env(safe-area-inset-bottom))] text-[#142132]">
-      <div className="mx-auto max-w-[430px] px-4 pt-4">
+    <ClientPortalResponsiveShell persona="buyer">
         <MobileHeader
           activeSection={mobileSection}
           agencyName={config.agencyName}
           logoUrl={config.logoDarkUrl || config.logoLightUrl}
           brand={brand}
           title={pageTitles[mobileSection]}
+          onOpenMenu={() => setMenuOpen(true)}
         />
 
         {mobileSection === 'overview' ? (
@@ -985,63 +968,85 @@ function MobileBuyerPortal({ activeSection, brand, config, token, loading, demoU
         ) : null}
         {mobileSection === 'finance' ? <MobileFinance brand={brand} model={financeModel} onCompleteUpload={onCompleteUpload} token={token} /> : null}
         {mobileSection === 'bond-application' ? <MobileBondApplication brand={brand} demoUploadComplete={demoUploadComplete} token={token} /> : null}
+        {mobileSection === 'messages' ? <MobileMessages brand={brand} model={teamModel} /> : null}
         {mobileSection === 'team' ? <MobileTeam brand={brand} model={teamModel} /> : null}
-      </div>
-      <MobileBottomNav activeSection={mobileSection} brand={brand} token={token} />
-    </div>
+      <MobileBottomNav activeSection={mobileSection} brand={brand} token={token} onOpenMenu={() => setMenuOpen(true)} />
+      <MobilePortalMenu open={menuOpen} activeSection={mobileSection} brand={brand} token={token} onClose={() => setMenuOpen(false)} />
+    </ClientPortalResponsiveShell>
   )
 }
 
-function MobileHeader({ activeSection, agencyName, logoUrl, brand, title }) {
+function MobileHeader({ activeSection, agencyName, logoUrl, brand, title, onOpenMenu }) {
   const isOverview = activeSection === 'overview'
 
   return (
     <header className="mb-4 flex min-h-11 items-center justify-between gap-3">
       <div className="min-w-0">
         {isOverview ? (
-          logoUrl ? (
-            <span className="inline-flex min-h-12 items-center gap-2 rounded-[14px] px-3 py-2 shadow-sm" style={{ backgroundColor: brand.primary }}>
-              <img src={logoUrl} alt={`${agencyName} logo`} className="max-h-8 max-w-[105px] object-contain object-left" />
-              <span className="max-w-[118px] truncate text-sm font-semibold uppercase tracking-[0.04em] text-white">{agencyName}</span>
-            </span>
-          ) : (
-            <strong className="text-base font-semibold">{agencyName}</strong>
-          )
+          <span className="inline-flex min-h-12 items-center rounded-[14px] px-3 py-2 shadow-sm" style={{ backgroundColor: brand.primary, color: brand.onPrimary }}>
+            <AgencyBrandMark name={agencyName} logoUrl={logoUrl} inverse compact imageClassName="max-h-8 max-w-[132px]" />
+          </span>
         ) : (
           <div>
             <h1 className="text-[1.55rem] font-semibold leading-tight tracking-[-0.05em] text-[#142132]">{title}</h1>
           </div>
         )}
       </div>
-      <button type="button" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white text-[#142132] shadow-sm" aria-label="Open menu">
+      <button type="button" onClick={onOpenMenu} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white text-[#142132] shadow-sm" aria-label="Open menu" aria-haspopup="dialog">
         <span className="text-xl leading-none">≡</span>
       </button>
     </header>
   )
 }
 
-function MobileBottomNav({ activeSection, brand, token }) {
+function MobileBottomNav({ activeSection, brand, token, onOpenMenu }) {
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-[#dfe7ee] bg-white/96 px-3 pb-[calc(8px+env(safe-area-inset-bottom))] pt-2 shadow-[0_-14px_32px_rgba(15,23,42,0.12)] backdrop-blur">
-      <div className="mx-auto grid max-w-[430px] gap-1" style={{ gridTemplateColumns: `repeat(${MOBILE_DEMO_NAV.length}, minmax(0, 1fr))` }}>
-        {MOBILE_DEMO_NAV.map((item) => {
-          const Icon = item.icon
-          const active = item.key === activeSection
-          const label = item.key === 'progress' ? 'Journey' : item.key === 'documents' ? 'Docs' : item.key === 'bond-application' ? 'Bond' : item.key === 'team' ? 'Team' : item.label
-          return (
-            <Link
-              key={item.key}
-              to={getDemoPath(token, item.key)}
-              className="flex min-h-[52px] flex-col items-center justify-center gap-1 rounded-[14px] text-[0.6rem] font-semibold transition"
-              style={active ? { color: brand.primary } : { color: '#667085' }}
-            >
-              <Icon size={18} strokeWidth={active ? 2.4 : 2} />
-              <span>{label}</span>
-            </Link>
-          )
-        })}
-      </div>
-    </nav>
+    <ClientPortalBottomNavigation
+      ariaLabel="Buyer portal mobile navigation"
+      activeKey={activeSection}
+      items={MOBILE_DEMO_NAV.map((item) => ({
+        ...item,
+        to: getDemoPath(token, item.key),
+        mobileLabel: item.key === 'progress' ? 'Journey' : item.key === 'documents' ? 'Docs' : item.label,
+      }))}
+      secondaryAction={{
+        label: 'More',
+        ariaLabel: 'Open more portal sections',
+        ariaHasPopup: 'dialog',
+        active: ['bond-application', 'messages', 'team'].includes(activeSection),
+        onClick: onOpenMenu,
+      }}
+    />
+  )
+}
+
+function MobilePortalMenu({ open, activeSection, brand, token, onClose }) {
+  if (!open) return null
+  return (
+    <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="Portal navigation">
+      <button type="button" className="absolute inset-0 bg-[#0d1b2a]/45" onClick={onClose} aria-label="Close menu" />
+      <section className="absolute inset-x-3 bottom-[calc(12px+env(safe-area-inset-bottom))] rounded-[24px] bg-white p-4 shadow-[0_24px_70px_rgba(15,23,42,0.3)]">
+        <div className="flex items-center justify-between gap-3 px-1 pb-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#667085]">Navigate</p>
+            <h2 className="mt-1 text-lg font-semibold text-[#142132]">Buyer portal</h2>
+          </div>
+          <button type="button" onClick={onClose} className="flex h-11 w-11 items-center justify-center rounded-full bg-[#f1f5f9] text-[#142132]" aria-label="Close menu"><X size={20} /></button>
+        </div>
+        <nav className="grid grid-cols-2 gap-2">
+          {DEMO_NAV.map((item) => {
+            const Icon = item.icon
+            const active = item.key === activeSection
+            return (
+              <Link key={item.key} to={getDemoPath(token, item.key)} onClick={onClose} className="flex min-h-[58px] items-center gap-3 rounded-[14px] border px-3 text-sm font-semibold" style={{ borderColor: active ? hexToRgba(brand.primary, 0.35) : '#e2e8f0', backgroundColor: active ? hexToRgba(brand.primary, 0.08) : '#ffffff', color: active ? brand.primary : '#344054' }}>
+                <Icon size={19} />
+                <span>{item.label}</span>
+              </Link>
+            )
+          })}
+        </nav>
+      </section>
+    </div>
   )
 }
 
@@ -1053,7 +1058,7 @@ function MobileOverview({ brand, config, loading, demoUploadComplete, onComplete
   return (
     <div className="space-y-3">
       <section className="relative overflow-hidden rounded-[22px] bg-slate-950 text-white shadow-[0_18px_42px_rgba(15,23,42,0.18)]">
-        <img src={config.samplePropertyImageUrl} alt={config.samplePropertyAddress} className="absolute inset-0 h-full w-full object-cover" />
+        <img src={config.samplePropertyImageUrl} alt={config.samplePropertyAddress} className="absolute inset-0 h-full w-full object-cover" fetchPriority="high" decoding="async" />
         <div className="absolute inset-0 bg-gradient-to-b from-black/18 via-black/20 to-black/82" />
         <div className="relative flex min-h-[270px] flex-col justify-end p-5">
           <p className="mb-auto text-xs font-semibold uppercase tracking-[0.16em] text-white/75">{loading ? 'Loading demo' : 'Your purchase'}</p>
@@ -1284,7 +1289,7 @@ function MobileFinance({ brand, model, onCompleteUpload, token }) {
           </div>
         </div>
       </section>
-      <BondJourneyTracker brand={brand} currentStageIndex={model.currentStageIndex} />
+      <BondJourneyTracker brand={brand} currentStageIndex={model.currentStageIndex} compact />
       {model.firstAction ? (
         <section className="rounded-[18px] border border-amber-200 bg-amber-50/80 p-4">
           <p className="text-xs font-semibold uppercase tracking-[0.12em] text-amber-700">Next action</p>
@@ -1295,7 +1300,7 @@ function MobileFinance({ brand, model, onCompleteUpload, token }) {
       ) : (
         <section className="rounded-[18px] border border-emerald-200 bg-emerald-50/80 p-4"><p className="text-sm font-semibold text-emerald-700">Finance documents received</p><p className="mt-1 text-sm leading-5 text-[#52657b]">Your application is ready for its next review.</p></section>
       )}
-      <Link to={getDemoPath(token, 'bond-application')} className="flex min-h-11 items-center justify-center rounded-[12px] text-sm font-semibold text-white" style={{ backgroundColor: brand.primary }}>
+      <Link to={getDemoPath(token, 'bond-application')} className="flex min-h-11 items-center justify-center rounded-[12px] text-sm font-semibold" style={brand.primaryActionStyle}>
         Open bond application
       </Link>
       <section>
@@ -1353,6 +1358,57 @@ function MobileBankRow({ bank, brand }) {
         <ChevronRight size={16} style={{ color: brand.primary }} />
       </span>
     </button>
+  )
+}
+
+function MobileMessages({ brand, model }) {
+  const [draft, setDraft] = useState('')
+  const [sentMessages, setSentMessages] = useState([])
+  const mainContact = model.mainContact
+
+  function sendDemoMessage() {
+    const message = draft.trim()
+    if (!message) return
+    setSentMessages((current) => [...current, { id: `buyer-message-${current.length + 1}`, message, time: 'Just now' }])
+    setDraft('')
+  }
+
+  return (
+    <div className="space-y-4">
+      <p className="-mt-2 text-sm leading-5 text-[#52657b]">Updates and questions shared with your transaction team.</p>
+      <section className="rounded-[18px] border border-[#dbe5ef] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+        <div className="flex items-center gap-3 border-b border-[#e4ebf3] pb-4">
+          <Avatar member={mainContact} size="sm" />
+          <div className="min-w-0 flex-1">
+            <h2 className="text-sm font-semibold text-[#142132]">Your transaction team</h2>
+            <p className="mt-0.5 text-xs text-[#52657b]">{mainContact.name} is your main contact</p>
+          </div>
+          <span className="rounded-full bg-emerald-50 px-2 py-1 text-[0.65rem] font-semibold text-emerald-700">Active</span>
+        </div>
+        <div className="space-y-3 py-4" aria-live="polite">
+          {DEMO_TEAM_UPDATES.slice(0, 2).reverse().map((update) => (
+            <article key={`${update.person}-${update.time}`} className="max-w-[92%] rounded-[16px] rounded-bl-[5px] bg-[#f1f5f9] px-4 py-3">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <strong className="text-xs text-[#142132]">{update.person}</strong>
+                <span className="text-[0.68rem] text-[#7b8ca2]">{update.time}</span>
+              </div>
+              <p className="mt-1.5 text-sm leading-5 text-[#344054]">{update.message}</p>
+            </article>
+          ))}
+          {sentMessages.map((message) => (
+            <article key={message.id} className="ml-auto max-w-[88%] rounded-[16px] rounded-br-[5px] px-4 py-3" style={brand.primaryActionStyle}>
+              <p className="text-sm leading-5">{message.message}</p>
+              <p className="mt-1 text-right text-[0.68rem] opacity-70">{message.time} · Sent</p>
+            </article>
+          ))}
+        </div>
+        <div className="border-t border-[#e4ebf3] pt-4">
+          <label htmlFor="buyer-mobile-message" className="text-xs font-semibold text-[#52657b]">Message your team</label>
+          <textarea id="buyer-mobile-message" value={draft} onChange={(event) => setDraft(event.target.value)} rows={3} placeholder="Type your message…" className="mt-2 w-full resize-none rounded-[14px] border border-[#cfd9e4] bg-white px-3 py-3 text-base text-[#142132] outline-none focus:ring-2" style={{ '--tw-ring-color': hexToRgba(brand.primary, 0.28) }} />
+          <button type="button" onClick={sendDemoMessage} disabled={!draft.trim()} className="mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-[12px] text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-45" style={brand.primaryActionStyle}><MessageCircle size={16} />Send message</button>
+        </div>
+      </section>
+    </div>
   )
 }
 
@@ -1433,7 +1489,7 @@ function MobileMainContactCard({ brand, member }) {
         </div>
       </div>
       <div className="mt-4 grid grid-cols-2 gap-3">
-        <a href={`mailto:${member.email}`} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[12px] text-sm font-semibold text-white" style={{ backgroundColor: brand.primary }}>
+        <a href={`mailto:${member.email}`} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[12px] text-sm font-semibold" style={brand.primaryActionStyle}>
           <MessageCircle size={15} />
           Message {member.name.split(' ')[0]}
         </a>
@@ -1520,7 +1576,7 @@ function DemoContent({ activeSection, brand, config, token, heroOverlayStyle, lo
   return (
     <div className="space-y-6">
       <section className="relative mt-5 overflow-hidden rounded-[28px] border border-white/70 bg-slate-900 text-white shadow-[0_22px_54px_rgba(15,23,42,0.16)] lg:mt-0">
-        <img src={config.samplePropertyImageUrl} alt={config.samplePropertyAddress} className="absolute inset-0 h-full w-full object-cover" />
+        <img src={config.samplePropertyImageUrl} alt={config.samplePropertyAddress} className="absolute inset-0 h-full w-full object-cover" fetchPriority="high" decoding="async" />
         <div className="absolute inset-0" style={heroOverlayStyle} />
         <div className="relative grid min-h-[310px] gap-6 p-6 lg:grid-cols-[minmax(0,1fr)_280px] lg:p-8">
           <div className="flex flex-col justify-between">
@@ -1819,7 +1875,7 @@ function CurrentStageDetails({ brand, stage }) {
         <div className="rounded-[16px] border border-[#e4ebf3] bg-white p-4">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="flex items-start gap-3">
-              <img src={stage.latestUpdate.avatar} alt={stage.latestUpdate.person} className="h-11 w-11 rounded-full object-cover" />
+              <img src={stage.latestUpdate.avatar} alt={stage.latestUpdate.person} className="h-11 w-11 rounded-full object-cover" loading="lazy" decoding="async" />
               <div>
                 <p className="text-sm font-semibold text-[#142132]">
                   Latest update from {stage.latestUpdate.person} <span className="font-medium text-[#667085]">· {stage.latestUpdate.role}</span>
@@ -1897,7 +1953,7 @@ function TransactionUpdatesSection({ brand, standalone = false }) {
       <div className="mt-4 divide-y divide-[#e4ebf3]">
         {DEMO_TEAM_UPDATES.map((update) => (
           <article key={`${update.person}-${update.time}`} className="grid grid-cols-[38px_minmax(0,1fr)_auto] gap-3 py-3 first:pt-0 last:pb-0">
-            <img src={update.avatar} alt={update.person} className="mt-1 h-8 w-8 rounded-full object-cover" />
+            <img src={update.avatar} alt={update.person} className="mt-1 h-8 w-8 rounded-full object-cover" loading="lazy" decoding="async" />
             <div>
               <p className="text-sm font-semibold text-[#142132]">
                 {update.person} <span className="font-medium text-[#667085]">· {update.role}</span>
@@ -2269,7 +2325,7 @@ function FinanceSummary({ application }) {
           return (
             <article key={item.label} className="flex items-start gap-3 lg:px-5 first:lg:pl-0 last:lg:pr-0">
               {item.avatar ? (
-                <img src={item.avatar} alt={item.value} className="h-12 w-12 rounded-full object-cover" />
+                <img src={item.avatar} alt={item.value} className="h-12 w-12 rounded-full object-cover" loading="lazy" decoding="async" />
               ) : (
                 <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full border ${statusClasses(item.tone)}`}>
                   <Icon size={22} />
@@ -2288,7 +2344,33 @@ function FinanceSummary({ application }) {
   )
 }
 
-function BondJourneyTracker({ brand, currentStageIndex }) {
+function BondJourneyTracker({ brand, currentStageIndex, compact = false }) {
+  if (compact) {
+    return (
+      <section className="rounded-[18px] border border-[#dbe5ef] bg-white p-4" aria-label="Bond application progress">
+        <div className="space-y-1">
+          {BOND_JOURNEY_STAGES.map((stage, index) => {
+            const Icon = stage.icon
+            const isComplete = index < currentStageIndex
+            const isCurrent = index === currentStageIndex
+            return (
+              <article key={stage.id} className="grid grid-cols-[40px_minmax(0,1fr)_auto] items-center gap-3 rounded-[12px] px-2 py-2.5" style={isCurrent ? { backgroundColor: hexToRgba(brand.primary, 0.08) } : null}>
+                <span className="flex h-10 w-10 items-center justify-center rounded-full border-2" style={{ borderColor: isComplete || isCurrent ? brand.primary : '#dbe5ef', backgroundColor: isComplete ? brand.primary : '#ffffff', color: isComplete ? '#ffffff' : isCurrent ? brand.primary : '#667085' }}>
+                  {isComplete ? <CheckCircle2 size={18} /> : <Icon size={18} />}
+                </span>
+                <div className="min-w-0">
+                  <h3 className="text-sm font-semibold" style={isCurrent ? { color: brand.primary } : { color: '#142132' }}>{stage.label}</h3>
+                  <p className="mt-0.5 text-xs text-[#52657b]">{isCurrent ? 'We are here' : stage.helper}</p>
+                </div>
+                <span className="text-[0.65rem] font-semibold uppercase tracking-[0.08em]" style={{ color: isComplete || isCurrent ? brand.primary : '#98a2b3' }}>{isComplete ? 'Done' : isCurrent ? 'Current' : 'Next'}</span>
+              </article>
+            )
+          })}
+        </div>
+      </section>
+    )
+  }
+
   return (
     <div className="mt-5 overflow-x-auto pb-2 lg:mt-8">
       <div className="grid min-w-[500px] grid-cols-5 items-start lg:min-w-[760px]">
@@ -2639,10 +2721,10 @@ function DemoBondApplicationStatusCard({ brand, completedDetails, documentNeeded
 
 function DemoBondApplicationJourney({ brand, sections, activeSection, onSelect, compact }) {
   return (
-    <section className={`${compact ? 'w-full min-w-0 overflow-hidden rounded-[18px]' : 'min-h-[calc(100vh-64px)]'} flex flex-col rounded-[22px] border border-[#e3eaf2] bg-white p-5 shadow-[0_18px_40px_rgba(15,23,42,0.045)] lg:p-6`}>
+    <section className={`${compact ? 'w-full min-w-0 rounded-[18px]' : 'min-h-[calc(100vh-64px)]'} flex flex-col rounded-[22px] border border-[#e3eaf2] bg-white p-5 shadow-[0_18px_40px_rgba(15,23,42,0.045)] lg:p-6`}>
       <p className="mb-5 text-xs font-semibold uppercase tracking-[0.16em] text-[#142132]">Your application</p>
-      <div className={compact ? 'max-w-full overflow-x-auto pb-1' : ''}>
-        <nav className={compact ? 'flex w-max gap-3' : 'relative space-y-1'}>
+      <div>
+        <nav className={compact ? 'grid min-w-0 gap-2 sm:grid-cols-2' : 'relative space-y-1'}>
           {!compact ? <span className="absolute left-[15px] top-6 h-[calc(100%-48px)] w-px bg-[#dbe5ef]" /> : null}
           {sections.map((section) => {
             const active = section.key === activeSection
@@ -2659,7 +2741,7 @@ function DemoBondApplicationJourney({ brand, sections, activeSection, onSelect, 
                 key={section.key}
                 type="button"
                 onClick={() => onSelect(section.key)}
-                className={`${compact ? 'min-w-[150px]' : 'relative w-full'} group rounded-[14px] px-3 py-3 text-left transition ${
+                className={`${compact ? 'w-full min-w-0' : 'relative w-full'} group rounded-[14px] px-3 py-3 text-left transition ${
                   active
                     ? attention
                       ? 'bg-amber-50/75'
@@ -2983,7 +3065,7 @@ function BankLogo({ bank }) {
   if (bank.logo) {
     return (
       <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white">
-        <img src={bank.logo} alt={`${bank.bankName} logo`} className="max-h-11 max-w-11 object-contain" />
+        <img src={bank.logo} alt={`${bank.bankName} logo`} className="max-h-11 max-w-11 object-contain" loading="lazy" decoding="async" />
       </span>
     )
   }
@@ -3107,7 +3189,7 @@ function ContactRouteCard({ brand, route }) {
 function Avatar({ member, size = 'md' }) {
   const sizeClass = size === 'lg' ? 'h-20 w-20' : size === 'sm' ? 'h-11 w-11' : 'h-16 w-16'
   if (member.profileImage) {
-    return <img src={member.profileImage} alt={member.name} className={`${sizeClass} rounded-full object-cover`} />
+    return <img src={member.profileImage} alt={member.name} className={`${sizeClass} rounded-full object-cover`} loading="lazy" decoding="async" />
   }
 
   return (

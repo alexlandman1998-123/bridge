@@ -13,6 +13,11 @@ const DEFAULT_DEMO_CONFIG = Object.freeze({
   samplePropertyAddress: '',
 })
 
+const PROSPECT_DEMO_CONFIG_CACHE_TTL_MS = 5 * 60 * 1000
+const PROSPECT_DEMO_CONFIG_WAIT_MS = 1200
+const prospectDemoConfigCache = new Map()
+const prospectDemoConfigRequests = new Map()
+
 function normalizeText(value = '') {
   return String(value || '').trim()
 }
@@ -62,6 +67,44 @@ export function buildDefaultProspectDemoConfig(slug = '') {
   }, { slug })
 }
 
+export function getCachedProspectDemoConfig(slug = '', now = Date.now()) {
+  const normalizedSlug = normalizeProspectDemoSlug(slug)
+  const cached = prospectDemoConfigCache.get(normalizedSlug)
+  if (!cached || now - cached.cachedAt > PROSPECT_DEMO_CONFIG_CACHE_TTL_MS) return null
+  return cached.value
+}
+
+function loadProspectDemoConfig(slug = '') {
+  const normalizedSlug = normalizeProspectDemoSlug(slug)
+  const existingRequest = prospectDemoConfigRequests.get(normalizedSlug)
+  if (existingRequest) return existingRequest
+
+  const request = fetchProspectDemoConfigBySlug(normalizedSlug)
+    .then((loaded) => {
+      const value = loaded || buildDefaultProspectDemoConfig(normalizedSlug)
+      prospectDemoConfigCache.set(normalizedSlug, { value, cachedAt: Date.now() })
+      return value
+    })
+    .catch(() => buildDefaultProspectDemoConfig(normalizedSlug))
+    .finally(() => prospectDemoConfigRequests.delete(normalizedSlug))
+
+  prospectDemoConfigRequests.set(normalizedSlug, request)
+  return request
+}
+
+function waitForProspectDemoConfig(request, slug = '') {
+  return new Promise((resolve) => {
+    const timeoutId = globalThis.setTimeout(
+      () => resolve(buildDefaultProspectDemoConfig(slug)),
+      PROSPECT_DEMO_CONFIG_WAIT_MS,
+    )
+    request.then((value) => {
+      globalThis.clearTimeout(timeoutId)
+      resolve(value)
+    })
+  })
+}
+
 export async function fetchProspectDemoConfigBySlug(slug = '') {
   const normalizedSlug = normalizeProspectDemoSlug(slug)
   if (!normalizedSlug || !isSupabaseConfigured || !supabase) return null
@@ -83,6 +126,7 @@ export async function fetchProspectDemoConfigBySlug(slug = '') {
 
 export async function resolveProspectDemoConfig(slug = '') {
   const normalizedSlug = normalizeProspectDemoSlug(slug)
-  const loaded = await fetchProspectDemoConfigBySlug(normalizedSlug)
-  return loaded || buildDefaultProspectDemoConfig(normalizedSlug)
+  const cached = getCachedProspectDemoConfig(normalizedSlug)
+  if (cached) return cached
+  return waitForProspectDemoConfig(loadProspectDemoConfig(normalizedSlug), normalizedSlug)
 }

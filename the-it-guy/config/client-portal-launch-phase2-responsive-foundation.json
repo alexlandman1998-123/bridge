@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "contractId": "client-portal-launch-v1",
+  "phase": 2,
+  "status": "implemented",
+  "personas": ["buyer", "seller"],
+  "sharedPrimitives": [
+    "ClientPortalResponsiveShell",
+    "ClientPortalBottomNavigation",
+    "ClientPortalStatePanel"
+  ],
+  "viewports": [
+    { "width": 360, "height": 800 },
+    { "width": 390, "height": 844 },
+    { "width": 768, "height": 1024 },
+    { "width": 1440, "height": 900 }
+  ],
+  "states": ["loading", "ready", "empty", "error", "offline", "expired", "unauthorised"],
+  "responsiveGuarantees": [
+    "Buyer demo, buyer production and seller production use the same mobile shell.",
+    "Buyer and seller mobile navigation uses the same safe-area-aware component.",
+    "Mobile navigation targets are at least 44 pixels high and expose aria-current.",
+    "Navigation item columns derive from the number of destinations.",
+    "Long labels and values wrap without widening the page.",
+    "Loading and access failure states use one recovery pattern."
+  ]
+}
