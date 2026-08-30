@@ -1410,7 +1410,7 @@ function buildHeroKpiCards(rows = []) {
     : 0
   const approvalVelocity = approvalRate >= 70 ? 'up 18%' : approvalRate >= 55 ? 'up 7%' : 'steady'
   const approvalTargetDays = 8
-  const estimatedCommission = Math.max(totalCommission, totalBondValue * 0.012)
+  const estimatedCommission = totalCommission
   const confirmedCommission = approvedRows.reduce((sum, row) => sum + getCommissionValue(row), 0)
 
   return {
@@ -2911,7 +2911,8 @@ function getManagementTargetValue(reportingScope = {}) {
 
 function buildManagementTargetTracker(activeRows = [], reportingScope = {}) {
   const actual = activeRows.length
-  const target = getManagementTargetValue(reportingScope) || Math.max(100, Math.ceil(actual / 10) * 10)
+  // Targets are stored organisation settings, never a dashboard estimate.
+  const target = getManagementTargetValue(reportingScope)
   const progress = target ? Math.round((actual / target) * 100) : 0
 
   return {
@@ -2920,7 +2921,7 @@ function buildManagementTargetTracker(activeRows = [], reportingScope = {}) {
     actual,
     target,
     progress,
-    helper: target ? `${Math.max(target - actual, 0)} applications remaining this period` : 'Set monthly targets under organisation targets',
+    helper: target ? `${Math.max(target - actual, 0)} applications remaining this period` : 'No target configured',
     href: '/settings/organisation#targets',
   }
 }
@@ -3709,7 +3710,9 @@ export async function getBondDevelopmentsWorkspaceSnapshot(user = {}, workspaceI
 export async function getBondCommandCenterSnapshot(user = {}, workspaceId = '', options = {}) {
   const snapshotStartedAt = Date.now()
   const reportingScope = options.reportingScope || (await getBondDashboardReportingScope(user, workspaceId, options))
-  const includeDemoRows = options.includeDemoRows ?? !isHqReportingScope(reportingScope)
+  // Demo rows are opt-in layout-preview data only; live dashboard views must
+  // never silently blend them into organisation reporting.
+  const includeDemoRows = options.includeDemoRows === true
   const allRows = await resolveBondRows(user, workspaceId, { ...options, includeDemoRows })
   bondPerfLog('command-center:rows', snapshotStartedAt, {
     workspaceId,
@@ -3776,16 +3779,16 @@ export async function getBondCommandCenterSnapshot(user = {}, workspaceId = '', 
     hqCommandCentre: isHqReportingScope(reportingScope)
       ? buildHqCommandCentreSnapshot(filteredRows, { bankBreakdown, bankLeadTimes, heroKpis: executiveAnalytics.heroKpis, reportingScope })
       : null,
-    managementOverview: isHqReportingScope(reportingScope)
-      ? buildBondManagementOverview({
-          allRows: scopedRows,
-          periodRows: filteredRows,
-          previousRows,
-          bankPerformance: buildHqBankPerformance(bankBreakdown, bankLeadTimes),
-          rangeKey,
-          reportingScope,
-        })
-      : null,
+    // Derived from the existing resolved, permission-scoped row set. This keeps
+    // the premium dashboard to one snapshot rather than adding per-section work.
+    managementOverview: buildBondManagementOverview({
+      allRows: scopedRows,
+      periodRows: filteredRows,
+      previousRows,
+      bankPerformance: buildHqBankPerformance(bankBreakdown, bankLeadTimes),
+      rangeKey,
+      reportingScope,
+    }),
     queues,
     developmentOptions: buildBondDevelopmentOptions(dateRows),
     selectedDevelopmentId: normalizeText(options.developmentId) || 'all',

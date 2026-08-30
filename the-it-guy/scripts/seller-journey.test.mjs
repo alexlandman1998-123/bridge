@@ -477,6 +477,30 @@ function assertJourneyStepStates(journey, currentKey, completedKeys = []) {
 }
 
 {
+  const lead = {
+    ...baseLead,
+    leadId: 'seller-canonical-live',
+    listingId: 'listing-canonical-live',
+    stage: 'Seller Onboarding Submitted',
+    status: 'Submitted',
+    sellerOnboardingStatus: 'completed',
+    mandateStatus: 'draft',
+  }
+  const listing = {
+    id: 'listing-canonical-live',
+    sellerLeadId: lead.leadId,
+    listingStatus: 'active',
+    listingVisibility: 'active_market',
+    sellerOnboarding: { status: 'completed', submittedAt: '2026-06-10T08:00:00Z' },
+    mandateStatus: 'signed',
+  }
+  const journey = buildSellerJourney({ lead, listing })
+  assert.equal(journey.stage.key, 'listing_live', 'canonical listing state must override stale CRM stage')
+  assert.equal(journey.listingLive, true)
+  assert.equal(journey.nextRecommendedAction.id, 'monitor_performance')
+}
+
+{
   const journey = buildSellerJourney({
     lead: { ...baseLead, listingId: 'listing-docs-1' },
     listing: {

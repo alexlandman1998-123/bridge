@@ -318,6 +318,7 @@ function action(id, label, enabled = true, reason = '', meta = {}) {
 
 export function getNextSellerAction(args = {}) {
   const journey = args.journey || buildSellerJourney(args)
+  if (journey.listingLive) return action('monitor_performance', 'Monitor Performance')
   const blockers = getSellerBlockers({ ...args, journey })
   const blocking = blockers.find((item) => item.severity === 'blocked') || blockers[0] || null
   if (blocking?.id === 'missing_seller_contact') return action('contact_seller', 'Contact Seller', true, '', { blocker: blocking })

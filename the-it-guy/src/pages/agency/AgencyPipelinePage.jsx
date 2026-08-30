@@ -6715,39 +6715,6 @@ function resolveListingAddressLabel(listing = {}) {
   )
 }
 
-function resolveRouteLeadStagePatchFromLinkedListing(lead = {}, listing = {}) {
-  const journey = buildSellerJourney({
-    lead: {
-      ...lead,
-      listingId: normalizeText(lead?.listingId || lead?.listing_id || listing?.id || listing?.listingId || listing?.listing_id),
-      mandatePacketId: normalizeText(lead?.mandatePacketId || lead?.mandate_packet_id || listing?.mandatePacketId || listing?.mandate_packet_id),
-    },
-    listing,
-    documents: Array.isArray(listing?.documents) ? listing.documents : [],
-  })
-  if (journey?.isSeller && journey?.stage?.label) {
-    return {
-      stage: journey.stage.label,
-      status: normalizeText(journey.stage.status) || journey.stage.label,
-    }
-  }
-
-  const mandateStatus = normalizeKey(listing?.mandateStatus || listing?.mandate_status)
-  const combinedLeadStage = normalizeKey(`${lead?.stage || ''} ${lead?.status || ''}`)
-  const hasSignedMandate = Boolean(
-    mandateStatus.includes('signed') ||
-      mandateStatus.includes('completed') ||
-      normalizeText(lead?.mandatePacketId || lead?.mandate_packet_id || listing?.mandatePacketId || listing?.mandate_packet_id),
-  )
-  if (!hasSignedMandate || combinedLeadStage.includes('mandate_signed') || combinedLeadStage.includes('listing')) {
-    return {}
-  }
-  return {
-    stage: 'Mandate Signed',
-    status: 'Signed',
-  }
-}
-
 function enrichRouteLeadWithLinkedListing(lead = {}, listing = null) {
   if (!lead || !listing) return lead
   const onboarding = listing?.sellerOnboarding && typeof listing.sellerOnboarding === 'object'
@@ -6756,94 +6723,33 @@ function enrichRouteLeadWithLinkedListing(lead = {}, listing = null) {
       ? listing.seller_onboarding
       : null
   const address = resolveListingAddressLabel(listing)
-  const stagePatch = resolveRouteLeadStagePatchFromLinkedListing(lead, listing)
-  const mandatePacketId = normalizeText(lead?.mandatePacketId || lead?.mandate_packet_id || listing?.mandatePacketId || listing?.mandate_packet_id)
+  // This is a display-only projection. Once linked, listing/onboarding values take
+  // precedence so a stale CRM snapshot cannot change the seller journey or profile.
+  const mandatePacketId = normalizeText(listing?.mandatePacketId || listing?.mandate_packet_id || lead?.mandatePacketId || lead?.mandate_packet_id)
   return {
     ...lead,
-    ...stagePatch,
-    sellerPropertyAddress: normalizeText(lead?.sellerPropertyAddress || lead?.seller_property_address) || address,
-    formattedAddress: normalizeText(lead?.formattedAddress || lead?.formatted_address) || normalizeText(listing?.formattedAddress || listing?.formatted_address),
-    streetAddress: normalizeText(lead?.streetAddress || lead?.street_address) || normalizeText(listing?.streetAddress || listing?.street_address || listing?.addressLine1 || listing?.address_line_1),
-    suburb: normalizeText(lead?.suburb) || normalizeText(listing?.suburb),
-    city: normalizeText(lead?.city) || normalizeText(listing?.city),
-    province: normalizeText(lead?.province) || normalizeText(listing?.province),
-    country: normalizeText(lead?.country) || normalizeText(listing?.country) || 'South Africa',
-    postalCode: normalizeText(lead?.postalCode || lead?.postal_code) || normalizeText(listing?.postalCode || listing?.postal_code),
-    latitude: lead?.latitude ?? listing?.latitude ?? null,
-    longitude: lead?.longitude ?? listing?.longitude ?? null,
-    googlePlaceId: normalizeText(lead?.googlePlaceId || lead?.google_place_id) || normalizeText(listing?.googlePlaceId || listing?.google_place_id),
-    estimatedValue: Number(lead?.estimatedValue || lead?.estimated_value || 0) || Number(listing?.estimatedValue || listing?.estimated_value || listing?.askingPrice || listing?.asking_price || 0) || 0,
-    listingId: normalizeText(lead?.listingId || lead?.listing_id || listing?.id || listing?.listingId || listing?.listing_id),
+    sellerPropertyAddress: address || normalizeText(lead?.sellerPropertyAddress || lead?.seller_property_address),
+    formattedAddress: normalizeText(listing?.formattedAddress || listing?.formatted_address) || normalizeText(lead?.formattedAddress || lead?.formatted_address),
+    streetAddress: normalizeText(listing?.streetAddress || listing?.street_address || listing?.addressLine1 || listing?.address_line_1) || normalizeText(lead?.streetAddress || lead?.street_address),
+    suburb: normalizeText(listing?.suburb) || normalizeText(lead?.suburb),
+    city: normalizeText(listing?.city) || normalizeText(lead?.city),
+    province: normalizeText(listing?.province) || normalizeText(lead?.province),
+    country: normalizeText(listing?.country) || normalizeText(lead?.country) || 'South Africa',
+    postalCode: normalizeText(listing?.postalCode || listing?.postal_code) || normalizeText(lead?.postalCode || lead?.postal_code),
+    latitude: listing?.latitude ?? lead?.latitude ?? null,
+    longitude: listing?.longitude ?? lead?.longitude ?? null,
+    googlePlaceId: normalizeText(listing?.googlePlaceId || listing?.google_place_id) || normalizeText(lead?.googlePlaceId || lead?.google_place_id),
+    estimatedValue: Number(listing?.estimatedValue || listing?.estimated_value || listing?.askingPrice || listing?.asking_price || 0) || Number(lead?.estimatedValue || lead?.estimated_value || 0) || 0,
+    listingId: normalizeText(listing?.id || listing?.listingId || listing?.listing_id || lead?.listingId || lead?.listing_id),
     mandatePacketId,
-    sellerOnboardingStatus: normalizeText(lead?.sellerOnboardingStatus || lead?.seller_onboarding_status || listing?.sellerOnboardingStatus || listing?.seller_onboarding_status || onboarding?.status),
-    sellerOnboardingToken: normalizeText(lead?.sellerOnboardingToken || lead?.seller_onboarding_token || onboarding?.token || listing?.sellerOnboardingToken || listing?.seller_onboarding_token),
-    mandateStatus: normalizeText(lead?.mandateStatus || lead?.mandate_status || listing?.mandateStatus || listing?.mandate_status),
+    sellerOnboardingStatus: normalizeText(onboarding?.status || listing?.sellerOnboardingStatus || listing?.seller_onboarding_status || lead?.sellerOnboardingStatus || lead?.seller_onboarding_status),
+    sellerOnboardingToken: normalizeText(onboarding?.token || listing?.sellerOnboardingToken || listing?.seller_onboarding_token || lead?.sellerOnboardingToken || lead?.seller_onboarding_token),
+    mandateStatus: normalizeText(listing?.mandateStatus || listing?.mandate_status || lead?.mandateStatus || lead?.mandate_status),
     sellerOnboarding: {
       ...(lead?.sellerOnboarding && typeof lead.sellerOnboarding === 'object' ? lead.sellerOnboarding : {}),
       ...(onboarding || {}),
     },
   }
-}
-
-function readRouteLeadLinkedListingSyncValue(lead = {}, key = '') {
-  const snakeKey = key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`)
-  return lead?.[key] ?? lead?.[snakeKey]
-}
-
-function addRouteLeadSyncPatchValue(patch, lead = {}, key = '', nextValue, options = {}) {
-  const { numeric = false, allowZero = false } = options
-  if (numeric) {
-    const nextNumber = Number(nextValue)
-    if (!Number.isFinite(nextNumber) || (!allowZero && nextNumber === 0)) return
-    const currentNumber = Number(readRouteLeadLinkedListingSyncValue(lead, key))
-    if (!Number.isFinite(currentNumber) || currentNumber !== nextNumber) {
-      patch[key] = nextNumber
-    }
-    return
-  }
-
-  const nextText = normalizeText(nextValue)
-  if (!nextText) return
-  const currentText = normalizeText(readRouteLeadLinkedListingSyncValue(lead, key))
-  if (currentText !== nextText) {
-    patch[key] = nextText
-  }
-}
-
-function buildRouteLeadLinkedListingSyncPatch(lead = {}, listing = null) {
-  if (!lead || !listing) return {}
-  const patch = {}
-  const onboarding = listing?.sellerOnboarding && typeof listing.sellerOnboarding === 'object'
-    ? listing.sellerOnboarding
-    : listing?.seller_onboarding && typeof listing.seller_onboarding === 'object'
-      ? listing.seller_onboarding
-      : {}
-  const stagePatch = resolveRouteLeadStagePatchFromLinkedListing(lead, listing)
-  addRouteLeadSyncPatchValue(patch, lead, 'stage', stagePatch.stage)
-  addRouteLeadSyncPatchValue(patch, lead, 'status', stagePatch.status)
-  addRouteLeadSyncPatchValue(patch, lead, 'sellerPropertyAddress', resolveListingAddressLabel(listing))
-  addRouteLeadSyncPatchValue(patch, lead, 'formattedAddress', listing?.formattedAddress || listing?.formatted_address || resolveListingAddressLabel(listing))
-  addRouteLeadSyncPatchValue(patch, lead, 'streetAddress', listing?.streetAddress || listing?.street_address || listing?.addressLine1 || listing?.address_line_1)
-  addRouteLeadSyncPatchValue(patch, lead, 'suburb', listing?.suburb)
-  addRouteLeadSyncPatchValue(patch, lead, 'city', listing?.city)
-  addRouteLeadSyncPatchValue(patch, lead, 'province', listing?.province)
-  addRouteLeadSyncPatchValue(patch, lead, 'country', listing?.country || 'South Africa')
-  addRouteLeadSyncPatchValue(patch, lead, 'postalCode', listing?.postalCode || listing?.postal_code)
-  addRouteLeadSyncPatchValue(patch, lead, 'googlePlaceId', listing?.googlePlaceId || listing?.google_place_id)
-  addRouteLeadSyncPatchValue(patch, lead, 'estimatedValue', listing?.estimatedValue || listing?.estimated_value || listing?.askingPrice || listing?.asking_price, { numeric: true })
-  addRouteLeadSyncPatchValue(patch, lead, 'listingId', listing?.id || listing?.listingId || listing?.listing_id)
-  addRouteLeadSyncPatchValue(patch, lead, 'mandatePacketId', listing?.mandatePacketId || listing?.mandate_packet_id)
-  addRouteLeadSyncPatchValue(patch, lead, 'sellerOnboardingToken', onboarding?.token || listing?.sellerOnboardingToken || listing?.seller_onboarding_token)
-  addRouteLeadSyncPatchValue(patch, lead, 'sellerOnboardingStatus', listing?.sellerOnboardingStatus || listing?.seller_onboarding_status || onboarding?.status)
-
-  if (listing?.latitude !== null && listing?.latitude !== undefined && listing?.latitude !== '') {
-    addRouteLeadSyncPatchValue(patch, lead, 'latitude', listing.latitude, { numeric: true, allowZero: true })
-  }
-  if (listing?.longitude !== null && listing?.longitude !== undefined && listing?.longitude !== '') {
-    addRouteLeadSyncPatchValue(patch, lead, 'longitude', listing.longitude, { numeric: true, allowZero: true })
-  }
-
-  return patch
 }
 
 function normalizeAppointmentListingOption(listing = {}) {
@@ -13160,47 +13066,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       return true
     }
 
-    const applySyncedRouteLeadPatch = (leadId, patch = {}) => {
-      const routeLeadKey = normalizeLeadIdentityKey(leadId)
-      if (!routeLeadKey || !Object.keys(patch).length) return
-      const pinnedSnapshot = routeLeadWorkspaceSnapshotRef.current
-      if (pinnedSnapshot?.key === hydrationKey) {
-        routeLeadWorkspaceSnapshotRef.current = {
-          ...pinnedSnapshot,
-          leads: (Array.isArray(pinnedSnapshot.leads) ? pinnedSnapshot.leads : []).map((lead) =>
-            normalizeLeadIdentityKey(lead?.leadId) === routeLeadKey
-              ? { ...lead, ...patch }
-              : lead,
-          ),
-        }
-      }
-      setRecords((previous) => ({
-        ...previous,
-        leads: (Array.isArray(previous.leads) ? previous.leads : []).map((lead) =>
-          normalizeLeadIdentityKey(lead?.leadId) === routeLeadKey
-            ? { ...lead, ...patch }
-            : lead,
-        ),
-      }))
-    }
-
-    const syncRouteLeadDenormalizedFields = async (lead = {}, listing = null) => {
-      const leadId = normalizeText(lead?.leadId || lead?.lead_id)
-      if (!leadId || !listing || !isSupabaseConfigured || !supabase || !isUuidLike(organisationId)) return
-      const patch = buildRouteLeadLinkedListingSyncPatch(lead, listing)
-      if (!Object.keys(patch).length) return
-      try {
-        const updatedLead = await updateAgencyCrmLeadRecord(organisationId, leadId, patch)
-        if (cancelled || routeLeadHydrationRef.current !== hydrationKey) return
-        applySyncedRouteLeadPatch(leadId, {
-          ...patch,
-          updatedAt: updatedLead?.updatedAt || new Date().toISOString(),
-        })
-      } catch (syncError) {
-        console.warn('[PIPELINE] lead workspace linked listing sync failed; continuing with hydrated listing data.', syncError)
-      }
-    }
-
     const getRouteSnapshotListingId = (snapshot) => {
       const routeLead = Array.isArray(snapshot?.leads) ? snapshot.leads[0] : null
       return normalizeText(snapshot?.listingId || routeLead?.listingId || routeLead?.listing_id)
@@ -13235,7 +13100,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           LEAD_WORKSPACE_HYDRATION_TIMEOUT_MS,
         )
         if (!linkedListing) return snapshot
-        void syncRouteLeadDenormalizedFields(routeLead, linkedListing)
         return {
           ...snapshot,
           leads: (Array.isArray(snapshot.leads) ? snapshot.leads : []).map((lead) =>
@@ -14206,7 +14070,20 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const resolveLeadLinkedListing = useCallback(
     (lead = {}) => {
       const listingId = normalizeText(lead?.listingId || lead?.listing_id)
-      if (listingId && appointmentListingById.has(listingId)) return appointmentListingById.get(listingId)
+      if (listingId && appointmentListingById.has(listingId)) {
+        const listingOption = appointmentListingById.get(listingId)
+        const sourceListing = isPlainObject(listingOption?.sourceListing) ? listingOption.sourceListing : {}
+        // Appointment options are deliberately compact. Seller-journey decisions need
+        // the complete linked listing, otherwise async hydration drops mandate and
+        // document evidence and lets the rail regress to onboarding.
+        return {
+          ...listingOption,
+          ...sourceListing,
+          id: normalizeText(sourceListing?.id || sourceListing?.listingId || sourceListing?.listing_id || listingOption?.id),
+          listingId: normalizeText(sourceListing?.listingId || sourceListing?.listing_id || sourceListing?.id || listingOption?.id),
+          sourceListing: Object.keys(sourceListing).length ? sourceListing : listingOption?.sourceListing,
+        }
+      }
       const leadIsSeller = resolveLeadCategoryView(lead) === 'seller'
       const sellerOnboardingToken = normalizeText(lead?.sellerOnboardingToken || lead?.seller_onboarding_token || lead?.sellerOnboarding?.token)
       if (leadIsSeller && (listingId || sellerOnboardingToken)) return null
@@ -17231,7 +17108,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     )
     const fallbackWantsHardCopyMandate = normalizeKey(fallbackAction.id) === 'record_hard_copy_mandate'
     const mandateStillRequired = Boolean(
-      !selectedSellerComplianceAgentStatus.signedMandate &&
+      !selectedSellerJourney.listingLive &&
+        !selectedSellerComplianceAgentStatus.signedMandate &&
         (onboardingSubmittedOrLater || fallbackWantsHardCopyMandate || complianceBlocker?.key === SELLER_BASE_PACK_KEYS.SIGNED_MANDATE),
     )
 

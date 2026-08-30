@@ -6,6 +6,9 @@ import BondEmptyState from './BondEmptyState'
 import BondHqCommandCentre from './BondHqCommandCentre'
 import BondPageShell from './BondPageShell'
 import BondSectionCard from './BondSectionCard'
+import PremiumBondDashboard from './PremiumBondDashboard'
+import { can } from '../../auth/permissions/permissionResolver'
+import { PERMISSIONS } from '../../auth/permissions/permissionRegistry'
 import OperationalHeatmap from '../analytics/OperationalHeatmap'
 import * as bondCommandCenterService from '../../services/bondCommandCenterService'
 import { FINANCE_INTELLIGENCE_DISCLAIMER } from '../../services/financeIntelligenceService'
@@ -194,6 +197,34 @@ export default function BondDashboard({
         <p className="text-sm font-semibold text-[#8f2f2f]">We could not load your Bond workspace context.</p>
         <p className="mt-1 text-sm text-[#9d4d4d]">Please switch workspace or try again.</p>
       </section>
+    )
+  }
+
+  // The dashboard is a single live snapshot.  Its presentation lives separately
+  // from the operational workflow components below so the existing routes and
+  // application actions remain unchanged.
+  if (!state.loading && snapshot) {
+    const canConfigureTarget = can(PERMISSIONS.manageWorkspaceSettings, user)
+    return (
+      <BondPageShell className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-[18px] border border-[#dbe5f0] bg-white px-4 py-3 shadow-[0_8px_22px_rgba(15,23,42,0.03)]">
+          <div>
+            <p className="text-sm font-semibold text-[#182b40]">Bond Originator Dashboard</p>
+            <p className="mt-0.5 text-xs text-[#71859a]">Live operational view for your current scope</p>
+          </div>
+          <label className="flex items-center gap-2 text-xs font-semibold text-[#60758d]">
+            Date range
+            <select value={rangeKey} onChange={(event) => handleRangeChange(event.target.value)} className="h-9 rounded-lg border border-[#d8e3ed] bg-white px-2 text-sm font-semibold text-[#29445f]">
+              <option value="last_30_days">Last 30 days</option>
+              <option value="this_month">This month</option>
+              <option value="quarter_to_date">Quarter to date</option>
+              <option value="all_time">All time</option>
+            </select>
+          </label>
+        </div>
+        {mockApplicationsPreview ? <p className="rounded-xl border border-[#efdcb8] bg-[#fff9ef] px-4 py-3 text-sm text-[#79531d]">Preview data is enabled for this local layout review.</p> : null}
+        <PremiumBondDashboard snapshot={snapshot} canConfigureTarget={canConfigureTarget} />
+      </BondPageShell>
     )
   }
 

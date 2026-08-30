@@ -375,19 +375,22 @@ function hasSignedMandateDocumentEvidence(documents = []) {
 }
 
 function hasSellerOnboardingDurableSubmissionEvidence({ lead = {}, listing = {} } = {}) {
+  const canonicalListing = hasCanonicalSellerListing({ lead, listing })
   const onboarding = listing?.sellerOnboarding && typeof listing.sellerOnboarding === 'object'
     ? listing.sellerOnboarding
-    : lead?.sellerOnboarding && typeof lead.sellerOnboarding === 'object'
-      ? lead.sellerOnboarding
-      : {}
-  const leadStatus = normalizeKey(lead?.sellerOnboardingStatus || lead?.seller_onboarding_status)
+    : listing?.seller_onboarding && typeof listing.seller_onboarding === 'object'
+      ? listing.seller_onboarding
+      : !canonicalListing && lead?.sellerOnboarding && typeof lead.sellerOnboarding === 'object'
+        ? lead.sellerOnboarding
+        : {}
+  const leadStatus = canonicalListing ? '' : normalizeKey(lead?.sellerOnboardingStatus || lead?.seller_onboarding_status)
   const onboardingStatus = normalizeKey(onboarding?.status || onboarding?.onboardingStatus || onboarding?.onboarding_status)
   const listingStatus = normalizeKey(listing?.seller_onboarding_status || listing?.sellerOnboardingStatus)
   const submittedAt = firstPresent(
-    lead?.sellerOnboardingSubmittedAt,
-    lead?.seller_onboarding_submitted_at,
-    lead?.sellerOnboardingCompletedAt,
-    lead?.seller_onboarding_completed_at,
+    canonicalListing ? '' : lead?.sellerOnboardingSubmittedAt,
+    canonicalListing ? '' : lead?.seller_onboarding_submitted_at,
+    canonicalListing ? '' : lead?.sellerOnboardingCompletedAt,
+    canonicalListing ? '' : lead?.seller_onboarding_completed_at,
     onboarding?.submittedAt,
     onboarding?.submitted_at,
     onboarding?.completedAt,
@@ -422,6 +425,14 @@ function readLinkedLeadIds(listing = {}) {
     listing?.leadId,
     listing?.lead_id,
   ].map(normalizeText).filter(Boolean)
+}
+
+function hasCanonicalSellerListing({ lead = {}, listing = {} } = {}) {
+  return Boolean(
+    readListingId(listing) &&
+      listingBelongsToLead(listing, lead) &&
+      !isOnboardingOnlyListingShell({ lead, listing }),
+  )
 }
 
 function getCanonicalListingLifecycleStatus(listing = {}) {
@@ -462,6 +473,7 @@ export function isSellerLead(lead = {}) {
 }
 
 function getSellerOnboardingSignals({ lead = {}, listing = {} } = {}) {
+  const canonicalListing = hasCanonicalSellerListing({ lead, listing })
   const listingScopedStatus = normalizeKey(
     listing?.sellerOnboarding?.status ||
       listing?.seller_onboarding?.status ||
@@ -474,18 +486,18 @@ function getSellerOnboardingSignals({ lead = {}, listing = {} } = {}) {
       lead?.sellerOnboarding?.status ||
       lead?.seller_onboarding?.status,
   )
-  const status = listingScopedStatus || leadScopedStatus
-  const leadJourneySignals = [
+  const status = canonicalListing ? listingScopedStatus : listingScopedStatus || leadScopedStatus
+  const leadJourneySignals = canonicalListing ? [] : [
     lead?.stage,
     lead?.status,
     lead?.currentStage,
     lead?.current_stage,
   ].map(normalizeKey).filter(Boolean)
   const token = firstPresent(
-    lead?.sellerOnboardingToken,
-    lead?.seller_onboarding_token,
     listing?.sellerOnboarding?.token,
     listing?.seller_onboarding_token,
+    canonicalListing ? '' : lead?.sellerOnboardingToken,
+    canonicalListing ? '' : lead?.seller_onboarding_token,
   )
   const listingLifecycle = normalizeKey(
     listing?.listingStatus ||
@@ -527,21 +539,22 @@ function leadStageImpliesSubmittedOnboarding(leadStageIndex = 0, onboardingSigna
 }
 
 function getMandateStatus({ lead = {}, listing = {}, mandatePacketStatus = {}, mandatePacket = null, documents = [] } = {}) {
-  const packet = mandatePacket || mandatePacketStatus?.packet || lead?.mandatePacket || null
+  const canonicalListing = hasCanonicalSellerListing({ lead, listing })
+  const packet = mandatePacket || mandatePacketStatus?.packet || (!canonicalListing && lead?.mandatePacket) || null
   const sourceContext = packet?.source_context_json && typeof packet.source_context_json === 'object'
     ? packet.source_context_json
     : mandatePacketStatus?.sourceContext && typeof mandatePacketStatus.sourceContext === 'object'
       ? mandatePacketStatus.sourceContext
     : {}
-  const leadMandateStageSignals = [lead?.stage, lead?.status]
+  const leadMandateStageSignals = (canonicalListing ? [] : [lead?.stage, lead?.status])
     .map(normalizeKey)
     .filter((status) => status.includes('mandate') || status.includes('signing') || status.includes('signature'))
   const mandateScopedStatuses = [
     listing?.mandateStatus,
     listing?.mandate_status,
     listing?.mandate?.status,
-    lead?.mandateStatus,
-    lead?.mandate_status,
+    canonicalListing ? '' : lead?.mandateStatus,
+    canonicalListing ? '' : lead?.mandate_status,
     packet?.status,
     mandatePacketStatus?.state,
     mandatePacketStatus?.signingStatus,
@@ -555,10 +568,9 @@ function getMandateStatus({ lead = {}, listing = {}, mandatePacketStatus = {}, m
     ...leadMandateStageSignals,
   ]
   const onboardingStatus = normalizeKey(
-    lead?.sellerOnboardingStatus ||
-      lead?.seller_onboarding_status ||
-      listing?.sellerOnboarding?.status ||
-      listing?.seller_onboarding_status,
+    listing?.sellerOnboarding?.status ||
+      listing?.seller_onboarding?.status ||
+      (canonicalListing ? '' : (lead?.sellerOnboardingStatus || lead?.seller_onboarding_status)),
   )
   const onboardingStatusBlocksStatusOnlyMandate = Boolean(onboardingStatus && !SELLER_ONBOARDING_SUBMITTED_STATUSES.has(onboardingStatus))
 
@@ -576,17 +588,23 @@ function getMandateStatus({ lead = {}, listing = {}, mandatePacketStatus = {}, m
     ...(Array.isArray(listing?.documents) ? listing.documents : []),
     ...(Array.isArray(documents) ? documents : []),
   ])
-  const mandatePacketRef = firstPresent(lead?.mandatePacketId, lead?.mandate_packet_id, listing?.mandatePacketId, listing?.mandate_packet_id, packet?.id)
+  const mandatePacketRef = firstPresent(
+    listing?.mandatePacketId,
+    listing?.mandate_packet_id,
+    packet?.id,
+    canonicalListing ? '' : lead?.mandatePacketId,
+    canonicalListing ? '' : lead?.mandate_packet_id,
+  )
   const allowStatusOnlyMandate = !onboardingStatusBlocksStatusOnlyMandate || Boolean(mandatePacketRef)
   const signedMandateScopedStatus = mandateScopedStatuses.some((status) =>
     SIGNED_MANDATE_STATUSES.has(status) || status.includes('mandate_signed'),
   )
   const hasExplicitSentEvidence = Boolean(
     firstPresent(
-      lead?.mandateSentAt,
-      lead?.mandate_sent_at,
-      lead?.mandateSigningLink,
-      lead?.mandateSignerLink,
+      canonicalListing ? '' : lead?.mandateSentAt,
+      canonicalListing ? '' : lead?.mandate_sent_at,
+      canonicalListing ? '' : lead?.mandateSigningLink,
+      canonicalListing ? '' : lead?.mandateSignerLink,
       sourceContext?.emailDeliveryId,
       sourceContext?.email_delivery_id,
       sourceContext?.deliveryId,
@@ -696,6 +714,9 @@ export function getSellerJourneyStage({ lead = {}, listing = null, mandatePacket
   if (!derivedStage && onboardingSignals.submitted) derivedStage = sellerJourneyStageSnapshot('seller_onboarding_submitted', 'Submitted')
   if (!derivedStage && onboardingSignals.sent) derivedStage = sellerJourneyStageSnapshot('seller_onboarding_sent', onboardingSignals.status === 'in_progress' ? 'In Progress' : 'Sent')
   const evidenceStage = derivedStage || sellerJourneyStageSnapshot('new_lead', 'New')
+  // A linked private listing owns the seller lifecycle. CRM stage/status is a
+  // denormalized lead projection and must never regress the canonical journey.
+  if (hasCanonicalSellerListing({ lead, listing })) return evidenceStage
   const leadStageIndex = STAGE_INDEX.get(leadStage?.key) ?? 0
   const listingCreatedIndex = STAGE_INDEX.get('listing_created') ?? 0
   const onboardingSubmittedIndex = STAGE_INDEX.get('seller_onboarding_submitted') ?? 0
@@ -886,25 +907,32 @@ export function buildListingJourney(listing = {}) {
 export function getSellerJourneyActions({ lead = {}, contact = {}, listing = null, mandatePacketStatus = null, documents = [] } = {}) {
   const onboardingSignals = getSellerOnboardingSignals({ lead, listing })
   const mandateStatus = getMandateStatus({ lead, listing, mandatePacketStatus, documents })
+  const canonicalListing = hasCanonicalSellerListing({ lead, listing })
   const listingShellExists = hasListingShell({ lead, listing })
   const leadStage = getSellerJourneyStageFromLead(lead)
   const leadStageIndex = STAGE_INDEX.get(leadStage?.key) ?? 0
   const listingCreated = hasListingCreated({ lead, listing, mandateStatus })
   const onboardingSubmittedForProgress = onboardingSignals.submitted ||
-    leadStageImpliesSubmittedOnboarding(leadStageIndex, onboardingSignals) ||
+    (!canonicalListing && leadStageImpliesSubmittedOnboarding(leadStageIndex, onboardingSignals)) ||
     mandateStatus !== 'not_started'
   const live = listingCreated && isListingLive(listing || lead)
-  const sellerPortalToken = firstPresent(lead?.sellerOnboardingToken, lead?.seller_onboarding_token, listing?.sellerOnboarding?.token)
+  const sellerPortalToken = firstPresent(
+    listing?.sellerOnboarding?.token,
+    listing?.seller_onboarding_token,
+    canonicalListing ? '' : lead?.sellerOnboardingToken,
+    canonicalListing ? '' : lead?.seller_onboarding_token,
+  )
   const canContact = Boolean(firstPresent(contact?.phone, lead?.phone, contact?.email, lead?.email, lead?.sellerPhone, lead?.sellerEmail))
   const mandateSigned = mandateStatus === 'signed'
   return [
     { id: 'contact_seller', label: 'Contact Seller', enabled: canContact },
     { id: 'send_onboarding', label: 'Send Seller Onboarding', enabled: !onboardingSignals.sent },
     { id: 'open_documents', label: 'Open Documents', enabled: onboardingSubmittedForProgress || mandateStatus !== 'not_started' },
-    { id: 'record_hard_copy_mandate', label: 'Upload Signed Mandate', enabled: onboardingSubmittedForProgress && !mandateSigned },
+    { id: 'record_hard_copy_mandate', label: 'Upload Signed Mandate', enabled: onboardingSubmittedForProgress && !mandateSigned && !live },
     { id: 'create_listing', label: mandateSigned ? 'Create Listing' : 'Create Listing Draft', enabled: !listingShellExists },
     { id: 'open_listing', label: mandateSigned ? 'Open Listing' : 'Open Listing Draft', enabled: listingShellExists },
     { id: 'activate_listing', label: 'Activate Listing', enabled: listingCreated && !live && mandateSigned },
+    { id: 'monitor_performance', label: 'Monitor Performance', enabled: live },
     { id: 'follow_up_with_seller', label: 'Send Follow-Up', enabled: Boolean(sellerPortalToken) },
   ].map((action) => ({
     ...action,
@@ -926,6 +954,7 @@ export function getSellerJourneyStatus(args = {}) {
 
 export function buildSellerJourney({ lead = {}, contact = {}, listing = null, mandatePacketStatus = null, mandatePacket = null, documents = [] } = {}) {
   const stage = getSellerJourneyStage({ lead, listing, mandatePacketStatus, mandatePacket, documents }) || { key: 'new_lead', label: 'New Lead', status: '' }
+  const canonicalListing = hasCanonicalSellerListing({ lead, listing })
   const onboardingSignals = getSellerOnboardingSignals({ lead, listing })
   const mandateStatus = getMandateStatus({ lead, listing, mandatePacketStatus, mandatePacket, documents })
   const listingShellExists = hasListingShell({ lead, listing })
@@ -939,7 +968,7 @@ export function buildSellerJourney({ lead = {}, contact = {}, listing = null, ma
   const contactedIndex = STAGE_INDEX.get('contacted') ?? 1
   const leadIsExplicitlyNew = leadStage?.key === 'new_lead' && ['new', 'created', 'lead'].includes(normalizeKey(leadStage?.status))
   const onboardingSubmittedForProgress = onboardingSignals.submitted ||
-    leadStageImpliesSubmittedOnboarding(leadStageIndex, onboardingSignals) ||
+    (!canonicalListing && leadStageImpliesSubmittedOnboarding(leadStageIndex, onboardingSignals)) ||
     mandateStatus !== 'not_started'
   const contactedForProgress = Boolean(
     (!leadIsExplicitlyNew && leadStageIndex >= contactedIndex) ||
@@ -979,7 +1008,9 @@ export function buildSellerJourney({ lead = {}, contact = {}, listing = null, ma
   const estimatedValue = toNumber(listing?.estimatedValue || listing?.estimated_value || listing?.askingPrice || listing?.asking_price || lead?.estimatedValue || lead?.estimated_value)
   const actions = getSellerJourneyActions({ lead, contact, listing, mandatePacketStatus, documents })
   const nextRecommendedAction = (
-    stage.key === 'seller_onboarding_sent'
+    stage.key === 'listing_live'
+      ? actions.find((action) => action.id === 'monitor_performance' && action.enabled)
+      : stage.key === 'seller_onboarding_sent'
       ? actions.find((action) => action.id === 'follow_up_with_seller' && action.enabled)
       : null
   ) || actions.find((action) => action.enabled && !['contact_seller', 'follow_up_with_seller'].includes(action.id)) ||

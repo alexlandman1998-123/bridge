@@ -35,6 +35,25 @@ const baseLead = {
 }
 
 {
+  const lead = {
+    ...baseLead,
+    listingId: 'listing-live-mandate-mismatch',
+    sellerOnboardingStatus: 'completed',
+  }
+  const listing = {
+    id: 'listing-live-mandate-mismatch',
+    sellerLeadId: lead.leadId,
+    listingStatus: 'active',
+    listingVisibility: 'active_market',
+    mandateStatus: 'signed',
+  }
+  const journey = buildSellerJourney({ lead, listing })
+  assert.equal(journey.listingLive, true)
+  assert.equal(getNextSellerAction({ lead, listing, journey }).id, 'monitor_performance')
+  assert.notEqual(journey.actions.find((item) => item.id === 'record_hard_copy_mandate')?.enabled, true)
+}
+
+{
   const journey = buildSellerJourney({
     lead: { ...baseLead, stage: 'Contacted', status: 'Active' },
     appointments: [{ appointmentType: 'seller_valuation', status: 'requested', dateTime: '2026-06-03T10:00:00Z' }],
