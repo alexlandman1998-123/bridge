@@ -1,13 +1,19 @@
+import { useLocation } from 'react-router-dom'
 import { Suspense, lazy } from 'react'
 import { loadAgencyLeadWorkspace } from './agencyLeadWorkspaceLoader'
-import LeadsRouteShell from '../../components/leads/LeadsRouteShell'
+import LeadWorkspaceHydrationShell from './LeadWorkspaceHydrationShell'
 
 const AgencyPipelinePage = lazy(loadAgencyLeadWorkspace)
 
 export default function AgencyLeadWorkspaceRoutePage() {
+  const location = useLocation()
+
   return (
-    <Suspense fallback={<LeadsRouteShell detail />}>
+    <Suspense
+      fallback={<LeadWorkspaceHydrationShell search={location.search} />}
+    >
       <AgencyPipelinePage
+        key={`lead-workspace:${location.pathname}`}
         initialViewMode="leads"
       />
     </Suspense>

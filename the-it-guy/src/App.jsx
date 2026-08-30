@@ -277,8 +277,6 @@ const BuyerViewingPreferencesPage = lazy(() => import('./pages/BuyerViewingPrefe
 const SellerViewingCoordinationPage = lazy(() => import('./pages/SellerViewingCoordinationPage'))
 const PublicAgencyIntakePage = lazy(() => import('./pages/PublicAgencyIntakePage'))
 const PublicAgentDigitalCardPage = lazy(() => import('./pages/PublicAgentDigitalCardPage'))
-const RentalApplicantJourneyPage = lazy(() => import('./pages/rentals/RentalApplicantJourneyPage'))
-const RentalApplicationWorkspacePage = lazy(() => import('./pages/rentals/RentalApplicationWorkspacePage'))
 const RetiredOfferWorkflowPage = lazy(() => import('./pages/RetiredOfferWorkflowPage'))
 const ClientModulePage = lazy(() => import('./pages/ClientModulePage'))
 const ClientOnboarding = lazy(() => import('./pages/ClientOnboarding'))
