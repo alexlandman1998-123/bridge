@@ -362,6 +362,7 @@ const LEAD_WORKSPACE_UNAVAILABLE_COPY = 'This lead could not be checked for the 
 const CANVASSING_STORAGE_PREFIX = 'itg:agency-canvassing:v1'
 const BUYER_LIFECYCLE_REFRESH_STORAGE_KEY = 'bridge:buyer-lifecycle-refresh:v1'
 const BUYER_LIFECYCLE_REFRESH_EVENT = 'bridge:buyer-lifecycle-refresh'
+const SELLER_ONBOARDING_SUBMITTED_STORAGE_KEY = 'itg:seller-onboarding-submitted:v1'
 const LEAD_TABLE_PAGE_SIZE = 12
 const SHOW_DAY_SOURCE_LABEL = 'Show Day'
 const SHOW_DAY_FOLLOW_UP_TITLE_FRAGMENT = 'follow up after show day'
@@ -11770,6 +11771,17 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [appointmentManualParticipantOpen, setAppointmentManualParticipantOpen] = useState(false)
   const [appointmentDeselectedParticipantKeys, setAppointmentDeselectedParticipantKeys] = useState([])
   const [isSellerOnboardingSending, setIsSellerOnboardingSending] = useState(false)
+  const [sellerOnboardingDeliveryState, setSellerOnboardingDeliveryState] = useState({
+    linkStatus: 'idle',
+    emailStatus: 'idle',
+    link: '',
+    recipient: '',
+    preparationMs: null,
+    resendSubmissionMs: null,
+    deliveryPersistenceMs: null,
+    totalEmailMs: null,
+    error: '',
+  })
   const [sellerFollowUpSending, setSellerFollowUpSending] = useState(false)
   const [sellerAttorneyPickerOpen, setSellerAttorneyPickerOpen] = useState(false)
   const [sellerPreferredAttorneys, setSellerPreferredAttorneys] = useState([])
@@ -12672,8 +12684,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   useEffect(() => {
     if (!organisationId) return
-    const handler = async (event) => {
-      const eventDetail = event?.detail || {}
+    const syncSellerOnboardingSubmission = async (eventDetail = {}) => {
       const lead = findLeadBySellerOnboardingEvent(records.leads, eventDetail)
       if (!lead?.leadId) {
         scheduleRecordsReload(organisationId)
@@ -12690,27 +12701,39 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             ? eventDetail.form_data
             : null
 
+      const localPatch = {
+        stage: 'Onboarding Submitted',
+        status: 'Submitted',
+        sellerOnboardingStatus: resolvedOnboardingStatus.includes('complete') ? 'completed' : resolvedOnboardingStatus || 'completed',
+        sellerOnboardingToken: submittedToken,
+        listingId: normalizeText(eventDetail?.listingId || eventDetail?.privateListingId || lead.listingId),
+        sellerWorkflowLeadId: normalizeLeadIdentityKey(eventDetail?.sellerLeadId || lead.sellerWorkflowLeadId || lead.sellerLeadId),
+        sellerOnboarding: {
+          ...(lead?.sellerOnboarding || {}),
+          status: resolvedOnboardingStatus.includes('complete') ? 'completed' : resolvedOnboardingStatus || 'completed',
+          token: submittedToken || lead?.sellerOnboarding?.token || null,
+          submittedAt,
+          completedAt: submittedAt,
+          ...(submittedFormData ? {
+            formData: {
+              ...getLeadSellerOnboardingFormData(lead),
+              ...submittedFormData,
+            },
+          } : {}),
+        },
+      }
+
+      setRecords((previous) => ({
+        ...previous,
+        leads: (Array.isArray(previous.leads) ? previous.leads : []).map((record) =>
+          normalizeLeadIdentityKey(record?.leadId) === normalizeLeadIdentityKey(lead.leadId)
+            ? { ...record, ...localPatch, updatedAt: submittedAt }
+            : record,
+        ),
+      }))
+
       try {
-        await updateAgencyCrmLeadRecord(organisationId, lead.leadId, {
-          stage: 'Onboarding Submitted',
-          status: 'Submitted',
-          sellerOnboardingStatus: resolvedOnboardingStatus.includes('complete') ? 'completed' : resolvedOnboardingStatus || 'completed',
-          sellerOnboardingToken: submittedToken,
-          listingId: normalizeText(eventDetail?.listingId || eventDetail?.privateListingId || lead.listingId),
-          sellerWorkflowLeadId: normalizeLeadIdentityKey(eventDetail?.sellerLeadId || lead.sellerWorkflowLeadId || lead.sellerLeadId),
-          sellerOnboarding: {
-            ...(lead?.sellerOnboarding || {}),
-            status: resolvedOnboardingStatus.includes('complete') ? 'completed' : resolvedOnboardingStatus || 'completed',
-            token: submittedToken || lead?.sellerOnboarding?.token || null,
-            submittedAt,
-            ...(submittedFormData ? {
-              formData: {
-                ...getLeadSellerOnboardingFormData(lead),
-                ...submittedFormData,
-              },
-            } : {}),
-          },
-        })
+        await updateAgencyCrmLeadRecord(organisationId, lead.leadId, localPatch)
         await createAgencyCrmLeadActivity(organisationId, lead.leadId, {
           agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
           activityType: 'Onboarding Submitted',
@@ -12726,9 +12749,23 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }
     }
 
+    const handler = (event) => {
+      void syncSellerOnboardingSubmission(event?.detail || {})
+    }
+    const storageHandler = (event) => {
+      if (event?.key !== SELLER_ONBOARDING_SUBMITTED_STORAGE_KEY || !event?.newValue) return
+      try {
+        void syncSellerOnboardingSubmission(JSON.parse(event.newValue))
+      } catch {
+        scheduleRecordsReload(organisationId, 0)
+      }
+    }
+
     window.addEventListener('itg:seller-onboarding-submitted', handler)
+    window.addEventListener('storage', storageHandler)
     return () => {
       window.removeEventListener('itg:seller-onboarding-submitted', handler)
+      window.removeEventListener('storage', storageHandler)
     }
   }, [currentAgent, currentAgent.email, currentAgent.fullName, currentAgent.id, organisationId, records.leads, scheduleRecordsReload])
 
@@ -15265,17 +15302,23 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     setFinanceReadinessForm(financeFormFromSummary(selectedLeadFinanceReadinessSummary))
   }, [selectedLead, selectedLead?.leadId, selectedLeadIsSeller, selectedLeadFinanceReadinessSummary])
 
-  const selectedLeadHasSellerOnboardingFormData = hasLeadSellerOnboardingFormData(selectedLead)
-
   useEffect(() => {
     if (!selectedLead || !selectedLeadIsSeller || !organisationId) return
-    if (selectedLeadOnboardingCompleted && selectedLeadHasSellerOnboardingFormData) return
+    if (
+      isSellerOnboardingSending ||
+      sellerLeadDocumentUploadingKey ||
+      sellerLeadMandateUploading ||
+      sellerPackUploadingKey ||
+      formalValuationUploading
+    ) return
+    if (selectedLeadOnboardingCompleted) return
     const onboardingToken = normalizeText(selectedLead?.sellerOnboardingToken || selectedLead?.sellerOnboarding?.token)
     const linkedListingId = normalizeText(selectedLead?.listingId)
     if ((!onboardingToken && !linkedListingId) || !isSupabaseConfigured) return
 
     let cancelled = false
     let pollTimer = null
+    let reconciliationInFlight = false
     const clearPollTimer = () => {
       if (pollTimer && typeof window !== 'undefined') {
         window.clearTimeout(pollTimer)
@@ -15284,33 +15327,42 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
 
     async function reconcileSellerOnboardingCompletion() {
+      if (reconciliationInFlight || cancelled) return
+      reconciliationInFlight = true
       try {
         let onboardingContext = null
-        if (onboardingToken) {
-          onboardingContext = await getSellerOnboardingByToken(onboardingToken, { includeRequirementsAndDocuments: false })
-        } else if (supabase && linkedListingId) {
+        if (supabase && linkedListingId) {
           const onboardingQuery = await supabase
             .from('private_listing_seller_onboarding')
             .select('id, private_listing_id, token, status, submitted_at, updated_at, form_data')
             .eq('private_listing_id', linkedListingId)
             .maybeSingle()
-          if (onboardingQuery.error) throw onboardingQuery.error
-          onboardingContext = {
-            onboarding: onboardingQuery.data,
-            listing: {
-              id: linkedListingId,
-              sellerOnboarding: onboardingQuery.data
-                ? {
-                    token: normalizeText(onboardingQuery.data.token),
-                    status: normalizeText(onboardingQuery.data.status),
-                    submittedAt: onboardingQuery.data.submitted_at || null,
-                    completedAt: onboardingQuery.data.submitted_at || null,
-                    updatedAt: onboardingQuery.data.updated_at || null,
-                    formData: onboardingQuery.data.form_data || {},
-                  }
-                : null,
-            },
+          if (!onboardingQuery.error) {
+            onboardingContext = {
+              onboarding: onboardingQuery.data,
+              listing: {
+                id: linkedListingId,
+                sellerOnboarding: onboardingQuery.data
+                  ? {
+                      token: normalizeText(onboardingQuery.data.token),
+                      status: normalizeText(onboardingQuery.data.status),
+                      submittedAt: onboardingQuery.data.submitted_at || null,
+                      completedAt: onboardingQuery.data.submitted_at || null,
+                      updatedAt: onboardingQuery.data.updated_at || null,
+                      formData: onboardingQuery.data.form_data || {},
+                    }
+                  : null,
+              },
+            }
+          } else if (!onboardingToken) {
+            throw onboardingQuery.error
           }
+        }
+        if (!onboardingContext && onboardingToken) {
+          onboardingContext = await getSellerOnboardingByToken(onboardingToken, {
+            includeRequirementsAndDocuments: false,
+            corePayload: true,
+          })
         }
 
         const hydratedOnboarding = onboardingContext?.listing?.sellerOnboarding || null
@@ -15402,21 +15454,41 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             }, SELLER_ONBOARDING_COMPLETION_POLL_MS)
           }
         }
+      } finally {
+        reconciliationInFlight = false
+      }
+    }
+
+    const reconcileWhenVisible = () => {
+      if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+        void reconcileSellerOnboardingCompletion()
       }
     }
 
     void reconcileSellerOnboardingCompletion()
+    if (typeof window !== 'undefined') {
+      window.addEventListener('focus', reconcileWhenVisible)
+      document.addEventListener('visibilitychange', reconcileWhenVisible)
+    }
     return () => {
       cancelled = true
       clearPollTimer()
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('focus', reconcileWhenVisible)
+        document.removeEventListener('visibilitychange', reconcileWhenVisible)
+      }
     }
   }, [
     currentAgent,
+    formalValuationUploading,
+    isSellerOnboardingSending,
     organisationId,
     selectedLead,
-    selectedLeadHasSellerOnboardingFormData,
     selectedLeadIsSeller,
     selectedLeadOnboardingCompleted,
+    sellerLeadDocumentUploadingKey,
+    sellerLeadMandateUploading,
+    sellerPackUploadingKey,
     reloadRecords,
   ])
 
@@ -17007,12 +17079,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }
     }
 
-    if (normalizeKey(fallbackAction.id) === 'open_seller_portal') {
+    if (['open_seller_portal', 'follow_up_with_seller'].includes(normalizeKey(fallbackAction.id))) {
       return {
-        title: 'Follow up with client',
+        title: 'Send seller follow-up',
         copy: 'Send the seller a reminder to complete their outstanding onboarding details.',
         actionId: 'follow_up_with_seller',
-        label: sellerFollowUpSending ? 'Sending…' : 'Follow Up With Client',
+        label: sellerFollowUpSending ? 'Sending…' : 'Send Follow-Up',
         disabled: sellerFollowUpSending,
       }
     }
@@ -17070,13 +17142,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const selectedLeadHasKingstonsSellerProcess = selectedSellerProcessPanelModel?.visible === true
   const selectedKingstonsProcessAction = useMemo(() => {
     const action = getKingstonsPipelineActionMeta(selectedSellerProcessPanelModel || {})
-    if (normalizeKey(action.actionId) === 'open_seller_portal' || normalizeKey(action.label).includes('track seller onboarding')) {
+    if (
+      ['open_seller_portal', 'follow_up_with_seller'].includes(normalizeKey(action.actionId)) ||
+      normalizeKey(action.label).includes('track seller onboarding')
+    ) {
       return {
         ...action,
-        title: 'Follow up with client',
+        title: 'Send seller follow-up',
         copy: 'Send the seller a reminder to complete their outstanding onboarding details.',
         actionId: 'follow_up_with_seller',
-        label: sellerFollowUpSending ? 'Sending…' : 'Follow Up With Client',
+        label: sellerFollowUpSending ? 'Sending…' : 'Send Follow-Up',
         disabled: sellerFollowUpSending,
       }
     }
@@ -23614,12 +23689,24 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
     setIsSellerOnboardingSending(true)
     setMessage('Preparing seller onboarding…')
+    setSellerOnboardingDeliveryState({
+      linkStatus: 'preparing',
+      emailStatus: 'idle',
+      link: '',
+      recipient: sellerEmail,
+      preparationMs: null,
+      resendSubmissionMs: null,
+      deliveryPersistenceMs: null,
+      totalEmailMs: null,
+      error: '',
+    })
     try {
       const useDbFirstListingPersistence = Boolean(isSupabaseConfigured && !MOCK_DATA_ENABLED)
       let token = normalizeText(selectedLead?.sellerOnboardingToken) || generateSellerOnboardingToken()
       let onboardingLink = buildSellerOnboardingLink(token)
       let sellerWorkflowLead = null
       let canonicalListingId = normalizeText(selectedLead?.listingId)
+      let reusableListing = selectedLeadLinkedListing
 
       if (useDbFirstListingPersistence) {
         if (!canonicalListingId) {
@@ -23655,15 +23742,44 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             syncRequirements: false,
           })
           canonicalListingId = normalizeText(created?.listing?.id)
+          reusableListing = created?.listing || null
         }
 
         if (canonicalListingId) {
+          const agencyBranding = resolveAgencyOfferEmailBranding({
+            organisationId,
+            organisationName,
+            profile,
+            currentWorkspace,
+            workspace,
+          })
           const onboarding = await sendSellerOnboarding(canonicalListingId, {
             sellerContactEmail: sellerEmail,
             sellerContactPhone: normalizeText(selectedLeadContact?.phone),
+            onboardingToken: token,
+            listingSnapshot: reusableListing,
+            performedBy: currentAgent.id,
+            portalBranding: {
+              organisationId,
+              organisationName: agencyBranding.organisationName,
+              agencyName: agencyBranding.organisationName,
+              logoUrl: agencyBranding.organisationLogoUrl,
+              logoLightUrl: agencyBranding.organisationLogoLightUrl,
+              logoDarkUrl: agencyBranding.organisationLogoDarkUrl,
+              logoIconUrl: agencyBranding.organisationLogoIconUrl,
+              primaryColour: agencyBranding.organisationBrandPrimaryColor,
+              secondaryColour: agencyBranding.organisationBrandSecondaryColor,
+            },
           })
           token = normalizeText(onboarding?.token) || token
           onboardingLink = normalizeText(onboarding?.link) || onboardingLink
+          setSellerOnboardingDeliveryState((previous) => ({
+            ...previous,
+            linkStatus: 'ready',
+            emailStatus: 'sending',
+            link: onboardingLink,
+            preparationMs: Number.isFinite(onboarding?.preparationMs) ? onboarding.preparationMs : null,
+          }))
         }
       } else {
         sellerWorkflowLead = createAgentSellerLead({
@@ -23717,7 +23833,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         if (sellerSurname) contactRepairPatch.lastName = sellerSurname
         if (normalizeText(selectedLeadContact?.phone)) contactRepairPatch.phone = normalizeText(selectedLeadContact.phone)
         if (sellerEmail) contactRepairPatch.email = sellerEmail
-        await updateAgencyCrmContactRecord(organisationId, selectedContactId, contactRepairPatch).catch((contactUpdateError) => {
+        void updateAgencyCrmContactRecord(organisationId, selectedContactId, contactRepairPatch).catch((contactUpdateError) => {
           console.warn('[Seller Onboarding] contact name repair skipped', {
             leadId: selectedLead?.leadId || null,
             contactId: selectedContactId,
@@ -23726,7 +23842,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         })
       }
 
-      await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, {
+      const localLeadPatch = {
         stage: 'Onboarding Sent',
         status: 'Sent',
         sellerOnboardingToken: token,
@@ -23734,7 +23850,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         sellerOnboardingStatus: 'sent',
         sellerWorkflowLeadId: normalizeText(sellerWorkflowLead?.sellerLeadId || sellerWorkflowLead?.id || selectedLead.leadId),
         listingId: canonicalListingId || normalizeText(selectedLead?.listingId),
-      })
+      }
       setRecords((previous) => ({
         ...previous,
         contacts: selectedContactId
@@ -23772,7 +23888,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             : lead,
         ),
       }))
-      await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
+      if (!useDbFirstListingPersistence) {
+        void updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, localLeadPatch).catch((leadSyncError) => {
+          console.warn('[Seller Onboarding] compatibility lead persistence failed', leadSyncError)
+        })
+      }
+      void createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
         agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
         activityType: 'Onboarding Sent',
         activityNote: `Seller onboarding was sent to ${sellerName}.`,
@@ -23780,12 +23901,33 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         activityDate: new Date().toISOString(),
       }, { actor: currentAgent })
 
+      setSellerOnboardingDeliveryState((previous) => ({
+        ...previous,
+        linkStatus: 'ready',
+        emailStatus: isSupabaseConfigured ? 'sending' : 'idle',
+        link: onboardingLink,
+      }))
+      setError('')
+      setMessage('Seller onboarding link ready. Email delivery is continuing in the background.')
+      setSellerAttorneyPickerOpen(false)
+      setIsSellerOnboardingSending(false)
+
       if (isSupabaseConfigured) {
         try {
+          const emailStartedAt = typeof performance !== 'undefined' ? performance.now() : Date.now()
+          const agencyEmailBranding = resolveAgencyOfferEmailBranding({
+            organisationId,
+            organisationName,
+            profile,
+            currentWorkspace,
+            workspace,
+          })
           const onboardingEmailPayload = {
             type: 'seller_onboarding_link',
             to: sellerEmail,
             organisationId: normalizeText(organisationId),
+            leadId: normalizeText(selectedLead?.leadId),
+            listingId: canonicalListingId || null,
             sellerName,
             propertyTitle: normalizeText(selectedLead?.sellerPropertyAddress || selectedLeadPropertyArea || selectedLead?.propertyInterest || 'your property'),
             propertyType: normalizeText(selectedLeadPropertyType),
@@ -23811,6 +23953,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             agentPhone: normalizeText(currentAgent.phone || currentAgent.mobile || currentAgent.contactNumber || currentAgent.contact_number),
             supportEmail: normalizeText(currentAgent.email).toLowerCase(),
             supportPhone: normalizeText(currentAgent.phone || currentAgent.mobile || currentAgent.contactNumber || currentAgent.contact_number),
+            brandingResolved: true,
+            organisationName: agencyEmailBranding.organisationName,
+            agencyName: agencyEmailBranding.organisationName,
+            agencyLogoUrl: agencyEmailBranding.organisationLogoUrl,
+            logoUrl: agencyEmailBranding.organisationLogoUrl,
+            logoLightUrl: agencyEmailBranding.organisationLogoLightUrl,
+            logoDarkUrl: agencyEmailBranding.organisationLogoDarkUrl,
+            logoIconUrl: agencyEmailBranding.organisationLogoIconUrl,
+            primaryColor: agencyEmailBranding.organisationBrandPrimaryColor,
+            secondaryColor: agencyEmailBranding.organisationBrandSecondaryColor,
           }
           void invokeEdgeFunction('send-email', {
             body: {
@@ -23824,6 +23976,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   listingId: canonicalListingId || null,
                   error: emailError,
                 })
+                setSellerOnboardingDeliveryState((previous) => ({
+                  ...previous,
+                  emailStatus: 'failed',
+                  totalEmailMs: Math.max(0, Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - emailStartedAt)),
+                  error: emailError?.message || 'Email could not be sent.',
+                }))
                 return
               }
               const routedType = normalizeText(emailResult?.type).toLowerCase()
@@ -23834,6 +23992,20 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   responseType: routedType,
                 })
               }
+              setSellerOnboardingDeliveryState((previous) => ({
+                ...previous,
+                emailStatus: 'sent',
+                resendSubmissionMs: Number.isFinite(emailResult?.timings?.resendSubmissionMs)
+                  ? emailResult.timings.resendSubmissionMs
+                  : null,
+                deliveryPersistenceMs: Number.isFinite(emailResult?.timings?.deliveryPersistenceMs)
+                  ? emailResult.timings.deliveryPersistenceMs
+                  : null,
+                totalEmailMs: Number.isFinite(emailResult?.timings?.totalMs)
+                  ? emailResult.timings.totalMs
+                  : Math.max(0, Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - emailStartedAt)),
+                error: '',
+              }))
             })
             .catch((emailError) => {
               console.error('[Seller Onboarding] email send failed', {
@@ -23841,18 +24013,60 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 listingId: canonicalListingId || null,
                 error: emailError,
               })
+              setSellerOnboardingDeliveryState((previous) => ({
+                ...previous,
+                emailStatus: 'failed',
+                totalEmailMs: Math.max(0, Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - emailStartedAt)),
+                error: emailError?.message || 'Email could not be sent.',
+              }))
             })
         } catch {
           // Onboarding record is created even if email send fails.
+          setSellerOnboardingDeliveryState((previous) => ({
+            ...previous,
+            emailStatus: 'failed',
+            error: 'Email could not be prepared.',
+          }))
         }
       }
 
-      setError('')
-      setMessage('Seller onboarding sent.')
-      setSellerAttorneyPickerOpen(false)
-      await reloadRecords(organisationId)
+      void Promise.all([
+        fetchAgencyCrmLeadWorkspace(organisationId, selectedLead.leadId),
+        canonicalListingId
+          ? getPrivateListing(canonicalListingId, { includeRequirementsAndDocuments: false, includeDistributionData: false })
+          : Promise.resolve(null),
+      ]).then(([leadSnapshot, refreshedListing]) => {
+        if (leadSnapshot?.leads?.length) {
+          setRecords((previous) => ({
+            ...previous,
+            contacts: dedupeByKey(
+              [...previous.contacts, ...(Array.isArray(leadSnapshot.contacts) ? leadSnapshot.contacts : [])],
+              (row) => row?.contactId,
+            ),
+            leads: mergeLeadRowsForReload(previous.leads, leadSnapshot.leads),
+            leadActivities: dedupeByKey(
+              [...previous.leadActivities, ...(Array.isArray(leadSnapshot.leadActivities) ? leadSnapshot.leadActivities : [])],
+              (row) => row?.activityId,
+            ),
+          }))
+        }
+        if (refreshedListing) {
+          setAppointmentListingOptions((previous) => dedupeListingOptions([
+            ...previous,
+            normalizeAppointmentListingOption(refreshedListing),
+          ].filter(Boolean)))
+        }
+      }).catch((targetedRefreshError) => {
+        console.warn('[Seller Onboarding] targeted background refresh failed', targetedRefreshError)
+      })
     } catch (sendError) {
       setError(sendError?.message || 'Unable to send seller onboarding right now.')
+      setSellerOnboardingDeliveryState((previous) => ({
+        ...previous,
+        linkStatus: 'failed',
+        emailStatus: 'idle',
+        error: sendError?.message || 'Unable to prepare seller onboarding.',
+      }))
       return
     } finally {
       setIsSellerOnboardingSending(false)
@@ -25203,7 +25417,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }).catch(() => null)
 
       setMessage('Signed hard-copy mandate uploaded. Listing draft is ready to complete and review.')
-      await reloadRecords(organisationId)
     } catch (uploadError) {
       setError(uploadError?.message || 'Unable to upload the signed mandate right now.')
     } finally {
@@ -25267,21 +25480,25 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         throw new Error('Create or link a listing draft before uploading seller documents.')
       }
 
-      const uploadedDocument = await uploadPrivateListingDocument(targetListingId, file, {
-        requirementId: normalizeText(documentRow?.requirementId || documentRow?.requirement_id || documentRow?.id),
-        requirementKey: normalizeText(documentRow?.requirementKey || documentRow?.requirement_key || documentKey),
-        documentType: normalizeText(documentRow?.documentType || documentRow?.document_type || documentKey) || 'seller_document',
-        documentCategory: normalizeText(
-          documentRow?.documentCategory ||
-            documentRow?.document_category ||
-            documentRow?.category ||
-            category?.key ||
-            getSellerLeadDocumentCategoryKey(documentRow),
-        ) || 'seller',
-        documentName: normalizeText(file.name || documentLabel || documentRow?.title) || 'Seller document',
-        visibility: 'internal',
-        status: 'uploaded',
-      })
+      const uploadedDocument = await withPipelineTimeout(
+        uploadPrivateListingDocument(targetListingId, file, {
+          requirementId: normalizeText(documentRow?.requirementId || documentRow?.requirement_id || documentRow?.id),
+          requirementKey: normalizeText(documentRow?.requirementKey || documentRow?.requirement_key || documentKey),
+          documentType: normalizeText(documentRow?.documentType || documentRow?.document_type || documentKey) || 'seller_document',
+          documentCategory: normalizeText(
+            documentRow?.documentCategory ||
+              documentRow?.document_category ||
+              documentRow?.category ||
+              category?.key ||
+              getSellerLeadDocumentCategoryKey(documentRow),
+          ) || 'seller',
+          documentName: normalizeText(file.name || documentLabel || documentRow?.title) || 'Seller document',
+          visibility: 'internal',
+          status: 'uploaded',
+        }),
+        `${documentLabel} upload is taking too long. Please try again.`,
+        PIPELINE_RECORDS_TIMEOUT_MS,
+      )
 
       const uploadedAt = normalizeText(uploadedDocument?.uploaded_at || uploadedDocument?.uploadedAt) || new Date().toISOString()
       const leadSource = selectedLead || routeLeadSnapshotLead || {}
@@ -25337,23 +25554,24 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         listingId: targetListingId,
       }
       patchSelectedLeadRecord(leadPatch, selectedLead.leadId)
-      await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, leadPatch).catch((leadUpdateError) => {
-        console.warn('[AgencyPipelinePage] Seller document upload saved, but lead mirror sync is still pending.', leadUpdateError)
-        return null
-      })
-      await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
-        agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
-        activityType: 'Seller Document Uploaded',
-        activityNote: `${documentLabel} uploaded by agent.`,
-        outcome: documentLabel,
-        activityDate: uploadedAt,
-      }, { actor: currentAgent }).catch((activityError) => {
-        console.warn('[AgencyPipelinePage] Seller document upload activity could not be recorded.', activityError)
-        return null
-      })
+      await Promise.all([
+        updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, leadPatch).catch((leadUpdateError) => {
+          console.warn('[AgencyPipelinePage] Seller document upload saved, but lead mirror sync is still pending.', leadUpdateError)
+          return null
+        }),
+        createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
+          agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+          activityType: 'Seller Document Uploaded',
+          activityNote: `${documentLabel} uploaded by agent.`,
+          outcome: documentLabel,
+          activityDate: uploadedAt,
+        }, { actor: currentAgent }).catch((activityError) => {
+          console.warn('[AgencyPipelinePage] Seller document upload activity could not be recorded.', activityError)
+          return null
+        }),
+      ])
 
       setMessage(`${documentLabel} uploaded.`)
-      await reloadRecords(organisationId)
     } catch (uploadError) {
       setError(uploadError?.message || `Unable to upload ${documentLabel}.`)
     } finally {
@@ -30835,6 +31053,57 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
       {error ? <div className="rounded-[18px] border border-[#f6d4d4] bg-[#fff4f4] px-4 py-3 text-sm text-[#9f1d1d]">{error}</div> : null}
       {message ? <div className="rounded-[18px] border border-[#d4e8dc] bg-[#eef9f1] px-4 py-3 text-sm text-[#1a6e3a]">{message}</div> : null}
+      {sellerOnboardingDeliveryState.linkStatus !== 'idle' ? (
+        <div className="rounded-[18px] border border-[#dbe7f0] bg-white px-4 py-3 text-sm text-[#29445e] shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className={`rounded-full px-3 py-1 text-xs font-semibold ${sellerOnboardingDeliveryState.linkStatus === 'ready' ? 'bg-[#e7f7ee] text-[#137647]' : sellerOnboardingDeliveryState.linkStatus === 'failed' ? 'bg-[#fff0f0] text-[#a52b2b]' : 'bg-[#edf4fb] text-[#315a7d]'}`}>
+                {sellerOnboardingDeliveryState.linkStatus === 'ready' ? 'Link ready' : sellerOnboardingDeliveryState.linkStatus === 'failed' ? 'Link failed' : 'Preparing link'}
+              </span>
+              <span className={`rounded-full px-3 py-1 text-xs font-semibold ${sellerOnboardingDeliveryState.emailStatus === 'sent' ? 'bg-[#e7f7ee] text-[#137647]' : sellerOnboardingDeliveryState.emailStatus === 'failed' ? 'bg-[#fff0f0] text-[#a52b2b]' : 'bg-[#fff7df] text-[#8a6511]'}`}>
+                {sellerOnboardingDeliveryState.emailStatus === 'sent'
+                  ? 'Email sent'
+                  : sellerOnboardingDeliveryState.emailStatus === 'failed'
+                    ? 'Email failed'
+                    : sellerOnboardingDeliveryState.emailStatus === 'sending'
+                      ? 'Email sending'
+                      : 'Email not started'}
+              </span>
+              {Number.isFinite(sellerOnboardingDeliveryState.preparationMs) ? (
+                <span className="text-xs text-[#6b7f92]">Link {sellerOnboardingDeliveryState.preparationMs} ms</span>
+              ) : null}
+              {Number.isFinite(sellerOnboardingDeliveryState.resendSubmissionMs) ? (
+                <span className="text-xs text-[#6b7f92]">Resend {sellerOnboardingDeliveryState.resendSubmissionMs} ms</span>
+              ) : null}
+              {Number.isFinite(sellerOnboardingDeliveryState.deliveryPersistenceMs) ? (
+                <span className="text-xs text-[#6b7f92]">Delivery log {sellerOnboardingDeliveryState.deliveryPersistenceMs} ms</span>
+              ) : null}
+            </div>
+            {sellerOnboardingDeliveryState.link ? (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className="rounded-[10px] border border-[#cad9e6] px-3 py-1.5 text-xs font-semibold text-[#29445e] hover:bg-[#f4f8fb]"
+                  onClick={() => void navigator.clipboard?.writeText(sellerOnboardingDeliveryState.link)}
+                >
+                  Copy link
+                </button>
+                <a
+                  className="rounded-[10px] bg-[#137647] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#0f633b]"
+                  href={sellerOnboardingDeliveryState.link}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Open link
+                </a>
+              </div>
+            ) : null}
+          </div>
+          {sellerOnboardingDeliveryState.error ? (
+            <p className="mt-2 text-xs text-[#a52b2b]">{sellerOnboardingDeliveryState.error}</p>
+          ) : null}
+        </div>
+      ) : null}
 
       {!isCalendarMode && !isLeadWorkspaceRoute ? (
         <Suspense fallback={<LoadingSkeleton rows={8} />}>

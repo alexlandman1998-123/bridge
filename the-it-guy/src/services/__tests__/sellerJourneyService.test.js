@@ -119,4 +119,18 @@ assert.equal(hardCopySignedJourney.mandateStatus, 'signed')
 assert.equal(hardCopySignedJourney.listingCreated, true)
 assert.equal(hardCopySignedJourney.listingLive, true)
 
+const onboardingSentJourney = buildSellerJourney({
+  lead: {
+    leadId: 'seller-lead-onboarding-sent',
+    leadCategory: 'seller',
+    stage: 'Seller Onboarding Sent',
+    sellerOnboardingStatus: 'sent',
+    sellerOnboardingToken: 'seller-token',
+  },
+})
+
+assert.equal(onboardingSentJourney.stage.key, 'seller_onboarding_sent')
+assert.equal(onboardingSentJourney.nextRecommendedAction?.id, 'follow_up_with_seller')
+assert.equal(onboardingSentJourney.nextRecommendedAction?.label, 'Send Follow-Up')
+
 console.log('sellerJourneyService tests passed')

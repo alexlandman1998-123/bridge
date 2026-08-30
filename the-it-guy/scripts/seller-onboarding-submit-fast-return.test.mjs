@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
 const migration = await readFile(
-  new URL('../../supabase/migrations/202607310001_seller_onboarding_submit_fast_return.sql', import.meta.url),
+  new URL('../../supabase/migrations/20260829204153_seller_onboarding_completion_receipt_and_projection_rls.sql', import.meta.url),
   'utf8',
 )
 const progressMigration = await readFile(
@@ -29,9 +29,15 @@ assert.match(
 )
 assert.match(
   migration,
-  /return jsonb_build_object\([\s\S]*?'listing', to_jsonb\(v_listing\),[\s\S]*?'onboarding', to_jsonb\(v_onboarding\) - 'seller_portal_password_hash' - 'seller_portal_access_token_hash' - 'seller_portal_invite_token_hash'[\s\S]*?'requirements', '\[\]'::jsonb,[\s\S]*?'documents', '\[\]'::jsonb,[\s\S]*?'appointments', '\[\]'::jsonb,/,
-  'seller onboarding submit should return a minimal payload after core writes',
+  /return jsonb_build_object\(\s*'onboardingId', v_onboarding\.id,\s*'listingId', v_listing\.id,\s*'status', v_onboarding\.status,\s*'submittedAt', v_onboarding\.submitted_at\s*\)/,
+  'seller onboarding submit should return only the four-field completion receipt',
 )
+assert.doesNotMatch(migration, /'listing', to_jsonb\(v_listing\)|'onboarding', to_jsonb\(v_onboarding\)/, 'completion receipt must not return full rows')
+assert.match(migration, /bridge_sanitize_seller_onboarding_form_data[\s\S]*?'generatedDocument'[\s\S]*?'seller_compliance_signers'/, 'completion should strip generated artifacts and duplicate compliance aliases')
+assert.match(migration, /canonical_facts_json = v_canonical_facts[\s\S]*?seller_canonical_facts_json = v_canonical_facts/, 'token RPC should own both canonical projections that anonymous RLS rejected')
+assert.match(migration, /insert into public\.listing_publication_data[\s\S]*?on conflict \(listing_id\) do update/, 'token RPC should own the publication projection that anonymous RLS rejected')
+assert.match(migration, /create or replace function public\.bridge_get_private_listing_seller_onboarding_completion\(/, 'migration should add a lightweight completion recovery RPC')
+assert.match(migration, /revoke all on function public\.bridge_complete_private_listing_seller_onboarding[\s\S]*?from public;[\s\S]*?grant execute[\s\S]*?to anon, authenticated;/, 'completion RPC must expose only explicit token-scoped execute access')
 assert.doesNotMatch(
   migration,
   /bridge_private_listing_seller_portal_core_payload\(p_token\)/,
@@ -82,10 +88,13 @@ assert.match(
   /void enqueueSellerOnboardingProgressProjection\(client, \{[\s\S]*?listing: listingForProgress,[\s\S]*?reason: 'seller_onboarding_progress_fallback'/,
   'seller onboarding fallback draft saves should queue projection work after the direct update returns',
 )
-assert.match(
-  privateListingService,
-  /deferSellerOnboardingFollowUp\('seller requirements sync after onboarding submit'[\s\S]*?syncPrivateListingRequirements\(rpcContext\.listing, \{[\s\S]*?reason: 'onboarding_completed'/,
-  'seller onboarding submit should not wait for optional requirement sync before returning',
+assert.match(privateListingService, /SELLER_ONBOARDING_COMPLETION_TIMEOUT_MS = 12_000[\s\S]*?bridge_complete_private_listing_seller_onboarding[\s\S]*?\.abortSignal\(timeout\.signal\)/, 'completion RPC should have a 12-second client timeout')
+assert.match(privateListingService, /SELLER_ONBOARDING_RECOVERY_TIMEOUT_MS = 3_000[\s\S]*?fetchSellerOnboardingCompletionReceipt[\s\S]*?bridge_get_private_listing_seller_onboarding_completion/, 'timeout recovery should use the lightweight completion receipt')
+assert.match(privateListingService, /sanitizeSellerOnboardingCompletionFormData[\s\S]*?delete sanitized\[key\]/, 'client should sanitize completion form data before transport')
+assert.doesNotMatch(
+  privateListingService.match(/if \(!rpc\.error\) \{[\s\S]*?return rpcContext\n  \}/)?.[0] || '',
+  /persistCanonicalSellerFactPayload|syncSellerOnboardingPublicationDraft|syncSellerJourneyLeadStage/,
+  'successful completion must not repeat the RLS-sensitive projections in the browser',
 )
 assert.match(
   privateListingService,
@@ -114,14 +123,11 @@ assert.match(
 )
 assert.match(
   privateListingService,
-  /function recoverSellerOnboardingSubmitAfterTimeout\(token, timeoutError\)[\s\S]*?getSellerOnboardingByToken\(normalizedToken, \{[\s\S]*?includeRequirementsAndDocuments: false,[\s\S]*?corePayload: true,[\s\S]*?\}\)/,
-  'seller onboarding submit should re-read the lightweight payload after a statement timeout before surfacing an error',
-)
-assert.match(
-  privateListingService,
-  /if \(isStatementTimeoutError\(rpc\.error\)\) \{[\s\S]*?recoverSellerOnboardingSubmitAfterTimeout\(normalizedToken, rpc\.error\)[\s\S]*?return recoveredContext/,
+  /if \(isSellerOnboardingCompletionTimeoutError\(rpc\.error\)\) \{[\s\S]*?recoverSellerOnboardingSubmitAfterTimeout\(client, normalizedToken, rpc\.error,[\s\S]*?return recoveredContext/,
   'seller onboarding submit should accept a recovered completed context after a timeout',
 )
+assert.doesNotMatch(sellerOnboardingPage, /generatedDocument: disclosureDocument/, 'submit must not embed generated disclosure HTML in form_data')
+assert.match(sellerOnboardingPage, /submitSellerOnboarding\(token, \{[\s\S]*?listingSnapshot: listing,/, 'submit should build the immediate UI result from the already-loaded listing')
 assert.match(
   sellerOnboardingPage,
   /getSellerOnboardingByToken\(token, \{[\s\S]*?includeRequirementsAndDocuments: false,[\s\S]*?corePayload: true,[\s\S]*?\}\)/,
@@ -129,7 +135,7 @@ assert.match(
 )
 assert.match(
   sellerOnboardingPage,
-  /message\.toLowerCase\(\)\.includes\('statement timeout'\)[\s\S]*?refresh once/,
+  /function resolveSellerOnboardingSubmitError\(error\)[\s\S]*?isSellerOnboardingTimeoutError\(error\)[\s\S]*?refresh once/,
   'seller onboarding page should not show raw database statement timeout wording',
 )
 assert.match(

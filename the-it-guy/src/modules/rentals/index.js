@@ -79,6 +79,10 @@ export {
   RentalPortfoliosPage,
   RentalPortfolioDetailPage,
   RentalTenanciesPage,
+  RentalVacanciesPage,
+  RentalVacancyCreatePage,
+  RentalVacancyDetailPage,
+  RentalOperationsDashboardPage,
 } from './shell/rentalRouteLoaders.js'
 
 export { RENTAL_MODULES, resolveRentalModuleAvailability } from '../../services/rentals/rentalModuleAvailability.js'

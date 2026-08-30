@@ -1,0 +1,1 @@
+import assert from'node:assert/strict';import{buildRentalPipelineSummary,transitionRentalLead}from'../rentalLeadPipelineModel.js';assert.equal(transitionRentalLead({stage:'new'},'contacted').nextAction,'Schedule viewing');assert.equal(buildRentalPipelineSummary([{stage:'new'},{stage:'new'}])[0].count,2);console.log('Rental lead pipeline model tests passed.')

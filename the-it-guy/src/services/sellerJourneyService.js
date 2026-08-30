@@ -905,7 +905,7 @@ export function getSellerJourneyActions({ lead = {}, contact = {}, listing = nul
     { id: 'create_listing', label: mandateSigned ? 'Create Listing' : 'Create Listing Draft', enabled: !listingShellExists },
     { id: 'open_listing', label: mandateSigned ? 'Open Listing' : 'Open Listing Draft', enabled: listingShellExists },
     { id: 'activate_listing', label: 'Activate Listing', enabled: listingCreated && !live && mandateSigned },
-    { id: 'open_seller_portal', label: 'Track Seller Onboarding', enabled: Boolean(sellerPortalToken) },
+    { id: 'follow_up_with_seller', label: 'Send Follow-Up', enabled: Boolean(sellerPortalToken) },
   ].map((action) => ({
     ...action,
     disabled: !action.enabled,
@@ -978,7 +978,11 @@ export function buildSellerJourney({ lead = {}, contact = {}, listing = null, ma
   )
   const estimatedValue = toNumber(listing?.estimatedValue || listing?.estimated_value || listing?.askingPrice || listing?.asking_price || lead?.estimatedValue || lead?.estimated_value)
   const actions = getSellerJourneyActions({ lead, contact, listing, mandatePacketStatus, documents })
-  const nextRecommendedAction = actions.find((action) => action.enabled && !['contact_seller', 'open_seller_portal'].includes(action.id)) ||
+  const nextRecommendedAction = (
+    stage.key === 'seller_onboarding_sent'
+      ? actions.find((action) => action.id === 'follow_up_with_seller' && action.enabled)
+      : null
+  ) || actions.find((action) => action.enabled && !['contact_seller', 'follow_up_with_seller'].includes(action.id)) ||
     actions.find((action) => action.enabled) ||
     null
   const currentStageStartedAt = resolveSellerStageStartedAt({

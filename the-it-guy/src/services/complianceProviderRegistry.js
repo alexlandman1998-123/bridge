@@ -4,7 +4,7 @@ function reference(prefix = 'MOCK') {
 
 const mockProvider = {
   key: 'mock',
-  label: 'Configured verification provider',
+  label: 'configured provider',
   checks: ['identity', 'address', 'sanctions', 'pep', 'risk'],
   cost: null,
   async startVerification({ subject = {} } = {}) {

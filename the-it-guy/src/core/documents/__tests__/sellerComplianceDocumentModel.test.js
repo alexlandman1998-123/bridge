@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { buildPropertyDisclosureDocumentMarkup, PROPERTY_DISCLOSURE_ANSWER } from '../../../lib/propertyDisclosure.js'
+import {
+  buildPropertyDisclosureDocumentMarkup,
+  PROPERTY_DISCLOSURE_ANSWER,
+  PROPERTY_DISCLOSURE_QUESTIONS,
+  shouldPromptPropertyDisclosureComment,
+} from '../../../lib/propertyDisclosure.js'
 import { buildSellerComplianceDocumentModel } from '../sellerComplianceDocumentModel.js'
 import { buildSellerCompliancePortalModel } from '../sellerCompliancePortalModel.js'
 
@@ -95,4 +100,31 @@ test('buildPropertyDisclosureDocumentMarkup renders FICA and signer pages when c
   assert.match(html, /Signature Certificate/)
   assert.match(html, /Jane Smith/)
   assert.match(html, /Page 5 of 5/)
+})
+
+test('property disclosure requests details for answers that indicate a defect', () => {
+  const electricalFaults = PROPERTY_DISCLOSURE_QUESTIONS.find((question) => question.key === 'electrical_faults')
+  const securitySystems = PROPERTY_DISCLOSURE_QUESTIONS.find((question) => question.key === 'security_systems')
+
+  assert.equal(shouldPromptPropertyDisclosureComment(electricalFaults, PROPERTY_DISCLOSURE_ANSWER.yes), true)
+  assert.equal(shouldPromptPropertyDisclosureComment(electricalFaults, PROPERTY_DISCLOSURE_ANSWER.no), false)
+  assert.equal(shouldPromptPropertyDisclosureComment(securitySystems, PROPERTY_DISCLOSURE_ANSWER.no), true)
+  assert.equal(shouldPromptPropertyDisclosureComment(securitySystems, PROPERTY_DISCLOSURE_ANSWER.yes), false)
+  assert.equal(shouldPromptPropertyDisclosureComment(securitySystems, PROPERTY_DISCLOSURE_ANSWER.unsure), true)
+})
+
+test('buildPropertyDisclosureDocumentMarkup includes per-question issue details', () => {
+  const html = buildPropertyDisclosureDocumentMarkup({
+    ...completedDisclosure,
+    responses: {
+      ...completedDisclosure.responses,
+      electrical_faults: {
+        answer: PROPERTY_DISCLOSURE_ANSWER.yes,
+        note: 'Kitchen plug trips when the kettle is used.',
+      },
+    },
+  })
+
+  assert.match(html, /Details:/)
+  assert.match(html, /Kitchen plug trips when the kettle is used\./)
 })

@@ -452,6 +452,7 @@ async function resolveSenderOrganisationBranding(
 export async function handleSellerOnboardingEmail(
   payload: SendSellerOnboardingPayload,
 ) {
+  const requestStartedAt = performance.now();
   const resendApiKey = normalizeText(Deno.env.get("RESEND_API_KEY"));
   const supabaseUrl = normalizeText(Deno.env.get("SUPABASE_URL"));
   const serviceRoleKey = normalizeText(
@@ -550,62 +551,38 @@ export async function handleSellerOnboardingEmail(
   let templateOverrides = null;
   let senderOrganisationName = organisationName;
   let senderOrganisationLogoUrl = payloadAgencyLogoUrl;
-  let senderBrandPrimaryColor = "";
-  let senderBrandSecondaryColor = "";
-  if (organisationId && supabase) {
-    try {
-      const resolvedOrganisation = await resolveSenderOrganisationBranding(
-        supabase,
-        organisationId,
+  const brandingPayload = payload as Record<string, unknown>;
+  const [branding, resolvedTemplateOverrides] = await Promise.all([
+    resolveEmailBranding({
+      supabase: supabase || undefined,
+      organisationId,
+      rolloutMode: brandingPayload.brandingResolved === true ? "payload_only" : undefined,
+      payload: {
+        ...brandingPayload,
+        organisationName: senderOrganisationName || organisationName,
+        logoUrl: senderOrganisationLogoUrl,
+        supportEmail,
+        supportPhone,
+      },
+      defaults: {
         organisationName,
-      );
-      senderOrganisationName = resolvedOrganisation.senderOrganisationName;
-      senderOrganisationLogoUrl =
-        resolvedOrganisation.senderOrganisationLogoUrl ||
-        senderOrganisationLogoUrl;
-      senderBrandPrimaryColor = resolvedOrganisation.senderBrandPrimaryColor ||
-        senderBrandPrimaryColor;
-      senderBrandSecondaryColor =
-        resolvedOrganisation.senderBrandSecondaryColor ||
-        senderBrandSecondaryColor;
-      if (!supportEmail) {
-        supportEmail = resolvedOrganisation.supportEmail;
-      }
-      if (!supportPhone) {
-        supportPhone = resolvedOrganisation.supportPhone;
-      }
-      templateOverrides = await fetchOrganisationEmailTemplateOverride(
+        logoUrl: payloadAgencyLogoUrl,
+        supportEmail,
+        supportPhone,
+      },
+    }),
+    organisationId && supabase
+      ? fetchOrganisationEmailTemplateOverride(
         supabase,
         organisationId,
         portalDocumentsMode ? "seller_portal_link" : "seller_onboarding",
-      );
-    } catch (error) {
-      console.error(
-        "[seller_onboarding] template override lookup failed",
-        error,
-      );
-    }
-  }
-
-  const branding = await resolveEmailBranding({
-    supabase: supabase || undefined,
-    organisationId,
-    payload: {
-      ...(payload as Record<string, unknown>),
-      organisationName: senderOrganisationName || organisationName,
-      logoUrl: senderOrganisationLogoUrl,
-      primaryColor: senderBrandPrimaryColor,
-      secondaryColor: senderBrandSecondaryColor,
-      supportEmail,
-      supportPhone,
-    },
-    defaults: {
-      organisationName,
-      logoUrl: payloadAgencyLogoUrl,
-      supportEmail,
-      supportPhone,
-    },
-  });
+      ).catch((error) => {
+        console.error("[seller_onboarding] template override lookup failed", error);
+        return null;
+      })
+      : Promise.resolve(null),
+  ]);
+  templateOverrides = resolvedTemplateOverrides;
   senderOrganisationName = branding.organisationName;
   senderOrganisationLogoUrl = branding.logoDarkUrl || branding.logoUrl ||
     branding.logoLightUrl || branding.logoIconUrl ||
@@ -701,6 +678,8 @@ export async function handleSellerOnboardingEmail(
     },
   );
 
+  const preparationMs = Math.max(0, Math.round(performance.now() - requestStartedAt));
+  const resendStartedAt = performance.now();
   const emailResult = await sendViaResendApi({
     apiKey: resendApiKey,
     from: sender,
@@ -711,21 +690,51 @@ export async function handleSellerOnboardingEmail(
     text,
     timeoutMs: SELLER_ONBOARDING_RESEND_TIMEOUT_MS,
   });
+  const resendSubmissionMs = Math.max(0, Math.round(performance.now() - resendStartedAt));
 
   if (!emailResult.ok) {
+    const deliveryStartedAt = performance.now();
     await markEmailDeliveryFailed(delivery?.id || "", {
       errorMessage: emailResult.error?.message ||
         "Failed to send seller onboarding email.",
+    });
+    const deliveryPersistenceMs = Math.max(0, Math.round(performance.now() - deliveryStartedAt));
+    const timings = {
+      preparationMs,
+      resendSubmissionMs,
+      deliveryPersistenceMs,
+      totalMs: Math.max(0, Math.round(performance.now() - requestStartedAt)),
+    };
+    console.info("[seller_onboarding] delivery timing", {
+      organisationId: organisationId || null,
+      listingId: listingId || null,
+      status: "failed",
+      ...timings,
     });
     return jsonResponse(500, {
       error: emailResult.error?.message ||
         "Failed to send seller onboarding email.",
       details: emailResult.error,
+      timings,
     });
   }
 
+  const deliveryStartedAt = performance.now();
   await markEmailDeliverySent(delivery?.id || "", {
     emailId: emailResult.data?.id || null,
+  });
+  const deliveryPersistenceMs = Math.max(0, Math.round(performance.now() - deliveryStartedAt));
+  const timings = {
+    preparationMs,
+    resendSubmissionMs,
+    deliveryPersistenceMs,
+    totalMs: Math.max(0, Math.round(performance.now() - requestStartedAt)),
+  };
+  console.info("[seller_onboarding] delivery timing", {
+    organisationId: organisationId || null,
+    listingId: listingId || null,
+    status: "sent",
+    ...timings,
   });
 
   return jsonResponse(200, {
@@ -737,5 +746,6 @@ export async function handleSellerOnboardingEmail(
     canonicalInviteLink: canonicalClientInvite?.inviteLink || null,
     legacyOnboardingLink: portalDocumentsMode ? legacyOnboardingLink : null,
     communicationType,
+    timings,
   });
 }

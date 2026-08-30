@@ -42,6 +42,12 @@ type ResolveEmailBrandingInput = {
   rolloutOrganisationIds?: string[] | string;
 };
 
+const EMAIL_BRANDING_CACHE_TTL_MS = 60_000;
+const emailBrandingLookupCache = new Map<
+  string,
+  { expiresAt: number; value?: EmailBrandingInput; promise?: Promise<EmailBrandingInput> }
+>();
+
 function toRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
@@ -722,32 +728,54 @@ export async function resolveEmailBranding({
     return mergeEmailBranding(defaults, explicitBranding);
   }
 
-  const [organisationRow, brandingRow, settingsRow] = await Promise.all([
-    maybeFetchSingleByOrganisation(
-      supabase,
-      "organisations",
-      "id",
-      resolvedOrganisationId,
-    ),
-    maybeFetchSingleByOrganisation(
-      supabase,
-      "organisation_branding",
-      "organisation_id",
-      resolvedOrganisationId,
-    ),
-    maybeFetchSingleByOrganisation(
-      supabase,
-      "organisation_settings",
-      "organisation_id",
-      resolvedOrganisationId,
-    ),
-  ]);
+  const cacheKey = resolvedOrganisationId.toLowerCase();
+  const cached = emailBrandingLookupCache.get(cacheKey);
+  let databaseBranding: EmailBrandingInput;
+  if (cached && cached.expiresAt > Date.now() && cached.value) {
+    databaseBranding = cached.value;
+  } else if (cached?.promise) {
+    databaseBranding = await cached.promise;
+  } else {
+    const request = (async () => {
+      const [organisationRow, brandingRow, settingsRow] = await Promise.all([
+        maybeFetchSingleByOrganisation(
+          supabase,
+          "organisations",
+          "id",
+          resolvedOrganisationId,
+        ),
+        maybeFetchSingleByOrganisation(
+          supabase,
+          "organisation_branding",
+          "organisation_id",
+          resolvedOrganisationId,
+        ),
+        maybeFetchSingleByOrganisation(
+          supabase,
+          "organisation_settings",
+          "organisation_id",
+          resolvedOrganisationId,
+        ),
+      ]);
+      const value = mergeEmailBranding(
+        extractEmailBrandingFromSettings(settingsRow),
+        extractEmailBrandingFromOrganisation(organisationRow),
+        extractEmailBrandingFromOrganisationBranding(brandingRow),
+        { organisationId: resolvedOrganisationId },
+      );
+      emailBrandingLookupCache.set(cacheKey, {
+        expiresAt: Date.now() + EMAIL_BRANDING_CACHE_TTL_MS,
+        value,
+      });
+      return value;
+    })();
+    emailBrandingLookupCache.set(cacheKey, { expiresAt: 0, promise: request });
+    databaseBranding = await request;
+  }
 
   return mergeEmailBranding(
     defaults,
-    extractEmailBrandingFromSettings(settingsRow),
-    extractEmailBrandingFromOrganisation(organisationRow),
-    extractEmailBrandingFromOrganisationBranding(brandingRow),
+    databaseBranding,
     explicitBranding,
     { organisationId: resolvedOrganisationId },
   );

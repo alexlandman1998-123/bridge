@@ -6,7 +6,7 @@ export const RENTAL_MODULE_PUBLIC_SURFACES = Object.freeze([
 ])
 
 export const RENTAL_MODULE_ROUTE_IDS = Object.freeze({
-  dashboard: 'dashboard', tenancies: 'tenancies', leads: 'leads', applications: 'applications', properties: 'properties', portfolios: 'portfolios',
+  dashboard: 'dashboard', tenancies: 'tenancies', leads: 'leads', applications: 'applications', properties: 'properties', portfolios: 'portfolios', vacancies: 'vacancies',
   calendar: 'calendar', listingCreate: 'listing_create', listingDetail: 'listing_detail', listings: 'listings',
 })
 
@@ -21,6 +21,7 @@ const routes = Object.freeze({
   [RENTAL_MODULE_ROUTE_IDS.listings]: '/agent/rentals/listings',
   [RENTAL_MODULE_ROUTE_IDS.properties]: '/agent/rentals/portfolio/properties',
   [RENTAL_MODULE_ROUTE_IDS.portfolios]: '/agent/rentals/portfolio',
+  [RENTAL_MODULE_ROUTE_IDS.vacancies]: '/agent/rentals/vacancies',
 })
 
 export function getRentalModuleRoute(routeId) {

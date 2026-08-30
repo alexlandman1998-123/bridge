@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
-import { AlertTriangle, Check, CheckCircle2, Clock3, FileText, RefreshCw, ShieldCheck, XCircle } from 'lucide-react'
+import { AlertTriangle, Check, CheckCircle2, CircleHelp, Clock3, FileText, Info, RefreshCw, ShieldCheck, XCircle } from 'lucide-react'
 import Button from '../ui/Button'
 import Drawer from '../ui/Drawer'
 import { getClientComplianceVerification, recordComplianceAuditEvent, startClientComplianceVerification } from '../../services/clientComplianceService'
+import { getComplianceProvider } from '../../services/complianceProviderRegistry'
 
 const CHECK_LABELS = { identity: 'Identity', address: 'Address', sanctions: 'Sanctions', pep: 'PEP', risk: 'Risk' }
-const DEFAULT_CHECKS = Object.keys(CHECK_LABELS).map((type) => ({ type, status: 'pending', result: 'Pending' }))
+const DEFAULT_CHECKS = Object.keys(CHECK_LABELS).map((type) => ({ type, status: 'not_run', result: 'Not run' }))
 
 function formatDateTime(value) {
   if (!value) return '—'
@@ -17,10 +18,59 @@ function titleCase(value) {
 }
 
 function checkIcon(status, processing) {
-  if (processing || status === 'pending') return <RefreshCw className={`h-4 w-4 ${processing ? 'animate-spin' : ''}`} />
+  if (processing || status === 'in_progress') return <RefreshCw className={`h-4 w-4 ${processing ? 'animate-spin' : ''}`} />
+  if (['not_run', 'pending', 'unavailable'].includes(status)) return <Clock3 className="h-4 w-4" />
   if (['verified', 'clear', 'low'].includes(status)) return <Check className="h-4 w-4" />
   if (['potential_match', 'review_required', 'medium', 'high'].includes(status)) return <AlertTriangle className="h-4 w-4" />
   return <XCircle className="h-4 w-4" />
+}
+
+function normalizeCheckStatus(check = {}) {
+  const status = String(check.status || '').trim().toLowerCase()
+  if (!status || status === 'pending') return 'not_run'
+  return status
+}
+
+function buyerPanelPresentation({ status = 'not_started', missingFields = [], unavailable = false } = {}) {
+  if (missingFields.length) {
+    const count = missingFields.length
+    return {
+      key: 'incomplete',
+      title: 'Additional information required',
+      copy: `Complete ${count} missing field${count === 1 ? '' : 's'} before this buyer can be verified.`,
+      tone: 'amber',
+    }
+  }
+  if (unavailable) return { key: 'unavailable', title: 'Verification unavailable', copy: 'Verification is currently unavailable for this workspace.', tone: 'neutral' }
+  if (status === 'in_progress') return { key: 'processing', title: 'Verification in progress', copy: "We're checking this buyer's FICA information.", tone: 'blue' }
+  if (status === 'verified') return { key: 'verified', title: 'FICA verification complete', copy: 'Buyer verification is complete.', tone: 'green' }
+  if (status === 'review_required') return { key: 'review', title: 'Review required', copy: 'One or more verification checks need review.', tone: 'amber' }
+  if (['failed', 'incomplete'].includes(status)) return { key: 'failed', title: 'Verification unsuccessful', copy: 'Resolve the highlighted information and try again.', tone: 'red' }
+  if (status === 'expired') return { key: 'expired', title: 'Verification refresh required', copy: 'The previous verification is no longer current.', tone: 'amber' }
+  return { key: 'ready', title: 'Ready for FICA verification', copy: 'The required buyer information is captured and ready to check.', tone: 'green' }
+}
+
+function buyerCheckPresentation(check = {}, { missingFields = [], processing = false } = {}) {
+  const type = String(check.type || '').trim().toLowerCase()
+  const missingText = missingFields.join(' ').toLowerCase()
+  const identityMissing = /(id|passport|name|registration)/.test(missingText)
+  const addressMissing = /address/.test(missingText)
+  const status = processing
+    ? 'in_progress'
+    : type === 'identity' && identityMissing
+      ? 'incomplete'
+      : type === 'address' && addressMissing
+        ? 'incomplete'
+        : normalizeCheckStatus(check)
+  const label = status === 'not_run' ? 'Not run' : titleCase(check.result || status)
+  return { ...check, status, label }
+}
+
+function buyerCheckTone(status = '') {
+  if (['verified', 'clear', 'low'].includes(status)) return 'border-[#cbe7d7] bg-[#f7fcf9] text-[#157a4d]'
+  if (['incomplete', 'review_required', 'medium'].includes(status)) return 'border-[#f0d9a5] bg-[#fffaf0] text-[#a26b16]'
+  if (['failed', 'unable_to_verify', 'potential_match', 'high'].includes(status)) return 'border-[#f0cfcb] bg-[#fff8f7] text-[#a43e36]'
+  return 'border-[#dce7f2] bg-[#fbfdff] text-[#60758b]'
 }
 
 function presentation(status, missing = [], partyLabel = 'Seller') {
@@ -34,13 +84,14 @@ function presentation(status, missing = [], partyLabel = 'Seller') {
   return { title: `${partyLabel} identity has not been verified`, copy: `The ${party}’s information has been captured, but identity and compliance checks have not yet been completed.`, tone: 'neutral' }
 }
 
-export default function SellerFicaVerification({ organisationId, clientContactId, sellerName, clientName = '', partyType = 'seller', entityType = 'individual', subject = {}, missingFields = [], verificationCost = null, canView = true, canRun = false, onCompleteInformation, onAuditActivity }) {
+export default function SellerFicaVerification({ organisationId, clientContactId, sellerName, clientName = '', partyType = 'seller', entityType = 'individual', subject = {}, missingFields = [], verificationCost = null, providerKey = 'mock', providerLabel = '', canView = true, canRun = false, onCompleteInformation, onAuditActivity }) {
   const [snapshot, setSnapshot] = useState({ profile: null, run: null })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [verifyOpen, setVerifyOpen] = useState(false)
   const [reportOpen, setReportOpen] = useState(false)
   const [running, setRunning] = useState(false)
+  const [infoOpen, setInfoOpen] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -63,6 +114,10 @@ export default function SellerFicaVerification({ organisationId, clientContactId
   const partyLabel = partyType === 'buyer' ? 'Buyer' : 'Seller'
   const displayName = clientName || sellerName
   const state = presentation(status, missingFields, partyLabel)
+  const configuredProvider = getComplianceProvider(providerKey)
+  const resolvedProviderLabel = String(providerLabel || run?.provider || configuredProvider?.label || 'configured provider').trim()
+  const buyerState = buyerPanelPresentation({ status, missingFields, unavailable: storageUnavailable })
+  const buyerChecks = checks.map((check) => buyerCheckPresentation(check, { missingFields, processing: running || status === 'in_progress' }))
   const risk = run?.riskRating || 'unknown'
   const canStart = canRun && !storageUnavailable && !missingFields.length && !running && status !== 'in_progress'
   const address = subject.residentialAddress || [subject.street, subject.suburb, subject.city, subject.province, subject.country].filter(Boolean).join(', ')
@@ -76,7 +131,7 @@ export default function SellerFicaVerification({ organisationId, clientContactId
     setVerifyOpen(false)
     setError('')
     try {
-      const nextRun = await startClientComplianceVerification({ organisationId, clientContactId, entityType, subject, providerKey: 'mock', rerun })
+      const nextRun = await startClientComplianceVerification({ organisationId, clientContactId, entityType, subject, providerKey, rerun })
       setSnapshot((previous) => ({ ...previous, run: nextRun }))
       onAuditActivity?.(rerun ? 'FICA verification re-run' : 'FICA verification completed', nextRun)
     } catch (runError) {
@@ -96,6 +151,114 @@ export default function SellerFicaVerification({ organisationId, clientContactId
 
   return (
     <>
+      {partyType === 'buyer' ? (
+        <section
+          className={`mt-5 rounded-[20px] border p-5 shadow-[0_10px_28px_rgba(31,54,78,0.035)] sm:p-6 ${buyerState.tone === 'green' ? 'border-[#cbe7d7] bg-[#fbfefd]' : buyerState.tone === 'amber' ? 'border-[#f0d9a5] bg-[#fffdf9]' : buyerState.tone === 'red' ? 'border-[#f0cfcb] bg-[#fffafa]' : 'border-[#dce7f2] bg-white'}`}
+          aria-busy={loading || running}
+          data-testid="buyer-fica-verification"
+        >
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-full ${buyerState.tone === 'green' ? 'bg-[#eaf6ef] text-[#157a4d]' : buyerState.tone === 'amber' ? 'bg-[#fff0c9] text-[#8a641d]' : buyerState.tone === 'red' ? 'bg-[#fde8e6] text-[#a43e36]' : 'bg-[#eef5fb] text-[#315b7a]'}`}>
+                {buyerState.key === 'verified' ? <CheckCircle2 className="h-5 w-5" /> : <ShieldCheck className="h-5 w-5" />}
+              </span>
+              <p className="text-[0.7rem] font-bold uppercase tracking-[0.16em] text-[#31506b]">FICA Verification</p>
+            </div>
+            <div className="relative">
+              <button
+                type="button"
+                className="inline-flex min-h-9 items-center gap-1.5 rounded-[10px] px-2 text-xs font-semibold text-[#405b75] hover:bg-white/70"
+                aria-expanded={infoOpen}
+                aria-controls="buyer-fica-checks-info"
+                onClick={() => setInfoOpen((open) => !open)}
+              >
+                <CircleHelp className="h-4 w-4" />
+                What is checked?
+              </button>
+              {infoOpen ? (
+                <div id="buyer-fica-checks-info" role="dialog" className="absolute right-0 top-10 z-20 w-[min(20rem,calc(100vw-3rem))] rounded-[14px] border border-[#dce7f2] bg-white p-4 text-left shadow-[0_16px_36px_rgba(16,32,51,0.14)]">
+                  <p className="text-sm font-semibold text-[#102033]">Buyer CDD may include</p>
+                  <ul className="mt-2 space-y-1 text-xs leading-5 text-[#60758b]">
+                    <li>Identity and address verification</li>
+                    <li>Sanctions and PEP screening</li>
+                    <li>Risk assessment</li>
+                    {entityType !== 'individual' ? <li>Beneficial-owner and control-person verification</li> : null}
+                  </ul>
+                </div>
+              ) : null}
+            </div>
+          </div>
+
+          <div className={`mt-4 ${buyerState.key === 'verified' ? 'grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end' : ''}`}>
+            <div>
+              <h4 className="text-xl font-semibold tracking-[-0.03em] text-[#102033]">{loading ? 'Loading verification status…' : buyerState.title}</h4>
+              <p className="mt-1.5 text-sm leading-6 text-[#526b82]">{buyerState.copy}</p>
+              {missingFields.length ? (
+                <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+                  <span className="font-semibold text-[#8a641d]">Missing:</span>
+                  {missingFields.map((field) => <span key={field} className="rounded-full border border-[#f0dfbd] bg-white px-2.5 py-1 font-medium text-[#68573b]">{field}</span>)}
+                </div>
+              ) : null}
+            </div>
+            {buyerState.key === 'verified' && run?.reportReference ? (
+              <Button type="button" size="sm" variant="secondary" className="w-full lg:w-auto" onClick={viewReport}>
+                <FileText className="h-4 w-4" /> View verification report
+              </Button>
+            ) : null}
+          </div>
+
+          <div className={`mt-4 grid gap-2 ${buyerState.key === 'verified' ? 'sm:grid-cols-5' : 'sm:grid-cols-2 lg:grid-cols-5'}`}>
+            {buyerChecks.map((check) => (
+              <div key={check.type} className={`flex min-h-[74px] items-center gap-2.5 rounded-[13px] border px-3 py-2.5 ${buyerCheckTone(check.status)}`}>
+                <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-current/20 bg-white/70">
+                  {checkIcon(check.status, running || status === 'in_progress')}
+                </span>
+                <span className="min-w-0">
+                  <span className="block truncate text-xs font-semibold text-[#20364c]">{CHECK_LABELS[check.type] || titleCase(check.type)}</span>
+                  <span className="mt-0.5 block truncate text-[0.68rem] font-medium text-current">{check.label}</span>
+                </span>
+              </div>
+            ))}
+          </div>
+
+          {buyerState.key !== 'verified' ? (
+            <div className="mt-4 flex flex-col gap-3 border-t border-[#eceff2] pt-4 sm:flex-row sm:items-center sm:justify-between">
+              <p className={`flex min-w-0 items-center gap-2 text-xs leading-5 ${storageUnavailable ? 'text-[#60758b]' : buyerState.tone === 'amber' ? 'text-[#8a641d]' : buyerState.tone === 'red' ? 'text-[#a43e36]' : 'text-[#60758b]'}`}>
+                {storageUnavailable ? <Info className="h-4 w-4 shrink-0" /> : buyerState.key === 'processing' ? <RefreshCw className="h-4 w-4 shrink-0 animate-spin" /> : <AlertTriangle className="h-4 w-4 shrink-0" />}
+                {storageUnavailable
+                  ? 'Verification is currently unavailable for this workspace.'
+                  : buyerState.key === 'processing'
+                    ? 'Verification is being processed. Duplicate submissions are disabled.'
+                    : buyerState.key === 'ready'
+                      ? `Ready to verify with ${resolvedProviderLabel}.`
+                      : buyerState.key === 'review'
+                        ? 'Review the highlighted checks before marking this buyer compliant.'
+                        : buyerState.key === 'failed'
+                          ? 'Verification was unsuccessful. Review the details before retrying.'
+                          : 'Verification is unavailable until required information is completed.'}
+              </p>
+              <div className="w-full shrink-0 sm:w-auto">
+                {buyerState.key === 'incomplete' ? (
+                  <Button type="button" size="sm" className="w-full sm:w-auto" onClick={onCompleteInformation}>Complete information</Button>
+                ) : buyerState.key === 'unavailable' ? (
+                  <Button type="button" size="sm" className="w-full sm:w-auto" disabled><Info className="h-4 w-4" />Verification unavailable</Button>
+                ) : buyerState.key === 'processing' ? (
+                  <Button type="button" size="sm" className="w-full sm:w-auto" disabled><RefreshCw className="h-4 w-4 animate-spin" />Verification in progress</Button>
+                ) : buyerState.key === 'review' ? (
+                  <Button type="button" size="sm" className="w-full sm:w-auto" onClick={viewReport}><ShieldCheck className="h-4 w-4" />Review verification</Button>
+                ) : buyerState.key === 'failed' || buyerState.key === 'expired' ? (
+                  <Button type="button" size="sm" className="w-full sm:w-auto" disabled={!canStart} onClick={() => setVerifyOpen(true)}><RefreshCw className="h-4 w-4" />Retry verification</Button>
+                ) : (
+                  <Button type="button" size="sm" className="w-full sm:w-auto" disabled={!canStart} onClick={() => setVerifyOpen(true)}><ShieldCheck className="h-4 w-4" />Verify with {resolvedProviderLabel}</Button>
+                )}
+              </div>
+            </div>
+          ) : null}
+
+          {error ? <p className="mt-3 text-xs font-semibold text-[#a43e36]">{error}</p> : null}
+          <p className="mt-4 text-xs text-[#71869b]">Verification powered by <span className="font-semibold text-[#31506b]">{resolvedProviderLabel}</span></p>
+        </section>
+      ) : (
       <section className={`mt-5 rounded-[20px] border p-5 shadow-[0_12px_30px_rgba(31,54,78,0.04)] sm:p-6 ${cardClass}`} aria-busy={loading || running} data-testid={`${partyType}-fica-verification`}>
         <div className="grid gap-6 xl:grid-cols-[minmax(300px,0.9fr)_minmax(0,1.7fr)]">
           <div className="flex gap-4">
@@ -130,8 +293,9 @@ export default function SellerFicaVerification({ organisationId, clientContactId
           </div>
         </div>
       </section>
+      )}
 
-      <Drawer open={verifyOpen} onClose={() => setVerifyOpen(false)} title={`Verify ${partyLabel}`} subtitle={displayName} footer={<div className="flex justify-end gap-2"><Button type="button" variant="secondary" onClick={() => setVerifyOpen(false)}>Cancel</Button><Button type="button" onClick={() => void runVerification(Boolean(run))}>Run Verification</Button></div>}>
+      <Drawer open={verifyOpen} onClose={() => setVerifyOpen(false)} title={`Verify ${partyLabel}`} subtitle={displayName} footer={<div className="flex justify-end gap-2"><Button type="button" variant="secondary" onClick={() => setVerifyOpen(false)}>Cancel</Button><Button type="button" onClick={() => void runVerification(Boolean(run))}>Run with {resolvedProviderLabel}</Button></div>}>
         <div className="space-y-6">
           <div className="rounded-[16px] border border-[#dfe8f2] bg-[#fbfdff] p-4"><dl className="space-y-3 text-sm"><div><dt className="text-xs text-[#71869b]">{entityType === 'individual' ? 'Full Name' : 'Entity Name'}</dt><dd className="mt-1 font-semibold text-[#20364c]">{displayName}</dd></div><div><dt className="text-xs text-[#71869b]">{entityType === 'individual' ? 'ID Number' : 'Registration / reference number'}</dt><dd className="mt-1 font-semibold text-[#20364c]">{maskedId}</dd></div><div><dt className="text-xs text-[#71869b]">Nationality</dt><dd className="mt-1 font-semibold text-[#20364c]">{subject.nationality || 'Not captured'}</dd></div><div><dt className="text-xs text-[#71869b]">{entityType === 'individual' ? 'Residential Address' : 'Registered Address'}</dt><dd className="mt-1 font-semibold text-[#20364c]">{address || 'Not captured'}</dd></div></dl></div>
           <div><h4 className="text-sm font-semibold text-[#102033]">Checks to be performed</h4><div className="mt-3 space-y-2">{DEFAULT_CHECKS.map((check) => <div key={check.type} className="flex items-center gap-3 rounded-[12px] border border-[#e2ebf4] px-3 py-2.5 text-sm font-semibold text-[#31506b]"><CheckCircle2 className="h-4 w-4 text-[#168154]" />{CHECK_LABELS[check.type]}</div>)}</div></div>

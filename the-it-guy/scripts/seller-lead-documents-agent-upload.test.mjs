@@ -49,4 +49,27 @@ assert.match(
   'uploaded seller documents should be mirrored onto the lead for immediate workspace feedback',
 )
 
+const genericUploadBlock = agencySource.slice(
+  agencySource.indexOf('async function handleSellerLeadDocumentUpload'),
+  agencySource.indexOf('async function handleActivateSellerListing'),
+)
+
+assert.doesNotMatch(
+  genericUploadBlock,
+  /await reloadRecords\(organisationId\)/,
+  'seller document uploads must not blank the lead workspace by awaiting a full Pipeline reload',
+)
+
+assert.match(
+  genericUploadBlock,
+  /withPipelineTimeout\([\s\S]*?uploadPrivateListingDocument/,
+  'seller document storage uploads should have a bounded timeout instead of hanging indefinitely',
+)
+
+assert.match(
+  genericUploadBlock,
+  /await Promise\.all\(\[/,
+  'lead mirror and activity persistence should run together after the local document update',
+)
+
 console.log('seller lead documents agent upload contract passed')

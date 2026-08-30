@@ -173,15 +173,15 @@ function assertNextAction(args, expectedId, expectedLabel) {
     sellerOnboardingToken: 'global-onboarding-token',
     sellerOnboardingStatus: 'sent',
   }
-  const { journey, readiness } = assertNextAction({ lead }, 'open_seller_portal', 'Track Seller Onboarding')
+  const { journey, readiness } = assertNextAction({ lead }, 'follow_up_with_seller', 'Send Follow-Up')
   assert.equal(journey.stage.key, 'seller_onboarding_sent')
-  assert.equal(actionById(getSellerJourneyActions({ lead }), 'open_seller_portal')?.enabled, true)
+  assert.equal(actionById(getSellerJourneyActions({ lead }), 'follow_up_with_seller')?.enabled, true)
   assert.equal(actionById(readiness.actions, 'generate_mandate'), null)
   assertNoKingstonsTokens({ journey, readiness }, 'onboarding sent global smoke')
 }
 
 {
-  const { journey, readiness } = assertNextAction({ lead: submittedLead }, 'record_hard_copy_mandate', 'Mandate signed as hard copy')
+  const { journey, readiness } = assertNextAction({ lead: submittedLead }, 'record_hard_copy_mandate', 'Upload Signed Mandate')
   assert.equal(journey.stage.key, 'seller_onboarding_submitted')
   assert.equal(readiness.canSendMandate, false)
   assert.equal(actionById(readiness.actions, 'open_seller_portal')?.enabled, true)
@@ -192,7 +192,7 @@ function assertNextAction(args, expectedId, expectedLabel) {
   const { journey, readiness } = assertNextAction(
     { lead: submittedLead, mandatePacketStatus: draftMandatePacketStatus },
     'record_hard_copy_mandate',
-    'Mandate signed as hard copy',
+    'Upload Signed Mandate',
   )
   assert.equal(journey.stage.key, 'seller_onboarding_submitted')
   assert.equal(journey.mandateStatus, 'draft')
@@ -204,7 +204,7 @@ function assertNextAction(args, expectedId, expectedLabel) {
   const { journey, readiness } = assertNextAction(
     { lead: submittedLead, mandatePacketStatus: sentMandatePacketStatus },
     'record_hard_copy_mandate',
-    'Mandate signed as hard copy',
+    'Upload Signed Mandate',
   )
   assert.equal(journey.stage.key, 'seller_onboarding_submitted')
   assert.equal(journey.mandateStatus, 'sent')

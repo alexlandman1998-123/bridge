@@ -39,11 +39,15 @@ import {
   RentalListingDetailPage,
   RentalListingsPage,
   RentalModuleBoundary,
+  RentalOperationsDashboardPage,
   RentalPortfolioDetailPage,
   RentalPortfoliosPage,
   RentalPropertiesPage,
   RentalPropertyDetailPage,
   RentalTenanciesPage,
+  RentalVacanciesPage,
+  RentalVacancyCreatePage,
+  RentalVacancyDetailPage,
   resolveRentalModuleAvailability,
 } from './modules/rentals'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
@@ -271,6 +275,8 @@ const BuyerViewingPreferencesPage = lazy(() => import('./pages/BuyerViewingPrefe
 const SellerViewingCoordinationPage = lazy(() => import('./pages/SellerViewingCoordinationPage'))
 const PublicAgencyIntakePage = lazy(() => import('./pages/PublicAgencyIntakePage'))
 const PublicAgentDigitalCardPage = lazy(() => import('./pages/PublicAgentDigitalCardPage'))
+const RentalApplicantJourneyPage = lazy(() => import('./pages/rentals/RentalApplicantJourneyPage'))
+const RentalApplicationWorkspacePage = lazy(() => import('./pages/rentals/RentalApplicationWorkspacePage'))
 const RetiredOfferWorkflowPage = lazy(() => import('./pages/RetiredOfferWorkflowPage'))
 const ClientModulePage = lazy(() => import('./pages/ClientModulePage'))
 const ClientOnboarding = lazy(() => import('./pages/ClientOnboarding'))
@@ -1704,6 +1710,7 @@ function AppRoutes() {
           <Route path="/launch/arch9" element={<Arch9LaunchConcierge />} />
           <Route path="/qr/arch9" element={<Arch9LaunchConcierge />} />
           <Route path="/card/:cardSlug" element={<AppErrorBoundary scope="agent-digital-card" title="Agent digital card failed to load"><PublicAgentDigitalCardPage /></AppErrorBoundary>} />
+          <Route path="/rental-application/:token" element={<AppErrorBoundary scope="rental-applicant-journey" title="Rental application failed to load"><RentalApplicantJourneyPage /></AppErrorBoundary>} />
           <Route path="/intake/:agencySlug" element={<AppErrorBoundary scope="agency-public-intake" title="Agency intake page failed to load"><PublicAgencyIntakePage /></AppErrorBoundary>} />
           <Route path="/a/:agencySlug" element={<AppErrorBoundary scope="agency-public-intake" title="Agency intake page failed to load"><PublicAgencyIntakePage /></AppErrorBoundary>} />
           <Route path="/young-law" element={<AppErrorBoundary scope="young-law-calculators" title="Young Law calculators failed to load"><YoungLawCalculatorsPage /></AppErrorBoundary>} />
@@ -2815,6 +2822,7 @@ function AppRoutes() {
                   </RoleRoute>
                 }
               />
+              <Route path="/agent/rentals/applications" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.applications}><RentalApplicationWorkspacePage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
               <Route
                 path="/agent/rentals/pipeline/calendar"
                 element={
@@ -2825,6 +2833,46 @@ function AppRoutes() {
                           title="Rental Calendar"
                           description="Rental inspections, viewings, applicant follow-ups, and lease appointments will be coordinated here."
                         />
+                      </RentalModuleGate>
+                    </RentalWorkspaceGuard>
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/agent/rentals/operations"
+                element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.properties}><RentalOperationsDashboardPage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>}
+              />
+              <Route
+                path="/agent/rentals/vacancies/new"
+                element={
+                  <RoleRoute allowedRoles={['agent']}>
+                    <RentalWorkspaceGuard>
+                      <RentalModuleGate moduleId={RENTAL_MODULES.properties}>
+                        <RentalVacancyCreatePage />
+                      </RentalModuleGate>
+                    </RentalWorkspaceGuard>
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/agent/rentals/vacancies/:vacancyId"
+                element={
+                  <RoleRoute allowedRoles={['agent']}>
+                    <RentalWorkspaceGuard>
+                      <RentalModuleGate moduleId={RENTAL_MODULES.properties}>
+                        <RentalVacancyDetailPage />
+                      </RentalModuleGate>
+                    </RentalWorkspaceGuard>
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/agent/rentals/vacancies"
+                element={
+                  <RoleRoute allowedRoles={['agent']}>
+                    <RentalWorkspaceGuard>
+                      <RentalModuleGate moduleId={RENTAL_MODULES.properties}>
+                        <RentalVacanciesPage />
                       </RentalModuleGate>
                     </RentalWorkspaceGuard>
                   </RoleRoute>

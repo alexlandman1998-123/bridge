@@ -95,6 +95,11 @@ const SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_SKIPPED_EVENT = 'seller_portal_i
 const SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_FAILED_EVENT = 'seller_portal_invite_failed_after_mandate_signed'
 let sellerPortalPayloadRpcUnavailable = false
 let sellerPortalCorePayloadRpcUnavailable = false
+let sellerOnboardingPrepareRpcUnavailable = false
+const ORGANISATION_BRANDING_CACHE_TTL_MS = 60_000
+const SELLER_ONBOARDING_COMPLETION_TIMEOUT_MS = 12_000
+const SELLER_ONBOARDING_RECOVERY_TIMEOUT_MS = 3_000
+const organisationBrandingSnapshotCache = new Map()
 let clientPortalNotificationServicePromise = null
 function loadClientPortalNotificationService() {
   if (!clientPortalNotificationServicePromise) {
@@ -250,6 +255,38 @@ function stripSellerOnboardingTransferAttorneyFields(formData = {}) {
     delete sellerOnboardingFormData[key]
   }
   return sellerOnboardingFormData
+}
+
+const SELLER_ONBOARDING_COMPLETION_ALIAS_KEYS = [
+  'generatedDocument', 'generated_document', 'generatedHtml', 'generated_html',
+  'sellerCompliancePack', 'seller_compliance_pack',
+  'canonicalSellerFacts', 'canonical_seller_facts',
+  'canonicalSellerFactReadiness', 'canonical_seller_fact_readiness',
+  'date_of_birth', 'birthDate',
+  'alternative_number', 'alternatePhone', 'alternate_phone',
+  'income_tax_number', 'taxNumber', 'tax_number',
+  'sa_resident', 'taxResident', 'tax_resident',
+  'popi_consent', 'popi_consent_accepted', 'popi_consent_accepted_at',
+  'arch9_terms_acceptance', 'arch9_terms_accepted', 'arch9_terms_accepted_at',
+  'seller_compliance_signers', 'seller_compliance_signing',
+  'seller_compliance_active_signer_id', 'property_disclosure',
+]
+
+export function sanitizeSellerOnboardingCompletionFormData(formData = {}) {
+  const sanitized = stripSellerOnboardingTransferAttorneyFields(formData)
+  for (const key of SELLER_ONBOARDING_COMPLETION_ALIAS_KEYS) delete sanitized[key]
+
+  if (sanitized.propertyDisclosure && typeof sanitized.propertyDisclosure === 'object') {
+    sanitized.propertyDisclosure = { ...sanitized.propertyDisclosure }
+    for (const key of [
+      'generatedDocument', 'generated_document', 'generatedHtml', 'generated_html',
+      'arch9_terms_acceptance', 'arch9_terms_accepted', 'arch9_terms_accepted_at',
+    ]) {
+      delete sanitized.propertyDisclosure[key]
+    }
+  }
+
+  return sanitized
 }
 
 function getSellerPortalAccessStorageKey(token = '') {
@@ -1309,6 +1346,32 @@ function isStatementTimeoutError(error) {
   )
 }
 
+function isSellerOnboardingCompletionTimeoutError(error) {
+  if (!error) return false
+  const name = normalizeText(error.name).toLowerCase()
+  const code = normalizeText(error.code).toLowerCase()
+  const text = [error.message, error.details, error.hint]
+    .map((value) => normalizeText(value).toLowerCase())
+    .join(' ')
+  return (
+    isStatementTimeoutError(error) ||
+    name === 'aborterror' ||
+    name === 'timeouterror' ||
+    code === 'seller_onboarding_completion_timeout' ||
+    text.includes('signal is aborted') ||
+    text.includes('operation was aborted')
+  )
+}
+
+function createRequestTimeout(timeoutMs) {
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+  return {
+    signal: controller.signal,
+    clear: () => clearTimeout(timeoutId),
+  }
+}
+
 const MISSING_PRIVATE_LISTING_TABLE_CACHE = new Set()
 
 function getMissingTableCacheKey(tableName = '') {
@@ -1492,7 +1555,8 @@ function isRecoverableSellerPortalPayloadRpcError(error) {
 
 function isCompletedSellerOnboardingContext(context = null) {
   const status = normalizeStatusKey(
-    context?.onboarding?.status ||
+    context?.status ||
+      context?.onboarding?.status ||
       context?.listing?.sellerOnboarding?.status ||
       context?.listing?.seller_onboarding?.status ||
       context?.listing?.sellerOnboardingStatus ||
@@ -1502,7 +1566,69 @@ function isCompletedSellerOnboardingContext(context = null) {
   return ['completed', 'complete', 'submitted', 'under_review'].includes(status)
 }
 
-async function recoverSellerOnboardingSubmitAfterTimeout(token, timeoutError) {
+function normalizeSellerOnboardingCompletionReceipt(value = null) {
+  if (!value || typeof value !== 'object') return null
+  const onboardingId = normalizeText(value.onboardingId || value.onboarding_id)
+  const listingId = normalizeText(value.listingId || value.listing_id)
+  if (!onboardingId || !listingId) return null
+  return {
+    onboardingId,
+    listingId,
+    status: normalizeText(value.status || 'completed'),
+    submittedAt: normalizeNullableText(value.submittedAt || value.submitted_at),
+  }
+}
+
+function buildSellerOnboardingCompletionContext(receipt, { formData = {}, listingSnapshot = {} } = {}) {
+  const submittedAt = receipt.submittedAt || new Date().toISOString()
+  const existingOnboarding = listingSnapshot?.sellerOnboarding || listingSnapshot?.seller_onboarding || {}
+  const onboarding = {
+    ...existingOnboarding,
+    id: receipt.onboardingId,
+    private_listing_id: receipt.listingId,
+    status: receipt.status,
+    submitted_at: submittedAt,
+    submittedAt,
+  }
+  return {
+    completion: receipt,
+    onboarding,
+    listing: {
+      ...(listingSnapshot && typeof listingSnapshot === 'object' ? listingSnapshot : {}),
+      id: receipt.listingId,
+      listingStatus: ['seller_lead', 'onboarding_sent'].includes(normalizeStatusKey(listingSnapshot?.listingStatus))
+        ? 'onboarding_completed'
+        : listingSnapshot?.listingStatus || 'onboarding_completed',
+      sellerOnboardingStatus: receipt.status,
+      sellerOnboarding: {
+        ...existingOnboarding,
+        id: receipt.onboardingId,
+        status: receipt.status,
+        submittedAt,
+        completedAt: submittedAt,
+        formData,
+      },
+    },
+  }
+}
+
+async function fetchSellerOnboardingCompletionReceipt(client, token) {
+  const timeout = createRequestTimeout(SELLER_ONBOARDING_RECOVERY_TIMEOUT_MS)
+  try {
+    const result = await client
+      .rpc('bridge_get_private_listing_seller_onboarding_completion', { p_token: token })
+      .abortSignal(timeout.signal)
+    if (result.error) {
+      if (isMissingRpcError(result.error, 'bridge_get_private_listing_seller_onboarding_completion')) return null
+      throw result.error
+    }
+    return normalizeSellerOnboardingCompletionReceipt(result.data)
+  } finally {
+    timeout.clear()
+  }
+}
+
+async function recoverSellerOnboardingSubmitAfterTimeout(client, token, timeoutError, options = {}) {
   const normalizedToken = normalizeText(token)
   if (!normalizedToken) return null
 
@@ -1510,18 +1636,15 @@ async function recoverSellerOnboardingSubmitAfterTimeout(token, timeoutError) {
     reason: buildSupabaseErrorSummary(timeoutError),
   })
 
-  const context = await getSellerOnboardingByToken(normalizedToken, {
-    includeRequirementsAndDocuments: false,
-    corePayload: true,
-  }).catch((recoveryError) => {
+  const receipt = await fetchSellerOnboardingCompletionReceipt(client, normalizedToken).catch((recoveryError) => {
     console.warn('[Private Listings] seller onboarding timeout recovery lookup failed', {
       reason: buildSupabaseErrorSummary(recoveryError),
     })
     return null
   })
 
-  if (!context?.listing || !isCompletedSellerOnboardingContext(context)) return null
-  return context
+  if (!receipt || !isCompletedSellerOnboardingContext(receipt)) return null
+  return buildSellerOnboardingCompletionContext(receipt, options)
 }
 
 function deferSellerOnboardingFollowUp(label, task) {
@@ -3483,97 +3606,111 @@ async function fetchOrganisationBrandingSnapshot(client, organisationId) {
   const normalizedOrganisationId = normalizeUuid(organisationId)
   if (!client || !normalizedOrganisationId) return null
 
-  try {
-    const [organisationResult, settingsResult] = await Promise.all([
-      client
-        .from('organisations')
-        .select('id, name, display_name, logo_url')
-        .eq('id', normalizedOrganisationId)
-        .maybeSingle(),
-      client
-        .from('organisation_settings')
-        .select('settings_json')
-        .eq('organisation_id', normalizedOrganisationId)
-        .maybeSingle(),
-    ])
+  const cached = organisationBrandingSnapshotCache.get(normalizedOrganisationId)
+  if (cached && cached.expiresAt > Date.now()) return cached.value
+  if (cached?.promise) return cached.promise
 
-    const organisation = organisationResult.error ? null : organisationResult.data
-    let organisationBrandingResult = await client
-      .from('organisation_branding')
-      .select('organisation_id, organisation_display_name, logo_light_url, logo_dark_url, logo_icon_url, primary_brand_color, secondary_brand_color, accent_brand_color')
-      .eq('organisation_id', normalizedOrganisationId)
-      .maybeSingle()
-    if (
-      organisationBrandingResult.error &&
-      (
-        isMissingColumnError(organisationBrandingResult.error, 'organisation_display_name') ||
-        isMissingColumnError(organisationBrandingResult.error, 'logo_icon_url') ||
-        isMissingColumnError(organisationBrandingResult.error, 'primary_brand_color') ||
-        isMissingColumnError(organisationBrandingResult.error, 'secondary_brand_color') ||
-        isMissingColumnError(organisationBrandingResult.error, 'accent_brand_color')
+  const request = (async () => {
+    try {
+      const [organisationResult, settingsResult, initialBrandingResult] = await Promise.all([
+        client
+          .from('organisations')
+          .select('id, name, display_name, logo_url')
+          .eq('id', normalizedOrganisationId)
+          .maybeSingle(),
+        client
+          .from('organisation_settings')
+          .select('settings_json')
+          .eq('organisation_id', normalizedOrganisationId)
+          .maybeSingle(),
+        client
+          .from('organisation_branding')
+          .select('organisation_id, organisation_display_name, logo_light_url, logo_dark_url, logo_icon_url, primary_brand_color, secondary_brand_color, accent_brand_color')
+          .eq('organisation_id', normalizedOrganisationId)
+          .maybeSingle(),
+      ])
+
+      const organisation = organisationResult.error ? null : organisationResult.data
+      let organisationBrandingResult = initialBrandingResult
+      if (
+        organisationBrandingResult.error &&
+        (
+          isMissingColumnError(organisationBrandingResult.error, 'organisation_display_name') ||
+          isMissingColumnError(organisationBrandingResult.error, 'logo_icon_url') ||
+          isMissingColumnError(organisationBrandingResult.error, 'primary_brand_color') ||
+          isMissingColumnError(organisationBrandingResult.error, 'secondary_brand_color') ||
+          isMissingColumnError(organisationBrandingResult.error, 'accent_brand_color')
+        )
+      ) {
+        organisationBrandingResult = await client
+          .from('organisation_branding')
+          .select('organisation_id, logo_light_url, logo_dark_url, primary_color, secondary_color, metadata_json')
+          .eq('organisation_id', normalizedOrganisationId)
+          .maybeSingle()
+      }
+      const organisationBranding = organisationBrandingResult.error ? {} : organisationBrandingResult.data
+      const settings = settingsResult.error ? null : settingsResult.data?.settings_json
+      const onboarding = settings?.agencyOnboarding && typeof settings.agencyOnboarding === 'object'
+        ? settings.agencyOnboarding
+        : {}
+      const agencyInformation = onboarding?.agencyInformation && typeof onboarding.agencyInformation === 'object'
+        ? onboarding.agencyInformation
+        : {}
+      const branding = onboarding?.branding && typeof onboarding.branding === 'object'
+        ? onboarding.branding
+        : {}
+      const settingsBranding = settings?.branding && typeof settings.branding === 'object'
+        ? settings.branding
+        : {}
+      const resolvedBranding = resolveOnboardingBranding(
+        branding,
+        settingsBranding,
+        settings,
+        organisationBranding,
+        {
+          organisationName: pickFirstText(
+            agencyInformation.tradingName,
+            agencyInformation.agencyName,
+          ),
+        },
+        organisation,
       )
-    ) {
-      organisationBrandingResult = await client
-        .from('organisation_branding')
-        .select('organisation_id, logo_light_url, logo_dark_url, primary_color, secondary_color, metadata_json')
-        .eq('organisation_id', normalizedOrganisationId)
-        .maybeSingle()
-    }
-    const organisationBranding = organisationBrandingResult.error ? {} : organisationBrandingResult.data
-    const settings = settingsResult.error ? null : settingsResult.data?.settings_json
-    const onboarding = settings?.agencyOnboarding && typeof settings.agencyOnboarding === 'object'
-      ? settings.agencyOnboarding
-      : {}
-    const agencyInformation = onboarding?.agencyInformation && typeof onboarding.agencyInformation === 'object'
-      ? onboarding.agencyInformation
-      : {}
-    const branding = onboarding?.branding && typeof onboarding.branding === 'object'
-      ? onboarding.branding
-      : {}
-    const settingsBranding = settings?.branding && typeof settings.branding === 'object'
-      ? settings.branding
-      : {}
-    const resolvedBranding = resolveOnboardingBranding(
-      branding,
-      settingsBranding,
-      settings,
-      organisationBranding,
-      {
-        organisationName: pickFirstText(
-          agencyInformation.tradingName,
-          agencyInformation.agencyName,
-        ),
-      },
-      organisation,
-    )
-    const organisationName = resolvedBranding.organisationName
-    const logoLightUrl = resolvedBranding.logoLightUrl
-    const logoDarkUrl = resolvedBranding.logoDarkUrl
-    const logoIconUrl = resolvedBranding.logoIconUrl
-    const logoUrl = pickFirstText(logoDarkUrl, logoLightUrl, logoIconUrl)
+      const organisationName = resolvedBranding.organisationName
+      const logoLightUrl = resolvedBranding.logoLightUrl
+      const logoDarkUrl = resolvedBranding.logoDarkUrl
+      const logoIconUrl = resolvedBranding.logoIconUrl
+      const logoUrl = pickFirstText(logoDarkUrl, logoLightUrl, logoIconUrl)
 
-    if (!organisationName && !logoUrl) return null
-    return {
-      organisationId: normalizedOrganisationId,
-      organisationName,
-      agencyName: organisationName,
-      logoUrl,
-      logoDarkUrl,
-      logoLightUrl,
-      logoIconUrl,
-      logoDark: logoDarkUrl,
-      logoLight: logoLightUrl,
-      primaryColour: resolvedBranding.primaryColour,
-      secondaryColour: resolvedBranding.secondaryColour,
-      accentColour: resolvedBranding.accentColour,
+      const value = !organisationName && !logoUrl ? null : {
+        organisationId: normalizedOrganisationId,
+        organisationName,
+        agencyName: organisationName,
+        logoUrl,
+        logoDarkUrl,
+        logoLightUrl,
+        logoIconUrl,
+        logoDark: logoDarkUrl,
+        logoLight: logoLightUrl,
+        primaryColour: resolvedBranding.primaryColour,
+        secondaryColour: resolvedBranding.secondaryColour,
+        accentColour: resolvedBranding.accentColour,
+      }
+      organisationBrandingSnapshotCache.set(normalizedOrganisationId, {
+        value,
+        expiresAt: Date.now() + ORGANISATION_BRANDING_CACHE_TTL_MS,
+      })
+      return value
+    } catch (error) {
+      organisationBrandingSnapshotCache.delete(normalizedOrganisationId)
+      console.warn('[Private Listings] organisation branding snapshot unavailable for seller onboarding.', {
+        organisationId: normalizedOrganisationId,
+        error,
+      })
+      return null
     }
-  } catch (error) {
-    console.warn('[Private Listings] organisation branding snapshot unavailable for seller onboarding.', {
-      organisationId: normalizedOrganisationId,
-      error,
-    })
-    return null
-  }
+  })()
+  organisationBrandingSnapshotCache.set(normalizedOrganisationId, { promise: request, expiresAt: 0 })
+  return request
 }
 
 async function fetchSellerOnboardingPublicBrandingSnapshot(token) {
@@ -7226,8 +7363,7 @@ async function updateLeadRowsWithFallback(client, buildScopedQuery, payload = {}
   let nextPayload = { ...(payload || {}) }
 
   while (true) {
-    const result = await buildScopedQuery(client.from('leads'))
-      .update(nextPayload)
+    const result = await buildScopedQuery(client.from('leads').update(nextPayload))
       .select('lead_id')
       .maybeSingle()
 
@@ -7623,29 +7759,43 @@ export async function sendSellerOnboarding(
     includePortalBranding = true,
     deferStatusTransition = false,
     performedBy = '',
+    onboardingToken = '',
+    listingSnapshot = null,
+    portalBranding: providedPortalBranding = null,
   } = {},
 ) {
+  const preparationStartedAt = typeof performance !== 'undefined' ? performance.now() : Date.now()
   const client = requireClient()
   let performedByUserId = normalizeText(performedBy)
   if (!performedByUserId && !deferStatusTransition) {
     const user = await getCurrentUser(client)
     performedByUserId = normalizeText(user?.id)
   }
-  const listing = await getPrivateListing(listingId, { includeRequirementsAndDocuments: false })
+  const reusableListing = listingSnapshot && normalizeText(listingSnapshot?.id || listingSnapshot?.listingId || listingSnapshot?.listing_id) === normalizeText(listingId)
+    ? listingSnapshot
+    : null
+  const listing = reusableListing || await getPrivateListing(listingId, { includeRequirementsAndDocuments: false })
   if (!listing?.id) throw new Error('Private listing not found.')
 
-  const existingQuery = await client
-    .from('private_listing_seller_onboarding')
-    .select('*')
-    .eq('private_listing_id', listing.id)
-    .maybeSingle()
-  if (existingQuery.error && !isMissingTableError(existingQuery.error, 'private_listing_seller_onboarding')) {
-    throw existingQuery.error
+  const snapshotOnboarding = listing?.sellerOnboarding && typeof listing.sellerOnboarding === 'object'
+    ? listing.sellerOnboarding
+    : null
+  let existingOnboarding = snapshotOnboarding
+  if (!existingOnboarding || (!normalizeText(onboardingToken) && !normalizeText(existingOnboarding?.token))) {
+    const existingQuery = await client
+      .from('private_listing_seller_onboarding')
+      .select('*')
+      .eq('private_listing_id', listing.id)
+      .maybeSingle()
+    if (existingQuery.error && !isMissingTableError(existingQuery.error, 'private_listing_seller_onboarding')) {
+      throw existingQuery.error
+    }
+    existingOnboarding = existingQuery.data || existingOnboarding
   }
 
-  const token = normalizeText(existingQuery.data?.token) || generateSellerOnboardingToken()
+  const token = normalizeText(onboardingToken || existingOnboarding?.token) || generateSellerOnboardingToken()
   const expiresAt = new Date(Date.now() + Math.max(1, Number(expiresInDays || 14)) * 24 * 60 * 60 * 1000).toISOString()
-  const existingFormData = stripSellerOnboardingTransferAttorneyFields(existingQuery.data?.form_data)
+  const existingFormData = stripSellerOnboardingTransferAttorneyFields(existingOnboarding?.form_data || existingOnboarding?.formData)
   const listingSellerFacts = listing?.sellerCanonicalFacts && typeof listing.sellerCanonicalFacts === 'object'
     ? listing.sellerCanonicalFacts
     : {}
@@ -7662,7 +7812,7 @@ export async function sendSellerOnboarding(
   const resolvedSellerEmail = normalizeText(sellerContactEmail || existingFormData.sellerEmail || existingFormData.email || listingSellerFacts.email || listingSellerFacts.sellerEmail).toLowerCase()
   const resolvedSellerPhone = normalizeText(sellerContactPhone || existingFormData.sellerPhone || existingFormData.phone || listingSellerFacts.phone || listingSellerFacts.sellerPhone || listingSellerFacts.mobile)
   const portalBranding = includePortalBranding
-    ? await fetchOrganisationBrandingSnapshot(client, listing.organisationId)
+    ? providedPortalBranding || await fetchOrganisationBrandingSnapshot(client, listing.organisationId)
     : null
   const payload = {
     private_listing_id: listing.id,
@@ -7687,25 +7837,51 @@ export async function sendSellerOnboarding(
     status: 'sent',
   }
 
-  const upsert = await client
-    .from('private_listing_seller_onboarding')
-    .upsert(payload, { onConflict: 'private_listing_id' })
-    .select('*')
-    .single()
-  if (upsert.error) {
-    if (isMissingTableError(upsert.error, 'private_listing_seller_onboarding')) {
-      const errorSummary = buildSupabaseErrorSummary(upsert.error)
-      throw new Error(
-        `Seller onboarding table is unavailable to this API context. ` +
-        `Run sql/20260509_private_listing_foundation.sql on the same Supabase project as this app and reload schema. ` +
-        `(${errorSummary})`,
-      )
+  let persistedOnboarding = null
+  let atomicPrepared = false
+  if (!sellerOnboardingPrepareRpcUnavailable && !deferStatusTransition) {
+    const prepareResult = await client.rpc('bridge_prepare_seller_onboarding_link', {
+      p_listing_id: listing.id,
+      p_token: token,
+      p_token_expires_at: expiresAt,
+      p_form_data: payload.form_data,
+      p_seller_type: payload.seller_type,
+      p_ownership_structure: payload.ownership_structure,
+      p_marital_regime: payload.marital_regime,
+      p_performed_by: normalizeUuid(performedByUserId) || null,
+    })
+    if (!prepareResult.error) {
+      persistedOnboarding = prepareResult.data?.onboarding || null
+      atomicPrepared = true
+    } else if (['PGRST202', '42883'].includes(normalizeText(prepareResult.error?.code).toUpperCase())) {
+      sellerOnboardingPrepareRpcUnavailable = true
+    } else {
+      throw prepareResult.error
     }
-    throw upsert.error
+  }
+
+  if (!atomicPrepared) {
+    const upsert = await client
+      .from('private_listing_seller_onboarding')
+      .upsert(payload, { onConflict: 'private_listing_id' })
+      .select('*')
+      .single()
+    if (upsert.error) {
+      if (isMissingTableError(upsert.error, 'private_listing_seller_onboarding')) {
+        const errorSummary = buildSupabaseErrorSummary(upsert.error)
+        throw new Error(
+          `Seller onboarding table is unavailable to this API context. ` +
+          `Run sql/20260509_private_listing_foundation.sql on the same Supabase project as this app and reload schema. ` +
+          `(${errorSummary})`,
+        )
+      }
+      throw upsert.error
+    }
+    persistedOnboarding = upsert.data
   }
 
   const currentLifecycle = getPrivateListingLifecycleState(listing)
-  if (currentLifecycle === 'seller_lead' && !deferStatusTransition) {
+  if (!atomicPrepared && currentLifecycle === 'seller_lead' && !deferStatusTransition) {
     const transitionSellerLead = async () => {
       let transitionPerformedBy = performedByUserId
       if (!transitionPerformedBy) {
@@ -7735,7 +7911,7 @@ export async function sendSellerOnboarding(
     normalizeText(listing?.originatingCrmLeadId),
   ].filter(Boolean)))
   const sentAtIso = new Date().toISOString()
-  if (!deferStatusTransition) {
+  if (!atomicPrepared && !deferStatusTransition) {
     void syncSellerJourneyLeadStage(client, {
       organisationId: leadOrganisationId,
       leadIds: leadIdsToSync,
@@ -7753,10 +7929,12 @@ export async function sendSellerOnboarding(
   }
 
   return {
-    onboarding: upsert.data,
+    onboarding: persistedOnboarding,
     token,
     link: buildSellerOnboardingLink(token),
     expiresAt,
+    preparationMs: Math.max(0, Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - preparationStartedAt)),
+    persistenceMode: atomicPrepared ? 'targeted_rpc' : 'compatibility_fallback',
   }
 }
 
@@ -8021,49 +8199,60 @@ export async function submitSellerOnboarding(token, payload = {}) {
   const client = requireClient()
   const normalizedToken = normalizeText(token)
   if (!normalizedToken) throw new Error('Onboarding token is required.')
-  const formData = stripSellerOnboardingTransferAttorneyFields(payload.formData)
-
-  const rpc = await client.rpc('bridge_complete_private_listing_seller_onboarding', {
-    p_token: normalizedToken,
-    p_form_data: formData,
-    p_seller_type: normalizeNullableText(payload.sellerType),
-    p_ownership_structure: normalizeNullableText(payload.ownershipStructure),
-    p_marital_regime: normalizeNullableText(payload.maritalRegime),
-  })
+  const rawFormData = stripSellerOnboardingTransferAttorneyFields(payload.formData)
+  const canonicalFacts = getCanonicalFactsCandidate(rawFormData)
+  const canonicalReadiness = getCanonicalReadinessCandidate(rawFormData)
+  const formData = sanitizeSellerOnboardingCompletionFormData(rawFormData)
+  const rpcFormData = {
+    ...formData,
+    ...(canonicalFacts ? { canonicalSellerFacts: canonicalFacts } : {}),
+    ...(canonicalReadiness ? { canonicalSellerFactReadiness: canonicalReadiness } : {}),
+  }
+  const timeout = createRequestTimeout(SELLER_ONBOARDING_COMPLETION_TIMEOUT_MS)
+  let rpc
+  try {
+    rpc = await client
+      .rpc('bridge_complete_private_listing_seller_onboarding', {
+        p_token: normalizedToken,
+        p_form_data: rpcFormData,
+        p_seller_type: normalizeNullableText(payload.sellerType),
+        p_ownership_structure: normalizeNullableText(payload.ownershipStructure),
+        p_marital_regime: normalizeNullableText(payload.maritalRegime),
+      })
+      .abortSignal(timeout.signal)
+  } catch (requestError) {
+    rpc = { error: requestError }
+  } finally {
+    timeout.clear()
+  }
   const useClientFallback =
     rpc.error &&
     (isMissingRpcError(rpc.error, 'bridge_complete_private_listing_seller_onboarding') ||
       isMissingPrivateListingActivityError(rpc.error))
   if (rpc.error && !useClientFallback) {
-    if (isStatementTimeoutError(rpc.error)) {
-      const recoveredContext = await recoverSellerOnboardingSubmitAfterTimeout(normalizedToken, rpc.error)
+    if (isSellerOnboardingCompletionTimeoutError(rpc.error)) {
+      const recoveredContext = await recoverSellerOnboardingSubmitAfterTimeout(client, normalizedToken, rpc.error, {
+        formData,
+        listingSnapshot: payload.listingSnapshot,
+      })
       if (recoveredContext?.listing) {
         return recoveredContext
       }
+      const completionTimeoutError = new Error('Seller onboarding completion could not be confirmed within 12 seconds.')
+      completionTimeoutError.code = 'seller_onboarding_completion_timeout'
+      throw completionTimeoutError
     }
     throw rpc.error
   }
   if (!rpc.error) {
-    let rpcContext = mapSellerClientPortalPayload(rpc.data)
-    if (!rpcContext?.listing) {
+    const receipt = normalizeSellerOnboardingCompletionReceipt(rpc.data)
+    if (!receipt) {
       throw new Error('Seller onboarding link is invalid or inactive.')
     }
-    deferSellerOnboardingFollowUp('seller client portal context sync after onboarding submit', () => ensureSellerClientPortalContext(client, {
-      listing: rpcContext.listing,
-      onboarding: rpcContext.onboarding,
+    const rpcContext = buildSellerOnboardingCompletionContext(receipt, {
       formData,
-    }))
-    deferSellerOnboardingFollowUp('canonical seller facts persistence after onboarding submit', () => persistCanonicalSellerFactPayload(client, {
-      listingId: rpcContext.listing.id,
-      onboardingId: rpcContext.onboarding?.id,
-      formData,
-      listing: rpcContext.listing,
-      draft: false,
-    }))
-    deferSellerOnboardingFollowUp('seller onboarding publication draft sync after onboarding submit', () => syncSellerOnboardingPublicationDraft(client, {
-      listing: rpcContext.listing,
-      formData,
-    }))
+      listingSnapshot: payload.listingSnapshot,
+    })
     deferSellerOnboardingFollowUp('mandate editable draft pre-creation after onboarding submit', () => precreateSellerMandateDraftFromOnboarding({
       client,
       listing: rpcContext.listing,
@@ -8082,41 +8271,11 @@ export async function submitSellerOnboarding(token, payload = {}) {
         formData,
       })
     })
-    void maybeResolveCanonicalSellerRequirements({
+    deferSellerOnboardingFollowUp('canonical seller requirement resolution after onboarding submit', () => maybeResolveCanonicalSellerRequirements({
       listing: rpcContext.listing,
-      formData,
+      formData: rpcFormData,
       client,
       reason: 'seller_onboarding_completed',
-    }).catch((canonicalError) => {
-      console.warn('[Private Listings] canonical seller requirement resolution skipped after onboarding submit', canonicalError)
-    })
-    const leadOrganisationId = normalizeText(rpcContext.listing?.organisationId)
-    const rawLeadIds = [
-      normalizeText(rpcContext.listing?.sellerLeadId),
-      normalizeText(rpcContext.listing?.originatingCrmLeadId),
-    ]
-    const listingIdForLeadSync = normalizeText(rpcContext.listing?.id)
-    const leadTokenForLeadSync = normalizeText(rpcContext.onboarding?.token || rpcContext.listing?.sellerOnboarding?.token)
-    const leadIdsToSync = new Set(rawLeadIds.filter(Boolean))
-    for (const rawLeadId of rawLeadIds) {
-      if (isUuidLike(rawLeadId)) continue
-      const normalizedLeadId = normalizeUuid(rawLeadId)
-      if (normalizedLeadId) leadIdsToSync.add(normalizedLeadId)
-    }
-
-    deferSellerOnboardingFollowUp('seller journey lead stage sync after onboarding submit', () => syncSellerJourneyLeadStage(client, {
-      organisationId: leadOrganisationId,
-      leadIds: Array.from(leadIdsToSync),
-      onboardingToken: leadTokenForLeadSync,
-      listingId: listingIdForLeadSync,
-      targetStage: 'Seller Onboarding Submitted',
-      targetStatus: 'Submitted',
-      extraPayload: {
-        seller_onboarding_status: 'completed',
-        seller_onboarding_token: normalizeNullableText(rpcContext.onboarding?.token || rpcContext.listing?.sellerOnboarding?.token || ''),
-        listing_id: listingIdForLeadSync || null,
-        updated_at: new Date().toISOString(),
-      },
     }))
     return rpcContext
   }
@@ -8137,7 +8296,7 @@ export async function submitSellerOnboarding(token, payload = {}) {
     ...existingFormData,
     ...formData,
   }
-  const sanitizedNextFormData = stripSellerOnboardingTransferAttorneyFields(nextFormData)
+  const sanitizedNextFormData = sanitizeSellerOnboardingCompletionFormData(nextFormData)
 
   const sellerTypeFromPayload =
     normalizeNullableText(payload.sellerType) ||

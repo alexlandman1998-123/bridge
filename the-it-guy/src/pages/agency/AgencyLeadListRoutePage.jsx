@@ -1,6 +1,7 @@
 import { RefreshCw, X } from 'lucide-react'
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import AgentAssignmentSelect from '../../components/AgentAssignmentSelect'
 import LeadsRouteShell from '../../components/leads/LeadsRouteShell'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { canAccessPrincipalExperience } from '../../lib/organisationAccess'
@@ -32,6 +33,23 @@ const EMPTY_FORM = Object.freeze({
   property: '',
   notes: '',
 })
+const LEAD_SOURCE_OPTIONS = Object.freeze([
+  'Property24',
+  'Private Property',
+  'Website',
+  'Referral',
+  'Show Day',
+  'Walk-In',
+  'WhatsApp',
+  'Facebook',
+  'Google',
+  'Signboard',
+  'Listing Call',
+  'Cold Call',
+  'Door Knock',
+  'Manual Entry',
+  'Other',
+])
 let settingsActionsPromise = null
 let leadMutationActionsPromise = null
 
@@ -100,6 +118,9 @@ function mapAgent(row = {}) {
     name: normalizeText(row?.fullName || row?.full_name || [firstName, lastName].filter(Boolean).join(' ')) || email || 'Team member',
     email,
     branchId: normalizeText(row?.branchId || row?.branch_id),
+    avatarUrl: normalizeText(row?.avatarUrl || row?.avatar_url || row?.profilePhotoUrl || row?.profile_photo_url || row?.photoUrl || row?.photo_url || row?.profile?.avatar_url),
+    roleLabel: normalizeText(row?.jobTitle || row?.job_title || row?.roleLabel || row?.role_label) || 'Agent',
+    isCurrentUser: row?.isCurrentUser === true,
   }
 }
 
@@ -131,8 +152,20 @@ function LeadCreateDialog({ open, category, agents, currentAgent, saving, error,
             <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">Last name<input required className="h-11 rounded-[12px] border border-[#dbe4ee] px-3 font-normal" value={form.lastName} onChange={(event) => setField('lastName', event.target.value)} /></label>
             <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">Mobile<input required className="h-11 rounded-[12px] border border-[#dbe4ee] px-3 font-normal" value={form.phone} onChange={(event) => setField('phone', event.target.value)} /></label>
             <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">Email<input required type="email" className="h-11 rounded-[12px] border border-[#dbe4ee] px-3 font-normal" value={form.email} onChange={(event) => setField('email', event.target.value)} /></label>
-            <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">Lead source<input required className="h-11 rounded-[12px] border border-[#dbe4ee] px-3 font-normal" value={form.source} onChange={(event) => setField('source', event.target.value)} /></label>
-            <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">Assigned to<select className="h-11 rounded-[12px] border border-[#dbe4ee] px-3 font-normal" value={form.agentId || currentAgent.id} onChange={(event) => setField('agentId', event.target.value)}>{agents.map((agent) => <option key={agent.id || agent.email} value={agent.id || agent.email}>{agent.name}</option>)}</select></label>
+            <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">
+              Lead source
+              <select required className="h-11 rounded-[12px] border border-[#dbe4ee] bg-white px-3 font-normal text-[#29435d] outline-none transition focus:border-[#22445e] focus:ring-2 focus:ring-[#22445e]/10" value={form.source} onChange={(event) => setField('source', event.target.value)}>
+                {LEAD_SOURCE_OPTIONS.map((source) => <option key={source} value={source}>{source}</option>)}
+              </select>
+            </label>
+            <div className="grid gap-1.5 text-sm font-semibold text-[#29435d]">
+              <span>Assigned to</span>
+              <AgentAssignmentSelect
+                value={form.agentId || currentAgent.id}
+                agents={agents}
+                onChange={(agent) => setField('agentId', agent?.userId || agent?.id || agent?.email || '')}
+              />
+            </div>
           </div>
           <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">{category === 'seller' ? 'Property address' : 'Property or area of interest'}<input className="h-11 rounded-[12px] border border-[#dbe4ee] px-3 font-normal" value={form.property} onChange={(event) => setField('property', event.target.value)} /></label>
           <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">Notes<textarea className="min-h-24 rounded-[12px] border border-[#dbe4ee] p-3 font-normal" value={form.notes} onChange={(event) => setField('notes', event.target.value)} /></label>
@@ -172,6 +205,9 @@ export default function AgencyLeadListRoutePage() {
     lastName: profile?.lastName,
     fullName: profile?.fullName,
     email: profile?.email,
+    avatarUrl: profile?.avatarUrl || profile?.avatar_url || profile?.profilePhotoUrl || profile?.profile_photo_url || profile?.photoUrl || profile?.photo_url,
+    roleLabel: profile?.jobTitle || profile?.job_title || 'Agent',
+    isCurrentUser: true,
   }), [profile])
   const agentOptions = agents.length ? agents : [currentAgent]
   const isPrincipal = canAccessPrincipalExperience({ appRole: role, membershipRole })

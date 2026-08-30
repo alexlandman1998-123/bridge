@@ -1,0 +1,3 @@
+import assert from 'node:assert/strict'; import fs from 'node:fs/promises'; import path from 'node:path'; import { fileURLToPath } from 'node:url'
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'); const [sql, repo] = await Promise.all(['sql/20260829_rental_vacancy_marketing_foundation.sql','src/services/rentals/rentalVacancyMarketingRepository.js'].map((file) => fs.readFile(path.join(root,file),'utf8')))
+for (const token of ['rental_vacancy_marketing','rental_vacancy_media','storage_bucket','enable row level security']) assert.match(sql, new RegExp(token)); assert.doesNotMatch(sql,/private_listings/i); assert.match(repo,/uploadRentalVacancyMedia/); console.log('Rentals Phase 14 marketing foundation checks passed.')

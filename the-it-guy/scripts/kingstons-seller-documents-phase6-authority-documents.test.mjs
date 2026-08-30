@@ -49,7 +49,29 @@ const naturalPack = buildKingstonsSellerDocumentRequirementPack({
 
 assert.equal(naturalPack.version, 'kingstons_seller_documents_phase6_authority_documents_v1')
 assertAuthorityRow(naturalPack.generatedOwnershipDrivenDocuments.find((row) => row.key === 'all_owner_authority_consent'), 'all_owner_authority_consent')
-assertAuthorityRow(naturalPack.generatedOwnershipDrivenDocuments.find((row) => row.key === 'spouse_consent'), 'spouse_consent')
+assert.equal(
+  naturalPack.generatedOwnershipDrivenDocuments.some((row) => row.key === 'spouse_consent'),
+  false,
+  'spouse consent is tracked through the signer-specific HTML workflow, not as a standalone document',
+)
+
+const legacySpouseConsentSource = buildSellerDocumentSourceOfTruth({
+  listing: {
+    id: 'legacy-spouse-consent-requirement',
+    documentRequirements: [{
+      key: 'spouse_consent',
+      requirement_key: 'spouse_consent',
+      name: 'Spouse Consent / Signature',
+      status: 'required',
+      is_required: true,
+    }],
+  },
+})
+assert.equal(
+  legacySpouseConsentSource.rows.some((row) => row.key === 'spouse_consent'),
+  false,
+  'legacy spouse-consent requirement rows must not reappear in the document workspace',
+)
 
 const companyPack = buildKingstonsSellerDocumentRequirementPack({
   ...baseKingstonsListing,

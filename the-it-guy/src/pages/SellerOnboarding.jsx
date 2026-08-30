@@ -16,7 +16,7 @@ import {
   Trash2,
   UserRound,
 } from 'lucide-react'
-import { createContext, createElement, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { createContext, createElement, Fragment, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
   OnboardingSectionHeader,
@@ -83,12 +83,12 @@ import {
   PROPERTY_DISCLOSURE_ANSWER,
   PROPERTY_DISCLOSURE_QUESTIONS,
   buildPropertyDisclosureDocumentMarkup,
-  buildPropertyDisclosureDocument,
   getPropertyDisclosureAnswerSummary,
   getPropertyDisclosureStatus,
   getPropertyDisclosureStatusLabel,
   isPropertyDisclosureDigitallyComplete,
   normalizePropertyDisclosure,
+  shouldPromptPropertyDisclosureComment,
 } from '../lib/propertyDisclosure'
 import { buildSellerComplianceDocumentModel } from '../core/documents/sellerComplianceDocumentModel'
 import {
@@ -337,7 +337,7 @@ function resolveSellerOnboardingSubmitError(error) {
   if (message.toLowerCase().includes('fetch failed')) {
     return 'We could not reach the onboarding service. Please check your connection and try again.'
   }
-  if (message.toLowerCase().includes('statement timeout') || message.toLowerCase().includes('canceling statement due to')) {
+  if (isSellerOnboardingTimeoutError(error)) {
     return 'The onboarding service took too long to confirm your submission. Please refresh once before submitting again.'
   }
   return message
@@ -358,7 +358,13 @@ function resolveSellerOnboardingDraftError(error) {
 function isSellerOnboardingTimeoutError(error) {
   const message = String(error?.message || error || '').toLowerCase()
   const code = String(error?.code || '').toLowerCase()
-  return code === '57014' || message.includes('statement timeout') || message.includes('canceling statement due to')
+  return (
+    code === '57014' ||
+    code === 'seller_onboarding_completion_timeout' ||
+    message.includes('statement timeout') ||
+    message.includes('canceling statement due to') ||
+    message.includes('operation was aborted')
+  )
 }
 
 function areCanonicalSellerFactsEnabled() {
@@ -2358,6 +2364,7 @@ function PropertyDisclosureSection({
   signingStatus = null,
   hasRequestedSigner = false,
   onAnswerChange,
+  onNoteChange,
   onDownload,
   onDisclosureChange,
   termsAcceptanceError = '',
@@ -2375,6 +2382,17 @@ function PropertyDisclosureSection({
   const disclosureQuestionGroups = getDisclosureQuestionGroups()
   const commentsPaneIndex = disclosureQuestionGroups.length + 1
   const declarationPaneIndex = commentsPaneIndex + 1
+  const pendingSignatureRequests = Array.isArray(signingStatus?.signatureRequests)
+    ? signingStatus.signatureRequests.filter((request) => request.signerId !== activeSigner?.id)
+    : []
+
+  function buildSignatureRequestHref(request = {}) {
+    if (!request.email || !request.href) return ''
+    const absoluteUrl = typeof window !== 'undefined'
+      ? new URL(request.href, window.location.origin).toString()
+      : request.href
+    return `mailto:${encodeURIComponent(request.email)}?subject=${encodeURIComponent('Seller declaration and FICA signature request')}&body=${encodeURIComponent(`Hi ${request.name || 'there'},\n\nPlease review and sign the seller declaration and FICA form using your secure HTML link:\n\n${absoluteUrl}`)}`
+  }
 
   return (
     <StepShell
@@ -2393,6 +2411,54 @@ function PropertyDisclosureSection({
                 ? 'This link is only for this signer. The compliance pack stays open until every required signer is complete.'
                 : signingStatus?.statusLabel || 'Seller compliance signatures are tracked from this declaration.'}
             </p>
+          </section>
+        ) : null}
+        {pendingSignatureRequests.length > 0 ? (
+          <section className="rounded-[18px] border border-[#dbe6f2] bg-white p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-[#172334]">Outstanding party signatures</p>
+                <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
+                  Each party receives a signer-specific HTML form. Their signature is tracked separately.
+                </p>
+              </div>
+              <span className="rounded-full bg-[#fff4dd] px-3 py-1 text-xs font-semibold text-[#9a5b0b]">
+                {pendingSignatureRequests.length} pending
+              </span>
+            </div>
+            <div className="mt-3 grid gap-2">
+              {pendingSignatureRequests.map((request) => {
+                const emailHref = buildSignatureRequestHref(request)
+                return (
+                  <div key={request.signerId} className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-[#e4ebf3] bg-[#fbfdff] px-3 py-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-[#172334]">{request.name}</p>
+                      <p className="truncate text-xs text-[#6b7d93]">{request.roleLabel}{request.email ? ` · ${request.email}` : ' · Email required'}</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <a
+                        href={request.href}
+                        className="inline-flex min-h-10 items-center rounded-[12px] border border-[#dbe5ef] bg-white px-3 text-xs font-semibold text-[#35546c]"
+                      >
+                        Sign on this device
+                      </a>
+                      {emailHref ? (
+                        <a
+                          href={emailHref}
+                          className="inline-flex min-h-10 items-center rounded-[12px] bg-[var(--seller-brand-action)] px-3 text-xs font-semibold text-white"
+                        >
+                          Request signature
+                        </a>
+                      ) : (
+                        <span className="inline-flex min-h-10 items-center rounded-[12px] bg-[#edf1f5] px-3 text-xs font-semibold text-[#8a98a8]">
+                          Add email to request
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
           </section>
         ) : null}
         <FormSection
@@ -2420,6 +2486,7 @@ function PropertyDisclosureSection({
                   </div>
                   {questions.map((question) => {
                     const response = normalized.responses?.[question.key] || {}
+                    const showIssueComment = shouldPromptPropertyDisclosureComment(question, response.answer)
                     return (
                       <article key={question.key} className="rounded-[18px] border border-[#dfe8f2] bg-white p-3 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
                         <div className="flex items-start gap-3">
@@ -2452,6 +2519,17 @@ function PropertyDisclosureSection({
                             </button>
                           ))}
                         </div>
+                        {showIssueComment ? (
+                          <label className="mt-3 grid gap-1.5 text-xs font-semibold text-[#7c3f13]">
+                            Describe the issue or uncertainty
+                            <textarea
+                              className={`${DETAIL_INPUT_CLASS} min-h-[96px] resize-y border-[#edc68c] bg-[#fffaf2]`}
+                              value={response.note || ''}
+                              onChange={(event) => onNoteChange(question.key, event.target.value)}
+                              placeholder="What is broken, not working, damaged, missing, or uncertain?"
+                            />
+                          </label>
+                        ) : null}
                       </article>
                     )
                   })}
@@ -2472,37 +2550,55 @@ function PropertyDisclosureSection({
               <tbody>
                 {PROPERTY_DISCLOSURE_QUESTIONS.map((question) => {
                   const response = normalized.responses?.[question.key] || {}
+                  const showIssueComment = shouldPromptPropertyDisclosureComment(question, response.answer)
                   return (
-                    <tr key={question.key}>
-                      <td className="border-r border-t border-[#1f2937] px-3 py-2 align-top leading-6">
-                        <span className="font-semibold">{question.number}.</span> {question.text}
-                        {question.extraLabel ? (
-                          <label className="mt-2 grid max-w-[320px] gap-1 text-xs font-semibold text-[#4f6378]">
-                            {question.extraLabel}
-                            <input
-                              className="min-h-10 rounded-[10px] border border-[#d7e2ed] bg-white px-3 text-sm text-[#142334] outline-none focus:border-[#35546c]/40 focus:ring-2 focus:ring-[#35546c]/10"
-                              value={normalized.remoteControlsQuantity}
-                              onChange={(event) => onDisclosureChange('remoteControlsQuantity', event.target.value)}
-                              placeholder="e.g. 2 gate remotes, 1 garage remote"
-                            />
-                          </label>
-                        ) : null}
-                      </td>
-                      {answerOptions.map((option) => (
-                        <td key={option.key} className="border-r border-t border-[#1f2937] px-2 py-2 text-center align-middle last:border-r-0">
-                          <label className="inline-flex h-10 w-10 cursor-pointer items-center justify-center rounded-full border border-[#cbd7e4] bg-white">
-                            <input
-                              type="radio"
-                              className="h-4 w-4 accent-[#172334]"
-                              name={`disclosure-${question.key}`}
-                              checked={response.answer === option.key}
-                              onChange={() => onAnswerChange(question.key, option.key)}
-                            />
-                            <span className="sr-only">{option.label}</span>
-                          </label>
+                    <Fragment key={question.key}>
+                      <tr>
+                        <td className="border-r border-t border-[#1f2937] px-3 py-2 align-top leading-6">
+                          <span className="font-semibold">{question.number}.</span> {question.text}
+                          {question.extraLabel ? (
+                            <label className="mt-2 grid max-w-[320px] gap-1 text-xs font-semibold text-[#4f6378]">
+                              {question.extraLabel}
+                              <input
+                                className="min-h-10 rounded-[10px] border border-[#d7e2ed] bg-white px-3 text-sm text-[#142334] outline-none focus:border-[#35546c]/40 focus:ring-2 focus:ring-[#35546c]/10"
+                                value={normalized.remoteControlsQuantity}
+                                onChange={(event) => onDisclosureChange('remoteControlsQuantity', event.target.value)}
+                                placeholder="e.g. 2 gate remotes, 1 garage remote"
+                              />
+                            </label>
+                          ) : null}
                         </td>
-                      ))}
-                    </tr>
+                        {answerOptions.map((option) => (
+                          <td key={option.key} className="border-r border-t border-[#1f2937] px-2 py-2 text-center align-middle last:border-r-0">
+                            <label className="inline-flex h-10 w-10 cursor-pointer items-center justify-center rounded-full border border-[#cbd7e4] bg-white">
+                              <input
+                                type="radio"
+                                className="h-4 w-4 accent-[#172334]"
+                                name={`disclosure-${question.key}`}
+                                checked={response.answer === option.key}
+                                onChange={() => onAnswerChange(question.key, option.key)}
+                              />
+                              <span className="sr-only">{option.label}</span>
+                            </label>
+                          </td>
+                        ))}
+                      </tr>
+                      {showIssueComment ? (
+                        <tr>
+                          <td colSpan={4} className="border-t border-[#1f2937] bg-[#fffaf2] px-3 py-3">
+                            <label className="grid gap-1.5 text-xs font-semibold text-[#7c3f13]">
+                              Describe the issue or uncertainty for question {question.number}
+                              <textarea
+                                className={`${DETAIL_INPUT_CLASS} min-h-[88px] resize-y border-[#edc68c] bg-white`}
+                                value={response.note || ''}
+                                onChange={(event) => onNoteChange(question.key, event.target.value)}
+                                placeholder="What is broken, not working, damaged, missing, or uncertain?"
+                              />
+                            </label>
+                          </td>
+                        </tr>
+                      ) : null}
+                    </Fragment>
                   )
                 })}
               </tbody>
@@ -3436,6 +3532,29 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     })
   }
 
+  function handleDisclosureNoteChange(questionKey, note) {
+    setForm((previous) => {
+      const current = normalizePropertyDisclosure(previous?.propertyDisclosure || {}, {
+        kind: propertyBranch === 'commercial' || propertyBranch === 'mixed_use' ? 'commercial' : 'residential',
+      })
+      const next = normalizePropertyDisclosure({
+        ...current,
+        responses: {
+          ...(current.responses || {}),
+          [questionKey]: {
+            ...(current.responses?.[questionKey] || {}),
+            note,
+          },
+        },
+      }, { kind: current.kind })
+      return {
+        ...(previous || {}),
+        propertyDisclosure: next,
+        propertyDisclosureStatus: getPropertyDisclosureStatus(next),
+      }
+    })
+  }
+
   async function handleDownloadDisclosurePdf() {
     if (!form?.propertyDisclosure) return
     let pdfStage = null
@@ -4279,12 +4398,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
 
     try {
       setForm(submissionForm)
-      const disclosureDocument = buildPropertyDisclosureDocument(submissionDisclosure || {}, {
-        sellerId: String(listing?.seller?.id || listing?.sellerId || '').trim(),
-        propertyId: String(listing?.propertyId || listing?.property_id || '').trim(),
-        listingId: String(listing?.id || '').trim(),
-        transactionId: String(listing?.transactionId || listing?.transaction_id || '').trim(),
-      })
       const normalizedSellerTaxNumber = String(
         submissionForm.sellerTaxNumber ||
           submissionForm.incomeTaxNumber ||
@@ -4358,7 +4471,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
           arch9_terms_accepted: arch9TermsAcceptance.accepted,
           arch9TermsAcceptedAt,
           arch9_terms_accepted_at: arch9TermsAcceptedAt,
-          generatedDocument: disclosureDocument,
         },
         propertyDisclosureStatus: getPropertyDisclosureStatus(submissionDisclosure || {}),
         currentStep: FINAL_STEP_INDEX,
@@ -4397,6 +4509,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
             ? String(submissionForm?.ownershipType || '').trim().toLowerCase()
             : null,
           skipPortalNotification: true,
+          listingSnapshot: listing,
         })
         updated = submitted?.listing || null
       } else {
@@ -4429,24 +4542,33 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       setSuccess('Your property details have been submitted.\nYour agent will review the details and prepare the next mandate step.')
       scrollSellerOnboardingToTop()
       if (typeof window !== 'undefined') {
+        const submissionDetail = {
+          token: String(updated?.sellerOnboarding?.token || updated?.sellerOnboardingToken || '').trim(),
+          sellerLeadId: String(updated?.sellerLeadId || '').trim(),
+          leadId: String(updated?.sellerLeadId || updated?.id || '').trim(),
+          listingId: String(updated?.id || '').trim(),
+          privateListingId: String(updated?.id || '').trim(),
+          organisationId: String(updated?.organisationId || '').trim(),
+          sellerOnboardingStatus: String(updated?.sellerOnboarding?.status || 'completed').trim(),
+          submittedAt: new Date().toISOString(),
+          formData:
+            updated?.sellerOnboarding?.formData && typeof updated.sellerOnboarding.formData === 'object'
+              ? updated.sellerOnboarding.formData
+              : {},
+        }
         window.dispatchEvent(
           new CustomEvent('itg:seller-onboarding-submitted', {
-            detail: {
-              token: String(updated?.sellerOnboarding?.token || updated?.sellerOnboardingToken || '').trim(),
-              sellerLeadId: String(updated?.sellerLeadId || '').trim(),
-              leadId: String(updated?.sellerLeadId || updated?.id || '').trim(),
-              listingId: String(updated?.id || '').trim(),
-              privateListingId: String(updated?.id || '').trim(),
-              organisationId: String(updated?.organisationId || '').trim(),
-              sellerOnboardingStatus: String(updated?.sellerOnboarding?.status || 'completed').trim(),
-              submittedAt: new Date().toISOString(),
-              formData:
-                updated?.sellerOnboarding?.formData && typeof updated.sellerOnboarding.formData === 'object'
-                  ? updated.sellerOnboarding.formData
-                  : {},
-            },
+            detail: submissionDetail,
           }),
         )
+        try {
+          window.localStorage.setItem(
+            'itg:seller-onboarding-submitted:v1',
+            JSON.stringify({ ...submissionDetail, formData: undefined }),
+          )
+        } catch {
+          // Storage can be unavailable in restricted browsing contexts; the database fallback still reconciles.
+        }
         window.dispatchEvent(new Event('itg:listings-updated'))
         window.dispatchEvent(new Event('itg:pipeline-updated'))
       }
@@ -6133,6 +6255,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
               signingStatus={sellerComplianceSigning}
               hasRequestedSigner={hasRequestedComplianceSigner}
               onAnswerChange={handleDisclosureAnswerChange}
+              onNoteChange={handleDisclosureNoteChange}
               onDownload={handleDownloadDisclosurePdf}
               onDisclosureChange={patchPropertyDisclosure}
               termsAcceptanceError={termsAcceptanceError}

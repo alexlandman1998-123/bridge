@@ -26,104 +26,133 @@ export const PROPERTY_DISCLOSURE_QUESTIONS = Object.freeze([
     key: 'electrical_faults',
     number: 1,
     text: 'Are you aware of any electrical faults / problems regarding the electrical installation or appliances?',
+    commentAnswers: [PROPERTY_DISCLOSURE_ANSWER.yes, PROPERTY_DISCLOSURE_ANSWER.unsure],
   },
   {
     key: 'illegal_electrical_extensions',
     number: 2,
     text: 'Are there any illegal electrical extensions, or non-working points and has there been any disconnection or damage, to permanent fixtures / equipment? Eg stoves, oven, extractor fan, aircon, heaters, ceiling fans, light fixtures, water pumps etc...?',
+    commentAnswers: [PROPERTY_DISCLOSURE_ANSWER.yes, PROPERTY_DISCLOSURE_ANSWER.unsure],
   },
   {
     key: 'water_heater',
     number: 3,
     text: 'Are there any problems regarding the water heater for example: leaks, faulty gaskets, low pressure?',
+    commentAnswers: [PROPERTY_DISCLOSURE_ANSWER.yes, PROPERTY_DISCLOSURE_ANSWER.unsure],
   },
   {
     key: 'drainage_system',
     number: 4,
     text: 'Are there any problems with the drainage system e.g. clogged drainage pipes, drains, storm water drains or gutters?',
+    commentAnswers: [PROPERTY_DISCLOSURE_ANSWER.yes, PROPERTY_DISCLOSURE_ANSWER.unsure],
   },
   {
     key: 'leaking_taps_pipes',
     number: 5,
     text: 'Are there any leaking taps, pipes, burst pipes or water heating systems not working properly?',
+    commentAnswers: [PROPERTY_DISCLOSURE_ANSWER.yes, PROPERTY_DISCLOSURE_ANSWER.unsure],
   },
   {
     key: 'keys_to_all_doors',
     number: 6,
     text: 'Are there keys to all doors?',
+    commentAnswers: [PROPERTY_DISCLOSURE_ANSWER.no, PROPERTY_DISCLOSURE_ANSWER.unsure],
   },
   {
     key: 'remote_controls',
     number: 7,
     text: 'How many remote controls exist for electronic gates and garage doors?',
     extraLabel: 'Provide quantity',
+    commentAnswers: [PROPERTY_DISCLOSURE_ANSWER.unsure],
   },
   {
     key: 'security_systems',
     number: 8,
     text: 'Are all security systems in good working order e.g. alarms, burglar bars and security gates?',
+    commentAnswers: [PROPERTY_DISCLOSURE_ANSWER.no, PROPERTY_DISCLOSURE_ANSWER.unsure],
   },
   {
     key: 'pool_equipment',
     number: 9,
     text: 'a) Is the pool pump, cleaning equipment and pipes in good working condition (general operation of equipment, pipes or filter, etc) b) Is there any damage to the fibreglass/marbelite and are there any cracks or loose tiles?',
+    commentAnswers: [PROPERTY_DISCLOSURE_ANSWER.yes, PROPERTY_DISCLOSURE_ANSWER.no, PROPERTY_DISCLOSURE_ANSWER.unsure],
   },
   {
     key: 'pool_repairs_six_months',
     number: 10,
     text: 'Were any repairs done to the items specified in 9 above, over the past six months?',
+    commentAnswers: [PROPERTY_DISCLOSURE_ANSWER.yes, PROPERTY_DISCLOSURE_ANSWER.unsure],
   },
   {
     key: 'rising_damp',
     number: 11,
     text: 'Is there any rising damp in walls in any of the rooms / buildings?',
+    commentAnswers: [PROPERTY_DISCLOSURE_ANSWER.yes, PROPERTY_DISCLOSURE_ANSWER.unsure],
   },
   {
     key: 'roof_leaks',
     number: 12,
     text: 'Are there any leaks in the roof?',
+    commentAnswers: [PROPERTY_DISCLOSURE_ANSWER.yes, PROPERTY_DISCLOSURE_ANSWER.unsure],
   },
   {
     key: 'sanitary_fittings',
     number: 13,
     text: 'Are there cracks, leaks or problems with bathtubs, sinks, toilets or showers?',
+    commentAnswers: [PROPERTY_DISCLOSURE_ANSWER.yes, PROPERTY_DISCLOSURE_ANSWER.unsure],
   },
   {
     key: 'tiles_floors',
     number: 14,
     text: 'Are there any cracked or broken tiles, damaged wooden floors?',
+    commentAnswers: [PROPERTY_DISCLOSURE_ANSWER.yes, PROPERTY_DISCLOSURE_ANSWER.unsure],
   },
   {
     key: 'structural_defects',
     number: 15,
     text: 'Are there any structural defects which you are aware of for example, cracks in walls or erosion etc?',
+    commentAnswers: [PROPERTY_DISCLOSURE_ANSWER.yes, PROPERTY_DISCLOSURE_ANSWER.unsure],
   },
   {
     key: 'carpet_damage',
     number: 16,
     text: 'Is there any damage to the carpets such as stains, burn marks, spots etc?',
+    commentAnswers: [PROPERTY_DISCLOSURE_ANSWER.yes, PROPERTY_DISCLOSURE_ANSWER.unsure],
   },
   {
     key: 'cupboards',
     number: 17,
     text: 'Are all cupboards in working order and acceptable condition?',
+    commentAnswers: [PROPERTY_DISCLOSURE_ANSWER.no, PROPERTY_DISCLOSURE_ANSWER.unsure],
   },
   {
     key: 'door_window_locks',
     number: 18,
     text: 'Are all door handles, back doors and window locking systems in working order?',
+    commentAnswers: [PROPERTY_DISCLOSURE_ANSWER.no, PROPERTY_DISCLOSURE_ANSWER.unsure],
   },
   {
     key: 'improvements_on_plans',
     number: 19,
     text: 'Are all the improvements carried out at the property reflected on the approved building plans?',
+    commentAnswers: [PROPERTY_DISCLOSURE_ANSWER.no, PROPERTY_DISCLOSURE_ANSWER.unsure],
   },
   {
     key: 'approved_plans_possession',
     number: 20,
     text: 'Are you in possession of such approved building plans?',
+    commentAnswers: [PROPERTY_DISCLOSURE_ANSWER.no, PROPERTY_DISCLOSURE_ANSWER.unsure],
   },
 ])
+
+export function shouldPromptPropertyDisclosureComment(question, answer) {
+  const normalizedAnswer = normalizeAnswer(answer)
+  return Boolean(
+    normalizedAnswer &&
+      Array.isArray(question?.commentAnswers) &&
+      question.commentAnswers.includes(normalizedAnswer),
+  )
+}
 
 export const RESIDENTIAL_DISCLOSURE_CATEGORIES = Object.freeze([
   { key: 'structural', label: 'Structural', issueTypes: ['Structural defects', 'Cracks', 'Subsidence', 'Foundation issues'] },
@@ -708,6 +737,7 @@ export function buildPropertyDisclosureDocumentMarkup(disclosure = {}, context =
         <span class="question-number">${item.number}.</span>
         <span class="question-text">${escapeHtml(item.question)}</span>
         ${item.extraLabel ? `<span class="question-extra">${escapeHtml(item.extraLabel)}: ${escapeHtml(item.extraValue)}</span>` : ''}
+        ${item.note ? `<span class="question-note"><strong>Details:</strong> ${escapeHtml(item.note).replace(/\n/g, '<br />')}</span>` : ''}
       </td>
       <td class="answer-cell">${answerCell(item.answer, PROPERTY_DISCLOSURE_ANSWER.yes)}</td>
       <td class="answer-cell">${answerCell(item.answer, PROPERTY_DISCLOSURE_ANSWER.no)}</td>
@@ -803,6 +833,7 @@ export function buildPropertyDisclosureDocumentMarkup(disclosure = {}, context =
     .question-cell { color: #1f2937; }
     .question-number { display: inline-block; min-width: 5mm; color: #111827; font-weight: 700; }
     .question-extra { display: block; margin-top: 1.5mm; padding-left: 5mm; color: #3f4a56; font-size: 8.8pt; }
+    .question-note { display: block; margin-top: 1.5mm; padding-left: 5mm; color: #7c3f13; font-size: 8.8pt; line-height: 1.35; }
     .answer-cell { text-align: center; vertical-align: middle; color: #111827; }
     .answer-mark { display: inline-block; font-size: 12pt; font-weight: 700; line-height: 1; }
     .comments-title { color: #111827; font-weight: 700; text-transform: uppercase; }

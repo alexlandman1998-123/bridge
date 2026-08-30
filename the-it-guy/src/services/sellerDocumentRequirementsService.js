@@ -3,7 +3,6 @@ import { buildPropertyDisclosureDocumentMarkup } from '../lib/propertyDisclosure
 import { buildSellerComplianceDocumentModel } from '../core/documents/sellerComplianceDocumentModel.js'
 import {
   getSellerBasePackAliases,
-  isSellerBasePackKey,
   normalizeSellerBasePackKey,
   sellerBasePackKeysOverlap,
   SELLER_BASE_PACK_COMPLETION_ROUTES,
@@ -224,6 +223,7 @@ export function mergeSellerRequiredDocuments(...requirementLists) {
   const seen = new Set()
   for (const requirement of requirementLists.flat()) {
     if (!requirement || typeof requirement !== 'object') continue
+    if (isEmbeddedSellerSigningRequirement(requirement)) continue
     if (!requirementIsActive(requirement)) continue
     const identity = requirementIdentity(requirement)
     if (identity && seen.has(identity)) continue
@@ -237,6 +237,17 @@ const STALE_PRE_ONBOARDING_REQUIREMENT_KEYS = new Set([
   'seller_contact_confirmation',
   'seller_onboarding_submission',
 ])
+
+// Spouse consent is collected as a signer-specific action on the seller
+// declaration/FICA pack. It is not a separate file that can be uploaded.
+const EMBEDDED_SELLER_SIGNING_REQUIREMENT_KEYS = new Set([
+  'spouse_consent',
+  'seller_spouse_consent',
+])
+
+function isEmbeddedSellerSigningRequirement(requirement = {}) {
+  return EMBEDDED_SELLER_SIGNING_REQUIREMENT_KEYS.has(requirementIdentity(requirement))
+}
 
 const STALE_INTERNAL_SELLER_CAPTURE_REQUIREMENT_PATTERNS = [
   /^owner_\d+_marital_status$/,
@@ -404,6 +415,8 @@ function coerceSellerDocumentLifecycle(listing = {}, formData = {}) {
 }
 
 function filterStalePersistedRequirements(requirements = [], listing = {}, formData = {}) {
+  const activeRequirements = (Array.isArray(requirements) ? requirements : [])
+    .filter((requirement) => !isEmbeddedSellerSigningRequirement(requirement))
   const onboardingStatus = firstPresent(
     listing?.sellerOnboardingStatus,
     listing?.seller_onboarding_status,
@@ -411,9 +424,9 @@ function filterStalePersistedRequirements(requirements = [], listing = {}, formD
     listing?.seller_onboarding?.status,
   )
   const hasOnboardingFacts = isPlainObject(formData) && Object.keys(formData).length > 0
-  if (!hasOnboardingFacts && !hasSubmittedSellerOnboarding(onboardingStatus)) return Array.isArray(requirements) ? requirements : []
+  if (!hasOnboardingFacts && !hasSubmittedSellerOnboarding(onboardingStatus)) return activeRequirements
 
-  return (Array.isArray(requirements) ? requirements : []).filter((requirement) => {
+  return activeRequirements.filter((requirement) => {
     const key = requirementIdentity(requirement)
     return !STALE_PRE_ONBOARDING_REQUIREMENT_KEYS.has(key) &&
       !isStaleInternalSellerCaptureRequirement(requirement)
@@ -749,7 +762,6 @@ export function buildKingstonsAuthorityDocumentRequirements(ownershipProfile = {
   if (ownershipProfile?.captured !== true) return []
   const requirements = []
   const sellerType = normalizeKey(ownershipProfile.sellerType)
-  const naturalSetup = normalizeKey(ownershipProfile.natural?.maritalSetup || ownershipProfile.naturalSetup)
   const juristicEntityType = normalizeKingstonsSellerEntityType(ownershipProfile.juristicEntityType || ownershipProfile.juristic?.entityType)
 
   if (sellerType === 'natural') {
@@ -763,16 +775,6 @@ export function buildKingstonsAuthorityDocumentRequirements(ownershipProfile = {
         description: 'Written authority confirming every registered natural-person owner consents to the mandate and sale process.',
         partyRole: 'owner',
         partyName: `${owners.length} owners`,
-        entityType: 'natural',
-      }))
-    }
-    if (naturalSetup === 'in_community') {
-      requirements.push(buildKingstonsAuthorityDocumentRequirement({
-        key: 'spouse_consent',
-        name: 'Spouse Consent',
-        description: 'Spouse consent required where the seller is married in community of property.',
-        partyRole: 'spouse',
-        partyName: ownershipProfile.natural?.spouse?.name,
         entityType: 'natural',
       }))
     }

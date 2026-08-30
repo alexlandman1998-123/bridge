@@ -1119,14 +1119,6 @@ export function getRequiredSellerDocuments(requirementProfile = {}) {
           required: false,
           generatedFrom,
         }),
-        buildRequirement({
-          key: 'spouse_consent',
-          name: 'Spouse Consent / Signature',
-          description: 'Spousal consent/signature where applicable.',
-          group: 'marital',
-          visibility: 'seller_visible',
-          generatedFrom,
-        }),
       )
     } else if (maritalRegime === 'out_of_community' || maritalRegime === 'married_out_of_community' || maritalRegime === 'anc' || maritalRegime === 'antenuptial_contract') {
       docs.push(

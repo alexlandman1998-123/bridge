@@ -38,6 +38,18 @@ test('applySellerComplianceSignatureToForm records the active primary signer and
   assert.equal(nextForm.sellerComplianceSigners.find((signer) => signer.id === 'spouse').status, 'pending')
 })
 
+test('the normal onboarding link remains bound to the primary seller after their signature becomes complete', () => {
+  const nextForm = applySellerComplianceSignatureToForm({
+    formData: baseForm,
+    disclosure: baseForm.propertyDisclosure,
+  })
+
+  assert.equal(nextForm.sellerComplianceSigning.complete, false)
+  assert.equal(nextForm.sellerComplianceSigning.signingState.signedCount, 1)
+  assert.equal(nextForm.sellerComplianceSigners.find((signer) => signer.id === 'seller-1').status, 'signed')
+  assert.equal(nextForm.sellerComplianceSigners.find((signer) => signer.id === 'spouse').status, 'pending')
+})
+
 test('spouse signer link gets a blank signature view until the spouse signs', () => {
   const afterSellerOne = applySellerComplianceSignatureToForm({
     formData: baseForm,
@@ -57,14 +69,14 @@ test('spouse signer link gets a blank signature view until the spouse signs', ()
   assert.equal(spouseDisclosure.signedAt, '')
 })
 
-test('buildSellerComplianceSigningForForm does not treat an unknown signer parameter as matched', () => {
+test('buildSellerComplianceSigningForForm does not treat an unknown signer parameter as matched or advance to another party', () => {
   const flow = buildSellerComplianceSigningForForm({
     formData: baseForm,
     signerId: 'not-a-real-signer',
   })
 
   assert.equal(flow.requestedSignerMatched, false)
-  assert.equal(flow.activeSigner.id, 'spouse')
+  assert.equal(flow.activeSigner.id, 'seller-1')
 })
 
 test('applySellerComplianceSignatureToForm completes the pack when spouse signs later', () => {

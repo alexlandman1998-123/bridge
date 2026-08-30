@@ -27,6 +27,40 @@ function toArray(value) {
   return Array.isArray(value) ? value : []
 }
 
+function signatureValue(signer = {}) {
+  return text(
+    isPlainObject(signer.signature)
+      ? signer.signature.value || signer.signature.dataUrl || signer.signature.data_url
+      : signer.signature || signer.signatureValue || signer.signature_value,
+  )
+}
+
+function clearDuplicatedSecondarySignatures(signers = []) {
+  const seen = new Map()
+  return toArray(signers).map((signer) => {
+    const value = signatureValue(signer)
+    if (!value) return signer
+    const signedAt = text(signer?.signedAt || signer?.signed_at)
+    const prior = seen.get(value)
+    seen.set(value, prior || { signedAt })
+    const isGeneratedDuplicate = Boolean(
+      prior && (value.startsWith('data:image/') || (signedAt && prior.signedAt === signedAt)),
+    )
+    if (!isGeneratedDuplicate) return signer
+    return {
+      ...signer,
+      status: 'pending',
+      complete: false,
+      signedAt: '',
+      signed_at: '',
+      signature: { value: '', type: '' },
+      signatureValue: '',
+      signature_value: '',
+      legacyDuplicateSignatureReset: true,
+    }
+  })
+}
+
 function oneOrManyLabel(count, singular, plural = `${singular}s`) {
   return `${count} ${count === 1 ? singular : plural}`
 }
@@ -178,6 +212,20 @@ function buildSignerActionModel({ token = '', workspacePath = '', nextSigner = n
   ].filter(Boolean)
 }
 
+function buildSignatureRequests({ token = '', signers = [] } = {}) {
+  if (!token) return []
+  return toArray(signers)
+    .filter((signer) => signer?.required && !signer?.complete)
+    .map((signer) => ({
+      signerId: signer.id,
+      name: signer.name || signer.roleLabel || 'Seller',
+      roleLabel: signer.roleLabel || 'Seller',
+      email: signer.email || '',
+      href: `/seller/onboarding/${encodeURIComponent(token)}?signer=${encodeURIComponent(signer.id)}`,
+      disabled: !signer.email,
+    }))
+}
+
 function getStatusLabel(state = {}) {
   if (state.complete) return 'All signatures complete'
   if (state.status === 'authority_review_required') return 'Authority uploaded for review'
@@ -217,7 +265,7 @@ export function buildSellerCompliancePortalModel({
   const baseSigners = Array.isArray(existingSigners)
     ? existingSigners
     : getSellerComplianceFormSigners(safeFormData, safeListing, safePortalData)
-  const seededSigners = mergeDerivedSignerState(baseSigners, [
+  const seededSigners = mergeDerivedSignerState(clearDuplicatedSecondarySignatures(baseSigners), [
     buildPrimarySignedSignerFromDisclosure(safeFormData, safeListing, safePortalData),
   ])
   const facts = transformSellerOnboardingToFacts(safeFormData, safeListing, {
@@ -249,6 +297,7 @@ export function buildSellerCompliancePortalModel({
     progressLabel: `${state.completedCount || 0} of ${state.requiredCount || signers.length} complete`,
     nextMessage: getNextMessage(state),
     nextSigner,
+    signatureRequests: buildSignatureRequests({ token, signers }),
     actions: buildSignerActionModel({
       token,
       workspacePath,

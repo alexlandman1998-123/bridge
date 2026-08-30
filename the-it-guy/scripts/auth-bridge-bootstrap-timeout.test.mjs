@@ -76,6 +76,18 @@ assert.match(
   'scheduled retry attempts should be tracked with retry reason metadata',
 )
 
+assert.match(
+  source,
+  /message\.includes\('failed to fetch'\)[\s\S]*?return 'network_failure'/,
+  'transient Supabase fetch failures should enter bounded degraded recovery instead of clearing the workspace',
+)
+
+assert.match(
+  source,
+  /canKeepAuthenticatedWorkspaceDuringBridgeBoot[\s\S]*?status: keepCurrentWorkspace \? 'authenticated' : 'loading'/,
+  'background bridge revalidation should keep an already authenticated workspace mounted',
+)
+
 const degradedStateIndex = source.indexOf('const degradedState = retryReason')
 const retryAttemptsIndex = source.indexOf('const retryAttemptsUsed = bridgeRetryScopeRef.current.attempts || 0')
 assert.ok(degradedStateIndex > -1, 'retryable bridge boot failures should attempt a last-good degraded workspace recovery')

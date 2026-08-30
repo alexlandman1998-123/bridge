@@ -6,6 +6,12 @@ Arch9 Rentals should be delivered as a sequence of complete vertical slices. Dat
 
 Every phase must produce a deployable result. A phase is complete only when its database rules, RLS, backend contract, UI states, mobile behavior, observability, tests, migration evidence and rollback control are complete.
 
+### Internal-first scope
+
+The active roadmap builds the Rentals operating system inside Arch9: inventory, vacancies, marketing readiness, leads, applications, tenancies, money, maintenance, inspections and renewals. It does **not** include portal syndication, listing-feed synchronisation, credit/FICA providers, bank feeds or e-signature APIs.
+
+Those integrations remain behind stable internal boundaries and are added only after the relevant internal workflow has operated reliably. No external API is permitted to become the source of truth, and no integration work may alter Sales listing behaviour.
+
 ### Parallel workstreams
 
 | Workstream | Responsibility |
@@ -236,7 +242,7 @@ These apply to every phase and cannot be deferred.
 
 **Complexity:** Medium.
 
-## Programme C — Vacancy and marketing
+## Programme C — Vacancy and internal marketing
 
 ### Phase 12 — Vacancy domain and state machine
 
@@ -252,21 +258,21 @@ These apply to every phase and cannot be deferred.
 
 **Complexity:** Medium.
 
-### Phase 13 — Rental listing projection adapter
+### Phase 13 — Internal marketing record
 
-**Outcome:** A Vacancy can create/update a rental-marked shared listing without changing Sales semantics.
+**Outcome:** A Vacancy has a complete internal marketing record without creating or changing a shared Sales listing.
 
-**Backend/data:** `rental_vacancy_listings`, projection mapping and idempotent synchronization with `private_listings`.
+**Backend/data:** `rental_vacancy_marketing`, a versioned internal snapshot, completeness rules and an explicit `not_published` state. Keep any existing projection code isolated and disabled; do not synchronise with `private_listings`.
 
-**Frontend:** Marketing tab uses existing listing/media primitives through a rental adapter.
+**Frontend:** Marketing tab for headline, description, features, availability, terms and an internal preview.
 
-**Quality:** Field mapping, repeated sync, drift detection and full Sales listing regression.
+**Quality:** Snapshot/versioning, readiness calculation, branch scope and full Sales listing regression.
 
-**Exit gate:** Rental projection round-trips correctly and never enters default Sales results.
+**Exit gate:** A manager can prepare and approve a complete rental marketing record, while no Sales listing is created or changed.
 
 **Complexity:** Large.
 
-### Phase 14 — Rental media and listing readiness
+### Phase 14 — Rental media and marketing readiness
 
 **Outcome:** Property media and rental copy can be prepared efficiently.
 
@@ -276,21 +282,21 @@ These apply to every phase and cannot be deferred.
 
 **Quality:** File security, upload recovery, mobile images and large-media performance.
 
-**Exit gate:** A user can prepare a portal-ready rental listing from a Vacancy.
+**Exit gate:** A user can prepare an internally approved marketing pack from a Vacancy.
 
 **Complexity:** Medium.
 
-### Phase 15 — Portal syndication
+### Phase 15 — Internal marketing operations
 
-**Outcome:** Rental listings publish through existing Property24/Private Property adapters.
+**Outcome:** Managers can approve, pause, archive and audit an internal marketing record.
 
-**Backend:** Rental payload adapters, preview, publish, status sync, reconciliation and failures.
+**Backend:** Approval state, internal publication state, audit trail, scheduled review dates and a provider-neutral export boundary with no provider calls.
 
-**Frontend:** Syndication preview, blockers, publish action, status and recovery.
+**Frontend:** Readiness checklist, internal preview, approve/pause/archive actions and marketing history.
 
-**Quality:** Sandbox contracts, duplicate publish prevention, update/withdraw flows and Sales adapter regression.
+**Quality:** State transitions, authority rules, stale-version handling and Sales isolation regression.
 
-**Exit gate:** A pilot rental listing can be published, updated and withdrawn with reconciled status.
+**Exit gate:** A marketing record is operationally complete and auditable without any external publication.
 
 **Complexity:** Large.
 
@@ -308,11 +314,11 @@ These apply to every phase and cannot be deferred.
 
 **Complexity:** Medium–Large.
 
-### Phase 17 — Existing rental listing migration
+### Phase 17 — Legacy rental data migration
 
-**Outcome:** Existing marked rental listings are linked to structured property/unit/vacancy records.
+**Outcome:** Existing rental data is linked to structured property/unit/vacancy records without modifying shared listings.
 
-**Backend/data:** Dry-run classifier, ambiguity report, backfill, link creation and reconciliation.
+**Backend/data:** Dry-run classifier, ambiguity report, backfill, link creation and reconciliation. Treat any shared-listing reference as read-only evidence.
 
 **Frontend:** Admin review for ambiguous records.
 
@@ -334,7 +340,7 @@ These apply to every phase and cannot be deferred.
 
 **Quality:** Sales lead pipeline regression, classification changes and scoping.
 
-**Exit gate:** Rental and Sales leads coexist without polluting each other's default pipelines.
+**Exit gate:** Rental and Sales leads coexist without polluting each other's default pipelines, regardless of source.
 
 **Complexity:** Medium–Large.
 
@@ -348,7 +354,7 @@ These apply to every phase and cannot be deferred.
 
 **Quality:** Transition rules, optimistic updates, filters and mobile usage.
 
-**Exit gate:** A portal enquiry can be qualified and progressed operationally.
+**Exit gate:** An internally created or manually captured enquiry can be qualified and progressed operationally.
 
 **Complexity:** Medium.
 
@@ -510,15 +516,15 @@ These apply to every phase and cannot be deferred.
 
 **Complexity:** Medium–Large.
 
-### Phase 31 — Lease signing integration boundary
+### Phase 31 — Lease signing and manual evidence
 
-**Outcome:** Upload/manual signed state works now; e-signature can be added later.
+**Outcome:** Signed leases can be tracked and evidenced without an e-signature provider.
 
-**Backend:** Provider-neutral signing interface, manual evidence path and signing events.
+**Backend:** Signer records, manual signed-document evidence, signature dates and signing events. Preserve a provider-neutral interface, but make no external calls.
 
 **Frontend:** Awaiting tenant/landlord, signed and failed/recovery states.
 
-**Quality:** Signer identity, partial signatures, callback duplication and manual override audit.
+**Quality:** Signer identity, partial signatures, manual evidence and override audit.
 
 **Exit gate:** Lease can reach Signed without binding the domain to one signing provider.
 
@@ -560,7 +566,7 @@ These apply to every phase and cannot be deferred.
 
 **Frontend:** Activation review, blockers and success state.
 
-**Quality:** Concurrent activation, rollback, unit status and vacancy/listing closure.
+**Quality:** Concurrent activation, rollback, unit status and vacancy/marketing closure.
 
 **Exit gate:** No unit can have two active tenancies or remain marketed incorrectly.
 
@@ -952,7 +958,7 @@ These apply to every phase and cannot be deferred.
 
 **Complexity:** Large.
 
-## Programme K — Automation and integration expansion
+## Programme K — Internal automation and operating scale
 
 ### Phase 62 — Rental notification catalogue
 
@@ -982,45 +988,45 @@ These apply to every phase and cannot be deferred.
 
 **Complexity:** Large.
 
-### Phase 64 — Screening provider adapters
+### Phase 64 — Screening operations enhancements
 
-**Outcome:** External identity, FICA and credit providers plug into the manual screening model.
+**Outcome:** Screening remains a clear, repeatable internal process with better evidence and reviewer controls.
 
-**Backend:** Provider registry, request/callback, normalized results, consent gate and retry.
+**Backend:** Screening templates, reviewer queues, expiry policies, internal evidence requests and provider-neutral result fields. No provider requests or callbacks.
 
-**Frontend:** Provider progress, evidence and manual fallback.
+**Frontend:** Reviewer progress, evidence, exceptions and manual decision support.
 
-**Quality:** Webhook authentication, duplicate callbacks, outages and provider switching.
+**Quality:** Missing evidence, repeated reviews, expiry, authority and audit coverage.
 
-**Exit gate:** Provider failure never auto-declines or auto-approves an applicant.
+**Exit gate:** Screening is complete, auditable and never auto-approves or auto-declines an applicant.
 
 **Complexity:** Large.
 
-### Phase 65 — Payment feed integration
+### Phase 65 — Payment import and matching operations
 
-**Outcome:** Bank/payment imports create staged candidate payments for review or safe matching.
+**Outcome:** Staff can import approved payment files and match them safely without a live bank feed.
 
-**Backend:** Provider adapter, matching rules, confidence and reconciliation.
+**Backend:** Staged CSV/import format, matching rules, confidence and reconciliation. No bank or payment-provider connection.
 
 **Frontend:** Match/review queue and exception resolution.
 
-**Quality:** Duplicates, ambiguous references, refunds and replay.
+**Quality:** Duplicates, ambiguous references, reversals, replay and malformed files.
 
 **Exit gate:** Low-confidence matches cannot post automatically.
 
 **Complexity:** Large.
 
-### Phase 66 — E-signature integration
+### Phase 66 — Signing operations and completion controls
 
-**Outcome:** Lease signing uses a provider through the existing signing boundary.
+**Outcome:** Staff can chase, record and verify manual lease signing at scale.
 
-**Backend:** Envelope creation, signer sessions, callback validation and final artifact linking.
+**Backend:** Signing task state, reminders, manual completion evidence and final artifact linking. No envelope, signer-session or callback API.
 
-**Frontend:** Send, track, remind and recover actions.
+**Frontend:** Track, remind, record signed evidence and recovery actions.
 
-**Quality:** Signer security, partial signing, callback replay and final PDF evidence.
+**Quality:** Signer security, partial signing, reminder dedupe and final PDF evidence.
 
-**Exit gate:** Manual upload remains a safe fallback.
+**Exit gate:** Manual signing is reliable, auditable and a complete operating path.
 
 **Complexity:** Large.
 
@@ -1172,6 +1178,20 @@ Build booking, guest access, payment and check-in/out through new bounded workfl
 
 Extend shared maintenance/inspection/finance infrastructure through short-term adapters, not long-term table repurposing.
 
+## Deferred integration release — only after internal operations are stable
+
+This is intentionally outside the active phase sequence. Start an item here only when its matching internal workflow has completed staging, operated in a real pilot and passed the Sales isolation gate.
+
+| Deferred capability | Prerequisite internal phases | Safety rule |
+|---|---:|---|
+| Property24 / Private Property publication, updates and withdrawal | 12–17 | Rentals marketing remains the source of truth; never write directly into default Sales flows. |
+| Portal-originated enquiry ingestion | 18–20 | Create or classify a Rental lead only; never change Sales lead defaults. |
+| Credit, FICA and identity screening | 21–28, 64 | Consent first; provider output is review evidence, never an automated decision. |
+| Bank/payment feeds | 36–42, 65 | Stage and reconcile candidates before posting any financial record. |
+| E-signature provider | 30–31, 66 | Manual signing remains a fully supported fallback. |
+
+Each deferred integration is a new gated mini-release: sandbox contract, feature flag, small pilot cohort, reconciliation, rollback switch and Sales regression proof. It must not be folded back into an internal-workflow phase.
+
 ## 4. Recommended release milestones
 
 The 80 phases are engineering increments, not 80 public launches. Group them into controlled milestones:
@@ -1180,14 +1200,14 @@ The 80 phases are engineering increments, not 80 public launches. Group them int
 |---|---:|---|
 | Architecture ready | 0–5 | Safe, measurable Rentals shell |
 | Portfolio pilot | 6–11 | Properties, units, portfolios and landlords |
-| Lettings pilot | 12–20 | Vacancy marketing, dashboard, leads and viewings |
+| Lettings pilot | 12–20 | Internal marketing, dashboard, leads and viewings |
 | Application pilot | 21–28 | Applicant onboarding through human decision |
 | Tenancy pilot | 29–35 | Lease, move-in and active tenancy |
 | Collections pilot | 36–43 | Charges, payments, balances and arrears |
 | Operations pilot | 44–50 | Maintenance and inspections |
 | Portal pilot | 51–55 | Tenant and landlord self-service |
 | Lifecycle complete | 56–61 | Renewal, notice, exit and re-vacancy |
-| Automation/integrations | 62–66 | Reliable reminders and provider adapters |
+| Automation and operating scale | 62–66 | Reliable reminders, screening operations, imports and manual signing controls |
 | General availability | 67–75 | Reporting, scale, security and rollout |
 | Short-term future | 76–79 | Separate booking/stay domain |
 
@@ -1211,9 +1231,9 @@ Start with Phases 0–5, then implement Phases 6–8 as the first real vertical 
 
 Follow immediately with:
 
-`Portfolio → Landlord/Mandate → Documents/Activity → Vacancy → Rental Listing Projection`
+`Portfolio → Landlord/Mandate → Documents/Activity → Vacancy → Internal Marketing`
 
-Do not start Collections, portals or third-party screening until the core Property/Unit/Vacancy/Application/Tenancy boundaries have passed staging and Sales isolation gates.
+Do not start Collections, portals or third-party screening until the core Property/Unit/Vacancy/Application/Tenancy boundaries have passed staging and Sales isolation gates. Do not start any external integration until its internal workflow has passed a real pilot.
 
 ## 7. MVP completion boundary
 

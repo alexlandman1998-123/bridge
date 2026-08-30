@@ -1,0 +1,1 @@
+import assert from 'node:assert/strict';import{createRentalLeadClassification,isRentalLead}from'../rentalLeadClassificationModel.js';const lead=createRentalLeadClassification({leadId:'l1',organisationId:'o1',vacancyId:'v1',unitId:'u1'});assert.equal(lead.stage,'new');assert.equal(isRentalLead(lead),true);console.log('Rental lead classification model tests passed.')

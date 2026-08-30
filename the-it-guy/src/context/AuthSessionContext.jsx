@@ -153,6 +153,9 @@ function buildBootstrapTimeoutMessage({ phase = '', diagnostics = [] } = {}) {
 function getBridgeBootstrapRetryReason(error) {
   const message = String(error?.message || '').toLowerCase()
   const bootHealthStatus = String(error?.bootHealth?.status || '').toLowerCase()
+  if (message.includes('failed to fetch') || message.includes('networkerror') || message.includes('network request failed')) {
+    return 'network_failure'
+  }
   if (error?.code === 'AUTH_BOOT_STEP_TIMEOUT') return 'step_timeout'
   if (message.includes('authentication bootstrap timed out')) return 'bootstrap_timeout'
   if (message.includes('workspace.resolvecurrentworkspace') && message.includes('timed out')) return 'workspace_timeout'
@@ -161,6 +164,15 @@ function getBridgeBootstrapRetryReason(error) {
     return `boot_health_${bootHealthStatus}`
   }
   return ''
+}
+
+function canKeepAuthenticatedWorkspaceDuringBridgeBoot(previous = {}, session = null, selectedWorkspaceId = '') {
+  if (previous?.status !== 'authenticated') return false
+  if (!previous?.currentWorkspace?.id || !previous?.user?.id || !session?.user?.id) return false
+  if (previous.user.id !== session.user.id) return false
+
+  const requestedWorkspaceId = String(selectedWorkspaceId || '').trim()
+  return !requestedWorkspaceId || requestedWorkspaceId === String(previous.currentWorkspace.id || '').trim()
 }
 
 function getBridgeBootstrapRetryDelayMs(attemptIndex = 0) {
@@ -468,14 +480,21 @@ export function AuthSessionProvider({ children }) {
       let bridgeRetryReason = ''
       let bridgeBootHealthStatus = ''
       let bridgeBreadcrumbCount = 0
-      setAuthState((previous) => ({
-        ...previous,
-        status: 'loading',
-        session,
-        user: session.user,
-        bootRetry: null,
-        bootError: '',
-      }))
+      setAuthState((previous) => {
+        const keepCurrentWorkspace = canKeepAuthenticatedWorkspaceDuringBridgeBoot(
+          previous,
+          session,
+          selectedWorkspaceId,
+        )
+        return {
+          ...previous,
+          status: keepCurrentWorkspace ? 'authenticated' : 'loading',
+          session,
+          user: session.user,
+          bootRetry: null,
+          bootError: '',
+        }
+      })
       try {
         console.debug('[AUTH] bridge-boot:start', {
           userId: session.user.id,
@@ -721,10 +740,7 @@ export function AuthSessionProvider({ children }) {
               breadcrumbCount: degradedBreadcrumbs.length,
             },
           })
-          bridgeRetryScopeRef.current = {
-            key: retryScopeKey,
-            attempts: MAX_RETRYABLE_BRIDGE_BOOT_ATTEMPTS,
-          }
+          scheduleRetry({ keepCurrentState: true })
           return
         }
         if (scheduleRetry()) {

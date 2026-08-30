@@ -1,6 +1,12 @@
 import { isMissingColumnError, isMissingSchemaError, isMissingTableError } from "../utils/db.ts";
 import { normalizeText } from "../utils/text.ts";
 
+const EMAIL_TEMPLATE_CACHE_TTL_MS = 60_000;
+const emailTemplateOverrideCache = new Map<
+  string,
+  { expiresAt: number; value?: EmailTemplateOverride | null; promise?: Promise<EmailTemplateOverride | null> }
+>();
+
 function normalizeLines(value: unknown, fallback: string[] = []) {
   if (Array.isArray(value)) {
     const lines = value.map((item) => normalizeText(item)).filter(Boolean);
@@ -64,29 +70,49 @@ export async function fetchOrganisationEmailTemplateOverride(
     return null;
   }
 
-  const query = await supabase
-    .from("organisation_settings")
-    .select("settings_json")
-    .eq("organisation_id", normalizedOrganisationId)
-    .maybeSingle();
+  const cacheKey = `${normalizedOrganisationId}:${normalizedTemplateKey}`;
+  const cached = emailTemplateOverrideCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now() && "value" in cached) {
+    return cached.value ?? null;
+  }
+  if (cached?.promise) return cached.promise;
 
-  if (query.error) {
-    if (
-      isMissingTableError(query.error, "organisation_settings") ||
-      isMissingSchemaError(query.error) ||
-      isMissingColumnError(query.error, "settings_json")
-    ) {
-      return null;
+  const request = (async () => {
+    const query = await supabase
+      .from("organisation_settings")
+      .select("settings_json")
+      .eq("organisation_id", normalizedOrganisationId)
+      .maybeSingle();
+
+    if (query.error) {
+      if (
+        isMissingTableError(query.error, "organisation_settings") ||
+        isMissingSchemaError(query.error) ||
+        isMissingColumnError(query.error, "settings_json")
+      ) {
+        emailTemplateOverrideCache.set(cacheKey, {
+          expiresAt: Date.now() + EMAIL_TEMPLATE_CACHE_TTL_MS,
+          value: null,
+        });
+        return null;
+      }
+      emailTemplateOverrideCache.delete(cacheKey);
+      throw query.error;
     }
-    throw query.error;
-  }
 
-  const settings = toRecord(query.data?.settings_json);
-  const emailTemplates = toRecord(settings.emailTemplates);
-  const templateOverrides = toRecord(emailTemplates[normalizedTemplateKey]);
-  if (!Object.keys(templateOverrides).length) {
-    return null;
-  }
+    const settings = toRecord(query.data?.settings_json);
+    const emailTemplates = toRecord(settings.emailTemplates);
+    const templateOverrides = toRecord(emailTemplates[normalizedTemplateKey]);
+    const value = Object.keys(templateOverrides).length
+      ? normalizeEmailTemplateOverride(templateOverrides)
+      : null;
+    emailTemplateOverrideCache.set(cacheKey, {
+      expiresAt: Date.now() + EMAIL_TEMPLATE_CACHE_TTL_MS,
+      value,
+    });
+    return value;
+  })();
 
-  return normalizeEmailTemplateOverride(templateOverrides);
+  emailTemplateOverrideCache.set(cacheKey, { expiresAt: 0, promise: request });
+  return request;
 }

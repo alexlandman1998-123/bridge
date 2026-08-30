@@ -36,7 +36,10 @@ function findSigner(signers = [], signerId = '') {
 export function resolveSellerComplianceSigner(model = {}, signerId = '') {
   const signers = array(model.signers || model.signingState?.signers)
   if (!signers.length) return null
-  return findSigner(signers, signerId) || model.nextSigner || signers[0] || null
+  // The unscoped onboarding link always belongs to the primary seller. Pending
+  // co-sellers must use their explicit signer link so one person's signature
+  // can never advance and sign on behalf of the next party.
+  return findSigner(signers, signerId) || signers[0] || null
 }
 
 export function buildSellerComplianceSigningForForm({
