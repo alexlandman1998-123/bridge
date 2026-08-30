@@ -19,12 +19,9 @@ const enquiriesRouteStart = app.indexOf('path="/pipeline/enquiries"', detailRout
 const detailRoute = app.slice(detailRouteStart, enquiriesRouteStart)
 assert.match(detailRoute, /<AgencyLeadWorkspaceRoutePage \/>/, 'lead details should retain the mature workspace through its dedicated entry')
 
-assert.match(route, /listAgencyLeadListRecords\(workspaceId, \{ includeRelatedRecords: false, forceRefresh \}\)/)
-assert.match(route, /listAgencyLeadListRecords\(workspaceId, \{ includePrimaryRecords: false, includeRelatedRecords: true \}\)/)
-assert.ok(
-  route.indexOf('includeRelatedRecords: false') < route.indexOf('includePrimaryRecords: false, includeRelatedRecords: true'),
-  'primary lead rows must be requested before background enrichment',
-)
+assert.match(route, /includeRelatedRecords: false,[\s\S]*?pageSize: LEAD_LIST_PAGE_SIZE/)
+assert.doesNotMatch(route, /includePrimaryRecords: false, includeRelatedRecords: true/)
+assert.match(route, /deferredRelatedRecords: true/)
 assert.match(route, /<LeadListPage/)
 assert.match(route, /createAgencyCrmLeadRecord/)
 assert.match(route, /updateAgencyCrmLeadRecord/)
@@ -34,7 +31,7 @@ assert.match(route, /checkpoint: 'background_settled'/)
 
 assert.match(model, /export function buildAgencyLeadListModel/)
 assert.match(model, /export function buildAgencyLeadListSummary/)
-assert.match(model, /export const LEAD_LIST_PAGE_SIZE = 12/)
+assert.match(model, /export const LEAD_LIST_PAGE_SIZE = 25/)
 
 const bundle = await build({
   entryPoints: [resolve(root, 'src/pages/agency/AgencyLeadListRoutePage.jsx')],

@@ -189,6 +189,7 @@ export default function AgencyLeadListRoutePage() {
   const [filters, setFilters] = useState({ ...DEFAULT_AGENCY_LEAD_FILTERS })
   const [viewMode, setViewMode] = useState('table')
   const [page, setPage] = useState(1)
+  const [totalLeadCount, setTotalLeadCount] = useState(0)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState('')
@@ -220,9 +221,9 @@ export default function AgencyLeadListRoutePage() {
     setMembershipRole(resolveMembershipRole(currentMembership, organisationMembershipRole))
   }, [currentMembership, currentWorkspace, organisationMembershipRole, workspace])
 
-  const loadLeads = useCallback(async ({ backgroundOnly = false, forceRefresh = false } = {}) => {
+  const loadLeads = useCallback(async ({ forceRefresh = false, requestedPage = page } = {}) => {
     const requestId = ++loadRequestRef.current
-    if (!backgroundOnly) setRefreshing(true)
+    setRefreshing(true)
     setError('')
     try {
       let workspaceId = normalizeText(organisationId || resolveWorkspaceId({ currentWorkspace, currentMembership, workspace }))
@@ -232,34 +233,31 @@ export default function AgencyLeadListRoutePage() {
       }
       setOrganisationId(workspaceId)
 
-      if (!backgroundOnly) {
-        const primary = await listAgencyLeadListRecords(workspaceId, { includeRelatedRecords: false, forceRefresh })
-        if (requestId !== loadRequestRef.current) return
-        setRecords((previous) => ({
-          ...previous,
-          leads: Array.isArray(primary?.leads) ? primary.leads : [],
-          contacts: Array.isArray(primary?.contacts) ? primary.contacts : [],
-        }))
-        setLoading(false)
-        void performanceRef.current?.recordCheckpoint({ checkpoint: 'first_data', userId: profile?.id, workspaceId, metadata: { surface: 'lead_list', leadCount: primary?.leads?.length || 0 } })
-      }
+      const primary = await listAgencyLeadListRecords(workspaceId, {
+        includeRelatedRecords: false,
+        forceRefresh,
+        page: Math.max(0, requestedPage - 1),
+        pageSize: LEAD_LIST_PAGE_SIZE,
+      })
+      if (requestId !== loadRequestRef.current) return
+      setRecords({
+        leads: Array.isArray(primary?.leads) ? primary.leads : [],
+        contacts: Array.isArray(primary?.contacts) ? primary.contacts : [],
+        activities: [],
+        tasks: [],
+      })
+      setTotalLeadCount(Number(primary?.totalCount || 0))
+      setLoading(false)
+      void performanceRef.current?.recordCheckpoint({ checkpoint: 'first_data', userId: profile?.id, workspaceId, metadata: { surface: 'lead_list', leadCount: primary?.leads?.length || 0, totalLeadCount: primary?.totalCount || 0, page: requestedPage } })
 
       const organisationUsersPromise = isPrincipal
         ? loadSettingsActions().then(({ listOrganisationUsers }) => listOrganisationUsers()).catch(() => [])
         : Promise.resolve([])
-      const [related, organisationUsers] = await Promise.all([
-        listAgencyLeadListRecords(workspaceId, { includePrimaryRecords: false, includeRelatedRecords: true }),
-        organisationUsersPromise,
-      ])
+      const organisationUsers = await organisationUsersPromise
       if (requestId !== loadRequestRef.current) return
-      setRecords((previous) => ({
-        ...previous,
-        activities: Array.isArray(related?.leadActivities) ? related.leadActivities : [],
-        tasks: Array.isArray(related?.tasks) ? related.tasks : [],
-      }))
       const mappedAgents = (Array.isArray(organisationUsers) ? organisationUsers : []).map(mapAgent).filter((agent) => agent.id)
       setAgents(mappedAgents.length ? mappedAgents : [currentAgent])
-      void performanceRef.current?.recordCheckpoint({ checkpoint: 'background_settled', userId: profile?.id, workspaceId, metadata: { surface: 'lead_list', activityCount: related?.leadActivities?.length || 0, taskCount: related?.tasks?.length || 0 } })
+      void performanceRef.current?.recordCheckpoint({ checkpoint: 'background_settled', userId: profile?.id, workspaceId, metadata: { surface: 'lead_list', deferredRelatedRecords: true } })
     } catch (loadError) {
       if (requestId !== loadRequestRef.current) return
       setError(loadError?.message || 'Unable to load leads right now.')
@@ -267,9 +265,9 @@ export default function AgencyLeadListRoutePage() {
     } finally {
       if (requestId === loadRequestRef.current) setRefreshing(false)
     }
-  }, [currentAgent, currentMembership, currentWorkspace, isPrincipal, organisationId, profile?.id, workspace])
+  }, [currentAgent, currentMembership, currentWorkspace, isPrincipal, organisationId, page, profile?.id, workspace])
 
-  useEffect(() => { void loadLeads() }, [loadLeads])
+  useEffect(() => { void loadLeads({ requestedPage: page }) }, [loadLeads, page])
 
   const listModel = useMemo(() => buildAgencyLeadListModel({
     leads: records.leads,
@@ -280,11 +278,11 @@ export default function AgencyLeadListRoutePage() {
     filters: deferredFilters,
   }), [category, deferredFilters, records])
   const summaryModel = useMemo(() => buildAgencyLeadListSummary(records), [records])
-  const totalPages = Math.max(1, Math.ceil(listModel.rows.length / LEAD_LIST_PAGE_SIZE))
+  const totalPages = Math.max(1, Math.ceil(totalLeadCount / LEAD_LIST_PAGE_SIZE))
   const currentPage = Math.min(page, totalPages)
   const pageStart = listModel.rows.length ? (currentPage - 1) * LEAD_LIST_PAGE_SIZE + 1 : 0
-  const pageEnd = Math.min(listModel.rows.length, currentPage * LEAD_LIST_PAGE_SIZE)
-  const pageRows = listModel.rows.slice(pageStart ? pageStart - 1 : 0, pageEnd)
+  const pageEnd = pageStart ? pageStart + listModel.rows.length - 1 : 0
+  const pageRows = listModel.rows
   const sources = useMemo(() => [...new Set(records.leads.map((lead) => normalizeText(lead?.leadSource)).filter(Boolean))].sort(), [records.leads])
   const categoryTitle = category === 'seller' ? 'Seller Leads' : category === 'archived' ? 'Archived Leads' : 'Buyer Leads'
 
@@ -377,7 +375,7 @@ export default function AgencyLeadListRoutePage() {
     <section className="min-w-0 space-y-4">
       <div className="flex min-h-10 items-center justify-between gap-3">
         <div className="min-w-0">{error ? <p className="rounded-[14px] border border-[#f2cccc] bg-[#fff5f4] px-4 py-2 text-sm text-[#9f3028]">{error}</p> : message ? <p className="rounded-[14px] border border-[#cfe8dc] bg-[#effaf3] px-4 py-2 text-sm text-[#26724c]">{message}</p> : null}</div>
-        <button type="button" disabled={refreshing} className="inline-flex h-10 shrink-0 items-center gap-2 rounded-[12px] border border-[#dbe4ee] bg-white px-3 text-sm font-semibold text-[#405b75] disabled:opacity-60" onClick={() => void loadLeads({ forceRefresh: true })}><RefreshCw size={15} className={refreshing ? 'animate-spin' : ''} /> Refresh</button>
+        <button type="button" disabled={refreshing} className="inline-flex h-10 shrink-0 items-center gap-2 rounded-[12px] border border-[#dbe4ee] bg-white px-3 text-sm font-semibold text-[#405b75] disabled:opacity-60" onClick={() => void loadLeads({ forceRefresh: true, requestedPage: currentPage })}><RefreshCw size={15} className={refreshing ? 'animate-spin' : ''} /> Refresh</button>
       </div>
       <LeadListPage
         metrics={summaryModel.metrics}
@@ -391,7 +389,7 @@ export default function AgencyLeadListRoutePage() {
         categoryTitle={categoryTitle}
         categoryCounts={listModel.categoryCounts}
         categoryTabs={AGENCY_LEAD_CATEGORY_TABS}
-        summary={{ total: records.leads.length, filtered: listModel.rows.length, newThisWeek: summaryModel.metrics.newThisWeek }}
+        summary={{ total: totalLeadCount, filtered: listModel.rows.length, newThisWeek: summaryModel.metrics.newThisWeek }}
         sellerJourneyMetrics={summaryModel.sellerJourneyMetrics}
         operationalSummary={summaryModel.operationalSummary}
         showDaySummary={summaryModel.showDaySummary}
@@ -408,7 +406,7 @@ export default function AgencyLeadListRoutePage() {
         onResetFilters={() => { setPage(1); setFilters({ ...DEFAULT_AGENCY_LEAD_FILTERS }) }}
         onCategoryChange={(nextCategory) => { setPage(1); setCategory(nextCategory) }}
         onViewModeChange={setViewMode}
-        onPageChange={setPage}
+        onPageChange={(nextPage) => setPage(Math.max(1, Math.min(Number(nextPage) || 1, totalPages)))}
         onAddLead={(nextCategory) => { setError(''); setCreateDialog({ open: true, category: nextCategory === 'seller' ? 'seller' : 'buyer' }) }}
         onLeadIntent={handleLeadIntent}
         onOpenLead={(leadId) => {

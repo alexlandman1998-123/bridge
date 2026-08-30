@@ -50,7 +50,7 @@ function isUnavailable(error) {
   return status === 403 || code === '42501' || code === '42P01' || code === 'PGRST205' || message.includes('permission denied') || message.includes('row-level security') || message.includes('does not exist')
 }
 
-async function selectCompatibleLeads(workspaceId, leadId = '') {
+async function selectCompatibleLeads(workspaceId, leadId = '', { page = 0, pageSize = 0 } = {}) {
   const fieldSets = [
     LEAD_FIELDS_ASSIGNMENT,
     LEAD_FIELDS_LOCATION,
@@ -65,10 +65,14 @@ async function selectCompatibleLeads(workspaceId, leadId = '') {
     : fieldSets
   let result = { data: [], error: null }
   for (const fields of candidates) {
-    let query = supabase.from('leads').select(fields).eq('organisation_id', workspaceId)
+    let query = supabase.from('leads').select(fields, { count: leadId ? undefined : 'exact' }).eq('organisation_id', workspaceId)
     query = leadId
       ? query.eq('lead_id', leadId).limit(1).maybeSingle()
       : query.order('updated_at', { ascending: false })
+    if (!leadId && pageSize > 0) {
+      const from = Math.max(0, Number(page) || 0) * pageSize
+      query = query.range(from, from + pageSize - 1)
+    }
     result = await query
     if (!result.error) {
       compatibleLeadFields = fields
@@ -199,35 +203,43 @@ function readFreshCache(cache, key) {
   return entry
 }
 
-async function fetchPrimaryRecords(workspaceId, { forceRefresh = false } = {}) {
+async function fetchPrimaryRecords(workspaceId, { forceRefresh = false, page = 0, pageSize = 0 } = {}) {
+  const normalizedPageSize = Math.max(0, Math.round(Number(pageSize) || 0))
+  const normalizedPage = Math.max(0, Math.round(Number(page) || 0))
+  const cacheKey = normalizedPageSize ? `${workspaceId}:${normalizedPage}:${normalizedPageSize}` : workspaceId
   if (!forceRefresh) {
-    const cached = readFreshCache(primaryRecordsCache, workspaceId)
+    const cached = readFreshCache(primaryRecordsCache, cacheKey)
     if (cached?.data) return cached.data
     if (cached?.promise) return cached.promise
   }
 
-  const promise = Promise.all([
-    selectCompatibleLeads(workspaceId),
-    supabase.from('contacts').select(CONTACT_FIELDS).eq('organisation_id', workspaceId).order('updated_at', { ascending: false }),
-  ]).then(([leads, contacts]) => {
-    for (const result of [leads, contacts]) {
-      if (result.error && !isUnavailable(result.error)) throw result.error
-    }
-    const data = {
-      leads: Array.isArray(leads.data) ? leads.data.map(mapLead) : [],
-      contacts: Array.isArray(contacts.data) ? contacts.data.map(mapContact) : [],
-    }
-    primaryRecordsCache.set(workspaceId, {
+  const promise = selectCompatibleLeads(workspaceId, '', { page: normalizedPage, pageSize: normalizedPageSize })
+    .then(async (leads) => {
+      if (leads.error && !isUnavailable(leads.error)) throw leads.error
+      const leadRows = Array.isArray(leads.data) ? leads.data : []
+      const contactIds = [...new Set(leadRows.map((lead) => normalizeText(lead?.contact_id)).filter(Boolean))]
+      const contacts = contactIds.length
+        ? await supabase.from('contacts').select(CONTACT_FIELDS).eq('organisation_id', workspaceId).in('contact_id', contactIds)
+        : { data: [], error: null }
+      if (contacts.error && !isUnavailable(contacts.error)) throw contacts.error
+      const data = {
+        leads: leadRows.map(mapLead),
+        contacts: Array.isArray(contacts.data) ? contacts.data.map(mapContact) : [],
+        totalCount: Number(leads.count || leadRows.length),
+        page: normalizedPage,
+        pageSize: normalizedPageSize || leadRows.length,
+      }
+      primaryRecordsCache.set(cacheKey, {
       data,
       expiresAt: Date.now() + PRIMARY_RECORDS_CACHE_TTL_MS,
     })
     return data
   }).catch((error) => {
-    primaryRecordsCache.delete(workspaceId)
+    primaryRecordsCache.delete(cacheKey)
     throw error
   })
 
-  primaryRecordsCache.set(workspaceId, {
+  primaryRecordsCache.set(cacheKey, {
     promise,
     expiresAt: Date.now() + PRIMARY_RECORDS_CACHE_TTL_MS,
   })
@@ -311,7 +323,13 @@ export async function listAgencyLeadListRecords(organisationId, options = {}) {
   const includeRelatedRecords = options.includeRelatedRecords !== false
   const empty = Promise.resolve({ data: [], error: null })
   const requests = [
-    includePrimaryRecords ? fetchPrimaryRecords(workspaceId, { forceRefresh: options.forceRefresh === true }) : Promise.resolve({ leads: [], contacts: [] }),
+    includePrimaryRecords
+      ? fetchPrimaryRecords(workspaceId, {
+          forceRefresh: options.forceRefresh === true,
+          page: options.page,
+          pageSize: options.pageSize,
+        })
+      : Promise.resolve({ leads: [], contacts: [], totalCount: 0, page: 0, pageSize: 0 }),
     includeRelatedRecords
       ? supabase.from('lead_activities').select(ACTIVITY_FIELDS).eq('organisation_id', workspaceId).order('activity_date', { ascending: false })
       : empty,
@@ -330,6 +348,9 @@ export async function listAgencyLeadListRecords(organisationId, options = {}) {
     contacts: Array.isArray(primary.contacts) ? primary.contacts : [],
     leadActivities: Array.isArray(activities.data) ? activities.data.map(mapActivity) : [],
     tasks: Array.isArray(tasks.data) ? tasks.data.map(mapTask) : [],
+    totalCount: Number(primary.totalCount || 0),
+    page: Number(primary.page || 0),
+    pageSize: Number(primary.pageSize || 0),
     source: 'remote',
   }
 }

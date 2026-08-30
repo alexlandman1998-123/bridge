@@ -8,7 +8,7 @@ const packageJson = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8
 const routeSource = readFileSync(resolve(root, 'src/pages/agency/AgencyLeadListRoutePage.jsx'), 'utf8')
 const readRepository = readFileSync(resolve(root, 'src/pages/agency/agencyLeadListReadRepository.js'), 'utf8')
 
-assert.match(routeSource, /import \{ listAgencyLeadListRecords \} from '\.\/agencyLeadListReadRepository'/)
+assert.match(routeSource, /listAgencyLeadListRecords,[\s\S]*?from '\.\/agencyLeadListReadRepository'/)
 assert.doesNotMatch(
   routeSource,
   /from '\.\.\/\.\.\/lib\/agencyCrmRepository'/,
@@ -17,14 +17,16 @@ assert.doesNotMatch(
 assert.match(routeSource, /leadMutationActionsPromise = import\('\.\.\/\.\.\/lib\/agencyCrmRepository'\)/)
 assert.match(routeSource, /leadMutationActionsPromise = null[\s\S]{0,40}throw error/)
 assert.match(routeSource, /await loadLeadMutationActions\(\)/)
-assert.match(routeSource, /listAgencyLeadListRecords\(workspaceId, \{ includeRelatedRecords: false \}\)/)
-assert.match(routeSource, /listAgencyLeadListRecords\(workspaceId, \{ includePrimaryRecords: false, includeRelatedRecords: true \}\)/)
+assert.match(routeSource, /includeRelatedRecords: false,[\s\S]*?pageSize: LEAD_LIST_PAGE_SIZE/)
+assert.doesNotMatch(routeSource, /includePrimaryRecords: false, includeRelatedRecords: true/)
 
 assert.match(readRepository, /export async function listAgencyLeadListRecords/)
 assert.match(readRepository, /selectCompatibleLeads/)
 assert.match(readRepository, /LEAD_FIELDS_ASSIGNMENT/)
 assert.match(readRepository, /LEGACY_LEAD_FIELDS/)
 assert.match(readRepository, /Promise\.all\(requests\)/)
+assert.match(readRepository, /query = query\.range\(from, from \+ pageSize - 1\)/)
+assert.match(readRepository, /\.in\('contact_id', contactIds\)/)
 assert.doesNotMatch(readRepository, /agencyPipelineService/)
 assert.doesNotMatch(readRepository, /buyerProcessMigrationService/)
 assert.doesNotMatch(readRepository, /workspaceResolutionService/)

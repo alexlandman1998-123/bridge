@@ -1,7 +1,7 @@
 import { inferLeadCategoryFromRecord } from '../../lib/leadCategory'
 import { BUYER_LEAD_LIST_STAGES, resolveAgencyLeadListLifecycle } from './agencyLeadListLifecycle'
 
-export const LEAD_LIST_PAGE_SIZE = 12
+export const LEAD_LIST_PAGE_SIZE = 25
 
 export const DEFAULT_AGENCY_LEAD_FILTERS = Object.freeze({
   search: '',

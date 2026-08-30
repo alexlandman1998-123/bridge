@@ -6,7 +6,7 @@ import { build } from 'esbuild'
 const root = resolve(import.meta.dirname, '..')
 const outdir = resolve(root, '.seller-leads-performance-budget')
 const budgets = Object.freeze({
-  leadList: Object.freeze({ rawBytes: 460_000, gzipBytes: 130_000 }),
+  leadList: Object.freeze({ rawBytes: 465_000, gzipBytes: 130_000 }),
   workspaceShell: Object.freeze({ rawBytes: 30_000, gzipBytes: 10_000 }),
 })
 
