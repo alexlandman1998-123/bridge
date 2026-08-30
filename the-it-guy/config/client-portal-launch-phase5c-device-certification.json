@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "contractId": "arch9-client-portal-launch-phase5c-v1",
+  "candidate": {
+    "commit": "e57255094ff5d900f9e71e86a31c78245ce439f7",
+    "deploymentId": "dpl_3RNeX37gGJvcX5fLZD7kdCiZuU2P",
+    "url": "https://bridge-pnmoiq13o-alexs-projects-f5496a21.vercel.app"
+  },
+  "routes": {
+    "buyer": "/demo/mobile-check/buyer",
+    "seller": "/client/demo-seller-portal/selling"
+  },
+  "requiredChecks": [
+    "secure-access",
+    "initial-render",
+    "navigation",
+    "journey-progress",
+    "documents",
+    "finance-or-sale-status",
+    "messages-and-team",
+    "support-actions",
+    "offline-and-recovery",
+    "rotation-and-safe-areas",
+    "text-scaling",
+    "no-horizontal-overflow",
+    "no-blocking-console-errors"
+  ],
+  "devices": {
+    "ios": {
+      "required": true,
+      "device": "",
+      "osVersion": "",
+      "browser": "Safari",
+      "browserVersion": "",
+      "buyerResult": "pending",
+      "sellerResult": "pending",
+      "testedBy": "",
+      "testedAt": "",
+      "evidenceUrl": "",
+      "notes": ""
+    },
+    "android": {
+      "required": true,
+      "device": "",
+      "osVersion": "",
+      "browser": "Chrome",
+      "browserVersion": "",
+      "buyerResult": "pending",
+      "sellerResult": "pending",
+      "testedBy": "",
+      "testedAt": "",
+      "evidenceUrl": "",
+      "notes": ""
+    }
+  }
+}
