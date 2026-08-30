@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "contractId": "arch9-client-portal-launch-phase5d-v1",
+  "candidate": {
+    "commit": "e57255094ff5d900f9e71e86a31c78245ce439f7",
+    "deploymentId": "dpl_3RNeX37gGJvcX5fLZD7kdCiZuU2P",
+    "url": "https://bridge-pnmoiq13o-alexs-projects-f5496a21.vercel.app"
+  },
+  "surfaceMappings": [
+    { "id": "overview", "personas": ["buyer", "seller"], "desktopPath": "/client/:token/:workspace", "mobilePath": "/client/:token/:workspace" },
+    { "id": "journey", "personas": ["buyer", "seller"], "desktopPath": "/client/:token/:workspace/progress", "mobilePath": "/client/:token/:workspace/progress" },
+    { "id": "documents", "personas": ["buyer", "seller"], "desktopPath": "/client/:token/:workspace/documents", "mobilePath": "/client/:token/:workspace/documents" },
+    { "id": "finance", "personas": ["buyer"], "desktopPath": "/client/:token/buying/finance", "mobilePath": "/client/:token/buying/finance" },
+    { "id": "bond-application", "personas": ["buyer"], "desktopPath": "/client/:token/buying/finance/application", "mobilePath": "/client/:token/buying/finance/application" },
+    { "id": "offers", "personas": ["seller"], "desktopPath": "/client/:token/selling/offers", "mobilePath": "/client/:token/selling/offers" },
+    { "id": "appointments", "personas": ["buyer", "seller"], "desktopPath": "/client/:token/:workspace/appointments", "mobilePath": "/client/:token/:workspace/appointments" },
+    { "id": "messages", "personas": ["buyer", "seller"], "desktopPath": "/client/:token/:workspace/messages", "mobilePath": "/client/:token/:workspace/messages" },
+    { "id": "team", "personas": ["buyer", "seller"], "desktopPath": "/client/:token/:workspace/team", "mobilePath": "/client/:token/:workspace/team" },
+    { "id": "support", "personas": ["buyer", "seller"], "desktopPath": "/client/:token/:workspace", "mobilePath": "/client/:token/:workspace" }
+  ],
+  "evidence": {
+    "buyer": {
+      "overview": { "desktopResult": "pending", "mobileResult": "pending", "sameDataResult": "pending", "evidenceUrl": "" },
+      "journey": { "desktopResult": "pending", "mobileResult": "pending", "sameDataResult": "pending", "evidenceUrl": "" },
+      "documents": { "desktopResult": "pending", "mobileResult": "pending", "sameDataResult": "pending", "evidenceUrl": "" },
+      "finance": { "desktopResult": "pending", "mobileResult": "pending", "sameDataResult": "pending", "evidenceUrl": "" },
+      "bond-application": { "desktopResult": "pending", "mobileResult": "pending", "sameDataResult": "pending", "evidenceUrl": "" },
+      "appointments": { "desktopResult": "pending", "mobileResult": "pending", "sameDataResult": "pending", "evidenceUrl": "" },
+      "messages": { "desktopResult": "pending", "mobileResult": "pending", "sameDataResult": "pending", "evidenceUrl": "" },
+      "team": { "desktopResult": "pending", "mobileResult": "pending", "sameDataResult": "pending", "evidenceUrl": "" },
+      "support": { "desktopResult": "pending", "mobileResult": "pending", "sameDataResult": "pending", "evidenceUrl": "" }
+    },
+    "seller": {
+      "overview": { "desktopResult": "pending", "mobileResult": "pending", "sameDataResult": "pending", "evidenceUrl": "" },
+      "journey": { "desktopResult": "pending", "mobileResult": "pending", "sameDataResult": "pending", "evidenceUrl": "" },
+      "documents": { "desktopResult": "pending", "mobileResult": "pending", "sameDataResult": "pending", "evidenceUrl": "" },
+      "offers": { "desktopResult": "pending", "mobileResult": "pending", "sameDataResult": "pending", "evidenceUrl": "" },
+      "appointments": { "desktopResult": "pending", "mobileResult": "pending", "sameDataResult": "pending", "evidenceUrl": "" },
+      "messages": { "desktopResult": "pending", "mobileResult": "pending", "sameDataResult": "pending", "evidenceUrl": "" },
+      "team": { "desktopResult": "pending", "mobileResult": "pending", "sameDataResult": "pending", "evidenceUrl": "" },
+      "support": { "desktopResult": "pending", "mobileResult": "pending", "sameDataResult": "pending", "evidenceUrl": "" }
+    }
+  },
+  "approvedExceptions": []
+}
