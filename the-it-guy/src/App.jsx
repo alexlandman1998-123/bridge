@@ -62,6 +62,7 @@ import {
 } from './modules/rentals'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import LeadsRouteShell from './components/leads/LeadsRouteShell'
+import TransactionDetailRouteShell from './components/transactions/TransactionDetailRouteShell'
 import TransactionsRouteShell from './components/transactions/TransactionsRouteShell'
 import { loadAgencyLeadListRouteModule, loadAgencyLeadWorkspaceRouteModule } from './routes/leadsRouteLoader'
 import { loadTransactionsRouteModule } from './routes/transactionsRouteLoader'
@@ -522,7 +523,7 @@ function HeaderSkeleton() {
   )
 }
 
-function getStableRouteContentKey(pathname = '', search = '') {
+function getStableRouteContentKey(pathname = '') {
   if (pathname.startsWith('/settings')) return 'settings-shell'
   if (pathname.startsWith('/pipeline/leads/')) return pathname
 
@@ -531,7 +532,18 @@ function getStableRouteContentKey(pathname = '', search = '') {
     return `/agent/rentals/listings/${rentalListingMatch[1]}`
   }
 
-  return `${pathname}${search || ''}`
+  // Search parameters are in-place UI state (for example an active lead tab).
+  // Keying the outlet on them remounts the whole route and discards in-flight
+  // requests, which makes navigation look like a blank page reload.
+  return pathname
+}
+
+function TransactionDetailRoute() {
+  return (
+    <Suspense fallback={<TransactionDetailRouteShell />}>
+      <AttorneyTransactionDetail />
+    </Suspense>
+  )
 }
 
 function AppLayout({ onLogout, session = null, user }) {
@@ -567,7 +579,7 @@ function AppLayout({ onLogout, session = null, user }) {
   const isCommercialRoute = location.pathname.startsWith('/commercial')
   const isBondRoute = location.pathname.startsWith('/bond')
   const isLeadWorkspaceRoute = /^\/pipeline\/leads\/[^/]+/.test(location.pathname)
-  const routeContentKey = getStableRouteContentKey(location.pathname, location.search)
+  const routeContentKey = getStableRouteContentKey(location.pathname)
   const hideSharedHeader =
     isLegalWorkspaceRoute ||
     location.pathname === '/command-center' ||
@@ -935,9 +947,20 @@ function AuthGate({ onRetryBootstrap = null, onLogout = null }) {
   const authLoading = authState.status === 'loading'
   const session = authState.session
   const profileError = authState.bootError
+  const normalizedProfileError = String(profileError || '').toLowerCase()
   const baseRole = authState.appRole
   const onboardingCompleted = authState.onboardingComplete
-  const waitingOnWorkspace = authState.status === 'loading'
+  const recoverableSessionRestoreFailure =
+    !session &&
+    authState.status === 'error' &&
+    (
+      normalizedProfileError.includes('auth session missing') ||
+      normalizedProfileError.includes('lock') ||
+      normalizedProfileError.includes('network') ||
+      normalizedProfileError.includes('fetch') ||
+      normalizedProfileError.includes('timed out')
+    )
+  const waitingOnWorkspace = authState.status === 'loading' || recoverableSessionRestoreFailure
 
   useEffect(() => {
     if (!waitingOnWorkspace) {
@@ -971,7 +994,6 @@ function AuthGate({ onRetryBootstrap = null, onLogout = null }) {
     })
   }, [authState.activeMemberships.length, authState.onboardingRequiredReason, authState.status, baseRole, location.pathname, onboardingCompleted, profileError, session])
 
-  const normalizedProfileError = String(profileError || '').toLowerCase()
   const sessionOutOfSync =
     normalizedProfileError.includes('user from sub claim in jwt does not exist')
     || normalizedProfileError.includes('session is out of sync')
@@ -1032,12 +1054,6 @@ function AuthGate({ onRetryBootstrap = null, onLogout = null }) {
     )
   }
 
-  if (authState.status === 'unauthenticated' || !session) {
-    console.debug('[REDIRECT] auth:missing-session', { target: '/auth', from: location.pathname })
-    storePostLoginRedirect(`${location.pathname || '/'}${location.search || ''}${location.hash || ''}`)
-    return <Navigate to="/auth" replace state={{ from: location }} />
-  }
-
   if (authState.status === 'error') {
     return (
       <section className="auth-loading-screen">
@@ -1061,6 +1077,35 @@ function AuthGate({ onRetryBootstrap = null, onLogout = null }) {
               onClick={() => window.location.assign('/auth')}
             >
               Go to Sign-in
+            </button>
+          </div>
+        </div>
+      </section>
+    )
+  }
+
+  if (authState.status === 'unauthenticated') {
+    console.debug('[REDIRECT] auth:missing-session', { target: '/auth', from: location.pathname })
+    storePostLoginRedirect(`${location.pathname || '/'}${location.search || ''}${location.hash || ''}`)
+    return <Navigate to="/auth" replace state={{ from: location }} />
+  }
+
+  if (!session) {
+    return (
+      <section className="auth-loading-screen">
+        <div className="auth-loading-card">
+          <h2>Recovering your secure session…</h2>
+          <p>We are confirming your sign-in before opening the workspace.</p>
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+            <button
+              type="button"
+              className="auth-primary-cta"
+              onClick={() => {
+                onRetryBootstrap?.()
+                retryWorkspaceBootstrap?.()
+              }}
+            >
+              Retry
             </button>
           </div>
         </div>
@@ -2279,7 +2324,7 @@ function AppRoutes() {
                 element={
                   <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
                     <AppErrorBoundary scope="development-transaction-workspace" title="Transaction workspace failed to load">
-                      <AttorneyTransactionDetail />
+                      <TransactionDetailRoute />
                     </AppErrorBoundary>
                   </RoleRoute>
                 }
@@ -2385,7 +2430,7 @@ function AppRoutes() {
                   <SalesWorkspaceGuard>
                     <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
                       <AppErrorBoundary scope="transaction-workspace" title="Transaction workspace failed to load">
-                        <AttorneyTransactionDetail />
+                        <TransactionDetailRoute />
                       </AppErrorBoundary>
                     </RoleRoute>
                   </SalesWorkspaceGuard>
@@ -2397,7 +2442,7 @@ function AppRoutes() {
                   <SalesWorkspaceGuard>
                     <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
                       <AppErrorBoundary scope="transaction-workflow-detail" title="Transaction workflow detail failed to load">
-                        <AttorneyTransactionDetail />
+                        <TransactionDetailRoute />
                       </AppErrorBoundary>
                     </RoleRoute>
                   </SalesWorkspaceGuard>
@@ -2408,7 +2453,7 @@ function AppRoutes() {
                 element={
                   <RoleRoute allowedRoles={['bond_originator']}>
                     <AppErrorBoundary scope="bond-file-workspace" title="Bond file workspace failed to load">
-                      <AttorneyTransactionDetail />
+                      <TransactionDetailRoute />
                     </AppErrorBoundary>
                   </RoleRoute>
                 }
@@ -2418,7 +2463,7 @@ function AppRoutes() {
                 element={
                   <RoleRoute allowedRoles={['bond_originator']}>
                     <AppErrorBoundary scope="bond-file-workflow-detail" title="Bond workflow detail failed to load">
-                      <AttorneyTransactionDetail />
+                      <TransactionDetailRoute />
                     </AppErrorBoundary>
                   </RoleRoute>
                 }
