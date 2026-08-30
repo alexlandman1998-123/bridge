@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useAuthSession } from '../context/AuthSessionContext'
 import { useWorkspace } from '../context/WorkspaceContext'
 import {
@@ -46,6 +46,11 @@ import {
   setTransactionProgressRollout,
 } from '../services/transactionSharedProgressService'
 import { getPipelineOperationalDiagnostics } from '../services/pipelineOperationalDiagnosticsService'
+import {
+  buildTargetFlowPerformanceEvidence,
+  evaluateTargetFlowReleaseGate,
+  readTargetFlowPerformanceHistory,
+} from '../services/observability/targetFlowPerformanceBudget'
 
 function StatCard({ label, value, tone = 'neutral' }) {
   const toneClass =
@@ -201,6 +206,38 @@ function getDiagnosticStatusTone(status) {
   if (status === 'warning' || status === 'attention' || status === 'not_installed') return 'warning'
   if (status === 'healthy' || status === 'pass') return 'success'
   return 'neutral'
+}
+
+function TargetFlowPerformanceDiagnostics() {
+  const [history, setHistory] = useState(() => readTargetFlowPerformanceHistory())
+  const gate = useMemo(() => evaluateTargetFlowReleaseGate(history), [history])
+
+  useEffect(() => {
+    const refresh = () => setHistory(readTargetFlowPerformanceHistory())
+    window.addEventListener('arch9:route-performance', refresh)
+    return () => window.removeEventListener('arch9:route-performance', refresh)
+  }, [])
+
+  function exportEvidence() {
+    const blob = new Blob([`${JSON.stringify(buildTargetFlowPerformanceEvidence(history), null, 2)}\n`], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `arch9-target-flow-performance-${new Date().toISOString().slice(0, 10)}.json`
+    anchor.click()
+    URL.revokeObjectURL(url)
+  }
+
+  return (
+    <div className="grid gap-4 rounded-[14px] border border-[#dde4ee] bg-white p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div><h2 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#31485e]">Target flow performance</h2><p className="mt-2 max-w-3xl text-sm text-[#60758d]">Local release evidence for Transactions, Listings, listing detail and lead detail. Three samples per flow are required.</p></div>
+        <div className="flex flex-wrap gap-2"><button type="button" className="header-secondary-cta" onClick={() => setHistory(readTargetFlowPerformanceHistory())}>Refresh local samples</button><button type="button" className="header-primary-cta" onClick={exportEvidence} disabled={!history.length}>Export evidence</button></div>
+      </div>
+      <div className="grid gap-3 md:grid-cols-5"><StatCard label="Release gate" value={gate.status} tone={getDiagnosticStatusTone(gate.status.toLowerCase())} />{Object.entries(gate.flows).map(([page, flow]) => <StatCard key={page} label={page.replace(/_/g, ' ')} value={`${flow.passingSamples}/${flow.sampleCount}`} tone={flow.failingSamples ? 'critical' : flow.covered ? 'success' : 'warning'} />)}</div>
+      <p className={`rounded-[12px] border px-3 py-2 text-sm ${gate.status === 'PASS' ? 'border-[#cfe8d8] bg-[#effaf3] text-[#236340]' : gate.status === 'FAIL' ? 'border-[#f2c8c4] bg-[#fff5f4] text-[#9f1c1c]' : 'border-[#f5d3a4] bg-[#fff8ec] text-[#8a4b10]'}`}>{gate.status === 'PASS' ? 'All four target flows have enough passing samples for release.' : gate.status === 'FAIL' ? `Release blocked by: ${gate.failingFlows.join(', ') || 'a target-flow budget violation'}.` : `Collect more samples for: ${gate.missingFlows.join(', ')}.`}</p>
+    </div>
+  )
 }
 
 function asDiagnosticObject(value) {
@@ -861,6 +898,8 @@ export default function PlatformDiagnosticsPage() {
             </button>
           </div>
         </header>
+
+        <TargetFlowPerformanceDiagnostics />
 
         {operations ? (
           <div className="grid gap-4">
