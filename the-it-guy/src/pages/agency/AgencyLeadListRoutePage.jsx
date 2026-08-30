@@ -12,6 +12,7 @@ import {
   listAgencyLeadListRecords,
   preloadAgencyLeadCoreRecord,
 } from './agencyLeadListReadRepository'
+import { preloadAgencyLeadWorkspace } from './agencyLeadWorkspaceLoader'
 import {
   AGENCY_LEAD_CATEGORY_TABS,
   DEFAULT_AGENCY_LEAD_FILTERS,
@@ -367,6 +368,7 @@ export default function AgencyLeadListRoutePage() {
   const handleLeadIntent = useCallback((leadId) => {
     if (!organisationId || !leadId) return
     void preloadAgencyLeadCoreRecord(organisationId, leadId).catch(() => {})
+    void preloadAgencyLeadWorkspace()
   }, [organisationId])
 
   if (loading) return <LeadsRouteShell />
