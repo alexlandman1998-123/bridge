@@ -19,5 +19,12 @@ assert.match(permissionsSource, /const missingFirmIds = scopedFirmIds\.filter/)
 assert.match(detailSource, /\{ membership: attorneyPermissionState\.membership \}/)
 assert.match(detailSource, /\['today', 'tasks', 'transfer'\]\.includes\(activeWorkspaceMenu\)[\s\S]{0,220}?['"]workflow['"]/)
 assert.doesNotMatch(detailSource, /if \(workflowOperations && workflowOperationsTransactionId === transaction\.id\) return/)
+assert.match(detailSource, /attorneyPermissionState\.loading \|\| !attorneyPermissionState\.membership\?\.isActive/)
+assert.doesNotMatch(detailSource, /attorneyPermissionState\.loading \|\| !matterAccessChecked \|\| matterAccessKey !== currentMatterAccessKey/)
+assert.ok(
+  detailSource.indexOf('const initialRollupRequest = !background && USE_TRANSACTION_ROLLUP_OVERVIEW')
+    < detailSource.indexOf('const coreDetail = await fetchTransactionCoreById(transactionId)'),
+)
+assert.match(detailSource, /void initialRollupRequest\.then\(/)
 
 console.log('Attorney matter detail Phase 5 performance contract checks passed.')

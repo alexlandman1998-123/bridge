@@ -16077,6 +16077,11 @@ function AttorneyTransactionDetail() {
       : null
     let backgroundStatus = 'success'
     let hasCoreData = Boolean(navigationPreviewData?.transaction)
+    const initialRollupRequest = !background && USE_TRANSACTION_ROLLUP_OVERVIEW
+      ? requestTransactionRollup(transactionId)
+          .then((rollup) => ({ rollup, error: null }))
+          .catch((rollupError) => ({ rollup: null, error: rollupError }))
+      : Promise.resolve(null)
     try {
       if (!background && !hasCoreData) {
         setLoading(true)
@@ -16140,17 +16145,10 @@ function AttorneyTransactionDetail() {
       }
     }
 
-    const initialRollupRequest = !background && USE_TRANSACTION_ROLLUP_OVERVIEW
-      ? requestTransactionRollup(transactionId)
-          .then((rollup) => ({ rollup, error: null }))
-          .catch((rollupError) => ({ rollup: null, error: rollupError }))
-      : Promise.resolve(null)
-
     if (!fullRefresh) {
-      const initialRollupResult = await initialRollupRequest
-      if (initialRollupResult) {
-        setTransactionRollupError(initialRollupResult.error?.message || '')
-      }
+      void initialRollupRequest.then((initialRollupResult) => {
+        if (initialRollupResult) setTransactionRollupError(initialRollupResult.error?.message || '')
+      })
       if (!hasCoreData) {
         setError('Unable to load the transaction workspace core data.')
       }
@@ -16430,16 +16428,12 @@ function AttorneyTransactionDetail() {
 
   useEffect(() => {
     if (workspaceRole === 'attorney') {
-      if (attorneyPermissionState.loading || !matterAccessChecked || matterAccessKey !== currentMatterAccessKey) {
-        return
-      }
-      if (!matterAccessAllowed) {
-        setLoading(false)
+      if (attorneyPermissionState.loading || !attorneyPermissionState.membership?.isActive) {
         return
       }
     }
     void loadData({ background: false })
-  }, [attorneyPermissionState.loading, currentMatterAccessKey, loadData, matterAccessAllowed, matterAccessChecked, matterAccessKey, workspaceRole])
+  }, [attorneyPermissionState.loading, attorneyPermissionState.membership?.isActive, loadData, workspaceRole])
 
   useEffect(() => {
     let active = true
