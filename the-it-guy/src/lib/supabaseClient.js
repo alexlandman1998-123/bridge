@@ -309,7 +309,7 @@ function createSingleFlightAuthRead(auth, methodName, {
   }
 
   auth[methodName] = wrappedMethod
-  return clear
+  return invalidate
 }
 
 function installAuthReadSingleFlight(client) {
