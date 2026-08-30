@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useWorkspace } from '../context/WorkspaceContext'
 import {
   getAttorneyProfessionalProfilePermissions,
@@ -28,6 +28,29 @@ function getMembershipFirmId(membership = null) {
 
 function getMembershipUserId(membership = null) {
   return normalizeText(membership?.userId || membership?.user_id || membership?.raw?.user_id)
+}
+
+function getMembershipStabilityKey(membership = null) {
+  if (!membership) return ''
+  const practiceQualifications = membership.practiceQualifications ||
+    membership.practice_qualifications ||
+    membership.raw?.practice_qualifications ||
+    []
+  const normalizedQualifications = Array.isArray(practiceQualifications)
+    ? practiceQualifications.map(normalizeText).filter(Boolean).sort().join(',')
+    : normalizeText(practiceQualifications)
+
+  return [
+    normalizeText(membership.id || membership.membershipId || membership.membership_id),
+    getMembershipFirmId(membership),
+    getMembershipUserId(membership),
+    normalizeText(membership.departmentId || membership.department_id || membership.raw?.department_id),
+    normalizeText(membership.status || membership.raw?.status).toLowerCase(),
+    normalizeText(membership.role || membership.workspaceRole || membership.rawRole || membership.raw?.role),
+    normalizeText(membership.professionalRole || membership.professional_role || membership.raw?.professional_role),
+    normalizedQualifications,
+    normalizeText(membership.updatedAt || membership.updated_at || membership.raw?.updated_at),
+  ].join(':')
 }
 
 function membershipMatchesContext(membership = null, { firmId = '', userId = '' } = {}) {
@@ -78,6 +101,10 @@ export default function useAttorneyPermissions({ firmId = null } = {}) {
   const [error, setError] = useState('')
   const [resolvedFirmId, setResolvedFirmId] = useState('')
   const [membership, setMembership] = useState(null)
+  const bootMembership = membershipContexts?.attorneyFirm || currentMembership
+  const bootMembershipRef = useRef(bootMembership)
+  bootMembershipRef.current = bootMembership
+  const bootMembershipKey = getMembershipStabilityKey(bootMembership)
 
   useEffect(() => {
     let active = true
@@ -99,7 +126,7 @@ export default function useAttorneyPermissions({ firmId = null } = {}) {
         firmId: normalizeText(firmId) || null,
         workspaceId: normalizeText(workspace?.id) || null,
         workspaceType: normalizeText(workspace?.type) || null,
-        hasBootMembership: Boolean(membershipContexts?.attorneyFirm || currentMembership),
+        hasBootMembership: Boolean(bootMembershipRef.current),
       })
       let outcome = 'success'
       try {
@@ -126,8 +153,8 @@ export default function useAttorneyPermissions({ firmId = null } = {}) {
           return
         }
 
-        const bootMembership = membershipContexts?.attorneyFirm || currentMembership
-        const canUseBootMembership = membershipMatchesContext(bootMembership, {
+        const currentBootMembership = bootMembershipRef.current
+        const canUseBootMembership = membershipMatchesContext(currentBootMembership, {
           firmId: nextFirmId,
           userId: currentUserId,
         })
@@ -137,7 +164,7 @@ export default function useAttorneyPermissions({ firmId = null } = {}) {
           membershipSource: canUseBootMembership ? 'workspace_boot' : 'supabase_lookup',
         })
         const nextMembership = canUseBootMembership
-          ? bootMembership
+          ? currentBootMembership
           : await getCurrentUserAttorneyMembership(nextFirmId, currentUserId || null)
         if (!active) return
         setResolvedFirmId(nextFirmId)
@@ -169,9 +196,8 @@ export default function useAttorneyPermissions({ firmId = null } = {}) {
     }
   }, [
     appRole,
-    currentMembership,
+    bootMembershipKey,
     firmId,
-    membershipContexts?.attorneyFirm,
     profile?.id,
     profile?.primaryAttorneyFirmId,
     profile?.primary_attorney_firm_id,
@@ -186,6 +212,10 @@ export default function useAttorneyPermissions({ firmId = null } = {}) {
   const compatibilityRole = membership?.role || null
   const permissions = role ? getAttorneyProfessionalProfilePermissions(membership) : EMPTY_PERMISSIONS
   const isActiveMembership = Boolean(membership?.isActive || membership?.status === 'active')
+  const stableMembership = useMemo(
+    () => (membership ? { ...membership, isActive: isActiveMembership } : null),
+    [isActiveMembership, membership],
+  )
 
   const hasPermission = useMemo(
     () => (permissionKey) => (role && isActiveMembership ? hasAttorneyProfessionalPermission(membership, permissionKey) : false),
@@ -194,7 +224,7 @@ export default function useAttorneyPermissions({ firmId = null } = {}) {
 
   return {
     firmId: resolvedFirmId || null,
-    membership: membership ? { ...membership, isActive: isActiveMembership } : null,
+    membership: stableMembership,
     role,
     professionalRole: role,
     compatibilityRole,

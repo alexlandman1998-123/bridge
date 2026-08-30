@@ -15938,6 +15938,7 @@ function AttorneyTransactionDetail() {
   const backgroundRefreshHandlerRef = useRef(null)
   const transactionPerformanceBaselineRef = useRef(null)
   const attorneyMatterPerformanceBaselineRef = useRef(null)
+  const initialDetailLoadKeyRef = useRef('')
   if (transactionPerformanceBaselineRef.current?.transactionKey !== transactionId) {
     transactionPerformanceBaselineRef.current = {
       transactionKey: transactionId,
@@ -16432,8 +16433,10 @@ function AttorneyTransactionDetail() {
         return
       }
     }
+    if (initialDetailLoadKeyRef.current === currentMatterAccessKey) return
+    initialDetailLoadKeyRef.current = currentMatterAccessKey
     void loadData({ background: false })
-  }, [attorneyPermissionState.loading, attorneyPermissionState.membership?.isActive, loadData, workspaceRole])
+  }, [attorneyPermissionState.loading, attorneyPermissionState.membership?.isActive, currentMatterAccessKey, loadData, workspaceRole])
 
   useEffect(() => {
     let active = true
@@ -16521,7 +16524,6 @@ function AttorneyTransactionDetail() {
     attorneyPermissionState.firmId,
     attorneyPermissionState.loading,
     attorneyPermissionState.membership,
-    attorneyPermissionState.membership?.isActive,
     currentMatterAccessKey,
     profile?.id,
     profile?.userId,

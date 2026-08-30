@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
-const [apiSource, permissionsSource, detailSource] = await Promise.all([
+const [apiSource, permissionsSource, detailSource, permissionHookSource] = await Promise.all([
   readFile(new URL('../src/lib/api.js', import.meta.url), 'utf8'),
   readFile(new URL('../src/lib/attorneyPermissions.js', import.meta.url), 'utf8'),
   readFile(new URL('../src/pages/AttorneyTransactionDetail.jsx', import.meta.url), 'utf8'),
+  readFile(new URL('../src/hooks/useAttorneyPermissions.js', import.meta.url), 'utf8'),
 ])
 
 assert.match(apiSource, /async function buildTransactionWorkspaceShellFromTransaction/)
@@ -26,5 +27,12 @@ assert.ok(
     < detailSource.indexOf('const coreDetail = await fetchTransactionCoreById(transactionId)'),
 )
 assert.match(detailSource, /void initialRollupRequest\.then\(/)
+assert.match(detailSource, /const initialDetailLoadKeyRef = useRef\(['"]['"]\)/)
+assert.match(detailSource, /if \(initialDetailLoadKeyRef\.current === currentMatterAccessKey\) return/)
+assert.doesNotMatch(detailSource, /attorneyPermissionState\.membership,\s*attorneyPermissionState\.membership\?\.isActive,/)
+assert.match(permissionHookSource, /const bootMembershipKey = getMembershipStabilityKey\(bootMembership\)/)
+assert.match(permissionHookSource, /membership: stableMembership/)
+assert.doesNotMatch(permissionHookSource, /bootMembershipKey,[\s\S]{0,400}?\n\s*currentMembership,\n/)
+assert.doesNotMatch(permissionHookSource, /bootMembershipKey,[\s\S]{0,400}?\n\s*membershipContexts\?\.attorneyFirm,\n/)
 
 console.log('Attorney matter detail Phase 5 performance contract checks passed.')
