@@ -17,10 +17,11 @@ assert.doesNotMatch(pipeline, /\buseTransition\b/)
 assert.match(pipeline, /const \[pendingBuyerWorkspaceTab, setPendingBuyerWorkspaceTab] = useState\(''\)/)
 assert.match(
   pipeline,
-  /captureRouteLeadWorkspaceScroll\(\)[\s\S]*setPendingBuyerWorkspaceTab\(nextTab\)[\s\S]*setLeadWorkspaceTab\(nextTab\)[\s\S]*preloadAgencyLeadWorkspaceTab\(nextTab\)/,
+  /setPendingBuyerWorkspaceTab\(nextTab\)[\s\S]*setLeadWorkspaceTab\(nextTab\)[\s\S]*preloadAgencyLeadWorkspaceTab\(nextTab\)/,
 )
 assert.doesNotMatch(pipeline, /startBuyerWorkspaceTabTransition/)
-assert.match(pipeline, /restoreRouteLeadWorkspaceScroll\(\)[\s\S]*setPendingBuyerWorkspaceTab\(''\)/)
+assert.match(pipeline, /resolveBuyerWorkspaceTabKey\(leadWorkspaceTab\) !== pendingBuyerWorkspaceTab[\s\S]*setPendingBuyerWorkspaceTab\(''\)/)
+assert.doesNotMatch(pipeline, /captureRouteLeadWorkspaceScroll|restoreRouteLeadWorkspaceScroll/)
 assert.match(pipeline, /aria-busy=\{isSettling\}/)
 assert.match(pipeline, /data-pending=\{isSettling \? 'true' : undefined\}/)
 

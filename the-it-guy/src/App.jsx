@@ -34,6 +34,8 @@ import {
 import { BUSINESS_WORKSPACES, resolveBusinessWorkspaceRoute } from './lib/businessWorkspaceAccess'
 import {
   RENTAL_MODULES,
+  RentalApplicantJourneyPage,
+  RentalApplicationWorkspacePage,
   RentalApplicationsPage,
   RentalListingCreatePage,
   RentalListingDetailPage,
@@ -42,11 +44,17 @@ import {
   RentalOperationsDashboardPage,
   RentalCollectionsPage,
   RentalFinancialImportsPage,
+  RentalTenantPortalActionsPage,
+  RentalLandlordPortalDecisionsPage,
+  RentalLandlordPortalPage,
+  RentalRenewalWorkspacePage,
+  RentalNoticeWorkspacePage,
   RentalPortfolioDetailPage,
   RentalPortfoliosPage,
   RentalPropertiesPage,
   RentalPropertyDetailPage,
   RentalTenanciesPage,
+  RentalTenancyWorkspacePage,
   RentalVacanciesPage,
   RentalVacancyCreatePage,
   RentalVacancyDetailPage,
@@ -277,9 +285,6 @@ const BuyerViewingPreferencesPage = lazy(() => import('./pages/BuyerViewingPrefe
 const SellerViewingCoordinationPage = lazy(() => import('./pages/SellerViewingCoordinationPage'))
 const PublicAgencyIntakePage = lazy(() => import('./pages/PublicAgencyIntakePage'))
 const PublicAgentDigitalCardPage = lazy(() => import('./pages/PublicAgentDigitalCardPage'))
-const RentalApplicantJourneyPage = lazy(() => import('./pages/rentals/RentalApplicantJourneyPage'))
-const RentalApplicationWorkspacePage = lazy(() => import('./pages/rentals/RentalApplicationWorkspacePage'))
-const RentalTenancyWorkspacePage = lazy(() => import('./pages/rentals/RentalTenancyWorkspacePage'))
 const RetiredOfferWorkflowPage = lazy(() => import('./pages/RetiredOfferWorkflowPage'))
 const ClientModulePage = lazy(() => import('./pages/ClientModulePage'))
 const ClientOnboarding = lazy(() => import('./pages/ClientOnboarding'))
@@ -561,6 +566,7 @@ function AppLayout({ onLogout, session = null, user }) {
     /^\/pipeline\/leads\/[^/]+\/legal\/[^/]+/.test(location.pathname)
   const isCommercialRoute = location.pathname.startsWith('/commercial')
   const isBondRoute = location.pathname.startsWith('/bond')
+  const isLeadWorkspaceRoute = /^\/pipeline\/leads\/[^/]+/.test(location.pathname)
   const routeContentKey = getStableRouteContentKey(location.pathname, location.search)
   const hideSharedHeader =
     isLegalWorkspaceRoute ||
@@ -838,7 +844,12 @@ function AppLayout({ onLogout, session = null, user }) {
         ) : null}
         {degradedWorkspaceBanner}
 
-        <main ref={mainScrollRef} data-app-shell-scroll="main" className={`ui-main-content ui-page-scroll ${hideSharedHeader ? 'pt-6' : ''}`.trim()}>
+        <main
+          ref={mainScrollRef}
+          data-app-shell-scroll="main"
+          data-scroll-stability={isLeadWorkspaceRoute ? 'hydrating-workspace' : undefined}
+          className={`ui-main-content ui-page-scroll ${isLeadWorkspaceRoute ? 'ui-page-scroll-stable' : ''} ${hideSharedHeader ? 'pt-6' : ''}`.trim()}
+        >
           <div
             key={routeContentKey}
             className={`ui-content-container ${isDashboardRoute ? 'ui-content-container-dashboard' : ''} ${isAttorneyDashboardRoute ? 'ui-content-container-edge' : ''}`.trim()}
@@ -1714,6 +1725,9 @@ function AppRoutes() {
           <Route path="/qr/arch9" element={<Arch9LaunchConcierge />} />
           <Route path="/card/:cardSlug" element={<AppErrorBoundary scope="agent-digital-card" title="Agent digital card failed to load"><PublicAgentDigitalCardPage /></AppErrorBoundary>} />
           <Route path="/rental-application/:token" element={<AppErrorBoundary scope="rental-applicant-journey" title="Rental application failed to load"><RentalApplicantJourneyPage /></AppErrorBoundary>} />
+          <Route path="/tenant/rentals/actions" element={<AppErrorBoundary scope="rental-tenant-portal-actions" title="Tenant portal failed to load"><RentalTenantPortalActionsPage /></AppErrorBoundary>} />
+          <Route path="/landlord/rentals/decisions" element={<AppErrorBoundary scope="rental-landlord-portal-decisions" title="Landlord portal failed to load"><RentalLandlordPortalDecisionsPage /></AppErrorBoundary>} />
+          <Route path="/landlord/rentals" element={<AppErrorBoundary scope="rental-landlord-portal" title="Landlord portal failed to load"><RentalLandlordPortalPage /></AppErrorBoundary>} />
           <Route path="/intake/:agencySlug" element={<AppErrorBoundary scope="agency-public-intake" title="Agency intake page failed to load"><PublicAgencyIntakePage /></AppErrorBoundary>} />
           <Route path="/a/:agencySlug" element={<AppErrorBoundary scope="agency-public-intake" title="Agency intake page failed to load"><PublicAgencyIntakePage /></AppErrorBoundary>} />
           <Route path="/young-law" element={<AppErrorBoundary scope="young-law-calculators" title="Young Law calculators failed to load"><YoungLawCalculatorsPage /></AppErrorBoundary>} />
@@ -2789,6 +2803,8 @@ function AppRoutes() {
                 }
               />
               <Route path="/agent/rentals/tenancies/:tenancyId" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.tenancies}><RentalTenancyWorkspacePage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
+              <Route path="/agent/rentals/tenancies/:tenancyId/renewal" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.tenancies}><RentalRenewalWorkspacePage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
+              <Route path="/agent/rentals/tenancies/:tenancyId/notice" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.tenancies}><RentalNoticeWorkspacePage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
               <Route path="/agent/rentals/collections" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.tenancies}><RentalCollectionsPage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
               <Route path="/agent/rentals/finance/imports" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.tenancies}><RentalFinancialImportsPage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
               <Route

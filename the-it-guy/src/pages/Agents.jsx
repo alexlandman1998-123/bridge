@@ -4677,13 +4677,35 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
   }
 
   function openTransaction(row) {
-    const unitId = row?.unit?.id || row?.transaction?.unit_id
-    if (unitId) {
-      navigate(`/units/${unitId}`)
+    const transaction = row?.transaction || {}
+    const transactionId = transaction.id || row?.transaction_id || row?.transactionId || row?.id
+    if (transactionId) {
+      navigate(`/transactions/${transactionId}`, {
+        state: {
+          matterPreview: {
+            matterId: transactionId,
+            matterReference: transaction.transaction_reference || transaction.reference || '',
+            buyerName: row?.buyer?.name || '',
+            sellerName: row?.seller?.name || transaction.seller_name || '',
+            developmentName: row?.development?.name || '',
+            propertyLabel:
+              row?.unit?.unit_number ||
+              row?.unit?.name ||
+              transaction.property_description ||
+              '',
+            purchasePrice: transaction.sales_price || transaction.purchase_price || row?.unit?.price || 0,
+            financeType: transaction.finance_type || 'unknown',
+            currentStage: row?.stage || transaction.current_main_stage || transaction.stage || '',
+            lifecycleState: transaction.lifecycle_state || 'active',
+            lastUpdated: transaction.updated_at || transaction.created_at || '',
+          },
+        },
+      })
       return
     }
-    const transactionId = row?.transaction?.id || row?.id
-    navigate(transactionId ? `/transactions/${transactionId}` : '/transactions')
+
+    const unitId = row?.unit?.id || transaction.unit_id
+    navigate(unitId ? `/units/${unitId}` : '/transactions')
   }
 
   const actionItems = [

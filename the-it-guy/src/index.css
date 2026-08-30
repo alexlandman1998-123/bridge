@@ -639,6 +639,10 @@
     @apply min-w-0 flex-1 overflow-y-auto px-0 py-6;
   }
 
+  .ui-page-scroll-stable {
+    overflow-anchor: none;
+  }
+
   .ui-section-stack {
     @apply flex flex-col gap-6;
   }

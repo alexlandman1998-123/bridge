@@ -18,7 +18,8 @@ assert.doesNotMatch(detailRoute, /<Pipeline/, 'lead details should bypass the le
 
 assert.match(route, /const AgencyPipelinePage = lazy\(loadAgencyLeadWorkspace\)/)
 assert.doesNotMatch(route, /if \(activeTab === 'overview'\) return <AgencyLeadWorkspaceShellPage \/>/)
-assert.match(route, /fallback=\{<AgencyLeadWorkspaceShellPage loadingTab=\{activeTab !== 'overview'\} \/>\}/)
+assert.match(route, /fallback=\{<LeadWorkspaceHydrationShell search=\{location\.search\} \/>\}/)
+assert.doesNotMatch(route, /AgencyLeadWorkspaceShellPage/, 'lead route loading must not flash the dark cached preview')
 assert.match(loader, /import\('\.\/AgencyPipelinePage'\)/)
 assert.match(route, /key=\{`lead-workspace:\$\{location\.pathname\}`\}/)
 assert.match(route, /initialViewMode="leads"/)

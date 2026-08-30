@@ -71,6 +71,8 @@ export { RentalPropertyEvidencePanel } from './shared/evidence/RentalPropertyEvi
 
 export {
   RentalApplicationsPage,
+  RentalApplicantJourneyPage,
+  RentalApplicationWorkspacePage,
   RentalListingCreatePage,
   RentalListingDetailPage,
   RentalListingsPage,
@@ -79,12 +81,18 @@ export {
   RentalPortfoliosPage,
   RentalPortfolioDetailPage,
   RentalTenanciesPage,
+  RentalTenancyWorkspacePage,
   RentalVacanciesPage,
   RentalVacancyCreatePage,
   RentalVacancyDetailPage,
   RentalOperationsDashboardPage,
   RentalCollectionsPage,
   RentalFinancialImportsPage,
+  RentalTenantPortalActionsPage,
+  RentalLandlordPortalDecisionsPage,
+  RentalLandlordPortalPage,
+  RentalRenewalWorkspacePage,
+  RentalNoticeWorkspacePage,
 } from './shell/rentalRouteLoaders.js'
 
 export { RENTAL_MODULES, resolveRentalModuleAvailability } from '../../services/rentals/rentalModuleAvailability.js'

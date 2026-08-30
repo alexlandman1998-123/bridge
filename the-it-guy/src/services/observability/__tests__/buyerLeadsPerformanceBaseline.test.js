@@ -51,6 +51,27 @@ const baseline = createBuyerLeadsPerformanceBaseline({
 
 performanceApi.setNow(900)
 await baseline.recordCheckpoint({
+  checkpoint: 'workspace_chunk_loaded',
+  userId: 'user-1',
+  workspaceId: 'workspace-1',
+  durationMs: 420,
+  metadata: { chunkStartedBeforeRouteBaseline: true },
+})
+performanceApi.setNow(950)
+await baseline.recordCheckpoint({
+  checkpoint: 'core_lead_ready',
+  userId: 'user-1',
+  workspaceId: 'workspace-1',
+})
+performanceApi.setNow(980)
+await baseline.recordCheckpoint({
+  checkpoint: 'assignment_menu_opened',
+  userId: 'user-1',
+  workspaceId: 'workspace-1',
+  startedAt: 900,
+})
+performanceApi.setNow(1000)
+await baseline.recordCheckpoint({
   checkpoint: 'workspace_ready',
   userId: 'user-1',
   workspaceId: 'workspace-1',
@@ -58,21 +79,31 @@ await baseline.recordCheckpoint({
 })
 await baseline.recordCheckpoint({ checkpoint: 'workspace_ready' })
 
-assert.equal(recorded.length, 1)
-assert.equal(recorded[0].metricName, BUYER_LEADS_PERFORMANCE_METRICS.workspaceReady)
-assert.equal(recorded[0].route, '/pipeline/leads/:leadId')
-assert.equal(recorded[0].durationMs, 850)
-assert.equal(recorded[0].metadata.contract, 'arch9-buyer-leads-performance-baseline-v2')
-assert.equal(recorded[0].metadata.duplicateSupabaseRequestCount, 1)
-assert.equal(recorded[0].metadata.inactiveSpecialistRequestCount, 1)
-assert.equal(recorded[0].metadata.releaseGateContract, 'arch9-buyer-leads-release-gate-v1')
-assert.equal(recorded[0].metadata.releaseGateStatus, 'breached')
-assert.deepEqual(recorded[0].metadata.releaseGateBreaches, [
+assert.equal(recorded.length, 4)
+assert.equal(recorded[0].metricName, BUYER_LEADS_PERFORMANCE_METRICS.workspaceChunkLoaded)
+assert.equal(recorded[0].durationMs, 420)
+assert.equal(recorded[0].metadata.timingOrigin, 'explicit_duration')
+assert.equal(recorded[1].metricName, BUYER_LEADS_PERFORMANCE_METRICS.coreLeadReady)
+assert.equal(recorded[1].durationMs, 900)
+assert.equal(recorded[2].metricName, BUYER_LEADS_PERFORMANCE_METRICS.assignmentMenuOpened)
+assert.equal(recorded[2].durationMs, 80)
+assert.equal(recorded[2].metadata.timingOrigin, 'interaction')
+
+const workspaceReadyMetric = recorded[3]
+assert.equal(workspaceReadyMetric.metricName, BUYER_LEADS_PERFORMANCE_METRICS.workspaceReady)
+assert.equal(workspaceReadyMetric.route, '/pipeline/leads/:leadId')
+assert.equal(workspaceReadyMetric.durationMs, 950)
+assert.equal(workspaceReadyMetric.metadata.contract, 'arch9-buyer-leads-performance-baseline-v2')
+assert.equal(workspaceReadyMetric.metadata.duplicateSupabaseRequestCount, 1)
+assert.equal(workspaceReadyMetric.metadata.inactiveSpecialistRequestCount, 1)
+assert.equal(workspaceReadyMetric.metadata.releaseGateContract, 'arch9-buyer-leads-release-gate-v1')
+assert.equal(workspaceReadyMetric.metadata.releaseGateStatus, 'breached')
+assert.deepEqual(workspaceReadyMetric.metadata.releaseGateBreaches, [
   'duplicate_supabase_request_count',
   'inactive_specialist_request_count',
 ])
-assert.equal(recorded[0].metadata.workspaceTab, 'offers')
-assert.equal(recorded[0].metadata.leadCategory, 'buyer')
-assert.equal(JSON.stringify(recorded[0]).includes('buyer-lead-123'), false, 'performance rows must not include a lead identifier')
+assert.equal(workspaceReadyMetric.metadata.workspaceTab, 'offers')
+assert.equal(workspaceReadyMetric.metadata.leadCategory, 'buyer')
+assert.equal(JSON.stringify(recorded).includes('buyer-lead-123'), false, 'performance rows must not include a lead identifier')
 
 console.log('buyer leads performance baseline tests passed')

@@ -1,11 +1,22 @@
+import {
+  beginBuyerLeadWorkspaceChunkLoad,
+  completeBuyerLeadWorkspaceChunkLoad,
+} from '../../services/observability/buyerLeadWorkspaceChunkTrace.js'
+
 let workspaceModulePromise = null
 
 export function loadAgencyLeadWorkspace() {
   if (!workspaceModulePromise) {
-    workspaceModulePromise = import('./AgencyPipelinePage').catch((error) => {
-      workspaceModulePromise = null
-      throw error
-    })
+    beginBuyerLeadWorkspaceChunkLoad()
+    workspaceModulePromise = import('./AgencyPipelinePage')
+      .then((module) => {
+        completeBuyerLeadWorkspaceChunkLoad()
+        return module
+      })
+      .catch((error) => {
+        workspaceModulePromise = null
+        throw error
+      })
   }
   return workspaceModulePromise
 }

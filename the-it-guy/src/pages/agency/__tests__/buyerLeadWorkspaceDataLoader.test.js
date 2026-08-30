@@ -37,6 +37,35 @@ assert.equal(cachedLoad, buyerSnapshot)
 assert.equal(requestCount, 1, 'a warm buyer workspace should use the short-lived completed cache')
 
 clearBuyerLeadWorkspaceDataLoaderCache()
+let fullWorkspaceRequestCount = 0
+let journeyEnrichmentRequestCount = 0
+const enrichedSnapshot = await loadBuyerLeadWorkspaceData({
+  organisationId: 'workspace-1',
+  leadId: 'buyer-1',
+  seedSnapshot: buyerSnapshot,
+  fetchWorkspace: async () => {
+    fullWorkspaceRequestCount += 1
+    return buyerSnapshot
+  },
+  fetchJourneyEnrichment: async (_organisationId, _leadId, seedSnapshot) => {
+    journeyEnrichmentRequestCount += 1
+    assert.equal(seedSnapshot, buyerSnapshot)
+    return {
+      contacts: [{ contactId: 'contact-1' }],
+      leadActivities: [{ activityId: 'activity-1', leadId: 'buyer-1' }],
+      journeyEnrichmentStatus: 'ready',
+    }
+  },
+  now: () => 250,
+})
+assert.equal(fullWorkspaceRequestCount, 0, 'a buyer seed must not trigger a duplicate full workspace query')
+assert.equal(journeyEnrichmentRequestCount, 1)
+assert.equal(enrichedSnapshot.leads[0].leadId, 'buyer-1')
+assert.equal(enrichedSnapshot.contacts[0].contactId, 'contact-1')
+assert.equal(enrichedSnapshot.leadActivities[0].activityId, 'activity-1')
+assert.deepEqual(enrichedSnapshot.tasks, [])
+
+clearBuyerLeadWorkspaceDataLoaderCache()
 let sellerRequestCount = 0
 const sellerFetcher = async () => {
   sellerRequestCount += 1
@@ -52,4 +81,3 @@ await assert.rejects(
 )
 
 console.log('buyer lead workspace data loader tests passed')
-

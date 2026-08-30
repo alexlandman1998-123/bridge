@@ -31,14 +31,16 @@ assert.match(
   'seller listing activity hydration should no-op when fetched rows have not changed',
 )
 
-assert.ok(
-  agencySource.includes('const captureRouteLeadWorkspaceScroll = useCallback'),
-  'route lead workspace should capture scroll before background record merges',
+assert.doesNotMatch(
+  agencySource,
+  /captureRouteLeadWorkspaceScroll|restoreRouteLeadWorkspaceScroll|routeLeadScrollSnapshotRef/,
+  'background lead hydration must not replay stale scroll positions while the user is scrolling',
 )
 
-assert.ok(
-  agencySource.includes('const restoreRouteLeadWorkspaceScroll = useCallback'),
-  'route lead workspace should restore scroll after background record merges',
+assert.doesNotMatch(
+  agencySource,
+  /requestAnimationFrame\(\(\) => \{\s*restore\(\)\s*window\.requestAnimationFrame\(restore\)/,
+  'lead hydration must not fight user input with a two-frame scroll restoration',
 )
 
 assert.match(

@@ -1,17 +1,17 @@
 import { useLocation } from 'react-router-dom'
 import { Suspense, lazy } from 'react'
 import { loadAgencyLeadWorkspace } from './agencyLeadWorkspaceLoader'
-import AgencyLeadWorkspaceShellPage from './AgencyLeadWorkspaceShellPage'
-import { resolveAgencyLeadWorkspaceTab } from './agencyLeadWorkspaceRouteState'
+import LeadWorkspaceHydrationShell from './LeadWorkspaceHydrationShell'
 
 const AgencyPipelinePage = lazy(loadAgencyLeadWorkspace)
 
 export default function AgencyLeadWorkspaceRoutePage() {
   const location = useLocation()
-  const activeTab = resolveAgencyLeadWorkspaceTab(location.search)
 
   return (
-    <Suspense fallback={<AgencyLeadWorkspaceShellPage loadingTab={activeTab !== 'overview'} />}>
+    <Suspense
+      fallback={<LeadWorkspaceHydrationShell search={location.search} />}
+    >
       <AgencyPipelinePage
         key={`lead-workspace:${location.pathname}`}
         initialViewMode="leads"
