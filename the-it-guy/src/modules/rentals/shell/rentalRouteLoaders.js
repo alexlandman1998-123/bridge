@@ -1,6 +1,8 @@
 import { lazy } from 'react'
 
 // App imports only these lazy entry points, so Sales does not eagerly load rental pages.
+export const RentalApplicantJourneyPage = lazy(() => import('../../../pages/rentals/RentalApplicantJourneyPage'))
+export const RentalApplicationWorkspacePage = lazy(() => import('../../../pages/rentals/RentalApplicationWorkspacePage'))
 export const RentalApplicationsPage = lazy(() => import('../../../pages/rentals/RentalApplicationsPage'))
 export const RentalListingCreatePage = lazy(() => import('../../../pages/rentals/RentalListingCreatePage'))
 export const RentalListingDetailPage = lazy(() => import('../../../pages/rentals/RentalListingDetailPage'))

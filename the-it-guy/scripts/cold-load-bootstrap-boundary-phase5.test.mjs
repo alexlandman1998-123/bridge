@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const appSource = fs.readFileSync(path.join(root, 'src/App.jsx'), 'utf8')
+const rentalRouteLoadersSource = fs.readFileSync(path.join(root, 'src/modules/rentals/shell/rentalRouteLoaders.js'), 'utf8')
 
 assert.doesNotMatch(
   appSource,
@@ -21,5 +22,7 @@ assert.match(
   /from ['"]\.\/services\/rentals\/rentalModuleAvailability['"]/,
   'The small availability policy should be imported without loading the rentals barrel.',
 )
+assert.match(rentalRouteLoadersSource, /export const RentalApplicantJourneyPage = lazy/)
+assert.match(rentalRouteLoadersSource, /export const RentalApplicationWorkspacePage = lazy/)
 
 console.log('cold-load bootstrap boundary phase 5 checks passed')
