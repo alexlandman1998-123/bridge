@@ -150,6 +150,12 @@ verify_jwt = true
 import_map = "./functions/legal-document-job-runner/deno.json"
 entrypoint = "./functions/legal-document-job-runner/index.ts"
 
+[functions.listing-job-runner]
+enabled = false
+verify_jwt = false
+import_map = "./functions/listing-job-runner/deno.json"
+entrypoint = "./functions/listing-job-runner/index.ts"
+
 [functions.resolve-signer-token]
 enabled = true
 verify_jwt = false

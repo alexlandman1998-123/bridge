@@ -1,0 +1,23 @@
+{
+  "contract": "listing-worker-phase7-staging-v1",
+  "phase": 7,
+  "status": "STAGING_IMPLEMENTED_NOT_EXECUTED",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "productionProjectRef": "isdowlnollckzvltkasn",
+  "allowedJobType": "media_reconcile",
+  "scheduleEnabled": false,
+  "batchLimit": 1,
+  "executionConfirmation": "ACTIVATE_MEDIA_RECONCILIATION_STAGING_ONLY",
+  "evidencePath": "docs/architecture-baselines/listing-phase7-staging-receipt.json",
+  "requiredProof": [
+    "staging_target_is_not_production",
+    "phase_2_through_phase_6_schema_present",
+    "worker_function_deployed",
+    "single_job_completed",
+    "job_lifecycle_events_present",
+    "worker_heartbeat_present",
+    "no_expired_leases",
+    "portal_handlers_remain_blocked",
+    "schedule_remains_disabled"
+  ]
+}

@@ -68,6 +68,21 @@ import {
   resolveExactSellerRequirement,
 } from './sellerDocumentSatisfactionAssuranceService.js'
 import { normalizeSellerPortalActivationTermsConfig } from '../lib/sellerPortalActivationTerms.js'
+import {
+  decodePrivateListingPageCursor,
+  encodePrivateListingPageCursor,
+  normalizePrivateListingPageSize,
+  PRIVATE_LISTING_SUMMARY_PAGE_DEFAULT_SIZE,
+  PRIVATE_LISTING_SUMMARY_PAGE_MAX_SIZE,
+} from './listings/privateListingPagination.js'
+import { buildListingMediaPersistence } from './listings/listingMediaIdentity.js'
+
+export {
+  decodePrivateListingPageCursor,
+  encodePrivateListingPageCursor,
+  PRIVATE_LISTING_SUMMARY_PAGE_DEFAULT_SIZE,
+  PRIVATE_LISTING_SUMMARY_PAGE_MAX_SIZE,
+} from './listings/privateListingPagination.js'
 
 const LISTING_STATUSES = PRIVATE_LISTING_LIFECYCLE.STATUSES
 
@@ -1213,20 +1228,78 @@ function normalizeListingMediaRows(rows = []) {
       name: normalizeText(row?.caption || `Property image ${index + 1}`),
       label: normalizeText(row?.caption),
       url: normalizeText(row?.file_url),
+      bucket: normalizeText(row?.storage_bucket),
+      path: normalizeText(row?.storage_path),
+      contentType: normalizeText(row?.content_type),
+      size: Number(row?.byte_size || 0) || 0,
+      width: Number(row?.width || 0) || null,
+      height: Number(row?.height || 0) || null,
+      processingStatus: normalizeText(row?.processing_status || 'ready'),
       isCover: Boolean(row?.is_cover),
       sortOrder: Number(row?.sort_order || 0),
     }))
+}
+
+async function resolveListingMediaDeliveryUrls(client, rows = [], expiresInSeconds = 60 * 60, transform = null) {
+  const resolved = (Array.isArray(rows) ? rows : []).map((row) => ({ ...row }))
+  const byBucket = new Map()
+  for (const row of resolved) {
+    const bucket = normalizeText(row?.storage_bucket)
+    const path = normalizeText(row?.storage_path)
+    if (!bucket || !path) continue
+    const effectiveTransform = row?.materialized_variant ? null : transform
+    const groupKey = `${bucket}:${effectiveTransform ? JSON.stringify(effectiveTransform) : 'identity'}`
+    if (!byBucket.has(groupKey)) byBucket.set(groupKey, { bucket, transform: effectiveTransform, entries: [] })
+    byBucket.get(groupKey).entries.push({ row, path })
+  }
+  await Promise.all([...byBucket.values()].map(async ({ bucket, transform: groupTransform, entries }) => {
+    const result = await client.storage.from(bucket).createSignedUrls(
+      entries.map((entry) => entry.path),
+      expiresInSeconds,
+      groupTransform ? { transform: groupTransform } : undefined,
+    )
+    if (result.error) return
+    const urls = Array.isArray(result.data) ? result.data : []
+    entries.forEach((entry, index) => {
+      const signedUrl = normalizeText(urls[index]?.signedUrl || urls[index]?.signedURL)
+      if (signedUrl) entry.row.file_url = signedUrl
+    })
+  }))
+  return resolved
+}
+
+function preferMaterializedMediaVariant(row, variantKey) {
+  const variants = Array.isArray(row?.listing_media_variants) ? row.listing_media_variants : []
+  const variant = variants.find((item) => item?.variant_key === variantKey && item?.status === 'ready' && item?.storage_bucket && item?.storage_path)
+  if (!variant) return row
+  return {
+    ...row,
+    storage_bucket: variant.storage_bucket,
+    storage_path: variant.storage_path,
+    content_type: variant.content_type || row.content_type,
+    byte_size: variant.byte_size || row.byte_size,
+    width: variant.width || row.width,
+    height: variant.height || row.height,
+    materialized_variant: variant.variant_key,
+  }
 }
 
 async function fetchMediaRowsForListings(client, listingIds = []) {
   const ids = [...new Set((Array.isArray(listingIds) ? listingIds : []).map((id) => normalizeUuid(id)).filter(Boolean))]
   if (!ids.length) return new Map()
 
-  const query = await client
+  let query = await client
     .from('listing_media')
-    .select('id, listing_id, media_type, file_url, caption, sort_order, is_cover')
+    .select('id, listing_id, media_type, file_url, storage_bucket, storage_path, content_type, byte_size, width, height, checksum, processing_status, caption, sort_order, is_cover')
     .in('listing_id', ids)
     .order('sort_order', { ascending: true })
+  if (query.error && isMissingColumnError(query.error)) {
+    query = await client
+      .from('listing_media')
+      .select('id, listing_id, media_type, file_url, caption, sort_order, is_cover')
+      .in('listing_id', ids)
+      .order('sort_order', { ascending: true })
+  }
   if (query.error) {
     if (
       isMissingTableError(query.error, 'listing_media') ||
@@ -1237,13 +1310,48 @@ async function fetchMediaRowsForListings(client, listingIds = []) {
   }
 
   const mediaByListingId = new Map()
-  for (const row of query.data || []) {
+  for (const row of await resolveListingMediaDeliveryUrls(client, query.data || [])) {
     const listingId = normalizeText(row?.listing_id)
     if (!listingId) continue
     if (!mediaByListingId.has(listingId)) mediaByListingId.set(listingId, [])
     mediaByListingId.get(listingId).push(row)
   }
   return mediaByListingId
+}
+
+async function fetchCoverMediaRowsForListings(client, listingIds = []) {
+  const ids = normalizeUuidList(listingIds)
+  if (!ids.length) return new Map()
+  let coverQuery = await client
+    .from('listing_media')
+    .select('id, listing_id, media_type, file_url, storage_bucket, storage_path, content_type, byte_size, width, height, checksum, processing_status, caption, sort_order, is_cover, listing_media_variants(variant_key, source_revision, storage_bucket, storage_path, content_type, byte_size, width, height, status)')
+    .in('listing_id', ids)
+    .eq('media_type', 'image')
+    .eq('is_cover', true)
+  if (coverQuery.error && (isMissingColumnError(coverQuery.error) || `${coverQuery.error.message || ''}`.includes('listing_media_variants'))) {
+    coverQuery = await client
+      .from('listing_media')
+      .select('id, listing_id, media_type, file_url, caption, sort_order, is_cover')
+      .in('listing_id', ids)
+      .eq('media_type', 'image')
+      .eq('is_cover', true)
+  }
+  if (coverQuery.error) {
+    if (isMissingTableError(coverQuery.error, 'listing_media') || isMissingSchemaError(coverQuery.error) || isPermissionDeniedError(coverQuery.error)) return new Map()
+    throw coverQuery.error
+  }
+  const map = new Map()
+  const preferredRows = (coverQuery.data || []).map((row) => preferMaterializedMediaVariant(row, 'card'))
+  for (const row of await resolveListingMediaDeliveryUrls(client, preferredRows, 60 * 60, {
+    width: 640,
+    height: 480,
+    resize: 'cover',
+    quality: 75,
+  })) {
+    const listingId = normalizeText(row?.listing_id)
+    if (listingId && !map.has(listingId)) map.set(listingId, [row])
+  }
+  return map
 }
 
 function attachDistributionMediaToListing(listing = null, rows = []) {
@@ -6267,6 +6375,7 @@ export async function syncPrivateListingDistributionData(listingId, payload = {}
       caption: normalizeNullableText(item.label || item.name),
       sort_order: index,
       is_cover: normalizeText(item.id) === normalizeText(media.coverImageId) || (!media.coverImageId && index === 0),
+      ...buildListingMediaPersistence(item),
     })),
     ...floorplans.map((item, index) => ({
       listing_id: normalizedId,
@@ -6275,6 +6384,7 @@ export async function syncPrivateListingDistributionData(listingId, payload = {}
       caption: normalizeNullableText(item.label || item.name),
       sort_order: index,
       is_cover: false,
+      ...buildListingMediaPersistence(item),
     })),
     ...(videoLink ? [{
       listing_id: normalizedId,
@@ -6351,15 +6461,32 @@ export async function syncPrivateListingDistributionData(listingId, payload = {}
     throw publication.error
   }
 
-  const deleteMedia = await client.from('listing_media').delete().eq('listing_id', normalizedId)
-  if (deleteMedia.error) {
-    if (isMissingTableError(deleteMedia.error, 'listing_media')) return { skipped: true, reason: 'distribution_tables_missing' }
-    throw deleteMedia.error
-  }
-  if (mediaRows.length) {
-    const insertMedia = await client.from('listing_media').insert(mediaRows)
+  let mediaSync = await client.rpc('bridge_sync_listing_media_v2', {
+    p_listing_id: normalizedId,
+    p_media: mediaRows,
+  })
+  const mediaSyncUnavailable = mediaSync.error && (
+    ['42883', 'pgrst202'].includes(normalizeKey(mediaSync.error.code)) ||
+    `${mediaSync.error.message || ''} ${mediaSync.error.details || ''}`.toLowerCase().includes('bridge_sync_listing_media_v2')
+  )
+  if (mediaSyncUnavailable) {
+    const deleteMedia = await client.from('listing_media').delete().eq('listing_id', normalizedId)
+    if (deleteMedia.error) {
+      if (isMissingTableError(deleteMedia.error, 'listing_media')) return { skipped: true, reason: 'distribution_tables_missing' }
+      throw deleteMedia.error
+    }
+    let insertMedia = mediaRows.length ? await client.from('listing_media').insert(mediaRows) : { error: null }
+    if (insertMedia.error && isMissingColumnError(insertMedia.error)) {
+      const legacyMediaRows = mediaRows.map((row) => {
+        const legacy = { ...row }
+        for (const key of ['storage_bucket', 'storage_path', 'content_type', 'byte_size', 'width', 'height', 'checksum', 'processing_status']) delete legacy[key]
+        return legacy
+      })
+      insertMedia = await client.from('listing_media').insert(legacyMediaRows)
+    }
     if (insertMedia.error) throw insertMedia.error
   }
+  if (mediaSync.error && !mediaSyncUnavailable) throw mediaSync.error
 
   const deleteLinks = await client.from('listing_external_links').delete().eq('listing_id', normalizedId)
   if (deleteLinks.error) {
@@ -6375,6 +6502,7 @@ export async function syncPrivateListingDistributionData(listingId, payload = {}
     skipped: false,
     publication: publication.data,
     mediaCount: mediaRows.length,
+    mediaSync: mediaSyncUnavailable ? { mode: 'legacy_replace' } : { mode: 'incremental_atomic', ...(mediaSync.data || {}) },
     externalLinkCount: externalLinkRows.length,
   }
 }
@@ -6800,6 +6928,96 @@ export async function getAgentPrivateListingSummaries(
     ? await fetchOnboardingCommissionRowsForListings(client, rows.map((row) => row.id))
     : null
   return rows.map((row) => mapPrivateListingSummaryRow(row, onboardingCommissionByListingId)).filter(Boolean)
+}
+
+export async function getAgentPrivateListingSummaryPage(
+  agentId,
+  {
+    organisationId = null,
+    branchId = null,
+    includeAllOrganisationListings = false,
+    assignedAgentIds = [],
+    cursor = '',
+    pageSize = PRIVATE_LISTING_SUMMARY_PAGE_DEFAULT_SIZE,
+    listingCategory = '',
+  } = {},
+) {
+  const client = requireClient()
+  const normalizedAgentId = normalizeUuid(agentId)
+  const normalizedOrgId = normalizeUuid(organisationId)
+  const normalizedBranchId = normalizeUuid(branchId)
+  const normalizedAgentIds = normalizeUuidList([normalizedAgentId, ...assignedAgentIds])
+  const safePageSize = normalizePrivateListingPageSize(pageSize)
+  const decodedCursor = decodePrivateListingPageCursor(cursor)
+  if (!includeAllOrganisationListings && !normalizedAgentIds.length) {
+    return { items: [], nextCursor: '', hasMore: false, pageSize: safePageSize, totalCount: 0 }
+  }
+
+  const selectColumns = [
+    'id', 'listing_reference', 'listing_status', 'listing_visibility', 'seller_onboarding_status',
+    'mandate_status', 'asking_price', 'estimated_value', 'title', 'description', 'address_line_1',
+    'address_line_2', 'suburb', 'city', 'province', 'postal_code', 'property_type', 'property_structure_type',
+    'property_category', 'listing_category', 'listing_source', 'stock_source', 'seller_canonical_facts_json',
+    'seller_canonical_fact_readiness_json', 'organisation_id', 'branch_id', 'assigned_agent_id',
+    'property24_status', 'private_property_status', 'bridge_listing_status', 'created_at', 'updated_at',
+  ].join(', ')
+
+  let query = applyVisiblePrivateListingFilters(
+    client.from('private_listings').select(selectColumns, { count: 'planned' }),
+  )
+  if (normalizedOrgId) query = query.eq('organisation_id', normalizedOrgId)
+  if (normalizedBranchId) query = query.eq('branch_id', normalizedBranchId)
+  if (!includeAllOrganisationListings) {
+    query = normalizedAgentIds.length > 1
+      ? query.in('assigned_agent_id', normalizedAgentIds)
+      : query.eq('assigned_agent_id', normalizedAgentIds[0])
+  }
+  if (normalizeText(listingCategory)) query = query.eq('listing_category', normalizeText(listingCategory))
+  if (decodedCursor) {
+    query = query.or(`updated_at.lt.${decodedCursor.updatedAt},and(updated_at.eq.${decodedCursor.updatedAt},id.lt.${decodedCursor.id})`)
+  }
+
+  const result = await query
+    .order('updated_at', { ascending: false })
+    .order('id', { ascending: false })
+    .limit(safePageSize + 1)
+  if (result.error) {
+    if (isMissingTableError(result.error, 'private_listings')) {
+      return { items: [], nextCursor: '', hasMore: false, pageSize: safePageSize, totalCount: 0 }
+    }
+    throw result.error
+  }
+
+  const visibleRows = (Array.isArray(result.data) ? result.data : []).filter((row) => !isDeletedPrivateListingRow(row))
+  const hasMore = visibleRows.length > safePageSize
+  const pageRows = visibleRows.slice(0, safePageSize)
+  const listingIds = pageRows.map((row) => row.id)
+  const [publicationMap, mediaMap, assignedAgentsMap] = await Promise.all([
+    fetchPublicationRowsForListings(client, listingIds),
+    fetchCoverMediaRowsForListings(client, listingIds),
+    fetchAssignedAgentProfilesForListings(client, pageRows),
+  ])
+  const items = pageRows.map((row) => {
+    const summary = mapPrivateListingSummaryRow(row)
+    const publication = publicationMap.get(String(row.id)) || null
+    const agent = assignedAgentsMap.get(String(row.assigned_agent_id || '')) || null
+    const withPublication = {
+      ...summary,
+      assignedAgentName: pickFirstText(agent?.full_name, [agent?.first_name, agent?.last_name].filter(Boolean).join(' ')),
+      assignedAgentEmail: normalizeText(agent?.email).toLowerCase(),
+      listingPublicationData: publication ? mapPublicationRowToDraft(publication) : {},
+    }
+    return attachDistributionMediaToListing(withPublication, mediaMap.get(String(row.id)) || [])
+  }).filter(Boolean)
+  const lastRow = pageRows.at(-1)
+
+  return {
+    items,
+    nextCursor: hasMore ? encodePrivateListingPageCursor(lastRow) : '',
+    hasMore,
+    pageSize: safePageSize,
+    totalCount: Number.isFinite(Number(result.count)) ? Number(result.count) : null,
+  }
 }
 
 export async function createPrivateListingActivity(payload = {}) {

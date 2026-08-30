@@ -1,0 +1,21 @@
+{
+  "contract": "listing-worker-phase13-production-canary-v1",
+  "phase": 13,
+  "status": "IMPLEMENTED_NOT_EXECUTED",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "productionProjectRef": "isdowlnollckzvltkasn",
+  "phase12ReceiptPath": "docs/architecture-baselines/listing-phase12-staging-certification-receipt.json",
+  "evidencePath": "docs/architecture-baselines/listing-phase13-production-canary-receipt.json",
+  "allowedProviders": ["property24", "private_property"],
+  "batchLimit": 1,
+  "maxAttempts": 1,
+  "scheduleEnabled": false,
+  "confirmationPrefix": "RUN_PHASE13_PRODUCTION_CANARY",
+  "rollback": {
+    "disableProviderWorkerFirst": true,
+    "cancelQueuedProductionJobs": true,
+    "property24Action": "Use the authenticated Property24 listing withdrawal endpoint, then reconcile portal status.",
+    "privatePropertyAction": "Use the controlled Private Property inactive/removal workflow, then reconcile the event feed.",
+    "preserveAuditEvidence": true
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "contract": "listing-worker-phase12-staging-certification-v1",
+  "phase": 12,
+  "status": "IMPLEMENTED_NOT_CERTIFIED",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "productionProjectRef": "isdowlnollckzvltkasn",
+  "requiredProviders": ["property24", "private_property"],
+  "phase11ReceiptTemplate": "docs/architecture-baselines/listing-phase11-syndication-rehearsal-{provider}-receipt.json",
+  "evidencePath": "docs/architecture-baselines/listing-phase12-staging-certification-receipt.json",
+  "maximumReceiptAgeHours": 168,
+  "scheduleEnabled": false,
+  "productionEnabled": false,
+  "certificationConfirmation": "CERTIFY_PHASE12_STAGING_SYNDICATION_READY",
+  "requiredProof": [
+    "approved_staging_project_only",
+    "phase_9_variant_schema_deployed",
+    "phase_10_enqueue_controls_deployed",
+    "phase_11_health_rpc_deployed",
+    "listing_job_worker_deployed",
+    "syndication_adapter_deployed",
+    "property24_sandbox_rehearsal_passed",
+    "private_property_sandbox_rehearsal_passed",
+    "provider_workers_enabled_in_staging",
+    "production_syndication_disabled",
+    "recurring_schedule_disabled"
+  ]
+}

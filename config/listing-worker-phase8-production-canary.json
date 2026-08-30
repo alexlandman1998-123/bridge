@@ -1,0 +1,29 @@
+{
+  "contract": "listing-worker-phase8-production-canary-v1",
+  "phase": 8,
+  "status": "PRODUCTION_CANARY_IMPLEMENTED_NOT_EXECUTED",
+  "productionProjectRef": "isdowlnollckzvltkasn",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "phase7ReceiptPath": "docs/architecture-baselines/listing-phase7-staging-receipt.json",
+  "evidencePath": "docs/architecture-baselines/listing-phase8-production-canary-receipt.json",
+  "allowedJobType": "media_reconcile",
+  "scheduleEnabled": false,
+  "batchLimit": 1,
+  "maxAttempts": 1,
+  "executionConfirmation": "RUN_ONE_MEDIA_RECONCILIATION_PRODUCTION_CANARY",
+  "preconditions": [
+    "phase7_staging_smoke_passed",
+    "production_target_exact_match",
+    "production_queue_idle",
+    "no_expired_leases",
+    "canonical_media_candidate_available",
+    "worker_secret_configured",
+    "rollback_owner_assigned"
+  ],
+  "blockedHandlers": [
+    "property24_publish",
+    "private_property_publish",
+    "document_generate",
+    "webhook_deliver"
+  ]
+}

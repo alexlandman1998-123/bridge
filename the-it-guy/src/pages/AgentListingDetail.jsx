@@ -3335,6 +3335,7 @@ function AgentListingDetail() {
   const [canonicalOfferActionId, setCanonicalOfferActionId] = useState('')
   const [detailMessage, setDetailMessage] = useState('')
   const [detailError, setDetailError] = useState('')
+  const [listingLifecycleAction, setListingLifecycleAction] = useState('')
   const [deletingListing, setDeletingListing] = useState(false)
   const [gallerySaving, setGallerySaving] = useState(false)
   const [publicationSaving, setPublicationSaving] = useState(false)
@@ -4640,8 +4641,12 @@ function AgentListingDetail() {
     }
   }
 
-  async function updateProperty24ListingStatus() {
-    const nextStatus = String(property24StatusUpdate || '').trim()
+  async function updateProperty24ListingStatus(statusOverride = '') {
+    const nextStatus = String(
+      typeof statusOverride === 'string' && statusOverride.trim()
+        ? statusOverride
+        : property24StatusUpdate,
+    ).trim()
     if (!nextStatus) return null
     setProperty24Action('status-update')
     setDetailError('')
@@ -4687,6 +4692,68 @@ function AgentListingDetail() {
       return null
     } finally {
       setProperty24Action('')
+    }
+  }
+
+  async function updateListingLifecycle(nextStatus) {
+    const normalizedNextStatus = normalizeKey(nextStatus)
+    if (!['under_offer', 'sold'].includes(normalizedNextStatus) || listingLifecycleAction) return
+
+    const currentStatus = normalizeKey(marketingDraft.listingStatus)
+    if (currentStatus === normalizedNextStatus) {
+      setDetailError('')
+      setDetailMessage(`This listing is already marked ${formatStatusLabel(normalizedNextStatus)}.`)
+      return
+    }
+
+    if (normalizedNextStatus === 'sold') {
+      const confirmed = window.confirm('Mark this listing as sold? This will also send a Sold status to Property24 when the listing is linked there.')
+      if (!confirmed) return
+    }
+
+    setListingLifecycleAction(normalizedNextStatus)
+    setDetailError('')
+    setDetailMessage(`Marking listing as ${formatStatusLabel(normalizedNextStatus)}...`)
+
+    try {
+      const nextDraft = {
+        ...marketingDraft,
+        listingStatus: normalizedNextStatus,
+        publicationStatus: normalizedNextStatus === 'sold' ? 'Archived' : marketingDraft.publicationStatus,
+      }
+      const saveResult = await saveMarketingDraft(nextDraft, {
+        successMessage: '',
+      })
+      if (saveResult?.ok === false) throw saveResult.error || new Error('The listing status could not be saved.')
+
+      setMarketingDraft(nextDraft)
+
+      let property24Synced = false
+      if (property24Reference) {
+        const property24Result = await updateProperty24ListingStatus(normalizedNextStatus === 'sold' ? 'Sold' : 'Pending')
+        property24Synced = Boolean(property24Result)
+      }
+
+      const lifecycleLabel = formatStatusLabel(normalizedNextStatus)
+      const portalNotes = [
+        property24Reference
+          ? property24Synced
+            ? `Property24 was updated to ${normalizedNextStatus === 'sold' ? 'Sold' : 'Pending'}.`
+            : 'Property24 still needs attention; its status update did not complete.'
+          : '',
+        privatePropertyReference
+          ? 'Private Property is linked, but its current integration only supports publishing and status checks; update the lifecycle in the Private Property portal as well.'
+          : '',
+      ].filter(Boolean)
+
+      setDetailError('')
+      setDetailMessage([`Listing marked ${lifecycleLabel}.`, ...portalNotes].join(' '))
+      await loadListingData()
+    } catch (error) {
+      setDetailMessage('')
+      setDetailError(error?.message || 'The listing lifecycle could not be updated.')
+    } finally {
+      setListingLifecycleAction('')
     }
   }
 
@@ -10657,6 +10724,27 @@ function AgentListingDetail() {
                     <Button type="button" variant="secondary" onClick={returnToMarketingConsole}>
                       <ArrowLeft size={15} />
                       Back to Marketing
+                    </Button>
+                  ) : null}
+                  {!['under_offer', 'sold', 'withdrawn'].includes(normalizeKey(marketingDraft.listingStatus)) ? (
+                    <Button
+                      variant="secondary"
+                      onClick={() => void updateListingLifecycle('under_offer')}
+                      disabled={Boolean(listingLifecycleAction || property24Action)}
+                    >
+                      {listingLifecycleAction === 'under_offer' ? <Loader2 size={15} className="animate-spin" /> : null}
+                      Mark as Under Offer
+                    </Button>
+                  ) : null}
+                  {!['sold', 'withdrawn'].includes(normalizeKey(marketingDraft.listingStatus)) ? (
+                    <Button
+                      variant="secondary"
+                      onClick={() => void updateListingLifecycle('sold')}
+                      disabled={Boolean(listingLifecycleAction || property24Action)}
+                      className="border-[#d5a84b] bg-[#fffaf0] text-[#7a5612] hover:bg-[#fff4dc]"
+                    >
+                      {listingLifecycleAction === 'sold' ? <Loader2 size={15} className="animate-spin" /> : null}
+                      Mark as Sold
                     </Button>
                   ) : null}
                   <Button variant="secondary" onClick={handleDeleteListing} disabled={deletingListing}>

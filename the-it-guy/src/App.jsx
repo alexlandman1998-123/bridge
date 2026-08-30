@@ -40,6 +40,8 @@ import {
   RentalListingsPage,
   RentalModuleBoundary,
   RentalOperationsDashboardPage,
+  RentalCollectionsPage,
+  RentalFinancialImportsPage,
   RentalPortfolioDetailPage,
   RentalPortfoliosPage,
   RentalPropertiesPage,
@@ -277,6 +279,7 @@ const PublicAgencyIntakePage = lazy(() => import('./pages/PublicAgencyIntakePage
 const PublicAgentDigitalCardPage = lazy(() => import('./pages/PublicAgentDigitalCardPage'))
 const RentalApplicantJourneyPage = lazy(() => import('./pages/rentals/RentalApplicantJourneyPage'))
 const RentalApplicationWorkspacePage = lazy(() => import('./pages/rentals/RentalApplicationWorkspacePage'))
+const RentalTenancyWorkspacePage = lazy(() => import('./pages/rentals/RentalTenancyWorkspacePage'))
 const RetiredOfferWorkflowPage = lazy(() => import('./pages/RetiredOfferWorkflowPage'))
 const ClientModulePage = lazy(() => import('./pages/ClientModulePage'))
 const ClientOnboarding = lazy(() => import('./pages/ClientOnboarding'))
@@ -2785,6 +2788,9 @@ function AppRoutes() {
                   </RoleRoute>
                 }
               />
+              <Route path="/agent/rentals/tenancies/:tenancyId" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.tenancies}><RentalTenancyWorkspacePage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
+              <Route path="/agent/rentals/collections" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.tenancies}><RentalCollectionsPage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
+              <Route path="/agent/rentals/finance/imports" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.tenancies}><RentalFinancialImportsPage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
               <Route
                 path="/agent/rentals/pipeline/leads"
                 element={

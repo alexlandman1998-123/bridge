@@ -13,7 +13,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import FinalListingModuleOverview from '../../components/listings/FinalListingModuleOverview'
 import { buildFinalListingModuleOverview } from '../../services/listings/finalListingModuleModel'
-import { listRentalListingsForAgent } from '../../services/rentals/rentalListingDraftService'
+import { listRentalListingSummaryPage } from '../../services/rentals/rentalListingDraftService'
 import {
   buildRentalListingIndexRows,
   filterRentalListingIndexRows,
@@ -172,6 +172,9 @@ export default function RentalListingsPage() {
   const [successMessage, setSuccessMessage] = useState('')
   const [query, setQuery] = useState('')
   const [statusTab, setStatusTab] = useState('all')
+  const [nextCursor, setNextCursor] = useState('')
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [totalCount, setTotalCount] = useState(null)
 
   const rentalRows = useMemo(() => buildRentalListingIndexRows(listings), [listings])
   const summary = useMemo(() => summarizeRentalListingIndexRows(rentalRows), [rentalRows])
@@ -189,22 +192,30 @@ export default function RentalListingsPage() {
     [query, rentalRows, statusTab],
   )
 
-  const loadListings = useCallback(async () => {
+  const loadListings = useCallback(async ({ cursor = '', append = false } = {}) => {
     if (!assignedAgentId || !organisationId) {
       setListings([])
       setLoading(false)
       return
     }
     try {
-      setLoading(true)
+      if (append) setLoadingMore(true)
+      else setLoading(true)
       setError('')
-      const rows = await listRentalListingsForAgent(assignedAgentId, buildRentalListingQueryOptions(rentalScope))
-      setListings(rows)
+      const page = await listRentalListingSummaryPage(assignedAgentId, {
+        ...buildRentalListingQueryOptions(rentalScope),
+        cursor,
+        pageSize: 25,
+      })
+      setListings((current) => append ? [...current, ...page.items] : page.items)
+      setNextCursor(page.nextCursor || '')
+      if (!append) setTotalCount(page.totalCount)
     } catch (loadError) {
       setError(loadError?.message || 'Unable to load rental listings.')
       setListings([])
     } finally {
       setLoading(false)
+      setLoadingMore(false)
     }
   }, [assignedAgentId, organisationId, rentalScope])
 
@@ -284,7 +295,7 @@ export default function RentalListingsPage() {
 
             <div className="grid w-full grid-cols-2 gap-1.5 rounded-[18px] border border-[#dbe6f2] bg-[#f5f9fd] p-1.5 sm:max-w-[460px]">
               {[
-                { key: 'all', label: 'Rentals', count: summary.total },
+                { key: 'all', label: 'Rentals', count: totalCount ?? summary.total },
                 { key: 'applications', label: 'Applications', count: summary.applications || 0 },
               ].map((tab) => {
                 const active = statusTab === tab.key
@@ -339,6 +350,20 @@ export default function RentalListingsPage() {
               </button>
             </div>
           )}
+
+          {!loading && nextCursor ? (
+            <div className="mt-5 flex justify-center border-t border-[#eef3f8] pt-5">
+              <button
+                type="button"
+                disabled={loadingMore}
+                onClick={() => void loadListings({ cursor: nextCursor, append: true })}
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[14px] border border-[#c6d8ea] bg-white px-5 text-sm font-semibold text-[#1f4f78] transition hover:bg-[#f6faff] disabled:cursor-wait disabled:opacity-60"
+              >
+                {loadingMore ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : null}
+                {loadingMore ? 'Loading more' : 'Load more listings'}
+              </button>
+            </div>
+          ) : null}
         </section>
       </div>
     </section>

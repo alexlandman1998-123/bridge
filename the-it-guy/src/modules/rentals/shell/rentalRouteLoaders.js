@@ -14,3 +14,5 @@ export const RentalVacanciesPage = lazy(() => import('../../../pages/rentals/Ren
 export const RentalVacancyCreatePage = lazy(() => import('../../../pages/rentals/RentalVacancyCreatePage'))
 export const RentalVacancyDetailPage = lazy(() => import('../../../pages/rentals/RentalVacancyDetailPage'))
 export const RentalOperationsDashboardPage = lazy(() => import('../../../pages/rentals/RentalOperationsDashboardPage'))
+export const RentalCollectionsPage = lazy(() => import('../../../pages/rentals/RentalCollectionsPage'))
+export const RentalFinancialImportsPage = lazy(() => import('../../../pages/rentals/RentalFinancialImportsPage'))

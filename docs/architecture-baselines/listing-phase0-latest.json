@@ -1,0 +1,80 @@
+{
+  "contract": "listing-architecture-baseline-v1",
+  "generatedAt": "2026-08-30T08:48:03.993Z",
+  "inventory": {
+    "listingsSampled": 159,
+    "organisationCount": 11,
+    "branchCount": 3,
+    "byStatus": {
+      "active": 106,
+      "onboarding_sent": 21,
+      "onboarding_completed": 14,
+      "seller_lead": 7,
+      "withdrawn": 4,
+      "mandate_signed": 3,
+      "listing_review": 3,
+      "mandate_sent": 1
+    },
+    "byOrganisationAndStatus": {
+      "efa6c6ff-6941-4b59-8bcb-e4d9ba9e585a / active": 87,
+      "ec19d0a6-bcba-4eef-aa72-9972de88204d / active": 15,
+      "cbbd85b9-dbf8-44db-9d2a-e025600a940f / onboarding_sent": 10,
+      "f039ba4b-3f10-4632-ab4e-d9d5c552c859 / onboarding_completed": 9,
+      "efa6c6ff-6941-4b59-8bcb-e4d9ba9e585a / onboarding_sent": 5,
+      "ec19d0a6-bcba-4eef-aa72-9972de88204d / withdrawn": 4,
+      "2958d402-368e-43c9-b728-0098e10505f1 / seller_lead": 4,
+      "efa6c6ff-6941-4b59-8bcb-e4d9ba9e585a / seller_lead": 3,
+      "f039ba4b-3f10-4632-ab4e-d9d5c552c859 / onboarding_sent": 2,
+      "b577b0f8-ab97-4ca6-b214-a1669dc4092b / active": 2,
+      "2958d402-368e-43c9-b728-0098e10505f1 / mandate_signed": 2,
+      "efa6c6ff-6941-4b59-8bcb-e4d9ba9e585a / onboarding_completed": 2,
+      "ec19d0a6-bcba-4eef-aa72-9972de88204d / listing_review": 2,
+      "f039ba4b-3f10-4632-ab4e-d9d5c552c859 / mandate_sent": 1,
+      "f039ba4b-3f10-4632-ab4e-d9d5c552c859 / mandate_signed": 1,
+      "f169b7cd-c663-4479-a6e1-d59aeb1cac1d / onboarding_completed": 1,
+      "5617b21c-95bf-4b79-a4aa-d0963143770d / active": 1,
+      "5b706de0-ce2d-4087-a55e-59e448c5e134 / onboarding_sent": 1,
+      "2958d402-368e-43c9-b728-0098e10505f1 / onboarding_completed": 1,
+      "5b706de0-ce2d-4087-a55e-59e448c5e134 / onboarding_completed": 1,
+      "bdef8edb-e39b-47f9-95fb-769d37b333c4 / active": 1,
+      "5617b21c-95bf-4b79-a4aa-d0963143770d / onboarding_sent": 1,
+      "2958d402-368e-43c9-b728-0098e10505f1 / onboarding_sent": 1,
+      "efa6c6ff-6941-4b59-8bcb-e4d9ba9e585a / listing_review": 1,
+      "08e45d00-4f8b-4495-ba34-0fc62962de23 / onboarding_sent": 1
+    }
+  },
+  "telemetry": {
+    "sampleCount": 0,
+    "p50DurationMs": null,
+    "p95DurationMs": null,
+    "maximumResultCount": null,
+    "maximumResponseBytes": null
+  },
+  "media": {
+    "rowCount": 71,
+    "listingCount": 32,
+    "expiredUrlCount": 9,
+    "expiringWithinSevenDaysCount": 0,
+    "incompleteRowCount": 0,
+    "signedUrlCount": 40,
+    "averageAssetsPerListing": 2.22
+  },
+  "evaluation": {
+    "contract": "listing-architecture-baseline-v1",
+    "targets": {
+      "p95DurationMs": 800,
+      "maximumResultCount": 50,
+      "maximumResponseBytes": 500000,
+      "maximumExpiredMediaUrls": 0,
+      "maximumIncompleteMediaRows": 0
+    },
+    "checks": {
+      "p95Duration": false,
+      "resultCount": false,
+      "responseBytes": false,
+      "expiredMediaUrls": false,
+      "incompleteMediaRows": true
+    },
+    "status": "attention_required"
+  }
+}

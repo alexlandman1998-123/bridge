@@ -2,6 +2,7 @@ import {
   createPrivateListing,
   createPrivateListingActivity,
   getAgentPrivateListings,
+  getAgentPrivateListingSummaryPage,
   getPrivateListing,
   syncPrivateListingDistributionData,
   uploadPrivateListingMediaAsset,
@@ -21,6 +22,10 @@ import {
   buildRentalProperty24PublishRequest,
 } from './rentalListingProperty24PublishModel'
 import { isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
+import { recordPerformanceMetric } from '../observability/performanceMetrics.js'
+import { estimateJsonBytes } from '../observability/listingArchitectureBaseline.js'
+import { readListingImageDimensions, validateListingImageFile } from '../listings/listingMediaValidation.js'
+import { enqueueListingMediaProcessing } from '../listings/listingBackgroundJobs.js'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -37,6 +42,8 @@ function normalizeGalleryItems(items = []) {
       publicUrl: normalizeText(item.publicUrl),
       path: normalizeText(item.path),
       bucket: normalizeText(item.bucket),
+      storagePath: normalizeText(item.storagePath || item.storage_path || item.path),
+      storageBucket: normalizeText(item.storageBucket || item.storage_bucket || item.bucket),
       contentType: normalizeText(item.contentType || item.file?.type),
       size: Number(item.size || item.file?.size || 0) || 0,
       file: typeof File !== 'undefined' && item.file instanceof File ? item.file : null,
@@ -55,18 +62,15 @@ function stripUploadOnlyFields(item = {}) {
   return nextImage
 }
 
-function getRentalCoverGalleryItem(galleryImages = [], coverImageId = '') {
-  const normalizedImages = normalizeGalleryItems(galleryImages)
-  const normalizedCoverImageId = normalizeText(coverImageId)
-  return normalizedImages.find((item) => normalizeText(item.id) === normalizedCoverImageId) || normalizedImages[0] || null
-}
-
 async function uploadRentalGalleryImages(galleryImages = [], listingId) {
   const normalizedImages = normalizeGalleryItems(galleryImages)
   const uploadedImages = await Promise.all(
     normalizedImages.map(async (item, index) => {
       if (!item.file) return item
       try {
+        const dimensions = await readListingImageDimensions(item.file)
+        const validation = validateListingImageFile(item.file, dimensions)
+        if (!validation.valid) throw new Error(validation.errors.join(' '))
         const asset = await uploadPrivateListingMediaAsset(item.file, { listingId, type: 'gallery' })
         return {
           id: asset.path || item.id,
@@ -76,8 +80,13 @@ async function uploadRentalGalleryImages(galleryImages = [], listingId) {
           publicUrl: asset.publicUrl || '',
           path: asset.path || '',
           bucket: asset.bucket || '',
+          storagePath: asset.path || '',
+          storageBucket: asset.bucket || '',
           contentType: asset.contentType || item.contentType || '',
           size: asset.size || item.size || 0,
+          width: dimensions.width,
+          height: dimensions.height,
+          processingStatus: 'ready',
         }
       } catch (error) {
         const fallbackUrl = isPersistableMediaUrl(item.url) ? item.url : ''
@@ -104,27 +113,6 @@ function buildRentalListingMediaPayload(form = {}, uploadedGalleryImages = []) {
     galleryImages: uploadedGalleryImages,
     coverImageId: uploadedCoverImageId,
   }
-}
-
-async function finalizeRentalListingGalleryUploads({ listingId, form, publicationData, uploadedCoverImages = [] } = {}) {
-  const coverSource = getRentalCoverGalleryItem(form.galleryImages, form.coverImageId)
-  const coverSourceId = normalizeText(coverSource?.id)
-  const remainingImages = normalizeGalleryItems(form.galleryImages).filter((item) => normalizeText(item.id) !== coverSourceId)
-  if (!remainingImages.length) return null
-
-  const uploadedRemainingImages = await uploadRentalGalleryImages(remainingImages, listingId)
-  const uploadedGalleryImages = [...uploadedCoverImages, ...uploadedRemainingImages]
-  if (!uploadedGalleryImages.length) return null
-
-  const coverImageId = normalizeText(uploadedCoverImages[0]?.id) || normalizeText(form.coverImageId)
-  return syncPrivateListingDistributionData(listingId, {
-    publicationData,
-    media: buildRentalListingMediaPayload({ ...form, coverImageId }, uploadedGalleryImages),
-    externalLinks: [],
-  }).catch((error) => {
-    console.warn('[Rentals] Background rental gallery upload failed.', error)
-    return null
-  })
 }
 
 function formatProperty24Blocker(value = '') {
@@ -164,6 +152,7 @@ export function isRentalListingRecord(listing = {}) {
 }
 
 export async function listRentalListingsForAgent(agentId, options = {}) {
+  const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now()
   const rows = await getAgentPrivateListings(agentId, {
     organisationId: options.organisationId,
     branchId: options.branchId,
@@ -171,7 +160,61 @@ export async function listRentalListingsForAgent(agentId, options = {}) {
     includeAllOrganisationListings: options.includeAllOrganisationListings,
     includeMedia: true,
   })
-  return rows.filter(isRentalListingRecord)
+  const rentals = rows.filter(isRentalListingRecord)
+  const durationMs = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startedAt
+  void recordPerformanceMetric({
+    metricName: 'listings.index.load',
+    durationMs,
+    performanceBudgetMs: 800,
+    value: rentals.length,
+    unit: 'listings',
+    userId: agentId,
+    workspaceId: options.organisationId || '',
+    route: '/agent/rentals/listings',
+    metadata: {
+      contract: 'listing-architecture-baseline-v1',
+      resultCount: rentals.length,
+      responseBytes: estimateJsonBytes(rentals),
+      includeMedia: true,
+      unboundedQuery: true,
+    },
+  })
+  return rentals
+}
+
+export async function listRentalListingSummaryPage(agentId, options = {}) {
+  const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now()
+  const page = await getAgentPrivateListingSummaryPage(agentId, {
+    organisationId: options.organisationId,
+    branchId: options.branchId,
+    assignedAgentIds: options.assignedAgentIds,
+    includeAllOrganisationListings: options.includeAllOrganisationListings,
+    cursor: options.cursor,
+    pageSize: options.pageSize,
+    listingCategory: 'rental',
+  })
+  const durationMs = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startedAt
+  void recordPerformanceMetric({
+    metricName: 'listings.index.load',
+    durationMs,
+    performanceBudgetMs: 800,
+    value: page.items.length,
+    unit: 'listings',
+    userId: agentId,
+    workspaceId: options.organisationId || '',
+    route: '/agent/rentals/listings',
+    metadata: {
+      contract: 'listing-architecture-baseline-v1',
+      resultCount: page.items.length,
+      responseBytes: estimateJsonBytes(page),
+      includeMedia: true,
+      coverOnly: true,
+      unboundedQuery: false,
+      pageSize: page.pageSize,
+      hasMore: page.hasMore,
+    },
+  })
+  return page
 }
 
 export async function getRentalListingForAgent(listingId, agentId, options = {}) {
@@ -212,21 +255,20 @@ export async function createRentalListingDraft(form = {}, context = {}) {
   const listingId = created?.listing?.id
   if (!listingId) throw new Error('Unable to create the rental listing draft.')
 
-  const coverImage = getRentalCoverGalleryItem(form.galleryImages, form.coverImageId)
-  const uploadedCoverImages = await uploadRentalGalleryImages(coverImage ? [coverImage] : [], listingId)
+  // Browser-owned File objects must reach Storage before a durable server job can
+  // take over. Await the complete upload, then atomically sync and enqueue repair.
+  const uploadedGalleryImages = await uploadRentalGalleryImages(form.galleryImages, listingId)
   const publicationData = buildRentalPublicationDraft(form)
   const publicationResult = await syncPrivateListingDistributionData(listingId, {
     publicationData,
-    media: buildRentalListingMediaPayload(form, uploadedCoverImages),
+    media: buildRentalListingMediaPayload(form, uploadedGalleryImages),
     externalLinks: [],
   })
 
-  void finalizeRentalListingGalleryUploads({
-    listingId,
-    form,
-    publicationData,
-    uploadedCoverImages,
-  })
+  void enqueueListingMediaProcessing(listingId, {
+    revision: created?.listing?.updatedAt || created?.listing?.updated_at || created?.listing?.createdAt || created?.listing?.created_at,
+    source: 'rental_listing_create',
+  }).catch((error) => console.warn('[Rentals] Media processing enqueue failed.', error))
 
   void createPrivateListingActivity({
     privateListingId: listingId,
@@ -269,6 +311,11 @@ export async function updateRentalListingDraft(listingId, form = {}, context = {
     media: buildRentalListingMediaPayload(form, uploadedGalleryImages),
     externalLinks: [],
   })
+
+  void enqueueListingMediaProcessing(listingId, {
+    revision: listing?.updatedAt || listing?.updated_at,
+    source: 'rental_listing_update',
+  }).catch((error) => console.warn('[Rentals] Media processing enqueue failed.', error))
 
   const activity = await createPrivateListingActivity({
     privateListingId: listingId,

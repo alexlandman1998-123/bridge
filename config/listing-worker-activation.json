@@ -1,0 +1,33 @@
+{
+  "contract": "listing-worker-activation-v1",
+  "phase": 6,
+  "status": "INERT",
+  "workerFunction": "listing-job-runner",
+  "schedule": {
+    "enabled": false,
+    "recommendedCadenceMinutes": 1,
+    "batchLimit": 5
+  },
+  "handlers": {
+    "media_reconcile": "approved_for_controlled_activation",
+    "property24_publish": "blocked",
+    "private_property_publish": "blocked",
+    "document_generate": "blocked",
+    "webhook_deliver": "blocked"
+  },
+  "activationRequirements": [
+    "phase_2_through_phase_6_migrations_applied_in_order",
+    "listing_job_runner_secret_configured",
+    "worker_function_deployed",
+    "manual_single_batch_smoke_passed",
+    "worker_heartbeat_visible",
+    "queue_health_has_no_expired_leases",
+    "rollback_owner_assigned"
+  ],
+  "rollback": {
+    "disableSchedule": true,
+    "disableFunction": true,
+    "preserveQueuedJobs": true,
+    "preserveAuditEvidence": true
+  }
+}

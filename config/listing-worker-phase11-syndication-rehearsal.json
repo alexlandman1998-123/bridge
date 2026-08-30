@@ -1,0 +1,25 @@
+{
+  "contract": "listing-worker-phase11-syndication-rehearsal-v1",
+  "phase": 11,
+  "status": "IMPLEMENTED_NOT_EXECUTED",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "productionProjectRef": "isdowlnollckzvltkasn",
+  "allowedProviders": ["property24", "private_property"],
+  "allowedEnvironment": "sandbox",
+  "batchLimit": 1,
+  "scheduleEnabled": false,
+  "executionConfirmation": "RUN_PHASE11_STAGING_SYNDICATION_REHEARSAL",
+  "evidencePathTemplate": "docs/architecture-baselines/listing-phase11-syndication-rehearsal-{provider}-receipt.json",
+  "requiredProof": [
+    "staging_target_is_not_production",
+    "phase_10_enqueue_rpc_present",
+    "admin_user_authorized_enqueue",
+    "exact_listing_confirmation_used",
+    "single_sandbox_job_completed",
+    "provider_sync_evidence_present",
+    "job_lifecycle_evidence_present",
+    "worker_heartbeat_present",
+    "production_gate_remains_disabled",
+    "schedule_remains_disabled"
+  ]
+}
