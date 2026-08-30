@@ -618,20 +618,6 @@ function Sidebar() {
   }
 
   useEffect(() => {
-    const logoUrl = String(branding.logoUrl || '').trim()
-    if (!logoUrl) return undefined
-
-    const timeoutId = window.setTimeout(() => {
-      setLogoLoadState((previous) => {
-        if (previous.url === logoUrl && ['loaded', 'failed'].includes(previous.status)) return previous
-        return { url: logoUrl, status: 'failed' }
-      })
-    }, 8000)
-
-    return () => window.clearTimeout(timeoutId)
-  }, [branding.logoUrl])
-
-  useEffect(() => {
     let active = true
     window.queueMicrotask(() => {
       if (!active) return

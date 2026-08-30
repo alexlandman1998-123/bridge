@@ -1379,7 +1379,10 @@
   }
 
   .ui-sidebar-brand-logo-pending {
-    opacity: 0;
+    /* Do not hide an image while it is loading. Cached and signed logo URLs
+       can complete without a fresh load event, which otherwise left the
+       sidebar blank despite the image still being usable. */
+    opacity: 1;
   }
 
   .ui-sidebar-brand-logo-loaded {

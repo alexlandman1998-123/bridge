@@ -291,6 +291,7 @@ const TuckersAttorneysCalculatorsPage = lazy(() => import('./pages/TuckersAttorn
 const HomeSeekersDemo = lazy(() => import('./pages/HomeSeekersDemo'))
 const HomeSeekersBuy = lazy(() => import('./pages/HomeSeekersBuy'))
 const HomeSeekersSell = lazy(() => import('./pages/HomeSeekersSell'))
+const HomeSeekersRent = lazy(() => import('./pages/HomeSeekersRent'))
 const BondDashboardPage = lazy(() => import('./pages/bond/BondDashboardPage'))
 const BondDevelopmentsPage = lazy(() => import('./pages/bond/BondDevelopmentsPage'))
 const BondTransactionsPage = lazy(() => import('./pages/bond/BondTransactionsPage'))
@@ -1775,6 +1776,7 @@ function AppRoutes() {
           <Route path="/demo/homeseekers" element={<AppErrorBoundary scope="homeseekers-demo" title="HomeSeekers demo failed to load"><HomeSeekersDemo /></AppErrorBoundary>} />
           <Route path="/demo/homeseekers/buy" element={<AppErrorBoundary scope="homeseekers-buy" title="HomeSeekers buy page failed to load"><HomeSeekersBuy /></AppErrorBoundary>} />
           <Route path="/demo/homeseekers/sell" element={<AppErrorBoundary scope="homeseekers-sell" title="HomeSeekers sell page failed to load"><HomeSeekersSell /></AppErrorBoundary>} />
+          <Route path="/demo/homeseekers/rent" element={<AppErrorBoundary scope="homeseekers-rent" title="HomeSeekers rent page failed to load"><HomeSeekersRent /></AppErrorBoundary>} />
           <Route path="/referrals/invite/:token" element={<AppErrorBoundary scope="referral-invite" title="Referral invite failed to load"><ReferralInvitePage /></AppErrorBoundary>} />
           <Route element={<MobileExecutiveLayout />}>
             <Route path="/m/developments" element={<MobileDevelopmentsPage />} />
