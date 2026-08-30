@@ -32,15 +32,14 @@ import {
   isCommercialProfessionalMember,
 } from './lib/commercialAccess'
 import { BUSINESS_WORKSPACES, resolveBusinessWorkspaceRoute } from './lib/businessWorkspaceAccess'
+import { RentalModuleBoundary } from './modules/rentals/shell/RentalModuleBoundary'
 import {
-  RENTAL_MODULES,
   RentalApplicantJourneyPage,
   RentalApplicationWorkspacePage,
   RentalApplicationsPage,
   RentalListingCreatePage,
   RentalListingDetailPage,
   RentalListingsPage,
-  RentalModuleBoundary,
   RentalOperationsDashboardPage,
   RentalCollectionsPage,
   RentalFinancialImportsPage,
@@ -58,8 +57,8 @@ import {
   RentalVacanciesPage,
   RentalVacancyCreatePage,
   RentalVacancyDetailPage,
-  resolveRentalModuleAvailability,
-} from './modules/rentals'
+} from './modules/rentals/shell/rentalRouteLoaders'
+import { RENTAL_MODULES, resolveRentalModuleAvailability } from './services/rentals/rentalModuleAvailability'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import LeadsRouteShell from './components/leads/LeadsRouteShell'
 import TransactionDetailRouteShell from './components/transactions/TransactionDetailRouteShell'
