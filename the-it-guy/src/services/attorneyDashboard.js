@@ -21,6 +21,10 @@ import {
   resolvePortalPropertyLabel,
   resolvePortalSellerName,
 } from './portalCanonicalFieldFallbacks.js'
+import {
+  getAttorneyStageDefinitionsForLane,
+  normalizeAttorneyStageKey,
+} from '../constants/attorneyWorkflowStages.js'
 import { createPerfTimer } from '../lib/performanceTrace'
 
 const DASHBOARD_CACHE_TTL_MS = 15_000
@@ -587,6 +591,111 @@ function riskToneFromMatter(matter = {}) {
   return 'normal'
 }
 
+function resolveMatterCardWorkflowProgress(transaction = {}, laneKey = 'transfer') {
+  const stages = getAttorneyStageDefinitionsForLane(laneKey)
+  if (!stages.length) return 0
+
+  const currentStageKey = [
+    transaction.attorney_stage,
+    transaction.attorneyStage,
+    transaction.current_sub_stage_summary,
+    transaction.current_main_stage,
+    transaction.stage,
+  ]
+    .map((candidate) => normalizeAttorneyStageKey(candidate, laneKey))
+    .find((candidate) => stages.some((stage) => stage.key === candidate))
+  const currentStageIndex = stages.findIndex((stage) => stage.key === currentStageKey)
+  if (currentStageIndex < 0) return 0
+  return Math.round(((currentStageIndex + 1) / stages.length) * 100)
+}
+
+function resolveMatterCardStatus({ transaction = {}, matter = {}, laneKey = 'transfer' } = {}) {
+  if (matter.flags?.delayed) return 'Blocked'
+  if (matter.flags?.awaitingFica) return 'Awaiting FICA'
+  if (matter.flags?.awaitingSignatures) return 'Awaiting Client'
+  if (matter.flags?.awaitingGuarantees) return 'Awaiting Bank'
+  if (matter.flags?.awaitingLodgement) return 'At Lodgement'
+
+  const stage = [transaction.attorney_stage, transaction.current_sub_stage_summary, transaction.current_main_stage, transaction.stage]
+    .map(toLower)
+    .join(' ')
+  if (stage.includes('lodg')) return 'At Lodgement'
+  if (stage.includes('register')) return 'Registration Pending'
+  return laneKey === 'cancellation' ? 'In Progress' : 'In Progress'
+}
+
+function resolveMatterCardContext({ transaction = {}, matter = {}, statusLabel = '' } = {}) {
+  if (matter.flags?.awaitingFica) return 'Client documents required'
+  if (matter.flags?.awaitingSignatures) return 'Client action required'
+  if (matter.flags?.awaitingGuarantees) return 'Bank documents outstanding'
+  if (matter.flags?.delayed) return transaction.next_action || 'Matter requires attention'
+
+  const workflowContext = String(transaction.next_action || transaction.current_sub_stage_summary || '').trim()
+  if (workflowContext && toLower(workflowContext) !== toLower(statusLabel)) return workflowContext
+  return 'Workflow progressing'
+}
+
+function resolveMatterCardValue(transaction = {}, laneKey = 'transfer') {
+  if (laneKey === 'bond') return Number(transaction.bond_amount || transaction.purchase_price || transaction.sales_price || 0) || 0
+  if (laneKey === 'cancellation') return Number(transaction.estimated_settlement_amount || transaction.bond_amount || 0) || 0
+  return Number(transaction.purchase_price || transaction.sales_price || 0) || 0
+}
+
+export function mapMatterToActiveMatterCard({ summary = {}, primaryUnit = {}, memberProfilesById = {}, organisationsById = {} } = {}) {
+  const transaction = summary.transaction || primaryUnit.transaction || {}
+  const laneKey = summary.roles?.has('transfer')
+    ? 'transfer'
+    : summary.roles?.has('bond')
+      ? 'bond'
+      : 'cancellation'
+  const assignedUserId = primaryUnit.primaryAttorneyId || primaryUnit.secretaryId || primaryUnit.adminHandlerId || null
+  const assignedProfile = assignedUserId ? memberProfilesById[assignedUserId] : null
+  const buyer = primaryUnit.buyer || {}
+  const reference = getMatterReference(transaction, summary.transactionId || primaryUnit.transactionId)
+  const currentStage = transaction.current_sub_stage_summary || transaction.current_main_stage || transaction.stage || 'Stage pending'
+  const identityRow = { ...transaction, transaction, buyer, unit: primaryUnit }
+  const propertyAddress = resolvePortalPropertyLabel(identityRow, { fallback: 'Property address pending' })
+  const buyerName = resolvePortalBuyerName(identityRow, { fallback: buyer.email || 'Client pending' })
+  const sellerName = resolvePortalSellerName(identityRow, { fallback: 'Seller pending' })
+  const referralOrganisationId = transaction.originating_partner_organisation_id || transaction.referral_source_organisation_id || ''
+  const referralOrganisation = organisationsById[referralOrganisationId] || {}
+  const statusLabel = resolveMatterCardStatus({ transaction, matter: primaryUnit, laneKey })
+
+  return {
+    id: summary.transactionId,
+    reference,
+    matterType: laneKey,
+    propertyAddress,
+    buyerName,
+    buyerSellerName: sellerName && sellerName !== 'Seller pending' ? `${buyerName} / ${sellerName}` : buyerName,
+    contextLabel: resolveMatterCardContext({ transaction, matter: primaryUnit, statusLabel }),
+    bank: transaction.bank || transaction.bond_bank || transaction.financing_bank || 'Bank pending',
+    financeType: transaction.finance_type || 'cash',
+    purchasePrice: resolveMatterCardValue(transaction, laneKey),
+    sellerHasExistingBond: transaction.seller_has_existing_bond === true || toLower(transaction.seller_has_existing_bond) === 'true' || toLower(transaction.seller_existing_bond) === 'true',
+    currentBondBank: transaction.current_bond_bank || transaction.bank || '',
+    estimatedSettlementAmount: Number(transaction.estimated_settlement_amount || 0),
+    lifecycleState: transaction.lifecycle_state || null,
+    registrationDate: transaction.registration_date || transaction.registered_at || null,
+    linkedReference: reference,
+    currentStage,
+    progress: resolveMatterCardWorkflowProgress(transaction, laneKey),
+    assignedStaff: assignedProfile?.fullName || transaction.assigned_attorney_email || 'Unassigned',
+    referralPartnerName: referralOrganisation.name || '',
+    referralPartnerLogoUrl: referralOrganisation.logoUrl || '',
+    referralLabel: transaction.referral_source_organisation_id ? 'Nominated partner' : 'Referred by',
+    daysInStage: daysSince(transaction.updated_at || transaction.created_at),
+    instructedAt: getInstructionDate(transaction),
+    expectedRegistrationDate: getExpectedRegistrationDate(transaction),
+    lastActivityAt: getLastActivityDate(transaction),
+    lastUpdated: getLastActivityDate(transaction),
+    value: resolveMatterCardValue(transaction, laneKey),
+    riskTone: riskToneFromMatter(primaryUnit),
+    statusLabel,
+    href: `/transactions/${encodeURIComponent(summary.transactionId)}`,
+  }
+}
+
 function buildOperationalMatterLanes({ matterRoleSummaries = [], buyersById = {}, memberProfilesById = {}, organisationsById = {} } = {}) {
   const lanes = {
     transfer: [],
@@ -596,55 +705,12 @@ function buildOperationalMatterLanes({ matterRoleSummaries = [], buyersById = {}
 
   matterRoleSummaries.forEach((summary) => {
     const primaryUnit = summary.units?.[0] || {}
-    const transaction = summary.transaction || primaryUnit.transaction || {}
-    const assignedUserId = primaryUnit.primaryAttorneyId || primaryUnit.secretaryId || primaryUnit.adminHandlerId || null
-    const assignedProfile = assignedUserId ? memberProfilesById[assignedUserId] : null
-    const buyer = buyersById[transaction.buyer_id] || {}
-    const reference = getMatterReference(transaction, summary.transactionId || primaryUnit.transactionId)
-    const currentStage = transaction.current_sub_stage_summary || transaction.current_main_stage || transaction.stage || 'Instruction'
-    const sellerHasExistingBond =
-      transaction.seller_has_existing_bond === true ||
-      toLower(transaction.seller_has_existing_bond) === 'true' ||
-      toLower(transaction.seller_existing_bond) === 'true'
-    const identityRow = { ...transaction, transaction, buyer, unit: primaryUnit }
-    const propertyAddress = resolvePortalPropertyLabel(identityRow, { fallback: 'Property address pending' })
-    const buyerName = resolvePortalBuyerName(identityRow, { fallback: buyer.email || 'Client pending' })
-    const sellerName = resolvePortalSellerName(identityRow, { fallback: 'Seller pending' })
-    const referralOrganisationId = transaction.originating_partner_organisation_id || transaction.referral_source_organisation_id || ''
-    const referralOrganisation = organisationsById[referralOrganisationId] || {}
-    const card = {
-      id: summary.transactionId,
-      reference,
-      propertyAddress,
-      buyerName,
-      buyerSellerName: sellerName && sellerName !== 'Seller pending' ? `${buyerName} / ${sellerName}` : buyerName,
-      contextLine: `${propertyAddress} - ${buyerName}`,
-      sellerName,
-      bank: transaction.bank || transaction.bond_bank || transaction.financing_bank || 'Bank pending',
-      financeType: transaction.finance_type || 'cash',
-      purchasePrice: getTransactionValue(transaction),
-      sellerHasExistingBond,
-      currentBondBank: transaction.current_bond_bank || transaction.bank || '',
-      estimatedSettlementAmount: Number(transaction.estimated_settlement_amount || 0),
-      lifecycleState: transaction.lifecycle_state || null,
-      registrationDate: transaction.registration_date || transaction.registered_at || null,
-      linkedReference: reference,
-      currentStage,
-      progress: Math.min(100, Math.max(12, Math.round(((daysSince(transaction.created_at) + 1) / 90) * 100))),
-      assignedStaff: assignedProfile?.fullName || transaction.assigned_attorney_email || 'Unassigned',
-      referralPartnerName: referralOrganisation.name || '',
-      referralPartnerLogoUrl: referralOrganisation.logoUrl || '',
-      referralLabel: transaction.referral_source_organisation_id ? 'Nominated partner' : 'Referred by',
-      daysInStage: daysSince(transaction.updated_at || transaction.created_at),
-      instructedAt: getInstructionDate(transaction),
-      expectedRegistrationDate: getExpectedRegistrationDate(transaction),
-      lastActivityAt: getLastActivityDate(transaction),
-      lastUpdated: getLastActivityDate(transaction),
-      value: getTransactionValue(transaction),
-      riskTone: riskToneFromMatter(primaryUnit),
-      statusLabel: primaryUnit.issue || (primaryUnit.flags?.delayed ? 'Delayed' : 'On track'),
-      href: `/transactions/${encodeURIComponent(summary.transactionId)}`,
-    }
+    const card = mapMatterToActiveMatterCard({
+      summary,
+      primaryUnit: { ...primaryUnit, buyer: buyersById[(summary.transaction || primaryUnit.transaction || {}).buyer_id] || {} },
+      memberProfilesById,
+      organisationsById,
+    })
 
     if (summary.roles.has('transfer')) lanes.transfer.push(card)
     if (summary.roles.has('bond')) lanes.bond.push(card)
