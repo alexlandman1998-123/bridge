@@ -51,6 +51,7 @@ import {
 import { RENTAL_MODULES, resolveRentalModuleAvailability } from './services/rentals/rentalModuleAvailability'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import LeadsRouteShell from './components/leads/LeadsRouteShell'
+import LeadWorkspaceRouteLoadingShell from './components/leads/LeadWorkspaceRouteLoadingShell'
 import TransactionDetailRouteShell from './components/transactions/TransactionDetailRouteShell'
 import TransactionsRouteShell from './components/transactions/TransactionsRouteShell'
 import { loadAgencyLeadListRouteModule, loadAgencyLeadWorkspaceRouteModule } from './routes/leadsRouteLoader'
@@ -292,6 +293,7 @@ const HomeSeekersDemo = lazy(() => import('./pages/HomeSeekersDemo'))
 const HomeSeekersBuy = lazy(() => import('./pages/HomeSeekersBuy'))
 const HomeSeekersSell = lazy(() => import('./pages/HomeSeekersSell'))
 const HomeSeekersRent = lazy(() => import('./pages/HomeSeekersRent'))
+const HomeSeekersDevelopments = lazy(() => import('./pages/HomeSeekersDevelopments'))
 const BondDashboardPage = lazy(() => import('./pages/bond/BondDashboardPage'))
 const BondDevelopmentsPage = lazy(() => import('./pages/bond/BondDevelopmentsPage'))
 const BondTransactionsPage = lazy(() => import('./pages/bond/BondTransactionsPage'))
@@ -1777,6 +1779,7 @@ function AppRoutes() {
           <Route path="/demo/homeseekers/buy" element={<AppErrorBoundary scope="homeseekers-buy" title="HomeSeekers buy page failed to load"><HomeSeekersBuy /></AppErrorBoundary>} />
           <Route path="/demo/homeseekers/sell" element={<AppErrorBoundary scope="homeseekers-sell" title="HomeSeekers sell page failed to load"><HomeSeekersSell /></AppErrorBoundary>} />
           <Route path="/demo/homeseekers/rent" element={<AppErrorBoundary scope="homeseekers-rent" title="HomeSeekers rent page failed to load"><HomeSeekersRent /></AppErrorBoundary>} />
+          <Route path="/demo/homeseekers/developments" element={<AppErrorBoundary scope="homeseekers-developments" title="HomeSeekers developments page failed to load"><HomeSeekersDevelopments /></AppErrorBoundary>} />
           <Route path="/referrals/invite/:token" element={<AppErrorBoundary scope="referral-invite" title="Referral invite failed to load"><ReferralInvitePage /></AppErrorBoundary>} />
           <Route element={<MobileExecutiveLayout />}>
             <Route path="/m/developments" element={<MobileDevelopmentsPage />} />
@@ -3048,7 +3051,7 @@ function AppRoutes() {
                 element={
                   <SalesWorkspaceGuard>
                     <RoleRoute allowedRoles={['agent']}>
-                      <Suspense fallback={<LeadsRouteShell detail />}>
+                      <Suspense fallback={<LeadWorkspaceRouteLoadingShell loadStage="route_chunk_loading" />}>
                         <AgencyLeadWorkspaceRoutePage />
                       </Suspense>
                     </RoleRoute>

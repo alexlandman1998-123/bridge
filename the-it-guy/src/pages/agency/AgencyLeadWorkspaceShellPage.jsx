@@ -1,7 +1,7 @@
 import { ArrowLeft, Building2, Mail, MapPin, Phone, UserRound } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
-import LeadsRouteShell from '../../components/leads/LeadsRouteShell'
+import LeadWorkspaceRouteLoadingShell from '../../components/leads/LeadWorkspaceRouteLoadingShell'
 import { useWorkspace } from '../../context/WorkspaceContextBase'
 import { readAgencyLeadCoreCache } from './agencyLeadCoreCache'
 import { resolveAgencyLeadWorkspaceTab } from './agencyLeadWorkspaceRouteState'
@@ -103,7 +103,7 @@ export default function AgencyLeadWorkspaceShellPage({ loadingTab = false }) {
     { key: 'property', icon: <MapPin size={15} />, label: property || 'No property linked' },
   ], [contact?.email, contact?.phone, lead?.email, lead?.phone, property])
 
-  if (!core && !error) return <LeadsRouteShell detail />
+  if (!core && !error) return <LeadWorkspaceRouteLoadingShell />
 
   return (
     <section className="min-w-0 space-y-5">
@@ -149,7 +149,7 @@ export default function AgencyLeadWorkspaceShellPage({ loadingTab = false }) {
         </div>
       )}
 
-      {loadingTab ? <LeadsRouteShell detail label={`Loading ${activeTab.replaceAll('_', ' ')}`} /> : null}
+      {loadingTab ? <LeadWorkspaceRouteLoadingShell label={`Loading ${activeTab.replaceAll('_', ' ')}`} /> : null}
     </section>
   )
 }

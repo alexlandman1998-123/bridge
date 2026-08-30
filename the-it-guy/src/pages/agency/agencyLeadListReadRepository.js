@@ -5,6 +5,7 @@ import {
   readAgencyLeadCoreCache,
   writeAgencyLeadCoreCache,
 } from './agencyLeadCoreCache'
+import { seedAgencyLeadWorkspaceSnapshot } from './agencyLeadWorkspaceSnapshotCache'
 
 const LEGACY_LEAD_FIELDS =
   'lead_id, organisation_id, assigned_agent_id, contact_id, lead_category, lead_direction, lead_source, stage, status, priority, budget, area_interest, property_interest, seller_property_address, estimated_value, notes, converted_transaction_id, created_at, updated_at'
@@ -269,7 +270,11 @@ export async function preloadAgencyLeadCoreRecord(organisationId, leadId) {
   const resolvedLeadId = normalizeText(leadId)
   if (!resolvedLeadId) return null
   const cached = readCachedAgencyLeadCoreRecord(workspaceId, resolvedLeadId)
-  if (cached) return writeAgencyLeadCoreCache(workspaceId, resolvedLeadId, cached)
+  if (cached) {
+    const core = writeAgencyLeadCoreCache(workspaceId, resolvedLeadId, cached)
+    seedAgencyLeadWorkspaceSnapshot(workspaceId, resolvedLeadId, core, core?.source || 'lead_core_cache')
+    return core
+  }
 
   const cacheKey = `${workspaceId}:${resolvedLeadId}`
   if (leadCoreRequestCache.has(cacheKey)) return leadCoreRequestCache.get(cacheKey)
@@ -290,8 +295,9 @@ export async function preloadAgencyLeadCoreRecord(organisationId, leadId) {
       if (contactResult.error && !isUnavailable(contactResult.error)) throw contactResult.error
       contact = contactResult.data ? mapContact(contactResult.data) : null
     }
-    const data = { lead, contact, source: 'remote-core' }
-    return writeAgencyLeadCoreCache(workspaceId, resolvedLeadId, data)
+    const data = writeAgencyLeadCoreCache(workspaceId, resolvedLeadId, { lead, contact, source: 'remote-core' })
+    seedAgencyLeadWorkspaceSnapshot(workspaceId, resolvedLeadId, data, 'remote_core')
+    return data
   }).catch((error) => {
     throw error
   }).finally(() => {

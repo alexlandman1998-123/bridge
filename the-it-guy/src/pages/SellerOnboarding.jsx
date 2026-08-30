@@ -6,15 +6,18 @@ import {
   ChevronRight,
   Circle,
   ClipboardCheck,
+  Copy,
   Download,
   FileCheck2,
   Home,
   Landmark,
+  Mail,
   Plus,
   ShieldCheck,
   Sparkles,
   Trash2,
   UserRound,
+  X,
 } from 'lucide-react'
 import { createContext, createElement, Fragment, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
@@ -2382,18 +2385,6 @@ function PropertyDisclosureSection({
   const disclosureQuestionGroups = getDisclosureQuestionGroups()
   const commentsPaneIndex = disclosureQuestionGroups.length + 1
   const declarationPaneIndex = commentsPaneIndex + 1
-  const pendingSignatureRequests = Array.isArray(signingStatus?.signatureRequests)
-    ? signingStatus.signatureRequests.filter((request) => request.signerId !== activeSigner?.id)
-    : []
-
-  function buildSignatureRequestHref(request = {}) {
-    if (!request.email || !request.href) return ''
-    const absoluteUrl = typeof window !== 'undefined'
-      ? new URL(request.href, window.location.origin).toString()
-      : request.href
-    return `mailto:${encodeURIComponent(request.email)}?subject=${encodeURIComponent('Seller declaration and FICA signature request')}&body=${encodeURIComponent(`Hi ${request.name || 'there'},\n\nPlease review and sign the seller declaration and FICA form using your secure HTML link:\n\n${absoluteUrl}`)}`
-  }
-
   return (
     <StepShell
       eyebrow="Property Disclosure"
@@ -2411,54 +2402,6 @@ function PropertyDisclosureSection({
                 ? 'This link is only for this signer. The compliance pack stays open until every required signer is complete.'
                 : signingStatus?.statusLabel || 'Seller compliance signatures are tracked from this declaration.'}
             </p>
-          </section>
-        ) : null}
-        {pendingSignatureRequests.length > 0 ? (
-          <section className="rounded-[18px] border border-[#dbe6f2] bg-white p-4">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <p className="text-sm font-semibold text-[#172334]">Outstanding party signatures</p>
-                <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
-                  Each party receives a signer-specific HTML form. Their signature is tracked separately.
-                </p>
-              </div>
-              <span className="rounded-full bg-[#fff4dd] px-3 py-1 text-xs font-semibold text-[#9a5b0b]">
-                {pendingSignatureRequests.length} pending
-              </span>
-            </div>
-            <div className="mt-3 grid gap-2">
-              {pendingSignatureRequests.map((request) => {
-                const emailHref = buildSignatureRequestHref(request)
-                return (
-                  <div key={request.signerId} className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-[#e4ebf3] bg-[#fbfdff] px-3 py-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-[#172334]">{request.name}</p>
-                      <p className="truncate text-xs text-[#6b7d93]">{request.roleLabel}{request.email ? ` · ${request.email}` : ' · Email required'}</p>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <a
-                        href={request.href}
-                        className="inline-flex min-h-10 items-center rounded-[12px] border border-[#dbe5ef] bg-white px-3 text-xs font-semibold text-[#35546c]"
-                      >
-                        Sign on this device
-                      </a>
-                      {emailHref ? (
-                        <a
-                          href={emailHref}
-                          className="inline-flex min-h-10 items-center rounded-[12px] bg-[var(--seller-brand-action)] px-3 text-xs font-semibold text-white"
-                        >
-                          Request signature
-                        </a>
-                      ) : (
-                        <span className="inline-flex min-h-10 items-center rounded-[12px] bg-[#edf1f5] px-3 text-xs font-semibold text-[#8a98a8]">
-                          Add email to request
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
           </section>
         ) : null}
         <FormSection
@@ -2859,6 +2802,62 @@ function SellerCompletedState({ listing, form, brand, onDownloadDisclosure }) {
   )
 }
 
+function buildSignatureRequestEmailHref(request = {}) {
+  if (!request.email || !request.href) return ''
+  const absoluteUrl = typeof window !== 'undefined'
+    ? new URL(request.href, window.location.origin).toString()
+    : request.href
+  return `mailto:${encodeURIComponent(request.email)}?subject=${encodeURIComponent('Seller declaration and FICA signature request')}&body=${encodeURIComponent(`Hi ${request.name || 'there'},\n\nPlease review and sign the seller declaration and FICA form using your secure HTML link:\n\n${absoluteUrl}`)}`
+}
+
+function SignatureRequestDialog({ request = null, copied = false, onClose, onCopy }) {
+  if (!request) return null
+  const emailHref = buildSignatureRequestEmailHref(request)
+  const absoluteUrl = typeof window !== 'undefined'
+    ? new URL(request.href, window.location.origin).toString()
+    : request.href
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end bg-[#0f1f31]/45 p-3 sm:items-center sm:justify-center" role="presentation" onMouseDown={onClose}>
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="signature-request-title"
+        className="w-full max-w-lg rounded-[24px] bg-white p-5 shadow-2xl sm:p-6"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#6b7d93]">Signature request</p>
+            <h2 id="signature-request-title" className="mt-1 text-lg font-semibold text-[#172334]">Send {request.name || request.roleLabel}</h2>
+            <p className="mt-1 text-sm leading-6 text-[#60748b]">Share their private signing link. Each signer can only complete their own declaration.</p>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close signature request" className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[#60748b] transition hover:bg-[#f1f5f9]">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="mt-5 rounded-[16px] border border-[#dbe6f2] bg-[#f8fbff] p-3">
+          <p className="break-all text-xs leading-5 text-[#486077]">{absoluteUrl}</p>
+        </div>
+        <div className="mt-5 grid gap-2 sm:grid-cols-2">
+          <Button type="button" variant="secondary" onClick={onCopy} className="min-h-[46px] justify-center">
+            <Copy size={16} />
+            {copied ? 'Link copied' : 'Copy link'}
+          </Button>
+          {emailHref ? (
+            <a href={emailHref} className="inline-flex min-h-[46px] items-center justify-center gap-2 rounded-[14px] bg-[var(--seller-brand-action)] px-4 text-sm font-semibold text-white">
+              <Mail size={16} />
+              Email request
+            </a>
+          ) : (
+            <span className="inline-flex min-h-[46px] items-center justify-center rounded-[14px] bg-[#edf1f5] px-4 text-sm font-semibold text-[#8a98a8]">Add an email first</span>
+          )}
+        </div>
+      </section>
+    </div>
+  )
+}
+
 export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmitted = null }) {
   const params = useParams()
   const token = String(tokenOverride || params?.token || '').trim()
@@ -2874,6 +2873,8 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   const [error, setError] = useState('')
   const [termsAcceptanceError, setTermsAcceptanceError] = useState('')
   const [success, setSuccess] = useState('')
+  const [signatureRequest, setSignatureRequest] = useState(null)
+  const [signatureLinkCopied, setSignatureLinkCopied] = useState(false)
   const [showWelcome, setShowWelcome] = useState(true)
   const [draftSyncStatus, setDraftSyncStatus] = useState('idle')
   const [lastDraftSavedAt, setLastDraftSavedAt] = useState('')
@@ -3092,6 +3093,9 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   const sellerComplianceSigning = sellerComplianceSigningFlow.model
   const activeComplianceSigner = sellerComplianceSigningFlow.activeSigner
   const hasRequestedComplianceSigner = Boolean(sellerComplianceSigningFlow.requestedSignerMatched)
+  const pendingSignatureRequests = Array.isArray(sellerComplianceSigning?.signatureRequests)
+    ? sellerComplianceSigning.signatureRequests.filter((request) => request.signerId !== activeComplianceSigner?.id)
+    : []
   const activePropertyDisclosure = useMemo(() => buildDisclosureForComplianceSigner(form?.propertyDisclosure || {}, activeComplianceSigner, {
     preferSignerSignature: hasRequestedComplianceSigner,
   }), [activeComplianceSigner, form?.propertyDisclosure, hasRequestedComplianceSigner])
@@ -3282,6 +3286,19 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       }
       return next
     })
+  }
+
+  async function handleCopySignatureRequestLink() {
+    if (!signatureRequest?.href) return
+    const absoluteUrl = typeof window !== 'undefined'
+      ? new URL(signatureRequest.href, window.location.origin).toString()
+      : signatureRequest.href
+    try {
+      await navigator.clipboard.writeText(absoluteUrl)
+      setSignatureLinkCopied(true)
+    } catch {
+      setError('Unable to copy the signing link. Please copy it from the link shown in this dialog.')
+    }
   }
 
   function handlePropertyAddressUpdate(partial = {}) {
@@ -4288,21 +4305,19 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       return
     }
     const nextStep = Math.min(currentStep + 1, STEPS.length - 1)
-    const saved = await saveDraft(nextStep)
-    if (!saved) return
     setMobilePaneIndex(0)
     setCurrentStep(nextStep)
     scrollSellerOnboardingToTop()
+    void saveDraft(nextStep)
   }
 
   async function handleBack() {
     setError('')
     const nextStep = Math.max(currentStep - 1, 0)
-    const saved = await saveDraft(nextStep)
-    if (!saved) return
     setMobilePaneIndex(0)
     setCurrentStep(nextStep)
     scrollSellerOnboardingToTop()
+    void saveDraft(nextStep)
   }
 
   function handleMobilePaneBack() {
@@ -4804,7 +4819,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
           />
           <div className="flex shrink-0 items-center gap-1.5">
             {currentStep > 0 || activeMobilePaneIndex > 0 ? (
-              <Button type="button" variant="secondary" onClick={handleMobilePaneBack} disabled={saving || submitting} className="min-h-[34px] rounded-full px-2.5">
+              <Button type="button" variant="secondary" onClick={handleMobilePaneBack} disabled={submitting} className="min-h-[34px] rounded-full px-2.5">
                 <ChevronLeft size={14} />
                 Back
               </Button>
@@ -4820,7 +4835,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
           </div>
         </div>
         {currentStep < FINAL_STEP_INDEX ? (
-          <Button type="button" variant="ghost" onClick={handleMobilePaneNext} disabled={saving || submitting} className={`min-h-[52px] w-full rounded-[18px] ${BRAND_ACTION_BUTTON_CLASS}`}>
+          <Button type="button" variant="ghost" onClick={handleMobilePaneNext} disabled={submitting} className={`min-h-[52px] w-full rounded-[18px] ${BRAND_ACTION_BUTTON_CLASS}`}>
             {saving ? 'Saving...' : hasNextMobilePane ? 'Continue' : 'Save & Continue'}
             <ChevronRight size={14} />
           </Button>
@@ -4842,7 +4857,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {currentStep > 0 ? (
-            <Button type="button" variant="secondary" onClick={handleBack} disabled={saving || submitting} className="min-h-[46px]">
+            <Button type="button" variant="secondary" onClick={handleBack} disabled={submitting} className="min-h-[46px]">
               <ChevronLeft size={14} />
               Back
             </Button>
@@ -4853,7 +4868,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
             </Button>
           ) : null}
           {currentStep < FINAL_STEP_INDEX ? (
-            <Button type="button" variant="ghost" onClick={handleNext} disabled={saving || submitting} className={`min-h-[46px] ${BRAND_ACTION_BUTTON_CLASS}`}>
+            <Button type="button" variant="ghost" onClick={handleNext} disabled={submitting} className={`min-h-[46px] ${BRAND_ACTION_BUTTON_CLASS}`}>
               Save & Continue
               <ChevronRight size={14} />
             </Button>
@@ -6352,7 +6367,34 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                   ]}
                 />
               </div>
-              <div className="mt-5 rounded-[20px] border border-[#dbe6f2] bg-[#f7fbff] p-4">
+              {pendingSignatureRequests.length > 0 ? (
+                <section className="rounded-[20px] border border-[#dbe6f2] bg-[#f7fbff] p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-[#172334]">Request remaining signatures</p>
+                      <p className="mt-1 text-sm leading-6 text-[#60748b]">Now that the seller file is complete, share a private signing link with each remaining owner.</p>
+                    </div>
+                    <span className="rounded-full bg-[#fff4dd] px-3 py-1 text-xs font-semibold text-[#9a5b0b]">{pendingSignatureRequests.length} pending</span>
+                  </div>
+                  <div className="mt-3 grid gap-2">
+                    {pendingSignatureRequests.map((request) => (
+                      <div key={request.signerId} className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-[#e4ebf3] bg-white px-3 py-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-[#172334]">{request.name}</p>
+                          <p className="truncate text-xs text-[#6b7d93]">{request.roleLabel}{request.email ? ` · ${request.email}` : ' · Email required'}</p>
+                        </div>
+                        <Button type="button" variant="secondary" size="sm" onClick={() => {
+                          setSignatureLinkCopied(false)
+                          setSignatureRequest(request)
+                        }}>
+                          Request signature
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              ) : null}
+              <div className="rounded-[20px] border border-[#dbe6f2] bg-[#f7fbff] p-4">
                 <div className="flex items-start gap-3">
                   <Sparkles size={18} className="mt-0.5 text-[#35546c]" />
                   <p className="text-sm leading-6 text-[#35546c]">
@@ -6369,6 +6411,16 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       )}
 
       {onboardingActions}
+
+      <SignatureRequestDialog
+        request={signatureRequest}
+        copied={signatureLinkCopied}
+        onCopy={handleCopySignatureRequestLink}
+        onClose={() => {
+          setSignatureRequest(null)
+          setSignatureLinkCopied(false)
+        }}
+      />
 
       <footer className="flex flex-col gap-2 px-1 pb-2 text-center text-sm text-[#6b7d93] sm:flex-row sm:items-center sm:justify-between sm:text-left">
         <span>Secure seller onboarding powered by arch9</span>

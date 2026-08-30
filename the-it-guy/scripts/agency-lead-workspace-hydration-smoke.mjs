@@ -2,6 +2,11 @@ import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import process from 'node:process'
 import { chromium } from 'playwright'
+import { evaluateLeadWorkspaceReleaseGate } from '../src/services/observability/leadWorkspaceReleaseGate.js'
+import {
+  LEAD_WORKSPACE_LOADING_COMPLETED_EVENT,
+  LEAD_WORKSPACE_OPERATIONAL_HEALTH_CONTRACT,
+} from '../src/services/observability/leadWorkspaceOperationalHealth.js'
 
 const APP_ROOT = new URL('../', import.meta.url)
 const DEFAULT_PORT = 5195
@@ -9,6 +14,10 @@ const DEFAULT_BASE_URL = `http://127.0.0.1:${DEFAULT_PORT}`
 const FAKE_SUPABASE_URL = 'https://agency-lead-workspace-smoke.supabase.co'
 const FAKE_ANON_KEY = 'eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJyb2xlIjoiYW5vbiJ9.smoke'
 const DEV_AUTH_STORAGE_KEY = 'itg:dev-auth-role'
+const PHASE1_OBSERVABILITY_ONLY = process.env.LEAD_WORKSPACE_PHASE1_OBSERVABILITY_ONLY === '1'
+const PHASE5_RELEASE_GATE = process.env.LEAD_WORKSPACE_PHASE5_RELEASE_GATE === '1'
+const PHASE6_OPERATIONAL_MONITORING = process.env.LEAD_WORKSPACE_PHASE6_OPERATIONAL_MONITORING === '1'
+const RELEASE_GATE_ENABLED = PHASE5_RELEASE_GATE || PHASE6_OPERATIONAL_MONITORING
 
 const ORGANISATION_ID = '00000000-0000-4000-8000-000000000202'
 const LEAD_ID = '96be306b-d9d8-451f-8b60-79e6fe0e0cdd'
@@ -372,6 +381,13 @@ async function stubSupabaseTraffic(context, observed) {
       return
     }
 
+    if (method === 'POST' && tableFromPath(url.pathname) === 'telemetry_events') {
+      const body = JSON.parse(request.postData() || '{}')
+      observed.telemetryBodies.push(...(Array.isArray(body) ? body : [body]))
+      await route.fulfill(jsonResponse({ id: `telemetry-${observed.telemetryBodies.length}` }, request))
+      return
+    }
+
     if (pathname.includes('/rpc/')) {
       await route.fulfill(jsonResponse({}, request))
       return
@@ -395,7 +411,7 @@ function isIgnorableConsoleMessage(message) {
 
 const server = await startViteServer()
 const browser = await chromium.launch({ headless: true })
-const observed = { leadPatchBodies: [], requests: [] }
+const observed = { leadPatchBodies: [], requests: [], telemetryBodies: [] }
 const consoleErrors = []
 const pageErrors = []
 
@@ -404,14 +420,67 @@ async function prepareContext() {
   await context.addInitScript((storageKey) => {
     window.localStorage.setItem(storageKey, 'agent')
     window.localStorage.setItem('bridge:active-workspace', 'residential')
+    window.__leadWorkspacePhase1Observation = {
+      stages: [],
+      terminalEmptyStateViolations: [],
+      sellerMisclassificationViolations: [],
+      visualShellVariants: [],
+      shellRects: [],
+      maxShellHeightDeltaPx: 0,
+    }
+    window.addEventListener('arch9:lead-workspace-load-stage', (event) => {
+      const stage = event?.detail?.stage || ''
+      if (stage) window.__leadWorkspacePhase1Observation.stages.push(stage)
+    })
+    const terminalCopy = ['Lead not found', 'Lead workspace unavailable', 'Select a lead from the pipeline board']
+    const inspectLoadingPresentation = () => {
+      const bodyText = document.body?.innerText || ''
+      const trace = window.__arch9LeadWorkspaceLoadingTrace
+      for (const copy of terminalCopy) {
+        if (bodyText.includes(copy) && trace?.outcome !== 'ready') {
+          const key = `${copy}:${trace?.stages?.at(-1)?.stage || 'untracked'}`
+          if (!window.__leadWorkspacePhase1Observation.terminalEmptyStateViolations.includes(key)) {
+            window.__leadWorkspacePhase1Observation.terminalEmptyStateViolations.push(key)
+          }
+        }
+      }
+      const loadingShells = [...document.querySelectorAll('[data-lead-workspace-load-stage][aria-busy="true"]')]
+      for (const shell of loadingShells) {
+        const header = shell.querySelector(':scope > header')
+        const navigation = shell.querySelector('nav[aria-label="Lead workspace sections"]')
+        const signature = [shell.className, header?.className || '', navigation?.className || ''].join('|')
+        if (signature && !window.__leadWorkspacePhase1Observation.visualShellVariants.includes(signature)) {
+          window.__leadWorkspacePhase1Observation.visualShellVariants.push(signature)
+        }
+        if ((shell.innerText || '').includes('Buyer lead')) {
+          const violation = `${shell.dataset.leadWorkspaceLoadStage || 'unknown'}:Buyer lead`
+          if (!window.__leadWorkspacePhase1Observation.sellerMisclassificationViolations.includes(violation)) {
+            window.__leadWorkspacePhase1Observation.sellerMisclassificationViolations.push(violation)
+          }
+        }
+        const rect = shell.getBoundingClientRect()
+        if (rect.width > 0 && rect.height > 0) {
+          const previous = window.__leadWorkspacePhase1Observation.shellRects.at(-1)
+          if (previous) {
+            window.__leadWorkspacePhase1Observation.maxShellHeightDeltaPx = Math.max(
+              window.__leadWorkspacePhase1Observation.maxShellHeightDeltaPx,
+              Math.abs(rect.height - previous.height),
+            )
+          }
+          window.__leadWorkspacePhase1Observation.shellRects.push({ width: rect.width, height: rect.height })
+        }
+      }
+    }
+    new MutationObserver(inspectLoadingPresentation).observe(document, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['data-lead-workspace-load-stage', 'aria-busy'] })
   }, DEV_AUTH_STORAGE_KEY)
   return context
 }
 
 const warmupContext = await prepareContext()
-await stubSupabaseTraffic(warmupContext, { leadPatchBodies: [], requests: [] })
+await stubSupabaseTraffic(warmupContext, { leadPatchBodies: [], requests: [], telemetryBodies: [] })
 const warmupPage = await warmupContext.newPage()
-await warmupPage.goto(`${server.baseUrl}/pipeline/leads`, { waitUntil: 'domcontentloaded', timeout: 90_000 })
+const warmupRoute = RELEASE_GATE_ENABLED ? `/pipeline/leads/${LEAD_ID}` : '/pipeline/leads'
+await warmupPage.goto(`${server.baseUrl}${warmupRoute}`, { waitUntil: 'domcontentloaded', timeout: 90_000 })
 await warmupPage.getByText('Preparing workspace').waitFor({ state: 'hidden', timeout: 30_000 }).catch(() => null)
 await warmupContext.close().catch(() => {})
 
@@ -431,39 +500,89 @@ page.on('pageerror', (error) => {
 try {
   const route = `/pipeline/leads/${LEAD_ID}`
   const started = Date.now()
+  const readyTimeoutMs = RELEASE_GATE_ENABLED ? 30_000 : 10_000
   await page.goto(`${server.baseUrl}${route}`, { waitUntil: 'domcontentloaded', timeout: 90_000 })
-  await page.getByRole('heading', { name: 'Alexander Landman' }).waitFor({ state: 'visible', timeout: 10_000 })
-  await page.getByText('409 Queens Cres, Nr3, Menlo, Pretoria, Gauteng, 0081').first().waitFor({ state: 'visible', timeout: 10_000 })
-  await page.getByText('Complete Missing Details').first().waitFor({ state: 'visible', timeout: 10_000 })
-  await page.getByText('40%').first().waitFor({ state: 'visible', timeout: 10_000 })
-  await page.getByText('Seller Onboarding Submitted').first().waitFor({ state: 'visible', timeout: 10_000 })
-
+  await page.getByRole('heading', { name: 'Alexander Landman' }).waitFor({ state: 'visible', timeout: readyTimeoutMs })
+  await page.waitForFunction(() => window.__arch9LeadWorkspaceLoadingTrace?.outcome === 'ready', null, { timeout: readyTimeoutMs })
   const hydratedMs = Date.now() - started
-  assert.ok(hydratedMs < 30_000, `Lead workspace should hydrate from linked listing within the route smoke budget; took ${hydratedMs}ms.`)
-  assert.equal(await page.getByText(/^Lead Workspace$/).count(), 0, 'Generic Lead Workspace placeholder should not remain after hydration.')
-  assert.equal(await page.getByRole('heading', { name: 'Unnamed Lead' }).count(), 0, 'Hydrated seller lead should keep its CRM contact name.')
+  assert.ok(hydratedMs < 30_000, `Lead workspace should reach ready within the route smoke budget; took ${hydratedMs}ms.`)
+  const loadingObservation = await page.evaluate(() => ({
+    observation: window.__leadWorkspacePhase1Observation,
+    trace: window.__arch9LeadWorkspaceLoadingTrace,
+  }))
+  assert.deepEqual(
+    loadingObservation.observation?.terminalEmptyStateViolations || [],
+    [],
+    'Terminal lead empty-state copy must not render while a valid lead is still hydrating.',
+  )
+  assert.ok(loadingObservation.observation?.stages?.includes('core_lead_ready'), 'The browser trace should observe the core lead becoming ready.')
+  assert.ok(loadingObservation.observation?.stages?.includes('workspace_ready'), 'The browser trace should observe the workspace becoming ready.')
+  assert.equal(loadingObservation.trace?.outcome, 'ready')
+  assert.ok(Number(loadingObservation.trace?.loadingPresentationCount || 0) >= 1, 'The trace should count loading presentations for this navigation.')
+  if (RELEASE_GATE_ENABLED) {
+    const releaseGate = evaluateLeadWorkspaceReleaseGate({
+      trace: loadingObservation.trace,
+      observation: loadingObservation.observation,
+      readyMs: hydratedMs,
+    })
+    assert.equal(releaseGate.status, 'passed', `Lead workspace release gate failed: ${releaseGate.failedChecks.join(', ')}`)
+  }
 
-  await page.waitForFunction(() => window.__leadWorkspaceSmokePatched === true, null, { timeout: 1 }).catch(() => null)
-  await page.waitForTimeout(500)
-  const syncPatch = observed.leadPatchBodies.find((body) => body?.lead_id !== null)
-    || observed.leadPatchBodies.find((body) => body?.seller_property_address)
-  assert.ok(syncPatch, 'Lead workspace should PATCH the stale CRM lead from linked listing data.')
-  assert.equal(syncPatch.stage, 'Listing Created')
-  assert.equal(syncPatch.status, 'Draft')
-  assert.equal(syncPatch.seller_property_address, '409 Queens Cres, Nr3, Menlo, Pretoria, Gauteng, 0081')
-  if (syncPatch.listing_id) assert.equal(syncPatch.listing_id, LISTING_ID)
-  if (syncPatch.mandate_packet_id) assert.equal(syncPatch.mandate_packet_id, MANDATE_PACKET_ID)
-  if (syncPatch.seller_onboarding_status) assert.equal(syncPatch.seller_onboarding_status, 'completed')
+  if (PHASE6_OPERATIONAL_MONITORING) {
+    const telemetryDeadline = Date.now() + 5_000
+    while (
+      Date.now() < telemetryDeadline &&
+      !observed.telemetryBodies.some((body) => body?.event_name === LEAD_WORKSPACE_LOADING_COMPLETED_EVENT)
+    ) {
+      await delay(50)
+    }
+    const completionEvents = observed.telemetryBodies.filter((body) => body?.event_name === LEAD_WORKSPACE_LOADING_COMPLETED_EVENT)
+    assert.equal(completionEvents.length, 1, 'Phase 6 should persist one canonical completion event per navigation.')
+    const operationalMetadata = completionEvents[0]?.metadata || {}
+    assert.equal(operationalMetadata.operationalHealthContract, LEAD_WORKSPACE_OPERATIONAL_HEALTH_CONTRACT)
+    assert.ok(
+      ['healthy', 'degraded'].includes(operationalMetadata.operationalHealthStatus),
+      `A successful under-budget browser load must not be critical; received ${operationalMetadata.operationalHealthStatus}.`,
+    )
+    assert.equal(
+      operationalMetadata.operationalHealthStatus === 'degraded',
+      operationalMetadata.operationalHealthReasonCodes.includes('READY_TIME_DEGRADED'),
+      'Degraded successful loads should identify the ready-time threshold as the cause.',
+    )
+    assert.equal(operationalMetadata.outcome, 'ready')
+    assert.equal(operationalMetadata.leadCategory, 'seller')
+  }
+
+  if (!PHASE1_OBSERVABILITY_ONLY && !RELEASE_GATE_ENABLED) {
+    assert.equal(await page.getByText(/^Lead Workspace$/).count(), 0, 'Generic Lead Workspace placeholder should not remain after hydration.')
+    assert.equal(await page.getByRole('heading', { name: 'Unnamed Lead' }).count(), 0, 'Hydrated seller lead should keep its CRM contact name.')
+    await page.getByText('409 Queens Cres, Nr3, Menlo, Pretoria, Gauteng, 0081').first().waitFor({ state: 'visible', timeout: 10_000 })
+    await page.getByText('Complete Missing Details').first().waitFor({ state: 'visible', timeout: 10_000 })
+    await page.getByText('40%').first().waitFor({ state: 'visible', timeout: 10_000 })
+    await page.getByText('Seller Onboarding Submitted').first().waitFor({ state: 'visible', timeout: 10_000 })
+    await page.waitForFunction(() => window.__leadWorkspaceSmokePatched === true, null, { timeout: 1 }).catch(() => null)
+    await page.waitForTimeout(500)
+    const syncPatch = observed.leadPatchBodies.find((body) => body?.lead_id !== null)
+      || observed.leadPatchBodies.find((body) => body?.seller_property_address)
+    assert.ok(syncPatch, 'Lead workspace should PATCH the stale CRM lead from linked listing data.')
+    assert.equal(syncPatch.stage, 'Listing Created')
+    assert.equal(syncPatch.status, 'Draft')
+    assert.equal(syncPatch.seller_property_address, '409 Queens Cres, Nr3, Menlo, Pretoria, Gauteng, 0081')
+    if (syncPatch.listing_id) assert.equal(syncPatch.listing_id, LISTING_ID)
+    if (syncPatch.mandate_packet_id) assert.equal(syncPatch.mandate_packet_id, MANDATE_PACKET_ID)
+    if (syncPatch.seller_onboarding_status) assert.equal(syncPatch.seller_onboarding_status, 'completed')
+  }
 
   assert.deepEqual(pageErrors, [], `Unexpected page errors:\n${pageErrors.join('\n')}`)
   assert.deepEqual(consoleErrors, [], `Unexpected console errors:\n${consoleErrors.join('\n')}`)
-  console.log(`Agency lead workspace hydration smoke passed in ${hydratedMs}ms`)
+  console.log(`${PHASE6_OPERATIONAL_MONITORING ? 'Lead workspace Phase 6 operational monitoring browser check' : PHASE5_RELEASE_GATE ? 'Lead workspace Phase 5 release browser gate' : PHASE1_OBSERVABILITY_ONLY ? 'Lead workspace Phase 1 observability browser check' : 'Agency lead workspace hydration smoke'} passed in ${hydratedMs}ms`)
 } catch (error) {
   const text = await page.locator('body').innerText({ timeout: 1000 }).catch(() => '')
   console.error('Agency lead workspace hydration smoke failed')
   console.error('Current URL:', page.url())
   console.error('Observed requests:', JSON.stringify(observed.requests, null, 2))
   console.error('Observed lead patches:', JSON.stringify(observed.leadPatchBodies, null, 2))
+  console.error('Observed telemetry:', JSON.stringify(observed.telemetryBodies, null, 2))
   console.error('Page errors:', JSON.stringify(pageErrors, null, 2))
   console.error('Console errors:', JSON.stringify(consoleErrors, null, 2))
   console.error('Visible text excerpt:', text.slice(0, 3000))

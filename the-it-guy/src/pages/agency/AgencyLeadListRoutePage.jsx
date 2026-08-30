@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import AgentAssignmentSelect from '../../components/AgentAssignmentSelect'
 import LeadsRouteShell from '../../components/leads/LeadsRouteShell'
 import ConfirmDialog from '../../components/ui/ConfirmDialog'
-import { useWorkspace } from '../../context/WorkspaceContext'
+import { useWorkspace } from '../../context/WorkspaceContextBase'
 import { canAccessPrincipalExperience } from '../../lib/organisationAccess'
 import { createSellerLeadsPerformanceBaseline } from '../../services/observability/sellerLeadsPerformanceBaseline'
 import LeadListPage from './LeadListPage'
@@ -14,6 +14,8 @@ import {
   preloadAgencyLeadCoreRecord,
 } from './agencyLeadListReadRepository'
 import { preloadAgencyLeadWorkspace } from './agencyLeadWorkspaceLoader'
+import { writeAgencyLeadCoreCache } from './agencyLeadCoreCache'
+import { seedAgencyLeadWorkspaceSnapshot } from './agencyLeadWorkspaceSnapshotCache'
 import {
   AGENCY_LEAD_CATEGORY_TABS,
   DEFAULT_AGENCY_LEAD_FILTERS,
@@ -339,6 +341,9 @@ export default function AgencyLeadListRoutePage() {
         createdAt: created.createdAt,
         updatedAt: created.updatedAt,
       }
+      const createdCore = { lead: created, contact: createdContact, source: 'lead_created' }
+      writeAgencyLeadCoreCache(organisationId, created.leadId, createdCore)
+      seedAgencyLeadWorkspaceSnapshot(organisationId, created.leadId, createdCore, 'lead_created')
       // The lead is already durable at this point. Keep audit logging and the
       // reconciliation read off the interaction-critical path.
       void createAgencyCrmLeadActivity(organisationId, created.leadId, { agent: currentAgent, activityType: 'Lead Created', activityNote: 'Manual lead captured', outcome: 'Created' }, { actor: currentAgent }).catch(() => null)
@@ -452,7 +457,11 @@ export default function AgencyLeadListRoutePage() {
         onCategoryChange={(nextCategory) => { setPage(1); setCategory(nextCategory) }}
         onViewModeChange={setViewMode}
         onPageChange={(nextPage) => setPage(Math.max(1, Math.min(Number(nextPage) || 1, totalPages)))}
-        onAddLead={(nextCategory) => { setError(''); setCreateDialog({ open: true, category: nextCategory === 'seller' ? 'seller' : 'buyer' }) }}
+        onAddLead={(nextCategory) => {
+          void loadLeadMutationActions().catch(() => null)
+          setError('')
+          setCreateDialog({ open: true, category: nextCategory === 'seller' ? 'seller' : 'buyer' })
+        }}
         onLeadIntent={handleLeadIntent}
         onOpenLead={(leadId) => {
           handleLeadIntent(leadId)

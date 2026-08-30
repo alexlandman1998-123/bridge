@@ -8,6 +8,11 @@ import AreaAutocomplete from '../../components/location/AreaAutocomplete'
 import AreaMultiSelect from '../../components/location/AreaMultiSelect'
 import AppointmentCalendarActions from '../../components/appointments/AppointmentCalendarActions'
 import BuyerJourneyOverviewPanel from './BuyerJourneyOverviewPanel'
+import LeadWorkspaceLoadingShell from './LeadWorkspaceLoadingShell'
+import {
+  readAgencyLeadWorkspaceSnapshot as readLeadWorkspaceSessionSnapshot,
+  writeAgencyLeadWorkspaceSnapshot as writeLeadWorkspaceSessionSnapshot,
+} from './agencyLeadWorkspaceSnapshotCache'
 import Button from '../../components/ui/Button'
 import Field from '../../components/ui/Field'
 import { useWorkspace } from '../../context/WorkspaceContext'
@@ -210,6 +215,14 @@ import {
 import { createSellerLeadsPerformanceBaseline } from '../../services/observability/sellerLeadsPerformanceBaseline'
 import { createBuyerLeadsPerformanceBaseline } from '../../services/observability/buyerLeadsPerformanceBaseline'
 import { readBuyerLeadWorkspaceChunkTrace } from '../../services/observability/buyerLeadWorkspaceChunkTrace'
+import {
+  LEAD_WORKSPACE_LOAD_STAGES,
+  completeLeadWorkspaceLoadingTrace,
+  recordLeadWorkspaceLoadStage,
+} from '../../services/observability/leadWorkspaceLoadingTrace'
+import {
+  assessLeadWorkspaceOperationalHealth,
+} from '../../services/observability/leadWorkspaceOperationalHealth'
 import {
   LEAD_WORKSPACE_REQUEST_FAMILIES,
   shouldLoadLeadWorkspaceRequest,
@@ -701,42 +714,6 @@ const KINGSTONS_FORMAL_VALUATION_DOCUMENT = Object.freeze({
   description: 'The completed valuation document prepared after the valuation appointment.',
   fileName: 'Formal Valuation Document',
 })
-
-const LEAD_WORKSPACE_SESSION_SNAPSHOT_PREFIX = 'arch9:lead-workspace-snapshot'
-
-function getLeadWorkspaceSessionSnapshotKey(organisationId = '', leadId = '') {
-  const orgKey = normalizeText(organisationId)
-  const leadKey = normalizeLeadIdentityKey(leadId)
-  return orgKey && leadKey ? `${LEAD_WORKSPACE_SESSION_SNAPSHOT_PREFIX}:${orgKey}:${leadKey}` : ''
-}
-
-function readLeadWorkspaceSessionSnapshot(organisationId = '', leadId = '') {
-  if (typeof window === 'undefined') return null
-  const key = getLeadWorkspaceSessionSnapshotKey(organisationId, leadId)
-  if (!key) return null
-  try {
-    const parsed = JSON.parse(window.sessionStorage.getItem(key) || 'null')
-    return parsed && Array.isArray(parsed.leads) && parsed.leads.length ? parsed : null
-  } catch {
-    return null
-  }
-}
-
-function writeLeadWorkspaceSessionSnapshot(organisationId = '', leadId = '', snapshot = {}) {
-  if (typeof window === 'undefined') return
-  const key = getLeadWorkspaceSessionSnapshotKey(organisationId, leadId)
-  const leads = Array.isArray(snapshot?.leads) ? snapshot.leads.filter(Boolean) : []
-  if (!key || !leads.length) return
-  try {
-    window.sessionStorage.setItem(key, JSON.stringify({
-      ...snapshot,
-      leads,
-      savedAt: new Date().toISOString(),
-    }))
-  } catch {
-    // Session storage is only a resilience cache; ignore browser storage failures.
-  }
-}
 
 function buildPrivateListingActivitySignature(rows = []) {
   return (Array.isArray(rows) ? rows : [])
@@ -11692,6 +11669,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [sellerAssignmentSaving, setSellerAssignmentSaving] = useState(false)
   const [sellerCollaboratorSavingId, setSellerCollaboratorSavingId] = useState('')
   const sellerAssignmentMenuRef = useRef(null)
+
+  useEffect(() => {
+    if (isLeadWorkspaceRoute && routeLeadId && loading) {
+      recordLeadWorkspaceLoadStage(LEAD_WORKSPACE_LOAD_STAGES.pipelineContextLoading, { leadId: routeLeadId })
+    }
+  }, [isLeadWorkspaceRoute, loading, routeLeadId])
   const [leadListActionsMenuId, setLeadListActionsMenuId] = useState('')
   const [leadArchiveModal, setLeadArchiveModal] = useState({
     open: false,
@@ -13016,7 +12999,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const routeLeadCategory = routeLead ? resolveLeadCategoryView(routeLead) : ''
       return routeLeadCategory === 'buyer'
         ? loadBuyerLeadWorkspaceData({ organisationId, leadId: routeLeadId, seedSnapshot: snapshot })
-        : fetchAgencyCrmLeadWorkspace(organisationId, routeLeadId)
+        : fetchAgencyCrmLeadWorkspace(organisationId, routeLeadId, { seedSnapshot: snapshot })
     }
 
     const mergeRouteLeadSnapshot = (snapshot) => {
@@ -13220,6 +13203,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       if (cancelled || attempt >= LEAD_WORKSPACE_HYDRATION_MAX_RETRIES) return
       attempt += 1
       try {
+        const warmRouteSnapshot = routeLeadWorkspaceSnapshotRef.current?.key === hydrationKey
+          ? routeLeadWorkspaceSnapshotRef.current
+          : cachedRouteSnapshot
+        if (warmRouteSnapshot?.leads?.length) {
+          if (markRouteSnapshotReady(warmRouteSnapshot, { source: 'warm_snapshot_seed' })) {
+            hydrateAndMergeLinkedListingInBackground(warmRouteSnapshot, 'warm_snapshot_linked_listing')
+            hydrateFullLeadWorkspaceInBackground('warm_snapshot_followup', warmRouteSnapshot)
+            return
+          }
+        }
         const currentRouteLeadRecord = routeLeadRecordRef.current
         if (currentRouteLeadRecord) {
           const routeRecordSnapshot = {
@@ -13569,6 +13562,20 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   )
 
   useEffect(() => {
+    if (!isLeadWorkspaceRoute || !routeLeadId || !selectedLead) return
+    recordLeadWorkspaceLoadStage(LEAD_WORKSPACE_LOAD_STAGES.coreLeadReady, {
+      leadId: routeLeadId,
+      metadata: { source: routeLeadSnapshotLead ? 'route_snapshot' : 'pipeline_records' },
+    })
+  }, [isLeadWorkspaceRoute, routeLeadId, routeLeadSnapshotLead, selectedLead])
+
+  useEffect(() => {
+    if (!loading && selectedLeadWorkspaceRouteHydrating) {
+      recordLeadWorkspaceLoadStage(LEAD_WORKSPACE_LOAD_STAGES.workspaceHydrating, { leadId: routeLeadId })
+    }
+  }, [loading, routeLeadId, selectedLeadWorkspaceRouteHydrating])
+
+  useEffect(() => {
     if (!isLeadWorkspaceRoute || !organisationId || !selectedLead || resolveLeadCategoryView(selectedLead) !== 'buyer') return
     const chunkTrace = readBuyerLeadWorkspaceChunkTrace()
     if (Number.isFinite(Number(chunkTrace?.durationMs))) {
@@ -13612,10 +13619,34 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
     if (category === 'seller') {
       recordSellerLeadsPerformance('workspace_ready', organisationId, checkpointMetadata)
-      return
+    } else {
+      recordBuyerLeadsPerformance('workspace_ready', organisationId, checkpointMetadata)
     }
-    recordBuyerLeadsPerformance('workspace_ready', organisationId, checkpointMetadata)
-  }, [isLeadWorkspaceRoute, organisationId, recordBuyerLeadsPerformance, recordSellerLeadsPerformance, routeLeadHydrationStatus, routeLeadWorkspaceTab, selectedLead])
+    const completion = completeLeadWorkspaceLoadingTrace('ready', {
+      leadId: routeLeadId,
+      metadata: { leadCategory: category, workspaceTab: routeLeadWorkspaceTab },
+    })
+    if (completion.shouldReport && completion.trace) {
+      const health = assessLeadWorkspaceOperationalHealth(completion.trace, {
+        leadCategory: category,
+        warmSnapshot: checkpointMetadata.warmSnapshot,
+        workspaceTab: routeLeadWorkspaceTab,
+      })
+      recordPipelineTelemetry('lead_workspace_loading_sequence_completed', health.metadata, health.severity)
+    }
+  }, [isLeadWorkspaceRoute, organisationId, recordBuyerLeadsPerformance, recordPipelineTelemetry, recordSellerLeadsPerformance, routeLeadHydrationStatus, routeLeadId, routeLeadWorkspaceTab, selectedLead])
+
+  useEffect(() => {
+    if (!isLeadWorkspaceRoute || !organisationId || !['not_found', 'unavailable'].includes(routeLeadHydrationStatus)) return
+    const completion = completeLeadWorkspaceLoadingTrace(routeLeadHydrationStatus, {
+      leadId: routeLeadId,
+      metadata: { notice: routeLeadHydrationNotice },
+    })
+    if (completion.shouldReport && completion.trace) {
+      const health = assessLeadWorkspaceOperationalHealth(completion.trace)
+      recordPipelineTelemetry('lead_workspace_loading_sequence_completed', health.metadata, health.severity)
+    }
+  }, [isLeadWorkspaceRoute, organisationId, recordPipelineTelemetry, routeLeadHydrationNotice, routeLeadHydrationStatus, routeLeadId])
 
   useEffect(() => {
     if (!isLeadWorkspaceRoute || !organisationId || !selectedLead) return
@@ -31005,6 +31036,17 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }
 
   if (loading) {
+    if (isLeadWorkspaceRoute) {
+      return (
+        <LeadWorkspaceLoadingShell
+          lead={selectedLead}
+          contact={selectedLeadContact}
+          search={location.search}
+          loadStage={LEAD_WORKSPACE_LOAD_STAGES.pipelineContextLoading}
+          testId="lead-workspace-pipeline-context-loading"
+        />
+      )
+    }
     return (
       <section className="rounded-[20px] border border-[#dde4ee] bg-white p-6">
         <LoadingSkeleton lines={10} />
@@ -39193,32 +39235,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 </div>
               ) : (
                 selectedLeadWorkspaceRouteHydrating ? (
-                  <div className="mt-6 space-y-6" role="status" aria-live="polite" aria-label="Loading lead workspace" data-testid="lead-workspace-loading-shell">
-                    <span className="sr-only">Loading lead workspace</span>
-                    <section className="overflow-hidden rounded-[24px] border border-[#dbe7f2] bg-white shadow-[0_16px_42px_rgba(31,54,78,0.06)]">
-                      <div className="grid lg:grid-cols-[minmax(0,1.32fr)_minmax(390px,0.92fr)]">
-                        <div className="min-h-[300px] animate-pulse bg-[#e7eef5] p-8">
-                          <div className="h-6 w-28 rounded-full bg-white/70" />
-                          <div className="mt-10 h-11 w-72 max-w-full rounded-[12px] bg-white/80" />
-                          <div className="mt-5 h-5 w-56 max-w-full rounded-full bg-white/60" />
-                        </div>
-                        <div className="space-y-5 p-8">
-                          <div className="h-4 w-32 animate-pulse rounded-full bg-[#dfe8f1]" />
-                          <div className="h-36 animate-pulse rounded-[18px] bg-[#edf2f7]" />
-                          <div className="h-16 animate-pulse rounded-[16px] bg-[#f2f6fa]" />
-                        </div>
-                      </div>
-                    </section>
-                    <div className="grid grid-cols-3 gap-3 sm:grid-cols-6">
-                      {[0, 1, 2, 3, 4, 5].map((item) => (
-                        <div key={item} className="h-14 animate-pulse rounded-[16px] border border-[#e2ebf4] bg-white" />
-                      ))}
-                    </div>
-                    <div className="grid gap-5 lg:grid-cols-3">
-                      {[0, 1, 2].map((item) => (
-                        <div key={item} className="h-44 animate-pulse rounded-[22px] border border-[#e2ebf4] bg-white" />
-                      ))}
-                    </div>
+                  <div className="mt-6">
+                    <LeadWorkspaceLoadingShell
+                      lead={selectedLead}
+                      contact={selectedLeadContact}
+                      search={location.search}
+                      loadStage={LEAD_WORKSPACE_LOAD_STAGES.workspaceHydrating}
+                      testId="lead-workspace-loading-shell"
+                    />
                   </div>
                 ) : routeLeadId && ['not_found', 'unavailable'].includes(routeLeadHydrationStatus) ? (
                   <div className="mt-3 rounded-[14px] border border-dashed border-[#d7e2ef] bg-[#f9fbfe] px-4 py-5 text-sm text-[#6f839c]">

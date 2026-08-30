@@ -973,7 +973,7 @@ export async function listAgencyCrmLeadContacts(organisationId, options = {}) {
   }
 }
 
-export async function fetchAgencyCrmLeadWorkspace(organisationId, leadId) {
+export async function fetchAgencyCrmLeadWorkspace(organisationId, leadId, { seedSnapshot = null } = {}) {
   const workspaceId = requireAgencyWorkspaceId(organisationId, 'agencyCrmRepository.fetchAgencyCrmLeadWorkspace')
   const leadUuid = normalizeLeadUuid(leadId)
   if (!leadUuid) {
@@ -989,6 +989,60 @@ export async function fetchAgencyCrmLeadWorkspace(organisationId, leadId) {
   }
   if (!isSupabaseConfigured || !supabase) {
     throw new Error('Supabase is required before loading agency CRM lead data.')
+  }
+
+  const seededLead = (Array.isArray(seedSnapshot?.leads) ? seedSnapshot.leads : []).find((lead) => (
+    normalizeLeadUuid(lead?.leadId || lead?.lead_id) === leadUuid ||
+    normalizeLeadUuid(seedSnapshot?.resolvedLeadId) === normalizeLeadUuid(lead?.leadId || lead?.lead_id)
+  )) || null
+  if (seededLead) {
+    const resolvedLeadId = normalizeLeadUuid(seededLead?.leadId || seededLead?.lead_id) || leadUuid
+    const contactId = normalizeText(seededLead?.contactId || seededLead?.contact_id)
+    const seededContact = (Array.isArray(seedSnapshot?.contacts) ? seedSnapshot.contacts : []).find((contact) => (
+      normalizeText(contact?.contactId || contact?.contact_id) === contactId
+    )) || null
+    const contactPromise = contactId && !seededContact
+      ? supabase
+        .from('contacts')
+        .select('contact_id, organisation_id, assigned_agent_id, first_name, last_name, phone, email, contact_type, notes, created_at, updated_at')
+        .eq('organisation_id', workspaceId)
+        .eq('contact_id', contactId)
+        .maybeSingle()
+      : Promise.resolve({ data: null, error: null })
+    const activityPromise = supabase
+      .from('lead_activities')
+      .select(LEAD_ACTIVITY_SELECT_FIELDS)
+      .eq('organisation_id', workspaceId)
+      .eq('lead_id', resolvedLeadId)
+      .order('activity_date', { ascending: false })
+    const taskPromise = supabase
+      .from('tasks')
+      .select(TASK_SELECT_FIELDS)
+      .eq('organisation_id', workspaceId)
+      .eq('lead_id', resolvedLeadId)
+      .order('updated_at', { ascending: false })
+
+    const [contactResult, activityResult, taskResult] = await Promise.all([contactPromise, activityPromise, taskPromise])
+    const contactBlocked = contactResult.error && (isPermissionDeniedError(contactResult.error) || isMissingSchemaOrTableError(contactResult.error))
+    const activityBlocked = activityResult.error && (isPermissionDeniedError(activityResult.error) || isMissingSchemaOrTableError(activityResult.error))
+    const taskBlocked = taskResult.error && (isPermissionDeniedError(taskResult.error) || isMissingSchemaOrTableError(taskResult.error))
+    if (contactResult.error && !contactBlocked) throw contactResult.error
+    if (activityResult.error && !activityBlocked) throw activityResult.error
+    if (taskResult.error && !taskBlocked) throw taskResult.error
+
+    const fetchedContact = contactResult.data && !contactBlocked ? mapSupabaseContact(contactResult.data) : null
+    return {
+      contacts: seededContact ? [seededContact] : fetchedContact ? [fetchedContact] : [],
+      leads: [seededLead],
+      leadActivities: Array.isArray(activityResult.data) && !activityBlocked ? activityResult.data.map(mapSupabaseLeadActivity) : [],
+      tasks: Array.isArray(taskResult.data) && !taskBlocked ? taskResult.data.map(mapSupabaseTask) : [],
+      source: 'remote-progressive-enrichment',
+      leadWorkspaceStatus: 'ready',
+      leadWorkspaceReason: 'seed_snapshot_enrichment',
+      requestedLeadId: leadUuid,
+      resolvedLeadId,
+      listingId: normalizeText(seedSnapshot?.listingId || seededLead?.listingId || seededLead?.listing_id) || null,
+    }
   }
 
   const leadResult = await fetchLeadRowById(workspaceId, leadUuid)
