@@ -26,8 +26,8 @@ assert.match(service, /client\.rpc\('get_attorney_matter_snapshot_rollout_status
 assert.match(service, /rollout_status_unavailable/)
 
 assert.match(page, /getAttorneyMatterSnapshotRolloutStatus\(attorneyFirmId\)/)
-assert.match(page, /usesSnapshotReadModel && !snapshotRollout\.checked/)
 assert.match(page, /usesSnapshotReadModel && snapshotRollout\.enabled/)
+assert.doesNotMatch(page, /usesSnapshotReadModel && !snapshotRollout\.checked/)
 
 assert.match(verifier, /bridge_attorney_matter_list_snapshot/)
 assert.match(verifier, /Production must remain disabled until explicit approval/)

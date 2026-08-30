@@ -1654,11 +1654,6 @@ function AttorneyMattersPage() {
         timer.end({ outcome: 'view-disabled' })
         return
       }
-      if (usesSnapshotReadModel && !snapshotRollout.checked) {
-        setLoading(true)
-        timer.end({ outcome: 'rollout-checking' })
-        return
-      }
       setLoading(true)
       setError('')
       try {
@@ -1689,7 +1684,6 @@ function AttorneyMattersPage() {
                 rowCount: snapshot?.rows?.length || 0,
                 totalRowCount: snapshot?.pagination?.totalRows || 0,
                 source: 'rpc',
-                rolloutReason: snapshotRollout.reason || '',
               },
             })
             return
@@ -1737,7 +1731,7 @@ function AttorneyMattersPage() {
     return () => {
       active = false
     }
-  }, [attorneyFirmId, currentUserId, filters, snapshotPage, snapshotPageSize, snapshotSearchTerm, snapshotRollout.checked, snapshotRollout.enabled, snapshotRollout.reason, usesSnapshotReadModel, viewEnabled, viewKey])
+  }, [attorneyFirmId, currentUserId, filters, snapshotPage, snapshotPageSize, snapshotSearchTerm, snapshotRollout.enabled, usesSnapshotReadModel, viewEnabled, viewKey])
 
   useEffect(() => {
     function handleHeaderSearch(event) {
