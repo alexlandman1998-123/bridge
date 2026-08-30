@@ -77,6 +77,7 @@ const ICON_BY_KEY = {
   clients_contact_history: ClipboardList,
   financials: Wallet,
   marketing: Megaphone,
+  marketing_workspace: Megaphone,
   new_transaction: PlusCircle,
   pipeline: KanbanSquare,
   agency_pipeline: KanbanSquare,

@@ -1,0 +1,10 @@
+/* Explicit opaque search surface; shared app styles must never bleed the hero through it. */
+.hs-buy-site .hs-buy-search,
+.hs-buy-site .hs-buy-query,
+.hs-buy-site .hs-buy-select,
+.hs-buy-site .hs-buy-search button {
+  background-color: #fff !important;
+  background-image: none !important;
+  opacity: 1 !important;
+  backdrop-filter: none !important;
+}

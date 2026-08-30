@@ -63,3 +63,14 @@
 .hs-promise-card b{display:flex;align-items:center;gap:8px;margin-top:auto;padding-top:16px;color:#fff;font-size:10px;letter-spacing:.04em;text-transform:uppercase;opacity:.82;transition:gap .2s ease,opacity .2s ease}
 .hs-promise-card:hover{background:rgba(255,255,255,.055)}.hs-promise-card:hover b{gap:13px;opacity:1}
 @media(max-width:760px){.hs-promise-principles .hs-promise-card{min-height:0;padding:22px 0;border-top:1px solid #41413f;border-left:0}.hs-promise-card span{margin-bottom:12px}.hs-promise-card p{margin:9px 0 14px}.hs-promise-card b{margin-top:0;padding-top:0}}
+
+/* Utility options follow the same full-card interaction and readable hierarchy as the promise cards. */
+.hs-utility .hs-utility-card{display:flex;min-height:190px;flex-direction:column;padding:0 clamp(18px,2.5vw,42px);border-left:1px solid #d8d8d5;color:#101010!important;cursor:pointer;transition:background .2s ease}
+.hs-utility .hs-utility-card:first-child{padding-left:0;border-left:0}.hs-utility-card i{font-style:normal;font-size:27px;line-height:1}.hs-utility-card h3{margin:20px 0 10px;color:#111!important;font-size:12px!important;font-weight:800;letter-spacing:-.02em!important;line-height:1.35}.hs-utility-card p{max-width:25ch;min-height:0;margin:0 0 22px;color:#555!important;font-size:13px!important;font-weight:500;line-height:1.7;letter-spacing:0!important}.hs-utility-card b{display:flex;align-items:center;gap:9px;margin-top:auto;padding-bottom:2px;border-bottom:1px solid #333;width:max-content;color:#111;font-size:10px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;transition:gap .2s ease}.hs-utility-card:hover{background:rgba(0,0,0,.035)}.hs-utility-card:hover b{gap:14px}
+.hs-footer h3{color:#c9c9c5!important}.hs-footer a,.hs-footer>div:first-child p{color:#f2f2ef!important}.hs-footer-bottom{color:#c5c5c1!important}
+@media(max-width:1050px){.hs-utility .hs-utility-card:nth-child(3){padding-left:0;border-left:0}}
+@media(max-width:760px){.hs-utility .hs-utility-card,.hs-utility .hs-utility-card:nth-child(3){min-height:180px;padding:0 15px;border-left:1px solid #d8d8d5}.hs-utility .hs-utility-card:nth-child(odd){padding-left:0;border-left:0}.hs-utility-card p{font-size:12px!important}.hs-utility-card h3{font-size:11px!important}}
+
+/* Header intentionally carries a small, confident set of legible navigation choices. */
+.hs-header{gap:28px}.hs-nav{gap:clamp(24px,2.25vw,40px)}.hs-nav a{font-size:12px!important;letter-spacing:-.025em}.hs-nav a svg{width:13px;height:13px}
+@media(max-width:1050px){.hs-nav{gap:17px}.hs-nav a{font-size:11px!important}}

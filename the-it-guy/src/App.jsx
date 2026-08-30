@@ -289,6 +289,7 @@ const Dashboard = lazy(() => import('./pages/Dashboard'))
 const YoungLawCalculatorsPage = lazy(() => import('./pages/YoungLawCalculatorsPage'))
 const TuckersAttorneysCalculatorsPage = lazy(() => import('./pages/TuckersAttorneysCalculatorsPage'))
 const HomeSeekersDemo = lazy(() => import('./pages/HomeSeekersDemo'))
+const HomeSeekersBuy = lazy(() => import('./pages/HomeSeekersBuy'))
 const BondDashboardPage = lazy(() => import('./pages/bond/BondDashboardPage'))
 const BondDevelopmentsPage = lazy(() => import('./pages/bond/BondDevelopmentsPage'))
 const BondTransactionsPage = lazy(() => import('./pages/bond/BondTransactionsPage'))
@@ -387,6 +388,7 @@ const MobileSearchPage = lazy(() => import('./pages/mobile/MobileSearchPage'))
 const MobileTasksPage = lazy(() => import('./pages/mobile/MobileTasksPage'))
 const MobileTransactionDetailPage = lazy(() => import('./pages/mobile/MobileTransactionDetailPage'))
 const MobileWorkspacePage = lazy(() => import('./pages/mobile/MobileWorkspacePage'))
+const MarketingComingSoonPage = lazy(() => import('./pages/MarketingComingSoonPage'))
 const NewTransactionPage = lazy(() => import('./pages/NewTransactionPage'))
 const OnboardingProfileSetup = lazy(() => import('./pages/OnboardingProfileSetup'))
 const OnboardingLinksDemoPage = lazy(() => import('./pages/OnboardingLinksDemoPage'))
@@ -1770,6 +1772,7 @@ function AppRoutes() {
           <Route path="/tuckers-attorneys/calculators" element={<AppErrorBoundary scope="tuckers-attorneys-calculators" title="Tuckers Attorneys calculators failed to load"><TuckersAttorneysCalculatorsPage /></AppErrorBoundary>} />
           <Route path="/demo/tuckers-attorneys" element={<AppErrorBoundary scope="tuckers-attorneys-calculators" title="Tuckers Attorneys calculators failed to load"><TuckersAttorneysCalculatorsPage /></AppErrorBoundary>} />
           <Route path="/demo/homeseekers" element={<AppErrorBoundary scope="homeseekers-demo" title="HomeSeekers demo failed to load"><HomeSeekersDemo /></AppErrorBoundary>} />
+          <Route path="/demo/homeseekers/buy" element={<AppErrorBoundary scope="homeseekers-buy" title="HomeSeekers buy page failed to load"><HomeSeekersBuy /></AppErrorBoundary>} />
           <Route path="/referrals/invite/:token" element={<AppErrorBoundary scope="referral-invite" title="Referral invite failed to load"><ReferralInvitePage /></AppErrorBoundary>} />
           <Route element={<MobileExecutiveLayout />}>
             <Route path="/m/developments" element={<MobileDevelopmentsPage />} />
@@ -3094,6 +3097,16 @@ function AppRoutes() {
                   <SalesWorkspaceGuard>
                     <RoleRoute allowedRoles={['agent']}>
                       <Pipeline key="pipeline-calendar" initialAgentViewMode="calendar" />
+                    </RoleRoute>
+                  </SalesWorkspaceGuard>
+                }
+              />
+              <Route
+                path="/marketing"
+                element={
+                  <SalesWorkspaceGuard>
+                    <RoleRoute allowedRoles={['agent']}>
+                      <MarketingComingSoonPage />
                     </RoleRoute>
                   </SalesWorkspaceGuard>
                 }

@@ -14,6 +14,7 @@ export const navPermissionByKey = Object.freeze({
   clients: PERMISSIONS.viewClients,
   financials: PERMISSIONS.viewReports,
   marketing: PERMISSIONS.editDevelopments,
+  marketing_workspace: PERMISSIONS.viewLeads,
   new_transaction: PERMISSIONS.createTransactions,
   agency_pipeline: PERMISSIONS.viewLeads,
   developer_pipeline: PERMISSIONS.viewSalesPipeline,
