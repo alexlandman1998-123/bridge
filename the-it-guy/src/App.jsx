@@ -558,6 +558,7 @@ function AppLayout({ onLogout, session = null, user }) {
     /^\/pipeline\/leads\/[^/]+\/legal\/[^/]+/.test(location.pathname)
   const isCommercialRoute = location.pathname.startsWith('/commercial')
   const isBondRoute = location.pathname.startsWith('/bond')
+  const isLeadWorkspaceRoute = /^\/pipeline\/leads\/[^/]+/.test(location.pathname)
   const routeContentKey = getStableRouteContentKey(location.pathname, location.search)
   const hideSharedHeader =
     isLegalWorkspaceRoute ||
@@ -835,7 +836,12 @@ function AppLayout({ onLogout, session = null, user }) {
         ) : null}
         {degradedWorkspaceBanner}
 
-        <main ref={mainScrollRef} data-app-shell-scroll="main" className={`ui-main-content ui-page-scroll ${hideSharedHeader ? 'pt-6' : ''}`.trim()}>
+        <main
+          ref={mainScrollRef}
+          data-app-shell-scroll="main"
+          data-scroll-stability={isLeadWorkspaceRoute ? 'hydrating-workspace' : undefined}
+          className={`ui-main-content ui-page-scroll ${isLeadWorkspaceRoute ? 'ui-page-scroll-stable' : ''} ${hideSharedHeader ? 'pt-6' : ''}`.trim()}
+        >
           <div
             key={routeContentKey}
             className={`ui-content-container ${isDashboardRoute ? 'ui-content-container-dashboard' : ''} ${isAttorneyDashboardRoute ? 'ui-content-container-edge' : ''}`.trim()}

@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowLeft, ArrowUpRight, Bath, BedDouble, Bold, Bookmark, Box, Building2, CalendarDays, Car, Check, CheckCircle2, CheckSquare, ChevronDown, ChevronRight, Clock3, Columns3, Copy, Download, ExternalLink, Eye, FileText, Filter, Gauge, Home, ImageIcon, Italic, Link2, List, Lock, Mail, MapPin, MessageCircle, MoreHorizontal, Paperclip, Pencil, Phone, Plus, RefreshCw, Ruler, Search, Send, Settings, ShieldCheck, Smile, Star, Table2, Tag, Trash2, TrendingUp, Upload, UserRound, X, Zap } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, ArrowUpRight, Bath, BedDouble, Bold, Bookmark, Box, Building2, CalendarDays, Car, Check, CheckCircle2, CheckSquare, ChevronDown, ChevronRight, Clock3, Columns3, Copy, Download, ExternalLink, Eye, FileText, Filter, Gauge, Home, ImageIcon, Italic, Lightbulb, Link2, List, Lock, Mail, MapPin, MessageCircle, MoreHorizontal, Paperclip, Pencil, Phone, Plus, RefreshCw, Ruler, Search, Send, Settings, ShieldCheck, Smile, Star, Table2, Tag, Trash2, TrendingUp, Upload, UserRound, X, Zap } from 'lucide-react'
 import { Suspense, createElement, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import LoadingSkeleton from '../../components/LoadingSkeleton'
@@ -7,6 +7,7 @@ import AddressAutocomplete from '../../components/location/AddressAutocomplete'
 import AreaAutocomplete from '../../components/location/AreaAutocomplete'
 import AreaMultiSelect from '../../components/location/AreaMultiSelect'
 import AppointmentCalendarActions from '../../components/appointments/AppointmentCalendarActions'
+import BuyerJourneyOverviewPanel from './BuyerJourneyOverviewPanel'
 import Button from '../../components/ui/Button'
 import Field from '../../components/ui/Field'
 import { useWorkspace } from '../../context/WorkspaceContext'
@@ -204,6 +205,7 @@ import {
 } from '../../services/pipelineOperationalTelemetryService'
 import { createSellerLeadsPerformanceBaseline } from '../../services/observability/sellerLeadsPerformanceBaseline'
 import { createBuyerLeadsPerformanceBaseline } from '../../services/observability/buyerLeadsPerformanceBaseline'
+import { readBuyerLeadWorkspaceChunkTrace } from '../../services/observability/buyerLeadWorkspaceChunkTrace'
 import {
   LEAD_WORKSPACE_REQUEST_FAMILIES,
   shouldLoadLeadWorkspaceRequest,
@@ -11447,6 +11449,160 @@ function financeFormFromSummary(summary = {}) {
   }
 }
 
+function BuyerLeadAssignmentDropdown({
+  canReassign = false,
+  saving = false,
+  options = [],
+  currentOwner = null,
+  workspaceType = 'agency',
+  organisationName = '',
+  onAssign,
+  onOpened,
+  leadKey = '',
+}) {
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const triggerRef = useRef(null)
+  const menuRef = useRef(null)
+  const searchInputRef = useRef(null)
+  const requestedAtRef = useRef(null)
+
+  const filteredOptions = useMemo(() => {
+    const searchKey = normalizeKey(search)
+    if (!searchKey) return options
+    return options.filter((agent) => normalizeKey([
+      agent.name,
+      agent.email,
+      agent.jobTitle,
+      getOrganisationRoleLabel(agent.role, workspaceType),
+    ].join(' ')).includes(searchKey))
+  }, [options, search, workspaceType])
+
+  useEffect(() => {
+    setOpen(false)
+    setSearch('')
+  }, [leadKey])
+
+  useEffect(() => {
+    if (!open || typeof document === 'undefined') return undefined
+    const handlePointerDown = (event) => {
+      if (triggerRef.current?.contains(event.target) || menuRef.current?.contains(event.target)) return
+      setOpen(false)
+      setSearch('')
+    }
+    const handleKeyDown = (event) => {
+      if (event.key !== 'Escape') return
+      setOpen(false)
+      setSearch('')
+      triggerRef.current?.focus({ preventScroll: true })
+    }
+    document.addEventListener('pointerdown', handlePointerDown, true)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown, true)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [open])
+
+  useEffect(() => {
+    if (!open || typeof window === 'undefined') return undefined
+    const frameId = window.requestAnimationFrame(() => {
+      searchInputRef.current?.focus({ preventScroll: true })
+      if (typeof onOpened === 'function' && Number.isFinite(Number(requestedAtRef.current))) {
+        onOpened({ startedAt: Number(requestedAtRef.current), optionCount: options.length })
+      }
+    })
+    return () => window.cancelAnimationFrame(frameId)
+  }, [onOpened, open, options.length])
+
+  if (!canReassign) return null
+
+  return (
+    <>
+      <Button
+        ref={triggerRef}
+        type="button"
+        size="sm"
+        variant="secondary"
+        className="h-9 shrink-0 rounded-[12px] px-3 text-xs"
+        disabled={saving}
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        aria-controls="buyer-assignment-menu"
+        data-testid="buyer-assignment-trigger"
+        onClick={() => {
+          if (!open) requestedAtRef.current = getPipelineTelemetryNow()
+          setOpen((current) => !current)
+          if (open) setSearch('')
+        }}
+      >
+        {saving ? <RefreshCw className="h-4 w-4 animate-spin" /> : null}
+        {saving ? 'Reassigning' : 'Reassign'}
+        {!saving ? <ChevronDown className="h-4 w-4" /> : null}
+      </Button>
+      {open ? (
+        <div
+          ref={menuRef}
+          id="buyer-assignment-menu"
+          className="absolute left-4 right-4 top-[64px] z-40 overflow-hidden rounded-[16px] border border-[#cfdeea] bg-white shadow-[0_18px_42px_rgba(16,32,51,0.18)]"
+          role="listbox"
+          aria-label="Reassign buyer lead"
+          data-testid="buyer-assignment-menu"
+        >
+          <div className="border-b border-[#e8eef5] p-3">
+            <label className="flex h-10 items-center gap-2 rounded-[11px] border border-[#d7e2ed] bg-[#fbfdff] px-3 focus-within:border-[#168154] focus-within:ring-2 focus-within:ring-[#d8f1e4]">
+              <Search className="h-4 w-4 shrink-0 text-[#7890a7]" />
+              <span className="sr-only">Search agents by name or email</span>
+              <input
+                ref={searchInputRef}
+                type="search"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search name or email"
+                className="min-w-0 flex-1 bg-transparent text-sm text-[#18324b] outline-none placeholder:text-[#91a2b4]"
+              />
+            </label>
+          </div>
+          <div className="max-h-64 overflow-y-auto p-2">
+            {filteredOptions.length ? filteredOptions.map((agent) => {
+              const isCurrentOwner = normalizeKey(currentOwner?.userId || currentOwner?.id) === normalizeKey(agent.userId || agent.id)
+              return (
+                <button
+                  key={`${agent.id}:${agent.email}:buyer-assignment`}
+                  type="button"
+                  role="option"
+                  aria-selected={isCurrentOwner}
+                  disabled={isCurrentOwner || saving}
+                  className="flex min-h-14 w-full items-center gap-3 rounded-[11px] px-3 py-2 text-left transition hover:bg-[#f2f8f5] disabled:cursor-default disabled:opacity-70"
+                  onClick={() => {
+                    setOpen(false)
+                    setSearch('')
+                    void onAssign?.(agent)
+                  }}
+                >
+                  {agent.avatarUrl ? (
+                    <img className="h-9 w-9 shrink-0 rounded-full object-cover" src={agent.avatarUrl} alt="" />
+                  ) : (
+                    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#eaf6ef] text-xs font-bold text-[#167149]" aria-hidden="true">{getInitials(agent.name)}</span>
+                  )}
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-semibold text-[#18324b]">{agent.name}</span>
+                    <span className="block truncate text-xs text-[#71869b]">{agent.email || agent.jobTitle || getOrganisationRoleLabel(agent.role, workspaceType)}</span>
+                    <span className="block truncate text-[0.68rem] text-[#91a2b4]">{agent.jobTitle || getOrganisationRoleLabel(agent.role, workspaceType)}{organisationName ? ` · ${organisationName}` : ''}</span>
+                  </span>
+                  {isCurrentOwner ? <Check className="h-4 w-4 shrink-0 text-[#168154]" /> : null}
+                </button>
+              )
+            }) : (
+              <p className="px-3 py-6 text-center text-sm text-[#71869b]">No eligible agents found.</p>
+            )}
+          </div>
+        </div>
+      ) : null}
+    </>
+  )
+}
+
 function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const navigate = useNavigate()
   const location = useLocation()
@@ -11536,11 +11692,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       },
     })
   }, [isLeadWorkspaceRoute, profile?.id])
-  const recordBuyerLeadsPerformance = useCallback((checkpoint, workspaceId = '', metadata = {}) => {
+  const recordBuyerLeadsPerformance = useCallback((checkpoint, workspaceId = '', metadata = {}, timing = {}) => {
     void buyerLeadsPerformanceBaselineRef.current?.recordCheckpoint({
       checkpoint,
       userId: normalizeText(profile?.id),
       workspaceId: normalizeText(workspaceId),
+      ...(timing && typeof timing === 'object' ? timing : {}),
       metadata: {
         surface: isLeadWorkspaceRoute ? 'lead_workspace' : 'lead_list',
         renderCount: sellerLeadsRenderCountRef.current,
@@ -11594,7 +11751,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const reloadTimerRef = useRef(null)
   const routeLeadHydrationRef = useRef('')
   const routeLeadWorkspaceSnapshotRef = useRef(null)
-  const routeLeadScrollSnapshotRef = useRef(null)
   const hasCompletedContextLoadRef = useRef(false)
   const isCalendarMode = initialViewMode === 'calendar'
   const isOverviewMode = initialViewMode === 'overview'
@@ -11642,6 +11798,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [isLeadDetailSaving, setIsLeadDetailSaving] = useState(false)
   const [buyerQualificationEditing, setBuyerQualificationEditing] = useState(false)
   const [buyerQualificationForm, setBuyerQualificationForm] = useState(BUYER_QUALIFICATION_FORM_DEFAULTS)
+  const buyerQualificationLeadKeyRef = useRef('')
   const [viewingPlanSelectedPropertyIds, setViewingPlanSelectedPropertyIds] = useState([])
   const [viewingPlanStatus, setViewingPlanStatus] = useState('draft')
   const [viewingPlannerConfirmPath, setViewingPlannerConfirmPath] = useState('already_rsvpd')
@@ -11993,41 +12150,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     isPrincipal,
   ])
 
-  const captureRouteLeadWorkspaceScroll = useCallback(() => {
-    if (!isLeadWorkspaceRoute || !routeLeadId || typeof window === 'undefined' || typeof document === 'undefined') return
-    const shellScrollElement = document.querySelector('[data-app-shell-scroll="main"], .ui-main-content.ui-page-scroll')
-    const shellScrollTop = Number(shellScrollElement?.scrollTop || 0)
-    const shellScrollLeft = Number(shellScrollElement?.scrollLeft || 0)
-    const windowScrollTop = window.scrollY || 0
-    const windowScrollLeft = window.scrollX || 0
-    const useShellScroll = Boolean(shellScrollElement && shellScrollTop > 0)
-    routeLeadScrollSnapshotRef.current = {
-      key: `${normalizeText(organisationId)}:${normalizeLeadIdentityKey(routeLeadId)}`,
-      target: useShellScroll ? 'shell' : 'window',
-      x: useShellScroll ? shellScrollLeft : windowScrollLeft,
-      y: useShellScroll ? shellScrollTop : windowScrollTop,
-    }
-  }, [isLeadWorkspaceRoute, organisationId, routeLeadId])
-
-  const restoreRouteLeadWorkspaceScroll = useCallback(() => {
-    if (!isLeadWorkspaceRoute || !routeLeadId || typeof window === 'undefined' || typeof document === 'undefined') return
-    const snapshot = routeLeadScrollSnapshotRef.current
-    const key = `${normalizeText(organisationId)}:${normalizeLeadIdentityKey(routeLeadId)}`
-    if (!snapshot || snapshot.key !== key || snapshot.y <= 0) return
-    const shellScrollElement = document.querySelector('[data-app-shell-scroll="main"], .ui-main-content.ui-page-scroll')
-    const restore = () => {
-      if (snapshot.target === 'shell' && shellScrollElement && typeof shellScrollElement.scrollTo === 'function') {
-        shellScrollElement.scrollTo({ left: snapshot.x || 0, top: snapshot.y || 0, behavior: 'auto' })
-        return
-      }
-      window.scrollTo({ left: snapshot.x || 0, top: snapshot.y || 0, behavior: 'auto' })
-    }
-    window.requestAnimationFrame(() => {
-      restore()
-      window.requestAnimationFrame(restore)
-    })
-  }, [isLeadWorkspaceRoute, organisationId, routeLeadId])
-
   const reloadRecords = useCallback(
     async (orgId, options = {}) => {
       const {
@@ -12133,9 +12255,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         const scopedActivities = sourceActivities.filter((row) => scopedLeadIds.has(normalizeLeadIdentityKey(row?.leadId)))
         const scopedDeals = sourceDeals.filter((row) => scopedLeadIds.has(normalizeLeadIdentityKey(row?.leadId)))
         const scopedInboundEmails = sourceInboundEmails.filter((row) => scopedLeadIds.has(normalizeLeadIdentityKey(row?.leadId)))
-        const shouldPreserveRouteScroll = Boolean(isLeadWorkspaceRoute && routeLeadId)
-        if (shouldPreserveRouteScroll) captureRouteLeadWorkspaceScroll()
-
         setRecords((previous) => {
           const nextAppointments = preserveAppointmentsOutsideRange
             ? mergeAppointmentRowsForReload(previous.appointments, scopedAppointments, {
@@ -12164,7 +12283,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             inboundLeadEmails: scopedInboundEmails,
           }
         })
-        if (shouldPreserveRouteScroll) restoreRouteLeadWorkspaceScroll()
       }
 
       let primaryRecordsReady = false
@@ -12358,7 +12476,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         appointmentCount: Array.isArray(appointmentRows) ? appointmentRows.length : 0,
       })
     },
-    [captureRouteLeadWorkspaceScroll, isLeadWorkspaceRoute, currentAgent, isPrincipal, recordSellerLeadsPerformance, restoreRouteLeadWorkspaceScroll, routeLeadId],
+    [currentAgent, isPrincipal, recordSellerLeadsPerformance],
   )
 
   const scheduleRecordsReload = useCallback(
@@ -12983,7 +13101,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const routeLead = (Array.isArray(snapshot?.leads) ? snapshot.leads[0] : null) || routeLeadRecordRef.current
       const routeLeadCategory = routeLead ? resolveLeadCategoryView(routeLead) : ''
       return routeLeadCategory === 'buyer'
-        ? loadBuyerLeadWorkspaceData({ organisationId, leadId: routeLeadId })
+        ? loadBuyerLeadWorkspaceData({ organisationId, leadId: routeLeadId, seedSnapshot: snapshot })
         : fetchAgencyCrmLeadWorkspace(organisationId, routeLeadId)
     }
 
@@ -13023,7 +13141,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           ...linkedListings.map((listing) => normalizeAppointmentListingOption(listing)).filter(Boolean),
         ]))
       }
-      captureRouteLeadWorkspaceScroll()
       setRecords((previous) => ({
         ...previous,
         contacts: dedupeByKey(
@@ -13040,7 +13157,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           (row) => row?.taskId,
         ),
       }))
-      restoreRouteLeadWorkspaceScroll()
       return true
     }
 
@@ -13058,7 +13174,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           ),
         }
       }
-      captureRouteLeadWorkspaceScroll()
       setRecords((previous) => ({
         ...previous,
         leads: (Array.isArray(previous.leads) ? previous.leads : []).map((lead) =>
@@ -13067,7 +13182,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             : lead,
         ),
       }))
-      restoreRouteLeadWorkspaceScroll()
     }
 
     const syncRouteLeadDenormalizedFields = async (lead = {}, listing = null) => {
@@ -13185,6 +13299,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           if (mergeRouteLeadSnapshot(workspaceSnapshot)) {
             setRouteLeadHydrationStatus('ready')
             setRouteLeadHydrationNotice('')
+            const hydratedLead = Array.isArray(workspaceSnapshot?.leads) ? workspaceSnapshot.leads[0] : null
+            if (hydratedLead && resolveLeadCategoryView(hydratedLead) === 'buyer') {
+              recordBuyerLeadsPerformance('journey_enrichment_complete', organisationId, {
+                source: reason,
+                enrichmentStatus: normalizeText(workspaceSnapshot?.journeyEnrichmentStatus || 'ready'),
+                activityCount: Array.isArray(workspaceSnapshot?.leadActivities) ? workspaceSnapshot.leadActivities.length : 0,
+                taskCount: Array.isArray(workspaceSnapshot?.tasks) ? workspaceSnapshot.tasks.length : 0,
+              })
+            }
             recordHydrationOutcome('lead_workspace_background_hydration_ready', {
               reason,
               leadCount: Array.isArray(workspaceSnapshot?.leads) ? workspaceSnapshot.leads.length : 0,
@@ -13264,6 +13387,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         )
         if (cancelled) return
         if (markRouteSnapshotReady(workspaceSnapshot, { source: 'full_workspace' })) {
+          const hydratedLead = Array.isArray(workspaceSnapshot?.leads) ? workspaceSnapshot.leads[0] : null
+          if (hydratedLead && resolveLeadCategoryView(hydratedLead) === 'buyer') {
+            recordBuyerLeadsPerformance('journey_enrichment_complete', organisationId, {
+              source: 'full_workspace',
+              enrichmentStatus: normalizeText(workspaceSnapshot?.journeyEnrichmentStatus || 'ready'),
+              activityCount: Array.isArray(workspaceSnapshot?.leadActivities) ? workspaceSnapshot.leadActivities.length : 0,
+              taskCount: Array.isArray(workspaceSnapshot?.tasks) ? workspaceSnapshot.tasks.length : 0,
+            })
+          }
           hydrateAndMergeLinkedListingInBackground(workspaceSnapshot, 'workspace_snapshot_linked_listing')
           return
         }
@@ -13311,13 +13443,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }
     }
   }, [
-    captureRouteLeadWorkspaceScroll,
     isLeadWorkspaceRoute,
     isSupabaseConfigured,
     organisationId,
+    recordBuyerLeadsPerformance,
     recordPipelineTelemetry,
     reloadRecords,
-    restoreRouteLeadWorkspaceScroll,
     routeLeadId,
     routeLeadWorkspaceTab,
   ])
@@ -13564,6 +13695,40 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       !selectedLead &&
       !['not_found', 'unavailable'].includes(routeLeadHydrationStatus),
   )
+
+  useEffect(() => {
+    if (!isLeadWorkspaceRoute || !organisationId || !selectedLead || resolveLeadCategoryView(selectedLead) !== 'buyer') return
+    const chunkTrace = readBuyerLeadWorkspaceChunkTrace()
+    if (Number.isFinite(Number(chunkTrace?.durationMs))) {
+      recordBuyerLeadsPerformance('workspace_chunk_loaded', organisationId, {
+        chunkStartedBeforeRouteBaseline: Number(chunkTrace.startedAt) < Number(buyerLeadsPerformanceBaselineRef.current?.startedAt || 0),
+      }, { durationMs: chunkTrace.durationMs })
+    }
+    recordBuyerLeadsPerformance('core_lead_ready', organisationId, {
+      source: routeLeadSnapshotLead ? 'route_snapshot' : 'records',
+      hydrationStatus: routeLeadHydrationStatus,
+    })
+  }, [isLeadWorkspaceRoute, organisationId, recordBuyerLeadsPerformance, routeLeadHydrationStatus, routeLeadSnapshotLead, selectedLead])
+
+  useEffect(() => {
+    if (
+      !isLeadWorkspaceRoute ||
+      !organisationId ||
+      !selectedLead ||
+      resolveLeadCategoryView(selectedLead) !== 'buyer' ||
+      resolveBuyerWorkspaceTabKey(leadWorkspaceTab) !== 'overview' ||
+      typeof window === 'undefined'
+    ) return undefined
+    const frameId = window.requestAnimationFrame(() => {
+      if (document.querySelector('[data-testid="buyer-overview-workspace"]')) {
+        recordBuyerLeadsPerformance('overview_first_rendered', organisationId, { renderPhase: 'request_animation_frame' })
+      }
+      if (document.querySelector('[data-testid="buyer-journey-overview"]')) {
+        recordBuyerLeadsPerformance('journey_first_rendered', organisationId, { renderPhase: 'request_animation_frame' })
+      }
+    })
+    return () => window.cancelAnimationFrame(frameId)
+  }, [isLeadWorkspaceRoute, leadWorkspaceTab, organisationId, recordBuyerLeadsPerformance, selectedLead])
 
   useEffect(() => {
     if (!isLeadWorkspaceRoute || !organisationId || routeLeadHydrationStatus !== 'ready' || !selectedLead) return
@@ -14794,6 +14959,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setBuyerProfileForm({})
       setBuyerQualificationForm(BUYER_QUALIFICATION_FORM_DEFAULTS)
       setBuyerQualificationEditing(false)
+      buyerQualificationLeadKeyRef.current = ''
       setViewingPlanSelectedPropertyIds([])
       setViewingPlanStatus('draft')
       setViewingPlanResponseForm(BUYER_VIEWING_RESPONSE_DEFAULTS)
@@ -14832,9 +14998,26 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       contact: selectedLeadContact,
       listing: selectedLeadLinkedListing,
     }))
-    setBuyerQualificationForm(buildBuyerQualificationFormFromLead(selectedLead))
-    setBuyerQualificationEditing(false)
   }, [selectedLead, selectedLeadContact, selectedLeadLinkedListing])
+
+  useEffect(() => {
+    const nextLeadKey = normalizeLeadIdentityKey(selectedLead?.leadId || selectedLead?.lead_id)
+    if (!nextLeadKey) return
+
+    const leadChanged = buyerQualificationLeadKeyRef.current !== nextLeadKey
+    if (leadChanged) {
+      buyerQualificationLeadKeyRef.current = nextLeadKey
+      setBuyerQualificationForm(buildBuyerQualificationFormFromLead(selectedLead))
+      setBuyerQualificationEditing(false)
+      return
+    }
+
+    // Background lead hydration may replace selectedLead several times. Preserve an
+    // agent's active draft and only synchronize fresh server data while read-only.
+    if (!buyerQualificationEditing) {
+      setBuyerQualificationForm(buildBuyerQualificationFormFromLead(selectedLead))
+    }
+  }, [buyerQualificationEditing, selectedLead])
 
   const selectedLeadRecordId = normalizeText(
     selectedLead?.leadId ||
@@ -15239,19 +15422,17 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         return
       }
 
-      captureRouteLeadWorkspaceScroll()
       setPendingBuyerWorkspaceTab(nextTab)
       setLeadWorkspaceTab(nextTab)
       void preloadAgencyLeadWorkspaceTab(nextTab)
       if (isLeadWorkspaceRoute) replaceLeadWorkspaceTabInUrl(nextTab)
-  }, [captureRouteLeadWorkspaceScroll, isLeadWorkspaceRoute, leadWorkspaceTab, replaceLeadWorkspaceTabInUrl, selectedLeadIsSeller])
+  }, [isLeadWorkspaceRoute, leadWorkspaceTab, replaceLeadWorkspaceTabInUrl, selectedLeadIsSeller])
 
   useEffect(() => {
     if (selectedLeadIsSeller || !pendingBuyerWorkspaceTab) return
     if (resolveBuyerWorkspaceTabKey(leadWorkspaceTab) !== pendingBuyerWorkspaceTab) return
-    restoreRouteLeadWorkspaceScroll()
     setPendingBuyerWorkspaceTab('')
-  }, [leadWorkspaceTab, pendingBuyerWorkspaceTab, restoreRouteLeadWorkspaceScroll, selectedLeadIsSeller])
+  }, [leadWorkspaceTab, pendingBuyerWorkspaceTab, selectedLeadIsSeller])
 
   const buyerWorkspaceVisualTab = pendingBuyerWorkspaceTab || resolveBuyerWorkspaceTabKey(leadWorkspaceTab)
   const buyerWorkspaceTabIsSettling = Boolean(pendingBuyerWorkspaceTab)
@@ -18867,6 +19048,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     () => selectedLeadBuyerJourneyStages.find((stage) => stage.key === buyerJourneyActionStage) || null,
     [buyerJourneyActionStage, selectedLeadBuyerJourneyStages],
   )
+
+  const handleBuyerJourneyOverviewStageSelect = useCallback((stageKey) => {
+    setBuyerJourneyActionStage(stageKey)
+  }, [])
 
   const buyerOverviewQualification = useMemo(() => {
     const stageKey = normalizeText(selectedLeadEffectiveLifecycleStage || selectedLead?.stage).toLowerCase()
@@ -33290,61 +33475,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 )}
               </section>
               {selectedLead && !selectedLeadIsSeller && resolveBuyerWorkspaceTabKey(leadWorkspaceTab) === 'overview' ? (
-                <section className="overflow-hidden rounded-[24px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_16px_42px_rgba(31,54,78,0.06)]" data-testid="buyer-journey-overview">
-                  <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#edf3f8] px-6 py-5 sm:px-8">
-                    <div>
-                      <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#6d839b]">Buyer Journey</p>
-                      <h2 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-[#102033]">
-                        {selectedLeadBuyerJourneyModel.currentStage?.label || 'Buyer Timeline'}
-                      </h2>
-                    </div>
-                    <span className="rounded-full border border-[#cbdcf5] bg-[#eef5ff] px-3 py-1 text-xs font-bold uppercase tracking-[0.1em] text-[#24568f]">
-                      Current Stage
-                    </span>
-                  </div>
-
-                  <div className="overflow-x-auto px-5 py-7 sm:px-8" data-testid="buyer-journey-rail">
-                    <ol
-                      className="grid min-w-[980px] gap-0"
-                      style={{ gridTemplateColumns: `repeat(${Math.max(selectedLeadBuyerJourneyStages.length, 1)}, minmax(140px, 1fr))` }}
-                    >
-                      {selectedLeadBuyerJourneyStages.map((step, index) => {
-                        const isCurrent = step.state === 'current'
-                        const isCompleted = step.state === 'completed'
-                        const dotClass = isCurrent
-                          ? 'border-[#2f7b9e] bg-white text-[#245f86] shadow-[0_0_0_7px_rgba(47,123,158,0.12)]'
-                          : isCompleted
-                            ? 'border-[#2f7b9e] bg-[#2f7b9e] text-white'
-                            : 'border-[#cad7e5] bg-white text-[#8fa1b4]'
-                        const lineClass = isCompleted || isCurrent ? 'bg-[#9bc7de]' : 'bg-[#dce6f1]'
-                        return (
-                          <li key={step.key} className="relative px-2">
-                            {index < selectedLeadBuyerJourneyStages.length - 1 ? (
-                              <span className={`absolute left-[calc(50%+18px)] right-[calc(-50%+18px)] top-[18px] h-0.5 ${lineClass}`} aria-hidden="true" />
-                            ) : null}
-                            <button
-                              type="button"
-                              onClick={() => setBuyerJourneyActionStage(step.key)}
-                              className={`relative flex min-h-[116px] w-full flex-col items-center text-center transition ${isCurrent ? 'rounded-[18px] border border-[#cfe0ee] bg-[#f4f9fc] px-3 py-3 shadow-[0_10px_22px_rgba(31,54,78,0.06)]' : 'px-2 py-3 hover:rounded-[18px] hover:bg-[#f8fbfd]'}`}
-                              aria-current={isCurrent ? 'step' : undefined}
-                            >
-                              <span className={`z-10 grid h-9 w-9 place-items-center rounded-full border-2 text-xs font-bold ${dotClass}`}>
-                                {isCompleted ? <CheckCircle2 className="h-4 w-4" /> : index + 1}
-                              </span>
-                              <p className="mt-3 max-w-[150px] text-sm font-semibold leading-5 text-[#203a54]">{step.label}</p>
-                              <p className="mt-1 max-w-[150px] truncate text-xs font-semibold text-[#6d839b]" title={step.detail || (isCurrent ? 'Current Stage' : isCompleted ? 'Complete' : 'Upcoming')}>
-                                {step.detail || (isCurrent ? 'Current Stage' : isCompleted ? 'Complete' : 'Upcoming')}
-                              </p>
-                              {isCurrent ? (
-                                <span className="mt-2 rounded-full bg-[#dfeef7] px-2.5 py-1 text-[0.64rem] font-bold uppercase tracking-[0.1em] text-[#245f86]">Live</span>
-                              ) : null}
-                            </button>
-                          </li>
-                        )
-                      })}
-                    </ol>
-                  </div>
-                </section>
+                <BuyerJourneyOverviewPanel
+                  currentStageLabel={selectedLeadBuyerJourneyModel.currentStage?.label || 'Buyer Timeline'}
+                  stages={selectedLeadBuyerJourneyStages}
+                  onStageSelect={handleBuyerJourneyOverviewStageSelect}
+                />
               ) : null}
               {selectedLead && !selectedLeadIsSeller && leadWorkspaceTab === 'buyer_dashboard' ? (
                 <>
@@ -34857,6 +34992,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           if (journeyAction.key === 'create_transaction') return { ...journeyAction, icon: ArrowUpRight, actions: [{ key: journeyAction.key, label: 'Create transaction', icon: ArrowUpRight, primary: true, onClick: () => void handleBuyerCommandConvertToTransaction() }] }
                           return { ...journeyAction, icon: ArrowUpRight, actions: [{ key: journeyAction.key, label: 'Open transaction', icon: ArrowUpRight, primary: true, onClick: () => selectedLeadLinkedTransactionId && navigate(`/transactions/${selectedLeadLinkedTransactionId}`) }] }
                         })()
+                        const buyerJourneyNextActionTip = {
+                          mark_contacted: 'A quick call now increases your chances of converting this lead.',
+                          qualify: 'Capture the buyer’s needs while the conversation is still fresh.',
+                          schedule_viewing: 'Offer a small choice of viewing times to improve confirmation rates.',
+                          progress_from_viewing: 'Record the viewing outcome before moving into transaction setup.',
+                          complete_transaction_setup: 'Complete the buyer profile before preparing the offer.',
+                          upload_signed_otp: 'Upload the signed OTP to move this buyer into the transaction workflow.',
+                          create_transaction: 'Create the transaction once the signed offer and parties are confirmed.',
+                        }[journeyAction.key] || 'Complete the next action to keep this buyer moving forward.'
 	                        const showViewingCompletedFeedbackOverride = false
                         const buyerQualificationIconByLabel = {
                           Budget: Tag,
@@ -34879,8 +35023,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
 	                        return (
                           <>
-                            <div className="grid gap-5 xl:grid-cols-[minmax(0,0.65fr)_minmax(320px,0.35fr)] xl:items-stretch">
-                              <form className="order-2 flex h-full flex-col rounded-[20px] border border-[#dce7f2] bg-white p-4 shadow-[0_12px_34px_rgba(31,54,78,0.045)] sm:p-5 xl:order-none xl:col-start-1 xl:row-span-2 xl:row-start-1" onSubmit={handleSaveBuyerQualification}>
+                            <div className="grid items-stretch gap-5 xl:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]" data-testid="buyer-overview-workspace">
+                              <form className="flex h-full min-h-0 flex-col rounded-[20px] border border-[#dce7f2] bg-white p-4 shadow-[0_12px_34px_rgba(31,54,78,0.045)] sm:p-5" onSubmit={handleSaveBuyerQualification}>
                                 <div className="flex flex-wrap items-start justify-between gap-3">
                                   <div>
                                     <p className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#6d839b]">Buyer Qualification</p>
@@ -34902,7 +35046,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                         Cancel
                                       </Button>
                                     ) : (
-                                      <Button type="button" size="sm" variant="secondary" onClick={() => setBuyerQualificationEditing(true)}>
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="secondary"
+                                        aria-controls="buyer-qualification-editor"
+                                        data-testid="buyer-qualification-edit"
+                                        onClick={() => setBuyerQualificationEditing(true)}
+                                      >
                                         <Pencil className="h-4 w-4" />
                                         Edit
                                       </Button>
@@ -34912,7 +35063,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
                                 {buyerQualificationEditing ? (
                                   <>
-                                    <div className="mt-4 grid gap-3.5">
+                                    <div id="buyer-qualification-editor" className="mt-4 grid gap-3.5" data-testid="buyer-qualification-editor">
                                       <div className="grid gap-4 md:grid-cols-2">
                                         <label className={BUYER_QUALIFICATION_LABEL_CLASS}>
                                           What is your budget?
@@ -34997,21 +35148,19 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                   </>
                                 ) : (
                                   <>
-                                    <div className="mt-4 flex flex-1 flex-col border-t border-[#edf3f8]">
+                                    <div className="mt-4 grid flex-1 border-t border-[#edf3f8] md:grid-cols-2" data-testid="buyer-qualification-summary-grid">
                                       {qualificationQuestionRows.map((row, rowIndex) => {
                                         const isMissing = row.value === 'Not captured'
                                         const shouldScrollValue = row.wide && !isMissing
                                         const QualificationIcon = buyerQualificationIconByLabel[row.label] || Columns3
                                         return (
-                                          <div key={row.label} className={`grid flex-1 grid-cols-[36px_minmax(0,1fr)] gap-x-3 gap-y-2 border-b border-[#edf3f8] py-1.5 last:border-b-0 sm:grid-cols-[36px_minmax(150px,0.42fr)_minmax(0,1fr)] ${row.wide ? 'sm:items-start' : 'sm:items-center'} ${rowIndex === 0 ? 'pt-2.5' : ''}`}>
-                                            <span className="grid h-8 w-8 place-items-center rounded-[10px] bg-[#eef5fb] text-[#1d65a6]">
+                                          <div key={row.label} className={`grid min-h-[76px] grid-cols-[40px_minmax(0,1fr)] items-center gap-3 border-b border-[#edf3f8] px-1 py-3 md:px-3 md:odd:border-r md:odd:border-r-[#f1f5f8] ${rowIndex < 2 ? 'md:pt-3' : ''}`}>
+                                            <span className="grid h-9 w-9 place-items-center rounded-[11px] bg-[#eef5fb] text-[#1d65a6]">
                                               <QualificationIcon className="h-4 w-4" />
                                             </span>
                                             <span className="min-w-0 self-center">
-                                              <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#536f8f]">{row.label}</span>
-                                            </span>
-                                            <span className="col-start-2 min-w-0 self-center sm:col-start-auto">
-                                              <span className={`block text-sm leading-5 tracking-normal ${shouldScrollValue ? 'max-h-[18rem] overflow-y-auto overscroll-contain rounded-[12px] border border-[#e4edf6] bg-[#fbfdff] p-3 whitespace-pre-wrap break-words [overflow-wrap:anywhere]' : 'whitespace-pre-line'} ${isMissing ? 'font-medium text-[#9aa9b8]' : 'font-semibold text-[#102033]'}`}>{row.value}</span>
+                                              <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#29435d]">{row.label}</span>
+                                              <span className={`mt-1 block text-sm leading-5 tracking-normal ${shouldScrollValue ? 'max-h-12 overflow-y-auto overscroll-contain whitespace-pre-wrap break-words [overflow-wrap:anywhere]' : 'truncate'} ${isMissing ? 'font-medium text-[#8ea0b2]' : 'font-semibold text-[#102033]'}`} title={row.value}>{row.value}</span>
                                             </span>
                                           </div>
                                         )
@@ -35030,19 +35179,21 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                 )}
                               </form>
 
-                              <>
-                              <section className="order-1 rounded-[20px] border border-[#17364d] bg-[#102033] p-5 text-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_14px_34px_rgba(16,32,51,0.14)] xl:order-none xl:col-start-2 xl:row-start-1">
-                                <div className="flex flex-wrap items-start justify-between gap-4">
-                                  <div className="min-w-0">
+                              <div className="grid h-full min-h-0 gap-5 xl:grid-rows-[minmax(0,1.1fr)_minmax(0,0.9fr)]" data-testid="buyer-overview-right-column">
+                              <section className="flex min-h-0 flex-col rounded-[20px] border border-[#17364d] bg-[#102033] p-5 text-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_14px_34px_rgba(16,32,51,0.14)]">
+                                <div className="min-w-0">
                                     <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#a8bfd3]">What’s next</p>
 	                                    <h3 className="mt-2 text-lg font-semibold leading-6 tracking-[-0.03em] text-white">{buyerJourneyWhatsNext.title}</h3>
 	                                    <p className="mt-2 text-sm leading-5 text-[#c7d5e2]">{buyerJourneyWhatsNext.description}</p>
-	                                  </div>
-	                                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-white/10 text-[#9bd6b7] ring-1 ring-white/15">
-	                                    {createElement(buyerJourneyWhatsNext.icon, { className: 'h-4 w-4' })}
-	                                  </span>
 	                                </div>
-	                                <div className={`mt-4 grid gap-2 ${buyerJourneyWhatsNext.actions.length > 1 ? 'sm:grid-cols-2' : ''}`}>
+	                                <div className="mt-5 flex gap-3 border-t border-white/15 pt-4">
+	                                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#163d54] text-[#55d69a] ring-1 ring-white/10"><Lightbulb className="h-4 w-4" /></span>
+	                                  <div className="min-w-0">
+	                                    <p className="text-[0.66rem] font-bold uppercase tracking-[0.12em] text-[#55d69a]">Next action tip</p>
+	                                    <p className="mt-1 text-sm leading-5 text-[#d7e4ec]">{buyerJourneyNextActionTip}</p>
+	                                  </div>
+	                                </div>
+	                                <div className={`mt-auto grid gap-2 pt-5 ${buyerJourneyWhatsNext.actions.length > 1 ? 'sm:grid-cols-2' : ''}`}>
 	                                  {buyerJourneyWhatsNext.actions.map((action) => (
 	                                    <button
 	                                      key={action.key}
@@ -35058,30 +35209,30 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                                </div>
 	                              </section>
 
-                              <section className="relative order-3 flex w-full flex-col rounded-[20px] border border-[#dce7f2] bg-white p-5 shadow-[0_12px_34px_rgba(31,54,78,0.045)] xl:order-none xl:col-start-2 xl:row-start-2" ref={sellerAssignmentMenuRef}>
+                              <section className="relative flex min-h-0 w-full flex-col rounded-[20px] border border-[#dce7f2] bg-white p-5 shadow-[0_12px_34px_rgba(31,54,78,0.045)]">
                                 <div className="flex items-start justify-between gap-3">
                                   <div>
                                     <p className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#6d839b]">Lead Assigned To</p>
                                     <p className="mt-1 text-xs text-[#758aa0]">Primary owner for this buyer lead</p>
                                   </div>
-                                  {canReassignSelectedLead ? (
-                                    <Button
-                                      type="button"
-                                      size="sm"
-                                      variant="secondary"
-                                      className="h-9 shrink-0 rounded-[12px] px-3 text-xs"
-                                      disabled={sellerAssignmentSaving}
-                                      aria-expanded={sellerAssignmentMenuOpen}
-                                      aria-haspopup="listbox"
-                                      onClick={() => setSellerAssignmentMenuOpen((open) => !open)}
-                                    >
-                                      {sellerAssignmentSaving ? <RefreshCw className="h-4 w-4 animate-spin" /> : null}
-                                      {sellerAssignmentSaving ? 'Reassigning' : 'Reassign'}
-                                      {!sellerAssignmentSaving ? <ChevronDown className="h-4 w-4" /> : null}
-                                    </Button>
-                                  ) : null}
+                                  <BuyerLeadAssignmentDropdown
+                                    canReassign={canReassignSelectedLead}
+                                    saving={sellerAssignmentSaving}
+                                    options={eligibleLeadAssignmentOptions}
+                                    currentOwner={selectedLeadAssignedAgent}
+                                    workspaceType={currentWorkspace?.type || workspace?.type || 'agency'}
+                                    organisationName={organisationName}
+                                    leadKey={normalizeLeadIdentityKey(selectedLead?.leadId)}
+                                    onAssign={handleLeadReassignment}
+                                    onOpened={({ startedAt, optionCount }) => {
+                                      recordBuyerLeadsPerformance('assignment_menu_opened', organisationId, {
+                                        optionCount,
+                                        renderPhase: 'isolated_dropdown_request_animation_frame',
+                                      }, { startedAt })
+                                    }}
+                                  />
                                 </div>
-                                <div className="mt-5 flex min-w-0 items-center gap-3">
+                                <div className="mt-6 flex min-w-0 flex-1 items-center gap-4">
                                   {selectedLeadAssignedAgent?.avatarUrl ? (
                                     <img className="h-14 w-14 shrink-0 rounded-full object-cover" src={selectedLeadAssignedAgent.avatarUrl} alt="" />
                                   ) : (
@@ -35099,63 +35250,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                             : 'Agent')}
                                           {organisationName ? ` · ${organisationName}` : ''}
                                         </p>
-                                        <p className="mt-1 truncate text-xs font-medium text-[#7890a7]">{selectedLeadAssignedAgent.email || 'Email not available'}</p>
                                       </>
                                     ) : (
                                       <p className="mt-1 text-sm text-[#60758b]">No team member has been assigned yet.</p>
                                     )}
                                   </div>
                                 </div>
-                                {sellerAssignmentMenuOpen ? (
-                                  <div className="absolute left-4 right-4 top-[64px] z-40 overflow-hidden rounded-[16px] border border-[#cfdeea] bg-white shadow-[0_18px_42px_rgba(16,32,51,0.18)]" role="listbox" aria-label="Reassign buyer lead">
-                                    <div className="border-b border-[#e8eef5] p-3">
-                                      <label className="flex h-10 items-center gap-2 rounded-[11px] border border-[#d7e2ed] bg-[#fbfdff] px-3 focus-within:border-[#168154] focus-within:ring-2 focus-within:ring-[#d8f1e4]">
-                                        <Search className="h-4 w-4 shrink-0 text-[#7890a7]" />
-                                        <span className="sr-only">Search agents by name or email</span>
-                                        <input
-                                          autoFocus
-                                          type="search"
-                                          value={sellerAssignmentSearch}
-                                          onChange={(event) => setSellerAssignmentSearch(event.target.value)}
-                                          placeholder="Search name or email"
-                                          className="min-w-0 flex-1 bg-transparent text-sm text-[#18324b] outline-none placeholder:text-[#91a2b4]"
-                                        />
-                                      </label>
-                                    </div>
-                                    <div className="max-h-64 overflow-y-auto p-2">
-                                      {filteredLeadAssignmentOptions.length ? filteredLeadAssignmentOptions.map((agent) => {
-                                        const isCurrentOwner = normalizeKey(selectedLeadAssignedAgent?.userId || selectedLeadAssignedAgent?.id) === normalizeKey(agent.userId || agent.id)
-                                        return (
-                                          <button
-                                            key={`${agent.id}:${agent.email}:buyer-assignment`}
-                                            type="button"
-                                            role="option"
-                                            aria-selected={isCurrentOwner}
-                                            disabled={isCurrentOwner || sellerAssignmentSaving}
-                                            className="flex min-h-14 w-full items-center gap-3 rounded-[11px] px-3 py-2 text-left transition hover:bg-[#f2f8f5] disabled:cursor-default disabled:opacity-70"
-                                            onClick={() => void handleLeadReassignment(agent)}
-                                          >
-                                            {agent.avatarUrl ? (
-                                              <img className="h-9 w-9 shrink-0 rounded-full object-cover" src={agent.avatarUrl} alt="" />
-                                            ) : (
-                                              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#eaf6ef] text-xs font-bold text-[#167149]" aria-hidden="true">{getInitials(agent.name)}</span>
-                                            )}
-                                            <span className="min-w-0 flex-1">
-                                              <span className="block truncate text-sm font-semibold text-[#18324b]">{agent.name}</span>
-                                              <span className="block truncate text-xs text-[#71869b]">{agent.email || agent.jobTitle || getOrganisationRoleLabel(agent.role, currentWorkspace?.type || workspace?.type || 'agency')}</span>
-                                              <span className="block truncate text-[0.68rem] text-[#91a2b4]">{agent.jobTitle || getOrganisationRoleLabel(agent.role, currentWorkspace?.type || workspace?.type || 'agency')}{organisationName ? ` · ${organisationName}` : ''}</span>
-                                            </span>
-                                            {isCurrentOwner ? <Check className="h-4 w-4 shrink-0 text-[#168154]" /> : null}
-                                          </button>
-                                        )
-                                      }) : (
-                                        <p className="px-3 py-6 text-center text-sm text-[#71869b]">No eligible agents found.</p>
-                                      )}
-                                    </div>
-                                  </div>
-                                ) : null}
 	                              </section>
-                              </>
+                              </div>
                             </div>
 
                             <div className="grid min-w-0 gap-5 lg:grid-cols-2 lg:items-stretch">

@@ -3,11 +3,33 @@ import { summarizeSellerLeadsPerformanceResources } from './sellerLeadsPerforman
 import { evaluateBuyerLeadsReleaseGate } from './buyerLeadsReleaseGate.js'
 
 export const BUYER_LEADS_PERFORMANCE_METRICS = Object.freeze({
+  workspaceChunkLoaded: 'buyer_leads.workspace.chunk_loaded',
+  coreLeadReady: 'buyer_leads.core.ready',
+  overviewFirstRendered: 'buyer_leads.overview.first_render',
+  journeyFirstRendered: 'buyer_leads.journey.first_render',
+  journeyEnrichmentComplete: 'buyer_leads.journey.enriched',
+  assignmentMenuOpened: 'buyer_leads.assignment_menu.opened',
   workspaceReady: 'buyer_leads.workspace.ready',
 })
 
 export const BUYER_LEADS_PERFORMANCE_BUDGETS_MS = Object.freeze({
+  [BUYER_LEADS_PERFORMANCE_METRICS.workspaceChunkLoaded]: 2000,
+  [BUYER_LEADS_PERFORMANCE_METRICS.coreLeadReady]: 1500,
+  [BUYER_LEADS_PERFORMANCE_METRICS.overviewFirstRendered]: 2500,
+  [BUYER_LEADS_PERFORMANCE_METRICS.journeyFirstRendered]: 2500,
+  [BUYER_LEADS_PERFORMANCE_METRICS.journeyEnrichmentComplete]: 4000,
+  [BUYER_LEADS_PERFORMANCE_METRICS.assignmentMenuOpened]: 100,
   [BUYER_LEADS_PERFORMANCE_METRICS.workspaceReady]: 2500,
+})
+
+const CHECKPOINT_METRICS = Object.freeze({
+  workspace_chunk_loaded: BUYER_LEADS_PERFORMANCE_METRICS.workspaceChunkLoaded,
+  core_lead_ready: BUYER_LEADS_PERFORMANCE_METRICS.coreLeadReady,
+  overview_first_rendered: BUYER_LEADS_PERFORMANCE_METRICS.overviewFirstRendered,
+  journey_first_rendered: BUYER_LEADS_PERFORMANCE_METRICS.journeyFirstRendered,
+  journey_enrichment_complete: BUYER_LEADS_PERFORMANCE_METRICS.journeyEnrichmentComplete,
+  assignment_menu_opened: BUYER_LEADS_PERFORMANCE_METRICS.assignmentMenuOpened,
+  workspace_ready: BUYER_LEADS_PERFORMANCE_METRICS.workspaceReady,
 })
 
 function now(performanceApi) {
@@ -102,34 +124,50 @@ export function createBuyerLeadsPerformanceBaseline({
     route: normalizedRoute,
     startedAt: session.startedAt,
     timingOrigin: session.timingOrigin,
-    recordCheckpoint({ checkpoint = '', userId = '', workspaceId = '', metadata = {} } = {}) {
-      if (checkpoint !== 'workspace_ready') return Promise.resolve({ persisted: false, reason: 'unknown_checkpoint' })
+    recordCheckpoint({ checkpoint = '', userId = '', workspaceId = '', metadata = {}, startedAt = null, durationMs = null } = {}) {
+      const metricName = CHECKPOINT_METRICS[checkpoint]
+      if (!metricName) return Promise.resolve({ persisted: false, reason: 'unknown_checkpoint' })
       if (completed.has(checkpoint)) return Promise.resolve({ persisted: false, reason: 'checkpoint_already_recorded' })
       completed.add(checkpoint)
 
       const activeTab = normalizeText(metadata?.workspaceTab || 'overview').toLowerCase()
-      const durationMs = Math.max(0, Math.round(now(performanceApi) - session.startedAt))
-      const resourceSummary = summarizeBuyerWorkspaceResources({
-        performanceApi,
-        startedAt: session.startedAt,
-        activeTab,
-      })
-      const releaseGate = evaluateBuyerLeadsReleaseGate({ durationMs, ...resourceSummary })
+      const hasExplicitDuration = durationMs !== null && durationMs !== undefined && Number.isFinite(Number(durationMs))
+      const hasExplicitStartedAt = startedAt !== null && startedAt !== undefined && Number.isFinite(Number(startedAt))
+      const explicitDurationMs = hasExplicitDuration ? Number(durationMs) : null
+      const explicitStartedAt = hasExplicitStartedAt ? Number(startedAt) : null
+      const resolvedDurationMs = hasExplicitDuration && explicitDurationMs >= 0
+        ? Math.round(explicitDurationMs)
+        : Math.max(0, Math.round(now(performanceApi) - (
+          hasExplicitStartedAt && explicitStartedAt >= 0 ? explicitStartedAt : session.startedAt
+        )))
+      const isWorkspaceReady = checkpoint === 'workspace_ready'
+      const resourceSummary = isWorkspaceReady
+        ? summarizeBuyerWorkspaceResources({ performanceApi, startedAt: session.startedAt, activeTab })
+        : {}
+      const releaseGate = isWorkspaceReady
+        ? evaluateBuyerLeadsReleaseGate({ durationMs: resolvedDurationMs, ...resourceSummary })
+        : null
       return recorder({
-        metricName: BUYER_LEADS_PERFORMANCE_METRICS.workspaceReady,
-        durationMs,
-        performanceBudgetMs: BUYER_LEADS_PERFORMANCE_BUDGETS_MS[BUYER_LEADS_PERFORMANCE_METRICS.workspaceReady],
+        metricName,
+        durationMs: resolvedDurationMs,
+        performanceBudgetMs: BUYER_LEADS_PERFORMANCE_BUDGETS_MS[metricName],
         userId,
         workspaceId,
         route: normalizedRoute,
         metadata: {
           contract: 'arch9-buyer-leads-performance-baseline-v2',
           checkpoint,
-          timingOrigin: session.timingOrigin,
+          timingOrigin: hasExplicitDuration
+            ? 'explicit_duration'
+            : hasExplicitStartedAt
+              ? 'interaction'
+              : session.timingOrigin,
           ...resourceSummary,
-          releaseGateContract: releaseGate.contract,
-          releaseGateStatus: releaseGate.status,
-          releaseGateBreaches: releaseGate.breaches.map((breach) => breach.key),
+          ...(releaseGate ? {
+            releaseGateContract: releaseGate.contract,
+            releaseGateStatus: releaseGate.status,
+            releaseGateBreaches: releaseGate.breaches.map((breach) => breach.key),
+          } : {}),
           ...(metadata && typeof metadata === 'object' ? metadata : {}),
           workspaceTab: activeTab,
           leadCategory: 'buyer',

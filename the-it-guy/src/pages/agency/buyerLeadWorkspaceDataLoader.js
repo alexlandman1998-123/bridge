@@ -1,6 +1,6 @@
 import { inferLeadCategoryFromRecord } from '../../lib/leadCategory.js'
 
-const DEFAULT_CACHE_TTL_MS = 5000
+const DEFAULT_CACHE_TTL_MS = 60000
 const pendingLoads = new Map()
 const completedLoads = new Map()
 
@@ -24,6 +24,25 @@ async function fetchBuyerWorkspaceFromRepository(organisationId, leadId) {
   return fetchAgencyCrmLeadWorkspace(organisationId, leadId)
 }
 
+async function fetchBuyerJourneyEnrichmentFromRepository(organisationId, leadId, seedSnapshot = {}) {
+  const { fetchAgencyCrmLeadJourneyEnrichment } = await import('../../lib/agencyCrmRepository.js')
+  const lead = Array.isArray(seedSnapshot?.leads) ? seedSnapshot.leads[0] : null
+  return fetchAgencyCrmLeadJourneyEnrichment(organisationId, {
+    leadId: normalizeText(lead?.leadId || lead?.lead_id || leadId),
+    contactId: normalizeText(lead?.contactId || lead?.contact_id),
+  })
+}
+
+function mergeSeedWithJourneyEnrichment(seedSnapshot = {}, enrichment = {}) {
+  return {
+    ...seedSnapshot,
+    contacts: Array.isArray(enrichment?.contacts) ? enrichment.contacts : (seedSnapshot.contacts || []),
+    leadActivities: Array.isArray(enrichment?.leadActivities) ? enrichment.leadActivities : (seedSnapshot.leadActivities || []),
+    tasks: Array.isArray(seedSnapshot?.tasks) ? seedSnapshot.tasks : [],
+    journeyEnrichmentStatus: enrichment?.journeyEnrichmentStatus || 'ready',
+  }
+}
+
 export function clearBuyerLeadWorkspaceDataLoaderCache() {
   pendingLoads.clear()
   completedLoads.clear()
@@ -32,7 +51,9 @@ export function clearBuyerLeadWorkspaceDataLoaderCache() {
 export function loadBuyerLeadWorkspaceData({
   organisationId = '',
   leadId = '',
+  seedSnapshot = null,
   fetchWorkspace = fetchBuyerWorkspaceFromRepository,
+  fetchJourneyEnrichment = fetchBuyerJourneyEnrichmentFromRepository,
   cacheTtlMs = DEFAULT_CACHE_TTL_MS,
   now = Date.now,
 } = {}) {
@@ -48,8 +69,12 @@ export function loadBuyerLeadWorkspaceData({
   const pending = pendingLoads.get(key)
   if (pending) return pending
 
+  const hasBuyerSeed = isBuyerSnapshot(seedSnapshot)
   const request = Promise.resolve()
-    .then(() => fetchWorkspace(organisationId, leadId))
+    .then(() => hasBuyerSeed
+      ? fetchJourneyEnrichment(organisationId, leadId, seedSnapshot)
+        .then((enrichment) => mergeSeedWithJourneyEnrichment(seedSnapshot, enrichment))
+      : fetchWorkspace(organisationId, leadId))
     .then((snapshot) => {
       if (isBuyerSnapshot(snapshot)) {
         completedLoads.set(key, { snapshot, completedAt: Number(now()) })

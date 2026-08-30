@@ -1130,6 +1130,45 @@ export async function fetchAgencyCrmLeadRouteHydrationSeed(organisationId, leadI
   }
 }
 
+export async function fetchAgencyCrmLeadJourneyEnrichment(organisationId, { leadId = '', contactId = '' } = {}) {
+  const workspaceId = requireAgencyWorkspaceId(organisationId, 'agencyCrmRepository.fetchAgencyCrmLeadJourneyEnrichment')
+  const resolvedLeadId = normalizeLeadUuid(leadId)
+  if (!resolvedLeadId) {
+    return { contacts: [], leadActivities: [], source: 'remote', journeyEnrichmentStatus: 'not_found' }
+  }
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error('Supabase is required before loading buyer journey enrichment.')
+  }
+
+  const contactPromise = normalizeText(contactId)
+    ? supabase
+      .from('contacts')
+      .select('contact_id, organisation_id, assigned_agent_id, first_name, last_name, phone, email, contact_type, notes, created_at, updated_at')
+      .eq('organisation_id', workspaceId)
+      .eq('contact_id', normalizeText(contactId))
+      .maybeSingle()
+    : Promise.resolve({ data: null, error: null })
+  const activityPromise = supabase
+    .from('lead_activities')
+    .select(LEAD_ACTIVITY_SELECT_FIELDS)
+    .eq('organisation_id', workspaceId)
+    .eq('lead_id', resolvedLeadId)
+    .order('activity_date', { ascending: false })
+
+  const [contactResult, activityResult] = await Promise.all([contactPromise, activityPromise])
+  const contactBlocked = contactResult.error && (isPermissionDeniedError(contactResult.error) || isMissingSchemaOrTableError(contactResult.error))
+  const activityBlocked = activityResult.error && (isPermissionDeniedError(activityResult.error) || isMissingSchemaOrTableError(activityResult.error))
+  if (contactResult.error && !contactBlocked) throw contactResult.error
+  if (activityResult.error && !activityBlocked) throw activityResult.error
+
+  return {
+    contacts: contactResult.data && !contactBlocked ? [mapSupabaseContact(contactResult.data)] : [],
+    leadActivities: Array.isArray(activityResult.data) && !activityBlocked ? activityResult.data.map(mapSupabaseLeadActivity) : [],
+    source: 'remote',
+    journeyEnrichmentStatus: contactBlocked || activityBlocked ? 'partial' : 'ready',
+  }
+}
+
 export async function listBuyerViewingPreferenceLinks(organisationId, leadId, { limit = 10 } = {}) {
   const workspaceId = requireAgencyWorkspaceId(organisationId, 'agencyCrmRepository.listBuyerViewingPreferenceLinks')
   const leadUuid = normalizeLeadUuid(leadId)

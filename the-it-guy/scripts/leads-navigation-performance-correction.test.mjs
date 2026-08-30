@@ -9,7 +9,7 @@ const [app, sidebar, routeLoader, listRoute, listPage, repository, workspaceRout
   readFile('src/pages/agency/LeadListPage.jsx', 'utf8'),
   readFile('src/pages/agency/agencyLeadListReadRepository.js', 'utf8'),
   readFile('src/pages/agency/AgencyLeadWorkspaceRoutePage.jsx', 'utf8'),
-  readFile('src/pages/agency/AgencyLeadWorkspaceShellPage.jsx', 'utf8'),
+  readFile('src/pages/agency/LeadWorkspaceHydrationShell.jsx', 'utf8'),
   readFile('src/pages/agency/AgencyPipelinePage.jsx', 'utf8'),
   readFile('src/pages/agency/agencyLeadWorkspaceTabLoader.js', 'utf8'),
 ])
@@ -46,9 +46,10 @@ assert.match(listPage, /onFocus=\{\(\) => onLeadIntent\(row\.id\)\}/)
 
 assert.match(workspaceRoute, /const AgencyPipelinePage = lazy\(loadAgencyLeadWorkspace\)/)
 assert.doesNotMatch(workspaceRoute, /if \(activeTab === 'overview'\) return <AgencyLeadWorkspaceShellPage \/>/)
-assert.match(workspaceRoute, /fallback=\{<AgencyLeadWorkspaceShellPage loadingTab=\{activeTab !== 'overview'\} \/>\}/)
-assert.match(workspaceShell, /LEAD_ROUTE_PATTERN\.test\(location\.pathname\)/)
-assert.match(workspaceShell, /navigate\(`\$\{location\.pathname\}\?\$\{params\.toString\(\)\}/)
+assert.match(workspaceRoute, /fallback=\{<LeadWorkspaceHydrationShell search=\{location\.search\} \/>\}/)
+assert.doesNotMatch(workspaceRoute, /AgencyLeadWorkspaceShellPage/, 'lead route loading must not flash the dark cached preview')
+assert.match(workspaceShell, /readAgencyLeadCoreCache\(organisationId, leadId\)/)
+assert.match(workspaceShell, /data-testid="lead-workspace-hydration-shell"/)
 
 assert.match(tabLoader, /export function loadLeadDocumentWorkspace/)
 assert.match(tabLoader, /if \(tabKey === 'documents'\)/)
