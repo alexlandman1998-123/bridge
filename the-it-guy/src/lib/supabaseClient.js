@@ -201,14 +201,14 @@ function createSingleFlightAuthRead(auth, methodName, {
   let inFlightJoinCount = 0
   let cachedResult = null
   let cachedAt = 0
+  let cacheGeneration = 0
 
-  const clear = () => {
-    inFlight = null
-    inFlightJoinCount = 0
+  const invalidate = () => {
+    cacheGeneration += 1
     cachedResult = null
     cachedAt = 0
   }
-  clearers.push(clear)
+  clearers.push(invalidate)
 
   const wrappedMethod = async (...args) => {
     const cacheable = isZeroArgumentAuthRead(args)
@@ -224,6 +224,7 @@ function createSingleFlightAuthRead(auth, methodName, {
     }
 
     const startedAt = getAuthReadNow()
+    const requestGeneration = cacheGeneration
     if (cacheable) inFlightJoinCount = 0
     const runAuthReadWithLockRecovery = async () => {
       let attempts = 0
@@ -268,7 +269,7 @@ function createSingleFlightAuthRead(auth, methodName, {
     const request = Promise.resolve()
       .then(runAuthReadWithLockRecovery)
       .then((result) => {
-        if (cacheable && isSuccessfulAuthRead(result)) {
+        if (cacheable && requestGeneration === cacheGeneration && isSuccessfulAuthRead(result)) {
           cachedResult = result
           cachedAt = Date.now()
         }
@@ -327,6 +328,10 @@ function installAuthReadSingleFlight(client) {
     const originalOnAuthStateChange = auth.onAuthStateChange.bind(auth)
     auth.onAuthStateChange = (callback) =>
       originalOnAuthStateChange((event, nextSession) => {
+        // Do not clear an active read: GoTrue owns a storage lock while it is
+        // running. Keeping it joinable prevents a second call from triggering
+        // the orphaned-lock recovery loop. The generation still prevents stale
+        // results from entering the completed-value cache.
         clearAuthReadCache()
         return callback?.(event, nextSession)
       })
