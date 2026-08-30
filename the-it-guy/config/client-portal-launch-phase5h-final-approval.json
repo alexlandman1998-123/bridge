@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "contractId": "arch9-client-portal-launch-phase5h-v1",
+  "candidate": {
+    "applicationCommit": "9a1aeb8fcfdf4c90e0a61086db1f7176c8346a1c",
+    "releaseControlsCommit": "f19d4e2d1289c98992a42874653897517010bf53",
+    "sourceDeploymentId": "dpl_AiLLY2V2LsDBcYvMo7YntaB1PQne",
+    "sourceUrl": "https://bridge-im7c0rxji-alexs-projects-f5496a21.vercel.app"
+  },
+  "production": {
+    "project": "bridge",
+    "primaryUrl": "https://app.arch9.co.za",
+    "currentDeploymentId": "dpl_B8YU5UNGd59x2nbmigCbZKdCe6fk",
+    "currentDeploymentUrl": "https://bridge-9zim5amg9-alexs-projects-f5496a21.vercel.app",
+    "promotionCommand": "vercel promote dpl_AiLLY2V2LsDBcYvMo7YntaB1PQne",
+    "rollbackCommand": "vercel rollback dpl_B8YU5UNGd59x2nbmigCbZKdCe6fk"
+  },
+  "prerequisiteGates": {
+    "physicalDevices": "scripts/client-portal-launch-phase5c-device-certification.mjs",
+    "capabilityParity": "scripts/client-portal-launch-phase5d-capability-parity.mjs",
+    "accessibility": "scripts/client-portal-launch-phase5e-accessibility.mjs",
+    "performance": "scripts/client-portal-launch-phase5f-performance.mjs",
+    "operations": "scripts/client-portal-launch-phase5g-operations.mjs"
+  },
+  "defects": {
+    "status": "pending",
+    "openCritical": null,
+    "openHigh": null,
+    "evidenceUrl": ""
+  },
+  "approvals": {
+    "productOwner": { "status": "pending", "name": "", "approvedAt": "", "evidenceUrl": "" },
+    "releaseManager": { "status": "pending", "name": "", "approvedAt": "", "evidenceUrl": "" }
+  },
+  "changeWindow": {
+    "status": "pending",
+    "startsAt": "",
+    "endsAt": "",
+    "supportNotified": false,
+    "pilotAgencyApproved": false,
+    "evidenceUrl": ""
+  },
+  "promotion": {
+    "status": "disabled",
+    "maximumPilotAgencies": 1,
+    "automaticExpansion": false,
+    "observationHours": 72,
+    "executedBy": "",
+    "executedAt": "",
+    "productionDeploymentId": ""
+  }
+}
