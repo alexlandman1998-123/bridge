@@ -54,6 +54,8 @@ const SAFE_BOOLEAN_KEYS = Object.freeze([
   'hasData',
   'hasSession',
   'selectedWorkspaceProvided',
+  'usedConsolidatedStartupContext',
+  'usedLegacyProfileFallback',
   'agencyResolutionFallback',
   'scopeNormalized',
 ])
@@ -65,10 +67,16 @@ const SAFE_COUNT_KEYS = Object.freeze([
   'sourceUnavailableCount',
   'activeMembershipCount',
   'breadcrumbCount',
+  'bootStepCount',
+  'contextRpcDurationMs',
+  'profileDurationMs',
+  'workspaceResolutionDurationMs',
+  'onboardingDurationMs',
 ])
 const SAFE_TEXT_KEYS = Object.freeze([
   'bootHealthStatus',
   'retryReason',
+  'bootstrapMode',
 ])
 const EXCLUDED_RESOURCE_PATH_PREFIXES = Object.freeze([
   '/rest/v1/performance_metrics',

@@ -247,6 +247,8 @@ function delay(ms = 0) {
 
 let authBootStepSequence = 0
 const activeAuthBootSteps = new Map()
+const completedAuthBootSteps = []
+const MAX_COMPLETED_AUTH_BOOT_STEPS = 50
 
 function beginAuthBootStep(label, metadata = {}) {
   authBootStepSequence += 1
@@ -259,8 +261,18 @@ function beginAuthBootStep(label, metadata = {}) {
   return stepId
 }
 
-function endAuthBootStep(stepId) {
+function endAuthBootStep(stepId, { outcome = 'success', durationMs = 0 } = {}) {
+  const step = activeAuthBootSteps.get(stepId)
   activeAuthBootSteps.delete(stepId)
+  if (!step) return
+  completedAuthBootSteps.push({
+    label: step.label,
+    durationMs: roundDuration(durationMs),
+    outcome: outcome === 'failed' ? 'failed' : 'success',
+  })
+  if (completedAuthBootSteps.length > MAX_COMPLETED_AUTH_BOOT_STEPS) {
+    completedAuthBootSteps.splice(0, completedAuthBootSteps.length - MAX_COMPLETED_AUTH_BOOT_STEPS)
+  }
 }
 
 export function getActiveAuthBootStepDiagnostics() {
@@ -273,6 +285,32 @@ export function getActiveAuthBootStepDiagnostics() {
 
 export function clearActiveAuthBootStepDiagnostics() {
   activeAuthBootSteps.clear()
+  completedAuthBootSteps.splice(0, completedAuthBootSteps.length)
+}
+
+export function getCompletedAuthBootStepDiagnostics() {
+  return completedAuthBootSteps.map((step) => ({ ...step }))
+}
+
+export function summarizeAuthBootStepDiagnostics(steps = []) {
+  const normalizedSteps = Array.isArray(steps) ? steps : []
+  const durationFor = (label) => normalizedSteps
+    .filter((step) => step?.label === label)
+    .reduce((duration, step) => Math.max(duration, roundDuration(step?.durationMs)), 0)
+  const onboardingDurationMs = normalizedSteps
+    .filter((step) => String(step?.label || '').startsWith('onboarding.'))
+    .reduce((duration, step) => duration + Math.max(0, roundDuration(step?.durationMs)), 0)
+  const contextRpcDurationMs = durationFor('workspace.context.load')
+  const profileDurationMs = durationFor('profile.load')
+
+  return {
+    stepCount: normalizedSteps.length,
+    contextRpcDurationMs,
+    profileDurationMs,
+    workspaceResolutionDurationMs: durationFor('workspace.resolveCurrentWorkspace'),
+    onboardingDurationMs,
+    usedConsolidatedStartupContext: contextRpcDurationMs > 0 && profileDurationMs > 0,
+  }
 }
 
 function withStepTimeout(task, {
@@ -440,9 +478,11 @@ async function withTransientSchemaRetry(task, {
 async function runAuthBootStep(label, task, metadata = {}) {
   const startedAt = getNowMs()
   const stepId = beginAuthBootStep(label, metadata)
+  let outcome = 'failed'
   console.debug('[AUTH][BOOT] step:start', { label, ...metadata })
   try {
     const result = await task()
+    outcome = 'success'
     console.debug('[AUTH][BOOT] step:success', {
       label,
       durationMs: roundDuration(getNowMs() - startedAt),
@@ -458,7 +498,10 @@ async function runAuthBootStep(label, task, metadata = {}) {
     })
     throw error
   } finally {
-    endAuthBootStep(stepId)
+    endAuthBootStep(stepId, {
+      outcome,
+      durationMs: getNowMs() - startedAt,
+    })
   }
 }
 
@@ -564,6 +607,7 @@ export function shouldIgnoreStaleMembershipRecovery({
 
 async function loadBridgeAuthStateUncoalesced({ session, selectedWorkspaceId = '' } = {}) {
   clearActiveAuthBootStepDiagnostics()
+  let startupBootstrapMode = 'unknown'
   if (!isSupabaseConfigured || !supabase) {
     throw new Error('Supabase is not configured. Arch9 auth requires Supabase in this environment.')
   }
@@ -631,7 +675,12 @@ async function loadBridgeAuthStateUncoalesced({ session, selectedWorkspaceId = '
       const rpcProfile = workspaceContext
         ? normalizeWorkspaceResolutionRpcContext(workspaceContext, { user }).profile
         : null
-      if (rpcProfile?.id) return rpcProfile
+      if (rpcProfile?.id) {
+        startupBootstrapMode = 'consolidated_rpc'
+        return rpcProfile
+      }
+
+      startupBootstrapMode = 'legacy_profile'
 
       if (workspaceContextError) {
         console.warn('[AUTH] consolidated startup context unavailable; using legacy profile bootstrap.', {
@@ -1043,6 +1092,8 @@ async function loadBridgeAuthStateUncoalesced({ session, selectedWorkspaceId = '
     onboardingState?.onboardingStatus === ONBOARDING_STATUSES.workspacePendingApproval
       ? ONBOARDING_REQUIRED_REASONS.pendingApproval
       : onboardingState?.recoveryReason || onboarding.onboardingRequiredReason
+  const authBootSteps = getCompletedAuthBootStepDiagnostics()
+  const authBootTiming = summarizeAuthBootStepDiagnostics(authBootSteps)
 
   return {
     status: 'authenticated',
@@ -1065,6 +1116,10 @@ async function loadBridgeAuthStateUncoalesced({ session, selectedWorkspaceId = '
     permissions: workspaceResolution.permissions,
     workspaceResolution,
     workspaceDiagnostics: workspaceResolution.diagnostics,
+    authBootstrap: {
+      mode: startupBootstrapMode,
+      ...authBootTiming,
+    },
     workspaceAccessDegraded: false,
     workspaceDegradedReason: '',
     workspaceDegradedMessage: '',

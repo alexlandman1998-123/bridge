@@ -17,7 +17,7 @@ assert.match(
 
 assert.match(
   authBootSource,
-  /const rpcProfile = workspaceContext[\s\S]*?normalizeWorkspaceResolutionRpcContext\(workspaceContext, \{ user \}\)\.profile[\s\S]*?if \(rpcProfile\?\.id\) return rpcProfile/,
+  /const rpcProfile = workspaceContext[\s\S]*?normalizeWorkspaceResolutionRpcContext\(workspaceContext, \{ user \}\)\.profile[\s\S]*?if \(rpcProfile\?\.id\)[\s\S]*?return rpcProfile/,
   'the profile returned by the startup RPC should avoid a second profile read for established users',
 )
 

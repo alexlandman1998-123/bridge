@@ -4,6 +4,7 @@ import { trackTelemetryEvent } from './telemetry.js'
 const SLOW_OPERATION_MS = 1500
 const SLOW_ROUTE_MS = 2500
 export const PERFORMANCE_BUDGETS_MS = Object.freeze({
+  'dashboard.auth.bridge_boot': 4000,
   'legal_document.generation.status_lookup': 2500,
   'legal_document.generation.seller_onboarding': 3000,
   'legal_document.generation.template_lookup': 3000,

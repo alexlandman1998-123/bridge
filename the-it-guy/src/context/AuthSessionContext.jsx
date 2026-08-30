@@ -577,6 +577,17 @@ export function AuthSessionProvider({ children }) {
         const successBreadcrumbs = writeAuthBootBreadcrumb('bridge_boot_success', successMetadata)
         bridgeBootHealthStatus = successMetadata.bootHealthStatus || ''
         bridgeBreadcrumbCount = successBreadcrumbs.length
+        const authBootstrap = nextState.authBootstrap || {}
+        const startupTimingMetadata = {
+          bootstrapMode: authBootstrap.mode || 'unknown',
+          bootStepCount: authBootstrap.stepCount || 0,
+          contextRpcDurationMs: authBootstrap.contextRpcDurationMs || 0,
+          profileDurationMs: authBootstrap.profileDurationMs || 0,
+          workspaceResolutionDurationMs: authBootstrap.workspaceResolutionDurationMs || 0,
+          onboardingDurationMs: authBootstrap.onboardingDurationMs || 0,
+          usedConsolidatedStartupContext: authBootstrap.mode === 'consolidated_rpc',
+          usedLegacyProfileFallback: authBootstrap.mode === 'legacy_profile',
+        }
         setAuthState(nextState)
         persistLastGoodBridgeAuthState(nextState)
         void trackAuthMetric('auth_boot_success', {
@@ -591,6 +602,7 @@ export function AuthSessionProvider({ children }) {
             bootHealthDurationMs: nextState.workspaceDiagnostics?.bootHealth?.durationMs || null,
             retryAttempt: bootAttempt || 0,
             breadcrumbCount: successBreadcrumbs.length,
+            ...startupTimingMetadata,
           },
         })
         void trackWorkspaceBrandingMetric('workspace_branding_resolved', {
@@ -803,6 +815,14 @@ export function AuthSessionProvider({ children }) {
           bootHealthStatus: bridgeBootHealthStatus,
           retryReason: bridgeRetryReason,
           breadcrumbCount: bridgeBreadcrumbCount,
+          bootstrapMode: resolvedBridgeState?.authBootstrap?.mode || 'unknown',
+          bootStepCount: resolvedBridgeState?.authBootstrap?.stepCount || 0,
+          contextRpcDurationMs: resolvedBridgeState?.authBootstrap?.contextRpcDurationMs || 0,
+          profileDurationMs: resolvedBridgeState?.authBootstrap?.profileDurationMs || 0,
+          workspaceResolutionDurationMs: resolvedBridgeState?.authBootstrap?.workspaceResolutionDurationMs || 0,
+          onboardingDurationMs: resolvedBridgeState?.authBootstrap?.onboardingDurationMs || 0,
+          usedConsolidatedStartupContext: resolvedBridgeState?.authBootstrap?.mode === 'consolidated_rpc',
+          usedLegacyProfileFallback: resolvedBridgeState?.authBootstrap?.mode === 'legacy_profile',
         })
       }
     }
