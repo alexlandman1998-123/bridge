@@ -3,6 +3,7 @@ import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } f
 import { useNavigate } from 'react-router-dom'
 import AgentAssignmentSelect from '../../components/AgentAssignmentSelect'
 import LeadsRouteShell from '../../components/leads/LeadsRouteShell'
+import ConfirmDialog from '../../components/ui/ConfirmDialog'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { canAccessPrincipalExperience } from '../../lib/organisationAccess'
 import { createSellerLeadsPerformanceBaseline } from '../../services/observability/sellerLeadsPerformanceBaseline'
@@ -196,6 +197,8 @@ export default function AgencyLeadListRoutePage() {
   const [message, setMessage] = useState('')
   const [createDialog, setCreateDialog] = useState({ open: false, category: 'buyer' })
   const [creating, setCreating] = useState(false)
+  const [deleteDialog, setDeleteDialog] = useState({ open: false, leadId: '' })
+  const [deleting, setDeleting] = useState(false)
   const loadRequestRef = useRef(0)
   const performanceRef = useRef(null)
   if (!performanceRef.current) performanceRef.current = createSellerLeadsPerformanceBaseline({ route: '/pipeline/leads' })
@@ -340,15 +343,20 @@ export default function AgencyLeadListRoutePage() {
   }
 
   const handleDeleteLead = async (leadId) => {
-    if (!window.confirm('Permanently delete this lead? This cannot be undone.')) return
+    if (!leadId || deleting) return
+    setDeleting(true)
+    setError('')
     try {
       const { deleteAgencyCrmLeadRecord } = await loadLeadMutationActions()
       await deleteAgencyCrmLeadRecord(organisationId, leadId)
+      setDeleteDialog({ open: false, leadId: '' })
       setMessage('Lead deleted.')
       invalidateAgencyLeadListCache(organisationId, leadId)
       await loadLeads({ forceRefresh: true })
     } catch (deleteError) {
       setError(deleteError?.message || 'Unable to delete this lead.')
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -420,7 +428,7 @@ export default function AgencyLeadListRoutePage() {
           navigate(`/pipeline/leads/${encodeURIComponent(leadId)}`)
         }}
         onArchiveLead={(leadId) => void handleArchiveLead(leadId)}
-        onDeleteLead={(leadId) => void handleDeleteLead(leadId)}
+        onDeleteLead={(leadId) => { setError(''); setDeleteDialog({ open: true, leadId }) }}
         onMoveLead={(leadId, columnId) => void handleMoveLead(leadId, columnId)}
         onOpenShowDayQueue={() => setFilters((previous) => ({ ...previous, source: 'Show Day' }))}
         onOpenShowDayLead={(row, tab) => {
@@ -430,6 +438,16 @@ export default function AgencyLeadListRoutePage() {
         }}
       />
       {createDialog.open ? <LeadCreateDialog open category={createDialog.category} agents={agentOptions} currentAgent={currentAgent} saving={creating} error={error} onClose={() => setCreateDialog((previous) => ({ ...previous, open: false }))} onSave={(form) => void handleCreateLead(form)} /> : null}
+      <ConfirmDialog
+        open={deleteDialog.open}
+        title={`Delete ${category === 'seller' ? 'seller' : 'buyer'} lead?`}
+        description="This permanently removes the lead and its related CRM records from the organisation. This cannot be undone."
+        confirmLabel="Delete lead"
+        variant="destructive"
+        confirming={deleting}
+        onCancel={() => setDeleteDialog({ open: false, leadId: '' })}
+        onConfirm={() => void handleDeleteLead(deleteDialog.leadId)}
+      />
     </section>
   )
 }
