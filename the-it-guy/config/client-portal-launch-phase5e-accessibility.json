@@ -3,9 +3,9 @@
   "contractId": "arch9-client-portal-launch-phase5e-v1",
   "standard": "WCAG 2.2 AA",
   "candidate": {
-    "commit": "e57255094ff5d900f9e71e86a31c78245ce439f7",
-    "deploymentId": "dpl_3RNeX37gGJvcX5fLZD7kdCiZuU2P",
-    "url": "https://bridge-pnmoiq13o-alexs-projects-f5496a21.vercel.app"
+    "commit": "9a1aeb8fcfdf4c90e0a61086db1f7176c8346a1c",
+    "deploymentId": "dpl_AiLLY2V2LsDBcYvMo7YntaB1PQne",
+    "url": "https://bridge-im7c0rxji-alexs-projects-f5496a21.vercel.app"
   },
   "personas": ["buyer", "seller"],
   "requiredChecks": {

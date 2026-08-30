@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "contractId": "arch9-client-portal-launch-phase5f-v1",
+  "candidate": {
+    "commit": "9a1aeb8fcfdf4c90e0a61086db1f7176c8346a1c",
+    "deploymentId": "dpl_AiLLY2V2LsDBcYvMo7YntaB1PQne",
+    "url": "https://bridge-im7c0rxji-alexs-projects-f5496a21.vercel.app"
+  },
+  "protocol": {
+    "viewport": { "width": 390, "height": 844 },
+    "minimumSampleCount": 5,
+    "aggregation": "p75",
+    "coldProfile": "mobile slow 4G with empty browser cache",
+    "cachedProfile": "same device and session after initial portal load",
+    "personas": ["buyer", "seller"]
+  },
+  "measurements": {
+    "buyerUsefulContentMs": { "value": null, "sampleCount": 0, "evidenceUrl": "" },
+    "sellerUsefulContentMs": { "value": null, "sampleCount": 0, "evidenceUrl": "" },
+    "slowNetworkCoreContentMs": { "value": null, "sampleCount": 0, "evidenceUrl": "" },
+    "cachedNavigationMs": { "value": null, "sampleCount": 0, "evidenceUrl": "" },
+    "maximumCumulativeLayoutShift": { "value": null, "sampleCount": 0, "evidenceUrl": "" },
+    "routeCrashCount": { "value": null, "sampleCount": 0, "evidenceUrl": "" },
+    "deadControlCount": { "value": null, "sampleCount": 0, "evidenceUrl": "" }
+  },
+  "testedBy": "",
+  "testedAt": "",
+  "notes": "Phase 5B observations are diagnostic only and do not replace the controlled five-run protocol."
+}
