@@ -1,42 +1,87 @@
-import { BarChart3, CalendarDays, Globe2, Mail, Megaphone, MessageCircle } from 'lucide-react'
+import { ArrowUpRight, BarChart3, CalendarDays, Check, Globe2, Mail, Megaphone, MessageCircle, Sparkles } from 'lucide-react'
+import './MarketingComingSoonPage.css'
 
-const capabilities = [
-  { icon: Mail, title: 'Email campaigns', detail: 'Build audiences, send campaigns, and follow results.' },
-  { icon: MessageCircle, title: 'WhatsApp campaigns', detail: 'Connect business accounts, use approved templates, and manage replies.' },
-  { icon: CalendarDays, title: 'Show days', detail: 'Promote open houses, collect RSVPs, and follow up with attendees.' },
-  { icon: Globe2, title: 'Website & landing pages', detail: 'Turn listing and campaign traffic into enquiry leads.' },
-  { icon: BarChart3, title: 'Marketing performance', detail: 'See which campaigns, events, and sources create results.' },
+const campaignChannels = [
+  { icon: Mail, title: 'Email', detail: 'Audience building, campaign delivery, and conversion reporting.' },
+  { icon: MessageCircle, title: 'WhatsApp', detail: 'Connected business accounts, approved templates, and replies in context.' },
+]
+
+const eventTypes = [
+  { title: 'Show Days', detail: 'Promote, capture RSVPs, check in attendees, and follow up.' },
+  { title: 'Auctions & Launches', detail: 'Event-driven demand generation for your next phase of growth.' },
 ]
 
 export default function MarketingComingSoonPage() {
   return (
-    <section className="page">
-      <div className="panel card-tier-standard" style={{ display: 'grid', gap: '1.25rem', maxWidth: '56rem' }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.85rem' }}>
-          <div className="icon-badge" aria-hidden="true"><Megaphone size={22} /></div>
-          <div style={{ display: 'grid', gap: '0.35rem' }}>
-            <span className="eyebrow">Coming soon</span>
-            <h1 style={{ margin: 0 }}>Marketing</h1>
-            <p className="status-message" style={{ margin: 0 }}>
-              Create demand, capture enquiries, and see what converts—all connected to your listings and leads.
-            </p>
+    <main className="marketing-launch-page">
+      <section className="marketing-launch-hero">
+        <div className="marketing-launch-orb marketing-launch-orb-one" aria-hidden="true" />
+        <div className="marketing-launch-orb marketing-launch-orb-two" aria-hidden="true" />
+        <div className="marketing-launch-hero-content">
+          <div className="marketing-launch-kicker"><Sparkles size={15} /> Coming soon</div>
+          <h1>Marketing that turns attention into opportunity.</h1>
+          <p>
+            A connected workspace for campaigns, show days, and digital lead capture—built around your listings and pipeline.
+          </p>
+          <div className="marketing-launch-flow" aria-label="Marketing flow">
+            <span>Campaign</span><ArrowUpRight size={14} /><span>Enquiry</span><ArrowUpRight size={14} /><span>Lead</span><ArrowUpRight size={14} /><span>Viewing</span>
           </div>
         </div>
+        <div className="marketing-launch-mark" aria-hidden="true"><Megaphone size={42} /></div>
+      </section>
 
-        <div className="stats-grid">
-          {capabilities.map(({ icon: Icon, title, detail }) => (
-            <article className="stat-card" key={title} style={{ display: 'grid', gap: '0.45rem' }}>
-              <Icon size={19} aria-hidden="true" />
-              <strong>{title}</strong>
-              <span className="status-message">{detail}</span>
-            </article>
-          ))}
+      <section className="marketing-launch-content" aria-label="Marketing roadmap">
+        <div className="marketing-launch-section-heading">
+          <div>
+            <span>THE MARKETING WORKSPACE</span>
+            <h2>One place to create demand and measure what works.</h2>
+          </div>
+          <div className="marketing-launch-status"><Check size={14} /> Planned for release</div>
         </div>
 
-        <p className="status-message" style={{ margin: 0 }}>
-          Private viewings stay in the individual lead workflow. Marketing Events are for one-to-many activity, starting with Show Days.
-        </p>
-      </div>
-    </section>
+        <div className="marketing-launch-grid">
+          <article className="marketing-launch-card marketing-launch-card-campaigns">
+            <div className="marketing-launch-card-icon"><Megaphone size={19} /></div>
+            <span className="marketing-launch-card-label">CAMPAIGNS</span>
+            <h3>Reach the right audience, on the right channel.</h3>
+            <div className="marketing-launch-channel-list">
+              {campaignChannels.map(({ icon: Icon, title, detail }) => (
+                <div className="marketing-launch-channel" key={title}>
+                  <Icon size={17} /><div><strong>{title}</strong><p>{detail}</p></div>
+                </div>
+              ))}
+            </div>
+          </article>
+
+          <article className="marketing-launch-card marketing-launch-card-events">
+            <div className="marketing-launch-card-icon"><CalendarDays size={19} /></div>
+            <span className="marketing-launch-card-label">EVENTS</span>
+            <h3>Make every open house a measurable campaign.</h3>
+            <div className="marketing-launch-event-list">
+              {eventTypes.map(({ title, detail }) => <div key={title}><strong>{title}</strong><p>{detail}</p></div>)}
+            </div>
+          </article>
+
+          <article className="marketing-launch-card marketing-launch-card-website">
+            <div className="marketing-launch-card-icon"><Globe2 size={19} /></div>
+            <span className="marketing-launch-card-label">WEBSITE & LANDING PAGES</span>
+            <h3>Convert visits into enquiries automatically.</h3>
+            <p>Build branded pages around listings, campaigns, and events—with every enquiry delivered straight to your lead pipeline.</p>
+          </article>
+
+          <article className="marketing-launch-card marketing-launch-card-performance">
+            <div className="marketing-launch-card-icon"><BarChart3 size={19} /></div>
+            <span className="marketing-launch-card-label">MARKETING PERFORMANCE</span>
+            <h3>Know what created the next opportunity.</h3>
+            <p>Follow the journey from source and campaign through to enquiry, viewing, offer, and conversion.</p>
+          </article>
+        </div>
+
+        <aside className="marketing-launch-note">
+          <span>Private viewings stay with the lead.</span>
+          <p>Marketing Events are for one-to-many activity, beginning with Show Days.</p>
+        </aside>
+      </section>
+    </main>
   )
 }

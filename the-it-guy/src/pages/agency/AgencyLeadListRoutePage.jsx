@@ -144,7 +144,7 @@ function LeadCreateDialog({ open, category, agents, currentAgent, saving, error,
 
   return (
     <div className="fixed inset-0 z-[120] grid place-items-center bg-[#102033]/50 p-3 backdrop-blur-[2px] sm:p-6" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
-      <section className="flex max-h-[calc(100vh-1.5rem)] w-full max-w-2xl flex-col overflow-hidden rounded-[22px] border border-[#dbe7f2] bg-white shadow-[0_30px_80px_rgba(16,32,51,0.24)] sm:max-h-[calc(100vh-3rem)]" role="dialog" aria-modal="true" aria-labelledby="create-lead-title">
+      <section className="flex max-h-[calc(100vh-1.5rem)] w-full max-w-4xl flex-col overflow-hidden rounded-[22px] border border-[#dbe7f2] bg-white shadow-[0_30px_80px_rgba(16,32,51,0.24)] sm:max-h-[calc(100vh-3rem)]" role="dialog" aria-modal="true" aria-labelledby="create-lead-title">
         <header className="flex shrink-0 items-start justify-between gap-4 border-b border-[#e7eef5] bg-[#fbfdff] px-5 py-4 sm:px-6">
           <div className="min-w-0">
             <h2 id="create-lead-title" className="text-xl font-semibold tracking-[-0.025em] text-[#142132]">Add {category === 'seller' ? 'Seller' : 'Buyer'} Lead</h2>
@@ -217,10 +217,11 @@ export default function AgencyLeadListRoutePage() {
     lastName: profile?.lastName,
     fullName: profile?.fullName,
     email: profile?.email,
+    branchId: currentMembership?.branchId || currentMembership?.branch_id || profile?.branchId || profile?.branch_id,
     avatarUrl: profile?.avatarUrl || profile?.avatar_url || profile?.profilePhotoUrl || profile?.profile_photo_url || profile?.photoUrl || profile?.photo_url,
     roleLabel: profile?.jobTitle || profile?.job_title || 'Agent',
     isCurrentUser: true,
-  }), [profile])
+  }), [currentMembership?.branchId, currentMembership?.branch_id, profile])
   const agentOptions = agents.length ? agents : [currentAgent]
   const isPrincipal = canAccessPrincipalExperience({ appRole: role, membershipRole })
   const deferredFilters = useDeferredValue(filters)
@@ -323,12 +324,35 @@ export default function AgencyLeadListRoutePage() {
         sellerPropertyAddress: form.category === 'seller' ? form.property : '',
         notes: form.notes,
       }, { actor: currentAgent })
-      await createAgencyCrmLeadActivity(organisationId, created.leadId, { agent: currentAgent, activityType: 'Lead Created', activityNote: 'Manual lead captured', outcome: 'Created' }, { actor: currentAgent }).catch(() => null)
+      const createdContact = {
+        contactId: created.contactId,
+        organisationId,
+        assignedAgentId: created.assignedAgentId,
+        assignedAgentName: created.assignedAgentName,
+        assignedAgentEmail: created.assignedAgentEmail,
+        firstName: form.firstName.trim(),
+        lastName: form.lastName.trim(),
+        phone: form.phone.trim(),
+        email: form.email.trim().toLowerCase(),
+        contactType: form.category,
+        notes: form.notes.trim(),
+        createdAt: created.createdAt,
+        updatedAt: created.updatedAt,
+      }
+      // The lead is already durable at this point. Keep audit logging and the
+      // reconciliation read off the interaction-critical path.
+      void createAgencyCrmLeadActivity(organisationId, created.leadId, { agent: currentAgent, activityType: 'Lead Created', activityNote: 'Manual lead captured', outcome: 'Created' }, { actor: currentAgent }).catch(() => null)
+      setRecords((previous) => ({
+        ...previous,
+        leads: [created, ...(previous.leads || []).filter((lead) => normalizeText(lead?.leadId) !== normalizeText(created.leadId))],
+        contacts: [createdContact, ...(previous.contacts || []).filter((contact) => normalizeText(contact?.contactId) !== normalizeText(createdContact.contactId))],
+      }))
+      setTotalLeadCount((count) => count + 1)
       setCreateDialog((previous) => ({ ...previous, open: false }))
       setCategory(form.category)
       setMessage('Lead created.')
       invalidateAgencyLeadListCache(organisationId)
-      await loadLeads({ forceRefresh: true })
+      void loadLeads({ forceRefresh: true })
     } catch (createError) {
       setError(createError?.message || 'Unable to create this lead.')
     } finally {

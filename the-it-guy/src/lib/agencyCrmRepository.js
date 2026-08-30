@@ -611,7 +611,10 @@ async function resolveLeadScopeContext(workspaceId = '', payload = {}, actor = n
     actor?.id,
   )
 
-  if ((!assignedUserId || !branchId || !assignedAgentEmail) && typeof lookupScope === 'function') {
+  // A branch is helpful attribution, but it is optional on CRM leads. Do not
+  // put a lead capture behind an extra membership round trip when the selected
+  // assignee already supplies a durable user id and email address.
+  if ((!assignedUserId || !assignedAgentEmail) && typeof lookupScope === 'function') {
     const membership = await lookupScope(workspaceId, {
       userId: assignedUserId || assignedAgentId || actor?.id,
       email: assignedAgentEmail,

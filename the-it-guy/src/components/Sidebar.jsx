@@ -15,6 +15,8 @@ import {
   KeyRound,
   LayoutDashboard,
   LineChart,
+  Mail,
+  MessageCircle,
   ChevronDown,
   Network,
   Megaphone,
@@ -78,6 +80,14 @@ const ICON_BY_KEY = {
   financials: Wallet,
   marketing: Megaphone,
   marketing_workspace: Megaphone,
+  marketing_campaigns: Megaphone,
+  marketing_email: Mail,
+  marketing_whatsapp: MessageCircle,
+  marketing_events: CalendarDays,
+  marketing_show_days: CalendarDays,
+  marketing_launches: Trophy,
+  marketing_website: Building2,
+  marketing_performance: LineChart,
   new_transaction: PlusCircle,
   pipeline: KanbanSquare,
   agency_pipeline: KanbanSquare,
@@ -267,7 +277,7 @@ function isParentNavActive(item, location) {
   }
 
   const pathname = location?.pathname || ''
-  const childActive = item.children.some((child) => targetMatchesLocation(location, child.to))
+  const childActive = item.children.some((child) => targetMatchesLocation(location, child.to) || isParentNavActive(child, location))
   const customActive = Array.isArray(item.activeMatch)
     ? item.activeMatch.some((path) => routeMatches(pathname, path))
     : false

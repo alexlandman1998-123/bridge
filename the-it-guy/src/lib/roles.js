@@ -157,7 +157,34 @@ export const APP_NAV_BY_ROLE = {
       to: '/listings',
       activeMatch: ['/listings', '/agent/listings'],
     },
-    { key: 'marketing_workspace', label: 'Marketing', to: '/marketing', activeMatch: ['/marketing'] },
+    {
+      key: 'marketing_workspace',
+      label: 'Marketing',
+      to: '/marketing',
+      activeMatch: ['/marketing'],
+      children: [
+        {
+          key: 'marketing_campaigns',
+          label: 'Campaigns',
+          to: '/marketing?section=campaigns',
+          children: [
+            { key: 'marketing_email', label: 'Email', to: '/marketing?section=email' },
+            { key: 'marketing_whatsapp', label: 'WhatsApp', to: '/marketing?section=whatsapp' },
+          ],
+        },
+        {
+          key: 'marketing_events',
+          label: 'Events',
+          to: '/marketing?section=events',
+          children: [
+            { key: 'marketing_show_days', label: 'Show Days', to: '/marketing?section=show-days' },
+            { key: 'marketing_launches', label: 'Auctions & Launches', to: '/marketing?section=launches' },
+          ],
+        },
+        { key: 'marketing_website', label: 'Website & Landing Pages', to: '/marketing?section=website' },
+        { key: 'marketing_performance', label: 'Marketing Performance', to: '/marketing?section=performance' },
+      ],
+    },
     { key: 'clients', label: 'Clients', to: '/clients' },
     { key: 'partners', label: 'Partners', to: '/partners' },
     { key: 'reports', label: 'Reports', to: '/reports' },
@@ -568,7 +595,34 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
       to: '/listings',
       activeMatch: ['/listings', '/agent/listings'],
     },
-    { key: 'marketing_workspace', label: 'Marketing', to: '/marketing', activeMatch: ['/marketing'] },
+    {
+      key: 'marketing_workspace',
+      label: 'Marketing',
+      to: '/marketing',
+      activeMatch: ['/marketing'],
+      children: [
+        {
+          key: 'marketing_campaigns',
+          label: 'Campaigns',
+          to: '/marketing?section=campaigns',
+          children: [
+            { key: 'marketing_email', label: 'Email', to: '/marketing?section=email' },
+            { key: 'marketing_whatsapp', label: 'WhatsApp', to: '/marketing?section=whatsapp' },
+          ],
+        },
+        {
+          key: 'marketing_events',
+          label: 'Events',
+          to: '/marketing?section=events',
+          children: [
+            { key: 'marketing_show_days', label: 'Show Days', to: '/marketing?section=show-days' },
+            { key: 'marketing_launches', label: 'Auctions & Launches', to: '/marketing?section=launches' },
+          ],
+        },
+        { key: 'marketing_website', label: 'Website & Landing Pages', to: '/marketing?section=website' },
+        { key: 'marketing_performance', label: 'Marketing Performance', to: '/marketing?section=performance' },
+      ],
+    },
     {
       key: 'agency',
       label: 'Organisation',

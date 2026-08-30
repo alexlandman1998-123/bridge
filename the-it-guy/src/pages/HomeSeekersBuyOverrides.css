@@ -8,3 +8,40 @@
   opacity: 1 !important;
   backdrop-filter: none !important;
 }
+
+.hs-buy-site .hs-buy-header {
+  position: fixed;
+  z-index: 30;
+  top: 0;
+  right: 0;
+  left: 0;
+  background: transparent;
+  border-bottom-color: transparent;
+  transition: background-color 220ms ease, border-color 220ms ease, box-shadow 220ms ease;
+}
+.hs-buy-header .hs-logo img { filter: brightness(0) invert(1); transition: filter 220ms ease; }
+.hs-buy-header .hs-nav a { color: #fff; transition: color 220ms ease; }
+.hs-buy-header .hs-nav .is-active { border-bottom-color: #fff; }
+.hs-buy-site .hs-buy-header--scrolled { background: #fff; border-bottom-color: #e5e5e2; box-shadow: 0 5px 18px rgba(0, 0, 0, .08); }
+.hs-buy-header--scrolled .hs-logo img { filter: grayscale(1) brightness(.08); }
+.hs-buy-header--scrolled .hs-nav a { color: #111; }
+.hs-buy-header--scrolled .hs-nav .is-active { border-bottom-color: #111; }
+
+/* Keep the floating search surface in front of the hero image at every breakpoint. */
+.hs-buy-site .hs-buy-search { position: relative; z-index: 12; background: #fff !important; }
+
+/* The local-discovery panel is intentionally white-on-black. */
+.hs-buy-site .hs-buy-areas .hs-eyebrow,
+.hs-buy-site .hs-buy-areas h2,
+.hs-buy-site .hs-buy-areas a { color: #fff !important; }
+.hs-buy-site .hs-buy-areas .hs-eyebrow { opacity: .72; }
+
+.hs-buy-site .hs-buy-area-cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 42px; }
+.hs-buy-site .hs-buy-area-cards a { position: relative; min-height: 240px; overflow: hidden; border: 0; padding: 0; color: #fff !important; }
+.hs-buy-area-cards a::after { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,.18), rgba(0,0,0,.78)); }
+.hs-buy-area-cards img { width: 100%; height: 100%; position: absolute; inset: 0; object-fit: cover; opacity: .8; transition: transform 250ms ease; }
+.hs-buy-area-cards a:hover img { transform: scale(1.05); }
+.hs-buy-area-cards span { position: absolute; z-index: 1; right: 17px; bottom: 16px; left: 17px; }
+.hs-buy-area-cards b { display: block; margin-bottom: 7px; color: #fff; font-size: 14px; text-transform: uppercase; }
+.hs-buy-area-cards small { display: flex; align-items: center; gap: 8px; color: #fff; font-size: 10px; font-weight: 700; text-transform: uppercase; }
+@media(max-width:760px){.hs-buy-site .hs-buy-area-cards{display:flex;overflow-x:auto;margin-right:-24px;padding-right:24px}.hs-buy-site .hs-buy-area-cards a{min-width:220px;aspect-ratio:1;min-height:0}}
