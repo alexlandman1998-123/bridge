@@ -501,6 +501,27 @@ function assertJourneyStepStates(journey, currentKey, completedKeys = []) {
 }
 
 {
+  const lead = { ...baseLead, listingId: 'listing-retired-mandate' }
+  const listing = {
+    id: 'listing-retired-mandate',
+    sellerLeadId: lead.leadId,
+    listingStatus: 'onboarding_completed',
+    sellerOnboarding: { status: 'completed', submittedAt: '2026-08-30T08:00:00Z' },
+    mandateStatus: 'not_started',
+    documents: [{
+      id: 'old-mandate',
+      documentType: 'signed_mandate',
+      status: 'not_applicable',
+      fileUrl: 'https://example.test/audited-old-mandate.pdf',
+    }],
+  }
+  const journey = buildSellerJourney({ lead, listing })
+  assert.equal(journey.stage.key, 'seller_onboarding_submitted')
+  assert.equal(journey.mandateStatus, 'not_started')
+  assert.equal(journey.actions.find((item) => item.id === 'record_hard_copy_mandate').enabled, true)
+}
+
+{
   const journey = buildSellerJourney({
     lead: { ...baseLead, listingId: 'listing-docs-1' },
     listing: {

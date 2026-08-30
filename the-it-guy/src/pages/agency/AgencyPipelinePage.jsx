@@ -90,6 +90,7 @@ import { DOCUMENTS_BUCKET_CANDIDATES, assertEdgeFunctionSuccess, invokeEdgeFunct
 import { allocatePrivateListingTransferAttorneyPreInstruction, getPrivateListingTransferAttorneyAllocation, instructPrivateListingTransferAttorneyAllocation, listPrivateListingTransferAttorneyAllocations } from '../../services/privateListingAttorneyAllocationService'
 import { repairSellerDocumentTransactionContinuity } from '../../services/sellerDocumentTransactionContinuityService'
 import { buildSellerJourney, getSellerJourneyMetrics } from '../../services/sellerJourneyService'
+import { selectAuthoritativeListingOptionSource } from '../../services/listingOptionAuthorityService'
 import { buildSellerReadinessSummary } from '../../services/sellerReadinessService'
 import { buildSellerDocumentSourceOfTruth } from '../../services/sellerDocumentRequirementsService'
 import { buildSellerComplianceAgentStatus } from '../../core/documents/sellerComplianceAgentStatusModel'
@@ -6764,6 +6765,7 @@ function normalizeAppointmentListingOption(listing = {}) {
   return {
     id,
     sourceListing: listing,
+    sourceAuthority: normalizeText(listing?.listingOptionSourceAuthority || listing?.listing_option_source_authority) || 'canonical_listing',
     label: buildAppointmentListingLabel(listing),
     status: status || 'active',
     title: normalizeText(listing?.listingTitle || listing?.title || listing?.propertyName || listing?.property_name),
@@ -6789,6 +6791,7 @@ function buildListingOptionsFromLeads(leads = []) {
     if (!listingId) continue
     options.push(normalizeAppointmentListingOption({
       id: listingId,
+      listingOptionSourceAuthority: 'lead_projection',
       listingReference: listingId,
       title: lead?.propertyInterest,
       address: lead?.sellerPropertyAddress,
@@ -6973,9 +6976,11 @@ function dedupeListingOptions(options = []) {
     const optionTime = new Date(option.updatedAt || 0).getTime()
     const newerOption = optionTime >= existingTime ? option : existing
     const olderOption = optionTime >= existingTime ? existing : option
+    const authoritativeSource = selectAuthoritativeListingOptionSource(existing, option)
     byId.set(option.id, {
       ...olderOption,
       ...newerOption,
+      ...authoritativeSource,
       label: normalizeText(newerOption.label) || normalizeText(olderOption.label),
       title: normalizeText(newerOption.title) || normalizeText(olderOption.title),
       address: normalizeText(newerOption.address) || normalizeText(olderOption.address),

@@ -265,6 +265,13 @@ const UPLOADED_DOCUMENT_STATUSES = new Set([
   'signed_uploaded',
   'uploaded_signed',
 ])
+const RETIRED_DOCUMENT_STATUSES = new Set([
+  'not_applicable',
+  'cancelled',
+  'archived',
+  'voided',
+  'superseded',
+])
 
 function firstPresent(...values) {
   return values.map(normalizeText).find(Boolean) || ''
@@ -363,6 +370,7 @@ function hasSignedMandateDocumentEvidence(documents = []) {
   return (Array.isArray(documents) ? documents : []).some((document) => {
     if (!isSignedMandateDocumentLike(document)) return false
     const status = normalizeSellerDocumentRequirementStatus(document?.status || document?.documentStatus || document?.document_status)
+    if (RETIRED_DOCUMENT_STATUSES.has(status)) return false
     return Boolean(
       document?.complete ||
         document?.completed ||
