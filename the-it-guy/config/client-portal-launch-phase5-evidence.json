@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "contractId": "client-portal-launch-v1",
   "phase": 5,
-  "candidateBuild": "",
-  "productionEnvironment": "",
+  "candidateBuild": "e57255094ff5d900f9e71e86a31c78245ce439f7 / dpl_3RNeX37gGJvcX5fLZD7kdCiZuU2P",
+  "productionEnvironment": "Vercel Preview: https://bridge-pnmoiq13o-alexs-projects-f5496a21.vercel.app",
   "evidence": {
     "productionPerformance": {
       "status": "pending",
