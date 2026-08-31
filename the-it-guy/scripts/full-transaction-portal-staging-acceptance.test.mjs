@@ -12,6 +12,7 @@ const SAMLIN_ORGANISATION_ID = '84b6e57a-9b12-4bfd-991c-0f5f820d28f4'
 const SAMLIN_DEVELOPMENT_ID = '74d85095-1c99-4e04-a826-a67401691e4d'
 const TUCKERS_ORGANISATION_ID = 'cbbd85b9-dbf8-44db-9d2a-e025600a940f'
 const TUCKERS_FIRM_ID = '417e5aa8-4c61-4821-838e-8dd4a479cc19'
+const CONTROLLED_BOND_ORIGINATOR_EMAIL = 'qa.bond.consultant@example.test'
 const FIXTURE = 'full_transaction_portal_staging_acceptance_v1'
 
 function readEnv(fileName) {
@@ -116,6 +117,9 @@ async function cleanup(admin, state) {
     ['client_portal_links', 'transaction_id', state.transactionIds],
     ['client_portal_contexts', 'transaction_id', state.transactionIds],
     ['transaction_attorney_assignments', 'transaction_id', state.transactionIds],
+    ['transaction_bond_applications', 'transaction_id', state.transactionIds],
+    ['transaction_finance_workflows', 'transaction_id', state.transactionIds],
+    ['transaction_role_players', 'transaction_id', state.transactionIds],
     ['private_listings', 'id', state.privateListingIds],
     ['private_listing_documents', 'private_listing_id', state.privateListingIds],
     ['private_listing_seller_onboarding', 'private_listing_id', state.privateListingIds],
@@ -128,7 +132,7 @@ async function cleanup(admin, state) {
   }
 }
 
-async function createMatter({ api, transactionType, actor, organisationId, unitId, runId, firm, buyerEmail }) {
+async function createMatter({ api, transactionType, actor, organisationId, unitId, runId, firm, bondOriginator, buyerEmail }) {
   const isDeveloper = transactionType === 'developer_sale'
   return api.createTransactionFromWizard({
     setup: {
@@ -139,8 +143,8 @@ async function createMatter({ api, transactionType, actor, organisationId, unitI
       buyerEmail,
       buyerPhone: '+27820000001',
       purchaserType: 'individual',
-      financeType: 'cash',
-      financeManagedBy: 'client',
+      financeType: 'bond',
+      financeManagedBy: 'bond_originator',
       salesPrice: 2_190_000,
       propertyType: isDeveloper ? null : 'residential',
       propertyAddressLine1: isDeveloper ? null : `1 Acceptance Lane ${runId}`,
@@ -153,29 +157,47 @@ async function createMatter({ api, transactionType, actor, organisationId, unitI
       assignedAgentEmail: actor.email,
     },
     finance: {
-      cashAmount: 2_190_000,
-      bondAmount: 0,
+      cashAmount: 500_000,
+      bondAmount: 1_690_000,
       depositAmount: 100_000,
       reservationRequired: isDeveloper,
       reservationAmount: isDeveloper ? 100_000 : null,
       attorney: firm.name,
       attorneyEmail: firm.email,
+      bondOriginator: bondOriginator.email,
+      bondOriginatorEmail: bondOriginator.email,
     },
     status: { stage: 'Reserved', mainStage: 'reserved', nextAction: `${FIXTURE}:${runId}` },
     options: {
       disableAutoPartnerRouting: true,
       creationOrigin: FIXTURE,
       sourceContext: { organisationId, workspaceId: organisationId, fixture: FIXTURE, runId },
-      rolePlayers: [{
-        roleType: 'transfer_attorney',
-        partnerOrganisationId: TUCKERS_ORGANISATION_ID,
-        attorneyFirmId: TUCKERS_FIRM_ID,
-        partnerName: firm.name,
-        contactPerson: firm.name,
-        email: firm.email,
-        selectionSource: 'controlled_staging',
-        firmFirstAllocation: true,
-      }],
+      rolePlayers: [
+        {
+          roleType: 'transfer_attorney',
+          partnerOrganisationId: TUCKERS_ORGANISATION_ID,
+          attorneyFirmId: TUCKERS_FIRM_ID,
+          partnerName: firm.name,
+          contactPerson: firm.name,
+          email: firm.email,
+          selectionSource: 'controlled_staging',
+          firmFirstAllocation: true,
+        },
+        {
+          roleType: 'bond_originator',
+          partnerOrganisationId: bondOriginator.organisation_id,
+          partnerName: 'Controlled staging bond originator',
+          contactPerson: bondOriginator.email,
+          email: bondOriginator.email,
+          userId: bondOriginator.user_id,
+          regionId: bondOriginator.region_id,
+          workspaceUnitId: bondOriginator.workspace_unit_id,
+          branchId: bondOriginator.branch_id,
+          teamId: bondOriginator.team_id,
+          selectionSource: 'controlled_staging',
+          assignmentStatus: 'active',
+        },
+      ],
     },
   })
 }
@@ -186,7 +208,7 @@ async function uploadBuyerRequirements({ admin, api, created, label }) {
     .eq('transaction_id', created.transactionId).neq('status', 'not_applicable')
   if (requirements.error) throw requirements.error
   const applicable = (requirements.data || []).filter((row) =>
-    value(row.requested_from_role).toLowerCase() === 'buyer' || (row.uploadable_by_roles || []).includes('buyer'))
+    (row.uploadable_by_roles || []).map((role) => value(role).toLowerCase()).includes('buyer'))
   assert.ok(applicable.length, `${label}: no buyer upload requirements were generated.`)
   for (const requirement of applicable) {
     const uploaded = await api.uploadClientPortalDocument({
@@ -211,6 +233,7 @@ async function main() {
   const admin = createClient(url, env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
   const runId = `${Date.now()}-${crypto.randomBytes(3).toString('hex')}`
   const state = { transactionIds: [], privateListingIds: [], unitIds: [], buyerEmails: [] }
+  const handoverOnly = process.env.RUN_HANDOVER_ONLY === 'true'
   let vite = null
   let appClient = null
 
@@ -226,6 +249,15 @@ async function main() {
     const firmResult = await admin.from('attorney_firms').select('id, name, email, organisation_id')
       .eq('id', TUCKERS_FIRM_ID).eq('organisation_id', TUCKERS_ORGANISATION_ID).single()
     if (firmResult.error) throw firmResult.error
+
+    const bondOriginatorResult = await admin.from('organisation_users')
+      .select('user_id, email, organisation_id, region_id, workspace_unit_id, branch_id, team_id, scope_level, workspace_role')
+      .eq('email', CONTROLLED_BOND_ORIGINATOR_EMAIL)
+      .eq('app_role', 'bond_originator')
+      .eq('status', 'active')
+      .single()
+    if (bondOriginatorResult.error) throw bondOriginatorResult.error
+    assert.ok(bondOriginatorResult.data.user_id && bondOriginatorResult.data.organisation_id, 'Controlled bond-originator actor is required in staging.')
 
     const unitResult = await admin.from('units').insert({
       development_id: SAMLIN_DEVELOPMENT_ID,
@@ -252,31 +284,36 @@ async function main() {
     const developerMatter = await createMatter({
       api, transactionType: 'developer_sale', actor: developer,
       organisationId: SAMLIN_ORGANISATION_ID, unitId: unitResult.data.id,
-      runId, firm: firmResult.data, buyerEmail: developerBuyerEmail,
+      runId, firm: firmResult.data, bondOriginator: bondOriginatorResult.data, buyerEmail: developerBuyerEmail,
     })
     state.transactionIds.push(developerMatter.transactionId)
     assert.ok(developerMatter.buyerPortalToken)
-    const developerBuyerWorkspace = await portalWorkspace.getClientPortalWorkspaceData(developerMatter.buyerPortalToken, 'buying')
-    assert.equal(developerBuyerWorkspace.transaction.id, developerMatter.transactionId)
-    assert.doesNotMatch(JSON.stringify(developerBuyerWorkspace), /Sarah Williams|Demo Agency/)
-    const developerBuyerUploads = await uploadBuyerRequirements({ admin, api, created: developerMatter, label: 'developer' })
+    let developerBuyerUploads = 0
+    let developerSellerUploads = 0
+    if (!handoverOnly) {
+      const developerBuyerWorkspace = await portalWorkspace.getClientPortalWorkspaceData(developerMatter.buyerPortalToken, 'buying')
+      assert.equal(developerBuyerWorkspace.transaction.id, developerMatter.transactionId)
+      assert.doesNotMatch(JSON.stringify(developerBuyerWorkspace), /Sarah Williams|Demo Agency/)
+      developerBuyerUploads = await uploadBuyerRequirements({ admin, api, created: developerMatter, label: 'developer' })
 
-    const developerLink = await developerPortal.createDeveloperDocumentPortalLink({
-      transactionId: developerMatter.transactionId,
-      recipientEmail: developer.email,
-      expiresDays: 1,
-    })
-    const developerPayload = await developerPortal.fetchDeveloperDocumentPortal(developerLink.accessToken)
-    assert.equal(developerPayload.transaction.id, developerMatter.transactionId)
-    for (const requirement of developerPayload.requirements || []) {
-      await developerPortal.uploadDeveloperDocumentPortalFile({
-        token: developerLink.accessToken,
-        portalId: developerPayload.portal.id,
+      const developerLink = await developerPortal.createDeveloperDocumentPortalLink({
         transactionId: developerMatter.transactionId,
-        requirementId: requirement.id,
-        category: requirement.category || 'Developer Documents',
-        file: evidence(`developer-seller-${requirement.key || requirement.id}`),
+        recipientEmail: developer.email,
+        expiresDays: 1,
       })
+      const developerPayload = await developerPortal.fetchDeveloperDocumentPortal(developerLink.accessToken)
+      assert.equal(developerPayload.transaction.id, developerMatter.transactionId)
+      developerSellerUploads = developerPayload.requirements?.length || 0
+      for (const requirement of developerPayload.requirements || []) {
+        await developerPortal.uploadDeveloperDocumentPortalFile({
+          token: developerLink.accessToken,
+          portalId: developerPayload.portal.id,
+          transactionId: developerMatter.transactionId,
+          requirementId: requirement.id,
+          category: requirement.category || 'Developer Documents',
+          file: evidence(`developer-seller-${requirement.key || requirement.id}`),
+        })
+      }
     }
 
     await signInAs(admin, appClient, agent.email)
@@ -285,54 +322,61 @@ async function main() {
     const agentMatter = await createMatter({
       api, transactionType: 'private_property', actor: agent,
       organisationId: agent.organisation_id, unitId: null,
-      runId, firm: firmResult.data, buyerEmail: agentBuyerEmail,
+      runId, firm: firmResult.data, bondOriginator: bondOriginatorResult.data, buyerEmail: agentBuyerEmail,
     })
     state.transactionIds.push(agentMatter.transactionId)
     state.privateListingIds.push(agentMatter.privateListingId)
     assert.ok(agentMatter.buyerPortalToken && agentMatter.sellerOnboardingToken)
-    const sellerPassword = `Acceptance!${crypto.randomBytes(9).toString('base64url')}`
-    const sellerSession = await sellerService.setSellerPortalPassword({
-      token: agentMatter.sellerOnboardingToken,
-      password: sellerPassword,
-    })
-    assert.ok(sellerSession.accessToken, 'Seller portal activation did not issue an access token.')
-    const sellerPortalToken = sellerSession.stablePortalToken || agentMatter.sellerOnboardingToken
-    const agentBuyerWorkspace = await portalWorkspace.getClientPortalWorkspaceData(agentMatter.buyerPortalToken, 'buying')
-    const agentSellerWorkspace = await portalWorkspace.getClientPortalWorkspaceData(sellerPortalToken, 'selling', {
-      sellerPortalAccessToken: sellerSession.accessToken,
-    })
-    assert.equal(agentBuyerWorkspace.transaction.id, agentMatter.transactionId)
-    assert.equal(agentSellerWorkspace.transaction.id, agentMatter.transactionId)
-    assert.doesNotMatch(JSON.stringify([agentBuyerWorkspace, agentSellerWorkspace]), /Sarah Williams|Demo Agency/)
-    const agentBuyerUploads = await uploadBuyerRequirements({ admin, api, created: agentMatter, label: 'agent' })
-
-    const sellerPayload = await sellerService.getSellerOnboardingByToken(sellerPortalToken, {
-      includeRequirementsAndDocuments: true,
-      requirePortalAccess: true,
-      sellerPortalAccessToken: sellerSession.accessToken,
-    })
-    const sellerRequirements = sellerPayload?.listing?.documentRequirements || []
-    assert.ok(sellerRequirements.length, 'Agent seller portal has no projected requirements.')
-    for (const requirement of sellerRequirements) {
-      await sellerService.uploadSellerClientPortalDocument({
-        token: sellerPortalToken,
-        accessToken: sellerSession.accessToken,
-        file: evidence(`agent-seller-${requirement.requirement_key || requirement.key}`),
-        requirementKey: requirement.requirement_key || requirement.key,
-        documentType: requirement.requirement_key || requirement.key,
-        category: 'Seller Document',
+    let agentBuyerUploads = 0
+    let agentSellerUploads = 0
+    let sellerPortalToken = ''
+    let sellerSession = null
+    if (!handoverOnly) {
+      const sellerPassword = `Acceptance!${crypto.randomBytes(9).toString('base64url')}`
+      sellerSession = await sellerService.setSellerPortalPassword({
+        token: agentMatter.sellerOnboardingToken,
+        password: sellerPassword,
       })
-    }
+      assert.ok(sellerSession.accessToken, 'Seller portal activation did not issue an access token.')
+      sellerPortalToken = sellerSession.stablePortalToken || agentMatter.sellerOnboardingToken
+      const agentBuyerWorkspace = await portalWorkspace.getClientPortalWorkspaceData(agentMatter.buyerPortalToken, 'buying')
+      const agentSellerWorkspace = await portalWorkspace.getClientPortalWorkspaceData(sellerPortalToken, 'selling', {
+        sellerPortalAccessToken: sellerSession.accessToken,
+      })
+      assert.equal(agentBuyerWorkspace.transaction.id, agentMatter.transactionId)
+      assert.equal(agentSellerWorkspace.transaction.id, agentMatter.transactionId)
+      assert.doesNotMatch(JSON.stringify([agentBuyerWorkspace, agentSellerWorkspace]), /Sarah Williams|Demo Agency/)
+      agentBuyerUploads = await uploadBuyerRequirements({ admin, api, created: agentMatter, label: 'agent' })
 
-    const promoted = await admin.from('private_listing_documents')
-      .select('id, promoted_document_id, promoted_transaction_id, promotion_status')
-      .eq('private_listing_id', agentMatter.privateListingId)
-    if (promoted.error) throw promoted.error
-    assert.equal(promoted.data.length, sellerRequirements.length)
-    for (const row of promoted.data) {
-      assert.ok(row.promoted_document_id)
-      assert.equal(row.promoted_transaction_id, agentMatter.transactionId)
-      assert.equal(row.promotion_status, 'promoted')
+      const sellerPayload = await sellerService.getSellerOnboardingByToken(sellerPortalToken, {
+        includeRequirementsAndDocuments: true,
+        requirePortalAccess: true,
+        sellerPortalAccessToken: sellerSession.accessToken,
+      })
+      const sellerRequirements = sellerPayload?.listing?.documentRequirements || []
+      assert.ok(sellerRequirements.length, 'Agent seller portal has no projected requirements.')
+      agentSellerUploads = sellerRequirements.length
+      for (const requirement of sellerRequirements) {
+        await sellerService.uploadSellerClientPortalDocument({
+          token: sellerPortalToken,
+          accessToken: sellerSession.accessToken,
+          file: evidence(`agent-seller-${requirement.requirement_key || requirement.key}`),
+          requirementKey: requirement.requirement_key || requirement.key,
+          documentType: requirement.requirement_key || requirement.key,
+          category: 'Seller Document',
+        })
+      }
+
+      const promoted = await admin.from('private_listing_documents')
+        .select('id, promoted_document_id, promoted_transaction_id, promotion_status')
+        .eq('private_listing_id', agentMatter.privateListingId)
+      if (promoted.error) throw promoted.error
+      assert.equal(promoted.data.length, sellerRequirements.length)
+      for (const row of promoted.data) {
+        assert.ok(row.promoted_document_id)
+        assert.equal(row.promoted_transaction_id, agentMatter.transactionId)
+        assert.equal(row.promotion_status, 'promoted')
+      }
     }
 
     const attorneyClient = createClient(url, value(env.VITE_SUPABASE_ANON_KEY || env.SUPABASE_ANON_KEY), {
@@ -351,29 +395,61 @@ async function main() {
     const visible = new Set((matters.data?.rows || []).map((row) => row.transactionId || row.transaction_id || row.id))
     for (const transactionId of state.transactionIds) assert.ok(visible.has(transactionId), `Tuckers Matters omitted ${transactionId}.`)
 
-    await assert.rejects(
-      () => portalWorkspace.getClientPortalWorkspaceData(`invalid-${runId}`, 'buying'),
-      /invalid|inactive|not found|unavailable/i,
+    const canonicalBondApplications = await admin.from('transaction_bond_applications')
+      .select('id, transaction_id, assigned_organisation_id, assigned_user_id, assignment_status')
+      .in('transaction_id', state.transactionIds)
+    if (canonicalBondApplications.error) throw canonicalBondApplications.error
+    assert.equal(canonicalBondApplications.data.length, state.transactionIds.length, 'Each transaction must create one canonical bond application.')
+    for (const application of canonicalBondApplications.data) {
+      assert.equal(application.assigned_organisation_id, bondOriginatorResult.data.organisation_id)
+      assert.equal(application.assigned_user_id, bondOriginatorResult.data.user_id)
+    }
+
+    await signInAs(admin, appClient, bondOriginatorResult.data.email)
+    const bondApplications = await appClient.from('transaction_bond_applications')
+      .select('id, transaction_id')
+      .in('transaction_id', state.transactionIds)
+    if (bondApplications.error) throw bondApplications.error
+    assert.equal(bondApplications.data.length, state.transactionIds.length, 'The assigned bond originator cannot read every application.')
+    const bondDashboardRows = await api.fetchTransactionsByParticipantSummary({
+      userId: bondOriginatorResult.data.user_id,
+      roleType: 'bond_originator',
+      organisationId: '',
+    })
+    const bondDashboardIds = new Set(
+      (bondDashboardRows || []).map((row) => row?.transaction?.id || row?.id || row?.transaction_id).filter(Boolean),
     )
-    const expired = await admin.from('private_listing_seller_onboarding')
-      .update({ seller_portal_access_token_expires_at: new Date(Date.now() - 60_000).toISOString() })
-      .eq('private_listing_id', agentMatter.privateListingId)
-    if (expired.error) throw expired.error
-    await assert.rejects(
-      () => portalWorkspace.getClientPortalWorkspaceData(sellerPortalToken, 'selling', {
-        sellerPortalAccessToken: sellerSession.accessToken,
-      }),
-      (error) => error?.code === 'seller_portal_auth_required' && error?.portalAuth?.sessionExpired === true,
-    )
+    for (const transactionId of state.transactionIds) {
+      assert.ok(bondDashboardIds.has(transactionId), `Bond Applications omitted ${transactionId}.`)
+    }
+
+    if (!handoverOnly) {
+      await assert.rejects(
+        () => portalWorkspace.getClientPortalWorkspaceData(`invalid-${runId}`, 'buying'),
+        /invalid|inactive|not found|unavailable/i,
+      )
+      const expired = await admin.from('private_listing_seller_onboarding')
+        .update({ seller_portal_access_token_expires_at: new Date(Date.now() - 60_000).toISOString() })
+        .eq('private_listing_id', agentMatter.privateListingId)
+      if (expired.error) throw expired.error
+      await assert.rejects(
+        () => portalWorkspace.getClientPortalWorkspaceData(sellerPortalToken, 'selling', {
+          sellerPortalAccessToken: sellerSession.accessToken,
+        }),
+        (error) => error?.code === 'seller_portal_auth_required' && error?.portalAuth?.sessionExpired === true,
+      )
+    }
 
     const report = {
       fixture: FIXTURE,
       environment: 'staging',
       status: 'passed',
-      developer: { transactionId: developerMatter.transactionId, buyerUploads: developerBuyerUploads, sellerUploads: developerPayload.requirements?.length || 0 },
-      agent: { transactionId: agentMatter.transactionId, buyerUploads: agentBuyerUploads, sellerUploads: sellerRequirements.length },
+      mode: handoverOnly ? 'handover_only' : 'full_portal',
+      developer: { transactionId: developerMatter.transactionId, buyerUploads: developerBuyerUploads, sellerUploads: developerSellerUploads },
+      agent: { transactionId: agentMatter.transactionId, buyerUploads: agentBuyerUploads, sellerUploads: agentSellerUploads },
       tuckersMattersVisible: state.transactionIds.length,
-      invalidAndExpiredTokensRejected: true,
+      bondOriginatorApplicationsVisible: state.transactionIds.length,
+      invalidAndExpiredTokensRejected: handoverOnly ? null : true,
     }
     await cleanup(admin, state)
     console.log(JSON.stringify({ ...report, fixtureResidue: 0 }, null, 2))
@@ -418,9 +494,12 @@ function runContractChecks() {
   assert.match(migration, /revoke all on function[\s\S]+from public, anon/i)
 
   assert.match(api, /sellerHandoffRequired:\s*transactionType === 'private_property'/)
+  assert.match(api, /bondOriginatorAssignmentRequired:\s*expectedBondOriginatorAssignments > 0/)
+  assert.match(api, /BOND_ORIGINATOR_ASSIGNMENT_SETUP_INCOMPLETE/)
   assert.match(api, /client\.rpc\('bridge_verify_private_transaction_seller_handoff'/)
   assert.match(api, /sellerPortalPath:/)
   assert.match(lifecycle, /'seller_handoff'/)
+  assert.match(lifecycle, /'bond_originator_assignment'/)
   assert.doesNotMatch(liveLoader.slice(0, liveLoader.indexOf('const { mode')), /buildDemoClientPortalWorkspaceData/)
 }
 

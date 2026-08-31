@@ -29940,8 +29940,12 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     ['transfer_attorney', 'bond_attorney', 'cancellation_attorney'].includes(selection?.roleType) &&
     (shouldCreateAttorneyAssignmentForSelection(selection) || isFirmFirstAttorneyAllocation(selection)),
   ).length
+  const expectedBondOriginatorAssignments = isBondFinanceType(normalizedFinanceType)
+    ? mergedRolePlayerSelections.filter((selection) => selection?.roleType === 'bond_originator').length
+    : 0
   let creationLifecycle = createTransactionCreationLifecycle({
     attorneyAssignmentRequired: expectedAttorneyAssignments > 0,
+    bondOriginatorAssignmentRequired: expectedBondOriginatorAssignments > 0,
     sellerHandoffRequired: transactionType === 'private_property',
     portalSetupRequired: ['developer_sale', 'private_property'].includes(transactionType),
   })
@@ -30334,12 +30338,25 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     if (propagationResult.attorneyAssignments.length < expectedAttorneyAssignments.length) {
       const error = new Error('The selected attorney assignment did not reach the attorney workspace.')
       error.code = 'ATTORNEY_ASSIGNMENT_SETUP_INCOMPLETE'
+      error.setupArea = 'attorney_assignment'
       throw error
     }
     if (expectedAttorneyAssignments > 0) {
       creationLifecycle = setTransactionCreationStepOutcome(creationLifecycle, 'attorney_assignment', {
         status: 'complete',
         detail: { expected: expectedAttorneyAssignments, persisted: propagationResult.attorneyAssignments.length },
+      })
+    }
+    if (propagationResult.bondApplications.length < expectedBondOriginatorAssignments) {
+      const error = new Error('The selected bond originator assignment did not reach the bond workspace.')
+      error.code = 'BOND_ORIGINATOR_ASSIGNMENT_SETUP_INCOMPLETE'
+      error.setupArea = 'bond_originator_assignment'
+      throw error
+    }
+    if (expectedBondOriginatorAssignments > 0) {
+      creationLifecycle = setTransactionCreationStepOutcome(creationLifecycle, 'bond_originator_assignment', {
+        status: 'complete',
+        detail: { expected: expectedBondOriginatorAssignments, persisted: propagationResult.bondApplications.length },
       })
     }
     if (propagationResult.participants?.length) {
@@ -30352,8 +30369,20 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       ]
     }
   } catch (error) {
-    if (expectedAttorneyAssignments > 0) {
+    if (
+      expectedAttorneyAssignments > 0 &&
+      creationLifecycle.steps.attorney_assignment?.status !== 'complete'
+    ) {
       creationLifecycle = setTransactionCreationStepOutcome(creationLifecycle, 'attorney_assignment', {
+        status: 'failed',
+        error,
+      })
+    }
+    if (
+      expectedBondOriginatorAssignments > 0 &&
+      creationLifecycle.steps.bond_originator_assignment?.status !== 'complete'
+    ) {
+      creationLifecycle = setTransactionCreationStepOutcome(creationLifecycle, 'bond_originator_assignment', {
         status: 'failed',
         error,
       })
@@ -30363,6 +30392,8 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       error,
       error?.setupArea === 'attorney_assignment'
         ? 'The selected attorney firm could not be added to its Matters workspace.'
+        : error?.setupArea === 'bond_originator_assignment'
+          ? 'The selected bond originator could not be added to its Applications workspace.'
         : 'Participant setup could not be completed.',
     )
   }

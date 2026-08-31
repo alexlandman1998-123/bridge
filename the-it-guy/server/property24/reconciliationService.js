@@ -162,12 +162,28 @@ async function selectRows(query) {
 
 export async function fetchProperty24LocalSyncRows({
   supabase,
+  organisationId = '',
   environment = 'exdev',
   agencyId,
   listingNumber,
   limit = 500,
 } = {}) {
   if (!supabase) throw new Error('Supabase client is required.')
+  const normalizedOrganisationId = normalizeProperty24Text(organisationId)
+  let scopedListingRows = null
+  let scopedListingIds = []
+  if (normalizedOrganisationId) {
+    scopedListingRows = await selectRows(
+      supabase
+        .from('private_listings')
+        .select('id, organisation_id, listing_status, title, property24_reference, property24_status')
+        .eq('organisation_id', normalizedOrganisationId)
+        .limit(Math.max(Number(limit || 500), 5000)),
+    )
+    scopedListingIds = scopedListingRows.map((listing) => listing.id).filter(Boolean)
+    if (!scopedListingIds.length) return []
+  }
+
   let query = supabase
     .from('property24_listing_syncs')
     .select('*')
@@ -175,21 +191,24 @@ export async function fetchProperty24LocalSyncRows({
     .limit(limit)
   if (agencyId) query = query.eq('agency_id', Number(agencyId))
   if (listingNumber) query = query.eq('listing_number', Number(listingNumber))
+  if (scopedListingIds.length) query = query.in('private_listing_id', scopedListingIds)
 
   const syncRows = await selectRows(query)
   const listingIds = [...new Set(syncRows.map((row) => row.private_listing_id).filter(Boolean))]
   if (!listingIds.length) return syncRows.map((sync) => ({ sync, listing: null }))
 
-  let listingRows = []
-  try {
-    listingRows = await selectRows(
-      supabase
-        .from('private_listings')
-        .select('id, organisation_id, listing_status, title, property24_reference, property24_status')
-        .in('id', listingIds),
-    )
-  } catch {
-    listingRows = []
+  let listingRows = scopedListingRows || []
+  if (!scopedListingRows) {
+    try {
+      listingRows = await selectRows(
+        supabase
+          .from('private_listings')
+          .select('id, organisation_id, listing_status, title, property24_reference, property24_status')
+          .in('id', listingIds),
+      )
+    } catch {
+      listingRows = []
+    }
   }
   const listingsById = new Map(listingRows.map((listing) => [listing.id, listing]))
   return syncRows.map((sync) => ({
@@ -218,6 +237,8 @@ export function createProperty24ReconciliationComparison({ localRows = [], remot
       statusDrift.push({
         listingNumber,
         listingId: localSync.listingId,
+        listingTitle: localSync.listing?.title || null,
+        listingReference: localSync.listing?.property24Reference || String(listingNumber),
         localStatus: localSync.externalStatus || null,
         remoteStatus: remoteListing.status || null,
         localIsOnPortal: localSync.isOnPortal,
@@ -256,6 +277,7 @@ export async function createProperty24ReconciliationReport({
   const agencyId = normalizeProperty24Text(config.agencyId)
   const localRows = await fetchProperty24LocalSyncRows({
     supabase,
+    organisationId: config.organisationId,
     environment,
     agencyId,
     limit: config.limit || 500,
@@ -290,6 +312,7 @@ export async function createProperty24UpdatesReport({
   const fromDate = clampProperty24UpdatesFromDate(config.fromDate, now)
   const localRows = await fetchProperty24LocalSyncRows({
     supabase,
+    organisationId: config.organisationId,
     environment,
     agencyId,
     limit: config.limit || 500,
@@ -339,7 +362,13 @@ export async function createProperty24PortalVisibilityReport({
   const environment = normalizeProperty24Text(config.environment) || 'exdev'
   const agencyId = normalizeProperty24Text(config.agencyId)
   const limit = Math.min(Math.max(Number(config.limit || 25), 1), 100)
-  const localRows = await fetchProperty24LocalSyncRows({ supabase, environment, agencyId, limit })
+  const localRows = await fetchProperty24LocalSyncRows({
+    supabase,
+    organisationId: config.organisationId,
+    environment,
+    agencyId,
+    limit,
+  })
   const checks = []
   for (const row of localRows) {
     const local = summarizeLocalSync(row.sync, row.listing)
@@ -442,6 +471,7 @@ export async function createProperty24LeadImportPlan({
   const after = clampProperty24LeadsAfter(config.after, now)
   const localRows = await fetchProperty24LocalSyncRows({
     supabase,
+    organisationId: config.organisationId,
     environment,
     agencyId,
     limit: config.limit || 500,
@@ -460,6 +490,7 @@ export async function createProperty24LeadImportPlan({
   })
   return {
     generatedAt: toIsoDate(now),
+    organisationId: normalizeProperty24Text(config.organisationId) || null,
     environment,
     agencyId,
     after,
@@ -524,6 +555,7 @@ export async function runProperty24ReconciliationJob({
   const report = {
     phase: 'property24-phase5-reconciliation',
     generatedAt: toIsoDate(now),
+    organisationId: normalizeProperty24Text(config.organisationId) || null,
     environment: normalizeProperty24Text(config.environment) || 'exdev',
     agencyId: normalizeProperty24Text(config.agencyId),
     mode: 'REPORT_ONLY',

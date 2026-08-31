@@ -63,6 +63,7 @@ const imageWithBytes = [
 assert.equal(resolveProperty24ListingType('To Rent'), 'Rental')
 assert.equal(resolveProperty24ListingType('For Sale'), 'Sale')
 assert.equal(resolveProperty24Status('sold'), 'Sold')
+assert.equal(resolveProperty24Status('rented'), 'Rented')
 assert.equal(resolveProperty24Status('active', { isNew: true }), 'NewListing')
 assert.equal(resolveProperty24Status('active', { isNew: false }), 'Active')
 assert.equal(resolveProperty24PropertyTypeId('Apartment'), 5)

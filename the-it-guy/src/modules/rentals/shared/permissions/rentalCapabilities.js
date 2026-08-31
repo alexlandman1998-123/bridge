@@ -3,7 +3,7 @@ import { can, getPermissionScope, resolvePermissionContext } from '../../../../a
 import { buildWorkspaceQueryScope } from '../../../../auth/permissions/queryScope.js'
 import { ORG_ROLES } from '../../../../constants/orgRoles.js'
 
-export const RENTAL_CAPABILITY_CONTRACT_VERSION = 'arch9_rentals_capability_contract_v1'
+export const RENTAL_CAPABILITY_CONTRACT_VERSION = 'arch9_rentals_capability_contract_v2'
 
 export const RENTAL_CAPABILITIES = Object.freeze({
   portfolioView: 'rentals.portfolio.view',
@@ -27,6 +27,9 @@ export const RENTAL_CAPABILITIES = Object.freeze({
   inspectionsManage: 'rentals.inspections.manage',
   reportsView: 'rentals.reports.view',
   reportsExport: 'rentals.reports.export',
+  shortTermView: 'rentals.short_term.view',
+  shortTermManage: 'rentals.short_term.manage',
+  shortTermOperationsManage: 'rentals.short_term.operations.manage',
 })
 
 const RENTAL_AUTHORITY_ROLES = Object.freeze([
@@ -72,14 +75,19 @@ const capabilityDefinitions = Object.freeze({
   [RENTAL_CAPABILITIES.inspectionsManage]: { basePermission: PERMISSIONS.manageAppointments },
   [RENTAL_CAPABILITIES.reportsView]: { basePermission: PERMISSIONS.viewReports },
   [RENTAL_CAPABILITIES.reportsExport]: { basePermission: PERMISSIONS.exportReports },
+  [RENTAL_CAPABILITIES.shortTermView]: { basePermission: PERMISSIONS.viewListings },
+  [RENTAL_CAPABILITIES.shortTermManage]: { basePermission: PERMISSIONS.editListings },
+  [RENTAL_CAPABILITIES.shortTermOperationsManage]: { basePermission: PERMISSIONS.editTransactions },
 })
 
 export const RENTAL_RLS_ENTITY_CONTRACTS = Object.freeze([
-  'rental_portfolios',
-  'rental_portfolio_properties',
   'rental_properties',
   'rental_units',
   'rental_unit_status_history',
+  'rental_unit_operating_modes',
+  'rental_unit_occupancy_blocks',
+  'rental_short_term_bookings',
+  'rental_short_term_turnovers',
   'rental_property_landlords',
   'rental_property_mandates',
   'rental_vacancies',
@@ -87,27 +95,30 @@ export const RENTAL_RLS_ENTITY_CONTRACTS = Object.freeze([
   'rental_vacancy_marketing',
   'rental_vacancy_media',
   'rental_vacancy_marketing_status_history',
-  'rental_lead_links',
   'rental_applications',
   'rental_application_access_tokens',
-  'rental_application_household_members',
-  'rental_screening_checks',
+  'rental_application_consents',
+  'rental_application_decisions',
+  'rental_application_documents',
+  'rental_application_events',
+  'rental_application_screening_checks',
   'rental_tenancies',
   'rental_tenancy_parties',
   'rental_leases',
-  'rental_charges',
-  'rental_payments',
-  'rental_payment_allocations',
+  'rental_lease_versions',
+  'rental_charge_schedules',
+  'rental_financial_charges',
+  'rental_financial_payments',
+  'rental_financial_allocations',
+  'rental_financial_adjustments',
   'rental_maintenance_requests',
   'rental_maintenance_quotes',
-  'rental_inspections',
+  'rental_maintenance_assignments',
+  'rental_inspection_schedules',
   'rental_renewals',
   'rental_notices',
-  'rental_entity_documents',
-  'rental_activity_projections',
-  'rental_event_outbox',
-  'rental_event_consumer_receipts',
-  'rental_job_runs',
+  'rental_notification_templates',
+  'rental_notification_deliveries',
   'rental_party_relationships',
   'rental_party_workflow_snapshots',
 ])

@@ -125,7 +125,7 @@ const resolvedFromSettings = await resolveProperty24ListingPublishConfiguration(
     agencyId: '',
     agentId: '',
     agentSourceReference: '',
-    syndicationEnabled: false,
+    syndicationEnabled: true,
   },
 })
 
@@ -203,25 +203,43 @@ assert.equal(resolvedFromTable.agentId, '90001')
 assert.equal(resolvedFromTable.agentSourceReference, 'ARCH9-TABLE-AGENT')
 assert.equal(resolvedFromTable.property24ResolvedMapping.source, 'property24_agent_mappings')
 
-const resolvedWithExplicitOverride = await resolveProperty24ListingPublishConfiguration({
-  supabase: createFakeSupabase(baseTables),
-  listingId,
-  config: {
+await assert.rejects(
+  resolveProperty24ListingPublishConfiguration({
+    supabase: createFakeSupabase(baseTables),
     listingId,
-    environment: 'exdev',
-    explicitAgencyId: '55555',
-    explicitAgentId: '77777',
-    explicitAgentSourceReference: 'MANUAL-OVERRIDE',
-    agencyId: '31382',
-    agentId: '',
-    agentSourceReference: '',
-    syndicationEnabled: false,
-  },
-})
+    config: {
+      listingId,
+      environment: 'exdev',
+      explicitAgencyId: '55555',
+      explicitAgentId: '77777',
+      explicitAgentSourceReference: 'MANUAL-OVERRIDE',
+      agencyId: '31382',
+      agentId: '',
+      agentSourceReference: '',
+      syndicationEnabled: false,
+    },
+  }),
+  (error) => error?.code === 'property24_agency_connection_mismatch' && error?.status === 403,
+)
 
-assert.equal(resolvedWithExplicitOverride.agencyId, '55555')
-assert.equal(resolvedWithExplicitOverride.agentId, '77777')
-assert.equal(resolvedWithExplicitOverride.agentSourceReference, 'MANUAL-OVERRIDE')
+await assert.rejects(
+  resolveProperty24ListingPublishConfiguration({
+    supabase: createFakeSupabase(baseTables),
+    listingId,
+    config: {
+      listingId,
+      environment: 'exdev',
+      explicitAgencyId: '31382',
+      explicitAgentId: '77777',
+      explicitAgentSourceReference: 'MANUAL-OVERRIDE',
+      agencyId: '31382',
+      agentId: '',
+      agentSourceReference: '',
+      syndicationEnabled: false,
+    },
+  }),
+  (error) => error?.code === 'property24_agent_mapping_override_not_allowed' && error?.status === 403,
+)
 
 let routeResolverCalled = false
 const routeResponse = await createProperty24ApiResponse({
@@ -367,6 +385,7 @@ const browserStatusResponse = await createProperty24ApiResponse({
     SUPABASE_SERVICE_ROLE_KEY: 'service-role',
     PROPERTY24_BASIC_AUTH_USERNAME: 'user@example.test',
     PROPERTY24_BASIC_AUTH_PASSWORD: 'secret',
+    PROPERTY24_SYNDICATION_ENABLED: 'true',
   },
   dependencies: {
     createSupabase: () => createFakeSupabase(baseTables, { id: userId, email: 'alex@arch9.co.za' }),
@@ -397,6 +416,7 @@ const browserStatusUpdateResponse = await createProperty24ApiResponse({
     SUPABASE_SERVICE_ROLE_KEY: 'service-role',
     PROPERTY24_BASIC_AUTH_USERNAME: 'user@example.test',
     PROPERTY24_BASIC_AUTH_PASSWORD: 'secret',
+    PROPERTY24_SYNDICATION_ENABLED: 'true',
   },
   dependencies: {
     createSupabase: () => createFakeSupabase(baseTables, { id: userId, email: 'alex@arch9.co.za' }),
@@ -425,6 +445,6 @@ const apiSource = read('server/property24/api.js')
 assert.match(apiSource, /resolveProperty24ListingPublishConfiguration/)
 assert.match(apiSource, /mapping: resolvedConfig\.property24ResolvedMapping/)
 assert.match(apiSource, /authenticateBrowserProperty24ListingRequest/)
-assert.match(apiSource, /\['previewListing', 'previewRentalListing', 'publishListing', 'listingLifecycle', 'listingStatus', 'updateListingStatus', 'withdrawListing', 'listingLeads'\]/)
+assert.match(apiSource, /const listingRoutes = \[.*'publishListing'.*'reassignListingAgent'.*'updateListingStatus'.*'listingLeads'.*\]/)
 
 console.log('Property24 publish mapping resolution contract passed')

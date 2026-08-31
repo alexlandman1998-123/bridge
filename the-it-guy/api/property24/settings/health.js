@@ -7,6 +7,7 @@ import {
   createProperty24OperationalHealth,
   normalizeProperty24Text,
 } from '../../../server/property24/index.js'
+import { fetchOrganisationProperty24Connection } from '../../../server/property24/organisationConnectionService.js'
 import { writeNodeJsonResponse } from '../../../server/services/hqMissionControlApi.js'
 
 const appRoot = fileURLToPath(new URL('../../..', import.meta.url))
@@ -127,7 +128,7 @@ async function authenticateRequest({ request, supabase, organisationId } = {}) {
   return { ok: true, user }
 }
 
-async function fetchProperty24Settings({ supabase, organisationId, fallbackSettings = {} } = {}) {
+async function fetchProperty24Settings({ supabase, organisationId } = {}) {
   const result = await maybeSingle(
     supabase
       .from('organisation_settings')
@@ -135,7 +136,19 @@ async function fetchProperty24Settings({ supabase, organisationId, fallbackSetti
       .eq('organisation_id', organisationId),
   )
   if (result.error && result.error.code !== 'PGRST116') throw result.error
-  return result.data?.settings_json?.property24 || fallbackSettings?.property24 || fallbackSettings || {}
+  const legacySettings = result.data?.settings_json?.property24 || {}
+  const connection = await fetchOrganisationProperty24Connection({
+    supabase,
+    organisationId,
+    environment: legacySettings.environment,
+  })
+  return {
+    ...legacySettings,
+    enabled: connection.enabled,
+    environment: connection.environment,
+    agencyId: connection.agencyId,
+    lastAgentSyncAt: connection.lastAgentSyncAt || legacySettings.lastAgentSyncAt,
+  }
 }
 
 function getMissingConfiguration(env = {}) {
@@ -204,7 +217,7 @@ export default async function handler(request, response) {
       return
     }
 
-    const settings = await fetchProperty24Settings({ supabase, organisationId, fallbackSettings: body.settings })
+    const settings = await fetchProperty24Settings({ supabase, organisationId })
     const health = await createProperty24OperationalHealth({
       supabase,
       organisationId,

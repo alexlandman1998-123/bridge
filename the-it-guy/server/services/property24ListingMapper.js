@@ -111,6 +111,7 @@ export function resolveProperty24ListingType(value = '') {
 export function resolveProperty24Status(value = '', { isNew = true } = {}) {
   const key = normalizeProperty24ListingKey(value)
   if (['sold', 'registered', 'completed'].includes(key)) return 'Sold'
+  if (['rented', 'let', 'leased'].includes(key)) return 'Rented'
   if (['pending', 'under_offer', 'offer_accepted', 'transaction_created'].includes(key)) return 'Pending'
   if (['withdrawn', 'paused', 'removed'].includes(key)) return 'Withdrawn'
   if (['expired'].includes(key)) return 'Expired'

@@ -81,7 +81,6 @@ const incompleteComparison = buildRentalProperty24FieldComparison({
 const incompleteBlockerKeys = incompleteComparison.blockers.map((row) => row.key)
 for (const blocker of [
   'agencyId',
-  'contactAgentIds',
   'suburbId',
   'propertyTypeId',
   'monthlyRent',
@@ -94,6 +93,28 @@ for (const blocker of [
   assert.ok(incompleteBlockerKeys.includes(blocker), `Expected blocker ${blocker}`)
 }
 assert.equal(incompleteComparison.readyForBackendAdapter, false)
+assert.equal(
+  incompleteComparison.rows.find((row) => row.key === 'contactAgentIds').status,
+  RENTAL_PROPERTY24_FIELD_STATUS.BACKEND_RESOLVED,
+)
+
+const canonicalOwnershipComparison = buildRentalProperty24FieldComparison({
+  ...RENTAL_LISTING_RELEASE_GATE_FIXTURE,
+  organisationId: 'organisation-1',
+  assignedAgentId: '00000000-0000-4000-8000-000000000001',
+  property24AgencyId: '',
+  property24ContactAgentIds: [],
+})
+const canonicalOwnershipRows = Object.fromEntries(canonicalOwnershipComparison.rows.map((row) => [row.key, row]))
+assert.equal(canonicalOwnershipRows.agencyId.status, RENTAL_PROPERTY24_FIELD_STATUS.BACKEND_RESOLVED)
+assert.equal(canonicalOwnershipRows.contactAgentIds.status, RENTAL_PROPERTY24_FIELD_STATUS.BACKEND_RESOLVED)
+assert.equal(canonicalOwnershipRows.agentSourceReference.status, RENTAL_PROPERTY24_FIELD_STATUS.BACKEND_RESOLVED)
+assert.deepEqual(canonicalOwnershipComparison.readiness.payloadPreview.contactAgentIds, [])
+assert.equal(
+  JSON.stringify(canonicalOwnershipComparison.readiness.payloadPreview).includes('00000000-0000-4000-8000-000000000001'),
+  false,
+  'The Arch9 assigned-agent UUID must not be copied into Property24 contactAgentIds.',
+)
 
 const fakeIdComparison = buildRentalProperty24FieldComparison({
   ...RENTAL_LISTING_RELEASE_GATE_FIXTURE,

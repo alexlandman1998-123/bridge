@@ -131,17 +131,19 @@ function resolvePetsAllowed(value) {
   return { captured: true, value: normalized.includes('allow'), detail: normalizeText(value) }
 }
 
-function addItem(items, key, label, complete, detail, blocker) {
+function addItem(items, key, label, complete, detail, blocker, options = {}) {
   items.push({
     key,
     label,
     complete: Boolean(complete),
     detail: normalizeText(detail),
     blocker: complete ? '' : blocker || label,
+    backendResolved: Boolean(options.backendResolved),
   })
 }
 
-export function buildRentalProperty24PayloadPreview(listing = {}) {
+export function buildRentalProperty24PayloadPreview(listing = {}, options = {}) {
+  const resolution = asObject(options.resolution || options)
   const row = buildRentalListingIndexRow(listing)
   const publication = getRentalListingPublication(listing)
   const facts = getRentalListingFacts(listing)
@@ -168,20 +170,21 @@ export function buildRentalProperty24PayloadPreview(listing = {}) {
 
   return {
     listingType: 'Rental',
-    expiryDate: firstText(listing.expiryDate, listing.expiry_date, listing.mandateEndDate, listing.mandate_end_date, row.mandateEndDate, rentalInfo.mandateEndDate, rentalInfo.mandate_end_date),
-    agencyId: firstText(listing.property24AgencyId, listing.property24_agency_id, listing.agencyId, listing.agency_id),
-    contactAgentIds: normalizeArray(firstPath(listing, [
+    expiryDate: firstText(resolution.expiryDate, resolution.expiry_date, listing.expiryDate, listing.expiry_date, listing.mandateEndDate, listing.mandate_end_date, row.mandateEndDate, rentalInfo.mandateEndDate, rentalInfo.mandate_end_date),
+    agencyId: firstText(resolution.agencyId, resolution.agency_id, listing.property24AgencyId, listing.property24_agency_id),
+    contactAgentIds: normalizeArray(
+      resolution.contactAgentIds ||
+      resolution.contact_agent_ids ||
+      resolution.agentId ||
+      resolution.agent_id ||
+      firstPath(listing, [
       'property24ContactAgentIds',
       'property24_contact_agent_ids',
-      'contactAgentIds',
-      'contact_agent_ids',
-      'assignedAgentId',
-      'assigned_agent_id',
-    ]) || row.raw?.assignedAgentId || row.raw?.assigned_agent_id),
-    agentSourceReference: firstText(listing.agentSourceReference, listing.agent_source_reference, listing.listingReference, listing.listing_reference, row.id),
+    ])),
+    agentSourceReference: firstText(resolution.agentSourceReference, resolution.agent_source_reference, listing.property24AgentSourceReference, listing.property24_agent_source_reference),
     property: {
-      suburbId: firstText(listing.property24SuburbId, listing.property24_suburb_id, listing.suburbId, listing.suburb_id),
-      propertyTypeId: firstText(listing.property24PropertyTypeId, listing.property24_property_type_id, listing.propertyTypeId, listing.property_type_id),
+      suburbId: firstText(resolution.suburbId, resolution.suburb_id, listing.property24SuburbId, listing.property24_suburb_id, listing.suburbId, listing.suburb_id),
+      propertyTypeId: firstText(resolution.propertyTypeId, resolution.property_type_id, listing.property24PropertyTypeId, listing.property24_property_type_id, listing.propertyTypeId, listing.property_type_id),
       address: row.address,
       suburb: row.suburb,
       city: row.city,
@@ -229,25 +232,61 @@ export function buildRentalProperty24PayloadPreview(listing = {}) {
   }
 }
 
-export function buildRentalProperty24Readiness(listing = {}) {
+export function buildRentalProperty24Readiness(listing = {}, options = {}) {
   const row = buildRentalListingIndexRow(listing)
   const publication = getRentalListingPublication(listing)
   const facts = getRentalListingFacts(listing)
   const rentalInfo = getRentalListingRentalInfo(listing)
-  const payloadPreview = buildRentalProperty24PayloadPreview(listing)
+  const payloadPreview = buildRentalProperty24PayloadPreview(listing, options)
   const petsAllowed = resolvePetsAllowed(row.petsPolicy)
   const media = extractMediaItems(listing, publication)
   const garden = resolveFeatureFlag(listing, publication, facts, rentalInfo, 'garden')
   const pool = resolveFeatureFlag(listing, publication, facts, rentalInfo, 'pool')
   const flatlet = resolveFeatureFlag(listing, publication, facts, rentalInfo, 'flatlet')
   const garages = payloadPreview.property.garages
+  const organisationId = firstText(listing.organisationId, listing.organisation_id, row.raw?.organisationId, row.raw?.organisation_id)
+  const assignedAgentIdentity = firstText(
+    listing.assignedAgentId,
+    listing.assigned_agent_id,
+    listing.assignedAgentEmail,
+    listing.assigned_agent_email,
+    row.raw?.assignedAgentId,
+    row.raw?.assigned_agent_id,
+  )
+  const agencyResolvedByBackend = !payloadPreview.agencyId && Boolean(organisationId)
+  const contactAgentResolvedByBackend = payloadPreview.contactAgentIds.length === 0 && Boolean(assignedAgentIdentity)
+  const sourceReferenceResolvedByBackend = !payloadPreview.agentSourceReference && Boolean(assignedAgentIdentity)
   const items = []
 
   addItem(items, 'listingType', 'Listing type', payloadPreview.listingType === 'Rental', 'Rental', 'Listing type must be Rental')
   addItem(items, 'rentalInfo', 'Rental info object', Boolean(row.monthlyRent && row.availableFrom), 'Rent and availability included', 'Capture rentalInfo with rent and availability')
-  addItem(items, 'agencyId', 'Property24 agency', Boolean(payloadPreview.agencyId), payloadPreview.agencyId || 'Missing Property24 agency id', 'Map this agency to Property24')
-  addItem(items, 'contactAgentIds', 'Contact agents', payloadPreview.contactAgentIds.length > 0, payloadPreview.contactAgentIds.join(', ') || 'No Property24 contact agents', 'Map at least one rental agent to Property24')
-  addItem(items, 'agentSourceReference', 'Agent source reference', Boolean(payloadPreview.agentSourceReference), payloadPreview.agentSourceReference || 'Missing listing reference', 'Add a stable source reference')
+  addItem(
+    items,
+    'agencyId',
+    'Property24 agency connection',
+    Boolean(payloadPreview.agencyId || agencyResolvedByBackend),
+    payloadPreview.agencyId || (agencyResolvedByBackend ? 'Resolved from the listing organisation during the backend check' : 'Listing organisation missing'),
+    'Attach this listing to an organisation with a Property24 connection',
+    { backendResolved: agencyResolvedByBackend },
+  )
+  addItem(
+    items,
+    'contactAgentIds',
+    'Assigned agent mapping',
+    payloadPreview.contactAgentIds.length > 0 || contactAgentResolvedByBackend,
+    payloadPreview.contactAgentIds.join(', ') || (contactAgentResolvedByBackend ? 'Resolved from the assigned Arch9 agent during the backend check' : 'No assigned agent'),
+    'Assign an Arch9 agent, then map that profile under Property24 settings',
+    { backendResolved: contactAgentResolvedByBackend },
+  )
+  addItem(
+    items,
+    'agentSourceReference',
+    'Agent source reference',
+    Boolean(payloadPreview.agentSourceReference || sourceReferenceResolvedByBackend),
+    payloadPreview.agentSourceReference || (sourceReferenceResolvedByBackend ? 'Resolved from the assigned agent mapping during the backend check' : 'Assigned agent mapping missing'),
+    'Map the assigned Arch9 agent to Property24',
+    { backendResolved: sourceReferenceResolvedByBackend },
+  )
   addItem(items, 'suburbId', 'Property24 suburb', Boolean(payloadPreview.property.suburbId), payloadPreview.property.suburbId || row.location || 'Missing Property24 suburb id', 'Resolve the Property24 suburb id')
   addItem(items, 'propertyTypeId', 'Property24 property type', Boolean(payloadPreview.property.propertyTypeId), payloadPreview.property.propertyTypeId || row.propertyType || 'Missing Property24 property type id', 'Resolve the Property24 property type id')
   addItem(items, 'monthlyRent', 'Monthly rent', Boolean(row.monthlyRent), row.monthlyRent ? `R${row.monthlyRent}` : 'Missing monthly rent', 'Capture monthly rent')

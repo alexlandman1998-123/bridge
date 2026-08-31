@@ -549,7 +549,7 @@ Exit criteria:
 
 Goal: be ready when Property24 Operations asks to vet the integration.
 
-Status: implemented as a redacted evidence pack generator.
+Status: implemented as both a redacted CLI evidence generator and an organisation-scoped Settings workflow.
 
 Implemented files:
 
@@ -562,6 +562,16 @@ Implemented files:
 - `scripts/property24-vetting-pack.mjs`
   - Writes `outputs/property24-vetting-pack.json`.
   - Writes `outputs/property24-vetting-pack.md`.
+
+- `api/property24/settings/vetting-pack.js`
+  - Authenticates the Arch9 administrator and resolves the organisation's canonical ExDev connection.
+  - Runs only Property24 reads and returns a redacted pack plus rendered Markdown.
+
+- `src/services/property24VettingPackService.js`
+  - Builds the operator view and downloads the redacted Markdown report.
+
+- `src/pages/settings/SettingsProperty24Page.jsx`
+  - Shows passed, manual and missing-evidence counts with the complete Phase 6 checklist.
 
 Commands:
 
@@ -623,6 +633,8 @@ Exit criteria:
 
 Goal: move from ExDev to production without a messy bulk publish.
 
+Status: implemented as a fail-closed, organisation-scoped production gate. The implementation prepares the controlled cutover but does not deploy the migration, enable production, or publish a listing by itself.
+
 Steps:
 
 - Request live credentials only after ExDev vetting passes.
@@ -637,12 +649,40 @@ Steps:
 
 Controls:
 
-- Feature flag by organisation.
+- Durable `blocked`, `approved`, `pilot`, `paused`, and `live` feature state by organisation.
 - Publish permission tied to `publish_listings`.
-- Rate-limit sync jobs.
-- Dead-letter queue for repeated failures.
-- Daily reconciliation alert.
+- Separate server-only ExDev and production credentials with base-URL/environment validation.
+- Maximum three manually selected pilot listings; no bulk-publish action.
+- Five production writes per minute and a circuit that opens after three failures in fifteen minutes.
+- Production portal checks and reconciliation before promotion to live.
+- Append-only cutover decision evidence for operator review.
 - Rollback action maps to Property24 status update, not database deletion.
+
+Implementation:
+
+- `supabase/migrations/20260831150740_property24_live_cutover_gate.sql`
+  - Stores the organisation gate and append-only decision history.
+  - Enables RLS and exposes both tables only to the server service role.
+- `server/property24/environmentService.js`
+  - Resolves and validates isolated ExDev and production credentials.
+- `server/property24/liveCutoverService.js`
+  - Owns transitions, Phase 6 evidence binding, production evidence, pilot limits, rate limiting, failure circuit and pause safety.
+- `server/property24/organisationConnectionService.js`
+  - Rejects direct production enablement until the Phase 7 gate permits it.
+- `server/property24/publishService.js` and `server/property24/api.js`
+  - Enforce the organisation gate on every production listing create, update, status and withdrawal route.
+- `api/property24/settings/live-cutover.js`
+  - Authenticates an organisation principal/admin and runs the evidence-backed cutover actions.
+- `src/pages/settings/SettingsProperty24Page.jsx`
+  - Shows readiness checks, evidence, decision history and explicit approve/pilot/promote/pause controls.
+- `scripts/property24-phase7-live-cutover.test.mjs`
+  - Proves transitions, credential isolation, pilot limits, rate limiting, circuit breaking, rollback and server enforcement.
+
+Command:
+
+```bash
+npm run test:property24-phase7-live-cutover
+```
 
 Exit criteria:
 

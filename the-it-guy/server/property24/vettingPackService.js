@@ -1,5 +1,9 @@
 import { createProperty24ListingPlan } from '../services/property24ListingMapper.js'
-import { normalizeProperty24Text } from './client.js'
+import { normalizeProperty24Text, summarizeProperty24Payload } from './client.js'
+import {
+  fetchProperty24LocalSyncRows,
+  runProperty24ReconciliationJob,
+} from './reconciliationService.js'
 
 export const PROPERTY24_VETTING_DEFAULT_REPORTS = {
   phase1: 'outputs/property24-phase1-smoke.json',
@@ -116,6 +120,310 @@ function createOperationalNotes() {
     'Reconciliation is report-only and can run on a schedule without publishing listings or creating leads.',
     'Failed readiness checks expose blocker codes before Property24 is called.',
   ]
+}
+
+function isMissingOptionalTableError(error = {}) {
+  const code = normalizeProperty24Text(error.code).toUpperCase()
+  const message = normalizeProperty24Text(error.message || error.details).toLowerCase()
+  return code === '42P01' || code === 'PGRST205' || message.includes('does not exist')
+}
+
+async function selectOptionalRows(query) {
+  const result = await query
+  if (result?.error) {
+    if (isMissingOptionalTableError(result.error)) return []
+    throw result.error
+  }
+  return Array.isArray(result?.data) ? result.data : []
+}
+
+function findFirstProperty24Id(value, keys = []) {
+  const records = Array.isArray(value)
+    ? value
+    : Array.isArray(value?.items)
+      ? value.items
+      : Array.isArray(value?.data)
+        ? value.data
+        : value && typeof value === 'object'
+          ? [value]
+          : []
+  for (const record of records) {
+    for (const key of keys) {
+      const candidate = Number(record?.[key])
+      if (Number.isInteger(candidate) && candidate > 0) return candidate
+    }
+  }
+  return null
+}
+
+async function runReadOnlyProperty24Check(name, operation) {
+  try {
+    const result = await operation()
+    return {
+      name,
+      status: 'PASS',
+      httpStatus: result?.status || 200,
+      durationMs: result?.durationMs || null,
+      summary: summarizeProperty24Payload(result?.data),
+      data: result?.data,
+    }
+  } catch (error) {
+    return {
+      name,
+      status: 'FAIL',
+      httpStatus: error.status || null,
+      durationMs: null,
+      reason: normalizeProperty24Text(error.message) || 'Property24 read failed.',
+    }
+  }
+}
+
+async function createLivePhase1Report({ property24, agencyId } = {}) {
+  const firstWave = await Promise.all([
+    runReadOnlyProperty24Check('authenticated echo accepts Basic Auth', () => property24.echoAuthenticated()),
+    runReadOnlyProperty24Check(`fetch agency ${agencyId}`, () => property24.fetchAgency(agencyId)),
+    runReadOnlyProperty24Check(`fetch agency ${agencyId} agents`, () => property24.fetchAgencyAgents(agencyId)),
+    runReadOnlyProperty24Check('fetch countries', () => property24.fetchCountries()),
+  ])
+  const countries = firstWave.find((check) => check.name === 'fetch countries')
+  const countryId = findFirstProperty24Id(countries?.data, ['countryId', 'id'])
+  const secondWave = await Promise.all([
+    runReadOnlyProperty24Check('fetch provinces', () => property24.fetchProvinces(countryId || undefined)),
+    runReadOnlyProperty24Check('fetch property types', () => property24.fetchPropertyTypes(countryId || undefined)),
+    runReadOnlyProperty24Check('fetch listing types', () => property24.fetchListingTypes(countryId || undefined)),
+  ])
+  const checks = [...firstWave, ...secondWave].map((check) => Object.fromEntries(
+    Object.entries(check).filter(([key]) => key !== 'data'),
+  ))
+  return {
+    summary: {
+      status: checks.every((check) => check.status === 'PASS') ? 'PASS' : 'FAIL',
+      passCount: checks.filter((check) => check.status === 'PASS').length,
+      checkCount: checks.length,
+    },
+    checks,
+  }
+}
+
+async function fetchOrganisationSyncAttempts({
+  supabase,
+  listingIds = [],
+  environment,
+  agencyId,
+  limit = 200,
+} = {}) {
+  if (!listingIds.length) return []
+  let query = supabase
+    .from('property24_sync_attempts')
+    .select('id, private_listing_id, environment, agency_id, listing_number, action, status, idempotency_key, request_payload_summary, property24_http_status, retry_count, started_at, finished_at, created_at')
+    .eq('environment', environment)
+    .order('created_at', { ascending: false })
+    .limit(Math.min(Math.max(Number(limit || 200), 1), 500))
+  if (agencyId) query = query.eq('agency_id', Number(agencyId))
+  if (typeof query.in === 'function') query = query.in('private_listing_id', listingIds)
+  const rows = await selectOptionalRows(query)
+  const allowedListingIds = new Set(listingIds)
+  return rows.filter((row) => allowedListingIds.has(normalizeProperty24Text(row.private_listing_id)))
+}
+
+function getAttemptPreview(attempt = {}) {
+  const preview = attempt.request_payload_summary?.preview || {}
+  return {
+    summary: preview.summary || {},
+    imageByteLoad: {
+      summary: preview.imageByteLoad?.summary || {},
+    },
+  }
+}
+
+function getAttemptPhotoCount(attempt = {}) {
+  const count = getAttemptPreview(attempt).summary?.photoPayloadCount
+  if (count === null) return null
+  const parsed = Number(count)
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined
+}
+
+function createSafeAttemptSummary(attempt = {}) {
+  if (!attempt?.id) return null
+  return {
+    id: attempt.id,
+    private_listing_id: attempt.private_listing_id || null,
+    environment: attempt.environment || null,
+    agency_id: attempt.agency_id || null,
+    listing_number: attempt.listing_number || null,
+    action: attempt.action || null,
+    status: attempt.status || null,
+    idempotency_key: attempt.idempotency_key || null,
+    property24_http_status: attempt.property24_http_status || null,
+    retry_count: Number(attempt.retry_count || 0),
+    started_at: attempt.started_at || null,
+    finished_at: attempt.finished_at || null,
+  }
+}
+
+function createSubmittedAttemptReport(attempt, extra = {}) {
+  if (!attempt || attempt.status !== 'succeeded') return {}
+  return {
+    status: 'SUBMITTED',
+    property24Response: {
+      httpStatus: attempt.property24_http_status || 200,
+    },
+    syncAttempt: createSafeAttemptSummary(attempt),
+    ...extra,
+  }
+}
+
+function createReportsFromOrganisationState({ phase1, localRows = [], attempts = [], reconciliation } = {}) {
+  const sortedRows = [...localRows].sort((left, right) => {
+    const leftDate = Date.parse(left.sync?.updated_at || left.sync?.created_at || 0) || 0
+    const rightDate = Date.parse(right.sync?.updated_at || right.sync?.created_at || 0) || 0
+    return rightDate - leftDate
+  })
+  const primaryRow = sortedRows[0] || null
+  const successfulWrites = attempts.filter((attempt) => ['create', 'update'].includes(attempt.action) && attempt.status === 'succeeded')
+  const withImages = successfulWrites.find((attempt) => Number(getAttemptPhotoCount(attempt)) > 0)
+  const withoutImages = successfulWrites.find((attempt) => getAttemptPhotoCount(attempt) === null)
+  const publishAttempt = withImages || successfulWrites[0] || null
+  const publishPhotoCount = getAttemptPhotoCount(publishAttempt)
+  const publishPreview = getAttemptPreview(publishAttempt)
+  const statusAttempts = attempts.filter((attempt) => attempt.action === 'status_update' && attempt.status === 'succeeded')
+  const statusAttemptByValue = (value, occurrence = 0) => statusAttempts.filter((attempt) => (
+    normalizeProperty24Text(attempt.request_payload_summary?.listingStatus).toLowerCase() === value.toLowerCase()
+  ))[occurrence]
+  const activeAttempts = statusAttempts.filter((attempt) => (
+    normalizeProperty24Text(attempt.request_payload_summary?.listingStatus).toLowerCase() === 'active'
+  ))
+  const statusReport = (status, attempt) => createSubmittedAttemptReport(attempt, { listingStatus: status })
+  const createPhotoEvidence = (count) => count === null
+    ? null
+    : Number.isFinite(Number(count))
+      ? Array.from({ length: Math.min(Number(count), 100) }, (_, index) => ({ index, bytesLoaded: true }))
+      : undefined
+
+  const publish = createSubmittedAttemptReport(publishAttempt, {
+    listingId: publishAttempt?.private_listing_id || primaryRow?.sync?.private_listing_id || null,
+    preview: publishPreview,
+    redactedPayload: {
+      listingNumber: publishAttempt?.listing_number || primaryRow?.sync?.listing_number || null,
+      photos: createPhotoEvidence(publishPhotoCount),
+    },
+  })
+  const updateWithoutImages = createSubmittedAttemptReport(withoutImages, {
+    listingId: withoutImages?.private_listing_id || null,
+    preview: getAttemptPreview(withoutImages),
+    redactedPayload: { photos: null },
+  })
+  const updateWithImages = createSubmittedAttemptReport(withImages, {
+    listingId: withImages?.private_listing_id || null,
+    preview: getAttemptPreview(withImages),
+    redactedPayload: { photos: createPhotoEvidence(getAttemptPhotoCount(withImages)) },
+  })
+
+  return {
+    phase1,
+    preview: publishAttempt ? {
+      canSubmit: true,
+      summary: publishPreview.summary,
+      imageByteLoad: publishPreview.imageByteLoad,
+      source: { privateListingId: publishAttempt.private_listing_id || null },
+    } : {},
+    publish,
+    recordSync: primaryRow ? {
+      status: 'RECORDED',
+      listingId: primaryRow.sync?.private_listing_id || null,
+      databaseWrite: {
+        table: 'property24_listing_syncs',
+        privateListingId: primaryRow.sync?.private_listing_id || null,
+        listingNumber: primaryRow.sync?.listing_number || null,
+        isOnPortal: Boolean(primaryRow.sync?.is_on_portal),
+        property24Status: primaryRow.listing?.property24_status || null,
+      },
+    } : {},
+    reconciliation,
+    statusUpdate: statusAttempts[0]
+      ? statusReport(statusAttempts[0].request_payload_summary?.listingStatus || '', statusAttempts[0])
+      : {},
+    proofUpdateWithoutImages: updateWithoutImages,
+    proofUpdateWithImages: updateWithImages,
+    proofStatusWithdrawn: statusReport('Withdrawn', statusAttemptByValue('Withdrawn')),
+    proofStatusActive: statusReport('Active', activeAttempts[activeAttempts.length - 1]),
+    proofStatusPending: statusReport('Pending', statusAttemptByValue('Pending')),
+    proofStatusSold: statusReport('Sold', statusAttemptByValue('Sold')),
+    proofStatusFinalActive: activeAttempts.length > 1 ? statusReport('Active', activeAttempts[0]) : {},
+  }
+}
+
+export async function createProperty24OrganisationVettingPack({
+  supabase,
+  property24,
+  organisationId,
+  connection = {},
+  reconciliationReport = null,
+  generatedAt = new Date().toISOString(),
+} = {}) {
+  if (!supabase) throw new Error('Supabase client is required.')
+  if (!property24) throw new Error('Property24 client is required.')
+  const normalizedOrganisationId = normalizeProperty24Text(organisationId)
+  const environment = normalizeProperty24Text(connection.environment) || 'exdev'
+  const agencyId = normalizeProperty24Text(connection.agencyId)
+  if (!normalizedOrganisationId) throw new Error('Organisation ID is required.')
+  if (!agencyId) throw new Error('The organisation Property24 agency ID is required.')
+  if (environment !== 'exdev') throw new Error('The Phase 6 vetting pack is only available for ExDev connections.')
+
+  const [phase1, localRows, reconciliation] = await Promise.all([
+    createLivePhase1Report({ property24, agencyId }),
+    fetchProperty24LocalSyncRows({
+      supabase,
+      organisationId: normalizedOrganisationId,
+      environment,
+      agencyId,
+      limit: 500,
+    }),
+    reconciliationReport
+      ? Promise.resolve(reconciliationReport)
+      : runProperty24ReconciliationJob({
+          supabase,
+          property24,
+          config: {
+            organisationId: normalizedOrganisationId,
+            environment,
+            agencyId,
+            includePortalChecks: true,
+            includeLeads: false,
+            includeStatistics: false,
+            limit: 100,
+          },
+        }),
+  ])
+  const listingIds = localRows.map((row) => normalizeProperty24Text(row.sync?.private_listing_id)).filter(Boolean)
+  const attempts = await fetchOrganisationSyncAttempts({
+    supabase,
+    listingIds,
+    environment,
+    agencyId,
+  })
+  const reports = createReportsFromOrganisationState({ phase1, localRows, attempts, reconciliation })
+  const pack = createProperty24VettingPack({
+    reports,
+    config: {
+      environment,
+      listingId: localRows[0]?.sync?.private_listing_id,
+      listingNumber: localRows[0]?.sync?.listing_number,
+    },
+    generatedAt,
+  })
+  return {
+    ...pack,
+    source: 'live_organisation_readiness',
+    organisationId: normalizedOrganisationId,
+    agencyId,
+    safety: {
+      ...pack.safety,
+      property24ApiCalled: true,
+      property24WriteCalled: false,
+      databaseWritten: false,
+    },
+  }
 }
 
 function createSuggestedCommands(config = {}) {

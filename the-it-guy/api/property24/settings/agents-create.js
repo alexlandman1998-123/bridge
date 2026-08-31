@@ -4,12 +4,20 @@ import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import {
-  PROPERTY24_EXDEV_BASE_URL,
   createProperty24Client,
   normalizeProperty24Text,
   summarizeProperty24Payload,
 } from '../../../server/property24/client.js'
+import { resolveProperty24EnvironmentCredentials } from '../../../server/property24/environmentService.js'
 import { normalizeProperty24Agent } from '../../../server/property24/synchronisationService.js'
+import { fetchCanonicalProperty24AgentProfile } from '../../../server/property24/agentProfileService.js'
+import {
+  findMatchingProperty24Agent,
+  prepareProperty24AgentPhotoUrl,
+} from '../../../server/property24/agentPhotoService.js'
+import { syndicateCanonicalProperty24AgentProfile } from '../../../server/property24/agentProfileSyndicationService.js'
+import { persistCanonicalProperty24AgentMapping } from '../../../server/property24/agentMappingService.js'
+import { resolveOrganisationProperty24Connection } from '../../../server/property24/organisationConnectionService.js'
 import { writeNodeJsonResponse } from '../../../server/services/hqMissionControlApi.js'
 
 const appRoot = fileURLToPath(new URL('../../..', import.meta.url))
@@ -129,17 +137,22 @@ function getMissingConfiguration(env = {}) {
   const missing = []
   if (!normalizeProperty24Text(env.SUPABASE_URL || env.VITE_SUPABASE_URL)) missing.push('SUPABASE_URL')
   if (!normalizeProperty24Text(env.SUPABASE_SERVICE_ROLE_KEY)) missing.push('SUPABASE_SERVICE_ROLE_KEY')
-  if (!normalizeProperty24Text(env.PROPERTY24_BASIC_AUTH_USERNAME || env.PROPERTY24_USERNAME)) missing.push('PROPERTY24_BASIC_AUTH_USERNAME')
-  if (!normalizeProperty24Text(env.PROPERTY24_BASIC_AUTH_PASSWORD || env.PROPERTY24_PASSWORD)) missing.push('PROPERTY24_BASIC_AUTH_PASSWORD')
   return missing
 }
 
-function createProperty24FromEnv(env = {}) {
+function createProperty24FromEnv(env = {}, environment = 'exdev') {
+  const runtime = resolveProperty24EnvironmentCredentials({ env, environment })
+  if (!runtime.configured) {
+    const error = new Error(`Property24 ${runtime.environment} credentials are incomplete: ${runtime.missing.join(', ')}.`)
+    error.code = 'property24_environment_credentials_missing'
+    error.status = 503
+    throw error
+  }
   return createProperty24Client({
-    baseUrl: normalizeProperty24Text(env.PROPERTY24_BASE_URL) || PROPERTY24_EXDEV_BASE_URL,
-    username: normalizeProperty24Text(env.PROPERTY24_BASIC_AUTH_USERNAME || env.PROPERTY24_USERNAME),
-    password: normalizeProperty24Text(env.PROPERTY24_BASIC_AUTH_PASSWORD || env.PROPERTY24_PASSWORD),
-    userGroupId: normalizeProperty24Text(env.PROPERTY24_USER_GROUP_ID),
+    baseUrl: runtime.baseUrl,
+    username: runtime.username,
+    password: runtime.password,
+    userGroupId: runtime.userGroupId,
   })
 }
 
@@ -158,38 +171,38 @@ function isValidAgentMobile(value = '') {
   return /^\+?\d{10,15}$/.test(mobile)
 }
 
-function buildAgentPayload({ body = {}, env = {} } = {}) {
-  const agent = body.agent && typeof body.agent === 'object' ? body.agent : {}
-  const fullName = normalizeProperty24Text(agent.fullName || agent.name)
+export function buildProperty24AgentPayloadFromCanonicalProfile({ profile = {}, body = {}, connection = {}, env = {} } = {}) {
+  const fullName = normalizeProperty24Text(profile.fullName)
   const splitName = fullName.split(/\s+/).filter(Boolean)
-  const firstname = normalizeProperty24Text(agent.firstName || splitName[0])
-  const lastname = normalizeProperty24Text(agent.lastName || splitName.slice(1).join(' '))
+  const firstname = normalizeProperty24Text(profile.firstName || splitName[0])
+  const lastname = normalizeProperty24Text(profile.lastName || splitName.slice(1).join(' '))
   const payload = {
     firstname,
     lastname,
     receiveStatsMail: false,
     published: true,
-    agencyId: Number(body.agencyId || env.PROPERTY24_DEFAULT_AGENCY_ID),
-    sourceReference: normalizeProperty24Text(body.sourceReference || agent.sourceReference),
-    mobileNumber: normalizeAgentMobile(agent.mobile || agent.phone || agent.phoneNumber),
-    emailAddress: normalizeProperty24Text(agent.email),
+    agencyId: Number(connection.agencyId),
+    sourceReference: normalizeProperty24Text(body.sourceReference),
+    mobileNumber: normalizeAgentMobile(profile.phone),
+    emailAddress: normalizeProperty24Text(profile.email),
     countryId: Number(body.countryId || env.PROPERTY24_DEFAULT_COUNTRY_ID || 1),
     status: 'Active',
-    jobTitle: normalizeProperty24Text(agent.jobTitle) || 'Agent',
+    jobTitle: normalizeProperty24Text(profile.jobTitle) || 'Agent',
   }
 
   const missing = []
-  if (!payload.firstname) missing.push('agent.firstName')
-  if (!payload.lastname) missing.push('agent.lastName')
-  if (!payload.emailAddress) missing.push('agent.email')
-  if (!payload.mobileNumber) missing.push('agent.mobile')
+  if (!payload.firstname) missing.push('profile.firstName')
+  if (!payload.lastname) missing.push('profile.lastName')
+  if (!payload.emailAddress) missing.push('profile.email')
+  if (!payload.mobileNumber) missing.push('profile.phone')
+  if (!normalizeProperty24Text(profile.avatarUrl)) missing.push('profile.avatarUrl')
   if (!payload.sourceReference) missing.push('sourceReference')
   if (!Number.isInteger(payload.agencyId)) missing.push('agencyId')
   if (!Number.isInteger(payload.countryId)) missing.push('countryId')
 
   const invalid = []
-  if (payload.emailAddress && !isValidAgentEmail(payload.emailAddress)) invalid.push('agent.email')
-  if (payload.mobileNumber && !isValidAgentMobile(payload.mobileNumber)) invalid.push('agent.mobile')
+  if (payload.emailAddress && !isValidAgentEmail(payload.emailAddress)) invalid.push('profile.email')
+  if (payload.mobileNumber && !isValidAgentMobile(payload.mobileNumber)) invalid.push('profile.phone')
 
   return { payload, missing, invalid }
 }
@@ -229,23 +242,6 @@ export default async function handler(request, response) {
       return
     }
 
-    const { payload, missing, invalid } = buildAgentPayload({ body, env })
-    if (missing.length) {
-      writeNodeJsonResponse(response, buildResponse(400, {
-        error: 'missing_agent_fields',
-        missingFields: missing,
-      }))
-      return
-    }
-    if (invalid.length) {
-      writeNodeJsonResponse(response, buildResponse(400, {
-        error: 'invalid_agent_fields',
-        invalidFields: invalid,
-        message: 'Use a real agent email address and a mobile number with 10 to 15 digits before creating a Property24 agent.',
-      }))
-      return
-    }
-
     const supabase = createSupabaseClient(env.SUPABASE_URL || env.VITE_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
       auth: { persistSession: false, autoRefreshToken: false },
     })
@@ -255,22 +251,109 @@ export default async function handler(request, response) {
       return
     }
 
-    const property24 = createProperty24FromEnv(env)
-    const result = await property24.createAgent(payload)
+    const connection = await resolveOrganisationProperty24Connection({
+      supabase,
+      organisationId,
+      requestedAgencyId: body.agencyId,
+    })
+    const canonicalProfile = await fetchCanonicalProperty24AgentProfile({
+      supabase,
+      organisationId,
+      arch9UserId: body.arch9UserId,
+      arch9MembershipId: body.arch9MembershipId,
+    })
+    const { payload, missing, invalid } = buildProperty24AgentPayloadFromCanonicalProfile({ profile: canonicalProfile, body, connection, env })
+    if (missing.length) {
+      writeNodeJsonResponse(response, buildResponse(400, {
+        error: 'missing_agent_fields',
+        missingFields: missing,
+        message: 'Complete the missing fields on the Arch9 agent profile, then try again.',
+      }))
+      return
+    }
+    if (invalid.length) {
+      writeNodeJsonResponse(response, buildResponse(400, {
+        error: 'invalid_agent_fields',
+        invalidFields: invalid,
+        message: 'Update the Arch9 agent profile with a real email address and a mobile number containing 10 to 15 digits.',
+      }))
+      return
+    }
+
+    const preparedPhoto = await prepareProperty24AgentPhotoUrl(canonicalProfile.avatarUrl, {
+      allowedOrigins: [
+        env.SUPABASE_URL || env.VITE_SUPABASE_URL,
+        env.PROPERTY24_AGENT_PHOTO_ALLOWED_ORIGINS,
+      ],
+      allowInsecureHttp: normalizeProperty24Text(env.PROPERTY24_AGENT_PHOTO_ALLOW_HTTP).toLowerCase() === 'true',
+    })
+    const property24 = createProperty24FromEnv(env, connection.environment)
+    const beforeSnapshot = await property24.fetchAgencyAgents(connection.agencyId)
+    const existingAgent = findMatchingProperty24Agent(beforeSnapshot.data, payload)
+    const syndication = await syndicateCanonicalProperty24AgentProfile({
+      property24,
+      profile: canonicalProfile,
+      preparedPhoto,
+      agencyId: connection.agencyId,
+      sourceReference: payload.sourceReference,
+      countryId: payload.countryId,
+      remoteAgent: existingAgent,
+    })
+    const generatedAt = new Date().toISOString()
+    const warnings = [...syndication.warnings]
+    try {
+      await persistCanonicalProperty24AgentMapping({
+        supabase,
+        organisationId,
+        environment: connection.environment,
+        agencyId: connection.agencyId,
+        arch9UserId: canonicalProfile.userId,
+        property24AgentId: syndication.property24AgentId,
+        sourceReference: payload.sourceReference,
+        matchType: existingAgent ? 'source_reference' : 'manual',
+        confidence: 1,
+        lastSeenAt: generatedAt,
+      })
+    } catch (mappingError) {
+      warnings.push({ code: mappingError.code || 'property24_agent_mapping_write_failed', message: mappingError.message })
+    }
+    const accountUpdate = await supabase
+      .from('property24_accounts')
+      .update({ last_agent_sync_at: generatedAt })
+      .eq('organisation_id', organisationId)
+      .eq('environment', connection.environment)
+      .eq('agency_id', Number(connection.agencyId))
+    if (accountUpdate.error) {
+      warnings.push({ code: 'property24_account_sync_timestamp_failed', message: accountUpdate.error.message })
+    }
     const agent = normalizeProperty24Agent({
       ...payload,
-      id: result.data,
-      agentId: result.data,
+      id: syndication.property24AgentId,
+      agentId: syndication.property24AgentId,
       emailAddress: payload.emailAddress,
       mobileNumber: payload.mobileNumber,
     })
 
-    writeNodeJsonResponse(response, buildResponse(200, {
-      status: 'CREATED',
-      httpStatus: result.status,
-      property24AgentId: normalizeProperty24Text(result.data),
+    writeNodeJsonResponse(response, buildResponse(warnings.length ? 207 : 200, {
+      status: syndication.status,
+      generatedAt,
+      httpStatus: syndication.profileHttpStatus,
+      property24AgentId: normalizeProperty24Text(syndication.property24AgentId),
       agent,
-      response: summarizeProperty24Payload(result.data),
+      canonicalProfile: {
+        arch9UserId: canonicalProfile.userId,
+        arch9MembershipId: canonicalProfile.membershipId,
+        avatarReady: true,
+        source: 'arch9_profile',
+      },
+      profileSync: {
+        action: syndication.action,
+        profileUpdated: syndication.profileUpdated,
+        photoUploaded: syndication.photoUploaded,
+        photo: syndication.photo,
+      },
+      response: summarizeProperty24Payload({ agentId: syndication.property24AgentId, status: syndication.status }),
+      warnings,
       payload: {
         agencyId: payload.agencyId,
         countryId: payload.countryId,
@@ -286,6 +369,8 @@ export default async function handler(request, response) {
     writeNodeJsonResponse(response, buildResponse(Number(error.status || 500), {
       error: error.code || 'property24_agent_create_failed',
       message: error.message || 'Property24 agent creation failed.',
+      missingFields: error.missingFields || null,
+      invalidFields: error.invalidFields || null,
       httpStatus: error.status || null,
       response: error.responseBody ? summarizeProperty24Payload(error.responseBody) : null,
     }))

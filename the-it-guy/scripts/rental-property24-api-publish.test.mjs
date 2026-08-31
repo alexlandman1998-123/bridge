@@ -95,6 +95,13 @@ assert.match(fs.readFileSync(new URL('../api/property24/rentals/[listingId]/prev
 for (const routeFile of ['lifecycle.js', 'status.js', 'status-update.js', 'withdraw.js', 'reconcile.js']) {
   assert.match(fs.readFileSync(new URL(`../api/property24/rentals/[listingId]/${routeFile}`, import.meta.url), 'utf8'), /handleProperty24NodeRequest/)
 }
+const rentalDraftServiceSource = fs.readFileSync(new URL('../src/services/rentals/rentalListingDraftService.js', import.meta.url), 'utf8')
+const rentalDetailPageSource = fs.readFileSync(new URL('../src/pages/rentals/RentalListingDetailPage.jsx', import.meta.url), 'utf8')
+assert.match(rentalDraftServiceSource, /publishRentalProperty24Listing/)
+assert.match(rentalDraftServiceSource, /\/api\/property24\/rentals\/\$\{encodeURIComponent\(normalizedListingId\)\}\/publish/)
+assert.match(rentalDetailPageSource, /Publish to Property24/)
+assert.match(rentalDetailPageSource, /publishRentalProperty24Listing\(listingId\)/)
+assert.doesNotMatch(rentalDetailPageSource, /Prepare Handoff/)
 
 const lifecycle = await createProperty24ApiResponse({
   method: 'GET',

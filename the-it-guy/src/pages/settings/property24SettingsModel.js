@@ -10,6 +10,7 @@ const AGENT_ROLE_ALIASES = new Set([
 ])
 
 export const PROPERTY24_SETTINGS_DEFAULTS = {
+  dataOwnershipVersion: 'arch9_property24_canonical_v1',
   enabled: false,
   environment: 'exdev',
   agencyId: '',
@@ -20,6 +21,11 @@ export const PROPERTY24_SETTINGS_DEFAULTS = {
   property24Agents: [],
   agentMappings: [],
 }
+
+export const PROPERTY24_LISTING_STATUS_OPTIONS = Object.freeze({
+  sale: Object.freeze(['Active', 'Pending', 'Sold', 'Withdrawn']),
+  rental: Object.freeze(['Active', 'Pending', 'Rented', 'Withdrawn']),
+})
 
 export function normalizeProperty24SettingsText(value = '') {
   return String(value || '').trim()
@@ -43,6 +49,30 @@ function isObject(value) {
 
 function toArray(value) {
   return Array.isArray(value) ? value : []
+}
+
+export function getCanonicalArch9AgentProfile(agent = {}) {
+  const firstName = normalizeProperty24SettingsText(agent.firstName || agent.first_name)
+  const lastName = normalizeProperty24SettingsText(agent.lastName || agent.last_name || agent.surname)
+  const email = normalizeProperty24SettingsEmail(agent.email)
+  const fullName = normalizeProperty24SettingsText(
+    agent.fullName || agent.full_name || agent.name || [firstName, lastName].filter(Boolean).join(' ') || email,
+  )
+
+  return {
+    userId: normalizeProperty24SettingsText(agent.userId || agent.user_id || agent.id),
+    membershipId: normalizeProperty24SettingsText(agent.membershipId || agent.membership_id || agent.id),
+    firstName,
+    lastName,
+    fullName,
+    email,
+    phone: normalizePhone(agent.phone || agent.phoneNumber || agent.phone_number || agent.mobile || agent.mobileNumber || agent.mobile_number),
+    avatarUrl: normalizeProperty24SettingsText(
+      agent.avatarUrl || agent.avatar_url || agent.profilePhotoUrl || agent.profile_photo_url || agent.photoUrl || agent.photo_url,
+    ),
+    jobTitle: normalizeProperty24SettingsText(agent.jobTitle || agent.job_title || 'Agent'),
+    status: normalizeLower(agent.membershipStatus || agent.membership_status || agent.status || 'active'),
+  }
 }
 
 export function getArch9AgentKey(agent = {}) {
@@ -82,6 +112,8 @@ export function normalizeProperty24AgentRow(row = {}) {
     email: normalizeProperty24SettingsEmail(row.email || row.emailAddress || row.Email || row.EmailAddress),
     mobile: normalizePhone(row.mobile || row.mobileNumber || row.phone || row.phoneNumber || row.Mobile || row.MobileNumber),
     status: normalizeProperty24SettingsText(row.status || row.Status || 'active'),
+    lastSyncedAt: normalizeProperty24SettingsText(row.lastSyncedAt || row.last_synced_at),
+    lastSyncError: normalizeProperty24SettingsText(row.lastSyncError || row.last_sync_error),
   }
 }
 
@@ -98,6 +130,8 @@ export function normalizeProperty24AgentMapping(row = {}) {
     matchMethod: normalizeProperty24SettingsText(row.matchMethod || row.match_type || 'manual'),
     matchStatus: normalizeProperty24SettingsText(row.matchStatus || row.status || 'needs_review'),
     confidence: Number(row.confidence ?? 0),
+    lastSyncedAt: normalizeProperty24SettingsText(row.lastSyncedAt || row.last_synced_at),
+    lastSyncError: normalizeProperty24SettingsText(row.lastSyncError || row.last_sync_error),
   }
 }
 
@@ -106,6 +140,7 @@ export function normalizeProperty24Settings(settings = {}) {
   return {
     ...PROPERTY24_SETTINGS_DEFAULTS,
     ...source,
+    dataOwnershipVersion: 'arch9_property24_canonical_v1',
     enabled: Boolean(source.enabled),
     environment: ['production', 'exdev'].includes(normalizeLower(source.environment)) ? normalizeLower(source.environment) : 'exdev',
     agencyId: normalizeProperty24SettingsText(source.agencyId || source.agency_id),
@@ -116,6 +151,51 @@ export function normalizeProperty24Settings(settings = {}) {
     property24Agents: toArray(source.property24Agents || source.property24_agents).map(normalizeProperty24AgentRow),
     agentMappings: toArray(source.agentMappings || source.agent_mappings).map(normalizeProperty24AgentMapping),
   }
+}
+
+function serializeProperty24AgentReference(row = {}) {
+  const normalized = normalizeProperty24AgentRow(row)
+  return {
+    rowId: normalized.rowId,
+    property24AgentId: normalized.property24AgentId,
+    sourceReference: normalized.sourceReference,
+    status: normalized.status,
+    lastSyncedAt: normalized.lastSyncedAt,
+    lastSyncError: normalized.lastSyncError,
+  }
+}
+
+function serializeProperty24AgentMapping(row = {}) {
+  const normalized = normalizeProperty24AgentMapping(row)
+  return {
+    arch9UserId: normalized.arch9UserId,
+    arch9MembershipId: normalized.arch9MembershipId,
+    property24AgentId: normalized.property24AgentId,
+    sourceReference: normalized.sourceReference,
+    matchMethod: normalized.matchMethod,
+    matchStatus: normalized.matchStatus,
+    confidence: normalized.confidence,
+    lastSyncedAt: normalized.lastSyncedAt,
+    lastSyncError: normalized.lastSyncError,
+  }
+}
+
+export function serializeProperty24SettingsForPersistence(settings = {}) {
+  const normalized = normalizeProperty24Settings(settings)
+  return {
+    dataOwnershipVersion: 'arch9_property24_canonical_v1',
+    credentialsMode: normalized.credentialsMode,
+    sourceReferencePrefix: normalized.sourceReferencePrefix,
+    defaultExpiryDays: normalized.defaultExpiryDays,
+    property24Agents: normalized.property24Agents.map(serializeProperty24AgentReference),
+    agentMappings: normalized.agentMappings.map(serializeProperty24AgentMapping),
+  }
+}
+
+export function getProperty24ListingStatusOptions(listingType = 'sale') {
+  return normalizeLower(listingType).includes('rental')
+    ? [...PROPERTY24_LISTING_STATUS_OPTIONS.rental]
+    : [...PROPERTY24_LISTING_STATUS_OPTIONS.sale]
 }
 
 function buildExternalLookups(property24Agents = []) {

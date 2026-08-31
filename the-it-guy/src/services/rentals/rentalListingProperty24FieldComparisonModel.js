@@ -15,6 +15,7 @@ export const RENTAL_PROPERTY24_FIELD_COMPARISON_VERSION = 'arch9_rental_property
 export const RENTAL_PROPERTY24_FIELD_STATUS = Object.freeze({
   MAPPED: 'mapped',
   DEFAULTED: 'defaulted',
+  BACKEND_RESOLVED: 'backend_resolved',
   NEEDS_CAPTURE: 'needs_capture',
   NEEDS_MAPPING: 'needs_mapping',
   INTERNAL_GATE: 'internal_gate',
@@ -389,6 +390,9 @@ function hasValidContractValue(definition, value) {
 function resolveStatus(definition, value, readinessByKey) {
   if (definition.defaultValue && !hasValue(value)) return RENTAL_PROPERTY24_FIELD_STATUS.DEFAULTED
   if (definition.key === 'rentalRate') return RENTAL_PROPERTY24_FIELD_STATUS.DEFAULTED
+  if (readinessByKey[definition.readinessKey]?.backendResolved) {
+    return RENTAL_PROPERTY24_FIELD_STATUS.BACKEND_RESOLVED
+  }
   if (['marketingApprovalStatus', 'mandateStatus', 'agentSourceReference'].includes(definition.key)) {
     return readinessByKey[definition.readinessKey]?.complete
       ? RENTAL_PROPERTY24_FIELD_STATUS.INTERNAL_GATE
@@ -418,6 +422,7 @@ function summarizeRows(rows = []) {
     total: rows.length,
     mapped: 0,
     defaulted: 0,
+    backendResolved: 0,
     needsCapture: 0,
     needsMapping: 0,
     internalGates: 0,
@@ -428,6 +433,7 @@ function summarizeRows(rows = []) {
   for (const row of rows) {
     if (row.status === RENTAL_PROPERTY24_FIELD_STATUS.MAPPED) summary.mapped += 1
     if (row.status === RENTAL_PROPERTY24_FIELD_STATUS.DEFAULTED) summary.defaulted += 1
+    if (row.status === RENTAL_PROPERTY24_FIELD_STATUS.BACKEND_RESOLVED) summary.backendResolved += 1
     if (row.status === RENTAL_PROPERTY24_FIELD_STATUS.NEEDS_CAPTURE) summary.needsCapture += 1
     if (row.status === RENTAL_PROPERTY24_FIELD_STATUS.NEEDS_MAPPING) summary.needsMapping += 1
     if (row.status === RENTAL_PROPERTY24_FIELD_STATUS.INTERNAL_GATE) summary.internalGates += 1
@@ -438,8 +444,8 @@ function summarizeRows(rows = []) {
   return summary
 }
 
-export function buildRentalProperty24FieldComparison(listing = {}) {
-  const readiness = buildRentalProperty24Readiness(listing)
+export function buildRentalProperty24FieldComparison(listing = {}, options = {}) {
+  const readiness = buildRentalProperty24Readiness(listing, options)
   const row = buildRentalListingIndexRow(listing)
   const publication = getRentalListingPublication(listing)
   const rentalInfo = getRentalListingRentalInfo(listing)
@@ -461,7 +467,10 @@ export function buildRentalProperty24FieldComparison(listing = {}) {
       requirement: definition.requirement,
       severity: definition.severity,
       status,
-      valuePresent: hasValidContractValue(definition, value) || status === RENTAL_PROPERTY24_FIELD_STATUS.DEFAULTED,
+      valuePresent: hasValidContractValue(definition, value) || [
+        RENTAL_PROPERTY24_FIELD_STATUS.DEFAULTED,
+        RENTAL_PROPERTY24_FIELD_STATUS.BACKEND_RESOLVED,
+      ].includes(status),
       arch9Value: value,
       property24Value: formatProperty24Value(definition.key, hasValue(value) ? value : definition.defaultValue),
       blocksPublish,

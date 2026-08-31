@@ -36,6 +36,10 @@ import { RentalModuleBoundary } from './modules/rentals/shell/RentalModuleBounda
 import {
   RentalApplicationsPage,
   RentalCalendarPage,
+  ShortTermRentalInventoryPage,
+  ShortTermBookingsPage,
+  ShortTermTurnoversPage,
+  ShortTermRatesPage,
   RentalViewingsPage,
   RentalListingCreatePage,
   RentalListingDetailPage,
@@ -69,6 +73,7 @@ import {
   RentalVacancyDetailPage,
 } from './modules/rentals/shell/rentalRouteLoaders'
 import { RENTAL_MODULES, resolveRentalModuleAvailability } from './services/rentals/rentalModuleAvailability'
+import { getRentalOperatingModeHomeRoute, RENTAL_OPERATING_MODES } from './services/rentals/shortTermRentalFoundation'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import LeadsRouteShell from './components/leads/LeadsRouteShell'
 import LeadWorkspaceRouteLoadingShell from './components/leads/LeadWorkspaceRouteLoadingShell'
@@ -1407,6 +1412,27 @@ function RentalWorkspacePlaceholder({ title, description }) {
       <PlaceholderPage title={title} description={description} />
     </RentalWorkspaceGuard>
   )
+}
+
+function RentalOperatingModeEntryRoute() {
+  const { rentalOperatingMode } = useWorkspace()
+  return <Navigate to={getRentalOperatingModeHomeRoute(rentalOperatingMode)} replace />
+}
+
+function RentalOperatingModeGuard({ mode = RENTAL_OPERATING_MODES.longTerm, children }) {
+  const { availableRentalOperatingModeIds = [], rentalOperatingMode, setRentalOperatingMode } = useWorkspace()
+  // Preserve the existing module-gate disabled state when Rentals itself is off;
+  // otherwise a legacy dashboard link would redirect to itself forever.
+  const allowed = availableRentalOperatingModeIds.includes(mode) || (
+    mode === RENTAL_OPERATING_MODES.longTerm && availableRentalOperatingModeIds.length === 0
+  )
+
+  useEffect(() => {
+    if (allowed && rentalOperatingMode !== mode) setRentalOperatingMode?.(mode)
+  }, [allowed, mode, rentalOperatingMode, setRentalOperatingMode])
+
+  if (!allowed) return <Navigate to={getRentalOperatingModeHomeRoute(rentalOperatingMode)} replace />
+  return children
 }
 
 function RentalModuleGate({ moduleId = RENTAL_MODULES.dashboard, children }) {
@@ -2840,7 +2866,7 @@ function AppRoutes() {
                 element={
                   <RoleRoute allowedRoles={['agent']}>
                     <RentalWorkspaceGuard>
-                      <Navigate to="/agent/rentals/dashboard" replace />
+                      <RentalOperatingModeEntryRoute />
                     </RentalWorkspaceGuard>
                   </RoleRoute>
                 }
@@ -2850,13 +2876,18 @@ function AppRoutes() {
                 element={
                   <RoleRoute allowedRoles={['agent']}>
                     <RentalWorkspaceGuard>
-                      <RentalModuleGate moduleId={RENTAL_MODULES.dashboard}>
-                        <RentalOperationsDashboardPage />
-                      </RentalModuleGate>
+                      <RentalOperatingModeEntryRoute />
                     </RentalWorkspaceGuard>
                   </RoleRoute>
                 }
               />
+              <Route path="/agent/rentals/long-term" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><Navigate to="/agent/rentals/long-term/dashboard" replace /></RentalWorkspaceGuard></RoleRoute>} />
+              <Route path="/agent/rentals/long-term/dashboard" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalOperatingModeGuard mode={RENTAL_OPERATING_MODES.longTerm}><RentalModuleGate moduleId={RENTAL_MODULES.dashboard}><RentalOperationsDashboardPage /></RentalModuleGate></RentalOperatingModeGuard></RentalWorkspaceGuard></RoleRoute>} />
+              <Route path="/agent/rentals/short-term" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><Navigate to="/agent/rentals/short-term/dashboard" replace /></RentalWorkspaceGuard></RoleRoute>} />
+              <Route path="/agent/rentals/short-term/dashboard" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalOperatingModeGuard mode={RENTAL_OPERATING_MODES.shortTerm}><Suspense fallback={<PageSkeleton label="Loading Short-Term Rentals" />}><ShortTermRentalInventoryPage /></Suspense></RentalOperatingModeGuard></RentalWorkspaceGuard></RoleRoute>} />
+              <Route path="/agent/rentals/short-term/bookings" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalOperatingModeGuard mode={RENTAL_OPERATING_MODES.shortTerm}><Suspense fallback={<PageSkeleton label="Loading Short-Term bookings" />}><ShortTermBookingsPage /></Suspense></RentalOperatingModeGuard></RentalWorkspaceGuard></RoleRoute>} />
+              <Route path="/agent/rentals/short-term/turnovers" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalOperatingModeGuard mode={RENTAL_OPERATING_MODES.shortTerm}><Suspense fallback={<PageSkeleton label="Loading Short-Term turnovers" />}><ShortTermTurnoversPage /></Suspense></RentalOperatingModeGuard></RentalWorkspaceGuard></RoleRoute>} />
+              <Route path="/agent/rentals/short-term/rates" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalOperatingModeGuard mode={RENTAL_OPERATING_MODES.shortTerm}><Suspense fallback={<PageSkeleton label="Loading Short-Term rates" />}><ShortTermRatesPage /></Suspense></RentalOperatingModeGuard></RentalWorkspaceGuard></RoleRoute>} />
               <Route
                 path="/agent/rentals/tenancies"
                 element={

@@ -60,6 +60,7 @@
     "test:property24-phase4-workflow": "npm --prefix the-it-guy run test:property24-phase4-workflow --",
     "test:property24-phase5-reconciliation": "npm --prefix the-it-guy run test:property24-phase5-reconciliation --",
     "test:property24-phase6-vetting-pack": "npm --prefix the-it-guy run test:property24-phase6-vetting-pack --",
+    "test:property24-phase7-live-cutover": "npm --prefix the-it-guy run test:property24-phase7-live-cutover --",
     "test:property24-migration-import-dry-run": "npm --prefix the-it-guy run test:property24-migration-import-dry-run --",
     "test:property24-migration-data-map": "npm --prefix the-it-guy run test:property24-migration-data-map --",
     "test:property24-migration-image-import": "npm --prefix the-it-guy run test:property24-migration-image-import --",

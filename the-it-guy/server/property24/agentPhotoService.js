@@ -8,6 +8,13 @@ export const PROPERTY24_AGENT_PHOTO_MIN_SOURCE_SIZE = 300
 export const PROPERTY24_AGENT_PHOTO_MAX_INPUT_BYTES = 10 * 1024 * 1024
 export const PROPERTY24_AGENT_PHOTO_MAX_OUTPUT_BYTES = 2 * 1024 * 1024
 export const PROPERTY24_AGENT_PHOTO_INPUT_FORMATS = Object.freeze(['jpeg', 'png', 'webp'])
+export const PROPERTY24_AGENT_PHOTO_ALLOWED_CONTENT_TYPES = Object.freeze([
+  'application/octet-stream',
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/webp',
+])
 
 function requirePositiveInteger(value, label) {
   const number = Number(value)
@@ -26,6 +33,53 @@ function normalizeIdentifier(value) {
   if (!/^\d+$/.test(text)) return null
   const number = Number(text)
   return Number.isSafeInteger(number) && number > 0 ? number : null
+}
+
+function normalizeAllowedOrigins(values = []) {
+  return [...new Set((Array.isArray(values) ? values : [values]).flatMap((value) => String(value || '').split(','))
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .map((value) => {
+      try {
+        return new URL(value).origin.toLowerCase()
+      } catch {
+        return ''
+      }
+    })
+    .filter(Boolean))]
+}
+
+async function readResponseBodyWithLimit(response, maxBytes) {
+  const contentLength = Number(response.headers?.get?.('content-length') || 0)
+  if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+    throw new Error(`The agent photo exceeds the ${maxBytes}-byte remote input limit.`)
+  }
+
+  if (!response.body?.getReader) {
+    const buffer = Buffer.from(await response.arrayBuffer())
+    if (buffer.length > maxBytes) throw new Error(`The agent photo exceeds the ${maxBytes}-byte remote input limit.`)
+    return buffer
+  }
+
+  const reader = response.body.getReader()
+  const chunks = []
+  let totalBytes = 0
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      const chunk = Buffer.from(value)
+      totalBytes += chunk.length
+      if (totalBytes > maxBytes) {
+        await reader.cancel().catch(() => {})
+        throw new Error(`The agent photo exceeds the ${maxBytes}-byte remote input limit.`)
+      }
+      chunks.push(chunk)
+    }
+  } finally {
+    reader.releaseLock?.()
+  }
+  return Buffer.concat(chunks, totalBytes)
 }
 
 export function extractProperty24AgentId(value) {
@@ -69,6 +123,16 @@ export function findMatchingProperty24Agent(agents, candidate = {}) {
       (emailAddress && agentEmailAddress === emailAddress),
     )
   }) || null
+}
+
+export function hashProperty24AgentPhoto(agent = {}) {
+  const bytes = String(agent?.profilePicture?.bytes || agent?.ProfilePicture?.bytes || '').trim()
+  if (!bytes) return ''
+  try {
+    return crypto.createHash('sha256').update(Buffer.from(bytes, 'base64')).digest('hex')
+  } catch {
+    return ''
+  }
 }
 
 export async function normalizeProperty24AgentPhotoBuffer(input, {
@@ -167,5 +231,64 @@ export async function prepareProperty24AgentPhotoFile(filePath, options = {}) {
   return {
     ...prepared,
     sourcePath: resolvedPath,
+  }
+}
+
+export async function prepareProperty24AgentPhotoUrl(sourceUrl, {
+  allowedOrigins = [],
+  allowInsecureHttp = false,
+  fetchImpl = globalThis.fetch,
+  timeoutMs = 15_000,
+  maxInputBytes = PROPERTY24_AGENT_PHOTO_MAX_INPUT_BYTES,
+  ...normalizationOptions
+} = {}) {
+  if (typeof fetchImpl !== 'function') throw new Error('A fetch implementation is required to load the agent photo.')
+
+  let url
+  try {
+    url = new URL(String(sourceUrl || '').trim())
+  } catch {
+    throw new Error('The Arch9 agent profile photo URL is invalid.')
+  }
+  if (url.username || url.password) throw new Error('The Arch9 agent profile photo URL must not include credentials.')
+  if (url.protocol !== 'https:' && !(allowInsecureHttp && url.protocol === 'http:')) {
+    throw new Error('The Arch9 agent profile photo URL must use HTTPS.')
+  }
+
+  const normalizedAllowedOrigins = normalizeAllowedOrigins(allowedOrigins)
+  if (!normalizedAllowedOrigins.includes(url.origin.toLowerCase())) {
+    throw new Error(`The Arch9 agent profile photo host is not an approved storage origin: ${url.origin}`)
+  }
+
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), timeoutMs)
+  let response
+  try {
+    response = await fetchImpl(url.toString(), {
+      method: 'GET',
+      headers: { Accept: 'image/jpeg,image/png,image/webp' },
+      redirect: 'error',
+      signal: controller.signal,
+    })
+    if (!response.ok) {
+      throw new Error(`The Arch9 agent profile photo download failed with HTTP ${response.status}.`)
+    }
+    const contentType = String(response.headers?.get?.('content-type') || '').split(';')[0].trim().toLowerCase()
+    if (contentType && !PROPERTY24_AGENT_PHOTO_ALLOWED_CONTENT_TYPES.includes(contentType)) {
+      throw new Error(`The Arch9 agent profile photo returned unsupported content type "${contentType}".`)
+    }
+
+    const input = await readResponseBodyWithLimit(response, maxInputBytes)
+    return await normalizeProperty24AgentPhotoBuffer(input, {
+      ...normalizationOptions,
+      maxInputBytes,
+      sourceName: url.toString(),
+    })
+  } catch (error) {
+    if (error?.name === 'AbortError') throw new Error(`The Arch9 agent profile photo download timed out after ${timeoutMs}ms.`)
+    if (/^The Arch9 agent profile photo|^The agent photo/.test(error.message)) throw error
+    throw new Error(`The Arch9 agent profile photo could not be downloaded: ${error.message}`)
+  } finally {
+    clearTimeout(timeout)
   }
 }

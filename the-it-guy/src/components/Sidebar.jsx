@@ -421,13 +421,14 @@ function Sidebar() {
         membershipRole,
         currentMembership: navCurrentMembership,
         businessWorkspace: workspaceContext.businessWorkspaceId,
+        rentalOperatingMode: workspaceContext.rentalOperatingMode,
       })
       const moduleFilteredItems = role === 'attorney'
         ? filterAttorneyModuleNavigationItems(items, attorneyModuleState.modules)
         : items
       return filterNavigationItems(moduleFilteredItems, navPermissionContext)
     },
-    [attorneyModuleState.modules, baseRole, membershipRole, navCurrentMembership, navPermissionContext, profile, role, workspaceContext.businessWorkspaceId],
+    [attorneyModuleState.modules, baseRole, membershipRole, navCurrentMembership, navPermissionContext, profile, role, workspaceContext.businessWorkspaceId, workspaceContext.rentalOperatingMode],
   )
   const isIntelligencePath =
     location.pathname.startsWith('/attorney/intelligence') ||

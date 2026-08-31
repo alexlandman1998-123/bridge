@@ -4,17 +4,24 @@ import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import {
-  PROPERTY24_EXDEV_BASE_URL,
   createProperty24Client,
   normalizeProperty24Text,
   summarizeProperty24Payload,
 } from '../../../server/property24/client.js'
+import { resolveProperty24EnvironmentCredentials } from '../../../server/property24/environmentService.js'
 import {
   createProperty24AgentMappingPlan,
   createRedactedProperty24SynchronisationPreview,
   fetchArch9AgentCandidates,
   fetchProperty24AgencyAgentSnapshot,
 } from '../../../server/property24/synchronisationService.js'
+import { prepareProperty24AgentPhotoUrl } from '../../../server/property24/agentPhotoService.js'
+import { syndicateCanonicalProperty24AgentProfile } from '../../../server/property24/agentProfileSyndicationService.js'
+import {
+  fetchCanonicalProperty24AgentMappings,
+  persistCanonicalProperty24AgentMappings,
+} from '../../../server/property24/agentMappingService.js'
+import { resolveOrganisationProperty24Connection } from '../../../server/property24/organisationConnectionService.js'
 import { writeNodeJsonResponse } from '../../../server/services/hqMissionControlApi.js'
 
 const appRoot = fileURLToPath(new URL('../../..', import.meta.url))
@@ -130,12 +137,19 @@ async function authenticateRequest({ request, supabase, organisationId } = {}) {
   return { ok: true, user }
 }
 
-function createProperty24FromEnv(env = {}) {
+function createProperty24FromEnv(env = {}, environment = 'exdev') {
+  const runtime = resolveProperty24EnvironmentCredentials({ env, environment })
+  if (!runtime.configured) {
+    const error = new Error(`Property24 ${runtime.environment} credentials are incomplete: ${runtime.missing.join(', ')}.`)
+    error.code = 'property24_environment_credentials_missing'
+    error.status = 503
+    throw error
+  }
   return createProperty24Client({
-    baseUrl: normalizeProperty24Text(env.PROPERTY24_BASE_URL) || PROPERTY24_EXDEV_BASE_URL,
-    username: normalizeProperty24Text(env.PROPERTY24_BASIC_AUTH_USERNAME || env.PROPERTY24_USERNAME),
-    password: normalizeProperty24Text(env.PROPERTY24_BASIC_AUTH_PASSWORD || env.PROPERTY24_PASSWORD),
-    userGroupId: normalizeProperty24Text(env.PROPERTY24_USER_GROUP_ID),
+    baseUrl: runtime.baseUrl,
+    username: runtime.username,
+    password: runtime.password,
+    userGroupId: runtime.userGroupId,
   })
 }
 
@@ -143,8 +157,6 @@ function getMissingConfiguration(env = {}) {
   const missing = []
   if (!normalizeProperty24Text(env.SUPABASE_URL || env.VITE_SUPABASE_URL)) missing.push('SUPABASE_URL')
   if (!normalizeProperty24Text(env.SUPABASE_SERVICE_ROLE_KEY)) missing.push('SUPABASE_SERVICE_ROLE_KEY')
-  if (!normalizeProperty24Text(env.PROPERTY24_BASIC_AUTH_USERNAME || env.PROPERTY24_USERNAME)) missing.push('PROPERTY24_BASIC_AUTH_USERNAME')
-  if (!normalizeProperty24Text(env.PROPERTY24_BASIC_AUTH_PASSWORD || env.PROPERTY24_PASSWORD)) missing.push('PROPERTY24_BASIC_AUTH_PASSWORD')
   return missing
 }
 
@@ -175,17 +187,14 @@ export default async function handler(request, response) {
 
     const body = await readJsonBody(request)
     const organisationId = normalizeProperty24Text(body.organisationId)
-    const agencyId = normalizeProperty24Text(body.agencyId || env.PROPERTY24_DEFAULT_AGENCY_ID)
     const sourceReferencePrefix = normalizeProperty24Text(body.sourceReferencePrefix || 'ARCH9')
-    const existingMappings = Array.isArray(body.existingMappings) ? body.existingMappings : []
+    const compatibilityMappings = Array.isArray(body.existingMappings) ? body.existingMappings : []
+    const applyProfileUpdates = body.applyProfileUpdates === true
 
-    if (!organisationId || !agencyId) {
+    if (!organisationId) {
       writeNodeJsonResponse(response, buildResponse(400, {
         error: 'missing_configuration',
-        missingConfiguration: [
-          !organisationId ? 'organisationId' : '',
-          !agencyId ? 'agencyId' : '',
-        ].filter(Boolean),
+        missingConfiguration: ['organisationId'],
       }))
       return
     }
@@ -199,28 +208,132 @@ export default async function handler(request, response) {
       return
     }
 
-    const property24 = createProperty24FromEnv(env)
-    const [agentSnapshot, arch9Agents] = await Promise.all([
+    const connection = await resolveOrganisationProperty24Connection({
+      supabase,
+      organisationId,
+      requestedAgencyId: body.agencyId,
+    })
+    const agencyId = connection.agencyId
+
+    const property24 = createProperty24FromEnv(env, connection.environment)
+    const [agentSnapshot, arch9Agents, canonicalMappings] = await Promise.all([
       fetchProperty24AgencyAgentSnapshot({ property24, agencyId }),
       fetchArch9AgentCandidates({ supabase, organisationId }),
+      fetchCanonicalProperty24AgentMappings({
+        supabase,
+        organisationId,
+        environment: connection.environment,
+        agencyId,
+      }),
     ])
 
     const agentPlan = createProperty24AgentMappingPlan({
       arch9Agents,
       property24Agents: agentSnapshot.agents,
-      existingMappings,
+      existingMappings: canonicalMappings.length ? canonicalMappings : compatibilityMappings,
       sourceReferencePrefix,
     })
+    const generatedAt = new Date().toISOString()
+    const mappingRows = agentPlan.mappings.map((mapping) => ({
+      arch9UserId: mapping.arch9Agent.userId,
+      property24AgentId: mapping.property24Agent.property24AgentId,
+      sourceReference: mapping.sourceReference,
+      matchType: mapping.matchType,
+      confidence: mapping.confidence,
+      lastSeenAt: generatedAt,
+    }))
+    const savedMappings = await persistCanonicalProperty24AgentMappings({
+      supabase,
+      organisationId,
+      environment: connection.environment,
+      agencyId,
+      mappings: mappingRows,
+    })
 
-    writeNodeJsonResponse(response, buildResponse(200, {
+    const profileSyncResults = []
+    if (applyProfileUpdates) {
+      for (const mapping of agentPlan.mappings) {
+        const agent = mapping.arch9Agent
+        try {
+          const preparedPhoto = await prepareProperty24AgentPhotoUrl(agent.avatarUrl, {
+            allowedOrigins: [
+              env.SUPABASE_URL || env.VITE_SUPABASE_URL,
+              env.PROPERTY24_AGENT_PHOTO_ALLOWED_ORIGINS,
+            ],
+            allowInsecureHttp: normalizeProperty24Text(env.PROPERTY24_AGENT_PHOTO_ALLOW_HTTP).toLowerCase() === 'true',
+          })
+          const result = await syndicateCanonicalProperty24AgentProfile({
+            property24,
+            profile: {
+              userId: agent.userId,
+              membershipId: agent.membershipId,
+              firstName: agent.firstName,
+              lastName: agent.lastName,
+              fullName: agent.fullName,
+              email: agent.email,
+              phone: agent.mobile,
+              avatarUrl: agent.avatarUrl,
+              jobTitle: agent.jobTitle,
+            },
+            preparedPhoto,
+            agencyId,
+            sourceReference: mapping.sourceReference,
+            countryId: Number(env.PROPERTY24_DEFAULT_COUNTRY_ID || 1),
+            remoteAgent: mapping.property24Agent.raw,
+          })
+          profileSyncResults.push({
+            arch9UserId: agent.userId,
+            property24AgentId: result.property24AgentId,
+            status: result.status,
+            action: result.action,
+            photo: result.photo,
+            warnings: result.warnings,
+          })
+        } catch (profileError) {
+          profileSyncResults.push({
+            arch9UserId: agent.userId,
+            property24AgentId: mapping.property24Agent.property24AgentId,
+            status: 'FAILED',
+            error: profileError.code || 'property24_agent_profile_sync_failed',
+            message: profileError.message,
+            missingFields: profileError.missingFields || null,
+            invalidFields: profileError.invalidFields || null,
+          })
+        }
+      }
+    }
+    const profileFailures = profileSyncResults.filter((result) => result.status === 'FAILED')
+    const profilePartials = profileSyncResults.filter((result) => result.status.endsWith('_PARTIAL'))
+    const accountUpdate = await supabase
+      .from('property24_accounts')
+      .update({ last_agent_sync_at: generatedAt })
+      .eq('organisation_id', organisationId)
+      .eq('environment', connection.environment)
+      .eq('agency_id', Number(agencyId))
+    if (accountUpdate.error) throw accountUpdate.error
+
+    const responseStatus = profileFailures.length || profilePartials.length ? 207 : 200
+    writeNodeJsonResponse(response, buildResponse(responseStatus, {
       phase: 'property24-agent-sync',
-      generatedAt: new Date().toISOString(),
+      generatedAt,
       organisationId,
       agencyId,
       summary: agentPlan.summary,
-      property24Agents: agentSnapshot.agents,
+      property24Agents: agentSnapshot.agents.map(({ raw, ...agent }) => agent),
       arch9Agents,
-      agentPlan,
+      agentPlan: createRedactedProperty24SynchronisationPreview(agentPlan),
+      mappingPersistence: {
+        canonicalSource: 'property24_agent_mappings',
+        savedCount: savedMappings.length,
+      },
+      profileSync: {
+        applied: applyProfileUpdates,
+        requestedCount: applyProfileUpdates ? agentPlan.mappings.length : 0,
+        syncedCount: profileSyncResults.length - profileFailures.length - profilePartials.length,
+        partialCount: profilePartials.length,
+        failedCount: profileFailures.length,
+        results: profileSyncResults,
+      },
       redacted: createRedactedProperty24SynchronisationPreview({
         property24: { agents: agentSnapshot },
         agentPlan,

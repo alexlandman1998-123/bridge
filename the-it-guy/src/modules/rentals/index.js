@@ -67,7 +67,6 @@ export {
 } from './shared/parties/rentalPartyRelationships.js'
 export { RentalPartySelector } from './shared/parties/RentalPartySelector.jsx'
 export { RentalLandlordMandatePanel } from './shared/landlords/RentalLandlordMandatePanel.jsx'
-export { RentalPropertyEvidencePanel } from './shared/evidence/RentalPropertyEvidencePanel.jsx'
 
 export {
   RentalApplicationsPage,

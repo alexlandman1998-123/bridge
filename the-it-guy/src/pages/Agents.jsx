@@ -75,10 +75,12 @@ import { getPrincipalAgentCommandCentre, getPrincipalAgentDetailCommandCentre } 
 import { buildAgentCommissionSummary, getAgentCommissionSummary, updateCommissionTarget } from '../services/commissionService'
 import { buildPartnerBusinessDistribution } from '../services/partnerBusinessDistributionService'
 import {
+  assertAgentReadyForDeactivation,
   discoverAgentOffboardingAssets,
   executeAgentAssetReassignment,
   hasBlockingAgentAssets,
 } from '../services/agentOffboardingService'
+import { syncProperty24AgentLifecycleStatus } from '../services/property24AgentLifecycleService'
 import {
   buildTransferMembershipReport,
   executeAgentTransferRetention,
@@ -6814,9 +6816,12 @@ export function AgentsPage() {
       setOffboardingError('')
       setActionError('')
 
+      const organisationId = agent.organisationId || agentDirectory?.agency?.id || ''
+      const arch9UserId = normalizeOffboardingAgentId(agent)
+
       if (offboardingWizard.discovery?.summary?.totalAssets) {
         await executeAgentAssetReassignment({
-          organisationId: agent.organisationId || agentDirectory?.agency?.id || '',
+          organisationId,
           agent,
           assets,
           strategy,
@@ -6826,17 +6831,40 @@ export function AgentsPage() {
         })
       }
 
-      if (agent.organisationUserId) {
-        await deactivateOrganisationUser(agent.organisationUserId)
-      } else {
-        setAgentStatus({
-          agentEmail: agent.email,
-          organisationId: agent.organisationId,
-          status: AGENT_INVITE_STATUS.REVOKED,
-        })
+      await assertAgentReadyForDeactivation({ organisationId, agent })
+      const property24Lifecycle = await syncProperty24AgentLifecycleStatus({
+        organisationId,
+        arch9UserId,
+        status: 'inactive',
+      })
+
+      try {
+        if (agent.organisationUserId) {
+          await deactivateOrganisationUser(agent.organisationUserId)
+        } else {
+          setAgentStatus({
+            agentEmail: agent.email,
+            organisationId: agent.organisationId,
+            status: AGENT_INVITE_STATUS.REVOKED,
+          })
+        }
+      } catch (membershipFailure) {
+        if (property24Lifecycle.changed) {
+          try {
+            await syncProperty24AgentLifecycleStatus({ organisationId, arch9UserId, status: 'active' })
+          } catch (rollbackFailure) {
+            membershipFailure.message = `${membershipFailure.message} Property24 was set inactive and could not be restored automatically: ${rollbackFailure.message}`
+          }
+        }
+        throw membershipFailure
       }
 
-      setActionMessage(`Agent offboarded. ${agent.name || agent.email || 'The agent'} has been deactivated after business assets were handled.`)
+      const property24Message = property24Lifecycle.status === 'SKIPPED_NOT_CONFIGURED'
+        ? ' This agency has no Property24 connection, so no portal agent status was required.'
+        : property24Lifecycle.status === 'SKIPPED_NOT_MAPPED'
+          ? ' This agent has no Property24 mapping, so no portal agent status was required.'
+          : ' Their mapped Property24 agent was also verified inactive.'
+      setActionMessage(`Agent offboarded. ${agent.name || agent.email || 'The agent'} has been deactivated after business assets were handled.${property24Message}`)
       setOffboardingWizard({ open: false, agent: null, discovery: null })
       await loadData()
     } catch (offboardingFailure) {

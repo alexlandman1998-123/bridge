@@ -1,7 +1,8 @@
-export const TRANSACTION_CREATION_LIFECYCLE_VERSION = 'arch9_transaction_creation_v2'
+export const TRANSACTION_CREATION_LIFECYCLE_VERSION = 'arch9_transaction_creation_v3'
 
 export const TRANSACTION_CREATION_CRITICAL_STEPS = Object.freeze([
   'attorney_assignment',
+  'bond_originator_assignment',
   'onboarding_snapshot',
   'requirement_generation',
   'seller_handoff',
@@ -36,6 +37,7 @@ function createStep(required, at) {
 
 export function createTransactionCreationLifecycle({
   attorneyAssignmentRequired = false,
+  bondOriginatorAssignmentRequired = false,
   sellerHandoffRequired = false,
   portalSetupRequired = false,
   startedAt = new Date().toISOString(),
@@ -45,6 +47,7 @@ export function createTransactionCreationLifecycle({
     startedAt,
     steps: {
       attorney_assignment: createStep(attorneyAssignmentRequired, startedAt),
+      bond_originator_assignment: createStep(bondOriginatorAssignmentRequired, startedAt),
       onboarding_snapshot: createStep(true, startedAt),
       requirement_generation: createStep(true, startedAt),
       seller_handoff: createStep(sellerHandoffRequired, startedAt),

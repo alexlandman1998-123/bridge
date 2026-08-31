@@ -41,8 +41,10 @@ import {
 } from 'lucide-react'
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
+import { getProperty24ListingStatusOptions } from './settings/property24SettingsModel'
 import StartDocumentModal from '../components/documents/StartDocumentModal'
 import SellerDocumentReviewActions from '../components/documents/SellerDocumentReviewActions'
+import ListingAgentReassignmentPanel from '../components/listings/ListingAgentReassignmentPanel'
 import {
   ListingWorkspacePortalActionPanel,
   ListingWorkspacePortalChecklist,
@@ -448,7 +450,7 @@ const AMENITY_OPTIONS = ['Security Estate', 'Clubhouse', 'Kids Play Area', 'Walk
 const EXTERNAL_LINK_PLATFORM_OPTIONS = ['Property24', 'Private Property', 'Agency Website', 'Facebook Marketplace', 'Instagram', 'Gumtree', 'Other']
 const EXTERNAL_LINK_STATUS_OPTIONS = ['Draft', 'Live', 'Removed', 'Expired']
 const PORTAL_STATUS_OPTIONS = ['not_published', 'draft', 'published', 'paused', 'removed']
-const PROPERTY24_STATUS_UPDATE_OPTIONS = ['Active', 'Pending', 'Sold', 'Withdrawn']
+const PROPERTY24_STATUS_UPDATE_OPTIONS = getProperty24ListingStatusOptions('sale')
 const ARCH9_PUBLIC_SITE_ORIGIN = 'https://www.arch9.co.za'
 const ARCH9_PUBLIC_LISTINGS_API_PATH = '/api/public/listings'
 const PROPERTY24_LISTING_API_BASE_PATH = '/api/property24/listings'
@@ -10212,6 +10214,15 @@ function AgentListingDetail() {
       {detailMessage ? (
         <div className="rounded-[14px] border border-[#d8eddf] bg-[#ecfaf1] px-4 py-3 text-sm font-medium text-[#1f7d44]">{detailMessage}</div>
       ) : null}
+      <ListingAgentReassignmentPanel
+        listingId={listingRecord.id}
+        listing={listingRecord}
+        listingType="sale"
+        onReassigned={async () => {
+          await loadListingData()
+          setDetailMessage('Listing agent reassigned successfully.')
+        }}
+      />
       <Modal
         open={sellerProfileBuilderOpen}
         onClose={sellerProfileBuilderSaving ? undefined : () => setSellerProfileBuilderOpen(false)}

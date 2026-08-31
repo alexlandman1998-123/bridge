@@ -1,7 +1,19 @@
-import { supabase, isSupabaseConfigured } from '../lib/supabaseClient'
+import { supabase, isSupabaseConfigured } from '../lib/supabaseClient.js'
+import { reassignListingAgent } from './listingAgentReassignmentService.js'
 
 const ACTIVE_LEAD_EXCLUSIONS = new Set(['lost', 'archived', 'converted to transaction', 'converted'])
-const ACTIVE_LISTING_EXCLUSIONS = new Set(['withdrawn', 'archived', 'sold_archived', 'deleted'])
+const ACTIVE_LISTING_EXCLUSIONS = new Set([
+  'withdrawn',
+  'archived',
+  'sold',
+  'sold_archived',
+  'rented',
+  'completed',
+  'cancelled',
+  'canceled',
+  'inactive',
+  'deleted',
+])
 const ACTIVE_TRANSACTION_EXCLUSIONS = new Set(['registered', 'completed', 'archived', 'cancelled', 'canceled', 'deleted'])
 const ACTIVE_APPOINTMENT_EXCLUSIONS = new Set(['completed', 'cancelled', 'canceled', 'declined', 'no_show', 'no show'])
 
@@ -74,6 +86,63 @@ function isActiveListing(row = {}) {
   const status = normalizeLower(row.listing_status || row.status)
   const visibility = normalizeLower(row.listing_visibility || row.visibility)
   return !ACTIVE_LISTING_EXCLUSIONS.has(status) && !ACTIVE_LISTING_EXCLUSIONS.has(visibility)
+}
+
+export function resolveOffboardingListingType(listing = {}) {
+  const canonicalFacts = listing.seller_canonical_facts_json && typeof listing.seller_canonical_facts_json === 'object'
+    ? listing.seller_canonical_facts_json
+    : {}
+  const category = normalizeLower(
+    listing.listing_category ||
+    canonicalFacts.listingType ||
+    canonicalFacts.listing_type,
+  )
+  return category.includes('rental') || Boolean(canonicalFacts.rentalInfo || canonicalFacts.rental_info)
+    ? 'rental'
+    : 'sale'
+}
+
+export function buildAgentDeactivationReadiness(summary = {}) {
+  const blockers = Object.entries({
+    sellerLeads: Number(summary.sellerLeads || 0),
+    buyerLeads: Number(summary.buyerLeads || 0),
+    contacts: Number(summary.contacts || 0),
+    tasks: Number(summary.tasks || 0),
+    listings: Number(summary.activeListings ?? summary.listings ?? 0),
+    transactions: Number(summary.activeTransactions ?? summary.transactions ?? 0),
+    appointments: Number(summary.appointments || 0),
+    documentPackets: Number(summary.documentPackets || 0),
+    documentRequests: Number(summary.openDocumentRequests || 0),
+    sellerUploads: Number(summary.pendingSellerUploads || 0),
+  })
+    .filter(([, count]) => count > 0)
+    .map(([assetType, count]) => ({ assetType, count }))
+  return {
+    ready: blockers.length === 0,
+    blockers,
+    totalBlockingAssets: blockers.reduce((total, blocker) => total + blocker.count, 0),
+  }
+}
+
+export async function reassignAgentListingsForOffboarding({
+  listings = [],
+  destinationAgent = null,
+  reassignListing = reassignListingAgent,
+} = {}) {
+  const targetAgentId = normalizeUuid(destinationAgent?.userId)
+  if (asArray(listings).length && !targetAgentId) throw new Error('Choose a destination agent for listings.')
+
+  const reports = []
+  const seen = new Set()
+  for (const listing of asArray(listings)) {
+    const listingId = normalizeUuid(listing?.id)
+    if (!listingId || seen.has(listingId)) continue
+    seen.add(listingId)
+    const listingType = resolveOffboardingListingType(listing)
+    const report = await reassignListing(listingId, targetAgentId, { listingType })
+    reports.push({ listingId, listingType, status: report?.status || 'REASSIGNED', report })
+  }
+  return reports
 }
 
 function isActiveTransaction(row = {}) {
@@ -176,7 +245,7 @@ export async function discoverAgentOffboardingAssets({ organisationId = '', agen
     safeSelect('leads', 'lead_id, organisation_id, branch_id, assigned_user_id, assigned_agent_id, assigned_agent_email, created_by, lead_category, lead_direction, lead_source, stage, status, created_at, updated_at', normalizedOrgId),
     safeSelect('contacts', 'contact_id, organisation_id, assigned_agent_id, first_name, last_name, email, phone, contact_type, created_at, updated_at', normalizedOrgId),
     safeSelect('tasks', 'task_id, organisation_id, lead_id, transaction_id, assigned_agent_id, title, status, due_date, created_at, updated_at', normalizedOrgId),
-    safeSelect('private_listings', 'id, organisation_id, branch_id, assigned_agent_id, assigned_agent_email, created_by, listing_status, listing_visibility, title, listing_reference, mandate_status, seller_onboarding_status, created_at, updated_at', normalizedOrgId),
+    safeSelect('private_listings', 'id, organisation_id, branch_id, assigned_agent_id, assigned_agent_email, created_by, listing_status, listing_visibility, listing_category, seller_canonical_facts_json, property24_reference, property24_status, title, listing_reference, mandate_status, seller_onboarding_status, created_at, updated_at', normalizedOrgId),
     safeSelect('transactions', 'id, organisation_id, assigned_branch_id, assigned_user_id, assigned_agent_id, owner_user_id, assigned_agent, assigned_agent_email, created_by, lifecycle_state, stage, current_main_stage, is_active, deleted_at, transaction_reference, property_address_line_1, created_at, updated_at', normalizedOrgId),
     safeSelect('appointments', 'appointment_id, organisation_id, lead_id, contact_id, transaction_id, agent_id, created_by, title, appointment_type, status, date_time, appointment_date, created_at, updated_at', normalizedOrgId, { order: 'date_time' }),
     safeSelect('document_packets', 'id, organisation_id, transaction_id, lead_id, contact_id, assigned_agent_id, created_by, title, status, packet_type, created_at, updated_at', normalizedOrgId),
@@ -255,21 +324,6 @@ async function updateRows(table, idColumn, rows, patchFactory, auditFactory) {
   return updated.length
 }
 
-async function insertListingActivity(listingId, actorId, reason, metadata) {
-  const { error } = await supabase.from('private_listing_activity').insert({
-    private_listing_id: listingId,
-    activity_type: 'listing_ownership_transferred',
-    activity_title: 'Listing ownership transferred',
-    activity_description: reason || 'Listing reassigned during agent offboarding.',
-    performed_by: normalizeUuid(actorId) || null,
-    visibility: 'internal',
-    metadata: metadata || {},
-  })
-  if (error && !isMissingSchemaError(error)) {
-    console.warn('[Agent Offboarding] listing activity skipped', error)
-  }
-}
-
 export async function executeAgentAssetReassignment({
   organisationId = '',
   agent = {},
@@ -278,6 +332,7 @@ export async function executeAgentAssetReassignment({
   actor = {},
   reason = 'Agent offboarding',
   appointmentAction = 'reassign',
+  reassignListing = reassignListingAgent,
 } = {}) {
   if (!isSupabaseConfigured || !supabase) throw new Error('Supabase is required before agent offboarding can continue.')
   const normalizedOrgId = normalizeUuid(organisationId || agent.organisationId || agent.organisation_id)
@@ -332,16 +387,13 @@ export async function executeAgentAssetReassignment({
   })
 
   const listingDestination = assets.listings?.length ? requireDestination(strategy, 'listings') : null
-  results.listings = await updateRows('private_listings', 'id', asArray(assets.listings), () => ({
-    assigned_agent_id: normalizeUuid(listingDestination?.userId),
-    assigned_agent_email: normalizeEmail(listingDestination?.email) || null,
-    branch_id: normalizeUuid(listingDestination?.branchId) || undefined,
-    updated_at: now,
-  }), async (row) => {
-    const metadata = { previousOwnerUserId: sourceAgentId, newOwnerUserId: listingDestination?.userId, reason }
-    await insertListingActivity(row.id, actorId, reason, metadata)
-    await auditEvent({ actorId, organisationId: normalizedOrgId, action: 'listing_ownership_transferred', targetType: 'private_listing', targetId: row.id, metadata })
+  const listingReports = await reassignAgentListingsForOffboarding({
+    listings: assets.listings,
+    destinationAgent: listingDestination,
+    reassignListing,
   })
+  results.listings = listingReports.length
+  results.listingReports = listingReports
 
   const transactionDestination = assets.transactions?.length ? requireDestination(strategy, 'transactions') : null
   results.transactions = await updateRows('transactions', 'id', asArray(assets.transactions), () => ({
@@ -428,4 +480,18 @@ export async function executeAgentAssetReassignment({
   })
 
   return results
+}
+
+export async function assertAgentReadyForDeactivation({ organisationId = '', agent = {} } = {}) {
+  const discovery = await discoverAgentOffboardingAssets({ organisationId, agent })
+  const readiness = buildAgentDeactivationReadiness(discovery.summary)
+  if (!readiness.ready) {
+    const summary = readiness.blockers.map((blocker) => `${blocker.count} ${blocker.assetType}`).join(', ')
+    const error = new Error(`Agent deactivation is blocked because ownership remains on: ${summary}. Refresh and reassign these assets first.`)
+    error.code = 'agent_deactivation_assets_remaining'
+    error.readiness = readiness
+    error.discovery = discovery
+    throw error
+  }
+  return { ...discovery, readiness }
 }

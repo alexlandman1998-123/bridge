@@ -22,6 +22,7 @@ import {
   resolveProperty24ListingPublishConfiguration,
   resolveProperty24Environment,
 } from './publishService.js'
+import { resolveProperty24EnvironmentCredentials } from './environmentService.js'
 import {
   applyControlledProperty24ListingPublish,
   applyControlledProperty24StatusUpdate,
@@ -41,6 +42,12 @@ import {
 import {
   recordProperty24ListingSync,
 } from '../services/property24ListingSyncService.js'
+import {
+  prepareProperty24ListingAgentReassignment,
+  recordListingAgentReassignmentActivity,
+  resolveProperty24TargetAgentMapping,
+  writePrivateListingAgentAssignment,
+} from './listingAgentReassignmentService.js'
 
 const appRoot = fileURLToPath(new URL('../..', import.meta.url))
 let cachedRuntimeEnv = null
@@ -150,6 +157,20 @@ function normalizeBoolean(value, fallback = false) {
   return fallback
 }
 
+const PROPERTY24_RENTAL_STATUS_BY_KEY = Object.freeze({
+  active: 'Active',
+  pending: 'Pending',
+  rented: 'Rented',
+  withdrawn: 'Withdrawn',
+  backonmarket: 'BackOnMarket',
+  back_on_market: 'BackOnMarket',
+})
+
+function resolveRentalProperty24Status(value = '') {
+  const normalized = normalizeProperty24Text(value).toLowerCase().replace(/[\s-]+/g, '_')
+  return PROPERTY24_RENTAL_STATUS_BY_KEY[normalized] || ''
+}
+
 function matchProperty24Route(requestUrl, routeParams = {}) {
   const parts = requestUrl.pathname.split('/').filter(Boolean)
   const offset = parts[0] === 'api' && parts[1] === 'property24' ? 2 : 0
@@ -161,8 +182,32 @@ function matchProperty24Route(requestUrl, routeParams = {}) {
   if (routeParts[0] === 'rentals' && routeParts[2] === 'preview') {
     return { name: 'previewRentalListing', listingId: normalizeProperty24Text(routeParams.listingId || routeParts[1]) }
   }
+  if (routeParts[0] === 'rentals' && routeParts[2] === 'publish') {
+    return { name: 'publishRentalListing', listingId: normalizeProperty24Text(routeParams.listingId || routeParts[1]) }
+  }
+  if (routeParts[0] === 'rentals' && routeParts[2] === 'reassign-agent') {
+    return { name: 'reassignRentalListingAgent', listingId: normalizeProperty24Text(routeParams.listingId || routeParts[1]) }
+  }
+  if (routeParts[0] === 'rentals' && routeParts[2] === 'lifecycle') {
+    return { name: 'rentalLifecycle', listingId: normalizeProperty24Text(routeParams.listingId || routeParts[1]) }
+  }
+  if (routeParts[0] === 'rentals' && routeParts[2] === 'status') {
+    return { name: 'rentalStatus', listingId: normalizeProperty24Text(routeParams.listingId || routeParts[1]) }
+  }
+  if (routeParts[0] === 'rentals' && routeParts[2] === 'status-update') {
+    return { name: 'updateRentalStatus', listingId: normalizeProperty24Text(routeParams.listingId || routeParts[1]) }
+  }
+  if (routeParts[0] === 'rentals' && routeParts[2] === 'withdraw') {
+    return { name: 'withdrawRentalListing', listingId: normalizeProperty24Text(routeParams.listingId || routeParts[1]) }
+  }
+  if (routeParts[0] === 'rentals' && routeParts[2] === 'reconcile') {
+    return { name: 'reconcileRentalListing', listingId: normalizeProperty24Text(routeParams.listingId || routeParts[1]) }
+  }
   if (routeParts[0] === 'listings' && routeParts[2] === 'publish') {
     return { name: 'publishListing', listingId: normalizeProperty24Text(routeParams.listingId || routeParts[1]) }
+  }
+  if (routeParts[0] === 'listings' && routeParts[2] === 'reassign-agent') {
+    return { name: 'reassignListingAgent', listingId: normalizeProperty24Text(routeParams.listingId || routeParts[1]) }
   }
   if (routeParts[0] === 'listings' && routeParts[2] === 'lifecycle') {
     return { name: 'listingLifecycle', listingId: normalizeProperty24Text(routeParams.listingId || routeParts[1]) }
@@ -190,20 +235,23 @@ function matchProperty24Route(requestUrl, routeParams = {}) {
 
 export function buildProperty24ApiConfig({ env = getRuntimeEnv(), requestUrl, payload = {}, route = {} } = {}) {
   const query = requestUrl?.searchParams || new URLSearchParams()
-  const property24BaseUrl = normalizeProperty24Text(env.PROPERTY24_BASE_URL) || PROPERTY24_EXDEV_BASE_URL
-  const environment = normalizeProperty24Text(env.PROPERTY24_ENVIRONMENT) || resolveProperty24Environment(property24BaseUrl)
+  const legacyBaseUrl = normalizeProperty24Text(env.PROPERTY24_BASE_URL) || PROPERTY24_EXDEV_BASE_URL
+  const environment = normalizeProperty24Text(env.PROPERTY24_ENVIRONMENT) || resolveProperty24Environment(legacyBaseUrl)
+  const environmentCredentials = resolveProperty24EnvironmentCredentials({ env, environment })
+  const property24BaseUrl = environmentCredentials.baseUrl || legacyBaseUrl
   const explicitAgencyId = normalizeProperty24Text(firstValue(payload.agencyId, query.get('agencyId')))
   const explicitAgentId = normalizeProperty24Text(firstValue(payload.agentId, query.get('agentId')))
   const explicitAgentSourceReference = normalizeProperty24Text(firstValue(payload.agentSourceReference, query.get('agentSourceReference')))
 
   return {
     property24BaseUrl,
-    property24Username: normalizeProperty24Text(env.PROPERTY24_BASIC_AUTH_USERNAME || env.PROPERTY24_USERNAME),
-    property24Password: normalizeProperty24Text(env.PROPERTY24_BASIC_AUTH_PASSWORD || env.PROPERTY24_PASSWORD),
-    property24UserGroupId: normalizeProperty24Text(env.PROPERTY24_USER_GROUP_ID),
+    property24Username: environmentCredentials.username,
+    property24Password: environmentCredentials.password,
+    property24UserGroupId: environmentCredentials.userGroupId,
     apiInternalToken: normalizeProperty24Text(env.PROPERTY24_API_INTERNAL_TOKEN),
     allowUnsafeLocalApi: normalizeBoolean(env.PROPERTY24_API_ALLOW_UNAUTHENTICATED_LOCAL, false),
     syndicationEnabled: normalizeBoolean(env.PROPERTY24_SYNDICATION_ENABLED, false),
+    rentalLivePublishEnabled: normalizeBoolean(env.PROPERTY24_RENTAL_LIVE_PUBLISH_ENABLED, false),
     supabaseUrl: normalizeProperty24Text(env.SUPABASE_URL || env.VITE_SUPABASE_URL),
     serviceRoleKey: normalizeProperty24Text(env.SUPABASE_SERVICE_ROLE_KEY),
     listingId: normalizeProperty24Text(route.listingId || payload.listingId || query.get('listingId')),
@@ -240,6 +288,18 @@ export function buildProperty24ApiConfig({ env = getRuntimeEnv(), requestUrl, pa
     includePortalChecks: normalizeBoolean(payload.includePortalChecks ?? query.get('includePortalChecks'), false),
     includeStatistics: normalizeBoolean(payload.includeStatistics ?? query.get('includeStatistics'), false),
     refresh: normalizeBoolean(payload.refresh ?? query.get('refresh'), false),
+    productionWriteRequired: [
+      'publishListing',
+      'publishRentalListing',
+      'reassignListingAgent',
+      'reassignRentalListingAgent',
+      'updateListingStatus',
+      'withdrawListing',
+      'updateRentalStatus',
+      'withdrawRentalListing',
+    ].includes(route.name),
+    productionRollbackOnly: ['withdrawListing', 'withdrawRentalListing'].includes(route.name) ||
+      ['withdrawn', 'removed'].includes(normalizeProperty24Text(firstValue(payload.status, payload.listingStatus, query.get('status'), query.get('listingStatus'))).toLowerCase()),
     environment,
   }
 }
@@ -249,6 +309,7 @@ function getMissingConfiguration(config = {}, needs = {}) {
   const allowMissingAgentMapping = Boolean(needs.allowMissingAgentMapping)
   if (needs.apiToken && !config.apiInternalToken && !config.allowUnsafeLocalApi) missing.push('PROPERTY24_API_INTERNAL_TOKEN')
   if (needs.enabled && !config.syndicationEnabled) missing.push('PROPERTY24_SYNDICATION_ENABLED=true')
+  if (needs.rentalEnabled && !config.rentalLivePublishEnabled) missing.push('PROPERTY24_RENTAL_LIVE_PUBLISH_ENABLED=true')
   if (needs.supabase && !config.supabaseUrl) missing.push('SUPABASE_URL or VITE_SUPABASE_URL')
   if (needs.supabase && !config.serviceRoleKey) missing.push('SUPABASE_SERVICE_ROLE_KEY')
   if (needs.property24 && !config.property24Username) missing.push('PROPERTY24_BASIC_AUTH_USERNAME')
@@ -271,7 +332,9 @@ function getBearerToken(headers = {}) {
 }
 
 function canUseBrowserProperty24ListingAuth({ headers = {}, config = {}, route = {} } = {}) {
-  return ['previewListing', 'previewRentalListing', 'publishListing', 'listingLifecycle', 'listingStatus', 'updateListingStatus', 'withdrawListing', 'listingLeads'].includes(route?.name) &&
+  const listingRoutes = ['previewListing', 'previewRentalListing', 'publishListing', 'reassignListingAgent', 'listingLifecycle', 'listingStatus', 'updateListingStatus', 'withdrawListing', 'listingLeads']
+  const rentalRoutes = ['publishRentalListing', 'reassignRentalListingAgent', 'rentalLifecycle', 'rentalStatus', 'updateRentalStatus', 'withdrawRentalListing', 'reconcileRentalListing']
+  return (listingRoutes.includes(route?.name) || rentalRoutes.includes(route?.name)) &&
     Boolean(getBearerToken(headers) && config.supabaseUrl && config.serviceRoleKey)
 }
 
@@ -301,16 +364,87 @@ function getAuthFailure({ headers = {}, config = {}, route = {} } = {}) {
   })
 }
 
+const PROPERTY24_PUBLISH_PERMISSION = 'publish_listings'
+const PROPERTY24_PUBLISH_ROLES = new Set([
+  'principal',
+  'owner',
+  'admin',
+  'manager',
+  'branch_manager',
+  'agency_principal',
+  'agent',
+  'estate_agent',
+  'sales_agent',
+])
+
 function hasProperty24PublishRole(row = {}) {
   const role = normalizeProperty24Text(row.workspace_role || row.organisation_role || row.organization_role || row.role).toLowerCase()
   const status = normalizeProperty24Text(row.membership_status || row.status).toLowerCase()
   if (!['active', 'accepted', 'approved'].includes(status)) return false
-  return ['principal', 'owner', 'admin', 'manager', 'branch_manager', 'agency_principal', 'agent', 'estate_agent', 'sales_agent'].includes(role)
+  return PROPERTY24_PUBLISH_ROLES.has(role)
 }
 
 function hasProperty24AdminPublishRole(row = {}) {
   const role = normalizeProperty24Text(row.workspace_role || row.organisation_role || row.organization_role || row.role).toLowerCase()
+  const status = normalizeProperty24Text(row.membership_status || row.status).toLowerCase()
+  if (!['active', 'accepted', 'approved'].includes(status)) return false
   return ['principal', 'owner', 'admin', 'manager', 'branch_manager', 'agency_principal'].includes(role)
+}
+
+async function authenticateBrowserProperty24ListingReassignment({ supabase, headers = {}, config = {} } = {}) {
+  if (hasInternalProperty24ApiAuth({ headers, config })) {
+    return { actorUserId: normalizeProperty24Text(config.actorUserId), failure: null }
+  }
+
+  const token = getBearerToken(headers)
+  if (!token) {
+    return {
+      actorUserId: '',
+      failure: buildJsonResponse(401, { error: 'unauthorized', message: 'Sign in before reassigning this listing.' }),
+    }
+  }
+
+  const userResult = await supabase.auth.getUser(token)
+  const user = userResult.data?.user
+  if (userResult.error || !user?.id) {
+    return {
+      actorUserId: '',
+      failure: buildJsonResponse(401, { error: 'unauthorized', message: 'Your session could not be verified.' }),
+    }
+  }
+
+  const listingResult = await fetchMaybeSingle(
+    supabase
+      .from('private_listings')
+      .select('id, organisation_id')
+      .eq('id', config.listingId),
+  )
+  if (listingResult.error && listingResult.error.code !== 'PGRST116') throw listingResult.error
+  if (!listingResult.data?.organisation_id) {
+    return {
+      actorUserId: user.id,
+      failure: buildJsonResponse(404, { error: 'listing_not_found', message: 'This listing could not be found.' }),
+    }
+  }
+
+  const membership = await supabase
+    .from('organisation_users')
+    .select('id, user_id, email, role, workspace_role, organisation_role, organization_role, status, membership_status')
+    .eq('organisation_id', listingResult.data.organisation_id)
+    .or(`user_id.eq.${user.id},email.eq.${user.email || ''}`)
+    .limit(5)
+  if (membership.error) throw membership.error
+  if (!(membership.data || []).some(hasProperty24AdminPublishRole)) {
+    return {
+      actorUserId: user.id,
+      failure: buildJsonResponse(403, {
+        error: 'forbidden',
+        message: 'Only an agency principal, manager, or admin can reassign listings.',
+      }),
+    }
+  }
+
+  return { actorUserId: user.id, failure: null }
 }
 
 async function authenticateBrowserProperty24ListingRequest({ supabase, headers = {}, config = {} } = {}) {
@@ -361,7 +495,8 @@ async function authenticateBrowserProperty24ListingRequest({ supabase, headers =
   if (!activeMembership) {
     return buildJsonResponse(403, {
       error: 'forbidden',
-      message: 'You need agency access before publishing this listing to Property24.',
+      permission: PROPERTY24_PUBLISH_PERMISSION,
+      message: 'You need the publish_listings permission before publishing this listing to Property24.',
     })
   }
 
@@ -635,6 +770,220 @@ export async function createProperty24ApiResponse({
     const fetchAllLeads = dependencies.fetchAllLeads || defaultFetchAllLeads
     const pullAndImportLeads = dependencies.pullAndImportLeads || pullAndImportProperty24Leads
     const runReconciliation = dependencies.runReconciliation || runProperty24ReconciliationJob
+    const prepareListingAgentReassignment = dependencies.prepareListingAgentReassignment || prepareProperty24ListingAgentReassignment
+    const resolveTargetAgentMapping = dependencies.resolveTargetAgentMapping || resolveProperty24TargetAgentMapping
+    const writeListingAgentAssignment = dependencies.writeListingAgentAssignment || writePrivateListingAgentAssignment
+    const recordAgentReassignmentActivity = dependencies.recordAgentReassignmentActivity || recordListingAgentReassignmentActivity
+
+    if (['reassignListingAgent', 'reassignRentalListingAgent'].includes(route.name)) {
+      if (config.explicitAgentId || config.explicitAgentSourceReference) {
+        return buildJsonResponse(400, {
+          error: 'property24_agent_override_not_allowed',
+          message: 'Choose the new Arch9 listing agent only. Property24 contact details are resolved from that agent’s profile and mapping.',
+        })
+      }
+      const targetAgentId = normalizeProperty24Text(payload.assignedAgentId || payload.targetAgentId)
+      const missing = getMissingConfiguration(config, {
+        apiToken: !canUseBrowserProperty24ListingAuth({ headers, config, route }),
+        supabase: true,
+        listing: true,
+      })
+      if (!targetAgentId) missing.push('assignedAgentId')
+      if (missing.length) return buildJsonResponse(400, { error: 'missing_configuration', missingConfiguration: missing })
+
+      const supabase = createSupabase(config)
+      const reassignmentAuth = await authenticateBrowserProperty24ListingReassignment({ supabase, headers, config })
+      if (reassignmentAuth.failure) return reassignmentAuth.failure
+      const actorUserId = reassignmentAuth.actorUserId || config.actorUserId
+      const plan = await prepareListingAgentReassignment({
+        supabase,
+        listingId: config.listingId,
+        targetAgentId,
+        environment: config.environment,
+      })
+      const expectedListingType = route.name === 'reassignRentalListingAgent' ? 'rental' : 'sale'
+      if (plan.listingType !== expectedListingType) {
+        return buildJsonResponse(400, {
+          error: 'listing_type_mismatch',
+          message: expectedListingType === 'rental'
+            ? 'This route can only reassign rental listings.'
+            : 'This route can only reassign sale listings.',
+        })
+      }
+      if (!plan.changed) {
+        return buildJsonResponse(200, {
+          route: route.name,
+          status: 'UNCHANGED',
+          listingId: plan.listingId,
+          reassignment: plan,
+          property24: null,
+        })
+      }
+
+      let targetMapping = null
+      if (plan.requiresProperty24Sync) {
+        const portalMissing = getMissingConfiguration(config, {
+          property24: true,
+          rentalEnabled: plan.listingType === 'rental',
+        })
+        if (portalMissing.length) {
+          return buildJsonResponse(400, { error: 'missing_configuration', missingConfiguration: portalMissing })
+        }
+        targetMapping = await resolveTargetAgentMapping({
+          supabase,
+          plan,
+          environment: config.environment,
+        })
+      }
+
+      const listing = await writeListingAgentAssignment({
+        supabase,
+        plan,
+        assignedAgentId: plan.targetAgentId,
+        expectedCurrentAgentId: plan.previousAgentId,
+      })
+      let property24Report = null
+      try {
+        if (plan.requiresProperty24Sync) {
+          const publishConfig = await resolvePublishConfig({
+            supabase,
+            config: {
+              ...config,
+              actorUserId,
+              agencyId: targetMapping.agencyId,
+              agentId: targetMapping.property24AgentId,
+              agentSourceReference: targetMapping.sourceReference,
+            },
+            listingId: plan.listingId,
+          })
+          const resolvedMapping = publishConfig.property24ResolvedMapping || {}
+          if (
+            normalizeProperty24Text(resolvedMapping.arch9UserId) !== plan.targetAgentId ||
+            normalizeProperty24Text(publishConfig.agentId) !== normalizeProperty24Text(targetMapping.property24AgentId)
+          ) {
+            const mappingError = new Error('The reassigned Arch9 agent did not resolve to the expected Property24 profile.')
+            mappingError.code = 'property24_reassignment_mapping_mismatch'
+            mappingError.status = 409
+            throw mappingError
+          }
+          const resolvedMissing = getMissingConfiguration(publishConfig, {
+            enabled: true,
+            rentalEnabled: plan.listingType === 'rental',
+            mapping: true,
+          })
+          if (resolvedMissing.length) {
+            const configurationError = new Error(`Property24 setup is incomplete: ${resolvedMissing.join(', ')}.`)
+            configurationError.code = 'missing_configuration'
+            configurationError.status = 400
+            configurationError.missingConfiguration = resolvedMissing
+            throw configurationError
+          }
+
+          const property24 = createProperty24(publishConfig)
+          const submitPlanBuilder = plan.listingType === 'rental' ? buildRentalSubmitPlan : buildSubmitPlan
+          const preview = await submitPlanBuilder({
+            supabase,
+            listingId: publishConfig.listingId,
+            agencyId: publishConfig.agencyId,
+            agentId: publishConfig.agentId,
+            agentSourceReference: publishConfig.agentSourceReference,
+            environment: publishConfig.environment,
+            sandboxPayloadTestMode: false,
+            suburbId: publishConfig.suburbId,
+            propertyTypeId: publishConfig.propertyTypeId,
+            expiryDate: publishConfig.expiryDate,
+            listingNumber: publishConfig.listingNumber,
+            storageBaseUrl: publishConfig.supabaseUrl,
+            maxImages: publishConfig.maxImages,
+            photosChanged: true,
+            convertImagesToJpeg: true,
+            loadImageBytes: true,
+          })
+          let report = {
+            ...createProperty24PublishReport({ config: publishConfig, preview, apply: true }),
+            phase: 'property24-listing-agent-reassignment',
+          }
+          report = await applyControlledPublish({
+            supabase,
+            property24,
+            config: publishConfig,
+            preview,
+            report,
+            applyPublish,
+            allowPublishWithoutMandate: plan.listingType !== 'rental',
+            publishWithoutMandateReason: plan.listingType === 'rental'
+              ? ''
+              : 'Property24 agent reassignment accepted before mandate evidence upload.',
+          })
+          property24Report = report
+          if (report.status === 'BLOCKED' || report.status === 'FAILED') {
+            const syncError = new Error(
+              report.error?.message ||
+              (report.status === 'BLOCKED'
+                ? 'Property24 blocked the listing update. The Arch9 reassignment was rolled back.'
+                : 'Property24 could not update the listing agent. The Arch9 reassignment was rolled back.'),
+            )
+            syncError.code = report.status === 'BLOCKED'
+              ? 'property24_reassignment_blocked'
+              : 'property24_reassignment_failed'
+            syncError.status = report.status === 'BLOCKED' ? 422 : 502
+            syncError.report = report
+            throw syncError
+          }
+        }
+      } catch (syncError) {
+        let rollbackApplied = false
+        let rollbackError = null
+        try {
+          await writeListingAgentAssignment({
+            supabase,
+            plan,
+            assignedAgentId: plan.previousAgentId,
+            expectedCurrentAgentId: plan.targetAgentId,
+          })
+          rollbackApplied = true
+        } catch (error) {
+          rollbackError = error
+        }
+        await recordAgentReassignmentActivity({
+          supabase,
+          plan,
+          actorUserId,
+          status: 'failed',
+          property24: property24Report,
+          error: syncError,
+        })
+        return buildJsonResponse(Number(syncError.status || 502), {
+          route: route.name,
+          status: 'FAILED',
+          error: syncError.code || 'property24_reassignment_failed',
+          message: syncError.message,
+          listingId: plan.listingId,
+          rollbackApplied,
+          rollbackError: rollbackError?.message || null,
+          missingConfiguration: syncError.missingConfiguration || undefined,
+          reassignment: plan,
+          property24: syncError.report || property24Report,
+        })
+      }
+
+      const activity = await recordAgentReassignmentActivity({
+        supabase,
+        plan,
+        actorUserId,
+        status: 'completed',
+        property24: property24Report,
+      })
+      return buildJsonResponse(200, {
+        route: route.name,
+        status: 'COMPLETED',
+        listingId: plan.listingId,
+        listing,
+        reassignment: plan,
+        property24: property24Report,
+        activity,
+      })
+    }
 
     if (route.name === 'previewListing') {
       const missing = getMissingConfiguration(config, {
@@ -820,7 +1169,85 @@ export async function createProperty24ApiResponse({
       })
     }
 
-    if (route.name === 'listingStatus' || route.name === 'listingLifecycle') {
+    if (route.name === 'publishRentalListing') {
+      const missing = getMissingConfiguration(config, {
+        apiToken: !canUseBrowserProperty24ListingAuth({ headers, config, route }),
+        rentalEnabled: true,
+        supabase: true,
+        property24: true,
+        listing: true,
+      })
+      if (missing.length) return buildJsonResponse(400, { error: 'missing_configuration', missingConfiguration: missing })
+      const supabase = createSupabase(config)
+      const browserAuthFailure = await authenticateBrowserProperty24ListingRequest({ supabase, headers, config })
+      if (browserAuthFailure) return browserAuthFailure
+      const resolvedConfig = await resolvePublishConfig({ supabase, config, listingId: config.listingId })
+      const resolvedMissing = getMissingConfiguration(resolvedConfig, {
+        enabled: true,
+        rentalEnabled: true,
+        mapping: true,
+      })
+      if (resolvedMissing.length) {
+        return buildJsonResponse(400, {
+          error: 'missing_configuration',
+          missingConfiguration: resolvedMissing,
+          mapping: resolvedConfig.property24ResolvedMapping || null,
+        })
+      }
+
+      const property24 = createProperty24(resolvedConfig)
+      const preview = await buildRentalSubmitPlan({
+        supabase,
+        listingId: resolvedConfig.listingId,
+        agencyId: resolvedConfig.agencyId,
+        agentId: resolvedConfig.agentId,
+        agentSourceReference: resolvedConfig.agentSourceReference,
+        environment: resolvedConfig.environment,
+        sandboxPayloadTestMode: false,
+        suburbId: resolvedConfig.suburbId,
+        propertyTypeId: resolvedConfig.propertyTypeId,
+        expiryDate: resolvedConfig.expiryDate,
+        listingNumber: resolvedConfig.listingNumber,
+        storageBaseUrl: resolvedConfig.supabaseUrl,
+        maxImages: resolvedConfig.maxImages,
+        photosChanged: resolvedConfig.photosChanged,
+        convertImagesToJpeg: true,
+        loadImageBytes: true,
+      })
+      let report = {
+        ...createProperty24PublishReport({ config: resolvedConfig, preview, apply: true }),
+        phase: 'property24-rental-publish-listing',
+      }
+      report = await applyControlledPublish({
+        supabase,
+        property24,
+        config: resolvedConfig,
+        preview,
+        report,
+        applyPublish,
+        allowPublishWithoutMandate: false,
+        publishWithoutMandateReason: '',
+      })
+      if (!preview.canSubmit) {
+        return buildJsonResponse(422, {
+          route: route.name,
+          status: report.status,
+          listingId: resolvedConfig.listingId,
+          mapping: resolvedConfig.property24ResolvedMapping || null,
+          preview: toPublicPreview(preview),
+          report,
+        })
+      }
+      return buildJsonResponse(report.status === 'FAILED' ? 502 : 200, {
+        route: route.name,
+        status: report.status,
+        listingId: resolvedConfig.listingId,
+        mapping: resolvedConfig.property24ResolvedMapping || null,
+        report,
+      })
+    }
+
+    if (['listingStatus', 'listingLifecycle', 'rentalStatus', 'rentalLifecycle'].includes(route.name)) {
       const needsProperty24 = buildProperty24ApiConfig({ env: env || getRuntimeEnv(), requestUrl, payload: {}, route }).refresh
       const missing = getMissingConfiguration(config, {
         apiToken: !canUseBrowserProperty24ListingAuth({ headers, config, route }),
@@ -837,14 +1264,23 @@ export async function createProperty24ApiResponse({
       return buildJsonResponse(200, { route: route.name, status, lifecycle: status.lifecycle })
     }
 
-    if (route.name === 'updateListingStatus' || route.name === 'withdrawListing') {
+    if (['updateListingStatus', 'withdrawListing', 'updateRentalStatus', 'withdrawRentalListing'].includes(route.name)) {
       const missing = getMissingConfiguration(config, {
         apiToken: !canUseBrowserProperty24ListingAuth({ headers, config, route }),
         supabase: true,
         property24: true,
         listing: true,
       })
-      if (route.name === 'updateListingStatus' && !config.status) missing.push('status or listingStatus')
+      const updatingRentalStatus = route.name === 'updateRentalStatus'
+      const withdrawingRentalListing = route.name === 'withdrawRentalListing'
+      if (['updateListingStatus', 'updateRentalStatus'].includes(route.name) && !config.status) missing.push('status or listingStatus')
+      const rentalStatus = updatingRentalStatus ? resolveRentalProperty24Status(config.status) : ''
+      if (updatingRentalStatus && config.status && !rentalStatus) {
+        return buildJsonResponse(400, {
+          error: 'invalid_rental_listing_status',
+          message: 'Rental listings support Active, Pending, Rented, Withdrawn, or BackOnMarket.',
+        })
+      }
       if (missing.length) return buildJsonResponse(400, { error: 'missing_configuration', missingConfiguration: missing })
       const supabase = createSupabase(config)
       const browserAuthFailure = await authenticateBrowserProperty24ListingRequest({ supabase, headers, config })
@@ -852,10 +1288,16 @@ export async function createProperty24ApiResponse({
       const resolvedConfig = await resolvePublishConfig({ supabase, config, listingId: config.listingId })
       const statusConfig = await resolveProperty24StatusActionConfig({
         supabase,
-        resolvedConfig,
-        fallbackStatus: route.name === 'withdrawListing' ? 'Withdrawn' : '',
+        resolvedConfig: {
+          ...resolvedConfig,
+          ...(rentalStatus ? { status: rentalStatus } : {}),
+        },
+        fallbackStatus: route.name === 'withdrawListing' || withdrawingRentalListing ? 'Withdrawn' : '',
       })
-      const resolvedMissing = getMissingConfiguration(statusConfig, { enabled: true })
+      const resolvedMissing = getMissingConfiguration(statusConfig, {
+        enabled: true,
+        rentalEnabled: updatingRentalStatus || withdrawingRentalListing,
+      })
       if (!statusConfig.agencyId) resolvedMissing.push('PROPERTY24_DEFAULT_AGENCY_ID or agencyId')
       if (!statusConfig.listingNumber) resolvedMissing.push('listingNumber')
       if (resolvedMissing.length) {
@@ -880,6 +1322,44 @@ export async function createProperty24ApiResponse({
         listingId: statusConfig.listingId,
         mapping: statusConfig.property24ResolvedMapping || null,
         report,
+      })
+    }
+
+    if (route.name === 'reconcileRentalListing') {
+      const missing = getMissingConfiguration(config, {
+        apiToken: !canUseBrowserProperty24ListingAuth({ headers, config, route }),
+        enabled: true,
+        supabase: true,
+        property24: true,
+        listing: true,
+      })
+      if (missing.length) return buildJsonResponse(400, { error: 'missing_configuration', missingConfiguration: missing })
+      const supabase = createSupabase(config)
+      const browserAuthFailure = await authenticateBrowserProperty24ListingRequest({ supabase, headers, config })
+      if (browserAuthFailure) return browserAuthFailure
+      const resolvedConfig = await resolvePublishConfig({ supabase, config, listingId: config.listingId })
+      const statusConfig = await resolveProperty24StatusActionConfig({ supabase, resolvedConfig })
+      if (!statusConfig.agencyId) missing.push('PROPERTY24_DEFAULT_AGENCY_ID or agencyId')
+      if (!statusConfig.listingNumber) missing.push('listingNumber')
+      if (missing.length) {
+        return buildJsonResponse(400, {
+          error: 'missing_configuration',
+          missingConfiguration: missing,
+          mapping: statusConfig.property24ResolvedMapping || null,
+        })
+      }
+      const property24 = createProperty24(statusConfig)
+      const status = await fetchListingStatus({
+        supabase,
+        property24,
+        config: { ...statusConfig, refresh: true },
+      })
+      return buildJsonResponse(200, {
+        route: route.name,
+        status,
+        lifecycle: status.lifecycle,
+        listingId: statusConfig.listingId,
+        mapping: statusConfig.property24ResolvedMapping || null,
       })
     }
 

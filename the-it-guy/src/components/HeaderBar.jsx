@@ -5,6 +5,7 @@ import { useWorkspace } from '../context/WorkspaceContext'
 import { canAccessHQ } from '../auth/hqAccess'
 import { fetchMyNotifications, markAllNotificationsRead, markNotificationRead, runHeaderNotificationMaintenance } from '../lib/headerNotificationsApi'
 import { canAccessPrincipalExperience } from '../lib/organisationAccess'
+import { getRentalOperatingModeHomeRoute, RENTAL_OPERATING_MODES } from '../services/rentals/shortTermRentalFoundation'
 import useDismissableMenu from '../hooks/useDismissableMenu'
 import LazyQuickCreateDropdown from './LazyQuickCreateDropdown'
 
@@ -77,6 +78,29 @@ function getPageTitle(pathname, stateTitle, role) {
   if (pathname === '/settings' || pathname.startsWith('/settings')) return ''
 
   return ''
+}
+
+function RentalOperatingModeSwitcher({ mode, modes = [], onChange }) {
+  if (modes.length < 2) return null
+  return (
+    <div className="inline-flex items-center rounded-xl border border-slate-200 bg-slate-50 p-1" aria-label="Rental operating mode">
+      {modes.map((item) => {
+        const active = item === mode
+        const label = item === RENTAL_OPERATING_MODES.shortTerm ? 'Short-Term' : 'Long-Term'
+        return (
+          <button
+            key={item}
+            type="button"
+            aria-pressed={active}
+            onClick={() => onChange(item)}
+            className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${active ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}
+          >
+            {label}
+          </button>
+        )
+      })}
+    </div>
+  )
 }
 
 function HeaderFilterSelect({ icon: Icon, value, options = [], label, onChange }) {
@@ -925,7 +949,7 @@ function HeaderBar({ onLogout, user }) {
   }, [])
 
   useEffect(() => {
-    if (location.pathname !== '/dashboard' && location.pathname !== '/' && location.pathname !== '/agent/rentals/dashboard') {
+    if (location.pathname !== '/dashboard' && location.pathname !== '/' && location.pathname !== '/agent/rentals/dashboard' && location.pathname !== '/agent/rentals/long-term/dashboard' && location.pathname !== '/agent/rentals/short-term/dashboard') {
       setDashboardHeaderControls(null)
     }
   }, [location.pathname])
@@ -1034,12 +1058,14 @@ function HeaderBar({ onLogout, user }) {
   }, [role, loadNotifications])
 
   const title = getPageTitle(location.pathname, location.state?.headerTitle, role)
+  const isRentalDashboard = location.pathname === '/agent/rentals/dashboard' || location.pathname === '/agent/rentals/long-term/dashboard' || location.pathname === '/agent/rentals/short-term/dashboard'
+  const isRentalRoute = location.pathname.startsWith('/agent/rentals/')
   const isPremiumAgentWorkspace =
     (role === 'agent' || role === 'principal' || role === 'headquarters') &&
     (
       location.pathname === '/dashboard' ||
       location.pathname === '/' ||
-      location.pathname === '/agent/rentals/dashboard' ||
+      isRentalDashboard ||
       location.pathname === '/pipeline/leads' ||
       location.pathname.startsWith('/pipeline/leads/') ||
       location.pathname.startsWith('/agency/branches')
@@ -1053,11 +1079,15 @@ function HeaderBar({ onLogout, user }) {
       appRole: role,
       membershipRole: workspaceContext.organisationMembershipRole || workspaceContext.workspaceRole,
     })
-  const isRentalDashboard = location.pathname === '/agent/rentals/dashboard'
   const showPrincipalDashboardHeaderControls =
     (isRentalDashboard || canUsePrincipalDashboardControls) &&
     (location.pathname === '/dashboard' || location.pathname === '/' || isRentalDashboard) &&
     dashboardHeaderControls?.visible !== false
+  const showRentalOperatingModeSwitcher = isRentalRoute && workspaceContext.availableRentalOperatingModeIds?.length > 1
+  const changeRentalOperatingMode = useCallback((nextMode) => {
+    workspaceContext.setRentalOperatingMode?.(nextMode)
+    navigate(getRentalOperatingModeHomeRoute(nextMode))
+  }, [navigate, workspaceContext])
   const premiumHeaderTitle = isPremiumAttorneyOperations
     ? ''
     : location.pathname.startsWith('/pipeline/leads')
@@ -1503,6 +1533,13 @@ function HeaderBar({ onLogout, user }) {
         ) : null}
 
         <div className="ui-shell-actions ui-shell-actions-premium">
+          {showRentalOperatingModeSwitcher ? (
+            <RentalOperatingModeSwitcher
+              mode={workspaceContext.rentalOperatingMode}
+              modes={workspaceContext.availableRentalOperatingModeIds}
+              onChange={changeRentalOperatingMode}
+            />
+          ) : null}
           {showPrincipalDashboardHeaderControls ? (
             <div className="ui-shell-dashboard-filters" aria-label="Dashboard filters">
               <HeaderScopeToggle

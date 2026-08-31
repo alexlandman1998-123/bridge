@@ -8,6 +8,11 @@ import {
   normalizeProperty24Text,
   summarizeProperty24Payload,
 } from '../server/services/property24Client.js'
+import {
+  extractProperty24AgentId,
+  findMatchingProperty24Agent,
+  prepareProperty24AgentPhotoFile,
+} from '../server/property24/agentPhotoService.js'
 
 const appRoot = fileURLToPath(new URL('..', import.meta.url))
 
@@ -21,6 +26,7 @@ function parseArgs(argv) {
     sourceReference: '',
     agencyId: '',
     countryId: '',
+    photo: '',
   }
 
   for (const arg of argv) {
@@ -40,6 +46,8 @@ function parseArgs(argv) {
       options.agencyId = normalizeProperty24Text(arg.slice('--agency-id='.length))
     } else if (arg.startsWith('--country-id=')) {
       options.countryId = normalizeProperty24Text(arg.slice('--country-id='.length))
+    } else if (arg.startsWith('--photo=')) {
+      options.photo = normalizeProperty24Text(arg.slice('--photo='.length))
     } else {
       throw new Error(`Unknown option: ${arg}`)
     }
@@ -147,11 +155,69 @@ async function run() {
     userGroupId: config.userGroupId,
   })
 
+  const preparedPhoto = options.photo ? await prepareProperty24AgentPhotoFile(options.photo) : null
+  if (preparedPhoto) {
+    const existingResponse = await client.fetchAgencyAgents(config.agencyId)
+    const existingAgent = findMatchingProperty24Agent(existingResponse.data, payload)
+    if (existingAgent) {
+      console.log(JSON.stringify({
+        status: 'ALREADY_EXISTS',
+        message: 'A matching Property24 agent already exists. No write was made.',
+        agentId: extractProperty24AgentId(existingAgent),
+        sourceReference: payload.sourceReference,
+      }, null, 2))
+      process.exitCode = 2
+      return
+    }
+  }
+
   const result = await client.createAgent(payload)
+  const agentId = extractProperty24AgentId(result.data)
+  if (preparedPhoto && !agentId) {
+    throw new Error('Property24 created the agent but did not return a usable agent ID. Do not create the agent again; sync the agency agents first.')
+  }
+  if (preparedPhoto) {
+    try {
+      const photoResult = await client.updateAgentProfilePicture(agentId, preparedPhoto.payload)
+      console.log(JSON.stringify({
+        status: 'CREATED_WITH_PHOTO',
+        httpStatus: result.status,
+        photoHttpStatus: photoResult.status,
+        agentId,
+        photo: preparedPhoto.summary,
+        response: summarizeProperty24Payload(result.data),
+        payload: {
+          agencyId: payload.agencyId,
+          countryId: payload.countryId,
+          firstname: payload.firstname,
+          lastname: payload.lastname,
+          emailAddress: payload.emailAddress,
+          mobileNumber: payload.mobileNumber,
+          sourceReference: payload.sourceReference,
+          status: payload.status,
+        },
+      }, null, 2))
+      return
+    } catch (error) {
+      console.error(JSON.stringify({
+        status: 'CREATED_PHOTO_FAILED',
+        message: `Property24 agent ${agentId} was created, but the profile photo upload failed. Do not create the agent again; retry only the photo upload. ${error.message}`,
+        agentId,
+        httpStatus: error.status || null,
+        retry: {
+          command: 'node scripts/property24-upload-agent-photo.mjs',
+          arguments: [`--agent-id=${agentId}`, `--photo=${options.photo}`, '--apply'],
+        },
+        response: error.responseBody ? summarizeProperty24Payload(error.responseBody) : null,
+      }, null, 2))
+      process.exitCode = 1
+      return
+    }
+  }
   console.log(JSON.stringify({
     status: 'CREATED',
     httpStatus: result.status,
-    agentId: result.data,
+    agentId: agentId || result.data,
     response: summarizeProperty24Payload(result.data),
     payload: {
       agencyId: payload.agencyId,

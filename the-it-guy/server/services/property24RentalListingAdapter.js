@@ -113,7 +113,12 @@ function buildRentalValues({ listing = {}, comparison = {} } = {}) {
     agencyId,
     contactAgentIds,
     primaryAgentId: contactAgentIds[0] || null,
-    agentSourceReference: firstText(preview.agentSourceReference, readComparisonRow(comparison, 'agentSourceReference').property24Value, listing.listingReference, listing.listing_reference, listing.id),
+    agentSourceReference: firstText(
+      preview.agentSourceReference,
+      readComparisonRow(comparison, 'agentSourceReference').property24Value,
+      listing.property24AgentSourceReference,
+      listing.property24_agent_source_reference,
+    ),
     suburbId,
     propertyTypeId,
     monthlyRent,
@@ -219,7 +224,23 @@ export function createProperty24RentalListingPlan({
   imageByteLoad = null,
   options = {},
 } = {}) {
-  const fieldComparison = buildRentalProperty24FieldComparison(listing)
+  const resolvedAgentId = toProperty24Integer(
+    agentMapping.property24AgentId ||
+      agentMapping.property24_agent_id ||
+      agentMapping.agentId ||
+      agentMapping.agent_id,
+  )
+  const resolvedAgentSourceReference = firstText(agentMapping.sourceReference, agentMapping.source_reference)
+  const fieldComparison = buildRentalProperty24FieldComparison(listing, {
+    resolution: {
+      agencyId: options.agencyId,
+      contactAgentIds: resolvedAgentId ? [resolvedAgentId] : [],
+      agentSourceReference: resolvedAgentSourceReference,
+      suburbId: catalogMapping.suburbId || catalogMapping.suburb_id,
+      propertyTypeId: catalogMapping.propertyTypeId || catalogMapping.property_type_id,
+      expiryDate: options.expiryDate,
+    },
+  })
   const values = buildRentalValues({ listing, comparison: fieldComparison })
   const adaptedListing = buildAdaptedListing({ listing, values })
   const adaptedPublication = {
@@ -230,8 +251,8 @@ export function createProperty24RentalListingPlan({
   const adaptedMedia = Array.isArray(media) ? media : values.marketing.photos || []
   const adaptedAgentMapping = {
     ...agentMapping,
-    property24AgentId: toProperty24Integer(agentMapping.property24AgentId || agentMapping.property24_agent_id || values.primaryAgentId),
-    sourceReference: firstText(agentMapping.sourceReference, agentMapping.source_reference, values.agentSourceReference),
+    property24AgentId: resolvedAgentId || values.primaryAgentId,
+    sourceReference: firstText(resolvedAgentSourceReference, values.agentSourceReference),
   }
   const adaptedCatalogMapping = {
     ...catalogMapping,
@@ -242,7 +263,7 @@ export function createProperty24RentalListingPlan({
     ...options,
     environment: firstText(options.environment, 'exdev'),
     sandboxPayloadTestMode: options.sandboxPayloadTestMode ?? true,
-    agencyId: values.agencyId,
+    agencyId: toProperty24Integer(options.agencyId || values.agencyId),
     agentSourceReference: values.agentSourceReference,
     price: values.monthlyRent,
     expiryDate: values.expiryDate,

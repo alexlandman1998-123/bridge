@@ -139,6 +139,8 @@ export function getFeatureFlags() {
     salesRentalsWorkspaceAllowlist,
     salesRentalsUserAllowlist,
     rentalsEnabled: asBoolean(import.meta.env.VITE_RENTALS_ENABLED, false),
+    rentalLongTermEnabled: asBoolean(import.meta.env.VITE_RENTAL_LONG_TERM_ENABLED, true),
+    rentalShortTermEnabled: asBoolean(import.meta.env.VITE_RENTAL_SHORT_TERM_ENABLED, false),
     rentalApplicationsEnabled: asBoolean(import.meta.env.VITE_RENTAL_APPLICATIONS_ENABLED, false),
     rentalLeasesEnabled: asBoolean(import.meta.env.VITE_RENTAL_LEASES_ENABLED, false),
     rentalManagementEnabled: asBoolean(import.meta.env.VITE_RENTAL_MANAGEMENT_ENABLED, false),

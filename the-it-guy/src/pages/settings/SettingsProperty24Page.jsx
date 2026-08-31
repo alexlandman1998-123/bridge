@@ -5,14 +5,14 @@ import {
   CircleAlert,
   Clock3,
   Copy,
+  Download,
   KeyRound,
   MoreHorizontal,
   PlugZap,
-  Plus,
   RefreshCw,
   Save,
   Settings2,
-  Trash2,
+  ShieldCheck,
   UserPlus,
   Wand2,
 } from 'lucide-react'
@@ -28,11 +28,22 @@ import {
 import {
   createSuggestedProperty24AgentMappings,
   createSuggestedProperty24SourceReference,
+  getCanonicalArch9AgentProfile,
   normalizeProperty24AgentRow,
   normalizeProperty24Settings,
   normalizeProperty24SettingsText,
+  serializeProperty24SettingsForPersistence,
   summarizeProperty24SettingsReadiness,
 } from './property24SettingsModel'
+import { runProperty24OrganisationReconciliation } from '../../services/property24ReconciliationService'
+import {
+  downloadProperty24VettingPackMarkdown,
+  runProperty24OrganisationVettingPack,
+} from '../../services/property24VettingPackService'
+import {
+  applyProperty24LiveCutoverAction,
+  fetchProperty24LiveCutover,
+} from '../../services/property24LiveCutoverService'
 import {
   SettingsBanner,
   SettingsEmptyState,
@@ -82,13 +93,6 @@ function formatProperty24ApiError(payload = {}, fallback = 'Property24 agent cre
   const uniqueDetails = [...new Set(details)]
   if (uniqueDetails.length) return uniqueDetails.join(' ')
   return fallback
-}
-
-function createBlankProperty24Agent() {
-  return normalizeProperty24AgentRow({
-    rowId: `manual-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    status: 'active',
-  })
 }
 
 function toMappingPatch(agent = {}, mapping = {}) {
@@ -234,6 +238,13 @@ function getHealthTone(status = '') {
   return 'border-[#f3d9a8] bg-[#fff8ec] text-[#a16207]'
 }
 
+function getVettingEvidenceTone(status = '') {
+  const normalized = String(status || '').toUpperCase()
+  if (normalized === 'PASS') return getHealthTone('OK')
+  if (['NEEDS_EVIDENCE', 'NEEDS_REVIEW'].includes(normalized)) return getHealthTone('BLOCKED')
+  return getHealthTone('WARNING')
+}
+
 function HealthMetric({ label, value }) {
   return (
     <div className="rounded-[12px] border border-[#e3ebf3] bg-white px-4 py-3">
@@ -291,9 +302,10 @@ function getAgentInitials(agent = {}) {
 }
 
 function AgentAvatar({ agent }) {
+  const profile = getCanonicalArch9AgentProfile(agent)
   return (
-    <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#eef7f2] text-sm font-semibold text-[#0f7f4f]">
-      {getAgentInitials(agent)}
+    <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#eef7f2] text-sm font-semibold text-[#0f7f4f]">
+      {profile.avatarUrl ? <img src={profile.avatarUrl} alt="" className="h-full w-full object-cover" /> : getAgentInitials(agent)}
     </span>
   )
 }
@@ -303,6 +315,29 @@ function AgentConnectionStatus({ connected }) {
     <span className={`inline-flex items-center gap-2 text-sm font-semibold ${connected ? 'text-[#0f7f4f]' : 'text-[#b65f00]'}`}>
       <span className={`h-2 w-2 rounded-full ${connected ? 'bg-[#0f7f4f]' : 'bg-[#d97706]'}`} />
       {connected ? 'Connected' : 'Not connected'}
+    </span>
+  )
+}
+
+function AgentProfileReadiness({ agent }) {
+  const profile = getCanonicalArch9AgentProfile(agent)
+  const checks = [
+    { key: 'phone', ready: Boolean(profile.phone), label: 'Phone' },
+    { key: 'photo', ready: Boolean(profile.avatarUrl), label: 'Photo' },
+  ]
+  return (
+    <span className="mt-2 flex flex-wrap gap-1.5">
+      {checks.map((check) => (
+        <span
+          key={check.key}
+          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[0.68rem] font-semibold ${
+            check.ready ? 'bg-[#eef8f2] text-[#1f7a45]' : 'bg-[#fff4e8] text-[#a15c00]'
+          }`}
+        >
+          {check.ready ? <CheckCircle2 className="h-3 w-3" /> : <CircleAlert className="h-3 w-3" />}
+          {check.label} {check.ready ? 'ready' : 'missing'}
+        </span>
+      ))}
     </span>
   )
 }
@@ -348,11 +383,22 @@ export default function SettingsProperty24Page() {
   const [saving, setSaving] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [healthLoading, setHealthLoading] = useState(false)
+  const [reconciliationLoading, setReconciliationLoading] = useState(false)
+  const [vettingPackLoading, setVettingPackLoading] = useState(false)
+  const [liveCutoverLoading, setLiveCutoverLoading] = useState(false)
+  const [liveCutoverAction, setLiveCutoverAction] = useState('')
   const [creatingAgentKey, setCreatingAgentKey] = useState('')
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [healthError, setHealthError] = useState('')
+  const [reconciliationError, setReconciliationError] = useState('')
+  const [vettingPackError, setVettingPackError] = useState('')
+  const [liveCutoverError, setLiveCutoverError] = useState('')
   const [property24Health, setProperty24Health] = useState(null)
+  const [property24Reconciliation, setProperty24Reconciliation] = useState(null)
+  const [property24VettingPack, setProperty24VettingPack] = useState(null)
+  const [property24LiveCutover, setProperty24LiveCutover] = useState(null)
+  const [liveCutoverReason, setLiveCutoverReason] = useState('')
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [showAllAgents, setShowAllAgents] = useState(false)
   const [context, setContext] = useState(null)
@@ -366,19 +412,48 @@ export default function SettingsProperty24Page() {
       setLoading(true)
       setError('')
       try {
-        const [organisationContext, organisationUsers] = await Promise.all([
+        const [organisationContext, organisationUsers, sessionResult] = await Promise.all([
           fetchOrganisationSettings({ forceRefresh: true }),
           listOrganisationUsers(),
+          supabase.auth.getSession(),
         ])
         if (cancelled) return
-        const nextSettings = normalizeProperty24Settings(organisationContext.organisationSettings?.property24)
+        const legacySettings = normalizeProperty24Settings(organisationContext.organisationSettings?.property24)
+        let nextSettings = legacySettings
+        const accessToken = sessionResult.data?.session?.access_token
+        if (accessToken && organisationContext.organisation?.id) {
+          try {
+            const query = new URLSearchParams({
+              organisationId: organisationContext.organisation.id,
+              environment: legacySettings.environment,
+            })
+            const connectionResponse = await fetch(`/api/property24/settings/connection?${query.toString()}`, {
+              headers: { Authorization: `Bearer ${accessToken}` },
+            })
+            const connectionPayload = await connectionResponse.json().catch(() => ({}))
+            if (connectionResponse.ok && connectionPayload.connection) {
+              nextSettings = normalizeProperty24Settings({
+                ...legacySettings,
+                enabled: connectionPayload.connection.enabled,
+                agencyId: connectionPayload.connection.agencyId,
+                environment: connectionPayload.connection.environment,
+                lastAgentSyncAt: connectionPayload.connection.lastAgentSyncAt || legacySettings.lastAgentSyncAt,
+              })
+            }
+          } catch {
+            nextSettings = legacySettings
+          }
+        }
+        if (cancelled) return
         setContext(organisationContext)
         setUsers(organisationUsers)
         setSettings(nextSettings)
         setSavedSettings(nextSettings)
         void loadProperty24Health({
           organisationId: organisationContext.organisation?.id,
-          settingsSnapshot: nextSettings,
+        })
+        void loadProperty24LiveCutover({
+          organisationId: organisationContext.organisation?.id,
         })
       } catch (loadError) {
         if (!cancelled) setError(loadError.message || 'Unable to load Property24 settings.')
@@ -393,10 +468,25 @@ export default function SettingsProperty24Page() {
   }, [])
 
   const agentCandidates = useMemo(
-    () => users.filter((user) => user.email && !['inactive', 'archived', 'disabled'].includes(normalizeEmail(user.status || user.membershipStatus))),
+    () => users.filter((user) => user.email && !['inactive', 'deactivated', 'revoked', 'removed', 'archived', 'disabled'].includes(normalizeEmail(user.status || user.membershipStatus))),
     [users],
   )
   const mappingLookup = useMemo(() => createMappingLookup(settings.agentMappings), [settings.agentMappings])
+  const canonicalAgentByProperty24Id = useMemo(() => {
+    const candidatesByIdentity = new Map()
+    agentCandidates.forEach((agent) => {
+      const profile = getCanonicalArch9AgentProfile(agent)
+      if (profile.userId) candidatesByIdentity.set(profile.userId, agent)
+      if (profile.membershipId) candidatesByIdentity.set(profile.membershipId, agent)
+    })
+    return new Map(settings.agentMappings
+      .map((mapping) => {
+        const property24AgentId = normalizeProperty24SettingsText(mapping.property24AgentId)
+        const agent = candidatesByIdentity.get(mapping.arch9UserId) || candidatesByIdentity.get(mapping.arch9MembershipId) || null
+        return property24AgentId && agent ? [property24AgentId, agent] : null
+      })
+      .filter(Boolean))
+  }, [agentCandidates, settings.agentMappings])
   const readiness = useMemo(
     () => summarizeProperty24SettingsReadiness({ settings, arch9Agents: agentCandidates }),
     [settings, agentCandidates],
@@ -416,6 +506,9 @@ export default function SettingsProperty24Page() {
   const serverCredentialsReady = true
   const healthSummary = property24Health?.summary || {}
   const healthChecks = property24Health?.checks || []
+  const reconciliationView = property24Reconciliation?.view || null
+  const vettingPackView = property24VettingPack?.view || null
+  const liveCutoverView = property24LiveCutover || null
   const connectionReady = Boolean(settings.enabled && settings.agencyId)
   const latestSyncAt = healthSummary.latestListingSyncAt || healthSummary.latestLeadImportAt || property24Health?.generatedAt
   const isSandboxEnvironment = settings.environment !== 'production'
@@ -442,19 +535,26 @@ export default function SettingsProperty24Page() {
     setSettings((current) => normalizeProperty24Settings({ ...current, ...patch }))
   }
 
-  function updateProperty24Agent(index, patch) {
-    const nextAgents = settings.property24Agents.map((agent, agentIndex) => (
-      agentIndex === index ? normalizeProperty24AgentRow({ ...agent, ...patch }) : agent
-    ))
-    updateSettings({ property24Agents: nextAgents })
-  }
-
-  function removeProperty24Agent(index) {
-    updateSettings({ property24Agents: settings.property24Agents.filter((_, agentIndex) => agentIndex !== index) })
-  }
-
-  function addProperty24Agent() {
-    updateSettings({ property24Agents: [...settings.property24Agents, createBlankProperty24Agent()] })
+  async function persistCanonicalProperty24Connection(nextSettings) {
+    const sessionResult = await supabase.auth.getSession()
+    const accessToken = sessionResult.data?.session?.access_token
+    if (!accessToken) throw new Error('Sign in again before saving the Property24 connection.')
+    const response = await fetch('/api/property24/settings/connection', {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        organisationId: context.organisation.id,
+        agencyId: nextSettings.agencyId,
+        environment: nextSettings.environment,
+        enabled: nextSettings.enabled,
+      }),
+    })
+    const payload = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(payload.message || 'Unable to save the Property24 connection.')
+    return payload.connection
   }
 
   async function applySuggestedMappings(nextProperty24Agents = settings.property24Agents) {
@@ -491,6 +591,25 @@ export default function SettingsProperty24Page() {
   }
 
   async function persistMapping(agent, patch, successMessage) {
+    const sessionResult = await supabase.auth.getSession()
+    const accessToken = sessionResult.data?.session?.access_token
+    if (!accessToken) throw new Error('Sign in again before saving the Property24 agent mapping.')
+    const mappingResponse = await fetch('/api/property24/settings/agent-mapping', {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        organisationId: context.organisation.id,
+        arch9UserId: agent.userId || agent.user_id || agent.id,
+        arch9MembershipId: agent.id,
+        property24AgentId: patch.property24AgentId || '',
+        sourceReference: patch.sourceReference || '',
+      }),
+    })
+    const mappingPayload = await mappingResponse.json().catch(() => ({}))
+    if (!mappingResponse.ok) throw new Error(mappingPayload.message || 'Unable to save the canonical Property24 agent mapping.')
     const nextMappings = createNextMappingsForAgent(agent, patch)
     await persistProperty24Settings({
       ...settings,
@@ -525,7 +644,7 @@ export default function SettingsProperty24Page() {
     }, 'Agent match accepted and saved.')
   }
 
-  async function loadProperty24Health({ organisationId = context?.organisation?.id, settingsSnapshot = settings } = {}) {
+  async function loadProperty24Health({ organisationId = context?.organisation?.id } = {}) {
     if (!organisationId) return
     setHealthLoading(true)
     setHealthError('')
@@ -541,7 +660,6 @@ export default function SettingsProperty24Page() {
         },
         body: JSON.stringify({
           organisationId,
-          settings: settingsSnapshot,
         }),
       })
       const payload = await response.json().catch(() => ({}))
@@ -551,6 +669,83 @@ export default function SettingsProperty24Page() {
       setHealthError(loadHealthError.message || 'Property24 health check failed.')
     } finally {
       setHealthLoading(false)
+    }
+  }
+
+  async function runProperty24Reconciliation() {
+    const organisationId = context?.organisation?.id
+    if (!organisationId) return
+    setReconciliationLoading(true)
+    setReconciliationError('')
+    try {
+      const result = await runProperty24OrganisationReconciliation({
+        organisationId,
+        includePortalChecks: true,
+        limit: 25,
+      })
+      setProperty24Reconciliation(result)
+    } catch (reconciliationFailure) {
+      setReconciliationError(reconciliationFailure.message || 'Property24 reconciliation failed.')
+    } finally {
+      setReconciliationLoading(false)
+    }
+  }
+
+  async function generateProperty24VettingPack() {
+    const organisationId = context?.organisation?.id
+    if (!organisationId) return
+    setVettingPackLoading(true)
+    setVettingPackError('')
+    try {
+      const result = await runProperty24OrganisationVettingPack({ organisationId })
+      setProperty24VettingPack(result)
+    } catch (vettingFailure) {
+      setVettingPackError(vettingFailure.message || 'Property24 vetting-pack generation failed.')
+    } finally {
+      setVettingPackLoading(false)
+    }
+  }
+
+  function downloadVettingPack() {
+    try {
+      downloadProperty24VettingPackMarkdown(property24VettingPack)
+    } catch (downloadFailure) {
+      setVettingPackError(downloadFailure.message || 'Unable to download the Property24 vetting pack.')
+    }
+  }
+
+  async function loadProperty24LiveCutover({ organisationId = context?.organisation?.id } = {}) {
+    if (!organisationId) return
+    setLiveCutoverLoading(true)
+    setLiveCutoverError('')
+    try {
+      const cutover = await fetchProperty24LiveCutover({ organisationId })
+      setProperty24LiveCutover(cutover)
+    } catch (cutoverFailure) {
+      setLiveCutoverError(cutoverFailure.message || 'Unable to load Property24 production cutover.')
+    } finally {
+      setLiveCutoverLoading(false)
+    }
+  }
+
+  async function runLiveCutoverAction(action) {
+    const organisationId = context?.organisation?.id
+    if (!organisationId) return
+    setLiveCutoverAction(action)
+    setLiveCutoverError('')
+    try {
+      const result = await applyProperty24LiveCutoverAction({
+        organisationId,
+        action,
+        reason: liveCutoverReason,
+        pilotListingLimit: 3,
+      })
+      setProperty24LiveCutover(result.cutover)
+      setLiveCutoverReason('')
+    } catch (cutoverFailure) {
+      setLiveCutoverError(cutoverFailure.message || 'Property24 production cutover action failed.')
+    } finally {
+      setLiveCutoverAction('')
     }
   }
 
@@ -576,17 +771,9 @@ export default function SettingsProperty24Page() {
         },
         body: JSON.stringify({
           organisationId: context.organisation.id,
-          agencyId: settings.agencyId,
           sourceReference,
-          agent: {
-            firstName: agent.firstName,
-            lastName: agent.lastName,
-            fullName: agent.fullName,
-            email: agent.email,
-            mobile: agent.mobile || agent.phone,
-            phone: agent.phone,
-            jobTitle: agent.jobTitle || 'Agent',
-          },
+          arch9UserId: agent.userId || agent.user_id || agent.id,
+          arch9MembershipId: agent.id,
         }),
       })
       const payload = await response.json().catch(() => ({}))
@@ -620,7 +807,16 @@ export default function SettingsProperty24Page() {
         }),
         lastAgentSyncAt: new Date().toISOString(),
       }
-      await persistProperty24Settings(nextSettings, `Created and saved Property24 agent for ${agent.fullName || agent.email}.`)
+      const photoVerified = payload.profileSync?.photo?.verified === true
+      await persistProperty24Settings(
+        nextSettings,
+        photoVerified
+          ? `Created and verified the Property24 profile, phone and photo for ${agent.fullName || agent.email}.`
+          : `Property24 agent ${payload.property24AgentId} was saved, but profile verification needs attention. Sync agent profiles to retry.`,
+      )
+      if (Array.isArray(payload.warnings) && payload.warnings.length) {
+        setError(payload.warnings.map((warning) => warning.message).filter(Boolean).join(' '))
+      }
     } catch (createError) {
       setError(createError.message || 'Property24 agent creation failed.')
     } finally {
@@ -648,9 +844,9 @@ export default function SettingsProperty24Page() {
         },
         body: JSON.stringify({
           organisationId: context.organisation.id,
-          agencyId: settings.agencyId,
           existingMappings: settings.agentMappings,
           sourceReferencePrefix: settings.sourceReferencePrefix,
+          applyProfileUpdates: true,
         }),
       })
       const payload = await response.json().catch(() => ({}))
@@ -678,7 +874,16 @@ export default function SettingsProperty24Page() {
         agentMappings: [...nextMappings, ...reviewMappings],
         lastAgentSyncAt: payload.generatedAt || new Date().toISOString(),
       }
-      await persistProperty24Settings(nextSettings, `Synced and saved ${nextAgents.length} Property24 agents.`)
+      const profileSync = payload.profileSync || {}
+      const profileSyncMessage = profileSync.applied
+        ? ` Synced ${profileSync.syncedCount || 0} canonical profile${profileSync.syncedCount === 1 ? '' : 's'}; ${profileSync.partialCount || 0} partial and ${profileSync.failedCount || 0} failed.`
+        : ''
+      await persistProperty24Settings(nextSettings, `Synced and saved ${nextAgents.length} Property24 agents.${profileSyncMessage}`)
+      const attention = (profileSync.results || [])
+        .filter((result) => result.status === 'FAILED' || String(result.status || '').endsWith('_PARTIAL'))
+        .map((result) => result.message || result.warnings?.map((warning) => warning.message).filter(Boolean).join(' '))
+        .filter(Boolean)
+      if (attention.length) setError(attention.join(' '))
     } catch (syncError) {
       setError(syncError.message || 'Property24 agent sync failed.')
     } finally {
@@ -694,21 +899,22 @@ export default function SettingsProperty24Page() {
     try {
       const organisationSettings = context.organisationSettings || {}
       const nextProperty24 = normalizeProperty24Settings(nextSettings)
+      const persistedProperty24 = serializeProperty24SettingsForPersistence(nextProperty24)
       const nextSettingsJson = {
         ...organisationSettings,
-        property24: nextProperty24,
+        property24: persistedProperty24,
       }
       const nextContext = {
         ...context,
         organisationSettings: nextSettingsJson,
       }
-      await updateWorkflowSettings({ property24: nextProperty24 })
+      await updateWorkflowSettings({ property24: persistedProperty24 })
       setContext(nextContext)
       setSettings(nextProperty24)
       setSavedSettings(nextProperty24)
       setSuccess(successMessage)
       await refreshOrganisation?.({ forceRefresh: true })
-      void loadProperty24Health({ settingsSnapshot: nextProperty24 })
+      void loadProperty24Health()
       return nextProperty24
     } catch (saveError) {
       setError(saveError.message || 'Unable to save Property24 settings.')
@@ -719,7 +925,12 @@ export default function SettingsProperty24Page() {
   }
 
   async function saveSettings() {
-    await persistProperty24Settings(settings)
+    try {
+      await persistCanonicalProperty24Connection(settings)
+      await persistProperty24Settings(settings)
+    } catch (saveError) {
+      setError(saveError.message || 'Unable to save the Property24 connection.')
+    }
   }
 
   async function saveConnectionSetup(nextEnabled = settings.enabled) {
@@ -732,10 +943,15 @@ export default function SettingsProperty24Page() {
       setError('Enter the Property24 agency ID before enabling Property24.')
       return
     }
-    await persistProperty24Settings(
-      nextProperty24,
-      nextEnabled ? 'Property24 connection saved and enabled.' : 'Property24 connection saved.',
-    )
+    try {
+      await persistCanonicalProperty24Connection(nextProperty24)
+      await persistProperty24Settings(
+        nextProperty24,
+        nextEnabled ? 'Property24 connection saved and enabled.' : 'Property24 connection saved.',
+      )
+    } catch (saveError) {
+      setError(saveError.message || 'Unable to save the Property24 connection.')
+    }
   }
 
   if (loading) return <SettingsLoadingState label="Loading Property24 settings..." />
@@ -865,6 +1081,9 @@ export default function SettingsProperty24Page() {
                 ? 'In ExDev, Property24 may not return usable agent IDs yet. Sync agents to check what Property24 provides, but do not enter fake IDs.'
                 : 'Connect each Arch9 agent to their Property24 profile. This determines which agent listings are published under.'}
             </p>
+            <p className="mt-2 text-sm leading-6 text-[#40546b]">
+              Agent names, email addresses, phone numbers and photos are owned by the Arch9 Agent Profile. Property24 settings only stores the external ID and sync reference.
+            </p>
           </div>
           <div className="flex flex-wrap gap-2">
             <span className={`inline-flex min-h-10 items-center rounded-[10px] border px-3 text-sm font-semibold ${
@@ -908,6 +1127,8 @@ export default function SettingsProperty24Page() {
             <div className="divide-y divide-[#edf2f7]">
               {visibleAgentCandidates.map((agent) => {
                 const agentKey = agent.userId || agent.id || agent.email
+                const canonicalProfile = getCanonicalArch9AgentProfile(agent)
+                const profileReady = Boolean(canonicalProfile.email && canonicalProfile.phone && canonicalProfile.avatarUrl)
                 const mapping = mappingLookup.get(agentKey) || mappingLookup.get(normalizeEmail(agent.email)) || toMappingPatch(agent)
                 const mapped = Boolean(mapping.property24AgentId)
                 const matchedAgent = findProperty24AgentById(settings.property24Agents, mapping.property24AgentId)
@@ -923,6 +1144,8 @@ export default function SettingsProperty24Page() {
                       <div className="min-w-0">
                         <p className="truncate text-sm font-semibold text-[#17233a]">{agent.fullName || agent.email}</p>
                         <p className="mt-1 truncate text-sm text-[#6b7d93]">{agent.email || 'No email saved'}</p>
+                        <p className="mt-1 truncate text-xs text-[#7d8da0]">{agent.phone || agent.mobile || 'No phone saved on agent profile'}</p>
+                        <AgentProfileReadiness agent={agent} />
                       </div>
                     </div>
 
@@ -935,11 +1158,16 @@ export default function SettingsProperty24Page() {
                         aria-label={`Choose Property24 profile for ${agent.fullName || agent.email}`}
                       >
                         <option value="">Select Property24 profile</option>
-                        {selectableProperty24Agents.length ? selectableProperty24Agents.map((property24Agent) => (
-                          <option key={property24Agent.rowId || property24Agent.property24AgentId} value={property24Agent.property24AgentId}>
-                            {property24Agent.fullName || property24Agent.email || `Agent ${property24Agent.property24AgentId}`} {property24Agent.email ? `(${property24Agent.email})` : ''}
-                          </option>
-                        )) : (
+                        {selectableProperty24Agents.length ? selectableProperty24Agents.map((property24Agent) => {
+                          const canonicalAgent = canonicalAgentByProperty24Id.get(property24Agent.property24AgentId)
+                          const label = canonicalAgent?.fullName || property24Agent.fullName || canonicalAgent?.email || property24Agent.email || `Agent ${property24Agent.property24AgentId}`
+                          const email = canonicalAgent?.email || property24Agent.email
+                          return (
+                            <option key={property24Agent.rowId || property24Agent.property24AgentId} value={property24Agent.property24AgentId}>
+                              {label} {email ? `(${email})` : ''}
+                            </option>
+                          )
+                        }) : (
                           <option value="" disabled>No Property24 profiles with IDs synced</option>
                         )}
                       </select>
@@ -971,7 +1199,8 @@ export default function SettingsProperty24Page() {
                             type="button"
                             className="flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-left text-sm font-semibold text-[#24364b] transition hover:bg-[#f7fafc] disabled:cursor-not-allowed disabled:opacity-60"
                             onClick={() => createProperty24Agent(agent, mapping)}
-                            disabled={creating || !settings.agencyId || mapped}
+                            disabled={creating || !settings.agencyId || mapped || !profileReady}
+                            title={profileReady ? '' : 'Add a phone number and profile photo on the Arch9 Agent Profile first.'}
                           >
                             <UserPlus className="h-4 w-4" />
                             {creating ? 'Creating...' : "Can't find this agent? Create on Property24"}
@@ -1050,6 +1279,274 @@ export default function SettingsProperty24Page() {
             description="Sync running every 15 minutes"
           />
         </div>
+
+        <div className="mt-5 rounded-[14px] border border-[#dfe8f1] bg-[#f9fbfe] p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-sm font-semibold text-[#17233a]">Listing reconciliation</h3>
+                <span className="rounded-full border border-[#cfe0f3] bg-white px-2 py-0.5 text-[0.68rem] font-semibold uppercase tracking-[0.05em] text-[#27527a]">Read only</span>
+                {reconciliationView ? (
+                  <span className={`rounded-full border px-2 py-0.5 text-[0.68rem] font-semibold uppercase tracking-[0.05em] ${getHealthTone(reconciliationView.status)}`}>
+                    {reconciliationView.status === 'OK' ? 'In sync' : 'Needs review'}
+                  </span>
+                ) : null}
+              </div>
+              <p className="mt-1 max-w-3xl text-sm leading-6 text-[#6b7d93]">
+                Compare this agency’s Arch9 listing records with Property24. This check never publishes, edits or imports anything.
+              </p>
+            </div>
+            <button
+              type="button"
+              className={SECONDARY_BUTTON_CLASS}
+              onClick={runProperty24Reconciliation}
+              disabled={reconciliationLoading || !connectionReady}
+            >
+              <RefreshCw className={`h-4 w-4 ${reconciliationLoading ? 'animate-spin' : ''}`} />
+              {reconciliationLoading ? 'Comparing...' : reconciliationView ? 'Run again' : 'Compare listings'}
+            </button>
+          </div>
+
+          {reconciliationError ? <div className="mt-4"><SettingsBanner>{reconciliationError}</SettingsBanner></div> : null}
+          {reconciliationView ? (
+            <div className="mt-4 space-y-4">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <HealthMetric label="Arch9 tracked" value={reconciliationView.summary.trackedListings} />
+                <HealthMetric label="Property24 returned" value={reconciliationView.summary.property24Listings} />
+                <HealthMetric label="Matched" value={reconciliationView.summary.matchedListings} />
+                <HealthMetric label="Needs review" value={reconciliationView.summary.issueCount} />
+              </div>
+
+              {reconciliationView.issues.length ? (
+                <div className="overflow-hidden rounded-[12px] border border-[#e3ebf3] bg-white">
+                  {reconciliationView.issues.slice(0, 8).map((issue) => (
+                    <div key={issue.key} className="border-b border-[#edf2f7] px-4 py-3 last:border-0">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-semibold text-[#17233a]">{issue.title}</span>
+                          <span className="mt-1 block text-sm leading-5 text-[#6b7d93]">{issue.detail}</span>
+                        </span>
+                        <span className="shrink-0 rounded-full bg-[#fff8ec] px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.04em] text-[#a16207]">
+                          {issue.type.replace(/_/g, ' ')}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-xs leading-5 text-[#40546b]">Next: {issue.action}</p>
+                    </div>
+                  ))}
+                  {reconciliationView.issues.length > 8 ? (
+                    <div className="border-t border-[#edf2f7] px-4 py-3 text-xs font-semibold text-[#6b7d93]">
+                      {reconciliationView.issues.length - 8} more item{reconciliationView.issues.length - 8 === 1 ? '' : 's'} require review.
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="rounded-[12px] border border-[#ccead8] bg-[#f2fbf5] px-4 py-3 text-sm text-[#1f7a45]">
+                  Arch9 and Property24 agree for the listings returned in this check.
+                </div>
+              )}
+              <p className="text-xs text-[#7a8ca1]">Last compared: {formatHealthDate(reconciliationView.generatedAt)}</p>
+            </div>
+          ) : (
+            <p className="mt-4 rounded-[12px] border border-dashed border-[#d7e2ee] bg-white px-4 py-4 text-sm text-[#6b7d93]">
+              Run the comparison after publishing, reassigning an agent, or changing a listing status.
+            </p>
+          )}
+        </div>
+
+        <div className="mt-5 rounded-[14px] border border-[#dfe8f1] bg-[#f9fbfe] p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-sm font-semibold text-[#17233a]">ExDev vetting pack</h3>
+                <span className="rounded-full border border-[#cfe0f3] bg-white px-2 py-0.5 text-[0.68rem] font-semibold uppercase tracking-[0.05em] text-[#27527a]">Phase 6</span>
+                <span className="rounded-full border border-[#cfe0f3] bg-white px-2 py-0.5 text-[0.68rem] font-semibold uppercase tracking-[0.05em] text-[#27527a]">Read only</span>
+                {vettingPackView ? (
+                  <span className={`rounded-full border px-2 py-0.5 text-[0.68rem] font-semibold uppercase tracking-[0.05em] ${getHealthTone(vettingPackView.summary.blockers ? 'BLOCKED' : 'OK')}`}>
+                    {vettingPackView.summary.blockers ? 'Needs evidence' : 'Ready'}
+                  </span>
+                ) : null}
+              </div>
+              <p className="mt-1 max-w-3xl text-sm leading-6 text-[#6b7d93]">
+                Run the Property24 read checks and combine them with this agency’s redacted sync, retry and reconciliation evidence. No listing or agent is changed.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {vettingPackView ? (
+                <button type="button" className={SECONDARY_BUTTON_CLASS} onClick={downloadVettingPack}>
+                  <Download className="h-4 w-4" /> Download report
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className={SECONDARY_BUTTON_CLASS}
+                onClick={generateProperty24VettingPack}
+                disabled={vettingPackLoading || !connectionReady || !isSandboxEnvironment}
+                title={isSandboxEnvironment ? '' : 'The vetting pack is only available for an ExDev connection.'}
+              >
+                <RefreshCw className={`h-4 w-4 ${vettingPackLoading ? 'animate-spin' : ''}`} />
+                {vettingPackLoading ? 'Generating...' : vettingPackView ? 'Generate again' : 'Generate pack'}
+              </button>
+            </div>
+          </div>
+
+          {vettingPackError ? <div className="mt-4"><SettingsBanner>{vettingPackError}</SettingsBanner></div> : null}
+          {!isSandboxEnvironment ? (
+            <p className="mt-4 rounded-[12px] border border-[#f3d9a8] bg-[#fff8ec] px-4 py-3 text-sm text-[#8a5710]">
+              Phase 6 evidence is locked to ExDev. Production readiness uses the separate live-cutover gate.
+            </p>
+          ) : vettingPackView ? (
+            <div className="mt-4 space-y-4">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <HealthMetric label="Passed" value={vettingPackView.summary.passed} />
+                <HealthMetric label="Manual ExDev" value={vettingPackView.summary.manual} />
+                <HealthMetric label="Needs evidence" value={vettingPackView.summary.blockers} />
+                <HealthMetric label="Total checks" value={vettingPackView.summary.total} />
+              </div>
+              <div className="overflow-hidden rounded-[12px] border border-[#e3ebf3] bg-white">
+                {vettingPackView.evidence.slice(0, 12).map((item) => (
+                  <div key={item.id} className="border-b border-[#edf2f7] px-4 py-3 last:border-0">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <span className="min-w-0">
+                        <span className="block text-sm font-semibold text-[#17233a]">{item.label}</span>
+                        {item.nextStep ? <span className="mt-1 block text-xs leading-5 text-[#60758b]">Next: {item.nextStep}</span> : null}
+                      </span>
+                      <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.04em] ${getVettingEvidenceTone(item.status)}`}>
+                        {item.status.replace(/_/g, ' ')}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[#7a8ca1]">
+                <span>Credentials, signed image URLs and image bytes are redacted.</span>
+                <span>Generated: {formatHealthDate(vettingPackView.generatedAt)}</span>
+              </div>
+            </div>
+          ) : (
+            <p className="mt-4 rounded-[12px] border border-dashed border-[#d7e2ee] bg-white px-4 py-4 text-sm text-[#6b7d93]">
+              Generate this after the listing, agent, update and status workflows have been exercised in ExDev.
+            </p>
+          )}
+        </div>
+
+        <div className="mt-5 rounded-[14px] border border-[#dfe8f1] bg-[#f9fbfe] p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-sm font-semibold text-[#17233a]">Production cutover</h3>
+                <span className="rounded-full border border-[#cfe0f3] bg-white px-2 py-0.5 text-[0.68rem] font-semibold uppercase tracking-[0.05em] text-[#27527a]">Phase 7</span>
+                {liveCutoverView ? (
+                  <span className={`rounded-full border px-2 py-0.5 text-[0.68rem] font-semibold uppercase tracking-[0.05em] ${getHealthTone(
+                    liveCutoverView.status === 'live' ? 'OK' : liveCutoverView.status === 'paused' || liveCutoverView.status === 'blocked' ? 'BLOCKED' : 'WARNING'
+                  )}`}>
+                    {liveCutoverView.status}
+                  </span>
+                ) : null}
+              </div>
+              <p className="mt-1 max-w-3xl text-sm leading-6 text-[#6b7d93]">
+                Approve completed ExDev evidence, open a maximum three-listing production pilot, verify it, and only then promote the agency to live.
+              </p>
+            </div>
+            <button
+              type="button"
+              className={SECONDARY_BUTTON_CLASS}
+              onClick={() => loadProperty24LiveCutover()}
+              disabled={liveCutoverLoading || Boolean(liveCutoverAction)}
+            >
+              <RefreshCw className={`h-4 w-4 ${liveCutoverLoading ? 'animate-spin' : ''}`} />
+              {liveCutoverLoading ? 'Checking...' : 'Refresh gate'}
+            </button>
+          </div>
+
+          {liveCutoverError ? <div className="mt-4"><SettingsBanner>{liveCutoverError}</SettingsBanner></div> : null}
+          {liveCutoverView ? (
+            <div className="mt-4 space-y-4">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <HealthMetric label="Gate state" value={liveCutoverView.status} />
+                <HealthMetric label="Pilot listings" value={`${liveCutoverView.evidenceSummary?.trackedListingCount || 0}/${liveCutoverView.safety?.pilotListingLimit || 3}`} />
+                <HealthMetric label="On portal" value={liveCutoverView.evidenceSummary?.onPortalListingCount || 0} />
+                <HealthMetric label="Recent failures" value={liveCutoverView.evidenceSummary?.failedAttemptCount || 0} />
+              </div>
+
+              <div className="overflow-hidden rounded-[12px] border border-[#e3ebf3] bg-white">
+                {(liveCutoverView.checks || []).map((check) => (
+                  <div key={check.key} className="flex flex-col gap-2 border-b border-[#edf2f7] px-4 py-3 last:border-0 sm:flex-row sm:items-start sm:justify-between">
+                    <span className="min-w-0">
+                      <span className="block text-sm font-semibold text-[#17233a]">{check.label}</span>
+                      <span className="mt-1 block text-xs leading-5 text-[#60758b]">{check.detail}</span>
+                    </span>
+                    <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.04em] ${getHealthTone(check.ready ? 'OK' : 'BLOCKED')}`}>
+                      {check.ready ? 'Ready' : 'Blocked'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="rounded-[12px] border border-[#f3d9a8] bg-[#fff8ec] px-4 py-3 text-sm leading-6 text-[#8a5710]">
+                <span className="inline-flex items-center gap-2 font-semibold"><ShieldCheck className="h-4 w-4" /> No bulk publishing</span>
+                <p className="mt-1">Pausing stops new production writes. Existing listings are never deleted; rollback uses the listing status workflow.</p>
+              </div>
+
+              <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+                <label className={FIELD_CLASS}>
+                  <span className={LABEL_CLASS}>Decision reason</span>
+                  <textarea
+                    className={`${INPUT_CLASS} min-h-20 py-3`}
+                    value={liveCutoverReason}
+                    onChange={(event) => setLiveCutoverReason(event.target.value)}
+                    placeholder="Required: record the approval, pilot decision, promotion evidence or pause reason."
+                  />
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {liveCutoverView.availableActions?.approveExDev ? (
+                    <button type="button" className={SECONDARY_BUTTON_CLASS} disabled={liveCutoverReason.trim().length < 10 || Boolean(liveCutoverAction)} onClick={() => runLiveCutoverAction('approve_exdev')}>
+                      {liveCutoverAction === 'approve_exdev' ? 'Checking ExDev...' : 'Approve ExDev evidence'}
+                    </button>
+                  ) : null}
+                  {liveCutoverView.availableActions?.startPilot ? (
+                    <button type="button" className={PRIMARY_BUTTON_CLASS} disabled={liveCutoverReason.trim().length < 10 || Boolean(liveCutoverAction)} onClick={() => runLiveCutoverAction('start_pilot')}>
+                      {liveCutoverAction === 'start_pilot' ? 'Starting...' : 'Start 3-listing pilot'}
+                    </button>
+                  ) : null}
+                  {liveCutoverView.availableActions?.resumePilot ? (
+                    <button type="button" className={PRIMARY_BUTTON_CLASS} disabled={liveCutoverReason.trim().length < 10 || Boolean(liveCutoverAction)} onClick={() => runLiveCutoverAction('resume_pilot')}>
+                      {liveCutoverAction === 'resume_pilot' ? 'Resuming...' : 'Resume pilot'}
+                    </button>
+                  ) : null}
+                  {liveCutoverView.availableActions?.promoteLive ? (
+                    <button type="button" className={PRIMARY_BUTTON_CLASS} disabled={liveCutoverReason.trim().length < 10 || Boolean(liveCutoverAction)} onClick={() => runLiveCutoverAction('promote_live')}>
+                      {liveCutoverAction === 'promote_live' ? 'Verifying...' : 'Verify and promote live'}
+                    </button>
+                  ) : null}
+                  {liveCutoverView.availableActions?.pause ? (
+                    <button type="button" className={SECONDARY_BUTTON_CLASS} disabled={liveCutoverReason.trim().length < 10 || Boolean(liveCutoverAction)} onClick={() => runLiveCutoverAction('pause')}>
+                      {liveCutoverAction === 'pause' ? 'Pausing...' : 'Pause production'}
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+
+              {(liveCutoverView.events || []).length ? (
+                <div className="rounded-[12px] border border-[#e3ebf3] bg-white px-4 py-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.05em] text-[#60758b]">Recent decisions</p>
+                  <div className="mt-2 divide-y divide-[#edf2f7]">
+                    {liveCutoverView.events.slice(0, 5).map((event) => (
+                      <div key={event.id} className="py-2 text-xs leading-5 text-[#40546b]">
+                        <span className="font-semibold">{String(event.action || '').replace(/_/g, ' ')}</span>
+                        <span> · {event.previous_status || 'new'} → {event.next_status} · {formatHealthDate(event.created_at)}</span>
+                        <p className="text-[#6b7d93]">{event.reason}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <p className="mt-4 rounded-[12px] border border-dashed border-[#d7e2ee] bg-white px-4 py-4 text-sm text-[#6b7d93]">
+              Load the cutover gate to inspect production readiness. No production write occurs during this check.
+            </p>
+          )}
+        </div>
       </section>
 
       <section className="rounded-[16px] border border-[#e1e8ef] bg-white shadow-[0_10px_28px_rgba(15,23,42,0.035)]">
@@ -1122,36 +1619,26 @@ export default function SettingsProperty24Page() {
 
             <SettingsSectionCard
               title="Property24 Agent Records"
-              description="Only use this if Property24 support gives you specific agent records to check."
+              description="Read-only external identifiers. Sync copies the current Arch9 profile phone and photo to Property24 and verifies the result."
               actions={
-                <div className="flex flex-wrap gap-2">
-                  <button type="button" className={SECONDARY_BUTTON_CLASS} onClick={addProperty24Agent}>
-                    <Plus className="h-4 w-4" /> Add
-                  </button>
-                  <button type="button" className={SECONDARY_BUTTON_CLASS} onClick={() => applySuggestedMappings()}>
-                    <Wand2 className="h-4 w-4" /> Auto-match
-                  </button>
-                  <button type="button" className={PRIMARY_BUTTON_CLASS} onClick={syncProperty24Agents} disabled={syncing || saving || !settings.agencyId}>
-                    <RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} /> {syncing ? 'Syncing...' : 'Sync agents'}
-                  </button>
-                </div>
+                <button type="button" className={PRIMARY_BUTTON_CLASS} onClick={syncProperty24Agents} disabled={syncing || saving || !settings.agencyId}>
+                  <RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} /> {syncing ? 'Syncing profiles...' : 'Sync agent profiles'}
+                </button>
               }
             >
               <div className="overflow-hidden rounded-[14px] border border-[#dfe7ee]">
-                <div className="grid grid-cols-[1fr_1fr_1fr_44px] gap-0 bg-[#f7fafc] px-4 py-3 text-xs font-semibold uppercase text-[#6b7d93]">
+                <div className="grid grid-cols-[1fr_1.4fr_0.8fr_1fr] gap-4 bg-[#f7fafc] px-4 py-3 text-xs font-semibold uppercase text-[#6b7d93]">
                   <span>Agent ID</span>
-                  <span>Name</span>
-                  <span>Email</span>
-                  <span />
+                  <span>Source reference</span>
+                  <span>Status</span>
+                  <span>Last sync</span>
                 </div>
                 {settings.property24Agents.length ? settings.property24Agents.map((agent, index) => (
-                  <div key={agent.rowId || index} className="grid grid-cols-[1fr_1fr_1fr_44px] gap-3 border-t border-[#edf2f7] bg-white px-4 py-3">
-                    <input className={INPUT_CLASS} value={agent.property24AgentId} onChange={(event) => updateProperty24Agent(index, { property24AgentId: event.target.value })} />
-                    <input className={INPUT_CLASS} value={agent.fullName} onChange={(event) => updateProperty24Agent(index, { fullName: event.target.value })} />
-                    <input className={INPUT_CLASS} value={agent.email} onChange={(event) => updateProperty24Agent(index, { email: event.target.value })} />
-                    <button type="button" className="inline-flex h-11 w-11 items-center justify-center rounded-[10px] border border-[#ead1d1] text-[#b42318] transition hover:bg-[#fff5f5]" onClick={() => removeProperty24Agent(index)} aria-label="Remove Property24 agent">
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+                  <div key={agent.rowId || index} className="grid grid-cols-[1fr_1.4fr_0.8fr_1fr] gap-4 border-t border-[#edf2f7] bg-white px-4 py-3 text-sm text-[#40546b]">
+                    <span className="font-semibold text-[#17233a]">{agent.property24AgentId || 'Pending from Property24'}</span>
+                    <span className="truncate">{agent.sourceReference || 'Not returned'}</span>
+                    <span>{agent.status || 'Unknown'}</span>
+                    <span>{formatHealthDate(agent.lastSyncedAt || settings.lastAgentSyncAt)}</span>
                   </div>
                 )) : (
                   <div className="bg-white px-4 py-8 text-center text-sm text-[#6b7d93]">

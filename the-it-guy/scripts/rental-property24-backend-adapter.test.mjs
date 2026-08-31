@@ -12,6 +12,10 @@ import {
 
 const previewOnly = createProperty24RentalListingPlan({
   listing: RENTAL_LISTING_RELEASE_GATE_FIXTURE,
+  agentMapping: {
+    property24AgentId: 77959,
+    sourceReference: 'arch9-agent-1',
+  },
 })
 
 assert.equal(previewOnly.version, PROPERTY24_RENTAL_LISTING_ADAPTER_VERSION)
@@ -46,6 +50,10 @@ assert.equal(Object.hasOwn(previewOnly, 'payload'), false)
 
 const submitReady = createProperty24RentalListingPlan({
   listing: RENTAL_LISTING_RELEASE_GATE_FIXTURE,
+  agentMapping: {
+    property24AgentId: 77959,
+    sourceReference: 'arch9-agent-1',
+  },
   media: [{
     mediaType: 'image',
     bytes: 'base64-rental-image',
@@ -80,7 +88,8 @@ assert.equal(fakeAgentIdPreview.canPreview, true)
 assert.equal(fakeAgentIdPreview.canSubmit, false)
 assert.deepEqual(fakeAgentIdPreview.previewPayload.contactAgentIds, [])
 assert.ok(fakeAgentIdPreview.technicalBlockers.includes('sandbox_property24_agent_id_required_before_submit'))
-assert.equal(fakeAgentRows.contactAgentIds.status, RENTAL_PROPERTY24_FIELD_STATUS.NEEDS_MAPPING)
+assert.ok(fakeAgentIdPreview.technicalBlockers.includes('sandbox_agent_source_reference_required_before_submit'))
+assert.equal(fakeAgentRows.contactAgentIds.status, RENTAL_PROPERTY24_FIELD_STATUS.BACKEND_RESOLVED)
 assert.equal(
   JSON.stringify(fakeAgentIdPreview.previewPayload).includes('p24-agent-1'),
   false,
@@ -97,6 +106,10 @@ const missingAvailability = createProperty24RentalListingPlan({
         availableFrom: '',
       },
     },
+  },
+  agentMapping: {
+    property24AgentId: 77959,
+    sourceReference: 'arch9-agent-1',
   },
 })
 

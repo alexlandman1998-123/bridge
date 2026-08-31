@@ -5,9 +5,11 @@ import {
   clampProperty24UpdatesFromDate,
   createProperty24ApiResponse,
   createProperty24ReconciliationComparison,
+  fetchProperty24LocalSyncRows,
   normalizeProperty24LeadForImport,
   runProperty24ReconciliationJob,
 } from '../server/property24/index.js'
+import { buildProperty24ReconciliationOperatorView } from '../src/services/property24ReconciliationService.js'
 
 function read(path) {
   return fs.readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
@@ -150,6 +152,24 @@ const supabase = createFakeSupabase({
     },
   ],
 })
+const scopedRows = await fetchProperty24LocalSyncRows({
+  supabase: createFakeSupabase({
+    property24_listing_syncs: [
+      { private_listing_id: 'listing-org-1', environment: 'exdev', agency_id: 31382, listing_number: 101 },
+      { private_listing_id: 'listing-org-2', environment: 'exdev', agency_id: 31382, listing_number: 202 },
+    ],
+    private_listings: [
+      { id: 'listing-org-1', organisation_id: 'org-1', title: 'Org 1 listing' },
+      { id: 'listing-org-2', organisation_id: 'org-2', title: 'Org 2 listing' },
+    ],
+  }),
+  organisationId: 'org-1',
+  environment: 'exdev',
+  agencyId: 31382,
+})
+assert.equal(scopedRows.length, 1)
+assert.equal(scopedRows[0].sync.private_listing_id, 'listing-org-1')
+assert.equal(scopedRows[0].listing.organisation_id, 'org-1')
 const calls = []
 const property24 = {
   fetchListingReconciliation: async (params) => {
@@ -196,6 +216,7 @@ const report = await runProperty24ReconciliationJob({
   property24,
   now,
   config: {
+    organisationId: 'org-1',
     environment: 'exdev',
     agencyId: 31382,
     fromDate: '2026-08-01T00:00:00.000Z',
@@ -206,6 +227,7 @@ const report = await runProperty24ReconciliationJob({
   },
 })
 assert.equal(report.mode, 'REPORT_ONLY')
+assert.equal(report.organisationId, 'org-1')
 assert.equal(report.safety.databaseWritten, false)
 assert.equal(report.status, 'NEEDS_REVIEW')
 assert.equal(report.updates.fromDate, '2026-08-13T10:00:00.000Z')
@@ -215,6 +237,12 @@ assert.equal(report.leadImportPlan.summary.readyForCrmIngestionCount, 1)
 assert.equal(report.leadImportPlan.summary.needsReviewCount, 1)
 assert.ok(calls.some(([name]) => name === 'reconciliation'))
 assert.ok(calls.some(([name]) => name === 'leads'))
+
+const operatorView = buildProperty24ReconciliationOperatorView(report)
+assert.equal(operatorView.status, 'NEEDS_REVIEW')
+assert.equal(operatorView.mode, 'REPORT_ONLY')
+assert.ok(operatorView.summary.issueCount > 0)
+assert.ok(operatorView.issues.some((issue) => issue.type === 'unmatched_update'))
 
 const apiResponse = await createProperty24ApiResponse({
   method: 'POST',
@@ -247,12 +275,18 @@ assert.equal(apiResponse.body.status, 'OK')
 for (const path of [
   'server/property24/reconciliationService.js',
   'api/property24/reconciliation/run.js',
+  'api/property24/settings/reconciliation.js',
+  'src/services/property24ReconciliationService.js',
   'scripts/property24-reconcile.mjs',
 ]) {
   assert.ok(fs.existsSync(new URL(`../${path}`, import.meta.url)), `${path} should exist`)
 }
 assert.match(read('server/property24/apiContract.js'), /runReconciliation/)
 assert.match(read('server/property24/api.js'), /runProperty24ReconciliationJob/)
+assert.match(read('api/property24/settings/reconciliation.js'), /auth\.getUser\(token\)/)
+assert.match(read('api/property24/settings/reconciliation.js'), /fetchOrganisationProperty24Connection/)
+assert.match(read('api/property24/settings/reconciliation.js'), /includeLeads: false/)
+assert.match(read('src/pages/settings/SettingsProperty24Page.jsx'), /Listing reconciliation/)
 assert.match(read('scripts/property24-reconcile.mjs'), /--include-leads/)
 const packageJson = JSON.parse(read('package.json'))
 assert.equal(packageJson.scripts['property24:reconcile'], 'node scripts/property24-reconcile.mjs')

@@ -83,6 +83,7 @@ export function normalizeArch9AgentCandidate(agent = {}) {
   const role = normalizeLower(agent.role || agent.workspace_role || agent.workspaceRole || agent.organisation_role || agent.organisationRole)
   return compactObject({
     userId: normalizeProperty24Text(agent.user_id || agent.userId || agent.id),
+    membershipId: normalizeProperty24Text(agent.membership_id || agent.membershipId),
     profileId: normalizeProperty24Text(agent.profile_id || agent.profileId || agent.user_id || agent.userId || agent.id),
     organisationId: normalizeProperty24Text(agent.organisation_id || agent.organisationId),
     firstName: firstName || normalizeNamePart(fullName.split(' ')[0]),
@@ -90,6 +91,8 @@ export function normalizeArch9AgentCandidate(agent = {}) {
     fullName,
     email: normalizeEmail(agent.email),
     mobile: normalizePhone(agent.phone_number || agent.phoneNumber || agent.mobile),
+    avatarUrl: normalizeProperty24Text(agent.avatar_url || agent.avatarUrl),
+    jobTitle: normalizeProperty24Text(agent.job_title || agent.jobTitle || 'Agent'),
     role,
     status: normalizeLower(agent.status || 'active') || 'active',
     sourceReference: normalizeProperty24Text(agent.property24_source_reference || agent.property24SourceReference || agent.sourceReference),
@@ -136,7 +139,7 @@ export function createProperty24AgentMappingPlan({
 } = {}) {
   const localAgents = arch9Agents
     .map(normalizeArch9AgentCandidate)
-    .filter((agent) => agent.status !== 'inactive' && (isArch9AgentRole(agent.role) || agent.email || agent.sourceReference))
+    .filter((agent) => !['inactive', 'deactivated', 'revoked', 'removed', 'archived', 'disabled'].includes(agent.status) && (isArch9AgentRole(agent.role) || agent.email || agent.sourceReference))
   const externalAgents = property24Agents.map(normalizeProperty24Agent)
   const matchableExternalAgents = externalAgents.filter((agent) => agent.property24AgentId)
   const missingIdExternalAgents = externalAgents.filter((agent) => !agent.property24AgentId)
@@ -399,24 +402,24 @@ export async function fetchArch9AgentCandidates({ supabase, organisationId } = {
 
   let usersResult = await supabase
     .from('organisation_users')
-    .select('user_id, organisation_id, first_name, last_name, email, phone_number, role, workspace_role, organisation_role, status')
+    .select('id, user_id, organisation_id, first_name, last_name, email, phone_number, role, workspace_role, organisation_role, status')
     .eq('organisation_id', organisationId)
     .eq('status', 'active')
   if (isMissingColumnError(usersResult.error, 'phone_number')) {
     usersResult = await supabase
       .from('organisation_users')
-      .select('user_id, organisation_id, first_name, last_name, email, role, workspace_role, organisation_role, status')
+      .select('id, user_id, organisation_id, first_name, last_name, email, role, workspace_role, organisation_role, status')
       .eq('organisation_id', organisationId)
       .eq('status', 'active')
   }
 
   let profilesResult = await supabase
     .from('profiles')
-    .select('id, full_name, first_name, last_name, email, phone_number, role, status')
+    .select('id, full_name, first_name, last_name, email, phone_number, avatar_url, role, status')
   if (isMissingColumnError(profilesResult.error, 'phone_number')) {
     profilesResult = await supabase
       .from('profiles')
-      .select('id, full_name, first_name, last_name, email, role, status')
+      .select('id, full_name, first_name, last_name, email, avatar_url, role, status')
   }
   if (usersResult.error) throw usersResult.error
   if (profilesResult.error && profilesResult.error.code !== '42P01') throw profilesResult.error
@@ -429,9 +432,13 @@ export async function fetchArch9AgentCandidates({ supabase, organisationId } = {
         ...profile,
         ...user,
         id: user.user_id,
+        membership_id: user.id,
         full_name: profile.full_name,
-        phone_number: user.phone_number || profile.phone_number,
-        email: user.email || profile.email,
+        first_name: profile.first_name || user.first_name,
+        last_name: profile.last_name || user.last_name,
+        phone_number: profile.phone_number || user.phone_number,
+        avatar_url: profile.avatar_url,
+        email: profile.email || user.email,
       })
     })
     .filter((agent) => isArch9AgentRole(agent.role) || agent.email)

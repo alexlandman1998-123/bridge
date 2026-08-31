@@ -27,11 +27,12 @@ import {
   ListingWorkspacePortalReadinessGrid,
   ListingWorkspaceTabs,
 } from '../../components/listings/ListingWorkspaceShell'
+import ListingAgentReassignmentPanel from '../../components/listings/ListingAgentReassignmentPanel'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import {
   getRentalListingForAgent,
-  prepareRentalProperty24PublishRequest,
   previewRentalProperty24Listing,
+  publishRentalProperty24Listing,
   updateRentalListingDraft,
 } from '../../services/rentals/rentalListingDraftService'
 import {
@@ -195,7 +196,13 @@ function getProperty24PreviewDetails(preview = null) {
 function getProperty24PreviewIssues(preview = null) {
   const details = getProperty24PreviewDetails(preview)
   return [
-    ...details.dataBlockers.map((item) => ({ key: `data:${item}`, label: formatProperty24PreviewBlocker(item), detail: 'Fix this rental listing field before Property24 can accept it.' })),
+    ...details.dataBlockers.map((item) => ({
+      key: `data:${item}`,
+      label: item === 'missing_property24_agent_id' ? 'Assigned agent is not mapped to Property24' : formatProperty24PreviewBlocker(item),
+      detail: item === 'missing_property24_agent_id'
+        ? 'Map the assigned agent under Settings → Property24 Agents. Their phone and photo remain on the Arch9 agent profile.'
+        : 'Fix this rental listing field before Property24 can accept it.',
+    })),
     ...details.technicalBlockers.map((item) => ({
       key: `technical:${item}`,
       label: item === 'sandbox_property24_agent_id_required_before_submit' ? 'Property24 agent ID needed for real publishing' : formatProperty24PreviewBlocker(item),
@@ -266,8 +273,8 @@ function Property24ReadinessItem({ item }) {
 
 function Property24SyndicationPanel({
   detail,
-  onPreparePublish,
-  preparingPublish,
+  onPublish,
+  publishing,
   publishError,
   property24Preview,
   checkingProperty24,
@@ -279,9 +286,10 @@ function Property24SyndicationPanel({
   const previewStatus = getProperty24ReadinessStatus(property24Preview)
   const previewIssues = getProperty24PreviewIssues(property24Preview)
   const payload = previewDetails.redactedPayload || readiness?.payloadPreview || {}
+  const resolvedMapping = property24Preview?.mapping || {}
   const localBlockers = readiness?.blockers || []
   const blockers = property24Preview ? previewIssues : localBlockers
-  const canPrepareHandoff = Boolean(property24Preview && previewDetails.canSubmit && readiness.readyToPublish)
+  const canPublish = Boolean(property24Preview && previewDetails.canSubmit)
   const statusToneClasses = previewStatus.tone === 'success'
     ? 'border-[#cfe8dc] bg-[#f2fbf5] text-[#286b43]'
     : previewStatus.tone === 'warning'
@@ -317,12 +325,12 @@ function Property24SyndicationPanel({
             <button
               type="button"
               className="ui-pill-button"
-              onClick={onPreparePublish}
-              disabled={!canPrepareHandoff || preparingPublish}
-              title={canPrepareHandoff ? 'Prepare internal Property24 rental handoff' : 'Run a clean Property24 readiness check before preparing a handoff'}
+              onClick={onPublish}
+              disabled={!canPublish || publishing}
+              title={canPublish ? 'Publish this rental using its assigned Property24 agent mapping' : 'Run a clean Property24 readiness check before publishing'}
             >
-              {preparingPublish ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Send size={16} aria-hidden="true" />}
-              Prepare Handoff
+              {publishing ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Send size={16} aria-hidden="true" />}
+              Publish to Property24
             </button>
           </div>
         </div>
@@ -335,7 +343,7 @@ function Property24SyndicationPanel({
           <p className="mb-4 rounded-[8px] border border-[#f2c6c6] bg-[#fff7f7] px-4 py-3 text-sm font-semibold text-[#9f3131]">{publishError}</p>
         ) : null}
 
-        <div className="grid gap-3 md:grid-cols-3">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <FactCard
             label="Portal status"
             value={detail.property24StatusLabel}
@@ -351,8 +359,14 @@ function Property24SyndicationPanel({
           <FactCard
             label={property24Preview ? 'Backend blockers' : 'Local blockers'}
             value={String(property24Preview ? previewDetails.blockerCount : localBlockers.length)}
-            detail={property24Preview ? `${previewDetails.imagesLoaded} photos checked, ${previewDetails.imagesFailed} errors` : 'Run backend check before handoff'}
+            detail={property24Preview ? `${previewDetails.imagesLoaded} photos checked, ${previewDetails.imagesFailed} errors` : 'Run backend check before publishing'}
             icon={<ShieldCheck size={18} aria-hidden="true" />}
+          />
+          <FactCard
+            label="Assigned agent mapping"
+            value={resolvedMapping.property24AgentId ? `Property24 #${resolvedMapping.property24AgentId}` : property24Preview ? 'Not mapped' : 'Not checked'}
+            detail={resolvedMapping.arch9Email || 'Resolved from the assigned Arch9 agent'}
+            icon={<Users size={18} aria-hidden="true" />}
           />
         </div>
 
@@ -374,7 +388,7 @@ function Property24SyndicationPanel({
             </div>
           ) : (
             <p className="rounded-[8px] border border-[#cfe8dc] bg-[#f2fbf5] p-3 text-sm font-semibold text-[#286b43]">
-              {property24Preview ? 'The backend preview did not find any Property24 blockers.' : 'Local rental readiness looks complete. Run the backend check before handoff.'}
+              {property24Preview ? 'The backend preview did not find any Property24 blockers.' : 'Local rental readiness looks complete. Run the backend check before publishing.'}
             </p>
           )}
         </DetailPanel>
@@ -659,8 +673,8 @@ function RentalListingEditPanel({ form, onChange, onCancel, onSubmit, saving, ca
 function RentalTabContent({
   activeTab,
   detail,
-  onPreparePublish,
-  preparingPublish,
+  onPublish,
+  publishing,
   publishError,
   property24Preview,
   checkingProperty24,
@@ -762,15 +776,14 @@ function RentalTabContent({
     return (
       <Property24SyndicationPanel
         detail={detail}
-        onPreparePublish={onPreparePublish}
-        preparingPublish={preparingPublish}
+        onPublish={onPublish}
+        publishing={publishing}
         publishError={publishError}
         property24Preview={property24Preview}
         checkingProperty24={checkingProperty24}
-          property24PreviewError={property24PreviewError}
-          onCheckProperty24={onCheckProperty24}
-          onOpenSyndication={onOpenSyndication}
-        />
+        property24PreviewError={property24PreviewError}
+        onCheckProperty24={onCheckProperty24}
+      />
     )
   }
   if (activeTab === 'applications') {
@@ -822,7 +835,7 @@ export default function RentalListingDetailPage() {
   const [editForm, setEditForm] = useState(() => ({ ...RENTAL_LISTING_INITIAL_FORM }))
   const [editError, setEditError] = useState('')
   const [savingEdit, setSavingEdit] = useState(false)
-  const [preparingPublish, setPreparingPublish] = useState(false)
+  const [publishing, setPublishing] = useState(false)
   const [publishError, setPublishError] = useState('')
   const [property24Preview, setProperty24Preview] = useState(null)
   const [checkingProperty24, setCheckingProperty24] = useState(false)
@@ -968,28 +981,29 @@ export default function RentalListingDetailPage() {
     }
   }
 
-  async function handlePrepareProperty24Publish() {
+  async function handleProperty24Publish() {
     const previewDetails = getProperty24PreviewDetails(property24Preview)
-    if (!property24Preview || !previewDetails.canSubmit || !detail?.property24Readiness?.readyToPublish) {
-      setPublishError('Run a clean Property24 readiness check before preparing the internal handoff.')
+    if (!property24Preview || !previewDetails.canSubmit) {
+      setPublishError('Run a clean Property24 readiness check before publishing this rental.')
       return
     }
     try {
-      setPreparingPublish(true)
+      setPublishing(true)
       setPublishError('')
       setSuccessMessage('')
-      await prepareRentalProperty24PublishRequest(listingId, {
-        organisationId,
-        assignedAgentId,
-        performedBy: assignedAgentId,
-        requestedBy: assignedAgentId,
-      })
-      setSuccessMessage('Property24 rental publish request was prepared for backend handoff.')
+      const result = await publishRentalProperty24Listing(listingId)
+      const listingNumber = result?.report?.databaseWrite?.listingNumber ||
+        result?.report?.property24Response?.data?.listingNumber ||
+        result?.report?.property24Response?.data?.ListingNumber ||
+        ''
+      setSuccessMessage(listingNumber
+        ? `Rental published to Property24. Listing number ${listingNumber}.`
+        : 'Rental published to Property24.')
       await loadListing()
     } catch (publishRequestError) {
-      setPublishError(publishRequestError?.message || 'Unable to prepare the Property24 rental publish request.')
+      setPublishError(publishRequestError?.message || 'Unable to publish this rental to Property24.')
     } finally {
-      setPreparingPublish(false)
+      setPublishing(false)
     }
   }
 
@@ -1110,6 +1124,16 @@ export default function RentalListingDetailPage() {
           </p>
         ) : null}
 
+        <ListingAgentReassignmentPanel
+          listingId={row.id}
+          listing={listing}
+          listingType="rental"
+          onReassigned={async () => {
+            await loadListing()
+            setSuccessMessage('Rental listing agent reassigned successfully.')
+          }}
+        />
+
         {editOpen ? (
           <RentalListingEditPanel
             form={editForm}
@@ -1186,8 +1210,8 @@ export default function RentalListingDetailPage() {
         <RentalTabContent
           activeTab={activeTab}
           detail={detail}
-          onPreparePublish={handlePrepareProperty24Publish}
-          preparingPublish={preparingPublish}
+          onPublish={handleProperty24Publish}
+          publishing={publishing}
           publishError={publishError}
           property24Preview={property24Preview}
           checkingProperty24={checkingProperty24}

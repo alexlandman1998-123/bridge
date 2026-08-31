@@ -51,6 +51,7 @@ import {
   getPrivateListingStatusGroup,
 } from '../lib/privateListingLifecycle'
 import { createPrivateListing, createPrivateListingActivity, deletePrivateListing, getAgentPrivateListings, persistSellerProfileOnboardingFormData, syncPrivateListingDistributionData, syncPrivateListingRequirements, updatePrivateListing, uploadPrivateListingDocument, uploadPrivateListingMediaAsset } from '../services/privateListingService'
+import { reassignListingAgent } from '../services/listingAgentReassignmentService'
 import {
   createAgencyIntroducedDeveloperLead,
 } from '../services/developerLeadService'
@@ -4262,6 +4263,9 @@ function AgentListings({ initialTab = null } = {}) {
         mandate: mandatePack,
       },
     })
+    const previousAssignedAgentId = normalizeText(listing.assignedAgentId || listing.assigned_agent_id || listing.agentId)
+    const requestedAssignedAgentId = normalizeText(form.assignedAgentId)
+    const assignmentChanged = Boolean(requestedAssignedAgentId && requestedAssignedAgentId !== previousAssignedAgentId)
     const listingPatch = {
       developmentId: form.developmentId || null,
       unitId: form.unitId || null,
@@ -4336,7 +4340,9 @@ function AgentListings({ initialTab = null } = {}) {
     }
 
     if (isSupabaseConfigured && isUuidLike(listingId)) {
-      const savedListing = await updatePrivateListing(listingId, listingPatch, { includeRequirementsAndDocuments: false })
+      const databaseListingPatch = { ...listingPatch }
+      delete databaseListingPatch.assignedAgentId
+      const savedListing = await updatePrivateListing(listingId, databaseListingPatch, { includeRequirementsAndDocuments: false })
       if (savedListing?.id) {
         setPrivateListings((rows) => mergePrivateListingRows([savedListing], rows, deletedListingIds))
       }
@@ -4380,6 +4386,11 @@ function AgentListings({ initialTab = null } = {}) {
         console.warn('[Listings] listing editor distribution sync skipped', syncError)
         return null
       })
+      if (assignmentChanged) {
+        await reassignListingAgent(listingId, requestedAssignedAgentId, {
+          listingType: form.listingType === 'rental' ? 'rental' : 'sale',
+        })
+      }
       await createPrivateListingActivity({
         privateListingId: listingId,
         activityType: 'listing_editor_saved',

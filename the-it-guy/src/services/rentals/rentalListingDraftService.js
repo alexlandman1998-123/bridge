@@ -137,6 +137,9 @@ function formatProperty24Blocker(value = '') {
 
 export function formatRentalProperty24ApiError(payload = {}, fallback = 'Property24 rental readiness check failed.') {
   const missing = Array.isArray(payload?.missingConfiguration) ? payload.missingConfiguration : []
+  if (missing.includes('PROPERTY24_RENTAL_LIVE_PUBLISH_ENABLED=true')) {
+    return 'Live Property24 rental publishing is not enabled for this environment yet.'
+  }
   if (missing.length) return `Property24 setup is incomplete: ${missing.join(', ')}.`
 
   const preview = payload?.preview || payload?.report?.preview || {}
@@ -360,6 +363,34 @@ export async function previewRentalProperty24Listing(listingId, options = {}) {
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) {
     throw new Error(formatRentalProperty24ApiError(payload))
+  }
+  return payload
+}
+
+export async function publishRentalProperty24Listing(listingId, options = {}) {
+  const normalizedListingId = normalizeText(listingId)
+  if (!normalizedListingId) throw new Error('Rental listing id is required.')
+  if (!isSupabaseConfigured || !supabase) throw new Error('Sign in before publishing this rental to Property24.')
+
+  const sessionResult = await supabase.auth.getSession()
+  const accessToken = sessionResult.data?.session?.access_token
+  if (!accessToken) throw new Error('Sign in again before publishing this rental to Property24.')
+
+  const response = await fetch(`/api/property24/rentals/${encodeURIComponent(normalizedListingId)}/publish`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      maxImages: 20,
+      photosChanged: true,
+      ...options,
+    }),
+  })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    throw new Error(formatRentalProperty24ApiError(payload, 'Property24 rental publish failed.'))
   }
   return payload
 }

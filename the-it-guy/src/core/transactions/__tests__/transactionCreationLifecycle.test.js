@@ -12,6 +12,7 @@ const completedAt = '2026-08-31T07:00:05.000Z'
 
 let lifecycle = createTransactionCreationLifecycle({
   attorneyAssignmentRequired: true,
+  bondOriginatorAssignmentRequired: true,
   sellerHandoffRequired: true,
   portalSetupRequired: true,
   startedAt,
@@ -19,6 +20,7 @@ let lifecycle = createTransactionCreationLifecycle({
 
 assert.deepEqual(getTransactionCreationIncompleteSteps(lifecycle), [
   'attorney_assignment',
+  'bond_originator_assignment',
   'onboarding_snapshot',
   'requirement_generation',
   'seller_handoff',
@@ -31,6 +33,7 @@ assert.throws(
 
 for (const stepKey of [
   'attorney_assignment',
+  'bond_originator_assignment',
   'onboarding_snapshot',
   'requirement_generation',
   'seller_handoff',
@@ -83,6 +86,7 @@ assert.equal(incompletePatch.creation_completed_at, null)
 assert.equal(incompletePatch.creation_incomplete_at, completedAt)
 assert.deepEqual(incompletePatch.creation_error.incompleteSteps, ['requirement_generation', 'portal_setup'])
 assert.equal(incompletePatch.creation_steps.attorney_assignment.status, 'not_required')
+assert.equal(incompletePatch.creation_steps.bond_originator_assignment.status, 'not_required')
 assert.equal(incompletePatch.creation_steps.requirement_generation.status, 'failed')
 assert.equal(incompletePatch.creation_error.warnings[0].area, 'required_documents')
 

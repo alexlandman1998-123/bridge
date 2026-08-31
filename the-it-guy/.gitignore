@@ -26,3 +26,6 @@ playwright/.auth/
 *.sw?
 .vercel
 private-evidence/
+output/historical-transaction-classification-*.json
+output/historical-transaction-backfill-*.json
+output/historical-transaction-quarantine-*.json

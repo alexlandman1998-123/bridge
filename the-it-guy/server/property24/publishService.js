@@ -12,6 +12,7 @@ import {
   summarizeProperty24Payload,
 } from './client.js'
 import { recordProperty24ListingSync } from './syncService.js'
+import { assertProperty24ProductionWriteAllowed } from './liveCutoverService.js'
 
 function normalizeLower(value = '') {
   return normalizeProperty24PreviewText(value).toLowerCase()
@@ -232,7 +233,24 @@ export async function resolveProperty24ListingPublishConfiguration({
     fetchOrganisationUsersForProperty24({ supabase, organisationId }),
   ])
 
-  const agencyId = config.explicitAgencyId || accountSettings.agencyId || config.agencyId
+  const property24LiveCutover = config.productionWriteRequired
+    ? await assertProperty24ProductionWriteAllowed({
+        supabase,
+        organisationId,
+        agencyId: accountSettings.agencyId || config.explicitAgencyId || config.agencyId,
+        listingId: normalizedListingId,
+        environment: config.environment || accountSettings.environment,
+        rollbackOnly: config.productionRollbackOnly === true,
+      })
+    : null
+
+  if (accountSettings.agencyId && config.explicitAgencyId && config.explicitAgencyId !== accountSettings.agencyId) {
+    const error = new Error('The requested Property24 agency does not match the listing organisation’s saved connection.')
+    error.code = 'property24_agency_connection_mismatch'
+    error.status = 403
+    throw error
+  }
+  const agencyId = accountSettings.agencyId || config.explicitAgencyId || config.agencyId
   const tableMappings = await fetchProperty24AgentMappingRows({
     supabase,
     organisationId,
@@ -244,9 +262,22 @@ export async function resolveProperty24ListingPublishConfiguration({
   const tableMapping = findResolvedAgentMapping({ mappings: tableMappings, identity })
   const mapping = tableMapping || settingsMapping || null
 
-  const agentId = config.explicitAgentId || mapping?.property24AgentId || config.agentId
-  const agentSourceReference = config.explicitAgentSourceReference ||
-    mapping?.sourceReference ||
+  if (mapping?.property24AgentId && config.explicitAgentId && config.explicitAgentId !== mapping.property24AgentId) {
+    const error = new Error('The requested Property24 agent does not match the listing’s assigned Arch9 agent mapping. Reassign the listing instead.')
+    error.code = 'property24_agent_mapping_override_not_allowed'
+    error.status = 403
+    throw error
+  }
+  if (mapping?.sourceReference && config.explicitAgentSourceReference && config.explicitAgentSourceReference !== mapping.sourceReference) {
+    const error = new Error('The requested Property24 agent source reference does not match the listing’s assigned Arch9 agent mapping.')
+    error.code = 'property24_agent_mapping_override_not_allowed'
+    error.status = 403
+    throw error
+  }
+
+  const agentId = mapping?.property24AgentId || config.explicitAgentId || config.agentId
+  const agentSourceReference = mapping?.sourceReference ||
+    config.explicitAgentSourceReference ||
     config.agentSourceReference
 
   return {
@@ -255,7 +286,14 @@ export async function resolveProperty24ListingPublishConfiguration({
     agencyId,
     agentId,
     agentSourceReference,
-    syndicationEnabled: Boolean(accountSettings.configured ? accountSettings.enabled : config.syndicationEnabled),
+    syndicationEnabled: Boolean(
+      config.syndicationEnabled && (
+        accountSettings.configured
+          ? accountSettings.enabled || property24LiveCutover?.rollbackOnly === true
+          : true
+      ),
+    ),
+    property24LiveCutover,
     property24ResolvedMapping: {
       source: tableMapping ? 'property24_agent_mappings' : settingsMapping ? 'organisation_settings.property24.agentMappings' : 'none',
       listingAssignedAgentId: identity.assignedId || null,
