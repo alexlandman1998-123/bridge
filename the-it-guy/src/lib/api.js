@@ -22526,17 +22526,23 @@ async function findOrCreateBuyer(client, { name, phone, email, organisationId = 
   return data
 }
 
-export async function createClientRecord({ name, phone, email }) {
+export async function createClientRecord({ name, phone, email, organisationId = null }) {
   const client = requireClient()
 
   if (!String(name || '').trim()) {
     throw new Error('Client name is required.')
   }
 
+  const normalizedOrganisationId = normalizeNullableUuid(organisationId)
+  if (!normalizedOrganisationId) {
+    throw new Error('Select an active organisation workspace before adding a client.')
+  }
+
   return findOrCreateBuyer(client, {
     name: String(name || '').trim(),
     phone: String(phone || '').trim(),
     email: String(email || '').trim(),
+    organisationId: normalizedOrganisationId,
   })
 }
 

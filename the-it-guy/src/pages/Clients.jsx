@@ -32,6 +32,7 @@ import {
 } from '../core/clients/agentClientDirectory'
 import { deriveAttorneyClients } from '../core/clients/attorneyClientSelectors'
 import { buildAttorneyManualPartyRecord, readAttorneyManualParties, writeAttorneyManualParties } from '../core/clients/attorneyManualParties'
+import { useOrganisation } from '../context/OrganisationContext'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { createClientRecord, fetchDashboardOverview, fetchTransactionsByParticipant, fetchTransactionsByParticipantSummary, saveAttorneyMatterParty } from '../lib/api'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
@@ -662,7 +663,15 @@ function getEmptyAddClientForm(copy = DEFAULT_CLIENT_DIRECTORY_COPY) {
   }
 }
 
-function AddClientModal({ open, onClose, onSaved, copy = DEFAULT_CLIENT_DIRECTORY_COPY, mode = 'client', matterOptions = [] }) {
+function AddClientModal({
+  open,
+  onClose,
+  onSaved,
+  copy = DEFAULT_CLIENT_DIRECTORY_COPY,
+  mode = 'client',
+  matterOptions = [],
+  organisationId = null,
+}) {
   const [form, setForm] = useState(() => getEmptyAddClientForm(copy))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -688,7 +697,7 @@ function AddClientModal({ open, onClose, onSaved, copy = DEFAULT_CLIENT_DIRECTOR
         onClose()
         return
       }
-      const created = await createClientRecord(form)
+      const created = await createClientRecord({ ...form, organisationId })
       onSaved?.(created)
       onClose()
     } catch (saveError) {
@@ -816,7 +825,8 @@ function Clients() {
   const navigate = useNavigate()
   const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
-  const { profile, role, workspace } = useWorkspace()
+  const { profile, role, workspace, currentMembership } = useWorkspace()
+  const { organisation } = useOrganisation()
   const [rows, setRows] = useState([])
   const [agentFilters, setAgentFilters] = useState({ sources: [], assignedAgents: [] })
   const [loading, setLoading] = useState(true)
@@ -841,6 +851,15 @@ function Clients() {
   const directoryRoleOptions = isAttorneyClientDirectory ? ATTORNEY_CLIENT_ROLE_OPTIONS : CLIENT_ROLE_OPTIONS
   const directoryStatusFilters = isAttorneyClientDirectory ? ATTORNEY_STATUS_FILTERS : AGENT_STATUS_FILTERS
   const selectedDevelopmentId = searchParams.get('developmentId') || 'all'
+  const activeOrganisationId = String(
+    organisation?.id ||
+      workspace?.organisationId ||
+      workspace?.organisation_id ||
+      currentMembership?.organisationId ||
+      currentMembership?.organisation_id ||
+      (workspace.id === 'all' ? '' : workspace.id) ||
+      '',
+  ).trim()
 
   useEffect(() => {
     const nextFilter = normalizeClientFilterParam(
@@ -1603,6 +1622,7 @@ function Clients() {
         copy={directoryCopy}
         mode={isAttorneyClientDirectory ? 'attorney' : 'client'}
         matterOptions={matterOptions}
+        organisationId={activeOrganisationId || null}
         onSaved={handleAddClientSaved}
       />
     </section>
