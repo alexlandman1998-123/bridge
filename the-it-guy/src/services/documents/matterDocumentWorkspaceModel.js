@@ -1,4 +1,7 @@
 import { getDocumentReadiness } from '../documentReadinessService.js'
+import { resolveCrossModuleDocumentReference } from './crossModuleDocumentKeyMapService.js'
+
+const RETIRED_MATTER_DOCUMENT_REQUIREMENT_KEYS = new Set(['information_sheet'])
 
 export const MATTER_DOCUMENT_CATEGORIES = [
   'Instruction / OTP Documents',
@@ -905,55 +908,92 @@ export function buildRequiredDocumentRows({
 } = {}) {
   const lookup = requirementDocumentLookup || { byCanonicalId: new Map(), byDocumentId: new Map() }
   const transactionRecord = transaction || {}
-  return toArray(requiredDocumentChecklist).map((requirement) => {
-    const canonicalId = getRequirementCanonicalId(requirement)
-    const uploadedDocumentId = getRequirementDocumentId(requirement)
-    const linkedDocument =
-      (canonicalId ? lookup.byCanonicalId.get(String(canonicalId)) : null) ||
-      (uploadedDocumentId ? lookup.byDocumentId.get(String(uploadedDocumentId)) : null) ||
-      requirement?.matchedDocument ||
-      null
-    const status = normalizeDocumentCommandStatus(requirement?.status || linkedDocument?.review_status || linkedDocument?.status, {
-      hasDocument: Boolean(linkedDocument || uploadedDocumentId),
+  const rows = toArray(requiredDocumentChecklist)
+    .filter((requirement) => {
+      const rawKey = firstPresent(requirement?.key, requirement?.documentKey, requirement?.document_key, requirement?.requirementKey, '')
+      return !RETIRED_MATTER_DOCUMENT_REQUIREMENT_KEYS.has(String(rawKey).trim().toLowerCase())
     })
-    const category = resolveRequirementLibraryCategory(requirement)
-    const categoryGroup = resolveMatterDocumentCategoryGroup({ category, requirement, document: linkedDocument || {} })
-    const priority = getDocumentPriorityLabel(requirement)
-    const documentType = firstPresent(requirement?.documentType, requirement?.document_type, requirement?.type, requirement?.key, '')
-    const requiredParty = getRequirementPartyLabel(requirement)
+    .map((requirement) => {
+      const canonicalId = getRequirementCanonicalId(requirement)
+      const uploadedDocumentId = getRequirementDocumentId(requirement)
+      const linkedDocument =
+        (canonicalId ? lookup.byCanonicalId.get(String(canonicalId)) : null) ||
+        (uploadedDocumentId ? lookup.byDocumentId.get(String(uploadedDocumentId)) : null) ||
+        requirement?.matchedDocument ||
+        null
+      const status = normalizeDocumentCommandStatus(requirement?.status || linkedDocument?.review_status || linkedDocument?.status, {
+        hasDocument: Boolean(linkedDocument || uploadedDocumentId),
+      })
+      const category = resolveRequirementLibraryCategory(requirement)
+      const categoryGroup = resolveMatterDocumentCategoryGroup({ category, requirement, document: linkedDocument || {} })
+      const priority = getDocumentPriorityLabel(requirement)
+      const documentType = firstPresent(requirement?.documentType, requirement?.document_type, requirement?.type, requirement?.key, '')
+      const requiredParty = getRequirementPartyLabel(requirement)
 
-    return {
-      id: String(canonicalId || requirement?.id || requirement?.key || requirement?.documentKey || requirement?.document_key),
-      transactionId: transactionRecord?.id || requirement?.transactionId || requirement?.transaction_id || '',
-      displayName: requirement?.label || requirement?.documentLabel || requirement?.document_label || requirement?.key || 'Document requirement',
-      category,
-      canonicalCategory: normalizeMatterDocumentCategory(category),
-      categoryLabel: getDocumentCommandCategoryLabel(category),
-      categoryGroup: categoryGroup.key,
-      categoryGroupLabel: categoryGroup.label,
-      status,
-      statusLabel: getDocumentCommandStatusLabel(status),
-      priority,
-      blocksStage: Boolean(requirement?.isBlocking || requirement?.blocksStage || requirement?.blocks_stage),
-      requiredParty,
-      ownerLabel: requiredParty,
-      documentType,
-      documentTypeLabel: resolveMatterDocumentTypeLabel(requirement, requirement?.label || requirement?.documentLabel || requirement?.key),
-      versionLabel: resolveMatterDocumentVersionLabel(linkedDocument || {}),
-      fileSizeLabel: resolveMatterDocumentFileSizeLabel(linkedDocument || {}),
-      linkedToLabel: resolveMatterDocumentLinkedToLabel({ document: linkedDocument || {}, requirement }),
-      isFavourite: resolveMatterDocumentFavourite(linkedDocument || requirement),
-      relatedWorkflow: requirement?.owningWorkflow || requirement?.workflow || requirement?.visibleSection || '',
-      requiredDocumentId: requirement?.id || null,
-      requiredDocumentKey: requirement?.key || requirement?.documentKey || requirement?.document_key || '',
-      canonicalRequirementInstanceId: canonicalId || '',
-      fileUrl: linkedDocument?.url || '',
-      requirement,
-      linkedDocument,
-      source: 'transaction_required_documents',
-      satisfiesRequirement: Boolean(linkedDocument || uploadedDocumentId),
+      return {
+        id: String(canonicalId || requirement?.id || requirement?.key || requirement?.documentKey || requirement?.document_key),
+        transactionId: transactionRecord?.id || requirement?.transactionId || requirement?.transaction_id || '',
+        displayName: requirement?.label || requirement?.documentLabel || requirement?.document_label || requirement?.key || 'Document requirement',
+        category,
+        canonicalCategory: normalizeMatterDocumentCategory(category),
+        categoryLabel: getDocumentCommandCategoryLabel(category),
+        categoryGroup: categoryGroup.key,
+        categoryGroupLabel: categoryGroup.label,
+        status,
+        statusLabel: getDocumentCommandStatusLabel(status),
+        priority,
+        blocksStage: Boolean(requirement?.isBlocking || requirement?.blocksStage || requirement?.blocks_stage),
+        requiredParty,
+        ownerLabel: requiredParty,
+        documentType,
+        documentTypeLabel: resolveMatterDocumentTypeLabel(requirement, requirement?.label || requirement?.documentLabel || requirement?.key),
+        versionLabel: resolveMatterDocumentVersionLabel(linkedDocument || {}),
+        fileSizeLabel: resolveMatterDocumentFileSizeLabel(linkedDocument || {}),
+        linkedToLabel: resolveMatterDocumentLinkedToLabel({ document: linkedDocument || {}, requirement }),
+        isFavourite: resolveMatterDocumentFavourite(linkedDocument || requirement),
+        relatedWorkflow: requirement?.owningWorkflow || requirement?.workflow || requirement?.visibleSection || '',
+        requiredDocumentId: requirement?.id || null,
+        requiredDocumentKey: requirement?.key || requirement?.documentKey || requirement?.document_key || '',
+        canonicalRequirementInstanceId: canonicalId || '',
+        fileUrl: linkedDocument?.url || '',
+        requirement,
+        linkedDocument,
+        source: 'transaction_required_documents',
+        satisfiesRequirement: Boolean(linkedDocument || uploadedDocumentId),
+      }
+    })
+
+  const statusRank = {
+    verified: 7,
+    approved: 7,
+    pending_review: 6,
+    uploaded: 5,
+    generated: 5,
+    requested: 2,
+    missing: 1,
+  }
+  const bestRowsBySemanticRequirement = new Map()
+  for (const row of rows) {
+    const reference = resolveCrossModuleDocumentReference(row.requiredDocumentKey || row.documentType, {
+      expectedFromRole: row.requirement?.expectedFromRole,
+      requiredFromRole: row.requirement?.requiredFromRole,
+      requestedFromRole: row.requirement?.requestedFromRole || row.requirement?.requested_from,
+      ownerRole: row.requiredParty,
+    })
+    const semanticKey = `${reference.canonicalDocumentKey || row.requiredDocumentKey || row.id}:${String(row.requiredParty || '').toLowerCase()}`
+    const existing = bestRowsBySemanticRequirement.get(semanticKey)
+    if (!existing) {
+      bestRowsBySemanticRequirement.set(semanticKey, row)
+      continue
     }
-  })
+    const score = (candidate) =>
+      (candidate.satisfiesRequirement ? 100 : 0) +
+      (candidate.fileUrl ? 50 : 0) +
+      (statusRank[candidate.status] || 0) +
+      (candidate.requiredDocumentKey === reference.canonicalDocumentKey ? 3 : 0)
+    if (score(row) > score(existing)) bestRowsBySemanticRequirement.set(semanticKey, row)
+  }
+  return [...bestRowsBySemanticRequirement.values()]
 }
 
 export function buildAllDocumentLibraryRows({

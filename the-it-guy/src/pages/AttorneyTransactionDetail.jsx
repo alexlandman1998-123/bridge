@@ -122,6 +122,7 @@ import {
   cancelTransactionLifecycle,
   convertTransactionPreApprovalToBondApplication,
   createTransactionDocumentRequests,
+  createTransactionDocumentSignedUrl,
   createTransactionWorkspaceHydrationContext,
   declineBondQuote,
   fetchTransactionActivityWorkspace,
@@ -9278,6 +9279,35 @@ function ArchlineDocumentsWorkspace({
 }) {
   const [activePartyView, setActivePartyView] = useState('all')
   const [activeCategory, setActiveCategory] = useState(null)
+  const [documentAccessBusy, setDocumentAccessBusy] = useState('')
+  const [documentAccessError, setDocumentAccessError] = useState('')
+
+  async function openWorkspaceDocument(row = {}, { download = false } = {}) {
+    const document = row.raw || row.linkedDocument || {}
+    const filePath = document.file_path || document.filePath || document.storage_path || document.storagePath || ''
+    const accessKey = `${row.id}:${download ? 'download' : 'preview'}`
+    const targetWindow = window.open('about:blank', '_blank')
+    setDocumentAccessBusy(accessKey)
+    setDocumentAccessError('')
+    try {
+      const url = filePath
+        ? await createTransactionDocumentSignedUrl({
+            filePath,
+            fileBucket: document.file_bucket || document.fileBucket || document.bucket_key || '',
+            download,
+            filename: row.displayName || document.name || document.file_name || 'document',
+          })
+        : row.fileUrl
+      if (!url) throw new Error('This document is not available yet.')
+      if (targetWindow) targetWindow.location.href = url
+      else window.open(url, '_blank', 'noopener,noreferrer')
+    } catch (error) {
+      targetWindow?.close()
+      setDocumentAccessError(error?.message || 'Unable to open this document right now.')
+    } finally {
+      setDocumentAccessBusy('')
+    }
+  }
 
   const dashboardModel = useMemo(
     () =>
@@ -9473,6 +9503,9 @@ function ArchlineDocumentsWorkspace({
           </div>
         )}
       >
+        {documentAccessError ? (
+          <p className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700" role="alert">{documentAccessError}</p>
+        ) : null}
         <div className="grid gap-4 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
           <section className="rounded-lg border border-slate-200 bg-white">
             <div className="border-b border-slate-200 px-4 py-3">
@@ -9519,6 +9552,9 @@ function ArchlineDocumentsWorkspace({
               {activeCategoryFiles.map((row) => {
                 const document = row.raw || row.linkedDocument || {}
                 const documentMeta = [row.versionLabel, row.fileSizeLabel].filter(Boolean).join(' - ')
+                const hasStoredFile = Boolean(
+                  row.fileUrl || document.file_path || document.filePath || document.storage_path || document.storagePath,
+                )
                 return (
                   <article key={row.id} className="px-4 py-3">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
@@ -9537,14 +9573,22 @@ function ArchlineDocumentsWorkspace({
                       </span>
                     </div>
                     <div className="mt-3 flex flex-wrap justify-start gap-2 sm:justify-end">
-                      {row.fileUrl ? <a href={row.fileUrl} target="_blank" rel="noreferrer" className="inline-flex h-8 items-center rounded-lg border border-slate-200 px-3 text-xs font-semibold text-emerald-800">Preview</a> : null}
-                      {row.fileUrl ? <a href={row.fileUrl} download className="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700"><Download size={13} /> Download</a> : null}
-                      {row.status === 'pending_review' && row.fileUrl && onReview ? (
+                      {hasStoredFile ? (
+                        <button type="button" disabled={Boolean(documentAccessBusy)} onClick={() => openWorkspaceDocument(row)} className="inline-flex h-8 items-center rounded-lg border border-slate-200 px-3 text-xs font-semibold text-emerald-800 disabled:opacity-50">
+                          {documentAccessBusy === `${row.id}:preview` ? 'Opening...' : 'Preview'}
+                        </button>
+                      ) : null}
+                      {hasStoredFile ? (
+                        <button type="button" disabled={Boolean(documentAccessBusy)} onClick={() => openWorkspaceDocument(row, { download: true })} className="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700 disabled:opacity-50">
+                          <Download size={13} /> {documentAccessBusy === `${row.id}:download` ? 'Preparing...' : 'Download'}
+                        </button>
+                      ) : null}
+                      {row.status === 'pending_review' && hasStoredFile && onReview ? (
                         <Button type="button" variant="secondary" size="sm" onClick={() => onReview('approve', document, row.requiredDocument)}>
                           Verify
                         </Button>
                       ) : null}
-                      {row.fileUrl ? (
+                      {hasStoredFile ? (
                         <Button type="button" variant="ghost" size="sm" onClick={() => onReplace?.(document, row.requiredDocument)}>
                           Replace
                         </Button>

@@ -114,6 +114,30 @@ const baseModel = buildMatterDocumentWorkspaceModel({
   getLinkedRequirementForDocument,
 })
 
+const compatibilityDriftModel = buildMatterDocumentWorkspaceModel({
+  transaction,
+  requiredDocumentChecklist: [
+    { id: 'legacy-info', key: 'information_sheet', label: 'Information Sheet', expectedFromRole: 'buyer', status: 'pending' },
+    { id: 'legacy-id', key: 'id_document', label: 'ID Document', expectedFromRole: 'buyer', status: 'pending' },
+    { id: 'canonical-id', key: 'buyer_id_document', label: 'Buyer ID Document', expectedFromRole: 'buyer', status: 'uploaded', uploadedDocumentId: 'buyer-id-doc' },
+    { id: 'legacy-address', key: 'proof_of_address', label: 'Proof of Address', expectedFromRole: 'buyer', status: 'pending' },
+    { id: 'canonical-address', key: 'buyer_proof_of_address', label: 'Buyer Proof of Address', expectedFromRole: 'buyer', status: 'pending' },
+    { id: 'legacy-otp', key: 'otp', label: 'Offer to Purchase (OTP)', expectedFromRole: 'buyer', status: 'pending' },
+    { id: 'canonical-otp', key: 'signed_otp', label: 'Signed OTP', expectedFromRole: 'buyer', status: 'pending' },
+  ],
+})
+
+assert.deepEqual(
+  compatibilityDriftModel.requiredRows.map((row) => row.requiredDocumentKey).sort(),
+  ['buyer_id_document', 'buyer_proof_of_address', 'signed_otp'],
+  'retired requirements and compatibility aliases should not create duplicate user-facing rows',
+)
+assert.equal(
+  compatibilityDriftModel.requiredRows.find((row) => row.requiredDocumentKey === 'buyer_id_document')?.satisfiesRequirement,
+  true,
+  'the satisfied canonical requirement should win over a missing legacy alias',
+)
+
 assert.equal(normalizeDocumentCommandStatus('pending', { hasDocument: false }), 'missing')
 assert.equal(normalizeDocumentCommandStatus('pending', { hasDocument: true }), 'uploaded')
 assert.equal(normalizeDocumentCommandStatus('under_review', { hasDocument: true }), 'pending_review')

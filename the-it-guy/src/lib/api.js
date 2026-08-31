@@ -17902,6 +17902,39 @@ async function getSignedUrl(filePath, { client: suppliedClient = null, fileBucke
   return null
 }
 
+export async function createTransactionDocumentSignedUrl({
+  filePath,
+  fileBucket = '',
+  download = false,
+  filename = 'document',
+  expiresInSeconds = 60 * 30,
+} = {}) {
+  const normalizedPath = String(filePath || '').trim()
+  if (!normalizedPath) throw new Error('This document does not have a storage path.')
+
+  const client = requireClient()
+  const candidateBuckets = Array.from(
+    new Set([String(fileBucket || '').trim(), ...DOCUMENTS_BUCKET_CANDIDATES].filter(Boolean)),
+  )
+  let lastError = null
+  for (const bucketName of candidateBuckets) {
+    const { data, error } = await client.storage
+      .from(bucketName)
+      .createSignedUrl(
+        normalizedPath,
+        expiresInSeconds,
+        download ? { download: String(filename || 'document').trim() || 'document' } : undefined,
+      )
+    if (!error && data?.signedUrl) return data.signedUrl
+    lastError = error || lastError
+    if (error && isStorageBucketNotFoundError(error)) continue
+  }
+
+  const accessError = new Error(lastError?.message || 'Unable to open this document right now.')
+  accessError.code = lastError?.code || 'document_access_url_unavailable'
+  throw accessError
+}
+
 function isCanonicalFinalSignedDocumentRow(document = {}) {
   return String(document?.stage_key || document?.stageKey || '')
     .trim()
