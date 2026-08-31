@@ -1,5 +1,5 @@
 import { createElement, useCallback, useEffect, useMemo, useState } from 'react'
-import { ArrowRight, CheckCircle2, CircleDollarSign, ClipboardList, FileText, Home, KeyRound, Megaphone, RefreshCw, ShieldCheck, ToolCase, UsersRound, Wrench } from 'lucide-react'
+import { ArrowRight, CheckCircle2, CircleDollarSign, ClipboardList, FileText, Home, KeyRound, Megaphone, ShieldCheck, ToolCase, UsersRound, Wrench } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { DashboardKpiCard, MobileDashboardShell } from '../../components/dashboard/PremiumDashboard'
@@ -92,8 +92,7 @@ export default function RentalOperationsDashboardPage() {
     { key: 'leads', icon: UsersRound, label: 'New Leads', value: formatCount(metrics.new_leads), tone: 'slate', trend: leadDelta, trendLabel: `vs previous ${rangeDays(dateRange)} days` },
   ]
 
-  return <main className="mx-auto w-full max-w-[1600px] px-3 py-4 sm:px-5 lg:px-7"><MobileDashboardShell>
-    <header className="flex justify-end"><button type="button" onClick={() => void load()} disabled={loading} className="inline-flex items-center gap-2 rounded-xl border border-[#dbe6f2] bg-white px-3 py-2 text-sm font-semibold text-[#344054] shadow-sm disabled:opacity-60"><RefreshCw size={16} className={loading ? 'animate-spin' : ''} />Refresh</button></header>
+  return <main className="mx-auto w-full max-w-[1600px] px-3 py-2 sm:px-5 lg:px-7"><MobileDashboardShell>
     {error ? <section className="rounded-2xl border border-[#f7c9c9] bg-[#fff5f5] p-4 text-sm text-[#b42318]">{error}</section> : null}
     {!rentalScope.organisationId ? <section className="rounded-2xl border border-[#f4d7a9] bg-[#fffaf0] p-4 text-sm text-[#7a4b05]">Choose an agency workspace to load the Rentals dashboard.</section> : null}
     <section className="-mx-2 flex snap-x gap-3 overflow-x-auto px-2 pb-1 sm:mx-0 sm:grid sm:grid-cols-2 sm:overflow-visible sm:px-0 xl:grid-cols-5">{kpis.map((item) => <Link key={item.key} to={item.key === 'applications' ? '/agent/rentals/applications' : item.key === 'mandates' ? '/agent/rentals/portfolio/properties' : item.key === 'occupancy' ? '/agent/rentals/tenancies' : item.key === 'rent' ? '/agent/rentals/tenancies' : '/agent/rentals/pipeline/leads'} className="contents"><DashboardKpiCard {...item} /></Link>)}</section>

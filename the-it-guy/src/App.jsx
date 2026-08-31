@@ -41,6 +41,7 @@ import {
   ShortTermTurnoversPage,
   ShortTermRatesPage,
   RentalViewingsPage,
+  RentalLeadsPage,
   RentalListingCreatePage,
   RentalListingDetailPage,
   RentalListingsPage,
@@ -68,6 +69,7 @@ import {
   RentalPropertiesPage,
   RentalPropertyDetailPage,
   RentalTenanciesPage,
+  RentalTenancyDetailPage,
   RentalVacanciesPage,
   RentalVacancyCreatePage,
   RentalVacancyDetailPage,
@@ -2900,16 +2902,14 @@ function AppRoutes() {
                   </RoleRoute>
                 }
               />
+              <Route path="/agent/rentals/tenancies/:tenancyId" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.tenancies}><RentalTenancyDetailPage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
               <Route
                 path="/agent/rentals/pipeline/leads"
                 element={
                   <RoleRoute allowedRoles={['agent']}>
                     <RentalWorkspaceGuard>
                       <RentalModuleGate moduleId={RENTAL_MODULES.leads}>
-                        <RentalWorkspacePlaceholder
-                          title="Rental Leads"
-                          description="Landlord and tenant lead intake will be separated from seller and buyer sales leads here."
-                        />
+                        <RentalLeadsPage />
                       </RentalModuleGate>
                     </RentalWorkspaceGuard>
                   </RoleRoute>

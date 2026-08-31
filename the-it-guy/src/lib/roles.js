@@ -82,11 +82,10 @@ function createAgentRentalsPipelineNav() {
     key: 'rental_pipeline',
     label: 'Pipeline',
     to: '/agent/rentals/pipeline/leads',
-    activeMatch: ['/agent/rentals/pipeline', '/agent/rentals/pipeline/leads', '/agent/rentals/pipeline/viewings', '/agent/rentals/pipeline/applications', '/agent/rentals/pipeline/calendar'],
+    activeMatch: ['/agent/rentals/pipeline', '/agent/rentals/pipeline/leads', '/agent/rentals/pipeline/viewings', '/agent/rentals/pipeline/calendar'],
     children: [
       { key: 'rental_pipeline_leads', label: 'Leads', to: '/agent/rentals/pipeline/leads' },
       { key: 'rental_pipeline_viewings', label: 'Viewings', to: '/agent/rentals/pipeline/viewings' },
-      { key: 'rental_pipeline_applications', label: 'Applications', to: '/agent/rentals/pipeline/applications' },
       { key: 'rental_pipeline_calendar', label: 'Calendar', to: '/agent/rentals/pipeline/calendar' },
     ],
   }
@@ -95,6 +94,7 @@ function createAgentRentalsPipelineNav() {
 const RENTAL_NAV = Object.freeze({
   [RENTAL_OPERATING_MODES.longTerm]: ({ canManageOrganisation = false, isBranchManager = false } = {}) => [
     { key: 'rental_dashboard', label: 'Dashboard', to: '/agent/rentals/long-term/dashboard', activeMatch: ['/agent/rentals/dashboard', '/agent/rentals/long-term/dashboard'] },
+    { key: 'rental_applications', label: 'Applications', to: '/agent/rentals/applications', activeMatch: ['/agent/rentals/applications', '/agent/rentals/pipeline/applications'] },
     { key: 'rental_tenancies', label: 'Tenancies', to: '/agent/rentals/tenancies', activeMatch: ['/agent/rentals/tenancies'] },
     createAgentRentalsPipelineNav(),
     { key: 'rental_listings', label: 'Listings', to: '/agent/rentals/listings', activeMatch: ['/agent/rentals/listings'] },
