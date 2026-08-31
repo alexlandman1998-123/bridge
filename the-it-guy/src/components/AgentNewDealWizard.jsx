@@ -1016,12 +1016,16 @@ function AgentNewDealWizard({
     setPartnerSearch({ transferAttorney: '', bondOriginator: '', cancellationAttorney: '' })
     setPropertyOptionsError('')
     setIsLoadingPropertyOptions(true)
+    const requestedPropertyMode =
+      initialPropertyMode === PROPERTY_MODE_DEVELOPMENT || initialUnitId || initialDevelopmentId
+        ? PROPERTY_MODE_DEVELOPMENT
+        : PROPERTY_MODE_PRIVATE
     setForm((previous) => ({
       ...previous,
-      propertyMode: PROPERTY_MODE_PRIVATE,
-      privateListingId: initialPrivateListingId || '',
-      developmentId: '',
-      unitId: '',
+      propertyMode: requestedPropertyMode,
+      privateListingId: requestedPropertyMode === PROPERTY_MODE_PRIVATE ? initialPrivateListingId || '' : '',
+      developmentId: requestedPropertyMode === PROPERTY_MODE_DEVELOPMENT ? initialDevelopmentId || '' : '',
+      unitId: requestedPropertyMode === PROPERTY_MODE_DEVELOPMENT ? initialUnitId || '' : '',
     }))
     const localListings = mergeListings(readAgentPrivateListings())
     setPrivateListings(localListings)

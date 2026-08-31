@@ -19435,6 +19435,10 @@ export async function fetchDevelopmentDetail(developmentId) {
 
   const units = await fetchUnitsBase(client, developmentId)
   const rows = await hydrateUnitRows(client, units)
+  const allTransactionRows = await fetchTransactionsListSummary({
+    developmentId,
+    activeTransactionsOnly: false,
+  })
   const requirements = await fetchDocumentRequirements(client, developmentId)
   const settings = await ensureDevelopmentSettings(client, developmentId, {
     createIfMissing: false,
@@ -19479,7 +19483,7 @@ export async function fetchDevelopmentDetail(developmentId) {
     alterations = alterationsQuery.data || []
   }
 
-  const transactionIds = rows.map((row) => row.transaction?.id).filter(Boolean)
+  const transactionIds = [...new Set(allTransactionRows.map((row) => row.transaction?.id).filter(Boolean))]
   let docsByTransactionId = {}
   let transactionRequirementsByTransactionId = {}
 
@@ -19530,6 +19534,20 @@ export async function fetchDevelopmentDetail(developmentId) {
     }
   })
 
+  const transactionRowsWithDocumentSummary = allTransactionRows.map((row) => {
+    const transactionId = row.transaction?.id
+    const transactionDocuments = transactionId ? docsByTransactionId[transactionId] || [] : []
+    const transactionRequirements = transactionId ? transactionRequirementsByTransactionId[transactionId] || [] : []
+    const completion = transactionRequirements.length
+      ? buildRequiredChecklistFromRows(transactionRequirements, transactionDocuments)
+      : buildDocumentChecklist(requirements, transactionDocuments)
+
+    return {
+      ...row,
+      documentSummary: completion.summary,
+    }
+  })
+
   return {
     development,
     profile,
@@ -19538,6 +19556,9 @@ export async function fetchDevelopmentDetail(developmentId) {
     attorneyConfig,
     bondConfig,
     rows: rowsWithDocumentSummary.sort(byUnitNumber),
+    transactionRows: transactionRowsWithDocumentSummary.sort(
+      (left, right) => new Date(latestTimestamp(right) || 0) - new Date(latestTimestamp(left) || 0),
+    ),
     stats: getSummaryStats(rowsWithDocumentSummary),
     settings,
     alterations,

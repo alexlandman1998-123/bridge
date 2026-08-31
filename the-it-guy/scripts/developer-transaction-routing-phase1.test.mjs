@@ -116,18 +116,34 @@ assert.ok(
 
 const developmentDetailSource = readSource('src/pages/DevelopmentDetail.jsx')
 assert.ok(
-  developmentDetailSource.includes("const DEVELOPMENT_PRIMARY_TABS = DEVELOPMENT_TABS.filter((tab) => tab.id !== 'transactions')") &&
+  developmentDetailSource.includes("const DEVELOPMENT_PRIMARY_TABS = DEVELOPMENT_TABS.filter((tab) => tab.id !== 'performance')") &&
     developmentDetailSource.includes('DEVELOPMENT_PRIMARY_TABS.map'),
-  'Development page should remove Transactions from the top tab strip without removing the underlying workspace section.',
+  'Development page should show Transactions in the top tab strip and remove the obsolete Performance tab.',
 )
 
 const apiSource = readSource('src/lib/api.js')
+assert.ok(
+  apiSource.includes('const allTransactionRows = await fetchTransactionsListSummary({') &&
+    apiSource.includes('activeTransactionsOnly: false') &&
+    apiSource.includes('transactionRows: transactionRowsWithDocumentSummary.sort('),
+  'Development detail should load every transaction linked to the development, including inactive history.',
+)
 assert.ok(
   apiSource.includes('function resolveDevelopmentSettingsAssignedAgent(settings = {})') &&
     apiSource.includes('const developmentAssignedAgent =') &&
     apiSource.includes('assigned_agent: resolvedAssignedAgent || null') &&
     apiSource.includes('assigned_agent_email: resolvedAssignedAgentEmail || null'),
   'Developer-sale transaction creation should default assigned_agent from development settings or the active setup user.',
+)
+
+const dashboardApiSource = readSource('src/lib/api/dashboardOverviewApi.js')
+const dashboardSource = readSource('src/pages/Dashboard.jsx')
+assert.ok(
+  dashboardApiSource.includes('async function fetchDashboardTransactionRows(') &&
+    dashboardApiSource.includes('totalTransactions: transactionRows.length') &&
+    dashboardSource.includes('const transactionRecordRows = Array.isArray(overview?.transactionRows)') &&
+    dashboardSource.includes("label: 'Transactions'"),
+  'Developer dashboard should report saved development transactions from the canonical transaction read path.',
 )
 
 const agentNewDealWizard = readSource('src/components/AgentNewDealWizard.jsx')

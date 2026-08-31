@@ -736,6 +736,79 @@ async function fetchDashboardCoreTransactionsForUnitIds(client, unitIds) {
     .filter((item) => normalizeStage(item?.stage, null) !== 'Available')
 }
 
+async function fetchDashboardTransactionRows(client, units = [], developmentIds = []) {
+  const scopedDevelopmentIds = [...new Set((developmentIds || []).filter(Boolean))]
+  if (!scopedDevelopmentIds.length) return []
+
+  const selectClause =
+    'id, organisation_id, development_id, unit_id, buyer_id, transaction_reference, transaction_type, property_type, finance_type, purchaser_type, stage, current_main_stage, sales_price, purchase_price, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, next_action, creation_status, is_active, updated_at, created_at'
+  let result = await client
+    .from('transactions')
+    .select(selectWithoutKnownMissingColumns(selectClause))
+    .in('development_id', scopedDevelopmentIds)
+    .order('updated_at', { ascending: false })
+
+  if (result.error && isMissingColumnError(result.error)) {
+    registerKnownMissingColumns(result.error, [
+      'organisation_id',
+      'transaction_reference',
+      'transaction_type',
+      'property_type',
+      'purchaser_type',
+      'current_main_stage',
+      'sales_price',
+      'purchase_price',
+      'assigned_agent',
+      'assigned_agent_email',
+      'assigned_attorney_email',
+      'assigned_bond_originator_email',
+      'bank',
+      'creation_status',
+      'is_active',
+    ])
+    result = await client
+      .from('transactions')
+      .select(selectWithoutKnownMissingColumns(selectClause))
+      .in('development_id', scopedDevelopmentIds)
+      .order('updated_at', { ascending: false })
+  }
+
+  if (result.error) throw result.error
+  const transactions = result.data || []
+  if (!transactions.length) return []
+
+  const buyerIds = [...new Set(transactions.map((transaction) => transaction?.buyer_id).filter(Boolean))]
+  const buyersQuery = buyerIds.length
+    ? await client.from('buyers').select(selectWithoutKnownMissingColumns('id, name, phone, email')).in('id', buyerIds)
+    : { data: [], error: null }
+  if (buyersQuery.error) throw buyersQuery.error
+
+  const unitsById = new Map((units || []).map((unit) => [unit.id, unit]))
+  const developmentsById = new Map()
+  for (const unit of units || []) {
+    const development = unit?.development
+    if (development?.id) developmentsById.set(development.id, development)
+  }
+  const buyersById = new Map((buyersQuery.data || []).map((buyer) => [buyer.id, buyer]))
+
+  return transactions.map((transaction) => {
+    const unit = transaction?.unit_id ? unitsById.get(transaction.unit_id) || null : null
+    const development = transaction?.development_id
+      ? developmentsById.get(transaction.development_id) || unit?.development || null
+      : unit?.development || null
+    const stage = normalizeStage(transaction?.stage, unit?.status || 'Available')
+    return {
+      unit,
+      development,
+      transaction,
+      buyer: transaction?.buyer_id ? buyersById.get(transaction.buyer_id) || null : null,
+      stage,
+      mainStage: normalizeMainStage(transaction?.current_main_stage, stage),
+      documentSummary: { uploadedCount: 0, totalRequired: 0, missingCount: 0 },
+    }
+  })
+}
+
 function getDefaultHandoverRecord({ developmentId = null, unitId = null, transaction = null, buyer = null } = {}) {
   return {
     id: null,
@@ -1123,6 +1196,7 @@ export async function fetchDashboardOverview({
     if (!allowedDevelopmentIds.size) {
       return {
         rows: [],
+        transactionRows: [],
         metrics: buildDashboardMetrics([], 0),
         developmentSummaries: [],
         alerts: buildAlerts([]),
@@ -1135,6 +1209,7 @@ export async function fetchDashboardOverview({
     ) {
       return {
         rows: [],
+        transactionRows: [],
         metrics: buildDashboardMetrics([], 0),
         developmentSummaries: [],
         alerts: buildAlerts([]),
@@ -1160,10 +1235,25 @@ export async function fetchDashboardOverview({
     : baseRows
 
   const developmentSummaries = buildDevelopmentSummaries(rows)
+  const dashboardDevelopmentIds = normalizedDevelopmentId && normalizedDevelopmentId !== 'all'
+    ? [normalizedDevelopmentId]
+    : allowedDevelopmentIds
+      ? [...allowedDevelopmentIds]
+      : [...new Set(units.map((unit) => unit?.development_id).filter(Boolean))]
+  const transactionRows = await fetchDashboardTransactionRows(client, units, dashboardDevelopmentIds)
+  const metrics = buildDashboardMetrics(rows, developmentSummaries.length)
 
   return {
     rows,
-    metrics: buildDashboardMetrics(rows, developmentSummaries.length),
+    transactionRows,
+    metrics: {
+      ...metrics,
+      totalTransactions: transactionRows.length,
+      activeTransactions: transactionRows.filter((row) => {
+        const mainStage = normalizeMainStage(row?.transaction?.current_main_stage, row?.stage)
+        return row?.transaction?.is_active !== false && !['AVAIL', 'REG'].includes(mainStage)
+      }).length,
+    },
     developmentSummaries,
     alerts: buildAlerts(rows),
   }

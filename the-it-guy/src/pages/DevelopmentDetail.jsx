@@ -101,7 +101,7 @@ const DEVELOPMENT_TABS = [
   { id: 'configuration', label: 'Configuration' },
 ]
 
-const DEVELOPMENT_PRIMARY_TABS = DEVELOPMENT_TABS.filter((tab) => tab.id !== 'transactions')
+const DEVELOPMENT_PRIMARY_TABS = DEVELOPMENT_TABS.filter((tab) => tab.id !== 'performance')
 
 const DOCUMENT_TYPE_OPTIONS = [
   { value: 'logo', label: 'Development Logo' },
@@ -2519,6 +2519,10 @@ function DevelopmentDetail() {
   }, [data])
 
   const rows = useMemo(() => data?.rows || [], [data?.rows])
+  const allDevelopmentTransactionRows = useMemo(
+    () => data?.transactionRows || rows.filter((row) => row?.transaction?.id),
+    [data?.transactionRows, rows],
+  )
   const documents = useMemo(() => data?.documents || [], [data?.documents])
   const linkedListingRows = useMemo(() => data?.listings || [], [data?.listings])
   const alterations = useMemo(() => data?.alterations || [], [data?.alterations])
@@ -3012,7 +3016,7 @@ function DevelopmentDetail() {
   }, [unitRows, unitStatusFilter, unitStructureConfig.mode])
 
   const transactionRows = useMemo(() => {
-    return rows
+    return allDevelopmentTransactionRows
       .filter((row) => {
         if (!row?.unit?.id) {
           return false
@@ -3044,7 +3048,7 @@ function DevelopmentDetail() {
           buyerEmail: row?.buyer?.email || (isManualUnitStatus ? 'Manual stock update' : 'No email'),
         }
       })
-  }, [currentWorkspace, rows, transactionSearch, transactionStageFilter])
+  }, [allDevelopmentTransactionRows, currentWorkspace, transactionSearch, transactionStageFilter])
   const assignedAgentKeys = useMemo(
     () => new Set(agentAssignments.map((member) => buildAgentAssignmentKey(member))),
     [agentAssignments],
@@ -9387,7 +9391,7 @@ function DevelopmentDetail() {
                 <Field as="select" className="min-w-[180px]" value={transactionStageFilter} onChange={(event) => setTransactionStageFilter(event.target.value)}>
                   <option value="all">All stages</option>
                   {Array.from(new Set([
-                    ...rows.map((row) => String(row?.transaction?.stage || '').trim()).filter(Boolean),
+                    ...allDevelopmentTransactionRows.map((row) => String(row?.transaction?.stage || '').trim()).filter(Boolean),
                     ...DEVELOPMENT_UNIT_STATUS_OPTIONS.map((option) => option.value),
                   ])).map((stage) => (
                     <option key={stage} value={stage}>{toTitleLabel(stage)}</option>

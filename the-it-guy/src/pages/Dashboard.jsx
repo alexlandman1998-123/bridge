@@ -1602,11 +1602,15 @@ function buildDeveloperSparkline(seedValue = 0, length = 8) {
 
 function buildDeveloperCommandCenterModel({ rows = [], overview = {}, profile = {}, organisation = {} } = {}) {
   const safeRows = Array.isArray(rows) ? rows : []
+  const transactionRecordRows = Array.isArray(overview?.transactionRows)
+    ? overview.transactionRows.filter((row) => row?.transaction?.id)
+    : safeRows.filter((row) => row?.transaction?.id)
+  const activeTransactionRows = transactionRecordRows.filter((row) => row?.transaction?.is_active !== false)
   const overviewDevelopmentSummaries = Array.isArray(overview?.developmentSummaries) ? overview.developmentSummaries : []
   const portfolio = selectPortfolioMetrics(safeRows, {
     totalDevelopmentsOverride: Number(overview?.metrics?.totalDevelopments || 0) || null,
   })
-  const activeTransactions = selectActiveTransactions(safeRows)
+  const activeTransactions = selectActiveTransactions(activeTransactionRows)
   const developmentPerformance = selectDevelopmentPerformance(safeRows)
   const rowsByDevelopmentId = new Map()
   for (const row of safeRows) {
@@ -1718,7 +1722,8 @@ function buildDeveloperCommandCenterModel({ rows = [], overview = {}, profile = 
       imageUrl: development.imageUrl || getDevelopmentImage(rowsByDevelopmentId.get(development.id) || {}),
     }))
 
-  const recentActivity = [...safeRows]
+  const recentActivitySource = transactionRecordRows.length ? transactionRecordRows : safeRows
+  const recentActivity = [...recentActivitySource]
     .filter((row) => row?.transaction || row?.unit)
     .sort((left, right) => new Date(getRowUpdatedAt(right) || 0) - new Date(getRowUpdatedAt(left) || 0))
     .slice(0, 5)
@@ -1758,7 +1763,7 @@ function buildDeveloperCommandCenterModel({ rows = [], overview = {}, profile = 
     ],
     kpis: [
       { key: 'developments', label: 'Active Developments', value: formatKpiCount(portfolio.totalDevelopments), detail: 'vs last month', trend: null, icon: Building2, tone: 'blue' },
-      { key: 'transactions', label: 'Active Transactions', value: formatKpiCount(activeTransactions.length), detail: 'open and in progress', trend: null, icon: Layers3, tone: 'green' },
+      { key: 'transactions', label: 'Transactions', value: formatKpiCount(transactionRecordRows.length), detail: `${formatKpiCount(activeTransactions.length)} active`, trend: null, icon: Layers3, tone: 'green' },
       { key: 'pipeline', label: 'Pipeline Value', value: formatKpiCurrency(portfolio.pipelineValue), detail: 'active transaction value', trend: null, icon: Banknote, tone: 'purple' },
       { key: 'revenue', label: 'Revenue Secured', value: formatKpiCurrency(portfolio.totalSalesValue), detail: 'registered value', trend: null, icon: CircleDollarSign, tone: 'orange' },
       { key: 'available', label: 'Units Available', value: formatKpiCount(portfolio.unitsAvailable), detail: 'sellable stock', trend: null, icon: Home, tone: 'blue' },
@@ -1791,7 +1796,7 @@ function buildDeveloperCommandCenterModel({ rows = [], overview = {}, profile = 
       ],
     },
     performance: [
-      { key: 'transactions', label: 'Transactions', value: formatKpiCount(activeTransactions.filter((item) => isToday(item.updatedAt) || IS_DATE_IN_CURRENT_MONTH(item.updatedAt)).length || activeTransactions.length), trendLabel: 'this month', trend: null, points: buildDeveloperSparkline(activeTransactions.length), tone: 'blue' },
+      { key: 'transactions', label: 'Transactions', value: formatKpiCount(transactionRecordRows.filter((row) => isToday(getRowUpdatedAt(row)) || IS_DATE_IN_CURRENT_MONTH(getRowUpdatedAt(row))).length || transactionRecordRows.length), trendLabel: 'this month', trend: null, points: buildDeveloperSparkline(transactionRecordRows.length), tone: 'blue' },
       { key: 'revenue', label: 'Revenue Secured', value: formatKpiCurrency(portfolio.totalSalesValue), trendLabel: 'this month', trend: null, points: buildDeveloperSparkline(portfolio.totalSalesValue || portfolio.pipelineValue || 1), tone: 'green' },
       { key: 'registrations', label: 'Registrations', value: formatKpiCount(portfolio.unitsRegistered), trendLabel: 'this month', trend: null, points: buildDeveloperSparkline(portfolio.unitsRegistered || 1), tone: 'purple' },
     ],
