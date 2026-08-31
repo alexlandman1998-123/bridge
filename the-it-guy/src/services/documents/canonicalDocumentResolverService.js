@@ -330,7 +330,6 @@ export function buildInstanceSignature(instance = {}) {
     instance.context_type || '',
     instance.context_id || '',
     instance.document_definition_key || '',
-    instance.requested_from_role || '',
     instance.requested_from_contact_id || '',
   ].join('::')
 }

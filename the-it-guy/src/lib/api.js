@@ -34483,7 +34483,10 @@ async function resolveTransactionWorkspaceReadContext(transactionId) {
       transaction = await fetchTransactionRowById(client, resolvedTransactionId)
     }
   }
-  if (!transaction || transaction?.is_active === false) return null
+  // Inactive/archived matters remain part of the legal record. The matter shell
+  // already permits authorised firm users to open them, so document datasets
+  // must use the same permission check instead of misreporting them as missing.
+  if (!transaction) return null
 
   const canonicalTransactionId = transaction.id || resolvedTransactionId
   const activeProfile = await resolveActiveProfileContext(client)
@@ -48092,22 +48095,37 @@ export async function uploadClientPortalDocument({
   const uploadedBucket = await uploadToBuyerPortalDocumentsBucket(client, filePath, file)
   let rpcResult
   try {
-    rpcResult = await client.rpc('bridge_upload_buyer_portal_document', {
-      p_transaction_id: link.transaction_id,
-      p_file_path: filePath,
-      p_file_bucket: uploadedBucket || fileBucket || 'documents',
-      p_document_name: persistedDocumentName,
-      p_category: category || 'Client Portal',
-      p_document_type: normalizedDocumentType,
-      p_required_document_key:
-        requiredDocumentKey || (isReservationDepositProofUpload ? 'reservation_deposit_proof' : null),
-      p_requirement_instance_id: normalizeNullableUuid(canonicalRequirementInstanceId),
-      p_document_request_id: normalizeNullableUuid(documentRequestId),
-      p_bucket_key: normalizeNullableText(bucketKey),
-      p_finance_lane: normalizeNullableText(financeLane),
-      p_related_entity_type: normalizeNullableText(relatedEntityType),
-      p_related_entity_id: normalizeNullableUuid(relatedEntityId),
-    })
+    const requestOnlyUpload = Boolean(
+      normalizeNullableUuid(documentRequestId) &&
+      !normalizeNullableUuid(canonicalRequirementInstanceId) &&
+      !normalizeNullableText(requiredDocumentKey),
+    )
+    rpcResult = requestOnlyUpload
+      ? await client.rpc('bridge_upload_buyer_portal_requested_document', {
+          p_transaction_id: link.transaction_id,
+          p_document_request_id: normalizeNullableUuid(documentRequestId),
+          p_file_path: filePath,
+          p_file_bucket: uploadedBucket || fileBucket || 'documents',
+          p_document_name: persistedDocumentName,
+          p_category: category || 'Additional Requests',
+          p_document_type: normalizedDocumentType,
+        })
+      : await client.rpc('bridge_upload_buyer_portal_document', {
+          p_transaction_id: link.transaction_id,
+          p_file_path: filePath,
+          p_file_bucket: uploadedBucket || fileBucket || 'documents',
+          p_document_name: persistedDocumentName,
+          p_category: category || 'Client Portal',
+          p_document_type: normalizedDocumentType,
+          p_required_document_key:
+            requiredDocumentKey || (isReservationDepositProofUpload ? 'reservation_deposit_proof' : null),
+          p_requirement_instance_id: normalizeNullableUuid(canonicalRequirementInstanceId),
+          p_document_request_id: normalizeNullableUuid(documentRequestId),
+          p_bucket_key: normalizeNullableText(bucketKey),
+          p_finance_lane: normalizeNullableText(financeLane),
+          p_related_entity_type: normalizeNullableText(relatedEntityType),
+          p_related_entity_id: normalizeNullableUuid(relatedEntityId),
+        })
 
     if (rpcResult.error) throw rpcResult.error
     if (!rpcResult.data?.id) throw new Error('Buyer portal document upload did not return a document record.')

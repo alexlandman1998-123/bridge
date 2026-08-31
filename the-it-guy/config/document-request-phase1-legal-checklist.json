@@ -26,8 +26,6 @@
   ],
   "requirements": [
     { "key": "signed_otp", "label": "Signed OTP / Sale Agreement", "ownerRole": "agent", "appliesTo": ["transaction"], "level": "required", "visibility": "professional_shared", "blocker": "attorney_instruction_ready" },
-    { "key": "buyer_fica_pack", "label": "Buyer FICA Pack", "ownerRole": "buyer", "appliesTo": ["buyer"], "level": "required", "visibility": "client_visible", "blocker": "attorney_instruction_ready" },
-    { "key": "seller_fica_pack", "label": "Seller FICA Pack", "ownerRole": "seller", "appliesTo": ["seller"], "level": "required", "visibility": "client_visible", "blocker": "attorney_instruction_ready" },
     { "key": "transfer_duty_information", "label": "Transfer Duty Information", "ownerRole": "transfer_attorney", "appliesTo": ["transaction"], "level": "required", "visibility": "professional_shared", "blocker": "lodgement_ready" },
     { "key": "rates_clearance", "label": "Rates Clearance", "ownerRole": "seller", "appliesTo": ["property"], "level": "required", "visibility": "client_visible", "blocker": "lodgement_ready" },
     { "key": "transfer_documents", "label": "Transfer Documents", "ownerRole": "transfer_attorney", "appliesTo": ["transaction"], "level": "required", "visibility": "professional_shared", "blocker": "lodgement_ready" },

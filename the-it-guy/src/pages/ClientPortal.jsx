@@ -3469,7 +3469,7 @@ function getBuyerMobileDocumentCategory(item = {}) {
   if (/bond|bank|finance|income|employer|employment|affordability|proof.of.funds|source.of.funds|deposit|cash|salary|statement|liabilit/.test(haystack)) return { key: 'finance', label: 'Finance' }
   if (/offer|otp|reservation|sale agreement|agreement of sale|purchase agreement|signed/.test(haystack)) return { key: 'sales', label: 'Sales' }
   if (/property|unit|developer|specification|plans|levy|rates|hoa|body corporate/.test(haystack)) return { key: 'property', label: 'Property' }
-  return { key: 'fica', label: 'FICA' }
+  return { key: 'fica', label: 'Identity & Compliance' }
 }
 
 function getBuyerMobileDocumentBucket(document = {}) {

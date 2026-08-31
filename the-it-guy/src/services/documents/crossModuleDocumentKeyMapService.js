@@ -89,16 +89,6 @@ export const CROSS_MODULE_DOCUMENT_DEFINITIONS = Object.freeze([
     modules: ['buyer_onboarding', 'transaction_documents', 'attorney_transfer'],
   }),
   documentDefinition({
-    canonicalKey: 'information_sheet',
-    label: 'Information Sheet',
-    ownerRole: 'buyer',
-    responsibleRoles: ['buyer', 'agent'],
-    packKey: 'buyer_identity_fica',
-    aliases: [],
-    modules: ['buyer_onboarding', 'transaction_documents'],
-  }),
-
-  documentDefinition({
     canonicalKey: 'seller_id_document',
     label: 'Seller ID Document',
     ownerRole: 'seller',

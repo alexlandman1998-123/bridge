@@ -15,7 +15,7 @@ import {
 test('canonical matrix validates before adapter mapping is used', () => {
   const validation = validateDocumentRequestCanonicalMatrix()
   assert.equal(validation.ok, true)
-  assert.equal(validation.counts.requirements, 67)
+  assert.equal(validation.counts.requirements, 65)
   assert.equal(validation.counts.signoffDecisions, 7)
 })
 
@@ -25,8 +25,9 @@ test('adapter maps legacy buyer, seller and attorney keys to canonical request k
   assert.equal(resolveCanonicalDocumentRequestKey('seller_beneficial_ownership', 'attorney'), 'seller_company_beneficial_ownership')
   assert.equal(resolveCanonicalDocumentRequestKey('signed_mandate', 'seller'), 'signed_mandate')
   assert.equal(resolveCanonicalDocumentRequestKey('signed_disclosure_form', 'seller'), 'property_condition_disclosure')
-  assert.equal(resolveCanonicalDocumentRequestKey('signed_fica_declaration', 'seller'), 'seller_fica_pack')
-  assert.notEqual(resolveCanonicalDocumentRequestKey('signed_mandate', 'seller'), 'seller_fica_pack')
+  assert.equal(resolveCanonicalDocumentRequestKey('signed_fica_declaration', 'seller'), '')
+  assert.equal(resolveCanonicalDocumentRequestKey('information_sheet', 'buyer'), '')
+  assert.equal(resolveCanonicalDocumentRequestKey('buyer_fica', 'attorney'), '')
   assert.equal(getCanonicalDocumentRequestMetadata('unknown_document', { context: 'buyer' }).canonicalDocumentRequestKnown, false)
 })
 

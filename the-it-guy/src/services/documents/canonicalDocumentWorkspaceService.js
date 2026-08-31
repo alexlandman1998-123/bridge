@@ -107,6 +107,18 @@ export const PACK_FALLBACKS = Object.freeze({
 const SATISFIED_STATUSES = new Set(['approved', 'completed', 'waived', 'not_applicable'])
 const PROVISIONAL_STATUSES = new Set(['uploaded', 'under_review'])
 const MISSING_STATUSES = new Set(['pending', 'requested', 'rejected', 'expired'])
+const RETIRED_REQUIREMENT_KEYS = new Set(['information_sheet', 'buyer_fica_pack', 'seller_fica_pack'])
+const REQUIREMENT_STATUS_PRIORITY = Object.freeze({
+  completed: 90,
+  approved: 80,
+  under_review: 70,
+  uploaded: 60,
+  rejected: 50,
+  requested: 40,
+  pending: 30,
+  waived: 20,
+  not_applicable: 0,
+})
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -351,9 +363,32 @@ export function getMissingBlockers(requirements = [], gate = '') {
 }
 
 export function buildCanonicalDocumentWorkspaceModel({ requirements = [], documentCenter = {}, role = 'seller' } = {}) {
-  const normalized = requirements
+  const visibleRequirements = requirements
     .map((item) => normalizeCanonicalRequirement(item, { documentCenter, role }))
-    .filter((item) => item.id && item.visible && item.status !== 'not_applicable')
+    .filter((item) =>
+      item.id &&
+      item.visible &&
+      item.status !== 'not_applicable' &&
+      !RETIRED_REQUIREMENT_KEYS.has(normalizeKey(item.documentDefinitionKey)),
+    )
+
+  // A requirement's assignee is mutable workflow metadata, not its identity.
+  // Collapse legacy duplicates by context/key/contact so every module renders the
+  // same state while the database reconciliation migration is rolling out.
+  const byIdentity = new Map()
+  for (const requirement of visibleRequirements) {
+    const identity = [
+      normalizeText(requirement.context_type || requirement.contextType),
+      normalizeText(requirement.context_id || requirement.contextId),
+      normalizeKey(requirement.documentDefinitionKey),
+      normalizeText(requirement.requested_from_contact_id || requirement.requestedFromContactId),
+    ].join('::')
+    const current = byIdentity.get(identity)
+    const currentScore = (REQUIREMENT_STATUS_PRIORITY[current?.status] || 0) + (current?.hasLinkedDocument ? 100 : 0)
+    const nextScore = (REQUIREMENT_STATUS_PRIORITY[requirement.status] || 0) + (requirement.hasLinkedDocument ? 100 : 0)
+    if (!current || nextScore > currentScore) byIdentity.set(identity, requirement)
+  }
+  const normalized = [...byIdentity.values()]
 
   const grouped = new Map()
   for (const requirement of normalized) {

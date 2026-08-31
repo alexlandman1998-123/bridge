@@ -5,7 +5,7 @@ import {
 export const DOCUMENT_REQUEST_CANONICAL_ADAPTER_VERSION = 'document_request_canonical_adapter_v1'
 
 const BUYER_KEY_ALIASES = Object.freeze({
-  information_sheet: 'buyer_fica_pack',
+  information_sheet: '',
   otp: 'signed_otp',
   transfer_documents: 'transfer_documents',
   id_document: 'buyer_id_document',
@@ -68,10 +68,10 @@ const SELLER_KEY_ALIASES = Object.freeze({
   signed_mandatory_disclosure_form: 'property_condition_disclosure',
   signed_defect_form: 'property_condition_disclosure',
   signed_defects_form: 'property_condition_disclosure',
-  signed_fica_declaration: 'seller_fica_pack',
-  signed_fica_declaration_pack: 'seller_fica_pack',
-  signed_fica_form: 'seller_fica_pack',
-  seller_onboarding_submission: 'seller_fica_pack',
+  signed_fica_declaration: '',
+  signed_fica_declaration_pack: '',
+  signed_fica_form: '',
+  seller_onboarding_submission: '',
   id_document: 'seller_id_document',
   proof_of_address: 'seller_proof_of_address',
   marriage_certificate: 'seller_marriage_certificate',
@@ -129,8 +129,8 @@ const SELLER_KEY_ALIASES = Object.freeze({
 
 const ATTORNEY_KEY_ALIASES = Object.freeze({
   sale_agreement_or_otp: 'signed_otp',
-  buyer_fica: 'buyer_fica_pack',
-  seller_fica: 'seller_fica_pack',
+  buyer_fica: '',
+  seller_fica: '',
   transfer_duty_information: 'transfer_duty_information',
   transfer_documents: 'transfer_documents',
   rates_clearance: 'rates_clearance',
@@ -173,7 +173,7 @@ const ATTORNEY_KEY_ALIASES = Object.freeze({
   bond_instruction: 'bond_approval',
   bond_grant_letter: 'grant_signed',
   bank_requirements: 'bond_approval',
-  buyer_bank_fica: 'buyer_fica_pack',
+  buyer_bank_fica: '',
   bond_documents: 'grant_signed',
   bank_signing_documents: 'grant_signed',
   guarantees_issued: 'grant_signed',
