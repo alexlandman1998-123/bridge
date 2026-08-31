@@ -4,7 +4,7 @@ const APPROVED_STATUSES = new Set(['approved', 'completed', 'complete', 'verifie
 
 export const BUYER_DOCUMENT_CATEGORIES = Object.freeze([
   Object.freeze({ key: 'sales', label: 'Sales Documents', shortLabel: 'Sales' }),
-  Object.freeze({ key: 'fica', label: 'FICA Documents', shortLabel: 'FICA' }),
+  Object.freeze({ key: 'fica', label: 'Identity & Compliance', shortLabel: 'Identity & Compliance' }),
   Object.freeze({ key: 'finance', label: 'Finance Documents', shortLabel: 'Finance' }),
   Object.freeze({ key: 'property', label: 'Property Documents', shortLabel: 'Property' }),
   Object.freeze({ key: 'additional', label: 'Additional Requests', shortLabel: 'Additional' }),
