@@ -925,7 +925,7 @@ function HeaderBar({ onLogout, user }) {
   }, [])
 
   useEffect(() => {
-    if (location.pathname !== '/dashboard' && location.pathname !== '/') {
+    if (location.pathname !== '/dashboard' && location.pathname !== '/' && location.pathname !== '/agent/rentals/dashboard') {
       setDashboardHeaderControls(null)
     }
   }, [location.pathname])
@@ -1039,6 +1039,7 @@ function HeaderBar({ onLogout, user }) {
     (
       location.pathname === '/dashboard' ||
       location.pathname === '/' ||
+      location.pathname === '/agent/rentals/dashboard' ||
       location.pathname === '/pipeline/leads' ||
       location.pathname.startsWith('/pipeline/leads/') ||
       location.pathname.startsWith('/agency/branches')
@@ -1052,9 +1053,10 @@ function HeaderBar({ onLogout, user }) {
       appRole: role,
       membershipRole: workspaceContext.organisationMembershipRole || workspaceContext.workspaceRole,
     })
+  const isRentalDashboard = location.pathname === '/agent/rentals/dashboard'
   const showPrincipalDashboardHeaderControls =
-    canUsePrincipalDashboardControls &&
-    (location.pathname === '/dashboard' || location.pathname === '/') &&
+    (isRentalDashboard || canUsePrincipalDashboardControls) &&
+    (location.pathname === '/dashboard' || location.pathname === '/' || isRentalDashboard) &&
     dashboardHeaderControls?.visible !== false
   const premiumHeaderTitle = isPremiumAttorneyOperations
     ? ''
@@ -1550,6 +1552,8 @@ function HeaderBar({ onLogout, user }) {
                   ? 'Search applications, clients, partners...'
                   : role === 'attorney'
                     ? 'Search matters, clients, documents...'
+                  : isRentalDashboard
+                    ? 'Search applications, tenants, properties...'
                     : 'Search transactions, clients, listings...'
               }
             />
