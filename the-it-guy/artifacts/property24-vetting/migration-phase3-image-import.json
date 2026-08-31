@@ -1,0 +1,417 @@
+{
+  "version": "property24_migration_image_import_v1",
+  "phase": "property24-migration-import-phase3-image-import",
+  "mode": "dry-run",
+  "status": "DRY_RUN",
+  "generatedAt": "2026-08-31T10:13:08.551Z",
+  "context": {
+    "organisationId": "ec19d0a6-bcba-4eef-aa72-9972de88204d",
+    "environment": "exdev",
+    "agencyId": 31382,
+    "bucket": "listing-media"
+  },
+  "sourceMapping": {
+    "version": "property24_migration_mapping_v1",
+    "generatedAt": "2026-08-31T10:05:37.593Z",
+    "inputHashes": {
+      "agents": "ad66a5fd88f21ea9ff57b2fd5048d6905630dde11bcd229dff24a128ce465196",
+      "listings": "dc42bd4e21760238e3d1f257bba30af5eeb9838a12ae5129332c6a0cf91f8a74",
+      "images": "1ad40c2a3f4fbfa91d6405c75eed125973d3f834a30e2683ff2c5fc83ba38591"
+    }
+  },
+  "safety": {
+    "sourceImagesDownloaded": false,
+    "storageWritesPerformed": false,
+    "databaseWritesPerformed": false,
+    "property24WritesPerformed": false
+  },
+  "summary": {
+    "requestedImageCount": 14,
+    "uploadedImageCount": 0,
+    "reusedImageCount": 0,
+    "failedImageCount": 0,
+    "pendingImageCount": 14,
+    "completedImageCount": 0,
+    "listingCount": 4,
+    "readyListingCount": 0,
+    "listingMediaRowCount": 0
+  },
+  "blockers": [],
+  "items": [
+    {
+      "sourceKey": "e47e2e7776892b832cfd455aa9fb976feee9771e21d717668ff38d0f9c3c0710",
+      "listingIdentityKey": "property24:exdev:31382:listing:100314793",
+      "listingNumber": 100314793,
+      "arch9ListingId": null,
+      "sourceUrl": "https://images.exdev.property24-test.com/252953392",
+      "caption": "Screenshot 2025-10-20 at 10.19.54.png",
+      "sourceOrdinal": 1,
+      "sortOrder": 0,
+      "isCover": true,
+      "status": "pending"
+    },
+    {
+      "sourceKey": "3c3633ac35e4752da9dbee9f36ced871570e23d996d3dcb397314ede8a6499f6",
+      "listingIdentityKey": "property24:exdev:31382:listing:100314793",
+      "listingNumber": 100314793,
+      "arch9ListingId": null,
+      "sourceUrl": "https://images.exdev.property24-test.com/252953393",
+      "caption": "Screenshot 2025-10-20 at 10.20.04.png",
+      "sourceOrdinal": 2,
+      "sortOrder": 1,
+      "isCover": false,
+      "status": "pending"
+    },
+    {
+      "sourceKey": "0c121969bd0d1034af9e0c878fe88809a3057fe1a75e1da323d13e0d7dc6b6b7",
+      "listingIdentityKey": "property24:exdev:31382:listing:100314793",
+      "listingNumber": 100314793,
+      "arch9ListingId": null,
+      "sourceUrl": "https://images.exdev.property24-test.com/252953394",
+      "caption": "Screenshot 2025-10-20 at 10.20.12.png",
+      "sourceOrdinal": 3,
+      "sortOrder": 2,
+      "isCover": false,
+      "status": "pending"
+    },
+    {
+      "sourceKey": "2e287cab84b8f37a0c5c9fee7a147ce26195153508cfb7730ac1828cfcb8097b",
+      "listingIdentityKey": "property24:exdev:31382:listing:100314793",
+      "listingNumber": 100314793,
+      "arch9ListingId": null,
+      "sourceUrl": "https://images.exdev.property24-test.com/252953395",
+      "caption": "Screenshot 2025-10-20 at 10.20.24.png",
+      "sourceOrdinal": 4,
+      "sortOrder": 3,
+      "isCover": false,
+      "status": "pending"
+    },
+    {
+      "sourceKey": "a67c2454c1bf5d6c7c02ad6001e41197c2ad1c2680f9d957f30bdeef4dc62fd1",
+      "listingIdentityKey": "property24:exdev:31382:listing:100314816",
+      "listingNumber": 100314816,
+      "arch9ListingId": null,
+      "sourceUrl": "https://images.exdev.property24-test.com/252953490",
+      "caption": "Screenshot 2025-10-20 at 10.19.54.png",
+      "sourceOrdinal": 1,
+      "sortOrder": 0,
+      "isCover": true,
+      "status": "pending"
+    },
+    {
+      "sourceKey": "f6acb5e7a22c743bbe09d12aef7a3c5646a35984349844c63057caa84936dbec",
+      "listingIdentityKey": "property24:exdev:31382:listing:100314816",
+      "listingNumber": 100314816,
+      "arch9ListingId": null,
+      "sourceUrl": "https://images.exdev.property24-test.com/252953491",
+      "caption": "Screenshot 2025-10-20 at 10.20.04.png",
+      "sourceOrdinal": 2,
+      "sortOrder": 1,
+      "isCover": false,
+      "status": "pending"
+    },
+    {
+      "sourceKey": "d926a4a2746e9bc394a917cc893a55464e0eaabc01d6b0cd36c664f612c93056",
+      "listingIdentityKey": "property24:exdev:31382:listing:100314816",
+      "listingNumber": 100314816,
+      "arch9ListingId": null,
+      "sourceUrl": "https://images.exdev.property24-test.com/252953492",
+      "caption": "Screenshot 2025-10-20 at 10.20.12.png",
+      "sourceOrdinal": 3,
+      "sortOrder": 2,
+      "isCover": false,
+      "status": "pending"
+    },
+    {
+      "sourceKey": "ec8f6ed2e62724504c3a5b3721281265d59b0bf4612dc11f46b5b01d3a046b44",
+      "listingIdentityKey": "property24:exdev:31382:listing:100314816",
+      "listingNumber": 100314816,
+      "arch9ListingId": null,
+      "sourceUrl": "https://images.exdev.property24-test.com/252953493",
+      "caption": "Screenshot 2025-10-20 at 10.20.24.png",
+      "sourceOrdinal": 4,
+      "sortOrder": 3,
+      "isCover": false,
+      "status": "pending"
+    },
+    {
+      "sourceKey": "7564e696106d8d31dd9d17a3ed514dd6ef045ad9a83262f8336e620b5c12efd4",
+      "listingIdentityKey": "property24:exdev:31382:listing:100314816",
+      "listingNumber": 100314816,
+      "arch9ListingId": null,
+      "sourceUrl": "https://images.exdev.property24-test.com/252953494",
+      "caption": "Screenshot 2025-10-20 at 10.20.33.png",
+      "sourceOrdinal": 5,
+      "sortOrder": 4,
+      "isCover": false,
+      "status": "pending"
+    },
+    {
+      "sourceKey": "254f9f010914dfdfc649adf96e195191a4b2d972963edbd22facd9bc51531f44",
+      "listingIdentityKey": "property24:exdev:31382:listing:100314816",
+      "listingNumber": 100314816,
+      "arch9ListingId": null,
+      "sourceUrl": "https://images.exdev.property24-test.com/252953495",
+      "caption": "Screenshot 2025-10-20 at 10.20.44.png",
+      "sourceOrdinal": 6,
+      "sortOrder": 5,
+      "isCover": false,
+      "status": "pending"
+    },
+    {
+      "sourceKey": "53975ef519c6eb430914b693f583731d766da05286f464ed5ad2e0bb8b7eb045",
+      "listingIdentityKey": "property24:exdev:31382:listing:100314819",
+      "listingNumber": 100314819,
+      "arch9ListingId": null,
+      "sourceUrl": "https://images.exdev.property24-test.com/252953500",
+      "caption": "Open-plan living and dining area",
+      "sourceOrdinal": 1,
+      "sortOrder": 0,
+      "isCover": true,
+      "status": "pending"
+    },
+    {
+      "sourceKey": "8bdd824b858076cd04960101c8c2cb03cadb3b4da4b661cc34e43de64c7d3b37",
+      "listingIdentityKey": "property24:exdev:31382:listing:100314819",
+      "listingNumber": 100314819,
+      "arch9ListingId": null,
+      "sourceUrl": "https://images.exdev.property24-test.com/252953501",
+      "caption": "Contemporary kitchen",
+      "sourceOrdinal": 2,
+      "sortOrder": 1,
+      "isCover": false,
+      "status": "pending"
+    },
+    {
+      "sourceKey": "7b0544379496201bcbd8590c3a9e9e6832da2ef9bcc2b66156407bd4007a66f8",
+      "listingIdentityKey": "property24:exdev:31382:listing:100314820",
+      "listingNumber": 100314820,
+      "arch9ListingId": null,
+      "sourceUrl": "https://images.exdev.property24-test.com/252953502",
+      "caption": "Front exterior",
+      "sourceOrdinal": 1,
+      "sortOrder": 0,
+      "isCover": true,
+      "status": "pending"
+    },
+    {
+      "sourceKey": "7f41b1e7df4f6dbc312bbaeb00723e758c15a3e8d76898e306b0d515121267ab",
+      "listingIdentityKey": "property24:exdev:31382:listing:100314820",
+      "listingNumber": 100314820,
+      "arch9ListingId": null,
+      "sourceUrl": "https://images.exdev.property24-test.com/252953503",
+      "caption": "Open-plan living area",
+      "sourceOrdinal": 2,
+      "sortOrder": 1,
+      "isCover": false,
+      "status": "pending"
+    }
+  ],
+  "listings": [
+    {
+      "listingIdentityKey": "property24:exdev:31382:listing:100314793",
+      "listingNumber": 100314793,
+      "arch9ListingId": null,
+      "status": "INCOMPLETE",
+      "media": [
+        {
+          "sourceKey": "e47e2e7776892b832cfd455aa9fb976feee9771e21d717668ff38d0f9c3c0710",
+          "listingIdentityKey": "property24:exdev:31382:listing:100314793",
+          "listingNumber": 100314793,
+          "arch9ListingId": null,
+          "sourceUrl": "https://images.exdev.property24-test.com/252953392",
+          "caption": "Screenshot 2025-10-20 at 10.19.54.png",
+          "sourceOrdinal": 1,
+          "sortOrder": 0,
+          "isCover": true,
+          "status": "pending"
+        },
+        {
+          "sourceKey": "3c3633ac35e4752da9dbee9f36ced871570e23d996d3dcb397314ede8a6499f6",
+          "listingIdentityKey": "property24:exdev:31382:listing:100314793",
+          "listingNumber": 100314793,
+          "arch9ListingId": null,
+          "sourceUrl": "https://images.exdev.property24-test.com/252953393",
+          "caption": "Screenshot 2025-10-20 at 10.20.04.png",
+          "sourceOrdinal": 2,
+          "sortOrder": 1,
+          "isCover": false,
+          "status": "pending"
+        },
+        {
+          "sourceKey": "0c121969bd0d1034af9e0c878fe88809a3057fe1a75e1da323d13e0d7dc6b6b7",
+          "listingIdentityKey": "property24:exdev:31382:listing:100314793",
+          "listingNumber": 100314793,
+          "arch9ListingId": null,
+          "sourceUrl": "https://images.exdev.property24-test.com/252953394",
+          "caption": "Screenshot 2025-10-20 at 10.20.12.png",
+          "sourceOrdinal": 3,
+          "sortOrder": 2,
+          "isCover": false,
+          "status": "pending"
+        },
+        {
+          "sourceKey": "2e287cab84b8f37a0c5c9fee7a147ce26195153508cfb7730ac1828cfcb8097b",
+          "listingIdentityKey": "property24:exdev:31382:listing:100314793",
+          "listingNumber": 100314793,
+          "arch9ListingId": null,
+          "sourceUrl": "https://images.exdev.property24-test.com/252953395",
+          "caption": "Screenshot 2025-10-20 at 10.20.24.png",
+          "sourceOrdinal": 4,
+          "sortOrder": 3,
+          "isCover": false,
+          "status": "pending"
+        }
+      ],
+      "listingMediaRows": []
+    },
+    {
+      "listingIdentityKey": "property24:exdev:31382:listing:100314816",
+      "listingNumber": 100314816,
+      "arch9ListingId": null,
+      "status": "INCOMPLETE",
+      "media": [
+        {
+          "sourceKey": "a67c2454c1bf5d6c7c02ad6001e41197c2ad1c2680f9d957f30bdeef4dc62fd1",
+          "listingIdentityKey": "property24:exdev:31382:listing:100314816",
+          "listingNumber": 100314816,
+          "arch9ListingId": null,
+          "sourceUrl": "https://images.exdev.property24-test.com/252953490",
+          "caption": "Screenshot 2025-10-20 at 10.19.54.png",
+          "sourceOrdinal": 1,
+          "sortOrder": 0,
+          "isCover": true,
+          "status": "pending"
+        },
+        {
+          "sourceKey": "f6acb5e7a22c743bbe09d12aef7a3c5646a35984349844c63057caa84936dbec",
+          "listingIdentityKey": "property24:exdev:31382:listing:100314816",
+          "listingNumber": 100314816,
+          "arch9ListingId": null,
+          "sourceUrl": "https://images.exdev.property24-test.com/252953491",
+          "caption": "Screenshot 2025-10-20 at 10.20.04.png",
+          "sourceOrdinal": 2,
+          "sortOrder": 1,
+          "isCover": false,
+          "status": "pending"
+        },
+        {
+          "sourceKey": "d926a4a2746e9bc394a917cc893a55464e0eaabc01d6b0cd36c664f612c93056",
+          "listingIdentityKey": "property24:exdev:31382:listing:100314816",
+          "listingNumber": 100314816,
+          "arch9ListingId": null,
+          "sourceUrl": "https://images.exdev.property24-test.com/252953492",
+          "caption": "Screenshot 2025-10-20 at 10.20.12.png",
+          "sourceOrdinal": 3,
+          "sortOrder": 2,
+          "isCover": false,
+          "status": "pending"
+        },
+        {
+          "sourceKey": "ec8f6ed2e62724504c3a5b3721281265d59b0bf4612dc11f46b5b01d3a046b44",
+          "listingIdentityKey": "property24:exdev:31382:listing:100314816",
+          "listingNumber": 100314816,
+          "arch9ListingId": null,
+          "sourceUrl": "https://images.exdev.property24-test.com/252953493",
+          "caption": "Screenshot 2025-10-20 at 10.20.24.png",
+          "sourceOrdinal": 4,
+          "sortOrder": 3,
+          "isCover": false,
+          "status": "pending"
+        },
+        {
+          "sourceKey": "7564e696106d8d31dd9d17a3ed514dd6ef045ad9a83262f8336e620b5c12efd4",
+          "listingIdentityKey": "property24:exdev:31382:listing:100314816",
+          "listingNumber": 100314816,
+          "arch9ListingId": null,
+          "sourceUrl": "https://images.exdev.property24-test.com/252953494",
+          "caption": "Screenshot 2025-10-20 at 10.20.33.png",
+          "sourceOrdinal": 5,
+          "sortOrder": 4,
+          "isCover": false,
+          "status": "pending"
+        },
+        {
+          "sourceKey": "254f9f010914dfdfc649adf96e195191a4b2d972963edbd22facd9bc51531f44",
+          "listingIdentityKey": "property24:exdev:31382:listing:100314816",
+          "listingNumber": 100314816,
+          "arch9ListingId": null,
+          "sourceUrl": "https://images.exdev.property24-test.com/252953495",
+          "caption": "Screenshot 2025-10-20 at 10.20.44.png",
+          "sourceOrdinal": 6,
+          "sortOrder": 5,
+          "isCover": false,
+          "status": "pending"
+        }
+      ],
+      "listingMediaRows": []
+    },
+    {
+      "listingIdentityKey": "property24:exdev:31382:listing:100314819",
+      "listingNumber": 100314819,
+      "arch9ListingId": null,
+      "status": "INCOMPLETE",
+      "media": [
+        {
+          "sourceKey": "53975ef519c6eb430914b693f583731d766da05286f464ed5ad2e0bb8b7eb045",
+          "listingIdentityKey": "property24:exdev:31382:listing:100314819",
+          "listingNumber": 100314819,
+          "arch9ListingId": null,
+          "sourceUrl": "https://images.exdev.property24-test.com/252953500",
+          "caption": "Open-plan living and dining area",
+          "sourceOrdinal": 1,
+          "sortOrder": 0,
+          "isCover": true,
+          "status": "pending"
+        },
+        {
+          "sourceKey": "8bdd824b858076cd04960101c8c2cb03cadb3b4da4b661cc34e43de64c7d3b37",
+          "listingIdentityKey": "property24:exdev:31382:listing:100314819",
+          "listingNumber": 100314819,
+          "arch9ListingId": null,
+          "sourceUrl": "https://images.exdev.property24-test.com/252953501",
+          "caption": "Contemporary kitchen",
+          "sourceOrdinal": 2,
+          "sortOrder": 1,
+          "isCover": false,
+          "status": "pending"
+        }
+      ],
+      "listingMediaRows": []
+    },
+    {
+      "listingIdentityKey": "property24:exdev:31382:listing:100314820",
+      "listingNumber": 100314820,
+      "arch9ListingId": null,
+      "status": "INCOMPLETE",
+      "media": [
+        {
+          "sourceKey": "7b0544379496201bcbd8590c3a9e9e6832da2ef9bcc2b66156407bd4007a66f8",
+          "listingIdentityKey": "property24:exdev:31382:listing:100314820",
+          "listingNumber": 100314820,
+          "arch9ListingId": null,
+          "sourceUrl": "https://images.exdev.property24-test.com/252953502",
+          "caption": "Front exterior",
+          "sourceOrdinal": 1,
+          "sortOrder": 0,
+          "isCover": true,
+          "status": "pending"
+        },
+        {
+          "sourceKey": "7f41b1e7df4f6dbc312bbaeb00723e758c15a3e8d76898e306b0d515121267ab",
+          "listingIdentityKey": "property24:exdev:31382:listing:100314820",
+          "listingNumber": 100314820,
+          "arch9ListingId": null,
+          "sourceUrl": "https://images.exdev.property24-test.com/252953503",
+          "caption": "Open-plan living area",
+          "sourceOrdinal": 2,
+          "sortOrder": 1,
+          "isCover": false,
+          "status": "pending"
+        }
+      ],
+      "listingMediaRows": []
+    }
+  ],
+  "nextPhase": "Run with apply enabled after the listing-media storage migration is deployed."
+}

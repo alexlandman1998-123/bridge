@@ -45,8 +45,6 @@ function HomeSeekersDevelopments() {
 
     <section className="hs-developments-hero"><div><p className="hs-eyebrow">New developments</p><h1>A better way<br />to begin.</h1><p>Thoughtful new homes in places that make everyday life feel considered.</p><a href="#collection">Explore developments <ArrowRight size={17} /></a></div></section>
 
-    <section className="hs-developments-intro"><p className="hs-eyebrow">Built around how you live</p><h2>More than a new address.</h2><p>We represent developments with a point of view: well located, intelligently designed and made for the life you want to build.</p></section>
-
     <section className="hs-development-collection" id="collection"><header><div><p className="hs-eyebrow">Featured collection</p><h2>Places taking shape.</h2></div><a href="mailto:hello@homeseekers.co.za">Talk to our developments team <ArrowRight size={17} /></a></header><div className="hs-development-grid">{developments.map((development) => <a href="mailto:hello@homeseekers.co.za" className="hs-development-card" key={development.name}><figure><img src={development.image} alt={development.name} /><span>{development.status}</span></figure><section><h3>{development.name}</h3><p><MapPin size={14} /> {development.location}</p><small>{development.detail}</small><b>View development <ArrowRight size={16} /></b></section></a>)}</div></section>
 
     <section className="hs-availability" aria-labelledby="availability-heading">

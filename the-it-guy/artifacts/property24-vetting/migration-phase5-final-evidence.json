@@ -1,0 +1,1280 @@
+{
+  "version": "property24_migration_verification_v1",
+  "phase": "property24-migration-import-phase5-final-verification",
+  "status": "VERIFIED",
+  "generatedAt": "2026-08-31T10:42:26.607Z",
+  "context": {
+    "organisationId": "ec19d0a6-bcba-4eef-aa72-9972de88204d",
+    "environment": "exdev",
+    "agencyId": 31382
+  },
+  "inputs": {
+    "mapping": {
+      "path": "/Users/alexanderlandman/the-it-guy/the-it-guy/artifacts/property24-vetting/migration-phase2-data-mapping.json",
+      "sha256": "06cf10b7452bfc6188e62d4f44da047338f873910f78de7bd9992958da90b4ab"
+    },
+    "images": {
+      "path": "/Users/alexanderlandman/the-it-guy/the-it-guy/artifacts/property24-vetting/migration-phase4-image-import-apply.json",
+      "sha256": "22500cdbff0e0d4732f80601b238a022ef4e03640c48fa46ae2a0f17b4c315b7"
+    },
+    "duplicateProtectionRerun": {
+      "path": "/Users/alexanderlandman/the-it-guy/the-it-guy/artifacts/property24-vetting/migration-phase5-duplicate-protection-rerun.json",
+      "sha256": "5d295106a71ef15616cb3ee3c4e5deced37939545cafa1535265981b61b02401"
+    }
+  },
+  "safety": {
+    "property24WritesPerformed": false,
+    "databaseWritesPerformed": false,
+    "storageWritesPerformed": false,
+    "verificationReadOnly": true
+  },
+  "summary": {
+    "checkCount": 62,
+    "passedCheckCount": 62,
+    "failedCheckCount": 0,
+    "agentCount": 4,
+    "listingCount": 4,
+    "expectedImageCount": 14,
+    "verifiedImageCount": 14,
+    "duplicateAgentMappingCount": 0,
+    "duplicateListingIdentityCount": 0,
+    "duplicateSyncCount": 0,
+    "duplicateImageRowCount": 0,
+    "unexpectedImageCount": 0
+  },
+  "duplicateProtection": {
+    "rerunStatus": "COMPLETE",
+    "createListingCount": 0,
+    "staleMediaRowCount": 0,
+    "uploadedImageCount": 0,
+    "reusedImageCount": 14
+  },
+  "agents": [
+    {
+      "property24AgentId": 77959,
+      "sourceReference": "ARCH9-AGENT-001",
+      "property24Status": "Active",
+      "arch9MappingStatus": "active",
+      "arch9UserId": null
+    },
+    {
+      "property24AgentId": 77968,
+      "sourceReference": "ARCH9-P24-TEST-001",
+      "property24Status": "Active",
+      "arch9MappingStatus": "active",
+      "arch9UserId": null
+    },
+    {
+      "property24AgentId": 77969,
+      "sourceReference": "ARCH9-VET-JON-SNOW",
+      "property24Status": "Inactive",
+      "arch9MappingStatus": "inactive",
+      "arch9UserId": null
+    },
+    {
+      "property24AgentId": 77970,
+      "sourceReference": "ARCH9-VET-PAULY-SHORE",
+      "property24Status": "Inactive",
+      "arch9MappingStatus": "inactive",
+      "arch9UserId": null
+    }
+  ],
+  "listings": [
+    {
+      "listingNumber": 100314793,
+      "listingId": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+      "listingType": "Sale",
+      "property24Status": "Active",
+      "isOnPortal": true,
+      "arch9ListingStatus": "active",
+      "arch9Property24Status": "published",
+      "mediaCount": 4
+    },
+    {
+      "listingNumber": 100314816,
+      "listingId": "08080a97-b727-4522-9381-d26029902df1",
+      "listingType": "Sale",
+      "property24Status": "Active",
+      "isOnPortal": true,
+      "arch9ListingStatus": "active",
+      "arch9Property24Status": "published",
+      "mediaCount": 6
+    },
+    {
+      "listingNumber": 100314819,
+      "listingId": "3e8f6b1a-b0db-5075-b4b1-d1b32c18d8d3",
+      "listingType": "Rental",
+      "property24Status": "Rented",
+      "isOnPortal": false,
+      "arch9ListingStatus": "withdrawn",
+      "arch9Property24Status": "removed",
+      "mediaCount": 2
+    },
+    {
+      "listingNumber": 100314820,
+      "listingId": "2b54543c-ecb1-580f-b665-1f5df86caf34",
+      "listingType": "Sale",
+      "property24Status": "Sold",
+      "isOnPortal": false,
+      "arch9ListingStatus": "sold",
+      "arch9Property24Status": "removed",
+      "mediaCount": 2
+    }
+  ],
+  "checks": [
+    {
+      "id": "organisation_identity",
+      "status": "PASS",
+      "detail": "Verified Arch9 organisation Kingstons Real Estate.",
+      "evidence": {
+        "expected": "ec19d0a6-bcba-4eef-aa72-9972de88204d",
+        "actual": "ec19d0a6-bcba-4eef-aa72-9972de88204d"
+      }
+    },
+    {
+      "id": "storage_bucket",
+      "status": "PASS",
+      "detail": "The listing-media bucket exists and is public.",
+      "evidence": {
+        "bucket": {
+          "id": "listing-media",
+          "name": "listing-media",
+          "owner": "",
+          "public": true,
+          "file_size_limit": 15728640,
+          "allowed_mime_types": [
+            "image/jpeg",
+            "image/png",
+            "image/webp",
+            "image/gif",
+            "image/avif"
+          ],
+          "created_at": "2026-08-31T10:31:31.158Z",
+          "updated_at": "2026-08-31T10:31:31.158Z"
+        }
+      }
+    },
+    {
+      "id": "duplicate_protection_rerun_complete",
+      "status": "PASS",
+      "detail": "The idempotent apply/reconcile rerun completed and verified successfully.",
+      "evidence": {
+        "status": "COMPLETE",
+        "verification": {
+          "passed": true,
+          "checks": {
+            "agents": true,
+            "listings": true,
+            "publications": true,
+            "syncs": true,
+            "media": true
+          },
+          "importedMediaCount": 14,
+          "expectedMediaCount": 14,
+          "unexpectedImageCount": 0
+        }
+      }
+    },
+    {
+      "id": "duplicate_protection_no_creates",
+      "status": "PASS",
+      "detail": "The rerun created no listings; all existing identities were updated in place.",
+      "evidence": {
+        "createListingCount": 0,
+        "actions": [
+          {
+            "listingNumber": 100314793,
+            "action": "update"
+          },
+          {
+            "listingNumber": 100314816,
+            "action": "update"
+          },
+          {
+            "listingNumber": 100314819,
+            "action": "update"
+          },
+          {
+            "listingNumber": 100314820,
+            "action": "update"
+          }
+        ]
+      }
+    },
+    {
+      "id": "duplicate_protection_media_reuse",
+      "status": "PASS",
+      "detail": "All 14 images were reused without another upload.",
+      "evidence": {
+        "imageSummary": {
+          "requestedImageCount": 14,
+          "uploadedImageCount": 0,
+          "reusedImageCount": 14,
+          "failedImageCount": 0,
+          "pendingImageCount": 0,
+          "completedImageCount": 14,
+          "listingCount": 4,
+          "readyListingCount": 4,
+          "listingMediaRowCount": 14
+        }
+      }
+    },
+    {
+      "id": "duplicate_protection_no_stale_media",
+      "status": "PASS",
+      "detail": "The rerun found no duplicate or stale image rows.",
+      "evidence": {
+        "staleMediaRowCount": 0,
+        "removed": [
+          {
+            "listingNumber": 100314793,
+            "count": 0
+          },
+          {
+            "listingNumber": 100314816,
+            "count": 0
+          },
+          {
+            "listingNumber": 100314819,
+            "count": 0
+          },
+          {
+            "listingNumber": 100314820,
+            "count": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "agent_77959_unique",
+      "status": "PASS",
+      "detail": "Agent 77959 has exactly one Arch9 mapping row.",
+      "evidence": {
+        "mappingRowIds": [
+          "04eda7fb-61bb-4121-bdbf-af14865c1d5f"
+        ]
+      }
+    },
+    {
+      "id": "agent_77959_status",
+      "status": "PASS",
+      "detail": "Agent 77959 matches live Property24 status Active.",
+      "evidence": {
+        "expected": {
+          "sourceReference": "ARCH9-AGENT-001",
+          "status": "active"
+        },
+        "actual": {
+          "sourceReference": "ARCH9-AGENT-001",
+          "status": "active"
+        }
+      }
+    },
+    {
+      "id": "agent_77968_unique",
+      "status": "PASS",
+      "detail": "Agent 77968 has exactly one Arch9 mapping row.",
+      "evidence": {
+        "mappingRowIds": [
+          "8729973f-37e5-40ae-af0b-e0e8f4e86e27"
+        ]
+      }
+    },
+    {
+      "id": "agent_77968_status",
+      "status": "PASS",
+      "detail": "Agent 77968 matches live Property24 status Active.",
+      "evidence": {
+        "expected": {
+          "sourceReference": "ARCH9-P24-TEST-001",
+          "status": "active"
+        },
+        "actual": {
+          "sourceReference": "ARCH9-P24-TEST-001",
+          "status": "active"
+        }
+      }
+    },
+    {
+      "id": "agent_77969_unique",
+      "status": "PASS",
+      "detail": "Agent 77969 has exactly one Arch9 mapping row.",
+      "evidence": {
+        "mappingRowIds": [
+          "60f71b09-4095-428e-afd4-552742b2e5ad"
+        ]
+      }
+    },
+    {
+      "id": "agent_77969_status",
+      "status": "PASS",
+      "detail": "Agent 77969 matches live Property24 status Inactive.",
+      "evidence": {
+        "expected": {
+          "sourceReference": "ARCH9-VET-JON-SNOW",
+          "status": "inactive"
+        },
+        "actual": {
+          "sourceReference": "ARCH9-VET-JON-SNOW",
+          "status": "inactive"
+        }
+      }
+    },
+    {
+      "id": "agent_77970_unique",
+      "status": "PASS",
+      "detail": "Agent 77970 has exactly one Arch9 mapping row.",
+      "evidence": {
+        "mappingRowIds": [
+          "44729cc8-30bc-4380-9632-9cfbed14e6f7"
+        ]
+      }
+    },
+    {
+      "id": "agent_77970_status",
+      "status": "PASS",
+      "detail": "Agent 77970 matches live Property24 status Inactive.",
+      "evidence": {
+        "expected": {
+          "sourceReference": "ARCH9-VET-PAULY-SHORE",
+          "status": "inactive"
+        },
+        "actual": {
+          "sourceReference": "ARCH9-VET-PAULY-SHORE",
+          "status": "inactive"
+        }
+      }
+    },
+    {
+      "id": "listing_100314793_unique",
+      "status": "PASS",
+      "detail": "Listing 100314793 resolves to exactly one Arch9 listing.",
+      "evidence": {
+        "listingIds": [
+          "f35d8916-2ae9-4364-b364-fc279e260fa7"
+        ]
+      }
+    },
+    {
+      "id": "listing_100314793_sync_unique",
+      "status": "PASS",
+      "detail": "Listing 100314793 has exactly one Property24 sync row.",
+      "evidence": {
+        "syncRowIds": [
+          "3eba8d4a-ea95-4724-ab20-34e9e903617c"
+        ]
+      }
+    },
+    {
+      "id": "listing_100314793_publication_unique",
+      "status": "PASS",
+      "detail": "Listing 100314793 has exactly one publication row.",
+      "evidence": {
+        "publicationRowIds": [
+          "4fb5c664-2591-442d-a66e-e56d7d070139"
+        ]
+      }
+    },
+    {
+      "id": "listing_100314793_rerun_identity",
+      "status": "PASS",
+      "detail": "Listing 100314793 retained Arch9 ID f35d8916-2ae9-4364-b364-fc279e260fa7 during the rerun.",
+      "evidence": {
+        "expectedListingId": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+        "actualListingId": "f35d8916-2ae9-4364-b364-fc279e260fa7"
+      }
+    },
+    {
+      "id": "listing_100314793_status",
+      "status": "PASS",
+      "detail": "Arch9 listing state matches Property24 Active.",
+      "evidence": {
+        "expected": {
+          "listingStatus": "active",
+          "listingVisibility": "active_market",
+          "isActive": true,
+          "property24Status": "published"
+        },
+        "actual": {
+          "listingStatus": "active",
+          "listingVisibility": "active_market",
+          "isActive": true,
+          "property24Status": "published"
+        }
+      }
+    },
+    {
+      "id": "listing_100314793_publication",
+      "status": "PASS",
+      "detail": "Publication state is Published.",
+      "evidence": {
+        "expected": "Published",
+        "actual": "Published"
+      }
+    },
+    {
+      "id": "listing_100314793_sync",
+      "status": "PASS",
+      "detail": "Property24 sync row records Active and portal=true.",
+      "evidence": {
+        "expected": {
+          "externalStatus": "on_portal",
+          "isOnPortal": true,
+          "currentStatus": "Active"
+        },
+        "actual": {
+          "externalStatus": "on_portal",
+          "isOnPortal": true,
+          "currentStatus": "Active"
+        }
+      }
+    },
+    {
+      "id": "listing_100314793_canonical_status",
+      "status": "PASS",
+      "detail": "Canonical import metadata preserves the current Property24 semantic status.",
+      "evidence": {
+        "expected": {
+          "sourceStatus": "Active",
+          "semanticStatus": "active"
+        },
+        "actual": {
+          "sourceStatus": "Active",
+          "semanticStatus": "active"
+        }
+      }
+    },
+    {
+      "id": "listing_100314793_media_exact_set",
+      "status": "PASS",
+      "detail": "Exactly 4 canonical images are attached with no duplicates.",
+      "evidence": {
+        "expectedPaths": [
+          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314793/0001-9bd2673ce584bb5f27f0.jpg",
+          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314793/0002-67fe9f833f89e3e6054f.jpg",
+          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314793/0003-69f119ed30dd0905686f.jpg",
+          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314793/0004-9da36d02905af51e18f7.jpg"
+        ],
+        "actualPaths": [
+          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314793/0001-9bd2673ce584bb5f27f0.jpg",
+          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314793/0002-67fe9f833f89e3e6054f.jpg",
+          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314793/0003-69f119ed30dd0905686f.jpg",
+          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314793/0004-9da36d02905af51e18f7.jpg"
+        ]
+      }
+    },
+    {
+      "id": "listing_100314793_media_order",
+      "status": "PASS",
+      "detail": "Image sort order is contiguous from 0 to 3.",
+      "evidence": {
+        "expectedOrders": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "actualOrders": [
+          0,
+          1,
+          2,
+          3
+        ]
+      }
+    },
+    {
+      "id": "listing_100314793_cover",
+      "status": "PASS",
+      "detail": "Exactly one cover image is set at sort order 0.",
+      "evidence": {
+        "coverCount": 1,
+        "coverOrders": [
+          0
+        ]
+      }
+    },
+    {
+      "id": "listing_100314793_media_integrity",
+      "status": "PASS",
+      "detail": "Every rehosted image is publicly reachable and matches its source SHA-256.",
+      "evidence": {
+        "objects": [
+          {
+            "listingNumber": 100314793,
+            "sortOrder": 0,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314793/0001-9bd2673ce584bb5f27f0.jpg",
+            "expectedSha256": "9bd2673ce584bb5f27f052a057b980e3f6af3489d60d10b0e5e45c7779bd22c4",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 129436,
+            "actualSha256": "9bd2673ce584bb5f27f052a057b980e3f6af3489d60d10b0e5e45c7779bd22c4",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 100314793,
+            "sortOrder": 1,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314793/0002-67fe9f833f89e3e6054f.jpg",
+            "expectedSha256": "67fe9f833f89e3e6054f74bc4f7e8c5fa83c2e6001b46c056aed16fdaf9405d2",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 107807,
+            "actualSha256": "67fe9f833f89e3e6054f74bc4f7e8c5fa83c2e6001b46c056aed16fdaf9405d2",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 100314793,
+            "sortOrder": 2,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314793/0003-69f119ed30dd0905686f.jpg",
+            "expectedSha256": "69f119ed30dd0905686f88afae94f795c3f12d6de7dc4a255bee43389967421e",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 120151,
+            "actualSha256": "69f119ed30dd0905686f88afae94f795c3f12d6de7dc4a255bee43389967421e",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 100314793,
+            "sortOrder": 3,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314793/0004-9da36d02905af51e18f7.jpg",
+            "expectedSha256": "9da36d02905af51e18f70d64073c3af0ad6f92bd3a5b233c2253575bb39f85e1",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 114965,
+            "actualSha256": "9da36d02905af51e18f70d64073c3af0ad6f92bd3a5b233c2253575bb39f85e1",
+            "sha256Matches": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "listing_100314816_unique",
+      "status": "PASS",
+      "detail": "Listing 100314816 resolves to exactly one Arch9 listing.",
+      "evidence": {
+        "listingIds": [
+          "08080a97-b727-4522-9381-d26029902df1"
+        ]
+      }
+    },
+    {
+      "id": "listing_100314816_sync_unique",
+      "status": "PASS",
+      "detail": "Listing 100314816 has exactly one Property24 sync row.",
+      "evidence": {
+        "syncRowIds": [
+          "a07c885a-9dc4-492c-ac37-a2d47b4f73d0"
+        ]
+      }
+    },
+    {
+      "id": "listing_100314816_publication_unique",
+      "status": "PASS",
+      "detail": "Listing 100314816 has exactly one publication row.",
+      "evidence": {
+        "publicationRowIds": [
+          "5b864281-15d9-4c4b-9263-9b0b106bad45"
+        ]
+      }
+    },
+    {
+      "id": "listing_100314816_rerun_identity",
+      "status": "PASS",
+      "detail": "Listing 100314816 retained Arch9 ID 08080a97-b727-4522-9381-d26029902df1 during the rerun.",
+      "evidence": {
+        "expectedListingId": "08080a97-b727-4522-9381-d26029902df1",
+        "actualListingId": "08080a97-b727-4522-9381-d26029902df1"
+      }
+    },
+    {
+      "id": "listing_100314816_status",
+      "status": "PASS",
+      "detail": "Arch9 listing state matches Property24 Active.",
+      "evidence": {
+        "expected": {
+          "listingStatus": "active",
+          "listingVisibility": "active_market",
+          "isActive": true,
+          "property24Status": "published"
+        },
+        "actual": {
+          "listingStatus": "active",
+          "listingVisibility": "active_market",
+          "isActive": true,
+          "property24Status": "published"
+        }
+      }
+    },
+    {
+      "id": "listing_100314816_publication",
+      "status": "PASS",
+      "detail": "Publication state is Published.",
+      "evidence": {
+        "expected": "Published",
+        "actual": "Published"
+      }
+    },
+    {
+      "id": "listing_100314816_sync",
+      "status": "PASS",
+      "detail": "Property24 sync row records Active and portal=true.",
+      "evidence": {
+        "expected": {
+          "externalStatus": "on_portal",
+          "isOnPortal": true,
+          "currentStatus": "Active"
+        },
+        "actual": {
+          "externalStatus": "on_portal",
+          "isOnPortal": true,
+          "currentStatus": "Active"
+        }
+      }
+    },
+    {
+      "id": "listing_100314816_canonical_status",
+      "status": "PASS",
+      "detail": "Canonical import metadata preserves the current Property24 semantic status.",
+      "evidence": {
+        "expected": {
+          "sourceStatus": "Active",
+          "semanticStatus": "active"
+        },
+        "actual": {
+          "sourceStatus": "Active",
+          "semanticStatus": "active"
+        }
+      }
+    },
+    {
+      "id": "listing_100314816_media_exact_set",
+      "status": "PASS",
+      "detail": "Exactly 6 canonical images are attached with no duplicates.",
+      "evidence": {
+        "expectedPaths": [
+          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314816/0001-29c0ce599156d486b3df.jpg",
+          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314816/0002-7105ae3307c41c3a5bf9.jpg",
+          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314816/0003-353c92deaf35e1ac68f6.jpg",
+          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314816/0004-6e6cdc708f27d32f3b9d.jpg",
+          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314816/0005-fa77419855e4fd2a4bc6.jpg",
+          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314816/0006-b5b71e9e768aaeed8b4a.jpg"
+        ],
+        "actualPaths": [
+          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314816/0001-29c0ce599156d486b3df.jpg",
+          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314816/0002-7105ae3307c41c3a5bf9.jpg",
+          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314816/0003-353c92deaf35e1ac68f6.jpg",
+          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314816/0004-6e6cdc708f27d32f3b9d.jpg",
+          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314816/0005-fa77419855e4fd2a4bc6.jpg",
+          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314816/0006-b5b71e9e768aaeed8b4a.jpg"
+        ]
+      }
+    },
+    {
+      "id": "listing_100314816_media_order",
+      "status": "PASS",
+      "detail": "Image sort order is contiguous from 0 to 5.",
+      "evidence": {
+        "expectedOrders": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "actualOrders": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5
+        ]
+      }
+    },
+    {
+      "id": "listing_100314816_cover",
+      "status": "PASS",
+      "detail": "Exactly one cover image is set at sort order 0.",
+      "evidence": {
+        "coverCount": 1,
+        "coverOrders": [
+          0
+        ]
+      }
+    },
+    {
+      "id": "listing_100314816_media_integrity",
+      "status": "PASS",
+      "detail": "Every rehosted image is publicly reachable and matches its source SHA-256.",
+      "evidence": {
+        "objects": [
+          {
+            "listingNumber": 100314816,
+            "sortOrder": 0,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314816/0001-29c0ce599156d486b3df.jpg",
+            "expectedSha256": "29c0ce599156d486b3dfd198275e2a2a9c98bc74e2f715e9100169066bfda317",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 131440,
+            "actualSha256": "29c0ce599156d486b3dfd198275e2a2a9c98bc74e2f715e9100169066bfda317",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 100314816,
+            "sortOrder": 1,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314816/0002-7105ae3307c41c3a5bf9.jpg",
+            "expectedSha256": "7105ae3307c41c3a5bf9f0e07f37123c52cb9a8566ccc630cca3a11ab911cfea",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 109548,
+            "actualSha256": "7105ae3307c41c3a5bf9f0e07f37123c52cb9a8566ccc630cca3a11ab911cfea",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 100314816,
+            "sortOrder": 2,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314816/0003-353c92deaf35e1ac68f6.jpg",
+            "expectedSha256": "353c92deaf35e1ac68f63cbc07915ac41e0728eec1ce29f6b5a23c5006e5bfc5",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 121410,
+            "actualSha256": "353c92deaf35e1ac68f63cbc07915ac41e0728eec1ce29f6b5a23c5006e5bfc5",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 100314816,
+            "sortOrder": 3,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314816/0004-6e6cdc708f27d32f3b9d.jpg",
+            "expectedSha256": "6e6cdc708f27d32f3b9d93539b0a8643300195e358e3fba554844cfb9ce3d21c",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 116645,
+            "actualSha256": "6e6cdc708f27d32f3b9d93539b0a8643300195e358e3fba554844cfb9ce3d21c",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 100314816,
+            "sortOrder": 4,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314816/0005-fa77419855e4fd2a4bc6.jpg",
+            "expectedSha256": "fa77419855e4fd2a4bc66ba28a3d56cc43073c3b7ee489711d04064d566c0eec",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 125751,
+            "actualSha256": "fa77419855e4fd2a4bc66ba28a3d56cc43073c3b7ee489711d04064d566c0eec",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 100314816,
+            "sortOrder": 5,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314816/0006-b5b71e9e768aaeed8b4a.jpg",
+            "expectedSha256": "b5b71e9e768aaeed8b4ae6ad10dc3a5c6b8239fff0c4b6bd5446b37d3e6a34ee",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 120896,
+            "actualSha256": "b5b71e9e768aaeed8b4ae6ad10dc3a5c6b8239fff0c4b6bd5446b37d3e6a34ee",
+            "sha256Matches": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "listing_100314819_unique",
+      "status": "PASS",
+      "detail": "Listing 100314819 resolves to exactly one Arch9 listing.",
+      "evidence": {
+        "listingIds": [
+          "3e8f6b1a-b0db-5075-b4b1-d1b32c18d8d3"
+        ]
+      }
+    },
+    {
+      "id": "listing_100314819_sync_unique",
+      "status": "PASS",
+      "detail": "Listing 100314819 has exactly one Property24 sync row.",
+      "evidence": {
+        "syncRowIds": [
+          "54b2480d-d173-4635-bdc1-b684c7ae31de"
+        ]
+      }
+    },
+    {
+      "id": "listing_100314819_publication_unique",
+      "status": "PASS",
+      "detail": "Listing 100314819 has exactly one publication row.",
+      "evidence": {
+        "publicationRowIds": [
+          "0034ad99-8f24-45ab-9d87-bcef29cd7ca4"
+        ]
+      }
+    },
+    {
+      "id": "listing_100314819_rerun_identity",
+      "status": "PASS",
+      "detail": "Listing 100314819 retained Arch9 ID 3e8f6b1a-b0db-5075-b4b1-d1b32c18d8d3 during the rerun.",
+      "evidence": {
+        "expectedListingId": "3e8f6b1a-b0db-5075-b4b1-d1b32c18d8d3",
+        "actualListingId": "3e8f6b1a-b0db-5075-b4b1-d1b32c18d8d3"
+      }
+    },
+    {
+      "id": "listing_100314819_status",
+      "status": "PASS",
+      "detail": "Arch9 listing state matches Property24 Rented.",
+      "evidence": {
+        "expected": {
+          "listingStatus": "withdrawn",
+          "listingVisibility": "archived",
+          "isActive": false,
+          "property24Status": "removed"
+        },
+        "actual": {
+          "listingStatus": "withdrawn",
+          "listingVisibility": "archived",
+          "isActive": false,
+          "property24Status": "removed"
+        }
+      }
+    },
+    {
+      "id": "listing_100314819_publication",
+      "status": "PASS",
+      "detail": "Publication state is Archived.",
+      "evidence": {
+        "expected": "Archived",
+        "actual": "Archived"
+      }
+    },
+    {
+      "id": "listing_100314819_sync",
+      "status": "PASS",
+      "detail": "Property24 sync row records Rented and portal=false.",
+      "evidence": {
+        "expected": {
+          "externalStatus": "removed",
+          "isOnPortal": false,
+          "currentStatus": "Rented"
+        },
+        "actual": {
+          "externalStatus": "removed",
+          "isOnPortal": false,
+          "currentStatus": "Rented"
+        }
+      }
+    },
+    {
+      "id": "listing_100314819_canonical_status",
+      "status": "PASS",
+      "detail": "Canonical import metadata preserves the current Property24 semantic status.",
+      "evidence": {
+        "expected": {
+          "sourceStatus": "Rented",
+          "semanticStatus": "rented"
+        },
+        "actual": {
+          "sourceStatus": "Rented",
+          "semanticStatus": "rented"
+        }
+      }
+    },
+    {
+      "id": "listing_100314819_media_exact_set",
+      "status": "PASS",
+      "detail": "Exactly 2 canonical images are attached with no duplicates.",
+      "evidence": {
+        "expectedPaths": [
+          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314819/0001-ed60cfebbdcec2c26d81.jpg",
+          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314819/0002-17ba4d87398a849e1777.jpg"
+        ],
+        "actualPaths": [
+          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314819/0001-ed60cfebbdcec2c26d81.jpg",
+          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314819/0002-17ba4d87398a849e1777.jpg"
+        ]
+      }
+    },
+    {
+      "id": "listing_100314819_media_order",
+      "status": "PASS",
+      "detail": "Image sort order is contiguous from 0 to 1.",
+      "evidence": {
+        "expectedOrders": [
+          0,
+          1
+        ],
+        "actualOrders": [
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "id": "listing_100314819_cover",
+      "status": "PASS",
+      "detail": "Exactly one cover image is set at sort order 0.",
+      "evidence": {
+        "coverCount": 1,
+        "coverOrders": [
+          0
+        ]
+      }
+    },
+    {
+      "id": "listing_100314819_media_integrity",
+      "status": "PASS",
+      "detail": "Every rehosted image is publicly reachable and matches its source SHA-256.",
+      "evidence": {
+        "objects": [
+          {
+            "listingNumber": 100314819,
+            "sortOrder": 0,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314819/0001-ed60cfebbdcec2c26d81.jpg",
+            "expectedSha256": "ed60cfebbdcec2c26d81e746f7bba3860ff9d69bd25cf846e9e41e362c903b20",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 160233,
+            "actualSha256": "ed60cfebbdcec2c26d81e746f7bba3860ff9d69bd25cf846e9e41e362c903b20",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 100314819,
+            "sortOrder": 1,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314819/0002-17ba4d87398a849e1777.jpg",
+            "expectedSha256": "17ba4d87398a849e1777dd04fb37579fad2980d84e89b1ab0811d815e4c09636",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 165776,
+            "actualSha256": "17ba4d87398a849e1777dd04fb37579fad2980d84e89b1ab0811d815e4c09636",
+            "sha256Matches": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "listing_100314820_unique",
+      "status": "PASS",
+      "detail": "Listing 100314820 resolves to exactly one Arch9 listing.",
+      "evidence": {
+        "listingIds": [
+          "2b54543c-ecb1-580f-b665-1f5df86caf34"
+        ]
+      }
+    },
+    {
+      "id": "listing_100314820_sync_unique",
+      "status": "PASS",
+      "detail": "Listing 100314820 has exactly one Property24 sync row.",
+      "evidence": {
+        "syncRowIds": [
+          "44935c7c-cab1-432d-993e-8e17b37a314c"
+        ]
+      }
+    },
+    {
+      "id": "listing_100314820_publication_unique",
+      "status": "PASS",
+      "detail": "Listing 100314820 has exactly one publication row.",
+      "evidence": {
+        "publicationRowIds": [
+          "a31890d5-cab8-44df-956f-160e89af3647"
+        ]
+      }
+    },
+    {
+      "id": "listing_100314820_rerun_identity",
+      "status": "PASS",
+      "detail": "Listing 100314820 retained Arch9 ID 2b54543c-ecb1-580f-b665-1f5df86caf34 during the rerun.",
+      "evidence": {
+        "expectedListingId": "2b54543c-ecb1-580f-b665-1f5df86caf34",
+        "actualListingId": "2b54543c-ecb1-580f-b665-1f5df86caf34"
+      }
+    },
+    {
+      "id": "listing_100314820_status",
+      "status": "PASS",
+      "detail": "Arch9 listing state matches Property24 Sold.",
+      "evidence": {
+        "expected": {
+          "listingStatus": "sold",
+          "listingVisibility": "archived",
+          "isActive": false,
+          "property24Status": "removed"
+        },
+        "actual": {
+          "listingStatus": "sold",
+          "listingVisibility": "archived",
+          "isActive": false,
+          "property24Status": "removed"
+        }
+      }
+    },
+    {
+      "id": "listing_100314820_publication",
+      "status": "PASS",
+      "detail": "Publication state is Archived.",
+      "evidence": {
+        "expected": "Archived",
+        "actual": "Archived"
+      }
+    },
+    {
+      "id": "listing_100314820_sync",
+      "status": "PASS",
+      "detail": "Property24 sync row records Sold and portal=false.",
+      "evidence": {
+        "expected": {
+          "externalStatus": "removed",
+          "isOnPortal": false,
+          "currentStatus": "Sold"
+        },
+        "actual": {
+          "externalStatus": "removed",
+          "isOnPortal": false,
+          "currentStatus": "Sold"
+        }
+      }
+    },
+    {
+      "id": "listing_100314820_canonical_status",
+      "status": "PASS",
+      "detail": "Canonical import metadata preserves the current Property24 semantic status.",
+      "evidence": {
+        "expected": {
+          "sourceStatus": "Sold",
+          "semanticStatus": "sold"
+        },
+        "actual": {
+          "sourceStatus": "Sold",
+          "semanticStatus": "sold"
+        }
+      }
+    },
+    {
+      "id": "listing_100314820_media_exact_set",
+      "status": "PASS",
+      "detail": "Exactly 2 canonical images are attached with no duplicates.",
+      "evidence": {
+        "expectedPaths": [
+          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314820/0001-51e28b786635ce3728d9.jpg",
+          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314820/0002-e4a046d8800662869042.jpg"
+        ],
+        "actualPaths": [
+          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314820/0001-51e28b786635ce3728d9.jpg",
+          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314820/0002-e4a046d8800662869042.jpg"
+        ]
+      }
+    },
+    {
+      "id": "listing_100314820_media_order",
+      "status": "PASS",
+      "detail": "Image sort order is contiguous from 0 to 1.",
+      "evidence": {
+        "expectedOrders": [
+          0,
+          1
+        ],
+        "actualOrders": [
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "id": "listing_100314820_cover",
+      "status": "PASS",
+      "detail": "Exactly one cover image is set at sort order 0.",
+      "evidence": {
+        "coverCount": 1,
+        "coverOrders": [
+          0
+        ]
+      }
+    },
+    {
+      "id": "listing_100314820_media_integrity",
+      "status": "PASS",
+      "detail": "Every rehosted image is publicly reachable and matches its source SHA-256.",
+      "evidence": {
+        "objects": [
+          {
+            "listingNumber": 100314820,
+            "sortOrder": 0,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314820/0001-51e28b786635ce3728d9.jpg",
+            "expectedSha256": "51e28b786635ce3728d9e139bbdb142ce23d73dab944e09d1c3a36a85f9a914f",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 376819,
+            "actualSha256": "51e28b786635ce3728d9e139bbdb142ce23d73dab944e09d1c3a36a85f9a914f",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 100314820,
+            "sortOrder": 1,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314820/0002-e4a046d8800662869042.jpg",
+            "expectedSha256": "e4a046d8800662869042aeec91b9e3614600dc6e556ce67e4d3c752bb40113be",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 201452,
+            "actualSha256": "e4a046d8800662869042aeec91b9e3614600dc6e556ce67e4d3c752bb40113be",
+            "sha256Matches": true
+          }
+        ]
+      }
+    }
+  ],
+  "failures": [],
+  "storageResults": [
+    {
+      "listingNumber": 100314793,
+      "sortOrder": 0,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314793/0001-9bd2673ce584bb5f27f0.jpg",
+      "expectedSha256": "9bd2673ce584bb5f27f052a057b980e3f6af3489d60d10b0e5e45c7779bd22c4",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 129436,
+      "actualSha256": "9bd2673ce584bb5f27f052a057b980e3f6af3489d60d10b0e5e45c7779bd22c4",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 100314793,
+      "sortOrder": 1,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314793/0002-67fe9f833f89e3e6054f.jpg",
+      "expectedSha256": "67fe9f833f89e3e6054f74bc4f7e8c5fa83c2e6001b46c056aed16fdaf9405d2",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 107807,
+      "actualSha256": "67fe9f833f89e3e6054f74bc4f7e8c5fa83c2e6001b46c056aed16fdaf9405d2",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 100314793,
+      "sortOrder": 2,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314793/0003-69f119ed30dd0905686f.jpg",
+      "expectedSha256": "69f119ed30dd0905686f88afae94f795c3f12d6de7dc4a255bee43389967421e",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 120151,
+      "actualSha256": "69f119ed30dd0905686f88afae94f795c3f12d6de7dc4a255bee43389967421e",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 100314793,
+      "sortOrder": 3,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314793/0004-9da36d02905af51e18f7.jpg",
+      "expectedSha256": "9da36d02905af51e18f70d64073c3af0ad6f92bd3a5b233c2253575bb39f85e1",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 114965,
+      "actualSha256": "9da36d02905af51e18f70d64073c3af0ad6f92bd3a5b233c2253575bb39f85e1",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 100314816,
+      "sortOrder": 0,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314816/0001-29c0ce599156d486b3df.jpg",
+      "expectedSha256": "29c0ce599156d486b3dfd198275e2a2a9c98bc74e2f715e9100169066bfda317",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 131440,
+      "actualSha256": "29c0ce599156d486b3dfd198275e2a2a9c98bc74e2f715e9100169066bfda317",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 100314816,
+      "sortOrder": 1,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314816/0002-7105ae3307c41c3a5bf9.jpg",
+      "expectedSha256": "7105ae3307c41c3a5bf9f0e07f37123c52cb9a8566ccc630cca3a11ab911cfea",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 109548,
+      "actualSha256": "7105ae3307c41c3a5bf9f0e07f37123c52cb9a8566ccc630cca3a11ab911cfea",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 100314816,
+      "sortOrder": 2,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314816/0003-353c92deaf35e1ac68f6.jpg",
+      "expectedSha256": "353c92deaf35e1ac68f63cbc07915ac41e0728eec1ce29f6b5a23c5006e5bfc5",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 121410,
+      "actualSha256": "353c92deaf35e1ac68f63cbc07915ac41e0728eec1ce29f6b5a23c5006e5bfc5",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 100314816,
+      "sortOrder": 3,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314816/0004-6e6cdc708f27d32f3b9d.jpg",
+      "expectedSha256": "6e6cdc708f27d32f3b9d93539b0a8643300195e358e3fba554844cfb9ce3d21c",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 116645,
+      "actualSha256": "6e6cdc708f27d32f3b9d93539b0a8643300195e358e3fba554844cfb9ce3d21c",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 100314816,
+      "sortOrder": 4,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314816/0005-fa77419855e4fd2a4bc6.jpg",
+      "expectedSha256": "fa77419855e4fd2a4bc66ba28a3d56cc43073c3b7ee489711d04064d566c0eec",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 125751,
+      "actualSha256": "fa77419855e4fd2a4bc66ba28a3d56cc43073c3b7ee489711d04064d566c0eec",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 100314816,
+      "sortOrder": 5,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314816/0006-b5b71e9e768aaeed8b4a.jpg",
+      "expectedSha256": "b5b71e9e768aaeed8b4ae6ad10dc3a5c6b8239fff0c4b6bd5446b37d3e6a34ee",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 120896,
+      "actualSha256": "b5b71e9e768aaeed8b4ae6ad10dc3a5c6b8239fff0c4b6bd5446b37d3e6a34ee",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 100314819,
+      "sortOrder": 0,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314819/0001-ed60cfebbdcec2c26d81.jpg",
+      "expectedSha256": "ed60cfebbdcec2c26d81e746f7bba3860ff9d69bd25cf846e9e41e362c903b20",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 160233,
+      "actualSha256": "ed60cfebbdcec2c26d81e746f7bba3860ff9d69bd25cf846e9e41e362c903b20",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 100314819,
+      "sortOrder": 1,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314819/0002-17ba4d87398a849e1777.jpg",
+      "expectedSha256": "17ba4d87398a849e1777dd04fb37579fad2980d84e89b1ab0811d815e4c09636",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 165776,
+      "actualSha256": "17ba4d87398a849e1777dd04fb37579fad2980d84e89b1ab0811d815e4c09636",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 100314820,
+      "sortOrder": 0,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314820/0001-51e28b786635ce3728d9.jpg",
+      "expectedSha256": "51e28b786635ce3728d9e139bbdb142ce23d73dab944e09d1c3a36a85f9a914f",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 376819,
+      "actualSha256": "51e28b786635ce3728d9e139bbdb142ce23d73dab944e09d1c3a36a85f9a914f",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 100314820,
+      "sortOrder": 1,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314820/0002-e4a046d8800662869042.jpg",
+      "expectedSha256": "e4a046d8800662869042aeec91b9e3614600dc6e556ce67e4d3c752bb40113be",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 201452,
+      "actualSha256": "e4a046d8800662869042aeec91b9e3614600dc6e556ce67e4d3c752bb40113be",
+      "sha256Matches": true
+    }
+  ]
+}

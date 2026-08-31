@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "agencyId": 31382,
+  "updatedAt": "2026-08-31T09:23:26.538Z",
+  "listings": {
+    "rental": {
+      "property24ListingNumber": 100314819,
+      "agentId": 77969,
+      "agentSourceReference": "ARCH9-VET-JON-SNOW",
+      "agentName": "Jon Snow",
+      "title": "Modern Newlands Apartment with Mountain Views",
+      "description": "This neat little two bedroom cottage is situated on a beautiful flat peace of ground a stones throw away from the beach.\n\nThe property is fully walled with an electric gate and has a lovely lush manicured garden.\nIt consists of a cosy lounge a galley fitted kitchen and two rooms with a newly refurbished bathroom.\n\nThis home has huge potential to build on and extend and is a hop skip and jump to the beach.\nAdd on another story and you will have gorgeous sea views or keep the cottage as a granny flat or guest cottage and build the home of your dreams on the property there is ample space.",
+      "floorSize": 82,
+      "monthlyRent": 22000,
+      "imageFiles": [
+        "artifacts/property24-vetting/phase2/newlands-apartment-living-room.png",
+        "artifacts/property24-vetting/phase2/newlands-apartment-kitchen.png"
+      ],
+      "imageCaptions": [
+        "Open-plan living and dining area",
+        "Contemporary kitchen"
+      ],
+      "status": "Active"
+    },
+    "sale": {
+      "property24ListingNumber": 100314820,
+      "agentId": 77970,
+      "agentSourceReference": "ARCH9-VET-PAULY-SHORE",
+      "agentName": "Pauly Shore",
+      "title": "Contemporary Sandton Family Home",
+      "description": "Very spacious family home offering 3 bedrooms, 2 bathrooms, massive kitchen with a pantry and a scullery, spacious lounge, dining area, study, 2 full bathrooms, pool, double carport and more parking space, this property is a must have for an entertainer. It's available immediately. It's available furnished or unfurnished, if you want it furnished the price will be more and discussed.",
+      "floorSize": 220,
+      "price": 4950000,
+      "imageFiles": [
+        "artifacts/property24-vetting/phase2/sandton-house-exterior.png",
+        "artifacts/property24-vetting/phase2/sandton-house-living-room.png"
+      ],
+      "imageCaptions": [
+        "Front exterior",
+        "Open-plan living area"
+      ],
+      "status": "Active"
+    }
+  }
+}

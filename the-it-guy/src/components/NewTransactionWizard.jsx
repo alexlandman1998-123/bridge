@@ -2072,98 +2072,6 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
       const partnerInvitationResults = []
       const partnerInvitationWarnings = []
       const partnerProspectResults = []
-      for (const { roleType, prospect } of activePartnerProspects) {
-        try {
-          if (prospect.status === 'joined' && prospect.bridgeUserId) {
-            const reuseResult = await applyPartnerProspectToTransaction({
-              transactionId: result.transactionId,
-              partnerProspectId: prospect.id,
-              roleType,
-            })
-            partnerProspectResults.push({ roleType, prospect, result: reuseResult })
-            continue
-          }
-
-          const invitationDraft = prospectToInvitationDraft(roleType, prospect)
-          const invitationResult = await createTransactionPartnerInvitation({
-            transactionId: result.transactionId,
-            ...invitationDraft,
-            metadata: {
-              source: 'partner_prospect_reuse',
-              buyerName,
-              partnerProspectId: prospect.id,
-            },
-          })
-          partnerInvitationResults.push(invitationResult)
-          partnerProspectResults.push({ roleType, prospect, invitation: invitationResult.invitation })
-          if (invitationResult.emailResult?.sent === false || invitationResult.emailResult?.error) {
-            partnerInvitationWarnings.push(
-              `${prospect.companyName}: prospect reused, but email delivery needs attention.`,
-            )
-          }
-        } catch (prospectError) {
-          partnerInvitationWarnings.push(
-            `${prospect.companyName || prospect.email}: ${prospectError.message || 'partner prospect could not be reused.'}`,
-          )
-        }
-      }
-      for (const draft of activePartnerInvitations) {
-        try {
-          const invitationResult = await createTransactionPartnerInvitation({
-            transactionId: result.transactionId,
-            ...draft,
-            metadata: {
-              source: 'new_transaction_wizard',
-              buyerName,
-            },
-          })
-          partnerInvitationResults.push(invitationResult)
-          if (invitationResult.emailResult?.sent === false || invitationResult.emailResult?.error) {
-            partnerInvitationWarnings.push(
-              `${draft.companyName}: invitation saved, but email delivery needs attention.`,
-            )
-          }
-        } catch (invitationError) {
-          partnerInvitationWarnings.push(
-            `${draft.companyName || draft.email}: ${invitationError.message || 'invitation could not be created.'}`,
-          )
-        }
-      }
-      if (shouldAutoInviteDevelopmentDefaultBondOriginator) {
-        try {
-          const invitationResult = await createTransactionPartnerInvitation({
-            transactionId: result.transactionId,
-            roleType: 'bond_originator',
-            companyName: directDevelopmentDefaultBondOriginator.companyName,
-            contactName:
-              directDevelopmentDefaultBondOriginator.contactPerson ||
-              directDevelopmentDefaultBondOriginator.companyName,
-            email: directDevelopmentDefaultBondOriginator.email,
-            phone: directDevelopmentDefaultBondOriginator.phone || '',
-            metadata: {
-              source: 'development_role_player_default',
-              buyerName,
-              developmentId: selectedDevelopment?.id || form.setup.developmentId || null,
-              defaultSource:
-                developmentRolePlayerDefaults.defaultBondOriginatorSource ||
-                developmentRolePlayerDefaults.default_bond_originator_source ||
-                'first_bond_originator',
-            },
-          })
-          partnerInvitationResults.push(invitationResult)
-          if (invitationResult.emailResult?.sent === false || invitationResult.emailResult?.error) {
-            partnerInvitationWarnings.push(
-              `${directDevelopmentDefaultBondOriginator.companyName}: default originator invitation saved, but email delivery needs attention.`,
-            )
-          }
-        } catch (invitationError) {
-          partnerInvitationWarnings.push(
-            `${directDevelopmentDefaultBondOriginator.companyName || directDevelopmentDefaultBondOriginator.email}: ${
-              invitationError.message || 'default originator invitation could not be created.'
-            }`,
-          )
-        }
-      }
 
       const buyerDocumentsPortal = resolveBuyerDocumentsPortal(result)
 
@@ -2195,6 +2103,73 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
 
       // Do not block transaction creation UX on post-create email automation.
       void (async () => {
+        for (const { roleType, prospect } of activePartnerProspects) {
+          try {
+            if (prospect.status === 'joined' && prospect.bridgeUserId) {
+              const reuseResult = await applyPartnerProspectToTransaction({ transactionId: result.transactionId, partnerProspectId: prospect.id, roleType })
+              partnerProspectResults.push({ roleType, prospect, result: reuseResult })
+            } else {
+              const invitationResult = await createTransactionPartnerInvitation({
+                transactionId: result.transactionId,
+                ...prospectToInvitationDraft(roleType, prospect),
+                metadata: { source: 'partner_prospect_reuse', buyerName, partnerProspectId: prospect.id },
+              })
+              partnerInvitationResults.push(invitationResult)
+              partnerProspectResults.push({ roleType, prospect, invitation: invitationResult.invitation })
+              if (invitationResult.emailResult?.sent === false || invitationResult.emailResult?.error) {
+                partnerInvitationWarnings.push(`${prospect.companyName}: prospect reused, but email delivery needs attention.`)
+              }
+            }
+          } catch (error) {
+            partnerInvitationWarnings.push(`${prospect.companyName || prospect.email}: ${error.message || 'partner prospect could not be reused.'}`)
+          }
+        }
+        for (const draft of activePartnerInvitations) {
+          try {
+            const invitationResult = await createTransactionPartnerInvitation({
+              transactionId: result.transactionId,
+              ...draft,
+              metadata: { source: 'new_transaction_wizard', buyerName },
+            })
+            partnerInvitationResults.push(invitationResult)
+            if (invitationResult.emailResult?.sent === false || invitationResult.emailResult?.error) {
+              partnerInvitationWarnings.push(`${draft.companyName}: invitation saved, but email delivery needs attention.`)
+            }
+          } catch (error) {
+            partnerInvitationWarnings.push(`${draft.companyName || draft.email}: ${error.message || 'invitation could not be created.'}`)
+          }
+        }
+        if (shouldAutoInviteDevelopmentDefaultBondOriginator) {
+          try {
+            const invitationResult = await createTransactionPartnerInvitation({
+              transactionId: result.transactionId,
+              roleType: 'bond_originator',
+              companyName: directDevelopmentDefaultBondOriginator.companyName,
+              contactName: directDevelopmentDefaultBondOriginator.contactPerson || directDevelopmentDefaultBondOriginator.companyName,
+              email: directDevelopmentDefaultBondOriginator.email,
+              phone: directDevelopmentDefaultBondOriginator.phone || '',
+              metadata: {
+                source: 'development_role_player_default',
+                buyerName,
+                developmentId: selectedDevelopment?.id || form.setup.developmentId || null,
+                defaultSource: developmentRolePlayerDefaults.defaultBondOriginatorSource || developmentRolePlayerDefaults.default_bond_originator_source || 'first_bond_originator',
+              },
+            })
+            partnerInvitationResults.push(invitationResult)
+            if (invitationResult.emailResult?.sent === false || invitationResult.emailResult?.error) {
+              partnerInvitationWarnings.push(`${directDevelopmentDefaultBondOriginator.companyName}: default originator invitation saved, but email delivery needs attention.`)
+            }
+          } catch (error) {
+            partnerInvitationWarnings.push(`${directDevelopmentDefaultBondOriginator.companyName || directDevelopmentDefaultBondOriginator.email}: ${error.message || 'default originator invitation could not be created.'}`)
+          }
+        }
+        setCreatedTransaction((current) => current ? {
+          ...current,
+          partnerInvitations: partnerInvitationResults,
+          partnerProspects: partnerProspectResults,
+          partnerInvitationWarnings,
+        } : current)
+
         let buyerDocumentsEmailError = ''
         if (!form.setup.buyerEmail.trim()) {
           buyerDocumentsEmailError = 'Transaction created, but buyer document request email was not sent because buyer email is blank.'

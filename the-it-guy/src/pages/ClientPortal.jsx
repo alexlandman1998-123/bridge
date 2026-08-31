@@ -9538,6 +9538,8 @@ function ClientPortal() {
         token,
         file,
         category: offer?.bankName ? `Bond Offer Signed - ${offer.bankName}` : 'Bond Offer Signed',
+        requiredDocumentKey: 'grant_letter',
+        documentType: 'grant_letter',
       })
       applyUploadedPortalDocument(uploaded)
 
@@ -9829,6 +9831,7 @@ function ClientPortal() {
         : await uploadClientPortalDocument({
             token,
             requiredDocumentKey: documentKey,
+            canonicalRequirementInstanceId: options.requirementInstanceId || null,
             category: options.category || (isReservationProofUpload ? 'Reservation Deposit / Proof of Payment' : 'Required Document'),
             documentType: isReservationProofUpload ? 'reservation_deposit_pop' : undefined,
             documentRequestId: options.documentRequestId || null,

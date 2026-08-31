@@ -1,4 +1,5 @@
 import { requireClient, isMissingColumnError } from '../../src/services/attorneyFirmServiceShared.js'
+import { normalizeTransactionStage } from '../../src/lib/stages.js'
 import { logTransactionWorkflowEvent } from './workflowEventService.js'
 
 export const LEGACY_TRANSACTION_LIFECYCLE_FIELDS = Object.freeze([
@@ -14,21 +15,42 @@ function normalizeText(value) {
 export function mapParentStageToLegacyStage(parentStage = '', currentMainStage = 'AVAIL') {
   switch (String(parentStage || '').trim().toUpperCase()) {
     case 'SETUP':
-      return 'AVAIL'
+      return normalizeText(currentMainStage) || 'AVAIL'
     case 'SALES_OTP':
       return 'OTP'
     case 'FINANCE':
       return 'FIN'
     case 'TRANSFER':
-      return 'TRANSFER'
+      return 'XFER'
     case 'REGISTRATION':
-      return 'REGISTRATION'
+      return 'REG'
     case 'COMPLETE':
-      return 'COMPLETE'
+      return 'REG'
     case 'CANCELLED':
-      return 'CANCELLED'
+      return normalizeText(currentMainStage) || 'AVAIL'
     default:
       return normalizeText(currentMainStage) || 'AVAIL'
+  }
+}
+
+export function mapParentStageToDetailedStage(parentStage = '', currentStage = 'Available') {
+  const fallback = normalizeTransactionStage(currentStage, 'Available')
+  switch (String(parentStage || '').trim().toUpperCase()) {
+    case 'SETUP':
+      return fallback
+    case 'SALES_OTP':
+      return normalizeTransactionStage('OTP Signed')
+    case 'FINANCE':
+      return normalizeTransactionStage('Finance Pending')
+    case 'TRANSFER':
+      return normalizeTransactionStage('Transfer in Progress')
+    case 'REGISTRATION':
+      return normalizeTransactionStage('Transfer Lodged')
+    case 'COMPLETE':
+      return normalizeTransactionStage('Registered')
+    case 'CANCELLED':
+    default:
+      return fallback
   }
 }
 
@@ -72,13 +94,14 @@ export function buildTransactionCompatibilityPayload(transaction = {}, rollup = 
   const nowIso = rollup?.derivedAt || options.now || new Date().toISOString()
   const currentMainStage = transaction.current_main_stage || transaction.currentMainStage || 'AVAIL'
   const legacyStage = mapParentStageToLegacyStage(rollup.parentStage, currentMainStage)
+  const detailedStage = mapParentStageToDetailedStage(rollup.parentStage, transaction.stage)
   return {
-    stage: legacyStage,
+    stage: detailedStage,
     current_main_stage: legacyStage,
     current_sub_stage_summary: buildSubStageSummary(rollup),
     next_action: normalizeText(rollup.nextAction?.label) || null,
     comment: normalizeText(buildSubStageSummary(rollup)) || null,
-    is_active: rollup.parentStage !== 'SETUP',
+    is_active: String(rollup.parentStage || '').trim().toUpperCase() !== 'CANCELLED',
     updated_at: nowIso,
     ...options.extraFields,
   }
@@ -94,7 +117,7 @@ export async function syncTransactionCompatibilityFields(transactionId, rollup =
   if (!transaction?.id) {
     const query = await client
       .from('transactions')
-      .select('id, unit_id, current_main_stage')
+      .select('id, unit_id, stage, current_main_stage')
       .eq('id', transactionId)
       .maybeSingle()
     if (query.error) throw query.error

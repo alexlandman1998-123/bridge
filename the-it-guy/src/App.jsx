@@ -41,6 +41,24 @@ import {
   RentalListingDetailPage,
   RentalListingsPage,
   RentalOperationsDashboardPage,
+  RentalPilotReadinessPage,
+  RentalRolloutControlsPage,
+  RentalFinancialReconciliationPage,
+  RentalPilotLaunchPage,
+  RentalPilotExecutionPage,
+  RentalPilotReviewsPage,
+  RentalMaintenancePage,
+  RentalMaintenanceQuotesPage,
+  RentalMaintenanceExecutionPage,
+  RentalInspectionsPage,
+  RentalInspectionExecutionPage,
+  RentalInspectionFollowUpPage,
+  RentalMoveOutPage,
+  RentalTenancyClosurePage,
+  RentalNotificationsPage,
+  RentalRemindersPage,
+  RentalScreeningPage,
+  RentalReportsPage,
   RentalPortfolioDetailPage,
   RentalPortfoliosPage,
   RentalPropertiesPage,
@@ -373,6 +391,7 @@ const DeveloperIntelligencePricingSimulatorPage = lazy(() => import('./pages/dev
 const DevelopmentDetail = lazy(() => import('./pages/DevelopmentDetail'))
 const DeveloperPartnerInvitePage = lazy(() => import('./pages/DeveloperPartnerInvitePage'))
 const DeveloperAccessInvitePage = lazy(() => import('./pages/DeveloperAccessInvitePage'))
+const DeveloperDocumentPortalPage = lazy(() => import('./pages/DeveloperDocumentPortalPage'))
 const DeveloperLeadsPage = lazy(() => import('./pages/DeveloperLeadsPage'))
 const DeveloperPartnersPage = lazy(() => import('./pages/DeveloperPartnersPage'))
 const Developments = lazy(() => import('./pages/Developments'))
@@ -2832,10 +2851,7 @@ function AppRoutes() {
                   <RoleRoute allowedRoles={['agent']}>
                     <RentalWorkspaceGuard>
                       <RentalModuleGate moduleId={RENTAL_MODULES.dashboard}>
-                        <RentalWorkspacePlaceholder
-                          title="Rentals Dashboard"
-                          description="Rental lead, listing, application, and lease activity will land here as the module is phased in."
-                        />
+                        <RentalOperationsDashboardPage />
                       </RentalModuleGate>
                     </RentalWorkspaceGuard>
                   </RoleRoute>
@@ -2909,8 +2925,26 @@ function AppRoutes() {
               />
               <Route
                 path="/agent/rentals/operations"
-                element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.properties}><RentalOperationsDashboardPage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>}
+                element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.dashboard}><RentalOperationsDashboardPage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>}
               />
+              <Route path="/agent/rentals/pilot-readiness" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.dashboard}><RentalPilotReadinessPage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
+              <Route path="/agent/rentals/rollout-controls" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.dashboard}><RentalRolloutControlsPage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
+              <Route path="/agent/rentals/pilot-launch" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.dashboard}><RentalPilotLaunchPage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
+              <Route path="/agent/rentals/pilot-execution" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.dashboard}><RentalPilotExecutionPage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
+              <Route path="/agent/rentals/pilot-reviews" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.dashboard}><RentalPilotReviewsPage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
+              <Route path="/agent/rentals/maintenance" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.management}><RentalMaintenancePage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
+              <Route path="/agent/rentals/maintenance/quotes" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.management}><RentalMaintenanceQuotesPage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
+              <Route path="/agent/rentals/maintenance/execution" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.management}><RentalMaintenanceExecutionPage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
+              <Route path="/agent/rentals/inspections" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.management}><RentalInspectionsPage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
+              <Route path="/agent/rentals/inspections/:inspectionId" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.management}><RentalInspectionExecutionPage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
+              <Route path="/agent/rentals/inspections/:inspectionId/follow-up" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.management}><RentalInspectionFollowUpPage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
+              <Route path="/agent/rentals/tenancies/:tenancyId/move-out" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.management}><RentalMoveOutPage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
+              <Route path="/agent/rentals/tenancies/:tenancyId/closure" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.management}><RentalTenancyClosurePage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
+              <Route path="/agent/rentals/notifications" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.management}><RentalNotificationsPage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
+              <Route path="/agent/rentals/reminders" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.management}><RentalRemindersPage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
+              <Route path="/agent/rentals/screening" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.management}><RentalScreeningPage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
+              <Route path="/agent/rentals/reports" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.management}><RentalReportsPage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
+              <Route path="/agent/rentals/financial-reconciliation" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.management}><RentalFinancialReconciliationPage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
               <Route
                 path="/agent/rentals/vacancies/new"
                 element={
@@ -3696,6 +3730,7 @@ function AppRoutes() {
           <Route path="/partners/invite/:invitationId" element={<AppErrorBoundary scope="partner-invite-route" title="Partner invite failed to load"><PartnerInvitationAcceptPage /></AppErrorBoundary>} />
           <Route path="/developer/access-invite/:token" element={<AppErrorBoundary scope="developer-access-invite-route" title="Developer access invite failed to load"><DeveloperAccessInvitePage /></AppErrorBoundary>} />
           <Route path="/developer/partner-invite/:token" element={<TokenRouteGate><AppErrorBoundary scope="developer-partner-invite-route" title="Developer partner invite failed to load"><DeveloperPartnerInvitePage /></AppErrorBoundary></TokenRouteGate>} />
+          <Route path="/developer/document-portal/:token" element={<TokenRouteGate><AppErrorBoundary scope="developer-document-portal-route" title="Developer document portal failed to load"><DeveloperDocumentPortalPage /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/commercial/portal/:token" element={<TokenRouteGate><AppErrorBoundary scope="commercial-portal-route" title="Commercial portal failed to load"><CommercialExternalPortalPage /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/commercial/onboarding/:token" element={<TokenRouteGate><AppErrorBoundary scope="commercial-onboarding-route" title="Commercial onboarding failed to load"><CommercialOnboardingPortalPage /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/commercial/landlord-onboarding/:token" element={<TokenRouteGate><AppErrorBoundary scope="commercial-landlord-onboarding-route" title="Landlord onboarding failed to load"><CommercialLandlordOnboardingPage /></AppErrorBoundary></TokenRouteGate>} />

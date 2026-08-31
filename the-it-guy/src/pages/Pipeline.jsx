@@ -899,6 +899,12 @@ function LegacyPipeline() {
         options: {
           allowIncomplete: true,
           commissionSnapshot: normalizedCommissionSnapshot,
+          sourceContext: {
+            organisationId: workspace?.id || null,
+            workspaceId: workspace?.id || null,
+            listingId: isDevelopment ? null : selectedListing?.id || null,
+            agentUserId: assignedAgentUserId || null,
+          },
         },
       })
 

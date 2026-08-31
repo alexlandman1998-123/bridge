@@ -241,6 +241,7 @@ try {
   }
 
   const privateProjection = canonicalInstanceToPrivateListingRequirement(canonicalInstance)
+  assert.equal(Object.hasOwn(privateProjection, 'id'), false)
   assert.equal(privateProjection.private_listing_id, 'listing-1')
   assert.equal(privateProjection.requirement_key, 'mandate_signature')
   assert.equal(privateProjection.requirement_group, 'mandate')
@@ -255,12 +256,14 @@ try {
     generated_from: { previous: true },
   })
   assert.equal(approvedLegacy.status, 'approved')
+  assert.equal(approvedLegacy.id, 'legacy-1')
   assert.equal(approvedLegacy.generated_from.previous, true)
 
   const transactionProjection = canonicalInstanceToTransactionRequiredDocument({
     ...canonicalInstance,
     status: REQUIREMENT_STATUSES.completed,
   })
+  assert.equal(Object.hasOwn(transactionProjection, 'id'), false)
   assert.equal(transactionProjection.transaction_id, 'transaction-1')
   assert.equal(transactionProjection.document_key, 'mandate_signature')
   assert.equal(transactionProjection.status, 'accepted')
@@ -270,6 +273,7 @@ try {
   assert.equal(transactionProjection.required_from_role, 'client')
 
   const requestProjection = canonicalInstanceToDocumentRequest(canonicalInstance)
+  assert.equal(Object.hasOwn(requestProjection, 'id'), false)
   assert.equal(requestProjection.document_type, 'mandate_signature')
   assert.equal(requestProjection.priority, 'required')
   assert.equal(requestProjection.status, 'requested')

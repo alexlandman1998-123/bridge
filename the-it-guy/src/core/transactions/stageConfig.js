@@ -1,8 +1,11 @@
 export {
+  AGENT_TRANSACTION_STAGE_OPTIONS,
+  CANONICAL_TRANSACTION_STAGES,
   CLIENT_STAGE_EXPLAINERS,
   MAIN_PROCESS_STAGES,
   MAIN_STAGE_LABELS,
   STAGES,
+  TRANSACTION_STAGE_DEFINITIONS,
   getClientStageExplainer,
   getDetailedStageFromMainStage,
   getLifecycleStatus,
@@ -13,4 +16,5 @@ export {
   getSummaryStats,
   isInTransferStage,
   normalizeStageLabel,
+  normalizeTransactionStage,
 } from '../../lib/stages.js'

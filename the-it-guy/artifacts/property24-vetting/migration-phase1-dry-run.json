@@ -1,0 +1,303 @@
+{
+  "version": "property24_migration_dry_run_v1",
+  "phase": "property24-migration-import-phase1-dry-run",
+  "mode": "dry-run",
+  "status": "READY",
+  "generatedAt": "2026-08-31T09:56:19.355Z",
+  "safety": {
+    "property24WritesPerformed": false,
+    "databaseWritesPerformed": false,
+    "imageDownloadsPerformed": false,
+    "reportFileOnly": true
+  },
+  "agency": {
+    "expectedAgencyId": 31382,
+    "detectedAgencyIds": [
+      31382
+    ],
+    "resolvedAgencyId": 31382,
+    "consistent": true
+  },
+  "inputs": {
+    "agents": {
+      "path": "/Users/alexanderlandman/Downloads/Agency-31382-export-agents.csv",
+      "sha256": "ad66a5fd88f21ea9ff57b2fd5048d6905630dde11bcd229dff24a128ce465196",
+      "bytes": 779,
+      "delimiter": ",",
+      "headers": [
+        "AgencyId",
+        "AgentId",
+        "Firstname",
+        "Lastname",
+        "Status",
+        "SourceReference",
+        "CountryId",
+        "MobileNumber",
+        "MobileNumber1",
+        "MobileNumber2",
+        "MobileNumber3",
+        "FaxNumber",
+        "WorkNumber",
+        "EmailAddress",
+        "Qualification",
+        "About",
+        "Property24ProfilePictureURL",
+        "Published",
+        "ReceiveStatsMail",
+        "ReceiveGroupListingEmail"
+      ],
+      "requiredHeaders": [
+        "AgencyId",
+        "AgentId",
+        "Firstname",
+        "Lastname",
+        "Status",
+        "SourceReference",
+        "CountryId",
+        "MobileNumber",
+        "EmailAddress",
+        "Published"
+      ],
+      "missingHeaders": [],
+      "rowCount": 4
+    },
+    "listings": {
+      "path": "/Users/alexanderlandman/Downloads/Agency-31382-export-listings.csv",
+      "sha256": "dc42bd4e21760238e3d1f257bba30af5eeb9838a12ae5129332c6a0cf91f8a74",
+      "bytes": 4429,
+      "delimiter": ",",
+      "headers": [
+        "AgencyId",
+        "ContactAgentIds",
+        "ListingNumber",
+        "ListingType",
+        "Status",
+        "Price",
+        "ListingVisibility",
+        "OccupationDate",
+        "ExpiryDate",
+        "Description",
+        "DescriptionHeader",
+        "DevelopmentId",
+        "LightstoneId",
+        "Repossessed",
+        "YouTubeVideoId",
+        "MatterportSpaceId",
+        "EyeSpy360Id",
+        "PetsAllowed",
+        "ShowLocation",
+        "Age",
+        "SuburbId",
+        "MunicipalRatesAndTaxes",
+        "MonthlyLevy",
+        "StreetNumber",
+        "StreetName",
+        "StandNumber",
+        "SourceReference",
+        "Longitude",
+        "Latitude",
+        "ErfSize",
+        "ErfAreaUnit",
+        "FloorArea",
+        "FloorAreaAreaUnit",
+        "PropertyTypeId",
+        "Bedrooms",
+        "BedroomsDescription",
+        "Bathrooms",
+        "BathroomsDescription",
+        "Garages",
+        "GaragesDescription",
+        "ReceptionRooms",
+        "ReceptionRoomsDescription",
+        "Studies",
+        "StudiesDescription",
+        "Kitchens",
+        "KitchensDescription",
+        "SecureParkings",
+        "NumberOfParkingSpaces",
+        "ParkingDescription",
+        "DomesticRooms",
+        "DomesticRoomsDescription",
+        "DomesticBathrooms",
+        "OutsideToilets",
+        "Garden",
+        "Pool",
+        "PoolDescription",
+        "Flatlet",
+        "FlatDescription",
+        "ParkingBayNumber",
+        "Furnished",
+        "DepositRequirementsComments",
+        "LeasePeriod",
+        "RentalRate",
+        "ComplexUnitNumber",
+        "ComplexSpecialLevy",
+        "AuctionDate",
+        "AuctionVenue",
+        "AuctionDescription"
+      ],
+      "requiredHeaders": [
+        "AgencyId",
+        "ContactAgentIds",
+        "ListingNumber",
+        "ListingType",
+        "Status",
+        "Price",
+        "ListingVisibility",
+        "Description",
+        "DescriptionHeader",
+        "SuburbId",
+        "SourceReference",
+        "FloorArea",
+        "FloorAreaAreaUnit",
+        "PropertyTypeId"
+      ],
+      "missingHeaders": [],
+      "rowCount": 4
+    },
+    "images": {
+      "path": "/Users/alexanderlandman/Downloads/Agency-31382-export-images.csv",
+      "sha256": "1ad40c2a3f4fbfa91d6405c75eed125973d3f834a30e2683ff2c5fc83ba38591",
+      "bytes": 1411,
+      "delimiter": ",",
+      "headers": [
+        "ListingNumber",
+        "Caption",
+        "Ordinal",
+        "Prop24ImageUrl"
+      ],
+      "requiredHeaders": [
+        "ListingNumber",
+        "Caption",
+        "Ordinal",
+        "Prop24ImageUrl"
+      ],
+      "missingHeaders": [],
+      "rowCount": 14
+    }
+  },
+  "summary": {
+    "agentCount": 4,
+    "agentProfilePictureCount": 2,
+    "listingCount": 4,
+    "saleListingCount": 3,
+    "rentalListingCount": 1,
+    "imageCount": 14,
+    "listingsWithImages": 4,
+    "listingAgentLinkCount": 4,
+    "matchedListingAgentLinkCount": 4,
+    "errorCount": 0,
+    "warningCount": 0
+  },
+  "relationships": {
+    "missingListingAgentLinks": [],
+    "orphanImages": [],
+    "listingsWithoutImages": [],
+    "imageCounts": {
+      "100314793": 4,
+      "100314816": 6,
+      "100314819": 2,
+      "100314820": 2
+    }
+  },
+  "inventory": {
+    "agents": [
+      {
+        "agencyId": 31382,
+        "agentId": 77959,
+        "name": "Alex Landman",
+        "status": "Active",
+        "sourceReference": "ARCH9-AGENT-001",
+        "hasProfilePicture": false
+      },
+      {
+        "agencyId": 31382,
+        "agentId": 77968,
+        "name": "Alex Property24 Test",
+        "status": "Active",
+        "sourceReference": "ARCH9-P24-TEST-001",
+        "hasProfilePicture": false
+      },
+      {
+        "agencyId": 31382,
+        "agentId": 77969,
+        "name": "Jon Snow",
+        "status": "Active",
+        "sourceReference": "ARCH9-VET-JON-SNOW",
+        "hasProfilePicture": true
+      },
+      {
+        "agencyId": 31382,
+        "agentId": 77970,
+        "name": "Pauly Shore",
+        "status": "Active",
+        "sourceReference": "ARCH9-VET-PAULY-SHORE",
+        "hasProfilePicture": true
+      }
+    ],
+    "listings": [
+      {
+        "agencyId": 31382,
+        "listingNumber": 100314793,
+        "listingType": "Sale",
+        "status": "Active",
+        "sourceReference": "PRV-202608201031-U8YM",
+        "contactAgentIds": [
+          77959
+        ],
+        "price": 1234567,
+        "floorArea": 100,
+        "suburbId": 140,
+        "propertyTypeId": 4,
+        "imageCount": 4
+      },
+      {
+        "agencyId": 31382,
+        "listingNumber": 100314816,
+        "listingType": "Sale",
+        "status": "Active",
+        "sourceReference": "PRV-202608261113-HRSS",
+        "contactAgentIds": [
+          77968
+        ],
+        "price": 1000000,
+        "floorArea": 200,
+        "suburbId": 1987,
+        "propertyTypeId": 4,
+        "imageCount": 6
+      },
+      {
+        "agencyId": 31382,
+        "listingNumber": 100314819,
+        "listingType": "Rental",
+        "status": "Active",
+        "sourceReference": "ARCH9-VET-PHASE2-RENT-NEWLANDS",
+        "contactAgentIds": [
+          77969
+        ],
+        "price": 22000,
+        "floorArea": 82,
+        "suburbId": 8679,
+        "propertyTypeId": 5,
+        "imageCount": 2
+      },
+      {
+        "agencyId": 31382,
+        "listingNumber": 100314820,
+        "listingType": "Sale",
+        "status": "Active",
+        "sourceReference": "ARCH9-VET-PHASE2-SALE-SANDTON",
+        "contactAgentIds": [
+          77970
+        ],
+        "price": 4950000,
+        "floorArea": 220,
+        "suburbId": 5864,
+        "propertyTypeId": 4,
+        "imageCount": 2
+      }
+    ]
+  },
+  "issues": [],
+  "nextPhase": "Review this report before implementing field mapping or any database apply path."
+}

@@ -1,8 +1,10 @@
 import { DOCUMENTS_BUCKET_CANDIDATES, createScopedSupabaseClient, invokeEdgeFunction, supabase } from './supabaseClient'
 import { uploadToStorageCandidateBuckets } from './storageFallbacks'
+import { retryMutationWithoutReportedMissingColumns } from './targetedMissingColumnRetry.js'
 import { resolveClientPortalFinalSignedArtifactAccess } from '../core/documents/finalSignedArtifactAccess'
 export { generateMandateDocumentFromTemplate } from './generateMandateDocument'
 import {
+  CANONICAL_TRANSACTION_STAGES,
   MAIN_PROCESS_STAGES,
   STAGES,
   getDetailedStageFromMainStage,
@@ -12,6 +14,7 @@ import {
   getSummaryStats,
   isInTransferStage,
   normalizeStageLabel,
+  normalizeTransactionStage,
 } from '../core/transactions/stageConfig'
 import { selectReportStageSummary } from '../core/transactions/selectors'
 import {
@@ -83,6 +86,13 @@ import {
   resolveWizardInitialTransactionStage,
 } from '../core/transactions/newTransactionSetupHealth.js'
 import { resolveTransactionSaleProfile } from '../core/transactions/transactionSaleProfile.js'
+import {
+  TransactionCreationIncompleteError,
+  buildTransactionCreationPersistencePatch,
+  createTransactionCreationLifecycle,
+  getTransactionCreationIncompleteSteps,
+  setTransactionCreationStepOutcome,
+} from '../core/transactions/transactionCreationLifecycle.js'
 import { buildBuyerOnboardingCompletionHook } from '../core/transactions/buyerOnboardingCompletionHook.js'
 import {
   buildBuyerOnboardingCompletionParticipantPatch,
@@ -237,8 +247,10 @@ import {
   notifyBondIntakeStartedForOnboarding,
 } from '../services/bondIntakeNotificationService'
 import {
+  TRANSACTION_CANONICAL_PERSISTENCE_MODES,
   fetchTransactionDocumentRequirementsByTransactionIds as fetchCanonicalTransactionDocumentRequirementsByTransactionIds,
   maybeResolveTransactionDocumentRequirements,
+  resolveTransactionDocumentRequirements,
 } from '../services/documents/transactionCanonicalDocumentRequirementService'
 import { syncCanonicalRequiredDocumentsForTransactionContext } from '../services/documents/documentRequestCanonicalTransactionSyncService'
 import { runCanonicalDocumentRequestRecalculationBatch } from '../services/documents/documentRequestCanonicalAdminRecalculationService.js'
@@ -1174,7 +1186,29 @@ const TRANSACTION_RLS_INSERT_GUARD_COLUMNS = new Set([
   'owner_user_id',
   'created_by',
   'assigned_agent_email',
+  'creation_status',
+  'creation_started_at',
+  'creation_completed_at',
+  'creation_incomplete_at',
+  'creation_steps',
+  'creation_error',
 ])
+const MAX_TARGETED_MISSING_COLUMN_RETRIES = 8
+
+async function executeTransactionMutationWithTargetedColumnRetry({ payload, execute }) {
+  const initialResult = await execute(payload)
+  const retry = await retryMutationWithoutReportedMissingColumns({
+    initialResult,
+    payload,
+    execute,
+    maxAttempts: MAX_TARGETED_MISSING_COLUMN_RETRIES,
+    canRemoveColumn: (column) => !TRANSACTION_RLS_INSERT_GUARD_COLUMNS.has(column),
+    onRemoveColumns: (columns) => {
+      for (const column of columns) knownMissingSchemaColumns.add(String(column).toLowerCase())
+    },
+  })
+  return retry.result
+}
 const TRANSACTION_SUMMARY_SELECT_CLAUSE =
   'id, organisation_id, assigned_branch_id, lifecycle_state, matter_number, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, property_description, sales_price, purchase_price, finance_type, purchaser_type, cash_amount, bond_amount, deposit_amount, reservation_required, reservation_amount, reservation_amount_type, reservation_treatment, reservation_payable_to, alteration_charge_treatment, onboarding_status, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, next_action, comment, expected_transfer_date, bond_workspace_id, bond_region_id, bond_workspace_unit_id, primary_bond_consultant_user_id, assigned_bond_processor_user_id, assigned_bond_manager_user_id, assigned_bond_compliance_user_id, bond_assignment_status, bond_assignment_source, finance_status, compliance_status, compliance_review_required, application_prepared, submitted_to_banks, documents_complete, finance_documents_complete, documents_missing, required_documents_missing, finance_documents_missing, missing_documents_count, uploaded_documents_count, total_required_documents, bank_feedback_pending, bank_feedback_status, next_action_due_at, finance_due_at, attorney_stage, risk_status, operational_state, processor_name, assigned_bond_processor_name, compliance_name, gross_commission_percentage, gross_commission_amount, agent_split_percentage_snapshot, agency_split_percentage_snapshot, agent_commission_amount, agency_commission_amount, registered_at, completed_at, archived_at, cancelled_at, deleted_at, last_meaningful_activity_at, updated_at, created_at, is_active'
 const TRANSACTION_SUMMARY_FALLBACK_SELECT_CLAUSE =
@@ -3458,12 +3492,12 @@ function generateSnapshotToken() {
 
 function normalizeStage(rawStage, rawStatus) {
   const normalizedStage = normalizeStageLabel(rawStage)
-  if (STAGES.includes(normalizedStage)) {
+  if (CANONICAL_TRANSACTION_STAGES.includes(normalizedStage)) {
     return normalizedStage
   }
 
   const normalizedStatus = normalizeStageLabel(rawStatus)
-  if (STAGES.includes(normalizedStatus)) {
+  if (CANONICAL_TRANSACTION_STAGES.includes(normalizedStatus)) {
     return normalizedStatus
   }
 
@@ -4076,7 +4110,10 @@ async function syncTransactionSubprocessOwners(client, transaction, subprocesses
     if (process.owner_type !== desiredOwner) {
       updates.push({
         id: process.id,
+        transaction_id: transaction.id,
+        process_type: process.process_type,
         owner_type: desiredOwner,
+        status: process.status || 'not_started',
         updated_at: new Date().toISOString(),
       })
     }
@@ -5013,6 +5050,46 @@ async function ensureDevelopmentSettings(client, developmentId, { createIfMissin
   }
 
   return normalizeDevelopmentSettingsRow(inserted)
+}
+
+function deriveClientPortalSettingsFromTransaction(transaction = {}) {
+  const reservationRequired = Boolean(transaction.reservation_required)
+  return {
+    ...DEFAULT_DEVELOPMENT_SETTINGS,
+    // Private-property transactions have no development feature record. Their
+    // transaction is the source of truth for the buyer-facing capabilities.
+    client_portal_enabled: true,
+    snag_reporting_enabled: false,
+    alteration_requests_enabled: false,
+    service_reviews_enabled: Boolean(transaction.unit_id),
+    reservation_deposit_enabled_by_default: reservationRequired,
+    reservation_deposit_amount: reservationRequired
+      ? normalizeOptionalNumber(transaction.reservation_amount)
+      : null,
+    reservation_deposit_amount_type:
+      transaction.reservation_amount_type || DEFAULT_DEVELOPMENT_SETTINGS.reservation_deposit_amount_type,
+    reservation_deposit_treatment:
+      transaction.reservation_treatment || DEFAULT_DEVELOPMENT_SETTINGS.reservation_deposit_treatment,
+    reservation_deposit_payable_to:
+      transaction.reservation_payable_to || DEFAULT_DEVELOPMENT_SETTINGS.reservation_deposit_payable_to,
+    reservation_deposit_payment_details:
+      transaction.reservation_payment_details && typeof transaction.reservation_payment_details === 'object'
+        ? transaction.reservation_payment_details
+        : DEFAULT_DEVELOPMENT_SETTINGS.reservation_deposit_payment_details,
+    enabledModules: {
+      ...DEFAULT_DEVELOPMENT_SETTINGS.enabledModules,
+      bond_originator: isBondFinanceType(transaction.finance_type),
+    },
+    source: 'transaction',
+  }
+}
+
+async function resolveClientPortalSettings(client, link, transaction) {
+  const developmentId = normalizeNullableUuid(transaction?.development_id || link?.development_id)
+  if (!developmentId) {
+    return deriveClientPortalSettingsFromTransaction(transaction)
+  }
+  return ensureDevelopmentSettings(client, developmentId, { createIfMissing: false })
 }
 
 async function fetchDocumentRequirements(client, developmentId = null) {
@@ -8664,10 +8741,54 @@ export async function ensureTransactionRequiredDocuments(
     stage = null,
     currentMainStage = null,
   },
-  { sync = true } = {},
+  { sync = true, canonicalSourceRequired = false } = {},
 ) {
   if (!transactionId) {
     return []
+  }
+
+  if (canonicalSourceRequired) {
+    let canonicalResolution
+    try {
+      canonicalResolution = await resolveTransactionDocumentRequirements({
+        transactionId,
+        client,
+        formData: {
+          ...(formData || {}),
+          purchaser_type: formData?.purchaser_type || purchaserType,
+          purchase_finance_type: formData?.purchase_finance_type || financeType,
+          reservation_required: formData?.reservation_required ?? reservationRequired,
+          cash_amount: formData?.cash_amount ?? cashAmount,
+          bond_amount: formData?.bond_amount ?? bondAmount,
+        },
+        writeLegacyProjection: true,
+        persistenceMode: TRANSACTION_CANONICAL_PERSISTENCE_MODES.creationRpc,
+      })
+    } catch (cause) {
+      const error = new Error('Canonical transaction requirement setup failed during creation.')
+      error.code = 'CANONICAL_REQUIREMENT_SETUP_INCOMPLETE'
+      error.cause = cause
+      throw error
+    }
+
+    const canonicalInstances = canonicalResolution?.canonicalSync?.instances || []
+    const requirements = canonicalResolution?.requirements || []
+    const legacyProjectionRows = canonicalResolution?.legacyProjection?.rows || []
+    const hasUnlinkedRequirement = requirements.some((requirement) => !requirement?.canonicalRequirementInstanceId)
+    const hasUnlinkedLegacyProjection = legacyProjectionRows.some((requirement) => !requirement?.canonical_requirement_instance_id)
+    if (!canonicalInstances.length || !requirements.length || !legacyProjectionRows.length || hasUnlinkedRequirement || hasUnlinkedLegacyProjection) {
+      const error = new Error('Canonical transaction requirements or their compatibility projection were not fully persisted.')
+      error.code = 'CANONICAL_REQUIREMENT_SETUP_INCOMPLETE'
+      error.detail = {
+        canonicalInstanceCount: canonicalInstances.length,
+        readModelCount: requirements.length,
+        legacyProjectionCount: legacyProjectionRows.length,
+        hasUnlinkedRequirement,
+        hasUnlinkedLegacyProjection,
+      }
+      throw error
+    }
+    return requirements
   }
 
   try {
@@ -15045,7 +15166,7 @@ async function fetchTransactionDocumentRequestEmailContext(client, transactionId
   }
 
   let portalLink = null
-  if (transaction?.development_id && transaction?.unit_id && transaction?.id) {
+  if (transaction?.id && transaction?.buyer_id) {
     portalLink = await getOrCreateClientPortalLinkRecord(client, {
       developmentId: transaction.development_id,
       unitId: transaction.unit_id,
@@ -17731,6 +17852,27 @@ async function uploadToDocumentsBucket(client, filePath, file, options = undefin
     genericMessage: 'Unable to upload document.',
   })
   return bucket
+}
+
+async function uploadToBuyerPortalDocumentsBucket(client, filePath, file) {
+  const { bucket } = await uploadToStorageCandidateBuckets({
+    bucketCandidates: ['documents'],
+    upload: (bucketName) => client.storage.from(bucketName).upload(filePath, file),
+    missingBucketMessage: 'Buyer portal document storage is not configured for this environment.',
+    accessDeniedMessage: 'Buyer portal document storage access is not ready yet. Please retry.',
+    accessDeniedCode: 'buyer_portal_document_storage_access_not_ready',
+    genericMessage: 'Unable to upload buyer portal document.',
+  })
+  return bucket
+}
+
+async function removeUploadedDocumentObject(client, bucketName, filePath) {
+  const normalizedBucket = String(bucketName || '').trim()
+  const normalizedPath = String(filePath || '').trim()
+  if (!normalizedBucket || !normalizedPath) return
+
+  const { error } = await client.storage.from(normalizedBucket).remove([normalizedPath])
+  if (error) throw error
 }
 
 async function getSignedUrl(filePath, { client: suppliedClient = null, fileBucket = '', expiresInSeconds = 60 * 60 } = {}) {
@@ -29555,8 +29697,19 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       sourceContext.workspaceId ||
       sourceContext.workspace_id ||
       setup.organisationId ||
-      setup.organisation_id,
+      setup.organisation_id ||
+      actorProfile.workspaceId ||
+      actorProfile.organisationId,
   )
+  if (!resolvedOrganisationId && linkedPrivateListingId) {
+    const listingOrganisation = await client
+      .from('private_listings')
+      .select('organisation_id')
+      .eq('id', linkedPrivateListingId)
+      .maybeSingle()
+    if (listingOrganisation.error) throw listingOrganisation.error
+    resolvedOrganisationId = normalizeNullableUuid(listingOrganisation.data?.organisation_id)
+  }
   if (!resolvedOrganisationId && transactionType === 'developer_sale' && setup.developmentId) {
     resolvedOrganisationId = await resolveDevelopmentOrganisationId(client, setup.developmentId)
   }
@@ -29624,14 +29777,14 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
   const purchaserType = normalizePurchaserType(setup.purchaserType)
   const buyerParties = resolveWizardBuyerParties(setup, purchaserType)
   const handoffChecklist = normalizeWizardHandoffChecklist(options?.handoffChecklist || setup?.handoffChecklist || {})
-  const requestedDetailedStage = status.stage || 'Reserved'
+  const requestedDetailedStage = normalizeTransactionStage(status.stage, 'Reserved')
   const requestedMainStage = normalizeMainStage(status.mainStage, requestedDetailedStage)
   const initialTransactionStage = resolveWizardInitialTransactionStage(handoffChecklist, {
     stage: requestedDetailedStage,
     mainStage: requestedMainStage,
   })
-  const resolvedDetailedStage = initialTransactionStage.stage
-  const resolvedMainStage = initialTransactionStage.mainStage || requestedMainStage
+  const resolvedDetailedStage = normalizeTransactionStage(initialTransactionStage.stage, requestedDetailedStage)
+  const resolvedMainStage = normalizeMainStage(initialTransactionStage.mainStage, resolvedDetailedStage)
   const resolvedNextAction = resolveWizardHandoffNextAction(
     handoffChecklist,
     status.nextAction || finance.nextAction || null,
@@ -29756,8 +29909,22 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
   const snapshotAgencySplit = normalizeOptionalNumber(commissionSnapshotInput?.agencySplitPercentage)
   const snapshotAgentCommissionAmount = normalizeOptionalNumber(commissionSnapshotInput?.agentCommissionAmount)
   const snapshotAgencyCommissionAmount = normalizeOptionalNumber(commissionSnapshotInput?.agencyCommissionAmount)
+  const expectedAttorneyAssignments = mergedRolePlayerSelections.filter((selection) =>
+    ['transfer_attorney', 'bond_attorney', 'cancellation_attorney'].includes(selection?.roleType) &&
+    (shouldCreateAttorneyAssignmentForSelection(selection) || isFirmFirstAttorneyAllocation(selection)),
+  ).length
+  let creationLifecycle = createTransactionCreationLifecycle({
+    attorneyAssignmentRequired: expectedAttorneyAssignments > 0,
+    sellerHandoffRequired: transactionType === 'private_property',
+    portalSetupRequired: ['developer_sale', 'private_property'].includes(transactionType),
+  })
+  const initialCreationLifecyclePatch = buildTransactionCreationPersistencePatch({
+    lifecycle: creationLifecycle,
+    status: 'initializing',
+  })
 
   const transactionPayload = {
+    ...initialCreationLifecyclePatch,
     organisation_id: resolvedOrganisationId,
     listing_id: linkedPrivateListingId,
     development_id: transactionType === 'developer_sale' ? setup.developmentId : null,
@@ -29845,291 +30012,51 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       setup.accessLevel,
       transactionType === 'private_property' ? 'private' : 'shared',
     ),
-    is_active: true,
     updated_at: new Date().toISOString(),
   }
 
-  const minimalTransactionPayload = {
-    organisation_id: resolvedOrganisationId,
-    listing_id: linkedPrivateListingId,
-    development_id: transactionType === 'developer_sale' ? setup.developmentId : null,
-    unit_id: transactionType === 'developer_sale' ? setup.unitId : null,
-    buyer_id: buyer?.id || null,
-    transaction_type: transactionType,
-    sale_route: saleProfile.saleRoute,
-    sale_channel: saleProfile.saleChannel,
-    seller_party_type: saleProfile.sellerPartyType,
-    lead_owner: normalizeNullableText(sourceContext.leadOwner || sourceContext.lead_owner),
-    ownership_model: normalizeNullableText(sourceContext.ownershipModel || sourceContext.ownership_model),
-    source_agency_org_id: normalizeNullableUuid(
-      sourceContext.sourceAgencyOrgId ||
-        sourceContext.source_agency_org_id ||
-        sourceContext.agencyOrganisationId ||
-        sourceContext.agency_organisation_id,
-    ),
-    property_type: transactionType === 'private_property' ? propertyType : null,
-    property_address_line_1: normalizeNullableText(setup.propertyAddressLine1),
-    property_address_line_2: normalizeNullableText(setup.propertyAddressLine2),
-    suburb: normalizeNullableText(setup.suburb),
-    city: normalizeNullableText(setup.city),
-    province: normalizeNullableText(setup.province),
-    postal_code: normalizeNullableText(setup.postalCode),
-    property_description: normalizeNullableText(setup.propertyDescription),
-    matter_owner: normalizeNullableText(finance.attorney || actorName),
-    seller_name: normalizeNullableText(setup.sellerName),
-    seller_email: normalizeNullableText(setup.sellerEmail)?.toLowerCase() || null,
-    seller_phone: normalizeNullableText(setup.sellerPhone),
-    finance_type: persistedFinanceType,
-    purchaser_type: purchaserType,
-    finance_managed_by: normalizeFinanceManagedBy(setup.financeManagedBy),
-    // Retain deal terms when falling back for an unrelated schema difference.
-    purchase_price: resolvedPurchasePrice,
-    sales_price: resolvedPurchasePrice,
-    cash_amount: normalizeOptionalNumber(finance.cashAmount),
-    bond_amount: normalizeOptionalNumber(finance.bondAmount),
-    deposit_amount: normalizeOptionalNumber(finance.depositAmount),
-    stage: resolvedDetailedStage,
-    current_main_stage: resolvedMainStage,
-    assigned_agent: resolvedAssignedAgent || null,
-    assigned_agent_email: resolvedAssignedAgentEmail || null,
-    attorney: finance.attorney || null,
-    assigned_attorney_email: normalizeNullableText(finance.attorneyEmail)?.toLowerCase() || null,
-    bond_originator: finance.bondOriginator || null,
-    assigned_bond_originator_email: normalizeNullableText(finance.bondOriginatorEmail)?.toLowerCase() || null,
-    originating_partner_organisation_id: primaryPartnerSelection?.partnerOrganisationId || null,
-    referral_source_organisation_id: normalizeNullableText(options?.referralSourceOrganisationId) || null,
-    relationship_owner_user_id: actorUserId,
-    partner_relationship_id: primaryPartnerSelection?.partnerRelationshipId || null,
-    assigned_region_id: assignedRegionId || null,
-    assigned_branch_id: assignedBranchId || null,
-    next_action: resolvedNextAction,
-    comment: resolvedNextAction,
-    reservation_required: reservationRequired,
-    reservation_amount: resolvedReservationAmount,
-    reservation_amount_type: reservationRequired ? reservationAmountType : null,
-    reservation_treatment: reservationRequired ? reservationTreatment : null,
-    reservation_payable_to: reservationRequired ? reservationPayableTo : null,
-    reservation_status: reservationStatus,
-    reservation_payment_details: reservationRequired ? reservationPaymentDetails : {},
-    alteration_charge_treatment: transactionType === 'developer_sale' ? alterationChargeTreatment : null,
-    gross_commission_percentage: snapshotGrossCommissionPercentage,
-    gross_commission_amount: snapshotGrossCommissionAmount,
-    agent_split_percentage_snapshot: snapshotAgentSplit,
-    agency_split_percentage_snapshot: snapshotAgencySplit,
-    agent_commission_amount: snapshotAgentCommissionAmount,
-    agency_commission_amount: snapshotAgencyCommissionAmount,
-    assigned_agent_id: ['developer', 'agent'].includes(actorRole) ? actorUserId : null,
-    assigned_user_id: actorUserId,
-    owner_user_id: actorUserId,
-    created_by: actorUserId,
-    access_level: normalizeTransactionAccessLevel(
-      setup.accessLevel,
-      transactionType === 'private_property' ? 'private' : 'shared',
-    ),
-    updated_at: new Date().toISOString(),
-  }
-  const legacyTransactionPayload =
-    transactionPayload.finance_type === 'combination' ? { ...transactionPayload, finance_type: 'hybrid' } : null
-  const legacyMinimalTransactionPayload =
-    minimalTransactionPayload.finance_type === 'combination'
-      ? { ...minimalTransactionPayload, finance_type: 'hybrid' }
-      : null
-
-  // Seller fields are only used for private-property matters. Omitting them on
-  // developer-sale inserts prevents unnecessary fallback writes on schemas that
-  // don't include seller_* columns, which would otherwise drop reservation data.
+  // Developer sales do not persist private-seller fields. Every other field
+  // remains in the rich payload and targeted retries remove only the exact
+  // column reported missing by PostgreSQL/PostgREST.
   if (transactionType !== 'private_property') {
     delete transactionPayload.seller_name
     delete transactionPayload.seller_email
     delete transactionPayload.seller_phone
-    delete minimalTransactionPayload.seller_name
-    delete minimalTransactionPayload.seller_email
-    delete minimalTransactionPayload.seller_phone
-    if (legacyTransactionPayload) {
-      delete legacyTransactionPayload.seller_name
-      delete legacyTransactionPayload.seller_email
-      delete legacyTransactionPayload.seller_phone
-    }
-    if (legacyMinimalTransactionPayload) {
-      delete legacyMinimalTransactionPayload.seller_name
-      delete legacyMinimalTransactionPayload.seller_email
-      delete legacyMinimalTransactionPayload.seller_phone
-    }
   }
 
   const insertTransactionPayload = omitKnownMissingColumnsFromPayload(transactionPayload)
-  const insertLegacyTransactionPayload = legacyTransactionPayload
-    ? omitKnownMissingColumnsFromPayload(legacyTransactionPayload)
-    : null
-  const insertMinimalTransactionPayload = omitKnownMissingColumnsFromPayload(minimalTransactionPayload)
-  const insertLegacyMinimalTransactionPayload = legacyMinimalTransactionPayload
-    ? omitKnownMissingColumnsFromPayload(legacyMinimalTransactionPayload)
-    : null
+  const transactionMutationSelect =
+    'id, unit_id, buyer_id, finance_type, stage, attorney, bond_originator, next_action, created_at, updated_at'
 
-  let transactionResult = await client
-    .from('transactions')
-    .insert(insertTransactionPayload)
-    .select(
-      'id, unit_id, buyer_id, finance_type, stage, attorney, bond_originator, next_action, created_at, updated_at',
-    )
-    .limit(1)
-    .single()
-
-  if (
-    transactionResult.error &&
-    isFinanceTypeConstraintError(transactionResult.error) &&
-    insertLegacyTransactionPayload
-  ) {
-    transactionResult = await client
+  const executeInsertMutation = async (payload) => {
+    let result = await client
       .from('transactions')
-      .insert(insertLegacyTransactionPayload)
-      .select(
-        'id, unit_id, buyer_id, finance_type, stage, attorney, bond_originator, next_action, created_at, updated_at',
-      )
+      .insert(payload)
+      .select(transactionMutationSelect)
       .limit(1)
       .single()
+
+    if (
+      result.error &&
+      isFinanceTypeConstraintError(result.error) &&
+      payload.finance_type === 'combination'
+    ) {
+      result = await client
+        .from('transactions')
+        .insert({ ...payload, finance_type: 'hybrid' })
+        .select(transactionMutationSelect)
+        .limit(1)
+        .single()
+    }
+    return result
   }
 
-  if (
-    transactionResult.error &&
-    (isMissingColumnError(transactionResult.error, 'bond_amount') ||
-      isMissingColumnError(transactionResult.error, 'transaction_type') ||
-      isMissingColumnError(transactionResult.error, 'property_type') ||
-      isMissingColumnError(transactionResult.error, 'property_address_line_1') ||
-      isMissingColumnError(transactionResult.error, 'matter_owner') ||
-      isMissingColumnError(transactionResult.error, 'seller_name') ||
-      isMissingColumnError(transactionResult.error, 'seller_email') ||
-      isMissingColumnError(transactionResult.error, 'seller_phone') ||
-      isMissingColumnError(transactionResult.error, 'cash_amount') ||
-      isMissingColumnError(transactionResult.error, 'deposit_amount') ||
-      isMissingColumnError(transactionResult.error, 'reservation_required') ||
-      isMissingColumnError(transactionResult.error, 'reservation_amount') ||
-      isMissingColumnError(transactionResult.error, 'reservation_amount_type') ||
-      isMissingColumnError(transactionResult.error, 'reservation_treatment') ||
-      isMissingColumnError(transactionResult.error, 'reservation_payable_to') ||
-      isMissingColumnError(transactionResult.error, 'reservation_status') ||
-      isMissingColumnError(transactionResult.error, 'reservation_paid_date') ||
-      isMissingColumnError(transactionResult.error, 'reservation_payment_details') ||
-      isMissingColumnError(transactionResult.error, 'alteration_charge_treatment') ||
-      isMissingColumnError(transactionResult.error, 'onboarding_status') ||
-      isMissingColumnError(transactionResult.error, 'onboarding_completed_at') ||
-      isMissingColumnError(transactionResult.error, 'external_onboarding_submitted_at') ||
-      isMissingColumnError(transactionResult.error, 'purchase_price') ||
-      isMissingColumnError(transactionResult.error, 'organisation_id') ||
-      isMissingColumnError(transactionResult.error, 'assigned_agent_email') ||
-      isMissingColumnError(transactionResult.error, 'assigned_attorney_email') ||
-      isMissingColumnError(transactionResult.error, 'assigned_bond_originator_email') ||
-      isMissingColumnError(transactionResult.error, 'originating_partner_organisation_id') ||
-      isMissingColumnError(transactionResult.error, 'referral_source_organisation_id') ||
-      isMissingColumnError(transactionResult.error, 'relationship_owner_user_id') ||
-      isMissingColumnError(transactionResult.error, 'partner_relationship_id') ||
-      isMissingColumnError(transactionResult.error, 'assigned_region_id') ||
-      isMissingColumnError(transactionResult.error, 'assigned_branch_id') ||
-      isMissingColumnError(transactionResult.error, 'gross_commission_percentage') ||
-      isMissingColumnError(transactionResult.error, 'gross_commission_amount') ||
-      isMissingColumnError(transactionResult.error, 'agent_split_percentage_snapshot') ||
-      isMissingColumnError(transactionResult.error, 'agency_split_percentage_snapshot') ||
-      isMissingColumnError(transactionResult.error, 'agent_commission_amount') ||
-      isMissingColumnError(transactionResult.error, 'agency_commission_amount') ||
-      isMissingColumnError(transactionResult.error, 'listing_id') ||
-      isMissingColumnError(transactionResult.error, 'current_main_stage') ||
-      isMissingColumnError(transactionResult.error, 'comment') ||
-      isMissingColumnError(transactionResult.error, 'assigned_agent_id') ||
-      isMissingColumnError(transactionResult.error, 'assigned_user_id') ||
-      isMissingColumnError(transactionResult.error, 'owner_user_id') ||
-      isMissingColumnError(transactionResult.error, 'created_by') ||
-      isMissingColumnError(transactionResult.error, 'sale_route') ||
-      isMissingColumnError(transactionResult.error, 'sale_channel') ||
-      isMissingColumnError(transactionResult.error, 'seller_party_type') ||
-      isMissingColumnError(transactionResult.error, 'lead_owner') ||
-      isMissingColumnError(transactionResult.error, 'ownership_model') ||
-      isMissingColumnError(transactionResult.error, 'source_agency_org_id') ||
-      isMissingColumnError(transactionResult.error, 'access_level'))
-  ) {
-    const fallbackPayload = {
-      ...(insertLegacyMinimalTransactionPayload || insertMinimalTransactionPayload),
-    }
-    delete fallbackPayload.current_main_stage
-    if (isMissingColumnError(transactionResult.error, 'listing_id')) {
-      delete fallbackPayload.listing_id
-    }
-    delete fallbackPayload.comment
-    delete fallbackPayload.purchaser_type
-    delete fallbackPayload.finance_managed_by
-    delete fallbackPayload.transaction_type
-    delete fallbackPayload.property_type
-    delete fallbackPayload.property_address_line_1
-    delete fallbackPayload.property_address_line_2
-    delete fallbackPayload.suburb
-    delete fallbackPayload.city
-    delete fallbackPayload.province
-    delete fallbackPayload.postal_code
-    delete fallbackPayload.property_description
-    delete fallbackPayload.matter_owner
-    delete fallbackPayload.seller_name
-    delete fallbackPayload.seller_email
-    delete fallbackPayload.seller_phone
-    if (isMissingColumnError(transactionResult.error, 'reservation_amount_type')) {
-      delete fallbackPayload.reservation_amount_type
-    }
-    if (isMissingColumnError(transactionResult.error, 'reservation_treatment')) {
-      delete fallbackPayload.reservation_treatment
-    }
-    if (isMissingColumnError(transactionResult.error, 'reservation_payable_to')) {
-      delete fallbackPayload.reservation_payable_to
-    }
-    if (isMissingColumnError(transactionResult.error, 'alteration_charge_treatment')) {
-      delete fallbackPayload.alteration_charge_treatment
-    }
-    delete fallbackPayload.assigned_agent
-    delete fallbackPayload.assigned_agent_email
-    delete fallbackPayload.assigned_attorney_email
-    delete fallbackPayload.assigned_bond_originator_email
-    delete fallbackPayload.originating_partner_organisation_id
-    delete fallbackPayload.referral_source_organisation_id
-    delete fallbackPayload.relationship_owner_user_id
-    delete fallbackPayload.partner_relationship_id
-    delete fallbackPayload.assigned_region_id
-    delete fallbackPayload.assigned_branch_id
-    delete fallbackPayload.gross_commission_percentage
-    delete fallbackPayload.gross_commission_amount
-    delete fallbackPayload.agent_split_percentage_snapshot
-    delete fallbackPayload.agency_split_percentage_snapshot
-    delete fallbackPayload.agent_commission_amount
-    delete fallbackPayload.agency_commission_amount
-    delete fallbackPayload.sale_route
-    delete fallbackPayload.sale_channel
-    delete fallbackPayload.seller_party_type
-    delete fallbackPayload.lead_owner
-    delete fallbackPayload.ownership_model
-    delete fallbackPayload.source_agency_org_id
-    delete fallbackPayload.access_level
-    if (isMissingColumnError(transactionResult.error, 'organisation_id')) {
-      delete fallbackPayload.organisation_id
-    }
-    deletePayloadColumnsIfMissing(transactionResult.error, fallbackPayload, [
-      'purchase_price',
-      'sales_price',
-      'cash_amount',
-      'bond_amount',
-      'deposit_amount',
-      'assigned_agent_id',
-      'assigned_user_id',
-      'owner_user_id',
-      'created_by',
-    ])
+  let transactionResult = await executeTransactionMutationWithTargetedColumnRetry({
+    payload: insertTransactionPayload,
+    execute: executeInsertMutation,
+  })
 
-    transactionResult = await client
-      .from('transactions')
-      .insert(fallbackPayload)
-      .select(
-        'id, unit_id, buyer_id, finance_type, stage, attorney, bond_originator, next_action, created_at, updated_at',
-      )
-      .limit(1)
-      .single()
-  }
-
-  if (transactionResult.error && transactionResult.error.code === '23505') {
+  if (transactionResult.error?.code === '23505') {
     const { data: existingTransaction, error: existingTransactionError } = await client
       .from('transactions')
       .select('id')
@@ -30138,325 +30065,57 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       .limit(1)
       .maybeSingle()
 
-    if (existingTransactionError) {
-      throw existingTransactionError
-    }
+    if (existingTransactionError) throw existingTransactionError
+    if (!existingTransaction) throw transactionResult.error
 
-    if (!existingTransaction) {
-      throw transactionResult.error
-    }
-
-    const richConflictPayload = {
+    const conflictPayload = {
       ...insertTransactionPayload,
-      is_active: true,
       updated_at: new Date().toISOString(),
     }
-    const legacyRichConflictPayload =
-      richConflictPayload.finance_type === 'combination' ? { ...richConflictPayload, finance_type: 'hybrid' } : null
-
-    transactionResult = await client
-      .from('transactions')
-      .update(richConflictPayload)
-      .eq('id', existingTransaction.id)
-      .select(
-        'id, unit_id, buyer_id, finance_type, stage, attorney, bond_originator, next_action, created_at, updated_at',
-      )
-      .limit(1)
-      .single()
-
-    if (transactionResult.error && isFinanceTypeConstraintError(transactionResult.error) && legacyRichConflictPayload) {
-      transactionResult = await client
+    const executeUpdateMutation = async (payload) => {
+      let result = await client
         .from('transactions')
-        .update(legacyRichConflictPayload)
+        .update(payload)
         .eq('id', existingTransaction.id)
-        .select(
-          'id, unit_id, buyer_id, finance_type, stage, attorney, bond_originator, next_action, created_at, updated_at',
-        )
+        .select(transactionMutationSelect)
         .limit(1)
         .single()
+
+      if (
+        result.error &&
+        isFinanceTypeConstraintError(result.error) &&
+        payload.finance_type === 'combination'
+      ) {
+        result = await client
+          .from('transactions')
+          .update({ ...payload, finance_type: 'hybrid' })
+          .eq('id', existingTransaction.id)
+          .select(transactionMutationSelect)
+          .limit(1)
+          .single()
+      }
+      return result
     }
 
-    if (
-      transactionResult.error &&
-      (isMissingColumnError(transactionResult.error, 'bond_amount') ||
-        isMissingColumnError(transactionResult.error, 'transaction_type') ||
-        isMissingColumnError(transactionResult.error, 'property_type') ||
-        isMissingColumnError(transactionResult.error, 'property_address_line_1') ||
-        isMissingColumnError(transactionResult.error, 'matter_owner') ||
-        isMissingColumnError(transactionResult.error, 'seller_name') ||
-        isMissingColumnError(transactionResult.error, 'seller_email') ||
-        isMissingColumnError(transactionResult.error, 'seller_phone') ||
-        isMissingColumnError(transactionResult.error, 'cash_amount') ||
-        isMissingColumnError(transactionResult.error, 'deposit_amount') ||
-        isMissingColumnError(transactionResult.error, 'reservation_required') ||
-        isMissingColumnError(transactionResult.error, 'reservation_amount') ||
-        isMissingColumnError(transactionResult.error, 'reservation_amount_type') ||
-        isMissingColumnError(transactionResult.error, 'reservation_treatment') ||
-        isMissingColumnError(transactionResult.error, 'reservation_payable_to') ||
-        isMissingColumnError(transactionResult.error, 'reservation_status') ||
-        isMissingColumnError(transactionResult.error, 'reservation_paid_date') ||
-        isMissingColumnError(transactionResult.error, 'reservation_payment_details') ||
-        isMissingColumnError(transactionResult.error, 'alteration_charge_treatment') ||
-        isMissingColumnError(transactionResult.error, 'onboarding_status') ||
-        isMissingColumnError(transactionResult.error, 'onboarding_completed_at') ||
-        isMissingColumnError(transactionResult.error, 'external_onboarding_submitted_at') ||
-        isMissingColumnError(transactionResult.error, 'purchase_price') ||
-        isMissingColumnError(transactionResult.error, 'organisation_id') ||
-        isMissingColumnError(transactionResult.error, 'assigned_agent_email') ||
-        isMissingColumnError(transactionResult.error, 'assigned_attorney_email') ||
-        isMissingColumnError(transactionResult.error, 'assigned_bond_originator_email') ||
-        isMissingColumnError(transactionResult.error, 'originating_partner_organisation_id') ||
-        isMissingColumnError(transactionResult.error, 'referral_source_organisation_id') ||
-        isMissingColumnError(transactionResult.error, 'relationship_owner_user_id') ||
-        isMissingColumnError(transactionResult.error, 'partner_relationship_id') ||
-        isMissingColumnError(transactionResult.error, 'gross_commission_percentage') ||
-        isMissingColumnError(transactionResult.error, 'gross_commission_amount') ||
-        isMissingColumnError(transactionResult.error, 'agent_split_percentage_snapshot') ||
-        isMissingColumnError(transactionResult.error, 'agency_split_percentage_snapshot') ||
-        isMissingColumnError(transactionResult.error, 'agent_commission_amount') ||
-        isMissingColumnError(transactionResult.error, 'agency_commission_amount') ||
-        isMissingColumnError(transactionResult.error, 'listing_id') ||
-        isMissingColumnError(transactionResult.error, 'current_main_stage') ||
-        isMissingColumnError(transactionResult.error, 'comment') ||
-        isMissingColumnError(transactionResult.error, 'assigned_agent_id') ||
-        isMissingColumnError(transactionResult.error, 'assigned_user_id') ||
-        isMissingColumnError(transactionResult.error, 'owner_user_id') ||
-        isMissingColumnError(transactionResult.error, 'created_by') ||
-        isMissingColumnError(transactionResult.error, 'sale_route') ||
-        isMissingColumnError(transactionResult.error, 'sale_channel') ||
-        isMissingColumnError(transactionResult.error, 'seller_party_type') ||
-        isMissingColumnError(transactionResult.error, 'lead_owner') ||
-        isMissingColumnError(transactionResult.error, 'ownership_model') ||
-        isMissingColumnError(transactionResult.error, 'source_agency_org_id') ||
-        isMissingColumnError(transactionResult.error, 'access_level'))
-    ) {
-      const fallbackPayload = {
-        ...(insertLegacyMinimalTransactionPayload || insertMinimalTransactionPayload),
-        is_active: true,
-        updated_at: new Date().toISOString(),
-      }
-      delete fallbackPayload.current_main_stage
-      if (isMissingColumnError(transactionResult.error, 'listing_id')) {
-        delete fallbackPayload.listing_id
-      }
-      delete fallbackPayload.comment
-      delete fallbackPayload.purchaser_type
-      delete fallbackPayload.finance_managed_by
-      delete fallbackPayload.transaction_type
-      delete fallbackPayload.property_type
-      delete fallbackPayload.property_address_line_1
-      delete fallbackPayload.property_address_line_2
-      delete fallbackPayload.suburb
-      delete fallbackPayload.city
-      delete fallbackPayload.province
-      delete fallbackPayload.postal_code
-      delete fallbackPayload.property_description
-      delete fallbackPayload.matter_owner
-      delete fallbackPayload.seller_name
-      delete fallbackPayload.seller_email
-      delete fallbackPayload.seller_phone
-      if (isMissingColumnError(transactionResult.error, 'reservation_amount_type')) {
-        delete fallbackPayload.reservation_amount_type
-      }
-      if (isMissingColumnError(transactionResult.error, 'reservation_treatment')) {
-        delete fallbackPayload.reservation_treatment
-      }
-      if (isMissingColumnError(transactionResult.error, 'reservation_payable_to')) {
-        delete fallbackPayload.reservation_payable_to
-      }
-      if (isMissingColumnError(transactionResult.error, 'alteration_charge_treatment')) {
-        delete fallbackPayload.alteration_charge_treatment
-      }
-      delete fallbackPayload.assigned_agent
-      delete fallbackPayload.assigned_agent_email
-      delete fallbackPayload.assigned_attorney_email
-      delete fallbackPayload.assigned_bond_originator_email
-      delete fallbackPayload.originating_partner_organisation_id
-      delete fallbackPayload.referral_source_organisation_id
-      delete fallbackPayload.relationship_owner_user_id
-      delete fallbackPayload.partner_relationship_id
-      delete fallbackPayload.gross_commission_percentage
-      delete fallbackPayload.gross_commission_amount
-      delete fallbackPayload.agent_split_percentage_snapshot
-      delete fallbackPayload.agency_split_percentage_snapshot
-      delete fallbackPayload.agent_commission_amount
-      delete fallbackPayload.agency_commission_amount
-      delete fallbackPayload.sale_route
-      delete fallbackPayload.sale_channel
-      delete fallbackPayload.seller_party_type
-      delete fallbackPayload.lead_owner
-      delete fallbackPayload.ownership_model
-      delete fallbackPayload.source_agency_org_id
-      delete fallbackPayload.access_level
-      if (isMissingColumnError(transactionResult.error, 'organisation_id')) {
-        delete fallbackPayload.organisation_id
-      }
-      deletePayloadColumnsIfMissing(transactionResult.error, fallbackPayload, [
-        'purchase_price',
-        'sales_price',
-        'cash_amount',
-        'bond_amount',
-        'deposit_amount',
-        'assigned_agent_id',
-        'assigned_user_id',
-        'owner_user_id',
-        'created_by',
-      ])
-
-      transactionResult = await client
-        .from('transactions')
-        .update(fallbackPayload)
-        .eq('id', existingTransaction.id)
-        .select(
-          'id, unit_id, buyer_id, finance_type, stage, attorney, bond_originator, next_action, created_at, updated_at',
-        )
-        .limit(1)
-        .single()
-    }
-
-    if (
-      transactionResult.error &&
-      (isMissingColumnError(transactionResult.error, 'bond_amount') ||
-        isMissingColumnError(transactionResult.error, 'transaction_type') ||
-        isMissingColumnError(transactionResult.error, 'property_type') ||
-        isMissingColumnError(transactionResult.error, 'property_address_line_1') ||
-        isMissingColumnError(transactionResult.error, 'matter_owner') ||
-        isMissingColumnError(transactionResult.error, 'seller_name') ||
-        isMissingColumnError(transactionResult.error, 'seller_email') ||
-        isMissingColumnError(transactionResult.error, 'seller_phone') ||
-        isMissingColumnError(transactionResult.error, 'cash_amount') ||
-        isMissingColumnError(transactionResult.error, 'deposit_amount') ||
-        isMissingColumnError(transactionResult.error, 'reservation_required') ||
-        isMissingColumnError(transactionResult.error, 'reservation_amount') ||
-        isMissingColumnError(transactionResult.error, 'reservation_amount_type') ||
-        isMissingColumnError(transactionResult.error, 'reservation_treatment') ||
-        isMissingColumnError(transactionResult.error, 'reservation_payable_to') ||
-        isMissingColumnError(transactionResult.error, 'reservation_status') ||
-        isMissingColumnError(transactionResult.error, 'reservation_paid_date') ||
-        isMissingColumnError(transactionResult.error, 'reservation_payment_details') ||
-        isMissingColumnError(transactionResult.error, 'alteration_charge_treatment') ||
-        isMissingColumnError(transactionResult.error, 'onboarding_status') ||
-        isMissingColumnError(transactionResult.error, 'onboarding_completed_at') ||
-        isMissingColumnError(transactionResult.error, 'external_onboarding_submitted_at') ||
-        isMissingColumnError(transactionResult.error, 'purchase_price') ||
-        isMissingColumnError(transactionResult.error, 'organisation_id') ||
-        isMissingColumnError(transactionResult.error, 'assigned_agent_email') ||
-        isMissingColumnError(transactionResult.error, 'assigned_attorney_email') ||
-        isMissingColumnError(transactionResult.error, 'assigned_bond_originator_email') ||
-        isMissingColumnError(transactionResult.error, 'originating_partner_organisation_id') ||
-        isMissingColumnError(transactionResult.error, 'referral_source_organisation_id') ||
-        isMissingColumnError(transactionResult.error, 'relationship_owner_user_id') ||
-        isMissingColumnError(transactionResult.error, 'partner_relationship_id') ||
-        isMissingColumnError(transactionResult.error, 'gross_commission_percentage') ||
-        isMissingColumnError(transactionResult.error, 'gross_commission_amount') ||
-        isMissingColumnError(transactionResult.error, 'agent_split_percentage_snapshot') ||
-        isMissingColumnError(transactionResult.error, 'agency_split_percentage_snapshot') ||
-        isMissingColumnError(transactionResult.error, 'agent_commission_amount') ||
-        isMissingColumnError(transactionResult.error, 'agency_commission_amount') ||
-        isMissingColumnError(transactionResult.error, 'listing_id') ||
-        isMissingColumnError(transactionResult.error, 'current_main_stage') ||
-        isMissingColumnError(transactionResult.error, 'comment') ||
-        isMissingColumnError(transactionResult.error, 'assigned_agent_id') ||
-        isMissingColumnError(transactionResult.error, 'assigned_user_id') ||
-        isMissingColumnError(transactionResult.error, 'owner_user_id') ||
-        isMissingColumnError(transactionResult.error, 'created_by') ||
-        isMissingColumnError(transactionResult.error, 'sale_route') ||
-        isMissingColumnError(transactionResult.error, 'sale_channel') ||
-        isMissingColumnError(transactionResult.error, 'seller_party_type') ||
-        isMissingColumnError(transactionResult.error, 'lead_owner') ||
-        isMissingColumnError(transactionResult.error, 'ownership_model') ||
-        isMissingColumnError(transactionResult.error, 'source_agency_org_id') ||
-        isMissingColumnError(transactionResult.error, 'access_level'))
-    ) {
-      const fallbackPayload = {
-        ...(insertLegacyMinimalTransactionPayload || insertMinimalTransactionPayload),
-        updated_at: new Date().toISOString(),
-      }
-      delete fallbackPayload.current_main_stage
-      if (isMissingColumnError(transactionResult.error, 'listing_id')) {
-        delete fallbackPayload.listing_id
-      }
-      delete fallbackPayload.comment
-      delete fallbackPayload.purchaser_type
-      delete fallbackPayload.finance_managed_by
-      delete fallbackPayload.transaction_type
-      delete fallbackPayload.property_type
-      delete fallbackPayload.property_address_line_1
-      delete fallbackPayload.property_address_line_2
-      delete fallbackPayload.suburb
-      delete fallbackPayload.city
-      delete fallbackPayload.province
-      delete fallbackPayload.postal_code
-      delete fallbackPayload.property_description
-      delete fallbackPayload.matter_owner
-      delete fallbackPayload.seller_name
-      delete fallbackPayload.seller_email
-      delete fallbackPayload.seller_phone
-      if (isMissingColumnError(transactionResult.error, 'reservation_amount_type')) {
-        delete fallbackPayload.reservation_amount_type
-      }
-      if (isMissingColumnError(transactionResult.error, 'reservation_treatment')) {
-        delete fallbackPayload.reservation_treatment
-      }
-      if (isMissingColumnError(transactionResult.error, 'reservation_payable_to')) {
-        delete fallbackPayload.reservation_payable_to
-      }
-      if (isMissingColumnError(transactionResult.error, 'alteration_charge_treatment')) {
-        delete fallbackPayload.alteration_charge_treatment
-      }
-      delete fallbackPayload.assigned_agent
-      delete fallbackPayload.assigned_agent_email
-      delete fallbackPayload.assigned_attorney_email
-      delete fallbackPayload.assigned_bond_originator_email
-      delete fallbackPayload.originating_partner_organisation_id
-      delete fallbackPayload.referral_source_organisation_id
-      delete fallbackPayload.relationship_owner_user_id
-      delete fallbackPayload.partner_relationship_id
-      delete fallbackPayload.gross_commission_percentage
-      delete fallbackPayload.gross_commission_amount
-      delete fallbackPayload.agent_split_percentage_snapshot
-      delete fallbackPayload.agency_split_percentage_snapshot
-      delete fallbackPayload.agent_commission_amount
-      delete fallbackPayload.agency_commission_amount
-      delete fallbackPayload.sale_route
-      delete fallbackPayload.sale_channel
-      delete fallbackPayload.seller_party_type
-      delete fallbackPayload.lead_owner
-      delete fallbackPayload.ownership_model
-      delete fallbackPayload.source_agency_org_id
-      delete fallbackPayload.access_level
-      if (isMissingColumnError(transactionResult.error, 'organisation_id')) {
-        delete fallbackPayload.organisation_id
-      }
-      deletePayloadColumnsIfMissing(transactionResult.error, fallbackPayload, [
-        'purchase_price',
-        'sales_price',
-        'cash_amount',
-        'bond_amount',
-        'deposit_amount',
-        'assigned_agent_id',
-        'assigned_user_id',
-        'owner_user_id',
-        'created_by',
-      ])
-
-      transactionResult = await client
-        .from('transactions')
-        .update(fallbackPayload)
-        .eq('id', existingTransaction.id)
-        .select(
-          'id, unit_id, buyer_id, finance_type, stage, attorney, bond_originator, next_action, created_at, updated_at',
-        )
-        .limit(1)
-        .single()
-    }
+    transactionResult = await executeTransactionMutationWithTargetedColumnRetry({
+      payload: conflictPayload,
+      execute: executeUpdateMutation,
+    })
   }
-
   if (transactionResult.error) {
     throw transactionResult.error
   }
 
   const transaction = transactionResult.data
+  async function persistCreationLifecyclePatch(patch) {
+    const lifecycleUpdate = await client.from('transactions').update(patch).eq('id', transaction.id)
+    if (lifecycleUpdate.error) {
+      const persistenceError = new Error('Transaction creation status could not be persisted.')
+      persistenceError.code = 'TRANSACTION_CREATION_STATUS_PERSISTENCE_FAILED'
+      persistenceError.cause = lifecycleUpdate.error
+      throw persistenceError
+    }
+  }
   const setupWarnings = []
   const recordSetupWarning = (area, error, fallbackMessage = 'Transaction setup step could not be completed.') => {
     const warning = {
@@ -30604,6 +30263,10 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
   let onboardingRecord = null
   let clientPortalLink = null
   let participantRows = []
+  let propagationResult = { participants: [], attorneyAssignments: [], bondApplications: [] }
+  let onboardingSnapshot = null
+  let requiredDocumentRows = []
+  let sellerHandoff = null
 
   try {
     const participantsResult = await ensureTransactionParticipants(client, {
@@ -30628,7 +30291,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       },
     })
 
-    const propagationResult = await propagateTransactionRoleplayersIfPossible(client, {
+    propagationResult = await propagateTransactionRoleplayersIfPossible(client, {
       transactionId: transaction.id,
       transaction: {
         ...transactionPayload,
@@ -30641,6 +30304,17 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       buyerId: buyer?.id || null,
       financeType: normalizedFinanceType,
     })
+    if (propagationResult.attorneyAssignments.length < expectedAttorneyAssignments.length) {
+      const error = new Error('The selected attorney assignment did not reach the attorney workspace.')
+      error.code = 'ATTORNEY_ASSIGNMENT_SETUP_INCOMPLETE'
+      throw error
+    }
+    if (expectedAttorneyAssignments > 0) {
+      creationLifecycle = setTransactionCreationStepOutcome(creationLifecycle, 'attorney_assignment', {
+        status: 'complete',
+        detail: { expected: expectedAttorneyAssignments, persisted: propagationResult.attorneyAssignments.length },
+      })
+    }
     if (propagationResult.participants?.length) {
       const participantIds = new Set(participantRows.map((item) => item.id).filter(Boolean))
       participantRows = [
@@ -30651,8 +30325,11 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       ]
     }
   } catch (error) {
-    if (!isRecoverableTransactionSetupError(error)) {
-      throw error
+    if (expectedAttorneyAssignments > 0) {
+      creationLifecycle = setTransactionCreationStepOutcome(creationLifecycle, 'attorney_assignment', {
+        status: 'failed',
+        error,
+      })
     }
     recordSetupWarning(
       error?.setupArea || 'participants',
@@ -30668,15 +30345,17 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       transactionId: transaction.id,
       purchaserType,
     })
-  } catch (error) {
-    if (!isRecoverableTransactionSetupError(error)) {
+    if (!onboardingRecord?.token) {
+      const error = new Error('Buyer onboarding token was not persisted.')
+      error.code = 'ONBOARDING_TOKEN_SETUP_INCOMPLETE'
       throw error
     }
+  } catch (error) {
     recordSetupWarning('buyer_onboarding', error, 'Buyer onboarding token could not be created.')
   }
 
   try {
-    await persistInitialBuyerPartiesOnboardingData(client, {
+    onboardingSnapshot = await persistInitialBuyerPartiesOnboardingData(client, {
       transactionId: transaction.id,
       purchaserType,
       buyerParties,
@@ -30693,48 +30372,164 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       },
       handoffChecklist,
     })
-  } catch (error) {
-    if (!isRecoverableTransactionSetupError(error)) {
+    if (!onboardingRecord?.token) {
+      const error = new Error('Buyer onboarding token was not persisted.')
+      error.code = 'ONBOARDING_TOKEN_SETUP_INCOMPLETE'
       throw error
     }
+    if (!onboardingSnapshot || typeof onboardingSnapshot !== 'object') {
+      const error = new Error('Buyer onboarding snapshot was not persisted.')
+      error.code = 'ONBOARDING_SNAPSHOT_SETUP_INCOMPLETE'
+      throw error
+    }
+    creationLifecycle = setTransactionCreationStepOutcome(creationLifecycle, 'onboarding_snapshot', {
+      status: 'complete',
+      detail: { tokenPersisted: true, snapshotPersisted: true },
+    })
+  } catch (error) {
+    creationLifecycle = setTransactionCreationStepOutcome(creationLifecycle, 'onboarding_snapshot', {
+      status: 'failed',
+      error,
+    })
     recordSetupWarning('buyer_parties', error, 'Buyer party setup could not be completed.')
   }
 
   try {
-    await ensureTransactionRequiredDocuments(client, {
+    requiredDocumentRows = await ensureTransactionRequiredDocuments(client, {
       transactionId: transaction.id,
       purchaserType,
       financeType: normalizedFinanceType,
       reservationRequired: reservationRequired,
       cashAmount: transactionPayload.cash_amount,
       bondAmount: transactionPayload.bond_amount,
+    }, {
+      canonicalSourceRequired: true,
     })
-  } catch (error) {
-    if (!isRecoverableTransactionSetupError(error)) {
+    if (!requiredDocumentRows.length) {
+      const error = new Error('Canonical transaction requirements were not generated.')
+      error.code = 'REQUIREMENT_GENERATION_SETUP_INCOMPLETE'
       throw error
     }
+    creationLifecycle = setTransactionCreationStepOutcome(creationLifecycle, 'requirement_generation', {
+      status: 'complete',
+      detail: { requirementCount: requiredDocumentRows.length },
+    })
+  } catch (error) {
+    creationLifecycle = setTransactionCreationStepOutcome(creationLifecycle, 'requirement_generation', {
+      status: 'failed',
+      error,
+    })
     recordSetupWarning('required_documents', error, 'Required document setup could not be completed.')
   }
 
   try {
-    if (setup.unitId) {
-      clientPortalLink = await getOrCreateClientPortalLink({
-        developmentId: setup.developmentId,
-        unitId: setup.unitId,
-        transactionId: transaction.id,
-        buyerId: buyer?.id || null,
+    if (creationLifecycle.steps.seller_handoff.required) {
+      const handoffResult = await client.rpc('bridge_verify_private_transaction_seller_handoff', {
+        p_transaction_id: transaction.id,
+      })
+      if (handoffResult.error) throw handoffResult.error
+      sellerHandoff = handoffResult.data && typeof handoffResult.data === 'object'
+        ? handoffResult.data
+        : null
+      if (
+        sellerHandoff?.verified !== true ||
+        !sellerHandoff?.privateListingId ||
+        !sellerHandoff?.sellerOnboardingId ||
+        !sellerHandoff?.sellerOnboardingToken ||
+        !sellerHandoff?.sellerPortalContextId
+      ) {
+        const error = new Error('Private seller onboarding and portal continuity could not be verified.')
+        error.code = 'SELLER_HANDOFF_SETUP_INCOMPLETE'
+        throw error
+      }
+      creationLifecycle = setTransactionCreationStepOutcome(creationLifecycle, 'seller_handoff', {
+        status: 'complete',
+        detail: {
+          privateListingId: sellerHandoff.privateListingId,
+          sellerOnboardingId: sellerHandoff.sellerOnboardingId,
+          sellerPortalContextId: sellerHandoff.sellerPortalContextId,
+          promotedUploadCount: Number(sellerHandoff.promotedUploadCount || 0),
+          satisfiedSellerRequirementCount: Number(sellerHandoff.satisfiedSellerRequirementCount || 0),
+        },
       })
     }
   } catch (error) {
-    const missingPortalSchema =
-      isRecoverableTransactionSetupError(error) ||
-      /client portal links are not set up yet/i.test(String(error?.message || ''))
-    if (!missingPortalSchema) {
-      throw error
+    if (creationLifecycle.steps.seller_handoff.required) {
+      creationLifecycle = setTransactionCreationStepOutcome(creationLifecycle, 'seller_handoff', {
+        status: 'failed',
+        error,
+      })
+    }
+    recordSetupWarning('seller_handoff', error, 'Private seller onboarding and document continuity could not be completed.')
+  }
+
+  try {
+    if (creationLifecycle.steps.portal_setup.required) {
+      clientPortalLink = await getOrCreateClientPortalLink({
+        developmentId: transactionPayload.development_id,
+        unitId: transactionPayload.unit_id,
+        transactionId: transaction.id,
+        buyerId: buyer?.id || null,
+      })
+      if (!clientPortalLink?.token) {
+        const error = new Error('Buyer portal link was not persisted.')
+        error.code = 'PORTAL_SETUP_INCOMPLETE'
+        throw error
+      }
+      creationLifecycle = setTransactionCreationStepOutcome(creationLifecycle, 'portal_setup', {
+        status: 'complete',
+        detail: { tokenPersisted: true },
+      })
+    }
+  } catch (error) {
+    if (creationLifecycle.steps.portal_setup.required) {
+      creationLifecycle = setTransactionCreationStepOutcome(creationLifecycle, 'portal_setup', {
+        status: 'failed',
+        error,
+      })
     }
     recordSetupWarning('client_portal_link', error, 'Client portal link setup could not be completed.')
   }
 
+  const incompleteCreationSteps = getTransactionCreationIncompleteSteps(creationLifecycle)
+  if (incompleteCreationSteps.length) {
+    const incompleteError = new Error('One or more critical transaction setup steps failed.')
+    incompleteError.code = 'TRANSACTION_CREATION_INCOMPLETE'
+    await persistCreationLifecyclePatch(buildTransactionCreationPersistencePatch({
+      lifecycle: creationLifecycle,
+      status: 'incomplete',
+      error: incompleteError,
+      warnings: setupWarnings,
+    }))
+    throw new TransactionCreationIncompleteError({
+      transactionId: transaction.id,
+      incompleteSteps: incompleteCreationSteps,
+      cause: incompleteError,
+    })
+  }
+
+  // Reserve the unit before reporting success. This remains synchronous so a
+  // second creator cannot treat the unit as still available while the
+  // non-critical post-create work runs.
+  if (setup.unitId) {
+    const unitUpdatePayload = { status: resolvedDetailedStage }
+    const normalizedSalesPrice = normalizeOptionalNumber(setup.salesPrice)
+    if (normalizedSalesPrice !== null) unitUpdatePayload.price = normalizedSalesPrice
+
+    const { error: updateUnitError } = await client.from('units').update(unitUpdatePayload).eq('id', setup.unitId)
+    if (updateUnitError) throw updateUnitError
+  }
+
+  await persistCreationLifecyclePatch(buildTransactionCreationPersistencePatch({
+    lifecycle: creationLifecycle,
+    status: 'complete',
+    warnings: setupWarnings,
+  }))
+
+  // The transaction is now safe to open: its required onboarding, portal and
+  // canonical document setup have completed. Keep telemetry, notification and
+  // projection work off the interactive create path.
+  void (async () => {
   const financePayload = {
     transaction_id: transaction.id,
     proof_of_funds_received: normalizeOptionalBoolean(finance.proofOfFundsReceived),
@@ -30843,7 +30638,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       automation: 'TransactionInitialized',
       onboardingToken: onboardingRecord?.token || null,
       participantCount: participantRows.length,
-      requiredDocsGenerated: true,
+      requiredDocsGenerated: requiredDocumentRows.length > 0,
       clientLinkGenerated: Boolean(clientPortalLink?.token),
     },
   })
@@ -30948,7 +30743,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     }
   }
 
-  return {
+  const postCreateResult = {
     transactionId: transaction.id,
     unitId: unitData?.id || null,
     unitNumber: unitData?.unit_number || null,
@@ -30965,6 +30760,12 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     clientPortalPath: clientPortalLink?.token ? `/client/${clientPortalLink.token}` : '',
     buyerPortalToken: clientPortalLink?.token || null,
     buyerPortalPath: clientPortalLink?.token ? `/client/${clientPortalLink.token}` : '',
+    privateListingId: sellerHandoff?.privateListingId || linkedPrivateListingId || null,
+    sellerOnboardingToken: sellerHandoff?.sellerOnboardingToken || null,
+    sellerPortalToken: sellerHandoff?.sellerPortalToken || null,
+    sellerPortalPath: sellerHandoff?.sellerOnboardingToken
+      ? `/client/${sellerHandoff.sellerOnboardingToken}/selling`
+      : '',
     reservationRequired: persistedReservationRequired,
     reservationAmount: persistedReservationAmount,
     reservationAmountType: transactionPayload.reservation_amount_type,
@@ -30975,6 +30776,62 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     rolePlayerCount: mergedRolePlayerSelections.length,
     handoffChecklist,
     setupHealth,
+    setupWarnings,
+  }
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('itg:transaction-post-create-complete', {
+      detail: postCreateResult,
+    }))
+  }
+  return postCreateResult
+  })().catch((error) => {
+    console.warn('[createTransactionFromWizard] post-create work failed', error)
+  })
+
+  return {
+    transactionId: transaction.id,
+    unitId: setup.unitId || null,
+    unitNumber: null,
+    transactionType,
+    propertyType: transactionPayload.property_type || null,
+    propertyLabel:
+      transactionType === 'private_property'
+        ? [setup.propertyAddressLine1, setup.city || setup.suburb].filter(Boolean).join(', ') ||
+          setup.propertyDescription ||
+          'Private property matter'
+        : null,
+    onboardingToken: onboardingRecord?.token || null,
+    clientPortalToken: clientPortalLink?.token || null,
+    clientPortalPath: clientPortalLink?.token ? `/client/${clientPortalLink.token}` : '',
+    buyerPortalToken: clientPortalLink?.token || null,
+    buyerPortalPath: clientPortalLink?.token ? `/client/${clientPortalLink.token}` : '',
+    privateListingId: sellerHandoff?.privateListingId || linkedPrivateListingId || null,
+    sellerOnboardingToken: sellerHandoff?.sellerOnboardingToken || null,
+    sellerPortalToken: sellerHandoff?.sellerPortalToken || null,
+    sellerPortalPath: sellerHandoff?.sellerOnboardingToken
+      ? `/client/${sellerHandoff.sellerOnboardingToken}/selling`
+      : '',
+    reservationRequired: persistedReservationRequired,
+    reservationAmount: persistedReservationAmount,
+    reservationAmountType: transactionPayload.reservation_amount_type,
+    reservationTreatment: transactionPayload.reservation_treatment,
+    reservationPayableTo: transactionPayload.reservation_payable_to,
+    alterationChargeTreatment: transactionPayload.alteration_charge_treatment,
+    buyerPartyCount: buyerParties.length,
+    rolePlayerCount: mergedRolePlayerSelections.length,
+    handoffChecklist,
+    setupHealth: buildNewTransactionSetupHealth({
+      setupWarnings,
+      handoffChecklist,
+      buyerParties,
+      rolePlayers: mergedRolePlayerSelections,
+      onboardingRecord,
+      transactionPayload,
+      transactionType,
+      sourceContext,
+      completeness: options?.completeness || null,
+    }),
     setupWarnings,
   }
 }
@@ -40539,7 +40396,7 @@ export async function getOrCreateClientPortalLink({ developmentId, unitId, trans
   })
 
   if (!link) {
-    throw new Error('Development, unit, and transaction are required.')
+    throw new Error('A transaction and buyer are required for buyer portal setup.')
   }
 
   return link
@@ -40554,16 +40411,50 @@ async function getOrCreateClientPortalLinkRecord(
   const normalizedTransactionId = normalizeNullableUuid(transactionId)
   const normalizedBuyerId = normalizeNullableUuid(buyerId)
 
-  if (!normalizedDevelopmentId || !normalizedUnitId || !normalizedTransactionId) {
+  if (!normalizedTransactionId) {
     return null
   }
 
-  const settings = await ensureDevelopmentSettings(client, normalizedDevelopmentId)
-  if (!settings.client_portal_enabled) {
-    if (requireDevelopmentSettings) {
-      throw new Error('Client portal is disabled for this development.')
+  const { data: transaction, error: transactionError } = await client
+    .from('transactions')
+    .select('id, development_id, unit_id, buyer_id, transaction_type')
+    .eq('id', normalizedTransactionId)
+    .maybeSingle()
+
+  if (transactionError) {
+    throw transactionError
+  }
+  if (!transaction) {
+    throw new Error('Transaction not found for buyer portal setup.')
+  }
+
+  const transactionDevelopmentId = normalizeNullableUuid(transaction.development_id)
+  const transactionUnitId = normalizeNullableUuid(transaction.unit_id)
+  const transactionBuyerId = normalizeNullableUuid(transaction.buyer_id)
+  if (Boolean(transactionDevelopmentId) !== Boolean(transactionUnitId)) {
+    throw new Error('The transaction has incomplete development context.')
+  }
+  if (!transactionBuyerId) {
+    throw new Error('The transaction must have a buyer before buyer portal setup can complete.')
+  }
+  if (normalizedDevelopmentId && normalizedDevelopmentId !== transactionDevelopmentId) {
+    throw new Error('The selected development does not belong to this transaction.')
+  }
+  if (normalizedUnitId && normalizedUnitId !== transactionUnitId) {
+    throw new Error('The selected unit does not belong to this transaction.')
+  }
+  if (normalizedBuyerId && normalizedBuyerId !== transactionBuyerId) {
+    throw new Error('The selected buyer does not belong to this transaction.')
+  }
+
+  if (transactionDevelopmentId) {
+    const settings = await ensureDevelopmentSettings(client, transactionDevelopmentId)
+    if (!settings.client_portal_enabled) {
+      if (requireDevelopmentSettings) {
+        throw new Error('Client portal is disabled for this development.')
+      }
+      return null
     }
-    return null
   }
 
   const { data: existing, error: existingError } = await client
@@ -40584,16 +40475,23 @@ async function getOrCreateClientPortalLinkRecord(
   }
 
   if (existing) {
+    if (
+      normalizeNullableUuid(existing.development_id) !== transactionDevelopmentId ||
+      normalizeNullableUuid(existing.unit_id) !== transactionUnitId ||
+      normalizeNullableUuid(existing.buyer_id) !== transactionBuyerId
+    ) {
+      throw new Error('The existing buyer portal link does not match its transaction.')
+    }
     return existing
   }
 
   const { data, error } = await client
     .from('client_portal_links')
     .insert({
-      development_id: normalizedDevelopmentId,
-      unit_id: normalizedUnitId,
+      development_id: transactionDevelopmentId,
+      unit_id: transactionUnitId,
       transaction_id: normalizedTransactionId,
-      buyer_id: normalizedBuyerId,
+      buyer_id: transactionBuyerId,
       token: generateClientPortalToken(),
       is_active: true,
     })
@@ -40707,7 +40605,7 @@ async function resolveBuyerBondApplicationPortalMetadata(client, { transaction =
   const unitId = normalizeNullableUuid(unit?.id || transaction?.unit_id || transaction?.unitId)
   const buyerId = normalizeNullableUuid(buyer?.id || transaction?.buyer_id || transaction?.buyerId)
 
-  if (!transactionId || !developmentId || !unitId) {
+  if (!transactionId || !buyerId) {
     return {
       ...buildClientPortalAccessMetadata(null),
       portalLinkSource: 'missing_context',
@@ -45453,14 +45351,6 @@ export async function respondToClientPortalAppointment({
 export async function fetchClientPortalByToken(token) {
   const client = requireClientPortalTokenClient(token)
   const link = await resolveClientPortalLinkByToken(client, token)
-  const settings = await ensureDevelopmentSettings(client, link.development_id, {
-    createIfMissing: false,
-  })
-  const rolePlayerPolicy = normalizeBuyerBondOriginatorPolicy(settings)
-
-  if (!settings.client_portal_enabled) {
-    throw new Error('Client portal is currently disabled for this development.')
-  }
 
   let transactionQuery = await client
     .from('transactions')
@@ -45550,6 +45440,12 @@ export async function fetchClientPortalByToken(token) {
 
   if (!transaction) {
     throw new Error('Transaction not found.')
+  }
+
+  const settings = await resolveClientPortalSettings(client, link, transaction)
+  const rolePlayerPolicy = normalizeBuyerBondOriginatorPolicy(settings)
+  if (!settings.client_portal_enabled) {
+    throw new Error('Client portal is currently disabled for this transaction.')
   }
 
   let unit = null
@@ -45950,14 +45846,6 @@ export async function fetchClientPortalJourneySnapshotByToken(token, actorRole =
 export async function fetchClientPortalCoreByToken(token) {
   const client = requireClientPortalTokenClient(token)
   const link = await resolveClientPortalLinkByToken(client, token)
-  const settings = await ensureDevelopmentSettings(client, link.development_id, {
-    createIfMissing: false,
-  })
-  const rolePlayerPolicy = normalizeBuyerBondOriginatorPolicy(settings)
-
-  if (!settings.client_portal_enabled) {
-    throw new Error('Client portal is currently disabled for this development.')
-  }
 
   let transactionQuery = await client
     .from('transactions')
@@ -46045,6 +45933,12 @@ export async function fetchClientPortalCoreByToken(token) {
   }
   if (!transaction) {
     throw new Error('Transaction not found.')
+  }
+
+  const settings = await resolveClientPortalSettings(client, link, transaction)
+  const rolePlayerPolicy = normalizeBuyerBondOriginatorPolicy(settings)
+  if (!settings.client_portal_enabled) {
+    throw new Error('Client portal is currently disabled for this transaction.')
   }
 
   const [unitQuery, buyerQuery] = await Promise.all([
@@ -47909,6 +47803,7 @@ export async function uploadClientPortalDocument({
   file,
   category = 'Client Portal',
   requiredDocumentKey = null,
+  canonicalRequirementInstanceId = null,
   documentType = null,
   documentRequestId = null,
   source = 'client_portal',
@@ -48024,155 +47919,74 @@ export async function uploadClientPortalDocument({
   const filePath = `client-portal/${link.transaction_id}/${generatedFileName}`
   const persistedDocumentName = isReservationDepositProofUpload ? generatedFileName : file.name
 
-  const uploadedBucket = await uploadToDocumentsBucket(client, filePath, file)
-
-  const basePayload = {
-    transaction_id: link.transaction_id,
-    name: persistedDocumentName,
-    file_path: filePath,
-    category: category || 'Client Portal',
-    document_type: normalizedDocumentType,
-    visibility_scope: 'shared',
-    uploaded_by_user_id: null,
-    stage_key: null,
-    is_client_visible: true,
-    uploaded_by_role: 'client',
-    uploaded_by_email: buyerEmail,
-    uploaded_by_party: normalizeNullableText(uploadedByParty),
-    bucket_key: normalizeNullableText(bucketKey),
-    source: normalizeNullableText(source),
-    file_bucket: normalizeNullableText(uploadedBucket || fileBucket),
-    finance_lane: normalizeNullableText(financeLane),
-    related_entity_type: normalizeNullableText(relatedEntityType),
-    related_entity_id: normalizeNullableUuid(relatedEntityId),
-  }
-  const fullSelect =
-    'id, transaction_id, name, file_path, category, document_type, visibility_scope, stage_key, uploaded_by_user_id, is_client_visible, uploaded_by_role, uploaded_by_email, uploaded_by_party, bucket_key, source, file_bucket, finance_lane, related_entity_type, related_entity_id, created_at'
-
-  let result = null
-  if (isReservationDepositProofUpload) {
-    let existingReservationDocumentId = null
-    const existingDocumentQuery = await client
-      .from('documents')
-      .select('id')
-      .eq('transaction_id', link.transaction_id)
-      .eq('document_type', 'reservation_deposit_pop')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-
-    if (!existingDocumentQuery.error) {
-      existingReservationDocumentId = existingDocumentQuery.data?.id || null
-    } else if (
-      !isMissingColumnError(existingDocumentQuery.error, 'document_type') &&
-      !isMissingSchemaError(existingDocumentQuery.error)
-    ) {
-      throw existingDocumentQuery.error
-    }
-
-    if (existingReservationDocumentId) {
-      result = await client
-        .from('documents')
-        .update(basePayload)
-        .eq('id', existingReservationDocumentId)
-        .select(fullSelect)
-        .single()
-    }
-  }
-
-  if (!result || result.error) {
-    result = await client.from('documents').insert(basePayload).select(fullSelect).single()
-  }
-
-  if (
-    result.error &&
-    (isMissingColumnError(result.error, 'document_type') ||
-      isMissingColumnError(result.error, 'visibility_scope') ||
-      isMissingColumnError(result.error, 'stage_key') ||
-      isMissingColumnError(result.error, 'uploaded_by_user_id') ||
-      isMissingColumnError(result.error, 'is_client_visible') ||
-      isMissingColumnError(result.error, 'uploaded_by_role') ||
-      isMissingColumnError(result.error, 'uploaded_by_email') ||
-      isMissingColumnError(result.error, 'uploaded_by_party') ||
-      isMissingColumnError(result.error, 'bucket_key') ||
-      isMissingColumnError(result.error, 'source') ||
-      isMissingColumnError(result.error, 'file_bucket') ||
-      isMissingColumnError(result.error, 'finance_lane') ||
-      isMissingColumnError(result.error, 'related_entity_type') ||
-      isMissingColumnError(result.error, 'related_entity_id'))
-  ) {
-    let legacyInsertResult = await client
-      .from('documents')
-      .insert({
-        transaction_id: link.transaction_id,
-        name: persistedDocumentName,
-        file_path: filePath,
-        category: category || 'Client Portal',
-        is_client_visible: true,
-      })
-      .select('id, transaction_id, name, file_path, category, is_client_visible, created_at')
-      .single()
-
-    if (legacyInsertResult.error && isMissingColumnError(legacyInsertResult.error, 'is_client_visible')) {
-      legacyInsertResult = await client
-        .from('documents')
-        .insert({
-          transaction_id: link.transaction_id,
-          name: persistedDocumentName,
-          file_path: filePath,
-          category: category || 'Client Portal',
-        })
-        .select('id, transaction_id, name, file_path, category, created_at')
-        .single()
-    }
-
-    result = legacyInsertResult
-  }
-
-  if (result.error) {
-    console.warn('Client portal document metadata save failed', {
-      transactionId: link.transaction_id,
-      filePath,
-      documentType: normalizedDocumentType,
-      error: result.error,
+  const uploadedBucket = await uploadToBuyerPortalDocumentsBucket(client, filePath, file)
+  let rpcResult
+  try {
+    rpcResult = await client.rpc('bridge_upload_buyer_portal_document', {
+      p_transaction_id: link.transaction_id,
+      p_file_path: filePath,
+      p_file_bucket: uploadedBucket || fileBucket || 'documents',
+      p_document_name: persistedDocumentName,
+      p_category: category || 'Client Portal',
+      p_document_type: normalizedDocumentType,
+      p_required_document_key:
+        requiredDocumentKey || (isReservationDepositProofUpload ? 'reservation_deposit_proof' : null),
+      p_requirement_instance_id: normalizeNullableUuid(canonicalRequirementInstanceId),
+      p_document_request_id: normalizeNullableUuid(documentRequestId),
+      p_bucket_key: normalizeNullableText(bucketKey),
+      p_finance_lane: normalizeNullableText(financeLane),
+      p_related_entity_type: normalizeNullableText(relatedEntityType),
+      p_related_entity_id: normalizeNullableUuid(relatedEntityId),
     })
-    throw result.error
+
+    if (rpcResult.error) throw rpcResult.error
+    if (!rpcResult.data?.id) throw new Error('Buyer portal document upload did not return a document record.')
+  } catch (databaseError) {
+    try {
+      await removeUploadedDocumentObject(client, uploadedBucket, filePath)
+    } catch (cleanupError) {
+      console.error('Buyer portal upload rollback could not remove its storage object', {
+        bucket: uploadedBucket,
+        filePath,
+        cleanupError,
+      })
+      databaseError.storageCleanupError = cleanupError
+    }
+    throw databaseError
   }
 
-  await logTransactionEventIfPossible(client, {
-    transactionId: link.transaction_id,
-    eventType: 'DocumentUploaded',
-    createdByRole: 'client',
-    eventData: {
+  const result = { data: rpcResult.data, error: null }
+
+  if (!documentRequestId) {
+    await updateDocumentRequestFromUploadIfPossible(client, {
+      transactionId: link.transaction_id,
+      documentId: result.data.id,
+      category: result.data.category || category || 'Client Portal',
+      documentName: result.data.name,
+      actorRole: 'client',
+      actorUserId: null,
+    }).catch((requestLinkError) => {
+      console.warn('Buyer portal upload request projection failed after the atomic upload completed', requestLinkError)
+    })
+  }
+
+  let readiness = null
+  try {
+    readiness = await runDocumentAutomationIfPossible(client, {
+      transactionId: link.transaction_id,
       documentId: result.data.id,
       documentName: result.data.name,
+      documentType: normalizedDocumentType,
       category: result.data.category || category || 'Client Portal',
-      visibilityScope: result.data.visibility_scope || 'shared',
-      source: normalizeNullableText(source) || 'client_portal',
-    },
-  })
-
-  await updateDocumentRequestFromUploadIfPossible(client, {
-    transactionId: link.transaction_id,
-    documentId: result.data.id,
-    category: result.data.category || category || 'Client Portal',
-    documentName: result.data.name,
-    documentRequestId,
-    actorRole: 'client',
-    actorUserId: null,
-  })
-
-  const readiness = await runDocumentAutomationIfPossible(client, {
-    transactionId: link.transaction_id,
-    documentId: result.data.id,
-    documentName: result.data.name,
-    documentType: normalizedDocumentType,
-    category: result.data.category || category || 'Client Portal',
-    requiredDocumentKey: requiredDocumentKey || (isReservationDepositProofUpload ? 'reservation_deposit_proof' : null),
-    actorRole: 'client',
-    actorUserId: null,
-    source: normalizeNullableText(source) || 'client_portal_upload',
-  })
+      requiredDocumentKey: requiredDocumentKey || (isReservationDepositProofUpload ? 'reservation_deposit_proof' : null),
+      actorRole: 'client',
+      actorUserId: null,
+      source: normalizeNullableText(source) || 'client_portal_upload',
+    })
+  } catch (automationError) {
+    console.warn('Buyer portal post-upload automation failed after the atomic upload completed', automationError)
+    readiness = await computeTransactionReadinessSnapshot(client, link.transaction_id).catch(() => null)
+  }
 
   const financeTypeForBondNotifications =
     readiness?.financeType ||
@@ -50846,6 +50660,8 @@ export async function uploadClientPortalFinanceDocument({
     documentId: uploaded.id,
     relatedEntityType,
     relatedEntityId,
+  }).catch((relationError) => {
+    console.warn('Buyer portal finance relation projection failed after the atomic upload completed', relationError)
   })
 
   await logTransactionEventIfPossible(client, {
@@ -50861,6 +50677,8 @@ export async function uploadClientPortalFinanceDocument({
       relatedEntityType: normalizeNullableText(relatedEntityType),
       relatedEntityId: normalizeNullableUuid(relatedEntityId),
     },
+  }).catch((eventError) => {
+    console.warn('Buyer portal finance projection event failed after the atomic upload completed', eventError)
   })
 
   return uploaded

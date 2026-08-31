@@ -174,6 +174,7 @@ import { fetchJourneyStageOverrides } from '../services/journeyStageOverrideServ
 import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { getFinanceReadiness } from '../services/bondFinanceReadinessService'
 import { getPrivateListingTransferAttorneyAllocation } from '../services/privateListingAttorneyAllocationService'
+import { createDeveloperDocumentPortalLink } from '../services/developerDocumentPortalService'
 import { getTransferInstructionLifecycle } from '../services/transferInstructionLifecycleService'
 import { buildMatterDocumentWorkspaceModel } from '../services/documents/matterDocumentWorkspaceModel'
 import { getBankPanelForCurrentUser } from '../services/bondOriginatorBankService'
@@ -17172,7 +17173,12 @@ function AttorneyTransactionDetail() {
     )
   }, [data?.onboardingFormData, development, isDeveloperSaleMatter, roleplayerForm.sellerName, sellerPartyLabels.partyDetailsPending, transaction, transaction?.seller_name, transactionParticipants])
   const sellerEmail = useMemo(() => {
-    const sellerParticipant = transactionParticipants.find((participant) => participant?.roleType === 'seller')
+    const sellerParticipant = transactionParticipants.find((participant) =>
+      participant?.roleType === 'seller' ||
+      participant?.roleType === 'developer' ||
+      participant?.transactionRole === 'developer_contact' ||
+      participant?.mvpLaunchRoleKey === 'developer_representative',
+    )
     return cleanDetailEmail(
       transaction?.seller_email ||
       roleplayerForm.sellerEmail ||
@@ -18789,16 +18795,57 @@ function AttorneyTransactionDetail() {
     setRequestDocumentModalOpen(true)
   }, [])
 
-  const handleRequestDeveloperDocuments = useCallback(() => {
-    handleQuickRequestDocuments({
-      title: 'Developer sale pack / authority documents',
-      requestedFrom: 'developer',
-      visibility: 'shared_role_players',
-      notes: 'Please provide the developer entity, authority, sale-pack, and unit/development documents for this transaction.',
-      priority: 'urgent',
-      dueDate: '',
-    })
-  }, [handleQuickRequestDocuments])
+  const handleRequestDeveloperDocuments = useCallback(async () => {
+    if (!transaction?.id) {
+      setOnboardingActionMessage('Transaction data is not available.')
+      return
+    }
+    if (!sellerEmail) {
+      setOnboardingActionMessage('Developer email is missing. Add a developer contact before sending the portal invitation.')
+      return
+    }
+
+    try {
+      setDocumentRequestSaving(true)
+      setError('')
+      setOnboardingActionMessage('')
+      const portal = await createDeveloperDocumentPortalLink({
+        transactionId: transaction.id,
+        recipientEmail: sellerEmail,
+      })
+      const response = await invokeEdgeFunction('send-email', {
+        body: {
+          type: 'transaction_document_request',
+          transactionId: transaction.id,
+          organisationId: cleanDetailText(workspaceOrganisationId),
+          to: sellerEmail,
+          recipientName: sellerDisplayName || 'Developer team',
+          title: 'Developer transaction documents requested',
+          subject: `Documents requested for ${matterHeadline || 'your development sale'}`,
+          message: 'Please use the secure developer document portal to upload the requested sale-pack, authority, property and transfer documents.',
+          actionLink: portal.url,
+          metadata: {
+            portalType: 'developer_document_portal',
+            portalId: portal.id || null,
+          },
+        },
+      })
+      const responseError = response?.error || response?.data?.error
+      if (responseError) {
+        const parsedMessage = response?.error
+          ? await parseEdgeFunctionError(response.error, 'Could not send the developer document portal invitation.')
+          : typeof responseError === 'string'
+            ? responseError
+            : responseError?.message || 'Could not send the developer document portal invitation.'
+        throw new Error(parsedMessage)
+      }
+      setOnboardingActionMessage(`Developer document portal invitation sent to ${sellerEmail}.`)
+    } catch (sendError) {
+      setOnboardingActionMessage(sendError?.message || 'Could not send the developer document portal invitation.')
+    } finally {
+      setDocumentRequestSaving(false)
+    }
+  }, [matterHeadline, sellerDisplayName, sellerEmail, transaction?.id, workspaceOrganisationId])
 
   useEffect(() => {
     if (workspaceRole !== 'bond_originator' || !bondConsultantDeepLink?.requestKey) return

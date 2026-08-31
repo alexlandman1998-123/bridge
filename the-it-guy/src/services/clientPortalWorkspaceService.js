@@ -3735,9 +3735,6 @@ export async function getProspectDemoClientPortalWorkspaceData(token, workspace 
 }
 
 export async function getClientPortalWorkspaceData(token, workspace = 'shared', options = {}) {
-  const demoWorkspaceData = buildDemoClientPortalWorkspaceData(token, workspace)
-  if (demoWorkspaceData) return demoWorkspaceData
-
   const { mode = 'full' } = options
   const coreContext = mode === 'core' ? resolveFastClientPortalCoreContext(token, workspace) : null
   const context = coreContext || await resolveClientPortalContext(token)

@@ -94,6 +94,7 @@ create index if not exists property24_catalog_mappings_org_idx
 create or replace function public.property24_mappings_set_updated_at()
 returns trigger
 language plpgsql
+set search_path = public
 as $$
 begin
   new.updated_at := now();

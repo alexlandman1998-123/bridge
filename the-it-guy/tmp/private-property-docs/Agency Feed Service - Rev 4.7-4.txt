@@ -1,0 +1,4964 @@
+--- PAGE 1 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 1 
+AGENCY FEED SERVICE 
+ 
+ 
+Many different authors 
+ February 2026 
+Revision 4.6 
+ 
+ 
+TABLE OF CONTENTS 
+ 
+1 Introduction ................................ ................................ ................................ .................... 6 
+1.1 Overview ................................ ................................ ................................ ................. 6 
+1.2 The Integration Process ................................ ................................ .......................... 6 
+1.3 Technical Support ................................ ................................ ................................ ... 6 
+1.4 Prerequisites for Feed Integration ................................ ................................ ........... 7 
+1.5 Getting Started ................................ ................................ ................................ ........ 7 
+1.6 Moderation ................................ ................................ ................................ .............. 8 
+1.7 Token Generation ................................ ................................ ................................ ... 8 
+2 Interface Definition ................................ ................................ ................................ ....... 10 
+2.1 Update a branch ................................ ................................ ................................ ... 10 
+2.2 Add/Update Agent................................ ................................ ................................ . 12 
+2.3 Add/Update Listing................................ ................................ ................................  14 
+2.4 Get Countries ................................ ................................ ................................ ........ 25 
+2.5 Get Provinces ................................ ................................ ................................ ....... 26 
+2.6 Get Cities ................................ ................................ ................................ .............. 28 
+2.7 Get Suburbs................................ ................................ ................................ .......... 30 
+2.8 Get Listing Status ................................ ................................ ................................ . 32 
+2.9 Update Listing Status ................................ ................................ ............................ 34 
+2.10 Update Listing Show Day ................................ ................................ .................. 36 
+2.11 Get Agents ................................ ................................ ................................ ........ 38 
+2.12 Get Active Listings ................................ ................................ ............................. 40 
+2.13 Get all Agents for Branch ................................ ................................ .................. 42 
+2.14 Get all Listings for Branch ................................ ................................ ................. 44 
+2.15 Get all Submitted Listings for Branch ................................ ................................ . 46 
+2.16 Get Lead Stats ................................ ................................ ................................ .. 46 
+2.17 Get a Listing Lead Stat ................................ ................................ ...................... 48 
+2.18 Get a Summary for Listing ................................ ................................ ................. 50 
+2.19 Update image for Agent ................................ ................................ ..................... 51 
+
+--- PAGE 2 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 2 
+2.20 Update the UniqueAgentID ................................ ................................ ................ 53 
+2.21 Update the UniqueListingID ................................ ................................ ............... 55 
+2.22 Get the location of agent images ................................ ................................ ....... 57 
+2.23 Get branch details ................................ ................................ ............................. 59 
+2.24 Get detailed lead stats ................................ ................................ ....................... 62 
+2.25 Get detailed lead stats for a specific listing ................................ ........................ 64 
+2.26 Show/Hide contact details for an Agent ................................ ............................. 67 
+2.27 Get full details for all listings for a Branch ................................ .......................... 67 
+2.28 Get a verbose status of a listing ................................ ................................ ........ 70 
+2.29 Add an auction venue ................................ ................................ ........................ 71 
+2.30 Get an auction venues details ................................ ................................ ........... 72 
+2.31 Add an auction to a listing ................................ ................................ ................. 73 
+2.32 Get Expiring Listings ................................ ................................ ........................... 76 
+2.33 Get Expired Listings ................................ ................................ ............................ 77 
+2.34 Get Listing Performance Stats ................................ ................................ ........... 79 
+2.35 Listing Lead Details Feed ................................ ................................ .................. 81 
+3 Listing Event Feed ................................ ................................ ................................ ....... 83 
+4 Widgets ................................ ................................ ................................ ........................ 91 
+4.1 GetWidgetUrl ................................ ........................... Error! Bookmark not defined. 
+4.2 Security Token ................................ ......................... Error! Bookmark not defined. 
+4.3 Available Widgets ................................ .................... Error! Bookmark not defined. 
+5 Frequently Asked Questions ................................ ................................ ........................ 92 
+6 Usage Guidelines ................................ ................................ ................................ ......... 93 
+6.1 Method Calling Order ................................ ................................ ............................ 93 
+Auction Method Calling Order ................................ ................................ .......................... 93 
+6.2 Method Call Count ................................ ................................ ................................  93 
+7 Appendix A: Data Attributes ................................ ................................ ......................... 95 
+8 Appendix B: Moderation Rules ................................ ................................ ................... 100 
+8.1 Auto Moderation Rules ................................ ................................ ....................... 100 
+8.2 Manual Moderation Rules ................................ ................................ ................... 102 
+9 Appendix C: Error Codes ................................ ................................ ........................... 103 
+9.1 Web Method Error Codes ................................ ................................ ................... 103 
+ 
+
+--- PAGE 3 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 3 
+Document Revision History 
+ 
+Date Rev Change Notes 
+- 1.0 – 1.3 Earlier versions of the spec. 
+2014/12/02 1.4 Added Sales Price Qualifiers: POA, OffersFrom, Negotiable. 
+Added Rental Periods: Per Day, Per Week, Per Month. 
+2014/12/05 1.5 Changed Farm Name from mandatory to optional. 
+Added Nedbank Assisted Sale mandate type. 
+2014/12/08 1.6 Added Price Qualifiers and Rental Periods to method “Get Full 
+Details of all Listings for a Branch”. 
+2015/06/04 2 Major reformatting of the document; reworked the introduction 
+section; increased listing images limit from 12 to 24; removed 
+deprecated method GetAllBranchesDetails; fixed “Poa” 
+enumeration constant; added Nedbank Assisted Sale 
+mandate types. 
+2015/06/18 3.0 Updated spelling, punctuation and consistent references to 
+Nedbank and FNB Bank mandate types throughout the 
+document. Removed the reference to “propoints” under 
+widgets in section 3. 
+2015/07/16 3.1 Updated the widget description to be accurate 
+2015/08/25 3.2 Updated available widgets to include Spotlight Listing 
+2015/10/20 3.3 Made the branch name an optional not used field on 
+UpdateBranch 
+2015/11/03 3.4 Added List of valid string options for RoofType attribute 
+2016/05/05 3.4.1 Added details on how to make a token for new integrators 
+2016/05/11 3.5 Added LandType (ResidentialLand and CommercialLand).  
+ 
+Added Rental Price PerM2 option, and created rules for 
+Commercial & Farm rental prices. 
+ 
+Added BusinessType “Hotel” and removed BusinessType 
+“Other” which was never a legal type.   
+ 
+Fixed the support telephone number. 
+2016/05/12 3.5.1 Modified RentalPriceType rules to ensure the system remains 
+backwards compatible. 
+2016/08/18 3.6 Remove 2nd reference to "Irrigation System"; changed 
+mandatory limit of 3 photos for sales down to 1; made 
+description optional - whereas previously the length had to be 
+
+--- PAGE 4 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 4 
+greater than 140 characters; deprecated the ExpiryDate field; 
+added note saying address is locked down after a listing goes 
+live. 
+2017/01/25 3.7 Fixed typo: AuctionsOnly -> AuctionOnly 
+2017/04/11 3.8 Added exception details to method calls 
+2017/04/13 3.9 Increased maximum limit of images per listing from 24 to 30. 
+2017/05/24 3.9.1 Added details for GetListingStatus 
+2017/05/24 3.9.2 Added Privyseal URL Alias for Agents 
+2017/06/20 3.9.3 Added auction details and Privyseal validation. Fixed 
+documentation around stats 
+2018/08/15 3.9.4 Updated list of all the latest mandate types 
+2018/08/15 3.9.5 Updated list of all the latest mandate types to include FNB PIP 
+mandates 
+2018/09/10 3.9.6 Updated Appendix A: Data Attributes 
+2018/12/19 3.9.7 Added StandardBankEasySell mandate type 
+2019/03/15 3.9.8 Added AbsaPropertyInPossession mandate type 
+2019/05/30 3.9.9 Added GetExpiringListings and GetExpiredListings methods 
+2019/11/23 4.0 Increased minimum number of images for Rental listings from 
+0 to 3 
+2023/04/12 4.1 Added ListingPerformanceStats method 
+2023/04/20 4.1.1 Added ListingLeadDetailsFeed method 
+2023/05/16 4.1.2 Update ListingPerformanceStats method and 
+ListingLeadDetailsFeed method 
+2023/05/17 4.1.3 Update ListingLeadDetailsFeed method 
+2023/07/03 4.2 Update Listing – SuburbId, Address 
+2023/10/23 4.2.2 Update Listing - Headline 
+2025/06/06 4.3 Added Exclusive Listings 
+2025/08/16 4.4 Updated documentation to include missing methods: 
+GetListingEventFeedByFeedProvider & 
+GetListingEventFeedByBranch 
+2025/11/04 4.5     Updated the UpdateListing notes to clarify how to correctly 
+indicate that no photos should be included when updating an 
+existing listing. See the “Photo Urls” section for details. 
+2026/02/02 4.6 In Appendix A: Data Attributes, changed the ‘Expected Values’ 
+column for ‘Finishes’ from Alphanumeric to "Very High", 
+"High", "Medium", "Budget" 
+2026/07/20 4.7 • ListingLeadDetailsFeed 
+o Added Field: LeadType 
+o Removed Field: ToEmail 
+
+--- PAGE 5 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 5 
+• GetFullDetailsOfAllListingsByBranch 
+o Added Pagination fields 
+• LeadStatDetail 
+o Changed leads to be unique per listing and not 
+unique per agent per listing (No duplicates). 
+o Removed Field: Work 
+o Removed Field: To_Email  
+o Removed these lead types 
+▪ Sms (Please Call Me) 
+▪ Sms (Email Alert) 
+▪ Sms (Contact Alert) 
+o Renamed these lead types 
+▪ Email -> EmailLead 
+o Added Lead Type 
+▪ WhatsAppLead 
+• GetListingEventFeedByFeedProvider 
+o Reworked the functionality, meaning that: 
+▪ The field continuationKey has been reset 
+and pre 4.7 values will be invalid 
+o These ListingFeedEventType’s no longer exist: 
+▪ ImagesDownloading 
+▪ ErrorDownloadingImages 
+▪ ImagesDownloaded 
+• GetListingEventFeedByBranch  
+o Reworked the functionality, meaning that: 
+▪ The field continuationKey has been 
+reset and pre 4.7 values will be invalid 
+o These ListingFeedEventType’s no longer exist: 
+▪ ImagesDownloading 
+▪ ErrorDownloadingImages 
+▪ ImagesDownloaded 
+ 
+
+--- PAGE 6 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 6 
+1 Introduction 
+1.1 Overview 
+This document captures the details of the Private Property Agency Feed Web Service API. 
+1.2 The Integration Process 
+Note: The most important prerequisite to integrating with Private Property is that the client 
+needs access to a programmer/developer competent in consuming XML web services. 
+The steps outlined below describe the process of setting up a new feed where there is no 
+existing connection to our systems. 
+1. Request for a feed is sent to Private Property via the Requester (a Private Property 
+Relationship/Account Manager). 
+2. Private Property Integrations Staff sends the API document through to the 
+Requestor. 
+3. The API document is sent by the requestor to the IT Provider elected to implement 
+their feeds. 
+4. The IT Provider sends a request to Private Property to set up a test branch on the 
+Private Property integration (sand box) server. 
+5. Private Property creates a test branch on the sand box server and the authentication 
+details are sent back to the IT Provider. 
+6. The IT Provider proceeds with the feed development. 
+7. The IT Provider tests the feed against the sand box environment. Private Property 
+Integrations staff will be present to assist with this process if required. 
+8. Private Property will test the completed feed integration and will notify the Requester 
+that the feed is ready to go live. 
+9. The Requester will give the go ahead to go live, after which Private Property will 
+create a branch on the live production site. 
+10. The credentials and live URL will be sent to the IT Provider to implement live. 
+11. Some warm-up testing on the live system will be carried out by Requestor, IT 
+Provider and Private Property Integrations staff and if all is well, the system will go 
+live. 
+Please note that this full process can take anything from 2 weeks to 2 months depending on 
+the experience level of the IT Provider and/or the complexity of the integration. 
+1.3 Technical Support 
+Private Property offers the IT Provider the following channels for Technical Support queries: 
+ 
+• Email: integration@privateproperty.co.za 
+• Tel:  087 375 1000 (Support Desk) 
+ 
+
+--- PAGE 7 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 7 
+•  
+1.4 Prerequisites for Feed Integration 
+The following rules apply: 
+1. A valid security token has to be created and passed through to web service with 
+every request.  
+1.5 Getting Started 
+The first step it to initiate a request for a new feed.  This can be done by sending a request 
+via the branch’s Private Property Account Manager, or by emailing the request through to 
+integration@privateproperty.co.za. 
+To help speed up the process, the following details are required: 
+• Name and contact details of the IT provider who is responsible for implementing the 
+feed for the agency. 
+• Name of agency requiring the feed. 
+• Name of Branch under agency requiring the feed. 
+• Email for the branch to which notifications will be delivered (it is advisable to use a 
+test email) 
+• Contact number for the branch 
+• Whether or not this branch is going to be sending through normal listings, FNB 
+Quicksell and or Nedbank Assisted Sale mandate types. 
+Once the branch has been correctly setup, the following details will be emailed to the 
+requester who must forward them on to the developer: 
+• User name 
+• Password 
+• GUID 
+The GUID is a unique identifier for the branch. The username and password are to be used 
+to build the token that is used for security authentication. Sample code to create the token is 
+available on request in the following languages: C#, PHP and Perl 
+The developer is then free to connect to the web service at the following URL and to start 
+calling the service methods. 
+https://services.sandbox.pp.co.za/AgentImport/AgentImport.asmx  
+A formal definition of each of the web-service calls services is available to developers on the 
+web-services page. 
+ 
+ 
+ 
+Please note that the Sandbox integration environment is only available during business 
+hours, from 06:00 until 19:00 GMT+2. 
+
+--- PAGE 8 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 8 
+1.6 Moderation 
+Each listing that is uploaded via the web service goes through 2 levels of moderation in the 
+production system: 
+1. Automated moderation. Listings get declined automatically if they do not pass a 
+number of minimum criteria tests (see notes below). A notification email will go out to 
+the email setup on the branch describing the failed test. 
+2. Manual moderation. Once a listing passes automated moderation, it is activated 
+and may be reviewed by a member of a moderation team. You will be notified of the 
+listing activation. 
+Notes: 
+• For a list of minimum moderation criteria, please refer to Appendix B. 
+• On the sandbox system, listings ONLY go through automated moderation.  Should 
+they pass they will be immediately activated and no manual moderation will be 
+applied. 
+• Once a listing has been activated in the sandbox environment, it may be viewed on 
+the sandbox portal at: https://www.sandbox.pp.co.za 
+1.7 Token Generation 
+A security token must be added to every soap call.  It is a time based token that allows you 
+to access a specific data set until the token expires.  Correctly manging the tokens allows 
+your calls to be secure and reduces the chance of others using your credentials to access 
+your clients data.  You will need a single user name and password which will be applied to 
+all integrations that you do with Private Property for all your clients 
+ 
+To generate a token you will need: 
+Field Name Description 
+User name Your companies user name 
+Password Your Companies password 
+UID A unique code to make the digest 
+calculation unique 
+Expires The date and time until which this token is 
+valid* 
+Digest A base 64 encoded SHA1 hash 
+Stamp Time The time stamp at which the token was 
+generated 
+ 
+A token should appear as follows: 
+<Token> 
+   <Digest>lxa4S/abJYHozy/rdm2i2WaSUvs=</Digest> 
+   <UserName>youruser</UserName> 
+   <StampTime>2016-04-26T00:04:33Z</StampTime> 
+   <Expires>2016-04-27T00:04:33Z</Expires> 
+   <UID>1738906</UID> 
+</Token> 
+ 
+ 
+ 
+
+--- PAGE 9 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 9 
+1.7.1 Digest Generation 
+To generate a digest you will need to generate a string as follows: 
+UID + Stamp Time + Password + Expires 
+ 
+You will the need to create an SHA1 hash of that string. Finally you will need to Base 64 
+encode it so that it can be send in the XML document without errors 
+ 
+An example of the string to be hashed is as follows 
+17389062016-04-26T00:04:33Zmypassword2016-04-27T00:04:33Z 
+ 
+ 
+ 
+*Please note that because some servers do not update to be in sync the actual current time, 
+some servers might have a different time by a few minutes.  You will need to allow for this in 
+the value of the Expires field  
+
+--- PAGE 10 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 10 
+2 Interface Definition 
+2.1 Update a branch 
+2.1.1 Message Outline 
+UpdateBranch: Simple method that updates the branches details 
+Property Data Type Required Description 
+Address String (500) No The branches physical address 
+AgentId String (100) Yes Unique Identifier for the associated branch 
+contact 
+BranchId Guid Yes Unique Identifier 
+ContactName String (50) Yes Contact name for the branch 
+Email String (50) Yes Branch contact email address 
+Fax Integer No Fax number of the branch 
+Name String (50) No Deprecated 
+Tel1 Tel Yes Telephone number of the branch 
+Tel2 Tel No Alternate telephone number of the branch 
+2.1.2 Notes 
+• Please make sure that the e-mail address for the branch is an e-mail that is 
+reachable and checked regularly. The system may send messages that require 
+intervention by the office Administrator. 
+• Please make sure that the agent for the branch exists. 
+2.1.3 Possible Error Messages 
+• PP50 GeneralException 
+• PP100 UnauthorisedToken 
+• PP101 InvalidBranchGuid 
+• PP109 UnauthorisedAccess 
+• PP108 InvalidBranchDetails 
+2.1.4 SOAP 1.2 Format 
+The following is a sample SOAP 1.2 request and response. The placeholders shown need to 
+be replaced with actual values. 
+ 
+UpdateBranch Method 
+ 
+POST /WebServices/AgentImport/AgentImport.asmx HTTP/1.1 
+Host: host 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+ 
+ 
+ 
+ 
+ 
+
+--- PAGE 11 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 11 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope 
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"> 
+  <soap12:Body> 
+    <UpdateBranch xmlns="http://tempuri.org/"> 
+      <Branch> 
+        <Email>string</Email> 
+        <Name>string</Name> 
+        <Address>string</Address> 
+        <ContactName>string</ContactName> 
+        <Fax>string</Fax> 
+        <Tel1>string</Tel1> 
+        <Tel2>string</Tel2> 
+        <AgentId>string</AgentId> 
+        <BranchId>guid</BranchId> 
+      </Branch> 
+      <Token> 
+        <Digest>string</Digest> 
+        <UserName>string</UserName> 
+        <StampTime>string</StampTime> 
+        <Expires>string</Expires> 
+        <UID>string</UID> 
+      </Token> 
+    </UpdateBranch> 
+  </soap12:Body> 
+</soap12:Envelope> 
+ 
+Return Type 
+ 
+HTTP/1.1 200 OK 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope 
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"> 
+  <soap12:Body> 
+    <UpdateBranchResponse xmlns="http://tempuri.org/" /> 
+  </soap12:Body> 
+</soap12:Envelope> 
+ 
+ 
+ 
+ 
+ 
+  
+ 
+ 
+ 
+ 
+
+--- PAGE 12 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 12 
+2.2 Add/Update Agent 
+2.2.1 Message Outline 
+UpdateAgent: Simple method that can add an agent or update the agent’s details.  
+Property Data Type Required Description 
+Active Boolean Yes Whether the agent is active or not. 
+AgentId String (100) Yes Unique Identifier for the associated agent 
+BranchId Guid Yes Unique Identifier 
+Email String (50) Yes Agent email address 
+FirstName String (50) Yes First name 
+LastName String (50) Yes Last name 
+TelCell Tel Yes Mobile Telephone number 
+TelHome Tel No Home Telephone number 
+TelWork Tel Yes Work Telephone number 
+PrivysealAlias String (100) No Whether the agent has a Privyseal 
+authentication i.e. a URL Alias 
+2.2.2 Notes 
+• Please ensure that the agent e-mail is a valid e-mail address and is checked 
+regularly. The system may send messages that require intervention by the agent and 
+office Administrator. 
+• Please only send agent details when they have changed to prevent any unnecessary 
+traffic. 
+• If PrivysealAlias is provided, it is validated for correctness 
+2.2.3 Possible Error Messages 
+• PP50 GeneralException 
+• PP100 UnauthorisedToken 
+• PP101 InvalidBranchGuid 
+• PP109 UnauthorisedAccess 
+• PP102 InvalidAgent 
+• PP107 InvalidAgentDetails 
+• PP118 NoAssociatedContact 
+• PP120 InvalidImage 
+• PP121 Agent cannot be removed 
+• PP123 PrivysealAlias 
+2.2.4 SOAP 1.2 Format 
+
+--- PAGE 13 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 13 
+The following is a sample SOAP 1.2 request and response. The placeholders shown need to 
+be replaced with actual values. 
+ 
+POST /pplsystems/agentimport/agentimport.asmx HTTP/1.1 
+Host: host 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope 
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"> 
+  <soap12:Body> 
+    <UpdateAgent xmlns="http://tempuri.org/"> 
+      <Agent> 
+        <Email>string</Email> 
+        <FirstName>string</FirstName> 
+        <LastName>string</LastName> 
+        <AgentId>string</AgentId> 
+        <PrivysealAlias>string</PrivysealAlias> 
+        <Active>boolean</Active> 
+        <TelCell>string</TelCell> 
+        <TelHome>string</TelHome> 
+        <TelWork>string</TelWork> 
+        <BranchId>guid</BranchId> 
+        
+<PrivatePropertyAgentId>string</PrivatePropertyAgentId> 
+      </Agent> 
+      <Token> 
+        <Digest>string</Digest> 
+        <UserName>string</UserName> 
+        <StampTime>string</StampTime> 
+        <Expires>string</Expires> 
+        <UID>string</UID> 
+      </Token> 
+    </UpdateAgent> 
+  </soap12:Body> 
+</soap12:Envelope> 
+HTTP/1.1 200 OK 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope 
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"> 
+  <soap12:Body> 
+    <UpdateAgentResponse xmlns="http://tempuri.org/"> 
+      <UpdateAgentResult>string</UpdateAgentResult> 
+    </UpdateAgentResponse> 
+  </soap12:Body> 
+</soap12:Envelope> 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+
+--- PAGE 14 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 14 
+2.3 Add/Update Listing 
+2.3.1 Message Outline 
+UpdateListing: This method is used to create listings or to update an existing listing. 
+Property Data Type Required Description 
+Attribute Attribute[] Yes Attributes for a specific listing 
+BranchId Guid Yes Unique Identifier 
+Category Category[] Yes Which Categories the listing falls 
+under i.e. 
+1. Residential 
+2. Land 
+3. Farms 
+4. Commercial 
+ComplexName String (100) No Complex name 
+Headline String(200) No A Headline to display above the 
+Description for a Listing. 
+Description String (4000) Yes Description of the property 
+ExpiryDate DateTime No This field has been deprecated and 
+will be ignored if supplied. 
+AvailableFrom DateTime No Date from which property will be 
+available 
+Format: yyyy-MM-dd 
+AgentId String Yes Agent / User associated to the listing 
+ 
+N.B To attach multiple agents to a 
+listing, send through a comma 
+separated list of agentId’s 
+ListingDate DateTime Yes The start date of the listing 
+Format: yyyy-MM-dd 
+ListingType Enum Yes Represents whether the listing is a 
+sales listing or a rental listing. 
+MandateType Enum Yes Represents the mandate type for the 
+listing 
+Price Double Yes Asking price of the listing.  The Price 
+must be greater than 0. 
+RentalPriceType Enum No Defines how the Price field is 
+interpreted for MandateTypes of 
+“Rental” and “HouseShare”. This is 
+ignored for other MandateTypes. 
+ 
+The following options are available 
+for all category types: 
+• PerMonth 
+• PerWeek 
+• PerDay 
+ 
+
+--- PAGE 15 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 15 
+For “Commercial” and “Land” 
+(Commercial Land) listings, the 
+following additional option is 
+available: 
+• PerM2 
+ 
+If no RentalPriceType is supplied, a 
+value of “PerMonth” will be 
+assumed. 
+SalesPricePresentation Enum No This field only applies to sales-
+related MandateTypes (i.e. not 
+rentals and not house share). 
+Determines how the Price is shown 
+on the website 
+• Standard – Price is shown 
+as a value 
+• Poa – Price is hidden with 
+the text Poa and the listing 
+is moved to the bottom of 
+the results.  The Price field 
+will be ignored. 
+• Negotiable – The text 
+“NEGOTIABLE” is added to 
+the price 
+• OffersFrom – The text 
+“Offers from Rxxx,xxxx” will 
+be added to the price 
+Notes: 
+• If no PricePresentation is 
+supplied, “Standard” will be 
+assumed 
+OffersFromPrice Double No Minimum price that the seller will 
+accept on this listing. 
+Notes: 
+• Mandatory if 
+SalesPricePresentation is 
+“OffersFrom” 
+• If suppled, this value must 
+be less than or equal to the 
+Price field and greater than 
+0 
+PropertyId String (100) Yes Unique identifier 
+PropertyStatus Enum Yes The property status of the listing 
+• ForSale 
+• ToLet  
+• PendingOffer 
+• Sold 
+• Inactive 
+Province Province No Province 
+• KwaZuluNatal 
+• Gauteng 
+• WesternCape 
+• NorthernCape 
+• FreeState 
+• EasternCape 
+
+--- PAGE 16 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 16 
+• Limpopo 
+• NorthWest 
+• Mpumalanga 
+ShowdayEvents ShowdayEvent No Events representing show days for 
+this listing 
+StreetName String (100) Yes Street name of the listing 
+StreetNumber String (10) Yes Street number of the listing 
+Suburb String (100) No Suburb of the listing 
+Town String (100) No Town name 
+UnitNumber String (10) No Unit number of the listing 
+SuburbId Int No The Id of the suburb this listing is in 
+(List obtainined through 
+GetSuburbs) 
+HideStreetName Boolean  Yes Hides the street name on the web 
+site 
+HideStreetNo Boolean Yes Hides the street number on the web 
+site 
+HideComplexName Boolean Yes Hides the complex  name on the 
+web site 
+HideUnitNo Boolean Yes Hides the unit number on the web 
+site 
+Deposit Double Yes Only required for rental listings 
+PhotoUrls String[] No The image URL’s for each listing. 
+OwnerID String(50) No The ID number of the seller 
+XCoordinate Double No The X Coordinate of the listing 
+YCoordinate Double No The Y Coordinate of the listing 
+SoleMandateExclusiveDays Int No Defines the number of days a sale 
+listing is exclusive on Private 
+Property for. 
+ 
+*NB.  Appendix A explains the attribute types in more detail. 
+2.3.2 Notes 
+• Agents must exist 
+o The specified agent on the listing must exist prior to uploading the listing; if 
+you forget to do this an exception will be thrown. A listing may have multiple 
+agents attached to it. 
+• Address can’t be altered after listing is activated 
+o Once a listing has been activated, the address details are locked down. 
+o This means that any requests to update the following address attributes will 
+have no effect: 
+▪ StreetName 
+
+--- PAGE 17 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 17 
+▪ StreetNumber 
+▪ ComplexName 
+▪ UnitNumber 
+▪ Province 
+▪ Town 
+▪ Suburb 
+▪ SuburbId 
+o Furthermore, in such an update event, the above attribute changes will be 
+silently ignored, but all other attribute changes will be applied. 
+• Hiding of Address 
+o The system allows for the hiding of certain address details on the web site: 
+▪ Hide street name 
+▪ Hide street number 
+▪ Hide complex name 
+▪ Hide unit number 
+o This will prevent users from contacting the sellers directly and ensure security 
+for your mandates. If all of the above properties are set, only the suburb name 
+will display. 
+o An important point to take note of is that when any of the above properties are 
+set to true your listings will be negatively affected in the ranking of search 
+results. This means that your listings will not appear at the top of the search 
+results. 
+• Categories 
+o At least one category is compulsory: either ‘Residential’, ‘Land’, ‘Farms’ or 
+‘Commercial’. 
+o A listing may have multiple categories.  
+o Each category determines which mandatory attributes must be met, if the 
+mandatory attributes are not met then an exception will be thrown 
+Category Mandatory Attribute 
+Residential Bedrooms 
+Bathrooms 
+Home Type 
+Land Land Area 
+Land Type (optional - defaulted to Residential Land) 
+Farm Farm Type 
+Commercial Business Type 
+o If the category of “Land” is selected, a Land Type should be provided.  For 
+backwards compatibility reasons, this attribute is optional and if not provided 
+a value of “Residential Land” will be assumed. 
+• General 
+
+--- PAGE 18 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 18 
+o Be especially careful when adding Attributes to listings and make sure to use 
+the correct type e.g. Storeys is an INTEGER count of the number of storeys 
+while BuiltInCupBoards is a BOOLEAN either TRUE / FALSE 
+o Changing the status of a listing using an UpdateListing call after it has 
+become active will NOT affect its status. Please use the ListingStatusUpdate 
+call instead. 
+o Property descriptions should be within CDATA tags to cater for special 
+characters. 
+o Once a listing has gone active, the address details cannot be overwritten by a 
+feed.  If an address needs to be changed, the Private Property Support Team 
+will need to be contacted (see Technical Support section above). 
+ 
+ 
+• SuburbId 
+o The full hierarchy can be found by calling GetSuburbs, GetCities, 
+GetProvinces and GetCountries. 
+o Should the SuburbId provided not match with any of the existing Ids in our 
+datastore, the request will result in an error. 
+• Suburb/City/Province/SuburbId 
+o  Only Suburb Name, City and Province should be provided in a single request 
+without the SuburbId 
+o Similarly, only SuburbId may be provided in a single request without Suburb 
+Name, City and Province. 
+o Providing both the SuburbId along with either the Suburb Name, City or 
+Province will result in an error. 
+ 
+ 
+ 
+• Mandate Types 
+Rental Mandates Only 
+Rental Standard rental mandate 
+HouseShare A house share mandate 
+Sales Mandates Only 
+FullMandate A full or sole mandate (for sale) 
+OpenMandate An open mandate (for sale) 
+AuctionOnly A property for sale on auction 
+Restricted Mandates  
+AbsaHelpYouSell ABSA Help You Sell property (for sale) 
+AbsaNegotiable ABSA Negotiable property (for sale) 
+AbsaPoa ABSA Price On Application property (for sale) 
+
+--- PAGE 19 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 19 
+AbsaSie ABSA Sale In Execution property (for sale) 
+Price must be entered but will not be displayed 
+AbsaDec ABSA Deceased Estates property (for sale) 
+AbsaLiq ABSA Liquidated property (for sale) 
+AbsaPropertyInPossession ABSA Property In Possession property (for sale) 
+FNBQuicksell FNB Quicksell property (for sale) 
+FNBSelect FNB Select property (for sale) 
+FNBPropertyInPossession FNB Property In Possession property (for sale) 
+FNBSaleInExecution FNB Sales In Execution property (for sale) 
+Price must be entered but will not be displayed 
+NedbankAssistedSale Nedbank Assisted Sale property (for sale) 
+NedbankDealmakerPlatinum Nedbank Dealmaker Platinum property (for 
+sale) 
+NedbankPrimeSelect Nedbank Prime Select property (for sale) 
+NedbankVacantLand Nedbank Vacant Land property (for sale) 
+NedbankBestDeals Nedbank Best Deals property (for sale) 
+NedbankSie Nedbank Sales In Execution property (for sale) 
+Price must be entered but will not be displayed 
+SAHSellAssist SAH Sell Assist property (for sale) 
+SAHSaleInExecution SAH Sales In Execution (for sale) 
+Price must be entered but will not be displayed 
+SAHPropertyInPossession SAH Property In Possession property (for sale) 
+SAHInsolvencies SAH Insolvencies property (for sale) 
+SAHDeceasedEstates SAH Deceased Estates property (for sale) 
+SAHSPOA SAH Price On Application property (for sale) 
+StandardBankSie Standard Bank Sales In Execution property (for 
+sale) 
+Price must be entered but will not be displayed 
+StandardBankPropertyInPossession Standard Bank Property In Possession property 
+(for sale) 
+ 
+StandardBankInsolventProperties Standard Bank Insolvent Properties property 
+(for sale) 
+StandardBankEasySell Standard Bank EasySell Properties property (for 
+sale) 
+  
+** Note 1: Special authorisation is required from PrivateProperty to send any of these 
+restricted mandate types 
+** Note 2: Other restricted mandate types are available on request for very special 
+requirements. 
+
+--- PAGE 20 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 20 
+** Note 3: See the SOAP definition for the specific enumeration values to use for each 
+mandate type 
+ 
+• Photo Urls 
+o For Sales Listing Types, there is a minimum limit of 3 photos. 
+o For Rental Listing Types, there is a minimum limit of 3 photos. 
+o For any listing, there is a maximum limit of 256 photos.  If more photo urls are 
+supplied, only the first 256 urls will be used. 
+o When updating a listing that is activated and there are no changes to the 
+images: 
+▪ You must include the namespace: 
+ 
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+ 
+▪ You must include xsi:nil="true" on PhotoUrls 
+ 
+<PhotoUrls xsi:nil="true" /> 
+ 
+o If the listing has been created but hasn’t been activated due to an error the 
+images must be supplied and will be validated. 
+ 
+ 
+ 
+    Important: Avoid Unnecessary Image Re-Downloads 
+When you update an activated listing without changing the images, you must explicitly indicate that no 
+image updates are required. If you omit the xmlns:xsi namespace or fail to set <PhotoUrls xsi:nil="true" />, 
+our system will assume that you are sending a full image update. This triggers a forced re-download of 
+all images (as many as 256 high resolution images), even if they haven’t changed. 
+This results in significant and unnecessary bandwidth usage, increased processing load for both your 
+systems and ours, and - most visibly - a degraded user experience: every re-downloaded image must be 
+dynamically resized again, causing slow first-time load times for your listings on our platform.  
+Forgetting this step hurts your costs, our infrastructure, and your customers’ experience. Please 
+ensure these fields are correctly included in all update requests where images remain unchanged. 
+ 
+   Recommended Integration Strategy 
+We strongly recommend that your system tracks image updates separately from normal listing updates. A 
+simple and effective approach is to maintain distinct timestamps, for example: 
+ListingUpdateDate: updated whenever any listing field changes 
+ListingImagesUpdateDate: updated only when image URLs change 
+PrivatePropertySyncDate: tracks when a listing was last successfully published to us 
+By comparing ListingImagesUpdateDate with the timestamp of your last successful sync, your system can 
+reliably determine whether image data actually changed. If it has not changed, you should: 
+Include namespace: xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+Set nil attribute: <PhotoUrls xsi:nil="true" /> 
+Image URLs: Avoid sending image URLs again - make sure that the collection is empty. 
+This ensures that only genuine image updates trigger a full image re-download on our side. Implementing 
+these timestamps will protect you from unnecessary bandwidth consumption, reduce processing load, and 
+ensure your listings load instantly for end-users. 
+
+--- PAGE 21 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 21 
+• Exclusive Listing 
+o An Exclusive Listing receives the following features at no additional cost: 
+▪ Featured Listing Tile and Highest Ranking (up to a maximum of 7 days) 
+▪ "Only on Private Property" label in SmartAlerts and Listing Results (for the full 
+commitment duration) 
+o Each agency is required to sign and submit an Exclusive Listings 
+Commitment and be activated before the feature is available. 
+o The SoleMandateExclusiveDays field indicates the number of days that the 
+agency commits to advertise a listing on Private Property only.  
+o Omission of this field, a nil value, or a value of zero will all be treated as if the 
+feature is not requested. 
+o Exclusive Listings must have a ListingType of Sale, for which the agency 
+holds a sole mandate. 
+o Valid values to enable the feature are 1–92 (days). 
+o A valid value represents the number of days from the listing's first submission 
+that it will qualify as an Exclusive Listing. 
+o When a listing is submitted with a valid value and is accepted, the success 
+response will include the date and time after which the listing may be 
+published on other portals. 
+▪ e.g. Successful, DelayListingOnOtherWebsitesUntil: 2025-04-09T07:07:00+02:00 
+▪ The date described above is in RFC 3339 format. 
+o Once a listing has been successfully accepted as Exclusive, any reduction in 
+SoleMandateExclusiveDays to below 1 within the first 24 hours after listing 
+creation will result in an error. This is to prevent taking advantage of the alerts 
+and features and then retracting immediately. 
+ 
+
+--- PAGE 22 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 22 
+2.3.3 Possible Error Messages 
+• PP50 GeneralException 
+• PP100 UnauthorisedToken 
+• PP101 InvalidBranchGuid 
+• PP109 UnauthorisedAccess 
+• PP60 PropertyValidation 
+• PP70 MandateValidation 
+• PP102 InvalidAgent 
+• PP103 InvalidListing 
+• PP104 InvalidContract 
+• PP105 InvalidPackage 
+• PP106 InvalidAttributes 
+• PP112 InvalidArea 
+• PP117 InsufficientImages 
+• PP119 InvalidAddress 
+• PP122 InvalidPriceFrom 
+2.3.4 SOAP 1.2 Format 
+The following is a sample SOAP 1.2 request and response. The placeholders shown need to 
+be replaced with actual values. 
+POST /pplsystems/agentimport/agentimport.asmx HTTP/1.1 
+Host: host 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-
+instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"> 
+  <soap12:Body> 
+    <UpdateListing xmlns="http://tempuri.org/"> 
+      <ListingImport> 
+        <PropertyId>string</PropertyId> 
+        <BranchId>guid</BranchId> 
+        <Category> 
+          <Category>Residential or Land or Farms or 
+Commercial</Category> 
+          <Category>Residential or Land or Farms or 
+Commercial</Category> 
+        </Category> 
+        <MandateType>Rental or HouseShare or FullMandate or 
+OpenMandate or AuctionOnly or FNBQuickSell or FNBSelect or 
+NedbankAssistedSale</MandateType> 
+        <StreetName>string</StreetName> 
+        <StreetNumber>string</StreetNumber> 
+        <ComplexName>string</ComplexName> 
+        <UnitNumber>string</UnitNumber> 
+
+--- PAGE 23 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 23 
+        <Suburb>string</Suburb> 
+        <SuburbId>int</SuburbId> 
+        <Town>string</Town> 
+        <Province>KwaZuluNatal or Gauteng or WesternCape or 
+NorthernCape or FreeState or EasternCape or   Limpopo or NorthWest or 
+Mpumalanga</Province> 
+        <Headline>string</Headline> 
+        <Description>string</Description> 
+        <Price>double</Price> 
+        <Deposit>double</Deposit> 
+        <ListingDate>dateTime</ListingDate> 
+        <ExpiryDate>dateTime</ExpiryDate> 
+        <AvailableFrom>dateTime</AvailableFrom> 
+        <AgentId>string</AgentId> 
+        <PhotoUrls> 
+          <string>string</string> 
+          <string>string</string> 
+        </PhotoUrls> 
+        <OwnerID>string</OwnerID> 
+        <XCoordinate>double</XCoordinate> 
+        <YCoordinate>double</YCoordinate> 
+        <ListingType>Unknown or Sale or Rental</ListingType> 
+        <PropertyStatus>ForSale or ToLet or PendingOffer or Sold or 
+Inactive</PropertyStatus> 
+        <ShowdayEvents> 
+          <ShowdayEvent> 
+            <PropertyId>string</PropertyId> 
+            <StartDate>dateTime</StartDate> 
+            <EndDate>dateTime</EndDate> 
+            <Description>string</Description> 
+            <Active>boolean</Active> 
+          </ShowdayEvent> 
+          <ShowdayEvent> 
+            <PropertyId>string</PropertyId> 
+            <StartDate>dateTime</StartDate> 
+            <EndDate>dateTime</EndDate> 
+            <Description>string</Description> 
+            <Active>boolean</Active> 
+          </ShowdayEvent> 
+        </ShowdayEvents> 
+        <Attributes> 
+          <Attribute> 
+            <AttributeType>Bedrooms or Bathrooms or HomeType or 
+LandType or FloorArea or LandArea or EnSuite or Lounges or 
+DiningAreas or Garages or StaffQuarters or Study or Pool or Flatlet or 
+Carports or Storeys or FarmName or BusinessType or Parking or 
+LeviesAndRates or Levies or Rates or PetsAllowed or WaterIncluded or 
+ElectrictyIncluded or Satelite or TV or Aircon or Alarm or ScenicView or 
+SeaView or WalkInCloset or BuiltInCupboards or Furnished or 
+HandicapAvailable or Balcony or Deck or AccessGate or SecurityPost or 
+TennisCourt or SquashCourt or Clubhouse or Gym or Golf or Jaccuzzi or 
+Patio or Storage or Fence or Laundry</AttributeType> 
+            <Value>string</Value> 
+          </Attribute> 
+          <Attribute> 
+            <AttributeType>Bedrooms or Bathrooms or HomeType or 
+LandType or FloorArea or LandArea or EnSuite or Lounges or 
+DiningAreas or Garages or StaffQuarters or Study or Pool or Flatlet or 
+Carports or Storeys or FarmName or BusinessType or Parking or 
+LeviesAndRates or Levies or Rates or PetsAllowed or WaterIncluded or 
+
+--- PAGE 24 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 24 
+ElectrictyIncluded or Satelite or TV or Aircon or Alarm or ScenicView or 
+SeaView or WalkInCloset or BuiltInCupboards or Furnished or 
+HandicapAvailable or Balcony or Deck or AccessGate or SecurityPost or 
+TennisCourt or SquashCourt or Clubhouse or Gym or Golf or Jaccuzzi or 
+Patio or Storage or Fence or Laundry</AttributeType> 
+            <Value>string</Value> 
+          </Attribute> 
+        </Attributes> 
+        <HideStreetName>boolean</HideStreetName> 
+        <HideStreetNo>boolean</HideStreetNo> 
+        <HideComplexName>boolean</HideComplexName> 
+        <HideUnitNumber>boolean</HideUnitNumber> 
+      </ListingImport> 
+      <Token> 
+        <Digest>string</Digest> 
+        <UserName>string</UserName> 
+        <StampTime>string</StampTime> 
+        <Expires>string</Expires> 
+        <UID>string</UID> 
+      </Token> 
+    </UpdateListing> 
+  </soap12:Body> 
+</soap12:Envelope> 
+HTTP/1.1 200 OK 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-
+instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"> 
+  <soap12:Body> 
+    <UpdateListingResponse xmlns="http://tempuri.org/"> 
+      <UpdateListingResult>string</UpdateListingResult> 
+    </UpdateListingResponse> 
+  </soap12:Body> 
+</soap12:Envelope> 
+ 
+ 
+ 
+
+--- PAGE 25 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 25 
+2.4 Get Countries 
+2.4.1 Message Outline 
+GetCountries: This method returns the list of countries you can load a listing in. 
+2.4.2 SOAP 1.2 Format 
+The following is a sample SOAP 1.2 request and response. The placeholders shown need to 
+be replaced with actual values. 
+ 
+GetListingStatus Method 
+ 
+POST /WebServices/AgentImport/AgentImport.asmx HTTP/1.1 
+Host: host 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope 
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"> 
+  <soap12:Body> 
+    <GetCountries xmlns="http://tempuri.org/"> 
+      <Token> 
+        <Digest>string</Digest> 
+        <UserName>string</UserName> 
+        <StampTime>string</StampTime> 
+        <Expires>string</Expires> 
+        <UID>string</UID> 
+      </Token> 
+    </GetCountries> 
+  </soap12:Body> 
+</soap12:Envelope> 
+ 
+Return type 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope 
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"> 
+  <soap12:Body> 
+    <GetCountriesResponse xmlns="http://tempuri.org/"> 
+      <GetCountriesResult> 
+        <CountryModel> 
+          <Id>int</Id> 
+          <Name>string</Name> 
+        </CountryModel> 
+        <CountryModel> 
+          <Id>int</Id> 
+          <Name>string</Name> 
+        </CountryModel> 
+      </GetCountriesResult> 
+    </GetCountriesResponse> 
+  </soap12:Body> 
+</soap12:Envelope> 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+
+--- PAGE 26 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 26 
+2.5 Get Provinces 
+2.5.1 Message Outline 
+GetProvinces: This method returns the list of provinces you can load a listing in. 
+Property Data Type Required Description 
+CountryId Int Yes Id of the country to get provinces for 
+ 
+2.5.2 Possible Error Messages 
+• PP112 InvalidArea 
+2.5.3 SOAP 1.2 Format 
+The following is a sample SOAP 1.2 request and response. The placeholders shown need to 
+be replaced with actual values. 
+ 
+GetListingStatus Method 
+ 
+POST /WebServices/AgentImport/AgentImport.asmx HTTP/1.1 
+Host: host 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope 
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"> 
+  <soap12:Body> 
+    <GetProvinces xmlns="http://tempuri.org/"> 
+      <CountryId>int</CountryId> 
+      <Token> 
+        <Digest>string</Digest> 
+        <UserName>string</UserName> 
+        <StampTime>string</StampTime> 
+        <Expires>string</Expires> 
+        <UID>string</UID> 
+      </Token> 
+    </GetProvinces> 
+  </soap12:Body> 
+</soap12:Envelope> 
+ 
+Return type 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope 
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"> 
+  <soap12:Body> 
+    <GetProvincesResponse xmlns="http://tempuri.org/"> 
+      <GetProvincesResult> 
+        <ProvinceModel> 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+
+--- PAGE 27 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 27 
+          <Id>int</Id> 
+          <CountryId>int</CountryId> 
+          <Name>string</Name> 
+        </ProvinceModel> 
+        <ProvinceModel> 
+          <Id>int</Id> 
+          <CountryId>int</CountryId> 
+          <Name>string</Name> 
+        </ProvinceModel> 
+      </GetProvincesResult> 
+    </GetProvincesResponse> 
+  </soap12:Body> 
+</soap12:Envelope> 
+ 
+ 
+
+--- PAGE 28 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 28 
+2.6 Get Cities 
+2.6.1 Message Outline 
+GetCities: This method returns the list of cities you can load a listing in. 
+Property Data Type Required Description 
+ProvinceId Int Yes Id of the province to get cities for 
+2.6.2 Possible Error Messages 
+• PP112 InvalidArea 
+2.6.3 SOAP 1.2 Format 
+The following is a sample SOAP 1.2 request and response. The placeholders shown need to 
+be replaced with actual values. 
+ 
+GetListingStatus Method 
+ 
+POST /WebServices/AgentImport/AgentImport.asmx HTTP/1.1 
+Host: host 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope 
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"> 
+  <soap12:Body> 
+    <GetCities xmlns="http://tempuri.org/"> 
+      <ProvinceID>int</ProvinceID> 
+      <Token> 
+        <Digest>string</Digest> 
+        <UserName>string</UserName> 
+        <StampTime>string</StampTime> 
+        <Expires>string</Expires> 
+        <UID>string</UID> 
+      </Token> 
+    </GetCities> 
+  </soap12:Body> 
+</soap12:Envelope> 
+ 
+Return type 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope 
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"> 
+  <soap12:Body> 
+    <GetCitiesResponse xmlns="http://tempuri.org/"> 
+      <GetCitiesResult> 
+        <CityModel> 
+          <Id>int</Id> 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+
+--- PAGE 29 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 29 
+          <ProvinceId>int</ProvinceId> 
+          <Name>string</Name> 
+        </CityModel> 
+        <CityModel> 
+          <Id>int</Id> 
+          <ProvinceId>int</ProvinceId> 
+          <Name>string</Name> 
+        </CityModel> 
+      </GetCitiesResult> 
+    </GetCitiesResponse> 
+  </soap12:Body> 
+</soap12:Envelope> 
+ 
+ 
+
+--- PAGE 30 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 30 
+2.7 Get Suburbs 
+2.7.1 Message Outline 
+GetSuburbs: This method returns the list of suburbs you can load a listing in. 
+Property Data Type Required Description 
+CityId Int Yes Id of the city to get suburbs for 
+2.7.2 Notes 
+• The Suburb Ids returned can be used in the Suburbid field when loading listings. 
+2.7.3 Possible Error Messages 
+• PP112 InvalidArea 
+2.7.4 SOAP 1.2 Format 
+The following is a sample SOAP 1.2 request and response. The placeholders shown need to 
+be replaced with actual values. 
+ 
+GetListingStatus Method 
+ 
+POST /WebServices/AgentImport/AgentImport.asmx HTTP/1.1 
+Host: host 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope 
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"> 
+  <soap12:Body> 
+    <GetSuburbs xmlns="http://tempuri.org/"> 
+      <CityID>int</CityID> 
+      <Token> 
+        <Digest>string</Digest> 
+        <UserName>string</UserName> 
+        <StampTime>string</StampTime> 
+        <Expires>string</Expires> 
+        <UID>string</UID> 
+      </Token> 
+    </GetSuburbs> 
+  </soap12:Body> 
+</soap12:Envelope> 
+ 
+Return type 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope 
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"> 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+
+--- PAGE 31 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 31 
+  <soap12:Body> 
+    <GetSuburbsResponse xmlns="http://tempuri.org/"> 
+      <GetSuburbsResult> 
+        <SuburbModel> 
+          <Id>int</Id> 
+          <CityId>int</CityId> 
+          <Name>string</Name> 
+        </SuburbModel> 
+        <SuburbModel> 
+          <Id>int</Id> 
+          <CityId>int</CityId> 
+          <Name>string</Name> 
+        </SuburbModel> 
+      </GetSuburbsResult> 
+    </GetSuburbsResponse> 
+  </soap12:Body> 
+</soap12:Envelope> 
+ 
+ 
+ 
+
+--- PAGE 32 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 32 
+2.8 Get Listing Status 
+2.8.1 Message Outline 
+GetListingStatus: This method returns the status of a specific listing. 
+Property Data Type Required Description 
+BranchId Guid Yes Unique Identifier 
+PropertyId String (100) Yes Unique identifier for the property 
+2.8.2 Notes 
+• Many unnecessary calls are made to this method for listings which do not yet exist on 
+the system. Ensure that the listing for which you are trying to get has actually been 
+sent to the system and you have a valid PP Ref for it.  
+• It is preferable that more efficient means are used to receive general updates to 
+listing status via GetListingEventFeedByFeedProvider & 
+GetListingEventFeedByBranch methods. 
+2.8.3 Possible Responses 
+Value Applies To Description 
+Archived Both Archived are “deleted” listings do not show under a clients list of 
+listings 
+Pending Offer Sales This listing was marked as offer pending for display on the 
+portal 
+For Sale Sales The listing is for sale on the portal 
+Sold Sales This listing was marked sold.  It will display on the portal as sold 
+for a predefined period of time 
+Inactive Both This listing was previously active on the portal and has now 
+been marked as not active on the portal 
+Expired Both This listings expiry date has passed and it is now not active on 
+the portal.  Only some specific listing types such as auctions 
+and some bank sales can be in this state 
+Pending Action Both This listing is requiring moderation by Private Property staff.  
+This is not a very common status as we now use auto 
+moderation and listings rarely enter this state 
+Declined Both This listing was declined in moderation by Private Property staff. 
+Incomplete Both The listing has been submitted but has not got enough details to 
+be considered for activation 
+ToLet Rentals This listing is to let on the portal 
+ 
+
+--- PAGE 33 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 33 
+2.8.4 Possible Error Messages 
+• PP50 GeneralException 
+• PP100 UnauthorisedToken 
+• PP101 InvalidBranchGuid 
+• PP109 UnauthorisedAccess 
+• PP103 InvalidListing 
+2.8.5 SOAP 1.2 Format 
+The following is a sample SOAP 1.2 request and response. The placeholders shown need to 
+be replaced with actual values. 
+ 
+GetListingStatus Method 
+ 
+POST /WebServices/AgentImport/AgentImport.asmx HTTP/1.1 
+Host: host 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope 
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"> 
+  <soap12:Body> 
+    <GetListingStatus xmlns="http://tempuri.org/"> 
+      <BranchId>guid</BranchId> 
+      <PropertyId>string</PropertyId> 
+      <Token> 
+        <Digest>string</Digest> 
+        <UserName>string</UserName> 
+        <StampTime>string</StampTime> 
+        <Expires>string</Expires> 
+        <UID>string</UID> 
+      </Token> 
+    </GetListingStatus> 
+  </soap12:Body> 
+</soap12:Envelope> 
+ 
+Return Type 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope 
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"> 
+  <soap12:Body> 
+    <GetStatusResponse xmlns="http://tempuri.org/"> 
+      <GetStatusResult>string</GetStatusResult> 
+    </GetStatusResponse> 
+  </soap12:Body> 
+</soap12:Envelope> 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+
+--- PAGE 34 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 34 
+2.9 Update Listing Status 
+2.9.1 Message Outline 
+ListingStatusUpdate: This method updates a specific listings status. (Only activated listings 
+may have their status updated).  
+Property Data Type Required Description 
+BranchId Guid Yes Unique Identifier 
+PropertyId string Yes Unique Listing Identifier 
+ListingType Enum Yes The listing type 
+PropertyStatus PropertyStatus Yes The new listings status  
+2.9.2 Possible Error Messages 
+• PP50 GeneralException 
+• PP100 UnauthorisedToken 
+• PP101 InvalidBranchGuid 
+• PP109 UnauthorisedAccess 
+• PP103 InvalidListing 
+• PP113 InvalidPrice 
+ 
+2.9.3 SOAP 1.2 Format 
+The following is a sample SOAP 1.2 request and response. The placeholders shown need to 
+be replaced with actual values. 
+ 
+Listing Status Update 
+ 
+POST /WebServices/AgentImport/AgentImport.asmx HTTP/1.1 
+Host: host 
+Content-Type: text/xml; charset=utf-8 
+Content-Length: length 
+SOAPAction: "http://tempuri.org/ListingStatusUpdate" 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope 
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"> 
+  <soap12:Body> 
+    <ListingStatusUpdate xmlns="http://tempuri.org/"> 
+      <BranchId>guid</BranchId> 
+      <PropertyId>string</PropertyId> 
+      <ListingType>Unknown or Sale or Rental</ListingType> 
+      <PropertyStatus>Unknown or ForSale or ToLet or 
+PendingOffer or Sold or Inactive</PropertyStatus> 
+      <Token> 
+        <Digest>string</Digest> 
+ 
+
+--- PAGE 35 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 35 
+        <UserName>string</UserName> 
+        <StampTime>string</StampTime> 
+        <Expires>string</Expires> 
+        <UID>string</UID> 
+      </Token> 
+    </ListingStatusUpdate> 
+  </soap12:Body> 
+</soap12:Envelope> 
+ 
+Return Type 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope 
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"> 
+  <soap12:Body> 
+    <ListingStatusUpdateResponse xmlns="http://tempuri.org/"> 
+      
+<ListingStatusUpdateResult>string</ListingStatusUpdateResult> 
+    </ListingStatusUpdateResponse> 
+  </soap12:Body> 
+</soap12:Envelope> 
+ 
+ 
+ 
+
+--- PAGE 36 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 36 
+2.10 Update Listing Show Day 
+2.10.1 Message Outline 
+ListingShowdayUpdate: This method adds / removes a specific show day from a listing. 
+ Property Data Type Required Description 
+BranchId Guid Yes Unique Identifier 
+Showday ShowdayEvent Yes Show day event 
+2.10.2 Possible Error Messages 
+• PP50 GeneralException 
+• PP100 UnauthorisedToken 
+• PP101 InvalidBranchGuid 
+• PP109 UnauthorisedAccess 
+2.10.3 SOAP 1.2 Format 
+The following is a sample SOAP 1.2 request and response. The placeholders shown need to 
+be replaced with actual values. 
+ 
+ListingShowdayUpdate Method 
+ 
+POST /WebServices/AgentImport/AgentImport.asmx HTTP/1.1 
+Host: host 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope 
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"> 
+  <soap12:Body> 
+    <ListingShowdayUpdate xmlns="http://tempuri.org/"> 
+      <BranchId>guid</BranchId> 
+      <Showday> 
+        <PropertyId>string</PropertyId> 
+        <StartDate>dateTime</StartDate> 
+        <EndDate>dateTime</EndDate> 
+        <Description>string</Description> 
+        <Active>boolean</Active> 
+      </Showday> 
+      <Token> 
+        <Digest>string</Digest> 
+        <UserName>string</UserName> 
+        <StampTime>string</StampTime> 
+        <Expires>string</Expires> 
+        <UID>string</UID> 
+      </Token> 
+    </ListingShowdayUpdate> 
+  </soap12:Body> 
+</soap12:Envelope> 
+ 
+
+--- PAGE 37 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 37 
+ 
+Return Type 
+ 
+HTTP/1.1 200 OK 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope 
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"> 
+  <soap12:Body> 
+    <ListingShowdayAddResponse xmlns="http://tempuri.org/"> 
+      
+<ListingShowdayAddResult>string</ListingShowdayAddResult> 
+    </ListingShowdayAddResponse> 
+  </soap12:Body> 
+</soap12:Envelope> 
+ 
+ 
+ 
+
+--- PAGE 38 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 38 
+2.11 Get Agents 
+2.11.1 Message Outline 
+GetAgents: This method gets all the agents associated to the branch 
+Property Data Type Required Description 
+BranchId Guid Yes Unique Identifier 
+2.11.2 Possible Error Messages 
+• PP50 GeneralException 
+• PP100 UnauthorisedToken 
+• PP101 InvalidBranchGuid 
+• PP109 UnauthorisedAccess 
+• PP107 InvalidAgentDetails 
+2.11.3 SOAP 1.2 Format 
+The following is a sample SOAP 1.2 request and response. The placeholders shown need to 
+be replaced with actual values. 
+ 
+GetAgents 
+ 
+POST /WebServices/AgentImport/AgentImport.asmx HTTP/1.1 
+Host: host 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope 
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"> 
+  <soap12:Body> 
+    <GetAgents xmlns="http://tempuri.org/"> 
+      <BranchId>guid</BranchId> 
+      <Token> 
+        <Digest>string</Digest> 
+        <UserName>string</UserName> 
+        <StampTime>string</StampTime> 
+        <Expires>string</Expires> 
+        <UID>string</UID> 
+      </Token> 
+    </GetAgents> 
+  </soap12:Body> 
+</soap12:Envelope> 
+ 
+Return Type 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope 
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+ 
+ 
+ 
+ 
+ 
+ 
+
+--- PAGE 39 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 39 
+xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"> 
+  <soap12:Body> 
+    <GetAgentsResponse xmlns="http://tempuri.org/"> 
+      <GetAgentsResult> 
+        <Agent> 
+          <Email>string</Email> 
+          <FirstName>string</FirstName> 
+          <LastName>string</LastName> 
+          <AgentId>string</AgentId> 
+          <PrivysealAlias>string</PrivysealAlias> 
+          <Active>boolean</Active> 
+          <TelCell>string</TelCell> 
+          <TelHome>string</TelHome> 
+          <TelWork>string</TelWork> 
+          <BranchId>guid</BranchId> 
+        </Agent> 
+        <Agent> 
+          <Email>string</Email> 
+          <FirstName>string</FirstName> 
+          <LastName>string</LastName> 
+          <AgentId>string</AgentId> 
+          <PrivysealAlias>string</PrivysealAlias> 
+          <Active>boolean</Active> 
+          <TelCell>string</TelCell> 
+          <TelHome>string</TelHome> 
+          <TelWork>string</TelWork> 
+          <BranchId>guid</BranchId> 
+        </Agent> 
+      </GetAgentsResult> 
+    </GetAgentsResponse> 
+  </soap12:Body> 
+</soap12:Envelope> 
+ 
+ 
+
+--- PAGE 40 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 40 
+2.12 Get Active Listings 
+2.12.1 Message Outline 
+GetActiveListings: This method gets all the active listings for a specific branch. 
+ Property Data Type Required Description 
+BranchId Guid Yes Unique Identifier 
+2.12.2 Possible Error Messages 
+• PP50 GeneralException 
+• PP100 UnauthorisedToken 
+• PP101 InvalidBranchGuid 
+• PP109 UnauthorisedAccess 
+2.12.3 SOAP 1.2 Format 
+The following is a sample SOAP 1.2 request and response. The placeholders shown need to 
+be replaced with actual values. 
+ 
+GetActiveListing Method 
+ 
+POST /WebServices/AgentImport/AgentImport.asmx HTTP/1.1 
+Host: host 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope 
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"> 
+  <soap12:Body> 
+    <GetActiveListings xmlns="http://tempuri.org/"> 
+      <BranchId>guid</BranchId> 
+      <Token> 
+        <Digest>string</Digest> 
+        <UserName>string</UserName> 
+        <StampTime>string</StampTime> 
+        <Expires>string</Expires> 
+        <UID>string</UID> 
+      </Token> 
+    </GetActiveListings> 
+  </soap12:Body> 
+</soap12:Envelope> 
+ 
+Return Type 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope 
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"> 
+ 
+ 
+ 
+ 
+ 
+ 
+
+--- PAGE 41 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 41 
+  <soap12:Body> 
+    <GetActiveListingsResponse xmlns="http://tempuri.org/"> 
+      <GetActiveListingsResult> 
+        <ActiveListing> 
+          <ListingType>string</ListingType> 
+          <PrivatePropertyRef>string</PrivatePropertyRef> 
+          <UniqueId>string</UniqueId> 
+        </ActiveListing> 
+        <ActiveListing> 
+          <ListingType>string</ListingType> 
+          <PrivatePropertyRef>string</PrivatePropertyRef> 
+          <UniqueId>string</UniqueId> 
+        </ActiveListing> 
+      </GetActiveListingsResult> 
+    </GetActiveListingsResponse> 
+  </soap12:Body> 
+</soap12:Envelope> 
+ 
+ 
+ 
+
+--- PAGE 42 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 42 
+2.13 Get all Agents for Branch 
+2.13.1 Message Outline 
+GetAllAgentsforBranch: This method gets all the active listings for a specific branch 
+(including those that do not have a UniqueAgentID) and returns all the details for the agents 
+in an xml list. 
+Property Data Type Required Description 
+BranchId Guid Yes Unique Identifier 
+2.13.2 Possible Error Messages 
+• PP50 GeneralException 
+• PP100 UnauthorisedToken 
+• PP101 InvalidBranchGuid 
+• PP109 UnauthorisedAccess 
+2.13.3 SOAP 1.2 Format 
+The following is a sample SOAP 1.2 request and response. The placeholders shown need to 
+be replaced with actual values. 
+POST /pplsystems/agentimport/agentimport.asmx HTTP/1.1 
+Host: host 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-
+instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"> 
+  <soap12:Body> 
+    <GetAllAgentsForBranch xmlns="http://tempuri.org/"> 
+      <BranchId>guid</BranchId> 
+      <Token> 
+        <Digest>string</Digest> 
+        <UserName>string</UserName> 
+        <StampTime>string</StampTime> 
+        <Expires>string</Expires> 
+        <UID>string</UID> 
+      </Token> 
+    </GetAllAgentsForBranch> 
+  </soap12:Body> 
+</soap12:Envelope> 
+HTTP/1.1 200 OK 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-
+instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"> 
+  <soap12:Body> 
+    <GetAllAgentsForBranchResponse xmlns="http://tempuri.org/"> 
+ 
+ 
+ 
+ 
+ 
+ 
+
+--- PAGE 43 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 43 
+      
+<GetAllAgentsForBranchResult>xmlxml</GetAllAgentsForBranchResult> 
+    </GetAllAgentsForBranchResponse> 
+  </soap12:Body> 
+</soap12:Envelope> 
+ 
+ 
+ 
+
+--- PAGE 44 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 44 
+2.14 Get all Listings for Branch 
+2.14.1 Message Outline 
+GetAllListingsforBranch: This method gets all the active listings for a specific branch 
+ Property Data Type Required Description 
+BranchId Guid Yes Unique Identifier 
+2.14.2 Possible Error Messages 
+• PP50 GeneralException 
+• PP100 UnauthorisedToken 
+• PP101 InvalidBranchGuid 
+• PP109 UnauthorisedAccess 
+2.14.3 SOAP 1.2 Format 
+The following is a sample SOAP 1.2 request and response. The placeholders shown need to 
+be replaced with actual values. 
+POST /pplsystems/agentimport/agentimport.asmx HTTP/1.1 
+Host: host 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-
+instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"> 
+  <soap12:Body> 
+    <GetAllListingsForBranch xmlns="http://tempuri.org/"> 
+      <BranchId>guid</BranchId> 
+      <Token> 
+        <Digest>string</Digest> 
+        <UserName>string</UserName> 
+        <StampTime>string</StampTime> 
+        <Expires>string</Expires> 
+        <UID>string</UID> 
+      </Token> 
+    </GetAllListingsForBranch> 
+  </soap12:Body> 
+</soap12:Envelope> 
+HTTP/1.1 200 OK 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-
+instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"> 
+  <soap12:Body> 
+    <GetAllListingsForBranchResponse xmlns="http://tempuri.org/"> 
+      
+<GetAllListingsForBranchResult>xmlxml</GetAllListingsForBranchResult> 
+ 
+ 
+ 
+ 
+ 
+ 
+
+--- PAGE 45 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 45 
+    </GetAllListingsForBranchResponse> 
+  </soap12:Body> 
+</soap12:Envelope> 
+ 
+ 
+ 
+
+--- PAGE 46 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 46 
+2.15 Get all Submitted Listings for Branch 
+2.15.1 Message Outline 
+GetAllSubmittedListingsForBranch: This method is no longer supported and will return a 
+NotSupportedException error 
+2.16 Get Lead Stats 
+2.16.1 Message Outline 
+LeadStatsSummary: This method gets all the aggregated lead stats for a specific branch for 
+a defined period. This can also specify if the results returned must be for sales or rentals or 
+both. 
+Property Data Type Required Description 
+BranchId Guid Yes Unique Identifier 
+StartDate DateTime Yes The start date in a date range 
+EndDate DateTime Yes The end date in a date range 
+2.16.2 Possible Error Messages 
+• PP50 GeneralException 
+• PP100 UnauthorisedToken 
+• PP101 InvalidBranchGuid 
+• PP109 UnauthorisedAccess 
+2.16.3 SOAP 1.2 Format 
+The following is a sample SOAP 1.2 request and response. The placeholders shown need to 
+be replaced with actual values. 
+POST /pplsystems/agentimport/agentimport.asmx HTTP/1.1 
+Host: host 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap12="http://www.w3.org/2003/05/soap -
+envelope"> 
+  <soap12:Body> 
+    <LeadStatSummary xmlns="http://tempuri.org/"> 
+      <BranchGuid>guid</BranchGuid> 
+      <StartDate>dateTime</StartDate> 
+      <EndDate>dateTime</EndDate> 
+      <Token> 
+        <Digest>string</Digest> 
+        <UserName>string</UserName> 
+        <StampTime>string</StampTime> 
+        <Expires>string</Expires> 
+        <UID>string</UID> 
+ 
+ 
+ 
+ 
+ 
+ 
+
+--- PAGE 47 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 47 
+      </Token> 
+    </LeadStatSummary> 
+  </soap12:Body> 
+</soap12:Envelope> 
+HTTP/1.1 200 OK 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" 
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xmlns:xsd="http://www.w3.org/2001/XMLSchema"> 
+   <soap:Body> 
+      <LeadStatSummaryResponse xmlns="http://tempuri.org/"> 
+         <LeadStatSummaryResult> 
+            <xs:schema id="NewDataSet" xmlns="" xmlns:xs="http://www.w3.org/2001/XMLSchema" 
+xmlns:msdata="urn:schemas-microsoft-com:xml-msdata"> 
+               <xs:element name="NewDataSet" msdata:IsDataSet="true" 
+msdata:MainDataTable="Table" msdata:UseCurrentLocale="true"> 
+                  <xs:complexType> 
+                     <xs:choice minOccurs="0" maxOccurs="unbounded"> 
+                        <xs:element name="Table"> 
+                           <xs:complexType> 
+                              <xs:sequence> 
+                                 <xs:element name="LeadCount" type="xs:int" minOccurs="0" /> 
+                                 <xs:element name="PPRef" type="xs:string" minOccurs="0" />  
+                                 <xs:element name="Date" type="xs:int" minOccurs="0" /> 
+                                 <xs:element name="LeadType" type="xs:string" minOccurs="0" />  
+                                 <xs:element name="PropertyId" type="xs:string" minOccurs="0" />  
+                                 <xs:element name="ListingType" type="xs:string" minOccurs="0" /> 
+                              </xs:sequence> 
+                           </xs:complexType> 
+                        </xs:element> 
+                     </xs:choice> 
+                  </xs:complexType> 
+               </xs:element> 
+            </xs:schema> 
+            <diffgr:diffgram xmlns:msdata="urn:schemas-microsoft-com:xml-msdata" 
+xmlns:diffgr="urn:schemas-microsoft-com:xml-diffgram-v1"> 
+               <NewDataSet xmlns=""> 
+                  <Table diffgr:id="Table1" msdata:rowOrder="0"> 
+                     <LeadCount>int</LeadCount> 
+                     <PPRef>string</PPRef> 
+                     <Date>dateTime</Date> 
+                     <LeadType>Unknown, Telephone,Email, Sms (Please Call Me), Sms (Email 
+Notification) or Sms (Contact Detail Notification)</LeadType> 
+                     <PropertyId>string</PropertyId> 
+                     <ListingType>Unknown, Sale or Rental</ListingType> 
+                  </Table> 
+               </NewDataSet> 
+            </diffgr:diffgram> 
+         </LeadStatSummaryResult> 
+      </LeadStatSummaryResponse> 
+   </soap:Body> 
+</soap:Envelope> 
+ 
+ 
+
+--- PAGE 48 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 48 
+2.17 Get a Listing Lead Stat 
+2.17.1 Message Outline 
+LeadStatDetail: This method gets the lead stat details for a specific listing for a defined 
+period.  If there are multiple agents on a listing only one unique lead will be returned per 
+customer interaction. 
+Property Data Type Required Description 
+UniqueListingId String Yes Unique identifier of the listing 
+BranchId  Guid Yes Unique Identifier 
+StartDate DateTime Yes The start date in a date range 
+EndDate DateTime Yes The end date in a date range 
+ListingType Enum Yes Represents whether the listing is a sales 
+listing or a rental listing. 
+2.17.2 Possible Error Messages 
+• PP50 GeneralException 
+• PP100 UnauthorisedToken 
+• PP101 InvalidBranchGuid 
+• PP109 UnauthorisedAccess 
+2.17.3 SOAP 1.2 Format 
+The following is a sample SOAP 1.2 request and response. The placeholders shown need to 
+be replaced with actual values. 
+POST /pplsystems/agentimport/agentimport.asmx HTTP/1.1 
+Host: host 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap12="http://www.w3.org/2003/05/soap -
+envelope"> 
+  <soap12:Body> 
+    <LeadStatDetail xmlns="http://tempuri.org/"> 
+      <UniqueListingId>string</UniqueListingId> 
+      <BranchGuid>guid</BranchGuid> 
+      <StartDate>dateTime</StartDate> 
+      <EndDate>dateTime</EndDate> 
+      <Token> 
+        <Digest>string</Digest> 
+        <UserName>string</UserName> 
+        <StampTime>string</StampTime> 
+        <Expires>string</Expires> 
+        <UID>string</UID> 
+      </Token> 
+    </LeadStatDetail> 
+  </soap12:Body> 
+ 
+ 
+ 
+ 
+ 
+ 
+
+--- PAGE 49 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 49 
+HTTP/1.1 200 OK 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" 
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xmlns:xsd="http://www.w3.org/2001/XMLSchema"> 
+  <soap:Body> 
+    <LeadStatDetailResponse xmlns="http://tempuri.org/"> 
+      <LeadStatDetailResult> 
+        <xs:schema id="NewDataSet" xmlns="" xmlns:xs="http://www.w3.org/2001/XMLSchema" 
+xmlns:msdata="urn:schemas-microsoft-com:xml-msdata"> 
+          <xs:element name="NewDataSet" msdata:IsDataSet="true" msdata:MainDataTable="Table" 
+msdata:UseCurrentLocale="true"> 
+            <xs:complexType> 
+              <xs:choice minOccurs="0" maxOccurs="unbounded"> 
+                <xs:element name="Table"> 
+                  <xs:complexType> 
+                    <xs:sequence> 
+                      <xs:element name="PPRef" type="xs:string" minOccurs="0" /> 
+                      <xs:element name="From_Name" type="xs:string" minOccurs="0" />  
+                      <xs:element name="Date" type="xs:dateTime" minOccurs="0" /> 
+                      <xs:element name="LeadType" type="xs:string" minOccurs="0" />  
+                      <xs:element name="PropertyId" type="xs:string" minOccurs="0" /> 
+                      <xs:element name="Cell" type="xs:string" minOccurs="0" /> 
+                      <xs:element name="From_Email" type="xs:string" minOccurs="0" />  
+                      <xs:element name="Comment" type="xs:string" minOccurs="0" />  
+                    </xs:sequence> 
+                  </xs:complexType> 
+                </xs:element> 
+              </xs:choice> 
+            </xs:complexType> 
+          </xs:element> 
+        </xs:schema> 
+        <diffgr:diffgram xmlns:msdata="urn:schemas-microsoft-com:xml-msdata" 
+xmlns:diffgr="urn:schemas-microsoft-com:xml-diffgram-v1"> 
+          <NewDataSet xmlns=""> 
+            <Table diffgr:id="Table1" msdata:rowOrder="0"> 
+              <PPRef>string</PPRef> 
+              <From_Name>string</From_Name> 
+              <Date>dateTime</Date> 
+              <LeadType>EmailLead, WhatsAppLead</LeadType> 
+              <PropertyId>string</PropertyId> 
+              <Cell>string</Cell> 
+              <From_Email>string</From_Email> 
+              <Comment>string</Comment> 
+            </Table>            
+          </NewDataSet> 
+        </diffgr:diffgram> 
+      </LeadStatDetailResult> 
+    </LeadStatDetailResponse> 
+  </soap:Body> 
+</soap:Envelope> 
+ 
+ 
+
+--- PAGE 50 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 50 
+2.18 Get a Summary for Listing 
+ 
+ListingSummary: This method gets a summary of information for a listing, providing a type 
+of audit trail for the listing. We have also created a web interface that uses this service allowing 
+the development team to see these details. Please note, that this is for assistance only, and 
+not a system of ours that will take change requests. 
+https://services.sandbox.pp.co.za/AgentImport/listingsummary.aspx 
+ 
+ 
+
+--- PAGE 51 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 51 
+2.19 Update image for Agent 
+2.19.1 Message Outline 
+UpdateAgentImage: This method sets an image for the agent. The image will be updated if 
+the image already exists. 
+Property Data Type Required Description 
+Agent  Agent Yes Agent  
+ImageUrl String Yes The URL of the image 
+2.19.2 Notes 
+• Ensure that the agent image URL has a valid image and is at least 160 x 120px (height x 
+width) or greater, but does not exceed 1MB. 
+2.19.3 Possible Error Messages 
+• PP50 GeneralException 
+• PP100 UnauthorisedToken 
+• PP101 InvalidBranchGuid 
+• PP109 UnauthorisedAccess 
+• PP102 InvalidAgent 
+2.19.4 SOAP 1.2 Format 
+The following is a sample SOAP 1.2 request and response. The placeholders shown need to 
+be replaced with actual values. 
+POST /pplsystems/agentimport/agentimport.asmx HTTP/1.1 
+Host: host 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-
+instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"> 
+  <soap12:Body> 
+    <UpdateAgentImage xmlns="http://tempuri.org/"> 
+      <Agent> 
+        <Email>string</Email> 
+        <FirstName>string</FirstName> 
+        <LastName>string</LastName> 
+        <AgentId>string</AgentId> 
+        <Active>boolean</Active> 
+        <TelCell>string</TelCell> 
+        <TelHome>string</TelHome> 
+        <TelWork>string</TelWork> 
+        <BranchId>guid</BranchId> 
+      </Agent> 
+      <imgurl>string</imgurl> 
+      <Token> 
+ 
+ 
+ 
+
+--- PAGE 52 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 52 
+        <Digest>string</Digest> 
+        <UserName>string</UserName> 
+        <StampTime>string</StampTime> 
+        <Expires>string</Expires> 
+        <UID>string</UID> 
+      </Token> 
+    </UpdateAgentImage> 
+  </soap12:Body> 
+</soap12:Envelope> 
+HTTP/1.1 200 OK 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-
+instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"> 
+  <soap12:Body> 
+    <UpdateAgentImageResponse xmlns="http://tempuri.org/"> 
+      <UpdateAgentImageResult>string</UpdateAgentImageResult> 
+    </UpdateAgentImageResponse> 
+  </soap12:Body> 
+</soap12:Envelope> 
+ 
+ 
+ 
+
+--- PAGE 53 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 53 
+2.20 Update the UniqueAgentID 
+2.20.1 Message Outline 
+UpdateUniqueAgentId: This method sets the UniqueAgentID on an agent. If one already 
+exists for the agent, it will update the value. 
+Property Data 
+Type 
+Required Description 
+PrivatePropertyAgentId Agent Yes Encrypted Agent Id  
+AgentId String Yes Unique Identifier 
+2.20.2 Possible Error Messages 
+• PP100 UnauthorisedToken 
+2.20.3 SOAP 1.2 Format 
+The following is a sample SOAP 1.2 request and response. The placeholders shown need to 
+be replaced with actual values. 
+POST /pplsystems/agentimport/agentimport.asmx HTTP/1.1 
+Host: host 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-
+instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"> 
+  <soap12:Body> 
+    <UpdateUniqueAgentID xmlns="http://tempuri.org/"> 
+      <PrivatePropertyAgentId>string</PrivatePropertyAgentId> 
+      <AgentId>string</AgentId> 
+      <Token> 
+        <Digest>string</Digest> 
+        <UserName>string</UserName> 
+        <StampTime>string</StampTime> 
+        <Expires>string</Expires> 
+        <UID>string</UID> 
+      </Token> 
+    </UpdateUniqueAgentID> 
+  </soap12:Body> 
+</soap12:Envelope> 
+HTTP/1.1 200 OK 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-
+instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"> 
+  <soap12:Body> 
+    <UpdateUniqueAgentIDResponse xmlns="http://tempuri.org/" /> 
+  </soap12:Body> 
+</soap12:Envelope> 
+ 
+ 
+ 
+ 
+ 
+ 
+
+--- PAGE 54 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 54 
+ 
+ 
+
+--- PAGE 55 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 55 
+2.21 Update the UniqueListingID 
+2.21.1 Message Outline 
+UpdateUniqueListingID: This method sets the uniquelistingid on a specific listing. If one 
+already exists for the listing, it will update the value. 
+Property Data 
+Type 
+Required Description 
+PrivatePropertyListingId Agent Yes Encrypted Listing Id  
+PropertyId String Yes Unique Identifier 
+ListingType Enum Yes Represents whether the listing is a sales listing or a 
+rental listing. 
+2.21.2 Possible Error Messages 
+• PP100 UnauthorisedToken 
+• PP103 InvalidListing 
+2.21.3 SOAP 1.2 Format 
+The following is a sample SOAP 1.2 request and response. The placeholders shown need to 
+be replaced with actual values. 
+POST /pplsystems/agentimport/agentimport.asmx HTTP/1.1 
+Host: host 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-
+instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"> 
+  <soap12:Body> 
+    <UpdateUniqueListingID xmlns="http://tempuri.org/"> 
+      <PrivatePropertyListingId>string</PrivatePropertyListingId> 
+      <PropertyId>string</PropertyId> 
+      <ListingType>Unknown or Sale or Rental</ListingType> 
+      <Token> 
+        <Digest>string</Digest> 
+        <UserName>string</UserName> 
+        <StampTime>string</StampTime> 
+        <Expires>string</Expires> 
+        <UID>string</UID> 
+      </Token> 
+    </UpdateUniqueListingID> 
+  </soap12:Body> 
+</soap12:Envelope> 
+HTTP/1.1 200 OK 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+ 
+ 
+ 
+ 
+ 
+ 
+
+--- PAGE 56 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 56 
+<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-
+instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"> 
+  <soap12:Body> 
+    <UpdateUniqueListingIDResponse xmlns="http://tempuri.org/" /> 
+  </soap12:Body> 
+</soap12:Envelope> 
+ 
+ 
+ 
+
+--- PAGE 57 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 57 
+2.22 Get the location of agent images 
+2.22.1 Message Outline 
+This provides the location of the images as described in the (Get images for agents) method 
+above, so that the 3rd party can pull the images of the location provided. 
+2.22.2 Possible Error Messages 
+• PP50 GeneralException 
+• PP100 UnauthorisedToken 
+• PP101 InvalidBranchGuid 
+• PP109 UnauthorisedAccess 
+• PP102 InvalidAgent 
+• PP116 NoAgentImage 
+2.22.3 SOAP 1.2 Format 
+The following is a sample SOAP 1.2 request and response. The placeholders shown need to 
+be replaced with actual values. 
+POST /pplsystems/agentimport/agentimport.asmx HTTP/1.1 
+Host: host 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-
+instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"> 
+  <soap12:Body> 
+    <GetAgentImageLocation xmlns="http://tempuri.org/"> 
+      <Agent> 
+        <Email>string</Email> 
+        <FirstName>string</FirstName> 
+        <LastName>string</LastName> 
+        <AgentId>string</AgentId> 
+        <Active>boolean</Active> 
+        <TelCell>string</TelCell> 
+        <TelHome>string</TelHome> 
+        <TelWork>string</TelWork> 
+        <BranchId>guid</BranchId> 
+      </Agent> 
+      <Token> 
+        <Digest>string</Digest> 
+        <UserName>string</UserName> 
+        <StampTime>string</StampTime> 
+        <Expires>string</Expires> 
+        <UID>string</UID> 
+      </Token> 
+    </GetAgentImageLocation> 
+  </soap12:Body> 
+</soap12:Envelope> 
+HTTP/1.1 200 OK 
+ 
+ 
+ 
+ 
+ 
+ 
+
+--- PAGE 58 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 58 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-
+instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"> 
+  <soap12:Body> 
+    <GetAgentImageLocationResponse xmlns="http://tempuri.org/"> 
+      
+<GetAgentImageLocationResult>string</GetAgentImageLocationRes
+ult> 
+    </GetAgentImageLocationResponse> 
+  </soap12:Body> 
+</soap12:Envelope> 
+ 
+ 
+
+--- PAGE 59 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 59 
+2.23 Get branch details 
+2.23.1 Message Outline 
+This returns a list of details associated with the branch, including contract information, 
+agents, etc. 
+2.23.2 Possible Error Messages 
+• PP50 GeneralException 
+• PP100 UnauthorisedToken 
+• PP101 InvalidBranchGuid 
+• PP109 UnauthorisedAccess 
+2.23.3 SOAP 1.2 Format 
+The following is a sample SOAP 1.2 request and response. The placeholders shown need to 
+be replaced with actual values. 
+POST /pplsystems/agentimport/agentimport.asmx HTTP/1.1 
+Host: host 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-
+instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"> 
+  <soap12:Body> 
+    <GetBranchDetails xmlns="http://tempuri.org/"> 
+      <BranchId>guid</BranchId> 
+      <Token> 
+        <Digest>string</Digest> 
+        <UserName>string</UserName> 
+        <StampTime>string</StampTime> 
+        <Expires>string</Expires> 
+        <UID>string</UID> 
+      </Token> 
+    </GetBranchDetails> 
+  </soap12:Body> 
+</soap12:Envelope> 
+HTTP/1.1 200 OK 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-
+instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"> 
+  <soap12:Body> 
+    <GetBranchDetailsResponse xmlns="http://tempuri.org/"> 
+      <GetBranchDetailsResult> 
+        <Email>string</Email> 
+        <Name>string</Name> 
+        <Address>string</Address> 
+        <ContactName>string</ContactName> 
+ 
+ 
+ 
+ 
+ 
+ 
+
+--- PAGE 60 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 60 
+        <Fax>string</Fax> 
+        <Tel1>string</Tel1> 
+        <Tel2>string</Tel2> 
+        <AgentId>string</AgentId> 
+        <BranchId>guid</BranchId> 
+        <ID>int</ID> 
+        <ContactID>int</ContactID> 
+        <Active>boolean</Active> 
+        <BillingContactName>string</BillingContactName> 
+        <BillingEmailAddress>string</BillingEmailAddress> 
+        <QuickSell>boolean</QuickSell> 
+        <QuickSellOnly>boolean</QuickSellOnly> 
+        <ManualBilling>boolean</ManualBilling> 
+        <LightstoneCompanyID>string</LightstoneCompanyID> 
+        <PostalAddress>string</PostalAddress> 
+        <SIE>boolean</SIE> 
+        <VTContractor>int</VTContractor> 
+        <ProPointBalance>int</ProPointBalance> 
+        <AgentsID> 
+          <int>int</int> 
+          <int>int</int> 
+        </AgentsID> 
+        <BranchContracts> 
+          <BranchContracts> 
+            <ID>int</ID> 
+            <BranchID>int</BranchID> 
+            <StartDate>dateTime</StartDate> 
+            <EndDate>dateTime</EndDate> 
+            <ProductPackageID>int</ProductPackageID> 
+            <ProductPackageName>string</ProductPackageName> 
+            <PackageFee>double</PackageFee> 
+            <SetUpFee>double</SetUpFee> 
+            <PackageFeeExclVat>double</PackageFeeExclVat> 
+            <FreeSaleSlots>int</FreeSaleSlots> 
+            <SaleSlotCost>double</SaleSlotCost> 
+            <FreeRentalSlots>int</FreeRentalSlots> 
+            <RentalSlotCost>double</RentalSlotCost> 
+            <Status>int</Status> 
+            <CreatedBy>int</CreatedBy> 
+            <CreatedOn>dateTime</CreatedOn> 
+            <LastModifiedBy>int</LastModifiedBy> 
+            <LastModifiedOn>dateTime</LastModifiedOn> 
+            <TerminationDate>dateTime</TerminationDate> 
+            <LightstoneAddon>boolean</LightstoneAddon> 
+            <LightstoneUserCreated>boolean</LightstoneUserCreated> 
+            <ContractTypeID>int</ContractTypeID> 
+            <LinkingID>int</LinkingID> 
+            <UidAreaShape>string</UidAreaShape> 
+            <DisplayAttorney>boolean</DisplayAttorney> 
+            <CommissionPercentage>double</CommissionPercentage> 
+            <Upgrade>boolean</Upgrade> 
+            <SignupDate>dateTime</SignupDate> 
+            <TerminationReason>int</TerminationReason> 
+            
+<LightstoneAgreementStatus>int</LightstoneAgreementStatus> 
+            <LightstoneSignupDate>dateTime</LightstoneSignupDate> 
+            <NumberOfAgents>int</NumberOfAgents> 
+          </BranchContracts> 
+          <BranchContracts> 
+            <ID>int</ID> 
+
+--- PAGE 61 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 61 
+            <BranchID>int</BranchID> 
+            <StartDate>dateTime</StartDate> 
+            <EndDate>dateTime</EndDate> 
+            <ProductPackageID>int</ProductPackageID> 
+            <ProductPackageName>string</ProductPackageName> 
+            <PackageFee>double</PackageFee> 
+            <SetUpFee>double</SetUpFee> 
+            <PackageFeeExclVat>double</PackageFeeExclVat> 
+            <FreeSaleSlots>int</FreeSaleSlots> 
+            <SaleSlotCost>double</SaleSlotCost> 
+            <FreeRentalSlots>int</FreeRentalSlots> 
+            <RentalSlotCost>double</RentalSlotCost> 
+            <Status>int</Status> 
+            <CreatedBy>int</CreatedBy> 
+            <CreatedOn>dateTime</CreatedOn> 
+            <LastModifiedBy>int</LastModifiedBy> 
+            <LastModifiedOn>dateTime</LastModifiedOn> 
+            <TerminationDate>dateTime</TerminationDate> 
+            <LightstoneAddon>boolean</LightstoneAddon> 
+            <LightstoneUserCreated>boolean</LightstoneUserCreated> 
+            <ContractTypeID>int</ContractTypeID> 
+            <LinkingID>int</LinkingID> 
+            <UidAreaShape>string</UidAreaShape> 
+            <DisplayAttorney>boolean</DisplayAttorney> 
+            <CommissionPercentage>double</CommissionPercentage> 
+            <Upgrade>boolean</Upgrade> 
+            <SignupDate>dateTime</SignupDate> 
+            <TerminationReason>int</TerminationReason> 
+            
+<LightstoneAgreementStatus>int</LightstoneAgreementStatus> 
+            <LightstoneSignupDate>dateTime</LightstoneSignupDate> 
+            <NumberOfAgents>int</NumberOfAgents> 
+          </BranchContracts> 
+        </BranchContracts> 
+      </GetBranchDetailsResult> 
+    </GetBranchDetailsResponse> 
+  </soap12:Body> 
+</soap12:Envelope> 
+ 
+ 
+ 
+
+--- PAGE 62 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 62 
+2.24 Get detailed lead stats 
+2.24.1 Message Outline 
+LeadStatDetail: This method gets the full details of all leads for a specific branch for a defined 
+period. This can also specify if the results returned must be for sales or rentals or both. 
+Property Data Type Required Description 
+BranchId Guid Yes Unique Identifier 
+StartDate DateTime Yes The start date in a date range 
+EndDate DateTime Yes The end date in a date range 
+ListingType Enum Yes Represents whether the listing is a sales 
+listing or a rental listing. 
+2.24.2 Possible Error Messages 
+• PP50 GeneralException 
+• PP100 UnauthorisedToken 
+• PP101 InvalidBranchGuid 
+• PP109 UnauthorisedAccess 
+2.24.3 SOAP 1.2 Format 
+The following is a sample SOAP 1.2 request and response. The placeholders shown need to 
+be replaced with actual values. 
+POST /pplsystems/agentimport/agentimport.asmx HTTP/1.1 
+Host: host 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-
+instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"> 
+  <soap12:Body> 
+    <LeadStatsDetails xmlns="http://tempuri.org/"> 
+      <BranchId>guid</BranchId> 
+      <StartDate>dateTime</StartDate> 
+      <EndDate>dateTime</EndDate> 
+      <ListingType>Unknown or Sale or Rental or Both</ListingType> 
+      <Token> 
+        <Digest>string</Digest> 
+        <UserName>string</UserName> 
+        <StampTime>string</StampTime> 
+        <Expires>string</Expires> 
+        <UID>string</UID> 
+      </Token> 
+    </LeadStatsDetails> 
+  </soap12:Body> 
+</soap12:Envelope> 
+HTTP/1.1 200 OK 
+Content-Type: application/soap+xml; charset=utf-8 
+ 
+ 
+ 
+ 
+ 
+ 
+
+--- PAGE 63 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 63 
+Content-Length: length 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-
+instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"> 
+  <soap12:Body> 
+    <LeadStatsDetailsResponse xmlns="http://tempuri.org/"> 
+      <LeadStatsDetailsResult> 
+        <Leads> 
+          <Lead> 
+            <LeadType>Unknown or Email or Telephone or 
+Mobile</LeadType> 
+            <DateSend>dateTime</DateSend> 
+            <Message>string</Message> 
+            <UserId>int</UserId> 
+            <ContactName>string</ContactName> 
+            <ContactEmail>string</ContactEmail> 
+            <ContactNumber>string</ContactNumber> 
+            <UniqueListingId>string</UniqueListingId> 
+            <Ref>string</Ref> 
+            <LeadOrigin>string</LeadOrigin> 
+          </Lead> 
+          <Lead> 
+            <LeadType>Unknown or Email or Telephone or 
+Mobile</LeadType> 
+            <DateSend>dateTime</DateSend> 
+            <Message>string</Message> 
+            <UserId>int</UserId> 
+            <ContactName>string</ContactName> 
+            <ContactEmail>string</ContactEmail> 
+            <ContactNumber>string</ContactNumber> 
+            <UniqueListingId>string</UniqueListingId> 
+            <Ref>string</Ref> 
+            <LeadOrigin>string</LeadOrigin> 
+          </Lead> 
+        </Leads> 
+        <Offers> 
+          <Offer> 
+            <FromContactID>int</FromContactID> 
+            <FromContactName>string</FromContactName> 
+            <FromContactEmail>string</FromContactEmail> 
+            <FromContactNumber>string</FromContactNumber> 
+            <ToContactID>int</ToContactID> 
+            <ToContactName>string</ToContactName> 
+            <ToContactEmail>string</ToContactEmail> 
+            <Message>string</Message> 
+            <Ref>string</Ref> 
+            <OfferValue>double</OfferValue> 
+            <AskingPrice>double</AskingPrice> 
+          </Offer> 
+          <Offer> 
+            <FromContactID>int</FromContactID> 
+            <FromContactName>string</FromContactName> 
+            <FromContactEmail>string</FromContactEmail> 
+            <FromContactNumber>string</FromContactNumber> 
+            <ToContactID>int</ToContactID> 
+            <ToContactName>string</ToContactName> 
+            <ToContactEmail>string</ToContactEmail> 
+            <Message>string</Message> 
+
+--- PAGE 64 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 64 
+            <Ref>string</Ref> 
+            <OfferValue>double</OfferValue> 
+            <AskingPrice>double</AskingPrice> 
+          </Offer> 
+        </Offers> 
+      </LeadStatsDetailsResult> 
+    </LeadStatsDetailsResponse> 
+  </soap12:Body> 
+</soap12:Envelope> 
+ 
+2.25 Get detailed lead stats for a specific listing 
+2.25.1 Message Outline 
+ListingLeadStatsDetails: This method gets the full details of all leads for a specific listing 
+for a defined period. This can also specify if the results returned must be for sales or rentals 
+or both. 
+Property Data Type Required Description 
+BranchId Guid Yes Unique Identifier 
+StartDate DateTime Yes The start date in a date range 
+EndDate DateTime Yes The end date in a date range 
+ListingType Enum Yes Represents whether the listing is a sales 
+listing or a rental listing. 
+UniqueListingId String Yes Unique Identifier for a specific listing 
+2.25.2 Possible Error Messages 
+• PP50 GeneralException 
+• PP100 UnauthorisedToken 
+• PP101 InvalidBranchGuid 
+• PP109 UnauthorisedAccess 
+2.25.3 SOAP 1.2 Format 
+The following is a sample SOAP 1.2 request and response. The placeholders shown need to 
+be replaced with actual values. 
+POST /pplsystems/agentimport/agentimport.asmx HTTP/1.1 
+Host: host 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-
+instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"> 
+  <soap12:Body> 
+ 
+ 
+ 
+ 
+ 
+ 
+
+--- PAGE 65 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 65 
+    <ListingLeadStatsDetails xmlns="http://tempuri.org/"> 
+      <UniqueListingId>string</UniqueListingId> 
+      <BranchId>guid</BranchId> 
+      <StartDate>dateTime</StartDate> 
+      <EndDate>dateTime</EndDate> 
+      <ListingType>Unknown or Sale or Rental or Both</ListingType> 
+      <Token> 
+        <Digest>string</Digest> 
+        <UserName>string</UserName> 
+        <StampTime>string</StampTime> 
+        <Expires>string</Expires> 
+        <UID>string</UID> 
+      </Token> 
+    </ListingLeadStatsDetails> 
+  </soap12:Body> 
+</soap12:Envelope> 
+HTTP/1.1 200 OK 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-
+instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"> 
+  <soap12:Body> 
+    <ListingLeadStatsDetailsResponse xmlns="http://tempuri.org/"> 
+      <ListingLeadStatsDetailsResult> 
+        <Leads> 
+          <Lead> 
+            <LeadType>Unknown or Email or Telephone or 
+Mobile</LeadType> 
+            <DateSend>dateTime</DateSend> 
+            <Message>string</Message> 
+            <UserId>int</UserId> 
+            <ContactName>string</ContactName> 
+            <ContactEmail>string</ContactEmail> 
+            <ContactNumber>string</ContactNumber> 
+            <UniqueListingId>string</UniqueListingId> 
+            <Ref>string</Ref> 
+            <LeadOrigin>string</LeadOrigin> 
+          </Lead> 
+          <Lead> 
+            <LeadType>Unknown or Email or Telephone or 
+Mobile</LeadType> 
+            <DateSend>dateTime</DateSend> 
+            <Message>string</Message> 
+            <UserId>int</UserId> 
+            <ContactName>string</ContactName> 
+            <ContactEmail>string</ContactEmail> 
+            <ContactNumber>string</ContactNumber> 
+            <UniqueListingId>string</UniqueListingId> 
+            <Ref>string</Ref> 
+            <LeadOrigin>string</LeadOrigin> 
+          </Lead> 
+        </Leads> 
+        <Offers> 
+          <Offer> 
+            <FromContactID>int</FromContactID> 
+            <FromContactName>string</FromContactName> 
+            <FromContactEmail>string</FromContactEmail> 
+
+--- PAGE 66 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 66 
+            <FromContactNumber>string</FromContactNumber> 
+            <ToContactID>int</ToContactID> 
+            <ToContactName>string</ToContactName> 
+            <ToContactEmail>string</ToContactEmail> 
+            <Message>string</Message> 
+            <Ref>string</Ref> 
+            <OfferValue>double</OfferValue> 
+            <AskingPrice>double</AskingPrice> 
+          </Offer> 
+          <Offer> 
+            <FromContactID>int</FromContactID> 
+            <FromContactName>string</FromContactName> 
+            <FromContactEmail>string</FromContactEmail> 
+            <FromContactNumber>string</FromContactNumber> 
+            <ToContactID>int</ToContactID> 
+            <ToContactName>string</ToContactName> 
+            <ToContactEmail>string</ToContactEmail> 
+            <Message>string</Message> 
+            <Ref>string</Ref> 
+            <OfferValue>double</OfferValue> 
+            <AskingPrice>double</AskingPrice> 
+          </Offer> 
+        </Offers> 
+      </ListingLeadStatsDetailsResult> 
+    </ListingLeadStatsDetailsResponse> 
+  </soap12:Body> 
+</soap12:Envelope> 
+ 
+ 
+ 
+
+--- PAGE 67 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 67 
+2.26 Show/Hide contact details for an Agent 
+2.26.1 Message Outline 
+ShowHideListingContactDetails: This method is no longer supported and will return a 
+NotSupportedException error 
+ 
+2.27 Get full details for all listings for a Branch 
+2.27.1 Message Outline 
+GetFullDetailsOfAllListingsByBranch:  This provides a serialized list of listings associated 
+to a branch with their full details as provided by the Get full details of a specific listing 
+webservice. This provides a detailed list of information associated with a listing. The content 
+is the same as that of a submitted listing.  This method is paginated with up to 1000 listings 
+per page. If there are less than 1000 entries returned you are on the last page.   
+2.27.2 Possible Error Messages 
+• PP50 GeneralException 
+• PP100 UnauthorisedToken 
+• PP101 InvalidBranchGuid 
+• PP109 UnauthorisedAccess 
+2.27.3 SOAP 1.2 Format 
+The following is a sample SOAP 1.2 request and response. The placeholders shown need to 
+be replaced with actual values. 
+POST /pplsystems/agentimport/agentimport.asmx HTTP/1.1 
+Content-Type: text/xml; charset=utf-8 
+Content-Length: length 
+SOAPAction: "http://tempuri.org/GetFullDetailsOfAllListingsByBranch" 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-
+instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"> 
+  <soap:Body> 
+    <GetFullDetailsOfAllListingsByBranch xmlns="http://tempuri.org/"> 
+      <BranchId>guid</BranchId> 
+      <Skip>int</Skip> 
+      <Take>int</Take> 
+      <Token> 
+ 
+ 
+ 
+ 
+ 
+ 
+Property Data Type Required Description 
+BranchId Guid Yes Unique Identifier 
+Take Integer No The number of listings to return (max: 1000, 
+default: 1000) 
+Skip Integer No Listings to skip before starting to return 
+
+--- PAGE 68 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 68 
+        <Digest>string</Digest> 
+        <UserName>string</UserName> 
+        <StampTime>string</StampTime> 
+        <Expires>string</Expires> 
+        <UID>string</UID> 
+      </Token> 
+    </GetFullDetailsOfAllListingsByBranch> 
+  </soap:Body> 
+</soap:Envelope> 
+ 
+HTTP/1.1 200 OK 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-
+instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"> 
+  <soap12:Body> 
+    <GetFullDetailsOfAllListingsByBranchResponse 
+xmlns="http://tempuri.org/"> 
+      <GetFullDetailsOfAllListingsByBranchResult> 
+        <Listing> 
+          <PropertyId>string</PropertyId> 
+          <BranchId>guid</BranchId> 
+          <Category> 
+            <Category>Residential or Land or Farms or 
+Commercial</Category> 
+            <Category>Residential or Land or Farms or 
+Commercial</Category> 
+          </Category> 
+          <MandateType>Rental or HouseShare or OpenMandate or 
+FullMandate or FNBQuickSell or AuctionOnly or 
+NedbankAssistedSale</MandateType> 
+          <StreetName>string</StreetName> 
+          <StreetNumber>string</StreetNumber> 
+          <ComplexName>string</ComplexName> 
+          <UnitNumber>string</UnitNumber> 
+          <Suburb>string</Suburb> 
+          <Town>string</Town> 
+          <Province>KwaZuluNatal or Gauteng or WesternCape or 
+NorthernCape or FreeState or EasternCape or Limpopo or NorthWest 
+or Mpumalanga</Province> 
+          <Headline>string</Headline> 
+          <Description>string</Description> 
+          <Price>double</Price> 
+          <Deposit>double</Deposit> 
+          <RentalPriceType>PerMonth or PerWeek or 
+PerDay</RentalPriceType> 
+          <SalesPricePresentation>Standard or Poa or Negotiable or 
+OffersFrom</SalesPricePresentation> 
+          <OffersFrom>double</OffersFrom> 
+          <ListingDate>dateTime</ListingDate> 
+          <ExpiryDate>dateTime</ExpiryDate> 
+          <AgentId>string</AgentId> 
+          <PhotoUrls> 
+            <string>string</string> 
+            <string>string</string> 
+          </PhotoUrls> 
+          <OwnerID>string</OwnerID> 
+
+--- PAGE 69 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 69 
+          <XCoordinate>double</XCoordinate> 
+          <YCoordinate>double</YCoordinate> 
+          <ListingType>Unknown or Sale or Rental or 
+Both</ListingType> 
+          <PropertyStatus>ForSale or ToLet or PendingOffer or Sold or 
+Inactive</PropertyStatus> 
+          <ShowdayEvents> 
+            <ShowdayEvent xsi:nil="true" /> 
+            <ShowdayEvent xsi:nil="true" /> 
+          </ShowdayEvents> 
+          <Attributes> 
+            <Attribute xsi:nil="true" /> 
+            <Attribute xsi:nil="true" /> 
+          </Attributes> 
+          <HideStreetName>boolean</HideStreetName> 
+          <HideStreetNo>boolean</HideStreetNo> 
+          <HideComplexName>boolean</HideComplexName> 
+          <HideUnitNumber>boolean</HideUnitNumber> 
+        </Listing> 
+        <Listing>…</Listing> 
+        <Listing>…</Listing> 
+      </GetFullDetailsOfAllListingsByBranchResult> 
+    </GetFullDetailsOfAllListingsByBranchResponse> 
+  </soap12:Body> 
+</soap12:Envelope> 
+ 
+
+--- PAGE 70 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 70 
+2.28 Get a verbose status of a listing 
+2.28.1 Message Outline 
+This is an extended version of GetListingStatus and returns a more descriptive status of a 
+listing if it is declined.  
+2.28.2 Possible Responses 
+The same as GetListingStatus except for declined listings eg: 
+Declined - Cannot create a new resedential listing with a blank suburb. 
+Declined - the data type of attribute: beds is incorrect 
+ 
+2.28.3 Possible Error Messages 
+• PP50 GeneralException 
+• PP100 UnauthorisedToken 
+• PP101 InvalidBranchGuid 
+• PP109 UnauthorisedAccess 
+• PP103 InvalidListing 
+2.28.4 SOAP 1.2 Format 
+The following is a sample SOAP 1.2 request and response. The placeholders shown need to 
+be replaced with actual values. 
+POST /pplsystems/agentimport/agentimport.asmx HTTP/1.1 
+Host: host 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-
+instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"> 
+  <soap12:Body> 
+    <GetListingStatusVerbose xmlns="http://tempuri.org/"> 
+      <BranchId>guid</BranchId> 
+      <PropertyId>string</PropertyId> 
+      <Token> 
+        <Digest>string</Digest> 
+        <UserName>string</UserName> 
+        <StampTime>string</StampTime> 
+        <Expires>string</Expires> 
+        <UID>string</UID> 
+      </Token> 
+    </GetListingStatusVerbose> 
+  </soap12:Body> 
+</soap12:Envelope> 
+HTTP/1.1 200 OK 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+ 
+ 
+ 
+ 
+ 
+ 
+
+--- PAGE 71 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 71 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-
+instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"> 
+  <soap12:Body> 
+    <GetListingStatusVerboseResponse xmlns="http://tempuri.org/"> 
+      
+<GetListingStatusVerboseResult>string</GetListingStatusVerboseRe
+sult> 
+    </GetListingStatusVerboseResponse> 
+  </soap12:Body> 
+</soap12:Envelope> 
+2.29 Add an auction venue 
+2.29.1 Message Outline 
+VenueDetailsAdd:  This method is used to add Auction Venue details to the branch. 
+Auction venues are needed to use some of the other auction methods.  The suburb is auto 
+mapped to our geography hierarchy.  If it cannot be mapped, a PP112 error will be thrown 
+2.29.2 Possible Error Messages 
+• PP100 UnauthorisedToken 
+• PP101 InvalidBranchGuid 
+• PP109 UnauthorisedAccess 
+• PP111 DuplicateVenue 
+• PP112 UnknownArea 
+2.29.3 SOAP 1.2 Format 
+The following is a sample SOAP 1.2 request and response. The placeholders shown need to 
+be replaced with actual values. 
+Property Data Type Required Description 
+BranchId Guid Yes Unique Identifier 
+VenueName String (500) Yes Name of the Venue 
+VenueAddress String 
+(1000) 
+Yes Address of Venue 
+Province Province Yes KwaZuluNatal 
+Gauteng 
+WesternCape 
+NorthernCape 
+FreeState 
+EasternCape 
+Limpopo 
+NorthWest 
+Mpumalanga 
+Suburb String Yes Suburb where venue is 
+
+--- PAGE 72 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 72 
+POST /pplsystems/agentimport/agentimport.asmx HTTP/1.1 
+Host: host 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-
+instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"> 
+  <soap12:Body> 
+    <VenueDetailsAdd xmlns="http://tempuri.org/"> 
+      <BranchId>guid</BranchId> 
+      <VenueName>string</VenueName> 
+      <VenueAddress>string</VenueAddress> 
+      <Province>KwaZuluNatal or Gauteng or WesternCape or 
+NorthernCape or FreeState or EasternCape or Limpopo or NorthWest 
+or Mpumalanga</Province> 
+      <Suburb>string</Suburb> 
+      <Token> 
+        <Digest>string</Digest> 
+        <UserName>string</UserName> 
+        <StampTime>string</StampTime> 
+        <Expires>string</Expires> 
+        <UID>string</UID> 
+      </Token> 
+    </VenueDetailsAdd> 
+  </soap12:Body> 
+</soap12:Envelope> 
+HTTP/1.1 200 OK 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-
+instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"> 
+  <soap12:Body> 
+    <VenueDetailsAddResponse xmlns="http://tempuri.org/" /> 
+  </soap12:Body> 
+</soap12:Envelope> 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+2.30 Get an auction venues details 
+2.30.1 Message Outline 
+VenueDetailsGet:  This method is used to get Auction Venue details to the branch. The 
+resulting ID returned in required to add an action to a listing 
+2.30.2 Possible Error Messages 
+• PP100 UnauthorisedToken 
+• PP109 UnauthorisedAccess 
+Property Data Type Required Description 
+BranchId Guid Yes Unique Identifier 
+
+--- PAGE 73 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 73 
+2.30.3 SOAP 1.2 Format 
+The following is a sample SOAP 1.2 request and response. The placeholders shown need to 
+be replaced with actual values. 
+POST /pplsystems/agentimport/agentimport.asmx HTTP/1.1 
+Host: host 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-
+instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"> 
+  <soap12:Body> 
+    <VenueDetailsGet xmlns="http://tempuri.org/"> 
+      <BranchId>guid</BranchId> 
+      <Token> 
+        <Digest>string</Digest> 
+        <UserName>string</UserName> 
+        <StampTime>string</StampTime> 
+        <Expires>string</Expires> 
+        <UID>string</UID> 
+      </Token> 
+    </VenueDetailsGet> 
+  </soap12:Body> 
+</soap12:Envelope> 
+HTTP/1.1 200 OK 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-
+instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"> 
+  <soap12:Body> 
+    <VenueDetailsGetResponse xmlns="http://tempuri.org/"> 
+      <VenueDetailsGetResult> 
+        <AuctionVenues> 
+          <ID>int</ID> 
+          <VenueName>string</VenueName> 
+          <VenueAddress>string</VenueAddress> 
+          <BranchId>int</BranchId> 
+          <ShapeId>int</ShapeId> 
+        </AuctionVenues> 
+        <AuctionVenues> 
+          <ID>int</ID> 
+          <VenueName>string</VenueName> 
+          <VenueAddress>string</VenueAddress> 
+          <BranchId>int</BranchId> 
+          <ShapeId>int</ShapeId> 
+        </AuctionVenues> 
+      </VenueDetailsGetResult> 
+    </VenueDetailsGetResponse> 
+  </soap12:Body> 
+</soap12:Envelope> 
+ 
+ 
+ 
+ 
+ 
+ 
+2.31 Add an auction to a listing 
+
+--- PAGE 74 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 74 
+2.31.1 Message Outline 
+ListingAuctionDetailsUpdate:  This method is used to Add an auction to a listing.  Please 
+note that only AuctionOnly and SIE classed mandate types will show as on auction.  SIE 
+classed mandate types will only show on action during the auction period.  AuctionOnly, 
+SaleInExecution, NedbankSie and SAHSaleInExecution listings with actions will be removed 
+from the portal after the auction end date has passed. 
+2.31.2 Possible Error Messages 
+• PP100 UnauthorisedToken 
+• PP109 UnauthorisedAccess 
+• PP113 InvalidPrice 
+• PP114 InvalidDate 
+• PP103 InvalidListing 
+• PP50 GeneralException 
+• PP124 NotAuctionListing 
+ 
+1. The StartDate must be before the EndDate 
+2. If SameAsAddress is not True, you have to have an AuctionVenueId 
+3. Only one current/future starting auction can be present on a listing at a time and it 
+can only be modified if the StartDate is more than 24 hours in the future 
+ 
+2.31.3 SOAP 1.2 Format 
+The following is a sample SOAP 1.2 request and response. The placeholders shown need to 
+be replaced with actual values. 
+Property Data Type Required Description 
+BranchId Guid Yes Unique Identifier 
+UniqueListingId String Yes Unique identifier for the property 
+ReservePrice Double Yes The lowest price an auction will succeed at 
+StartPrice Double Yes The price at which the auction begins 
+Active Boolean Yes Is the auction currently turned on 
+StartDate DateTime Yes The date at which the auction starts 
+EndDate DateTime Yes The date at which the auction ends 
+ShowPrice Boolean Yes Sets whether the asking price be shown 
+SameAsAddress Boolean Yes Sets if the auction is at the property itself 
+AuctionVenueId Integer Yes The ID of the venue, if the auction is not at 
+the property(0 is a valid value) 
+
+--- PAGE 75 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 75 
+POST /pplsystems/agentimport/agentimport.asmx HTTP/1.1 
+Host: host 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-
+instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"> 
+  <soap12:Body> 
+    <ListingAuctionDetailsUpdate xmlns="http://tempuri.org/"> 
+      <BranchId>guid</BranchId> 
+      <UniqueListingId>string</UniqueListingId> 
+      <ReservePrice>double</ReservePrice> 
+      <StartPrice>double</StartPrice> 
+      <Active>boolean</Active> 
+      <StartDate>dateTime</StartDate> 
+      <EndDate>dateTime</EndDate> 
+      <ShowPrice>boolean</ShowPrice> 
+      <SameAsAddress>boolean</SameAsAddress> 
+      <AuctionVenueId>int</AuctionVenueId> 
+      <Token> 
+        <Digest>string</Digest> 
+        <UserName>string</UserName> 
+        <StampTime>string</StampTime> 
+        <Expires>string</Expires> 
+        <UID>string</UID> 
+      </Token> 
+    </ListingAuctionDetailsUpdate> 
+  </soap12:Body> 
+</soap12:Envelope> 
+HTTP/1.1 200 OK 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-
+instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"> 
+  <soap12:Body> 
+    <ListingAuctionDetailsUpdateResponse xmlns="http://tempuri.org/" 
+/> 
+  </soap12:Body> 
+</soap12:Envelope> 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+
+--- PAGE 76 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 76 
+2.32 Get Expiring Listings 
+ 
+2.32.1 Message Outline 
+GetExpiringListings:  This method is used to get a list of listings both sales and rentals that 
+are expiring in the next 7 days 
+ 
+Property Data Type Required Description 
+BranchId Guid Yes Unique Identifier 
+ 
+2.32.2 Possible Error Messages 
+• PP100 UnauthorisedToken 
+• PP109 UnauthorisedAccess 
+2.32.3 SOAP 1.2 Format 
+The following is a sample SOAP 1.2 request and response. The placeholders shown need to 
+be replaced with actual values. 
+POST /pplsystems/agentimport/agentimport.asmx HTTP/1.1 
+Host: host 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+  
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope 
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"> 
+  <soap12:Body> 
+    <GetExpiringListings xmlns="http://tempuri.org/"> 
+      <BranchId>guid</BranchId> 
+      <Token> 
+        <Digest>string</Digest> 
+        <UserName>string</UserName> 
+        <StampTime>string</StampTime> 
+        <Expires>string</Expires> 
+        <UID>string</UID> 
+      </Token> 
+    </GetExpiringListings> 
+  </soap12:Body> 
+</soap12:Envelope> 
+HTTP/1.1 200 OK 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+  
+HTTP/1.1 200 OK 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+  
+<?xml version="1.0" encoding="utf-8"?> 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+
+--- PAGE 77 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 77 
+<soap12:Envelope 
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"> 
+  <soap12:Body> 
+    <GetExpiringListingsResponse xmlns="http://tempuri.org/"> 
+      <GetExpiringListingsResult> 
+        <ListingExpiry> 
+          <ListingType>Unknown or Sale or Rental or 
+Both</ListingType> 
+          <PropertyId>string</PropertyId> 
+          <ExpiryDate>dateTime</ExpiryDate> 
+          <PrivatePropertyRef>string</PrivatePropertyRef> 
+        </ListingExpiry> 
+        <ListingExpiry> 
+          <ListingType>Unknown or Sale or Rental or 
+Both</ListingType> 
+          <PropertyId>string</PropertyId> 
+          <ExpiryDate>dateTime</ExpiryDate> 
+          <PrivatePropertyRef>string</PrivatePropertyRef> 
+        </ListingExpiry> 
+      </GetExpiringListingsResult> 
+    </GetExpiringListingsResponse> 
+  </soap12:Body> 
+</soap12:Envelope> 
+2.33 Get Expired Listings 
+ 
+2.33.1 Message Outline 
+GetExpiredListings:  This method is used to get a list of listings both sales and rentals that 
+are have expired in the last x days 
+ 
+Property Data Type Required Description 
+BranchId Guid Yes Unique Identifier 
+DaysExpired Int Yes The number of days in the past that listings 
+expired.  
+ 
+2.33.2 Possible Error Messages 
+• PP100 UnauthorisedToken 
+• PP109 UnauthorisedAccess 
+ 
+1. A max of 30 days is allowed.  Anything more than that will result in only 30 days being 
+returned 
+2.33.3 SOAP 1.2 Format 
+The following is a sample SOAP 1.2 request and response. The placeholders shown need to 
+be replaced with actual values. 
+
+--- PAGE 78 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 78 
+POST /pplsystems/agentimport/agentimport.asmx HTTP/1.1 
+Host: host 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+  
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope 
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"> 
+  <soap12:Body> 
+    <GetExpiredListings xmlns="http://tempuri.org/"> 
+      <BranchId>guid</BranchId> 
+      <DaysExpired>int</DaysExpired> 
+      <Token> 
+        <Digest>string</Digest> 
+        <UserName>string</UserName> 
+        <StampTime>string</StampTime> 
+        <Expires>string</Expires> 
+        <UID>string</UID> 
+      </Token> 
+    </GetExpiredListings> 
+  </soap12:Body> 
+</soap12:Envelope> 
+  
+HTTP/1.1 200 OK 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+  
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope 
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"> 
+  <soap12:Body> 
+    <GetExpiredListingsResponse xmlns="http://tempuri.org/"> 
+      <GetExpiredListingsResult> 
+        <ListingExpiry> 
+          <ListingType>Unknown or Sale or Rental or 
+Both</ListingType> 
+          <PropertyId>string</PropertyId> 
+          <ExpiryDate>dateTime</ExpiryDate> 
+          <PrivatePropertyRef>string</PrivatePropertyRef> 
+        </ListingExpiry> 
+        <ListingExpiry> 
+          <ListingType>Unknown or Sale or Rental or 
+Both</ListingType> 
+          <PropertyId>string</PropertyId> 
+          <ExpiryDate>dateTime</ExpiryDate> 
+          <PrivatePropertyRef>string</PrivatePropertyRef> 
+        </ListingExpiry> 
+      </GetExpiredListingsResult> 
+    </GetExpiredListingsResponse> 
+  </soap12:Body> 
+</soap12:Envelope> 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+
+--- PAGE 79 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 79 
+2.34 Get Listing Performance Stats 
+ 
+2.34.1 Message Outline 
+ListingPerformanceStats: This method gets all the aggregated lead stats for one or more 
+listings on a specific date . The call takes a list of up to 1000 PropertyRefs and a Date  and 
+returns stats for each property reference in the input for the day specified by the Date. The 
+Date specified cannot be more than 60 days ago. 
+ 
+Property Data Type Required Description 
+PropertyRefs String[] Yes Array of strings 
+Date DateTime Yes The date for which the results should be 
+supplied. The results are per day. 
+2.34.2 Possible Error Messages 
+• PP50 GeneralException 
+• PP100 UnauthorisedToken 
+• PP109 UnauthorisedAccess 
+2.34.3 SOAP 1.2 Format 
+The following is a sample SOAP 1.2 request and response. The placeholders shown need to 
+be replaced with actual values. 
+POST /AgentImport/AgentImport.asmx HTTP/1.1 
+Host: host 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap12="http://www.w3.org/2003/05/soap -
+envelope"> 
+  <soap12:Body> 
+    <ListingPerformanceStats xmlns="http://tempuri.org/"> 
+      <PropertyRefs> 
+        <string>string</string> 
+        <string>string</string> 
+      </PropertyRefs> 
+      <Date>dateTime</Date> 
+      <Token> 
+        <Digest>string</Digest> 
+        <UserName>string</UserName> 
+        <StampTime>string</StampTime> 
+        <Expires>string</Expires> 
+        <UID>string</UID> 
+      </Token> 
+    </ListingPerformanceStats> 
+  </soap12:Body> 
+ 
+ 
+ 
+ 
+ 
+ 
+
+--- PAGE 80 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 80 
+</soap12:Envelope> 
+HTTP/1.1 200 OK 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap12="http://www.w3.org/2003/05/soap -
+envelope"> 
+  <soap12:Body> 
+    <ListingPerformanceStatsResponse xmlns="http://tempuri.org/"> 
+      <ListingPerformanceStatsResult> 
+        <ListingPerformanceStats> 
+          <ListingPerformanceStatsOnDate> 
+            <Date>dateTime</Date> 
+            <Messages>int</Messages> 
+            <TelLeads>int</TelLeads> 
+            <Views>int</Views> 
+            <Alerts>int</Alerts> 
+            <PropertyRef>string</PropertyRef> 
+          </ListingPerformanceStatsOnDate> 
+          <ListingPerformanceStatsOnDate> 
+            <Date>dateTime</Date> 
+            <Messages>int</Messages> 
+            <TelLeads>int</TelLeads> 
+            <Views>int</Views> 
+            <Alerts>int</Alerts> 
+            <PropertyRef>string</PropertyRef> 
+          </ListingPerformanceStatsOnDate> 
+        </ListingPerformanceStats> 
+      </ListingPerformanceStatsResult> 
+    </ListingPerformanceStatsResponse> 
+  </soap12:Body> 
+</soap12:Envelope> 
+ 
+ 
+ 
+
+--- PAGE 81 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 81 
+2.35  Listing Lead Details Feed 
+2.35.1 Message Outline 
+ListingLeadDetailsFeed: This method gets all the listing lead details recorded after  the 
+StartDate. If there are more than 1000 results, the first 1000 results will be returned along with 
+a NextStartDate which can then be supplied in a subsequent call to his end -point to get the 
+next set of results. The maximum request period allowed is for 60 days in the past. 
+ 
+Property Data Type Required Description 
+StartDate DateTime No Data recorded after this date will be 
+returned in batches of 1000. 
+2.35.2 Possible Error Messages 
+• PP50 GeneralException 
+• PP100 UnauthorisedToken 
+• PP109 UnauthorisedAccess 
+2.35.3 Possible Lead Types 
+• EmailLead 
+• WhatsAppLead 
+ 
+2.35.4 SOAP 1.2 Format 
+The following is a sample SOAP 1.2 request and response. The placeholders shown need to 
+be replaced with actual values. 
+POST /AgentImport/AgentImport.asmx HTTP/1.1 
+Host: host 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap12="http://www.w3.org/2003/05/soap -
+envelope"> 
+  <soap12:Body> 
+    <ListingLeadDetailsFeed xmlns="http://tempuri.org/"> 
+      <StartDate>dateTime</StartDate> 
+      <Token> 
+        <Digest>string</Digest> 
+        <UserName>string</UserName> 
+        <StampTime>string</StampTime> 
+        <Expires>string</Expires> 
+        <UID>string</UID> 
+      </Token> 
+    </ListingLeadDetailsFeed> 
+  </soap12:Body> 
+</soap12:Envelope> 
+ 
+ 
+ 
+ 
+ 
+ 
+
+--- PAGE 82 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 82 
+ 
+HTTP/1.1 200 OK 
+Content-Type: text/xml; charset=utf-8 
+Content-Length: length 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"> 
+  <soap:Body> 
+    <ListingLeadDetailsFeedResponse xmlns="http://tempuri.org/"> 
+      <ListingLeadDetailsFeedResult> 
+        <ListingLeadDetails> 
+          <ListingLeadDetail> 
+            <LeadId>string</LeadId> 
+            <Date>dateTime</Date> 
+            <BranchId>string</BranchId> 
+            <UniqueListingId>string</UniqueListingId> 
+            <PPRef>string</PPRef> 
+            <FromEmail>string</FromEmail> 
+            <FromName>string</FromName> 
+            <FromContactNumber>string</FromContactNumber> 
+            <LeadType>string</LeadType> 
+            <Message>string</Message> 
+          </ListingLeadDetail> 
+          <ListingLeadDetail> 
+            <LeadId>string</LeadId> 
+            <Date>dateTime</Date> 
+            <BranchId>string</BranchId> 
+            <UniqueListingId>string</UniqueListingId> 
+            <PPRef>string</PPRef> 
+            <FromEmail>string</FromEmail> 
+            <FromName>string</FromName> 
+            <FromContactNumber>string</FromContactNumber> 
+            <LeadType>string</LeadType> 
+            <Message>string</Message> 
+          </ListingLeadDetail> 
+        </ListingLeadDetails> 
+        <NextStartDate>dateTime</NextStartDate> 
+      </ListingLeadDetailsFeedResult> 
+    </ListingLeadDetailsFeedResponse> 
+  </soap:Body> 
+ 
+ 
+ 
+
+--- PAGE 83 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 83 
+3 Listing Event Feed 
+We have implemented a listing event feed that will contain information around events that 
+occur in the private property system and affect your or your clients listings. 
+Using this feed will reduce unnecessary calls to GetListingStatus and GetLisitngSummary 
+GetListingStatus and GetLisitngSummary required you check if a status has changed to 
+Active in order for you to get the PrivateProperty Ref. 
+Using the listing event feed you will receive this information as it becomes available and no 
+longer have to call GetListingStatus and GetLisitngSummary for this information. 
+ 
+From the listing event feed you will be able to tell as and when a listing: 
+• gets activated (PP Ref will be provided). 
+• is removed. (Expired eg.culling, Branch de-activation) 
+ 
+Events and their data: 
+ 
+Each record will have the following values returned: 
+ 
+• Branch unique identifier 
+• Listing unique identifier 
+• Event 
+o Activated 
+▪ Description: listing ref 
+o Deactivated 
+▪ Event Descriptions: 
+▪ Deactivated 
+▪ Expired 
+▪ Branch Deactivated 
+▪ Deleted 
+• Event description 
+o Optional eg Listing Ref for “Listing Activated” 
+• Current listing status 
+o Inactive 
+o Deleted 
+o Active 
+o Incomplete 
+• Date/time 
+ 
+
+--- PAGE 84 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 84 
+ 
+Branch unique 
+identifier(OfficeFeedRef) 
+Listing 
+unique 
+identifier 
+Event Event 
+description 
+Current listing status Timestamp 
+Xxx Yyy Activated PP Ref Active yyyy/MM/dd 
+HH:mm:ss 
+Xxx Yyy Deactivated N/A Deactivated/Expired/Branch 
+Deactivated/Deleted 
+yyyy/MM/dd 
+HH:mm:ss 
+ 
+In addition to the data about listings a Continuation Key will be provided per package of data 
+• This will allow paging through the data by passing the continuation token on the next call.  
+• Pages will be 100 records in length.  
+• If less than 100 records are returned, then there are no more records right now.  
+• If you have no continuation key use “0“ 
+ 
+Flow for a listing with a status update: 
+ 
+ 
+3.1.1 Message Outline 
+GetListingEventFeedByFeedProvider: This method gets the listing feed events for you as 
+a feed provider. It is retrieved in batches of 1000 records. 
+
+
+--- PAGE 85 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 85 
+ 
+Property Data Type Required Description 
+continuationKey String Yes If you do not have a continuationKey and 
+you want to start consuming the feed use 
+“0“ as a continuationKey and 
+startDateTime to choose a date and time 
+that you want to start receiving updates. 
+startDateTime DateTime Yes We recommend using a start date that is 2 
+days prior to your feed initialization. 
+ 
+3.1.2 Possible Error Messages 
+• PP50 GeneralException 
+• PP100 UnauthorisedToken 
+• PP109 UnauthorisedAccess 
+ 
+3.1.3 SOAP 1.2 Format 
+The following is a sample SOAP 1.2 request and response. The placeholders shown need to 
+be replaced with actual values. 
+ 
+POST /AgentImport/AgentImport.asmx HTTP/1.1 
+Host: host 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+ 
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"> 
+ <s:Body xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xmlns:xsd="http://www.w3.org/2001/XMLSchema"> 
+  <GetListingEventFeedByFeedProvider xmlns="http://tempuri.org/"> 
+   <Token> 
+    <Digest>o0o0o0o0oo0o0o0o0oo0o0o0o0o=</Digest> 
+    <UserName>username</UserName> 
+    <StampTime>2020-05-26T12:19:47Z</StampTime> 
+    <Expires>2020-05-26T00:00:00Z</Expires> 
+    <UID>000000000000000000</UID> 
+   </Token> 
+   <continuationKey>637260923720908438e001</continuationKey> 
+   <startDateTime xsi:nil="true"/> 
+  </GetListingEventFeedByFeedProvider> 
+ </s:Body> 
+</s:Envelope>   
+ 
+HTTP/1.1 200 OK 
+Content-Type: application/soap+xml; charset=utf-8 
+Content-Length: length 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" 
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xmlns:xsd="http://www.w3.org/2001/XMLSchema"> 
+ 
+ 
+ 
+ 
+ 
+ 
+
+--- PAGE 86 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 86 
+ <soap:Body> 
+  <GetListingEventFeedByFeedProviderResponse xmlns="http://tempuri.org/">  
+   <GetListingEventFeedByFeedProviderResult> 
+   
+ <ContinuationKey>637260923720908438e000000000001</ContinuationKey>  
+    <FeedData> 
+     <LisitngEventFeedData> 
+      <TimeStamp>2020-05-
+26T12:18:48.5620645Z</TimeStamp> 
+     
+ <ListingFeedRef>List000000000001</ListingFeedRef> 
+     
+ <OfficeFeedRef>OFF000000000000010</OfficeFeedRef> 
+     
+ <ListingFeedEventType>Activated</ListingFeedEventType> 
+      <EventDescription>T1234567</EventDescription> 
+     
+ <ListingFeedEventStatus>Active</ListingFeedEventStatus> 
+     </LisitngEventFeedData> 
+       <LisitngEventFeedData> 
+      <TimeStamp>2020-05-
+26T12:25:44.5772198Z</TimeStamp> 
+     
+ <ListingFeedRef>List000000000025</ListingFeedRef> 
+     
+ <OfficeFeedRef>OFF0000000000000500</OfficeFeedRef> 
+     
+ <ListingFeedEventType>Deactivated</ListingFeedEventType> 
+      <EventDescription>T7654321</EventDescription> 
+     
+ <ListingFeedEventStatus>Deactivated</ListingFeedEventStatus> 
+     </LisitngEventFeedData> 
+    </FeedData> 
+   </GetListingEventFeedByFeedProviderResult> 
+  </GetListingEventFeedByFeedProviderResponse> 
+ </soap:Body> 
+</soap:Envelope> 
+ 
+ 
+ 
+Implementation Suggestion 
+ 
+Run the below pseudocode every 5 min (you choose) to check if there are new 
+updates. 
+ 
+ 
+method GetPrivatePropertyListingEventFeed() 
+{ 
+    moreToProcess = true 
+ 
+    while (moreToProcess) 
+    { 
+        continuationKey = getContinuationKey // you will have to store a key somewhere. 
+        startDateTime = null 
+ 
+        if (continuationKey is empty) // first call 
+        { 
+            continuationKey = "0" 
+            startDateTime = DateTime.Now - 2 days 
+        } 
+ 
+ 
+ 
+ 
+ 
+ 
+
+--- PAGE 87 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 87 
+ 
+        token = getToken() // however you currently do this 
+ 
+        response = null 
+ 
+        if (continuationKey == "0") 
+            response = call ppService.GetListingEventFeedByFeedProvider(continuationKey, token, startDateTime) 
+        else 
+            response = call ppService.GetListingEventFeedByFeedProvider(continuationKey, token) 
+ 
+        if (continuationKey != response.ContinuationKey) // new key 
+        { 
+            SaveNewContinuationKey(response.ContinuationKey) 
+ 
+            foreach (event in response.ListingEventFeedData) 
+            { 
+                switch (event.ListingFeedEventType) 
+                { 
+                    case "Activated": 
+                        // Update listing status and add the ppRef (event.EventDescription) 
+                        break 
+                    case "Deactivated": 
+                        // Update listing status 
+                        break 
+                } 
+            } 
+        } 
+ 
+        if (response.ListingEventFeedData.count < 100) 
+        { 
+            moreToProcess = false 
+        } 
+    } 
+} 
+ 
+3.1.4 Message Outline 
+GetListingEventFeedByBranch: This method gets the listing feed events for a particular 
+branch. It is retrieved in batches of 1000 records. 
+ 
+Property Data Type Required Description 
+UniqueBranchId String Yes Unique guid for the branch 
+continuationKey String Yes If you do not have a continuationKey and 
+you want to start consuming the feed use 
+“0“ as a continuationKey and 
+startDateTime to choose a date and time 
+that you want to start receiving updates. 
+startDateTime DateTime Yes We recommend using a start date that is 2 
+days prior to your feed initialization. 
+ 
+3.1.5 Possible Error Messages 
+• PP50 GeneralException 
+• PP100 UnauthorisedToken 
+• PP109 UnauthorisedAccess 
+ 
+
+--- PAGE 88 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 88 
+3.1.6 SOAP 1.2 Format 
+The following is a sample SOAP 1.2 request and response. The placeholders shown need to 
+be replaced with actual values. 
+ 
+POST /pplsystems/agentimport/agentimport.asmx HTTP/1.1 
+Host: services.privateproperty.co.za 
+Content-Type: text/xml; charset=utf-8 
+Content-Length: length 
+SOAPAction: "http://tempuri.org/GetListingEventFeedByBranch" 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"> 
+  <soap:Body> 
+    <GetListingEventFeedByBranch xmlns="http://tempuri.org/"> 
+      <UniqueBranchId>guid</UniqueBranchId> 
+      <Token> 
+        <Digest>string</Digest> 
+        <UserName>string</UserName> 
+        <StampTime>string</StampTime> 
+        <Expires>string</Expires> 
+        <UID>string</UID> 
+      </Token> 
+      <continuationKey>string</continuationKey> 
+      <startDateTime>dateTime</startDateTime> 
+    </GetListingEventFeedByBranch> 
+  </soap:Body> 
+</soap:Envelope> 
+ 
+HTTP/1.1 200 OK 
+Content-Type: text/xml; charset=utf-8 
+Content-Length: length 
+ 
+<?xml version="1.0" encoding="utf-8"?> 
+<soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"> 
+  <soap:Body> 
+    <GetListingEventFeedByBranchResponse xmlns="http://tempuri.org/">  
+      <GetListingEventFeedByBranchResult> 
+        <ContinuationKey>string</ContinuationKey> 
+        <OfficeFeedRef>string</OfficeFeedRef> 
+        <FeedData> 
+          <LisitngEventFeedData> 
+            <TimeStamp>dateTime</TimeStamp> 
+            <ListingFeedRef>string</ListingFeedRef> 
+            <OfficeFeedRef>string</OfficeFeedRef> 
+            <ListingFeedEventType>string</ListingFeedEventType> 
+            <EventDescription>string</EventDescription> 
+            <ListingFeedEventStatus>string</ListingFeedEventStatus> 
+          </LisitngEventFeedData> 
+          <LisitngEventFeedData> 
+            <TimeStamp>dateTime</TimeStamp> 
+            <ListingFeedRef>string</ListingFeedRef> 
+            <OfficeFeedRef>string</OfficeFeedRef> 
+            <ListingFeedEventType>string</ListingFeedEventType> 
+            <EventDescription>string</EventDescription> 
+ 
+ 
+ 
+ 
+ 
+ 
+
+--- PAGE 89 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 89 
+            <ListingFeedEventStatus>string</ListingFeedEventStatus> 
+          </LisitngEventFeedData> 
+        </FeedData> 
+      </GetListingEventFeedByBranchResult> 
+    </GetListingEventFeedByBranchResponse> 
+  </soap:Body> 
+</soap:Envelope> 
+ 
+ 
+Implementation Suggestion 
+ 
+Run the below pseudocode every 5 min (you choose) to check if there are new 
+updates. 
+ 
+ 
+method GetPrivatePropertyListingEventFeed() 
+{ 
+    // get BranchIds 
+    branchIds = getBranchIds() 
+ 
+    foreach (var branchId in branchIds) 
+    { 
+        bool moreToProcess = true 
+        var continuationKey = "" 
+        DateTime? startDateTime = null 
+ 
+        while (moreToProcess) 
+        { 
+            if (continuationKey is empty) // try retrieve key 
+            { 
+                continuationKey = getContinuationKeyForBranch(branchId) 
+                startDateTime = null 
+            } 
+ 
+            // first call for a new branch 
+            if (continuationKey is empty) 
+            { 
+                continuationKey = "0" 
+                startDateTime = DateTime.Now - 2 days 
+            } 
+ 
+            var token = getToken() // however you do this 
+ 
+            var response = null 
+ 
+            if (continuationKey == "0") 
+                response = call ppService.GetListingEventFeedByBranch(continuationKey, token, branchId, startDateTime) 
+            else 
+                response = call ppService.GetListingEventFeedByBranch(continuationKey, token, branchId) 
+ 
+            if (continuationKey != response.ContinuationKey) // new key 
+            { 
+                continuationKey = response.ContinuationKey 
+                SaveNewContinuationKeyForBranch(response.ContinuationKey, branchId) 
+ 
+                foreach (event in response.ListingEventFeedData) 
+                { 
+                    switch (event.ListingFeedEventType) 
+                    { 
+                        case "Activated": 
+                            // Update listing status and add the ppRef (event.EventDescription) 
+                            break 
+                        case "Deactivated": 
+                            // Update listing status 
+                            break 
+                    } 
+                } 
+ 
+ 
+ 
+ 
+ 
+ 
+
+--- PAGE 90 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 90 
+            } 
+ 
+            // no more updates for this branch 
+            if (response.ListingEventFeedData.count < 100) 
+            { 
+                moreToProcess = false 
+            } 
+        } 
+    } 
+} 
+ 
+
+--- PAGE 91 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 91 
+4 Widgets 
+4.1 Message Outline 
+GetWidgetUrl: This method is no longer supported and will return a NotSupportedException 
+error 
+ 
+ 
+
+--- PAGE 92 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 92 
+5 Frequently Asked Questions 
+1 My listing comes back saying I’m not authorised to send through listings, why?  
+ Ensure that the branch is setup correctly. To send through FNB Quicksell or Nedbank Assisted 
+Sale listings, the branch must be setup  (enabled) to do this on private property’s management 
+system. To send through normal lists, a contract is required. On sandbox this is simulated. 
+2 My listing was sent through but is not on the sandbox site? 
+ There are a number of reasons that this could have happened. If the branch is setup correctly, 
+a listing could be rejected or still waiting to be moderated. You can use the web service to get 
+the status of the listing. 
+3 My listing is still not showing and has a status “pending” 
+ This means the listing is being moderated; there may be a backlog, the best thing to do would 
+be to wait a bit and try again later. If this process is taking too long, you should contact support.  
+4 My listing was rejected, why? 
+ If your listing was rejected, there could be a number of reasons as to why it was rejected. Listings 
+are automatically tested for invalid data by our system; if it does not meet our criteria the listing 
+will be rejected. When rejected, a mail will go out t o the branch email providing details of which 
+listing was rejected and why it was rejected. 
+5 My listing was rejected and I do not get reasons why it was rejected in a mail. Why?  
+ Every time a listing is rejected through our automated tests, a mail will go out. IF you have not 
+received the mail, use the listing summary web service to see what mails were sent out and 
+ensure it is going to the correct email address. Note, that if a li sting is rejected more than five 
+times, the system will block that listing from entering our system. Should there be a valid reason 
+for the listing being rejected, please contact our support centre. 
+ 
+ 
+
+--- PAGE 93 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 93 
+6 Usage Guidelines 
+6.1 Method Calling Order 
+There is an inherent order in which the methods on the web -services should be called. The 
+correct calling order will ensure that required entities exist on the system and do not cause 
+errors for dependant calls. For example, an agent cannot be assigned to a listing before that 
+Estate Agent exists within the system. 
+Herewith some typical calling order scenarios: 
+Method Called Preceeding Method(s) Comment 
+UpdateAgent GetAllAgentsForBranch 
+Or 
+GetAgent 
+If a provider is unsure as to whether an 
+agent exists within a branch, preceding 
+calls to these methods can assist decision 
+making. 
+UpdateListing UpdateAgent This order is only required if the agent 
+does not exist on the system yet or if the 
+agent details have changed. 
+ListingStatusUpdate GetListingStatus At times the ListingStatusUpdate fails 
+because the listing does not yet exist on 
+our system and the feed provider has 
+failed to handle the failed UpdateListing 
+method correctly. By calling 
+GetListingStatus first, a non-existent 
+listing can be resent and an unnecessary 
+call avoided. 
+Auction Method Calling Order 
+Method Called Preceeding 
+Method(s) 
+Comment 
+VenueDetailsAdd NA You need a venue to add any 
+auctions that do now have 
+SameAsAddress set to True 
+VenueDetilsGet VenueDetailsAdd This will only return a value if a venue 
+has already been added.  If you 
+already have added the venue in the 
+past, then there is no need to call 
+VenuDetailsAdd again 
+ListingAuctionDetailsUpdate VenueDetailsGet/NA If the auction is not taking place at the 
+property, you need the ID returned 
+from the appropriate auction venue to 
+call this method 
+ 
+ 
+6.2 Method Call Count 
+In order to reduce unnecessary load across our web servers, it is recommended that method 
+call loops be carefully planned. A mind-set that we are trying to change with feed providers is 
+
+--- PAGE 94 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 94 
+the tendency to “update everything with every batch”.  Careful thought to the count of calls 
+made in a typical work day will assist in ensuring that the web -services always perform well 
+for the sake of both the feed provider and Private Property. 
+To illustrate the point, a statistic from March 2013 showed that the UpdateAgent method was 
+being called 3 times more than the UpdateListing method, which seems odd since certainly 
+property details update more often than agent details. In addition, we also noted that we 
+received almost 300k method calls that failed valid business rules including incomplete 
+property descriptions, less than 3 im ages on properties for sale and UpdateListing method 
+calls against properties which did not yet exist on our system. 
+All the above -mentioned calls generate unwanted traffic on our web servers. Kindly ensure 
+that your feed to Private Property is well planned with efficiency in mind. 
+ 
+
+--- PAGE 95 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 95 
+7 Appendix A: Data Attributes 
+ 
+Attribute Data Type Expected Values Categories 
+        Bedrooms Double Numeric Residential, Farms & 
+Smallholdings, 
+Commercial 
+        Bathrooms Double Numeric Residential, Farms & 
+Smallholdings, 
+Commercial 
+        HomeType  String Duplex 
+Apartment 
+House 
+Cluster 
+Simplex 
+Garden Cottage 
+Duet 
+Townhouse 
+Flat 
+Bachelor Apartment 
+Loft 
+Penthouse 
+Studio Apartment 
+Residential, Farms & 
+Smallholdings 
+        FarmType String Small Holding 
+Farm with house 
+Farm 
+Farm Land 
+Agricultural Holding 
+Commercial Farm 
+Game Farm 
+Farms & Smallholdings 
+        LandType String Residential Land 
+Commercial Land 
+Land 
+        FloorArea String Numeric Residential, Land, 
+Farms & 
+Smallholdings, 
+Commercial 
+        LandArea String Numeric Residential, Land, 
+Farms & 
+Smallholdings, 
+Commercial 
+        EnSuite Double Numeric Residential, Farms & 
+Smallholdings 
+        Lounges Double Numeric Residential, Farms & 
+Smallholdings 
+        DiningAreas Double Numeric Residential, Farms & 
+Smallholdings 
+        Garages Double Numeric Residential, Farms & 
+Smallholdings 
+
+--- PAGE 96 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 96 
+        StaffQuarters String Yes 
+No 
+Residential, Farms & 
+Smallholdings 
+        Study String Yes 
+No 
+Residential, Farms & 
+Smallholdings 
+        Pool String Yes 
+No 
+Residential, Farms & 
+Smallholdings 
+        Flatlet String Yes 
+No 
+Residential, Farms & 
+Smallholdings 
+        Carports Double Numeric Residential, Farms & 
+Smallholdings 
+        Storeys Double Numeric Residential, Farms & 
+Smallholdings 
+        FarmName String Alphanumeric 
+Characters 
+Farms & 
+Smallholdings 
+        BusinessType String Offices 
+Commercial 
+Bed And Breakfast 
+Industrial 
+Retail 
+Hotel 
+Commercial 
+        Parking String Alphanumeric 
+Characters 
+Commercial, 
+Residential 
+        LeviesAndRates Double Numeric Residential, Land, 
+Farms & 
+Smallholdings 
+        Rates int Numeric Residential, Land, 
+Farms & 
+Smallholdings, 
+Commercial 
+        Levies int Numeric Residential, Land, 
+Farms & 
+Smallholdings, 
+Commercial 
+        PetsAllowed String Yes 
+No 
+Residential, Farms & 
+Smallholdings 
+        WaterIncluded String Yes 
+No 
+Residential, Farms & 
+Smallholdings 
+        
+ElectrictyIncluded 
+String Yes 
+No 
+Residential, Farms & 
+Smallholdings 
+        Satelite String Yes 
+No 
+Residential, Farms & 
+Smallholdings 
+        TV String Yes 
+No 
+Residential, Farms & 
+Smallholdings 
+
+--- PAGE 97 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 97 
+        Aircon String Yes 
+No 
+Residential, Farms & 
+Smallholdings 
+        Alarm String Yes 
+No 
+Residential, Farms & 
+Smallholdings 
+        ScenicView String Yes 
+No 
+Residential, Farms & 
+Smallholdings 
+        SeaView  String Yes 
+No 
+Residential, Farms & 
+Smallholdings 
+        WalkInCloset String Yes 
+No 
+Residential, Farms & 
+Smallholdings 
+        
+BuiltInCupboards 
+String Yes 
+No 
+Residential, Farms & 
+Smallholdings 
+        Furnished String Yes 
+No 
+Residential, Farms & 
+Smallholdings 
+        
+HandicapAvailable 
+String Yes 
+No 
+Residential, Farms & 
+Smallholdings 
+        Balcony String Yes 
+No 
+Residential, Farms & 
+Smallholdings 
+        Deck String Yes 
+No 
+Residential, Farms & 
+Smallholdings 
+        AccessGate String Yes 
+No 
+Residential, Farms & 
+Smallholdings 
+        SecurityPost String Yes 
+No 
+Residential, Farms & 
+Smallholdings 
+        TennisCourt String Yes 
+No 
+Residential, Farms & 
+Smallholdings 
+        SquashCourt String Yes 
+No 
+Residential, Farms & 
+Smallholdings 
+        Clubhouse String Yes 
+No 
+Residential, Farms & 
+Smallholdings 
+        Gym String Yes 
+No 
+Residential, Farms & 
+Smallholdings 
+        Golf String Yes 
+No 
+Residential, Farms & 
+Smallholdings 
+        Jacuzzi String Yes 
+No 
+Residential, Farms & 
+Smallholdings 
+        Patio String Yes 
+No 
+Residential, Farms & 
+Smallholdings 
+        Storage String Yes 
+No 
+Residential, Farms & 
+Smallholdings 
+        Fence String Yes 
+No 
+Residential, Farms & 
+Smallholdings 
+
+--- PAGE 98 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 98 
+        Laundry String Yes 
+No 
+Residential, Farms & 
+Smallholdings 
+        Kitchen string Yes 
+No 
+Residential, Farms & 
+Smallholdings 
+        Lapa string Yes 
+No 
+Residential, Farms & 
+Smallholdings 
+        Electric Fencing string Yes 
+No 
+Residential, Farms & 
+Smallholdings 
+        Built-in-Braai string Yes 
+No 
+Residential, Farms & 
+Smallholdings 
+        Fireplace string Yes 
+No 
+Residential, Farms & 
+Smallholdings 
+        Garden Cottage string Yes 
+No 
+Residential, Farms & 
+Smallholdings 
+        Jetty Berth string Yes 
+No 
+Residential, Farms & 
+Smallholdings 
+        Scullery string Yes 
+No 
+Residential, Farms & 
+Smallholdings 
+        Pantry string Yes 
+No 
+Residential, Farms & 
+Smallholdings 
+        Guest Toilet string Yes 
+No 
+Residential, Farms & 
+Smallholdings 
+        Entrance hall string Yes 
+No 
+Residential, Farms & 
+Smallholdings 
+        Borehole string Yes 
+No 
+Farms & 
+Smallholdings  
+        Irrigation 
+System 
+string Yes 
+No 
+Residential, Farms & 
+Smallholdings 
+        Paving string Yes 
+No 
+Residential, Farms & 
+Smallholdings 
+        RoofType string Tiles 
+Slate 
+Thatch 
+Other 
+Residential 
+        Finishes string Very High 
+High 
+Medium 
+Budget 
+Residential 
+        Garden string Yes 
+No 
+Residential 
+        Intercom string Yes 
+No 
+Residential, Farms & 
+Smallholdings 
+        Family/TV Room string Yes 
+No 
+Residential, Farms & 
+Smallholdings 
+ 
+
+--- PAGE 99 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 99 
+ 
+ 
+
+--- PAGE 100 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 100 
+8 Appendix B: Moderation Rules 
+8.1 Auto Moderation Rules 
+Item Reason for Failure Description 
+1 Street name is missing for listing Street name is missing 
+2 Street number is missing for listing Street number is missing 
+3 Suburb is missing for listing Suburb is missing 
+4 Province is not set for listing Province is not set 
+5 (sectional title) Scheme/Complex name 
+missing 
+(sectional title) Scheme/Complex name missing 
+6 (sectional title) Unit number missing (sectional title) Unit number missing 
+7 Less than 3 photos for listing Less than 3 photos (Sales and Rental listings) 
+8 There are no photos for listing. There are no photos. 
+9 Property end date expired Property end date expired 
+10 Property category not set No Property Category was used, e.g. Residential, Land, 
+Farm, Commercial. 
+12 Bathrooms not set (residential), cannot be 0 The attributes are insufficient. Bathrooms is a mandatory 
+attribute for residential listings. 
+13 Home type not set (residential) The attributes are insufficient. Home Type is a 
+mandatory attribute for residential listings. 
+14 Bedrooms not set (residential),can be 0 The attributes are insufficient. Bedrooms is a mandatory 
+attribute for residential listings. 
+15 Land size not set (Lands), cannot be 0 The attributes are insufficient. Land size is a mandatory 
+attribute for listings of Land and must be valid. 
+17 Price is set to zero The Price is invalid. A listing cannot have a price of 0, 
+please amend and resubmit. 
+18 Price below a limit (10 000 for sales) The Price is invalid. The price set is too low for a listing. 
+19 Illegal Description - web address The description of listing contains a web address. 
+20 Illegal Description - address The description of listing contains a physical address.  
+ 
+21 Illegal Description - telephone number. The description contains a telephone number. 
+22 Duplicate entry. Based on matching of the 
+address to another address.  This rule only 
+applies to listings loaded within the same 
+branch. 
+The property you have uploaded is already on our 
+website. We have a policy that; no property (with an 
+active status) should appear on the Private Property 
+Listings website more than once by the same agency 
+branch. 
+ 
+The policy states that the property listed 1st from a 
+specific Agency branch with the CORRECT DETAILS 
+will be kept and the duplicate of it will be DE-
+ACTIVATED. The following exception might apply; 
+  
+In the case where a bank steps in on a property there 
+might be exception in terms of the grounds that the 
+AGENCY or PRIVATE SELLER have to market it. 
+ 
+
+--- PAGE 101 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 101 
+If you wish to contest or dispute this, please send a mail 
+with all the relevant information to 
+police@privateproperty.co.za. 
+23 Agent doesn’t exist One or more of the agentIds attached to a listing don’t 
+exist.  All agents MUST be uploaded before they are 
+referenced in a listing object. 
+24 Illegal Headline - web address The headline of listing contains a web address. 
+25 Illegal Headline - email The headline of listing contains an email address.  
+ 
+26 Illegal Headline  - telephone number. The headline contains a telephone number. 
+27 Illegal Headline  - special characters. The Headline contains illegal characters. It should only 
+contain alpha-numeric characters and the following 
+special characters [ ! , . - space]. 
+ 
+ 
+
+--- PAGE 102 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 102 
+8.2 Manual Moderation Rules 
+Item Reason for Failure Description 
+1 Duplicate images loaded 
+ 
+Listings cannot have the same image duplicated 
+2 Insufficient Images 
+ 
+Listings will be declined for images when: 
+ 
+• When less than 3 photos are loaded 
+• When the main photo is not one of the Unique 
+Selling points, or when its orientation is portrait. 
+• If there are people / animals in the photos. 
+• If there are logos or watermarks that don’t 
+conform to the policy in the photos. 
+• When some photo's where corrupted during the 
+export, or when there is excessive poor lighting. 
+3 Insufficient Description Listings will be declined for description when: 
+ 
+• The description does not adequately describe 
+the property and its redeeming features. 
+• When the description is in another language 
+other than English. 
+• Telephone numbers, web addresses and emails 
+in the description. 
+• Excessive "Sales Speak", punctuation, poor 
+spelling and grammar. 
+4 Insufficient Address details Listings will be declined when the address details are 
+insufficient: 
+ 
+• No, province, town, suburb, street, street 
+numbers or street name and scheme names 
+(and when unit number is missing from the 
+Scheme/Complex name.) 
+• When a listing is duplicating another listing 
+currently listed on the site (i.e. The addresses 
+match) 
+5 Insufficient Attributes Listings will be declined for attributes when: 
+ 
+• The price is 0 or something unlikely e.g. 
+650000000 
+• When there is a bedroom/bathroom mismatch 
+e.g. it has 0 bedrooms but 3 bathrooms 
+6 Insufficient Headline Listings will be declined for headline when: 
+ 
+• When the headline is in another language other 
+than English. 
+• Telephone numbers, web addresses and emails 
+in the headline. 
+• If any “special characters” other than ‘!’, ‘,’, ‘-‘ , 
+‘.’ and ‘ ‘ are used. (exclamation point, comma, 
+dash, full-stop and space) 
+ 
+
+--- PAGE 103 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 103 
+9 Appendix C: Error Codes 
+9.1 Web Method Error Codes 
+PP Error Reason for error Fix 
+PP50 GeneralException  An error has occurred within the system 
+outside of predefined business rules 
+ 
+Contact support for assistance 
+PP60 PropertyValidation The details or attributes for the property 
+have been incorrectly supplied 
+ 
+Inspect details in error message and 
+correct details and attributes accordingly 
+PP70 MandateValidation The mandate for this property could not 
+be created due to invalid data 
+ 
+Inspect details in error message and 
+correct mandate details accordingly 
+PP100 
+UnauthorisedToken 
+The token supplied has failed to 
+authenticate 
+ 
+Inspect username / password and 
+timestamps in token. Check that system 
+time is correct since token relies on 
+StampTime and ExpiryTime. 
+PP101 
+InvalidBranchGuid 
+The supplied Branch GUID is incorrect 
+ 
+Supply correct BranchGUID 
+PP102 InvalidAgent The supplied AgentId is incorrect 
+ 
+Supply correct AgentId (check that agent 
+is in branch) 
+PP103 InvalidListing The supplied PropertyId is incorrect 
+ 
+Supply PropertyId for the relative 
+BranchGUID and make sure that the 
+PropertyId exists 
+PP104 InvalidContract There is no active contract for Branch 
+ 
+Contact support for assistance 
+PP105 InvalidPackage There is no active package for the 
+Branch 
+ 
+Contact support for assistance 
+PP106 InvalidAttributes Property attributes supplied for listing 
+do not exist on the system 
+ 
+Inspect error details and be sure to use 
+Property attributes specified in this 
+document in the UpdateListing section. 
+PP107 
+InvalidAgentDetails 
+The supplied AgentDetails are incorrect Inspect error details and correct agent 
+details accordingly. Typically this refers to 
+e-mail addresses, branch guids, agent 
+unique id’s etc. 
+PP108 
+InvalidBranchDetails 
+The supplied BranchDetails are 
+incorrect 
+Inspect error details and correct branch 
+details accordingly. Typically this refers to 
+e-mail addresses, branch guids etc. 
+PP109 
+UnauthorisedAccess 
+The supplied token does not grant 
+access to this part of the system 
+ 
+Contact support for assistance 
+PP110 InvalidCategories The categories supplied for the 
+property are invalid 
+Inspect error details and correct 
+accordingly. Please refer to the 
+UpdateListing section for category types. 
+PP111 DuplicateVenue The venue for an auction or show-day 
+already exists 
+ 
+Use the existing venue id. 
+PP112 UnknownArea The area supplied within the address 
+details of a listing cannot be found 
+Contact support for assistance 
+
+--- PAGE 104 ---
+ COMPANY CONFIDENTIAL 
+Agency Feed Service Page 104 
+PP113 InvalidPrice The price supplied is outside the valid 
+ranges 
+Inspect error details and correct 
+accordingly. Rentals between 1-250000, 
+Sales between 10000-150000000 
+PP114 InvalidDate The date supplied is invalid 
+ 
+Inspect error details and correct 
+accordingly 
+PP115 
+ShowdayException 
+The showday details provided are 
+invalid 
+ 
+Inspect error details and correct 
+accordingly 
+PP116 NoAgentImage No image has been supplied for the 
+agent 
+Use the UpdateAgentImage call with a 
+valid image url and re-send 
+ 
+PP117 
+InsufficientImages 
+Minimum number of images (Rentals = 
+3, Sales = 3) have not been supplied 
+ 
+Please supply images 
+PP118 
+NoAssociatedContact 
+The supplied agentId does not have a 
+related contact 
+ 
+Contact support for assistance 
+PP121 
+Agent cannot be 
+removed 
+The Agent in question is assigned 
+to current active listings. 
+Please re-assign all active listings to 
+another Estate Agent before attempting to 
+remove this Agent 
+PP122 InvalidPriceFrom One of the following descriptive 
+messages will follow: 
+ 
+PP122 InvalidPriceFrom - 
+PriceFrom is only valid with a 
+SalesPricePresentation of 
+OffersFrom 
+ 
+PP122 InvalidPriceFrom -  
+PriceFrom should be greater than 0 
+and less than or equal to the asking 
+price 
+Correct the value of the PriceFrom field 
+and resubmit the listing 
+PP123 PrivysealAlias If a value is supplied for 
+PrivysealAlias, it can only have the 
+values - Regex ^[A-Z\d\-\(\)]+$ 
+Either pass in an empty string or use a 
+valid value 
+PP124  
+NotAuctionListing 
+The only listing types allowed to 
+have auctions are: 
+AuctionOnly 
+StandardBankSie 
+NedbankSie 
+SAHSaleInExecution 
+SaleInExecution 
+Use a different listing or change its listing 
+type if applicable 
+  
+ 

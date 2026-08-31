@@ -563,7 +563,7 @@ export function canonicalInstanceToPrivateListingRequirement(instance = {}, exis
   }
 
   return {
-    id: existing?.id,
+    ...(existing?.id ? { id: existing.id } : {}),
     private_listing_id: listingId,
     requirement_key: canonicalDefinitionKeyToLegacyKey(instance.document_definition_key),
     requirement_name: getDefinitionLabel(instance),
@@ -584,7 +584,7 @@ export function canonicalInstanceToTransactionRequiredDocument(instance = {}, ex
     : incomingStatus
 
   return {
-    id: existing?.id,
+    ...(existing?.id ? { id: existing.id } : {}),
     transaction_id: instance.transaction_id,
     document_key: canonicalDefinitionKeyToLegacyKey(instance.document_definition_key),
     document_label: getDefinitionLabel(instance),
@@ -604,7 +604,7 @@ export function canonicalInstanceToTransactionRequiredDocument(instance = {}, ex
 
 export function canonicalInstanceToDocumentRequest(instance = {}, existing = null) {
   return {
-    id: existing?.id,
+    ...(existing?.id ? { id: existing.id } : {}),
     transaction_id: instance.transaction_id,
     category: instance.pack_key,
     document_type: canonicalDefinitionKeyToLegacyKey(instance.document_definition_key),
@@ -756,6 +756,17 @@ function indexedBy(rows = [], keys = []) {
   return map
 }
 
+function dedupeTransactionProjectionRows(rows = []) {
+  const byDocumentKey = new Map()
+  for (const row of rows) {
+    const key = normalizeKey(row.document_key)
+    if (!key) continue
+    const existing = byDocumentKey.get(key)
+    if (!existing || (!existing.id && row.id)) byDocumentKey.set(key, row)
+  }
+  return [...byDocumentKey.values()]
+}
+
 export async function syncCanonicalToPrivateListingRequirements({ contextId, listingId = null, client = supabase, force = false } = {}) {
   if (!areCanonicalDocumentAdaptersEnabled({ force })) return makeSkipResult('canonical_document_adapters_disabled', { force })
   const db = requireClient(client)
@@ -776,11 +787,11 @@ export async function syncCanonicalToPrivateListingRequirements({ contextId, lis
   if (legacyResult.error) throw legacyResult.error
 
   const legacyByLinkOrKey = indexedBy(legacyResult.data || [], ['canonical_requirement_instance_id', 'requirement_key'])
-  const rows = (instanceResult.data || []).map((instance) => {
+  const rows = dedupeTransactionProjectionRows((instanceResult.data || []).map((instance) => {
     const legacyKey = canonicalDefinitionKeyToLegacyKey(instance.document_definition_key)
     const existing = legacyByLinkOrKey.get(`canonical_requirement_instance_id:${instance.id}`) || legacyByLinkOrKey.get(`requirement_key:${legacyKey}`) || null
     return canonicalInstanceToPrivateListingRequirement(instance, existing)
-  })
+  }))
 
   if (!rows.length) return { skipped: false, synced: 0, rows: [] }
   const write = await db
@@ -836,6 +847,42 @@ export async function syncCanonicalToTransactionRequiredDocuments({ transactionI
   })))
 
   return { skipped: false, synced: write.data?.length || 0, rows: write.data || [] }
+}
+
+export async function syncCanonicalInstancesToTransactionRequiredDocuments({
+  transactionId,
+  instances = [],
+  definitions = [],
+  client = supabase,
+} = {}) {
+  const db = requireClient(client)
+  if (!transactionId) throw new Error('transactionId is required.')
+  const canonicalInstances = normalizeArray(instances)
+  if (!canonicalInstances.length) {
+    return { skipped: false, synced: 0, rows: [], source: 'canonical_instances' }
+  }
+
+  const legacyResult = await db.from('transaction_required_documents').select('*').eq('transaction_id', transactionId)
+  if (legacyResult.error) throw legacyResult.error
+  const definitionsByKey = new Map(normalizeArray(definitions).map((definition) => [definition.key, definition]))
+  const legacyByLinkOrKey = indexedBy(legacyResult.data || [], ['canonical_requirement_instance_id', 'document_key'])
+  const rows = dedupeTransactionProjectionRows(canonicalInstances.map((instance) => {
+    const legacyKey = canonicalDefinitionKeyToLegacyKey(instance.document_definition_key)
+    const existing = legacyByLinkOrKey.get(`canonical_requirement_instance_id:${instance.id}`) || legacyByLinkOrKey.get(`document_key:${legacyKey}`) || null
+    return canonicalInstanceToTransactionRequiredDocument({
+      ...instance,
+      transaction_id: instance.transaction_id || transactionId,
+      document_definitions: definitionsByKey.get(instance.document_definition_key) || instance.document_definitions,
+    }, existing)
+  }))
+
+  const write = await db.from('transaction_required_documents')
+    .upsert(rows, { onConflict: 'transaction_id,document_key' })
+    .select('*')
+  if (write.error) throw write.error
+  // The creation RPC already writes the canonical audit events. Do not require
+  // browser actors to insert a second event merely for the legacy projection.
+  return { skipped: false, synced: write.data?.length || 0, rows: write.data || [], source: 'canonical_instances' }
 }
 
 export async function syncCanonicalToDocumentRequests({ transactionId, contextType = 'transaction', contextId = transactionId, client = supabase, force = false } = {}) {

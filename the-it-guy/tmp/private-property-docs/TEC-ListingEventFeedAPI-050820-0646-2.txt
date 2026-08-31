@@ -1,0 +1,452 @@
+--- PAGE 1 ---
+Listing Event Feed API
+We have implemented a listing event feed that will contain information around events that occur in the private property system and affect your or 
+your clients listings.
+Using this feed will reduce unnecessary calls to GetListingStatus and GetLisitngSummary
+GetListingStatus and GetLisitngSummary required you check if a status has changed to Active in order for you to get the PrivateProperty Ref.
+Using the listing event feed you will receive this information as it becomes available and no longer have to call GetListingStatus and 
+GetLisitngSummary for this information.
+From the listing event feed you will be able to tell as and when a listing:
+1. gets activated (PP Ref will be provided).
+2. images are downloading.
+3. images have downloaded.
+4. image downloads failed (a new listing will not be activated until images are resolved).
+5. is removed. (Expired eg.culling, Branch de-activation)
+Events and their data:
+Each record will have the following values returned:
+Branch unique identifier
+Listing unique identifier
+Event
+Images downloading
+Activated
+Description: listing ref
+Images downloaded
+Error downloading images
+Deactivated
+Event Descriptions:
+Deactivated
+Expired
+Branch Deactivated
+Deleted
+Event description
+Optional eg Listing Ref for “Listing Activated”
+Current listing status
+Inactive
+Deleted
+Active
+Incomplete
+Date/time
+Branch unique identifier
+(OfficeFeedRef)
+Listing unique 
+identifier
+Event Event description Current listing status Timestamp
+Xxx Yyy Images Downloading N/A Incomplete/Active
+/Inactive
+yyyy/MM/dd HH:mm:ss
+Xxx Yyy Activated PP Ref Active yyyy/MM/dd HH:mm:ss
+Xxx Yyy Images Downloaded N/A Active/Inactive yyyy/MM/dd HH:mm:ss
+Xxx Yyy Error downloading 
+images
+Description of error Incomplete yyyy/MM/dd HH:mm:ss
+Xxx Yyy Deactivated N/A Deactivated/Expired
+/Branch Deactivated
+/Deleted
+ 
+yyyy/MM/dd HH:mm:ss
+In addition to the data about listings a Continuation Key will be provided per package of data. 
+This will allow paging through the data by passing the continuation token on the next call. 
+Pages will be 100 records in length. 
+
+--- PAGE 2 ---
+If less than 100 records are returned, then there are no more records right now.
+If you have no continuation key use “0“
+Our current flow for a new listing
+
+
+--- PAGE 3 ---
+1.  
+Implementation
+There are 2 ways you can use the listing event feed:
+1. By Feed Provider:
+You will receive updates for listings that belong to all branches you service.
+You will only be required to store one Continuation Key.
+2. By Branch:
+You will receive updates for listings that belong to a specified branch that you service.
+You will be required to store one Continuation Key per Branch.
+Current Values
+ListingFeedEventType
+enum ListingEventFeedType
+{
+  ImagesDownloading,
+  ErrorDownloadingImages,
+  ImagesDownloaded,
+  Activated,
+  Deactivated
+}
+ListingFeedEventStatus
+enum ListingEventFeedStatus
+{
+    Incomplete,
+    Active,
+    Inactive,
+    Deactivated,
+    Expired,
+    OfficeDeactivated
+}
+By Feed Provider
+Sample Requests
+
+
+--- PAGE 4 ---
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+        <s:Body xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+                <GetListingEventFeedByFeedProvider xmlns="
+http://tempuri.org/">
+                        <Token>
+                                <Digest>o0o0o0o0oo0o0o0o0oo0o0o0o0o=<
+/Digest>
+                                <UserName>username</UserName>
+                                <StampTime>2020-05-26T12:19:47Z<
+/StampTime>
+                                <Expires>2020-05-26T00:00:00Z</Expires>
+                                <UID>000000000000000000</UID>
+                        </Token>
+                        <continuationKey>637260923720908438e001<
+/continuationKey>
+                        <startDateTime xsi:nil="true"/>
+                </GetListingEventFeedByFeedProvider>
+        </s:Body>
+</s:Envelope>  
+Only a  and the security  as you currently have are required.continuationKey Token
+If you do not have a  and you want to start consuming the feed use “0“ as a  and  to continuationKey continuationKey startDateTime
+choose a date and time that you want to start receiving updates.
+We recommend .using a start date that is 2 days prior to your feed initialization
+<continuationKey>0</continuationKey>
+<startDateTime>2020-05-24T00:00:00Z</startDateTime>
+Once you have a  you will no longer have to send a start .continuationKey startDateTime
+Sample response
+You will have to store the new  and send it to us with your next call.ContinuationKey
+<?xml version="1.0" encoding="utf-8"?>
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" 
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="
+http://www.w3.org/2001/XMLSchema">
+        <soap:Body>
+                <GetListingEventFeedByFeedProviderResponse xmlns="
+http://tempuri.org/">
+                        <GetListingEventFeedByFeedProviderResult>
+                                
+<ContinuationKey>637260923720908438e000000000001</ContinuationKey>
+                                <FeedData>
+
+--- PAGE 5 ---
+                                        <LisitngEventFeedData>
+                                                <TimeStamp>2020-05-
+26T12:18:44.5772198Z</TimeStamp>
+                                                
+<ListingFeedRef>List000000000001</ListingFeedRef>
+                                                
+<OfficeFeedRef>OFF000000000000010</OfficeFeedRef>
+                                                
+<ListingFeedEventType>ImagesDownloading</ListingFeedEventType>
+                                                <EventDescription><
+/EventDescription>
+                                                
+<ListingFeedEventStatus>Incomplete</ListingFeedEventStatus>
+                                        </LisitngEventFeedData>
+                                        <LisitngEventFeedData>
+                                                <TimeStamp>2020-05-
+26T12:18:47.5870675Z</TimeStamp>
+                                                
+<ListingFeedRef>List000000000001</ListingFeedRef>
+                                                
+<OfficeFeedRef>OFF000000000000010</OfficeFeedRef>
+                                                
+<ListingFeedEventType>ImagesDownloaded</ListingFeedEventType>
+                                                <EventDescription><
+/EventDescription>
+                                                
+<ListingFeedEventStatus>Incomplete</ListingFeedEventStatus>
+                                        </LisitngEventFeedData>
+                                        <LisitngEventFeedData>
+                                                <TimeStamp>2020-05-
+26T12:18:48.5620645Z</TimeStamp>
+                                                
+<ListingFeedRef>List000000000001</ListingFeedRef>
+                                                
+<OfficeFeedRef>OFF000000000000010</OfficeFeedRef>
+                                                
+<ListingFeedEventType>Activated</ListingFeedEventType>
+                                                
+<EventDescription>T1234567</EventDescription>
+                                                
+<ListingFeedEventStatus>Active</ListingFeedEventStatus>
+                                        </LisitngEventFeedData>
+                                          <LisitngEventFeedData>
+                                                <TimeStamp>2020-05-
+26T12:25:44.5772198Z</TimeStamp>
+                                                
+<ListingFeedRef>List000000000025</ListingFeedRef>
+                                                
+<OfficeFeedRef>OFF0000000000000500</OfficeFeedRef>
+                                                
+
+--- PAGE 6 ---
+<ListingFeedEventType>Deactivated</ListingFeedEventType>
+                                                
+<EventDescription>T7654321</EventDescription>
+                                                
+<ListingFeedEventStatus>Deactivated</ListingFeedEventStatus>
+                                        </LisitngEventFeedData>
+                                </FeedData>
+                        </GetListingEventFeedByFeedProviderResult>
+                </GetListingEventFeedByFeedProviderResponse>
+        </soap:Body>
+</soap:Envelope>
+Implementation guidelines ()
+// Call this every 15 min (you choose) to check if there are new updates
+// If there are updates all will be retrieved and processed 
+method GetPrivatePropertyListingEventFeed()
+{
+    moreToProcess = true
+    While (moreToProcess)
+    {
+      continuationKey = getContinuationKey //you will have to store a 
+key somewhere. 
+      startDateTime = null;
+      
+      if( continuationKey is empty ) // you dont have a key so it is 
+your first call.
+      {
+          continuationKey = "0"
+          startDateTime = DateTime.Now - 2 days
+      }
+      
+      token = getToken() // However you currently do this
+      
+      responce = null;
+      
+      if( continuationKey == "0" )
+        responce = call ppService.GetListingEventFeedByFeedProvider( 
+continuationKey, token, startDateTime )
+      else
+        responce = call ppService.GetListingEventFeedByFeedProvider( 
+continuationKey, token )
+      
+        if(  continuationKey != responce.ContinuationKey ) // You have 
+a new key
+        {
+            SaveNewContinuationKey( responce.ContinuationKey )  // save 
+it over the old one
+
+--- PAGE 7 ---
+            foreach ( event in responce.LisitngEventFeedData )
+            {
+                switch ( event.ListingFeedEventType )
+                  case "Activated":
+                      //Update listing status and add the ppRef (event.
+EventDescription)
+                  case "Deactivated":
+                      // Update listing status
+                  case "ImagesDownloading":
+                      // No action required. Just starting a step
+                  case "ErrorDownloadingImages":
+                      // Inform user/agent that there is an issue with 
+images
+                  case "ImagesDownloaded":
+                      // No action required. Next step is Activation
+              } 
+          }  
+          
+          if (responce.LisitngEventFeedData.count < 100) // 
+          {
+            moreToProcess = false;
+          } 
+    }
+}
+2. By Branch
+Sample Requests
+
+--- PAGE 8 ---
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+        <s:Body xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+                <GetListingEventFeedByFeedProvider xmlns="
+http://tempuri.org/">
+                        <UniqueBranchId>OFF0000000000000500<
+/UniqueBranchId>
+                        <Token>
+                                <Digest>o0o0o0o0oo0o0o0o0oo0o0o0o0o=<
+/Digest>
+                                <UserName>username</UserName>
+                                <StampTime>2020-05-26T12:19:47Z<
+/StampTime>
+                                <Expires>2020-05-26T00:00:00Z</Expires>
+                                <UID>000000000000000000</UID>
+                        </Token>
+                        <continuationKey>637260923720908438e001<
+/continuationKey>
+                        <startDateTime xsi:nil="true"/>
+                </GetListingEventFeedByFeedProvider>
+        </s:Body>
+</s:Envelope>  
+Only ,  and the security  as you currently have are required.continuationKey UniqueBranchId Token
+If you do not have a  for a branch and you want to start consuming the feed use “0“ as a  and continuationKey continuationKey startDat
+ to choose a date and time that you want to start receiving updates.eTime
+We recommend .using a start date that is 2 days prior to your feed initialization
+<continuationKey>0</continuationKey>
+<startDateTime>2020-05-24T00:00:00Z</startDateTime>
+Once you have a  for a branch you will no longer have to send a start .continuationKey startDateTime
+Sample response
+You will have to store the new  per branch and send it to us with your next call for that branch.ContinuationKey
+<?xml version="1.0" encoding="utf-8"?>
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" 
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="
+http://www.w3.org/2001/XMLSchema">
+        <soap:Body>
+                <GetListingEventFeedByFeedProviderResponse xmlns="
+http://tempuri.org/">
+                        <GetListingEventFeedByFeedProviderResult>
+                                
+
+--- PAGE 9 ---
+<ContinuationKey>637260923720908438e000000000001</ContinuationKey>
+                                <FeedData>
+                                        <LisitngEventFeedData>
+                                                <TimeStamp>2020-05-
+26T12:18:44.5772198Z</TimeStamp>
+                                                
+<ListingFeedRef>List000000000001</ListingFeedRef>
+                                                
+<OfficeFeedRef>OFF0000000000000500</OfficeFeedRef>
+                                                
+<ListingFeedEventType>ImagesDownloading</ListingFeedEventType>
+                                                <EventDescription><
+/EventDescription>
+                                                
+<ListingFeedEventStatus>Incomplete</ListingFeedEventStatus>
+                                        </LisitngEventFeedData>
+                                        <LisitngEventFeedData>
+                                                <TimeStamp>2020-05-
+26T12:18:47.5870675Z</TimeStamp>
+                                                
+<ListingFeedRef>List000000000001</ListingFeedRef>
+                                                
+<OfficeFeedRef>OFF0000000000000500</OfficeFeedRef>
+                                                
+<ListingFeedEventType>ImagesDownloaded</ListingFeedEventType>
+                                                <EventDescription><
+/EventDescription>
+                                                
+<ListingFeedEventStatus>Incomplete</ListingFeedEventStatus>
+                                        </LisitngEventFeedData>
+                                        <LisitngEventFeedData>
+                                                <TimeStamp>2020-05-
+26T12:18:48.5620645Z</TimeStamp>
+                                                
+<ListingFeedRef>List000000000001</ListingFeedRef>
+                                                
+<OfficeFeedRef>OFF0000000000000500</OfficeFeedRef>
+                                                
+<ListingFeedEventType>Activated</ListingFeedEventType>
+                                                
+<EventDescription>T1234567</EventDescription>
+                                                
+<ListingFeedEventStatus>Active</ListingFeedEventStatus>
+                                        </LisitngEventFeedData>
+                                          <LisitngEventFeedData>
+                                                <TimeStamp>2020-05-
+26T12:25:44.5772198Z</TimeStamp>
+                                                
+<ListingFeedRef>List000000000025</ListingFeedRef>
+                                                
+
+--- PAGE 10 ---
+<OfficeFeedRef>OFF0000000000000500</OfficeFeedRef>
+                                                
+<ListingFeedEventType>Deactivated</ListingFeedEventType>
+                                                
+<EventDescription>T7654321</EventDescription>
+                                                
+<ListingFeedEventStatus>Deactivated</ListingFeedEventStatus>
+                                        </LisitngEventFeedData>
+                                </FeedData>
+                        </GetListingEventFeedByFeedProviderResult>
+                </GetListingEventFeedByFeedProviderResponse>
+        </soap:Body>
+</soap:Envelope>
+Implementation guidelines ()
+// Call this every 15 min (you choose) to check if there are new updates
+// If there are updates all will be retrieved and processed 
+method GetPrivatePropertyListingEventFeed()
+{
+    //get BranchIds
+    branchIds = getBranchIds();
+    foreach( var branchId in branchIds )
+    {
+      bool moreToProcess = true
+      var continuationKey = "";
+      While (moreToProcess)
+      {
+        if(continuationKey is empty) // if empty, try and retrieve.
+        {
+          continuationKey = getContinuationKeyForBranch(branchId) //you 
+will have to store a key somewhere per branch. 
+          startDateTime = null;
+        }
+        
+         // if still empty you do not have a key for this branch, 
+         // set up your first call for the branch.
+         // when you add new branches this sets them for the event feed
+        if( continuationKey is empty )
+        {
+            continuationKey = "0"
+            startDateTime = DateTime.Now - 2 days
+        }
+        
+        var token = getToken() // However you currently do this
+        
+        var responce = null;
+        
+
+--- PAGE 11 ---
+        if( continuationKey == "0" )
+          responce = call ppService.GetListingEventFeedByBranch( 
+continuationKey, token, branchId, startDateTime )
+        else
+          responce = call ppService.GetListingEventFeedByBranch( 
+continuationKey, token, branchId )
+        
+          if(  continuationKey != responce.ContinuationKey ) // You 
+have a new key
+          {
+              continuationKey = responce.ContinuationKey
+              SaveNewContinuationKeyForBranch( responce.
+ContinuationKey, branchId )  // save it over the old one
+              foreach ( event in responce.LisitngEventFeedData )
+              {
+                  switch ( event.ListingFeedEventType )
+                    case "Activated":
+                        //Update listing status and add the ppRef 
+(event.EventDescription)
+                    case "Deactivated":
+                        // Update listing status
+                    case "ImagesDownloading":
+                        // No action required. Just starting a step
+                    case "ErrorDownloadingImages":
+                        // Inform user/agent that there is an issue 
+with images
+                    case "ImagesDownloaded":
+                        // No action required. Next step is Activation
+                } 
+            }  
+            
+            if (responce.LisitngEventFeedData.count < 100) // No more 
+updates for this branch
+            {
+              moreToProcess = false;
+            } 
+      }
+    }
+}

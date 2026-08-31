@@ -820,6 +820,40 @@ export async function syncRequirementInstances({ input = {}, generatedInstances 
   }
 }
 
+export async function syncTransactionRequirementInstancesForCreation({
+  transactionId,
+  generatedInstances = [],
+  client = supabase,
+} = {}) {
+  const db = requireClient(client)
+  if (!transactionId) throw new Error('transactionId is required.')
+  if (!Array.isArray(generatedInstances) || !generatedInstances.length) {
+    const error = new Error('Canonical transaction requirement generation produced no instances.')
+    error.code = 'CANONICAL_REQUIREMENT_PERSISTENCE_INCOMPLETE'
+    throw error
+  }
+
+  const result = await db.rpc('bridge_sync_transaction_document_requirement_instances', {
+    p_transaction_id: transactionId,
+    p_generated_instances: generatedInstances,
+  })
+  if (result.error) throw result.error
+
+  const instances = normalizeArray(result.data?.instances)
+  if (!instances.length) {
+    const error = new Error('Canonical transaction requirements were not persisted.')
+    error.code = 'CANONICAL_REQUIREMENT_PERSISTENCE_INCOMPLETE'
+    throw error
+  }
+
+  return {
+    ...(result.data || {}),
+    instances,
+    allInstances: normalizeArray(result.data?.allInstances || result.data?.all_instances || instances),
+    source: 'transaction_creation_rpc',
+  }
+}
+
 export async function resolveRequirements(input = {}, { client = supabase, rules = null, definitions = null } = {}) {
   assertResolverInput(input)
   const db = client || supabase

@@ -202,7 +202,9 @@ select jsonb_build_object(
       'value', coalesce(sales_price, purchase_price),
       'updatedAt', updated_at,
       'appointmentsToday', appointments_today
-    ) order by updated_at desc nulls last, id),
+    ) order by updated_at desc nulls last, id)
+    from paged_matters
+  ),
     '[]'::jsonb
   ),
   'access', jsonb_build_object(

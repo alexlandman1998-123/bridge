@@ -1,0 +1,90 @@
+--- PAGE 1 ---
+Private Property Webhooks Specification  
+Overview 
+Private Property provides Webhooks to enable real-time delivery of leads to external 
+systems at both the Agency and Group level. This allows you to: 
+ 
+- Receive leads immediately in the system of your choice. 
+- Trigger automated workflows and processes at the time of lead generation. 
+How It Works 
+Private Property follows a standard webhook implementation. When a lead is captured, a 
+JSON payload is posted to a user-defined HTTPS endpoint. Each message is signed using 
+HMAC based on the body bytes and a secret key that is generated when the webhook is 
+configured. 
+Key Characteristics 
+- Message Format: JSON 
+- Transport: HTTPS POST 
+- Signature Header: X-Signature (HMAC of body using the shared secret) 
+- Authentication: Self-managed via HMAC verification 
+- Setup: Self-service through the Private Property Admin Portal 
+  
+
+--- PAGE 2 ---
+Setup Instructions 
+1. Permissions 
+- Group-level leads: Only a Group Owner or technical representative can configure. 
+- Agency-level leads: Only an Agency Principal can configure. 
+2. Where to Configure 
+- Group View: Log in to the Private Property Admin Portal, navigate to the relevant Group, 
+and add a webhook. 
+- Agency View: Log in to the Private Property Admin Portal, navigate to the relevant Agency, 
+and add a webhook. 
+Admin Portal URL: https://admin.privateproperty.co.za 
+Private Property Support is responsible only for ensuring that customers have the correct 
+access to the Private Property Admin Portal. It is the customer's responsibility to work with 
+their internal or external technical partners to configure, implement, and maintain webhook 
+integrations. 
+3. Required Fields 
+When adding a webhook, you must supply: 
+ 
+- Name – A descriptive name for the webhook 
+- URL – The HTTPS endpoint to which leads will be delivered 
+- ErrorNotificationEmail – Email address for failure notifications 
+ 
+After creation, you will be issued a HMAC Secret, which you must use to verify incoming 
+messages. 
+ 
+  
+
+--- PAGE 3 ---
+Webhook Message Format 
+HTTP Headers 
+Header Description 
+X-Signature HMAC SHA256 of the raw body 
+Content-Type application/json 
+Sample Payload 
+{ 
+  "messageType": "Lead", 
+  "messageVersion": 1, 
+  "leadId": 123456, 
+  "leadType": "MessageLead", 
+  "agencyId": 123456, 
+  "agencyName": "Prestige Realty Agency", 
+  "agencyAccountNumber": "PRA-XXXXXX", 
+  "listingId": 123456, 
+  "listingType": "Sale", 
+  "listingReference": "TXXXXXXX", 
+  "listingExternalReference": "RLSXXXXXX", 
+  "listingUrl": "https://privateproperty.co.za/TXXXXXXX", 
+  "listingAddress": "123 Ocean View Drive", 
+  "listingSuburb": "Sunnyvale", 
+  "leadDateTime": "2025-05-21T11:23:03.1063029+02:00", 
+  "leadSentDateTime": "2025-05-21T11:24:03.1063036+02:00", 
+  "leadName": "Ricky Bobby", 
+  "leadPhoneNumber": "XXXXXXXXXX", 
+  "leadEmail": "buyerXXXX@email.com", 
+  "leadMessage": "I am interested in this property. Please contact me with more details." 
+} 
+Message Types 
+- Lead 
+Lead Types 
+- MessageLead 
+- WhatsAppLead 
+Listing Types 
+- Sale 
+- Rental 
+
+--- PAGE 4 ---
+  
+Add Group Webhook Screenshot 
+Group Webhooks Screenshot 

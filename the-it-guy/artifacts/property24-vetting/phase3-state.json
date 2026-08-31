@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "agencyId": 31382,
+  "paulyAgentId": 77970,
+  "updatedAt": "2026-08-31T08:47:42.299Z",
+  "profilePicture": {
+    "sourceSha256": "cecfde6f68a1c3c32ea36fde281e6676379f561e276d75f20c3b8d0fbde3f8bb",
+    "baselineRemoteSha256": "90352ebd5fa66afee721e9207119d6a1eeb59a23176d91d62b2af2d87e49d3ee",
+    "confirmedRemoteSha256": "a59e7c4aec878699731ad589169053843c46438b5d00a704acdf9544739bde05"
+  }
+}

@@ -1,0 +1,95 @@
+{
+  "status": "PHASE6_DRY_RUN_READY",
+  "environment": "exdev",
+  "message": "Phase 6 identities and starting states are verified. No Property24 write was made.",
+  "preflight": {
+    "agencyId": 31382,
+    "fromDate": "2026-08-25T10:20:07.085Z",
+    "agents": {
+      "jon": {
+        "agentId": 77969,
+        "firstname": "Jon",
+        "lastname": "Snow",
+        "agencyId": 31382,
+        "sourceReference": "ARCH9-VET-JON-SNOW",
+        "mobileNumber": "0600001123",
+        "emailAddress": "jon.snow.p24@arch9.co.za",
+        "countryId": 1,
+        "status": "Active",
+        "published": true,
+        "profilePictureSha256": "5c97c39a3898397acb452a39bc6247d26ce9fecb46de6d16470ab9a1e75ff502"
+      },
+      "pauly": {
+        "agentId": 77970,
+        "firstname": "Pauly",
+        "lastname": "Shore",
+        "agencyId": 31382,
+        "sourceReference": "ARCH9-VET-PAULY-SHORE",
+        "mobileNumber": "0600000002",
+        "emailAddress": "pauly.shore.p24@arch9.co.za",
+        "countryId": 1,
+        "status": "Active",
+        "published": true,
+        "profilePictureSha256": "a59e7c4aec878699731ad589169053843c46438b5d00a704acdf9544739bde05"
+      }
+    },
+    "listings": {
+      "rental": {
+        "listingNumber": 100314819,
+        "listingType": "Rental",
+        "sourceReference": "ARCH9-VET-PHASE2-RENT-NEWLANDS",
+        "targetStatus": "Rented",
+        "status": "Active",
+        "isOnPortal": true,
+        "updateReasonType": "Valid",
+        "updateComment": null,
+        "httpStatus": {
+          "reconciliation": 200,
+          "updates": 200,
+          "portal": 200
+        }
+      },
+      "sale": {
+        "listingNumber": 100314820,
+        "listingType": "Sale",
+        "sourceReference": "ARCH9-VET-PHASE2-SALE-SANDTON",
+        "targetStatus": "Sold",
+        "status": "Active",
+        "isOnPortal": true,
+        "updateReasonType": "Valid",
+        "updateComment": null,
+        "httpStatus": {
+          "reconciliation": 200,
+          "updates": 200,
+          "portal": 200
+        }
+      }
+    },
+    "actions": {
+      "listingStatuses": [
+        {
+          "listingNumber": 100314819,
+          "listingType": "Rental",
+          "targetStatus": "Rented"
+        },
+        {
+          "listingNumber": 100314820,
+          "listingType": "Sale",
+          "targetStatus": "Sold"
+        }
+      ],
+      "agentStatuses": [
+        {
+          "agentId": 77969,
+          "name": "Jon Snow",
+          "targetStatus": "Inactive"
+        },
+        {
+          "agentId": 77970,
+          "name": "Pauly Shore",
+          "targetStatus": "Inactive"
+        }
+      ]
+    }
+  }
+}

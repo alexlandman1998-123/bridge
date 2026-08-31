@@ -1,4 +1,57 @@
-export const STAGES = [
+const defineStage = (stage, mainStage, aliases = []) => Object.freeze({
+  stage,
+  mainStage,
+  aliases: Object.freeze(aliases),
+})
+
+// Canonical persistence contract for transactions.stage. Agent, developer and
+// workflow labels deliberately coexist because they expose different levels
+// of detail in the same transaction journey.
+export const TRANSACTION_STAGE_DEFINITIONS = Object.freeze([
+  defineStage('Available', 'AVAIL', ['avail']),
+  defineStage('Reserved', 'DEP'),
+  // Agent deals accept/sign the offer before collecting the deal deposit. The
+  // macro stage therefore stays at DEP until that deposit milestone is met.
+  defineStage('Offer Accepted', 'DEP', ['offer_accepted']),
+  defineStage('OTP Signed', 'OTP', ['otp', 'signed otp', 'offer to purchase signed']),
+  defineStage('Deposit', 'OTP'),
+  defineStage('Deposit Paid', 'DEP', ['dep', 'deposit_paid']),
+  defineStage('Finance', 'FIN', ['finance in progress']),
+  defineStage('Finance Pending', 'FIN', ['fin', 'finance_pending']),
+  defineStage('Bond Approved / Proof of Funds', 'FIN', [
+    'bond approved',
+    'bond_approved',
+    'bond_approved_proof_of_funds',
+    'proof of funds',
+  ]),
+  defineStage('Proceed to Attorneys', 'ATTY', [
+    'atty',
+    'legal preparation',
+    'transfer preparation',
+    'with attorneys',
+  ]),
+  defineStage('Transfer', 'XFER'),
+  defineStage('Transfer in Progress', 'XFER', ['xfer', 'transfer_in_progress']),
+  defineStage('Transfer Lodged', 'XFER', ['transfer_lodged']),
+  defineStage('Registration', 'REG'),
+  defineStage('Registered', 'REG', ['reg']),
+])
+
+export const CANONICAL_TRANSACTION_STAGES = Object.freeze(
+  TRANSACTION_STAGE_DEFINITIONS.map(({ stage }) => stage),
+)
+
+export const AGENT_TRANSACTION_STAGE_OPTIONS = Object.freeze([
+  'Offer Accepted',
+  'Deposit',
+  'Finance',
+  'Transfer',
+  'Registration',
+])
+
+// Developer stock screens keep their detailed journey; each value belongs to
+// the canonical contract above and uses the same normalizer.
+export const STAGES = Object.freeze([
   'Available',
   'Reserved',
   'OTP Signed',
@@ -9,7 +62,7 @@ export const STAGES = [
   'Transfer in Progress',
   'Transfer Lodged',
   'Registered',
-]
+])
 
 export const MAIN_PROCESS_STAGES = ['AVAIL', 'DEP', 'OTP', 'FIN', 'ATTY', 'XFER', 'REG']
 
@@ -120,12 +173,27 @@ export function getClientStageExplainer(mainStage) {
   )
 }
 
-const STAGE_ALIASES = {
-  'Transfer In Progress': 'Transfer in Progress',
-  'Legal Preparation': 'Proceed to Attorneys',
-  'Transfer Preparation': 'Proceed to Attorneys',
-  'With Attorneys': 'Proceed to Attorneys',
+function normalizeTransactionStageKey(stage) {
+  return String(stage || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s/_-]+/g, ' ')
 }
+
+const TRANSACTION_STAGE_BY_KEY = new Map()
+const MAIN_STAGE_BY_TRANSACTION_STAGE = new Map()
+
+for (const definition of TRANSACTION_STAGE_DEFINITIONS) {
+  TRANSACTION_STAGE_BY_KEY.set(normalizeTransactionStageKey(definition.stage), definition.stage)
+  MAIN_STAGE_BY_TRANSACTION_STAGE.set(definition.stage, definition.mainStage)
+  for (const alias of definition.aliases) {
+    TRANSACTION_STAGE_BY_KEY.set(normalizeTransactionStageKey(alias), definition.stage)
+  }
+}
+
+// The old schema accepted this capitalization. New writes and the migration
+// normalize it to one canonical value.
+TRANSACTION_STAGE_BY_KEY.set(normalizeTransactionStageKey('Transfer In Progress'), 'Transfer in Progress')
 
 function normalizeMainProcessStageKey(mainStage) {
   const normalized = String(mainStage || '').toUpperCase()
@@ -138,12 +206,21 @@ function normalizeMainProcessStageKey(mainStage) {
 
 const TRANSFER_STAGES = new Set([
   'Proceed to Attorneys',
+  'Transfer',
   'Transfer in Progress',
   'Transfer Lodged',
 ])
 
+export function normalizeTransactionStage(stage, fallback = null) {
+  const normalized = TRANSACTION_STAGE_BY_KEY.get(normalizeTransactionStageKey(stage))
+  if (normalized) return normalized
+
+  if (fallback === null || fallback === undefined || fallback === '') return fallback
+  return TRANSACTION_STAGE_BY_KEY.get(normalizeTransactionStageKey(fallback)) || null
+}
+
 export function normalizeStageLabel(stage) {
-  return STAGE_ALIASES[stage] || stage
+  return normalizeTransactionStage(stage) || String(stage || '').trim()
 }
 
 export function getMainStageFromDetailedStage(stage) {
@@ -152,25 +229,24 @@ export function getMainStageFromDetailedStage(stage) {
 
   if (MAIN_PROCESS_STAGES.includes(normalizedMain)) return normalizedMain
 
-  if (normalized === 'Available') return 'AVAIL'
-  if (normalized === 'Reserved' || normalized === 'Deposit Paid') return 'DEP'
-  if (normalized === 'OTP Signed') return 'OTP'
-  if (normalized === 'Finance Pending' || normalized === 'Bond Approved / Proof of Funds') return 'FIN'
-  if (normalized === 'Proceed to Attorneys') return 'ATTY'
-  if (normalized === 'Transfer in Progress' || normalized === 'Transfer Lodged' || normalized === 'Transfer') return 'XFER'
-  if (normalized === 'Registered') return 'REG'
+  const mappedMainStage = MAIN_STAGE_BY_TRANSACTION_STAGE.get(normalized)
+  if (mappedMainStage) return mappedMainStage
 
   return 'AVAIL'
 }
 
 export function getDetailedStageFromMainStage(mainStage, currentDetailedStage = null) {
   const normalizedMain = normalizeMainProcessStageKey(mainStage)
+  const current = normalizeTransactionStage(currentDetailedStage)
+
+  if (current && MAIN_STAGE_BY_TRANSACTION_STAGE.get(current) === normalizedMain) {
+    return current
+  }
 
   if (normalizedMain === 'AVAIL') return 'Available'
   if (normalizedMain === 'DEP') return 'Reserved'
   if (normalizedMain === 'OTP') return 'OTP Signed'
   if (normalizedMain === 'FIN') {
-    const current = normalizeStageLabel(currentDetailedStage)
     if (current === 'Bond Approved / Proof of Funds') {
       return 'Bond Approved / Proof of Funds'
     }
@@ -178,7 +254,6 @@ export function getDetailedStageFromMainStage(mainStage, currentDetailedStage = 
   }
   if (normalizedMain === 'ATTY') return 'Proceed to Attorneys'
   if (normalizedMain === 'XFER') {
-    const current = normalizeStageLabel(currentDetailedStage)
     if (current === 'Transfer Lodged') {
       return 'Transfer Lodged'
     }
@@ -186,7 +261,7 @@ export function getDetailedStageFromMainStage(mainStage, currentDetailedStage = 
   }
   if (normalizedMain === 'REG') return 'Registered'
 
-  return normalizeStageLabel(currentDetailedStage) || 'Available'
+  return current || 'Available'
 }
 
 export function getMainStageIndex(stageOrMain) {

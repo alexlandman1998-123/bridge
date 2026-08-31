@@ -1,0 +1,205 @@
+--- PAGE 1 ---
+Listing Event Feed API 
+We have implemented a webservice method that allows a feed provider to add You Tube video Id 
+as well as Matterport Id to a listing on Private Property. The method works after a listing is 
+published to the portal. 
+Customers must contact Private Property Support should they wish to add HD higher ranking. 
+Implementation 
+Web services:  
+• UpdateListingVideoOrMatterport (BranchId, PropertyId, ListingType, ListingId, 
+MatterportId, VideoUrl, Token) 
+ 
+Requirements: 
+ 
+1. YoutubeVideoId. YoutubeVideoId must be 11 characters.  
+2. Matterport Id 
+ 
+Possible Errors: 
+1. Validate Listing, Return error if listing is not found (Error code PP103 - Invalid Listing) 
+2. Validate Branch against the Listing, Return error if listing does not belong to branch (Error 
+code PP103 - Invalid Listing) 
+3. Return Error if update fails (Error code PP50 - General Exception). 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+
+--- PAGE 2 ---
+ 
+Sample XML: 
+All data supplied. 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+<soapenv:Envelope 
+xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" 
+xmlns:tem="http://tempuri.org/"> 
+   <soapenv:Header/> 
+   <soapenv:Body> 
+      <tem:UpdateListingVideoOrMatterport> 
+         <tem:BranchId>7C8C0BA2-F379-43DE-9E55-
+1EF099D30C99</tem:BranchId> 
+         <tem:UniqueListingId>b18c400c-5f70-4508-b44b-
+2e3932be81d9</tem:UniqueListingId> 
+         <tem:MatterportId>cJhhdz6udAu</tem:MatterportId> 
+         <tem:YoutubeVideoId>kLwWsGua1bI</tem:YoutubeVideoId> 
+         <tem:ListingType>Sale</tem:ListingType> 
+         <tem:Token> 
+            
+<tem:Digest>E5ILJqmiF5Gtducw3y1k7rYYojI=</tem:Digest> 
+ 
+            <tem:UserName>infusioncommon</tem:UserName> 
+            <tem:StampTime>2022-11-16T14:50:40Z</tem:StampTime> 
+            <tem:Expires>2022-11-25T14:50:40Z</tem:Expires> 
+            <tem:UID>4EAgCxcpQZpccwmb2VaCB7</tem:UID> 
+         </tem:Token> 
+      </tem:UpdateListingVideoOrMatterport> 
+   </soapenv:Body> 
+</soapenv:Envelope> 
+ 
+       
+ 
+         
+         
+         
+         
+         
+
+--- PAGE 3 ---
+Only YoutubeVideoId. 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+<soapenv:Envelope 
+xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" 
+xmlns:tem="http://tempuri.org/"> 
+   <soapenv:Header/> 
+   <soapenv:Body> 
+      <tem:UpdateListingVideoOrMatterport> 
+         <tem:BranchId>7C8C0BA2-F379-43DE-9E55-
+1EF099D30C99</tem:BranchId> 
+         <tem:UniqueListingId>b18c400c-5f70-4508-b44b-
+2e3932be81d9</tem:UniqueListingId> 
+         <tem:MatterportId></tem:MatterportId> 
+         <tem:YoutubeVideoId>kLwWsGua1bI</tem:YoutubeVideoId> 
+         <tem:ListingType>Sale</tem:ListingType> 
+         <tem:Token> 
+            
+<tem:Digest>E5ILJqmiF5Gtducw3y1k7rYYojI=</tem:Digest> 
+ 
+            <tem:UserName>infusioncommon</tem:UserName> 
+            <tem:StampTime>2022-11-16T14:50:40Z</tem:StampTime> 
+            <tem:Expires>2022-11-25T14:50:40Z</tem:Expires> 
+            <tem:UID>4EAgCxcpQZpccwmb2VaCB7</tem:UID> 
+         </tem:Token> 
+      </tem:UpdateListingVideoOrMatterport> 
+   </soapenv:Body> 
+</soapenv:Envelope> 
+ 
+       
+ 
+         
+         
+         
+         
+         
+
+--- PAGE 4 ---
+Only MatterportId. 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+<soapenv:Envelope 
+xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" 
+xmlns:tem="http://tempuri.org/"> 
+   <soapenv:Header/> 
+   <soapenv:Body> 
+      <tem:UpdateListingVideoOrMatterport> 
+         <tem:BranchId>7C8C0BA2-F379-43DE-9E55-
+1EF099D30C99</tem:BranchId> 
+         <tem:UniqueListingId>b18c400c-5f70-4508-b44b-
+2e3932be81d9</tem:UniqueListingId> 
+         <tem:MatterportId>cJhhdz6udAu</tem:MatterportId> 
+         <tem:YoutubeVideoId></tem:YoutubeVideoId> 
+         <tem:ListingType>Sale</tem:ListingType> 
+         <tem:Token> 
+            
+<tem:Digest>E5ILJqmiF5Gtducw3y1k7rYYojI=</tem:Digest> 
+            <tem:UserName>infusioncommon</tem:UserName> 
+            <tem:StampTime>2022-11-16T14:50:40Z</tem:StampTime> 
+            <tem:Expires>2022-11-25T14:50:40Z</tem:Expires> 
+            <tem:UID>4EAgCxcpQZpccwmb2VaCB7</tem:UID> 
+         </tem:Token> 
+      </tem:UpdateListingVideoOrMatterport> 
+   </soapenv:Body> 
+</soapenv:Envelope> 
+ 
+       
+ 
+         
+         
+         
+         
+         
+
+--- PAGE 5 ---
+No Content supplied. Will result in no op. 
+ 
+ 
+ 
+ 
+ 
+ 
+<soapenv:Envelope 
+xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" 
+xmlns:tem="http://tempuri.org/"> 
+   <soapenv:Header/> 
+   <soapenv:Body> 
+      <tem:UpdateListingVideoOrMatterport> 
+         <tem:BranchId>7C8C0BA2-F379-43DE-9E55-
+1EF099D30C99</tem:BranchId> 
+         <tem:UniqueListingId>b18c400c-5f70-4508-b44b-
+2e3932be81d9</tem:UniqueListingId> 
+         <tem:MatterportId></tem:MatterportId> 
+         <tem:YoutubeVideoId></tem:YoutubeVideoId> 
+         <tem:ListingType>Sale</tem:ListingType> 
+         <tem:Token> 
+            
+<tem:Digest>E5ILJqmiF5Gtducw3y1k7rYYojI=</tem:Digest> 
+            <tem:UserName>infusioncommon</tem:UserName> 
+            <tem:StampTime>2022-11-16T14:50:40Z</tem:StampTime> 
+            <tem:Expires>2022-11-25T14:50:40Z</tem:Expires> 
+            <tem:UID>4EAgCxcpQZpccwmb2VaCB7</tem:UID> 
+         </tem:Token> 
+      </tem:UpdateListingVideoOrMatterport> 
+   </soapenv:Body> 
+</soapenv:Envelope>  
+ 
+       
+ 
+         
+         
+         
+         
+         

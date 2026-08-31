@@ -13,6 +13,7 @@ import { resolveSalesWorkflowSnapshot } from '../../core/transactions/salesWorkf
 import { resolveFinanceWorkflowSnapshot } from '../../core/transactions/financeWorkflow'
 import {
   legacyRequirementKeyToCanonicalKey,
+  syncCanonicalInstancesToTransactionRequiredDocuments,
   syncCanonicalToTransactionRequiredDocuments,
 } from './canonicalDocumentAdapterService'
 import {
@@ -34,6 +35,7 @@ import {
   normalizeRule,
   resolveRequirementCandidates,
   syncRequirementInstances,
+  syncTransactionRequirementInstancesForCreation,
 } from './canonicalDocumentResolverService'
 import { resolveTransactionFacts } from '../attorneyWorkflow/transactionFactsResolver'
 import { resolveLegalDocumentRequirements } from '../attorneyWorkflow/attorneyDocumentRequirementsResolver'
@@ -41,6 +43,10 @@ import { resolveLegalDocumentRequirements } from '../attorneyWorkflow/attorneyDo
 export const TRANSACTION_CANONICAL_DOCUMENT_ENGINE_SOURCE = 'transaction_canonical_document_requirement_engine'
 export const TRANSACTION_CANONICAL_DOCUMENT_ENGINE_VERSION = 'transaction_canonical_document_requirement_engine_v1'
 export const TRANSACTION_DOCUMENT_REQUIREMENT_TABLE = 'transaction_document_requirements'
+export const TRANSACTION_CANONICAL_PERSISTENCE_MODES = Object.freeze({
+  direct: 'direct',
+  creationRpc: 'transaction_creation_rpc',
+})
 
 const TRANSACTION_DOCUMENT_SECTION_LABELS = Object.freeze({
   buyer_documents: 'Buyer Documents',
@@ -526,6 +532,7 @@ function buildProjectionRow({
   facts = {},
   source = 'canonical_rule',
   explicitMeta = {},
+  includeOutsideStage = false,
 } = {}) {
   const definitionKey = generated.document_definition_key || definition.key
   const packKey = generated.pack_key || definition.pack_key
@@ -539,7 +546,7 @@ function buildProjectionRow({
     facts,
   })
 
-  if (!displayGate.visible) return null
+  if (!displayGate.visible && !includeOutsideStage) return null
 
   const requirementLevel = normalizeText(generated.requirement_level || definition.default_requirement_level || REQUIREMENT_LEVELS.required)
   const required = ![REQUIREMENT_LEVELS.optional, REQUIREMENT_LEVELS.notApplicable].includes(requirementLevel)
@@ -596,7 +603,6 @@ function buildProjectionRow({
     last_resolved_at: new Date().toISOString(),
     superseded_at: null,
     superseded_reason: null,
-    debug_group_key: groupKey,
   }
 }
 
@@ -911,7 +917,7 @@ async function syncProjectionRows({
     seenSignatures.add(signature)
     const existing = existingBySignature.get(signature)
     toUpsert.push({
-      id: existing?.id,
+      ...(existing?.id ? { id: existing.id } : {}),
       ...row,
       created_at: existing?.created_at || nowIso,
       updated_at: nowIso,
@@ -1030,6 +1036,7 @@ export async function resolveTransactionDocumentRequirements({
   subprocesses = null,
   client = supabase,
   writeLegacyProjection = false,
+  persistenceMode = TRANSACTION_CANONICAL_PERSISTENCE_MODES.direct,
 } = {}) {
   const db = requireClient(client)
   if (!transactionId && !transaction?.id) throw new Error('transactionId is required.')
@@ -1076,17 +1083,23 @@ export async function resolveTransactionDocumentRequirements({
   })
 
   const generatedInstances = candidates.map((candidate) => candidate.generated)
-  const canonicalSync = await syncRequirementInstances({
-    input: {
-      ...resolverInput,
-      options: {
-        ...resolverInput.options,
-        dryRun: false,
-      },
-    },
-    generatedInstances,
-    client: db,
-  })
+  const canonicalSync = persistenceMode === TRANSACTION_CANONICAL_PERSISTENCE_MODES.creationRpc
+    ? await syncTransactionRequirementInstancesForCreation({
+        transactionId: transactionRow.id,
+        generatedInstances,
+        client: db,
+      })
+    : await syncRequirementInstances({
+        input: {
+          ...resolverInput,
+          options: {
+            ...resolverInput.options,
+            dryRun: false,
+          },
+        },
+        generatedInstances,
+        client: db,
+      })
 
   const instancesBySignature = new Map(
     normalizeArray(canonicalSync.instances).map((instance) => [buildInstanceSignature(instance), instance]),
@@ -1100,6 +1113,7 @@ export async function resolveTransactionDocumentRequirements({
         ...candidate,
         instance,
         facts,
+        includeOutsideStage: persistenceMode === TRANSACTION_CANONICAL_PERSISTENCE_MODES.creationRpc,
       })
     })
     .filter(Boolean)
@@ -1110,13 +1124,20 @@ export async function resolveTransactionDocumentRequirements({
     projectionRows,
   })
 
-  if (writeLegacyProjection) {
-    await syncCanonicalToTransactionRequiredDocuments({
-      transactionId: transactionRow.id,
-      client: db,
-      force: true,
-    })
-  }
+  const legacyProjection = writeLegacyProjection
+    ? persistenceMode === TRANSACTION_CANONICAL_PERSISTENCE_MODES.creationRpc
+      ? await syncCanonicalInstancesToTransactionRequiredDocuments({
+          transactionId: transactionRow.id,
+          instances: canonicalSync.allInstances || canonicalSync.instances,
+          definitions: loadedDefinitions,
+          client: db,
+        })
+      : await syncCanonicalToTransactionRequiredDocuments({
+          transactionId: transactionRow.id,
+          client: db,
+          force: true,
+        })
+    : null
 
   return {
     transactionId: transactionRow.id,
@@ -1124,6 +1145,8 @@ export async function resolveTransactionDocumentRequirements({
     facts,
     canonicalSync,
     projectionRows: syncedProjectionRows,
+    legacyProjection,
+    persistenceMode,
     requirements: syncedProjectionRows.map(mapProjectionRowToRequirement),
   }
 }

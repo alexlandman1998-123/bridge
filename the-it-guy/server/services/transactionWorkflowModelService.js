@@ -489,6 +489,7 @@ export async function updateWorkflowStepStatus(transactionId, workflowKey, stepK
   const normalizedStatus = normalizeWorkflowStepStatus(status)
   const nowIso = toIsoString(options.now || new Date().toISOString()) || new Date().toISOString()
   const stepPayload = {
+    ...step,
     id: step.id,
     status: normalizedStatus,
     completed_at: ['complete', 'skipped', 'not_applicable'].includes(normalizedStatus) ? nowIso : null,
@@ -511,6 +512,7 @@ export async function updateWorkflowStepStatus(transactionId, workflowKey, stepK
     )
 
   const instancePayload = {
+    ...instance,
     id: instance.id,
     status: derivedStatus,
     ...buildInstanceStatusTimestamps(derivedStatus, nowIso),
@@ -590,6 +592,7 @@ async function updateWorkflowInstance(client, instance = {}, workflow = {}, nowI
   const status = normalizeWorkflowInstanceStatus(workflow.status)
   const timestamps = buildInstanceStatusTimestamps(status, nowIso)
   const payload = {
+    ...instance,
     id: instance.id,
     status,
     ...timestamps,
@@ -603,6 +606,7 @@ async function updateWorkflowInstance(client, instance = {}, workflow = {}, nowI
 async function updateWorkflowStep(client, existingStep = {}, nextStep = {}, nowIso) {
   const status = normalizeWorkflowStepStatus(nextStep.status)
   const payload = {
+    ...existingStep,
     id: existingStep.id,
     status,
     step_label: nextStep.label || existingStep.step_label,
@@ -626,8 +630,8 @@ export async function persistTransactionRollup(transactionId, rollup = {}, optio
   const previous = options.previousRollup || (await selectTransactionRollup(client, transactionId))
   const payload = {
     transaction_id: transactionId,
-    parent_stage: rollup.parentStage || null,
-    parent_status: rollup.parentStatus || null,
+    parent_stage: rollup.parentStage || previous?.parent_stage || 'SETUP',
+    parent_status: rollup.parentStatus || previous?.parent_status || 'not_started',
     progress_percent: Number(rollup.progressPercent || 0),
     active_workflow_key: rollup.activeWorkflowKey || null,
     active_step_key: rollup.activeStepKey || null,

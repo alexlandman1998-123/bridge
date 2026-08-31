@@ -1,4 +1,4 @@
-import { MAIN_PROCESS_STAGES, STAGES, getMainStageFromDetailedStage, normalizeStageLabel } from '../core/transactions/stageConfig'
+import { CANONICAL_TRANSACTION_STAGES, MAIN_PROCESS_STAGES, getMainStageFromDetailedStage, normalizeStageLabel } from '../core/transactions/stageConfig'
 import { financeTypeMatchesFilter } from '../core/transactions/financeType'
 import { supabase } from './supabaseClient'
 
@@ -20,9 +20,9 @@ const one = (value) => Array.isArray(value) ? value[0] || null : value || null
 
 function stageFor(stage, status = 'Available') {
   const primary = normalizeStageLabel(stage)
-  if (STAGES.includes(primary)) return primary
+  if (CANONICAL_TRANSACTION_STAGES.includes(primary)) return primary
   const fallback = normalizeStageLabel(status)
-  return STAGES.includes(fallback) ? fallback : 'Available'
+  return CANONICAL_TRANSACTION_STAGES.includes(fallback) ? fallback : 'Available'
 }
 
 function mainStageFor(mainStage, stage) {

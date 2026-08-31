@@ -1,0 +1,50 @@
+{
+  "suburbs": [
+    {
+      "property24Id": 140,
+      "name": "Garsfontein",
+      "cityName": "Pretoria",
+      "provinceName": "Gauteng",
+      "countryName": "South Africa",
+      "latitude": -25.795891,
+      "longitude": 28.3003
+    },
+    {
+      "property24Id": 1987,
+      "name": "Bartlett",
+      "cityName": "Boksburg",
+      "provinceName": "Gauteng",
+      "countryName": "South Africa",
+      "latitude": -26.174993,
+      "longitude": 28.275971
+    },
+    {
+      "property24Id": 8679,
+      "name": "Newlands",
+      "cityName": "Cape Town",
+      "provinceName": "Western Cape",
+      "countryName": "South Africa"
+    },
+    {
+      "property24Id": 5864,
+      "name": "Sandton",
+      "cityName": "Johannesburg",
+      "provinceName": "Gauteng",
+      "countryName": "South Africa"
+    }
+  ],
+  "propertyTypes": [
+    {
+      "property24Id": 4,
+      "name": "House",
+      "arch9PropertyType": "house",
+      "propertyCategory": "residential"
+    },
+    {
+      "property24Id": 5,
+      "name": "Apartment",
+      "arch9PropertyType": "apartment",
+      "propertyCategory": "residential"
+    }
+  ]
+}

@@ -28,6 +28,10 @@ import { getAgentPrivateListingSummaries, getAgentPrivateListings } from '../ser
 import { inferPartnerRoutingRoleTypesForTransaction, resolvePartnerRoutingForTransaction } from '../services/universalPartnerRoutingService'
 import { activateAnchorOnSpace } from '../lib/keyboardActivation'
 import { getPurchaserTypeLabel } from '../lib/purchaserPersonas'
+import {
+  AGENT_TRANSACTION_STAGE_OPTIONS,
+  normalizeTransactionStage,
+} from '../core/transactions/stageConfig.js'
 import Button from './ui/Button'
 import Modal from './ui/Modal'
 
@@ -885,7 +889,7 @@ function AgentNewDealWizard({
     importSellerName: '',
     importSellerEmail: '',
     importSellerPhone: '',
-    importCurrentStage: 'Offer Accepted',
+    importCurrentStage: AGENT_TRANSACTION_STAGE_OPTIONS[0],
     importMandateUploaded: false,
     importOtpUploaded: false,
     signedOtpStatus: 'pending_upload',
@@ -2426,10 +2430,10 @@ function AgentNewDealWizard({
         },
         status: {
           stage: propertyMode === PROPERTY_MODE_IMPORT
-            ? form.importCurrentStage
+            ? normalizeTransactionStage(form.importCurrentStage, AGENT_TRANSACTION_STAGE_OPTIONS[0])
             : propertyMode === PROPERTY_MODE_DEVELOPMENT && form.reservationRequired
               ? 'Reserved'
-              : 'Offer Accepted',
+              : normalizeTransactionStage('Offer Accepted'),
           nextAction,
           notes: [
             hasExternallyAppointedRolePlayer ? 'Externally appointed role player captured for at least one assignment.' : '',
@@ -2686,7 +2690,7 @@ function AgentNewDealWizard({
                       </Field>
                       <Field label="Current Stage" error={errors.importCurrentStage}>
                         <select className={fieldClass()} value={form.importCurrentStage} onChange={(event) => updateField('importCurrentStage', event.target.value)}>
-                          {['Offer Accepted', 'Deposit', 'Finance', 'Transfer', 'Registration'].map((stage) => (
+                          {AGENT_TRANSACTION_STAGE_OPTIONS.map((stage) => (
                             <option key={stage} value={stage}>{stage}</option>
                           ))}
                         </select>

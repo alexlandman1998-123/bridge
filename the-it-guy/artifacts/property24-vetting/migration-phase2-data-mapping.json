@@ -1,0 +1,1825 @@
+{
+  "version": "property24_migration_mapping_v1",
+  "phase": "property24-migration-import-phase2-data-mapping",
+  "mode": "mapping-plan",
+  "status": "READY_WITH_RESOLUTION_REQUIRED",
+  "generatedAt": "2026-08-31T10:05:37.593Z",
+  "safety": {
+    "property24WritesPerformed": false,
+    "databaseWritesPerformed": false,
+    "imageDownloadsPerformed": false,
+    "reportFileOnly": true
+  },
+  "context": {
+    "organisationId": "ec19d0a6-bcba-4eef-aa72-9972de88204d",
+    "environment": "exdev",
+    "agencyId": 31382
+  },
+  "validation": {
+    "status": "READY",
+    "summary": {
+      "agentCount": 4,
+      "agentProfilePictureCount": 2,
+      "listingCount": 4,
+      "saleListingCount": 3,
+      "rentalListingCount": 1,
+      "imageCount": 14,
+      "listingsWithImages": 4,
+      "listingAgentLinkCount": 4,
+      "matchedListingAgentLinkCount": 4,
+      "errorCount": 0,
+      "warningCount": 0
+    },
+    "inputHashes": {
+      "agents": "ad66a5fd88f21ea9ff57b2fd5048d6905630dde11bcd229dff24a128ce465196",
+      "listings": "dc42bd4e21760238e3d1f257bba30af5eeb9838a12ae5129332c6a0cf91f8a74",
+      "images": "1ad40c2a3f4fbfa91d6405c75eed125973d3f834a30e2683ff2c5fc83ba38591"
+    }
+  },
+  "summary": {
+    "agentPlanCount": 4,
+    "mappedArch9AgentCount": 0,
+    "agentResolutionRequiredCount": 4,
+    "listingPlanCount": 4,
+    "saleListingCount": 3,
+    "rentalListingCount": 1,
+    "imageRelationshipCount": 14,
+    "propertyTypeResolvedCount": 4,
+    "suburbResolvedCount": 4,
+    "externalAgentRelationshipCount": 4,
+    "arch9AgentRelationshipCount": 0,
+    "resolutionRequiredCount": 4,
+    "errorCount": 0
+  },
+  "fieldCoverage": {
+    "agents": {
+      "sourceFieldCount": 20,
+      "directMappedCount": 15,
+      "preservedOnlyCount": 5,
+      "fields": [
+        {
+          "sourceField": "AgencyId",
+          "target": "property24_agent_mappings.agency_id",
+          "mode": "direct"
+        },
+        {
+          "sourceField": "AgentId",
+          "target": "property24_agent_mappings.property24_agent_id",
+          "mode": "direct"
+        },
+        {
+          "sourceField": "Firstname",
+          "target": "agentDraft.firstName",
+          "mode": "direct"
+        },
+        {
+          "sourceField": "Lastname",
+          "target": "agentDraft.lastName",
+          "mode": "direct"
+        },
+        {
+          "sourceField": "Status",
+          "target": "property24_agent_mappings.status",
+          "mode": "direct"
+        },
+        {
+          "sourceField": "SourceReference",
+          "target": "property24_agent_mappings.source_reference",
+          "mode": "direct"
+        },
+        {
+          "sourceField": "CountryId",
+          "target": "agentDraft.property24CountryId",
+          "mode": "direct"
+        },
+        {
+          "sourceField": "MobileNumber",
+          "target": "property24_agent_mappings.mobile_snapshot",
+          "mode": "direct"
+        },
+        {
+          "sourceField": "MobileNumber1",
+          "target": "agentDraft.sourceSnapshot.MobileNumber1",
+          "mode": "preserved"
+        },
+        {
+          "sourceField": "MobileNumber2",
+          "target": "agentDraft.sourceSnapshot.MobileNumber2",
+          "mode": "preserved"
+        },
+        {
+          "sourceField": "MobileNumber3",
+          "target": "agentDraft.sourceSnapshot.MobileNumber3",
+          "mode": "preserved"
+        },
+        {
+          "sourceField": "FaxNumber",
+          "target": "agentDraft.sourceSnapshot.FaxNumber",
+          "mode": "preserved"
+        },
+        {
+          "sourceField": "WorkNumber",
+          "target": "agentDraft.sourceSnapshot.WorkNumber",
+          "mode": "preserved"
+        },
+        {
+          "sourceField": "EmailAddress",
+          "target": "property24_agent_mappings.email_snapshot",
+          "mode": "direct"
+        },
+        {
+          "sourceField": "Qualification",
+          "target": "agentDraft.qualification",
+          "mode": "direct"
+        },
+        {
+          "sourceField": "About",
+          "target": "agentDraft.about",
+          "mode": "direct"
+        },
+        {
+          "sourceField": "Property24ProfilePictureURL",
+          "target": "agentDraft.profilePictureSourceUrl",
+          "mode": "direct"
+        },
+        {
+          "sourceField": "Published",
+          "target": "agentDraft.published",
+          "mode": "direct"
+        },
+        {
+          "sourceField": "ReceiveStatsMail",
+          "target": "agentDraft.receiveStatsMail",
+          "mode": "direct"
+        },
+        {
+          "sourceField": "ReceiveGroupListingEmail",
+          "target": "agentDraft.receiveGroupListingEmail",
+          "mode": "direct"
+        }
+      ]
+    },
+    "listings": {
+      "sourceFieldCount": 68,
+      "directMappedCount": 34,
+      "preservedOnlyCount": 34,
+      "fields": [
+        {
+          "sourceField": "AgencyId",
+          "target": "property24_listing_syncs.agency_id",
+          "mode": "direct"
+        },
+        {
+          "sourceField": "ContactAgentIds",
+          "target": "relationships.contactAgents",
+          "mode": "direct"
+        },
+        {
+          "sourceField": "ListingNumber",
+          "target": "property24_listing_syncs.listing_number",
+          "mode": "direct"
+        },
+        {
+          "sourceField": "ListingType",
+          "target": "listing_publication_data.listing_type",
+          "mode": "direct"
+        },
+        {
+          "sourceField": "Status",
+          "target": "private_listings.listing_status",
+          "mode": "direct"
+        },
+        {
+          "sourceField": "Price",
+          "target": "private_listings.asking_price",
+          "mode": "direct"
+        },
+        {
+          "sourceField": "ListingVisibility",
+          "target": "private_listings.listing_visibility",
+          "mode": "direct"
+        },
+        {
+          "sourceField": "OccupationDate",
+          "target": "sellerCanonicalFacts.rentalInfo.occupationDate",
+          "mode": "direct"
+        },
+        {
+          "sourceField": "ExpiryDate",
+          "target": "sellerCanonicalFacts.property24Import.expiryDate",
+          "mode": "direct"
+        },
+        {
+          "sourceField": "Description",
+          "target": "private_listings.description",
+          "mode": "direct"
+        },
+        {
+          "sourceField": "DescriptionHeader",
+          "target": "private_listings.title",
+          "mode": "direct"
+        },
+        {
+          "sourceField": "DevelopmentId",
+          "target": "sellerCanonicalFacts.property24Import.raw.DevelopmentId",
+          "mode": "preserved"
+        },
+        {
+          "sourceField": "LightstoneId",
+          "target": "sellerCanonicalFacts.property24Import.raw.LightstoneId",
+          "mode": "preserved"
+        },
+        {
+          "sourceField": "Repossessed",
+          "target": "sellerCanonicalFacts.property24Import.raw.Repossessed",
+          "mode": "preserved"
+        },
+        {
+          "sourceField": "YouTubeVideoId",
+          "target": "sellerCanonicalFacts.property24Import.raw.YouTubeVideoId",
+          "mode": "preserved"
+        },
+        {
+          "sourceField": "MatterportSpaceId",
+          "target": "sellerCanonicalFacts.property24Import.raw.MatterportSpaceId",
+          "mode": "preserved"
+        },
+        {
+          "sourceField": "EyeSpy360Id",
+          "target": "sellerCanonicalFacts.property24Import.raw.EyeSpy360Id",
+          "mode": "preserved"
+        },
+        {
+          "sourceField": "PetsAllowed",
+          "target": "sellerCanonicalFacts.property24Import.propertyFeatures.petsAllowed",
+          "mode": "direct"
+        },
+        {
+          "sourceField": "ShowLocation",
+          "target": "sellerCanonicalFacts.property24Import.raw.ShowLocation",
+          "mode": "preserved"
+        },
+        {
+          "sourceField": "Age",
+          "target": "sellerCanonicalFacts.property24Import.raw.Age",
+          "mode": "preserved"
+        },
+        {
+          "sourceField": "SuburbId",
+          "target": "sellerCanonicalFacts.property24Import.suburbId",
+          "mode": "direct"
+        },
+        {
+          "sourceField": "MunicipalRatesAndTaxes",
+          "target": "listing_publication_data.rates_taxes",
+          "mode": "direct"
+        },
+        {
+          "sourceField": "MonthlyLevy",
+          "target": "listing_publication_data.levies",
+          "mode": "direct"
+        },
+        {
+          "sourceField": "StreetNumber",
+          "target": "private_listings.street_number",
+          "mode": "direct"
+        },
+        {
+          "sourceField": "StreetName",
+          "target": "private_listings.street_name",
+          "mode": "direct"
+        },
+        {
+          "sourceField": "StandNumber",
+          "target": "sellerCanonicalFacts.property24Import.raw.StandNumber",
+          "mode": "preserved"
+        },
+        {
+          "sourceField": "SourceReference",
+          "target": "private_listings.listing_reference",
+          "mode": "direct"
+        },
+        {
+          "sourceField": "Longitude",
+          "target": "private_listings.longitude",
+          "mode": "direct"
+        },
+        {
+          "sourceField": "Latitude",
+          "target": "private_listings.latitude",
+          "mode": "direct"
+        },
+        {
+          "sourceField": "ErfSize",
+          "target": "listing_publication_data.erf_size",
+          "mode": "direct"
+        },
+        {
+          "sourceField": "ErfAreaUnit",
+          "target": "sellerCanonicalFacts.property24Import.raw.ErfAreaUnit",
+          "mode": "preserved"
+        },
+        {
+          "sourceField": "FloorArea",
+          "target": "listing_publication_data.floor_size",
+          "mode": "direct"
+        },
+        {
+          "sourceField": "FloorAreaAreaUnit",
+          "target": "sellerCanonicalFacts.property24Import.raw.FloorAreaAreaUnit",
+          "mode": "preserved"
+        },
+        {
+          "sourceField": "PropertyTypeId",
+          "target": "sellerCanonicalFacts.property24Import.propertyTypeId",
+          "mode": "direct"
+        },
+        {
+          "sourceField": "Bedrooms",
+          "target": "listing_publication_data.bedrooms",
+          "mode": "direct"
+        },
+        {
+          "sourceField": "BedroomsDescription",
+          "target": "sellerCanonicalFacts.property24Import.raw.BedroomsDescription",
+          "mode": "preserved"
+        },
+        {
+          "sourceField": "Bathrooms",
+          "target": "listing_publication_data.bathrooms",
+          "mode": "direct"
+        },
+        {
+          "sourceField": "BathroomsDescription",
+          "target": "sellerCanonicalFacts.property24Import.raw.BathroomsDescription",
+          "mode": "preserved"
+        },
+        {
+          "sourceField": "Garages",
+          "target": "listing_publication_data.garages",
+          "mode": "direct"
+        },
+        {
+          "sourceField": "GaragesDescription",
+          "target": "sellerCanonicalFacts.property24Import.raw.GaragesDescription",
+          "mode": "preserved"
+        },
+        {
+          "sourceField": "ReceptionRooms",
+          "target": "sellerCanonicalFacts.property24Import.raw.ReceptionRooms",
+          "mode": "preserved"
+        },
+        {
+          "sourceField": "ReceptionRoomsDescription",
+          "target": "sellerCanonicalFacts.property24Import.raw.ReceptionRoomsDescription",
+          "mode": "preserved"
+        },
+        {
+          "sourceField": "Studies",
+          "target": "sellerCanonicalFacts.property24Import.raw.Studies",
+          "mode": "preserved"
+        },
+        {
+          "sourceField": "StudiesDescription",
+          "target": "sellerCanonicalFacts.property24Import.raw.StudiesDescription",
+          "mode": "preserved"
+        },
+        {
+          "sourceField": "Kitchens",
+          "target": "sellerCanonicalFacts.property24Import.raw.Kitchens",
+          "mode": "preserved"
+        },
+        {
+          "sourceField": "KitchensDescription",
+          "target": "sellerCanonicalFacts.property24Import.raw.KitchensDescription",
+          "mode": "preserved"
+        },
+        {
+          "sourceField": "SecureParkings",
+          "target": "sellerCanonicalFacts.property24Import.raw.SecureParkings",
+          "mode": "preserved"
+        },
+        {
+          "sourceField": "NumberOfParkingSpaces",
+          "target": "listing_publication_data.parking_bays",
+          "mode": "direct"
+        },
+        {
+          "sourceField": "ParkingDescription",
+          "target": "sellerCanonicalFacts.property24Import.raw.ParkingDescription",
+          "mode": "preserved"
+        },
+        {
+          "sourceField": "DomesticRooms",
+          "target": "sellerCanonicalFacts.property24Import.raw.DomesticRooms",
+          "mode": "preserved"
+        },
+        {
+          "sourceField": "DomesticRoomsDescription",
+          "target": "sellerCanonicalFacts.property24Import.raw.DomesticRoomsDescription",
+          "mode": "preserved"
+        },
+        {
+          "sourceField": "DomesticBathrooms",
+          "target": "sellerCanonicalFacts.property24Import.raw.DomesticBathrooms",
+          "mode": "preserved"
+        },
+        {
+          "sourceField": "OutsideToilets",
+          "target": "sellerCanonicalFacts.property24Import.raw.OutsideToilets",
+          "mode": "preserved"
+        },
+        {
+          "sourceField": "Garden",
+          "target": "listing_publication_data.features",
+          "mode": "direct"
+        },
+        {
+          "sourceField": "Pool",
+          "target": "listing_publication_data.features",
+          "mode": "direct"
+        },
+        {
+          "sourceField": "PoolDescription",
+          "target": "sellerCanonicalFacts.property24Import.raw.PoolDescription",
+          "mode": "preserved"
+        },
+        {
+          "sourceField": "Flatlet",
+          "target": "listing_publication_data.features",
+          "mode": "direct"
+        },
+        {
+          "sourceField": "FlatDescription",
+          "target": "sellerCanonicalFacts.property24Import.raw.FlatDescription",
+          "mode": "preserved"
+        },
+        {
+          "sourceField": "ParkingBayNumber",
+          "target": "sellerCanonicalFacts.property24Import.raw.ParkingBayNumber",
+          "mode": "preserved"
+        },
+        {
+          "sourceField": "Furnished",
+          "target": "sellerCanonicalFacts.rentalInfo.furnishedStatus",
+          "mode": "direct"
+        },
+        {
+          "sourceField": "DepositRequirementsComments",
+          "target": "sellerCanonicalFacts.rentalInfo.depositRequirement",
+          "mode": "direct"
+        },
+        {
+          "sourceField": "LeasePeriod",
+          "target": "sellerCanonicalFacts.rentalInfo.leasePeriodMonths",
+          "mode": "direct"
+        },
+        {
+          "sourceField": "RentalRate",
+          "target": "sellerCanonicalFacts.rentalInfo.rentalRate",
+          "mode": "direct"
+        },
+        {
+          "sourceField": "ComplexUnitNumber",
+          "target": "sellerCanonicalFacts.property24Import.raw.ComplexUnitNumber",
+          "mode": "preserved"
+        },
+        {
+          "sourceField": "ComplexSpecialLevy",
+          "target": "sellerCanonicalFacts.property24Import.raw.ComplexSpecialLevy",
+          "mode": "preserved"
+        },
+        {
+          "sourceField": "AuctionDate",
+          "target": "sellerCanonicalFacts.property24Import.raw.AuctionDate",
+          "mode": "preserved"
+        },
+        {
+          "sourceField": "AuctionVenue",
+          "target": "sellerCanonicalFacts.property24Import.raw.AuctionVenue",
+          "mode": "preserved"
+        },
+        {
+          "sourceField": "AuctionDescription",
+          "target": "sellerCanonicalFacts.property24Import.raw.AuctionDescription",
+          "mode": "preserved"
+        }
+      ]
+    },
+    "images": {
+      "sourceFieldCount": 4,
+      "directMappedCount": 4,
+      "preservedOnlyCount": 0,
+      "fields": [
+        {
+          "sourceField": "ListingNumber",
+          "target": "mediaPlan.privateListingKey",
+          "mode": "direct"
+        },
+        {
+          "sourceField": "Caption",
+          "target": "mediaPlan.images.caption",
+          "mode": "direct"
+        },
+        {
+          "sourceField": "Ordinal",
+          "target": "mediaPlan.images.sortOrder",
+          "mode": "direct"
+        },
+        {
+          "sourceField": "Prop24ImageUrl",
+          "target": "mediaPlan.images.sourceUrl",
+          "mode": "direct"
+        }
+      ]
+    }
+  },
+  "relationships": [
+    {
+      "listingNumber": 100314793,
+      "listingIdentityKey": "property24:exdev:31382:listing:100314793",
+      "contactAgents": [
+        {
+          "property24AgentId": 77959,
+          "agentIdentityKey": "property24:exdev:31382:agent:77959",
+          "sourceReference": "ARCH9-AGENT-001",
+          "arch9UserId": null,
+          "resolutionStatus": "create_or_invite"
+        }
+      ],
+      "imageCount": 4
+    },
+    {
+      "listingNumber": 100314816,
+      "listingIdentityKey": "property24:exdev:31382:listing:100314816",
+      "contactAgents": [
+        {
+          "property24AgentId": 77968,
+          "agentIdentityKey": "property24:exdev:31382:agent:77968",
+          "sourceReference": "ARCH9-P24-TEST-001",
+          "arch9UserId": null,
+          "resolutionStatus": "create_or_invite"
+        }
+      ],
+      "imageCount": 6
+    },
+    {
+      "listingNumber": 100314819,
+      "listingIdentityKey": "property24:exdev:31382:listing:100314819",
+      "contactAgents": [
+        {
+          "property24AgentId": 77969,
+          "agentIdentityKey": "property24:exdev:31382:agent:77969",
+          "sourceReference": "ARCH9-VET-JON-SNOW",
+          "arch9UserId": null,
+          "resolutionStatus": "create_or_invite"
+        }
+      ],
+      "imageCount": 2
+    },
+    {
+      "listingNumber": 100314820,
+      "listingIdentityKey": "property24:exdev:31382:listing:100314820",
+      "contactAgents": [
+        {
+          "property24AgentId": 77970,
+          "agentIdentityKey": "property24:exdev:31382:agent:77970",
+          "sourceReference": "ARCH9-VET-PAULY-SHORE",
+          "arch9UserId": null,
+          "resolutionStatus": "create_or_invite"
+        }
+      ],
+      "imageCount": 2
+    }
+  ],
+  "resolutionQueue": [
+    {
+      "code": "arch9_agent_resolution_required",
+      "entityType": "agent",
+      "externalId": 77959,
+      "field": "arch9_user_id",
+      "message": "Property24 agent 77959 must be linked to an existing or newly invited Arch9 user before apply."
+    },
+    {
+      "code": "arch9_agent_resolution_required",
+      "entityType": "agent",
+      "externalId": 77968,
+      "field": "arch9_user_id",
+      "message": "Property24 agent 77968 must be linked to an existing or newly invited Arch9 user before apply."
+    },
+    {
+      "code": "arch9_agent_resolution_required",
+      "entityType": "agent",
+      "externalId": 77969,
+      "field": "arch9_user_id",
+      "message": "Property24 agent 77969 must be linked to an existing or newly invited Arch9 user before apply."
+    },
+    {
+      "code": "arch9_agent_resolution_required",
+      "entityType": "agent",
+      "externalId": 77970,
+      "field": "arch9_user_id",
+      "message": "Property24 agent 77970 must be linked to an existing or newly invited Arch9 user before apply."
+    }
+  ],
+  "agentPlans": [
+    {
+      "identityKey": "property24:exdev:31382:agent:77959",
+      "property24AgentId": 77959,
+      "sourceReference": "ARCH9-AGENT-001",
+      "resolutionStatus": "create_or_invite",
+      "arch9UserId": null,
+      "targetTable": "property24_agent_mappings",
+      "agentDraft": {
+        "firstName": "Alex",
+        "lastName": "Landman",
+        "fullName": "Alex Landman",
+        "email": "alex@arch9.co.za",
+        "mobile": "0676125009",
+        "property24CountryId": 1,
+        "qualification": null,
+        "about": null,
+        "profilePictureSourceUrl": null,
+        "published": true,
+        "receiveStatsMail": false,
+        "receiveGroupListingEmail": true,
+        "sourceSnapshot": {
+          "AgencyId": "31382",
+          "AgentId": "77959",
+          "Firstname": "Alex",
+          "Lastname": "Landman",
+          "Status": "Active",
+          "SourceReference": "ARCH9-AGENT-001",
+          "CountryId": "1",
+          "MobileNumber": "0676125009",
+          "MobileNumber1": "",
+          "MobileNumber2": "",
+          "MobileNumber3": "",
+          "FaxNumber": "",
+          "WorkNumber": "",
+          "EmailAddress": "alex@arch9.co.za",
+          "Qualification": "",
+          "About": "",
+          "Property24ProfilePictureURL": "",
+          "Published": "1",
+          "ReceiveStatsMail": "0",
+          "ReceiveGroupListingEmail": "1"
+        }
+      },
+      "mappingRow": {
+        "organisation_id": "ec19d0a6-bcba-4eef-aa72-9972de88204d",
+        "environment": "exdev",
+        "agency_id": 31382,
+        "arch9_user_id": null,
+        "property24_agent_id": 77959,
+        "source_reference": "ARCH9-AGENT-001",
+        "email_snapshot": "alex@arch9.co.za",
+        "first_name_snapshot": "Alex",
+        "last_name_snapshot": "Landman",
+        "mobile_snapshot": "0676125009",
+        "match_type": "manual",
+        "confidence": 0,
+        "status": "active"
+      },
+      "mappingFingerprint": "497518ce1cd21bdc5796c6c74ec875343fa3f461cb5b29289a5c5dd27b363144"
+    },
+    {
+      "identityKey": "property24:exdev:31382:agent:77968",
+      "property24AgentId": 77968,
+      "sourceReference": "ARCH9-P24-TEST-001",
+      "resolutionStatus": "create_or_invite",
+      "arch9UserId": null,
+      "targetTable": "property24_agent_mappings",
+      "agentDraft": {
+        "firstName": "Alex",
+        "lastName": "Property24 Test",
+        "fullName": "Alex Property24 Test",
+        "email": "alex.property24.test@arch9.co.za",
+        "mobile": "0676125009",
+        "property24CountryId": 1,
+        "qualification": null,
+        "about": null,
+        "profilePictureSourceUrl": null,
+        "published": true,
+        "receiveStatsMail": false,
+        "receiveGroupListingEmail": true,
+        "sourceSnapshot": {
+          "AgencyId": "31382",
+          "AgentId": "77968",
+          "Firstname": "Alex",
+          "Lastname": "Property24 Test",
+          "Status": "Active",
+          "SourceReference": "ARCH9-P24-TEST-001",
+          "CountryId": "1",
+          "MobileNumber": "0676125009",
+          "MobileNumber1": "",
+          "MobileNumber2": "",
+          "MobileNumber3": "",
+          "FaxNumber": "",
+          "WorkNumber": "",
+          "EmailAddress": "alex.property24.test@arch9.co.za",
+          "Qualification": "",
+          "About": "",
+          "Property24ProfilePictureURL": "",
+          "Published": "1",
+          "ReceiveStatsMail": "0",
+          "ReceiveGroupListingEmail": "1"
+        }
+      },
+      "mappingRow": {
+        "organisation_id": "ec19d0a6-bcba-4eef-aa72-9972de88204d",
+        "environment": "exdev",
+        "agency_id": 31382,
+        "arch9_user_id": null,
+        "property24_agent_id": 77968,
+        "source_reference": "ARCH9-P24-TEST-001",
+        "email_snapshot": "alex.property24.test@arch9.co.za",
+        "first_name_snapshot": "Alex",
+        "last_name_snapshot": "Property24 Test",
+        "mobile_snapshot": "0676125009",
+        "match_type": "manual",
+        "confidence": 0,
+        "status": "active"
+      },
+      "mappingFingerprint": "873a3f5a2b86b940aa4ce01c5df8b069cd0e09699e23ced318f4030f4dbd7bc5"
+    },
+    {
+      "identityKey": "property24:exdev:31382:agent:77969",
+      "property24AgentId": 77969,
+      "sourceReference": "ARCH9-VET-JON-SNOW",
+      "resolutionStatus": "create_or_invite",
+      "arch9UserId": null,
+      "targetTable": "property24_agent_mappings",
+      "agentDraft": {
+        "firstName": "Jon",
+        "lastName": "Snow",
+        "fullName": "Jon Snow",
+        "email": "jon.snow.p24@arch9.co.za",
+        "mobile": "0600001123",
+        "property24CountryId": 1,
+        "qualification": null,
+        "about": null,
+        "profilePictureSourceUrl": "https://images.exdev.property24-test.com/252953498",
+        "published": true,
+        "receiveStatsMail": false,
+        "receiveGroupListingEmail": true,
+        "sourceSnapshot": {
+          "AgencyId": "31382",
+          "AgentId": "77969",
+          "Firstname": "Jon",
+          "Lastname": "Snow",
+          "Status": "Active",
+          "SourceReference": "ARCH9-VET-JON-SNOW",
+          "CountryId": "1",
+          "MobileNumber": "0600001123",
+          "MobileNumber1": "",
+          "MobileNumber2": "",
+          "MobileNumber3": "",
+          "FaxNumber": "",
+          "WorkNumber": "",
+          "EmailAddress": "jon.snow.p24@arch9.co.za",
+          "Qualification": "",
+          "About": "",
+          "Property24ProfilePictureURL": "https://images.exdev.property24-test.com/252953498",
+          "Published": "1",
+          "ReceiveStatsMail": "0",
+          "ReceiveGroupListingEmail": "1"
+        }
+      },
+      "mappingRow": {
+        "organisation_id": "ec19d0a6-bcba-4eef-aa72-9972de88204d",
+        "environment": "exdev",
+        "agency_id": 31382,
+        "arch9_user_id": null,
+        "property24_agent_id": 77969,
+        "source_reference": "ARCH9-VET-JON-SNOW",
+        "email_snapshot": "jon.snow.p24@arch9.co.za",
+        "first_name_snapshot": "Jon",
+        "last_name_snapshot": "Snow",
+        "mobile_snapshot": "0600001123",
+        "match_type": "manual",
+        "confidence": 0,
+        "status": "active"
+      },
+      "mappingFingerprint": "ea3507f26355fd692bc66d2c81bb9627961737ecaf67c370c4cb3dd63c8ae28c"
+    },
+    {
+      "identityKey": "property24:exdev:31382:agent:77970",
+      "property24AgentId": 77970,
+      "sourceReference": "ARCH9-VET-PAULY-SHORE",
+      "resolutionStatus": "create_or_invite",
+      "arch9UserId": null,
+      "targetTable": "property24_agent_mappings",
+      "agentDraft": {
+        "firstName": "Pauly",
+        "lastName": "Shore",
+        "fullName": "Pauly Shore",
+        "email": "pauly.shore.p24@arch9.co.za",
+        "mobile": "0600000002",
+        "property24CountryId": 1,
+        "qualification": null,
+        "about": null,
+        "profilePictureSourceUrl": "https://images.exdev.property24-test.com/252953504",
+        "published": true,
+        "receiveStatsMail": false,
+        "receiveGroupListingEmail": true,
+        "sourceSnapshot": {
+          "AgencyId": "31382",
+          "AgentId": "77970",
+          "Firstname": "Pauly",
+          "Lastname": "Shore",
+          "Status": "Active",
+          "SourceReference": "ARCH9-VET-PAULY-SHORE",
+          "CountryId": "1",
+          "MobileNumber": "0600000002",
+          "MobileNumber1": "",
+          "MobileNumber2": "",
+          "MobileNumber3": "",
+          "FaxNumber": "",
+          "WorkNumber": "",
+          "EmailAddress": "pauly.shore.p24@arch9.co.za",
+          "Qualification": "",
+          "About": "",
+          "Property24ProfilePictureURL": "https://images.exdev.property24-test.com/252953504",
+          "Published": "1",
+          "ReceiveStatsMail": "0",
+          "ReceiveGroupListingEmail": "1"
+        }
+      },
+      "mappingRow": {
+        "organisation_id": "ec19d0a6-bcba-4eef-aa72-9972de88204d",
+        "environment": "exdev",
+        "agency_id": 31382,
+        "arch9_user_id": null,
+        "property24_agent_id": 77970,
+        "source_reference": "ARCH9-VET-PAULY-SHORE",
+        "email_snapshot": "pauly.shore.p24@arch9.co.za",
+        "first_name_snapshot": "Pauly",
+        "last_name_snapshot": "Shore",
+        "mobile_snapshot": "0600000002",
+        "match_type": "manual",
+        "confidence": 0,
+        "status": "active"
+      },
+      "mappingFingerprint": "33f57aa79ba37c2c9f42a51296529a67f90e2358a00645d8e30f99761ed993d7"
+    }
+  ],
+  "listingPlans": [
+    {
+      "identityKey": "property24:exdev:31382:listing:100314793",
+      "listingNumber": 100314793,
+      "sourceReference": "PRV-202608201031-U8YM",
+      "sourceStatus": "Active",
+      "semanticStatus": "active",
+      "mappingNote": null,
+      "targetTables": [
+        "private_listings",
+        "listing_publication_data",
+        "property24_listing_syncs",
+        "listing_media"
+      ],
+      "privateListing": {
+        "organisationId": "ec19d0a6-bcba-4eef-aa72-9972de88204d",
+        "branchId": null,
+        "assignedAgentId": null,
+        "assignedAgentSourceReference": "ARCH9-AGENT-001",
+        "listingReference": "PRV-202608201031-U8YM",
+        "listingStatus": "active",
+        "listingVisibility": "active_market",
+        "propertyCategory": "residential",
+        "listingSource": "imported_stock",
+        "propertyStructureType": "other",
+        "propertyType": "house",
+        "listingCategory": "private_sale",
+        "title": "Beautiful 3 bed house in Garsfontein",
+        "description": "This is an ExDev integration test listing. Do not publish publicly. Agent: your test/training use\nWelcome to Junoah Estate, a secure, single-storey residential development in the sought-after suburb of Bartlett, Boksburg. Built for modern families and working professionals, it combines comfort, clean design, and everyday convenience in a safe, community-focused setting.\n\nEach home offers three well-sized bedrooms, two full bathrooms, and open-plan living areas that lead out to a private garden with a built-in braai — ideal for entertaining or unwinding at home. The kitchen is fitted with a gas stove and designed for practical, everyday use. Every unit also includes a double garage and quality finishes throughout.\n\nOptional extras such as backup inverter systems and air conditioning allow you to tailor your home to your needs, with added peace of mind during load-shedding. The estate is fully enclosed and features 24-hour security, access control, and electric fencing.\n\nResidents can enjoy a private park within the estate — a quiet, green space for children, families, and relaxed outdoor living. Junoah Estate is also conveniently located close to leading schools, shopping centres, and main transport routes.",
+        "askingPrice": 1234567,
+        "addressLine1": "694 Cicely Street",
+        "addressLine2": null,
+        "formattedAddress": "694 Cicely Street, Garsfontein, Pretoria, Gauteng",
+        "streetNumber": null,
+        "streetName": "694 Cicely Street",
+        "streetAddress": "694 Cicely Street",
+        "suburb": "Garsfontein",
+        "city": "Pretoria",
+        "province": "Gauteng",
+        "country": "South Africa",
+        "latitude": -25.795891,
+        "longitude": 28.3003,
+        "mandateStatus": "signed_external_pending_upload",
+        "sellerOnboardingStatus": "not_started",
+        "isActive": true,
+        "property24Reference": "100314793",
+        "property24Status": "published",
+        "internalListingNotes": "BRIDGE_QUICK_ADD_METADATA: {\"quickAddIntent\":\"imported_existing_listing\",\"source\":\"property24_import\",\"property24AgencyId\":31382,\"property24ListingNumber\":100314793,\"property24SourceReference\":\"PRV-202608201031-U8YM\",\"property24Status\":\"Active\",\"property24SemanticStatus\":\"active\"}",
+        "sellerCanonicalFacts": {
+          "property24Import": {
+            "agencyId": 31382,
+            "listingNumber": 100314793,
+            "sourceReference": "PRV-202608201031-U8YM",
+            "listingType": "Sale",
+            "sourceStatus": "Active",
+            "semanticStatus": "active",
+            "expiryDate": "2026-12-31",
+            "suburbId": 140,
+            "propertyTypeId": 4,
+            "propertyTypeLabel": "House",
+            "floorAreaUnit": "SquareMetres",
+            "erfAreaUnit": "0",
+            "propertyFeatures": {
+              "bedrooms": 3,
+              "bedroomsDescription": null,
+              "bathrooms": 2,
+              "bathroomsDescription": null,
+              "garages": 2,
+              "garagesDescription": null,
+              "receptionRooms": null,
+              "studies": null,
+              "kitchens": null,
+              "secureParkings": 0,
+              "parkingSpaces": 2,
+              "domesticRooms": null,
+              "domesticBathrooms": null,
+              "outsideToilets": null,
+              "garden": false,
+              "pool": false,
+              "poolDescription": null,
+              "flatlet": false,
+              "flatDescription": null,
+              "petsAllowed": "DontKnow",
+              "furnishedStatus": "No"
+            },
+            "contactAgentIds": [
+              77959
+            ],
+            "raw": {
+              "AgencyId": "31382",
+              "ContactAgentIds": "77959",
+              "ListingNumber": "100314793",
+              "ListingType": "Sale",
+              "Status": "Active",
+              "Price": "1234567",
+              "ListingVisibility": "Public",
+              "OccupationDate": "",
+              "ExpiryDate": "2026-12-31 00:00:00.000",
+              "Description": "This is an ExDev integration test listing. Do not publish publicly. Agent: your test/training use\nWelcome to Junoah Estate, a secure, single-storey residential development in the sought-after suburb of Bartlett, Boksburg. Built for modern families and working professionals, it combines comfort, clean design, and everyday convenience in a safe, community-focused setting.\n\nEach home offers three well-sized bedrooms, two full bathrooms, and open-plan living areas that lead out to a private garden with a built-in braai — ideal for entertaining or unwinding at home. The kitchen is fitted with a gas stove and designed for practical, everyday use. Every unit also includes a double garage and quality finishes throughout.\n\nOptional extras such as backup inverter systems and air conditioning allow you to tailor your home to your needs, with added peace of mind during load-shedding. The estate is fully enclosed and features 24-hour security, access control, and electric fencing.\n\nResidents can enjoy a private park within the estate — a quiet, green space for children, families, and relaxed outdoor living. Junoah Estate is also conveniently located close to leading schools, shopping centres, and main transport routes.",
+              "DescriptionHeader": "Beautiful 3 bed house in Garsfontein",
+              "DevelopmentId": "",
+              "LightstoneId": "",
+              "Repossessed": "0",
+              "YouTubeVideoId": "",
+              "MatterportSpaceId": "",
+              "EyeSpy360Id": "",
+              "PetsAllowed": "DontKnow",
+              "ShowLocation": "0",
+              "Age": "",
+              "SuburbId": "140",
+              "MunicipalRatesAndTaxes": "100",
+              "MonthlyLevy": "100",
+              "StreetNumber": "",
+              "StreetName": "694 Cicely Street",
+              "StandNumber": "",
+              "SourceReference": "PRV-202608201031-U8YM",
+              "Longitude": "",
+              "Latitude": "",
+              "ErfSize": "150",
+              "ErfAreaUnit": "0",
+              "FloorArea": "100",
+              "FloorAreaAreaUnit": "SquareMetres",
+              "PropertyTypeId": "4",
+              "Bedrooms": "3",
+              "BedroomsDescription": "",
+              "Bathrooms": "2",
+              "BathroomsDescription": "",
+              "Garages": "2",
+              "GaragesDescription": "",
+              "ReceptionRooms": "",
+              "ReceptionRoomsDescription": "",
+              "Studies": "",
+              "StudiesDescription": "",
+              "Kitchens": "",
+              "KitchensDescription": "",
+              "SecureParkings": "0",
+              "NumberOfParkingSpaces": "2",
+              "ParkingDescription": "",
+              "DomesticRooms": "",
+              "DomesticRoomsDescription": "",
+              "DomesticBathrooms": "",
+              "OutsideToilets": "",
+              "Garden": "0",
+              "Pool": "0",
+              "PoolDescription": "",
+              "Flatlet": "0",
+              "FlatDescription": "",
+              "ParkingBayNumber": "",
+              "Furnished": "No",
+              "DepositRequirementsComments": "",
+              "LeasePeriod": "",
+              "RentalRate": "Month",
+              "ComplexUnitNumber": "",
+              "ComplexSpecialLevy": "",
+              "AuctionDate": "",
+              "AuctionVenue": "",
+              "AuctionDescription": ""
+            }
+          }
+        }
+      },
+      "publicationData": {
+        "title": "Beautiful 3 bed house in Garsfontein",
+        "address": "694 Cicely Street, Garsfontein, Pretoria, Gauteng",
+        "suburb": "Garsfontein",
+        "province": "Gauteng",
+        "propertyType": "house",
+        "listingType": "Sale",
+        "askingPrice": 1234567,
+        "bedrooms": 3,
+        "bathrooms": 2,
+        "garages": 2,
+        "parkingBays": 2,
+        "floorSize": 100,
+        "erfSize": 150,
+        "ratesTaxes": 100,
+        "levies": 100,
+        "description": "This is an ExDev integration test listing. Do not publish publicly. Agent: your test/training use\nWelcome to Junoah Estate, a secure, single-storey residential development in the sought-after suburb of Bartlett, Boksburg. Built for modern families and working professionals, it combines comfort, clean design, and everyday convenience in a safe, community-focused setting.\n\nEach home offers three well-sized bedrooms, two full bathrooms, and open-plan living areas that lead out to a private garden with a built-in braai — ideal for entertaining or unwinding at home. The kitchen is fitted with a gas stove and designed for practical, everyday use. Every unit also includes a double garage and quality finishes throughout.\n\nOptional extras such as backup inverter systems and air conditioning allow you to tailor your home to your needs, with added peace of mind during load-shedding. The estate is fully enclosed and features 24-hour security, access control, and electric fencing.\n\nResidents can enjoy a private park within the estate — a quiet, green space for children, families, and relaxed outdoor living. Junoah Estate is also conveniently located close to leading schools, shopping centres, and main transport routes.",
+        "features": [],
+        "amenities": [],
+        "status": "Published"
+      },
+      "mediaPlan": {
+        "targetTable": "listing_media",
+        "phase": "image_import_pending",
+        "images": [
+          {
+            "property24ListingNumber": 100314793,
+            "sourceUrl": "https://images.exdev.property24-test.com/252953392",
+            "caption": "Screenshot 2025-10-20 at 10.19.54.png",
+            "sourceOrdinal": 1,
+            "sortOrder": 0,
+            "isCover": true
+          },
+          {
+            "property24ListingNumber": 100314793,
+            "sourceUrl": "https://images.exdev.property24-test.com/252953393",
+            "caption": "Screenshot 2025-10-20 at 10.20.04.png",
+            "sourceOrdinal": 2,
+            "sortOrder": 1,
+            "isCover": false
+          },
+          {
+            "property24ListingNumber": 100314793,
+            "sourceUrl": "https://images.exdev.property24-test.com/252953394",
+            "caption": "Screenshot 2025-10-20 at 10.20.12.png",
+            "sourceOrdinal": 3,
+            "sortOrder": 2,
+            "isCover": false
+          },
+          {
+            "property24ListingNumber": 100314793,
+            "sourceUrl": "https://images.exdev.property24-test.com/252953395",
+            "caption": "Screenshot 2025-10-20 at 10.20.24.png",
+            "sourceOrdinal": 4,
+            "sortOrder": 3,
+            "isCover": false
+          }
+        ]
+      },
+      "property24Sync": {
+        "privateListingKey": "PRV-202608201031-U8YM",
+        "environment": "exdev",
+        "agency_id": 31382,
+        "listing_number": 100314793,
+        "external_status": "on_portal",
+        "is_on_portal": true,
+        "source_status": "Active"
+      },
+      "agentRelationships": [
+        {
+          "property24AgentId": 77959,
+          "agentIdentityKey": "property24:exdev:31382:agent:77959",
+          "sourceReference": "ARCH9-AGENT-001",
+          "arch9UserId": null,
+          "resolutionStatus": "create_or_invite"
+        }
+      ],
+      "mappingFingerprint": "36f345c1f44a5facfaf16df94013bc247719cf0720bf3a126feca19328d53bd6"
+    },
+    {
+      "identityKey": "property24:exdev:31382:listing:100314816",
+      "listingNumber": 100314816,
+      "sourceReference": "PRV-202608261113-HRSS",
+      "sourceStatus": "Active",
+      "semanticStatus": "active",
+      "mappingNote": null,
+      "targetTables": [
+        "private_listings",
+        "listing_publication_data",
+        "property24_listing_syncs",
+        "listing_media"
+      ],
+      "privateListing": {
+        "organisationId": "ec19d0a6-bcba-4eef-aa72-9972de88204d",
+        "branchId": null,
+        "assignedAgentId": null,
+        "assignedAgentSourceReference": "ARCH9-P24-TEST-001",
+        "listingReference": "PRV-202608261113-HRSS",
+        "listingStatus": "active",
+        "listingVisibility": "active_market",
+        "propertyCategory": "residential",
+        "listingSource": "imported_stock",
+        "propertyStructureType": "other",
+        "propertyType": "house",
+        "listingCategory": "private_sale",
+        "title": "Modern Home",
+        "description": "Combining generous proportions, exceptional security, and an unrivalled address, this is the perfect executive residence, downsizer's dream, or lock-up-and-go sanctuary in one of Pretoria's most desirable neighbourhoods.",
+        "askingPrice": 1000000,
+        "addressLine1": "99 Ridge Road",
+        "addressLine2": null,
+        "formattedAddress": "99 Ridge Road, Bartlett, Boksburg, Gauteng",
+        "streetNumber": null,
+        "streetName": "99 Ridge Road",
+        "streetAddress": "99 Ridge Road",
+        "suburb": "Bartlett",
+        "city": "Boksburg",
+        "province": "Gauteng",
+        "country": "South Africa",
+        "latitude": -26.174993,
+        "longitude": 28.275971,
+        "mandateStatus": "signed_external_pending_upload",
+        "sellerOnboardingStatus": "not_started",
+        "isActive": true,
+        "property24Reference": "100314816",
+        "property24Status": "published",
+        "internalListingNotes": "BRIDGE_QUICK_ADD_METADATA: {\"quickAddIntent\":\"imported_existing_listing\",\"source\":\"property24_import\",\"property24AgencyId\":31382,\"property24ListingNumber\":100314816,\"property24SourceReference\":\"PRV-202608261113-HRSS\",\"property24Status\":\"Active\",\"property24SemanticStatus\":\"active\"}",
+        "sellerCanonicalFacts": {
+          "property24Import": {
+            "agencyId": 31382,
+            "listingNumber": 100314816,
+            "sourceReference": "PRV-202608261113-HRSS",
+            "listingType": "Sale",
+            "sourceStatus": "Active",
+            "semanticStatus": "active",
+            "expiryDate": "2027-02-26",
+            "suburbId": 1987,
+            "propertyTypeId": 4,
+            "propertyTypeLabel": "House",
+            "floorAreaUnit": "SquareMetres",
+            "erfAreaUnit": "0",
+            "propertyFeatures": {
+              "bedrooms": 2,
+              "bedroomsDescription": null,
+              "bathrooms": 1,
+              "bathroomsDescription": null,
+              "garages": 2,
+              "garagesDescription": null,
+              "receptionRooms": null,
+              "studies": null,
+              "kitchens": null,
+              "secureParkings": null,
+              "parkingSpaces": 2,
+              "domesticRooms": null,
+              "domesticBathrooms": null,
+              "outsideToilets": null,
+              "garden": false,
+              "pool": false,
+              "poolDescription": null,
+              "flatlet": false,
+              "flatDescription": null,
+              "petsAllowed": "DontKnow",
+              "furnishedStatus": "No"
+            },
+            "contactAgentIds": [
+              77968
+            ],
+            "raw": {
+              "AgencyId": "31382",
+              "ContactAgentIds": "77968",
+              "ListingNumber": "100314816",
+              "ListingType": "Sale",
+              "Status": "Active",
+              "Price": "1000000",
+              "ListingVisibility": "Public",
+              "OccupationDate": "",
+              "ExpiryDate": "2027-02-26 00:00:00.000",
+              "Description": "Combining generous proportions, exceptional security, and an unrivalled address, this is the perfect executive residence, downsizer's dream, or lock-up-and-go sanctuary in one of Pretoria's most desirable neighbourhoods.",
+              "DescriptionHeader": "Modern Home",
+              "DevelopmentId": "",
+              "LightstoneId": "",
+              "Repossessed": "0",
+              "YouTubeVideoId": "",
+              "MatterportSpaceId": "",
+              "EyeSpy360Id": "",
+              "PetsAllowed": "DontKnow",
+              "ShowLocation": "0",
+              "Age": "",
+              "SuburbId": "1987",
+              "MunicipalRatesAndTaxes": "",
+              "MonthlyLevy": "",
+              "StreetNumber": "",
+              "StreetName": "99 Ridge Road",
+              "StandNumber": "",
+              "SourceReference": "PRV-202608261113-HRSS",
+              "Longitude": "",
+              "Latitude": "",
+              "ErfSize": "200",
+              "ErfAreaUnit": "0",
+              "FloorArea": "200",
+              "FloorAreaAreaUnit": "SquareMetres",
+              "PropertyTypeId": "4",
+              "Bedrooms": "2",
+              "BedroomsDescription": "",
+              "Bathrooms": "1",
+              "BathroomsDescription": "",
+              "Garages": "2",
+              "GaragesDescription": "",
+              "ReceptionRooms": "",
+              "ReceptionRoomsDescription": "",
+              "Studies": "",
+              "StudiesDescription": "",
+              "Kitchens": "",
+              "KitchensDescription": "",
+              "SecureParkings": "",
+              "NumberOfParkingSpaces": "2",
+              "ParkingDescription": "",
+              "DomesticRooms": "",
+              "DomesticRoomsDescription": "",
+              "DomesticBathrooms": "",
+              "OutsideToilets": "",
+              "Garden": "0",
+              "Pool": "0",
+              "PoolDescription": "",
+              "Flatlet": "0",
+              "FlatDescription": "",
+              "ParkingBayNumber": "",
+              "Furnished": "No",
+              "DepositRequirementsComments": "",
+              "LeasePeriod": "",
+              "RentalRate": "Month",
+              "ComplexUnitNumber": "",
+              "ComplexSpecialLevy": "",
+              "AuctionDate": "",
+              "AuctionVenue": "",
+              "AuctionDescription": ""
+            }
+          }
+        }
+      },
+      "publicationData": {
+        "title": "Modern Home",
+        "address": "99 Ridge Road, Bartlett, Boksburg, Gauteng",
+        "suburb": "Bartlett",
+        "province": "Gauteng",
+        "propertyType": "house",
+        "listingType": "Sale",
+        "askingPrice": 1000000,
+        "bedrooms": 2,
+        "bathrooms": 1,
+        "garages": 2,
+        "parkingBays": 2,
+        "floorSize": 200,
+        "erfSize": 200,
+        "ratesTaxes": null,
+        "levies": null,
+        "description": "Combining generous proportions, exceptional security, and an unrivalled address, this is the perfect executive residence, downsizer's dream, or lock-up-and-go sanctuary in one of Pretoria's most desirable neighbourhoods.",
+        "features": [],
+        "amenities": [],
+        "status": "Published"
+      },
+      "mediaPlan": {
+        "targetTable": "listing_media",
+        "phase": "image_import_pending",
+        "images": [
+          {
+            "property24ListingNumber": 100314816,
+            "sourceUrl": "https://images.exdev.property24-test.com/252953490",
+            "caption": "Screenshot 2025-10-20 at 10.19.54.png",
+            "sourceOrdinal": 1,
+            "sortOrder": 0,
+            "isCover": true
+          },
+          {
+            "property24ListingNumber": 100314816,
+            "sourceUrl": "https://images.exdev.property24-test.com/252953491",
+            "caption": "Screenshot 2025-10-20 at 10.20.04.png",
+            "sourceOrdinal": 2,
+            "sortOrder": 1,
+            "isCover": false
+          },
+          {
+            "property24ListingNumber": 100314816,
+            "sourceUrl": "https://images.exdev.property24-test.com/252953492",
+            "caption": "Screenshot 2025-10-20 at 10.20.12.png",
+            "sourceOrdinal": 3,
+            "sortOrder": 2,
+            "isCover": false
+          },
+          {
+            "property24ListingNumber": 100314816,
+            "sourceUrl": "https://images.exdev.property24-test.com/252953493",
+            "caption": "Screenshot 2025-10-20 at 10.20.24.png",
+            "sourceOrdinal": 4,
+            "sortOrder": 3,
+            "isCover": false
+          },
+          {
+            "property24ListingNumber": 100314816,
+            "sourceUrl": "https://images.exdev.property24-test.com/252953494",
+            "caption": "Screenshot 2025-10-20 at 10.20.33.png",
+            "sourceOrdinal": 5,
+            "sortOrder": 4,
+            "isCover": false
+          },
+          {
+            "property24ListingNumber": 100314816,
+            "sourceUrl": "https://images.exdev.property24-test.com/252953495",
+            "caption": "Screenshot 2025-10-20 at 10.20.44.png",
+            "sourceOrdinal": 6,
+            "sortOrder": 5,
+            "isCover": false
+          }
+        ]
+      },
+      "property24Sync": {
+        "privateListingKey": "PRV-202608261113-HRSS",
+        "environment": "exdev",
+        "agency_id": 31382,
+        "listing_number": 100314816,
+        "external_status": "on_portal",
+        "is_on_portal": true,
+        "source_status": "Active"
+      },
+      "agentRelationships": [
+        {
+          "property24AgentId": 77968,
+          "agentIdentityKey": "property24:exdev:31382:agent:77968",
+          "sourceReference": "ARCH9-P24-TEST-001",
+          "arch9UserId": null,
+          "resolutionStatus": "create_or_invite"
+        }
+      ],
+      "mappingFingerprint": "c2cce160bcb0057d8f5dfce76fdf5d0ce940fe876dd93348e730ffb55410cff1"
+    },
+    {
+      "identityKey": "property24:exdev:31382:listing:100314819",
+      "listingNumber": 100314819,
+      "sourceReference": "ARCH9-VET-PHASE2-RENT-NEWLANDS",
+      "sourceStatus": "Active",
+      "semanticStatus": "active",
+      "mappingNote": null,
+      "targetTables": [
+        "private_listings",
+        "listing_publication_data",
+        "property24_listing_syncs",
+        "listing_media"
+      ],
+      "privateListing": {
+        "organisationId": "ec19d0a6-bcba-4eef-aa72-9972de88204d",
+        "branchId": null,
+        "assignedAgentId": null,
+        "assignedAgentSourceReference": "ARCH9-VET-JON-SNOW",
+        "listingReference": "ARCH9-VET-PHASE2-RENT-NEWLANDS",
+        "listingStatus": "active",
+        "listingVisibility": "active_market",
+        "propertyCategory": "residential",
+        "listingSource": "imported_stock",
+        "propertyStructureType": "other",
+        "propertyType": "apartment",
+        "listingCategory": "rental",
+        "title": "Modern Newlands Apartment with Mountain Views",
+        "description": "This neat little two bedroom cottage is situated on a beautiful flat peace of ground a stones throw away from the beach.\n\nThe property is fully walled with an electric gate and has a lovely lush manicured garden.\nIt consists of a cosy lounge a galley fitted kitchen and two rooms with a newly refurbished bathroom.\n\nThis home has huge potential to build on and extend and is a hop skip and jump to the beach.\nAdd on another story and you will have gorgeous sea views or keep the cottage as a granny flat or guest cottage and build the home of your dreams on the property there is ample space.",
+        "askingPrice": 22000,
+        "addressLine1": null,
+        "addressLine2": null,
+        "formattedAddress": "Newlands, Cape Town, Western Cape",
+        "streetNumber": null,
+        "streetName": null,
+        "streetAddress": null,
+        "suburb": "Newlands",
+        "city": "Cape Town",
+        "province": "Western Cape",
+        "country": "South Africa",
+        "latitude": null,
+        "longitude": null,
+        "mandateStatus": "signed_external_pending_upload",
+        "sellerOnboardingStatus": "not_started",
+        "isActive": true,
+        "property24Reference": "100314819",
+        "property24Status": "published",
+        "internalListingNotes": "BRIDGE_QUICK_ADD_METADATA: {\"quickAddIntent\":\"imported_existing_listing\",\"source\":\"property24_import\",\"property24AgencyId\":31382,\"property24ListingNumber\":100314819,\"property24SourceReference\":\"ARCH9-VET-PHASE2-RENT-NEWLANDS\",\"property24Status\":\"Active\",\"property24SemanticStatus\":\"active\"}",
+        "sellerCanonicalFacts": {
+          "rentalInfo": {
+            "status": "active",
+            "monthlyRent": 22000,
+            "rentalRate": "Month",
+            "availableFrom": "2026-09-01",
+            "occupationDate": "2026-09-01",
+            "expiryDate": "2026-11-30",
+            "depositAmount": 44000,
+            "depositRequirement": "Equal to deposit amount R44000",
+            "leasePeriodMonths": 12,
+            "furnishedStatus": "No",
+            "petsAllowed": "No"
+          },
+          "property24Import": {
+            "agencyId": 31382,
+            "listingNumber": 100314819,
+            "sourceReference": "ARCH9-VET-PHASE2-RENT-NEWLANDS",
+            "listingType": "Rental",
+            "sourceStatus": "Active",
+            "semanticStatus": "active",
+            "expiryDate": "2026-11-30",
+            "suburbId": 8679,
+            "propertyTypeId": 5,
+            "propertyTypeLabel": "Apartment",
+            "floorAreaUnit": "SquareMetres",
+            "erfAreaUnit": "0",
+            "propertyFeatures": {
+              "bedrooms": 2,
+              "bedroomsDescription": null,
+              "bathrooms": 2,
+              "bathroomsDescription": null,
+              "garages": 0,
+              "garagesDescription": null,
+              "receptionRooms": null,
+              "studies": null,
+              "kitchens": null,
+              "secureParkings": 0,
+              "parkingSpaces": 0,
+              "domesticRooms": null,
+              "domesticBathrooms": null,
+              "outsideToilets": null,
+              "garden": false,
+              "pool": false,
+              "poolDescription": null,
+              "flatlet": false,
+              "flatDescription": null,
+              "petsAllowed": "No",
+              "furnishedStatus": "No"
+            },
+            "contactAgentIds": [
+              77969
+            ],
+            "raw": {
+              "AgencyId": "31382",
+              "ContactAgentIds": "77969",
+              "ListingNumber": "100314819",
+              "ListingType": "Rental",
+              "Status": "Active",
+              "Price": "22000",
+              "ListingVisibility": "Public",
+              "OccupationDate": "2026-09-01 00:00:00.000",
+              "ExpiryDate": "2026-11-30 00:00:00.000",
+              "Description": "This neat little two bedroom cottage is situated on a beautiful flat peace of ground a stones throw away from the beach.\n\nThe property is fully walled with an electric gate and has a lovely lush manicured garden.\nIt consists of a cosy lounge a galley fitted kitchen and two rooms with a newly refurbished bathroom.\n\nThis home has huge potential to build on and extend and is a hop skip and jump to the beach.\nAdd on another story and you will have gorgeous sea views or keep the cottage as a granny flat or guest cottage and build the home of your dreams on the property there is ample space.",
+              "DescriptionHeader": "Modern Newlands Apartment with Mountain Views",
+              "DevelopmentId": "",
+              "LightstoneId": "",
+              "Repossessed": "0",
+              "YouTubeVideoId": "",
+              "MatterportSpaceId": "",
+              "EyeSpy360Id": "",
+              "PetsAllowed": "No",
+              "ShowLocation": "0",
+              "Age": "",
+              "SuburbId": "8679",
+              "MunicipalRatesAndTaxes": "",
+              "MonthlyLevy": "",
+              "StreetNumber": "",
+              "StreetName": "",
+              "StandNumber": "",
+              "SourceReference": "ARCH9-VET-PHASE2-RENT-NEWLANDS",
+              "Longitude": "",
+              "Latitude": "",
+              "ErfSize": "",
+              "ErfAreaUnit": "0",
+              "FloorArea": "82",
+              "FloorAreaAreaUnit": "SquareMetres",
+              "PropertyTypeId": "5",
+              "Bedrooms": "2",
+              "BedroomsDescription": "",
+              "Bathrooms": "2",
+              "BathroomsDescription": "",
+              "Garages": "0",
+              "GaragesDescription": "",
+              "ReceptionRooms": "",
+              "ReceptionRoomsDescription": "",
+              "Studies": "",
+              "StudiesDescription": "",
+              "Kitchens": "",
+              "KitchensDescription": "",
+              "SecureParkings": "0",
+              "NumberOfParkingSpaces": "0",
+              "ParkingDescription": "",
+              "DomesticRooms": "",
+              "DomesticRoomsDescription": "",
+              "DomesticBathrooms": "",
+              "OutsideToilets": "",
+              "Garden": "0",
+              "Pool": "0",
+              "PoolDescription": "",
+              "Flatlet": "0",
+              "FlatDescription": "",
+              "ParkingBayNumber": "",
+              "Furnished": "No",
+              "DepositRequirementsComments": "Equal to deposit amount R44000",
+              "LeasePeriod": "12 Months",
+              "RentalRate": "Month",
+              "ComplexUnitNumber": "",
+              "ComplexSpecialLevy": "",
+              "AuctionDate": "",
+              "AuctionVenue": "",
+              "AuctionDescription": ""
+            }
+          }
+        }
+      },
+      "publicationData": {
+        "title": "Modern Newlands Apartment with Mountain Views",
+        "address": "Newlands, Cape Town, Western Cape",
+        "suburb": "Newlands",
+        "province": "Western Cape",
+        "propertyType": "apartment",
+        "listingType": "Rental",
+        "askingPrice": 22000,
+        "bedrooms": 2,
+        "bathrooms": 2,
+        "garages": 0,
+        "parkingBays": 0,
+        "floorSize": 82,
+        "erfSize": null,
+        "ratesTaxes": null,
+        "levies": null,
+        "description": "This neat little two bedroom cottage is situated on a beautiful flat peace of ground a stones throw away from the beach.\n\nThe property is fully walled with an electric gate and has a lovely lush manicured garden.\nIt consists of a cosy lounge a galley fitted kitchen and two rooms with a newly refurbished bathroom.\n\nThis home has huge potential to build on and extend and is a hop skip and jump to the beach.\nAdd on another story and you will have gorgeous sea views or keep the cottage as a granny flat or guest cottage and build the home of your dreams on the property there is ample space.",
+        "features": [],
+        "amenities": [],
+        "status": "Published"
+      },
+      "mediaPlan": {
+        "targetTable": "listing_media",
+        "phase": "image_import_pending",
+        "images": [
+          {
+            "property24ListingNumber": 100314819,
+            "sourceUrl": "https://images.exdev.property24-test.com/252953500",
+            "caption": "Open-plan living and dining area",
+            "sourceOrdinal": 1,
+            "sortOrder": 0,
+            "isCover": true
+          },
+          {
+            "property24ListingNumber": 100314819,
+            "sourceUrl": "https://images.exdev.property24-test.com/252953501",
+            "caption": "Contemporary kitchen",
+            "sourceOrdinal": 2,
+            "sortOrder": 1,
+            "isCover": false
+          }
+        ]
+      },
+      "property24Sync": {
+        "privateListingKey": "ARCH9-VET-PHASE2-RENT-NEWLANDS",
+        "environment": "exdev",
+        "agency_id": 31382,
+        "listing_number": 100314819,
+        "external_status": "on_portal",
+        "is_on_portal": true,
+        "source_status": "Active"
+      },
+      "agentRelationships": [
+        {
+          "property24AgentId": 77969,
+          "agentIdentityKey": "property24:exdev:31382:agent:77969",
+          "sourceReference": "ARCH9-VET-JON-SNOW",
+          "arch9UserId": null,
+          "resolutionStatus": "create_or_invite"
+        }
+      ],
+      "mappingFingerprint": "80d4fa4adf1365279527e5864aabbf2b6eb78ba596f3b52343755f15bf4af6cc"
+    },
+    {
+      "identityKey": "property24:exdev:31382:listing:100314820",
+      "listingNumber": 100314820,
+      "sourceReference": "ARCH9-VET-PHASE2-SALE-SANDTON",
+      "sourceStatus": "Active",
+      "semanticStatus": "active",
+      "mappingNote": null,
+      "targetTables": [
+        "private_listings",
+        "listing_publication_data",
+        "property24_listing_syncs",
+        "listing_media"
+      ],
+      "privateListing": {
+        "organisationId": "ec19d0a6-bcba-4eef-aa72-9972de88204d",
+        "branchId": null,
+        "assignedAgentId": null,
+        "assignedAgentSourceReference": "ARCH9-VET-PAULY-SHORE",
+        "listingReference": "ARCH9-VET-PHASE2-SALE-SANDTON",
+        "listingStatus": "active",
+        "listingVisibility": "active_market",
+        "propertyCategory": "residential",
+        "listingSource": "imported_stock",
+        "propertyStructureType": "other",
+        "propertyType": "house",
+        "listingCategory": "private_sale",
+        "title": "Contemporary Sandton Family Home",
+        "description": "Very spacious family home offering 3 bedrooms, 2 bathrooms, massive kitchen with a pantry and a scullery, spacious lounge, dining area, study, 2 full bathrooms, pool, double carport and more parking space, this property is a must have for an entertainer. It's available immediately. It's available furnished or unfurnished, if you want it furnished the price will be more and discussed.",
+        "askingPrice": 4950000,
+        "addressLine1": null,
+        "addressLine2": null,
+        "formattedAddress": "Sandton, Johannesburg, Gauteng",
+        "streetNumber": null,
+        "streetName": null,
+        "streetAddress": null,
+        "suburb": "Sandton",
+        "city": "Johannesburg",
+        "province": "Gauteng",
+        "country": "South Africa",
+        "latitude": null,
+        "longitude": null,
+        "mandateStatus": "signed_external_pending_upload",
+        "sellerOnboardingStatus": "not_started",
+        "isActive": true,
+        "property24Reference": "100314820",
+        "property24Status": "published",
+        "internalListingNotes": "BRIDGE_QUICK_ADD_METADATA: {\"quickAddIntent\":\"imported_existing_listing\",\"source\":\"property24_import\",\"property24AgencyId\":31382,\"property24ListingNumber\":100314820,\"property24SourceReference\":\"ARCH9-VET-PHASE2-SALE-SANDTON\",\"property24Status\":\"Active\",\"property24SemanticStatus\":\"active\"}",
+        "sellerCanonicalFacts": {
+          "property24Import": {
+            "agencyId": 31382,
+            "listingNumber": 100314820,
+            "sourceReference": "ARCH9-VET-PHASE2-SALE-SANDTON",
+            "listingType": "Sale",
+            "sourceStatus": "Active",
+            "semanticStatus": "active",
+            "expiryDate": "2026-11-30",
+            "suburbId": 5864,
+            "propertyTypeId": 4,
+            "propertyTypeLabel": "House",
+            "floorAreaUnit": "SquareMetres",
+            "erfAreaUnit": "0",
+            "propertyFeatures": {
+              "bedrooms": 4,
+              "bedroomsDescription": null,
+              "bathrooms": 3,
+              "bathroomsDescription": null,
+              "garages": 2,
+              "garagesDescription": null,
+              "receptionRooms": null,
+              "studies": null,
+              "kitchens": null,
+              "secureParkings": 0,
+              "parkingSpaces": 2,
+              "domesticRooms": null,
+              "domesticBathrooms": null,
+              "outsideToilets": null,
+              "garden": true,
+              "pool": false,
+              "poolDescription": null,
+              "flatlet": false,
+              "flatDescription": null,
+              "petsAllowed": "DontKnow",
+              "furnishedStatus": "No"
+            },
+            "contactAgentIds": [
+              77970
+            ],
+            "raw": {
+              "AgencyId": "31382",
+              "ContactAgentIds": "77970",
+              "ListingNumber": "100314820",
+              "ListingType": "Sale",
+              "Status": "Active",
+              "Price": "4950000",
+              "ListingVisibility": "Public",
+              "OccupationDate": "",
+              "ExpiryDate": "2026-11-30 00:00:00.000",
+              "Description": "Very spacious family home offering 3 bedrooms, 2 bathrooms, massive kitchen with a pantry and a scullery, spacious lounge, dining area, study, 2 full bathrooms, pool, double carport and more parking space, this property is a must have for an entertainer. It's available immediately. It's available furnished or unfurnished, if you want it furnished the price will be more and discussed.",
+              "DescriptionHeader": "Contemporary Sandton Family Home",
+              "DevelopmentId": "",
+              "LightstoneId": "",
+              "Repossessed": "0",
+              "YouTubeVideoId": "",
+              "MatterportSpaceId": "",
+              "EyeSpy360Id": "",
+              "PetsAllowed": "DontKnow",
+              "ShowLocation": "0",
+              "Age": "",
+              "SuburbId": "5864",
+              "MunicipalRatesAndTaxes": "",
+              "MonthlyLevy": "",
+              "StreetNumber": "",
+              "StreetName": "",
+              "StandNumber": "",
+              "SourceReference": "ARCH9-VET-PHASE2-SALE-SANDTON",
+              "Longitude": "",
+              "Latitude": "",
+              "ErfSize": "600",
+              "ErfAreaUnit": "0",
+              "FloorArea": "220",
+              "FloorAreaAreaUnit": "SquareMetres",
+              "PropertyTypeId": "4",
+              "Bedrooms": "4",
+              "BedroomsDescription": "",
+              "Bathrooms": "3",
+              "BathroomsDescription": "",
+              "Garages": "2",
+              "GaragesDescription": "",
+              "ReceptionRooms": "",
+              "ReceptionRoomsDescription": "",
+              "Studies": "",
+              "StudiesDescription": "",
+              "Kitchens": "",
+              "KitchensDescription": "",
+              "SecureParkings": "0",
+              "NumberOfParkingSpaces": "2",
+              "ParkingDescription": "",
+              "DomesticRooms": "",
+              "DomesticRoomsDescription": "",
+              "DomesticBathrooms": "",
+              "OutsideToilets": "",
+              "Garden": "1",
+              "Pool": "0",
+              "PoolDescription": "",
+              "Flatlet": "0",
+              "FlatDescription": "",
+              "ParkingBayNumber": "",
+              "Furnished": "No",
+              "DepositRequirementsComments": "",
+              "LeasePeriod": "",
+              "RentalRate": "Month",
+              "ComplexUnitNumber": "",
+              "ComplexSpecialLevy": "",
+              "AuctionDate": "",
+              "AuctionVenue": "",
+              "AuctionDescription": ""
+            }
+          }
+        }
+      },
+      "publicationData": {
+        "title": "Contemporary Sandton Family Home",
+        "address": "Sandton, Johannesburg, Gauteng",
+        "suburb": "Sandton",
+        "province": "Gauteng",
+        "propertyType": "house",
+        "listingType": "Sale",
+        "askingPrice": 4950000,
+        "bedrooms": 4,
+        "bathrooms": 3,
+        "garages": 2,
+        "parkingBays": 2,
+        "floorSize": 220,
+        "erfSize": 600,
+        "ratesTaxes": null,
+        "levies": null,
+        "description": "Very spacious family home offering 3 bedrooms, 2 bathrooms, massive kitchen with a pantry and a scullery, spacious lounge, dining area, study, 2 full bathrooms, pool, double carport and more parking space, this property is a must have for an entertainer. It's available immediately. It's available furnished or unfurnished, if you want it furnished the price will be more and discussed.",
+        "features": [
+          "Garden"
+        ],
+        "amenities": [],
+        "status": "Published"
+      },
+      "mediaPlan": {
+        "targetTable": "listing_media",
+        "phase": "image_import_pending",
+        "images": [
+          {
+            "property24ListingNumber": 100314820,
+            "sourceUrl": "https://images.exdev.property24-test.com/252953502",
+            "caption": "Front exterior",
+            "sourceOrdinal": 1,
+            "sortOrder": 0,
+            "isCover": true
+          },
+          {
+            "property24ListingNumber": 100314820,
+            "sourceUrl": "https://images.exdev.property24-test.com/252953503",
+            "caption": "Open-plan living area",
+            "sourceOrdinal": 2,
+            "sortOrder": 1,
+            "isCover": false
+          }
+        ]
+      },
+      "property24Sync": {
+        "privateListingKey": "ARCH9-VET-PHASE2-SALE-SANDTON",
+        "environment": "exdev",
+        "agency_id": 31382,
+        "listing_number": 100314820,
+        "external_status": "on_portal",
+        "is_on_portal": true,
+        "source_status": "Active"
+      },
+      "agentRelationships": [
+        {
+          "property24AgentId": 77970,
+          "agentIdentityKey": "property24:exdev:31382:agent:77970",
+          "sourceReference": "ARCH9-VET-PAULY-SHORE",
+          "arch9UserId": null,
+          "resolutionStatus": "create_or_invite"
+        }
+      ],
+      "mappingFingerprint": "948f7fc75f90880cb7258c04d9ee00f2bc955c8f67c8d515fe0b3603ce3d668f"
+    }
+  ],
+  "nextPhase": "Resolve the queued organisation, agent, or catalog identities before applying this mapping plan."
+}

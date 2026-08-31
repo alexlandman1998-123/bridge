@@ -9,7 +9,7 @@ import {
 
 assert.deepEqual(
   resolveWizardInitialTransactionStage({ signedOtpStatus: 'uploaded' }, { stage: 'Reserved', mainStage: 'OTP' }),
-  { stage: 'Finance In Progress', mainStage: 'FIN', onboardingStatus: 'signed_otp_received' },
+  { stage: 'Finance', mainStage: 'FIN', onboardingStatus: 'signed_otp_received' },
 )
 assert.deepEqual(
   resolveWizardInitialTransactionStage({ signedOtpStatus: 'pending_upload' }, { stage: 'Reserved', mainStage: 'OTP' }),

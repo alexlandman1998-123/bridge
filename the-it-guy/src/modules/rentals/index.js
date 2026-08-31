@@ -85,6 +85,16 @@ export {
   RentalVacancyCreatePage,
   RentalVacancyDetailPage,
   RentalOperationsDashboardPage,
+  RentalPilotReadinessPage,
+  RentalRolloutControlsPage,
+  RentalFinancialReconciliationPage,
+  RentalPilotLaunchPage,
+  RentalPilotExecutionPage,
+  RentalPilotReviewsPage,
+  RentalMaintenancePage,
+  RentalMaintenanceQuotesPage,
+  RentalMaintenanceExecutionPage,
+  RentalInspectionsPage,
 } from './shell/rentalRouteLoaders.js'
 
 export { RENTAL_MODULES, resolveRentalModuleAvailability } from '../../services/rentals/rentalModuleAvailability.js'

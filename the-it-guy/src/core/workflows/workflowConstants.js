@@ -1,3 +1,8 @@
+import {
+  CANONICAL_TRANSACTION_STAGES,
+  normalizeTransactionStage,
+} from '../transactions/stageConfig.js'
+
 export const WORKFLOW_MAIN_STAGES = ['AVAIL', 'DEP', 'OTP', 'FIN', 'ATTY', 'XFER', 'REG']
 
 export const WORKFLOW_MAIN_STAGE_LABELS = {
@@ -10,18 +15,7 @@ export const WORKFLOW_MAIN_STAGE_LABELS = {
   REG: 'Registration',
 }
 
-export const WORKFLOW_DETAILED_STAGES = [
-  'Available',
-  'Reserved',
-  'OTP Signed',
-  'Deposit Paid',
-  'Finance Pending',
-  'Bond Approved / Proof of Funds',
-  'Proceed to Attorneys',
-  'Transfer in Progress',
-  'Transfer Lodged',
-  'Registered',
-]
+export const WORKFLOW_DETAILED_STAGES = CANONICAL_TRANSACTION_STAGES
 
 export const WORKFLOW_SUBPROCESS_TYPES = [
   'finance',
@@ -39,28 +33,6 @@ export const WORKFLOW_SUBPROCESS_STEP_STATUSES = ['not_started', 'in_progress', 
 export const WORKFLOW_CHECKLIST_STATUSES = ['pending', 'in_progress', 'completed', 'blocked', 'waived']
 export const WORKFLOW_DOCUMENT_REQUEST_STATUSES = ['requested', 'uploaded', 'under_review', 'reviewed', 'rejected', 'completed', 'cancelled']
 export const WORKFLOW_VISIBILITY_SCOPES = ['internal', 'shared_role_players', 'client_visible']
-
-const DETAILED_STAGE_BY_SLUG = {
-  available: 'Available',
-  avail: 'Available',
-  reserved: 'Reserved',
-  otp_signed: 'OTP Signed',
-  otp: 'OTP Signed',
-  deposit_paid: 'Deposit Paid',
-  dep: 'Deposit Paid',
-  finance_pending: 'Finance Pending',
-  fin: 'Finance Pending',
-  bond_approved_proof_of_funds: 'Bond Approved / Proof of Funds',
-  bond_approved: 'Bond Approved / Proof of Funds',
-  proof_of_funds: 'Bond Approved / Proof of Funds',
-  proceed_to_attorneys: 'Proceed to Attorneys',
-  atty: 'Proceed to Attorneys',
-  transfer_in_progress: 'Transfer in Progress',
-  xfer: 'Transfer in Progress',
-  transfer_lodged: 'Transfer Lodged',
-  registered: 'Registered',
-  reg: 'Registered',
-}
 
 const MAIN_STAGE_BY_SLUG = {
   avail: 'AVAIL',
@@ -126,8 +98,7 @@ export function normalizeMainStage(value, fallback = 'AVAIL') {
 }
 
 export function normalizeDetailedStage(value, fallback = 'Available') {
-  const normalized = DETAILED_STAGE_BY_SLUG[normalizeKey(value)] || String(value || '').trim()
-  return WORKFLOW_DETAILED_STAGES.includes(normalized) ? normalized : fallback
+  return normalizeTransactionStage(value, fallback)
 }
 
 export function normalizeSubprocessType(value, fallback = 'attorney') {

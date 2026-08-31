@@ -2041,14 +2041,16 @@ create table if not exists transaction_bond_closeout_documents (
 
 create table if not exists client_portal_links (
   id uuid primary key default gen_random_uuid(),
-  development_id uuid not null references developments(id) on delete cascade,
-  unit_id uuid not null references units(id) on delete cascade,
+  development_id uuid references developments(id) on delete cascade,
+  unit_id uuid references units(id) on delete cascade,
   transaction_id uuid not null references transactions(id) on delete cascade,
   buyer_id uuid references buyers(id) on delete set null,
   token text not null unique,
   is_active boolean not null default true,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  constraint client_portal_links_context_shape_check
+    check ((development_id is null) = (unit_id is null))
 );
 
 create table if not exists client_portal_contexts (

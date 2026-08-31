@@ -1,3 +1,5 @@
+import { getMainStageFromDetailedStage, normalizeTransactionStage } from './stageConfig.js'
+
 export const NEW_TRANSACTION_SETUP_HEALTH_VERSION = 'arch9_new_transaction_setup_health_v1'
 
 function text(value) {
@@ -23,16 +25,18 @@ export function resolveWizardHandoffNextAction(handoffChecklist = {}, fallbackNe
 
 export function resolveWizardInitialTransactionStage(handoffChecklist = {}, fallback = {}) {
   if (handoffChecklist?.signedOtpStatus === 'uploaded') {
+    const stage = normalizeTransactionStage('Finance')
     return {
-      stage: 'Finance In Progress',
-      mainStage: 'FIN',
+      stage,
+      mainStage: getMainStageFromDetailedStage(stage),
       onboardingStatus: 'signed_otp_received',
     }
   }
 
+  const stage = normalizeTransactionStage(fallback.stage, 'Reserved')
   return {
-    stage: text(fallback.stage) || 'Reserved',
-    mainStage: text(fallback.mainStage) || '',
+    stage,
+    mainStage: text(fallback.mainStage) || getMainStageFromDetailedStage(stage),
     onboardingStatus: handoffChecklist?.signedOtpStatus === 'pending_upload'
       ? 'awaiting_signed_otp'
       : 'awaiting_client_onboarding',

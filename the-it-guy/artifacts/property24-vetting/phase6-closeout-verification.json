@@ -1,0 +1,239 @@
+{
+  "status": "PHASE6_COMPLETE",
+  "environment": "exdev",
+  "agencyId": 31382,
+  "completed": [
+    {
+      "step": "close_rental_listing",
+      "status": "ALREADY_CLOSED",
+      "listingNumber": 100314819,
+      "listingStatus": "Rented"
+    },
+    {
+      "step": "verify_rental_listing",
+      "status": "VERIFIED",
+      "listingNumber": 100314819,
+      "listingStatus": "Rented",
+      "verification": {
+        "verified": true,
+        "attempts": 1,
+        "snapshot": {
+          "listingNumber": 100314819,
+          "listingType": "Rental",
+          "sourceReference": "ARCH9-VET-PHASE2-RENT-NEWLANDS",
+          "targetStatus": "Rented",
+          "status": "Rented",
+          "isOnPortal": false,
+          "updateReasonType": "ValidationFailed",
+          "updateComment": null,
+          "httpStatus": {
+            "reconciliation": 200,
+            "updates": 200,
+            "portal": 200
+          }
+        }
+      }
+    },
+    {
+      "step": "close_sale_listing",
+      "status": "ALREADY_CLOSED",
+      "listingNumber": 100314820,
+      "listingStatus": "Sold"
+    },
+    {
+      "step": "verify_sale_listing",
+      "status": "VERIFIED",
+      "listingNumber": 100314820,
+      "listingStatus": "Sold",
+      "verification": {
+        "verified": true,
+        "attempts": 1,
+        "snapshot": {
+          "listingNumber": 100314820,
+          "listingType": "Sale",
+          "sourceReference": "ARCH9-VET-PHASE2-SALE-SANDTON",
+          "targetStatus": "Sold",
+          "status": "Sold",
+          "isOnPortal": false,
+          "updateReasonType": "ValidationFailed",
+          "updateComment": null,
+          "httpStatus": {
+            "reconciliation": 200,
+            "updates": 200,
+            "portal": 200
+          }
+        }
+      }
+    },
+    {
+      "step": "verify_all_listings_closed",
+      "status": "VERIFIED"
+    },
+    {
+      "step": "deactivate_jon",
+      "status": "ALREADY_INACTIVE",
+      "agentId": 77969
+    },
+    {
+      "step": "deactivate_pauly",
+      "status": "ALREADY_INACTIVE",
+      "agentId": 77970
+    },
+    {
+      "step": "final_verification",
+      "status": "VERIFIED"
+    }
+  ],
+  "preflight": {
+    "agencyId": 31382,
+    "fromDate": "2026-08-25T10:20:26.333Z",
+    "agents": {
+      "jon": {
+        "agentId": 77969,
+        "firstname": "Jon",
+        "lastname": "Snow",
+        "agencyId": 31382,
+        "sourceReference": "ARCH9-VET-JON-SNOW",
+        "mobileNumber": "0600001123",
+        "emailAddress": "jon.snow.p24@arch9.co.za",
+        "countryId": 1,
+        "status": "Inactive",
+        "published": true,
+        "profilePictureSha256": "5c97c39a3898397acb452a39bc6247d26ce9fecb46de6d16470ab9a1e75ff502"
+      },
+      "pauly": {
+        "agentId": 77970,
+        "firstname": "Pauly",
+        "lastname": "Shore",
+        "agencyId": 31382,
+        "sourceReference": "ARCH9-VET-PAULY-SHORE",
+        "mobileNumber": "0600000002",
+        "emailAddress": "pauly.shore.p24@arch9.co.za",
+        "countryId": 1,
+        "status": "Inactive",
+        "published": true,
+        "profilePictureSha256": "a59e7c4aec878699731ad589169053843c46438b5d00a704acdf9544739bde05"
+      }
+    },
+    "listings": {
+      "rental": {
+        "listingNumber": 100314819,
+        "listingType": "Rental",
+        "sourceReference": "ARCH9-VET-PHASE2-RENT-NEWLANDS",
+        "targetStatus": "Rented",
+        "status": "Rented",
+        "isOnPortal": false,
+        "updateReasonType": "ValidationFailed",
+        "updateComment": null,
+        "httpStatus": {
+          "reconciliation": 200,
+          "updates": 200,
+          "portal": 200
+        }
+      },
+      "sale": {
+        "listingNumber": 100314820,
+        "listingType": "Sale",
+        "sourceReference": "ARCH9-VET-PHASE2-SALE-SANDTON",
+        "targetStatus": "Sold",
+        "status": "Sold",
+        "isOnPortal": false,
+        "updateReasonType": "ValidationFailed",
+        "updateComment": null,
+        "httpStatus": {
+          "reconciliation": 200,
+          "updates": 200,
+          "portal": 200
+        }
+      }
+    },
+    "actions": {
+      "listingStatuses": [
+        {
+          "listingNumber": 100314819,
+          "listingType": "Rental",
+          "targetStatus": "Rented"
+        },
+        {
+          "listingNumber": 100314820,
+          "listingType": "Sale",
+          "targetStatus": "Sold"
+        }
+      ],
+      "agentStatuses": [
+        {
+          "agentId": 77969,
+          "name": "Jon Snow",
+          "targetStatus": "Inactive"
+        },
+        {
+          "agentId": 77970,
+          "name": "Pauly Shore",
+          "targetStatus": "Inactive"
+        }
+      ]
+    }
+  },
+  "final": {
+    "agents": {
+      "jon": {
+        "agentId": 77969,
+        "firstname": "Jon",
+        "lastname": "Snow",
+        "agencyId": 31382,
+        "sourceReference": "ARCH9-VET-JON-SNOW",
+        "mobileNumber": "0600001123",
+        "emailAddress": "jon.snow.p24@arch9.co.za",
+        "countryId": 1,
+        "status": "Inactive",
+        "published": true,
+        "profilePictureSha256": "5c97c39a3898397acb452a39bc6247d26ce9fecb46de6d16470ab9a1e75ff502"
+      },
+      "pauly": {
+        "agentId": 77970,
+        "firstname": "Pauly",
+        "lastname": "Shore",
+        "agencyId": 31382,
+        "sourceReference": "ARCH9-VET-PAULY-SHORE",
+        "mobileNumber": "0600000002",
+        "emailAddress": "pauly.shore.p24@arch9.co.za",
+        "countryId": 1,
+        "status": "Inactive",
+        "published": true,
+        "profilePictureSha256": "a59e7c4aec878699731ad589169053843c46438b5d00a704acdf9544739bde05"
+      }
+    },
+    "listings": {
+      "rental": {
+        "listingNumber": 100314819,
+        "listingType": "Rental",
+        "sourceReference": "ARCH9-VET-PHASE2-RENT-NEWLANDS",
+        "targetStatus": "Rented",
+        "status": "Rented",
+        "isOnPortal": false,
+        "updateReasonType": "ValidationFailed",
+        "updateComment": null,
+        "httpStatus": {
+          "reconciliation": 200,
+          "updates": 200,
+          "portal": 200
+        }
+      },
+      "sale": {
+        "listingNumber": 100314820,
+        "listingType": "Sale",
+        "sourceReference": "ARCH9-VET-PHASE2-SALE-SANDTON",
+        "targetStatus": "Sold",
+        "status": "Sold",
+        "isOnPortal": false,
+        "updateReasonType": "ValidationFailed",
+        "updateComment": null,
+        "httpStatus": {
+          "reconciliation": 200,
+          "updates": 200,
+          "portal": 200
+        }
+      }
+    }
+  }
+}

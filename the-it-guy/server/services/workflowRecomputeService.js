@@ -44,13 +44,19 @@ function normalizeRecomputeArgs(transactionIdOrOptions, maybeOptions = {}) {
 async function updateRollupHealth(client, transactionId, patch = {}) {
   if (!transactionId || !patch || !Object.keys(patch).length) return null
 
-  let query = await client.from('transaction_rollups').upsert(
-    {
-      transaction_id: transactionId,
-      ...patch,
-    },
-    { onConflict: 'transaction_id' },
-  )
+  const current = await client.from('transaction_rollups')
+    .select('parent_stage, parent_status')
+    .eq('transaction_id', transactionId)
+    .maybeSingle()
+  if (current.error && !isMissingTableError(current.error, 'transaction_rollups')) throw current.error
+  if (current.error) return null
+
+  const basePayload = {
+    transaction_id: transactionId,
+    parent_stage: current.data?.parent_stage || 'SETUP',
+    parent_status: current.data?.parent_status || 'not_started',
+  }
+  let query = await client.from('transaction_rollups').upsert({ ...basePayload, ...patch }, { onConflict: 'transaction_id' })
 
   if (
     query.error &&
@@ -60,12 +66,12 @@ async function updateRollupHealth(client, transactionId, patch = {}) {
       isMissingColumnError(query.error, 'last_recompute_attempt_at')
     )
   ) {
-    const fallbackPatch = { transaction_id: transactionId, ...patch }
+    const fallbackPatch = { ...basePayload, ...patch }
     if (isMissingColumnError(query.error, 'is_stale')) delete fallbackPatch.is_stale
     if (isMissingColumnError(query.error, 'last_error')) delete fallbackPatch.last_error
     if (isMissingColumnError(query.error, 'last_recompute_attempt_at')) delete fallbackPatch.last_recompute_attempt_at
 
-    if (Object.keys(fallbackPatch).length === 1) {
+    if (!Object.keys(fallbackPatch).length) {
       return null
     }
 

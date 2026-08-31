@@ -1,0 +1,4 @@
+import { isSupabaseConfigured, supabase } from '../../lib/supabaseClient.js'
+const text=(v)=>String(v??'').trim(); const client=(c=supabase)=>{if(!isSupabaseConfigured||!c)throw new Error('Rental notifications require Supabase configuration.');return c}
+export async function getRentalNotificationCatalogue(organisationId,{client:c=supabase}={}){const r=await client(c).rpc('rental_get_notification_catalogue',{p_org:text(organisationId)});if(r.error)throw r.error;return r.data}
+export async function createRentalNotificationTemplate({organisationId,eventKey,channel,subject,body},{client:c=supabase}={}){const r=await client(c).rpc('rental_create_notification_template',{p_org:text(organisationId),p_event_key:text(eventKey),p_channel:text(channel),p_subject:text(subject),p_body:text(body)});if(r.error)throw r.error;return r.data}

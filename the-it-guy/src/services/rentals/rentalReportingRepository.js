@@ -1,0 +1,1 @@
+import{isSupabaseConfigured,supabase}from'../../lib/supabaseClient.js';export async function getRentalOperationalReport(p_org,{client=supabase}={}){if(!isSupabaseConfigured||!client)throw Error('Rental reporting requires Supabase configuration.');const r=await client.rpc('rental_get_operational_report',{p_org:String(p_org||'').trim()});if(r.error)throw r.error;return r.data}

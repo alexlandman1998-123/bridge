@@ -1,7 +1,7 @@
 import { supabase } from '../supabaseClient'
 import {
+  CANONICAL_TRANSACTION_STAGES,
   MAIN_PROCESS_STAGES,
-  STAGES,
   getMainStageFromDetailedStage,
   isInTransferStage,
   normalizeStageLabel,
@@ -259,12 +259,12 @@ function normalizeDevelopmentUnitRow(row = {}) {
 
 export function normalizeStage(rawStage, rawStatus) {
   const normalizedStage = normalizeStageLabel(rawStage)
-  if (STAGES.includes(normalizedStage)) {
+  if (CANONICAL_TRANSACTION_STAGES.includes(normalizedStage)) {
     return normalizedStage
   }
 
   const normalizedStatus = normalizeStageLabel(rawStatus)
-  if (STAGES.includes(normalizedStatus)) {
+  if (CANONICAL_TRANSACTION_STAGES.includes(normalizedStatus)) {
     return normalizedStatus
   }
 
