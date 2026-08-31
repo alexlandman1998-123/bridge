@@ -656,6 +656,14 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
   const { organisation } = useOrganisation()
   const workspaceKind = String(organisation?.type || workspaceType || role || '').toLowerCase()
   const isDeveloperTransactionWorkspace = role === 'developer' || ['developer', 'development'].includes(workspaceKind)
+  const developerOrganisationId = String(
+    organisation?.id ||
+      workspace?.organisationId ||
+      currentMembership?.organisation_id ||
+      currentMembership?.organisationId ||
+      (workspace?.id === 'all' ? '' : workspace?.id) ||
+      '',
+  ).trim()
   const [form, setForm] = useState(createInitialForm(initialDevelopmentId, initialUnitId))
   const [activeStep, setActiveStep] = useState(WIZARD_STEPS[0].key)
   const [developments, setDevelopments] = useState([])
@@ -740,7 +748,13 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
     async function loadDevelopments() {
       try {
         setLoadingMeta(true)
-        const rows = await fetchDevelopmentOptions()
+        if (isDeveloperTransactionWorkspace && !developerOrganisationId) {
+          setDevelopments([])
+          return
+        }
+        const rows = await fetchDevelopmentOptions(
+          isDeveloperTransactionWorkspace ? { organisationId: developerOrganisationId } : {},
+        )
         setDevelopments(rows)
       } catch (error) {
         setSaveError(error.message)
@@ -750,7 +764,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
     }
 
     void loadDevelopments()
-  }, [open, initialDevelopmentId, initialUnitId])
+  }, [developerOrganisationId, initialDevelopmentId, initialUnitId, isDeveloperTransactionWorkspace, open])
 
   useEffect(() => {
     if (!open || !isDeveloperTransactionWorkspace) return
