@@ -34,6 +34,7 @@ for (const excludedCall of [
 
 assert.match(pageSource, /fetchTransactionDocumentsWorkspace\(requestedTransactionId, \{ hydrationContext \}\)/)
 assert.match(pageSource, /__documentsHydrated: true/)
+assert.match(pageSource, /!data\.__isShell/, 'empty route shells must not masquerade as hydrated document datasets')
 assert.match(pageSource, /activeWorkspaceMenu !== 'documents'/)
 assert.match(pageSource, /Documents could not be loaded/)
 

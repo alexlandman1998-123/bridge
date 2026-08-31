@@ -16659,6 +16659,7 @@ function AttorneyTransactionDetail() {
     (data &&
       !data.__isNavigationPreview &&
       !data.__isRouteShell &&
+      !data.__isShell &&
       Object.prototype.hasOwnProperty.call(data, 'documents') &&
       Object.prototype.hasOwnProperty.call(data, 'requiredDocumentChecklist')),
   )

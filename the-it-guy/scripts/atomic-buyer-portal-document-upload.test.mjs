@@ -46,6 +46,12 @@ assert.doesNotMatch(uploadFunction, /\.from\('documents'\)\s*\n\s*\.insert/)
 assert.doesNotMatch(uploadFunction, /eventType: 'DocumentUploaded'/)
 assert.match(uploadFunction, /post-upload automation failed after the atomic upload completed/)
 assert.match(uploadFunction, /request projection failed after the atomic upload completed/)
+assert.match(uploadFunction, /const postUploadContextPromise = \(async \(\) =>/)
+assert.match(uploadFunction, /void \(async \(\) =>/)
+assert.ok(
+  uploadFunction.indexOf('void (async () =>') < uploadFunction.indexOf('return {\n    ...result.data'),
+  'post-upload projections, automation and notifications must run outside the buyer-facing response path',
+)
 
 assert.match(portal, /requiredDocumentKey: 'grant_letter',\s*documentType: 'grant_letter'/)
 assert.match(portal, /canonicalRequirementInstanceId: options\.requirementInstanceId \|\| null/)
