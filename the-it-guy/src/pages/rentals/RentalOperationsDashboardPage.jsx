@@ -30,7 +30,7 @@ const QUICK_ACTIONS = [
   ['Rollout controls', '/agent/rentals/rollout-controls'],
 ]
 
-export function RentalOperationsDashboardPage() {
+export default function RentalOperationsDashboardPage() {
   const [snapshot, setSnapshot] = useState(null); const [loading, setLoading] = useState(true); const [error, setError] = useState('')
   const load = useCallback(async () => { try { setLoading(true); setError(''); setSnapshot(await getRentalOperationsDashboard()) } catch (cause) { setError(cause?.message || 'Unable to load the Rentals dashboard.') } finally { setLoading(false) } }, [])
   useEffect(() => { void load() }, [load])

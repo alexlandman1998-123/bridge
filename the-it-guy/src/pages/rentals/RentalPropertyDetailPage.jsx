@@ -8,7 +8,7 @@ import { RentalLandlordMandatePanel } from '../../modules/rentals/shared/landlor
 
 const RentalPropertyEvidencePanel = lazy(() => import('../../modules/rentals/shared/evidence/RentalPropertyEvidencePanel.jsx').then((module) => ({ default: module.RentalPropertyEvidencePanel })))
 
-export function RentalPropertyDetailPage() {
+export default function RentalPropertyDetailPage() {
   const workspace = useWorkspace()
   const { propertyId } = useParams()
   const [property, setProperty] = useState(null); const [loading, setLoading] = useState(true); const [error, setError] = useState('')

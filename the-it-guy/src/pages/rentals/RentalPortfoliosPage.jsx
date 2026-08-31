@@ -11,7 +11,7 @@ function getScope(context = {}) {
   return { organisationId: text(context.workspace?.id || membership.organisation_id || membership.organisationId), branchId: text(membership.branch_id || membership.branchId), userId: text(context.profile?.id || context.userId) }
 }
 
-export function RentalPortfoliosPage() {
+export default function RentalPortfoliosPage() {
   const workspace = useWorkspace(); const scope = useMemo(() => getScope(workspace), [workspace])
   const [portfolios, setPortfolios] = useState([]); const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [form, setForm] = useState(initialForm); const [creating, setCreating] = useState(false)
   const load = useCallback(async () => { if (!scope.organisationId) { setPortfolios([]); setLoading(false); return } try { setLoading(true); setError(''); setPortfolios(await listRentalPortfolios(scope)) } catch (cause) { setError(cause?.message || 'Unable to load rental portfolios.'); setPortfolios([]) } finally { setLoading(false) } }, [scope])

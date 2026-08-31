@@ -629,6 +629,7 @@
     "test:rentals-phase80": "npm run test:rentals-phase79 && node scripts/rentals-phase80-controlled-pilot.test.mjs",
     "test:rentals-phase81": "npm run test:rentals-phase80 && node scripts/rentals-phase81-pilot-execution.test.mjs",
     "test:rentals-phase82": "npm run test:rentals-phase81 && node scripts/rentals-phase82-pilot-review-log.test.mjs",
+    "test:rentals-lazy-routes": "node scripts/rentals-lazy-route-exports.test.mjs",
     "test:rentals-phase18": "node src/services/rentals/__tests__/rentalLeadClassificationModel.test.js",
     "test:rentals-phase19": "node src/services/rentals/__tests__/rentalLeadPipelineModel.test.js",
     "test:rentals-phase20": "node src/services/rentals/__tests__/rentalViewingModel.test.js",

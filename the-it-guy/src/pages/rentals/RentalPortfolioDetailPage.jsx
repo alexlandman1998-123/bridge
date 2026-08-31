@@ -8,7 +8,7 @@ import { assignRentalPropertyToPortfolio, getRentalPortfolio, listRentalPortfoli
 const text = (value) => String(value ?? '').trim()
 function getScope(context = {}) { const membership = context.currentMembership || context.organisationMembership || {}; return { organisationId: text(context.workspace?.id || membership.organisation_id || membership.organisationId), branchId: text(membership.branch_id || membership.branchId), userId: text(context.profile?.id || context.userId) } }
 
-export function RentalPortfolioDetailPage() {
+export default function RentalPortfolioDetailPage() {
   const { portfolioId } = useParams(); const workspace = useWorkspace(); const scope = useMemo(() => getScope(workspace), [workspace])
   const [portfolio, setPortfolio] = useState(null); const [properties, setProperties] = useState([]); const [summary, setSummary] = useState(null); const [propertyId, setPropertyId] = useState(''); const [loading, setLoading] = useState(true); const [saving, setSaving] = useState(false); const [error, setError] = useState('')
   const load = useCallback(async () => { if (!portfolioId || !scope.organisationId) return; try { setLoading(true); setError(''); const [current, allProperties, summaries] = await Promise.all([getRentalPortfolio(portfolioId), listRentalProperties(scope), listRentalPortfolios(scope)]); setPortfolio(current); setProperties(allProperties); setSummary(summaries.find((item) => item.id === portfolioId) || null) } catch (cause) { setError(cause?.message || 'Unable to load rental portfolio.') } finally { setLoading(false) } }, [portfolioId, scope])

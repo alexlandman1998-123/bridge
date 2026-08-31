@@ -12,7 +12,7 @@ function getScope(context = {}) {
   return { organisationId: text(context.workspace?.id || membership.organisation_id || membership.organisationId), branchId: text(membership.branch_id || membership.branchId), userId: text(context.profile?.id || context.userId) }
 }
 
-export function RentalPropertiesPage() {
+export default function RentalPropertiesPage() {
   const workspace = useWorkspace()
   const scope = useMemo(() => getScope(workspace), [workspace])
   const [properties, setProperties] = useState([]); const [loading, setLoading] = useState(true); const [error, setError] = useState('')
