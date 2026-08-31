@@ -337,6 +337,10 @@ function resolvePrimaryLinkedRecord(client = {}) {
 export function getAgentClientOpenPath(client = {}) {
   const record = resolvePrimaryLinkedRecord(client)
   if (record?.path && record.kind !== 'client') return record.path
+  if (record?.path && record.kind === 'client') {
+    const recordReference = decodeURIComponent(normalizeText(record.path).split('/').at(-1) || '')
+    if (recordReference.startsWith('buyer:')) return record.path
+  }
   return `/clients/${encodeURIComponent(client.id || '')}`
 }
 
@@ -753,6 +757,42 @@ async function fetchManualBuyerRows({ organisationId = '' } = {}) {
   }
 }
 
+async function fetchManualBuyerRow({ buyerId = '', organisationId = '' } = {}) {
+  const recordId = normalizeText(buyerId)
+  const workspaceId = normalizeText(organisationId)
+  if (!isSupabaseConfigured || !supabase || !isUuidLike(recordId) || !isUuidLike(workspaceId)) return null
+
+  let result = await supabase
+    .from('buyers')
+    .select('id, name, phone, email, organisation_id, is_demo_data, demo_metadata, created_at, updated_at')
+    .eq('id', recordId)
+    .eq('organisation_id', workspaceId)
+    .maybeSingle()
+
+  if (result.error && (isMissingColumnError(result.error, 'is_demo_data') || isMissingColumnError(result.error, 'demo_metadata'))) {
+    result = await supabase
+      .from('buyers')
+      .select('id, name, phone, email, organisation_id, created_at, updated_at')
+      .eq('id', recordId)
+      .eq('organisation_id', workspaceId)
+      .maybeSingle()
+  }
+
+  if (result.error) throw result.error
+  if (!result.data || normalizeText(result.data.organisation_id) !== workspaceId || isSeedOrDemoRow(result.data)) return null
+  return result.data
+}
+
+async function resolveAgentOrganisationId({ profile = {}, role = 'agent', workspace = null } = {}) {
+  let organisationId = normalizeText(workspace?.id)
+  if (!isUuidLike(organisationId)) {
+    const settings = await fetchOrganisationSettings()
+    organisationId = normalizeText(settings?.organisation?.id)
+  }
+  assertResolvedWorkspaceContext({ organisationId, profile, appRole: role }, { service: 'agentClientDirectory.loadAgentClientProfile' })
+  return organisationId
+}
+
 function buildDirectory(sourceRows = []) {
   const grouped = { clients: new Map(), keyIndex: new Map() }
   for (const source of sourceRows) addSource(grouped, source)
@@ -871,6 +911,21 @@ export async function loadAgentClientDirectory({ profile = {}, role = 'agent', w
     users,
     filters: buildFilterOptions(clients, users),
   }
+}
+
+export async function loadAgentClientProfile({ clientId = '', profile = {}, role = 'agent', workspace = null } = {}) {
+  const decodedId = decodeURIComponent(normalizeText(clientId))
+  const [recordType, recordId] = decodedId.split(':', 2)
+  if (recordType !== 'buyer' || !isUuidLike(recordId)) return undefined
+
+  const organisationId = await resolveAgentOrganisationId({ profile, role, workspace })
+  const buyer = await fetchManualBuyerRow({ buyerId: recordId, organisationId })
+  if (!buyer) return null
+
+  const client = buildDirectory(buildManualBuyerSources([buyer]))[0]
+  if (!client) return null
+  const stableClient = { ...client, id: decodedId }
+  return getAgentClientProfile([stableClient], decodedId)
 }
 
 export function filterAgentClientDirectory(

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import Button from '../components/ui/Button'
-import { getAgentClientProfile, loadAgentClientDirectory } from '../core/clients/agentClientDirectory'
+import { getAgentClientProfile, loadAgentClientDirectory, loadAgentClientProfile } from '../core/clients/agentClientDirectory'
 import { getAttorneyClientProfile } from '../core/clients/attorneyClientSelectors'
 import { readAttorneyManualParties } from '../core/clients/attorneyManualParties'
 import { useWorkspace } from '../context/WorkspaceContext'
@@ -205,6 +205,7 @@ function ClientProfile() {
   const { profile, role, workspace } = useWorkspace()
   const [rows, setRows] = useState([])
   const [agentClients, setAgentClients] = useState([])
+  const [agentProfileData, setAgentProfileData] = useState(null)
   const [manualAttorneyParties, setManualAttorneyParties] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -219,7 +220,15 @@ function ClientProfile() {
       try {
         setLoading(true)
         setError('')
+        const directProfile = await loadAgentClientProfile({ clientId, profile, role, workspace })
+        if (directProfile !== undefined) {
+          setAgentProfileData(directProfile)
+          setAgentClients([])
+          setRows([])
+          return
+        }
         const directory = await loadAgentClientDirectory({ profile, role, workspace })
+        setAgentProfileData(null)
         setAgentClients(directory.clients || [])
         setRows([])
       } catch (loadError) {
@@ -253,22 +262,24 @@ function ClientProfile() {
     } finally {
       setLoading(false)
     }
-  }, [profile, role, workspace])
+  }, [clientId, profile, role, workspace])
 
   useEffect(() => {
     void loadData()
   }, [loadData])
 
   const profileData = useMemo(
-    () => (role === 'agent' ? getAgentClientProfile(agentClients, clientId) : getAttorneyClientProfile(rows, clientId, role === 'attorney' ? manualAttorneyParties : [])),
-    [agentClients, clientId, manualAttorneyParties, role, rows],
+    () => (role === 'agent' ? agentProfileData || getAgentClientProfile(agentClients, clientId) : getAttorneyClientProfile(rows, clientId, role === 'attorney' ? manualAttorneyParties : [])),
+    [agentClients, agentProfileData, clientId, manualAttorneyParties, role, rows],
   )
   const copy = useMemo(() => getProfileCopy(role), [role])
   const isAttorneyProfile = role === 'attorney'
 
   if (loading) {
     return (
-      <div className="rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
+      <div className="rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)]" role="status" aria-live="polite">
+        <h1 className="text-lg font-semibold text-[#142132]">Loading client profile</h1>
+        <p className="mt-1 text-sm text-[#6b7d93]">Fetching the latest client details and linked transactions.</p>
         <LoadingSkeleton lines={10} />
       </div>
     )
