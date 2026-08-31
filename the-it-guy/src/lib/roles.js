@@ -81,9 +81,10 @@ function createAgentRentalsPipelineNav() {
     key: 'rental_pipeline',
     label: 'Pipeline',
     to: '/agent/rentals/pipeline/leads',
-    activeMatch: ['/agent/rentals/pipeline', '/agent/rentals/pipeline/leads', '/agent/rentals/pipeline/applications', '/agent/rentals/pipeline/calendar'],
+    activeMatch: ['/agent/rentals/pipeline', '/agent/rentals/pipeline/leads', '/agent/rentals/pipeline/viewings', '/agent/rentals/pipeline/applications', '/agent/rentals/pipeline/calendar'],
     children: [
       { key: 'rental_pipeline_leads', label: 'Leads', to: '/agent/rentals/pipeline/leads' },
+      { key: 'rental_pipeline_viewings', label: 'Viewings', to: '/agent/rentals/pipeline/viewings' },
       { key: 'rental_pipeline_applications', label: 'Applications', to: '/agent/rentals/pipeline/applications' },
       { key: 'rental_pipeline_calendar', label: 'Calendar', to: '/agent/rentals/pipeline/calendar' },
     ],

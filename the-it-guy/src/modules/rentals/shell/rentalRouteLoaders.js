@@ -4,6 +4,8 @@ import { lazy } from 'react'
 export const RentalApplicantJourneyPage = lazy(() => import('../../../pages/rentals/RentalApplicantJourneyPage'))
 export const RentalApplicationWorkspacePage = lazy(() => import('../../../pages/rentals/RentalApplicationWorkspacePage'))
 export const RentalApplicationsPage = lazy(() => import('../../../pages/rentals/RentalApplicationsPage'))
+export const RentalCalendarPage = lazy(() => import('../../../pages/rentals/RentalCalendarPage'))
+export const RentalViewingsPage = lazy(() => import('../../../pages/rentals/RentalViewingsPage'))
 export const RentalListingCreatePage = lazy(() => import('../../../pages/rentals/RentalListingCreatePage'))
 export const RentalListingDetailPage = lazy(() => import('../../../pages/rentals/RentalListingDetailPage'))
 export const RentalListingsPage = lazy(() => import('../../../pages/rentals/RentalListingsPage'))

@@ -35,6 +35,8 @@ import { BUSINESS_WORKSPACES, resolveBusinessWorkspaceRoute } from './lib/busine
 import { RentalModuleBoundary } from './modules/rentals/shell/RentalModuleBoundary'
 import {
   RentalApplicationsPage,
+  RentalCalendarPage,
+  RentalViewingsPage,
   RentalListingCreatePage,
   RentalListingDetailPage,
   RentalListingsPage,
@@ -294,6 +296,9 @@ const HomeSeekersBuy = lazy(() => import('./pages/HomeSeekersBuy'))
 const HomeSeekersSell = lazy(() => import('./pages/HomeSeekersSell'))
 const HomeSeekersRent = lazy(() => import('./pages/HomeSeekersRent'))
 const HomeSeekersDevelopments = lazy(() => import('./pages/HomeSeekersDevelopments'))
+const HomeSeekersPeople = lazy(() => import('./pages/HomeSeekersPeople'))
+const HomeSeekersAbout = lazy(() => import('./pages/HomeSeekersAbout'))
+const HomeSeekersContact = lazy(() => import('./pages/HomeSeekersContact'))
 const BondDashboardPage = lazy(() => import('./pages/bond/BondDashboardPage'))
 const BondDevelopmentsPage = lazy(() => import('./pages/bond/BondDevelopmentsPage'))
 const BondTransactionsPage = lazy(() => import('./pages/bond/BondTransactionsPage'))
@@ -1780,6 +1785,9 @@ function AppRoutes() {
           <Route path="/demo/homeseekers/sell" element={<AppErrorBoundary scope="homeseekers-sell" title="HomeSeekers sell page failed to load"><HomeSeekersSell /></AppErrorBoundary>} />
           <Route path="/demo/homeseekers/rent" element={<AppErrorBoundary scope="homeseekers-rent" title="HomeSeekers rent page failed to load"><HomeSeekersRent /></AppErrorBoundary>} />
           <Route path="/demo/homeseekers/developments" element={<AppErrorBoundary scope="homeseekers-developments" title="HomeSeekers developments page failed to load"><HomeSeekersDevelopments /></AppErrorBoundary>} />
+          <Route path="/demo/homeseekers/people" element={<AppErrorBoundary scope="homeseekers-people" title="HomeSeekers people page failed to load"><HomeSeekersPeople /></AppErrorBoundary>} />
+          <Route path="/demo/homeseekers/about" element={<AppErrorBoundary scope="homeseekers-about" title="HomeSeekers about page failed to load"><HomeSeekersAbout /></AppErrorBoundary>} />
+          <Route path="/demo/homeseekers/contact" element={<AppErrorBoundary scope="homeseekers-contact" title="HomeSeekers contact page failed to load"><HomeSeekersContact /></AppErrorBoundary>} />
           <Route path="/referrals/invite/:token" element={<AppErrorBoundary scope="referral-invite" title="Referral invite failed to load"><ReferralInvitePage /></AppErrorBoundary>} />
           <Route element={<MobileExecutiveLayout />}>
             <Route path="/m/developments" element={<MobileDevelopmentsPage />} />
@@ -2861,6 +2869,10 @@ function AppRoutes() {
                 }
               />
               <Route
+                path="/agent/rentals/pipeline/viewings"
+                element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.leads}><RentalViewingsPage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>}
+              />
+              <Route
                 path="/agent/rentals/pipeline"
                 element={
                   <RoleRoute allowedRoles={['agent']}>
@@ -2889,10 +2901,7 @@ function AppRoutes() {
                   <RoleRoute allowedRoles={['agent']}>
                     <RentalWorkspaceGuard>
                       <RentalModuleGate moduleId={RENTAL_MODULES.calendar}>
-                        <RentalWorkspacePlaceholder
-                          title="Rental Calendar"
-                          description="Rental inspections, viewings, applicant follow-ups, and lease appointments will be coordinated here."
-                        />
+                        <RentalCalendarPage />
                       </RentalModuleGate>
                     </RentalWorkspaceGuard>
                   </RoleRoute>

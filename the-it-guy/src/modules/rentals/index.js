@@ -71,6 +71,8 @@ export { RentalPropertyEvidencePanel } from './shared/evidence/RentalPropertyEvi
 
 export {
   RentalApplicationsPage,
+  RentalViewingsPage,
+  RentalCalendarPage,
   RentalListingCreatePage,
   RentalListingDetailPage,
   RentalListingsPage,

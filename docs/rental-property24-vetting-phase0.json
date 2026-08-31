@@ -1,0 +1,58 @@
+{
+  "version": "arch9_rental_property24_vetting_phase0_v1",
+  "phase": "vetting_scope_locked",
+  "status": "READY_FOR_CONTROLLED_VETTING",
+  "claim": "Arch9 validates and prepares Property24 rental listing payloads for controlled backend handoff. Live rental publication is not part of this vetting scope.",
+  "fixture": {
+    "id": "rental-property24-vetting-fixture-1",
+    "title": "Green Point two-bedroom apartment",
+    "listingType": "Rental",
+    "isPresentationFixture": true,
+    "mustNotBeSubmitted": true
+  },
+  "readiness": {
+    "percent": 100,
+    "completed": 20,
+    "total": 20,
+    "blockers": []
+  },
+  "handoff": {
+    "status": "ready_for_backend_publish",
+    "canPrepare": true,
+    "liveWriteEnabled": false,
+    "requiresBackendPublisher": true
+  },
+  "demoSteps": [
+    {
+      "key": "open_fixture",
+      "action": "Open the complete rental fixture in Rentals > Listings.",
+      "safety": "No external call"
+    },
+    {
+      "key": "show_terms",
+      "action": "Show rent, deposit, availability, mandate, and landlord marketing approval.",
+      "safety": "No external call"
+    },
+    {
+      "key": "check_readiness",
+      "action": "Run Property24 rental readiness and inspect the Listing Service v53 payload preview.",
+      "safety": "Preview only"
+    },
+    {
+      "key": "show_blocked_example",
+      "action": "Show an incomplete listing being blocked before a handoff can be prepared.",
+      "safety": "Preview only"
+    },
+    {
+      "key": "prepare_handoff",
+      "action": "Prepare the internal backend publish handoff for the complete fixture.",
+      "safety": "Creates internal audit activity only"
+    }
+  ],
+  "outOfScope": [
+    "Live Property24 rental submission",
+    "Rental portal status update or withdrawal",
+    "Rental lead import or reconciliation",
+    "Production credentials or customer data"
+  ]
+}
