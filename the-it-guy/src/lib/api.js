@@ -71,6 +71,7 @@ import {
 } from '../core/documents/documentVaultArchitecture'
 import { normalizePortalDocumentType, resolvePortalDocumentMetadata } from '../core/documents/portalDocumentMetadata'
 import { resolveClientPortalProfile } from '../core/clientPortal/clientPortalProfile.js'
+import { canAccessAttorneyMatter } from './attorneyPermissions.js'
 import { resolveDefaultDocumentRequestVisibility } from '../core/documents/documentRequestContainerModel.js'
 import {
   CANONICAL_FINANCE_TYPES,
@@ -34490,12 +34491,11 @@ async function resolveTransactionWorkspaceReadContext(transactionId) {
 
   const canonicalTransactionId = transaction.id || resolvedTransactionId
   const activeProfile = await resolveActiveProfileContext(client)
-  if (normalizeRoleType(activeProfile.role) === 'attorney' && activeProfile.userId) {
-    const allowed = await canUserAccessTransaction({
-      userId: activeProfile.userId,
-      transactionId: canonicalTransactionId,
-      roleType: 'attorney',
-    })
+  if (normalizeRoleType(activeProfile.role) === 'attorney') {
+    // Use the same organisation-aware decision as the matter shell. Attorney
+    // access belongs to the assigned firm; a staff member need not be copied
+    // onto every matter merely to load its document history.
+    const allowed = await canAccessAttorneyMatter(canonicalTransactionId, null, null)
     if (!allowed) throw new Error('You do not have access to this transaction. Refresh Transactions and try again.')
   }
   return { client, transaction, canonicalTransactionId, activeProfile }
