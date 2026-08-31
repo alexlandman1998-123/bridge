@@ -5308,7 +5308,7 @@ export async function setSellerPortalPassword({ token, password } = {}) {
     p_password: password || '',
   })
   if (error) throw error
-  const accessToken = storeSellerPortalAccessToken(normalizedToken, data)
+  const accessToken = storeSellerPortalAccessToken(normalizedToken, data) || normalizeText(data?.accessToken)
   const stablePortalToken = normalizeText(data?.stablePortalToken)
   if (stablePortalToken && stablePortalToken !== normalizedToken) {
     storeSellerPortalAccessToken(stablePortalToken, data)
@@ -5384,7 +5384,7 @@ export async function completeSellerPortalPasswordRecovery({ token, password } =
     p_password: password || '',
   })
   if (error) throw error
-  const accessToken = storeSellerPortalAccessToken(normalizedToken, data)
+  const accessToken = storeSellerPortalAccessToken(normalizedToken, data) || normalizeText(data?.accessToken)
   const stablePortalToken = normalizeText(data?.stablePortalToken)
   if (stablePortalToken && stablePortalToken !== normalizedToken) {
     storeSellerPortalAccessToken(stablePortalToken, data)
@@ -5421,7 +5421,7 @@ export async function verifySellerPortalPassword({ token, password } = {}) {
     authError.portalAuth = data
     throw authError
   }
-  const accessToken = storeSellerPortalAccessToken(normalizedToken, data)
+  const accessToken = storeSellerPortalAccessToken(normalizedToken, data) || normalizeText(data?.accessToken)
   const stablePortalToken = normalizeText(data?.stablePortalToken)
   if (stablePortalToken && stablePortalToken !== normalizedToken) {
     storeSellerPortalAccessToken(stablePortalToken, data)

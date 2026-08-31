@@ -67,6 +67,16 @@ async function removeStoredObjects(admin, bucket, paths) {
 
 async function cleanup(admin, state) {
   if (state.transactionIds.length) {
+    const linkedListings = await admin
+      .from('transactions')
+      .select('listing_id')
+      .in('id', state.transactionIds)
+    if (linkedListings.error) throw linkedListings.error
+    for (const row of linkedListings.data || []) {
+      if (row.listing_id && !state.privateListingIds.includes(row.listing_id)) {
+        state.privateListingIds.push(row.listing_id)
+      }
+    }
     const docs = await admin.from('documents').select('file_path, file_bucket').in('transaction_id', state.transactionIds)
     if (docs.error) throw docs.error
     const byBucket = new Map()
@@ -75,6 +85,11 @@ async function cleanup(admin, state) {
       byBucket.set(bucket, [...(byBucket.get(bucket) || []), row.file_path])
     }
     for (const [bucket, paths] of byBucket) await removeStoredObjects(admin, bucket, paths)
+    const removedRequirements = await admin
+      .from('document_requirement_instances')
+      .delete()
+      .in('transaction_id', state.transactionIds)
+    if (removedRequirements.error) throw removedRequirements.error
     const removed = await admin.from('transactions').delete().in('id', state.transactionIds)
     if (removed.error) throw removed.error
   }
@@ -275,21 +290,33 @@ async function main() {
     state.transactionIds.push(agentMatter.transactionId)
     state.privateListingIds.push(agentMatter.privateListingId)
     assert.ok(agentMatter.buyerPortalToken && agentMatter.sellerOnboardingToken)
+    const sellerPassword = `Acceptance!${crypto.randomBytes(9).toString('base64url')}`
+    const sellerSession = await sellerService.setSellerPortalPassword({
+      token: agentMatter.sellerOnboardingToken,
+      password: sellerPassword,
+    })
+    assert.ok(sellerSession.accessToken, 'Seller portal activation did not issue an access token.')
+    const sellerPortalToken = sellerSession.stablePortalToken || agentMatter.sellerOnboardingToken
     const agentBuyerWorkspace = await portalWorkspace.getClientPortalWorkspaceData(agentMatter.buyerPortalToken, 'buying')
-    const agentSellerWorkspace = await portalWorkspace.getClientPortalWorkspaceData(agentMatter.sellerOnboardingToken, 'selling')
+    const agentSellerWorkspace = await portalWorkspace.getClientPortalWorkspaceData(sellerPortalToken, 'selling', {
+      sellerPortalAccessToken: sellerSession.accessToken,
+    })
     assert.equal(agentBuyerWorkspace.transaction.id, agentMatter.transactionId)
     assert.equal(agentSellerWorkspace.transaction.id, agentMatter.transactionId)
     assert.doesNotMatch(JSON.stringify([agentBuyerWorkspace, agentSellerWorkspace]), /Sarah Williams|Demo Agency/)
     const agentBuyerUploads = await uploadBuyerRequirements({ admin, api, created: agentMatter, label: 'agent' })
 
-    const sellerPayload = await sellerService.getSellerOnboardingByToken(agentMatter.sellerOnboardingToken, {
+    const sellerPayload = await sellerService.getSellerOnboardingByToken(sellerPortalToken, {
       includeRequirementsAndDocuments: true,
+      requirePortalAccess: true,
+      sellerPortalAccessToken: sellerSession.accessToken,
     })
     const sellerRequirements = sellerPayload?.listing?.documentRequirements || []
     assert.ok(sellerRequirements.length, 'Agent seller portal has no projected requirements.')
     for (const requirement of sellerRequirements) {
       await sellerService.uploadSellerClientPortalDocument({
-        token: agentMatter.sellerOnboardingToken,
+        token: sellerPortalToken,
+        accessToken: sellerSession.accessToken,
         file: evidence(`agent-seller-${requirement.requirement_key || requirement.key}`),
         requirementKey: requirement.requirement_key || requirement.key,
         documentType: requirement.requirement_key || requirement.key,
@@ -329,12 +356,14 @@ async function main() {
       /invalid|inactive|not found|unavailable/i,
     )
     const expired = await admin.from('private_listing_seller_onboarding')
-      .update({ token_expires_at: new Date(Date.now() - 60_000).toISOString() })
+      .update({ seller_portal_access_token_expires_at: new Date(Date.now() - 60_000).toISOString() })
       .eq('private_listing_id', agentMatter.privateListingId)
     if (expired.error) throw expired.error
     await assert.rejects(
-      () => portalWorkspace.getClientPortalWorkspaceData(agentMatter.sellerOnboardingToken, 'selling'),
-      /invalid|inactive|not found|unavailable/i,
+      () => portalWorkspace.getClientPortalWorkspaceData(sellerPortalToken, 'selling', {
+        sellerPortalAccessToken: sellerSession.accessToken,
+      }),
+      (error) => error?.code === 'seller_portal_auth_required' && error?.portalAuth?.sessionExpired === true,
     )
 
     const report = {
@@ -349,6 +378,9 @@ async function main() {
     await cleanup(admin, state)
     console.log(JSON.stringify({ ...report, fixtureResidue: 0 }, null, 2))
   } catch (error) {
+    if (error?.transactionId && !state.transactionIds.includes(error.transactionId)) {
+      state.transactionIds.push(error.transactionId)
+    }
     await cleanup(admin, state).catch((cleanupError) => { error.cleanupError = cleanupError })
     throw error
   } finally {

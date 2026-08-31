@@ -78,7 +78,7 @@ begin
       v_transaction.organisation_id,
       coalesce(v_transaction.assigned_agent_id, v_transaction.assigned_user_id),
       'TX-' || left(v_transaction.id::text, 8),
-      'transaction_created',
+      'onboarding_sent',
       'internal',
       coalesce(nullif(trim(v_transaction.property_description), ''), nullif(trim(v_transaction.property_address_line_1), ''), 'Private property sale'),
       v_transaction.property_type,
@@ -92,7 +92,7 @@ begin
       v_transaction.postal_code,
       'individual',
       'sent',
-      true,
+      false,
       coalesce(v_transaction.created_by, auth.uid()),
       jsonb_strip_nulls(jsonb_build_object(
         'sellerName', v_transaction.seller_name,
@@ -181,8 +181,7 @@ begin
            when v_onboarding.status = 'in_progress' then 'in_progress'
            else 'sent'
          end,
-         listing_status = case when listing_status = 'seller_lead' then 'transaction_created' else listing_status end,
-         is_active = true,
+         listing_status = case when listing_status = 'seller_lead' then 'onboarding_sent' else listing_status end,
          updated_at = v_now
    where id = v_listing.id;
 
@@ -259,7 +258,8 @@ begin
       from public.private_listing_document_requirements existing
       where existing.private_listing_id = v_listing.id
         and existing.requirement_key = canonical.document_definition_key
-    );
+    )
+  on conflict do nothing;
 
   v_promotion := public.bridge_promote_pending_private_listing_documents(v_listing.id);
 
