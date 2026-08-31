@@ -3043,6 +3043,80 @@ function mergeCanonicalRequiredDocuments(requiredDocuments = [], canonicalDocume
   return merged
 }
 
+const BUYER_PORTAL_DOCUMENT_ALIASES = new Map([
+  ['buyer_id_document', 'buyer_identity'],
+  ['id_document', 'buyer_identity'],
+  ['buyer_proof_of_address', 'buyer_proof_of_address'],
+  ['proof_of_address', 'buyer_proof_of_address'],
+  ['buyer_source_of_funds', 'buyer_proof_of_funds'],
+  ['proof_of_funds', 'buyer_proof_of_funds'],
+])
+
+function getBuyerPortalRequirementKey(requirement = {}) {
+  return getRequirementDedupeKeys(requirement)[0] || ''
+}
+
+function getBuyerPortalRequirementStatusRank(requirement = {}) {
+  const status = normalizeDocumentStatus(
+    requirement?.requiredDocumentStatus || requirement?.status || '',
+  )
+  return {
+    approved: 7,
+    completed: 7,
+    under_review: 6,
+    uploaded: 5,
+    rejected: 4,
+    requested: 3,
+    required: 2,
+  }[status] || 1
+}
+
+function normalizeBuyerPortalRequiredDocuments(requiredDocuments = [], workspaceMode = 'buying') {
+  if (workspaceMode !== 'buying') return requiredDocuments
+
+  const normalized = []
+  const indexByAlias = new Map()
+
+  for (const requirement of requiredDocuments) {
+    const requirementKey = getBuyerPortalRequirementKey(requirement)
+
+    // This is a checklist container, not a file a buyer can upload. Its leaf
+    // requirements remain visible individually below it.
+    if (requirementKey === 'buyer_fica_pack') continue
+
+    const alias = BUYER_PORTAL_DOCUMENT_ALIASES.get(requirementKey) || requirementKey
+    if (!alias || !indexByAlias.has(alias)) {
+      indexByAlias.set(alias, normalized.length)
+      normalized.push(requirement)
+      continue
+    }
+
+    const existingIndex = indexByAlias.get(alias)
+    const existing = normalized[existingIndex]
+    const preferred = getBuyerPortalRequirementStatusRank(requirement) >
+      getBuyerPortalRequirementStatusRank(existing)
+      ? requirement
+      : existing
+    const fallback = preferred === requirement ? existing : requirement
+    const merged = { ...fallback, ...preferred }
+
+    if (alias === 'buyer_identity') {
+      merged.label = 'Buyer ID / Passport'
+      merged.name = 'Buyer ID / Passport'
+    } else if (alias === 'buyer_proof_of_address') {
+      merged.label = 'Buyer Proof of Address'
+      merged.name = 'Buyer Proof of Address'
+    } else if (alias === 'buyer_proof_of_funds') {
+      merged.label = 'Proof of Funds'
+      merged.name = 'Proof of Funds'
+    }
+
+    normalized[existingIndex] = merged
+  }
+
+  return normalized
+}
+
 function buildCanonicalDocumentCenterPlan(portalData = {}, workspaceMode = 'buying') {
   const scenario = resolveCanonicalDocumentRequestScenario(portalData)
   if (!scenario) return null
@@ -3190,10 +3264,10 @@ export function buildDocumentCenter(portalData, workspaceMode = 'buying') {
   ]
   const uploadedDocumentsById = buildUploadedDocumentsLookup(uploadedDocuments)
   const downloadableDocumentsByKey = buildSellerDownloadableDocumentLookup(portalData, workspaceMode)
-  const requiredDocuments = filterRequiredDocumentsByWorkspace(
+  const requiredDocuments = normalizeBuyerPortalRequiredDocuments(filterRequiredDocumentsByWorkspace(
     mergeCanonicalRequiredDocuments(requiredDocumentsRaw, canonicalDocumentRequestPlan?.requiredDocuments || []),
     workspaceMode,
-  )
+  ), workspaceMode)
     .filter((requirement) => !isRetiredSellerPortalRequirement(requirement))
     .map((requirement) => {
       const uploadedDocument = findUploadedDocumentForRequirement(uploadedDocuments, requirement)

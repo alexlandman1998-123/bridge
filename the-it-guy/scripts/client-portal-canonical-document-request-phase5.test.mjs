@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -9,6 +9,8 @@ const bundleDir = await mkdtemp(path.join(tmpdir(), 'client-portal-canonical-doc
 const entryPath = path.join(bundleDir, 'entry.mjs')
 const bundlePath = path.join(bundleDir, 'bundle.mjs')
 const servicePath = path.join(process.cwd(), 'src/services/clientPortalWorkspaceService.js')
+const apiPath = path.join(process.cwd(), 'src/lib/api.js')
+const apiSource = await readFile(apiPath, 'utf8')
 
 await writeFile(
   entryPath,
@@ -157,6 +159,55 @@ test('buyer-only transaction context does not fabricate seller canonical request
   assert.equal(sellingModel.canonicalDocumentRequestPlan.audience, 'seller')
   assert.equal(sellingModel.canonicalDocumentRequestPlan.requiredDocuments.length, 0)
   assertExcludes(sellingKeys, ['seller_id_document', 'seller_fica_pack', 'rates_clearance'], 'buyer-only selling requirements')
+})
+
+test('buyer document centre hides containers and collapses semantic duplicates', () => {
+  const model = buildDocumentCenter({
+    transaction: {
+      id: 'transaction-buyer-documents',
+      purchaser_type: 'individual',
+      finance_type: 'cash',
+    },
+    requiredDocuments: [
+      { key: 'buyer_fica_pack', label: 'Buyer FICA Pack', status: 'required', expectedFromRole: 'buyer' },
+      { key: 'buyer_id_document', label: 'Buyer ID Document', status: 'under_review', expectedFromRole: 'buyer' },
+      { key: 'id_document', label: 'ID Document', status: 'required', expectedFromRole: 'buyer' },
+      { key: 'buyer_proof_of_address', label: 'Buyer Proof of Address', status: 'required', expectedFromRole: 'buyer' },
+      { key: 'proof_of_address', label: 'Proof of Address', status: 'required', expectedFromRole: 'buyer' },
+      { key: 'buyer_marital_status_details', label: 'Buyer Marital Status Declaration', status: 'required', expectedFromRole: 'buyer' },
+      { key: 'buyer_source_of_funds', label: 'Buyer Source of Funds', status: 'required', expectedFromRole: 'buyer' },
+      { key: 'proof_of_funds', label: 'Proof of Funds', status: 'required', expectedFromRole: 'buyer' },
+    ],
+    documents: [],
+    additionalDocumentRequests: [],
+  }, 'buying')
+
+  assert.equal(model.summary.total, 4)
+  assert.equal(model.summary.underReview, 1)
+  assert.equal(model.summary.outstanding, 3)
+  assert.equal(model.items.some((item) => item.title === 'Buyer FICA Pack'), false)
+  assert.equal(model.items.filter((item) => item.title === 'Proof of Funds').length, 1)
+  assert.equal(model.items.filter((item) => item.title === 'Buyer ID / Passport').length, 1)
+})
+
+test('client portal payload resolves organisation branding in core and full loaders', () => {
+  const portalLoaderSource = apiSource.slice(
+    apiSource.indexOf('export async function fetchClientPortalByToken'),
+    apiSource.indexOf('export async function fetchClientPortalJourneySnapshotByToken'),
+  )
+  const coreLoaderSource = apiSource.slice(
+    apiSource.indexOf('export async function fetchClientPortalCoreByToken'),
+    apiSource.indexOf('function mapClientPortalContextRow'),
+  )
+
+  for (const [name, source] of [['full', portalLoaderSource], ['core', coreLoaderSource]]) {
+    assert.match(source, /organisation_id, development_id/,
+      `${name} portal loader should fetch the transaction organisation`)
+    assert.match(source, /resolveClientPortalBranding\(client, transaction, link\)/,
+      `${name} portal loader should resolve organisation branding`)
+    assert.match(source, /branding,/,
+      `${name} portal payload should expose branding`)
+  }
 })
 
 console.log('client portal canonical document request phase 5 tests passed')

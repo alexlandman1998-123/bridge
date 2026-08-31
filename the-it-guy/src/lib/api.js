@@ -45477,6 +45477,25 @@ export async function respondToClientPortalAppointment({
   }
 }
 
+async function resolveClientPortalBranding(client, transaction = {}, link = {}) {
+  const development = await fetchDevelopmentBrandContext(
+    client,
+    transaction.development_id || link.development_id,
+  )
+  const organisationId = development?.organisation_id || transaction.organisation_id
+  const organisation = await fetchOrganisationBrandContext(client, organisationId)
+  if (!organisation) return null
+
+  return normalizeBuyerOnboardingBranding({
+    organisation,
+    transaction,
+    development,
+    brandingSource: development?.organisation_id
+      ? 'development_organisation'
+      : 'transaction_organisation',
+  })
+}
+
 export async function fetchClientPortalByToken(token) {
   const client = requireClientPortalTokenClient(token)
   const link = await resolveClientPortalLinkByToken(client, token)
@@ -45484,7 +45503,7 @@ export async function fetchClientPortalByToken(token) {
   let transactionQuery = await client
     .from('transactions')
     .select(
-      'id, development_id, unit_id, buyer_id, transaction_type, sale_route, sale_channel, seller_party_type, lead_owner, ownership_model, source_agency_org_id, sales_price, purchase_price, finance_type, cash_amount, bond_amount, deposit_amount, reservation_required, reservation_amount, reservation_amount_type, reservation_treatment, reservation_payable_to, reservation_status, reservation_paid_date, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_proof_document, alteration_charge_treatment, onboarding_status, purchaser_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, updated_at, created_at',
+      'id, organisation_id, development_id, unit_id, buyer_id, transaction_type, sale_route, sale_channel, seller_party_type, lead_owner, ownership_model, source_agency_org_id, sales_price, purchase_price, finance_type, cash_amount, bond_amount, deposit_amount, reservation_required, reservation_amount, reservation_amount_type, reservation_treatment, reservation_payable_to, reservation_status, reservation_paid_date, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_proof_document, alteration_charge_treatment, onboarding_status, purchaser_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, updated_at, created_at',
     )
     .eq('id', link.transaction_id)
     .maybeSingle()
@@ -45527,7 +45546,7 @@ export async function fetchClientPortalByToken(token) {
     transactionQuery = await client
       .from('transactions')
       .select(
-        'id, unit_id, buyer_id, sales_price, finance_type, purchaser_type, reservation_required, reservation_amount, reservation_amount_type, reservation_treatment, reservation_payable_to, reservation_status, reservation_paid_date, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_proof_document, alteration_charge_treatment, onboarding_status, stage, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, updated_at, created_at',
+        'id, organisation_id, development_id, unit_id, buyer_id, sales_price, finance_type, purchaser_type, reservation_required, reservation_amount, reservation_amount_type, reservation_treatment, reservation_payable_to, reservation_status, reservation_paid_date, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_proof_document, alteration_charge_treatment, onboarding_status, stage, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, updated_at, created_at',
       )
       .eq('id', link.transaction_id)
       .maybeSingle()
@@ -45554,7 +45573,7 @@ export async function fetchClientPortalByToken(token) {
       transactionQuery = await client
         .from('transactions')
         .select(
-          'id, unit_id, buyer_id, sales_price, finance_type, stage, attorney, bond_originator, next_action, updated_at, created_at',
+          'id, organisation_id, development_id, unit_id, buyer_id, sales_price, finance_type, stage, attorney, bond_originator, next_action, updated_at, created_at',
         )
         .eq('id', link.transaction_id)
         .maybeSingle()
@@ -45571,7 +45590,10 @@ export async function fetchClientPortalByToken(token) {
     throw new Error('Transaction not found.')
   }
 
-  const settings = await resolveClientPortalSettings(client, link, transaction)
+  const [settings, branding] = await Promise.all([
+    resolveClientPortalSettings(client, link, transaction),
+    resolveClientPortalBranding(client, transaction, link),
+  ])
   const rolePlayerPolicy = normalizeBuyerBondOriginatorPolicy(settings)
   if (!settings.client_portal_enabled) {
     throw new Error('Client portal is currently disabled for this transaction.')
@@ -45906,6 +45928,7 @@ export async function fetchClientPortalByToken(token) {
     unit,
     transaction,
     buyer,
+    branding,
     appointments,
     stage,
     mainStage,
@@ -45979,7 +46002,7 @@ export async function fetchClientPortalCoreByToken(token) {
   let transactionQuery = await client
     .from('transactions')
     .select(
-      'id, development_id, unit_id, buyer_id, transaction_type, sale_route, sale_channel, seller_party_type, lead_owner, ownership_model, source_agency_org_id, sales_price, purchase_price, finance_type, cash_amount, bond_amount, deposit_amount, reservation_required, reservation_amount, reservation_amount_type, reservation_treatment, reservation_payable_to, reservation_status, reservation_paid_date, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_proof_document, alteration_charge_treatment, onboarding_status, purchaser_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, updated_at, created_at',
+      'id, organisation_id, development_id, unit_id, buyer_id, transaction_type, sale_route, sale_channel, seller_party_type, lead_owner, ownership_model, source_agency_org_id, sales_price, purchase_price, finance_type, cash_amount, bond_amount, deposit_amount, reservation_required, reservation_amount, reservation_amount_type, reservation_treatment, reservation_payable_to, reservation_status, reservation_paid_date, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_proof_document, alteration_charge_treatment, onboarding_status, purchaser_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, updated_at, created_at',
     )
     .eq('id', link.transaction_id)
     .maybeSingle()
@@ -46022,7 +46045,7 @@ export async function fetchClientPortalCoreByToken(token) {
     transactionQuery = await client
       .from('transactions')
       .select(
-        'id, unit_id, buyer_id, sales_price, finance_type, purchaser_type, reservation_required, reservation_amount, reservation_amount_type, reservation_treatment, reservation_payable_to, reservation_status, reservation_paid_date, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_proof_document, alteration_charge_treatment, onboarding_status, stage, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, updated_at, created_at',
+        'id, organisation_id, development_id, unit_id, buyer_id, sales_price, finance_type, purchaser_type, reservation_required, reservation_amount, reservation_amount_type, reservation_treatment, reservation_payable_to, reservation_status, reservation_paid_date, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_proof_document, alteration_charge_treatment, onboarding_status, stage, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, updated_at, created_at',
       )
       .eq('id', link.transaction_id)
       .maybeSingle()
@@ -46049,7 +46072,7 @@ export async function fetchClientPortalCoreByToken(token) {
       transactionQuery = await client
         .from('transactions')
         .select(
-          'id, unit_id, buyer_id, sales_price, finance_type, stage, attorney, bond_originator, next_action, updated_at, created_at',
+          'id, organisation_id, development_id, unit_id, buyer_id, sales_price, finance_type, stage, attorney, bond_originator, next_action, updated_at, created_at',
         )
         .eq('id', link.transaction_id)
         .maybeSingle()
@@ -46064,7 +46087,10 @@ export async function fetchClientPortalCoreByToken(token) {
     throw new Error('Transaction not found.')
   }
 
-  const settings = await resolveClientPortalSettings(client, link, transaction)
+  const [settings, branding] = await Promise.all([
+    resolveClientPortalSettings(client, link, transaction),
+    resolveClientPortalBranding(client, transaction, link),
+  ])
   const rolePlayerPolicy = normalizeBuyerBondOriginatorPolicy(settings)
   if (!settings.client_portal_enabled) {
     throw new Error('Client portal is currently disabled for this transaction.')
@@ -46148,6 +46174,7 @@ export async function fetchClientPortalCoreByToken(token) {
     unit: unitQuery.data || null,
     transaction,
     buyer: buyerQuery.data || null,
+    branding,
     appointments,
     stage,
     mainStage,
