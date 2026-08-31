@@ -52090,7 +52090,6 @@ export async function setDeveloperPartnerDefault(relationshipId) {
   const relationship = await fetchDeveloperPartnerRelationshipById(client, safeRelationshipId)
   const developerOrganisationId = normalizeNullableUuid(relationship.developer_organisation_id)
   const partnerType = normalizeDeveloperPartnerType(relationship.partner_type)
-  const preferredPartnerType = getPreferredPartnerTypeForDeveloperPartner(partnerType)
   if (!developerOrganisationId) throw new Error('Developer organisation is required.')
   if (relationship.status !== 'agreement_active') {
     throw new Error('Activate or waive the partner agreement before setting this partner as a default.')
@@ -52152,57 +52151,25 @@ export async function setDeveloperPartnerDefault(relationshipId) {
 
   if (!companyName) throw new Error('This partner needs a name before it can be used as a default.')
 
-  const clearDefaultResult = await client
-    .from('organisation_preferred_partners')
-    .update({
-      is_preferred_default: false,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('organisation_id', developerOrganisationId)
-    .eq('partner_type', preferredPartnerType)
-
-  if (clearDefaultResult.error) throw clearDefaultResult.error
-
-  const existingResult = await client
-    .from('organisation_preferred_partners')
-    .select(DEVELOPER_PARTNER_PREFERRED_SELECT)
-    .eq('developer_partner_relationship_id', safeRelationshipId)
-    .maybeSingle()
-
-  if (existingResult.error) throw existingResult.error
-
-  const payload = {
-    organisation_id: developerOrganisationId,
-    partner_type: preferredPartnerType,
-    developer_partner_relationship_id: safeRelationshipId,
-    partner_organisation_id: partnerOrganisationId || null,
-    source: 'developer_partner_relationship',
-    scope_type: normalizeDeveloperPartnerScopeType(relationship.scope_type),
-    scope_json: relationship.scope_json && typeof relationship.scope_json === 'object' ? relationship.scope_json : {},
-    company_name: companyName,
-    contact_person: normalizeNullableText(relationship.partner_display_name) || companyName,
-    email_address: normalizeEmailAddress(relationship.partner_invitation_email || partnerOrganisation?.email) || null,
-    phone_number: normalizeNullableText(partnerOrganisation?.phone),
+  return setDeveloperCanonicalPartnerDefault({
+    developerOrganisationId,
+    preferredPartnerId: null,
+    partnerOrganisationId: partnerOrganisationId || null,
+    partnerType,
+    companyName,
+    contactPerson: normalizeNullableText(relationship.partner_display_name) || companyName,
+    email: normalizeEmailAddress(relationship.partner_invitation_email || partnerOrganisation?.email) || null,
+    phone: normalizeNullableText(partnerOrganisation?.phone),
     website: normalizeNullableText(partnerOrganisation?.website),
     province: normalizeNullableText(partnerOrganisation?.province),
     notes: `${getDeveloperPartnerTypeLabel(partnerType)} synced from Developer Partners.`,
-    is_active: true,
-    is_preferred_default: true,
-    updated_at: new Date().toISOString(),
-  }
-
-  const writeQuery = existingResult.data?.id
-    ? client
-        .from('organisation_preferred_partners')
-        .update(payload)
-        .eq('id', existingResult.data.id)
-        .select(DEVELOPER_PARTNER_PREFERRED_SELECT)
-        .single()
-    : client.from('organisation_preferred_partners').insert(payload).select(DEVELOPER_PARTNER_PREFERRED_SELECT).single()
-
-  const writeResult = await writeQuery
-  if (writeResult.error) throw writeResult.error
-  return normalizeDeveloperPartnerDefaultRow(writeResult.data)
+    source: 'developer_partner_relationship',
+    scopeType: normalizeDeveloperPartnerScopeType(relationship.scope_type),
+    scopeJson:
+      relationship.scope_json && typeof relationship.scope_json === 'object'
+        ? relationship.scope_json
+        : {},
+  })
 }
 
 export async function setDeveloperCanonicalPartnerDefault(input = {}) {

@@ -918,6 +918,59 @@ function mapPreferredPartnerToRow(partner = {}, organisationId = '') {
   }
 }
 
+async function savePreferredPartnerViaCanonicalRpc(client, organisationId, partner = {}) {
+  const result = await client.rpc('bridge_save_organisation_partner', {
+    p_organisation_id: organisationId,
+    p_partner_role_configuration_id: null,
+    p_external_partner_id: looksLikeUuid(partner.id) ? partner.id : null,
+    p_partner_organisation_id: looksLikeUuid(partner.partnerOrganisationId) ? partner.partnerOrganisationId : null,
+    p_role_type: normalizePreferredPartnerType(partner.partnerType),
+    p_company_name: normalizeNullableText(partner.companyName),
+    p_contact_person: normalizeNullableText(partner.contactPerson),
+    p_email_address: normalizeNullableText(partner.email)?.toLowerCase() || null,
+    p_phone_number: normalizeNullableText(partner.phone),
+    p_website: normalizeNullableText(partner.website),
+    p_physical_address: normalizeNullableText(partner.physicalAddress),
+    p_province: normalizeNullableText(partner.province),
+    p_notes: normalizeNullableText(partner.notes),
+    p_is_active: Boolean(partner.isActive),
+    p_is_preferred_default: Boolean(partner.isPreferredDefault),
+    p_source: normalizeNullableText(partner.source) || 'manual',
+    p_scope_type: normalizeNullableText(partner.scopeType) || 'all_developments',
+    p_scope_json: partner.scopeJson && typeof partner.scopeJson === 'object' ? partner.scopeJson : {},
+  })
+
+  if (result.error) {
+    if (isMissingRpcError(result.error, 'bridge_save_organisation_partner')) return null
+    throw result.error
+  }
+
+  const payload = result.data || {}
+  if (payload.success === false) {
+    throw new Error(payload.code || payload.reason || 'Unable to save this third party.')
+  }
+
+  const saved = payload.partner && typeof payload.partner === 'object' ? payload.partner : {}
+  return normalizePreferredPartnerRecord({
+    ...partner,
+    id: saved.id || partner.id,
+    partnerType: saved.partner_type || saved.partnerType || partner.partnerType,
+    partnerOrganisationId:
+      saved.partner_organisation_id || saved.partnerOrganisationId || partner.partnerOrganisationId,
+    companyName: saved.company_name || saved.companyName || partner.companyName,
+    contactPerson: saved.contact_person || saved.contactPerson || partner.contactPerson,
+    email: saved.email_address || saved.emailAddress || partner.email,
+    phone: saved.phone_number || saved.phoneNumber || partner.phone,
+    website: saved.website || partner.website,
+    physicalAddress: saved.physical_address || saved.physicalAddress || partner.physicalAddress,
+    province: saved.province || partner.province,
+    notes: saved.notes || partner.notes,
+    isActive: saved.is_active ?? saved.isActive ?? partner.isActive,
+    isPreferredDefault:
+      saved.is_preferred_default ?? saved.isPreferredDefault ?? partner.isPreferredDefault,
+  })
+}
+
 function readPreferredPartnersFromSettings(settings = {}) {
   const rows = Array.isArray(settings?.preferredPartners)
     ? settings.preferredPartners
@@ -3789,6 +3842,7 @@ export async function listOrganisationPreferredPartners() {
     .from('organisation_preferred_partners')
     .select(ORGANISATION_PREFERRED_PARTNER_SELECT)
     .eq('organisation_id', context.organisation.id)
+    .eq('is_active', true)
     .order('company_name', { ascending: true })
 
   if (
@@ -3805,6 +3859,7 @@ export async function listOrganisationPreferredPartners() {
       .from('organisation_preferred_partners')
       .select(ORGANISATION_PREFERRED_PARTNER_LEGACY_SELECT)
       .eq('organisation_id', context.organisation.id)
+      .eq('is_active', true)
       .order('company_name', { ascending: true })
   }
 
@@ -3838,9 +3893,9 @@ export async function saveOrganisationPreferredPartner(input = {}) {
   }
 
   const existing = await listOrganisationPreferredPartners()
+  const hasExistingPartner = existing.some((item) => String(item.id) === String(normalizedInput.id))
   const withUpdated = (() => {
-    const hasExisting = existing.some((item) => String(item.id) === String(normalizedInput.id))
-    const rows = hasExisting
+    const rows = hasExistingPartner
       ? existing.map((item) => (String(item.id) === String(normalizedInput.id) ? normalizePreferredPartnerRecord(normalizedInput, item) : item))
       : [...existing, normalizedInput]
 
@@ -3859,6 +3914,13 @@ export async function saveOrganisationPreferredPartner(input = {}) {
   if (!looksLikeUuid(rowPayload.id)) {
     delete rowPayload.id
   }
+
+  const canonicalSave = await savePreferredPartnerViaCanonicalRpc(
+    client,
+    context.organisation.id,
+    hasExistingPartner ? normalizedInput : { ...normalizedInput, id: '' },
+  )
+  if (canonicalSave) return canonicalSave
 
   if (normalizedInput.isPreferredDefault) {
     const clearDefaultResult = await client
@@ -3919,6 +3981,21 @@ export async function removeOrganisationPreferredPartner(partnerId) {
   assertOrganisationAdminAccess(context, 'manage preferred partners')
   if (!context.organisation.id) {
     return true
+  }
+
+  const existingPartners = await listOrganisationPreferredPartners()
+  const existingPartner = existingPartners.find((item) => String(item.id) === normalizedId)
+  if (existingPartner) {
+    const canonicalRemoval = await savePreferredPartnerViaCanonicalRpc(
+      client,
+      context.organisation.id,
+      {
+        ...existingPartner,
+        isActive: false,
+        isPreferredDefault: false,
+      },
+    )
+    if (canonicalRemoval) return true
   }
 
   const removeResult = await client
