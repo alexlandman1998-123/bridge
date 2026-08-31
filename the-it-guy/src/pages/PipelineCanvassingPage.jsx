@@ -18,9 +18,9 @@ import {
   UserRound,
   WalletCards,
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
 import Modal from '../components/ui/Modal'
@@ -40,10 +40,11 @@ import { csvEscape, mapCsvRowsToImportRows as mapCsvRowsToCanvassingRows, parseC
 import { leadCategoryLabel, normalizeLeadCategory } from '../lib/leadCategory'
 import { canAccessPrincipalExperience, normalizeOrganisationMembershipRole } from '../lib/organisationAccess'
 import { fetchOrganisationSettings, listOrganisationUsers } from '../lib/settingsApi'
-import { getAgentPrivateListings } from '../services/privateListingService'
+import { getAgentPrivateListingSummaries } from '../services/privateListingService'
 import { createLeadRequirement, listLeadRequirements } from '../services/leadRequirementService'
+import { createAgentRoutePerformanceBaseline } from '../services/observability/agentRoutePerformanceBaseline'
 
-const CANVASSING_CONTEXT_TIMEOUT_MS = 20000
+const CANVASSING_CONTEXT_TIMEOUT_MS = 8000
 
 function withCanvassingTimeout(task, message, timeoutMs = CANVASSING_CONTEXT_TIMEOUT_MS) {
   let timeoutId = null
@@ -1444,12 +1445,14 @@ function CanvassingImportModal({ open, audience = 'seller', importing = false, r
 
 function PipelineCanvassingPage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { prospectId: routeProspectIdParam = '' } = useParams()
   const routeProspectId = normalizeText(routeProspectIdParam)
   const isProspectWorkspaceRoute = Boolean(routeProspectId)
   const { profile, currentWorkspace, role, currentMembership, workspaceRole } = useWorkspace()
   const [organisationId, setOrganisationId] = useState('')
   const [loading, setLoading] = useState(true)
+  const [supportingDataLoading, setSupportingDataLoading] = useState(true)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [prospects, setProspects] = useState([])
@@ -1542,6 +1545,11 @@ function PipelineCanvassingPage() {
   const [areaDraftInput, setAreaDraftInput] = useState('')
   const [isProspectSaving, setIsProspectSaving] = useState(false)
   const [prospectSaveNotice, setProspectSaveNotice] = useState('')
+  const performanceBaselineRef = useRef(null)
+  if (!performanceBaselineRef.current) {
+    performanceBaselineRef.current = createAgentRoutePerformanceBaseline({ surface: 'canvassing', route: '/pipeline/canvassing' })
+  }
+  const isPrimaryAgentCanvassingRoute = role === 'agent' && !isProspectWorkspaceRoute && location.pathname === '/pipeline/canvassing'
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -1706,72 +1714,77 @@ function PipelineCanvassingPage() {
     async function loadContext() {
       try {
         setLoading(true)
+        setSupportingDataLoading(true)
         setError('')
-        let context = null
-        try {
-          context = await withCanvassingTimeout(
+        let orgId = normalizeText(currentWorkspace?.id)
+        if (normalizeKey(orgId) === 'all') orgId = ''
+        if (!orgId) {
+          const context = await withCanvassingTimeout(
             fetchOrganisationSettings(),
             'Organisation context is taking too long to load.',
           )
-        } catch (contextError) {
-          if (!isAuthSessionMissingError(contextError) || !normalizeText(currentWorkspace?.id)) {
-            console.warn('[CANVASSING] organisation context load failed.', contextError)
-          }
+          orgId = normalizeText(context?.organisation?.id)
         }
         if (!active) return
-        const orgId = normalizeText(context?.organisation?.id || currentWorkspace?.id)
         if (!orgId) throw new Error('A resolved workspace is required before loading canvassing data.')
         setOrganisationId(orgId)
+
+        // Prospects and activities are the usable screen. Resolve them before
+        // directory users and listing options so support data cannot block it.
         const store = await listCanvassingWorkspace(orgId)
+        if (!active) return
         setProspects(Array.isArray(store.prospects) ? store.prospects : [])
         setActivities(Array.isArray(store.activities) ? store.activities : [])
         setCanvassingDataStatus(normalizeCanvassingDataStatus(store))
-        try {
-          const users = await listOrganisationUsers()
-          if (active) setAgentUsers(Array.isArray(users) ? users : [])
-        } catch (usersError) {
-          console.warn('[CANVASSING] organisation users load failed.', usersError)
-          if (active) setAgentUsers([])
-        }
-        try {
-          const localListings = readAgentPrivateListings()
-          const branchScopedLocalListings = isPrincipalAgentView
-            ? localListings
-            : localListings.filter((listing) => {
-                const listingAgentId = normalizeText(listing?.assignedAgentId || listing?.assigned_agent_id)
-                const listingAgentEmail = normalizeText(listing?.assignedAgentEmail || listing?.assigned_agent_email).toLowerCase()
-                return (
-                  currentAgentIdentitySet.has(normalizeKey(listingAgentId)) ||
-                  (listingAgentEmail && currentAgentIdentitySet.has(normalizeKey(listingAgentEmail)))
-                )
-              })
-          const remoteListings = await getAgentPrivateListings(currentAgentForWrites.id, {
+        setLoading(false)
+
+        const localListings = readAgentPrivateListings()
+        const branchScopedLocalListings = isPrincipalAgentView
+          ? localListings
+          : localListings.filter((listing) => {
+              const listingAgentId = normalizeText(listing?.assignedAgentId || listing?.assigned_agent_id)
+              const listingAgentEmail = normalizeText(listing?.assignedAgentEmail || listing?.assigned_agent_email).toLowerCase()
+              return (
+                currentAgentIdentitySet.has(normalizeKey(listingAgentId)) ||
+                (listingAgentEmail && currentAgentIdentitySet.has(normalizeKey(listingAgentEmail)))
+              )
+            })
+
+        const [users, remoteListings] = await Promise.all([
+          listOrganisationUsers().catch((usersError) => {
+            console.warn('[CANVASSING] organisation users load failed.', usersError)
+            return []
+          }),
+          getAgentPrivateListingSummaries(currentAgentForWrites.id, {
             organisationId: orgId,
-            assignedAgentEmail: currentAgent.email,
             includeAllOrganisationListings: isPrincipalAgentView,
+            coreFieldsOnly: true,
           }).catch((listingError) => {
             console.warn('[CANVASSING] organisation listings load failed.', listingError)
             return []
-          })
-          if (active) {
-            setListingOptions(dedupeListingOptions([
-              ...(Array.isArray(branchScopedLocalListings) ? branchScopedLocalListings : []),
-              ...(Array.isArray(remoteListings) ? remoteListings : []),
-            ]))
-          }
-        } catch (listingError) {
-          console.warn('[CANVASSING] listing options unavailable.', listingError)
-          if (active) setListingOptions([])
-        }
+          }),
+        ])
+        if (!active) return
+        setAgentUsers(Array.isArray(users) ? users : [])
+        setListingOptions(dedupeListingOptions([
+          ...(Array.isArray(branchScopedLocalListings) ? branchScopedLocalListings : []),
+          ...(Array.isArray(remoteListings) ? remoteListings : []),
+        ]))
       } catch (contextError) {
         if (!active) return
+        if (!isAuthSessionMissingError(contextError) || !normalizeText(currentWorkspace?.id)) {
+          console.warn('[CANVASSING] workspace load failed.', contextError)
+        }
         setCanvassingDataStatus(normalizeCanvassingDataStatus({
           persistence: 'error',
           error: contextError?.message || 'Unable to load canvassing workspace.',
         }))
         setError(contextError?.message || 'Unable to load canvassing workspace.')
       } finally {
-        if (active) setLoading(false)
+        if (active) {
+          setLoading(false)
+          setSupportingDataLoading(false)
+        }
       }
     }
 
@@ -1786,9 +1799,34 @@ function PipelineCanvassingPage() {
     currentAgentForWrites.id,
     currentAgentIdentitySet,
     currentWorkspace?.id,
-    currentWorkspace?.name,
     isPrincipalAgentView,
   ])
+
+  useEffect(() => {
+    if (!isPrimaryAgentCanvassingRoute) return
+    void performanceBaselineRef.current?.recordCheckpoint({
+      checkpoint: 'shell_ready',
+      userId: profile?.id,
+      workspaceId: organisationId || currentWorkspace?.id,
+    })
+  }, [currentWorkspace?.id, isPrimaryAgentCanvassingRoute, organisationId, profile?.id])
+
+  useEffect(() => {
+    if (!isPrimaryAgentCanvassingRoute || loading) return undefined
+    const workspaceId = organisationId || currentWorkspace?.id
+    const metadata = { prospectCount: prospects.length, outcome: error ? 'degraded' : 'ready' }
+    void performanceBaselineRef.current?.recordCheckpoint({ checkpoint: 'core_ready', userId: profile?.id, workspaceId, metadata })
+  }, [currentWorkspace?.id, error, isPrimaryAgentCanvassingRoute, loading, organisationId, profile?.id, prospects.length])
+
+  useEffect(() => {
+    if (!isPrimaryAgentCanvassingRoute || loading || supportingDataLoading) return undefined
+    const workspaceId = organisationId || currentWorkspace?.id
+    const metadata = { prospectCount: prospects.length, outcome: error ? 'degraded' : 'ready' }
+    const frameId = window.requestAnimationFrame(() => {
+      void performanceBaselineRef.current?.recordCheckpoint({ checkpoint: 'settled', userId: profile?.id, workspaceId, metadata })
+    })
+    return () => window.cancelAnimationFrame(frameId)
+  }, [currentWorkspace?.id, error, isPrimaryAgentCanvassingRoute, loading, organisationId, profile?.id, prospects.length, supportingDataLoading])
 
   const selectedAgentForProspect = useMemo(() => resolveAgentById(prospectForm.assignedAgentId || currentAgentIdentity), [currentAgentIdentity, prospectForm.assignedAgentId, resolveAgentById])
 
@@ -2072,7 +2110,15 @@ function PipelineCanvassingPage() {
       .sort((left, right) => left.localeCompare(right))
   }, [prospectRows])
 
-  const canvassingDataStatusMeta = getCanvassingDataStatusMeta(canvassingDataStatus)
+  const canvassingDataStatusMeta = loading
+    ? {
+        key: 'loading',
+        label: 'Connecting',
+        detail: 'Loading canvassing prospects and activity from this workspace.',
+        className: 'border-sky-200 bg-sky-50 text-sky-800',
+        Icon: Clock3,
+      }
+    : getCanvassingDataStatusMeta(canvassingDataStatus)
   const CanvassingDataStatusIcon = canvassingDataStatusMeta.Icon
 
   const prospectById = useMemo(() => {
@@ -3846,7 +3892,7 @@ function PipelineCanvassingPage() {
     </>
   )
 
-  if (loading) {
+  if (loading && isProspectWorkspaceRoute) {
     return (
       <section className="rounded-[20px] border border-[#dde4ee] bg-white p-6">
         <p className="text-sm text-[#61758f]">Loading canvassing workspace...</p>
@@ -3864,7 +3910,12 @@ function PipelineCanvassingPage() {
   }
 
   return (
-    <section className="space-y-5">
+    <section
+      className="space-y-5"
+      data-performance-route={isPrimaryAgentCanvassingRoute ? 'canvassing' : undefined}
+      data-performance-core-ready={isPrimaryAgentCanvassingRoute ? (loading ? 'false' : 'true') : undefined}
+      data-performance-settled={isPrimaryAgentCanvassingRoute ? (loading || supportingDataLoading ? 'false' : 'true') : undefined}
+    >
       <header className="rounded-2xl border border-slate-200 bg-white px-5 py-5 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
@@ -3951,9 +4002,10 @@ function PipelineCanvassingPage() {
                   assigning={assigningProspects}
                   onAssign={handleAssignSelectedProspects}
                 />
-	                <Button
+                <Button
 	                  type="button"
 	                  className="min-h-11 w-full justify-center whitespace-nowrap rounded-xl px-4 lg:w-auto"
+                  disabled={loading || !organisationId}
                   onClick={() => {
                     resetProspectForm()
                     setProspectForm((previous) => ({
@@ -3972,6 +4024,7 @@ function PipelineCanvassingPage() {
                 <Button
                   type="button"
                   className="min-h-11 w-full justify-center whitespace-nowrap rounded-xl border border-slate-200 bg-white px-4 text-slate-700 shadow-sm hover:bg-slate-50 lg:w-auto"
+                  disabled={loading || !organisationId}
                   onClick={() => {
                     setImportResult(null)
                     setShowImportModal(true)
@@ -4140,6 +4193,7 @@ function PipelineCanvassingPage() {
                   return (
 	                    <tr
 	                      key={prospect.id}
+	                      style={{ contentVisibility: 'auto', containIntrinsicSize: '0 88px' }}
 	                      className={`h-[88px] cursor-pointer text-slate-700 transition hover:bg-slate-50 ${
                           selectedProspectIdSet.has(normalizeText(prospect.id)) ? 'bg-[#f5f9fd]' : ''
                         }`}
@@ -4215,7 +4269,9 @@ function PipelineCanvassingPage() {
                   <td className="px-4 py-8 text-sm text-slate-500" colSpan={6}>
                     <div className="space-y-1">
                       <p>
-                        {prospectView === 'seller'
+                        {loading
+                          ? 'Loading prospects…'
+                          : prospectView === 'seller'
                           ? 'No seller prospects yet. Add seller canvassing prospects to track valuation and mandate potential.'
                           : 'No buyer prospects yet. Add buyer canvassing prospects to track criteria and conversion readiness.'}
                       </p>
@@ -4264,6 +4320,7 @@ function PipelineCanvassingPage() {
               return (
 	                <div
 	                  key={prospect.id}
+	                  style={{ contentVisibility: 'auto', containIntrinsicSize: '0 112px' }}
 	                  className={`cursor-pointer px-4 py-3 transition hover:bg-slate-50 ${
                       selectedProspectIdSet.has(normalizeText(prospect.id)) ? 'bg-[#f5f9fd]' : ''
                     }`}
@@ -4327,7 +4384,9 @@ function PipelineCanvassingPage() {
           ) : (
             <div className="space-y-1 px-4 py-8 text-sm text-slate-500">
               <p>
-                {prospectView === 'seller'
+                {loading
+                  ? 'Loading prospects…'
+                  : prospectView === 'seller'
                   ? 'No seller prospects yet. Add seller canvassing prospects to track valuation and mandate potential.'
                   : 'No buyer prospects yet. Add buyer canvassing prospects to track criteria and conversion readiness.'}
               </p>

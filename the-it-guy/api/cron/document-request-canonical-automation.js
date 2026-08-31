@@ -92,6 +92,22 @@ export default async function handler(request, response) {
   }
 
   const query = resolveQuery(request)
+  const automationPaused = String(process.env.DOCUMENT_REQUEST_CANONICAL_AUTOMATION_PAUSED || 'true').toLowerCase() !== 'false'
+  const manualDryRunRequested = request.method === 'POST' && query.get('dry-run') === 'true'
+  if (automationPaused && !manualDryRunRequested) {
+    console.log(JSON.stringify({
+      level: 'info',
+      message: 'Document request canonical automation is paused.',
+      ...logContext,
+      durationMs: Date.now() - startedAt,
+    }))
+    return json(response, 200, {
+      ok: true,
+      paused: true,
+      reason: 'document_reminder_notifications_paused',
+    })
+  }
+
   const limit = Math.min(
     Math.max(Math.round(safeNumber(process.env.DOCUMENT_REQUEST_CANONICAL_AUTOMATION_LIMIT || query.get('limit'), DEFAULT_LIMIT)), 1),
     MAX_LIMIT,
@@ -100,7 +116,7 @@ export default async function handler(request, response) {
     Math.max(Math.round(safeNumber(process.env.DOCUMENT_REQUEST_CANONICAL_AUTOMATION_TIMEOUT_MS, DEFAULT_TIMEOUT_MS)), 1000),
     DEFAULT_TIMEOUT_MS,
   )
-  const commitEnabled = String(process.env.DOCUMENT_REQUEST_CANONICAL_AUTOMATION_COMMIT || '').toLowerCase() === 'true'
+  const commitEnabled = !automationPaused && String(process.env.DOCUMENT_REQUEST_CANONICAL_AUTOMATION_COMMIT || '').toLowerCase() === 'true'
   const allowLegacyKeys =
     String(process.env.DOCUMENT_REQUEST_CANONICAL_AUTOMATION_ALLOW_LEGACY_KEYS || '').toLowerCase() === 'true'
   const runId = `${Date.now()}-${Math.random().toString(36).slice(2)}`

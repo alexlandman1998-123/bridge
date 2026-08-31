@@ -17,6 +17,7 @@ import Button from '../../components/ui/Button'
 import Field from '../../components/ui/Field'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { isUnsafeFallbackAllowed } from '../../lib/envValidation'
+import { markRouteMilestone } from '../../lib/performanceTrace'
 import { buildSellerLeadListingPrefill } from '../../lib/sellerLeadListingPrefill'
 import {
   SELLER_BASE_PACK_COMPLETION_ROUTES,
@@ -13566,6 +13567,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   useEffect(() => {
     if (!isLeadWorkspaceRoute || !routeLeadId || !selectedLead) return
+    markRouteMilestone('core_ready')
     recordLeadWorkspaceLoadStage(LEAD_WORKSPACE_LOAD_STAGES.coreLeadReady, {
       leadId: routeLeadId,
       metadata: { source: routeLeadSnapshotLead ? 'route_snapshot' : 'pipeline_records' },
@@ -13614,6 +13616,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   useEffect(() => {
     if (!isLeadWorkspaceRoute || !organisationId || routeLeadHydrationStatus !== 'ready' || !selectedLead) return
+    markRouteMilestone('interactive_ready')
     const category = resolveLeadCategoryView(selectedLead)
     const checkpointMetadata = {
       workspaceTab: routeLeadWorkspaceTab,

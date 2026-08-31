@@ -18,6 +18,7 @@ import {
   buildRentalListingIndexRows,
   filterRentalListingIndexRows,
   formatRentalIndexStatusLabel,
+  RENTAL_LISTING_STATUS_TABS,
   summarizeRentalListingIndexRows,
 } from '../../services/rentals/rentalListingIndexModel'
 import {
@@ -255,6 +256,14 @@ export default function RentalListingsPage() {
             <div className="flex flex-wrap items-center gap-2 xl:justify-end">
               <button
                 type="button"
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[14px] border border-[#dce6f2] bg-white px-5 text-sm font-semibold text-[#35546c] transition hover:border-[#b8c9dc] hover:bg-[#f8fbff]"
+                onClick={() => navigate('/agent/rentals/vacancies')}
+              >
+                <Home size={16} aria-hidden="true" />
+                Vacancy workspace
+              </button>
+              <button
+                type="button"
                 className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[14px] border border-[#dce6f2] bg-white px-5 text-sm font-semibold text-[#142132] shadow-[0_8px_18px_rgba(15,23,42,0.04)] transition hover:border-[#b8c9dc] hover:bg-[#f8fbff]"
                 onClick={() => navigate('/agent/rentals/listings/new')}
               >
@@ -282,11 +291,9 @@ export default function RentalListingsPage() {
               </p>
             </div>
 
-            <div className="grid w-full grid-cols-2 gap-1.5 rounded-[18px] border border-[#dbe6f2] bg-[#f5f9fd] p-1.5 sm:max-w-[460px]">
-              {[
-                { key: 'all', label: 'Rentals', count: summary.total },
-                { key: 'applications', label: 'Applications', count: summary.applications || 0 },
-              ].map((tab) => {
+            <div className="grid w-full grid-cols-2 gap-1.5 rounded-[18px] border border-[#dbe6f2] bg-[#f5f9fd] p-1.5 sm:grid-cols-3 sm:max-w-[460px]">
+              {RENTAL_LISTING_STATUS_TABS.map((tab) => {
+                const count = tab.key === 'all' ? summary.total : summary[tab.key] || 0
                 const active = statusTab === tab.key
                 return (
                   <button
@@ -301,7 +308,7 @@ export default function RentalListingsPage() {
                   >
                     <span className="block truncate text-[0.84rem] font-semibold leading-5">{tab.label}</span>
                     <span className={`mt-0.5 block truncate text-[0.7rem] font-medium leading-4 ${active ? 'text-white/82' : 'text-[#7b8ca2]'}`}>
-                      {tab.count} item{tab.count === 1 ? '' : 's'}
+                      {count} item{count === 1 ? '' : 's'}
                     </span>
                   </button>
                 )

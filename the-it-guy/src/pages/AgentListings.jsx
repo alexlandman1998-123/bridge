@@ -1,5 +1,5 @@
 import { ArrowLeft, ArrowRight, Building2, CheckCircle2, Circle, CircleAlert, FileText, FolderKanban, HelpCircle, ImagePlus, Link, Loader2, Mail, MessageCircle, MoreVertical, Plus, Search, Share2, ShieldCheck, Sparkles, Trash2, UserRound, UsersRound, X } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
@@ -50,7 +50,7 @@ import {
   getPrivateListingLifecycleState,
   getPrivateListingStatusGroup,
 } from '../lib/privateListingLifecycle'
-import { createPrivateListing, createPrivateListingActivity, deletePrivateListing, getAgentPrivateListings, persistSellerProfileOnboardingFormData, syncPrivateListingDistributionData, syncPrivateListingRequirements, updatePrivateListing, uploadPrivateListingDocument, uploadPrivateListingMediaAsset } from '../services/privateListingService'
+import { createPrivateListing, createPrivateListingActivity, deletePrivateListing, getAgentPrivateListingSummaries, getAgentPrivateListings, persistSellerProfileOnboardingFormData, syncPrivateListingDistributionData, syncPrivateListingRequirements, updatePrivateListing, uploadPrivateListingDocument, uploadPrivateListingMediaAsset } from '../services/privateListingService'
 import { reassignListingAgent } from '../services/listingAgentReassignmentService'
 import {
   createAgencyIntroducedDeveloperLead,
@@ -60,6 +60,7 @@ import {
   SELLER_PORTAL_ACTIVATION_SOURCES,
 } from '../services/sellerPortalActivationService'
 import { getListingPartnerShareOptions, shareListingWithPartner, unshareListingWithPartner } from '../services/partnerListingSharingService'
+import { createAgentRoutePerformanceBaseline } from '../services/observability/agentRoutePerformanceBaseline'
 import { formatSouthAfricanWhatsAppNumber, sendWhatsAppNotification } from '../lib/whatsapp'
 import {
   buildDirectListingIntakePayload,
@@ -3465,6 +3466,7 @@ function AgentListings({ initialTab = null } = {}) {
   }, [location.search])
 
   const [loading, setLoading] = useState(true)
+  const [supportingDataLoading, setSupportingDataLoading] = useState(true)
   const [error, setError] = useState('')
   const [workflowMessage, setWorkflowMessage] = useState('')
   const [listingsTab, setListingsTab] = useState(() => {
@@ -3513,6 +3515,10 @@ function AgentListings({ initialTab = null } = {}) {
   const [developerLeadSubmitting, setDeveloperLeadSubmitting] = useState(false)
   const [listingUnitOptions, setListingUnitOptions] = useState([])
   const [listingUnitsLoading, setListingUnitsLoading] = useState(false)
+  const performanceBaselineRef = useRef(null)
+  if (!performanceBaselineRef.current) {
+    performanceBaselineRef.current = createAgentRoutePerformanceBaseline({ surface: 'listings', route: '/listings' })
+  }
 
   const [form, setForm] = useState(() => buildInitialListingLeadForm(profile, workspace))
   const [hydratedEditListingId, setHydratedEditListingId] = useState('')
@@ -3557,8 +3563,10 @@ function AgentListings({ initialTab = null } = {}) {
   }, [isDeveloperWorkspace, location.pathname, location.search, location.state, navigate])
 
   const loadData = useCallback(async ({ showLoading = true, deletedIdsOverride = null } = {}) => {
+    let corePublished = false
     try {
       if (showLoading) setLoading(true)
+      setSupportingDataLoading(true)
       setError('')
       let participantRows = []
       let options = []
@@ -3575,47 +3583,79 @@ function AgentListings({ initialTab = null } = {}) {
       let resolvedOrganisationId = ''
       if (isSupabaseConfigured) {
         const developmentRoleType = isDeveloperWorkspace ? 'developer' : 'agent'
-        const [organisationContext, participantRowsResult, assignedIdsResult, organisationUsersResult] = await Promise.all([
-          fetchOrganisationSettings().catch(() => null),
-          profile?.id
-            ? fetchTransactionsByParticipantSummary({ userId: profile.id, roleType: developmentRoleType })
-            : Promise.resolve([]),
-          fetchAssignedDevelopmentIdsForRole({
-            userId: profile?.id || null,
-            participantEmail: profile?.email || '',
-            roleType: developmentRoleType,
-          }),
-          listOrganisationUsers().catch(() => []),
+        const organisationContextPromise = fetchOrganisationSettings().catch(() => null)
+        const participantRowsPromise = profile?.id
+          ? fetchTransactionsByParticipantSummary({ userId: profile.id, roleType: developmentRoleType }).catch(() => [])
+          : Promise.resolve([])
+        const assignedIdsPromise = fetchAssignedDevelopmentIdsForRole({
+          userId: profile?.id || null,
+          participantEmail: profile?.email || '',
+          roleType: developmentRoleType,
+        }).catch(() => [])
+        const organisationUsersPromise = listOrganisationUsers().catch(() => [])
+        const [organisationContextForId, assignedIdsResult, organisationUsersResult] = await Promise.all([
+          selectedWorkspaceOrganisationId ? Promise.resolve(null) : organisationContextPromise,
+          assignedIdsPromise,
+          organisationUsersPromise,
         ])
-        participantRows = participantRowsResult
         assignedIds = assignedIdsResult
         userRows = Array.isArray(organisationUsersResult) ? organisationUsersResult : []
-        branchRows = extractBranchOptions(organisationContext)
-        resolvedOrganisationId = selectedWorkspaceOrganisationId || String(organisationContext?.organisation?.id || '').trim()
-
-        options = isDeveloperWorkspace
-          ? await fetchDevelopmentOptions({
-              developmentIds: assignedIds,
-              organisationId: selectedWorkspaceOrganisationId || resolvedOrganisationId,
-            })
-          : assignedIds.length
-            ? await fetchDevelopmentOptions({ developmentIds: assignedIds })
-            : await fetchDevelopmentOptions()
+        resolvedOrganisationId = selectedWorkspaceOrganisationId || String(organisationContextForId?.organisation?.id || '').trim()
 
         const canUseDbFirstPrivateListings = !MOCK_DATA_ENABLED && Boolean(resolvedOrganisationId && profile?.id)
-        if (canUseDbFirstPrivateListings) {
-          const agentAssignmentIds = resolveAgentAssignmentIds({ id: profile?.id, email: profile?.email }, userRows)
-          dbPrivateListings = await getAgentPrivateListings(profile.id, {
-            organisationId: resolvedOrganisationId,
-            assignedAgentEmail: profile?.email || '',
-            assignedAgentIds: agentAssignmentIds,
-            includeAllOrganisationListings: canAccessOrganisationListings({
-              agencyWorkflowMode,
-              currentMembership,
-              workspaceRole,
-            }),
-          })
+        const listingScope = canUseDbFirstPrivateListings
+          ? {
+              organisationId: resolvedOrganisationId,
+              assignedAgentIds: resolveAgentAssignmentIds({ id: profile?.id, email: profile?.email }, userRows),
+              includeAllOrganisationListings: canAccessOrganisationListings({
+                agencyWorkflowMode,
+                currentMembership,
+                workspaceRole,
+              }),
+              coreFieldsOnly: true,
+            }
+          : null
+        if (listingScope) {
+          dbPrivateListings = await getAgentPrivateListingSummaries(profile.id, listingScope)
         }
+
+        // Publish the lightweight listing rows first. Detailed compliance,
+        // documents and supporting workspaces hydrate without blocking cards.
+        setAssignedDevelopmentIds(Array.isArray(assignedIds) ? assignedIds : [])
+        setOrganisationUsers(userRows)
+        setOrganisationId(resolvedOrganisationId)
+        setPrivateListings(mergePrivateListingRows(dbPrivateListings, runtimeListings, locallyDeletedIds))
+        if (showLoading) setLoading(false)
+        corePublished = true
+
+        const optionsPromise = isDeveloperWorkspace
+          ? fetchDevelopmentOptions({
+              developmentIds: assignedIds,
+              organisationId: selectedWorkspaceOrganisationId || resolvedOrganisationId,
+            }).catch(() => [])
+          : assignedIds.length
+            ? fetchDevelopmentOptions({ developmentIds: assignedIds }).catch(() => [])
+            : fetchDevelopmentOptions().catch(() => [])
+        const fullListingsPromise = listingScope
+          ? getAgentPrivateListings(profile.id, {
+              ...listingScope,
+              assignedAgentEmail: profile?.email || '',
+            }).catch((listingError) => {
+              console.warn('[LISTINGS] Detailed listing hydration failed; keeping summary rows.', listingError)
+              return dbPrivateListings
+            })
+          : Promise.resolve([])
+        const [organisationContext, participantRowsResult, optionsResult, fullListingsResult] = await Promise.all([
+          organisationContextPromise,
+          participantRowsPromise,
+          optionsPromise,
+          fullListingsPromise,
+        ])
+
+        participantRows = participantRowsResult
+        options = optionsResult
+        branchRows = extractBranchOptions(organisationContext)
+        dbPrivateListings = fullListingsResult
       }
       const agentRows = Array.isArray(participantRows) ? participantRows.filter(Boolean) : []
       setTransactionRows(agentRows)
@@ -3628,20 +3668,23 @@ function AgentListings({ initialTab = null } = {}) {
       setPrivateListings(mergePrivateListingRows(dbPrivateListings, runtimeListings, locallyDeletedIds))
     } catch (loadError) {
       setError(loadError?.message || 'Unable to load listings at the moment.')
-      setDevelopmentRows([])
-      setTransactionRows([])
-      setDevelopmentOptions([])
-      setAssignedDevelopmentIds([])
-      setOrganisationUsers([])
-      setBranchOptions([])
+      if (!corePublished) {
+        setDevelopmentRows([])
+        setTransactionRows([])
+        setDevelopmentOptions([])
+        setAssignedDevelopmentIds([])
+        setOrganisationUsers([])
+        setBranchOptions([])
+      }
       const locallyDeletedIds = new Set([
         ...readDeletedListingIds(),
         ...(deletedIdsOverride instanceof Set ? Array.from(deletedIdsOverride) : []),
       ].map((value) => String(value || '').trim()).filter(Boolean))
       setDeletedListingIds(locallyDeletedIds)
-      setPrivateListings(mergePrivateListingRows([], readAgentPrivateListings(), locallyDeletedIds))
+      if (!corePublished) setPrivateListings(mergePrivateListingRows([], readAgentPrivateListings(), locallyDeletedIds))
     } finally {
       if (showLoading) setLoading(false)
+      setSupportingDataLoading(false)
     }
   }, [agencyWorkflowMode, currentMembership, isDeveloperWorkspace, profile, selectedWorkspaceOrganisationId, workspaceRole])
 
@@ -3654,6 +3697,42 @@ function AgentListings({ initialTab = null } = {}) {
       cancelled = true
     }
   }, [loadData])
+
+  const isPrimaryListingsRoute = role === 'agent' && !isListingEditorWorkspace && location.pathname === '/listings'
+
+  useEffect(() => {
+    if (!isPrimaryListingsRoute) return
+    void performanceBaselineRef.current?.recordCheckpoint({
+      checkpoint: 'shell_ready',
+      userId: profile?.id,
+      workspaceId: selectedWorkspaceOrganisationId || organisationId,
+    })
+  }, [isPrimaryListingsRoute, organisationId, profile?.id, selectedWorkspaceOrganisationId])
+
+  useEffect(() => {
+    if (!isPrimaryListingsRoute || loading) return undefined
+    const metadata = {
+      rowCount: privateListings.length,
+      supportingTransactionCount: transactionRows.length,
+      outcome: error ? 'degraded' : 'ready',
+    }
+    const workspaceId = selectedWorkspaceOrganisationId || organisationId
+    void performanceBaselineRef.current?.recordCheckpoint({ checkpoint: 'core_ready', userId: profile?.id, workspaceId, metadata })
+  }, [error, isPrimaryListingsRoute, loading, organisationId, privateListings.length, profile?.id, selectedWorkspaceOrganisationId, transactionRows.length])
+
+  useEffect(() => {
+    if (!isPrimaryListingsRoute || loading || supportingDataLoading) return undefined
+    const metadata = {
+      rowCount: privateListings.length,
+      supportingTransactionCount: transactionRows.length,
+      outcome: error ? 'degraded' : 'ready',
+    }
+    const workspaceId = selectedWorkspaceOrganisationId || organisationId
+    const frameId = window.requestAnimationFrame(() => {
+      void performanceBaselineRef.current?.recordCheckpoint({ checkpoint: 'settled', userId: profile?.id, workspaceId, metadata })
+    })
+    return () => window.cancelAnimationFrame(frameId)
+  }, [error, isPrimaryListingsRoute, loading, organisationId, privateListings.length, profile?.id, selectedWorkspaceOrganisationId, supportingDataLoading, transactionRows.length])
 
   useEffect(() => {
     function refresh() {
@@ -7469,7 +7548,12 @@ function AgentListings({ initialTab = null } = {}) {
   }
 
   return (
-    <section className="space-y-5">
+    <section
+      className="space-y-5"
+      data-performance-route={isPrimaryListingsRoute ? 'listings' : undefined}
+      data-performance-core-ready={isPrimaryListingsRoute ? (loading ? 'false' : 'true') : undefined}
+      data-performance-settled={isPrimaryListingsRoute ? (loading || supportingDataLoading ? 'false' : 'true') : undefined}
+    >
       {!isDeveloperWorkspace ? (
         <FinalListingModuleOverview
           overview={finalListingModuleOverview}
@@ -7678,6 +7762,7 @@ function AgentListings({ initialTab = null } = {}) {
               {residentialListingCards.map((card) => (
                 <article
                   key={card.id}
+                  style={{ contentVisibility: 'auto', containIntrinsicSize: '0 430px' }}
                   onClick={() => navigate(`/agent/listings/${encodeURIComponent(card.id)}`)}
                   className="group flex h-full cursor-pointer flex-col overflow-hidden rounded-[8px] border border-[#dce6f2] bg-white shadow-[0_6px_16px_rgba(15,23,42,0.05)] transition hover:-translate-y-0.5 hover:shadow-[0_10px_24px_rgba(15,23,42,0.09)]"
                 >
@@ -7814,6 +7899,7 @@ function AgentListings({ initialTab = null } = {}) {
               {filteredDevelopmentCards.map((card) => (
                 <article
                   key={card.id}
+                  style={{ contentVisibility: 'auto', containIntrinsicSize: '0 380px' }}
                   onClick={() => handleOpenDevelopmentWorkspace(card)}
                   className="group cursor-pointer overflow-hidden rounded-[20px] border border-[#dce6f2] bg-white shadow-[0_8px_24px_rgba(15,23,42,0.06)] transition hover:-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(15,23,42,0.1)]"
                 >

@@ -18253,6 +18253,7 @@ const UNIT_WORKSPACE_SHELL_CACHE_TTL_MS = 10 * 1000
 const unitSummaryCache = new Map()
 const unitSummaryInFlight = new Map()
 const unitWorkspaceShellCache = new Map()
+const transactionRouteCoreCache = new Map()
 const unitWorkspaceShellInFlight = new Map()
 
 function readTimedCache(map, key, ttlMs) {
@@ -34181,6 +34182,43 @@ export async function fetchTransactionCoreById(transactionId) {
   }
 
   return fetchTransactionCoreById(resolvedTransactionId)
+}
+
+// Keep first paint independent of the evolving transaction projection. These
+// long-lived columns form the route contract; richer metadata is hydrated after
+// the workspace is already interactive.
+const TRANSACTION_ROUTE_CORE_SELECT =
+  'id, development_id, unit_id, buyer_id, finance_type, stage, attorney, bond_originator, next_action, updated_at, created_at'
+
+export async function fetchTransactionRouteCoreById(transactionId) {
+  if (!transactionId) return null
+
+  const normalizedTransactionId = String(transactionId).trim()
+  const cached = readTimedCache(
+    transactionRouteCoreCache,
+    normalizedTransactionId,
+    UNIT_WORKSPACE_SHELL_CACHE_TTL_MS,
+  )
+  if (cached) return cached
+
+  const client = requireClient()
+  const query = await client
+    .from('transactions')
+    .select(TRANSACTION_ROUTE_CORE_SELECT)
+    .eq('id', normalizedTransactionId)
+    .maybeSingle()
+  if (query.error) throw query.error
+
+  if (query.data?.id) {
+    const shell = await buildTransactionWorkspaceShellFromTransaction(client, query.data)
+    const routeCore = { ...shell, __isRouteCore: true }
+    writeTimedCache(transactionRouteCoreCache, normalizedTransactionId, routeCore)
+    return routeCore
+  }
+
+  const resolvedTransactionId = await resolveTransactionIdFromBondApplicationId(client, normalizedTransactionId)
+  if (!resolvedTransactionId || resolvedTransactionId === normalizedTransactionId) return null
+  return fetchTransactionRouteCoreById(resolvedTransactionId)
 }
 
 export async function getTransactionRollup(transactionId, options = {}) {

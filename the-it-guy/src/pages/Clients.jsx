@@ -17,7 +17,7 @@ import {
   UserRoundSearch,
   Users,
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import Button from '../components/ui/Button'
@@ -36,6 +36,7 @@ import { useOrganisation } from '../context/OrganisationContext'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 import { fetchTransactionsByParticipantSummary } from '../lib/transactionsListApi'
+import { createAgentRoutePerformanceBaseline } from '../services/observability/agentRoutePerformanceBaseline'
 
 let legacyClientApiPromise = null
 
@@ -851,7 +852,12 @@ function Clients() {
   const [manualAttorneyParties, setManualAttorneyParties] = useState(() => readAttorneyManualParties())
   const [openActionMenuId, setOpenActionMenuId] = useState('')
   const [showAddModal, setShowAddModal] = useState(false)
+  const performanceBaselineRef = useRef(null)
+  if (!performanceBaselineRef.current) {
+    performanceBaselineRef.current = createAgentRoutePerformanceBaseline({ surface: 'clients', route: '/clients' })
+  }
   const isAgentClientDirectory = role === 'agent'
+  const isPrimaryAgentClientsRoute = isAgentClientDirectory && location.pathname === '/clients'
   const isAttorneyClientDirectory = role === 'attorney'
   const isBondClientsRoute = role === 'bond_originator' || location.pathname.startsWith('/bond/clients')
   const directoryCopy = isAttorneyClientDirectory ? ATTORNEY_CLIENT_DIRECTORY_COPY : DEFAULT_CLIENT_DIRECTORY_COPY
@@ -959,6 +965,35 @@ function Clients() {
   useEffect(() => {
     void loadData()
   }, [loadData])
+
+  useEffect(() => {
+    if (!isPrimaryAgentClientsRoute) return
+    void performanceBaselineRef.current?.recordCheckpoint({
+      checkpoint: 'shell_ready',
+      userId: profile?.id,
+      workspaceId: activeOrganisationId,
+    })
+  }, [activeOrganisationId, isPrimaryAgentClientsRoute, profile?.id])
+
+  useEffect(() => {
+    if (!isPrimaryAgentClientsRoute || loading) return undefined
+    const metadata = { rowCount: rows.length, outcome: error ? 'degraded' : 'ready' }
+    void performanceBaselineRef.current?.recordCheckpoint({
+      checkpoint: 'core_ready',
+      userId: profile?.id,
+      workspaceId: activeOrganisationId,
+      metadata,
+    })
+    const frameId = window.requestAnimationFrame(() => {
+      void performanceBaselineRef.current?.recordCheckpoint({
+        checkpoint: 'settled',
+        userId: profile?.id,
+        workspaceId: activeOrganisationId,
+        metadata,
+      })
+    })
+    return () => window.cancelAnimationFrame(frameId)
+  }, [activeOrganisationId, error, isPrimaryAgentClientsRoute, loading, profile?.id, rows.length])
 
   const developmentOptions = useMemo(() => getDevelopmentOptionsFromRows(rows), [rows])
   const sourceRows = useMemo(
@@ -1192,7 +1227,12 @@ function Clients() {
   }
 
   return (
-    <section className="space-y-5">
+    <section
+      className="space-y-5"
+      data-performance-route={isPrimaryAgentClientsRoute ? 'clients' : undefined}
+      data-performance-core-ready={isPrimaryAgentClientsRoute ? (loading ? 'false' : 'true') : undefined}
+      data-performance-settled={isPrimaryAgentClientsRoute ? (loading ? 'false' : 'true') : undefined}
+    >
       <section className="grid gap-4 xl:grid-cols-4">
         {[
           isAttorneyClientDirectory

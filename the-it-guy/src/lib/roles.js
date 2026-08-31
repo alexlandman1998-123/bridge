@@ -98,9 +98,10 @@ const RENTAL_NAV = Object.freeze({
     { key: 'rental_tenancies', label: 'Tenancies', to: '/agent/rentals/tenancies', activeMatch: ['/agent/rentals/tenancies'] },
     createAgentRentalsPipelineNav(),
     { key: 'rental_listings', label: 'Listings', to: '/agent/rentals/listings', activeMatch: ['/agent/rentals/listings'] },
+    { key: 'rental_properties', label: 'Properties & Mandates', to: '/agent/rentals/portfolio/properties', activeMatch: ['/agent/rentals/portfolio', '/agent/rentals/properties'] },
+    { key: 'rental_maintenance', label: 'Maintenance', to: '/agent/rentals/maintenance', activeMatch: ['/agent/rentals/maintenance'] },
     ...(canManageOrganisation ? [{ key: 'rental_agency', label: 'Organisation', to: '/agency/branches', navSection: 'secondary', activeMatch: ['/agency/branches', '/agency/agents', '/agency/commission', '/agency/partners', '/partners'], children: [{ key: 'rental_agency_branches', label: 'Branches', to: '/agency/branches' }, ...(!isBranchManager ? [{ key: 'rental_agency_people', label: 'Agents', to: '/agency/agents' }] : []), ...(!isBranchManager ? [{ key: 'rental_agency_partners', label: 'Partners', to: '/agency/partners', activeMatch: ['/agency/partners', '/partners'] }] : []), ...(!isBranchManager ? [{ key: 'rental_agency_commission', label: 'Commission', to: '/agency/commission' }] : [])] }] : []),
     { key: 'rental_clients', label: 'Clients', to: '/clients', navSection: 'secondary' },
-    { key: 'rental_reports', label: 'Reports', to: '/reports', navSection: 'secondary' },
   ],
   [RENTAL_OPERATING_MODES.shortTerm]: () => [
     { key: 'short_term_dashboard', label: 'Dashboard', to: '/agent/rentals/short-term/dashboard', activeMatch: ['/agent/rentals/short-term'] },
@@ -181,7 +182,6 @@ export const APP_NAV_BY_ROLE = {
     },
     { key: 'clients', label: 'Clients', to: '/clients' },
     { key: 'partners', label: 'Partners', to: '/partners' },
-    { key: 'reports', label: 'Reports', to: '/reports' },
     ...(SHOW_INTELLIGENCE_BETA
       ? [
           {
@@ -630,7 +630,6 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
       ],
     },
     { key: 'clients', label: 'Clients', to: '/clients' },
-    { key: 'reports', label: 'Reports', to: '/reports' },
   ], hqContext)
 
 }

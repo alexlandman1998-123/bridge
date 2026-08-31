@@ -76,10 +76,20 @@ export function summarizeTransactionWorkspaceResources({ performanceApi, started
 export function createTransactionWorkspacePerformanceBaseline({
   route = '/transactions',
   performanceApi = typeof performance !== 'undefined' ? performance : null,
+  windowApi = typeof window !== 'undefined' ? window : null,
   recorder = recordPerformanceMetric,
 } = {}) {
   const normalizedRoute = normalizeRoute(route)
-  const startedAt = now(performanceApi)
+  const current = now(performanceApi)
+  const routeTrace = windowApi?.__itgRoutePerfTrace
+  const traceStartedAt = Number(routeTrace?.startedAt)
+  const usesRouteTrace = Number.isFinite(traceStartedAt)
+    && traceStartedAt >= 0
+    && traceStartedAt <= current
+    && normalizeRoute(routeTrace?.to) === normalizedRoute
+  const startedAt = usesRouteTrace ? traceStartedAt : current
+  const timingOrigin = usesRouteTrace ? 'route_transition' : 'component_mount'
+  const temperature = usesRouteTrace ? 'warm' : 'cold'
   const checkpoints = new Set()
   const readyDatasets = new Set()
 
@@ -96,7 +106,9 @@ export function createTransactionWorkspacePerformanceBaseline({
       workspaceId,
       route: normalizedRoute,
       metadata: {
-        contract: 'arch9-transaction-workspace-performance-baseline-v1',
+        contract: 'arch9-transaction-workspace-performance-baseline-v2',
+        timingOrigin,
+        temperature,
         ...resources,
         ...(metadata && typeof metadata === 'object' ? metadata : {}),
       },
@@ -106,6 +118,8 @@ export function createTransactionWorkspacePerformanceBaseline({
   return {
     route: normalizedRoute,
     startedAt,
+    timingOrigin,
+    temperature,
     recordCheckpoint({ checkpoint = '', userId = '', workspaceId = '', metadata = {} } = {}) {
       const metricName = checkpoint === 'core_ready'
         ? TRANSACTION_WORKSPACE_PERFORMANCE_METRICS.coreReady

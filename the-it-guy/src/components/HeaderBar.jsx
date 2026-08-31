@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { canAccessHQ } from '../auth/hqAccess'
-import { fetchMyNotifications, markAllNotificationsRead, markNotificationRead, runHeaderNotificationMaintenance } from '../lib/headerNotificationsApi'
+import { fetchMyNotifications, markAllNotificationsRead, markNotificationRead } from '../lib/headerNotificationsApi'
 import { canAccessPrincipalExperience } from '../lib/organisationAccess'
 import { getRentalOperatingModeHomeRoute, RENTAL_OPERATING_MODES } from '../services/rentals/shortTermRentalFoundation'
 import useDismissableMenu from '../hooks/useDismissableMenu'
@@ -1207,7 +1207,6 @@ function HeaderBar({ onLogout, user }) {
     /^\/developments\/[^/]+\/transactions\/[^/]+$/.test(location.pathname)
   const hideTitle = !title || developerHideTitle || attorneyHideTitle || bondHideTitle || clientHideTitle || agentHideTitle || settingsHideTitle || isTransactionWorkspaceRoute
   const isClientRole = role === 'client'
-  const hideSearchInHeader = role === 'attorney' && (location.pathname === '/dashboard' || location.pathname === '/')
   const developerDashboardHeaderOnly = role === 'developer' && (location.pathname === '/dashboard' || location.pathname === '/')
   const userInitials = getUserInitials(user)
   const userAvatarUrl = getUserAvatarUrl(user)
@@ -1305,7 +1304,7 @@ function HeaderBar({ onLogout, user }) {
           const nextOpen = !notificationsOpen
           setNotificationsOpen(nextOpen)
           if (nextOpen) {
-            void runHeaderNotificationMaintenance().finally(() => loadNotifications())
+            void loadNotifications()
           }
         }}
       >
@@ -1398,17 +1397,9 @@ function HeaderBar({ onLogout, user }) {
             ) : null}
           </div>
 
-          <div className="shrink-0 border-t border-[#e6edf4] bg-white px-6 py-4">
-            <Link
-              to="/mobile/notifications"
-              className="mx-auto flex min-h-[44px] w-fit items-center gap-3 rounded-[12px] px-4 text-sm font-semibold text-[#101828] transition hover:bg-[#f3f6fa] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0f7a4f]"
-              onClick={() => setNotificationsOpen(false)}
-            >
-              <FileText size={17} className="text-[#52657a]" />
-              <span>View all notifications</span>
-              <ChevronRight size={17} className="text-[#101828]" />
-            </Link>
+          <div className="shrink-0 border-t border-[#e6edf4] bg-white px-6 py-3 text-center">
             <span className="sr-only">{filteredNotificationCount} notifications shown</span>
+            <span className="text-xs text-[#667085]">Recent notifications</span>
           </div>
         </div>
       ) : null}
@@ -1460,14 +1451,6 @@ function HeaderBar({ onLogout, user }) {
     return (
       <header className="no-print ui-shell-header ui-shell-header-attorney-dashboard">
         <div className="flex min-w-0 flex-1 items-center justify-end gap-3">
-          <div className="ui-shell-search min-h-[40px] min-w-[240px] max-w-[520px]" aria-label="Search">
-            <Search size={16} className="shrink-0 text-textSoft" />
-            <input
-              className="min-w-0 flex-1 border-0 bg-transparent p-0 text-secondary text-textStrong outline-none"
-              type="search"
-              placeholder="Search matters, clients, documents..."
-            />
-          </div>
           {!hideQuickCreateInHeader ? <LazyQuickCreateDropdown /> : null}
           {notificationsControl}
           {avatarControl}
@@ -1506,14 +1489,6 @@ function HeaderBar({ onLogout, user }) {
     return (
       <header className="no-print ui-shell-header ui-shell-header-no-title ui-shell-header-developer-dashboard">
         <div className="ui-shell-actions ui-shell-actions-developer-dashboard">
-          <div className="ui-shell-search ui-shell-search-developer-dashboard min-h-[44px]" aria-label="Search">
-            <Search size={17} className="shrink-0 text-textSoft" />
-            <input
-              className="min-w-0 flex-1 border-0 bg-transparent p-0 text-secondary text-textStrong outline-none"
-              type="search"
-              placeholder="Search unit, buyer, stage..."
-            />
-          </div>
           {!hideQuickCreateInHeader ? <LazyQuickCreateDropdown /> : null}
           {notificationsControl}
           {avatarControl}
@@ -1580,24 +1555,6 @@ function HeaderBar({ onLogout, user }) {
             </div>
           ) : null}
 
-          <div className="ui-shell-search ui-shell-search-premium min-h-[44px]" aria-label="Search">
-            <Search size={17} className="shrink-0 text-textSoft" />
-            <input
-              className="min-w-0 flex-1 border-0 bg-transparent p-0 text-secondary text-textStrong outline-none"
-              type="search"
-              placeholder={
-                role === 'bond_originator'
-                  ? 'Search applications, clients, partners...'
-                  : role === 'attorney'
-                    ? 'Search matters, clients, documents...'
-                  : isRentalDashboard
-                    ? 'Search applications, tenants, properties...'
-                    : 'Search transactions, clients, listings...'
-              }
-            />
-            <kbd>⌘K</kbd>
-          </div>
-
           {!hideQuickCreateInHeader ? <LazyQuickCreateDropdown /> : null}
 
           {notificationsControl}
@@ -1616,7 +1573,7 @@ function HeaderBar({ onLogout, user }) {
       ) : null}
 
       <div className="ui-shell-actions">
-        {!isClientRole && !hideSearchInHeader ? (
+        {!isClientRole && (isAgentsDirectoryRoute || isAttorneyMatterWorkspaceRoute) ? (
           <div
             className={`ui-shell-search min-h-[42px] ${
               isAgentsDirectoryRoute || isAttorneyMatterWorkspaceRoute
@@ -1632,9 +1589,7 @@ function HeaderBar({ onLogout, user }) {
               placeholder={
                 isAttorneyMatterWorkspaceRoute
                   ? 'Search matter, buyer, seller, erf, unit, attorney...'
-                  : isAgentsDirectoryRoute
-                    ? 'Search agents by name, email, branch...'
-                    : 'Search unit, buyer, stage...'
+                  : 'Search agents by name, email, branch...'
               }
               onChange={(event) => {
                 if (isAgentsDirectoryRoute) {

@@ -7,6 +7,13 @@
     "node": "22.x"
   },
   "scripts": {
+    "test:phase1-agent-surface-retirement": "node scripts/phase1-agent-surface-retirement.test.mjs",
+    "test:agent-performance-baseline": "node scripts/agent-performance-baseline.test.mjs",
+    "test:phase3-listings-canvassing-performance": "node scripts/phase3-listings-canvassing-performance.test.mjs",
+    "test:phase4-transaction-lead-detail-performance": "node scripts/phase4-transaction-lead-detail-performance.test.mjs",
+    "test:phase5-deployed-fixes-validation": "node scripts/phase5-deployed-fixes-validation.test.mjs",
+    "validate:agent-production-phase5": "node scripts/validate-agent-production-phase5.mjs --fail-on-mismatch",
+    "report:agent-performance-baseline": "node scripts/collect-agent-performance-baseline.mjs --output=output/agent-performance-baseline.json --markdown=docs/agent-performance-baseline.md",
     "classify:historical-transactions": "node scripts/classify-historical-transaction-records.mjs",
     "backfill:genuine-transactions": "node scripts/backfill-genuine-transactions.mjs",
     "quarantine:seed-transactions": "node scripts/quarantine-seed-transactions.mjs",

@@ -69,7 +69,7 @@ export function loadBuyerLeadWorkspaceData({
   const pending = pendingLoads.get(key)
   if (pending) return pending
 
-  const hasBuyerSeed = isBuyerSnapshot(seedSnapshot)
+  const hasBuyerSeed = isBuyerSnapshot(seedSnapshot) && seedSnapshot?.routeCoreOnly !== true
   const request = Promise.resolve()
     .then(() => hasBuyerSeed
       ? fetchJourneyEnrichment(organisationId, leadId, seedSnapshot)

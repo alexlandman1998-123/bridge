@@ -237,7 +237,6 @@ function ReleaseFreshnessGuard() {
 
 const AddDevelopmentModal = lazy(() => import('./components/AddDevelopmentModal'))
 const AgentNewDealWizard = lazy(() => import('./components/AgentNewDealWizard'))
-const CommandPalette = lazy(() => import('./components/CommandPalette'))
 const HeaderBar = lazy(() => import('./components/HeaderBar'))
 const MobileExecutiveLayout = lazy(() => import('./components/mobile/MobileExecutiveLayout'))
 const NewTransactionWizard = lazy(() => import('./components/NewTransactionWizard'))
@@ -255,7 +254,6 @@ const AgentIntelligencePricingPage = lazy(() => import('./pages/agent-intelligen
 const AgentListingDetail = lazy(() => import('./pages/AgentListingDetail'))
 const AgentListings = lazy(() => import('./pages/AgentListings'))
 const AgentEnquiriesPage = lazy(() => import('./pages/AgentEnquiriesPage'))
-const AgentReportingPage = lazy(() => import('./pages/AgentReportingPage'))
 const AgentsPage = lazy(() => import('./pages/Agents'))
 const AgentWorkspacePage = lazyNamed(() => import('./pages/Agents'), 'AgentWorkspacePage')
 const AgencyAnalyticsPage = lazy(() => import('./pages/agency/AgencyAnalyticsPage'))
@@ -937,12 +935,6 @@ function AppLayout({ onLogout, session = null, user }) {
         </Suspense>
       ) : null}
 
-      <Suspense fallback={null}>
-        <CommandPalette
-          onNewTransaction={() => handleOpenNewTransaction()}
-          onNewDevelopment={() => setDevelopmentModalOpen(true)}
-        />
-      </Suspense>
     </div>
   )
 }
@@ -951,6 +943,24 @@ const WORKSPACE_GATE_SLOW_MS = 30000
 
 function AccessDenied({ title = 'Access restricted', message = 'You do not have access to this area.' }) {
   return <AccessState type="denied" title={title} description={message} />
+}
+
+function ReportsRoute() {
+  const { role } = useWorkspace()
+
+  if (role === 'agent') {
+    return <Navigate to="/dashboard" replace />
+  }
+
+  return (
+    <RoleRoute allowedRoles={['developer', 'attorney', 'bond_originator']}>
+      <PermissionGate capability="view_reports">
+        <AppErrorBoundary scope="reports" title="Reports module encountered an error">
+          <Report />
+        </AppErrorBoundary>
+      </PermissionGate>
+    </RoleRoute>
+  )
 }
 
 function isSetupPath(pathname = '') {
@@ -3413,11 +3423,9 @@ function AppRoutes() {
               <Route
                 path="/agents/reporting"
                 element={
-                  <AgentManagementRoute>
-                    <RoleRoute allowedRoles={['agent']}>
-                      <AgentReportingPage />
-                    </RoleRoute>
-                  </AgentManagementRoute>
+                  <RoleRoute allowedRoles={['agent']}>
+                    <Navigate to="/dashboard" replace />
+                  </RoleRoute>
                 }
               />
               <Route
@@ -3491,15 +3499,7 @@ function AppRoutes() {
               />
               <Route
                 path="/reports"
-                element={
-                  <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
-                    <PermissionGate capability="view_reports">
-                      <AppErrorBoundary scope="reports" title="Reports module encountered an error">
-                        <Report />
-                      </AppErrorBoundary>
-                    </PermissionGate>
-                  </RoleRoute>
-                }
+                element={<ReportsRoute />}
               />
               <Route path="/report" element={<Navigate to="/reports" replace />} />
               <Route

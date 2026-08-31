@@ -46,10 +46,36 @@ await loadBuyerLeadWorkspaceData({ organisationId: 'workspace-1', leadId: 'selle
 await loadBuyerLeadWorkspaceData({ organisationId: 'workspace-1', leadId: 'seller-1', fetchWorkspace: sellerFetcher, now: () => 301 })
 assert.equal(sellerRequestCount, 2, 'seller snapshots must never enter the buyer workspace cache')
 
+clearBuyerLeadWorkspaceDataLoaderCache()
+let routeCoreWorkspaceRequests = 0
+let routeCoreJourneyRequests = 0
+const routeCoreSeed = {
+  ...buyerSnapshot,
+  leads: [{ leadId: 'buyer-route-core', leadCategory: 'buyer' }],
+  routeCoreOnly: true,
+}
+const routeCoreHydratedSnapshot = { ...routeCoreSeed, routeCoreOnly: false }
+const routeCoreResult = await loadBuyerLeadWorkspaceData({
+  organisationId: 'workspace-1',
+  leadId: 'buyer-route-core',
+  seedSnapshot: routeCoreSeed,
+  fetchWorkspace: async () => {
+    routeCoreWorkspaceRequests += 1
+    return routeCoreHydratedSnapshot
+  },
+  fetchJourneyEnrichment: async () => {
+    routeCoreJourneyRequests += 1
+    return { contacts: [], leadActivities: [] }
+  },
+  now: () => 400,
+})
+assert.equal(routeCoreResult, routeCoreHydratedSnapshot)
+assert.equal(routeCoreWorkspaceRequests, 1, 'a route-only buyer seed must receive full workspace hydration')
+assert.equal(routeCoreJourneyRequests, 0, 'route-only buyer seeds must not skip full lead metadata hydration')
+
 await assert.rejects(
   () => loadBuyerLeadWorkspaceData({ organisationId: '', leadId: '' }),
   /requires an organisation and lead/,
 )
 
 console.log('buyer lead workspace data loader tests passed')
-

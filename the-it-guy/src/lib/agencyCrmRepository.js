@@ -33,6 +33,16 @@ const LEAD_ACTIVITY_SELECT_FIELDS =
   'activity_id, organisation_id, lead_id, agent_id, activity_type, activity_note, activity_date, outcome, created_at'
 const TASK_SELECT_FIELDS =
   'task_id, organisation_id, lead_id, assigned_agent_id, title, description, due_date, status, priority, created_at, updated_at'
+const LEAD_SELECT_COMPATIBILITY_ORDER = [
+  LEAD_SELECT_FIELDS_ASSIGNMENT,
+  LEAD_SELECT_FIELDS_LOCATION,
+  LEAD_SELECT_FIELDS_EXTENDED,
+  LEAD_SELECT_FIELDS_SELLER_BRIDGE,
+  LEAD_SELECT_FIELDS_WITH_AGENT_EMAIL,
+  LEAD_SELECT_FIELDS,
+  LEGACY_LEAD_SELECT_FIELDS,
+]
+let preferredLeadSelectFields = ''
 const LEAD_LOCATION_DB_COLUMNS = [
   'formatted_address',
   'street_address',
@@ -786,26 +796,35 @@ function buildRemoteLeadCreatePayload(lead = {}, workspaceId = '', actor = null)
 }
 
 async function selectLeadsWithCompatibility(queryBuilderFactory) {
-  let leadResult = await queryBuilderFactory(LEAD_SELECT_FIELDS_ASSIGNMENT)
-  if (leadResult.error && isMissingColumnError(leadResult.error)) {
-    leadResult = await queryBuilderFactory(LEAD_SELECT_FIELDS_LOCATION)
+  const attemptedFields = new Set()
+  if (preferredLeadSelectFields) {
+    attemptedFields.add(preferredLeadSelectFields)
+    const preferredResult = await queryBuilderFactory(preferredLeadSelectFields)
+    if (!preferredResult.error || !isMissingColumnError(preferredResult.error)) return preferredResult
+    preferredLeadSelectFields = ''
   }
-  if (leadResult.error && isMissingColumnError(leadResult.error)) {
-    leadResult = await queryBuilderFactory(LEAD_SELECT_FIELDS_EXTENDED)
-  }
-  if (leadResult.error && isMissingColumnError(leadResult.error)) {
-    leadResult = await queryBuilderFactory(LEAD_SELECT_FIELDS_SELLER_BRIDGE)
-  }
-  if (leadResult.error && isMissingColumnError(leadResult.error)) {
-    leadResult = await queryBuilderFactory(LEAD_SELECT_FIELDS_WITH_AGENT_EMAIL)
-  }
-  if (leadResult.error && isMissingColumnError(leadResult.error)) {
-    leadResult = await queryBuilderFactory(LEAD_SELECT_FIELDS)
-  }
-  if (leadResult.error && isMissingColumnError(leadResult.error)) {
-    leadResult = await queryBuilderFactory(LEGACY_LEAD_SELECT_FIELDS)
+
+  let leadResult = { data: null, error: null }
+  for (const fields of LEAD_SELECT_COMPATIBILITY_ORDER) {
+    if (attemptedFields.has(fields)) continue
+    leadResult = await queryBuilderFactory(fields)
+    if (!leadResult.error) {
+      preferredLeadSelectFields = fields
+      return leadResult
+    }
+    if (!isMissingColumnError(leadResult.error)) return leadResult
   }
   return leadResult
+}
+
+async function fetchLeadRouteCoreRowById(workspaceId, leadUuid) {
+  if (!workspaceId || !leadUuid) return { data: null, error: null }
+  return supabase
+    .from('leads')
+    .select(LEGACY_LEAD_SELECT_FIELDS)
+    .eq('organisation_id', workspaceId)
+    .eq('lead_id', leadUuid)
+    .maybeSingle()
 }
 
 async function fetchLeadRowById(workspaceId, leadUuid) {
@@ -991,7 +1010,7 @@ export async function fetchAgencyCrmLeadWorkspace(organisationId, leadId, { seed
     throw new Error('Supabase is required before loading agency CRM lead data.')
   }
 
-  const seededLead = (Array.isArray(seedSnapshot?.leads) ? seedSnapshot.leads : []).find((lead) => (
+  const seededLead = !seedSnapshot?.routeCoreOnly && (Array.isArray(seedSnapshot?.leads) ? seedSnapshot.leads : []).find((lead) => (
     normalizeLeadUuid(lead?.leadId || lead?.lead_id) === leadUuid ||
     normalizeLeadUuid(seedSnapshot?.resolvedLeadId) === normalizeLeadUuid(lead?.leadId || lead?.lead_id)
   )) || null
@@ -1140,7 +1159,10 @@ export async function fetchAgencyCrmLeadRouteHydrationSeed(organisationId, leadI
     throw new Error('Supabase is required before loading agency CRM lead data.')
   }
 
-  const leadResult = await fetchLeadRowById(workspaceId, leadUuid)
+  // Route readiness uses one stable indexed query. Newer CRM fields and any
+  // schema compatibility work are merged by the existing background workspace
+  // hydration after the lead screen is visible.
+  const leadResult = await fetchLeadRouteCoreRowById(workspaceId, leadUuid)
   const leadBlocked = leadResult.error && (isPermissionDeniedError(leadResult.error) || isMissingSchemaOrTableError(leadResult.error))
   if (leadResult.error && !leadBlocked) throw leadResult.error
 
@@ -1184,6 +1206,7 @@ export async function fetchAgencyCrmLeadRouteHydrationSeed(organisationId, leadI
     requestedLeadId: leadUuid,
     resolvedLeadId,
     listingId: normalizeText(listingResolution?.listing?.id) || normalizeText(leadRow?.listing_id) || null,
+    routeCoreOnly: true,
   }
 }
 

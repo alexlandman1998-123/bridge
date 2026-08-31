@@ -126,6 +126,7 @@ import {
   declineBondQuote,
   fetchTransactionActivityWorkspace,
   fetchTransactionCoreById,
+  fetchTransactionRouteCoreById,
   fetchTransactionDocumentsWorkspace,
   fetchTransactionFinanceWorkspace,
   fetchTransactionPartnersWorkspace,
@@ -16079,17 +16080,13 @@ function AttorneyTransactionDetail() {
       : null
     let backgroundStatus = 'success'
     let hasCoreData = Boolean(navigationPreviewData?.transaction)
-    const initialRollupRequest = !background && USE_TRANSACTION_ROLLUP_OVERVIEW
-      ? requestTransactionRollup(transactionId)
-          .then((rollup) => ({ rollup, error: null }))
-          .catch((rollupError) => ({ rollup: null, error: rollupError }))
-      : Promise.resolve(null)
+    let initialRollupRequest = Promise.resolve(null)
     try {
       if (!background && !hasCoreData) {
         setLoading(true)
       }
       setError('')
-      const coreDetail = await fetchTransactionCoreById(transactionId)
+      const coreDetail = await fetchTransactionRouteCoreById(transactionId)
       if (coreDetail) {
         hasCoreData = true
         setData((previous) => {
@@ -16147,7 +16144,46 @@ function AttorneyTransactionDetail() {
       }
     }
 
+    // Do not let roll-up work or schema-compatibility retries compete with the
+    // indexed route-core lookup that controls first paint.
+    initialRollupRequest = !background && USE_TRANSACTION_ROLLUP_OVERVIEW
+      ? requestTransactionRollup(transactionId)
+          .then((rollup) => ({ rollup, error: null }))
+          .catch((rollupError) => ({ rollup: null, error: rollupError }))
+      : Promise.resolve(null)
+
     if (!fullRefresh) {
+      if (!background && hasCoreData) {
+        void fetchTransactionCoreById(transactionId)
+          .then((enrichedCore) => {
+            if (!enrichedCore) return
+            setData((previous) => {
+              const previousTransactionId = String(previous?.transaction?.id || '').trim()
+              const enrichedTransactionId = String(enrichedCore?.transaction?.id || '').trim()
+              if (previousTransactionId && enrichedTransactionId && previousTransactionId !== enrichedTransactionId) {
+                return previous
+              }
+              return {
+                ...(previous || {}),
+                ...enrichedCore,
+                transaction: { ...(previous?.transaction || {}), ...(enrichedCore.transaction || {}) },
+                unit: enrichedCore.unit || previous?.unit || null,
+                development: enrichedCore.development || previous?.development || null,
+                buyer: enrichedCore.buyer || previous?.buyer || null,
+                __isNavigationPreview: false,
+                __isRouteShell: false,
+                __coreHydrated: true,
+                __routeMetadataHydrated: true,
+              }
+            })
+          })
+          .catch((enrichmentError) => {
+            console.warn('[transaction-workspace] route metadata hydration deferred', {
+              transactionId,
+              message: enrichmentError?.message || 'Transaction metadata hydration failed.',
+            })
+          })
+      }
       void initialRollupRequest.then((initialRollupResult) => {
         if (initialRollupResult) setTransactionRollupError(initialRollupResult.error?.message || '')
       })
@@ -16214,7 +16250,7 @@ function AttorneyTransactionDetail() {
         })
       }
     }
-  }, [currentMembership?.organisationId, currentMembership?.organisation_id, navigationPreviewData?.transaction, profile?.id, requestTransactionRollup, requestWorkspaceHydrationContext, transactionId, workspace?.id])
+  }, [currentMembership?.organisationId, currentMembership?.organisation_id, navigationPreviewData?.transaction, profile?.id, requestTransactionRollup, requestWorkspaceHydrationContext, transactionId, workspace?.id, workspaceRole])
 
   const loadDocumentsWorkspace = useCallback(async ({ force = false } = {}) => {
     const requestedTransactionId = String(transactionId || '').trim()

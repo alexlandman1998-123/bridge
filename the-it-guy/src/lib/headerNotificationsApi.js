@@ -31,6 +31,41 @@ function normalize(row) {
   }
 }
 
+function isPlaceholderDocumentNotification(row = {}) {
+  const data = row?.event_data && typeof row.event_data === 'object' ? row.event_data : {}
+  const type = String(row?.notification_type || '').trim().toLowerCase()
+  const source = String(data.source || data.trigger || data.type || '').trim().toLowerCase()
+  const isDocumentNotification =
+    ['additional_document_requested', 'document_uploaded', 'overdue_missing_docs'].includes(type) ||
+    source.includes('document')
+  if (!isDocumentNotification) return false
+
+  const meaningfulContext = [
+    data.propertyAddress,
+    data.property_address,
+    data.listingAddress,
+    data.listing_address,
+    data.unitAddress,
+    data.unit_address,
+    data.unitLabel,
+    data.unit_label,
+    data.unitName,
+    data.unit_name,
+    data.developmentName,
+    data.development_name,
+    data.transactionReference,
+    data.transaction_reference,
+    data.documentName,
+    data.document_name,
+    data.clientName,
+    data.client_name,
+  ].some((value) => String(value || '').trim())
+  if (meaningfulContext) return false
+
+  const title = String(row?.title || '').trim()
+  return !title || /^unit\s*-?\s*$/i.test(title) || /^notification$/i.test(title)
+}
+
 async function currentUserId() {
   const result = await supabase.auth.getUser()
   if (result.error) throw result.error
@@ -45,15 +80,14 @@ export async function fetchMyNotifications({ limit = 25, unreadOnly = false, use
     if (!userId) return { notifications: [], unreadCount: 0 }
     let list = supabase.from('transaction_notifications').select(SELECT).eq('user_id', userId).order('created_at', { ascending: false }).limit(Math.max(1, Number(limit) || 25))
     if (unreadOnly) list = list.eq('is_read', false)
-    const [listResult, countResult] = await Promise.all([
-      list,
-      supabase.from('transaction_notifications').select('id', { count: 'exact', head: true }).eq('user_id', userId).eq('is_read', false),
-    ])
+    const listResult = await list
     if (listResult.error) {
       if (isMissingTable(listResult.error)) return { notifications: [], unreadCount: 0 }
       throw listResult.error
     }
-    const notifications = (listResult.data || []).map(normalize)
+    const notifications = (listResult.data || [])
+      .filter((row) => !isPlaceholderDocumentNotification(row))
+      .map(normalize)
     const transactionIds = [...new Set(notifications.map((item) => item.transactionId).filter(Boolean))]
     let unitIds = {}
     if (transactionIds.length) {
@@ -62,7 +96,7 @@ export async function fetchMyNotifications({ limit = 25, unreadOnly = false, use
     }
     return {
       notifications: notifications.map((item) => ({ ...item, unitId: unitIds[item.transactionId] || item.eventData?.unitId || null })),
-      unreadCount: countResult.error ? 0 : Number(countResult.count || 0),
+      unreadCount: notifications.filter((item) => !item.isRead).length,
     }
   }
   const request = loader()
@@ -104,14 +138,4 @@ export async function markAllNotificationsRead() {
   }
   cachedResult = null
   return (result.data || []).length
-}
-
-let maintenancePromise = null
-export async function runHeaderNotificationMaintenance() {
-  maintenancePromise ||= import('./api')
-    .then((api) => api.runMyNotificationReminderAutomation())
-    .finally(() => {
-      maintenancePromise = null
-    })
-  return maintenancePromise
 }

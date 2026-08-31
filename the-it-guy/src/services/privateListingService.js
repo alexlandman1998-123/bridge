@@ -6698,6 +6698,7 @@ export async function getAgentPrivateListingSummaries(
     includeAllOrganisationListings = false,
     assignedAgentIds = [],
     includeCommissionTerms = false,
+    coreFieldsOnly = false,
   } = {},
 ) {
   const client = requireClient()
@@ -6707,41 +6708,27 @@ export async function getAgentPrivateListingSummaries(
   if (!includeAllOrganisationListings && !normalizedAgentIds.length) return []
 
   const createSummaryQuery = ({ includeIsActive = true } = {}) => {
-    const selectColumns = [
+    const coreSelectColumns = [
       'id',
       'listing_reference',
       'listing_status',
       'listing_visibility',
       'seller_onboarding_status',
       'mandate_status',
-      'mandate_packet_id',
       'asking_price',
       'estimated_value',
       'title',
       'description',
       'address_line_1',
       'address_line_2',
-      'formatted_address',
-      'street_address',
       'suburb',
       'city',
       'province',
-      'country',
       'postal_code',
-      'latitude',
-      'longitude',
-      'google_place_id',
       'seller_type',
       'finance_context',
       'mandate_type',
-      'property_category',
       'property_type',
-      'property_structure_type',
-      'listing_category',
-      'listing_source',
-      'stock_source',
-      'seller_canonical_facts_json',
-      'seller_canonical_fact_readiness_json',
       'seller_lead_id',
       'seller_profile_id',
       'property_profile_id',
@@ -6751,7 +6738,25 @@ export async function getAgentPrivateListingSummaries(
       ...(includeIsActive ? ['is_active'] : []),
       'created_at',
       'updated_at',
-    ].join(', ')
+    ]
+    const extendedSelectColumns = [
+      ...coreSelectColumns,
+      'mandate_packet_id',
+      'formatted_address',
+      'street_address',
+      'country',
+      'latitude',
+      'longitude',
+      'google_place_id',
+      'property_category',
+      'property_structure_type',
+      'listing_category',
+      'listing_source',
+      'stock_source',
+      'seller_canonical_facts_json',
+      'seller_canonical_fact_readiness_json',
+    ]
+    const selectColumns = [...new Set(coreFieldsOnly ? coreSelectColumns : extendedSelectColumns)].join(', ')
     const queryBuilder = applyVisiblePrivateListingFilters(
       client
         .from('private_listings')

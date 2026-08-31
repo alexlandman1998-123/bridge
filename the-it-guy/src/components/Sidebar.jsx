@@ -27,6 +27,7 @@ import {
   Trophy,
   Users,
   Wallet,
+  Wrench,
   Workflow,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -59,6 +60,9 @@ const ICON_BY_KEY = {
   rental_pipeline_applications: ClipboardList,
   rental_pipeline_calendar: CalendarDays,
   rental_listings: Building2,
+  rental_applications: ClipboardList,
+  rental_properties: Building2,
+  rental_maintenance: Wrench,
   rental_agency: BriefcaseBusiness,
   rental_agency_branches: Building2,
   rental_agency_people: BriefcaseBusiness,
