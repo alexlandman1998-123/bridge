@@ -7,8 +7,15 @@ import { getAgentClientProfile, loadAgentClientDirectory, loadAgentClientProfile
 import { getAttorneyClientProfile } from '../core/clients/attorneyClientSelectors'
 import { readAttorneyManualParties } from '../core/clients/attorneyManualParties'
 import { useWorkspace } from '../context/WorkspaceContext'
-import { fetchDashboardOverview, fetchTransactionsByParticipant, fetchTransactionsByParticipantSummary } from '../lib/api'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
+import { fetchTransactionsByParticipantSummary } from '../lib/transactionsListApi'
+
+let legacyClientProfileApiPromise = null
+
+function loadLegacyClientProfileApi() {
+  legacyClientProfileApiPromise ||= import('../lib/api')
+  return legacyClientProfileApiPromise
+}
 
 function formatRelativeTime(value) {
   const date = new Date(value || 0)
@@ -249,12 +256,19 @@ function ClientProfile() {
       setError('')
       let transactionRows = []
       if (role === 'developer') {
+        const { fetchDashboardOverview } = await loadLegacyClientProfileApi()
         const overview = await fetchDashboardOverview({ developmentId: null })
         transactionRows = overview?.rows || []
       } else if ((role === 'agent' || role === 'attorney' || role === 'bond_originator') && profile?.id) {
-        transactionRows = role === 'attorney'
-          ? await fetchTransactionsByParticipantSummary({ userId: profile.id, roleType: role })
-          : await fetchTransactionsByParticipant({ userId: profile.id, roleType: role })
+        transactionRows = await fetchTransactionsByParticipantSummary({
+          userId: profile.id,
+          roleType: role,
+          organisationId: workspace?.id === 'all' ? '' : workspace?.id || '',
+          identityContext: {
+            email: profile?.email || '',
+            fullName: profile?.fullName || '',
+          },
+        })
       }
       setRows(transactionRows || [])
     } catch (loadError) {

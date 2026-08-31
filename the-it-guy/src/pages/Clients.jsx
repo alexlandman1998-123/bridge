@@ -34,8 +34,15 @@ import { deriveAttorneyClients } from '../core/clients/attorneyClientSelectors'
 import { buildAttorneyManualPartyRecord, readAttorneyManualParties, writeAttorneyManualParties } from '../core/clients/attorneyManualParties'
 import { useOrganisation } from '../context/OrganisationContext'
 import { useWorkspace } from '../context/WorkspaceContext'
-import { createClientRecord, fetchDashboardOverview, fetchTransactionsByParticipant, fetchTransactionsByParticipantSummary, saveAttorneyMatterParty } from '../lib/api'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
+import { fetchTransactionsByParticipantSummary } from '../lib/transactionsListApi'
+
+let legacyClientApiPromise = null
+
+function loadLegacyClientApi() {
+  legacyClientApiPromise ||= import('../lib/api')
+  return legacyClientApiPromise
+}
 
 const CLIENT_SEGMENTS = [
   { key: 'all', label: 'All Clients', icon: Users },
@@ -697,6 +704,7 @@ function AddClientModal({
         onClose()
         return
       }
+      const { createClientRecord } = await loadLegacyClientApi()
       const created = await createClientRecord({ ...form, organisationId })
       onSaved?.(created)
       onClose()
@@ -915,14 +923,21 @@ function Clients() {
       let transactionRows = []
 
       if (role === 'developer') {
+        const { fetchDashboardOverview } = await loadLegacyClientApi()
         const overview = await fetchDashboardOverview({
           developmentId: workspace.id === 'all' ? null : workspace.id,
         })
         transactionRows = filterSeedRows(overview?.rows || [])
       } else if ((role === 'agent' || role === 'attorney' || role === 'bond_originator') && profile?.id) {
-        transactionRows = role === 'attorney'
-          ? await fetchTransactionsByParticipantSummary({ userId: profile.id, roleType: role })
-          : await fetchTransactionsByParticipant({ userId: profile.id, roleType: role })
+        transactionRows = await fetchTransactionsByParticipantSummary({
+          userId: profile.id,
+          roleType: role,
+          organisationId: activeOrganisationId,
+          identityContext: {
+            email: profile?.email || '',
+            fullName: profile?.fullName || '',
+          },
+        })
         if (workspace.id !== 'all') {
           transactionRows = (transactionRows || []).filter((row) =>
             (row?.development?.id || row?.unit?.development_id) === workspace.id,
@@ -939,7 +954,7 @@ function Clients() {
     } finally {
       setLoading(false)
     }
-  }, [isAgentClientDirectory, profile, role, workspace])
+  }, [activeOrganisationId, isAgentClientDirectory, profile, role, workspace])
 
   useEffect(() => {
     void loadData()
@@ -1139,6 +1154,7 @@ function Clients() {
     let createdParty = buildAttorneyManualPartyRecord(payload)
     if (payload.linkedTransactionId && canSyncAttorneyPartyRole(payload.role)) {
       try {
+        const { saveAttorneyMatterParty } = await loadLegacyClientApi()
         const remote = await saveAttorneyMatterParty({
           transactionId: payload.linkedTransactionId,
           party: {

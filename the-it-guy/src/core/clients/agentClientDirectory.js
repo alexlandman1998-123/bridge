@@ -1,8 +1,8 @@
 import { listAgencyCrmLeadContacts } from '../../lib/agencyCrmRepository'
-import { fetchTransactionsByParticipant } from '../../lib/api'
 import { listCanvassingWorkspace } from '../../lib/canvassingRepository'
 import { fetchOrganisationSettings, listOrganisationUsers } from '../../lib/settingsApi'
 import { isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
+import { fetchTransactionsByParticipantSummary } from '../../lib/transactionsListApi'
 import { getOrganisationPrivateListings } from '../../services/privateListingService'
 import { assertResolvedWorkspaceContext } from '../../services/workspaceResolutionService'
 
@@ -868,10 +868,15 @@ export async function loadAgentClientDirectory({ profile = {}, role = 'agent', w
   let transactionRows = []
   if (isSupabaseConfigured && profile?.id) {
     try {
-      transactionRows = await fetchTransactionsByParticipant({ userId: profile.id, roleType: role })
-      if (workspace?.id && workspace.id !== 'all') {
-        transactionRows = transactionRows.filter((row) => (row?.development?.id || row?.unit?.development_id) === workspace.id)
-      }
+      transactionRows = await fetchTransactionsByParticipantSummary({
+        userId: profile.id,
+        roleType: role,
+        organisationId,
+        identityContext: {
+          email: profile?.email || '',
+          fullName: currentAgent.fullName,
+        },
+      })
       transactionRows = transactionRows.filter((row) => !isSeedOrDemoRow(row?.transaction || row) && !isSeedOrDemoRow(row?.buyer || {}))
     } catch {
       transactionRows = []

@@ -1,5 +1,12 @@
 {
-  "buildCommand": "npm run build",
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "npm run build && node scripts/agent-bundle-budget.mjs && node scripts/operational-script-deployment-audit.mjs && node scripts/agent-schema-compatibility-contract.test.mjs",
+  "functions": {
+    "api/cron/document-request-canonical-automation.js": {
+      "includeFiles": "{scripts/document-request-canonical-phase14-portal-verification.mjs,scripts/document-request-canonical-phase15-operational-rollout.mjs,scripts/document-request-canonical-phase16-automation.mjs,src/**}",
+      "maxDuration": 300
+    }
+  },
   "env": {
     "VITE_DOCUMENT_TITLE": "Arch9 | Platform",
     "VITE_MVP_PILOT_CREATION_PAUSED": "false"

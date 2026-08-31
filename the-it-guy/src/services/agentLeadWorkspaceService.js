@@ -439,9 +439,13 @@ function normalizeListing(row = {}) {
       row?.property_title ||
       row?.property_address ||
       row?.propertyAddress ||
+      row?.formatted_address ||
+      row?.formattedAddress ||
       row?.address ||
       row?.addressLine1 ||
       row?.address_line_1 ||
+      row?.street_address ||
+      row?.streetAddress ||
       onboardingFormData.propertyAddress ||
       onboardingFormData.property_address ||
       onboardingFormData.propertyAddressLine1 ||
@@ -471,7 +475,7 @@ function normalizeListing(row = {}) {
     status: normalizeText(row?.listingStatus || row?.listing_status || row?.status),
     title: propertyAddress || normalizeText(row?.suburb),
     propertyAddress,
-    addressLine1: normalizeText(row?.addressLine1 || row?.address_line_1 || row?.property_address || onboardingFormData.propertyAddressLine1 || onboardingFormData.propertyAddress || onboardingFormData.propertyAddressSearch),
+    addressLine1: normalizeText(row?.addressLine1 || row?.address_line_1 || row?.streetAddress || row?.street_address || row?.formattedAddress || row?.formatted_address || onboardingFormData.propertyAddressLine1 || onboardingFormData.propertyAddress || onboardingFormData.propertyAddressSearch),
     suburb: normalizeText(row?.suburb || row?.area || onboardingFormData.suburb),
     city: normalizeText(row?.city || onboardingFormData.city),
     askingPrice: row?.asking_price ?? row?.askingPrice ?? row?.price ?? onboardingFormData.askingPrice ?? null,
@@ -898,7 +902,7 @@ async function safeReadAllOffers(organisationId = '') {
 
 async function safeReadTransactions(organisationId = '', context = {}) {
   if (!isSupabaseConfigured || !supabase || !isUuidLike(organisationId)) return []
-  const fields = 'id, organisation_id, originating_buyer_lead_id, buyer_contact_id, seller_contact_id, listing_id, current_stage, current_main_stage, stage, status, onboarding_status, onboarding_completed_at, lifecycle_state, cancelled_at, created_at, updated_at'
+  const fields = 'id, organisation_id, originating_buyer_lead_id, buyer_contact_id, seller_contact_id, listing_id, current_main_stage, stage, onboarding_status, onboarding_completed_at, lifecycle_state, cancelled_at, created_at, updated_at'
   let query = supabase.from('transactions').select(fields).eq('organisation_id', organisationId).order('updated_at', { ascending: false }).limit(1000)
   if (context.convertedTransactionId) query = query.eq('id', context.convertedTransactionId)
   const { data, error } = await query
@@ -911,25 +915,13 @@ async function safeReadTransactions(organisationId = '', context = {}) {
 
 async function safeReadPrivateListings(organisationId = '') {
   if (!isSupabaseConfigured || !supabase || !isUuidLike(organisationId)) return []
-  const selectVariants = [
-    'id, organisation_id, seller_lead_id, originating_crm_lead_id, assigned_agent_id, listing_status, listing_visibility, mandate_status, mandate_packet_id, seller_onboarding_status, title, address_line_1, property_address, suburb, city, asking_price, estimated_value, property_type, property_category, seller_canonical_facts_json, seller_canonical_fact_readiness_json, created_at, updated_at',
-    'id, organisation_id, seller_lead_id, originating_crm_lead_id, assigned_agent_id, assigned_agent_email, listing_status, property_address, suburb, city, asking_price, created_at, updated_at',
-    'id, organisation_id, seller_lead_id, originating_crm_lead_id, assigned_agent_id, listing_status, property_address, suburb, city, asking_price, created_at, updated_at',
-    'id, organisation_id, seller_lead_id, originating_crm_lead_id, listing_status, property_address, suburb, city, asking_price, created_at, updated_at',
-  ]
-  let data = []
-  let error = null
-  for (const fields of selectVariants) {
-    const result = await supabase
-      .from('private_listings')
-      .select(fields)
-      .eq('organisation_id', organisationId)
-      .order('updated_at', { ascending: false })
-      .limit(1000)
-    data = result.data
-    error = result.error
-    if (!error || !isRecoverableReadError(error, 'private_listings')) break
-  }
+  const fields = 'id, organisation_id, seller_lead_id, originating_crm_lead_id, assigned_agent_id, assigned_agent_email, listing_status, listing_visibility, mandate_status, mandate_packet_id, seller_onboarding_status, title, address_line_1, formatted_address, street_address, suburb, city, asking_price, estimated_value, property_type, property_category, seller_canonical_facts_json, seller_canonical_fact_readiness_json, created_at, updated_at'
+  const { data, error } = await supabase
+    .from('private_listings')
+    .select(fields)
+    .eq('organisation_id', organisationId)
+    .order('updated_at', { ascending: false })
+    .limit(1000)
   if (error) {
     if (isRecoverableReadError(error, 'private_listings')) return []
     throw error
