@@ -1462,6 +1462,7 @@
     "test:buyer-onboarding-originator-handoff-phase3": "node scripts/buyer-onboarding-originator-handoff-phase3.test.mjs",
     "test:signed-otp-transfer-instruction-phase4": "node scripts/signed-otp-transfer-instruction-phase4.test.mjs",
     "test:attorney-instruction-response-phase5": "node scripts/attorney-instruction-response-phase5.test.mjs",
+    "test:attorney-transaction-firm-routing": "node scripts/attorney-transaction-firm-routing.test.mjs && node src/lib/__tests__/newTransactionPartnerOptions.test.js",
     "test:declined-transfer-attorney-reassignment-phase6": "node scripts/declined-transfer-attorney-reassignment-phase6.test.mjs",
     "test:transfer-instruction-lifecycle-assurance-phase7": "node scripts/transfer-instruction-lifecycle-assurance-phase7.test.mjs",
     "test:partner-directory-phase5": "node scripts/partner-directory-phase5.test.mjs",

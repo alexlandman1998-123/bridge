@@ -5092,6 +5092,26 @@ function DevelopmentDetail() {
     }
   }
 
+  function applyUnitQuickUpdate(unitId, { unitPatch = null, transactionPatch = null, handoverPatch = null } = {}) {
+    setData((previous) => {
+      if (!previous?.rows?.length) return previous
+
+      return {
+        ...previous,
+        rows: previous.rows.map((row) => {
+          if (row?.unit?.id !== unitId) return row
+
+          return {
+            ...row,
+            unit: unitPatch ? { ...row.unit, ...unitPatch } : row.unit,
+            transaction: transactionPatch ? { ...row.transaction, ...transactionPatch } : row.transaction,
+            handover: handoverPatch ? { ...row.handover, ...handoverPatch } : row.handover,
+          }
+        }),
+      }
+    })
+  }
+
   async function handleUnitQuickSave(unit, patch, { field = 'unit', feedbackLabel = 'Unit updated.' } = {}) {
     const saveKey = `${unit.id}:${field}`
     const nextUnitNumber = Object.prototype.hasOwnProperty.call(patch, 'unitNumber')
@@ -5120,9 +5140,10 @@ function DevelopmentDetail() {
       setError('')
 
       const unitPatch = { ...patch }
+      let nextSalesPrice = null
       if (Object.prototype.hasOwnProperty.call(unitPatch, 'salesPrice')) {
         const parsedSalesPrice = Number(unitPatch.salesPrice)
-        const nextSalesPrice = unitPatch.salesPrice === '' || !Number.isFinite(parsedSalesPrice) ? null : parsedSalesPrice
+        nextSalesPrice = unitPatch.salesPrice === '' || !Number.isFinite(parsedSalesPrice) ? null : parsedSalesPrice
         unitPatch.listPrice = nextSalesPrice ?? 0
         unitPatch.currentPrice = nextSalesPrice
         delete unitPatch.salesPrice
@@ -5136,7 +5157,7 @@ function DevelopmentDetail() {
         : unit.status || 'Available'
       unitPatch.status = nextStatusValue
 
-      await saveDevelopmentUnit(buildUnitQuickSavePayload(unit, unitPatch))
+      const savedUnit = await saveDevelopmentUnit(buildUnitQuickSavePayload(unit, unitPatch))
 
       const statusOption = getDevelopmentUnitStatusOption(nextStatusValue)
       if (
@@ -5152,10 +5173,17 @@ function DevelopmentDetail() {
         })
       }
 
+      applyUnitQuickUpdate(unit.id, {
+        unitPatch: {
+          ...savedUnit,
+          ...unitPatch,
+          status: nextStatusValue,
+        },
+        transactionPatch: Object.prototype.hasOwnProperty.call(patch, 'salesPrice')
+          ? { sales_price: nextSalesPrice, purchase_price: nextSalesPrice }
+          : null,
+      })
       setFeedback(feedbackLabel)
-      window.dispatchEvent(new Event('itg:transaction-updated'))
-      window.dispatchEvent(new Event('itg:developments-changed'))
-      await loadData()
     } catch (saveError) {
       setError(saveError.message)
     } finally {
@@ -5184,10 +5212,13 @@ function DevelopmentDetail() {
           status: unit.handover?.status || 'in_progress',
         },
       })
+      applyUnitQuickUpdate(unit.id, {
+        handoverPatch: {
+          handoverDate: nextDate || '',
+          status: unit.handover?.status || 'in_progress',
+        },
+      })
       setFeedback(`Unit ${unit.unitNumber} handover date updated.`)
-      window.dispatchEvent(new Event('itg:transaction-updated'))
-      window.dispatchEvent(new Event('itg:developments-changed'))
-      await loadData()
     } catch (saveError) {
       setError(saveError.message)
     } finally {
@@ -5206,7 +5237,7 @@ function DevelopmentDetail() {
       setUnitQuickSavingKey(`${unit.id}:status`)
       setFeedback('')
       setError('')
-      await saveDevelopmentUnit(buildUnitQuickSavePayload(unit, { status: nextStatusValue }))
+      const savedUnit = await saveDevelopmentUnit(buildUnitQuickSavePayload(unit, { status: nextStatusValue }))
 
       if (unit.currentTransactionId && statusOption.lifecycleStage) {
         await updateTransactionLifecycleStage(unit.currentTransactionId, statusOption.lifecycleStage, {
@@ -5217,10 +5248,11 @@ function DevelopmentDetail() {
         })
       }
 
+      applyUnitQuickUpdate(unit.id, {
+        unitPatch: { ...savedUnit, status: nextStatusValue },
+        transactionPatch: statusOption.lifecycleStage ? { stage: statusOption.lifecycleStage } : null,
+      })
       setFeedback(`Unit ${unit.unitNumber} marked ${nextStatusValue}.`)
-      window.dispatchEvent(new Event('itg:transaction-updated'))
-      window.dispatchEvent(new Event('itg:developments-changed'))
-      await loadData()
     } catch (saveError) {
       setError(saveError.message)
     } finally {

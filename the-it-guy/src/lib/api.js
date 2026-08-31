@@ -1310,7 +1310,11 @@ function isMissingSchemaError(error) {
 }
 
 function isRecoverableTransactionSetupError(error) {
-  return isMissingSchemaError(error) || isPermissionDeniedError(error)
+  return (
+    isMissingSchemaError(error) ||
+    isPermissionDeniedError(error) ||
+    ['ATTORNEY_FIRM_RESOLUTION_FAILED', 'ATTORNEY_ASSIGNMENT_PERSISTENCE_FAILED'].includes(error?.code)
+  )
 }
 
 function isRecoverableTransactionCommentError(error) {
@@ -9250,8 +9254,6 @@ function buildRequiredChecklistFromRows(requiredRows, documents) {
 
 function mergeLiveRequirementRows(expectedRows = [], persistedRows = [], context = {}) {
   const mergedByKey = new Map()
-  const expectedKeys = new Set(expectedRows.map((row) => row?.key).filter(Boolean))
-  const financeVisible = getMainStageIndex(context?.currentMainStage || 'AVAIL') >= getMainStageIndex('FIN')
 
   for (const row of expectedRows) {
     if (row?.key) {
@@ -9265,17 +9267,14 @@ function mergeLiveRequirementRows(expectedRows = [], persistedRows = [], context
     }
 
     const normalizedRow = withRequirementTraceMetadata(row, context)
-    if (
-      normalizedRow.visibleSection === 'finance_documents' &&
-      !financeVisible &&
-      !normalizedRow.preCollectionAllowed
-    ) {
-      continue
-    }
-    if (
-      (normalizedRow.visibleSection === 'buyer_documents' || normalizedRow.groupKey === 'sale') &&
-      !expectedKeys.has(normalizedRow.key)
-    ) {
+    const status = normalizeRequiredStatus(
+      normalizedRow.status,
+      statusFromLegacyFlags({
+        isRequired: normalizedRow.isRequired !== false,
+        isUploaded: Boolean(normalizedRow.isUploaded),
+      }),
+    )
+    if (normalizedRow.isRequired === false || normalizedRow.isEnabled === false || status === 'not_required') {
       continue
     }
 
@@ -25424,6 +25423,14 @@ function normalizeTransactionRolePlayerInputs(rolePlayers = [], options = {}) {
           partner.organisationId ||
           partner.organisation_id,
       )
+      const attorneyFirmId = normalizeNullableUuid(
+        item?.attorneyFirmId ||
+          item?.attorney_firm_id ||
+          item?.firmId ||
+          partner.attorneyFirmId ||
+          partner.attorney_firm_id ||
+          partner.firmId,
+      )
       const userId = normalizeNullableUuid(item?.userId || item?.user_id || partner.userId || partner.user_id)
       const regionId = normalizeNullableUuid(item?.regionId || item?.region_id || partner.regionId || partner.region_id)
       const workspaceUnitId = normalizeNullableUuid(
@@ -25442,6 +25449,7 @@ function normalizeTransactionRolePlayerInputs(rolePlayers = [], options = {}) {
         !contactPerson &&
         !email &&
         !partnerOrganisationId &&
+        !attorneyFirmId &&
         !userId &&
         normalizedSource !== 'agency_preferred'
       ) {
@@ -25458,6 +25466,7 @@ function normalizeTransactionRolePlayerInputs(rolePlayers = [], options = {}) {
           item?.partnerConnectionId || item?.connectionId || partner.partnerConnectionId || partner.connectionId,
         ),
         partnerOrganisationId,
+        attorneyFirmId,
         userId,
         firmFirstAllocation,
         preferredAttorneyUserId,
@@ -25491,6 +25500,7 @@ function normalizeTransactionRolePlayerInputs(rolePlayers = [], options = {}) {
             item?.partnerConnectionId || item?.connectionId || partner.partnerConnectionId || partner.connectionId,
           ),
           partnerOrganisationId,
+          attorneyFirmId,
           userId,
           firmFirstAllocation,
           preferredAttorneyUserId,
@@ -25507,6 +25517,7 @@ function normalizeTransactionRolePlayerInputs(rolePlayers = [], options = {}) {
             physicalAddress: normalizeNullableText(partner.physicalAddress),
             province: normalizeNullableText(partner.province),
             notes: normalizeNullableText(partner.notes),
+            attorneyFirmId,
           },
         },
       }
@@ -25933,8 +25944,50 @@ function attorneyAssignmentTypeForRoleplayer(roleType = '') {
   return 'transfer'
 }
 
-async function resolveAttorneyFirmIdForCreationRoleplayer(client, selection = {}) {
+async function resolveAttorneyFirmIdForCreationRoleplayer(client, selection = {}, transactionId = null) {
+  const attorneyFirmId = normalizeNullableUuid(
+    selection.attorneyFirmId || selection.attorney_firm_id || selection.firmId,
+  )
   const organisationId = normalizeNullableUuid(selection.partnerOrganisationId || selection.organisationId)
+
+  if (transactionId) {
+    const rpcResult = await client.rpc('bridge_resolve_attorney_firm_for_transaction', {
+      p_transaction_id: transactionId,
+      p_attorney_firm_id: attorneyFirmId,
+      p_partner_organisation_id: organisationId,
+      p_partner_name: normalizeTextValue(selection.partnerName) || null,
+      p_partner_email: normalizeEmailAddress(selection.email) || null,
+    })
+    if (!rpcResult.error) {
+      const resolvedFirmId = normalizeNullableUuid(rpcResult.data?.firm_id || rpcResult.data)
+      if (resolvedFirmId) return resolvedFirmId
+    } else if (!isMissingFunctionError(rpcResult.error, 'bridge_resolve_attorney_firm_for_transaction')) {
+      const resolutionError = new Error(
+        rpcResult.error.message || 'The selected attorney firm could not be linked to its attorney workspace.',
+      )
+      resolutionError.code = 'ATTORNEY_FIRM_RESOLUTION_FAILED'
+      resolutionError.setupArea = 'attorney_assignment'
+      throw resolutionError
+    }
+  }
+
+  if (attorneyFirmId) {
+    const byId = await client
+      .from('attorney_firms')
+      .select('id')
+      .eq('id', attorneyFirmId)
+      .eq('is_active', true)
+      .limit(1)
+    if (
+      byId.error &&
+      !isMissingTableError(byId.error, 'attorney_firms') &&
+      !isPermissionDeniedError(byId.error)
+    ) {
+      throw byId.error
+    }
+    if (byId.data?.[0]?.id) return byId.data[0].id
+  }
+
   if (organisationId) {
     let query = await client
       .from('attorney_firms')
@@ -26124,8 +26177,15 @@ export function buildCreationAttorneyAssignmentPayload({
 async function ensureAttorneyMatterAssignment(client, { transactionId, selection, actorProfile }) {
   if (!['transfer_attorney', 'bond_attorney', 'cancellation_attorney'].includes(selection?.roleType)) return null
 
-  const firmId = await resolveAttorneyFirmIdForCreationRoleplayer(client, selection)
-  if (!firmId) return null
+  const firmId = await resolveAttorneyFirmIdForCreationRoleplayer(client, selection, transactionId)
+  if (!firmId) {
+    const resolutionError = new Error(
+      `${selection?.partnerName || 'The selected attorney firm'} is not linked to an active attorney workspace. The attorney matter assignment was not created.`,
+    )
+    resolutionError.code = 'ATTORNEY_FIRM_RESOLUTION_FAILED'
+    resolutionError.setupArea = 'attorney_assignment'
+    throw resolutionError
+  }
 
   const assignmentType = attorneyAssignmentTypeForRoleplayer(selection.roleType)
   const attorneyRole = selection.roleType
@@ -26163,8 +26223,14 @@ async function ensureAttorneyMatterAssignment(client, { transactionId, selection
     if (
       isMissingTableError(existingQuery.error, 'transaction_attorney_assignments') ||
       isPermissionDeniedError(existingQuery.error)
-    )
-      return null
+    ) {
+      const persistenceError = new Error(
+        existingQuery.error.message || 'The attorney matter assignment store is unavailable.',
+      )
+      persistenceError.code = 'ATTORNEY_ASSIGNMENT_PERSISTENCE_FAILED'
+      persistenceError.setupArea = 'attorney_assignment'
+      throw persistenceError
+    }
     throw existingQuery.error
   }
 
@@ -26186,7 +26252,14 @@ async function ensureAttorneyMatterAssignment(client, { transactionId, selection
       payload,
       'id',
     )
-    return updated?.[0] || null
+    const assignment = updated?.[0] || null
+    if (!assignment) {
+      const persistenceError = new Error('The attorney matter assignment could not be updated.')
+      persistenceError.code = 'ATTORNEY_ASSIGNMENT_PERSISTENCE_FAILED'
+      persistenceError.setupArea = 'attorney_assignment'
+      throw persistenceError
+    }
+    return assignment
   }
 
   const inserted = await insertRecordWithMissingColumnFallback(
@@ -26198,7 +26271,14 @@ async function ensureAttorneyMatterAssignment(client, { transactionId, selection
     },
     'id',
   )
-  return inserted?.[0] || null
+  const assignment = inserted?.[0] || null
+  if (!assignment) {
+    const persistenceError = new Error('The attorney matter assignment could not be created.')
+    persistenceError.code = 'ATTORNEY_ASSIGNMENT_PERSISTENCE_FAILED'
+    persistenceError.setupArea = 'attorney_assignment'
+    throw persistenceError
+  }
+  return assignment
 }
 
 async function ensureBondApplicationWorkspaceRecord(client, { transactionId, buyerId, selection, actorProfile }) {
@@ -29802,6 +29882,12 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     finance_type: persistedFinanceType,
     purchaser_type: purchaserType,
     finance_managed_by: normalizeFinanceManagedBy(setup.financeManagedBy),
+    // Retain deal terms when falling back for an unrelated schema difference.
+    purchase_price: resolvedPurchasePrice,
+    sales_price: resolvedPurchasePrice,
+    cash_amount: normalizeOptionalNumber(finance.cashAmount),
+    bond_amount: normalizeOptionalNumber(finance.bondAmount),
+    deposit_amount: normalizeOptionalNumber(finance.depositAmount),
     stage: resolvedDetailedStage,
     current_main_stage: resolvedMainStage,
     assigned_agent: resolvedAssignedAgent || null,
@@ -30022,6 +30108,11 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       delete fallbackPayload.organisation_id
     }
     deletePayloadColumnsIfMissing(transactionResult.error, fallbackPayload, [
+      'purchase_price',
+      'sales_price',
+      'cash_amount',
+      'bond_amount',
+      'deposit_amount',
       'assigned_agent_id',
       'assigned_user_id',
       'owner_user_id',
@@ -30201,6 +30292,11 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
         delete fallbackPayload.organisation_id
       }
       deletePayloadColumnsIfMissing(transactionResult.error, fallbackPayload, [
+        'purchase_price',
+        'sales_price',
+        'cash_amount',
+        'bond_amount',
+        'deposit_amount',
         'assigned_agent_id',
         'assigned_user_id',
         'owner_user_id',
@@ -30333,6 +30429,11 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
         delete fallbackPayload.organisation_id
       }
       deletePayloadColumnsIfMissing(transactionResult.error, fallbackPayload, [
+        'purchase_price',
+        'sales_price',
+        'cash_amount',
+        'bond_amount',
+        'deposit_amount',
         'assigned_agent_id',
         'assigned_user_id',
         'owner_user_id',
@@ -30553,7 +30654,13 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     if (!isRecoverableTransactionSetupError(error)) {
       throw error
     }
-    recordSetupWarning('participants', error, 'Participant setup could not be completed.')
+    recordSetupWarning(
+      error?.setupArea || 'participants',
+      error,
+      error?.setupArea === 'attorney_assignment'
+        ? 'The selected attorney firm could not be added to its Matters workspace.'
+        : 'Participant setup could not be completed.',
+    )
   }
 
   try {

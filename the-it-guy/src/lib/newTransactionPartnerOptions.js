@@ -1,5 +1,17 @@
 import { normalizePreferredPartnerType } from './preferredPartners'
 
+function resolveAttorneyFirmId(source = {}) {
+  const settings = source.settingsJson || source.settings_json || {}
+  return (
+    source.attorneyFirmId ||
+    source.attorney_firm_id ||
+    source.firmId ||
+    settings.attorneyFirmId ||
+    settings.attorney_firm_id ||
+    null
+  )
+}
+
 export function mapPreferredDirectoryPartnerToTransactionOption(partner = {}) {
   const id = String(partner.id || '').trim()
   const companyName = String(partner.companyName || '').trim()
@@ -18,6 +30,7 @@ export function mapPreferredDirectoryPartnerToTransactionOption(partner = {}) {
     organisationId: partner.partnerOrganisationId || null,
     partnerOrganisationId: partner.partnerOrganisationId || null,
     partnerOrganizationId: partner.partnerOrganisationId || null,
+    attorneyFirmId: resolveAttorneyFirmId(partner),
     preferred: Boolean(partner.isPreferredDefault),
     isPreferredDefault: Boolean(partner.isPreferredDefault),
   }
@@ -41,6 +54,7 @@ export function mapDeveloperPartnerDefaultToTransactionOption(partner = {}) {
     organisationId: partner.partnerOrganisationId || null,
     partnerOrganisationId: partner.partnerOrganisationId || null,
     partnerOrganizationId: partner.partnerOrganisationId || null,
+    attorneyFirmId: resolveAttorneyFirmId(partner),
     preferred: Boolean(partner.isPreferredDefault),
     isPreferredDefault: Boolean(partner.isPreferredDefault),
   }
@@ -76,6 +90,8 @@ export function mapDeveloperPartnerRelationshipToTransactionOption(relationship 
     organisationId: relationship.partnerOrganisationId || null,
     partnerOrganisationId: relationship.partnerOrganisationId || null,
     partnerOrganizationId: relationship.partnerOrganisationId || null,
+    attorneyFirmId:
+      resolveAttorneyFirmId(relationship) || resolveAttorneyFirmId(relationship.partnerOrganisation || {}),
     preferred,
     isPreferredDefault: false,
     partnerType,
@@ -132,6 +148,7 @@ export function mergePartnerConnectionOptions(connectionOptions = [], legacyOpti
       organisationId: preferredRecord.organisationId || secondaryRecord.organisationId || null,
       partnerOrganisationId: preferredRecord.partnerOrganisationId || secondaryRecord.partnerOrganisationId || null,
       partnerOrganizationId: preferredRecord.partnerOrganizationId || secondaryRecord.partnerOrganizationId || null,
+      attorneyFirmId: preferredRecord.attorneyFirmId || secondaryRecord.attorneyFirmId || null,
       email: preferredRecord.email || secondaryRecord.email || '',
       phone: preferredRecord.phone || secondaryRecord.phone || '',
     })
@@ -171,8 +188,9 @@ export function partnerOptionToRolePlayerSelection(roleType, partner, selectionS
     partnerRoleConfigurationId: partner.partnerRoleConfigurationId || partner.partner_role_configuration_id || null,
     partnerOrganisationId:
       partner.organisationId || partner.partnerOrganisationId || partner.partnerOrganizationId || null,
+    attorneyFirmId: resolveAttorneyFirmId(partner),
     userId: isAttorneyRole ? null : selectedUserId,
-    firmFirstAllocation: isAttorneyRole && Boolean(selectedUserId),
+    firmFirstAllocation: isAttorneyRole,
     preferredAttorneyUserId: isAttorneyRole ? selectedUserId : null,
     partner: {
       companyName: partner.companyName,
@@ -181,6 +199,7 @@ export function partnerOptionToRolePlayerSelection(roleType, partner, selectionS
       phone: partner.phone || '',
       userId: isAttorneyRole ? null : selectedUserId,
       preferredAttorneyUserId: isAttorneyRole ? selectedUserId : null,
+      attorneyFirmId: resolveAttorneyFirmId(partner),
       partnerConnectionId: partner.connectionId || null,
       selectedPerson,
     },

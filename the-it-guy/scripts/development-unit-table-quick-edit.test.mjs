@@ -36,6 +36,24 @@ assert.ok(
 )
 
 assert.ok(
+  detailSource.includes('function applyUnitQuickUpdate(unitId,') &&
+    detailSource.includes('applyUnitQuickUpdate(unit.id, {'),
+  'inline unit edits should update only the changed Stock Master row locally',
+)
+
+for (const handlerName of [
+  'handleUnitQuickSave',
+  'handleUnitHandoverDateQuickChange',
+  'handleUnitStatusQuickChange',
+]) {
+  const handlerSource = detailSource.match(
+    new RegExp(`async function ${handlerName}\\([\\s\\S]*?(?=\\n  (?:async )?function |\\n  function |\\n  const )`),
+  )?.[0]
+  assert.ok(handlerSource, `${handlerName} should be defined`)
+  assert.ok(!handlerSource.includes('await loadData()'), `${handlerName} should not reload the entire development page`)
+}
+
+assert.ok(
   detailSource.includes('floorplanDocumentOptions.map((item) => (') &&
     detailSource.includes("field: 'floorplanId'"),
   'floorplan quick edits should use existing floorplan document options',

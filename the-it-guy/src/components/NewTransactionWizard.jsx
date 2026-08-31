@@ -1890,6 +1890,9 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
   const buyerDocumentsUrl =
     createdTransaction?.buyerDocumentsUrl ||
     resolveBuyerDocumentsPortal(createdTransaction).url
+  const attorneyAssignmentNeedsAttention = Boolean(
+    createdTransaction?.setupWarnings?.some((warning) => warning?.area === 'attorney_assignment'),
+  )
 
   function handleCopyBuyerDocumentsLink() {
     if (!buyerDocumentsUrl) {
@@ -2200,7 +2203,12 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
         }
 
         let reservationDepositEmailError = ''
-        if (result?.reservationRequired) {
+        // A transaction can be recorded after its reservation deposit has
+        // already been verified. In that case there are no payment
+        // instructions to send, so do not invoke the request-email handler
+        // and incorrectly report its expected `already_verified` response as
+        // a creation warning.
+        if (result?.reservationRequired && result?.reservationStatus !== 'verified') {
           if (!supabase) {
             reservationDepositEmailError = 'Transaction created, but reservation deposit email was not sent because Supabase is not configured in this environment.'
           } else {
@@ -3709,9 +3717,13 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
             aria-live="polite"
           >
             <header className="space-y-2">
-              <h3 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Transaction Created</h3>
+              <h3 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">
+                {attorneyAssignmentNeedsAttention ? 'Transaction Created — Attorney Assignment Required' : 'Transaction Created'}
+              </h3>
               <p className="text-sm leading-6 text-[#5f756a]">
-                {createdTransaction.allowIncomplete
+                {attorneyAssignmentNeedsAttention
+                  ? 'The transaction was saved, but it has not reached the selected attorney firm. Resolve the attorney assignment before continuing.'
+                  : createdTransaction.allowIncomplete
                   ? 'Draft workspace created. You can now add stakeholders and complete missing setup details.'
                   : createdTransaction.buyerDocumentsEmailSent === null
                     ? 'Transaction created successfully. Finalizing buyer document request email in the background.'

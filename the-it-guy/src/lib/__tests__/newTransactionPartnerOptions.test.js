@@ -26,6 +26,7 @@ try {
           companyName: 'Tuckers Attorneys',
           email: 'Conveyancing@Tuckers.example',
           partnerOrganisationId: 'org-tuckers',
+          attorneyFirmId: 'firm-tuckers',
           isPreferredDefault: true,
         },
       ],
@@ -56,12 +57,14 @@ try {
   assert.equal(options[0].source, 'developer_partner_default')
   assert.equal(options[0].relationshipId, 'relationship-tuckers')
   assert.equal(options[0].partnerOrganisationId, 'org-tuckers')
+  assert.equal(options[0].attorneyFirmId, 'firm-tuckers')
 
   const rolePlayer = partnerOptionToRolePlayerSelection('transfer_attorney', options[0])
   assert.equal(rolePlayer.partnerOrganisationId, 'org-tuckers')
   assert.equal(rolePlayer.partnerRelationshipId, 'relationship-tuckers')
   assert.equal(rolePlayer.partner.email, 'conveyancing@tuckers.example')
-  assert.equal(rolePlayer.firmFirstAllocation, false)
+  assert.equal(rolePlayer.attorneyFirmId, 'firm-tuckers')
+  assert.equal(rolePlayer.firmFirstAllocation, true)
 
   const bondOptions = getDeveloperWorkspacePartnerOptions(
     {

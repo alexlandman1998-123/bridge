@@ -138,6 +138,11 @@ assert.match(files.newTransactionWizard, /fetchDeveloperPartnersWorkspace/)
 assert.match(files.newTransactionWizard, /getDeveloperWorkspacePartnerOptions/)
 assert.match(files.newTransactionWizard, /Setup Needs Attention/)
 assert.match(files.newTransactionWizard, /setupWarnings/)
+assert.match(
+  files.newTransactionWizard,
+  /result\?\.reservationRequired && result\?\.reservationStatus !== 'verified'/,
+  'A verified reservation must not produce a misleading deposit-email warning after transaction creation.',
+)
 
 assert.match(files.unitDetail, /async function handleSendOnboardingEmail/)
 assert.match(files.unitDetail, /recordBuyerOnboardingSent/)
@@ -151,6 +156,21 @@ assert.match(files.api, /export async function recordBuyerOnboardingSent/)
 assert.match(files.api, /bond_assignment_status:\s*'awaiting_buyer_onboarding'/)
 assert.match(files.api, /bond assignment handoff update skipped/)
 assert.match(files.api, /buyer participant onboarding status update skipped/)
+assert.match(
+  files.api,
+  /const minimalTransactionPayload = \{[\s\S]*?purchase_price: resolvedPurchasePrice,[\s\S]*?cash_amount: normalizeOptionalNumber\(finance\.cashAmount\),[\s\S]*?bond_amount: normalizeOptionalNumber\(finance\.bondAmount\),[\s\S]*?deposit_amount: normalizeOptionalNumber\(finance\.depositAmount\),/,
+  'The transaction compatibility fallback must preserve canonical purchase, cash, bond, and deposit amounts.',
+)
+assert.match(
+  files.api,
+  /deletePayloadColumnsIfMissing\(transactionResult\.error, fallbackPayload, \[[\s\S]*?'purchase_price',[\s\S]*?'cash_amount',[\s\S]*?'bond_amount',[\s\S]*?'deposit_amount',/,
+  'The compatibility fallback should remove a deal-term column only when that exact column is unavailable.',
+)
+assert.doesNotMatch(
+  files.api,
+  /normalizedRow\.visibleSection === 'buyer_documents' \|\| normalizedRow\.groupKey === 'sale'/,
+  'Persisted active document requirements must remain visible when live derivation is temporarily incomplete.',
+)
 
 assert.match(files.workflowActions, /isDevelopmentSale\(state\)\s*\?\s*\['buyer_onboarding_complete'\]/)
 assert.match(files.workflowActions, /Seller onboarding is not required for new development transactions\./)

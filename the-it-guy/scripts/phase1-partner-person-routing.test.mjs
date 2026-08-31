@@ -9,7 +9,8 @@ assert.match(helper, /export async function loadPartnerPersonOptions/, 'partner 
 assert.match(helper, /export function mergePartnerPersonIntoOption/, 'partner person helper should enrich partner option with selected person')
 
 const rolePlayerOptions = read('src/lib/newTransactionPartnerOptions.js')
-assert.match(rolePlayerOptions, /firmFirstAllocation: isAttorneyRole && Boolean\(selectedUserId\)/, 'attorney role selections should remain firm-first')
+assert.match(rolePlayerOptions, /firmFirstAllocation: isAttorneyRole/, 'attorney firm selections should remain firm-first even when the firm assigns a person later')
+assert.match(rolePlayerOptions, /attorneyFirmId: resolveAttorneyFirmId\(partner\)/, 'attorney selections should carry the canonical firm id when the directory provides it')
 assert.match(rolePlayerOptions, /userId: isAttorneyRole \? null : selectedUserId/, 'bond originator role selections should carry selected consultant user id')
 assert.match(rolePlayerOptions, /preferredAttorneyUserId: isAttorneyRole \? selectedUserId : null/, 'attorney role selections should carry preferred attorney user id')
 
