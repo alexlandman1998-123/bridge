@@ -16507,7 +16507,10 @@ function AttorneyTransactionDetail() {
         const hasMatterAccess = await canAccessAttorneyMatter(
           transactionId,
           attorneyPermissionState.firmId,
-          profile?.id || profile?.userId || null,
+          // Resolve the actor from the live Supabase session. Workspace profile
+          // state can briefly lag behind an account/workspace switch and must
+          // not turn a valid firm assignment into a false access denial.
+          null,
           { membership: attorneyPermissionState.membership },
         )
         if (!active) return

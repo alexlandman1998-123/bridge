@@ -138,10 +138,14 @@ function normalizeMembershipRow(row) {
 }
 
 async function resolveAuthenticatedUserId(client, userId) {
-  const normalizedUserId = normalizeText(userId)
-  if (normalizedUserId) return normalizedUserId
   const authUser = await getAuthenticatedUser(client)
-  return authUser.id
+  const authenticatedUserId = normalizeText(authUser?.id)
+  if (authenticatedUserId) return authenticatedUserId
+
+  // Retain the explicit value only as a defensive fallback for non-browser
+  // test clients. Authorization in a live session must always follow auth.uid,
+  // not workspace/profile state that can lag behind an account switch.
+  return normalizeText(userId)
 }
 
 async function resolveFirmIdFromProfile(client, userId) {
