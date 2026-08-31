@@ -1112,6 +1112,7 @@ function HeaderBar({ onLogout, user }) {
         ? 'Agency command centre'
         : 'Agent'
   const hidePremiumHeaderTitle =
+    isRentalDashboard ||
     location.pathname.startsWith('/pipeline/leads') ||
     location.pathname.startsWith('/agency/branches') ||
     (role === 'agent' && (location.pathname === '/dashboard' || location.pathname === '/')) ||
