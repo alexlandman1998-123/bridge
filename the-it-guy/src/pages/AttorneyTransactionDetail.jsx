@@ -16539,14 +16539,6 @@ function AttorneyTransactionDetail() {
         return
       }
 
-      if (!attorneyPermissionState.membership?.isActive) {
-        if (!active) return
-        setMatterAccessAllowed(false)
-        setMatterAccessKey('')
-        setMatterAccessChecked(true)
-        return
-      }
-
       try {
         const hasMatterAccess = await canAccessAttorneyMatter(
           transactionId,

@@ -622,6 +622,16 @@ export async function canAccessAttorneyMatter(transactionId, firmId = null, user
 
   const resolvedUserId = await resolveAuthenticatedUserId(client, userId)
 
+  // The database function is the canonical cross-module access decision. It
+  // understands organisation-level firm assignments even when the browser's
+  // workspace membership projection is still loading or has gone stale.
+  const canonicalAccessQuery = await client.rpc('bridge_can_access_transaction_spine', {
+    target_transaction_id: resolvedTransactionId,
+  })
+  if (!canonicalAccessQuery.error && canonicalAccessQuery.data === true) {
+    return true
+  }
+
   const assignmentsQuery = await client
     .from('transaction_attorney_assignments')
     .select('id, transaction_id, firm_id, attorney_firm_id, assigned_organisation_id, assignment_type, attorney_role, department_id, attorney_department_id, primary_attorney_id, attorney_user_id, secretary_id, admin_handler_id, status, assignment_status')
