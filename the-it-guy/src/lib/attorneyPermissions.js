@@ -306,6 +306,24 @@ function canDepartmentViewAssignment(assignment = {}, permissions = {}, membersh
   return false
 }
 
+export function activeFirmMembershipCoversAttorneyAssignment(assignment = {}, membership = {}) {
+  const assignmentFirmIds = [
+    assignment.attorney_firm_id,
+    assignment.firm_id,
+    assignment.assigned_organisation_id,
+  ].map(normalizeText).filter(Boolean)
+  const membershipFirmId = normalizeText(membership.firmId || membership.firm_id)
+  const membershipStatus = String(membership.status || '').trim().toLowerCase()
+  const assignmentStatus = String(assignment.assignment_status || assignment.status || '').trim().toLowerCase()
+
+  return Boolean(
+    membershipFirmId &&
+      membershipStatus === 'active' &&
+      assignmentStatus !== 'removed' &&
+      assignmentFirmIds.includes(membershipFirmId),
+  )
+}
+
 async function getAttorneyTransactionAssignmentsForPermission(client, transactionId, firmId = null) {
   const resolvedTransactionId = normalizeText(transactionId)
   if (!resolvedTransactionId) return []
@@ -606,7 +624,7 @@ export async function canAccessAttorneyMatter(transactionId, firmId = null, user
 
   const assignmentsQuery = await client
     .from('transaction_attorney_assignments')
-    .select('id, transaction_id, firm_id, attorney_firm_id, assignment_type, attorney_role, department_id, attorney_department_id, primary_attorney_id, attorney_user_id, secretary_id, admin_handler_id, status, assignment_status')
+    .select('id, transaction_id, firm_id, attorney_firm_id, assigned_organisation_id, assignment_type, attorney_role, department_id, attorney_department_id, primary_attorney_id, attorney_user_id, secretary_id, admin_handler_id, status, assignment_status')
     .eq('transaction_id', resolvedTransactionId)
 
   if (assignmentsQuery.error) {
@@ -619,7 +637,12 @@ export async function canAccessAttorneyMatter(transactionId, firmId = null, user
   const scopedAssignments = (assignmentsQuery.data || []).filter((assignment) => {
     const status = String(assignment.assignment_status || assignment.status || '').trim().toLowerCase()
     if (status === 'removed') return false
-    if (firmId && String(assignment.attorney_firm_id || assignment.firm_id || '').trim() !== String(firmId).trim()) return false
+    if (
+      firmId &&
+      ![assignment.attorney_firm_id, assignment.firm_id, assignment.assigned_organisation_id]
+        .map((value) => String(value || '').trim())
+        .includes(String(firmId).trim())
+    ) return false
     return true
   })
 
@@ -638,7 +661,11 @@ export async function canAccessAttorneyMatter(transactionId, firmId = null, user
     }
   }
 
-  const scopedFirmIds = [...new Set(scopedAssignments.map((assignment) => assignment.attorney_firm_id || assignment.firm_id).filter(Boolean))]
+  const scopedFirmIds = [...new Set(scopedAssignments.flatMap((assignment) => [
+    assignment.attorney_firm_id,
+    assignment.firm_id,
+    assignment.assigned_organisation_id,
+  ]).filter(Boolean))]
   if (!scopedFirmIds.length) return false
 
   const normalizedSuppliedMembership = normalizeMembershipRow(suppliedMembership && {
@@ -684,8 +711,17 @@ export async function canAccessAttorneyMatter(transactionId, firmId = null, user
   }, {})
 
   for (const assignment of scopedAssignments) {
-    const membership = membershipsByFirmId[assignment.attorney_firm_id || assignment.firm_id]
+    const membership = [assignment.attorney_firm_id, assignment.firm_id, assignment.assigned_organisation_id]
+      .map((assignmentFirmId) => membershipsByFirmId[assignmentFirmId])
+      .find(Boolean)
     if (!membership) continue
+
+    // Matter visibility follows the firm assignment. Individual staff
+    // allocation and professional permissions still control lane edits and
+    // privileged actions after the read shell has opened.
+    if (activeFirmMembershipCoversAttorneyAssignment(assignment, membership)) {
+      return true
+    }
 
     const permissions = getAttorneyProfessionalProfilePermissions(membership)
     if (permissions.can_view_all_firm_matters) {
