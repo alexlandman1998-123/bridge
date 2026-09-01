@@ -424,6 +424,7 @@ const MobileTasksPage = lazy(() => import('./pages/mobile/MobileTasksPage'))
 const MobileTransactionDetailPage = lazy(() => import('./pages/mobile/MobileTransactionDetailPage'))
 const MobileWorkspacePage = lazy(() => import('./pages/mobile/MobileWorkspacePage'))
 const MarketingComingSoonPage = lazy(() => import('./pages/MarketingComingSoonPage'))
+const AuctionsPage = lazy(() => import('./pages/AuctionsPage'))
 const NewTransactionPage = lazy(() => import('./pages/NewTransactionPage'))
 const OnboardingProfileSetup = lazy(() => import('./pages/OnboardingProfileSetup'))
 const OnboardingLinksDemoPage = lazy(() => import('./pages/OnboardingLinksDemoPage'))
@@ -3218,6 +3219,16 @@ function AppRoutes() {
                   <SalesWorkspaceGuard>
                     <RoleRoute allowedRoles={['agent']}>
                       <MarketingComingSoonPage />
+                    </RoleRoute>
+                  </SalesWorkspaceGuard>
+                }
+              />
+              <Route
+                path="/auctions"
+                element={
+                  <SalesWorkspaceGuard>
+                    <RoleRoute allowedRoles={['agent']}>
+                      <AuctionsPage />
                     </RoleRoute>
                   </SalesWorkspaceGuard>
                 }

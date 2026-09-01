@@ -112,33 +112,25 @@ export function WhatsAppCampaignOverview({ onCreateCampaign }) {
 
   return (
     <div className="wa-page">
-      <header className="wa-page-header">
-        <div className="wa-title-block">
-          <span className="wa-brand-icon"><MessageCircle size={24} /></span>
-          <div>
-            <h1>WhatsApp Campaigns</h1>
-            <p>Create, manage and track your WhatsApp marketing campaigns.</p>
-          </div>
-        </div>
-        <button className="wa-primary-button" type="button" onClick={onCreateCampaign}>Create Campaign <ChevronRight size={16} /></button>
-      </header>
-
       <WhatsAppCampaignStats />
 
       <section className="wa-campaigns-panel">
-        <div className="wa-tabs" role="tablist" aria-label="Campaign status">
-          {tabs.map((tab) => (
-            <button
-              className={activeTab === tab ? 'wa-tab-active' : ''}
-              type="button"
-              role="tab"
-              aria-selected={activeTab === tab}
-              onClick={() => setActiveTab(tab)}
-              key={tab}
-            >
-              {tab}
-            </button>
-          ))}
+        <div className="wa-panel-toolbar">
+          <div className="wa-tabs" role="tablist" aria-label="Campaign status">
+            {tabs.map((tab) => (
+              <button
+                className={activeTab === tab ? 'wa-tab-active' : ''}
+                type="button"
+                role="tab"
+                aria-selected={activeTab === tab}
+                onClick={() => setActiveTab(tab)}
+                key={tab}
+              >
+                {tab}
+              </button>
+            ))}
+          </div>
+          <button className="wa-primary-button" type="button" onClick={onCreateCampaign}>Create Campaign <ChevronRight size={16} /></button>
         </div>
         <div className="wa-campaigns-content">
           <WhatsAppCampaignFilters />

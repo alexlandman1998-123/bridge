@@ -5,10 +5,11 @@
   --wa-ink: #122437;
   --wa-muted: #66798d;
   --wa-border: #e1e8ee;
-  width: min(1220px, 100%);
-  margin: 0 auto;
-  padding: clamp(1.25rem, 2.6vw, 2.5rem);
+  width: 100%;
+  margin: 0;
+  padding: 0;
   color: var(--wa-ink);
+  font-family: inherit;
 }
 
 .wa-page button,
@@ -17,11 +18,11 @@
 .wa-page-header, .wa-title-block, .wa-campaign-heading, .wa-filter-row, .wa-list-footer, .wa-create-header, .wa-form-footer, .wa-placeholder-actions { display: flex; align-items: center; }
 .wa-page-header { justify-content: space-between; gap: 1.5rem; margin-bottom: 1.6rem; }
 .wa-title-block { gap: 0.9rem; }
-.wa-title-block h1, .wa-create-header h1 { margin: 0; color: var(--wa-ink); font-family: var(--font-display); font-size: clamp(1.65rem, 2.5vw, 2.15rem); font-weight: 700; letter-spacing: -0.045em; line-height: 1.05; }
+.wa-title-block h1, .wa-create-header h1 { margin: 0; color: var(--wa-ink); font-family: inherit; font-size: clamp(1.35rem, 2vw, 1.7rem); font-weight: 650; letter-spacing: -0.03em; line-height: 1.1; }
 .wa-title-block p, .wa-create-header p { margin-top: 0.4rem; color: var(--wa-muted); font-size: 0.9rem; }
 .wa-brand-icon { display: grid; width: 48px; height: 48px; flex: 0 0 auto; place-items: center; border: 1px solid #ccebdc; border-radius: 15px; background: linear-gradient(145deg, #ecfaf3, #dff4e9); color: var(--wa-green); box-shadow: 0 8px 22px rgba(19, 126, 85, 0.1); }
 
-.wa-primary-button, .wa-secondary-button { display: inline-flex; min-height: 40px; align-items: center; justify-content: center; gap: 0.4rem; border-radius: 10px; padding: 0.6rem 0.95rem; font-size: 0.8rem; font-weight: 720; transition: 150ms ease; }
+.wa-primary-button, .wa-secondary-button { display: inline-flex; min-height: 40px; align-items: center; justify-content: center; gap: 0.4rem; border-radius: 10px; padding: 0.6rem 0.95rem; font-size: 0.8rem; font-weight: 650; transition: 150ms ease; }
 .wa-primary-button { border: 1px solid var(--wa-green); background: linear-gradient(180deg, #1b986a, #128259); color: #fff; box-shadow: 0 7px 16px rgba(18, 130, 89, 0.18); }
 .wa-primary-button:hover { border-color: var(--wa-green-dark); background: var(--wa-green-dark); transform: translateY(-1px); }
 .wa-secondary-button { border: 1px solid #d7e1e9; background: #fff; color: #30455a; box-shadow: 0 2px 5px rgba(25, 43, 58, 0.04); }
@@ -34,11 +35,14 @@
 .wa-stat-read .wa-stat-icon { background: #eaf3ff; color: #3478c6; }
 .wa-stat-recipients .wa-stat-icon { background: #f2f1fb; color: #6657a8; }
 .wa-stat-copy { display: grid; min-width: 0; }
-.wa-stat-copy strong { font-size: 1.35rem; letter-spacing: -0.035em; line-height: 1; }
-.wa-stat-copy > span { margin-top: 0.28rem; color: #33485b; font-size: 0.77rem; font-weight: 700; }
+.wa-stat-copy strong { font-size: 1.25rem; font-weight: 700; letter-spacing: -0.025em; line-height: 1; }
+.wa-stat-copy > span { margin-top: 0.28rem; color: #33485b; font-size: 0.77rem; font-weight: 650; }
 .wa-stat-copy small { margin-top: 0.16rem; color: #8795a4; font-size: 0.66rem; }
 
 .wa-campaigns-panel { overflow: hidden; border: 1px solid var(--wa-border); border-radius: 17px; background: #fff; box-shadow: 0 10px 27px rgba(31, 50, 67, 0.045); }
+.wa-panel-toolbar { display: flex; min-height: 60px; align-items: stretch; justify-content: space-between; gap: 1rem; border-bottom: 1px solid var(--wa-border); }
+.wa-panel-toolbar .wa-tabs { min-width: 0; flex: 1; border-bottom: 0; }
+.wa-panel-toolbar > .wa-primary-button { align-self: center; flex: 0 0 auto; margin: 0.55rem 1rem 0.55rem 0; }
 .wa-tabs { display: flex; min-height: 53px; gap: 1.65rem; overflow-x: auto; padding: 0 1.15rem; border-bottom: 1px solid var(--wa-border); }
 .wa-tabs button { position: relative; flex: 0 0 auto; border: 0; background: transparent; color: #718196; font-size: 0.77rem; font-weight: 680; }
 .wa-tabs button::after { position: absolute; right: 0; bottom: 0; left: 0; height: 2px; border-radius: 2px 2px 0 0; background: transparent; content: ''; }
@@ -57,7 +61,7 @@
 .wa-campaign-thumbnail { width: 128px; height: 112px; border-radius: 10px; object-fit: cover; background: #eef2f5; }
 .wa-campaign-main { min-width: 0; }
 .wa-campaign-heading { align-items: flex-start; justify-content: space-between; gap: 1rem; }
-.wa-campaign-heading h3, .wa-draft-card h3 { margin: 0; color: #172b3d; font-size: 0.87rem; font-weight: 750; letter-spacing: -0.012em; }
+.wa-campaign-heading h3, .wa-draft-card h3 { margin: 0; color: #172b3d; font-size: 0.87rem; font-weight: 650; letter-spacing: -0.01em; }
 .wa-campaign-heading p { margin-top: 0.25rem; color: #748497; font-size: 0.72rem; }
 .wa-campaign-heading p strong { color: #4b6074; font-weight: 650; }
 .wa-status { display: inline-flex; min-height: 26px; flex: 0 0 auto; align-items: center; padding: 0.25rem 0.66rem; border-radius: 999px; font-size: 0.67rem; font-weight: 750; }
@@ -99,7 +103,7 @@
 .wa-form-card, .wa-info-panel, .wa-next-steps { border: 1px solid var(--wa-border); border-radius: 17px; background: #fff; box-shadow: 0 9px 24px rgba(31, 50, 67, 0.04); }
 .wa-form-card { padding: 1.35rem; }
 .wa-card-heading { padding-bottom: 1rem; border-bottom: 1px solid #edf1f4; }
-.wa-card-heading h2, .wa-info-panel h2, .wa-placeholder-card h2 { margin: 0; color: var(--wa-ink); font-size: 1rem; font-weight: 760; letter-spacing: -0.02em; }
+.wa-card-heading h2, .wa-info-panel h2, .wa-placeholder-card h2 { margin: 0; color: var(--wa-ink); font-size: 1rem; font-weight: 650; letter-spacing: -0.015em; }
 .wa-card-heading p { margin-top: 0.28rem; color: var(--wa-muted); font-size: 0.72rem; }
 .wa-form-fields { display: grid; gap: 1.1rem; padding: 1.15rem 0; }
 .wa-field-label { display: grid; gap: 0.45rem; }
@@ -158,13 +162,15 @@
 }
 
 @media (max-width: 700px) {
-  .wa-page { padding: 1rem; }
+  .wa-page { padding: 0; }
   .wa-page-header { align-items: flex-start; flex-direction: column; }
   .wa-page-header .wa-primary-button { width: 100%; }
   .wa-stats { gap: 0.6rem; }
   .wa-stat { min-height: 96px; padding: 0.75rem; }
   .wa-stat-icon { width: 34px; height: 34px; }
   .wa-filter-row { align-items: stretch; flex-wrap: wrap; }
+  .wa-panel-toolbar { align-items: stretch; flex-direction: column; gap: 0; }
+  .wa-panel-toolbar > .wa-primary-button { align-self: flex-end; margin: 0.65rem 1rem; }
   .wa-search { flex-basis: 100%; }
   .wa-filter-control { flex: 1 1 140px; }
   .wa-campaign-card { grid-template-columns: 82px minmax(0, 1fr); }

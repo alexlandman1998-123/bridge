@@ -173,13 +173,14 @@ export const APP_NAV_BY_ROLE = {
           to: '/marketing?section=events',
           children: [
             { key: 'marketing_show_days', label: 'Show Days', to: '/marketing?section=show-days' },
-            { key: 'marketing_launches', label: 'Auctions & Launches', to: '/marketing?section=launches' },
+            { key: 'marketing_launches', label: 'Launches', to: '/marketing?section=launches' },
           ],
         },
         { key: 'marketing_website', label: 'Website & Landing Pages', to: '/marketing?section=website' },
         { key: 'marketing_performance', label: 'Marketing Performance', to: '/marketing?section=performance' },
       ],
     },
+    { key: 'auctions', label: 'Auctions', to: '/auctions' },
     { key: 'clients', label: 'Clients', to: '/clients' },
     { key: 'partners', label: 'Partners', to: '/partners' },
     ...(SHOW_INTELLIGENCE_BETA
@@ -610,13 +611,14 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
           to: '/marketing?section=events',
           children: [
             { key: 'marketing_show_days', label: 'Show Days', to: '/marketing?section=show-days' },
-            { key: 'marketing_launches', label: 'Auctions & Launches', to: '/marketing?section=launches' },
+            { key: 'marketing_launches', label: 'Launches', to: '/marketing?section=launches' },
           ],
         },
         { key: 'marketing_website', label: 'Website & Landing Pages', to: '/marketing?section=website' },
         { key: 'marketing_performance', label: 'Marketing Performance', to: '/marketing?section=performance' },
       ],
     },
+    { key: 'auctions', label: 'Auctions', to: '/auctions' },
     {
       key: 'agency',
       label: 'Organisation',

@@ -1,0 +1,41 @@
+.launches-page, .auctions-page { --la-green: #16875b; --la-green-dark: #106f4b; --la-green-soft: #e9f7ef; }
+.launches-page .wa-primary-button, .auctions-page .wa-primary-button { border-color: var(--la-green); background: linear-gradient(180deg, #1a9464, #117b52); }
+.launches-page .wa-tabs button.wa-tab-active, .auctions-page .wa-tabs button.wa-tab-active { color: var(--la-green-dark); }
+.launches-page .wa-tabs button.wa-tab-active::after, .auctions-page .wa-tabs button.wa-tab-active::after { background: var(--la-green); }
+.launches-page .wa-page-number-active, .auctions-page .wa-page-number-active { background: var(--la-green-soft); color: var(--la-green-dark); }
+.la-stat-upcoming .wa-stat-icon, .la-stat-lots .wa-stat-icon { background: #eaf3ff; color: #3475c5; }
+.la-stat-invited .wa-stat-icon, .la-stat-bidders .wa-stat-icon { background: #f1effb; color: #6557a6; }
+.la-stat-registrations .wa-stat-icon, .la-stat-active .wa-stat-icon { background: #edf7f2; color: var(--la-green); }
+.la-stat-leads .wa-stat-icon, .la-stat-clearance .wa-stat-icon { background: #e5f6ed; color: var(--la-green); }
+.la-card { position: relative; display: grid; grid-template-columns: 132px minmax(0, 1fr) 28px; min-height: 144px; gap: 1rem; padding: .8rem; border: 1px solid #e1e8ee; border-radius: 14px; background: #fff; transition: 150ms ease; }
+.la-card:hover { border-color: #c3d5cc; box-shadow: 0 8px 20px rgba(27,48,65,.06); transform: translateY(-1px); }
+.la-card > img { width: 132px; height: 118px; border-radius: 10px; object-fit: cover; background: #edf2f5; }
+.la-card-main { min-width: 0; }
+.la-card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.la-card-kicker { display: block; margin-bottom: .22rem; color: var(--la-green-dark); font-size: .54rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.la-card-heading h3 { margin: 0; color: #172b3d; font-size: .87rem; font-weight: 650; letter-spacing: -.01em; }
+.la-card-heading p { display: flex; align-items: center; gap: .3rem; margin-top: .25rem; color: #718396; font-size: .68rem; }
+.la-card-date { display: flex; flex-wrap: wrap; gap: 1.2rem; margin-top: .58rem; color: #697d90; font-size: .65rem; }
+.la-card-date span { display: inline-flex; align-items: center; gap: .3rem; }
+.la-card-metrics { display: grid; grid-template-columns: repeat(4,minmax(78px,1fr)); gap: .7rem; margin-top: .68rem; }
+.la-card-metrics div { display: grid; gap: .08rem; }
+.la-card-metrics dt { color: #8998a6; font-size: .59rem; }
+.la-card-metrics dd { margin: 0; color: #23384b; font-size: .72rem; font-weight: 700; }
+.la-card .wa-more { align-self: end; }
+.la-status-upcoming, .la-status-bidding-open { background: #e5f6ed; color: #187754; }
+.la-status-planning, .la-status-preparing { background: #fff1dc; color: #a56516; }
+.la-status-completed { background: #eaf2ff; color: #356cad; }
+.auctions-page { --la-green: #1d7556; --la-green-dark: #155740; }
+.auction-card .la-card-kicker { color: #7a6244; }
+@media (max-width: 700px) {
+  .la-card { grid-template-columns: 88px minmax(0,1fr); }
+  .la-card > img { width: 88px; height: 88px; }
+  .la-card-heading { display: block; }
+  .la-card-heading .la-status { margin-top: .4rem; }
+  .la-card-metrics { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .la-card .wa-more { position: absolute; right: .6rem; bottom: .6rem; }
+}
+@media (max-width: 440px) {
+  .la-card { grid-template-columns: 1fr; }
+  .la-card > img { width: 100%; height: 160px; }
+}

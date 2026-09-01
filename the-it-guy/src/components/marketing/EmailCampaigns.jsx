@@ -102,14 +102,13 @@ export function EmailCampaignOverview({ onCreateCampaign }) {
   const [activeTab, setActiveTab] = useState(emailCampaignTabs[0])
   return (
     <div className="wa-page email-page">
-      <header className="wa-page-header">
-        <div className="wa-title-block"><span className="wa-brand-icon email-brand-icon"><Mail size={24} /></span><div><h1>Email Campaigns</h1><p>Create, manage and track your email marketing campaigns.</p></div></div>
-        <button className="wa-primary-button" type="button" onClick={onCreateCampaign}>Create Campaign <ChevronRight size={16} /></button>
-      </header>
       <EmailCampaignStats />
       <section className="wa-campaigns-panel">
-        <div className="wa-tabs" role="tablist" aria-label="Campaign status">
-          {emailCampaignTabs.map((tab) => <button className={activeTab === tab ? 'wa-tab-active' : ''} type="button" role="tab" aria-selected={activeTab === tab} onClick={() => setActiveTab(tab)} key={tab}>{tab}</button>)}
+        <div className="wa-panel-toolbar">
+          <div className="wa-tabs" role="tablist" aria-label="Campaign status">
+            {emailCampaignTabs.map((tab) => <button className={activeTab === tab ? 'wa-tab-active' : ''} type="button" role="tab" aria-selected={activeTab === tab} onClick={() => setActiveTab(tab)} key={tab}>{tab}</button>)}
+          </div>
+          <button className="wa-primary-button" type="button" onClick={onCreateCampaign}>Create Campaign <ChevronRight size={16} /></button>
         </div>
         <div className="wa-campaigns-content">
           <EmailCampaignFilters />

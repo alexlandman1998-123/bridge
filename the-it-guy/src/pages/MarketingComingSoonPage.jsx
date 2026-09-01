@@ -1,12 +1,14 @@
 import { ArrowUpRight, BarChart3, CalendarDays, Check, Globe2, Mail, Megaphone, MessageCircle, Sparkles } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import { CreateEmailCampaign, EmailCampaignOverview } from '../components/marketing/EmailCampaigns'
+import { LaunchesOverview } from '../components/marketing/LaunchesAuctions'
 import { ShowDayDetail, ShowDaysOverview } from '../components/marketing/ShowDays'
 import { CreateWhatsAppCampaign, WhatsAppCampaignOverview } from '../components/marketing/WhatsAppCampaigns'
 import './MarketingComingSoonPage.css'
 import './WhatsAppCampaigns.css'
 import './EmailCampaigns.css'
 import './ShowDays.css'
+import './LaunchesAuctions.css'
 
 const campaignChannels = [
   { icon: Mail, title: 'Email', detail: 'Audience building, campaign delivery, and conversion reporting.' },
@@ -15,13 +17,15 @@ const campaignChannels = [
 
 const eventTypes = [
   { title: 'Show Days', detail: 'Promote, capture RSVPs, check in attendees, and follow up.' },
-  { title: 'Auctions & Launches', detail: 'Event-driven demand generation for your next phase of growth.' },
+  { title: 'Launches', detail: 'Create demand around development releases, previews, and launch events.' },
 ]
 
 export default function MarketingComingSoonPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const section = searchParams.get('section')
   const campaignView = searchParams.get('view')
+
+  if (section === 'launches') return <LaunchesOverview />
 
   if (section === 'show-days') {
     const openOverview = () => setSearchParams({ section: 'show-days' })
