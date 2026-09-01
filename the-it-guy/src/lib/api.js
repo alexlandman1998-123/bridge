@@ -1,6 +1,10 @@
 import { DOCUMENTS_BUCKET_CANDIDATES, createScopedSupabaseClient, invokeEdgeFunction, supabase } from './supabaseClient'
 import { uploadToStorageCandidateBuckets } from './storageFallbacks'
 import { retryMutationWithoutReportedMissingColumns } from './targetedMissingColumnRetry.js'
+import {
+  COMPATIBILITY_FALLBACK_IDS,
+  trackCompatibilityFallbackState,
+} from '../services/observability/compatibilityFallbackTelemetry.js'
 import { resolveClientPortalFinalSignedArtifactAccess } from '../core/documents/finalSignedArtifactAccess'
 export { generateMandateDocumentFromTemplate } from './generateMandateDocument'
 import {
@@ -1207,6 +1211,16 @@ async function executeTransactionMutationWithTargetedColumnRetry({ payload, exec
     onRemoveColumns: (columns) => {
       for (const column of columns) knownMissingSchemaColumns.add(String(column).toLowerCase())
     },
+  })
+  void trackCompatibilityFallbackState({
+    fallbackId: COMPATIBILITY_FALLBACK_IDS.transactionMutationMissingColumns,
+    usedFallback: retry.removedColumns.length > 0,
+    failed: Boolean(retry.result?.error && retry.removedColumns.length > 0),
+    sourceComponent: 'transaction_mutation',
+    reasonCode: retry.removedColumns.length ? 'schema_columns_omitted' : 'canonical_schema_supported',
+    userId: payload?.created_by || payload?.assigned_user_id || payload?.owner_user_id || '',
+    workspaceId: payload?.organisation_id || '',
+    route: typeof window !== 'undefined' ? window.location.pathname : '/transactions',
   })
   return retry.result
 }
@@ -8762,7 +8776,10 @@ export async function ensureTransactionRequiredDocuments(
           cash_amount: formData?.cash_amount ?? cashAmount,
           bond_amount: formData?.bond_amount ?? bondAmount,
         },
-        writeLegacyProjection: true,
+        // Client-facing required-document rows are owned by the canonical
+        // matrix below. Do not let the compatibility engine write a second,
+        // overlapping legacy projection during transaction creation.
+        writeLegacyProjection: false,
         persistenceMode: TRANSACTION_CANONICAL_PERSISTENCE_MODES.creationRpc,
       })
     } catch (cause) {
@@ -8774,22 +8791,36 @@ export async function ensureTransactionRequiredDocuments(
 
     const canonicalInstances = canonicalResolution?.canonicalSync?.instances || []
     const requirements = canonicalResolution?.requirements || []
-    const legacyProjectionRows = canonicalResolution?.legacyProjection?.rows || []
     const hasUnlinkedRequirement = requirements.some((requirement) => !requirement?.canonicalRequirementInstanceId)
-    const hasUnlinkedLegacyProjection = legacyProjectionRows.some((requirement) => !requirement?.canonical_requirement_instance_id)
-    if (!canonicalInstances.length || !requirements.length || !legacyProjectionRows.length || hasUnlinkedRequirement || hasUnlinkedLegacyProjection) {
+    if (!canonicalInstances.length || !requirements.length || hasUnlinkedRequirement) {
       const error = new Error('Canonical transaction requirements or their compatibility projection were not fully persisted.')
       error.code = 'CANONICAL_REQUIREMENT_SETUP_INCOMPLETE'
       error.detail = {
         canonicalInstanceCount: canonicalInstances.length,
         readModelCount: requirements.length,
-        legacyProjectionCount: legacyProjectionRows.length,
+        legacyProjectionCount: 0,
         hasUnlinkedRequirement,
-        hasUnlinkedLegacyProjection,
+        hasUnlinkedLegacyProjection: false,
       }
       throw error
     }
-    return requirements
+    const matrixSync = await syncCanonicalRequiredDocumentsForTransactionContext({
+      client,
+      transactionId,
+      transaction: canonicalResolution.transaction || { id: transactionId, purchaser_type: purchaserType, finance_type: financeType },
+      onboardingFormData: {
+        ...(formData || {}),
+        purchaser_type: formData?.purchaser_type || purchaserType,
+        purchase_finance_type: formData?.purchase_finance_type || financeType,
+      },
+      audience: 'auto',
+    })
+    if (!matrixSync?.rows?.length) {
+      const error = new Error('Canonical matrix document requirements were not fully persisted.')
+      error.code = 'CANONICAL_REQUIREMENT_SETUP_INCOMPLETE'
+      throw error
+    }
+    return matrixSync.rows
   }
 
   try {

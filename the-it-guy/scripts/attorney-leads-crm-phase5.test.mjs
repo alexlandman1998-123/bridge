@@ -50,6 +50,7 @@ test('workspace provides the refactored KPIs, filters, responsive queue, and det
   assert.match(page, /ManualLeadDrawer/)
   assert.match(page, /LeadDetailDrawer/)
   assert.match(page, /PublicLinkDrawer/)
+  assert.doesNotMatch(page, /More Lead actions|More actions for/)
 })
 
 test('all CRM reads are tenant scoped and Lead-domain scoped', () => {

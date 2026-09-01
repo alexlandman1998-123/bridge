@@ -29,9 +29,26 @@ insert into public.attorney_matter_snapshot_rollout_config (
 values
   ('development', true, 100, 'Phase 6 local development verification'),
   ('preview', true, 100, 'Phase 6 preview verification'),
-  ('staging', true, 100, 'Phase 6 staging certification'),
-  ('production', false, 0, 'Production remains disabled pending live RPC and query-plan approval')
+  ('staging', true, 100, 'Phase 6 staging certification')
 on conflict (environment) do nothing;
+
+-- A deployment is not permission to enable production. Force the kill switch
+-- closed even when a partial or previously edited production row already
+-- exists; promotion remains a separate, explicitly approved operation.
+insert into public.attorney_matter_snapshot_rollout_config (
+  environment,
+  enabled,
+  rollout_percentage,
+  release_note
+)
+values
+  ('production', false, 0, 'Production remains disabled pending live RPC and query-plan approval')
+on conflict (environment) do update
+set
+  enabled = false,
+  rollout_percentage = 0,
+  updated_at = now(),
+  release_note = excluded.release_note;
 
 create or replace function public.bridge_attorney_matter_snapshot_environment(p_environment text)
 returns text

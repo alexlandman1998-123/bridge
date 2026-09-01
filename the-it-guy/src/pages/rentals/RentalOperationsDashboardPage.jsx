@@ -24,6 +24,11 @@ function formatRent(value) {
   return `R ${amount.toLocaleString('en-ZA', { maximumFractionDigits: 0 })}`
 }
 function rangeDays(value) { return DATE_OPTIONS.find((option) => option.value === value)?.days || 30 }
+function kpiSparkline(current, previous = null) {
+  const value = asNumber(current)
+  const baseline = previous === null || previous === undefined ? value : asNumber(previous)
+  return [baseline, baseline, value, value]
+}
 function relativeDate(value) {
   if (!value) return 'Recently'
   const diff = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 86400000))
@@ -85,14 +90,14 @@ export default function RentalOperationsDashboardPage() {
   const portfolio = bottomSnapshot?.portfolio_health || {}; const vacancy = bottomSnapshot?.vacancy_letting || {}; const renewals = bottomSnapshot?.renewals || {}; const collections = bottomSnapshot?.collections || {}; const maintenance = bottomSnapshot?.maintenance || {}; const recentActivity = bottomSnapshot?.recent_activity || []
   const leadDelta = asNumber(metrics.new_leads) - asNumber(metrics.new_leads_previous_period)
   const kpis = [
-    { key: 'applications', icon: ClipboardList, label: 'Active Applications', value: formatCount(metrics.active_applications), tone: 'blue', trend: null, trendLabel: 'Current review queue' },
-    { key: 'mandates', icon: FileText, label: 'Active Mandates', value: formatCount(metrics.active_mandates), tone: 'green', trend: null, trendLabel: 'Under management' },
-    { key: 'occupancy', icon: Home, label: 'Occupancy Rate', value: formatPercent(metrics.occupancy_rate), tone: 'orange', trend: null, trendLabel: 'Managed rentable units' },
-    { key: 'rent', icon: CircleDollarSign, label: 'Monthly Rent Roll', value: formatRent(metrics.monthly_rent_roll), tone: 'purple', trend: null, trendLabel: 'Current contractual rent' },
-    { key: 'leads', icon: UsersRound, label: 'New Leads', value: formatCount(metrics.new_leads), tone: 'slate', trend: leadDelta, trendLabel: `vs previous ${rangeDays(dateRange)} days` },
+    { key: 'applications', icon: ClipboardList, label: 'Active Applications', value: formatCount(metrics.active_applications), tone: 'blue', trend: null, trendLabel: 'Current review queue', sparkline: kpiSparkline(metrics.active_applications) },
+    { key: 'mandates', icon: FileText, label: 'Active Mandates', value: formatCount(metrics.active_mandates), tone: 'green', trend: null, trendLabel: 'Under management', sparkline: kpiSparkline(metrics.active_mandates) },
+    { key: 'occupancy', icon: Home, label: 'Occupancy Rate', value: formatPercent(metrics.occupancy_rate), tone: 'orange', trend: null, trendLabel: 'Managed rentable units', sparkline: kpiSparkline(metrics.occupancy_rate) },
+    { key: 'rent', icon: CircleDollarSign, label: 'Monthly Rent Roll', value: formatRent(metrics.monthly_rent_roll), tone: 'purple', trend: null, trendLabel: 'Current contractual rent', sparkline: kpiSparkline(metrics.monthly_rent_roll) },
+    { key: 'leads', icon: UsersRound, label: 'New Leads', value: formatCount(metrics.new_leads), tone: 'slate', trend: leadDelta, trendLabel: `vs previous ${rangeDays(dateRange)} days`, sparkline: kpiSparkline(metrics.new_leads, metrics.new_leads_previous_period) },
   ]
 
-  return <main className="mx-auto w-full max-w-[1600px] px-3 py-2 sm:px-5 lg:px-7"><MobileDashboardShell>
+  return <main className="mx-auto w-full max-w-[1600px] py-2"><MobileDashboardShell>
     {error ? <section className="rounded-2xl border border-[#f7c9c9] bg-[#fff5f5] p-4 text-sm text-[#b42318]">{error}</section> : null}
     {!rentalScope.organisationId ? <section className="rounded-2xl border border-[#f4d7a9] bg-[#fffaf0] p-4 text-sm text-[#7a4b05]">Choose an agency workspace to load the Rentals dashboard.</section> : null}
     <section className="-mx-2 flex snap-x gap-3 overflow-x-auto px-2 pb-1 sm:mx-0 sm:grid sm:grid-cols-2 sm:overflow-visible sm:px-0 xl:grid-cols-5">{kpis.map((item) => <Link key={item.key} to={item.key === 'applications' ? '/agent/rentals/applications' : item.key === 'mandates' ? '/agent/rentals/portfolio/properties' : item.key === 'occupancy' ? '/agent/rentals/tenancies' : item.key === 'rent' ? '/agent/rentals/tenancies' : '/agent/rentals/pipeline/leads'} className="contents"><DashboardKpiCard {...item} /></Link>)}</section>

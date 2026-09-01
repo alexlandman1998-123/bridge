@@ -16,7 +16,6 @@ import {
   LoaderCircle,
   Mail,
   MessageSquareText,
-  MoreHorizontal,
   Phone,
   Plus,
   RefreshCw,
@@ -800,7 +799,6 @@ function LeadDetailDrawer({
                   <Check size={16} /> Convert
                 </button>
               ) : null}
-              <button type="button" className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 text-slate-500 transition hover:bg-slate-50" aria-label="More Lead actions"><MoreHorizontal size={18} /></button>
               <button type="button" className="flex h-10 w-10 items-center justify-center rounded-xl text-slate-500 transition hover:bg-slate-100" aria-label="Close Lead detail" onClick={onClose}><X size={20} /></button>
             </div>
           </div>
@@ -1582,9 +1580,8 @@ export default function AttorneyLeadsPage() {
                               </div>
                             </td>
                             <td>
-                              <div className="flex items-center justify-end gap-2">
+                              <div className="flex items-center justify-end">
                                 <button type="button" className="rounded-xl border border-emerald-200 px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-50" onClick={(event) => { event.stopPropagation(); setDetailError(''); setSelectedLead(lead) }}>Open</button>
-                                <button type="button" className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-slate-500 transition hover:bg-slate-50" aria-label={`More actions for ${leadName(lead)}`} onClick={(event) => event.stopPropagation()}><MoreHorizontal size={17} /></button>
                               </div>
                             </td>
                           </tr>

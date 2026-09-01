@@ -26,6 +26,10 @@ import {
   normalizeAttorneyStageKey,
 } from '../constants/attorneyWorkflowStages.js'
 import { createPerfTimer } from '../lib/performanceTrace'
+import {
+  COMPATIBILITY_FALLBACK_IDS,
+  trackCompatibilityFallbackState,
+} from './observability/compatibilityFallbackTelemetry.js'
 
 const DASHBOARD_CACHE_TTL_MS = 15_000
 const dashboardCache = new Map()
@@ -1423,6 +1427,15 @@ async function loadAttorneyManagementDashboardData(firmId = null, { roleView = '
     p_detail_limit: 50,
   })
   if (!snapshotResult.error) {
+    void trackCompatibilityFallbackState({
+      fallbackId: COMPATIBILITY_FALLBACK_IDS.attorneyDashboardSnapshot,
+      usedFallback: false,
+      sourceComponent: 'attorney_dashboard',
+      reasonCode: 'snapshot_rpc_available',
+      userId: currentUserId,
+      workspaceId: resolvedFirm.id,
+      route: '/attorney/dashboard',
+    })
     timer.mark('snapshot:load:end', {
       matters: snapshotResult.data?.matters?.length || 0,
       members: snapshotResult.data?.members?.length || 0,
@@ -1432,6 +1445,15 @@ async function loadAttorneyManagementDashboardData(firmId = null, { roleView = '
   if (!isMissingDashboardSnapshotRpc(snapshotResult.error)) {
     throw snapshotResult.error
   }
+  void trackCompatibilityFallbackState({
+    fallbackId: COMPATIBILITY_FALLBACK_IDS.attorneyDashboardSnapshot,
+    usedFallback: true,
+    sourceComponent: 'attorney_dashboard',
+    reasonCode: 'snapshot_rpc_unavailable',
+    userId: currentUserId,
+    workspaceId: resolvedFirm.id,
+    route: '/attorney/dashboard',
+  })
   console.warn('[Attorney Dashboard] snapshot RPC is unavailable; using legacy dashboard loader until the migration is applied.', snapshotResult.error)
   timer.mark('snapshot:unavailable')
 

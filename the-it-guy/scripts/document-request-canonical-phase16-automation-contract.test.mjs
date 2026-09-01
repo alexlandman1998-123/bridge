@@ -31,6 +31,25 @@ assert.match(
   'Phase 16 cron endpoint should require an explicit env override for legacy keys.',
 )
 assert.match(cron, /sanitizeReport/, 'Phase 16 cron endpoint should return a sanitized report.')
+assert.match(cron, /fileURLToPath\(import\.meta\.url\)/, 'Phase 16 cron endpoint should resolve its packaged project root.')
+for (const requiredScript of [
+  'document-request-canonical-phase14-portal-verification.mjs',
+  'document-request-canonical-phase15-operational-rollout.mjs',
+  'document-request-canonical-phase16-automation.mjs',
+]) {
+  assert.ok(
+    cron.includes(`new URL('../../scripts/${requiredScript}', import.meta.url)`),
+    `Cron endpoint should expose ${requiredScript} to Vercel static file tracing.`,
+  )
+}
+assert.match(cron, /const SCRIPT_PATH = OPERATIONAL_SCRIPT_PATHS\.automation/, 'Phase 16 cron endpoint should invoke the traced script by absolute path.')
+assert.match(cron, /assertOperationalScriptsPackaged/, 'Phase 16 cron endpoint should preflight its packaged operational scripts.')
+assert.match(cron, /cwd: PROJECT_ROOT/, 'Phase 16 child scripts should resolve from the packaged project root.')
+assert.match(
+  String(vercel.functions?.['api/cron/document-request-canonical-automation.js']?.includeFiles || ''),
+  /the-it-guy\/scripts\/document-request-canonical-phase16-automation\.mjs/,
+  'Phase 16 script should be included relative to the repository root used by Vercel file tracing.',
+)
 assert.doesNotMatch(
   cron,
   /seller_workspace_token|portal_token|access_token/i,

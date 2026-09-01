@@ -67,4 +67,16 @@ for (const expected of [
   assert.ok(source.includes(expected), `Phase 4 communication centre should include: ${expected}`)
 }
 
+for (const retiredNoOpControl of [
+  'Activity actions',
+  'Attach file',
+  'Mention person',
+  'Add reaction',
+]) {
+  assert.ok(
+    !source.includes(retiredNoOpControl),
+    `Communication workspace should not advertise the unimplemented ${retiredNoOpControl} control`,
+  )
+}
+
 console.log('Attorney communication control Phase 4 checks passed.')

@@ -3,7 +3,7 @@
   "buildCommand": "npm run build && node scripts/agent-bundle-budget.mjs && node scripts/operational-script-deployment-audit.mjs && node scripts/agent-schema-compatibility-contract.test.mjs",
   "functions": {
     "api/cron/document-request-canonical-automation.js": {
-      "includeFiles": "{scripts/document-request-canonical-phase14-portal-verification.mjs,scripts/document-request-canonical-phase15-operational-rollout.mjs,scripts/document-request-canonical-phase16-automation.mjs,src/**}",
+      "includeFiles": "{the-it-guy/scripts/document-request-canonical-phase14-portal-verification.mjs,the-it-guy/scripts/document-request-canonical-phase15-operational-rollout.mjs,the-it-guy/scripts/document-request-canonical-phase16-automation.mjs,the-it-guy/src/**}",
       "maxDuration": 300
     }
   },

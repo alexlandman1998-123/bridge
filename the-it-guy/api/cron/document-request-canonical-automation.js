@@ -1,13 +1,21 @@
 import { execFile } from 'node:child_process'
-import { readFile } from 'node:fs/promises'
+import { access, readFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 
 const execFileAsync = promisify(execFile)
 
 const ROUTE = '/api/cron/document-request-canonical-automation'
 const SCRIPT = 'scripts/document-request-canonical-phase16-automation.mjs'
+const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
+const OPERATIONAL_SCRIPT_PATHS = Object.freeze({
+  portalVerification: fileURLToPath(new URL('../../scripts/document-request-canonical-phase14-portal-verification.mjs', import.meta.url)),
+  operationalRollout: fileURLToPath(new URL('../../scripts/document-request-canonical-phase15-operational-rollout.mjs', import.meta.url)),
+  automation: fileURLToPath(new URL('../../scripts/document-request-canonical-phase16-automation.mjs', import.meta.url)),
+})
+const SCRIPT_PATH = OPERATIONAL_SCRIPT_PATHS.automation
 const DEFAULT_LIMIT = 5
 const MAX_LIMIT = 25
 const DEFAULT_TIMEOUT_MS = 240000
@@ -62,6 +70,10 @@ function sanitizeReport(report = {}) {
 
 async function readReport(outputPath) {
   return JSON.parse(await readFile(outputPath, 'utf8'))
+}
+
+async function assertOperationalScriptsPackaged() {
+  await Promise.all(Object.values(OPERATIONAL_SCRIPT_PATHS).map((scriptPath) => access(scriptPath)))
 }
 
 function parseTransactionIds(value = '') {
@@ -124,7 +136,7 @@ export default async function handler(request, response) {
   const rolloutOutput = path.join(os.tmpdir(), `document-request-phase16-cron-rollout-${runId}.json`)
   const portalOutput = path.join(os.tmpdir(), `document-request-phase16-cron-portal-${runId}.json`)
   const args = [
-    SCRIPT,
+    SCRIPT_PATH,
     '--source=cron',
     '--scheduling-enabled',
     `--limit=${limit}`,
@@ -140,8 +152,9 @@ export default async function handler(request, response) {
   if (allowLegacyKeys) args.push('--allow-legacy-keys')
 
   try {
+    await assertOperationalScriptsPackaged()
     await execFileAsync(process.execPath, args, {
-      cwd: process.cwd(),
+      cwd: PROJECT_ROOT,
       timeout: timeoutMs,
       maxBuffer: 1024 * 1024 * 32,
     })

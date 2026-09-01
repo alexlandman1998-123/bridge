@@ -6,6 +6,7 @@ const REQUIRED_FILES = Object.freeze([
   'scripts/document-request-canonical-phase15-operational-rollout.mjs',
   'scripts/document-request-canonical-phase16-automation.mjs',
 ])
+const VERCEL_PROJECT_ROOT = 'the-it-guy'
 
 const [routeSource, vercelSource] = await Promise.all([
   readFile(ROUTE, 'utf8'),
@@ -21,9 +22,14 @@ if (!String(functionConfig.includeFiles || '').includes('src/**')) {
 
 for (const filePath of REQUIRED_FILES) {
   await access(filePath)
-  if (!String(functionConfig.includeFiles || '').includes(filePath)) {
+  const packagedPath = `${VERCEL_PROJECT_ROOT}/${filePath}`
+  if (!String(functionConfig.includeFiles || '').includes(packagedPath)) {
     throw new Error(`${filePath} is not included in the deployed cron function.`)
   }
+}
+
+if (!String(functionConfig.includeFiles || '').includes(`${VERCEL_PROJECT_ROOT}/src/**`)) {
+  throw new Error(`${ROUTE} must package source dependencies from the configured Vercel project root.`)
 }
 
 const configuredEntrypoint = routeSource.match(/const SCRIPT = ['"]([^'"]+)['"]/)?.[1]
@@ -35,5 +41,6 @@ console.log(JSON.stringify({
   status: 'passed',
   route: ROUTE,
   entrypoint: configuredEntrypoint,
+  vercelProjectRoot: VERCEL_PROJECT_ROOT,
   includedOperationalScripts: REQUIRED_FILES,
 }, null, 2))

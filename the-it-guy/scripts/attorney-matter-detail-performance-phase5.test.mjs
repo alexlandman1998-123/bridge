@@ -23,8 +23,9 @@ assert.doesNotMatch(detailSource, /if \(workflowOperations && workflowOperations
 assert.match(detailSource, /attorneyPermissionState\.loading \|\| !attorneyPermissionState\.membership\?\.isActive/)
 assert.doesNotMatch(detailSource, /attorneyPermissionState\.loading \|\| !matterAccessChecked \|\| matterAccessKey !== currentMatterAccessKey/)
 assert.ok(
-  detailSource.indexOf('const initialRollupRequest = !background && USE_TRANSACTION_ROLLUP_OVERVIEW')
-    < detailSource.indexOf('const coreDetail = await fetchTransactionCoreById(transactionId)'),
+  detailSource.indexOf('const coreDetail = await fetchTransactionRouteCoreById(transactionId)')
+    < detailSource.indexOf('initialRollupRequest = !background && USE_TRANSACTION_ROLLUP_OVERVIEW'),
+  'The indexed route-core lookup should control first paint before rollup work starts.',
 )
 assert.match(detailSource, /void initialRollupRequest\.then\(/)
 assert.match(detailSource, /const initialDetailLoadKeyRef = useRef\(['"]['"]\)/)

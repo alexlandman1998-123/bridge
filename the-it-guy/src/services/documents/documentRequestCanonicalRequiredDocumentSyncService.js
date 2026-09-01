@@ -1,6 +1,7 @@
 import {
   buildCanonicalDocumentRequestAudiencePlan,
 } from '../../core/documents/documentRequestCanonicalPlanner.js'
+import { DOCUMENT_REQUEST_CANONICAL_MATRIX } from '../../core/documents/documentRequestCanonicalMatrix.js'
 
 export const DOCUMENT_REQUEST_CANONICAL_REQUIRED_DOCUMENT_SYNC_VERSION =
   'document_request_canonical_required_document_sync_v1'
@@ -17,6 +18,10 @@ const PRESERVED_REQUIRED_DOCUMENT_STATUSES = new Set([
   'reupload_required',
   'rejected',
 ])
+
+// These were umbrella labels from the pre-matrix generators.  They do not
+// represent a distinct upload when the matrix requests the actual evidence.
+const RETIRED_UMBRELLA_DOCUMENT_KEYS = new Set(['buyer_fica_pack', 'seller_fica_pack'])
 
 const GROUP_LABELS = Object.freeze({
   sale: 'Sale',
@@ -135,6 +140,18 @@ function existingRowsByDocumentKey(existingRows = []) {
   return new Map((existingRows || []).map((row) => [normalizeKey(row.document_key || row.key), row]))
 }
 
+function matrixManagedDocumentKeys() {
+  return new Set([
+    ...DOCUMENT_REQUEST_CANONICAL_MATRIX.requirements.map((requirement) => normalizeKey(requirement.key)),
+    ...RETIRED_UMBRELLA_DOCUMENT_KEYS,
+  ])
+}
+
+function canDeactivateStaleRow(row = {}) {
+  const status = normalizeRequiredDocumentStatus(row.status)
+  return !PRESERVED_REQUIRED_DOCUMENT_STATUSES.has(status) && !row.is_uploaded && !row.isUploaded && !row.uploaded_document_id
+}
+
 export function buildCanonicalRequiredDocumentRows({
   transactionId,
   scenario = {},
@@ -237,10 +254,36 @@ export async function syncCanonicalRequiredDocumentRows({
     throw write.error
   }
 
+  // Recalculation is a reconciliation, not an append-only import.  Only
+  // deactivate matrix-owned, unsatisfied rows so an uploaded legacy document
+  // is never hidden or discarded by a rules correction.
+  const activeKeys = new Set(plan.rows.map((row) => normalizeKey(row.document_key)))
+  const managedKeys = matrixManagedDocumentKeys()
+  const staleIds = existingRows
+    .filter((row) => managedKeys.has(normalizeKey(row.document_key)))
+    .filter((row) => !activeKeys.has(normalizeKey(row.document_key)))
+    .filter(canDeactivateStaleRow)
+    .map((row) => row.id)
+    .filter(Boolean)
+
+  if (staleIds.length) {
+    const staleWrite = await client
+      .from('transaction_required_documents')
+      .update({
+        is_required: false,
+        enabled: false,
+        is_uploaded: false,
+        status: 'not_required',
+      })
+      .in('id', staleIds)
+    if (staleWrite.error) throw staleWrite.error
+  }
+
   return {
     ...plan,
     dryRun: false,
-    synced: write.data?.length || plan.rows.length,
+    synced: (write.data?.length || plan.rows.length) + staleIds.length,
     persistedRows: write.data || [],
+    deactivatedStaleRowIds: staleIds,
   }
 }

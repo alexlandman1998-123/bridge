@@ -129,6 +129,19 @@ test('buyer-only transaction does not persist default seller rows', () => {
 })
 
 test('transaction context preserves buyer marital regime after entity normalization', () => {
+  const unmarriedResult = buildCanonicalRequiredDocumentRowsForTransactionContext({
+    transaction: {
+      id: 'transaction-unmarried',
+      purchaser_type: 'individual',
+      finance_type: 'cash',
+    },
+  })
+  const unmarriedKeys = keySet(unmarriedResult.rows)
+
+  assert.equal(unmarriedKeys.has('buyer_marital_status_details'), false)
+  assert.equal(unmarriedKeys.has('buyer_marriage_certificate'), false)
+  assert.equal(unmarriedKeys.has('buyer_fica_pack'), false)
+
   const ancResult = buildCanonicalRequiredDocumentRowsForTransactionContext({
     transaction: {
       id: 'transaction-anc',
@@ -177,6 +190,28 @@ test('transaction context preserves buyer marital regime after entity normalizat
   assert.equal(onboardingAncResult.derivedScenario.buyerMaritalRegime, 'married_anc')
   assert.equal(onboardingAncKeys.has('buyer_marriage_certificate'), true)
   assert.equal(onboardingAncResult.skippedPendingPolicyKeys.includes('buyer_anc_document'), true)
+})
+
+test('canonical matrix has one concrete request set for every buyer and seller structure', () => {
+  const buyerStructures = ['individual', 'married_coc', 'married_anc', 'company', 'trust', 'foreign_purchaser']
+  for (const purchaserType of buyerStructures) {
+    const result = buildCanonicalRequiredDocumentRowsForTransactionContext({
+      transaction: { id: `buyer-${purchaserType}`, purchaser_type: purchaserType, finance_type: 'cash' },
+    })
+    const keys = keySet(result.rows)
+    assert.equal(keys.has('buyer_fica_pack'), false, `${purchaserType} must not receive a generic buyer FICA pack`)
+    assert.equal(keys.has('seller_fica_pack'), false, `${purchaserType} must not receive a generic seller FICA pack`)
+  }
+
+  const sellerStructures = ['individual', 'married_cop', 'married_anc', 'company', 'trust', 'deceased_estate', 'power_of_attorney']
+  for (const sellerType of sellerStructures) {
+    const result = buildCanonicalRequiredDocumentRowsForTransactionContext({
+      transaction: { id: `seller-${sellerType}`, purchaser_type: 'individual', seller_type: sellerType, finance_type: 'cash' },
+    })
+    const keys = keySet(result.rows)
+    assert.equal(keys.has('buyer_fica_pack'), false, `${sellerType} must not receive a generic buyer FICA pack`)
+    assert.equal(keys.has('seller_fica_pack'), false, `${sellerType} must not receive a generic seller FICA pack`)
+  }
 })
 
 test('transaction context preserves seller marital regime requirements', () => {

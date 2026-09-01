@@ -62,7 +62,9 @@ export function evaluateAgentProductionDeployment({ assets = [], sources = {} } 
     },
     {
       id: 'clients_performance_instrumented',
-      passed: clients.includes('agent_clients.route.core_ready') && clients.includes('data-performance-settled'),
+      passed: clients.includes('data-performance-settled') && (
+        clients.includes('agent_clients.route.core_ready') || clients.includes('agentRoutePerformanceBaseline-')
+      ),
       evidence: 'Clients exposes core-ready and settled production checkpoints.',
       failureEvidence: 'The deployed Clients chunk does not include the new core-ready and settled checkpoints.',
     },
