@@ -46,6 +46,8 @@ function buildPropertyPerformance({ unit, bookings, rangeDays, now }) {
     id: unit.id,
     propertyId: unit.propertyId,
     propertyName: unit.propertyName,
+    propertyCoverImageUrl: unit.propertyCoverImageUrl,
+    propertyCoverImageAlt: unit.propertyCoverImageAlt,
     unitLabel: unit.unitLabel,
     bedrooms: number(unit.bedrooms),
     bathrooms: number(unit.bathrooms),
@@ -66,6 +68,10 @@ export function buildShortTermRentalDashboard({ units = [], bookings = [], turno
   const activeBookings = bookings.filter(isActiveBooking)
   const arrivalsToday = activeBookings.filter((booking) => booking.status === 'confirmed' && dayKey(booking.checkInAt, timeZone) === today)
   const departuresToday = activeBookings.filter((booking) => booking.status === 'checked_in' && dayKey(booking.checkOutAt, timeZone) === today)
+  const propertyMedia = new Map(enabledUnits.map((unit) => [text(unit.propertyId), {
+    propertyCoverImageUrl: text(unit.propertyCoverImageUrl), propertyCoverImageAlt: text(unit.propertyCoverImageAlt),
+  }]))
+  const withPropertyMedia = (booking) => ({ ...booking, ...(propertyMedia.get(text(booking.propertyId)) || {}) })
   const activeStays = activeBookings.filter((booking) => new Date(booking.checkInAt) <= now && new Date(booking.checkOutAt) > now)
   const guestsInHouse = activeStays.reduce((total, booking) => total + number(booking.adults, 1) + number(booking.children), 0)
   const occupiedNights = enabledUnits.reduce((total, unit) => total + Array.from({ length: safeRangeDays }, (_, index) => addDays(now, index))
@@ -96,7 +102,7 @@ export function buildShortTermRentalDashboard({ units = [], bookings = [], turno
   ].slice(0, 8)
 
   const upcomingStays = bookings.filter((booking) => ['provisional', 'confirmed'].includes(booking.status) && new Date(booking.checkInAt) >= now)
-    .sort((a, b) => new Date(a.checkInAt) - new Date(b.checkInAt)).slice(0, 12)
+    .sort((a, b) => new Date(a.checkInAt) - new Date(b.checkInAt)).slice(0, 12).map(withPropertyMedia)
   const propertyPerformance = enabledUnits.map((unit) => buildPropertyPerformance({ unit, bookings, rangeDays: safeRangeDays, now }))
   const dailyOccupancy = Array.from({ length: safeRangeDays }, (_, index) => {
     const date = addDays(now, index)
@@ -105,7 +111,7 @@ export function buildShortTermRentalDashboard({ units = [], bookings = [], turno
   })
 
   return {
-    arrivalsToday, departuresToday, activeStays, guestsInHouse, occupancyRate, enabledUnitCount: enabledUnits.length,
+    arrivalsToday: arrivalsToday.map(withPropertyMedia), departuresToday: departuresToday.map(withPropertyMedia), activeStays, guestsInHouse, occupancyRate, enabledUnitCount: enabledUnits.length,
     events, attention, upcomingStays, propertyPerformance, eligibleForSetupCount: Math.max(0, units.length - enabledUnits.length),
     performance: { bookingRevenue: null, occupancyRate, adr: null, revPar: null, daily: dailyOccupancy },
   }

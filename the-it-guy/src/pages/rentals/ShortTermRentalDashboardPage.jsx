@@ -1,6 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ArrowRight, BedDouble, CalendarDays, CheckCircle2, ChevronRight, ClipboardCheck, Clock3, DoorOpen, Loader2, UsersRound, WalletCards } from 'lucide-react'
-import { Link } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { listShortTermBookings } from '../../services/rentals/rentalShortTermBookingRepository.js'
 import { buildShortTermRentalDashboard } from '../../services/rentals/shortTermRentalDashboardModel.js'
@@ -8,39 +6,75 @@ import { listShortTermUnitInventory } from '../../services/rentals/rentalShortTe
 import { listShortTermRatePlans } from '../../services/rentals/rentalShortTermRatePlanRepository.js'
 import { listShortTermTurnovers } from '../../services/rentals/rentalShortTermTurnoverRepository.js'
 import { resolveRentalWorkspaceScope } from '../../services/rentals/rentalWorkspaceScope.js'
+import { AttentionPanel, DailyGuestLists, Metrics, OccupancyForecast, TodayTimeline } from './ShortTermDashboardComponents.jsx'
 
 const DATE_OPTIONS = [{ value: 'last_7_days', label: 'Last 7 Days', days: 7 }, { value: 'last_30_days', label: 'Last 30 Days', days: 30 }, { value: 'last_90_days', label: 'Last 90 Days', days: 90 }]
 const rangeDays = (value) => DATE_OPTIONS.find((option) => option.value === value)?.days || 30
-const dateTime = (value) => value ? new Intl.DateTimeFormat('en-ZA', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : '—'
-const dateOnly = (value) => value ? new Intl.DateTimeFormat('en-ZA', { month: 'short', day: 'numeric' }).format(new Date(value)) : '—'
-const money = (value) => value === null || value === undefined ? 'Not tracked' : `R${Number(value).toLocaleString('en-ZA', { maximumFractionDigits: 0 })}`
-const statusClass = (tone) => ({ green: 'bg-[#edf9f2] text-[#17764d]', blue: 'bg-[#edf5ff] text-[#2563a4]', amber: 'bg-[#fff6e7] text-[#9a5b08]', slate: 'bg-[#f1f5f9] text-[#52657a]' }[tone] || 'bg-[#f1f5f9] text-[#52657a]')
-const severityClass = (severity) => ({ attention: 'bg-[#fff0ed] text-[#c2410c]', warning: 'bg-[#fff7e7] text-[#a16207]', info: 'bg-[#edf5ff] text-[#2563a4]' }[severity] || 'bg-[#f1f5f9] text-[#52657a]')
-
-function Section({ title, action, children, className = '' }) {
-  return <section className={`rounded-[18px] border border-[#e4ebf2] bg-white p-4 shadow-[0_10px_26px_rgba(15,23,42,.035)] sm:p-5 ${className}`}><div className="flex items-start justify-between gap-4"><h2 className="text-[1rem] font-semibold text-[#152235]">{title}</h2>{action}</div>{children}</section>
-}
-
-function LinkAction({ to, children }) { return <Link to={to} className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-[#087a59] hover:text-[#056447]">{children}<ArrowRight size={14} /></Link> }
 
 export default function ShortTermRentalDashboardPage() {
-  const workspace = useWorkspace(); const scope = useMemo(() => resolveRentalWorkspaceScope(workspace), [workspace])
-  const [dataScope, setDataScope] = useState('company'); const [selectedWorkspaceId, setSelectedWorkspaceId] = useState('all'); const [dateRange, setDateRange] = useState('last_30_days')
-  const [source, setSource] = useState({ units: [], bookings: [], turnovers: [], ratePlans: [] }); const [loading, setLoading] = useState(true); const [error, setError] = useState('')
+  const workspace = useWorkspace()
+  const scope = useMemo(() => resolveRentalWorkspaceScope(workspace), [workspace])
+  const [dataScope, setDataScope] = useState('company')
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState('all')
+  const [dateRange, setDateRange] = useState('last_30_days')
+  const [source, setSource] = useState({ units: [], bookings: [], turnovers: [], ratePlans: [] })
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
   const workspaceOptions = useMemo(() => [{ value: 'all', label: 'All Branches' }, ...(scope.branchId ? [{ value: scope.branchId, label: 'My Branch' }] : [])], [scope.branchId])
-  const load = useCallback(async () => { if (!scope.organisationId) { setSource({ units: [], bookings: [], turnovers: [], ratePlans: [] }); setLoading(false); return } try { setLoading(true); setError(''); const branchId = selectedWorkspaceId === 'all' ? '' : selectedWorkspaceId; const [units, bookings, turnovers, ratePlans] = await Promise.all([listShortTermUnitInventory({ organisationId: scope.organisationId, branchId }), listShortTermBookings({ organisationId: scope.organisationId, branchId, from: new Date(Date.now() - 86_400_000).toISOString() }), listShortTermTurnovers({ organisationId: scope.organisationId, branchId }), listShortTermRatePlans({ organisationId: scope.organisationId, branchId })]); setSource({ units, bookings, turnovers, ratePlans }) } catch (cause) { setError(cause?.message || 'Unable to load Short-Term operations.') } finally { setLoading(false) } }, [scope.organisationId, selectedWorkspaceId])
+
+  const load = useCallback(async () => {
+    if (!scope.organisationId) {
+      setSource({ units: [], bookings: [], turnovers: [], ratePlans: [] })
+      setLoading(false)
+      return
+    }
+    try {
+      setLoading(true)
+      setError('')
+      const branchId = selectedWorkspaceId === 'all' ? '' : selectedWorkspaceId
+      const [units, bookings, turnovers, ratePlans] = await Promise.all([
+        listShortTermUnitInventory({ organisationId: scope.organisationId, branchId }),
+        listShortTermBookings({ organisationId: scope.organisationId, branchId, from: new Date(Date.now() - 86_400_000).toISOString() }),
+        listShortTermTurnovers({ organisationId: scope.organisationId, branchId }),
+        listShortTermRatePlans({ organisationId: scope.organisationId, branchId }),
+      ])
+      setSource({ units, bookings, turnovers, ratePlans })
+    } catch (cause) {
+      setError(cause?.message || 'Unable to load Short-Term operations.')
+    } finally {
+      setLoading(false)
+    }
+  }, [scope.organisationId, selectedWorkspaceId])
+
   useEffect(() => { void load() }, [load])
-  useEffect(() => { window.dispatchEvent(new CustomEvent('itg:principal-dashboard-header-controls', { detail: { visible: true, dataScope, selectedWorkspaceId, dateRange, dataScopeOptions: [{ value: 'company', label: 'Company' }, { value: 'agent', label: 'Agent' }], workspaceOptions, dateOptions: DATE_OPTIONS.map(({ value, label }) => ({ value, label })) } })); return () => window.dispatchEvent(new CustomEvent('itg:principal-dashboard-header-controls', { detail: null })) }, [dataScope, dateRange, selectedWorkspaceId, workspaceOptions])
-  useEffect(() => { const onChange = (event) => { const { key, value } = event.detail || {}; if (key === 'dataScope') setDataScope(value === 'agent' ? 'agent' : 'company'); if (key === 'selectedWorkspaceId') setSelectedWorkspaceId(String(value || 'all')); if (key === 'dateRange') setDateRange(DATE_OPTIONS.some((option) => option.value === value) ? value : 'last_30_days') }; window.addEventListener('itg:principal-dashboard-header-filter-change', onChange); return () => window.removeEventListener('itg:principal-dashboard-header-filter-change', onChange) }, [])
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('itg:principal-dashboard-header-controls', { detail: {
+      visible: true, dataScope, selectedWorkspaceId, dateRange,
+      dataScopeOptions: [{ value: 'company', label: 'Company' }, { value: 'agent', label: 'Agent' }],
+      workspaceOptions, dateOptions: DATE_OPTIONS.map(({ value, label }) => ({ value, label })),
+    } }))
+    return () => window.dispatchEvent(new CustomEvent('itg:principal-dashboard-header-controls', { detail: null }))
+  }, [dataScope, dateRange, selectedWorkspaceId, workspaceOptions])
+  useEffect(() => {
+    const onChange = (event) => {
+      const { key, value } = event.detail || {}
+      if (key === 'dataScope') setDataScope(value === 'agent' ? 'agent' : 'company')
+      if (key === 'selectedWorkspaceId') setSelectedWorkspaceId(String(value || 'all'))
+      if (key === 'dateRange') setDateRange(DATE_OPTIONS.some((option) => option.value === value) ? value : 'last_30_days')
+    }
+    window.addEventListener('itg:principal-dashboard-header-filter-change', onChange)
+    return () => window.removeEventListener('itg:principal-dashboard-header-filter-change', onChange)
+  }, [])
+
   const dashboard = useMemo(() => buildShortTermRentalDashboard({ ...source, rangeDays: rangeDays(dateRange) }), [dateRange, source])
-  const kpis = [{ icon: DoorOpen, label: 'Arrivals today', value: dashboard.arrivalsToday.length, detail: 'Confirmed check-ins', href: '/agent/rentals/short-term/bookings', action: 'View arrivals' }, { icon: ClipboardCheck, label: 'Departures today', value: dashboard.departuresToday.length, detail: 'Check-outs due', href: '/agent/rentals/short-term/bookings', action: 'View departures' }, { icon: UsersRound, label: 'Guests in-house', value: dashboard.guestsInHouse, detail: `${dashboard.activeStays.length} active stay${dashboard.activeStays.length === 1 ? '' : 's'}`, href: '/agent/rentals/short-term/bookings' }, { icon: BedDouble, label: 'Occupancy rate', value: dashboard.occupancyRate === null ? '—' : `${dashboard.occupancyRate}%`, detail: `Next ${rangeDays(dateRange)} days`, href: '/agent/rentals/short-term/properties' }]
-  return <main className="mx-auto w-full max-w-[1600px] px-3 py-2 sm:px-5 lg:px-7"><div className="space-y-4 pb-6">
+  const selectedRangeDays = rangeDays(dateRange)
+
+  return <main className="mx-auto w-full max-w-[1600px] px-3 py-3 sm:px-5 lg:px-7"><div className="space-y-4 pb-8">
     {error ? <p className="rounded-xl border border-[#f2c6c6] bg-[#fff7f7] p-3 text-sm text-[#9f3131]">{error}</p> : null}
     {!scope.organisationId ? <p className="rounded-xl border border-[#f4d7a9] bg-[#fffaf0] p-3 text-sm text-[#7a4b05]">Choose an agency workspace to load Short-Term Rentals.</p> : null}
-    <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{kpis.map(({ icon: Icon, label, value, detail, href, action }) => <Link key={label} to={href} className="rounded-[18px] border border-[#e4ebf2] bg-white p-4 shadow-[0_10px_26px_rgba(15,23,42,.035)] transition hover:-translate-y-px hover:border-[#cde5da]"><span className="grid h-10 w-10 place-items-center rounded-xl bg-[#edf8f2] text-[#087a59]"><Icon size={19} /></span><p className="mt-3 text-3xl font-semibold tracking-[-.045em] text-[#101828]">{loading ? '—' : value}</p><p className="mt-1 text-sm font-medium text-[#344054]">{label}</p><p className="mt-1 text-xs text-[#667085]">{detail}</p>{action ? <p className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-[#087a59]">{action}<ArrowRight size={13} /></p> : null}</Link>)}</section>
-    <section className="grid gap-4 xl:grid-cols-[minmax(0,1.85fr)_minmax(320px,1fr)]"><Section title={`Today · ${new Intl.DateTimeFormat('en-ZA', { day: 'numeric', month: 'long' }).format(new Date())}`} action={<LinkAction to="/agent/rentals/short-term/calendar">View full schedule</LinkAction>}><div className="mt-4 h-44 divide-y divide-[#eef2f6] overflow-y-auto overscroll-contain pr-2" role="region" aria-label="Today’s short-term rental schedule" tabIndex={0}>{loading ? <p className="py-8 text-center text-sm text-[#667085]"><Loader2 className="mr-2 inline animate-spin" size={15} />Loading today’s schedule…</p> : dashboard.events.length ? dashboard.events.map((event) => <Link key={event.id} to={event.href} className="grid grid-cols-[45px_34px_minmax(0,1fr)_auto] items-center gap-2 py-3 first:pt-0 hover:bg-[#fbfdfc]"><p className="text-xs font-semibold tabular-nums text-[#344054]">{new Intl.DateTimeFormat('en-ZA', { hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(event.at))}</p><span className="grid h-8 w-8 place-items-center rounded-lg bg-[#edf8f2] text-[#087a59]">{event.kind === 'arrival' ? <DoorOpen size={15} /> : event.kind === 'turnover' ? <ClipboardCheck size={15} /> : <Clock3 size={15} />}</span><div className="min-w-0"><p className="text-sm font-semibold text-[#243348]">{event.title} <span className="font-normal text-[#60758b]">· {event.propertyName} · {event.unitLabel}</span></p><p className="mt-0.5 truncate text-xs text-[#667085]">{event.detail}</p></div><span className={`rounded-full px-2 py-1 text-[.68rem] font-semibold ${statusClass(event.tone)}`}>{event.status}</span></Link>) : <p className="rounded-xl border border-dashed border-[#dbe6f1] py-7 text-center text-sm text-[#667085]">Nothing scheduled for today. Your team is all caught up.</p>}</div></Section><Section title="Needs your attention" action={dashboard.attention.length ? <span className="text-xs text-[#667085]">{dashboard.attention.length} item{dashboard.attention.length === 1 ? '' : 's'}</span> : null}><div className="mt-4 divide-y divide-[#eef2f6]">{loading ? <p className="py-8 text-center text-sm text-[#667085]">Loading actions…</p> : dashboard.attention.length ? dashboard.attention.map((item) => <Link key={item.id} to={item.href} className="flex items-center gap-3 py-3 first:pt-0 hover:bg-[#fbfdfc]"><span className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl ${severityClass(item.severity)}`}><CheckCircle2 size={16} /></span><div className="min-w-0 flex-1"><p className="text-sm font-semibold text-[#243348]">{item.title}</p><p className="truncate text-xs text-[#667085]">{item.propertyName} · {item.detail}</p></div><ChevronRight className="text-[#98a2b3]" size={16} /></Link>) : <p className="rounded-xl border border-dashed border-[#dbe6f1] py-7 text-center text-sm text-[#667085]">No operational issues need attention.</p>}</div></Section></section>
-    <section className="grid gap-4 lg:grid-cols-2"><Section title="Today’s arrivals" action={<LinkAction to="/agent/rentals/short-term/bookings">View arrivals</LinkAction>}><div className="mt-3 grid gap-2">{loading ? <p className="py-4 text-sm text-[#667085]">Loading arrivals…</p> : dashboard.arrivalsToday.length ? dashboard.arrivalsToday.map((booking) => <Link key={booking.id} to="/agent/rentals/short-term/bookings" className="flex items-center justify-between gap-3 rounded-xl bg-[#f4faf7] px-3 py-3"><div className="min-w-0"><p className="truncate text-sm font-semibold text-[#243348]">{booking.guestName || 'Guest arrival'}</p><p className="truncate text-xs text-[#667085]">{booking.propertyName} · {booking.unitLabel} · {dateTime(booking.checkInAt)}</p></div><span className="rounded-full bg-white px-2 py-1 text-[.66rem] font-semibold text-[#17764d]">Confirmed</span></Link>) : <p className="rounded-xl border border-dashed border-[#dbe6f1] p-4 text-sm text-[#667085]">No confirmed arrivals today.</p>}</div></Section><Section title="Today’s departures" action={<LinkAction to="/agent/rentals/short-term/bookings">View departures</LinkAction>}><div className="mt-3 grid gap-2">{loading ? <p className="py-4 text-sm text-[#667085]">Loading departures…</p> : dashboard.departuresToday.length ? dashboard.departuresToday.map((booking) => <Link key={booking.id} to="/agent/rentals/short-term/bookings" className="flex items-center justify-between gap-3 rounded-xl bg-[#fff9ee] px-3 py-3"><div className="min-w-0"><p className="truncate text-sm font-semibold text-[#243348]">{booking.guestName || 'Guest departure'}</p><p className="truncate text-xs text-[#667085]">{booking.propertyName} · {booking.unitLabel} · {dateTime(booking.checkOutAt)}</p></div><span className="rounded-full bg-white px-2 py-1 text-[.66rem] font-semibold text-[#9a5b08]">Check-out due</span></Link>) : <p className="rounded-xl border border-dashed border-[#dbe6f1] p-4 text-sm text-[#667085]">No in-house departures due today.</p>}</div></Section></section>
-    <Section title="Upcoming stays" action={<LinkAction to="/agent/rentals/short-term/bookings">View all bookings</LinkAction>}><div className="mt-4 flex snap-x gap-3 overflow-x-auto pb-1">{loading ? <p className="py-5 text-sm text-[#667085]">Loading upcoming stays…</p> : dashboard.upcomingStays.length ? dashboard.upcomingStays.map((stay) => <Link key={stay.id} to="/agent/rentals/short-term/bookings" className="min-w-[276px] snap-start overflow-hidden rounded-xl border border-[#e4ebf2] bg-white"><div className="flex h-20 items-end bg-[linear-gradient(125deg,#dbeee6,#a9cdbf_48%,#e8ddcb)] p-3"><span className="rounded-full bg-white/90 px-2 py-1 text-[.66rem] font-semibold text-[#173d32]">{dateOnly(stay.checkInAt)} – {dateOnly(stay.checkOutAt)}</span></div><div className="p-3"><div className="flex items-start justify-between gap-2"><div><p className="text-sm font-semibold text-[#243348]">{stay.propertyName}</p><p className="mt-1 text-xs text-[#667085]">{stay.unitLabel} · {stay.guestName || 'Guest'}</p></div><ChevronRight size={16} className="text-[#98a2b3]" /></div><div className="mt-3 flex justify-between text-xs text-[#52657a]"><span>{Number(stay.adults || 1) + Number(stay.children || 0)} guests</span><span>{Math.max(1, Math.round((new Date(stay.checkOutAt) - new Date(stay.checkInAt)) / 86_400_000))} nights</span></div></div></Link>) : <p className="rounded-xl border border-dashed border-[#dbe6f1] p-5 text-sm text-[#667085]">No upcoming stays yet. Add a booking when you are ready.</p>}</div></Section>
-    <section className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1.35fr)]"><Section title={`Portfolio performance · Last ${rangeDays(dateRange)} days`}><div className="mt-4 grid grid-cols-2 gap-2 lg:grid-cols-4">{[['Booking revenue', money(dashboard.performance.bookingRevenue)], ['Occupancy rate', dashboard.performance.occupancyRate === null ? '—' : `${dashboard.performance.occupancyRate}%`], ['Average daily rate', money(dashboard.performance.adr)], ['RevPAR', money(dashboard.performance.revPar)]].map(([label, value]) => <div key={label} className="rounded-xl border border-[#e8edf3] bg-[#fbfcfd] p-3"><p className="text-lg font-semibold tracking-[-.03em] text-[#172234]">{value}</p><p className="mt-1 text-[.68rem] leading-4 text-[#667085]">{label}</p></div>)}</div><div className="mt-5 rounded-xl border border-dashed border-[#dbe6f1] bg-[#fbfdfc] p-4"><div className="flex items-end gap-1.5" aria-label="Occupancy trend">{dashboard.performance.daily.filter((_, index) => index % Math.max(1, Math.ceil(dashboard.performance.daily.length / 18)) === 0).map((point) => <span key={point.date} className="flex-1 rounded-t bg-[#b7decf]" style={{ height: `${Math.max(10, point.occupancyRate || 0)}px` }} title={`${point.date}: ${point.occupancyRate ?? 0}% occupancy`} />)}</div><p className="mt-3 text-xs text-[#667085]">Occupancy is calculated from confirmed and in-house stays. Revenue, ADR and RevPAR will populate when booking values are recorded.</p></div></Section><Section title="Your properties" action={<LinkAction to="/agent/rentals/short-term/properties">View all properties</LinkAction>}><div className="mt-4 grid gap-3 sm:grid-cols-2">{dashboard.propertyPerformance.slice(0, 4).map((property) => <Link key={property.id} to="/agent/rentals/short-term/properties" className="overflow-hidden rounded-xl border border-[#e4ebf2] bg-white transition hover:border-[#cde5da]"><div className="h-20 bg-[linear-gradient(120deg,#c9ded5,#eee5d6_52%,#b5d0c2)] p-2"><span className="rounded-full bg-white/90 px-2 py-1 text-[.65rem] font-semibold text-[#185b45]">{property.occupancyRate ?? 0}% occupied</span></div><div className="p-3"><p className="text-sm font-semibold text-[#243348]">{property.propertyName}</p><p className="mt-1 text-xs text-[#667085]">{property.unitLabel} · {property.bedrooms} bed · {property.bathrooms} bath</p><div className="mt-3 border-t border-[#eef2f6] pt-2 text-xs text-[#52657a]"><p>{property.currentStay ? `In-house · ${property.currentStay.guestName || 'Guest'}` : property.nextStay ? `Next stay · ${dateTime(property.nextStay.checkInAt)}` : 'No upcoming stay'}</p></div></div></Link>)}</div>{dashboard.eligibleForSetupCount ? <Link to="/agent/rentals/short-term/properties" className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-[#087a59]">{dashboard.eligibleForSetupCount} {dashboard.eligibleForSetupCount === 1 ? 'property' : 'properties'} available for short-term setup <ArrowRight size={14} /></Link> : null}{!loading && !dashboard.propertyPerformance.length ? <p className="rounded-xl border border-dashed border-[#dbe6f1] p-5 text-sm text-[#667085]">Enable a managed unit in Properties to begin operating it as a short-term rental.</p> : null}</Section></section>
+    <Metrics dashboard={dashboard} loading={loading} rangeDays={selectedRangeDays} />
+    <section className="grid gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(330px,1fr)]"><TodayTimeline dashboard={dashboard} loading={loading} /><AttentionPanel dashboard={dashboard} loading={loading} /></section>
+    <DailyGuestLists dashboard={dashboard} loading={loading} />
+    <OccupancyForecast dashboard={dashboard} />
   </div></main>
 }

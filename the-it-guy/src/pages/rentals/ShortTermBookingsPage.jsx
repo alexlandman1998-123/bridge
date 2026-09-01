@@ -1,23 +1,100 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { CalendarCheck2, CheckCircle2, Loader2, Plus, RefreshCw, XCircle } from 'lucide-react'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { canUseRentalCapability, RENTAL_CAPABILITIES } from '../../modules/rentals/shared/permissions/rentalCapabilities.js'
 import { createShortTermBooking, listShortTermBookings, updateShortTermBookingStatus } from '../../services/rentals/rentalShortTermBookingRepository.js'
 import { listShortTermUnitInventory } from '../../services/rentals/rentalShortTermInventoryRepository.js'
 import { resolveRentalWorkspaceScope } from '../../services/rentals/rentalWorkspaceScope.js'
+import { BookingDrawer, BookingFilters, BookingsHeader, BookingList, BookingPagination, BookingTabs } from './ShortTermBookingsComponents.jsx'
 
 const initialForm = { unitId: '', guestName: '', guestEmail: '', guestPhone: '', checkInAt: '', checkOutAt: '', adults: 1, children: 0, source: 'direct', notes: '' }
-const dateTime = (value) => value ? new Intl.DateTimeFormat('en-ZA', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : '—'
-const label = (value) => String(value || '').replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
+const dayKey = (value) => new Date(value).toISOString().slice(0, 10)
+const tabStatus = { all: null, upcoming: 'confirmed', in_house: 'checked_in', completed: 'checked_out', cancelled: 'cancelled' }
 
 export default function ShortTermBookingsPage() {
-  const workspace = useWorkspace(); const scope = useMemo(() => resolveRentalWorkspaceScope(workspace), [workspace]); const canManage = canUseRentalCapability(RENTAL_CAPABILITIES.shortTermManage, workspace)
-  const [bookings, setBookings] = useState([]); const [units, setUnits] = useState([]); const [loading, setLoading] = useState(true); const [saving, setSaving] = useState(false); const [updatingId, setUpdatingId] = useState(''); const [error, setError] = useState(''); const [form, setForm] = useState(initialForm)
+  const workspace = useWorkspace()
+  const scope = useMemo(() => resolveRentalWorkspaceScope(workspace), [workspace])
+  const canManage = canUseRentalCapability(RENTAL_CAPABILITIES.shortTermManage, workspace)
+  const [bookings, setBookings] = useState([])
+  const [units, setUnits] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [updatingId, setUpdatingId] = useState('')
+  const [error, setError] = useState('')
+  const [form, setForm] = useState(initialForm)
+  const [drawer, setDrawer] = useState(null)
+  const [search, setSearch] = useState('')
+  const [status, setStatus] = useState('all')
+  const [property, setProperty] = useState('all')
+  const [activeTab, setActiveTab] = useState('all')
+  const [sort, setSort] = useState('checkin_soonest')
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
   const enabledUnits = useMemo(() => units.filter((unit) => unit.isShortTermEnabled), [units])
-  const load = useCallback(async () => { if (!scope.organisationId) { setBookings([]); setUnits([]); setLoading(false); return } try { setLoading(true); setError(''); const [nextBookings, nextUnits] = await Promise.all([listShortTermBookings({ organisationId: scope.organisationId, branchId: scope.listingBranchId, from: new Date().toISOString() }), listShortTermUnitInventory({ organisationId: scope.organisationId, branchId: scope.listingBranchId })]); setBookings(nextBookings); setUnits(nextUnits) } catch (reason) { setError(reason?.message || 'Unable to load Short-Term bookings.') } finally { setLoading(false) } }, [scope.organisationId, scope.listingBranchId])
+
+  const load = useCallback(async () => {
+    if (!scope.organisationId) { setBookings([]); setUnits([]); setLoading(false); return }
+    try {
+      setLoading(true); setError('')
+      const [nextBookings, nextUnits] = await Promise.all([
+        listShortTermBookings({ organisationId: scope.organisationId, branchId: scope.listingBranchId }),
+        listShortTermUnitInventory({ organisationId: scope.organisationId, branchId: scope.listingBranchId }),
+      ])
+      setBookings(nextBookings); setUnits(nextUnits)
+    } catch (reason) {
+      setError(reason?.message || 'Unable to load Short-Term bookings.')
+    } finally {
+      setLoading(false)
+    }
+  }, [scope.organisationId, scope.listingBranchId])
+
   useEffect(() => { void load() }, [load])
   const set = (key, value) => setForm((current) => ({ ...current, [key]: value }))
-  const submit = async (event) => { event.preventDefault(); const unit = enabledUnits.find((item) => item.id === form.unitId); if (!unit) { setError('Choose a unit enabled for Short-Term operation.'); return } try { setSaving(true); setError(''); await createShortTermBooking({ ...form, organisationId: unit.organisationId, propertyId: unit.propertyId, branchId: unit.branchId, unitId: unit.id, createdBy: workspace.profile?.id || workspace.userId }); setForm(initialForm); await load() } catch (reason) { setError(reason?.message || 'Unable to create this booking. The unit may no longer be available for those dates.') } finally { setSaving(false) } }
-  const changeStatus = async (booking, status) => { try { setUpdatingId(booking.id); setError(''); await updateShortTermBookingStatus(booking.id, status); await load() } catch (reason) { setError(reason?.message || 'Unable to update booking status.') } finally { setUpdatingId('') } }
-  return <section className="page-content"><div className="ui-section-stack"><header className="ui-toolbar"><div className="ui-toolbar-group"><span className="inline-flex h-11 w-11 items-center justify-center rounded-[8px] border border-[#dbe6f2] bg-white text-[#008d66]"><CalendarCheck2 size={20} /></span><div><p className="text-xs font-semibold uppercase text-[#607891]">Short-Term Rentals</p><h1 className="text-2xl font-semibold text-[#18324b]">Bookings</h1><p className="status-message">Every provisional, confirmed, or in-house booking reserves its unit immediately.</p></div></div><button type="button" className="ui-pill-button" onClick={() => void load()} disabled={loading}>{loading ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}Refresh</button></header>{error ? <p className="rounded-[8px] border border-[#f2c6c6] bg-[#fff7f7] p-3 text-sm font-semibold text-[#9f3131]">{error}</p> : null}{canManage ? <section className="ui-panel ui-panel-body"><div className="mb-4"><p className="text-sm font-semibold text-[#18324b]">New booking</p><p className="mt-1 text-sm text-[#607891]">Availability is checked by the database when you save.</p></div><form onSubmit={submit} className="grid gap-3 md:grid-cols-2 xl:grid-cols-4"><select required value={form.unitId} onChange={(event) => set('unitId', event.target.value)} className="rounded-[8px] border border-[#dbe6f2] px-3 py-2 text-sm"><option value="">Select enabled unit</option>{enabledUnits.map((unit) => <option key={unit.id} value={unit.id}>{unit.propertyName} · {unit.unitLabel}</option>)}</select><input required value={form.guestName} onChange={(event) => set('guestName', event.target.value)} placeholder="Guest name" className="rounded-[8px] border border-[#dbe6f2] px-3 py-2 text-sm"/><input type="email" value={form.guestEmail} onChange={(event) => set('guestEmail', event.target.value)} placeholder="Guest email (optional)" className="rounded-[8px] border border-[#dbe6f2] px-3 py-2 text-sm"/><input value={form.guestPhone} onChange={(event) => set('guestPhone', event.target.value)} placeholder="Guest phone (optional)" className="rounded-[8px] border border-[#dbe6f2] px-3 py-2 text-sm"/><input required type="datetime-local" value={form.checkInAt} onChange={(event) => set('checkInAt', event.target.value)} className="rounded-[8px] border border-[#dbe6f2] px-3 py-2 text-sm"/><input required type="datetime-local" value={form.checkOutAt} onChange={(event) => set('checkOutAt', event.target.value)} className="rounded-[8px] border border-[#dbe6f2] px-3 py-2 text-sm"/><div className="grid grid-cols-2 gap-2"><input type="number" min="1" value={form.adults} onChange={(event) => set('adults', event.target.value)} placeholder="Adults" className="rounded-[8px] border border-[#dbe6f2] px-3 py-2 text-sm"/><input type="number" min="0" value={form.children} onChange={(event) => set('children', event.target.value)} placeholder="Children" className="rounded-[8px] border border-[#dbe6f2] px-3 py-2 text-sm"/></div><button disabled={saving || !enabledUnits.length} className="inline-flex items-center justify-center gap-2 rounded-[8px] bg-[#008d66] px-3 py-2 text-sm font-semibold text-white disabled:opacity-60">{saving ? <Loader2 size={16} className="animate-spin"/> : <Plus size={16}/>}Create booking</button></form>{!enabledUnits.length ? <p className="mt-3 text-sm text-[#607891]">Enable at least one unit from the Short-Term dashboard before creating a booking.</p> : null}</section> : null}<section className="ui-panel ui-panel-body">{loading ? <p className="flex items-center gap-2 text-sm text-[#607891]"><Loader2 size={16} className="animate-spin"/>Loading bookings</p> : bookings.length ? <div className="grid gap-3">{bookings.map((booking) => <article key={booking.id} className="grid gap-3 rounded-[8px] border border-[#dbe6f2] bg-white p-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"><div><p className="text-xs font-semibold uppercase text-[#607891]">{booking.propertyName} · {booking.unitLabel}</p><h2 className="mt-1 font-semibold text-[#18324b]">{booking.guestName}</h2><p className="mt-1 text-sm text-[#607891]">{dateTime(booking.checkInAt)} → {dateTime(booking.checkOutAt)}</p></div><div><span className="rounded-full bg-[#edf5ff] px-2 py-1 text-xs font-semibold text-[#286ea8]">{label(booking.status)}</span><p className="mt-3 text-sm text-[#607891]">{booking.adults} adult{booking.adults === 1 ? '' : 's'} · {booking.children} child{booking.children === 1 ? '' : 'ren'}</p></div>{canManage ? <div className="flex items-center gap-2 lg:justify-end">{booking.status === 'provisional' ? <button type="button" disabled={updatingId === booking.id} onClick={() => void changeStatus(booking, 'confirmed')} className="inline-flex items-center gap-1 rounded-[7px] border border-[#bfe5d4] px-3 py-2 text-sm font-semibold text-[#087a59]"><CheckCircle2 size={15}/>Confirm</button> : null}{booking.status === 'confirmed' ? <button type="button" disabled={updatingId === booking.id} onClick={() => void changeStatus(booking, 'checked_in')} className="inline-flex items-center gap-1 rounded-[7px] border border-[#bfe5d4] px-3 py-2 text-sm font-semibold text-[#087a59]"><CheckCircle2 size={15}/>Check in</button> : null}{booking.status === 'checked_in' ? <button type="button" disabled={updatingId === booking.id} onClick={() => void changeStatus(booking, 'checked_out')} className="inline-flex items-center gap-1 rounded-[7px] bg-[#008d66] px-3 py-2 text-sm font-semibold text-white"><CheckCircle2 size={15}/>Check out</button> : null}{!['cancelled', 'checked_in', 'checked_out'].includes(booking.status) ? <button type="button" disabled={updatingId === booking.id} onClick={() => void changeStatus(booking, 'cancelled')} className="inline-flex items-center gap-1 rounded-[7px] border border-[#f4cccc] px-3 py-2 text-sm font-semibold text-[#b44040]"><XCircle size={15}/>Cancel</button> : null}</div> : null}</article>)}</div> : <p className="rounded-[8px] border border-dashed border-[#dbe6f2] p-5 text-sm text-[#607891]">No upcoming Short-Term bookings yet. Enable a unit, then add the first booking above.</p>}</section></div></section>
+  const closeDrawer = () => { setDrawer(null); setForm(initialForm) }
+  const submit = async (event) => {
+    event.preventDefault()
+    const unit = enabledUnits.find((item) => item.id === form.unitId)
+    if (!unit) { setError('Choose a unit enabled for Short-Term operation.'); return }
+    try {
+      setSaving(true); setError('')
+      await createShortTermBooking({ ...form, organisationId: unit.organisationId, propertyId: unit.propertyId, branchId: unit.branchId, unitId: unit.id, createdBy: workspace.profile?.id || workspace.userId })
+      closeDrawer(); await load()
+    } catch (reason) {
+      setError(reason?.message || 'Unable to create this booking. The unit may no longer be available for those dates.')
+    } finally {
+      setSaving(false)
+    }
+  }
+  const changeStatus = async (booking, nextStatus) => {
+    try { setUpdatingId(booking.id); setError(''); await updateShortTermBookingStatus(booking.id, nextStatus); await load() } catch (reason) { setError(reason?.message || 'Unable to update booking status.') } finally { setUpdatingId('') }
+  }
+
+  const metrics = useMemo(() => {
+    const now = new Date(); const sevenDays = new Date(now); sevenDays.setDate(sevenDays.getDate() + 7); const today = dayKey(now)
+    return { inHouse: bookings.filter((booking) => booking.status === 'checked_in').length, upcoming: bookings.filter((booking) => booking.status === 'confirmed' && new Date(booking.checkInAt) <= sevenDays).length, action: bookings.filter((booking) => booking.status === 'provisional').length, dueToday: bookings.filter((booking) => booking.status === 'checked_in' && dayKey(booking.checkOutAt) === today).length }
+  }, [bookings])
+  const counts = useMemo(() => ({ all: bookings.length, upcoming: bookings.filter((booking) => booking.status === 'confirmed').length, in_house: bookings.filter((booking) => booking.status === 'checked_in').length, completed: bookings.filter((booking) => booking.status === 'checked_out').length, cancelled: bookings.filter((booking) => booking.status === 'cancelled').length }), [bookings])
+  const filtered = useMemo(() => {
+    const query = search.trim().toLowerCase(); const tab = tabStatus[activeTab]
+    return bookings.filter((booking) => {
+      const queryMatch = !query || `${booking.guestName} ${booking.propertyName} ${booking.unitLabel} ${booking.id}`.toLowerCase().includes(query)
+      return queryMatch && (status === 'all' || booking.status === status) && (property === 'all' || booking.unitId === property) && (!tab || booking.status === tab)
+    }).sort((left, right) => {
+      if (sort === 'checkin_latest') return new Date(right.checkInAt) - new Date(left.checkInAt)
+      if (sort === 'checkout_soonest') return new Date(left.checkOutAt) - new Date(right.checkOutAt)
+      if (sort === 'guest') return String(left.guestName).localeCompare(String(right.guestName))
+      return new Date(left.checkInAt) - new Date(right.checkInAt)
+    })
+  }, [activeTab, bookings, property, search, sort, status])
+  const paged = useMemo(() => filtered.slice((page - 1) * pageSize, page * pageSize), [filtered, page, pageSize])
+  useEffect(() => { setPage(1) }, [activeTab, property, search, status, sort])
+  const activeFilters = Boolean(search || status !== 'all' || property !== 'all' || activeTab !== 'all')
+  const clearFilters = () => { setSearch(''); setStatus('all'); setProperty('all'); setActiveTab('all') }
+
+  return <main className="mx-auto w-full max-w-[1600px] px-3 py-3 sm:px-5 lg:px-7"><div className="space-y-4 pb-8">
+    <BookingsHeader metrics={metrics} canManage={canManage} onNewBooking={() => setDrawer({ type: 'new' })} />
+    {error ? <p className="rounded-xl border border-[#f2c6c6] bg-[#fff7f7] p-3 text-sm text-[#9f3131]">{error}</p> : null}
+    {!scope.organisationId ? <p className="rounded-xl border border-[#f4d7a9] bg-[#fffaf0] p-3 text-sm text-[#7a4b05]">Choose an agency workspace to load Short-Term bookings.</p> : null}
+    <section className="overflow-hidden rounded-[20px] border border-[#e4ebf0] bg-white shadow-[0_10px_28px_rgba(15,23,42,.035)]"><BookingFilters search={search} setSearch={setSearch} status={status} setStatus={setStatus} property={property} setProperty={setProperty} properties={enabledUnits} activeFilters={activeFilters} onClear={clearFilters} /><BookingTabs activeTab={activeTab} setActiveTab={setActiveTab} counts={counts} sort={sort} setSort={setSort} /><BookingList bookings={paged} loading={loading} canManage={canManage} updatingId={updatingId} onChangeStatus={changeStatus} onOpen={(booking) => setDrawer({ type: 'detail', booking })} onNewBooking={() => setDrawer({ type: 'new' })} /><BookingPagination page={page} setPage={setPage} total={filtered.length} pageSize={pageSize} setPageSize={setPageSize} /></section>
+    <BookingDrawer open={Boolean(drawer)} onClose={closeDrawer} booking={drawer?.booking || null} form={form} set={set} enabledUnits={enabledUnits} saving={saving} onSubmit={submit} canManage={canManage} onChangeStatus={changeStatus} updatingId={updatingId} />
+  </div></main>
 }

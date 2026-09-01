@@ -27,9 +27,11 @@ export function createShortTermBookingPayload(values = {}) {
 }
 
 export function mapShortTermBooking(row = {}) {
+  const propertyMetadata = row.rental_properties?.metadata_json && typeof row.rental_properties.metadata_json === 'object' ? row.rental_properties.metadata_json : {}
   return {
     id: text(row.id), organisationId: text(row.organisation_id), branchId: text(row.branch_id), propertyId: text(row.property_id), unitId: text(row.unit_id), status: text(row.status),
     guestName: text(row.guest_name), guestEmail: text(row.guest_email), guestPhone: text(row.guest_phone), source: text(row.source), checkInAt: row.check_in_at || null, checkOutAt: row.check_out_at || null,
     adults: number(row.adults, 1), children: number(row.children, 0), notes: text(row.notes), propertyName: text(row.rental_properties?.name) || 'Property', unitLabel: text(row.rental_units?.unit_label) || 'Unit',
+    propertyCoverImageUrl: text(propertyMetadata.coverImageUrl || propertyMetadata.cover_image_url), propertyCoverImageAlt: text(propertyMetadata.coverImageAlt || propertyMetadata.cover_image_alt),
   }
 }

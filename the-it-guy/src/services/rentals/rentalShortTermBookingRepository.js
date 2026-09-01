@@ -1,7 +1,7 @@
 import { isSupabaseConfigured, supabase } from '../../lib/supabaseClient.js'
 import { createShortTermBookingPayload, mapShortTermBooking } from './rentalShortTermBookingModel.js'
 
-const SELECT_FIELDS = 'id, organisation_id, branch_id, property_id, unit_id, status, guest_name, guest_email, guest_phone, source, check_in_at, check_out_at, adults, children, notes, created_at, rental_properties(name), rental_units(unit_label)'
+const SELECT_FIELDS = 'id, organisation_id, branch_id, property_id, unit_id, status, guest_name, guest_email, guest_phone, source, check_in_at, check_out_at, adults, children, notes, created_at, rental_properties(name, metadata_json), rental_units(unit_label)'
 const text = (value) => String(value ?? '').trim()
 const required = (client = supabase) => { if (!isSupabaseConfigured || !client) throw new Error('Short-Term bookings require Supabase configuration.'); return client }
 const failure = (error = {}) => new Error(['42P01', 'PGRST204', 'PGRST205'].includes(String(error.code || '').toUpperCase()) ? 'Short-Term bookings are not yet applied to this environment.' : (error.message || 'Short-Term booking request failed.'))
