@@ -19328,6 +19328,24 @@ export async function fetchDevelopmentsData({ organisationId = null } = {}) {
   const normalizedOrganisationId = String(organisationId || '').trim()
   const summaries = overview.developmentSummaries || []
   const directDevelopmentRows = []
+  let relatedDevelopmentIds = null
+
+  // Development access is relationship-based as of the Availability foundation.
+  // Keep the legacy organisation_id query as a compatibility fallback while
+  // environments receive the migration.
+  if (normalizedOrganisationId) {
+    const relationshipsQuery = await client
+      .from('development_organisation_relationships')
+      .select('development_id')
+      .eq('organisation_id', normalizedOrganisationId)
+      .eq('status', 'active')
+
+    if (!relationshipsQuery.error) {
+      relatedDevelopmentIds = [...new Set((relationshipsQuery.data || []).map((row) => String(row?.development_id || '').trim()).filter(Boolean))]
+    } else if (!isMissingTableError(relationshipsQuery.error, 'development_organisation_relationships')) {
+      throw relationshipsQuery.error
+    }
+  }
 
   let developmentsQuery = client
     .from('developments')
@@ -19336,10 +19354,14 @@ export async function fetchDevelopmentsData({ organisationId = null } = {}) {
     )
 
   if (normalizedOrganisationId) {
-    developmentsQuery = developmentsQuery.eq('organisation_id', normalizedOrganisationId)
+    developmentsQuery = Array.isArray(relatedDevelopmentIds)
+      ? relatedDevelopmentIds.length
+        ? developmentsQuery.in('id', relatedDevelopmentIds)
+        : null
+      : developmentsQuery.eq('organisation_id', normalizedOrganisationId)
   }
 
-  let developmentsResult = await developmentsQuery
+  let developmentsResult = developmentsQuery ? await developmentsQuery : { data: [], error: null }
 
   if (
     developmentsResult.error &&
@@ -19358,10 +19380,14 @@ export async function fetchDevelopmentsData({ organisationId = null } = {}) {
         .select(normalizedOrganisationId ? 'id, organisation_id, name, planned_units' : 'id, name, planned_units')
 
       if (normalizedOrganisationId) {
-        fallbackDevelopmentsQuery = fallbackDevelopmentsQuery.eq('organisation_id', normalizedOrganisationId)
+        fallbackDevelopmentsQuery = Array.isArray(relatedDevelopmentIds)
+          ? relatedDevelopmentIds.length
+            ? fallbackDevelopmentsQuery.in('id', relatedDevelopmentIds)
+            : null
+          : fallbackDevelopmentsQuery.eq('organisation_id', normalizedOrganisationId)
       }
 
-      developmentsResult = await fallbackDevelopmentsQuery
+      developmentsResult = fallbackDevelopmentsQuery ? await fallbackDevelopmentsQuery : { data: [], error: null }
     }
   } else if (
     developmentsResult.error &&

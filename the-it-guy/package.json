@@ -7,6 +7,8 @@
     "node": "22.x"
   },
   "scripts": {
+    "test:development-organisation-relationship-foundation": "node ../scripts/development-organisation-relationship-foundation.test.mjs",
+    "test:development-availability-workspace": "node ../scripts/development-availability-workspace.test.mjs",
     "test:phase1-agent-surface-retirement": "node scripts/phase1-agent-surface-retirement.test.mjs",
     "test:agent-performance-baseline": "node scripts/agent-performance-baseline.test.mjs",
     "test:phase3-listings-canvassing-performance": "node scripts/phase3-listings-canvassing-performance.test.mjs",

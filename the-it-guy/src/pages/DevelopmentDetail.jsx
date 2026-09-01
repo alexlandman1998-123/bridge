@@ -36,6 +36,7 @@ import {
 } from 'lucide-react'
 import { lazy, useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
+import DevelopmentAvailabilityWorkspace from '../components/developments/DevelopmentAvailabilityWorkspace'
 import Button from '../components/ui/Button'
 import Drawer from '../components/ui/Drawer'
 import Field from '../components/ui/Field'
@@ -73,7 +74,12 @@ import {
 import { fetchOrganisationSettings, listOrganisationUsers, normalizeOrganisationDeveloperProfile } from '../lib/settingsApi'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 import { markRouteMilestone } from '../lib/performanceTrace'
-import { listDeveloperLeadIntake } from '../services/developerLeadService'
+import {
+  createAgencyIntroducedDeveloperLead,
+  createDeveloperFedLead,
+  listDeveloperLeadIntake,
+  updateDeveloperLeadWorkspaceSetup,
+} from '../services/developerLeadService'
 
 const DevelopmentAttorneyCommercialSetup = lazy(() => import('../components/DevelopmentAttorneyCommercialSetup'))
 const DevelopmentBondCommercialSetup = lazy(() => import('../components/DevelopmentBondCommercialSetup'))
@@ -93,6 +99,7 @@ const currencyWithCents = new Intl.NumberFormat('en-ZA', {
 
 const DEVELOPMENT_TABS = [
   { id: 'overview', label: 'Overview' },
+  { id: 'availability', label: 'Availability' },
   { id: 'units', label: 'Units' },
   { id: 'leads', label: 'Leads' },
   { id: 'transactions', label: 'Transactions' },
@@ -201,6 +208,7 @@ const DEFAULT_DETAILS_FORM = {
       galleryImageUrls: '',
       developmentLogoUrl: '',
       sitePlanUrl: '',
+      sitePlanMap: {},
       masterplanUrl: '',
       floorplanUrls: '',
       videoUrl: '',
@@ -1370,6 +1378,9 @@ function normalizeMarketingContentForm(input = null) {
       galleryImageUrls: text(mediaLibrarySource.galleryImageUrls, mediaLibrarySource.gallery_image_urls || defaults.mediaLibrary.galleryImageUrls),
       developmentLogoUrl: text(mediaLibrarySource.developmentLogoUrl, mediaLibrarySource.development_logo_url || defaults.mediaLibrary.developmentLogoUrl),
       sitePlanUrl: text(mediaLibrarySource.sitePlanUrl, mediaLibrarySource.site_plan_url || defaults.mediaLibrary.sitePlanUrl),
+      sitePlanMap: mediaLibrarySource.sitePlanMap && typeof mediaLibrarySource.sitePlanMap === 'object' && !Array.isArray(mediaLibrarySource.sitePlanMap)
+        ? mediaLibrarySource.sitePlanMap
+        : defaults.mediaLibrary.sitePlanMap,
       masterplanUrl: text(mediaLibrarySource.masterplanUrl, mediaLibrarySource.masterplan_url || defaults.mediaLibrary.masterplanUrl),
       floorplanUrls: text(mediaLibrarySource.floorplanUrls, mediaLibrarySource.floorplan_urls || defaults.mediaLibrary.floorplanUrls),
       videoUrl: text(mediaLibrarySource.videoUrl, mediaLibrarySource.video_url || defaults.mediaLibrary.videoUrl),
@@ -4342,6 +4353,34 @@ function DevelopmentDetail() {
     setFeedback('Add a public listing URL or CTA link before previewing the listing.')
   }
 
+  async function handleAvailabilitySitePlanMapSave(sitePlanMap) {
+    if (!canManageDevelopment) return
+
+    const normalizedMarketing = normalizeMarketingContentForm(detailsForm.marketing)
+    const nextDetailsForm = {
+      ...detailsForm,
+      marketing: {
+        ...normalizedMarketing,
+        mediaLibrary: {
+          ...normalizedMarketing.mediaLibrary,
+          sitePlanMap,
+        },
+      },
+    }
+
+    try {
+      setDetailsSaving(true)
+      setError('')
+      setDetailsForm(nextDetailsForm)
+      await saveDevelopmentDetails(data.development.id, buildDevelopmentDetailsPayload(nextDetailsForm))
+      setFeedback('Site-plan unit positions saved.')
+    } catch (saveError) {
+      setError(saveError.message)
+    } finally {
+      setDetailsSaving(false)
+    }
+  }
+
   async function handlePublishDevelopmentMarketing() {
     const normalizedMarketing = normalizeMarketingContentForm(detailsForm.marketing)
     const listingSlug = normalizedMarketing.listingConfiguration.listingSlug || buildPublicDevelopmentSlug(data.development.name, data.development.id)
@@ -5323,6 +5362,64 @@ function DevelopmentDetail() {
     )
   }
 
+  async function handleAvailabilityCreateLead({ unit, buyerName = '', buyerEmail = '', buyerPhone = '', note = '' } = {}) {
+    const developerOrgId = normalizeDevelopmentLeadText(
+      data?.development?.organisation_id || data?.development?.organisationId || currentWorkspace?.id,
+    )
+    const sourceAgencyOrgId = normalizeDevelopmentLeadText(currentWorkspace?.id)
+    if (!developerOrgId || !data?.development?.id || !unit?.id) {
+      throw new Error('The development and selected unit must be available before adding a buyer lead.')
+    }
+
+    const leadInput = {
+      developerOrgId,
+      primaryDevelopmentId: data.development.id,
+      preferredUnitId: unit.id,
+      buyerFullName: buyerName,
+      buyerEmail,
+      buyerPhone,
+      privateNotes: note,
+      unitTypeInterest: unit.unitType || unit.unit_type || '',
+      leadStatus: 'new',
+      assignedAgentId: profile?.id || '',
+      sourceAgentUserId: profile?.id || '',
+    }
+    const isExternalAgency = role === 'agent' && sourceAgencyOrgId && sourceAgencyOrgId !== developerOrgId
+    const createdLead = isExternalAgency
+      ? await createAgencyIntroducedDeveloperLead({ ...leadInput, sourceAgencyOrgId, leadSource: 'availability_workspace' })
+      : await createDeveloperFedLead({ ...leadInput, leadSource: 'availability_workspace' })
+
+    setDevelopmentLeads((previous) => [createdLead, ...previous.filter((lead) => lead.developerLeadId !== createdLead.developerLeadId)])
+    setFeedback(`Buyer lead added for Unit ${unit.unitNumber || unit.unit_number || ''}.`)
+    return createdLead
+  }
+
+  async function handleAvailabilityLeadAction({ lead, unit, action, note = '' } = {}) {
+    const developerOrgId = normalizeDevelopmentLeadText(
+      data?.development?.organisation_id || data?.development?.organisationId || currentWorkspace?.id,
+    )
+    if (!developerOrgId || !lead?.developerLeadId) {
+      throw new Error('Choose a buyer lead before recording this sales action.')
+    }
+    const actionLabel = action === 'viewing'
+      ? `Viewing requested for Unit ${unit?.unitNumber || unit?.unit_number || ''}.`
+      : action === 'share'
+        ? `Unit ${unit?.unitNumber || unit?.unit_number || ''} shared with buyer.`
+        : action === 'reservation'
+          ? `Reservation requested for Unit ${unit?.unitNumber || unit?.unit_number || ''}.`
+          : `Follow-up recorded for Unit ${unit?.unitNumber || unit?.unit_number || ''}.`
+    const savedLead = await updateDeveloperLeadWorkspaceSetup({
+      developerOrgId,
+      developerLeadId: lead.developerLeadId,
+      preferredUnitId: unit?.id || lead.preferredUnitId || '',
+      nextActionNote: [actionLabel, note].filter(Boolean).join(' '),
+      activityNote: actionLabel,
+    })
+    setDevelopmentLeads((previous) => previous.map((item) => item.developerLeadId === savedLead.developerLeadId ? savedLead : item))
+    setFeedback(actionLabel)
+    return savedLead
+  }
+
   function openBulkUnitModal() {
     const suggestedCount = remainingPlannedUnits > 0 ? remainingPlannedUnits : 10
     const suggestedNumbers = Array.from(
@@ -6231,7 +6328,7 @@ function DevelopmentDetail() {
       </section>
 
       <section className="mt-4 rounded-[24px] border border-[#dde4ee] bg-white p-3 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-        <div className="grid gap-2 md:grid-cols-3 xl:grid-cols-7" role="tablist" aria-label="Development workspace tabs">
+        <div className="grid gap-2 md:grid-cols-3 xl:grid-cols-8" role="tablist" aria-label="Development workspace tabs">
           {DEVELOPMENT_PRIMARY_TABS.map((tab) => {
             const isActive = activeTab === tab.id
             return (
@@ -9069,6 +9166,40 @@ function DevelopmentDetail() {
             </aside>
           </section>
         </section>
+      ) : null}
+
+      {activeTab === 'availability' ? (
+        <DevelopmentAvailabilityWorkspace
+          units={unitRows}
+          role={role}
+          canManageInventory={canManageDevelopment}
+          canCreateTransactions={canCreateTransactions}
+          buyerLeads={developmentLeadRows}
+          reservationDepositConfigured={reservationDepositConfigured}
+          reservationDepositSummary={reservationDepositSummary}
+          sitePlanUrl={marketingForm.mediaLibrary.sitePlanUrl || marketingForm.mediaLibrary.masterplanUrl}
+          sitePlanMap={marketingForm.mediaLibrary.sitePlanMap}
+          sitePlanSaving={detailsSaving}
+          onSaveSitePlanMap={handleAvailabilitySitePlanMapSave}
+          onUploadSitePlan={(event) =>
+            void handleMarketingAssetFileUpload(event, 'site_plan', {
+              uploadKey: 'availability-site-plan',
+              successMessage: 'Site plan uploaded and ready for mapping.',
+            })
+          }
+          onEditUnit={(unit) => openUnitModal(unit)}
+          onChangeUnitStatus={(unit, status) => void handleUnitStatusQuickChange(unit, status)}
+          onSetReleaseState={(unit, status) => handleUnitStatusQuickChange(unit, status)}
+          onCreateTransaction={(unit) => openDevelopmentTransactionWizard({ unitId: unit.id })}
+          onOpenTransaction={(unit) => openDevelopmentTransactionWorkspace(unit)}
+          onCreateBuyerLead={handleAvailabilityCreateLead}
+          onLeadAction={handleAvailabilityLeadAction}
+          onSaveUnitPrice={(unit, salesPrice) => handleUnitQuickSave(
+            unit,
+            { salesPrice },
+            { field: 'availabilityPrice', feedbackLabel: `Unit ${unit.unitNumber || unit.unit_number || ''} price updated.` },
+          )}
+        />
       ) : null}
 
       {activeTab === 'units' ? (
