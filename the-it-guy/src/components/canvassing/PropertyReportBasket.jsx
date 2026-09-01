@@ -64,7 +64,7 @@ export default function PropertyReportBasket({
   }
 
   return (
-    <aside className="flex h-full flex-col bg-slate-50/70" data-testid="property-report-basket">
+    <aside className="flex h-full min-h-0 flex-col overflow-hidden bg-slate-50/70" data-testid="property-report-basket">
       <div className="border-b border-slate-200 p-5">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -75,10 +75,10 @@ export default function PropertyReportBasket({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]">
         <div className="p-4">
           {properties.length ? (
-            <div className="space-y-3">
+            <div className="max-h-[300px] space-y-3 overflow-y-auto overscroll-contain pr-1 [scrollbar-gutter:stable]" aria-label="Selected properties">
               {properties.map((property, index) => (
                 <article key={property.id} className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
                   <MiniParcel index={index} />

@@ -1,4 +1,4 @@
-import { Search, SlidersHorizontal } from 'lucide-react'
+import { Info, Search, SlidersHorizontal } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
@@ -148,9 +148,9 @@ export default function PropertySearchWorkspace() {
   }
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm" data-canvassing-workspace="property-search">
-      <div className="grid min-h-[680px] xl:grid-cols-[minmax(0,1fr)_340px]">
-        <div className="flex min-h-[580px] min-w-0 flex-col border-b border-slate-200 xl:border-b-0 xl:border-r">
+    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm xl:h-[calc(100dvh-14.5rem)] xl:min-h-[620px] xl:max-h-[760px]" data-canvassing-workspace="property-search">
+      <div className="grid min-h-[680px] xl:h-full xl:min-h-0 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="flex min-h-[580px] min-w-0 flex-col border-b border-slate-200 xl:min-h-0 xl:border-b-0 xl:border-r">
           <div className="border-b border-slate-200 bg-white p-4">
             <div className="grid gap-3 lg:grid-cols-[minmax(280px,1fr)_repeat(4,minmax(130px,auto))]">
               <label className="relative block">
@@ -172,8 +172,16 @@ export default function PropertySearchWorkspace() {
               </select>
             </div>
             <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
-              <span className="inline-flex items-center gap-1.5"><SlidersHorizontal size={14} />{activeFilterCount ? `${activeFilterCount} active ${activeFilterCount === 1 ? 'filter' : 'filters'}` : propertyDataProvider.isDemoData ? 'Showing the full fictional demonstration area' : 'Showing the current provider area'}</span>
-              <span>{propertyState.status === 'error' ? propertyState.error : `${propertyState.total} matching properties`}</span>
+              <div className="flex flex-wrap items-center gap-2.5">
+                <span>{propertyState.status === 'error' ? propertyState.error : `${propertyState.total} matching properties`}</span>
+                {propertyDataProvider.isDemoData ? (
+                  <span className="group relative inline-flex" data-property-provider-mode={propertyDataProvider.mode}>
+                    <button type="button" className="inline-flex min-h-7 items-center gap-1 rounded-lg bg-blue-50 px-2 text-[0.66rem] font-bold tracking-[0.04em] text-blue-700 transition hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-200" aria-describedby="canvassing-demo-data-tooltip">DEMO DATA <Info size={13} /></button>
+                    <span id="canvassing-demo-data-tooltip" role="tooltip" className="pointer-events-none absolute left-0 top-full z-30 mt-2 w-64 rounded-xl border border-slate-200 bg-slate-950 px-3 py-2 text-xs font-medium leading-5 text-white opacity-0 shadow-xl transition group-hover:opacity-100 group-focus-within:opacity-100">Demonstration property intelligence. Records are fictional and no live provider charges apply.</span>
+                  </span>
+                ) : null}
+              </div>
+              <span className="inline-flex items-center gap-1.5"><SlidersHorizontal size={14} />{activeFilterCount ? `${activeFilterCount} active ${activeFilterCount === 1 ? 'filter' : 'filters'}` : 'Showing the current property area'}</span>
             </div>
           </div>
 

@@ -25,7 +25,6 @@ import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
 import Modal from '../components/ui/Modal'
 import CanvassingWorkspaceTabs from '../components/canvassing/CanvassingWorkspaceTabs'
-import PropertyDataProviderStatus from '../components/canvassing/PropertyDataProviderStatus'
 import PropertyReportsWorkspace from '../components/canvassing/PropertyReportsWorkspace'
 import PropertySearchWorkspace from '../components/canvassing/PropertySearchWorkspace'
 import AddressAutocomplete from '../components/location/AddressAutocomplete'
@@ -3931,20 +3930,15 @@ function PipelineCanvassingPage() {
   }
 
   const canvassingWorkspaceHeader = (
-    <header className="rounded-2xl border border-slate-200 bg-white px-5 pt-5 shadow-sm">
+    <header className="pt-1">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-[1.45rem] font-semibold tracking-[-0.02em] text-slate-900">Canvassing</h2>
-            {activeCanvassingWorkspace === 'prospects' ? (
-              <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${canvassingDataStatusMeta.className}`}>
-                <CanvassingDataStatusIcon size={13} />
-                {canvassingDataStatusMeta.label}
-              </span>
-            ) : null}
-          </div>
-          <p className="mt-1 text-sm text-slate-600">Find properties, build prospect lists and convert opportunities into leads.</p>
+          <h1 className="text-[1.45rem] font-semibold tracking-[-0.02em] text-slate-900">Canvassing</h1>
+          <p className="mt-1 text-sm text-slate-600">Find properties and identify new opportunities.</p>
         </div>
+      </div>
+      <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+        <CanvassingWorkspaceTabs />
         {activeCanvassingWorkspace === 'prospects' ? (
           <div className="inline-flex rounded-2xl border border-slate-200 bg-slate-100 p-1 shadow-inner">
             <button
@@ -3972,7 +3966,6 @@ function PipelineCanvassingPage() {
           </div>
         ) : null}
       </div>
-      <CanvassingWorkspaceTabs />
     </header>
   )
 
@@ -3980,7 +3973,6 @@ function PipelineCanvassingPage() {
     return (
       <section className="space-y-5">
         {canvassingWorkspaceHeader}
-        <PropertyDataProviderStatus />
         <PropertySearchWorkspace />
       </section>
     )
@@ -3990,7 +3982,6 @@ function PipelineCanvassingPage() {
     return (
       <section className="space-y-5">
         {canvassingWorkspaceHeader}
-        <PropertyDataProviderStatus />
         <PropertyReportsWorkspace prospects={prospects} onProspectCreated={handlePropertyReportProspectCreated} />
       </section>
     )

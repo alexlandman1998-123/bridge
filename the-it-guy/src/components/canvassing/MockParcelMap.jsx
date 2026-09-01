@@ -118,7 +118,6 @@ export default function MockParcelMap({ properties = EMPTY_LIST, bounds, focused
 
       <div className="absolute left-4 top-4 flex flex-wrap gap-2">
         <span className="rounded-xl border border-slate-200 bg-white/95 px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm backdrop-blur">{properties.length.toLocaleString('en-ZA')} properties in view</span>
-        <span className={`rounded-xl border bg-white/95 px-3 py-2 text-xs font-semibold shadow-sm backdrop-blur ${isDemoData ? 'border-emerald-200 text-emerald-700' : 'border-blue-200 text-blue-700'}`}>{isDemoData ? 'Demo data' : 'Connected provider'}</span>
       </div>
 
       {focusedProperty ? (
