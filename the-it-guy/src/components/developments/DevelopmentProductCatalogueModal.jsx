@@ -10,13 +10,17 @@ const blankType = () => ({ id: newId(), code: '', name: '', bedrooms: '', bathro
 const blankFloorplan = () => ({ id: newId(), unitTypeId: '', code: '', name: '', documentId: '', internalSizeSqm: '', externalSizeSqm: '', isActive: true })
 
 function buildDraft(catalogue = {}) {
-  const unitTypes = (catalogue.unitTypes || []).map((item) => ({ ...item }))
-  const priceByType = buildCataloguePriceByUnitType(catalogue)
+  // Catalogue tables are additive and may not exist yet for older/seed
+  // developments. A missing catalogue is an empty editable state, not a
+  // reason to prevent the surrounding development workspace from rendering.
+  const source = catalogue && typeof catalogue === 'object' ? catalogue : {}
+  const unitTypes = (source.unitTypes || []).map((item) => ({ ...item }))
+  const priceByType = buildCataloguePriceByUnitType(source)
   return {
     unitTypes: unitTypes.length ? unitTypes : [blankType()],
-    floorplans: (catalogue.floorplans || []).map((item) => ({ ...item })),
+    floorplans: (source.floorplans || []).map((item) => ({ ...item })),
     prices: unitTypes.map((item) => ({ ...(priceByType.get(item.id) || {}), id: priceByType.get(item.id)?.id || newId(), unitTypeId: item.id, listPrice: priceByType.get(item.id)?.listPrice ?? '', priceFrom: priceByType.get(item.id)?.priceFrom ?? '', priceTo: priceByType.get(item.id)?.priceTo ?? '' })),
-    priceBook: (catalogue.priceBooks || []).find((item) => item.isDefault) || { name: 'Current sales price list', currencyCode: 'ZAR', status: 'active' },
+    priceBook: (source.priceBooks || []).find((item) => item.isDefault) || { name: 'Current sales price list', currencyCode: 'ZAR', status: 'active' },
   }
 }
 
