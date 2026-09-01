@@ -15,7 +15,7 @@ const longTermNav = getRoleNavItems('agent', { ...context, rentalOperatingMode: 
 const shortTermNav = getRoleNavItems('agent', { ...context, rentalOperatingMode: RENTAL_OPERATING_MODES.shortTerm })
 
 assert.equal(longTermNav[0].to, '/agent/rentals/long-term/dashboard')
-assert.deepEqual(shortTermNav.map((item) => item.key), ['short_term_dashboard'])
+assert.deepEqual(shortTermNav.map((item) => item.key), ['short_term_dashboard', 'short_term_calendar', 'short_term_bookings', 'short_term_properties', 'short_term_turnovers', 'short_term_rates'])
 assert.equal(shortTermNav[0].to, '/agent/rentals/short-term/dashboard')
 
 console.log('Rental operating mode navigation tests passed.')

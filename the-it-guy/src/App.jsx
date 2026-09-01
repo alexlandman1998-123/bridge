@@ -36,6 +36,8 @@ import { RentalModuleBoundary } from './modules/rentals/shell/RentalModuleBounda
 import {
   RentalApplicationsPage,
   RentalCalendarPage,
+  ShortTermRentalCalendarPage,
+  ShortTermRentalDashboardPage,
   ShortTermRentalInventoryPage,
   ShortTermBookingsPage,
   ShortTermTurnoversPage,
@@ -2917,7 +2919,9 @@ function AppRoutes() {
               <Route path="/agent/rentals/long-term" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><Navigate to="/agent/rentals/long-term/dashboard" replace /></RentalWorkspaceGuard></RoleRoute>} />
               <Route path="/agent/rentals/long-term/dashboard" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalOperatingModeGuard mode={RENTAL_OPERATING_MODES.longTerm}><RentalModuleGate moduleId={RENTAL_MODULES.dashboard}><RentalOperationsDashboardPage /></RentalModuleGate></RentalOperatingModeGuard></RentalWorkspaceGuard></RoleRoute>} />
               <Route path="/agent/rentals/short-term" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><Navigate to="/agent/rentals/short-term/dashboard" replace /></RentalWorkspaceGuard></RoleRoute>} />
-              <Route path="/agent/rentals/short-term/dashboard" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalOperatingModeGuard mode={RENTAL_OPERATING_MODES.shortTerm}><Suspense fallback={<PageSkeleton label="Loading Short-Term Rentals" />}><ShortTermRentalInventoryPage /></Suspense></RentalOperatingModeGuard></RentalWorkspaceGuard></RoleRoute>} />
+              <Route path="/agent/rentals/short-term/dashboard" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalOperatingModeGuard mode={RENTAL_OPERATING_MODES.shortTerm}><Suspense fallback={<PageSkeleton label="Loading Short-Term Rentals" />}><ShortTermRentalDashboardPage /></Suspense></RentalOperatingModeGuard></RentalWorkspaceGuard></RoleRoute>} />
+              <Route path="/agent/rentals/short-term/calendar" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalOperatingModeGuard mode={RENTAL_OPERATING_MODES.shortTerm}><Suspense fallback={<PageSkeleton label="Loading Short-Term calendar" />}><ShortTermRentalCalendarPage /></Suspense></RentalOperatingModeGuard></RentalWorkspaceGuard></RoleRoute>} />
+              <Route path="/agent/rentals/short-term/properties" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalOperatingModeGuard mode={RENTAL_OPERATING_MODES.shortTerm}><Suspense fallback={<PageSkeleton label="Loading Short-Term properties" />}><ShortTermRentalInventoryPage /></Suspense></RentalOperatingModeGuard></RentalWorkspaceGuard></RoleRoute>} />
               <Route path="/agent/rentals/short-term/bookings" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalOperatingModeGuard mode={RENTAL_OPERATING_MODES.shortTerm}><Suspense fallback={<PageSkeleton label="Loading Short-Term bookings" />}><ShortTermBookingsPage /></Suspense></RentalOperatingModeGuard></RentalWorkspaceGuard></RoleRoute>} />
               <Route path="/agent/rentals/short-term/turnovers" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalOperatingModeGuard mode={RENTAL_OPERATING_MODES.shortTerm}><Suspense fallback={<PageSkeleton label="Loading Short-Term turnovers" />}><ShortTermTurnoversPage /></Suspense></RentalOperatingModeGuard></RentalWorkspaceGuard></RoleRoute>} />
               <Route path="/agent/rentals/short-term/rates" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalOperatingModeGuard mode={RENTAL_OPERATING_MODES.shortTerm}><Suspense fallback={<PageSkeleton label="Loading Short-Term rates" />}><ShortTermRatesPage /></Suspense></RentalOperatingModeGuard></RentalWorkspaceGuard></RoleRoute>} />

@@ -104,10 +104,12 @@ const RENTAL_NAV = Object.freeze({
     { key: 'rental_clients', label: 'Clients', to: '/clients', navSection: 'secondary' },
   ],
   [RENTAL_OPERATING_MODES.shortTerm]: () => [
-    { key: 'short_term_dashboard', label: 'Dashboard', to: '/agent/rentals/short-term/dashboard', activeMatch: ['/agent/rentals/short-term'] },
+    { key: 'short_term_dashboard', label: 'Overview', to: '/agent/rentals/short-term/dashboard', activeMatch: ['/agent/rentals/short-term/dashboard'] },
+    { key: 'short_term_calendar', label: 'Calendar', to: '/agent/rentals/short-term/calendar', activeMatch: ['/agent/rentals/short-term/calendar'] },
     { key: 'short_term_bookings', label: 'Bookings', to: '/agent/rentals/short-term/bookings', activeMatch: ['/agent/rentals/short-term/bookings'] },
+    { key: 'short_term_properties', label: 'Properties', to: '/agent/rentals/short-term/properties', activeMatch: ['/agent/rentals/short-term/properties'] },
     { key: 'short_term_turnovers', label: 'Turnovers', to: '/agent/rentals/short-term/turnovers', activeMatch: ['/agent/rentals/short-term/turnovers'] },
-    { key: 'short_term_rates', label: 'Rates', to: '/agent/rentals/short-term/rates', activeMatch: ['/agent/rentals/short-term/rates'] },
+    { key: 'short_term_rates', label: 'Rates & Availability', to: '/agent/rentals/short-term/rates', activeMatch: ['/agent/rentals/short-term/rates'] },
   ],
 })
 
