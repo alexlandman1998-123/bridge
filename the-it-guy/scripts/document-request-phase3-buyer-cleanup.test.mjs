@@ -73,7 +73,7 @@ const companyBond = buildBuyerDocumentCanonicalCleanupProfile({
 })
 assert.equal(companyBond.version, BUYER_DOCUMENT_CANONICAL_CLEANUP_VERSION)
 assert.equal(companyBond.unmappedRows.length, 0)
-assert.ok(companyBond.professionalOnlyLegacyRows.some((row) => row.canonicalKey === 'signed_otp'))
+assert.ok(companyBond.buyerClientUploadKeys.includes('signed_otp'))
 assert.ok(companyBond.professionalOnlyLegacyRows.some((row) => row.canonicalKey === 'transfer_documents'))
 assert.ok(companyBond.buyerClientUploadKeys.includes('buyer_company_registration'))
 assert.ok(companyBond.buyerClientUploadKeys.includes('income_affordability_documents'))
@@ -92,7 +92,7 @@ const marriedAnc = buildBuyerDocumentCanonicalCleanupProfile({
   },
 })
 assert.ok(marriedAnc.pendingPolicyLegacyRows.some((row) => row.canonicalKey === 'buyer_anc_document'))
-assert.ok(marriedAnc.missingFromLegacyButCoveredByCanonicalPlan.includes('buyer_marital_status_details'))
+assert.equal(marriedAnc.canonicalPlanKeys.includes('buyer_marital_status_details'), false)
 
 const audit = buildBuyerDocumentCanonicalCleanupAudit()
 assert.equal(audit.summary.unmappedCount, 0)

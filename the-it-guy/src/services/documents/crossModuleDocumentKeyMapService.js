@@ -592,7 +592,7 @@ export const CROSS_MODULE_DOCUMENT_DEFINITIONS = Object.freeze([
     ownerRole: 'buyer',
     responsibleRoles: ['buyer'],
     packKey: 'buyer_identity_fica',
-    aliases: ['marriage_certificate', 'buyer_marital_status_details'],
+    aliases: ['marriage_certificate'],
     modules: ['buyer_onboarding', 'buyer_agency', 'transaction_documents', 'attorney_transfer'],
   }),
   documentDefinition({

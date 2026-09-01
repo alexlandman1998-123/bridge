@@ -1590,11 +1590,7 @@ function isClientPortalProfessionalOnlyRequirement(requirement = {}) {
       '',
   )
   if (canonicalVisibility === 'professional_shared') return true
-  if (
-    ['signed_otp', 'transfer_documents'].includes(canonicalKey) &&
-    canonicalOwnerRole &&
-    !['buyer', 'seller'].includes(canonicalOwnerRole)
-  ) {
+  if (canonicalKey === 'transfer_documents' && canonicalOwnerRole && !['buyer', 'seller'].includes(canonicalOwnerRole)) {
     return true
   }
   return false
@@ -3082,7 +3078,7 @@ function normalizeBuyerPortalRequiredDocuments(requiredDocuments = [], workspace
 
     // This is a checklist container, not a file a buyer can upload. Its leaf
     // requirements remain visible individually below it.
-    if (requirementKey === 'buyer_fica_pack') continue
+    if (['buyer_fica_pack', 'buyer_marital_status_details', 'marital_status_details'].includes(requirementKey)) continue
 
     const alias = BUYER_PORTAL_DOCUMENT_ALIASES.get(requirementKey) || requirementKey
     if (!alias || !indexByAlias.has(alias)) {

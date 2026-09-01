@@ -91,7 +91,13 @@ export const BUYER_DOCUMENT_CLEANUP_SCENARIOS = Object.freeze([
   },
 ])
 
-const PROFESSIONAL_ONLY_CANONICAL_KEYS = new Set(['signed_otp', 'transfer_documents'])
+const PROFESSIONAL_ONLY_CANONICAL_KEYS = new Set(['transfer_documents'])
+const RETIRED_BUYER_DOCUMENT_KEYS = new Set([
+  'information_sheet',
+  'buyer_fica_pack',
+  'buyer_marital_status_details',
+  'marital_status_details',
+])
 
 function normalizeText(value = '') {
   return String(value || '').trim()
@@ -160,7 +166,8 @@ export function buildBuyerDocumentCanonicalCleanupProfile(input = {}) {
   const profile = getBuyerRequirementProfile(input)
   const scenario = buildBuyerCanonicalDocumentScenario(profile, formData)
   const canonicalPlan = buildCanonicalDocumentRequestAudiencePlan(scenario, 'buyer')
-  const legacyRows = Array.isArray(profile.requiredDocuments) ? profile.requiredDocuments : []
+  const legacyRows = (Array.isArray(profile.requiredDocuments) ? profile.requiredDocuments : [])
+    .filter((row) => !RETIRED_BUYER_DOCUMENT_KEYS.has(normalizeKey(row?.key || row?.id)))
   const mappedRows = legacyRows.filter((row) => row.canonicalDocumentRequestKnown)
   const unmappedRows = legacyRows.filter((row) => !row.canonicalDocumentRequestKnown)
   const professionalOnlyLegacyRows = mappedRows.filter(isProfessionalOnlyLegacyBuyerRow)
@@ -168,7 +175,11 @@ export function buildBuyerDocumentCanonicalCleanupProfile(input = {}) {
   const buyerClientUploadRows = mappedRows.filter((row) => {
     if (isProfessionalOnlyLegacyBuyerRow(row)) return false
     if (normalizeKey(row.canonicalDocumentRequestVisibility) !== 'client_visible') return false
-    if (normalizeKey(row.canonicalDocumentRequestOwnerRole) && normalizeKey(row.canonicalDocumentRequestOwnerRole) !== 'buyer') return false
+    if (
+      normalizeKey(row.canonicalDocumentRequestOwnerRole) &&
+      normalizeKey(row.canonicalDocumentRequestOwnerRole) !== 'buyer' &&
+      canonicalKeyFor(row) !== 'signed_otp'
+    ) return false
     return true
   })
   const requestableBuyerClientUploadRows = buyerClientUploadRows.filter(

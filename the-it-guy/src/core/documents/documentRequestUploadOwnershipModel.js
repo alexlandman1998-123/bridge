@@ -7,7 +7,6 @@ const ATTORNEY_ROLES = new Set(['attorney', 'transfer_attorney', 'cancellation_a
 const PROFESSIONAL_ROLES = new Set(['agent', 'attorney', 'transfer_attorney', 'cancellation_attorney', 'bond_originator'])
 
 const PROFESSIONAL_ONLY_KEYS = new Set([
-  'signed_otp',
   'transfer_duty_information',
   'transfer_documents',
   'bond_cancellation_figures',

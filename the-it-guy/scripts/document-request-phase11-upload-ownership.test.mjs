@@ -70,6 +70,18 @@ assert.equal(transferDocuments.professionalOnly, true)
 assert.equal(transferDocuments.clientUploadDebt, false)
 assert.equal(transferDocuments.responsiblePartyRole, 'transfer_attorney')
 
+const signedOtp = resolveDocumentRequestUploadOwnership({
+  key: 'signed_otp',
+  ownerRole: 'agent',
+  requestedFrom: 'buyer',
+  visibility: 'client_visible',
+})
+assert.equal(signedOtp.professionalOnly, false)
+assert.equal(signedOtp.clientUploadDebt, true)
+assert.equal(signedOtp.responsiblePartyRole, 'buyer')
+assert.ok(signedOtp.uploadableByRoles.includes('buyer'))
+assert.ok(signedOtp.uploadableByRoles.includes('agent'))
+
 const bondDocuments = resolveDocumentRequestUploadOwnership({
   key: 'income_affordability_documents',
   ownerRole: 'buyer',

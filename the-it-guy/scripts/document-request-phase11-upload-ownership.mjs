@@ -53,7 +53,7 @@ function buildReport(options = {}) {
   const sellerComplianceOwnership = sellerComplianceKeys.map((key) =>
     ownershipAudit.ownership.find((item) => item.documentKey === key),
   )
-  const professionalOnlyKeys = ['signed_otp', 'transfer_duty_information', 'transfer_documents', 'bond_cancellation_figures']
+  const professionalOnlyKeys = ['transfer_duty_information', 'transfer_documents', 'bond_cancellation_figures']
   const professionalOnlyOwnership = professionalOnlyKeys.map((key) =>
     ownershipAudit.ownership.find((item) => item.documentKey === key),
   )

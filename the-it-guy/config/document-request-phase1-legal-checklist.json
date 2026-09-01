@@ -25,13 +25,12 @@
     { "key": "conditional_compliance_certificates", "recommendedDefault": "trigger_based", "status": "pending" }
   ],
   "requirements": [
-    { "key": "signed_otp", "label": "Signed OTP / Sale Agreement", "ownerRole": "agent", "appliesTo": ["transaction"], "level": "required", "visibility": "professional_shared", "blocker": "attorney_instruction_ready" },
+    { "key": "signed_otp", "label": "Signed OTP / Sale Agreement", "ownerRole": "agent", "requestedFrom": "buyer", "appliesTo": ["transaction"], "level": "required", "visibility": "client_visible", "blocker": "attorney_instruction_ready" },
     { "key": "transfer_duty_information", "label": "Transfer Duty Information", "ownerRole": "transfer_attorney", "appliesTo": ["transaction"], "level": "required", "visibility": "professional_shared", "blocker": "lodgement_ready" },
     { "key": "rates_clearance", "label": "Rates Clearance", "ownerRole": "seller", "appliesTo": ["property"], "level": "required", "visibility": "client_visible", "blocker": "lodgement_ready" },
     { "key": "transfer_documents", "label": "Transfer Documents", "ownerRole": "transfer_attorney", "appliesTo": ["transaction"], "level": "required", "visibility": "professional_shared", "blocker": "lodgement_ready" },
     { "key": "buyer_id_document", "label": "Buyer ID / Passport", "ownerRole": "buyer", "appliesTo": ["buyer_individual", "buyer_married_cop", "buyer_married_anc"], "level": "required", "visibility": "client_visible", "blocker": "attorney_instruction_ready" },
     { "key": "buyer_proof_of_address", "label": "Buyer Proof of Address", "ownerRole": "buyer", "appliesTo": ["buyer_individual", "buyer_married_cop", "buyer_married_anc", "buyer_foreign_individual"], "level": "required", "visibility": "client_visible", "blocker": "attorney_instruction_ready" },
-    { "key": "buyer_marital_status_details", "label": "Buyer Marital Status Declaration", "ownerRole": "buyer", "appliesTo": ["buyer_individual", "buyer_married_cop", "buyer_married_anc"], "level": "required", "visibility": "client_visible", "blocker": "attorney_instruction_ready" },
     { "key": "buyer_marriage_certificate", "label": "Buyer Marriage Certificate", "ownerRole": "buyer", "appliesTo": ["buyer_married_cop", "buyer_married_anc"], "level": "required", "visibility": "client_visible", "blocker": "attorney_instruction_ready" },
     { "key": "buyer_spouse_id_document", "label": "Buyer Spouse ID", "ownerRole": "buyer", "appliesTo": ["buyer_married_cop"], "level": "required", "visibility": "client_visible", "blocker": "attorney_instruction_ready" },
     { "key": "buyer_spouse_proof_of_address", "label": "Buyer Spouse Proof of Address", "ownerRole": "buyer", "appliesTo": ["buyer_married_cop"], "level": "required", "visibility": "client_visible", "blocker": "attorney_instruction_ready" },

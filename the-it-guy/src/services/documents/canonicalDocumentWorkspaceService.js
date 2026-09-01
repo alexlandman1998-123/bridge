@@ -107,7 +107,12 @@ export const PACK_FALLBACKS = Object.freeze({
 const SATISFIED_STATUSES = new Set(['approved', 'completed', 'waived', 'not_applicable'])
 const PROVISIONAL_STATUSES = new Set(['uploaded', 'under_review'])
 const MISSING_STATUSES = new Set(['pending', 'requested', 'rejected', 'expired'])
-const RETIRED_REQUIREMENT_KEYS = new Set(['information_sheet', 'buyer_fica_pack', 'seller_fica_pack'])
+const RETIRED_REQUIREMENT_KEYS = new Set([
+  'information_sheet',
+  'buyer_fica_pack',
+  'seller_fica_pack',
+  'buyer_marital_status_details',
+])
 const REQUIREMENT_STATUS_PRIORITY = Object.freeze({
   completed: 90,
   approved: 80,

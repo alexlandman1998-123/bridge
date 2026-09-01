@@ -76,10 +76,10 @@ test('buyer audience only receives buyer client-visible requests', () => {
   const buyerPlan = buildCanonicalDocumentRequestAudiencePlan(MIXED_SCENARIO, 'buyer')
   const keys = keySet(buyerPlan.requests)
 
-  assertIncludes(keys, ['buyer_trust_deed', 'buyer_trustee_resolution', 'bond_approval', 'grant_signed'], 'buyer plan')
+  assertIncludes(keys, ['signed_otp', 'buyer_trust_deed', 'buyer_trustee_resolution', 'bond_approval', 'grant_signed'], 'buyer plan')
   assertExcludes(
     keys,
-    ['seller_company_registration', 'seller_company_resolution', 'bond_statement', 'bond_cancellation_figures', 'signed_otp'],
+    ['seller_company_registration', 'seller_company_resolution', 'bond_statement', 'bond_cancellation_figures'],
     'buyer plan',
   )
   assert.equal(buyerPlan.requests.every((request) => request.clientVisible && request.requestedFrom === 'buyer'), true)
