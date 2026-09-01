@@ -1552,7 +1552,7 @@ function DemoContent({ activeSection, brand, config, token, heroOverlayStyle, lo
         </div>
       </section>
 
-      {activeSection === 'progress' ? <DemoBuyerJourney brand={brand} token={token} detailed /> : null}
+      {activeSection === 'progress' ? <ConveyancingJourneySection brand={brand} /> : null}
       {activeSection === 'messages' ? <TransactionUpdatesSection brand={brand} standalone /> : null}
     </div>
   )
@@ -1793,7 +1793,7 @@ function ConveyancingStageCard({ brand, stage, isLast }) {
 function CurrentStageDetails({ brand, stage }) {
   const details = [
     { label: 'Currently', value: stage.currentStatus, helper: 'Rates clearance figures have been requested.', icon: Clock3 },
-    { label: 'Usually takes', value: '5 - 10', helper: 'business days', icon: CalendarDays },
+    { label: 'Usually takes', value: stage.estimatedDuration || 'Timeline to be confirmed', helper: 'Estimated for this stage', icon: CalendarDays },
     { label: 'You need to do', value: stage.buyerAction, helper: stage.buyerActionDetail, icon: UserRound },
   ]
 

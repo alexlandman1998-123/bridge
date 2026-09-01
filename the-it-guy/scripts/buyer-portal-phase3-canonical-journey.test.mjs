@@ -14,12 +14,14 @@ test('production derives buyer presentation from the canonical snapshot with a l
   assert.match(source, /function BuyerProgressJourney[\s\S]*?<BuyerPortalJourney/)
   assert.doesNotMatch(source, /function BuyerProgressJourney[\s\S]{0,800}<PortalProgressJourney/)
 })
-test('demo overview and progress use the same canonical fixture model', async () => {
+test('demo overview uses the canonical fixture model and progress restores the conveyancing guide', async () => {
   const source = await read('src/pages/ProspectBuyerDemo.jsx')
 
   assert.match(source, /DEMO_BUYER_JOURNEY_MODEL = buildBuyerJourneyPresentationModel/)
   assert.match(source, /progress=\{\(<DemoBuyerJourney brand=\{brand\} token=\{token\}/)
-  assert.match(source, /activeSection === 'progress' \? <DemoBuyerJourney brand=\{brand\} token=\{token\} detailed/)
+  assert.match(source, /activeSection === 'progress' \? <ConveyancingJourneySection brand=\{brand\} \/>/)
+  assert.match(source, /The conveyancing process/)
+  assert.match(source, /stage\.estimatedDuration \|\| 'Timeline to be confirmed'/)
   assert.match(source, /model=\{DEMO_BUYER_JOURNEY_MODEL\}/)
   assert.doesNotMatch(source, /function PurchaseJourneySection/)
 })

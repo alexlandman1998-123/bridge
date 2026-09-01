@@ -3194,6 +3194,26 @@ function AppRoutes() {
                 }
               />
               <Route
+                path="/pipeline/canvassing/property-search"
+                element={
+                  <SalesWorkspaceGuard>
+                    <RoleRoute allowedRoles={['agent']}>
+                      <PipelineCanvassingPage />
+                    </RoleRoute>
+                  </SalesWorkspaceGuard>
+                }
+              />
+              <Route
+                path="/pipeline/canvassing/property-reports"
+                element={
+                  <SalesWorkspaceGuard>
+                    <RoleRoute allowedRoles={['agent']}>
+                      <PipelineCanvassingPage />
+                    </RoleRoute>
+                  </SalesWorkspaceGuard>
+                }
+              />
+              <Route
                 path="/pipeline/canvassing/prospects/:prospectId"
                 element={
                   <SalesWorkspaceGuard>

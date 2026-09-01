@@ -24,6 +24,10 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
 import Modal from '../components/ui/Modal'
+import CanvassingWorkspaceTabs from '../components/canvassing/CanvassingWorkspaceTabs'
+import PropertyDataProviderStatus from '../components/canvassing/PropertyDataProviderStatus'
+import PropertyReportsWorkspace from '../components/canvassing/PropertyReportsWorkspace'
+import PropertySearchWorkspace from '../components/canvassing/PropertySearchWorkspace'
 import AddressAutocomplete from '../components/location/AddressAutocomplete'
 import AreaAutocomplete from '../components/location/AreaAutocomplete'
 import { useWorkspace } from '../context/WorkspaceContext'
@@ -75,6 +79,7 @@ const PROSPECT_DETAIL_TABS = [
 ]
 
 const CANVASSING_METHODS = [
+  'Property Intelligence',
   'Cold Call',
   'Door Knock',
   'Referral',
@@ -263,6 +268,7 @@ function getCanvassingActionMenuPosition(triggerRect, itemCount = CANVASSING_ACT
 }
 
 const CANVASSING_SOURCE_PILL_STYLES = {
+  propertyIntelligence: { tone: 'blue', label: 'Property Intelligence' },
   property24: { tone: 'blue', label: 'Property24' },
   privateProperty: { tone: 'green', label: 'Private Property' },
   website: { tone: 'violet', label: 'Website' },
@@ -280,7 +286,7 @@ const CANVASSING_SOURCE_PILL_STYLES = {
 }
 
 const CANVASSING_SOURCE_PILL_FALLBACK = CANVASSING_SOURCE_PILL_STYLES.unknown
-const CANVASSING_SOURCE_PILL_ORDER = ['coldCall', 'doorKnock', 'referral', 'socialMedia', 'website', 'walkIn', 'previousClient', 'expiredListing', 'areaFarming', 'other', 'property24', 'privateProperty', 'whatsapp', 'unknown']
+const CANVASSING_SOURCE_PILL_ORDER = ['propertyIntelligence', 'coldCall', 'doorKnock', 'referral', 'socialMedia', 'website', 'walkIn', 'previousClient', 'expiredListing', 'areaFarming', 'other', 'property24', 'privateProperty', 'whatsapp', 'unknown']
 const CANVASSING_PROSPECT_VIEW_STORAGE_KEY = 'itg:canvassing:prospectView'
 const CANVASSING_FILTER_SELECT_CLASS = 'min-h-11 min-w-0 py-2.5 text-sm leading-5'
 const CANVASSING_IMPORT_TEMPLATE_COLUMNS = [
@@ -611,6 +617,7 @@ function resolveCanvassingSourceText(value = '') {
   const raw = normalizeText(value)
   if (!raw) return fallback
   const normalized = raw.toLowerCase()
+  if (normalized.includes('property intelligence')) return 'Property Intelligence'
   if (normalized.includes('property24')) return 'Property24'
   if (normalized.includes('private') && normalized.includes('property')) return 'Private Property'
   if (normalized.includes('whatsapp')) return 'WhatsApp'
@@ -631,6 +638,7 @@ function resolveCanvassingSourceText(value = '') {
 
 function normalizeCanvassingSourceKey(value = '') {
   const source = resolveCanvassingSourceText(value).toLowerCase()
+  if (source.includes('property intelligence')) return 'propertyIntelligence'
   if (source.includes('property24')) return 'property24'
   if (source.includes('private property')) return 'privateProperty'
   if (source.includes('whatsapp')) return 'whatsapp'
@@ -1550,6 +1558,11 @@ function PipelineCanvassingPage() {
     performanceBaselineRef.current = createAgentRoutePerformanceBaseline({ surface: 'canvassing', route: '/pipeline/canvassing' })
   }
   const isPrimaryAgentCanvassingRoute = role === 'agent' && !isProspectWorkspaceRoute && location.pathname === '/pipeline/canvassing'
+  const activeCanvassingWorkspace = location.pathname.endsWith('/property-search')
+    ? 'property-search'
+    : location.pathname.endsWith('/property-reports')
+      ? 'property-reports'
+      : 'prospects'
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -2434,6 +2447,14 @@ function PipelineCanvassingPage() {
     } catch (createError) {
       setError(createError?.message || 'Unable to add prospect.')
     }
+  }
+
+  function handlePropertyReportProspectCreated(created, activity = null) {
+    setProspects((previous) => [created, ...previous.filter((row) => normalizeText(row?.id) !== normalizeText(created?.id))])
+    if (activity) setActivities((previous) => [activity, ...previous])
+    setProspectView('seller')
+    setMessage('Property added to Current Prospects.')
+    setError('')
   }
 
   async function handleImportProspects(rows = []) {
@@ -3909,6 +3930,72 @@ function PipelineCanvassingPage() {
     )
   }
 
+  const canvassingWorkspaceHeader = (
+    <header className="rounded-2xl border border-slate-200 bg-white px-5 pt-5 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-[1.45rem] font-semibold tracking-[-0.02em] text-slate-900">Canvassing</h2>
+            {activeCanvassingWorkspace === 'prospects' ? (
+              <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${canvassingDataStatusMeta.className}`}>
+                <CanvassingDataStatusIcon size={13} />
+                {canvassingDataStatusMeta.label}
+              </span>
+            ) : null}
+          </div>
+          <p className="mt-1 text-sm text-slate-600">Find properties, build prospect lists and convert opportunities into leads.</p>
+        </div>
+        {activeCanvassingWorkspace === 'prospects' ? (
+          <div className="inline-flex rounded-2xl border border-slate-200 bg-slate-100 p-1 shadow-inner">
+            <button
+              type="button"
+              onClick={() => setProspectView('buyer')}
+              className={`rounded-xl px-3.5 py-2 text-sm font-semibold transition ${
+                prospectView === 'buyer'
+                  ? 'bg-white text-slate-950 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              Buyer Prospects
+            </button>
+            <button
+              type="button"
+              onClick={() => setProspectView('seller')}
+              className={`rounded-xl px-3.5 py-2 text-sm font-semibold transition ${
+                prospectView === 'seller'
+                  ? 'bg-white text-slate-950 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              Seller Prospects
+            </button>
+          </div>
+        ) : null}
+      </div>
+      <CanvassingWorkspaceTabs />
+    </header>
+  )
+
+  if (activeCanvassingWorkspace === 'property-search') {
+    return (
+      <section className="space-y-5">
+        {canvassingWorkspaceHeader}
+        <PropertyDataProviderStatus />
+        <PropertySearchWorkspace />
+      </section>
+    )
+  }
+
+  if (activeCanvassingWorkspace === 'property-reports') {
+    return (
+      <section className="space-y-5">
+        {canvassingWorkspaceHeader}
+        <PropertyDataProviderStatus />
+        <PropertyReportsWorkspace prospects={prospects} onProspectCreated={handlePropertyReportProspectCreated} />
+      </section>
+    )
+  }
+
   return (
     <section
       className="space-y-5"
@@ -3916,46 +4003,7 @@ function PipelineCanvassingPage() {
       data-performance-core-ready={isPrimaryAgentCanvassingRoute ? (loading ? 'false' : 'true') : undefined}
       data-performance-settled={isPrimaryAgentCanvassingRoute ? (loading || supportingDataLoading ? 'false' : 'true') : undefined}
     >
-      <header className="rounded-2xl border border-slate-200 bg-white px-5 py-5 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-[1.45rem] font-semibold tracking-[-0.02em] text-slate-900">Canvassing</h2>
-              <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${canvassingDataStatusMeta.className}`}>
-                <CanvassingDataStatusIcon size={13} />
-                {canvassingDataStatusMeta.label}
-              </span>
-            </div>
-            <p className="mt-1 text-sm text-slate-600">Track prospecting activity and convert interested prospects into leads.</p>
-          </div>
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <div className="inline-flex rounded-2xl border border-slate-200 bg-slate-100 p-1 shadow-inner">
-              <button
-                type="button"
-                onClick={() => setProspectView('buyer')}
-                className={`rounded-xl px-3.5 py-2 text-sm font-semibold transition ${
-                  prospectView === 'buyer'
-                    ? 'bg-white text-slate-950 shadow-sm'
-                    : 'text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                Buyer Prospects
-              </button>
-              <button
-                type="button"
-                onClick={() => setProspectView('seller')}
-                className={`rounded-xl px-3.5 py-2 text-sm font-semibold transition ${
-                  prospectView === 'seller'
-                    ? 'bg-white text-slate-950 shadow-sm'
-                    : 'text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                Seller Prospects
-              </button>
-            </div>
-          </div>
-        </div>
-      </header>
+      {canvassingWorkspaceHeader}
 
       {error ? <div className="rounded-[18px] border border-[#f6d4d4] bg-[#fff4f4] px-4 py-3 text-sm text-[#9f1d1d]">{error}</div> : null}
       {message ? <div className="rounded-[18px] border border-[#d4e8dc] bg-[#eef9f1] px-4 py-3 text-sm text-[#1a6e3a]">{message}</div> : null}
