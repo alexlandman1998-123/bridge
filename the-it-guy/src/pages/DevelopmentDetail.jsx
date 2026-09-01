@@ -54,6 +54,7 @@ import {
 } from '../core/transactions/developerSelectors'
 import { getReportNextAction } from '../core/transactions/reportNextAction'
 import { resolveTransactionWorkspaceRoute } from '../core/transactions/transactionWorkspaceRouting'
+import { selectCurrentDevelopmentTransactionRows } from '../core/developments/developmentTransactionVisibility.js'
 import {
   deleteDevelopment,
   deleteDevelopmentDocument,
@@ -2520,7 +2521,7 @@ function DevelopmentDetail() {
 
   const rows = useMemo(() => data?.rows || [], [data?.rows])
   const allDevelopmentTransactionRows = useMemo(
-    () => data?.transactionRows || rows.filter((row) => row?.transaction?.id),
+    () => selectCurrentDevelopmentTransactionRows(data?.transactionRows || rows),
     [data?.transactionRows, rows],
   )
   const documents = useMemo(() => data?.documents || [], [data?.documents])

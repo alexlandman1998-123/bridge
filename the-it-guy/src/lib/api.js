@@ -21,6 +21,7 @@ import {
   normalizeTransactionStage,
 } from '../core/transactions/stageConfig'
 import { selectReportStageSummary } from '../core/transactions/selectors'
+import { selectCurrentDevelopmentTransactionRows } from '../core/developments/developmentTransactionVisibility.js'
 import {
   deriveOnboardingConfiguration,
   getOnboardingStepDefinitions,
@@ -19501,10 +19502,10 @@ export async function fetchDevelopmentDetail(developmentId) {
 
   const units = await fetchUnitsBase(client, developmentId)
   const rows = await hydrateUnitRows(client, units)
-  const allTransactionRows = await fetchTransactionsListSummary({
+  const currentTransactionRows = selectCurrentDevelopmentTransactionRows(await fetchTransactionsListSummary({
     developmentId,
-    activeTransactionsOnly: false,
-  })
+    activeTransactionsOnly: true,
+  }))
   const requirements = await fetchDocumentRequirements(client, developmentId)
   const settings = await ensureDevelopmentSettings(client, developmentId, {
     createIfMissing: false,
@@ -19549,7 +19550,7 @@ export async function fetchDevelopmentDetail(developmentId) {
     alterations = alterationsQuery.data || []
   }
 
-  const transactionIds = [...new Set(allTransactionRows.map((row) => row.transaction?.id).filter(Boolean))]
+  const transactionIds = [...new Set(currentTransactionRows.map((row) => row.transaction?.id).filter(Boolean))]
   let docsByTransactionId = {}
   let transactionRequirementsByTransactionId = {}
 
@@ -19600,7 +19601,7 @@ export async function fetchDevelopmentDetail(developmentId) {
     }
   })
 
-  const transactionRowsWithDocumentSummary = allTransactionRows.map((row) => {
+  const transactionRowsWithDocumentSummary = currentTransactionRows.map((row) => {
     const transactionId = row.transaction?.id
     const transactionDocuments = transactionId ? docsByTransactionId[transactionId] || [] : []
     const transactionRequirements = transactionId ? transactionRequirementsByTransactionId[transactionId] || [] : []

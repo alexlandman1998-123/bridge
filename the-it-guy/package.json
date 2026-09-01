@@ -23,6 +23,7 @@
     "test:staging-rls-warning-remediation": "node scripts/staging-rls-warning-remediation.test.mjs",
     "test:full-transaction-portal-staging": "node scripts/full-transaction-portal-staging-acceptance.test.mjs",
     "test:developer-transaction-staging": "node scripts/developer-transaction-staging-acceptance.mjs",
+    "test:development-current-transactions": "node src/core/developments/__tests__/developmentTransactionVisibility.test.js",
     "dev": "vite",
     "build": "NODE_OPTIONS=--max-old-space-size=8192 vite build",
     "test": "node src/services/__tests__/principalDashboardService.test.js && node src/services/__tests__/inviteService.test.js && node src/services/__tests__/transactionPartnerInvitationService.test.js && node src/services/__tests__/organizationService.test.js && node src/services/__tests__/partnerNetworkService.test.js && node src/lib/__tests__/partnersRepository.test.js && node src/services/__tests__/organizationHierarchyService.test.js && node src/services/__tests__/assignmentEngineService.test.js && node src/services/__tests__/networkIntelligenceService.test.js",
