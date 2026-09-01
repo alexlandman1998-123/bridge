@@ -29,5 +29,7 @@ for (const editTarget of ['card.key', "'features'", "'defects'"]) {
 assert.ok(source.includes('open={sellerLeadEditModal.open && selectedLeadIsSeller}'), 'Seller Profile edit modal should open for all seller leads.')
 assert.ok(!source.includes('open={sellerLeadEditModal.open && selectedLeadIsSeller && selectedLeadHasKingstonsPipelineSignal}'), 'Seller Profile edit modal should not be gated by Kingstons pipeline signal.')
 assert.ok(source.includes('onSubmit={(event) => void handleSaveSellerLeadEditDetails(event)}'), 'Seller Profile edit modal should save through the seller profile save handler.')
+assert.match(source, /if \(!sellerLeadEditModal\.open && !isLeadDetailSaving\) \{\s*setSellerProfileEditForm\(buildKingstonsSellerProfileEditForm\(/, 'Background lead hydration must not replace an open Seller Profile draft.')
+assert.match(source, /function openSellerLeadEditModal\(mode = 'profile'\) \{\s*setSellerProfileEditForm\(buildKingstonsSellerProfileEditForm\(/, 'Opening Seller Profile editing must start with the latest persisted seller data.')
 
 console.log('Seller lead seller profile edit layout verified.')

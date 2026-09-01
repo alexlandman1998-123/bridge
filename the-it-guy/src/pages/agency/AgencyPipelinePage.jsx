@@ -14915,12 +14915,17 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       googlePlaceId: normalizeText(selectedLead?.googlePlaceId),
       notes: normalizeText(selectedLead?.notes),
     })
-    setSellerProfileEditForm(buildKingstonsSellerProfileEditForm({
-      lead: selectedLead,
-      contact: selectedLeadContact,
-      listing: selectedLeadLinkedListing,
-    }))
-  }, [selectedLead, selectedLeadContact, selectedLeadLinkedListing])
+    // Lead hydration can replace these records while an agent is typing. Keep
+    // the open Seller Profile modal's local draft intact; it is deliberately
+    // refreshed when the modal opens instead.
+    if (!sellerLeadEditModal.open && !isLeadDetailSaving) {
+      setSellerProfileEditForm(buildKingstonsSellerProfileEditForm({
+        lead: selectedLead,
+        contact: selectedLeadContact,
+        listing: selectedLeadLinkedListing,
+      }))
+    }
+  }, [isLeadDetailSaving, selectedLead, selectedLeadContact, selectedLeadLinkedListing, sellerLeadEditModal.open])
 
   useEffect(() => {
     const nextLeadKey = normalizeLeadIdentityKey(selectedLead?.leadId || selectedLead?.lead_id)
@@ -22328,6 +22333,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }
 
   function openSellerLeadEditModal(mode = 'profile') {
+    setSellerProfileEditForm(buildKingstonsSellerProfileEditForm({
+      lead: selectedLead,
+      contact: selectedLeadContact,
+      listing: selectedLeadLinkedListing,
+    }))
     setSellerLeadEditModal({ open: true, mode: normalizeKey(mode) || 'personal' })
     setError('')
   }

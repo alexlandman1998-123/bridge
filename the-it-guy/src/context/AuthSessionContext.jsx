@@ -9,7 +9,7 @@ import {
   loadBridgeAuthState,
   persistLastGoodBridgeAuthState,
 } from '../lib/authBoot'
-import { clearSupabaseLocalAuthState, isSupabaseConfigured, isUnsupportedJwtAlgorithmError, supabase } from '../lib/supabaseClient'
+import { isSupabaseConfigured, isUnsupportedJwtAlgorithmError, supabase } from '../lib/supabaseClient'
 import { getProductionSafetyViolation } from '../lib/envValidation'
 import { APP_ROLE_LABELS } from '../lib/appRoleMetadata'
 import { WORKSPACE_TYPES } from '../constants/workspaceTypes'
@@ -33,6 +33,8 @@ const BRIDGE_AUTH_BOOTSTRAP_RETRY_JITTER_MS = 750
 const MAX_RETRYABLE_BRIDGE_BOOT_ATTEMPTS = 2
 const AUTH_BOOT_OBSERVABILITY_STORAGE_KEY = 'arch9:auth-boot-observability:v1'
 const AUTH_BOOT_OBSERVABILITY_MAX_BREADCRUMBS = 20
+const AUTH_FLOW_STORAGE_KEY = 'arch9:auth-flow-id:v1'
+const AUTH_PENDING_DIAGNOSTIC_STORAGE_KEY = 'arch9:pending-auth-diagnostic:v1'
 
 const EMPTY_AUTH_STATE = Object.freeze({
   status: 'loading',
@@ -297,6 +299,86 @@ async function withBootstrapTimeout(task, {
   }
 }
 
+function getAuthFlowId() {
+  if (typeof window === 'undefined' || !window.sessionStorage) return 'unavailable'
+  try {
+    const existing = String(window.sessionStorage.getItem(AUTH_FLOW_STORAGE_KEY) || '').trim()
+    if (existing) return existing
+    const generated = typeof globalThis.crypto?.randomUUID === 'function'
+      ? globalThis.crypto.randomUUID()
+      : `auth-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+    window.sessionStorage.setItem(AUTH_FLOW_STORAGE_KEY, generated)
+    return generated
+  } catch {
+    return 'unavailable'
+  }
+}
+
+function storePendingAuthDiagnostic(event = '') {
+  if (typeof window === 'undefined' || !window.sessionStorage) return
+  try {
+    window.sessionStorage.setItem(AUTH_PENDING_DIAGNOSTIC_STORAGE_KEY, JSON.stringify({
+      event: String(event || '').trim(),
+      at: new Date().toISOString(),
+      authFlowId: getAuthFlowId(),
+    }))
+  } catch {
+    // Diagnostics must never affect authentication.
+  }
+}
+
+function readPendingAuthDiagnostic() {
+  if (typeof window === 'undefined' || !window.sessionStorage) return null
+  try {
+    const raw = window.sessionStorage.getItem(AUTH_PENDING_DIAGNOSTIC_STORAGE_KEY)
+    const parsed = JSON.parse(raw || 'null')
+    return parsed?.event ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+function clearPendingAuthDiagnostic() {
+  if (typeof window === 'undefined' || !window.sessionStorage) return
+  try {
+    window.sessionStorage.removeItem(AUTH_PENDING_DIAGNOSTIC_STORAGE_KEY)
+  } catch {
+    // Diagnostics must never affect authentication.
+  }
+}
+
+async function restoreSessionWithJwtRecovery() {
+  const initialResult = await supabase.auth.getSession()
+  if (!initialResult?.error || !isUnsupportedJwtAlgorithmError(initialResult.error)) {
+    return { ...initialResult, recoveryAttempted: false }
+  }
+
+  // A signing-key rotation can briefly leave a still-valid refresh token beside
+  // an access token that this client cannot use. Never delete browser auth state
+  // based on that single response: ask GoTrue for a fresh session first.
+  console.warn('[AUTH] session-bootstrap:unsupported-jwt-algorithm; attempting refresh recovery')
+  const refreshResult = await supabase.auth.refreshSession()
+  if (!refreshResult?.error && refreshResult?.data?.session) {
+    return { ...refreshResult, recoveryAttempted: true, recovered: true }
+  }
+
+  const recoveryError = new Error(
+    'Your sign-in could not be refreshed after a security-key update. Please retry; your saved session has not been removed.',
+  )
+  recoveryError.code = 'AUTH_JWT_ALGORITHM_RECOVERY_FAILED'
+  recoveryError.cause = refreshResult?.error || initialResult.error
+  throw recoveryError
+}
+
+function getAuthStateMetricEvent(event = '') {
+  const normalized = String(event || '').trim().toUpperCase()
+  if (normalized === 'TOKEN_REFRESHED') return 'token_refreshed'
+  if (normalized === 'SIGNED_IN') return 'signed_in'
+  if (normalized === 'SIGNED_OUT') return 'signed_out'
+  if (normalized === 'USER_UPDATED') return 'user_updated'
+  return ''
+}
+
 export function AuthSessionProvider({ children }) {
   const [devAuthRole, setDevAuthRoleState] = useState(() => getStoredDevAuthRole())
   const [session, setSession] = useState(null)
@@ -306,6 +388,8 @@ export function AuthSessionProvider({ children }) {
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState('')
   const bridgeRetryScopeRef = useRef({ key: '', attempts: 0 })
   const cachedBridgeBootRef = useRef({ key: '', restored: false })
+  const authSessionRef = useRef(null)
+  const logoutRequestedRef = useRef(false)
   const productionSafetyViolation = getProductionSafetyViolation()
   const sessionUserId = session?.user?.id || ''
 
@@ -367,7 +451,7 @@ export function AuthSessionProvider({ children }) {
       setAuthState((previous) => ({ ...previous, status: 'loading', bootError: '' }))
       try {
         console.debug('[AUTH] session-bootstrap:start')
-        const { data, error } = await withBootstrapTimeout(supabase.auth.getSession(), {
+        const { data, error, recoveryAttempted, recovered } = await withBootstrapTimeout(restoreSessionWithJwtRecovery(), {
           timeoutMs: SESSION_BOOTSTRAP_TIMEOUT_MS,
           phase: 'session',
         })
@@ -375,18 +459,25 @@ export function AuthSessionProvider({ children }) {
           sessionOutcome = 'cancelled'
           return
         }
-        if (error) {
-          if (isUnsupportedJwtAlgorithmError(error)) await clearSupabaseLocalAuthState()
-          throw error
-        }
+        if (error) throw error
         const restoredSession = data?.session || null
         restoredSessionUserId = restoredSession?.user?.id || ''
         hasSession = Boolean(restoredSession)
+        authSessionRef.current = restoredSession
         setSession(restoredSession)
-        console.debug('[AUTH] session-bootstrap:success', { hasSession })
+        console.debug('[AUTH] session-bootstrap:success', { hasSession, recoveryAttempted: Boolean(recoveryAttempted) })
+        const previousAuthEvent = restoredSession ? readPendingAuthDiagnostic() : null
         void trackAuthMetric(restoredSession ? 'session_restored' : 'no_session', {
           userId: restoredSessionUserId,
-          metadata: { source: 'session_bootstrap' },
+          metadata: {
+            source: 'session_bootstrap',
+            authFlowId: getAuthFlowId(),
+            recoveryAttempted: Boolean(recoveryAttempted),
+            recovered: recovered === true,
+            previousAuthEvent,
+          },
+        }).then((result) => {
+          if (previousAuthEvent && result?.persisted) clearPendingAuthDiagnostic()
         })
       } catch (error) {
         sessionOutcome = active ? 'failed' : 'cancelled'
@@ -421,6 +512,25 @@ export function AuthSessionProvider({ children }) {
 
     const { data: authSubscription } = supabase.auth.onAuthStateChange((event, nextSession) => {
       console.debug('[AUTH] state-change', { event, hasSession: Boolean(nextSession) })
+      const previousSession = authSessionRef.current
+      const previousUserId = previousSession?.user?.id || ''
+      const nextUserId = nextSession?.user?.id || ''
+      const metricEvent = getAuthStateMetricEvent(event)
+      authSessionRef.current = nextSession || null
+      if (metricEvent === 'signed_out' && !logoutRequestedRef.current) {
+        storePendingAuthDiagnostic('unexpected_signed_out')
+      }
+      if (metricEvent) {
+        void trackAuthMetric(metricEvent, {
+          userId: nextUserId || previousUserId,
+          metadata: {
+            authFlowId: getAuthFlowId(),
+            source: 'auth_state_change',
+            hasSession: Boolean(nextSession),
+            retainedSameUser: Boolean(previousUserId && previousUserId === nextUserId),
+          },
+        })
+      }
       setSession((previousSession) => {
         const previousUserId = previousSession?.user?.id || ''
         const nextUserId = nextSession?.user?.id || ''
@@ -870,6 +980,14 @@ export function AuthSessionProvider({ children }) {
   const logout = useCallback(async () => {
     const userId = authState.user?.id || session?.user?.id || ''
     const workspaceId = authState.currentWorkspace?.id || ''
+    logoutRequestedRef.current = true
+    // Write before revoking the session; after sign-out the RLS policy prevents
+    // the telemetry row from being stored, which made real logout activity invisible.
+    await trackAuthMetric('logout_requested', {
+      userId,
+      workspaceId,
+      metadata: { authFlowId: getAuthFlowId(), source: 'user_initiated' },
+    })
     clearStoredDevAuthRole()
     clearWorkspaceScopedRuntimeCaches()
     setDevAuthRoleState(null)
@@ -882,7 +1000,6 @@ export function AuthSessionProvider({ children }) {
     if (supabase) {
       await supabase.auth.signOut()
     }
-    void trackAuthMetric('logout', { userId, workspaceId })
   }, [authState.currentWorkspace?.id, authState.user?.id, session?.user?.id])
 
   const value = useMemo(
