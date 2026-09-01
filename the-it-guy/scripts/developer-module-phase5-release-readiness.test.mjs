@@ -158,13 +158,13 @@ assert.match(files.api, /bond assignment handoff update skipped/)
 assert.match(files.api, /buyer participant onboarding status update skipped/)
 assert.match(
   files.api,
-  /const minimalTransactionPayload = \{[\s\S]*?purchase_price: resolvedPurchasePrice,[\s\S]*?cash_amount: normalizeOptionalNumber\(finance\.cashAmount\),[\s\S]*?bond_amount: normalizeOptionalNumber\(finance\.bondAmount\),[\s\S]*?deposit_amount: normalizeOptionalNumber\(finance\.depositAmount\),/,
-  'The transaction compatibility fallback must preserve canonical purchase, cash, bond, and deposit amounts.',
+  /const transactionPayload = \{[\s\S]*?purchase_price: resolvedPurchasePrice,[\s\S]*?cash_amount: normalizeOptionalNumber\(finance\.cashAmount\),[\s\S]*?bond_amount: normalizeOptionalNumber\(finance\.bondAmount\),[\s\S]*?deposit_amount: normalizeOptionalNumber\(finance\.depositAmount\),/,
+  'The canonical transaction payload must preserve purchase, cash, bond, and deposit amounts.',
 )
 assert.match(
   files.api,
-  /deletePayloadColumnsIfMissing\(transactionResult\.error, fallbackPayload, \[[\s\S]*?'purchase_price',[\s\S]*?'cash_amount',[\s\S]*?'bond_amount',[\s\S]*?'deposit_amount',/,
-  'The compatibility fallback should remove a deal-term column only when that exact column is unavailable.',
+  /executeTransactionMutationWithTargetedColumnRetry\(\{[\s\S]*?payload: insertTransactionPayload,[\s\S]*?execute: executeInsertMutation,/,
+  'The compatibility path should use the targeted missing-column retry without replacing the canonical payload.',
 )
 assert.doesNotMatch(
   files.api,

@@ -13,7 +13,9 @@ for (const token of [
   'isDevelopmentCreateMissingColumnError',
   'isMissingColumnError(error, columnName)',
   'isDevelopmentCreateMissingColumnError(result.error)',
-  ".insert({ name: trimmedName, planned_units: Math.trunc(normalizedPlannedUnits) })",
+  'id: createClientUuid()',
+  "client.from('developments').insert(insertPayload)",
+  ".eq('id', insertPayload.id)",
 ]) {
   assert(files.api.includes(token), `api.js should include ${token}`)
 }

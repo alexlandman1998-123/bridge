@@ -65,6 +65,10 @@ export default function DeveloperAccessInvitePage() {
   const authPath = `/auth?next=${encodeURIComponent(returnPath)}`
   const signupPath = `/auth?mode=signup&next=${encodeURIComponent(returnPath)}`
   const session = authState.session
+  const signedInRole = normalizeText(authState.profile?.role || authState.user?.profile?.role).toLowerCase()
+  const developmentPath = invite?.developmentId
+    ? `${signedInRole === 'developer' ? '/developer/developments' : '/developments'}/${invite.developmentId}`
+    : '/dashboard'
   const authLoading = authState.status === 'loading'
 
   useEffect(() => {
@@ -191,7 +195,7 @@ export default function DeveloperAccessInvitePage() {
                       This development invite has already been accepted.
                     </StatusPanel>
                     <Button asChild>
-                      <Link to={invite?.developmentId ? `/developments/${invite.developmentId}` : '/dashboard'}>
+                      <Link to={developmentPath}>
                         Open development
                         <ArrowRight size={17} />
                       </Link>

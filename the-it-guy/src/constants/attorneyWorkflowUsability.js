@@ -593,6 +593,9 @@ export function normalizeAttorneyWorkflowWorkPacket(packet = null) {
   const checklist = Array.isArray(packet.checklist)
     ? packet.checklist.map((item) => compactText(item)).filter(Boolean).slice(0, 6)
     : []
+  const clientAudience = Array.isArray(packet.clientAudience)
+    ? [...new Set(packet.clientAudience.map((item) => compactText(item).toLowerCase()).filter((item) => ['buyer', 'seller'].includes(item)))]
+    : []
 
   return {
     title: compactText(packet.title || 'Workflow action'),
@@ -617,6 +620,11 @@ export function normalizeAttorneyWorkflowWorkPacket(packet = null) {
     sourceCoordinationLaneKey: compactText(packet.sourceCoordinationLaneKey || ''),
     sourceCoordinationTargetStage: compactText(packet.sourceCoordinationTargetStage || ''),
     sourceCoordinationStatus: compactText(packet.sourceCoordinationStatus || ''),
+    contractVersion: compactText(packet.contractVersion || ''),
+    taskType: compactText(packet.taskType || ''),
+    statusAction: compactText(packet.statusAction || ''),
+    clientAudience,
+    eventKey: compactText(packet.eventKey || ''),
   }
 }
 

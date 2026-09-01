@@ -1,0 +1,48 @@
+.email-page {
+  --email-green: #179161;
+  --email-green-dark: #11734e;
+  --email-green-soft: #e9f7ef;
+}
+
+.email-page .wa-primary-button { border-color: var(--email-green); background: linear-gradient(180deg, #1a9666, #117c53); }
+.email-page .wa-brand-icon,
+.email-page .wa-sender-icon,
+.email-page .wa-info-icon,
+.email-page .wa-placeholder-icon { border-color: #c9e9d8; background: linear-gradient(145deg, #edf9f2, #dcf2e7); color: var(--email-green); }
+.email-page .wa-tabs button.wa-tab-active { color: var(--email-green-dark); }
+.email-page .wa-tabs button.wa-tab-active::after { background: var(--email-green); }
+.email-page .wa-page-number-active { background: var(--email-green-soft); color: var(--email-green-dark); }
+.email-page .wa-step-active .wa-step-number,
+.email-page .wa-step-complete .wa-step-number { border-color: var(--email-green); background: var(--email-green); }
+.email-page .wa-choice-card-selected { border-color: #5daf8c; background: #f2faf6; }
+.email-page input { accent-color: var(--email-green); }
+
+.email-stat-opened .wa-stat-icon { background: #e9f7ef; color: #16855a; }
+.email-stat-clicked .wa-stat-icon { background: #edf3ff; color: #426fc0; }
+.email-stat-recipients .wa-stat-icon { background: #f2f1fb; color: #6758a6; }
+.email-brand-icon { box-shadow: 0 8px 22px rgba(23, 145, 97, 0.1); }
+.email-status-draft { background: #f4effd; color: #7651b2; }
+
+.email-newsletter-thumbnail {
+  position: relative;
+  display: flex;
+  overflow: hidden;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 0.8rem;
+  background:
+    radial-gradient(circle at 82% 20%, rgba(96, 213, 166, 0.42), transparent 25%),
+    linear-gradient(145deg, #0d2e38, #123f43 55%, #176350);
+  color: #fff;
+}
+.email-newsletter-thumbnail::after { position: absolute; top: -18px; right: -18px; width: 56px; height: 56px; border: 1px solid rgba(255,255,255,.23); border-radius: 50%; content: ''; }
+.email-newsletter-thumbnail small { margin-bottom: auto; color: #aee1cc; font-size: 0.42rem; font-weight: 750; letter-spacing: 0.1em; }
+.email-newsletter-thumbnail strong { font-family: var(--font-display); font-size: 1rem; letter-spacing: -0.04em; line-height: 0.85; }
+.email-newsletter-thumbnail span { margin-top: 0.35rem; color: #aee1cc; font-size: 0.46rem; font-weight: 750; }
+
+.email-info-panel ul { background: #edf8f2; }
+.email-info-panel li { color: #237052; }
+
+@media (max-width: 440px) {
+  .email-newsletter-thumbnail { min-height: 150px; }
+}

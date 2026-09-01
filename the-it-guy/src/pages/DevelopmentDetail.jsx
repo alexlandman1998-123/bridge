@@ -1164,6 +1164,24 @@ function buildMarketingAgencyDraftId() {
   return `agency-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
 }
 
+function buildPublicDevelopmentSlug(name = '', developmentId = '') {
+  const namePart = String(name || 'development')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 54) || 'development'
+  const idPart = String(developmentId || '').replace(/[^a-zA-Z0-9]/g, '').slice(0, 8).toLowerCase()
+  return idPart ? `${namePart}-${idPart}` : namePart
+}
+
+function buildPublicDevelopmentUrl(slug = '') {
+  const safeSlug = String(slug || '').trim()
+  if (!safeSlug) return ''
+  const origin = typeof window !== 'undefined' ? window.location.origin : ''
+  return `${origin}/development/${encodeURIComponent(safeSlug)}`
+}
+
 function createDefaultMarketingFloorplan(index = 1) {
   return {
     id: buildFloorplanDraftId(),
@@ -4312,6 +4330,7 @@ function DevelopmentDetail() {
       selectedMarketingFloorplan?.ctaUrl ||
       marketingForm.listingConfiguration.ctaUrl ||
       marketingForm.externalLinks.developmentLandingPageUrl ||
+      buildPublicDevelopmentUrl(marketingForm.listingConfiguration.listingSlug) ||
       marketingForm.externalLinks.externalWebsiteUrl
 
     if (previewUrl) {
@@ -4325,6 +4344,8 @@ function DevelopmentDetail() {
 
   async function handlePublishDevelopmentMarketing() {
     const normalizedMarketing = normalizeMarketingContentForm(detailsForm.marketing)
+    const listingSlug = normalizedMarketing.listingConfiguration.listingSlug || buildPublicDevelopmentSlug(data.development.name, data.development.id)
+    const publicLandingUrl = buildPublicDevelopmentUrl(listingSlug)
     const nextDetailsForm = {
       ...detailsForm,
       marketing: {
@@ -4335,9 +4356,14 @@ function DevelopmentDetail() {
         },
         listingConfiguration: {
           ...normalizedMarketing.listingConfiguration,
+          listingSlug,
           showOnListingWebsite: true,
           publicVisibility: true,
           marketingStatus: 'live',
+        },
+        externalLinks: {
+          ...normalizedMarketing.externalLinks,
+          developmentLandingPageUrl: publicLandingUrl,
         },
         floorplans: normalizedMarketing.floorplans.map((item) =>
           selectedMarketingFloorplan?.id && item.id === selectedMarketingFloorplan.id
@@ -4353,7 +4379,7 @@ function DevelopmentDetail() {
       setError('')
       setDetailsForm(nextDetailsForm)
       await saveDevelopmentDetails(data.development.id, buildDevelopmentDetailsPayload(nextDetailsForm))
-      setFeedback('Development marketing published.')
+      setFeedback(`Development marketing published at ${publicLandingUrl}`)
       window.dispatchEvent(new Event('itg:developments-changed'))
       await loadData()
     } catch (saveError) {
@@ -4500,7 +4526,20 @@ function DevelopmentDetail() {
         )
       }
 
-      const nextDetailsForm = buildDetailsFormWithUploadedMarketingAssets(uploadedRows, documentType, options)
+      const uploadedDetailsForm = buildDetailsFormWithUploadedMarketingAssets(uploadedRows, documentType, options)
+      const uploadedMarketing = normalizeMarketingContentForm(uploadedDetailsForm.marketing)
+      const listingSlug = uploadedMarketing.listingConfiguration.listingSlug || buildPublicDevelopmentSlug(data.development.name, data.development.id)
+      const nextDetailsForm = {
+        ...uploadedDetailsForm,
+        marketing: {
+          ...uploadedMarketing,
+          listingConfiguration: { ...uploadedMarketing.listingConfiguration, listingSlug },
+          externalLinks: {
+            ...uploadedMarketing.externalLinks,
+            developmentLandingPageUrl: uploadedMarketing.externalLinks.developmentLandingPageUrl || buildPublicDevelopmentUrl(listingSlug),
+          },
+        },
+      }
       setDetailsForm(nextDetailsForm)
       await saveDevelopmentDetails(data.development.id, buildDevelopmentDetailsPayload(nextDetailsForm))
       setFeedback(options.successMessage || 'Marketing assets uploaded.')
@@ -5690,7 +5729,14 @@ function DevelopmentDetail() {
                     </label>
                   </DetailField>
                   <DetailField label="Public Listing URL">
-                    <Field value={marketingForm.externalLinks.developmentLandingPageUrl} onChange={(event) => setMarketingField('externalLinks', 'developmentLandingPageUrl', event.target.value)} />
+                    <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                      <Field value={marketingForm.externalLinks.developmentLandingPageUrl} onChange={(event) => setMarketingField('externalLinks', 'developmentLandingPageUrl', event.target.value)} />
+                      <Button type="button" variant="secondary" onClick={() => void handleCopyMarketingValue(marketingForm.externalLinks.developmentLandingPageUrl, 'Public development link')} disabled={!marketingForm.externalLinks.developmentLandingPageUrl}>
+                        <Copy size={14} />
+                        Copy Link
+                      </Button>
+                    </div>
+                    <p className="mt-2 text-xs leading-5 text-[#6b7d93]">Generated automatically when plans or marketing assets are uploaded. Publishing makes the page public.</p>
                   </DetailField>
                   <DetailField label="Marketing Status">
                     <Field as="select" value={marketingForm.listingConfiguration.marketingStatus} onChange={(event) => setMarketingField('listingConfiguration', 'marketingStatus', event.target.value)}>

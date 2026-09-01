@@ -9,6 +9,23 @@ function normalize(value = '') {
   return toText(value).toLowerCase()
 }
 
+function resolveEventAudience(event = {}, metadata = {}) {
+  const contractAudience = Array.isArray(metadata?.workPacket?.clientAudience)
+    ? metadata.workPacket.clientAudience.map((item) => normalize(item)).filter(Boolean)
+    : []
+  if (contractAudience.length > 1) return 'buyer_and_seller'
+  if (contractAudience.length === 1) return contractAudience[0]
+  return normalize(
+    event?.audience ||
+      event?.requested_from ||
+      metadata?.audience ||
+      metadata?.requestedFrom ||
+      metadata?.requested_from ||
+      metadata?.workPacket?.audience ||
+      '',
+  )
+}
+
 function normalizeVisibility(value = '', fallback = 'internal_only') {
   const normalized = normalize(value)
   if (['client_visible', 'internal_only', 'shared_role_players'].includes(normalized)) {
@@ -349,7 +366,8 @@ export function normalizeClientActivityEvent(event = {}) {
       statusLabel: getActivityStatusLabel({ type: normalizedType, displayType, dueStatus }),
       dueDate,
       dueStatus,
-      audience: normalize(event?.audience || event?.requested_from || metadata?.audience || metadata?.requestedFrom || metadata?.requested_from || ''),
+      audience: resolveEventAudience(event, metadata),
+      clientAudience: Array.isArray(metadata?.workPacket?.clientAudience) ? metadata.workPacket.clientAudience : [],
       rejectionReason: toText(event?.rejectionReason || event?.rejection_reason),
     },
   }
@@ -1033,6 +1051,12 @@ function buildWorkflowProjectionEvents(context = {}, clientRole = 'buyer') {
       audience: normalize(milestone?.audience || clientRole || 'shared'),
       actionLabel: 'View Progress',
       actionRoute: 'progress',
+      processKey: milestone?.processKey || '',
+      processLabel: milestone?.processLabel || '',
+      laneLabel: milestone?.processLabel || '',
+      status: milestone?.status || 'in_progress',
+      expectedNextStep: milestone?.expectedNextStep || '',
+      topic: milestone?.processKey ? 'legal' : 'general',
     },
   }))
 

@@ -1,6 +1,9 @@
 import {
   createTransactionProgressDefinition,
 } from '../core/transactions/sharedTransactionProgressContract.js'
+import {
+  createAttorneyTaskOperationalContract,
+} from '../core/transactions/attorneyTaskOperationalContract.js'
 
 export const ATTORNEY_WORKFLOW_LANES = {
   transfer: {
@@ -218,6 +221,24 @@ function stage({
     clientTitle: clientProgressTitle || `${processLabel} update`,
     clientDescription: clientProgressText || `${processLabel} is currently at: ${label}.`,
   })
+  const operationalContract = createAttorneyTaskOperationalContract({
+    laneKey: lane,
+    taskKey: key,
+    label,
+    description,
+    actionLabel,
+    ownerRole: ownerRole || laneMeta.role,
+    ownerLabel: ownerLabel || laneMeta.label,
+    defaultVisibility,
+    clientVisibleAllowed,
+    requiredData,
+    requiredDocuments,
+    evidenceRequirements: evidenceRequirements.length ? evidenceRequirements : [`${label} confirmed on the matter record.`],
+    requiresNote,
+    readinessGate: gate,
+    clientTitle: sharedProgress.client?.title || '',
+    clientDescription: sharedProgress.client?.description || '',
+  })
   return {
     key,
     label,
@@ -237,6 +258,7 @@ function stage({
     requiredDocuments,
     requiresNote,
     sharedProgress,
+    operationalContract,
   }
 }
 
@@ -1302,6 +1324,10 @@ export function getAttorneyStageDefinition(stageKey, laneKey = null) {
     if (match) return match
   }
   return null
+}
+
+export function getAttorneyTaskOperationalContract(stageKey, laneKey = null) {
+  return getAttorneyStageDefinition(stageKey, laneKey)?.operationalContract || null
 }
 
 export function getAttorneyStageLabel(stageKey, laneKey = null) {

@@ -57,6 +57,7 @@ import ConfirmDialog from '../components/ui/ConfirmDialog'
 import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
 import Modal from '../components/ui/Modal'
+import LegalTaskWorkbench from '../components/attorney/workflow/LegalTaskWorkbench.jsx'
 import {
   buildBondHybridFinanceStageSteps,
   summarizeBondHybridFinanceWorkflow,
@@ -106,6 +107,8 @@ import {
   updateAttorneyWorkflowStepStatus,
 } from '../services/attorneyWorkflow/attorneyWorkflowLaneService'
 import { buildTransferWorkspaceViewModel } from '../services/attorneyWorkflow/transferWorkspaceViewModel.js'
+import { buildLegalTaskWorkbenchModel } from '../core/transactions/legalTaskWorkbenchModel.js'
+import { recordLegalWorkspaceUxEvent } from '../services/legalWorkspaceUxTelemetryService.js'
 import { getAttorneyStageDefinitionsForLane, normalizeAttorneyStageKey } from '../constants/attorneyWorkflowStages.js'
 import {
   buildAttorneyWorkflowActionCommand,
@@ -7948,6 +7951,8 @@ function ArchlineWorkflowWorkspace({
 
 function ArchlineTransferWorkspace({
   workflow = null,
+  workflowKey = 'transfer',
+  selectionStorageKey = '',
   documents = [],
   keyDates = [],
   parties = [],
@@ -7960,9 +7965,18 @@ function ArchlineTransferWorkspace({
   onOpenDocuments,
   onOpenParties,
   onOpenFinance,
+  onOpenMatter,
   onExecuteCommand,
+  onUxEvent,
 }) {
-  const [selectedTaskKey, setSelectedTaskKey] = useState('')
+  const [selectedTaskKey, setSelectedTaskKey] = useState(() => {
+    if (!selectionStorageKey || typeof window === 'undefined') return ''
+    try {
+      return window.sessionStorage.getItem(selectionStorageKey) || ''
+    } catch {
+      return ''
+    }
+  })
   const [search, setSearch] = useState('')
   const [attentionFilter, setAttentionFilter] = useState('')
   const [phaseFilter, setPhaseFilter] = useState('')
@@ -7989,7 +8003,7 @@ function ArchlineTransferWorkspace({
   const viewModel = useMemo(
     () => buildTransferWorkspaceViewModel({
       workflow,
-      workflowKey: 'transfer',
+      workflowKey,
       documents,
       keyDates,
       parties,
@@ -7998,7 +8012,7 @@ function ArchlineTransferWorkspace({
       search,
       filters: { attention: attentionFilter, phaseKey: phaseFilter, status: statusFilter },
     }),
-    [activityFeed, attentionFilter, documents, keyDates, parties, phaseFilter, search, selectedTaskKey, statusFilter, workflow],
+    [activityFeed, attentionFilter, documents, keyDates, parties, phaseFilter, search, selectedTaskKey, statusFilter, workflow, workflowKey],
   )
   const selectedTask = viewModel.selectedTask
   const currentPhase = viewModel.currentPhase
@@ -8036,6 +8050,14 @@ function ArchlineTransferWorkspace({
       return leftIndex - rightIndex
     },
   )
+  const taskWorkbenchModel = buildLegalTaskWorkbenchModel({
+    task: selectedTask,
+    taskContext: viewModel.selectedTaskContext,
+    workActions: taskWorkActions,
+    statusActions: primaryTaskActions,
+    workflowLabel: viewModel.title,
+    workflowTasks: viewModel.tasks,
+  })
   const statusFilterOptions = [
     ['', 'All'],
     ['open', 'Open'],
@@ -8049,10 +8071,13 @@ function ArchlineTransferWorkspace({
   ]
 
   useEffect(() => {
-    if (!selectedTaskKey && selectedTask?.key) {
-      setSelectedTaskKey(selectedTask.key)
+    if (!selectionStorageKey || !selectedTask?.key || typeof window === 'undefined') return
+    try {
+      window.sessionStorage.setItem(selectionStorageKey, selectedTask.key)
+    } catch {
+      // Selection persistence is a convenience; the workflow remains usable without storage.
     }
-  }, [selectedTask?.key, selectedTaskKey])
+  }, [selectedTask?.key, selectionStorageKey])
 
   useEffect(() => {
     const selectedPhaseKey = selectedTask?.phaseKey || currentPhase?.key
@@ -8164,6 +8189,12 @@ function ArchlineTransferWorkspace({
 
   function canRunTaskWorkAction(action = {}) {
     if (action.disabled) return false
+    if (action.id === 'capture_data') {
+      if (action.target === 'finance') return typeof onOpenFinance === 'function'
+      if (action.target === 'parties') return typeof onOpenParties === 'function'
+      if (action.target === 'matter') return typeof onOpenMatter === 'function'
+      return typeof onAddNote === 'function'
+    }
     if (action.id === 'request_document') return typeof onRequestDocument === 'function'
     if (action.id === 'upload_document') return typeof onUploadDocument === 'function'
     if (action.id === 'open_documents') return typeof onOpenDocuments === 'function'
@@ -8182,6 +8213,18 @@ function ArchlineTransferWorkspace({
 
   function handleTaskWorkAction(action = {}) {
     if (!selectedTask || !canRunTaskWorkAction(action)) return
+    if (action.id === 'capture_data') {
+      if (action.target === 'finance') {
+        onOpenFinance?.(selectedTask)
+      } else if (action.target === 'parties') {
+        onOpenParties?.(selectedTask)
+      } else if (action.target === 'matter') {
+        onOpenMatter?.(selectedTask)
+      } else {
+        onAddNote?.(selectedTask)
+      }
+      return
+    }
     if (action.id === 'request_document') {
       if (action.command && typeof onExecuteCommand === 'function') {
         onExecuteCommand(action.workflowAction, action.command)
@@ -8223,6 +8266,16 @@ function ArchlineTransferWorkspace({
     }
   }
 
+  function handleTaskWorkbenchAction(action = {}) {
+    if (action.source === 'status') {
+      const statusAction = primaryTaskActions.find((item) => item.id === action.id) || action
+      openStatusDraft(selectedTask, statusAction)
+      return
+    }
+    const workAction = taskWorkActions.find((item) => item.id === action.id) || action
+    handleTaskWorkAction(workAction)
+  }
+
   function handleCommandQueueItem(item = {}) {
     if (item.command && item.workflowAction && typeof onExecuteCommand === 'function') {
       onExecuteCommand(item.workflowAction, item.command)
@@ -8238,6 +8291,7 @@ function ArchlineTransferWorkspace({
 
   function getTaskWorkActionIcon(actionId = '') {
     const icons = {
+      capture_data: PenLine,
       request_document: FileText,
       upload_document: Upload,
       open_documents: FileText,
@@ -8325,6 +8379,15 @@ function ArchlineTransferWorkspace({
     if (!statusDraft.task) return
     const nextTaskKey = statusDraft.status === 'completed' ? viewModel.nextActionableTask?.key : ''
     const updateSucceeded = await onUpdateStep?.(statusDraft.task, statusDraft.status, buildStatusDraftNote(), statusDraft.workPacket || null)
+    onUxEvent?.({
+      eventName: 'task_status_updated',
+      lane: workflowKey,
+      taskType: taskWorkbenchModel.taskType,
+      status: statusDraft.status,
+      actionId: statusDraft.actionId,
+      placement: 'status_modal',
+      outcome: updateSucceeded === false ? 'failure' : 'success',
+    })
     if (updateSucceeded === false) return
     if (nextTaskKey) {
       setSelectedTaskKey(nextTaskKey)
@@ -8332,6 +8395,27 @@ function ArchlineTransferWorkspace({
       setActiveTaskTab('checklist')
     }
     closeStatusDraft()
+  }
+
+  if (selectedTask?.operationalContract) {
+    return (
+      <LegalTaskWorkbench
+        model={taskWorkbenchModel}
+        phases={viewModel.phases}
+        selectedTaskKey={selectedTask.key}
+        selectedPhaseKey={selectedTask.phaseKey}
+        saving={saving}
+        onSelectTask={setSelectedTaskKey}
+        onRunAction={handleTaskWorkbenchAction}
+        onOpenDocuments={() => onOpenDocuments?.(selectedTask, selectedDocuments)}
+        onAddNote={() => onAddNote?.(selectedTask)}
+        statusDraft={statusDraft}
+        onStatusDraftChange={setStatusDraft}
+        onSubmitStatusDraft={submitStatusDraft}
+        onCloseStatusDraft={closeStatusDraft}
+        onUxEvent={onUxEvent}
+      />
+    )
   }
 
   return (
@@ -15674,6 +15758,7 @@ function AttorneyTransactionDetail() {
   const [saving, setSaving] = useState(false)
   const [workspaceMenu, setWorkspaceMenu] = useState('today')
   const [localLegalWorkflowDetailKey, setLocalLegalWorkflowDetailKey] = useState('')
+  const [legalTaskReturnContext, setLegalTaskReturnContext] = useState(null)
   const [discussionBody, setDiscussionBody] = useState('')
   const [discussionType, setDiscussionType] = useState('operational')
   const [discussionVisibility, setDiscussionVisibility] = useState('shared')
@@ -19017,17 +19102,19 @@ function AttorneyTransactionDetail() {
 
   const openWorkspaceMenu = useCallback((nextMenu) => {
     setWorkspaceMenu(nextMenu)
-    if (localLegalWorkflowDetailKey && nextMenu !== 'transfer') {
-      setLocalLegalWorkflowDetailKey('')
+    if (nextMenu === 'transfer') {
+      setLegalTaskReturnContext(null)
     }
     if (routeLegalWorkflowDetailKey && nextMenu !== 'transfer') {
+      setLocalLegalWorkflowDetailKey(routeLegalWorkflowDetailKey)
       navigate(transactionWorkspaceBasePath)
     }
-  }, [localLegalWorkflowDetailKey, navigate, routeLegalWorkflowDetailKey, transactionWorkspaceBasePath])
+  }, [navigate, routeLegalWorkflowDetailKey, transactionWorkspaceBasePath])
 
   const openLegalWorkflowDetail = useCallback((detailKey) => {
     const normalized = normalizeLegalWorkflowDetailKey(detailKey)
     if (!normalized) return
+    setLegalTaskReturnContext(null)
     setWorkspaceMenu('transfer')
     setLocalLegalWorkflowDetailKey(normalized)
   }, [])
@@ -19888,43 +19975,24 @@ function AttorneyTransactionDetail() {
     setWorkspaceMenu('activity')
   }, [legalWorkflowModels])
   const archlineWorkspaceTabs = useMemo(() => [
-    { id: 'overview', label: 'Overview' },
-    { id: 'tasks', label: 'Tasks', count: overviewNextActions.length || undefined },
-    { id: 'transfer', label: 'Transfer' },
-    { id: 'finance', label: 'Attorney Finance' },
-    { id: 'documents', label: 'Documents', count: totalDocsLabel(documentHealthSummary.uploadedCount || 0, documentHealthSummary.requiredCount || requiredDocumentRows.length || 0) },
-    ...(requiresCancellationWorkflow ? [{ id: 'cancellation', label: 'Cancellation', count: 1 }] : []),
-    { id: 'activity', label: 'Activity' },
+    { id: 'transfer', label: 'Work' },
+    { id: 'documents', label: 'Documents' },
+    { id: 'activity', label: 'History' },
     { id: 'roleplayers', label: 'Parties' },
-  ], [
-    documentHealthSummary.requiredCount,
-    documentHealthSummary.uploadedCount,
-    overviewNextActions.length,
-    requiredDocumentRows.length,
-    requiresCancellationWorkflow,
-  ])
+  ], [])
   const archlineActiveWorkspaceTab = useMemo(() => {
-    if (activeLegalWorkflowDetailKey === 'bond-cancellation') return 'cancellation'
-    if (activeLegalWorkflowDetailKey === 'bond-registration') return 'finance'
+    if (activeWorkspaceMenu === 'documents') return 'documents'
+    if (activeWorkspaceMenu === 'activity') return 'activity'
     if (activeWorkspaceMenu === 'stakeholders') return 'roleplayers'
-    if (activeWorkspaceMenu === 'today') return 'overview'
-    return archlineWorkspaceTabs.some((tab) => tab.id === activeWorkspaceMenu) ? activeWorkspaceMenu : 'overview'
-  }, [activeLegalWorkflowDetailKey, activeWorkspaceMenu, archlineWorkspaceTabs])
+    return 'transfer'
+  }, [activeWorkspaceMenu])
   const handleArchlineTabChange = useCallback((tabId) => {
     if (tabId === 'roleplayers') {
       openWorkspaceMenu('stakeholders')
       return
     }
-    if (tabId === 'cancellation') {
-      openLegalWorkflowDetail('bond-cancellation')
-      return
-    }
-    if (tabId === 'transfer' && activeLegalWorkflowDetailKey) {
-      closeLegalWorkflowDetail()
-      return
-    }
     openWorkspaceMenu(tabId)
-  }, [activeLegalWorkflowDetailKey, closeLegalWorkflowDetail, openLegalWorkflowDetail, openWorkspaceMenu])
+  }, [openWorkspaceMenu])
   const archlineKeyDates = useMemo(() => [
     ['Instruction Date', formatDate(transaction?.instruction_date || transaction?.created_at, 'TBD')],
     ['Agreement Date', formatDate(transaction?.agreement_date || transaction?.offer_accepted_at || transaction?.created_at, 'TBD')],
@@ -20015,6 +20083,59 @@ function AttorneyTransactionDetail() {
       ],
     }
   }, [bondAttorneyWorkflowLane, bondWorkflowSummary?.currentStageLabel, financeReadinessDashboard?.blockers, legalWorkflowModels, routingDiagnostics?.facts, transactionFinanceWorkflow])
+  const archlineActiveLegalTaskWorkflowKey = activeLegalWorkflowDetailKey === 'bond-registration'
+    ? 'bond'
+    : activeLegalWorkflowDetailKey === 'bond-cancellation'
+      ? 'cancellation'
+      : 'transfer'
+  const archlineActiveLegalTaskWorkflow = archlineActiveLegalTaskWorkflowKey === 'bond'
+    ? archlineFinanceWorkflow
+    : archlineActiveLegalTaskWorkflowKey === 'cancellation'
+      ? archlineCancellationWorkflow
+      : archlineTransferWorkflow
+  const archlineActiveLegalTaskDocuments = archlineActiveLegalTaskWorkflowKey === 'transfer'
+    ? archlineTransferDocumentsForWorkflow
+    : archlineActiveLegalTaskWorkflowKey === 'bond'
+      ? archlineDocumentsByWorkflow.finance || []
+      : archlineDocumentsByWorkflow.cancellation || []
+
+  function openTaskLinkedWorkspace(targetWorkspace, task = null) {
+    if (task?.key) {
+      setLegalTaskReturnContext({
+        taskKey: task.key,
+        taskLabel: task.label || 'current legal task',
+        workflowKey: archlineActiveLegalTaskWorkflowKey,
+        workflowDetailKey: activeLegalWorkflowDetailKey,
+      })
+    }
+    openWorkspaceMenu(targetWorkspace)
+  }
+
+  function recordLegalWorkspaceUx(input = {}) {
+    void recordLegalWorkspaceUxEvent({
+      userId: profile?.id || '',
+      workspaceId: workspaceOrganisationId,
+      ...input,
+    })
+  }
+
+  function returnToLegalTask() {
+    const workflowDetailKey = legalTaskReturnContext?.workflowDetailKey || ''
+    recordLegalWorkspaceUx({
+      eventName: 'return_path_used',
+      lane: legalTaskReturnContext?.workflowKey || archlineActiveLegalTaskWorkflowKey,
+      placement: 'return_banner',
+      targetWorkspace: 'work',
+      outcome: 'success',
+    })
+    setLegalTaskReturnContext(null)
+    if (workflowDetailKey) {
+      openLegalWorkflowDetail(workflowDetailKey)
+      return
+    }
+    openWorkspaceMenu('transfer')
+  }
+
   const archlineFinanceSummaryRows = useMemo(() => [
     ['Loan Amount', formatCurrencyValue(hasCapturedFinancials ? transaction?.bond_amount : 0, bondAmountFallback)],
     ['Deposit', formatCurrencyValue(
@@ -20048,6 +20169,20 @@ function AttorneyTransactionDetail() {
       ...draft,
       note: typeof note === 'string' ? note : draft.note,
       workPacket,
+    })
+  }
+
+  function handleLegalTaskDocumentRequest(task, documents = []) {
+    const missingDocument = (documents || []).find((document) => document?.missing || document?.ready === false) || null
+    const documentLabel = missingDocument?.displayName || missingDocument?.label || missingDocument?.name || task?.label || 'the required document'
+    openConveyancingDocumentRequest({
+      ...(missingDocument || {}),
+      label: documentLabel,
+      displayName: documentLabel,
+      requestedFrom: missingDocument?.requiredFrom || missingDocument?.required_from || missingDocument?.requiredParty || '',
+      visibility: missingDocument?.visibilityDefault || task?.defaultVisibility || 'client_visible',
+      notes: `Please provide ${documentLabel} for ${task?.label || 'this legal task'}.`,
+      blocksStage: task?.completionReadiness?.canComplete === false,
     })
   }
 
@@ -21970,6 +22105,19 @@ function AttorneyTransactionDetail() {
       )}
     >
       <div className="space-y-6">
+        {workspaceRole === 'attorney' && activeWorkspaceMenu !== 'transfer' && legalTaskReturnContext ? (
+          <section className="flex flex-col gap-3 rounded-[16px] border border-emerald-200 bg-emerald-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between" role="status">
+            <div className="min-w-0">
+              <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-emerald-700">Task workspace open</span>
+              <strong className="mt-1 block truncate text-sm text-emerald-950">{legalTaskReturnContext.taskLabel}</strong>
+              <p className="mt-1 text-xs leading-5 text-emerald-800">Complete the focused work here, then return to the task to continue.</p>
+            </div>
+            <Button type="button" size="sm" variant="secondary" className="shrink-0" onClick={returnToLegalTask}>
+              <ChevronRight size={15} className="rotate-180" /> Return to task
+            </Button>
+          </section>
+        ) : null}
+
         {workspaceRole === 'bond_originator' && activeWorkspaceMenu === 'overview' ? (
           <BondConsultantOverviewWorkspace
             journeyModel={agentOverviewJourneyModel}
@@ -22031,69 +22179,64 @@ function AttorneyTransactionDetail() {
           />
         ) : null}
 
-        {workspaceRole === 'attorney' && activeWorkspaceMenu === 'transfer' && activeLegalWorkflowDetailKey !== 'bond-registration' ? (
-          activeLegalWorkflowDetailKey === 'bond-cancellation' ? (
-            <ArchlineWorkflowWorkspace
-              workflow={archlineCancellationWorkflow}
-              workflowKey="cancellation"
-              title="Cancellation Workflow"
-              badge={requiresCancellationWorkflow ? 'Required' : 'Not Required'}
-              summaryRows={[
-                ['Assigned', archlineCancellationWorkflow?.assignedDisplay || 'Not assigned'],
-                ['Progress', `${archlineCancellationWorkflow?.progressPercent || 0}%`],
-                ['Next', archlineCancellationWorkflow?.nextStep || 'Review workflow'],
-              ]}
-              documents={archlineDocumentsByWorkflow.cancellation}
-              blockers={archlineCancellationWorkflow?.blockers || []}
-              keyDates={archlineKeyDates}
-              activityFeed={overviewConversationEntries}
-              saving={workflowSaving}
-              onUpdateStep={(step, status, note) => void handleArchlineLegalWorkflowStepUpdate(archlineCancellationWorkflow, step, status, note)}
-              onUploadDocument={() => openDocumentUploadModal({ category: 'cancellation' })}
-              onAddNote={handleQuickAddWorkflowNote}
-              onOpenDocuments={() => openWorkspaceMenu('documents')}
-            />
-          ) : (
+        {workspaceRole === 'attorney' && activeWorkspaceMenu === 'transfer' ? (
+          <section className="space-y-4">
+            <div className="flex flex-wrap items-center gap-2 rounded-[14px] border border-slate-200 bg-white p-2 shadow-sm" role="tablist" aria-label="Legal workflow lane">
+              {[
+                { key: 'transfer', label: 'Transfer', detailKey: '' },
+                { key: 'bond', label: 'Bond registration', detailKey: 'bond-registration' },
+                ...(requiresCancellationWorkflow
+                  ? [{ key: 'cancellation', label: 'Cancellation', detailKey: 'bond-cancellation' }]
+                  : []),
+              ].map((lane) => {
+                const active = lane.key === archlineActiveLegalTaskWorkflowKey
+                return (
+                  <button
+                    key={lane.key}
+                    type="button"
+                    role="tab"
+                    className={`min-h-10 rounded-[10px] px-3 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 ${active ? 'bg-slate-950 text-white' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-950'}`}
+                    aria-selected={active}
+                    onClick={() => lane.detailKey ? openLegalWorkflowDetail(lane.detailKey) : closeLegalWorkflowDetail()}
+                  >
+                    {lane.label}
+                  </button>
+                )
+              })}
+            </div>
+
             <ArchlineTransferWorkspace
-              workflow={archlineTransferWorkflow}
-              documents={archlineTransferDocumentsForWorkflow}
+              key={archlineActiveLegalTaskWorkflowKey}
+              workflow={archlineActiveLegalTaskWorkflow}
+              workflowKey={archlineActiveLegalTaskWorkflowKey}
+              selectionStorageKey={`arch9:attorney-workflow-selection:${transaction.id}:${archlineActiveLegalTaskWorkflowKey}`}
+              documents={archlineActiveLegalTaskDocuments}
               keyDates={archlineKeyDates}
               parties={archlinePartyItems}
               activityFeed={overviewConversationEntries}
               saving={workflowSaving}
-              onUpdateStep={(step, status, note, workPacket) => handleArchlineLegalWorkflowStepUpdate(archlineTransferWorkflow, step, status, note, workPacket)}
+              onUpdateStep={(step, status, note, workPacket) => handleArchlineLegalWorkflowStepUpdate(archlineActiveLegalTaskWorkflow, step, status, note, workPacket)}
               onUploadDocument={(task, documents = []) => {
                 const targetDocument = (documents || []).find((document) => !document?.missing && (document?.requirement || document?.requiredDocument || document?.id)) || null
                 if (targetDocument?.requirement || targetDocument?.requiredDocument) {
                   openDocumentUploadModal({ requirement: targetDocument.requirement || targetDocument.requiredDocument })
                 } else {
-                  openDocumentUploadModal({ category: 'transfer' })
+                  openDocumentUploadModal({ category: archlineActiveLegalTaskWorkflowKey })
                 }
               }}
-              onRequestDocument={(task, documents = []) => {
-                const missingDocument = (documents || []).find((document) => document?.missing || document?.ready === false) || null
-                openConveyancingDocumentRequest({
-                  ...(missingDocument || {}),
-                  label: missingDocument?.displayName || missingDocument?.label || missingDocument?.name || task?.label || '',
-                  displayName: missingDocument?.displayName || missingDocument?.label || missingDocument?.name || task?.label || '',
-                  requestedFrom: missingDocument?.requiredFrom || missingDocument?.required_from || missingDocument?.requiredParty || '',
-                  visibility: missingDocument?.visibilityDefault || task?.defaultVisibility || 'client_visible',
-                  notes: missingDocument
-                    ? `Please provide ${missingDocument.displayName || missingDocument.label || missingDocument.name || 'the requested document'} for ${task?.label || 'this transfer task'}.`
-                    : `Please provide the documents or information required for ${task?.label || 'this transfer task'}.`,
-                  blocksStage: task?.completionReadiness?.canComplete === false,
-                })
-              }}
+              onRequestDocument={handleLegalTaskDocumentRequest}
               onAddNote={handleQuickAddWorkflowNote}
-              onOpenDocuments={() => openWorkspaceMenu('documents')}
-              onOpenParties={() => openWorkspaceMenu('stakeholders')}
-              onOpenFinance={() => openWorkspaceMenu('finance')}
-              onExecuteCommand={(action, command) => handleWorkflowActionCommand(archlineTransferWorkflow?.lane, action, command)}
+              onOpenDocuments={(task) => openTaskLinkedWorkspace('documents', task)}
+              onOpenParties={(task) => openTaskLinkedWorkspace('stakeholders', task)}
+              onOpenFinance={(task) => openTaskLinkedWorkspace('finance', task)}
+              onOpenMatter={(task) => openTaskLinkedWorkspace('overview', task)}
+              onExecuteCommand={(action, command) => handleWorkflowActionCommand(archlineActiveLegalTaskWorkflow?.lane, action, command)}
+              onUxEvent={recordLegalWorkspaceUx}
             />
-          )
+          </section>
         ) : null}
 
-        {workspaceRole === 'attorney' && (activeWorkspaceMenu === 'finance' || activeLegalWorkflowDetailKey === 'bond-registration') ? (
+        {workspaceRole === 'attorney' && activeWorkspaceMenu === 'finance' ? (
           <section className="space-y-5">
             {financeCommandCenterPanel}
           </section>

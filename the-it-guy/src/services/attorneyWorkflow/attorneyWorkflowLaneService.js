@@ -49,6 +49,10 @@ import {
   getTransactionProgressNotifications,
   publishTransactionSharedProgress,
 } from '../transactionSharedProgressService.js'
+import {
+  assertAttorneyTaskStatusAction,
+  buildAttorneyTaskMutationPacket,
+} from '../../core/transactions/attorneyTaskOperationalContract.js'
 
 const LANE_META = {
   transfer: {
@@ -1765,7 +1769,6 @@ export async function updateAttorneyWorkflowStepStatus({
   const normalizedStepKey = normalizeAttorneyStageKey(stepKey, normalizedLaneKey)
   const normalizedStatus = normalizeStepStatus(status, 'not_started')
   const normalizedNote = String(note || '').trim()
-  const workPacketMetadata = buildWorkPacketMetadata(workPacket)
   if (!normalizedTransactionId) throw new Error('Transaction id is required.')
   if (!stepId && !normalizedStepKey) throw new Error('Workflow step is required.')
 
@@ -1789,8 +1792,15 @@ export async function updateAttorneyWorkflowStepStatus({
     normalizedLaneKey,
   )
   const stageDefinition = getAttorneyStageDefinition(resolvedStepKey, normalizedLaneKey)
+  const operationalContract = stageDefinition?.operationalContract || null
+  assertAttorneyTaskStatusAction(operationalContract, normalizedStatus)
+  const operationalWorkPacket = buildAttorneyTaskMutationPacket(operationalContract, {
+    status: normalizedStatus,
+    workPacket,
+  })
+  const workPacketMetadata = buildWorkPacketMetadata(operationalWorkPacket)
   const normalizedVisibility = normalizeVisibility(
-    visibility || stageDefinition?.defaultVisibility || 'professional_shared',
+    visibility || operationalWorkPacket?.visibility || operationalContract?.visibilityPolicy?.defaultVisibility || stageDefinition?.defaultVisibility || 'professional_shared',
   )
   const permissionContext = await getAttorneyLegalPermissionContext({
     userId: actor.id,

@@ -7733,6 +7733,7 @@ function SellerPortalDashboard({
   sellerComplianceSigning,
   sellerListingUrl,
   latestAttorneyUpdate,
+  legalProgress,
   commentDraft,
   savingComment,
   onCommentDraftChange,
@@ -7760,7 +7761,11 @@ function SellerPortalDashboard({
         workspaceNavigationScope={workspaceNavigationScope}
       />
       <SellerTransactionHealthCard health={sellerHealth} />
-      <AttorneySaysCard update={latestAttorneyUpdate} fallbackStageLabel={sellerStatusLabel} />
+      {legalProgress?.available ? (
+        <ClientLegalProgressCard model={legalProgress} />
+      ) : (
+        <AttorneySaysCard update={latestAttorneyUpdate} fallbackStageLabel={sellerStatusLabel} />
+      )}
       <SellerProgressJourney
         listingProgressModel={sellerListingProgressModel}
         saleProgressModel={sellerSaleProgressModel}
@@ -8203,6 +8208,55 @@ function AttorneySaysCard({ update = null, fallbackStageLabel = '' }) {
   )
 }
 
+function ClientLegalProgressCard({ model = null }) {
+  if (!model?.available || !model?.current) return null
+  const current = model.current
+  const recentItems = (model.items || []).slice(1, 3)
+  const statusClassName = current.status === 'completed'
+    ? 'border-[#cde7d5] bg-[#eefbf3] text-[#1f7d44]'
+    : current.status === 'attention'
+      ? 'border-[#f1d7a8] bg-[#fff8e8] text-[#9a5b13]'
+      : 'border-[#d7e5f4] bg-[#f3f8fd] text-[#355d7c]'
+
+  return (
+    <section className={`${PORTAL_DESIGN_TOKENS.surface.card} p-5 ${PORTAL_DESIGN_TOKENS.shadow.card}`} aria-labelledby="client-legal-progress-title">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Legal progress</p>
+          <h3 id="client-legal-progress-title" className="mt-1 text-[1.05rem] font-semibold tracking-[-0.02em] text-[#142132]">
+            {current.title}
+          </h3>
+        </div>
+        <span className={`inline-flex min-h-[28px] items-center rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${statusClassName}`}>
+          {current.statusLabel}
+        </span>
+      </div>
+
+      <div className="mt-3 rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">{current.laneLabel}</span>
+          <span className="text-xs text-[#7b8ca2]">{formatShortPortalDate(current.updatedAt, 'Recently')}</span>
+        </div>
+        <p className="mt-2 text-sm leading-6 text-[#52647a]">{current.description}</p>
+      </div>
+
+      {recentItems.length ? (
+        <ol className="mt-3 divide-y divide-[#edf2f7]" aria-label="Recent legal progress">
+          {recentItems.map((item) => (
+            <li key={item.id} className="flex items-start justify-between gap-4 py-2.5 first:pt-0 last:pb-0">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-[#26394d]">{item.title}</p>
+                <p className="mt-0.5 text-xs text-[#7b8ca2]">{item.laneLabel}</p>
+              </div>
+              <span className="shrink-0 text-xs text-[#7b8ca2]">{formatShortPortalDate(item.updatedAt, 'Recently')}</span>
+            </li>
+          ))}
+        </ol>
+      ) : null}
+    </section>
+  )
+}
+
 function BuyerPortalDashboard({
   buyerFirstName,
   developmentName,
@@ -8220,6 +8274,7 @@ function BuyerPortalDashboard({
   updates,
   latestUpdatesSubtitle,
   latestAttorneyUpdate,
+  legalProgress,
   commentDraft,
   saving,
   onCommentDraftChange,
@@ -8237,7 +8292,7 @@ function BuyerPortalDashboard({
   token,
   workspaceNavigationScope,
 }) {
-  const hasSecondaryInsight = Boolean(controlBoard || latestAttorneyUpdate)
+  const hasSecondaryInsight = Boolean(controlBoard || legalProgress?.available || latestAttorneyUpdate)
   const messageAction = supportContact?.email
     ? { label: 'Message Team', href: `mailto:${supportContact.email}` }
     : { label: 'Message Team', to: 'team' }
@@ -8323,11 +8378,15 @@ function BuyerPortalDashboard({
         />
         {controlBoard ? (
           <MvpTransactionControlBoard controlBoard={controlBoard} compact />
+        ) : legalProgress?.available ? (
+          <ClientLegalProgressCard model={legalProgress} />
         ) : (
           <AttorneySaysCard update={latestAttorneyUpdate} fallbackStageLabel={currentStageLabel} />
         )}
         </section>
-        {controlBoard && latestAttorneyUpdate ? (
+        {controlBoard && legalProgress?.available ? (
+          <ClientLegalProgressCard model={legalProgress} />
+        ) : controlBoard && latestAttorneyUpdate ? (
           <AttorneySaysCard update={latestAttorneyUpdate} fallbackStageLabel={currentStageLabel} />
         ) : null}
       </>)}
@@ -14132,6 +14191,7 @@ function ClientPortal() {
                       sellerComplianceSigning={sellerComplianceSigning}
                       sellerListingUrl={sellerListingUrl}
                       latestAttorneyUpdate={latestAttorneyUpdate}
+                      legalProgress={workspaceData?.legalProgress}
                       commentDraft={commentDraft}
                       savingComment={saving}
                       onCommentDraftChange={setCommentDraft}
@@ -14228,6 +14288,7 @@ function ClientPortal() {
                   updates={latestJourneyFeedItems}
                   latestUpdatesSubtitle={latestUpdatesSubtitle}
                   latestAttorneyUpdate={latestAttorneyUpdate}
+                  legalProgress={workspaceData?.legalProgress}
                   commentDraft={commentDraft}
                   saving={saving}
                   onCommentDraftChange={setCommentDraft}

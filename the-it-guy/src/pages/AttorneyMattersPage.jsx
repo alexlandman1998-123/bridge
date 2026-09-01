@@ -57,6 +57,7 @@ import {
   resolvePortalPropertyLabel,
   resolvePortalSellerName,
 } from '../services/portalCanonicalFieldFallbacks'
+import { buildLegalPortfolioPriorityQueueModel } from '../core/transactions/legalPortfolioPriorityQueueModel.js'
 
 const DEFAULT_FILTERS = {
   status: 'all',
@@ -1324,6 +1325,51 @@ function MattersTable({ rows = [], selectedRows = [], onToggleRow, onToggleAll, 
   )
 }
 
+function LegalPortfolioPriorityQueue({ model = null, onOpenMatter }) {
+  if (!model?.available) return null
+  return (
+    <section className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm" aria-labelledby="legal-priority-queue-title">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-700"><AlertTriangle size={15} /></span>
+          <div className="min-w-0">
+            <p className="text-[0.64rem] font-semibold uppercase tracking-[0.1em] text-slate-500">Daily priority</p>
+            <h2 id="legal-priority-queue-title" className="text-sm font-semibold text-slate-950">Work next</h2>
+          </div>
+        </div>
+        <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800">
+          {model.totalAttention} need attention
+        </span>
+      </div>
+
+      <ol className="mt-3 flex gap-2 overflow-x-auto pb-1">
+        {model.items.map((item) => (
+          <li key={item.id} className="min-w-[260px] flex-1">
+            <button
+              type="button"
+              className="flex h-full w-full items-center gap-3 rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2.5 text-left transition hover:border-emerald-300 hover:bg-emerald-50/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700"
+              onClick={() => onOpenMatter?.(item.source)}
+            >
+              <span className={`inline-flex size-7 shrink-0 items-center justify-center rounded-md ${item.health === 'critical' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
+                <AlertTriangle size={14} />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="flex items-center justify-between gap-2">
+                  <strong className="truncate text-sm font-semibold text-slate-950">{item.reference}</strong>
+                  <ArrowRight size={14} className="shrink-0 text-slate-400" />
+                </span>
+                <span className="mt-0.5 block truncate text-xs font-medium text-slate-700">{item.nextAction}</span>
+                <span className="mt-0.5 block truncate text-[0.68rem] text-slate-500">{item.reasons.join(' · ')}</span>
+              </span>
+            </button>
+          </li>
+        ))}
+      </ol>
+      {model.hiddenCount ? <p className="mt-2 text-xs text-slate-500">{model.hiddenCount} more in the table below.</p> : null}
+    </section>
+  )
+}
+
 function IncomingAssignmentDialog({
   row,
   firmId = '',
@@ -1787,6 +1833,10 @@ function AttorneyMattersPage() {
   }, [location.pathname, location.search, navigate, viewKey, workspace?.view?.key])
 
   const usesIncomingQueue = Boolean(workspace?.view?.usesIncomingQueue)
+  const legalPriorityQueue = useMemo(
+    () => buildLegalPortfolioPriorityQueueModel({ rows: workspace?.filteredRows || workspace?.tableRows || [] }),
+    [workspace?.filteredRows, workspace?.tableRows],
+  )
   const canManageIncomingAssignments = Boolean(
     permissionsState.hasPermission('can_view_all_firm_matters') &&
     permissionsState.hasPermission('can_update_attorney_assignments'),
@@ -2045,6 +2095,8 @@ function AttorneyMattersPage() {
         <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
           {workspace.kpis.map((item) => <KpiCard key={item.key} item={item} />)}
         </section>
+
+        {!usesIncomingQueue && viewKey !== 'needs_attention' ? <LegalPortfolioPriorityQueue model={legalPriorityQueue} onOpenMatter={handleOpenMatter} /> : null}
 
         {incomingAction.error ? (
           <section className="flex items-start gap-2 rounded-xl border border-red-200 bg-white px-4 py-3 text-sm font-semibold text-red-700 shadow-sm">

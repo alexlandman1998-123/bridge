@@ -338,6 +338,16 @@ Deno.serve(async (req: Request) => {
       userEmail,
     });
 
+    const profileResult = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", userId)
+      .maybeSingle();
+    const signedInRole = normalizeLower(profileResult.data?.role);
+    const developmentRoute = signedInRole === "developer"
+      ? `/developer/developments/${encodeURIComponent(developmentId)}`
+      : `/developments/${encodeURIComponent(developmentId)}`;
+
     return jsonResponse(200, {
       ok: true,
       accepted: true,
@@ -346,7 +356,7 @@ Deno.serve(async (req: Request) => {
         email: userEmail,
         status: "active",
       },
-      redirectTo: `/developments/${encodeURIComponent(developmentId)}`,
+      redirectTo: developmentRoute,
     });
   } catch (error) {
     console.error("[development-access-invite] failed", error);

@@ -323,6 +323,7 @@ const HomeSeekersDevelopments = lazy(() => import('./pages/HomeSeekersDevelopmen
 const HomeSeekersPeople = lazy(() => import('./pages/HomeSeekersPeople'))
 const HomeSeekersAbout = lazy(() => import('./pages/HomeSeekersAbout'))
 const HomeSeekersContact = lazy(() => import('./pages/HomeSeekersContact'))
+const PublicDevelopmentLandingPage = lazy(() => import('./pages/PublicDevelopmentLandingPage'))
 const BondDashboardPage = lazy(() => import('./pages/bond/BondDashboardPage'))
 const BondDevelopmentsPage = lazy(() => import('./pages/bond/BondDevelopmentsPage'))
 const BondTransactionsPage = lazy(() => import('./pages/bond/BondTransactionsPage'))
@@ -1810,6 +1811,7 @@ function AppRoutes() {
           <Route path="/join" element={<Arch9JoinRedirect />} />
           <Route path="/buy" element={<BridgeBuyPage />} />
           <Route path="/buy/:slug" element={<BridgeBuyPage />} />
+          <Route path="/development/:slug" element={<AppErrorBoundary scope="public-development-landing" title="Development page failed to load"><PublicDevelopmentLandingPage /></AppErrorBoundary>} />
           <Route path="/bridge" element={<BridgeLanding />} />
           <Route path="/bridge/buy" element={<BridgeBuyPage />} />
           <Route path="/bridge/buy/:slug" element={<BridgeBuyPage />} />
@@ -2390,6 +2392,22 @@ function AppRoutes() {
                     <AppErrorBoundary scope="development-transaction-workspace" title="Transaction workspace failed to load">
                       <TransactionDetailRoute />
                     </AppErrorBoundary>
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/developer/developments"
+                element={
+                  <RoleRoute allowedRoles={['developer']}>
+                    <Developments />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/developer/developments/:developmentId"
+                element={
+                  <RoleRoute allowedRoles={['developer']}>
+                    <DevelopmentDetail />
                   </RoleRoute>
                 }
               />

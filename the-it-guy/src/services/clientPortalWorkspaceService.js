@@ -70,6 +70,7 @@ import {
 import { buildSellerCompliancePortalModel } from '../core/documents/sellerCompliancePortalModel.js'
 import { buildSellerComplianceDocumentModel } from '../core/documents/sellerComplianceDocumentModel.js'
 import { buildSellerComplianceAgentStatus } from '../core/documents/sellerComplianceAgentStatusModel.js'
+import { buildClientLegalProgressModel } from '../core/clientPortal/clientLegalProgressModel.js'
 
 function normalizeWorkspace(value = 'shared') {
   const normalized = String(value || 'shared').trim().toLowerCase()
@@ -1405,6 +1406,10 @@ function buildWorkflowSummary({
     title: progress?.title || 'Transaction update',
     summary: progress?.safeExplanation || progress?.description || 'Your transaction has progressed.',
     updatedAt: progress?.lastUpdated || progress?.updatedAt || null,
+    processKey: progress?.processKey || '',
+    processLabel: progress?.processLabel || '',
+    status: progress?.status || 'in_progress',
+    expectedNextStep: progress?.expectedNextStep || '',
   }))
   const clientVisibleMilestones = dedupeByKey(
     [...sharedProgressMilestones, ...(workflowReadModel?.clientVisibleMilestones || [])].map((milestone, index) => ({
@@ -1413,6 +1418,10 @@ function buildWorkflowSummary({
       title: milestone?.title || 'Transaction update',
       summary: milestone?.summary || 'Your transaction has a new update.',
       updatedAt: milestone?.updatedAt || null,
+      processKey: milestone?.processKey || '',
+      processLabel: milestone?.processLabel || '',
+      status: milestone?.status || 'in_progress',
+      expectedNextStep: milestone?.expectedNextStep || '',
     })),
     (item) => item.id,
   )
@@ -3674,6 +3683,7 @@ function buildDemoClientPortalWorkspaceData(token, workspace = 'shared', prospec
     portalProfile,
     portalCapabilities,
   })
+  const legalProgress = buildClientLegalProgressModel({ activityFeed, clientRole })
   const groupedActivityFeed = seed.groupedActivityFeed || {}
   const activityFeedSummary = seed.activityFeedSummary || {
     actionRequired: nextActions.filter((action) => action?.blocking).length,
@@ -3770,6 +3780,7 @@ function buildDemoClientPortalWorkspaceData(token, workspace = 'shared', prospec
     activityFeed,
     groupedActivityFeed,
     activityFeedSummary,
+    legalProgress,
     notifications,
     sellerJourney: portalData?.sellerJourney || portalData?.activeSellingContext?.sellerJourney || null,
     sellerPortalJourney,
@@ -3949,6 +3960,7 @@ export async function getClientPortalWorkspaceData(token, workspace = 'shared', 
   }, clientRole)
   const activityFeed = activityFeedModel.items
   const groupedActivityFeed = activityFeedModel.grouped
+  const legalProgress = buildClientLegalProgressModel({ activityFeed, clientRole })
   const rawNextActions = generateClientPortalNextActions({
     portalContext: {
       token,
@@ -4117,6 +4129,7 @@ export async function getClientPortalWorkspaceData(token, workspace = 'shared', 
     activityFeed,
     groupedActivityFeed,
     activityFeedSummary: activityFeedModel.summary,
+    legalProgress,
     notifications,
     sellerJourney: portalData?.sellerJourney || portalData?.activeSellingContext?.sellerJourney || null,
     sellerPortalJourney,

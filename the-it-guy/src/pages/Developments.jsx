@@ -138,7 +138,7 @@ function getDevelopmentProgress(totalUnits, inProgressCount, completedCount) {
 
 function Developments() {
   const navigate = useNavigate()
-  const { currentWorkspace } = useWorkspace()
+  const { currentWorkspace, role } = useWorkspace()
   const currentWorkspaceId = String(currentWorkspace?.id || '').trim()
   const [data, setData] = useState({
     metrics: {
@@ -285,7 +285,7 @@ function Developments() {
           registeredLabel,
           progress,
           progressPercent: getProgressPercent(progress),
-          primaryCtaUrl: `/developments/${item.id}`,
+          primaryCtaUrl: role === 'developer' ? `/developer/developments/${item.id}` : `/developments/${item.id}`,
         }
       })
       .sort((left, right) => {
@@ -294,7 +294,7 @@ function Developments() {
         }
         return left.name.localeCompare(right.name)
       })
-  }, [bottlenecks, data.developments, developmentPerformance, rows])
+  }, [bottlenecks, data.developments, developmentPerformance, role, rows])
 
   const filteredDevelopmentCards = useMemo(() => {
     const query = searchTerm.trim().toLowerCase()
