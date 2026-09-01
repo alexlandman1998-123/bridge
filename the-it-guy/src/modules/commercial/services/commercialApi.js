@@ -50,7 +50,7 @@ const SELECTS = {
   tenants:
     'id, organisation_id, branch_id, team_id, broker_id, created_at, updated_at, created_by, updated_by, status, notes, name, contact_person, email, phone, registration_number, vat_number, website, industry, company_size, current_location, formatted_address, street_number, route, street_name, street_address, suburb, city, province, postal_code, country, latitude, longitude, place_id, google_place_id, address_components, raw_google_response, geocoding_status, current_lease_expiry, preferred_contact_method',
   properties:
-    'id, organisation_id, branch_id, team_id, broker_id, created_at, updated_at, created_by, updated_by, status, notes, landlord_id, asset_manager_id, property_manager_id, property_name, property_type, address, formatted_address, street_number, route, street_name, street_address, suburb, city, province, postal_code, country, latitude, longitude, place_id, google_place_id, address_components, raw_google_response, geocoding_status, gla_m2, available_space_m2, vacancy_percentage, zoning, parking_ratio, loading_bays, power_supply, height_m, asking_rental_per_m2, asking_sale_price, number_of_units, building_grade, backup_power, generator, solar, fibre, number_of_lifts, amenities, yard_size_m2, eaves_height_m, roller_doors, truck_access, sprinklers, warehouse_area_m2, office_area_m2, frontage_m, anchor_tenants, foot_traffic, trading_hours, mall_type, visibility_rating, noi, cap_rate, wale_months, gross_yield, net_yield, annual_income, land_size_m2, bulk, coverage, services_available, environmental_status, farm_size_ha, water_rights, irrigation, crop_type, livestock_capacity, metadata_json',
+    'id, organisation_id, branch_id, team_id, broker_id, created_at, updated_at, created_by, updated_by, status, notes, landlord_id, asset_manager_id, property_manager_id, property_name, property_type, address, formatted_address, street_number, route, street_name, street_address, suburb, city, province, postal_code, country, latitude, longitude, place_id, google_place_id, address_components, raw_google_response, geocoding_status, gla_m2, available_space_m2, vacancy_percentage, zoning, parking_ratio, loading_bays, power_supply, height_m, asking_rental_per_m2, asking_sale_price, number_of_units, building_grade, backup_power, generator, solar, fibre, number_of_lifts, amenities, yard_size_m2, eaves_height_m, roller_doors, truck_access, sprinklers, warehouse_area_m2, office_area_m2, frontage_m, anchor_tenants, foot_traffic, trading_hours, mall_type, visibility_rating, noi, cap_rate, wale_months, gross_yield, net_yield, annual_income, land_size_m2, bulk, coverage, services_available, environmental_status, farm_size_ha, water_rights, irrigation, crop_type, livestock_capacity, crane_capacity, water_supply, agricultural_use, development_rights, subdivision_status, metadata_json',
   requirements:
     'id, organisation_id, branch_id, team_id, broker_id, created_at, updated_at, created_by, updated_by, status, notes, requirement_type, client_type, tenant_id, company_id, contact_id, requirement_name, property_type, preferred_locations, formatted_address, street_number, route, street_name, street_address, suburb, city, province, postal_code, country, latitude, longitude, place_id, google_place_id, address_components, raw_google_response, geocoding_status, min_size_m2, max_size_m2, budget_min, budget_max, target_occupation_date, lease_term_months, special_requirements, assigned_broker, stage',
   deals:
@@ -60,7 +60,7 @@ const SELECTS = {
   vacancies:
     'id, organisation_id, branch_id, team_id, broker_id, created_at, updated_at, created_by, updated_by, status, notes, property_id, landlord_id, property_manager_id, vacancy_name, unit_or_floor, formatted_address, street_number, route, street_name, street_address, suburb, city, province, postal_code, country, latitude, longitude, place_id, google_place_id, address_components, raw_google_response, geocoding_status, available_area_m2, asking_rental, availability_date, broker_assignment, incentives, fit_out_allowance, marketed_at, occupied_at, withdrawn_at, suspended_at, archived_at, metadata_json',
   listings:
-    'id, organisation_id, branch_id, team_id, broker_id, created_at, updated_at, created_by, updated_by, status, notes, landlord_id, property_id, vacancy_id, listing_type, listing_category, listing_status, title, description, formatted_address, street_number, route, street_name, street_address, suburb, city, province, postal_code, country, latitude, longitude, place_id, google_place_id, address_components, raw_google_response, geocoding_status, pricing, pricing_notes, featured, available_from, metadata_json, marketing_json, media_json, performance_json, internal_reviewed_at, approved_at, published_at, closed_at, expired_at, withdrawn_at',
+    'id, organisation_id, branch_id, team_id, broker_id, created_at, updated_at, created_by, updated_by, status, notes, landlord_id, property_id, vacancy_id, listing_type, listing_category, listing_status, title, description, formatted_address, street_number, route, street_name, street_address, suburb, city, province, postal_code, country, latitude, longitude, place_id, google_place_id, address_components, raw_google_response, geocoding_status, pricing, pricing_notes, featured, available_from, operating_costs, rates_and_taxes, lease_term_months, deposit_amount, utility_policy, metadata_json, marketing_json, media_json, performance_json, internal_reviewed_at, approved_at, published_at, closed_at, expired_at, withdrawn_at',
   viewings:
     'id, organisation_id, branch_id, team_id, broker_id, requirement_id, property_id, vacancy_id, listing_id, company_id, contact_id, viewing_date, viewing_time, status, notes, feedback, created_at, updated_at, created_by, updated_by',
   transactions:
@@ -2727,6 +2727,43 @@ function stripListingCreationOnlyFields(payload = {}) {
   return next
 }
 
+function canonicalPropertyFactsFromListingPayload(payload = {}) {
+  const attributes = payload.metadata_json?.commercial_attributes || {}
+  const leaseTerms = payload.metadata_json?.lease_terms || {}
+  const saleTerms = payload.metadata_json?.sale_terms || {}
+  const numeric = (value) => {
+    if (value === '' || value === null || value === undefined) return null
+    return Number.isFinite(Number(value)) ? Number(value) : null
+  }
+  const textValue = (value) => normalizeText(value) || null
+
+  return {
+    gla_m2: numeric(leaseTerms.gross_lettable_area),
+    available_space_m2: numeric(leaseTerms.available_area),
+    zoning: textValue(saleTerms.zoning || attributes.zoning_land_use_rights),
+    parking_ratio: textValue(leaseTerms.parking_ratio || attributes.parking_ratio),
+    loading_bays: numeric(attributes.loading_bays),
+    power_supply: textValue(attributes.power_supply),
+    yard_size_m2: numeric(attributes.yard_size),
+    roller_doors: numeric(attributes.roller_shutter_doors),
+    truck_access: attributes.truck_access === true,
+    sprinklers: attributes.sprinkler_system === true,
+    crane_capacity: textValue(attributes.crane_capacity),
+    farm_size_ha: numeric(attributes.farm_size),
+    water_rights: textValue(attributes.water_rights),
+    water_supply: textValue(attributes.boreholes || attributes.water_supply),
+    irrigation: textValue(attributes.irrigation),
+    agricultural_use: textValue(attributes.current_agricultural_use),
+    development_rights: textValue(attributes.development_rights || attributes.zoning_land_use_rights),
+    subdivision_status: textValue(attributes.subdivision_status),
+    bulk: textValue(attributes.bulk),
+    coverage: textValue(attributes.coverage),
+    services_available: textValue(attributes.services_available),
+    environmental_status: textValue(attributes.environmental_status),
+    land_size_m2: numeric(saleTerms.erf_size),
+  }
+}
+
 export async function createCommercialListing(payload = {}) {
   const organisationId = await resolveOrganisationId(payload.organisationId || payload.organisation_id)
   if (!organisationId) throw new Error('Commercial organisation context is not available.')
@@ -2753,6 +2790,7 @@ export async function createCommercialListing(payload = {}) {
   }
 
   if (!propertyId && normalizeText(payload.new_property_name)) {
+    const canonicalFacts = canonicalPropertyFactsFromListingPayload(payload)
     const property = await createCommercialRecord('properties', {
       ...hierarchyPayload,
       landlord_id: landlordId || null,
@@ -2777,6 +2815,7 @@ export async function createCommercialListing(payload = {}) {
       raw_google_response: payload.new_property_raw_google_response || null,
       geocoding_status: normalizeText(payload.new_property_geocoding_status) || null,
       available_space_m2: getListingArea(payload) || null,
+      ...canonicalFacts,
       broker_id: hierarchyPayload.broker_id || null,
       status: 'active',
     }, { logActivity: false })

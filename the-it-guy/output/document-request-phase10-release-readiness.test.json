@@ -1,6 +1,6 @@
 {
   "phase": "document_request_phase10_release_readiness",
-  "generatedAt": "2026-08-29T15:44:23.140Z",
+  "generatedAt": "2026-09-01T17:02:14.488Z",
   "commit": false,
   "mutatedData": false,
   "strict": false,
@@ -97,19 +97,14 @@
       "actualPhase": "document_request_phase5_seller_cleanup",
       "present": true,
       "phaseMatches": true,
-      "status": "blocked",
+      "status": "seller_cleanup_mapped_with_warnings",
       "mutatedData": false,
-      "failures": [
-        {
-          "key": "no_unmapped_seller_requirements",
-          "ok": false
-        }
-      ],
+      "failures": [],
       "warnings": [
         {
           "code": "legacy_seller_generator_not_full_canonical_policy",
           "message": "The legacy seller generator is mapped, but some canonical seller policy containers are not emitted by every seller scenario yet.",
-          "count": 49
+          "count": 50
         },
         {
           "code": "legacy_rows_roll_up_to_parent_containers",
@@ -234,7 +229,7 @@
       "phase": "phase5_seller_cleanup",
       "code": "legacy_seller_generator_not_full_canonical_policy",
       "message": "The legacy seller generator is mapped, but some canonical seller policy containers are not emitted by every seller scenario yet.",
-      "count": 49,
+      "count": 50,
       "requirementKey": null
     },
     {
@@ -277,11 +272,11 @@
     "bondOriginatorContainerCount": 5,
     "internalContainerCount": 30
   },
-  "releaseRecommendation": "blocked",
+  "releaseRecommendation": "ready_for_internal_pilot_not_production_activation",
   "gate": {
-    "status": "blocked",
-    "ok": false,
-    "mayProceedToPhase11": false,
+    "status": "release_readiness_mapped_with_warnings",
+    "ok": true,
+    "mayProceedToPhase11": true,
     "productionActivationReady": false,
     "checks": [
       {
@@ -294,7 +289,7 @@
       },
       {
         "key": "no_hard_phase_failures",
-        "ok": false
+        "ok": true
       },
       {
         "key": "warnings_are_managed_and_explicit",
@@ -325,19 +320,8 @@
         "ok": true
       }
     ],
-    "failed": [
-      {
-        "key": "no_hard_phase_failures",
-        "ok": false
-      }
-    ],
-    "hardBlockers": [
-      {
-        "code": "phase_failure",
-        "phase": "phase5_seller_cleanup",
-        "message": ""
-      }
-    ],
+    "failed": [],
+    "hardBlockers": [],
     "warnings": [
       {
         "phase": "phase3_buyer_cleanup",
@@ -360,7 +344,7 @@
         "code": "legacy_seller_generator_not_full_canonical_policy",
         "message": "The legacy seller generator is mapped, but some canonical seller policy containers are not emitted by every seller scenario yet.",
         "managed": true,
-        "count": 49,
+        "count": 50,
         "requirementKey": null
       },
       {

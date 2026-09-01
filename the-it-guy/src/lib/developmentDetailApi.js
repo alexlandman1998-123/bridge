@@ -8,7 +8,7 @@ const call = async (method, ...args) => {
 const METHODS = [
   'deleteDevelopment', 'deleteDevelopmentDocument', 'fetchDevelopmentDetail',
   'fetchDevelopmentDocumentRequirements', 'saveDevelopmentDetails', 'saveDevelopmentDocument',
-  'saveDevelopmentFinancials', 'saveDevelopmentUnit', 'uploadDevelopmentDocumentAsset',
+  'saveDevelopmentFinancials', 'saveDevelopmentProductCatalogue', 'saveDevelopmentStructureNodes', 'saveDevelopmentUnit', 'uploadDevelopmentDocumentAsset',
   'updateDevelopmentTransactionSalesPrice', 'updateTransactionLifecycleStage', 'updateDevelopmentSettings',
   'upsertTransactionHandover',
 ]
@@ -16,7 +16,7 @@ const operations = Object.fromEntries(METHODS.map((method) => [method, (...args)
 export const {
   deleteDevelopment, deleteDevelopmentDocument, fetchDevelopmentDetail,
   fetchDevelopmentDocumentRequirements, saveDevelopmentDetails, saveDevelopmentDocument,
-  saveDevelopmentFinancials, saveDevelopmentUnit, uploadDevelopmentDocumentAsset,
+  saveDevelopmentFinancials, saveDevelopmentProductCatalogue, saveDevelopmentStructureNodes, saveDevelopmentUnit, uploadDevelopmentDocumentAsset,
   updateDevelopmentTransactionSalesPrice, updateTransactionLifecycleStage, updateDevelopmentSettings,
   upsertTransactionHandover,
 } = operations

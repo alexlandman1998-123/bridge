@@ -1,15 +1,15 @@
 {
   "phase": "document_request_phase5_seller_cleanup",
-  "generatedAt": "2026-08-16T17:30:32.094Z",
+  "generatedAt": "2026-09-01T16:58:45.916Z",
   "commit": false,
   "mutatedData": false,
   "strict": false,
   "version": "seller_document_canonical_cleanup_v1",
   "scenarioCount": 11,
   "summary": {
-    "unmappedCount": 11,
+    "unmappedCount": 0,
     "professionalOnlyLegacyCount": 0,
-    "missingCoveredByCanonicalPlanCount": 49,
+    "missingCoveredByCanonicalPlanCount": 50,
     "pendingPolicyLegacyCount": 0,
     "duplicateCanonicalGroupCount": 9,
     "deferredSellerUploadCount": 0
@@ -45,17 +45,12 @@
           "financeType": "cash"
         },
         "legacyRequirementCount": 7,
-        "mappedRequirementCount": 6,
-        "sellerClientUploadCount": 6,
-        "requestableSellerClientUploadCount": 6,
+        "mappedRequirementCount": 7,
+        "sellerClientUploadCount": 7,
+        "requestableSellerClientUploadCount": 7,
         "canonicalPlanRequestCount": 10,
         "canonicalPlanRequestableCount": 10,
-        "unmappedRows": [
-          {
-            "key": "signed_mandate",
-            "label": "Signed Mandate"
-          }
-        ],
+        "unmappedRows": [],
         "professionalOnlyLegacyRows": [],
         "pendingPolicyLegacyRows": [],
         "deferredLegacyRows": [],
@@ -68,26 +63,28 @@
         ],
         "extraLegacyKeysOutsideSellerUpload": [],
         "sellerClientUploadKeys": [
+          "signed_mandate",
           "property_condition_disclosure",
-          "seller_fica_pack",
+          "seller_fica_declaration",
           "title_deed_copy",
           "rates_account",
           "seller_id_document",
           "seller_proof_of_address"
         ],
         "requestableSellerClientUploadKeys": [
+          "signed_mandate",
           "property_condition_disclosure",
-          "seller_fica_pack",
+          "seller_fica_declaration",
           "title_deed_copy",
           "rates_account",
           "seller_id_document",
           "seller_proof_of_address"
         ],
         "canonicalPlanKeys": [
-          "seller_fica_pack",
           "rates_clearance",
           "seller_id_document",
           "seller_proof_of_address",
+          "seller_fica_declaration",
           "title_deed_copy",
           "rates_account",
           "property_condition_disclosure",
@@ -96,10 +93,10 @@
           "electrical_compliance_certificate"
         ],
         "canonicalPlanRequestableKeys": [
-          "seller_fica_pack",
           "rates_clearance",
           "seller_id_document",
           "seller_proof_of_address",
+          "seller_fica_declaration",
           "title_deed_copy",
           "rates_account",
           "property_condition_disclosure",
@@ -160,18 +157,13 @@
           "sellerHasExistingBond": true,
           "financeType": "cash"
         },
-        "legacyRequirementCount": 14,
+        "legacyRequirementCount": 13,
         "mappedRequirementCount": 13,
         "sellerClientUploadCount": 13,
         "requestableSellerClientUploadCount": 13,
         "canonicalPlanRequestCount": 14,
         "canonicalPlanRequestableCount": 14,
-        "unmappedRows": [
-          {
-            "key": "signed_mandate",
-            "label": "Signed Mandate"
-          }
-        ],
+        "unmappedRows": [],
         "professionalOnlyLegacyRows": [],
         "pendingPolicyLegacyRows": [],
         "deferredLegacyRows": [],
@@ -188,40 +180,41 @@
         ],
         "missingFromLegacyButCoveredByCanonicalPlan": [
           "rates_clearance",
+          "seller_spouse_consent",
           "seller_bank_account_confirmation",
           "seller_tax_number",
           "electrical_compliance_certificate"
         ],
         "extraLegacyKeysOutsideSellerUpload": [],
         "sellerClientUploadKeys": [
+          "signed_mandate",
           "property_condition_disclosure",
-          "seller_fica_pack",
+          "seller_fica_declaration",
           "title_deed_copy",
           "rates_account",
           "seller_id_document",
           "seller_proof_of_address",
           "seller_marriage_certificate",
           "seller_spouse_id_document",
-          "seller_spouse_consent",
           "bond_statement"
         ],
         "requestableSellerClientUploadKeys": [
+          "signed_mandate",
           "property_condition_disclosure",
-          "seller_fica_pack",
+          "seller_fica_declaration",
           "title_deed_copy",
           "rates_account",
           "seller_id_document",
           "seller_proof_of_address",
           "seller_marriage_certificate",
           "seller_spouse_id_document",
-          "seller_spouse_consent",
           "bond_statement"
         ],
         "canonicalPlanKeys": [
-          "seller_fica_pack",
           "rates_clearance",
           "seller_id_document",
           "seller_proof_of_address",
+          "seller_fica_declaration",
           "seller_marriage_certificate",
           "seller_spouse_id_document",
           "seller_spouse_consent",
@@ -234,10 +227,10 @@
           "electrical_compliance_certificate"
         ],
         "canonicalPlanRequestableKeys": [
-          "seller_fica_pack",
           "rates_clearance",
           "seller_id_document",
           "seller_proof_of_address",
+          "seller_fica_declaration",
           "seller_marriage_certificate",
           "seller_spouse_id_document",
           "seller_spouse_consent",
@@ -305,17 +298,12 @@
           "financeType": "cash"
         },
         "legacyRequirementCount": 11,
-        "mappedRequirementCount": 10,
-        "sellerClientUploadCount": 10,
-        "requestableSellerClientUploadCount": 10,
+        "mappedRequirementCount": 11,
+        "sellerClientUploadCount": 11,
+        "requestableSellerClientUploadCount": 11,
         "canonicalPlanRequestCount": 15,
         "canonicalPlanRequestableCount": 15,
-        "unmappedRows": [
-          {
-            "key": "signed_mandate",
-            "label": "Signed Mandate"
-          }
-        ],
+        "unmappedRows": [],
         "professionalOnlyLegacyRows": [],
         "pendingPolicyLegacyRows": [],
         "deferredLegacyRows": [],
@@ -329,8 +317,9 @@
         ],
         "extraLegacyKeysOutsideSellerUpload": [],
         "sellerClientUploadKeys": [
+          "signed_mandate",
           "property_condition_disclosure",
-          "seller_fica_pack",
+          "seller_fica_declaration",
           "title_deed_copy",
           "rates_account",
           "seller_id_document",
@@ -341,8 +330,9 @@
           "body_corporate_details"
         ],
         "requestableSellerClientUploadKeys": [
+          "signed_mandate",
           "property_condition_disclosure",
-          "seller_fica_pack",
+          "seller_fica_declaration",
           "title_deed_copy",
           "rates_account",
           "seller_id_document",
@@ -353,10 +343,10 @@
           "body_corporate_details"
         ],
         "canonicalPlanKeys": [
-          "seller_fica_pack",
           "rates_clearance",
           "seller_id_document",
           "seller_proof_of_address",
+          "seller_fica_declaration",
           "seller_marriage_certificate",
           "seller_spouse_id_document",
           "seller_anc_document",
@@ -370,10 +360,10 @@
           "body_corporate_details"
         ],
         "canonicalPlanRequestableKeys": [
-          "seller_fica_pack",
           "rates_clearance",
           "seller_id_document",
           "seller_proof_of_address",
+          "seller_fica_declaration",
           "seller_marriage_certificate",
           "seller_spouse_id_document",
           "seller_anc_document",
@@ -441,17 +431,12 @@
           "financeType": "cash"
         },
         "legacyRequirementCount": 11,
-        "mappedRequirementCount": 10,
-        "sellerClientUploadCount": 10,
-        "requestableSellerClientUploadCount": 10,
+        "mappedRequirementCount": 11,
+        "sellerClientUploadCount": 11,
+        "requestableSellerClientUploadCount": 11,
         "canonicalPlanRequestCount": 12,
         "canonicalPlanRequestableCount": 11,
-        "unmappedRows": [
-          {
-            "key": "signed_mandate",
-            "label": "Signed Mandate"
-          }
-        ],
+        "unmappedRows": [],
         "professionalOnlyLegacyRows": [],
         "pendingPolicyLegacyRows": [],
         "deferredLegacyRows": [],
@@ -480,8 +465,9 @@
         ],
         "extraLegacyKeysOutsideSellerUpload": [],
         "sellerClientUploadKeys": [
+          "signed_mandate",
           "property_condition_disclosure",
-          "seller_fica_pack",
+          "seller_fica_declaration",
           "title_deed_copy",
           "rates_account",
           "seller_company_registration",
@@ -489,8 +475,9 @@
           "seller_director_fica"
         ],
         "requestableSellerClientUploadKeys": [
+          "signed_mandate",
           "property_condition_disclosure",
-          "seller_fica_pack",
+          "seller_fica_declaration",
           "title_deed_copy",
           "rates_account",
           "seller_company_registration",
@@ -498,8 +485,8 @@
           "seller_director_fica"
         ],
         "canonicalPlanKeys": [
-          "seller_fica_pack",
           "rates_clearance",
+          "seller_fica_declaration",
           "seller_company_registration",
           "seller_company_resolution",
           "seller_director_fica",
@@ -512,8 +499,8 @@
           "electrical_compliance_certificate"
         ],
         "canonicalPlanRequestableKeys": [
-          "seller_fica_pack",
           "rates_clearance",
+          "seller_fica_declaration",
           "seller_company_registration",
           "seller_company_resolution",
           "seller_director_fica",
@@ -580,17 +567,12 @@
           "financeType": "cash"
         },
         "legacyRequirementCount": 10,
-        "mappedRequirementCount": 9,
-        "sellerClientUploadCount": 9,
-        "requestableSellerClientUploadCount": 9,
+        "mappedRequirementCount": 10,
+        "sellerClientUploadCount": 10,
+        "requestableSellerClientUploadCount": 10,
         "canonicalPlanRequestCount": 13,
         "canonicalPlanRequestableCount": 12,
-        "unmappedRows": [
-          {
-            "key": "signed_mandate",
-            "label": "Signed Mandate"
-          }
-        ],
+        "unmappedRows": [],
         "professionalOnlyLegacyRows": [],
         "pendingPolicyLegacyRows": [],
         "deferredLegacyRows": [],
@@ -611,8 +593,9 @@
         ],
         "extraLegacyKeysOutsideSellerUpload": [],
         "sellerClientUploadKeys": [
+          "signed_mandate",
           "property_condition_disclosure",
-          "seller_fica_pack",
+          "seller_fica_declaration",
           "title_deed_copy",
           "rates_account",
           "seller_trust_deed",
@@ -621,8 +604,9 @@
           "seller_trustee_resolution"
         ],
         "requestableSellerClientUploadKeys": [
+          "signed_mandate",
           "property_condition_disclosure",
-          "seller_fica_pack",
+          "seller_fica_declaration",
           "title_deed_copy",
           "rates_account",
           "seller_trust_deed",
@@ -631,8 +615,8 @@
           "seller_trustee_resolution"
         ],
         "canonicalPlanKeys": [
-          "seller_fica_pack",
           "rates_clearance",
+          "seller_fica_declaration",
           "seller_trust_deed",
           "seller_letters_of_authority",
           "seller_trustee_resolution",
@@ -646,8 +630,8 @@
           "electrical_compliance_certificate"
         ],
         "canonicalPlanRequestableKeys": [
-          "seller_fica_pack",
           "rates_clearance",
+          "seller_fica_declaration",
           "seller_trust_deed",
           "seller_letters_of_authority",
           "seller_trustee_resolution",
@@ -714,17 +698,12 @@
           "financeType": "cash"
         },
         "legacyRequirementCount": 9,
-        "mappedRequirementCount": 8,
-        "sellerClientUploadCount": 8,
-        "requestableSellerClientUploadCount": 8,
+        "mappedRequirementCount": 9,
+        "sellerClientUploadCount": 9,
+        "requestableSellerClientUploadCount": 9,
         "canonicalPlanRequestCount": 10,
         "canonicalPlanRequestableCount": 10,
-        "unmappedRows": [
-          {
-            "key": "signed_mandate",
-            "label": "Signed Mandate"
-          }
-        ],
+        "unmappedRows": [],
         "professionalOnlyLegacyRows": [],
         "pendingPolicyLegacyRows": [],
         "deferredLegacyRows": [],
@@ -748,22 +727,24 @@
         ],
         "extraLegacyKeysOutsideSellerUpload": [],
         "sellerClientUploadKeys": [
+          "signed_mandate",
           "property_condition_disclosure",
-          "seller_fica_pack",
+          "seller_fica_declaration",
           "title_deed_copy",
           "rates_account",
           "seller_executor_authority"
         ],
         "requestableSellerClientUploadKeys": [
+          "signed_mandate",
           "property_condition_disclosure",
-          "seller_fica_pack",
+          "seller_fica_declaration",
           "title_deed_copy",
           "rates_account",
           "seller_executor_authority"
         ],
         "canonicalPlanKeys": [
-          "seller_fica_pack",
           "rates_clearance",
+          "seller_fica_declaration",
           "seller_executor_authority",
           "title_deed_copy",
           "rates_account",
@@ -774,8 +755,8 @@
           "hoa_levy_statement"
         ],
         "canonicalPlanRequestableKeys": [
-          "seller_fica_pack",
           "rates_clearance",
+          "seller_fica_declaration",
           "seller_executor_authority",
           "title_deed_copy",
           "rates_account",
@@ -838,17 +819,12 @@
           "financeType": "cash"
         },
         "legacyRequirementCount": 6,
-        "mappedRequirementCount": 5,
-        "sellerClientUploadCount": 5,
-        "requestableSellerClientUploadCount": 5,
+        "mappedRequirementCount": 6,
+        "sellerClientUploadCount": 6,
+        "requestableSellerClientUploadCount": 6,
         "canonicalPlanRequestCount": 10,
         "canonicalPlanRequestableCount": 10,
-        "unmappedRows": [
-          {
-            "key": "signed_mandate",
-            "label": "Signed Mandate"
-          }
-        ],
+        "unmappedRows": [],
         "professionalOnlyLegacyRows": [],
         "pendingPolicyLegacyRows": [],
         "deferredLegacyRows": [],
@@ -863,24 +839,26 @@
         ],
         "extraLegacyKeysOutsideSellerUpload": [],
         "sellerClientUploadKeys": [
+          "signed_mandate",
           "property_condition_disclosure",
-          "seller_fica_pack",
+          "seller_fica_declaration",
           "title_deed_copy",
           "rates_account",
           "seller_power_of_attorney"
         ],
         "requestableSellerClientUploadKeys": [
+          "signed_mandate",
           "property_condition_disclosure",
-          "seller_fica_pack",
+          "seller_fica_declaration",
           "title_deed_copy",
           "rates_account",
           "seller_power_of_attorney"
         ],
         "canonicalPlanKeys": [
-          "seller_fica_pack",
           "rates_clearance",
           "seller_id_document",
           "seller_proof_of_address",
+          "seller_fica_declaration",
           "title_deed_copy",
           "rates_account",
           "property_condition_disclosure",
@@ -889,10 +867,10 @@
           "electrical_compliance_certificate"
         ],
         "canonicalPlanRequestableKeys": [
-          "seller_fica_pack",
           "rates_clearance",
           "seller_id_document",
           "seller_proof_of_address",
+          "seller_fica_declaration",
           "title_deed_copy",
           "rates_account",
           "property_condition_disclosure",
@@ -959,17 +937,12 @@
           "financeType": "cash"
         },
         "legacyRequirementCount": 11,
-        "mappedRequirementCount": 10,
-        "sellerClientUploadCount": 10,
-        "requestableSellerClientUploadCount": 10,
+        "mappedRequirementCount": 11,
+        "sellerClientUploadCount": 11,
+        "requestableSellerClientUploadCount": 11,
         "canonicalPlanRequestCount": 12,
         "canonicalPlanRequestableCount": 12,
-        "unmappedRows": [
-          {
-            "key": "signed_mandate",
-            "label": "Signed Mandate"
-          }
-        ],
+        "unmappedRows": [],
         "professionalOnlyLegacyRows": [],
         "pendingPolicyLegacyRows": [],
         "deferredLegacyRows": [],
@@ -997,8 +970,9 @@
         ],
         "extraLegacyKeysOutsideSellerUpload": [],
         "sellerClientUploadKeys": [
+          "signed_mandate",
           "property_condition_disclosure",
-          "seller_fica_pack",
+          "seller_fica_declaration",
           "title_deed_copy",
           "rates_account",
           "seller_id_document",
@@ -1007,8 +981,9 @@
           "lease_agreement"
         ],
         "requestableSellerClientUploadKeys": [
+          "signed_mandate",
           "property_condition_disclosure",
-          "seller_fica_pack",
+          "seller_fica_declaration",
           "title_deed_copy",
           "rates_account",
           "seller_id_document",
@@ -1017,10 +992,10 @@
           "lease_agreement"
         ],
         "canonicalPlanKeys": [
-          "seller_fica_pack",
           "rates_clearance",
           "seller_id_document",
           "seller_proof_of_address",
+          "seller_fica_declaration",
           "title_deed_copy",
           "rates_account",
           "property_condition_disclosure",
@@ -1031,10 +1006,10 @@
           "lease_agreement"
         ],
         "canonicalPlanRequestableKeys": [
-          "seller_fica_pack",
           "rates_clearance",
           "seller_id_document",
           "seller_proof_of_address",
+          "seller_fica_declaration",
           "title_deed_copy",
           "rates_account",
           "property_condition_disclosure",
@@ -1102,17 +1077,12 @@
           "financeType": "cash"
         },
         "legacyRequirementCount": 12,
-        "mappedRequirementCount": 11,
-        "sellerClientUploadCount": 11,
-        "requestableSellerClientUploadCount": 11,
+        "mappedRequirementCount": 12,
+        "sellerClientUploadCount": 12,
+        "requestableSellerClientUploadCount": 12,
         "canonicalPlanRequestCount": 14,
         "canonicalPlanRequestableCount": 13,
-        "unmappedRows": [
-          {
-            "key": "signed_mandate",
-            "label": "Signed Mandate"
-          }
-        ],
+        "unmappedRows": [],
         "professionalOnlyLegacyRows": [],
         "pendingPolicyLegacyRows": [],
         "deferredLegacyRows": [],
@@ -1142,8 +1112,9 @@
         ],
         "extraLegacyKeysOutsideSellerUpload": [],
         "sellerClientUploadKeys": [
+          "signed_mandate",
           "property_condition_disclosure",
-          "seller_fica_pack",
+          "seller_fica_declaration",
           "title_deed_copy",
           "rates_account",
           "seller_company_registration",
@@ -1152,8 +1123,9 @@
           "zoning_certificate"
         ],
         "requestableSellerClientUploadKeys": [
+          "signed_mandate",
           "property_condition_disclosure",
-          "seller_fica_pack",
+          "seller_fica_declaration",
           "title_deed_copy",
           "rates_account",
           "seller_company_registration",
@@ -1162,8 +1134,8 @@
           "zoning_certificate"
         ],
         "canonicalPlanKeys": [
-          "seller_fica_pack",
           "rates_clearance",
+          "seller_fica_declaration",
           "seller_company_registration",
           "seller_company_resolution",
           "seller_director_fica",
@@ -1178,8 +1150,8 @@
           "vat_status_confirmation"
         ],
         "canonicalPlanRequestableKeys": [
-          "seller_fica_pack",
           "rates_clearance",
+          "seller_fica_declaration",
           "seller_company_registration",
           "seller_company_resolution",
           "seller_director_fica",
@@ -1252,17 +1224,12 @@
           "financeType": "cash"
         },
         "legacyRequirementCount": 12,
-        "mappedRequirementCount": 11,
-        "sellerClientUploadCount": 11,
-        "requestableSellerClientUploadCount": 11,
+        "mappedRequirementCount": 12,
+        "sellerClientUploadCount": 12,
+        "requestableSellerClientUploadCount": 12,
         "canonicalPlanRequestCount": 10,
         "canonicalPlanRequestableCount": 10,
-        "unmappedRows": [
-          {
-            "key": "signed_mandate",
-            "label": "Signed Mandate"
-          }
-        ],
+        "unmappedRows": [],
         "professionalOnlyLegacyRows": [],
         "pendingPolicyLegacyRows": [],
         "deferredLegacyRows": [],
@@ -1275,8 +1242,9 @@
         ],
         "extraLegacyKeysOutsideSellerUpload": [],
         "sellerClientUploadKeys": [
+          "signed_mandate",
           "property_condition_disclosure",
-          "seller_fica_pack",
+          "seller_fica_declaration",
           "title_deed_copy",
           "rates_account",
           "seller_id_document",
@@ -1288,8 +1256,9 @@
           "beetle_certificate"
         ],
         "requestableSellerClientUploadKeys": [
+          "signed_mandate",
           "property_condition_disclosure",
-          "seller_fica_pack",
+          "seller_fica_declaration",
           "title_deed_copy",
           "rates_account",
           "seller_id_document",
@@ -1301,10 +1270,10 @@
           "beetle_certificate"
         ],
         "canonicalPlanKeys": [
-          "seller_fica_pack",
           "rates_clearance",
           "seller_id_document",
           "seller_proof_of_address",
+          "seller_fica_declaration",
           "title_deed_copy",
           "rates_account",
           "property_condition_disclosure",
@@ -1313,10 +1282,10 @@
           "electrical_compliance_certificate"
         ],
         "canonicalPlanRequestableKeys": [
-          "seller_fica_pack",
           "rates_clearance",
           "seller_id_document",
           "seller_proof_of_address",
+          "seller_fica_declaration",
           "title_deed_copy",
           "rates_account",
           "property_condition_disclosure",
@@ -1375,17 +1344,12 @@
           "financeType": "cash"
         },
         "legacyRequirementCount": 7,
-        "mappedRequirementCount": 6,
-        "sellerClientUploadCount": 6,
-        "requestableSellerClientUploadCount": 6,
+        "mappedRequirementCount": 7,
+        "sellerClientUploadCount": 7,
+        "requestableSellerClientUploadCount": 7,
         "canonicalPlanRequestCount": 10,
         "canonicalPlanRequestableCount": 10,
-        "unmappedRows": [
-          {
-            "key": "signed_mandate",
-            "label": "Signed Mandate"
-          }
-        ],
+        "unmappedRows": [],
         "professionalOnlyLegacyRows": [],
         "pendingPolicyLegacyRows": [],
         "deferredLegacyRows": [],
@@ -1398,26 +1362,28 @@
         ],
         "extraLegacyKeysOutsideSellerUpload": [],
         "sellerClientUploadKeys": [
+          "signed_mandate",
           "property_condition_disclosure",
-          "seller_fica_pack",
+          "seller_fica_declaration",
           "title_deed_copy",
           "rates_account",
           "seller_id_document",
           "seller_proof_of_address"
         ],
         "requestableSellerClientUploadKeys": [
+          "signed_mandate",
           "property_condition_disclosure",
-          "seller_fica_pack",
+          "seller_fica_declaration",
           "title_deed_copy",
           "rates_account",
           "seller_id_document",
           "seller_proof_of_address"
         ],
         "canonicalPlanKeys": [
-          "seller_fica_pack",
           "rates_clearance",
           "seller_id_document",
           "seller_proof_of_address",
+          "seller_fica_declaration",
           "title_deed_copy",
           "rates_account",
           "property_condition_disclosure",
@@ -1426,10 +1392,10 @@
           "electrical_compliance_certificate"
         ],
         "canonicalPlanRequestableKeys": [
-          "seller_fica_pack",
           "rates_clearance",
           "seller_id_document",
           "seller_proof_of_address",
+          "seller_fica_declaration",
           "title_deed_copy",
           "rates_account",
           "property_condition_disclosure",
@@ -1459,63 +1425,7 @@
       }
     }
   ],
-  "unmapped": [
-    {
-      "scenarioId": "individual_freehold",
-      "key": "signed_mandate",
-      "label": "Signed Mandate"
-    },
-    {
-      "scenarioId": "married_cop_existing_bond",
-      "key": "signed_mandate",
-      "label": "Signed Mandate"
-    },
-    {
-      "scenarioId": "married_anc_sectional_title",
-      "key": "signed_mandate",
-      "label": "Signed Mandate"
-    },
-    {
-      "scenarioId": "company_seller",
-      "key": "signed_mandate",
-      "label": "Signed Mandate"
-    },
-    {
-      "scenarioId": "trust_seller",
-      "key": "signed_mandate",
-      "label": "Signed Mandate"
-    },
-    {
-      "scenarioId": "deceased_estate",
-      "key": "signed_mandate",
-      "label": "Signed Mandate"
-    },
-    {
-      "scenarioId": "power_of_attorney",
-      "key": "signed_mandate",
-      "label": "Signed Mandate"
-    },
-    {
-      "scenarioId": "tenant_occupied_estate",
-      "key": "signed_mandate",
-      "label": "Signed Mandate"
-    },
-    {
-      "scenarioId": "commercial_vat",
-      "key": "signed_mandate",
-      "label": "Signed Mandate"
-    },
-    {
-      "scenarioId": "conditional_compliance",
-      "key": "signed_mandate",
-      "label": "Signed Mandate"
-    },
-    {
-      "scenarioId": "stale_persisted_deferred_documents",
-      "key": "signed_mandate",
-      "label": "Signed Mandate"
-    }
-  ],
+  "unmapped": [],
   "professionalOnly": [],
   "missingCoveredByCanonicalPlan": [
     {
@@ -1537,6 +1447,10 @@
     {
       "scenarioId": "married_cop_existing_bond",
       "key": "rates_clearance"
+    },
+    {
+      "scenarioId": "married_cop_existing_bond",
+      "key": "seller_spouse_consent"
     },
     {
       "scenarioId": "married_cop_existing_bond",
@@ -1731,9 +1645,9 @@
     }
   ],
   "gate": {
-    "status": "blocked",
-    "ok": false,
-    "mayProceedToPhase6": false,
+    "status": "seller_cleanup_mapped_with_warnings",
+    "ok": true,
+    "mayProceedToPhase6": true,
     "productionActivationReady": false,
     "checks": [
       {
@@ -1746,7 +1660,7 @@
       },
       {
         "key": "no_unmapped_seller_requirements",
-        "ok": false
+        "ok": true
       },
       {
         "key": "deferred_acquisition_improvement_not_requested",
@@ -1761,17 +1675,12 @@
         "ok": true
       }
     ],
-    "failed": [
-      {
-        "key": "no_unmapped_seller_requirements",
-        "ok": false
-      }
-    ],
+    "failed": [],
     "warnings": [
       {
         "code": "legacy_seller_generator_not_full_canonical_policy",
         "message": "The legacy seller generator is mapped, but some canonical seller policy containers are not emitted by every seller scenario yet.",
-        "count": 49
+        "count": 50
       },
       {
         "code": "legacy_rows_roll_up_to_parent_containers",

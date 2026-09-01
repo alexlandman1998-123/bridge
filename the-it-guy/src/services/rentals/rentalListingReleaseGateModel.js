@@ -72,6 +72,7 @@ export const RENTAL_LISTING_RELEASE_GATE_FIXTURE = Object.freeze({
   assignedAgentId: 'agent-1',
   bedrooms: 2,
   bathrooms: 2,
+  floorSize: 86,
   parkingBays: 1,
   garages: 0,
   garden: false,

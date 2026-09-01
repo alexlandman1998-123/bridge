@@ -194,6 +194,26 @@ assert.equal(submitReady.payload.photos.length, 1)
 assert.equal(submitReady.payload.photos[0].bytes, 'base64-image-data')
 assert.equal(submitReady.previewPayload.photos[0].bytesLoaded, true)
 
+const missingResidentialQuality = createProperty24ListingPlan({
+  listing: { ...baseListing, title: '' },
+  publication: {
+    ...basePublication,
+    title: '',
+    floor_size: '',
+    bedrooms: '',
+    bathrooms: '',
+  },
+  media: imageWithBytes,
+  agentMapping: baseAgentMapping,
+  catalogMapping: baseCatalogMapping,
+  options: { expiryDate: '2026-12-31' },
+})
+
+assert.equal(missingResidentialQuality.canPreview, false)
+for (const blocker of ['missing_marketing_title', 'missing_floor_size', 'missing_bedrooms', 'missing_bathrooms']) {
+  assert.ok(missingResidentialQuality.dataBlockers.includes(blocker), `Expected residential quality blocker ${blocker}`)
+}
+
 const poaViaPublicationFeature = createProperty24ListingPlan({
   listing: { ...baseListing, asking_price: 0 },
   publication: {

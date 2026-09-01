@@ -1,0 +1,3 @@
+module.exports=[66188,a=>{"use strict";var b=a.i(7997);a.s(["default",0,function(){return(0,b.jsxs)("main",{style:{padding:"4rem",fontFamily:"system-ui"},children:[(0,b.jsx)("h1",{children:"Website unavailable"}),(0,b.jsx)("p",{children:"This website is not published or this domain is not connected yet."})]})}])},2894,function(a){a.n(a.i(66188))}];
+
+//# sourceMappingURL=app_not-found_tsx_1gi3i27._.js.map

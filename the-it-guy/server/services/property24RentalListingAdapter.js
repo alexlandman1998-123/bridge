@@ -146,6 +146,8 @@ function buildAdaptedListing({ listing = {}, values = {} } = {}) {
     property24SuburbId: values.suburbId,
     property24PropertyTypeId: values.propertyTypeId,
     propertyType: values.property.propertyType || listing.propertyType || listing.property_type,
+    floorSize: values.property.floorSize ?? listing.floorSize ?? listing.floor_size,
+    erfSize: values.property.erfSize ?? listing.erfSize ?? listing.erf_size,
     bedrooms: values.property.bedrooms ?? listing.bedrooms,
     bathrooms: values.property.bathrooms ?? listing.bathrooms,
     garages: values.property.garages ?? listing.garages,
@@ -175,6 +177,8 @@ function buildAdaptedPublication({ values = {} } = {}) {
     petsAllowed: values.petsAllowed,
     furnishedStatus: values.furnishedStatus,
     propertyType: values.property.propertyType,
+    floorSize: values.property.floorSize,
+    erfSize: values.property.erfSize,
   }
 }
 
@@ -203,6 +207,16 @@ function getAdapterDataBlockers(values = {}) {
   if (!values.expiryDate) blockers.push('missing_expiry_date')
   if (!values.rentalRate) blockers.push('missing_rental_rate')
   return unique(blockers)
+}
+
+function getRentalApprovalBlockers(fieldComparison = {}) {
+  const blockers = []
+  const rows = Array.isArray(fieldComparison.rows) ? fieldComparison.rows : []
+  const marketing = rows.find((row) => row.key === 'marketingApprovalStatus')
+  const mandate = rows.find((row) => row.key === 'mandateStatus')
+  if (marketing?.blocksPublish) blockers.push('rental_marketing_not_approved')
+  if (mandate?.blocksPublish) blockers.push('rental_mandate_not_signed')
+  return blockers
 }
 
 function getRentalNextStep({ canPreview, canSubmit, technicalBlockers }) {
@@ -280,7 +294,8 @@ export function createProperty24RentalListingPlan({
   })
 
   const adapterDataBlockers = getAdapterDataBlockers(values)
-  const dataBlockers = unique([...(basePlan.dataBlockers || []), ...adapterDataBlockers])
+  const approvalBlockers = getRentalApprovalBlockers(fieldComparison)
+  const dataBlockers = unique([...(basePlan.dataBlockers || []), ...adapterDataBlockers, ...approvalBlockers])
   const technicalBlockers = unique(basePlan.technicalBlockers || [])
   const canPreview = basePlan.canPreview && dataBlockers.length === 0
   const canSubmit = canPreview && basePlan.canSubmit && technicalBlockers.length === 0

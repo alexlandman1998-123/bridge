@@ -516,6 +516,14 @@ function normalizeText(value = '') {
   return String(value || '').trim()
 }
 
+function sanitizePostgrestSearchTerm(value = '') {
+  return normalizeText(value)
+    .replace(/[^\p{L}\p{N}\s@+-]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .slice(0, 100)
+    .trim()
+}
+
 function normalizeToken(value = '') {
   return String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_')
 }
@@ -1704,6 +1712,18 @@ async function loadAdminProfile(userId) {
   return null
 }
 
+async function loadAdminAccess() {
+  if (!supabase) return { level: '', roles: [] }
+
+  const { data, error } = await supabase.rpc('arch9_admin_access_level')
+  if (error || !data || typeof data !== 'object') return { level: '', roles: [] }
+
+  return {
+    level: normalizeText(data.level).toLowerCase(),
+    roles: Array.isArray(data.roles) ? data.roles : [],
+  }
+}
+
 async function loadDashboardSnapshot(rangeId) {
   if (!supabase) return { data: EMPTY_DASHBOARD, error: 'Supabase is not configured.' }
   const range = getRangeWindow(rangeId)
@@ -1954,7 +1974,7 @@ async function markInboundLeadConverted(leadId) {
 }
 
 async function searchAdminData(term = '') {
-  const query = normalizeText(term)
+  const query = sanitizePostgrestSearchTerm(term)
   if (!supabase || !query) return { results: [], warnings: [] }
 
   const searches = [
@@ -5994,10 +6014,13 @@ export default function App() {
 
       setIsResolvingAccess(true)
       try {
-        const nextProfile = await loadAdminProfile(session.user.id)
+        const [nextProfile, accessResult] = await Promise.all([
+          loadAdminProfile(session.user.id),
+          loadAdminAccess(),
+        ])
         if (cancelled) return
 
-        const nextAccess = resolveAdminAccess({ profile: nextProfile, user: session.user })
+        const nextAccess = resolveAdminAccess(accessResult)
         setAccess(nextAccess)
         setProfile(nextProfile || { email: session.user.email })
         if (typeof window !== 'undefined') setPathname(window.location.pathname)

@@ -173,6 +173,22 @@ function showForPropertyCategories(...categories) {
   }
 }
 
+function showForDevelopmentLand(values, record) {
+  const propertyType = String(values?.property_type || record?.property_type || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_')
+  return propertyType === 'land' || propertyType === 'vacant_land' || propertyType.includes('development')
+}
+
+function renderCommercialListingQuality(row = {}, rawLookups = {}) {
+  const property = (rawLookups.properties || []).find((candidate) => candidate.id === row.property_id) || {}
+  const quality = scoreListingQuality(row, { property })
+  if (quality.categoryReadiness.complete) return `${quality.score}% · Category ready`
+  const missingCount = quality.categoryReadiness.missingFacts.length
+  return `${quality.score}% · ${missingCount} category ${missingCount === 1 ? 'fact' : 'facts'} missing`
+}
+
 function workspaceLink(to, label) {
   return createElement(Link, { to, className: 'font-semibold text-[#1267a3] transition hover:text-[#0c4f80]' }, label)
 }
@@ -601,6 +617,7 @@ export const commercialCrudConfigs = {
       { name: 'truck_access', label: 'Truck access', type: 'checkbox', visibleWhen: showForPropertyCategories('industrial') },
       { name: 'sprinklers', label: 'Sprinklers', type: 'checkbox', visibleWhen: showForPropertyCategories('industrial') },
       { name: 'warehouse_area_m2', label: 'Warehouse area m²', type: 'number', visibleWhen: showForPropertyCategories('industrial') },
+      { name: 'crane_capacity', label: 'Crane capacity', visibleWhen: showForPropertyCategories('industrial') },
       { name: 'office_area_m2', label: 'Office area m²', type: 'number', visibleWhen: showForPropertyCategories('commercial', 'industrial', 'retail') },
       { name: 'frontage_m', label: 'Frontage m', type: 'number', visibleWhen: showForPropertyCategories('commercial', 'retail') },
       { name: 'anchor_tenants', label: 'Anchor tenants', visibleWhen: showForPropertyCategories('retail', 'commercial') },
@@ -614,16 +631,20 @@ export const commercialCrudConfigs = {
       { name: 'gross_yield', label: 'Gross yield %', type: 'percentage', visibleWhen: showForPropertyCategories('commercial', 'industrial', 'retail') },
       { name: 'net_yield', label: 'Net yield %', type: 'percentage', visibleWhen: showForPropertyCategories('commercial', 'industrial', 'retail') },
       { name: 'annual_income', label: 'Annual income', type: 'number', visibleWhen: showForPropertyCategories('commercial', 'industrial', 'retail', 'agricultural') },
-      { name: 'land_size_m2', label: 'Land size m²', type: 'number', visibleWhen: showForPropertyCategories('agricultural') },
-      { name: 'bulk', label: 'Bulk', visibleWhen: showForPropertyCategories('agricultural') },
-      { name: 'coverage', label: 'Coverage', visibleWhen: showForPropertyCategories('agricultural') },
-      { name: 'services_available', label: 'Services available', visibleWhen: showForPropertyCategories('agricultural') },
-      { name: 'environmental_status', label: 'Environmental status', visibleWhen: showForPropertyCategories('agricultural') },
+      { name: 'land_size_m2', label: 'Land size m²', type: 'number', visibleWhen: (values, record) => showForPropertyCategories('agricultural')(values, record) || showForDevelopmentLand(values, record) },
+      { name: 'bulk', label: 'Bulk', visibleWhen: (values, record) => showForPropertyCategories('agricultural')(values, record) || showForDevelopmentLand(values, record) },
+      { name: 'coverage', label: 'Coverage', visibleWhen: (values, record) => showForPropertyCategories('agricultural')(values, record) || showForDevelopmentLand(values, record) },
+      { name: 'services_available', label: 'Services available', visibleWhen: (values, record) => showForPropertyCategories('agricultural')(values, record) || showForDevelopmentLand(values, record) },
+      { name: 'environmental_status', label: 'Environmental status', visibleWhen: (values, record) => showForPropertyCategories('agricultural')(values, record) || showForDevelopmentLand(values, record) },
       { name: 'farm_size_ha', label: 'Farm size ha', type: 'number', visibleWhen: showForPropertyCategories('agricultural') },
+      { name: 'water_supply', label: 'Water supply', visibleWhen: showForPropertyCategories('agricultural') },
       { name: 'water_rights', label: 'Water rights', visibleWhen: showForPropertyCategories('agricultural') },
       { name: 'irrigation', label: 'Irrigation', visibleWhen: showForPropertyCategories('agricultural') },
       { name: 'crop_type', label: 'Crop type', visibleWhen: showForPropertyCategories('agricultural') },
       { name: 'livestock_capacity', label: 'Livestock capacity', visibleWhen: showForPropertyCategories('agricultural') },
+      { name: 'agricultural_use', label: 'Agricultural use', visibleWhen: showForPropertyCategories('agricultural') },
+      { name: 'development_rights', label: 'Development rights', visibleWhen: (values, record) => showForPropertyCategories('agricultural')(values, record) || showForDevelopmentLand(values, record) },
+      { name: 'subdivision_status', label: 'Subdivision status', visibleWhen: (values, record) => showForPropertyCategories('agricultural')(values, record) || showForDevelopmentLand(values, record) },
       { name: 'status', label: 'Status', type: 'select', options: ACTIVE_STATUSES, defaultValue: 'active' },
       { name: 'notes', label: 'Notes', type: 'textarea', span: 'full' },
     ],
@@ -725,7 +746,7 @@ export const commercialCrudConfigs = {
       { key: 'property_id', label: 'Property', render: (row, lookups) => getLookupLabel(lookups, 'properties', row.property_id) },
       { key: 'vacancy_id', label: 'Vacancy', render: (row, lookups) => getLookupLabel(lookups, 'vacancies', row.vacancy_id) },
       { key: 'pricing', label: 'Pricing', render: (row) => formatCurrency(row.pricing) },
-      { key: 'quality', label: 'Quality', sortable: false, render: (row) => `${scoreListingQuality(row).score}%` },
+      { key: 'quality', label: 'Quality', sortable: false, render: (row, _lookups, rawLookups) => renderCommercialListingQuality(row, rawLookups) },
       brokerColumn('broker_id'),
       nextActionColumn('listings'),
       updatedColumn(),
@@ -753,6 +774,11 @@ export const commercialCrudConfigs = {
       },
       { name: 'pricing_notes', label: 'Pricing notes', span: 'full' },
       { name: 'available_from', label: 'Available from', type: 'date' },
+      { name: 'operating_costs', label: 'Operating costs', type: 'number' },
+      { name: 'rates_and_taxes', label: 'Rates and taxes', type: 'number' },
+      { name: 'lease_term_months', label: 'Lease term months', type: 'number' },
+      { name: 'deposit_amount', label: 'Deposit amount', type: 'number' },
+      { name: 'utility_policy', label: 'Utilities policy' },
       { name: 'featured', label: 'Featured', type: 'checkbox' },
       { name: 'status', label: 'Internal status', type: 'select', options: ACTIVE_STATUSES, defaultValue: 'active' },
       { name: 'description', label: 'Description', type: 'textarea', span: 'full' },

@@ -37,6 +37,12 @@ import {
 import { lazy, useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import DevelopmentAvailabilityWorkspace from '../components/developments/DevelopmentAvailabilityWorkspace'
+import DevelopmentLaunchReadinessPanel from '../components/developments/DevelopmentLaunchReadinessPanel'
+import DevelopmentLaunchAssurancePanel from '../components/developments/DevelopmentLaunchAssurancePanel'
+import DevelopmentAgentLaunchBrief from '../components/developments/DevelopmentAgentLaunchBrief'
+import DevelopmentDemandIntelligencePanel from '../components/developments/DevelopmentDemandIntelligencePanel'
+import DevelopmentProductCatalogueModal from '../components/developments/DevelopmentProductCatalogueModal'
+import DevelopmentStructureSetupModal from '../components/developments/DevelopmentStructureSetupModal'
 import Button from '../components/ui/Button'
 import Drawer from '../components/ui/Drawer'
 import Field from '../components/ui/Field'
@@ -56,6 +62,11 @@ import {
 import { getReportNextAction } from '../core/transactions/reportNextAction'
 import { resolveTransactionWorkspaceRoute } from '../core/transactions/transactionWorkspaceRouting'
 import { selectCurrentDevelopmentTransactionRows } from '../core/developments/developmentTransactionVisibility.js'
+import { buildDevelopmentLaunchReadiness } from '../core/developments/developmentLaunchReadiness'
+import { buildDevelopmentLaunchPacket, formatDevelopmentLaunchPacket } from '../core/developments/developmentLaunchPacket'
+import { buildDevelopmentLaunchAssurance } from '../core/developments/developmentLaunchAssurance'
+import { buildDevelopmentAgentLaunchBrief, formatDevelopmentAgentLaunchBrief } from '../core/developments/developmentAgentLaunchBrief'
+import { buildDevelopmentDemandIntelligence } from '../core/developments/developmentDemandIntelligence'
 import {
   deleteDevelopment,
   deleteDevelopmentDocument,
@@ -64,6 +75,8 @@ import {
   saveDevelopmentDetails,
   saveDevelopmentDocument,
   saveDevelopmentFinancials,
+  saveDevelopmentProductCatalogue,
+  saveDevelopmentStructureNodes,
   saveDevelopmentUnit,
   uploadDevelopmentDocumentAsset,
   updateDevelopmentTransactionSalesPrice,
@@ -323,6 +336,8 @@ const DEFAULT_UNIT_FORM = {
   status: 'Available',
   vatApplicable: '',
   floorplanId: '',
+  unitTypeId: '',
+  catalogueFloorplanId: '',
   notes: '',
 }
 
@@ -2126,6 +2141,8 @@ function buildUnitForm(unit = null) {
     status: unit.status || 'Available',
     vatApplicable: unit.vatApplicable === null || unit.vatApplicable === undefined ? '' : String(Boolean(unit.vatApplicable)),
     floorplanId: unit.floorplanId || '',
+    unitTypeId: unit.unitTypeId || '',
+    catalogueFloorplanId: unit.catalogueFloorplanId || '',
     notes: unit.notes || '',
   }
 }
@@ -2336,6 +2353,8 @@ function DevelopmentDetail() {
   })
   const [unitModalOpen, setUnitModalOpen] = useState(false)
   const [bulkUnitModalOpen, setBulkUnitModalOpen] = useState(false)
+  const [structureSetupOpen, setStructureSetupOpen] = useState(false)
+  const [productCatalogueOpen, setProductCatalogueOpen] = useState(false)
   const [detailsSaving, setDetailsSaving] = useState(false)
   const [agentAssignmentsSaving, setAgentAssignmentsSaving] = useState(false)
   const [financialsSaving, setFinancialsSaving] = useState(false)
@@ -2345,6 +2364,8 @@ function DevelopmentDetail() {
   const [unitStatusSavingId, setUnitStatusSavingId] = useState('')
   const [unitQuickSavingKey, setUnitQuickSavingKey] = useState('')
   const [bulkUnitSaving, setBulkUnitSaving] = useState(false)
+  const [structureSetupSaving, setStructureSetupSaving] = useState(false)
+  const [productCatalogueSaving, setProductCatalogueSaving] = useState(false)
   const [documentSaving, setDocumentSaving] = useState(false)
   const [documentDownloadingId, setDocumentDownloadingId] = useState('')
   const [marketingAssetUploading, setMarketingAssetUploading] = useState('')
@@ -2975,6 +2996,8 @@ function DevelopmentDetail() {
       })),
     [floorplanTitleByDocumentId, floorplanTitlesByUnitType, rows],
   )
+  const productUnitTypes = data?.productCatalogue?.unitTypes || []
+  const catalogueFloorplans = data?.productCatalogue?.floorplans || []
   const unitStructureConfig = useMemo(() => {
     const hasPhase = unitRows.some((unit) => String(unit?.phase || '').trim().length > 0)
     const hasBlock = unitRows.some((unit) => String(unit?.block || '').trim().length > 0)
@@ -3399,6 +3422,37 @@ function DevelopmentDetail() {
   const reservationDepositSummary = getReservationDepositSummary(reservationSettingsForm)
   const reservationDepositConfigured =
     !reservationSettingsForm.enabledByDefault || validateReservationSettingsForm(reservationSettingsForm).length === 0
+  const launchReadiness = useMemo(() => buildDevelopmentLaunchReadiness({
+    units: unitRows,
+    structureNodes: data?.structureNodes || [],
+    productCatalogue: data?.productCatalogue,
+    marketing: marketingForm,
+    reservationDepositConfigured,
+    linkedListings: linkedListingRows,
+  }), [data?.productCatalogue, data?.structureNodes, linkedListingRows, marketingForm, reservationDepositConfigured, unitRows])
+  const launchPacket = useMemo(() => buildDevelopmentLaunchPacket({
+    development: data?.development,
+    readiness: launchReadiness,
+    units: unitRows,
+    structureNodes: data?.structureNodes || [],
+    productCatalogue: data?.productCatalogue,
+    listings: linkedListingRows,
+  }), [data?.development, data?.productCatalogue, data?.structureNodes, launchReadiness, linkedListingRows, unitRows])
+  const launchAssurance = useMemo(() => buildDevelopmentLaunchAssurance({
+    units: unitRows,
+    structureNodes: data?.structureNodes || [],
+    productCatalogue: data?.productCatalogue,
+    listings: linkedListingRows,
+    publicVisibility: marketingForm.listingConfiguration.publicVisibility,
+  }), [data?.productCatalogue, data?.structureNodes, linkedListingRows, marketingForm.listingConfiguration.publicVisibility, unitRows])
+  const agentLaunchBrief = useMemo(() => buildDevelopmentAgentLaunchBrief({
+    development: data?.development,
+    units: unitRows,
+    productCatalogue: data?.productCatalogue,
+    marketing: marketingForm,
+    readiness: launchReadiness,
+  }), [data?.development, data?.productCatalogue, launchReadiness, marketingForm, unitRows])
+  const demandIntelligence = useMemo(() => buildDevelopmentDemandIntelligence({ units: unitRows, leads: developmentLeadRows }), [developmentLeadRows, unitRows])
   const generalSummaryLocation = [detailsForm.name || data?.development?.name, detailsForm.suburb || detailsForm.location, detailsForm.city].filter(Boolean).join(' · ')
   const generalSummaryMeta = [
     `${formatNumber(detailsForm.totalUnitsExpected || developmentTrackerMetrics.totalUnits || 0)} Units`,
@@ -3503,6 +3557,45 @@ function DevelopmentDetail() {
       setFeedback(`${label} copied.`)
     } catch {
       setError(`Could not copy ${label.toLowerCase()}.`)
+    }
+  }
+
+  async function handleCopyLaunchPacket() {
+    try {
+      await navigator.clipboard.writeText(formatDevelopmentLaunchPacket(launchPacket))
+      setError('')
+      setFeedback('Launch summary copied.')
+    } catch {
+      setError('Could not copy the launch summary.')
+    }
+  }
+
+  async function handleCopyAgentLaunchBrief() {
+    try {
+      await navigator.clipboard.writeText(formatDevelopmentAgentLaunchBrief(agentLaunchBrief))
+      setError('')
+      setFeedback('Agent launch brief copied.')
+    } catch {
+      setError('Could not copy the agent launch brief.')
+    }
+  }
+
+  function handleDownloadLaunchPacket() {
+    try {
+      const blob = new Blob([JSON.stringify(launchPacket, null, 2)], { type: 'application/json;charset=utf-8' })
+      const objectUrl = window.URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      const name = String(data?.development?.name || 'development').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'development'
+      anchor.href = objectUrl
+      anchor.download = `${name}-launch-packet.json`
+      document.body.appendChild(anchor)
+      anchor.click()
+      document.body.removeChild(anchor)
+      window.URL.revokeObjectURL(objectUrl)
+      setError('')
+      setFeedback('Launch packet downloaded.')
+    } catch (downloadError) {
+      setError(downloadError?.message || 'Unable to download the launch packet.')
     }
   }
 
@@ -4980,6 +5073,8 @@ function DevelopmentDetail() {
         sizeSqm: unitForm.sizeSqm === '' ? null : unitForm.sizeSqm,
         vatApplicable: unitForm.vatApplicable === '' ? null : unitForm.vatApplicable === 'true',
         floorplanId: unitForm.floorplanId || null,
+        unitTypeId: unitForm.unitTypeId || null,
+        catalogueFloorplanId: unitForm.catalogueFloorplanId || null,
       })
       setFeedback(unitForm.id ? 'Unit updated.' : 'Unit added to development.')
       setUnitForm(DEFAULT_UNIT_FORM)
@@ -5166,6 +5261,8 @@ function DevelopmentDetail() {
       parkingCount: merged.parkingCount === '' ? null : merged.parkingCount ?? null,
       sizeSqm: merged.sizeSqm === '' ? null : merged.sizeSqm ?? null,
       floorplanId: merged.floorplanId || null,
+      unitTypeId: merged.unitTypeId || null,
+      catalogueFloorplanId: merged.catalogueFloorplanId || null,
       notes: merged.notes || '',
       phase: merged.phase ?? '',
       status: merged.status || 'Available',
@@ -5598,6 +5695,68 @@ function DevelopmentDetail() {
       setError(saveError.message)
     } finally {
       setBulkUnitSaving(false)
+    }
+  }
+
+  async function handleStructureSetupSave(preview) {
+    if (!canManageDevelopment) {
+      setError('Only the development team can create the project structure.')
+      return
+    }
+    const importedUnits = preview?.units || []
+    const importedNumbers = importedUnits.map((unit) => String(unit.unitNumber || '').trim())
+    const existingNumbers = new Set(
+      unitRows.map((unit) => String(unit?.unitNumber || unit?.unit_number || '').trim().toLowerCase()).filter(Boolean),
+    )
+    const collision = importedNumbers.find((value) => existingNumbers.has(value.toLowerCase()))
+    if (collision) {
+      setError(`Unit ${collision} already exists in this development. The structure import does not overwrite stock.`)
+      return
+    }
+
+    try {
+      setStructureSetupSaving(true)
+      setFeedback('')
+      setError('')
+      await saveDevelopmentStructureNodes({ developmentId: data.development.id, nodes: preview.nodes })
+      await Promise.all(importedUnits.map((unit) => saveDevelopmentUnit({
+        developmentId: data.development.id,
+        unitNumber: unit.unitNumber,
+        unitLabel: unit.unitNumber,
+        unitType: unit.unittype || unit.unit_type || '',
+        listPrice: unit.listprice || unit.list_price || 0,
+        currentPrice: null,
+        status: 'Available',
+        structureNodeId: unit.structureNodeId,
+      })))
+      setFeedback(`${formatNumber(importedUnits.length)} units and ${formatNumber(preview.nodes.length)} structure nodes created.`)
+      setStructureSetupOpen(false)
+      window.dispatchEvent(new Event('itg:developments-changed'))
+      await loadData()
+    } catch (saveError) {
+      setError(saveError.message || 'Could not create the development structure.')
+    } finally {
+      setStructureSetupSaving(false)
+    }
+  }
+
+  async function handleProductCatalogueSave(catalogue) {
+    if (!canManageDevelopment) {
+      setError('Only the development team can manage the product catalogue.')
+      return
+    }
+    try {
+      setProductCatalogueSaving(true)
+      setFeedback('')
+      setError('')
+      await saveDevelopmentProductCatalogue({ developmentId: data.development.id, ...catalogue })
+      setFeedback('Product catalogue and current price list saved.')
+      setProductCatalogueOpen(false)
+      await loadData()
+    } catch (saveError) {
+      setError(saveError.message || 'Could not save the product catalogue.')
+    } finally {
+      setProductCatalogueSaving(false)
     }
   }
 
@@ -6354,6 +6513,16 @@ function DevelopmentDetail() {
 
       {activeTab === 'overview' ? (
         <section className="mt-5 grid gap-5">
+          <DevelopmentLaunchReadinessPanel
+            readiness={launchReadiness}
+            onOpenArea={(tab) => setActiveTab(tab)}
+            onCopyPacket={handleCopyLaunchPacket}
+            onDownloadPacket={handleDownloadLaunchPacket}
+          />
+          <DevelopmentLaunchAssurancePanel
+            assurance={launchAssurance}
+            onOpenArea={(tab) => setActiveTab(tab)}
+          />
           <div className="grid gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1fr)_minmax(0,1.15fr)]">
             <article className="rounded-[18px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
               <div className="mb-5 flex items-center justify-between gap-3">
@@ -6524,6 +6693,12 @@ function DevelopmentDetail() {
 
       {activeTab === 'performance' ? (
         <>
+
+          <DevelopmentDemandIntelligencePanel
+            intelligence={demandIntelligence}
+            onOpenLeads={() => setActiveTab('leads')}
+            onOpenUnits={() => setActiveTab('units')}
+          />
 
           <section className={`${CARD_SHELL} mt-4 p-4`}>
             <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -9169,8 +9344,16 @@ function DevelopmentDetail() {
       ) : null}
 
       {activeTab === 'availability' ? (
+        <>
+        <DevelopmentAgentLaunchBrief
+          brief={agentLaunchBrief}
+          onCopy={handleCopyAgentLaunchBrief}
+          onOpenMarketing={() => setActiveTab('marketing')}
+        />
         <DevelopmentAvailabilityWorkspace
           units={unitRows}
+          structureNodes={data?.structureNodes || []}
+          productCatalogue={data?.productCatalogue}
           role={role}
           canManageInventory={canManageDevelopment}
           canCreateTransactions={canCreateTransactions}
@@ -9200,6 +9383,7 @@ function DevelopmentDetail() {
             { field: 'availabilityPrice', feedbackLabel: `Unit ${unit.unitNumber || unit.unit_number || ''} price updated.` },
           )}
         />
+        </>
       ) : null}
 
       {activeTab === 'units' ? (
@@ -9221,6 +9405,18 @@ function DevelopmentDetail() {
                   <Plus size={15} />
                   Add Bulk
                 </Button>
+                {canManageDevelopment ? (
+                  <>
+                    <Button variant="secondary" className="whitespace-nowrap" onClick={() => setProductCatalogueOpen(true)}>
+                      <FolderKanban size={15} />
+                      Product Catalogue
+                    </Button>
+                    <Button variant="secondary" className="whitespace-nowrap" onClick={() => setStructureSetupOpen(true)}>
+                      <Building2 size={15} />
+                      Structure Setup
+                    </Button>
+                  </>
+                ) : null}
                 <Button className="whitespace-nowrap" onClick={() => openUnitModal()}>
                   <Plus size={15} />
                   Add Unit
@@ -10043,6 +10239,16 @@ function DevelopmentDetail() {
                 <Field value={unitForm.unitType} onChange={(event) => setUnitForm((previous) => ({ ...previous, unitType: event.target.value }))} />
               </label>
               <label>
+                Catalogue Unit Type
+                <Field as="select" value={unitForm.unitTypeId} onChange={(event) => {
+                  const selected = productUnitTypes.find((item) => item.id === event.target.value)
+                  setUnitForm((previous) => ({ ...previous, unitTypeId: event.target.value, unitType: selected?.name || previous.unitType }))
+                }}>
+                  <option value="">Not linked</option>
+                  {productUnitTypes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                </Field>
+              </label>
+              <label>
                 Size (sqm)
                 <Field type="number" min="0" value={unitForm.sizeSqm} onChange={(event) => setUnitForm((previous) => ({ ...previous, sizeSqm: event.target.value }))} />
               </label>
@@ -10085,6 +10291,13 @@ function DevelopmentDetail() {
               <label>
                 Linked Floorplan ID
                 <Field value={unitForm.floorplanId} onChange={(event) => setUnitForm((previous) => ({ ...previous, floorplanId: event.target.value }))} />
+              </label>
+              <label>
+                Catalogue Floorplan
+                <Field as="select" value={unitForm.catalogueFloorplanId} onChange={(event) => setUnitForm((previous) => ({ ...previous, catalogueFloorplanId: event.target.value }))}>
+                  <option value="">Not linked</option>
+                  {catalogueFloorplans.filter((item) => !item.unitTypeId || item.unitTypeId === unitForm.unitTypeId).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                </Field>
               </label>
               <label className="full-width">
                 Notes
@@ -10404,6 +10617,21 @@ function DevelopmentDetail() {
           </form>
         </Modal>
       ) : null}
+      <DevelopmentStructureSetupModal
+        open={structureSetupOpen}
+        onClose={() => setStructureSetupOpen(false)}
+        onSave={handleStructureSetupSave}
+        saving={structureSetupSaving}
+      />
+      <DevelopmentProductCatalogueModal
+        key={`${productCatalogueOpen}-${data?.development?.id || ''}`}
+        open={productCatalogueOpen}
+        onClose={() => setProductCatalogueOpen(false)}
+        onSave={handleProductCatalogueSave}
+        saving={productCatalogueSaving}
+        catalogue={data?.productCatalogue}
+        documents={floorplanDocumentOptions}
+      />
       </div>
     </section>
   )

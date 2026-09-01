@@ -407,7 +407,7 @@ async function findExistingLead(client, organisationId, contactId) {
 async function resolveListing(client, enquiry) {
   const listingId = enquiry.listingId || enquiry.lead.listingId
   const selectVariants = [
-    'id, organisation_id, assigned_agent_id, assigned_agent_email, listing_reference, title, property_address, address_line_1, suburb, city, listing_status',
+    'id, organisation_id, development_id, assigned_agent_id, assigned_agent_email, listing_reference, title, property_address, address_line_1, suburb, city, listing_status',
     'id, organisation_id, assigned_agent_id, listing_reference, title, property_address, address_line_1, suburb, city, listing_status',
   ]
   if (isUuidLike(listingId)) {
@@ -821,6 +821,18 @@ export async function createOrUpdateLeadFromEnquiry(
       resolveListing(client, enquiry),
       resolveDevelopmentInterest(client, enquiry),
     ])
+    let resolvedDevelopmentMatch = developmentMatch
+    const linkedDevelopmentId = normalizeText(listing?.development_id || listing?.developmentId)
+    if (!resolvedDevelopmentMatch && linkedDevelopmentId) {
+      const linkedDevelopment = await fetchDevelopmentById(client, linkedDevelopmentId)
+      if (linkedDevelopment) {
+        resolvedDevelopmentMatch = {
+          development: linkedDevelopment,
+          score: 1,
+          reason: 'linked_listing_development_id',
+        }
+      }
+    }
     if (existingContact) await maybeUpdateContact(enquiry.organisationId, existingContact, enquiry)
     const { lead, reusedLead } = await createOrReuseLead({ enquiry, contact: existingContact, listing, actor })
     const contactId = existingContact?.contact_id || lead.contactId
@@ -893,13 +905,13 @@ export async function createOrUpdateLeadFromEnquiry(
     })
 
     let developerLead = null
-    if (isBuyerLead && developmentMatch?.development) {
+    if (isBuyerLead && resolvedDevelopmentMatch?.development) {
       const assignedAgentId = assignment?.agentId || assignment?.newAgentId || buildAssignedAgent(enquiry, listing)?.id || actor?.id
       const mirrorResult = await mirrorDevelopmentLeadFromEnquiry({
         enquiry,
         lead,
         contactId,
-        developmentMatch,
+        developmentMatch: resolvedDevelopmentMatch,
         assignedAgentId,
         actor,
       }).catch((mirrorError) => ({

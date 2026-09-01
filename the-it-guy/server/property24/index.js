@@ -1,4 +1,7 @@
 export * from './client.js'
+export * from './listingCategoryContract.js'
+export * from './listingCategoryModel.js'
+export * from './commercialListingFacts.js'
 export * from './mapper.js'
 export * from './listingDataService.js'
 export * from './syncService.js'

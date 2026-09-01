@@ -75,6 +75,7 @@ import {
   OFFER_WORKFLOW_RETIRED_MESSAGE,
 } from '../core/offers/offerWorkflowRetirement'
 import { requestPersistedPdfAccess } from '../lib/documentPacketsApi'
+import { fetchDevelopmentsData } from '../lib/api'
 import {
   getListingReadinessSummary,
   getRequiredSellerDocuments,
@@ -157,6 +158,7 @@ import { isUnsafeFallbackAllowed } from '../lib/envValidation'
 import { resolveTransactionRoutingProfile } from '../services/transactionRoutingProfileService'
 import {
   getPrivateListing,
+  createPrivateListingActivity,
   createPrivateListingDocumentDownloadUrl,
   deletePrivateListing,
   getSellerPortalAccessState,
@@ -3302,7 +3304,7 @@ function AgentListingDetail() {
   const navigate = useNavigate()
   const location = useLocation()
   const { listingId: encodedListingId } = useParams()
-  const { profile } = useWorkspace()
+  const { profile, currentWorkspace } = useWorkspace()
   const listingId = useMemo(() => {
     try {
       return decodeURIComponent(String(encodedListingId || '')).trim()
@@ -3316,6 +3318,11 @@ function AgentListingDetail() {
   const [pipelineLeads, setPipelineLeads] = useState([])
   const [loading, setLoading] = useState(true)
   const [activeOrganisationId, setActiveOrganisationId] = useState('')
+  const [developmentLinkOpen, setDevelopmentLinkOpen] = useState(false)
+  const [developmentLinkOptions, setDevelopmentLinkOptions] = useState([])
+  const [developmentLinkLoading, setDevelopmentLinkLoading] = useState(false)
+  const [developmentLinkSaving, setDevelopmentLinkSaving] = useState(false)
+  const [selectedDevelopmentLinkId, setSelectedDevelopmentLinkId] = useState('')
   const [offersRefreshTick, setOffersRefreshTick] = useState(0)
   const [showSendOfferLinkForm, setShowSendOfferLinkForm] = useState(false)
   const [offerInviteDraft, setOfferInviteDraft] = useState({
@@ -3521,6 +3528,31 @@ function AgentListingDetail() {
     () => String(listingRecord?.organisationId || listingRecord?.organisation_id || activeOrganisationId || '').trim(),
     [activeOrganisationId, listingRecord?.organisationId, listingRecord?.organisation_id],
   )
+
+  useEffect(() => {
+    if (!developmentLinkOpen) return undefined
+    let active = true
+    const organisationId = String(listingOrganisationId || currentWorkspace?.id || '').trim()
+    setSelectedDevelopmentLinkId(String(listingRecord?.developmentId || listingRecord?.development_id || '').trim())
+
+    async function loadDevelopmentLinkOptions() {
+      try {
+        setDevelopmentLinkLoading(true)
+        const response = await fetchDevelopmentsData({ organisationId: organisationId || null })
+        if (active) setDevelopmentLinkOptions(Array.isArray(response?.developments) ? response.developments : [])
+      } catch (error) {
+        if (active) {
+          setDevelopmentLinkOptions([])
+          setDetailError(error?.message || 'Developments could not be loaded for this listing.')
+        }
+      } finally {
+        if (active) setDevelopmentLinkLoading(false)
+      }
+    }
+
+    void loadDevelopmentLinkOptions()
+    return () => { active = false }
+  }, [currentWorkspace?.id, developmentLinkOpen, listingOrganisationId, listingRecord?.developmentId, listingRecord?.development_id])
 
   const sellerLeadId = useMemo(
     () => resolveSellerLeadIdFromListing(listingRecord),
@@ -3920,6 +3952,45 @@ function AgentListingDetail() {
       console.warn('[AgentListingDetail] local listing cache write skipped', storageError)
     }
     return updatedListing
+  }
+
+  async function saveDevelopmentLink() {
+    if (!listingRecord?.id) return
+    try {
+      setDevelopmentLinkSaving(true)
+      setDetailError('')
+      const savedListing = await updatePrivateListing(
+        listingRecord.id,
+        { developmentId: selectedDevelopmentLinkId || null },
+        { includeRequirementsAndDocuments: false },
+      )
+      if (savedListing?.id) {
+        setPrivateListings((rows) => upsertListingRecord(rows, mergeListingRecord(listingRecord, savedListing)))
+      }
+      const linkedDevelopment = developmentLinkOptions.find((development) => development.id === selectedDevelopmentLinkId)
+      await createPrivateListingActivity({
+        privateListingId: listingRecord.id,
+        activityType: selectedDevelopmentLinkId ? 'development_linked' : 'development_unlinked',
+        activityTitle: selectedDevelopmentLinkId ? 'Listing linked to development' : 'Listing unlinked from development',
+        activityDescription: selectedDevelopmentLinkId
+          ? `Linked to ${linkedDevelopment?.name || 'the selected development'} from the listing workspace.`
+          : 'Removed the development association from the listing workspace.',
+        performedBy: profile?.id || null,
+        visibility: 'internal',
+        metadata: {
+          previousDevelopmentId: listingRecord.developmentId || listingRecord.development_id || null,
+          developmentId: selectedDevelopmentLinkId || null,
+        },
+      }).catch(() => null)
+      setDevelopmentLinkOpen(false)
+      setDetailMessage(selectedDevelopmentLinkId ? 'Listing linked to the development. New listing enquiries will be mirrored into its development lead intake.' : 'Development link removed. This listing remains a normal private-property listing.')
+      window.dispatchEvent(new Event('itg:listings-updated'))
+      window.dispatchEvent(new Event('itg:developments-changed'))
+    } catch (error) {
+      setDetailError(error?.message || 'The development link could not be saved.')
+    } finally {
+      setDevelopmentLinkSaving(false)
+    }
   }
 
   async function persistListingSnapshot(nextDraft, { message = '', persistCoreFields = false } = {}) {
@@ -10169,6 +10240,42 @@ function AgentListingDetail() {
 
   return (
     <section className="space-y-5">
+      <Modal
+        open={developmentLinkOpen}
+        onClose={() => !developmentLinkSaving && setDevelopmentLinkOpen(false)}
+        title="Link listing to a development"
+        size="md"
+      >
+        <div className="space-y-4">
+          <p className="text-sm leading-6 text-[#607387]">
+            This keeps the listing as a normal private-property listing, including its portal treatment such as No Transfer Duty. It only adds the development context used for reporting and incoming lead routing.
+          </p>
+          <label className="grid gap-2">
+            <span className="text-sm font-semibold text-[#2d445e]">Development</span>
+            <Field
+              as="select"
+              value={selectedDevelopmentLinkId}
+              disabled={developmentLinkLoading || developmentLinkSaving}
+              onChange={(event) => setSelectedDevelopmentLinkId(event.target.value)}
+            >
+              <option value="">No linked development</option>
+              {developmentLinkOptions.map((development) => (
+                <option key={development.id} value={development.id}>
+                  {development.name}{development.location ? ` · ${development.location}` : ''}
+                </option>
+              ))}
+            </Field>
+          </label>
+          {developmentLinkLoading ? <p className="text-sm text-[#607387]">Loading accessible developments…</p> : null}
+          {!developmentLinkLoading && !developmentLinkOptions.length ? <p className="rounded-[12px] border border-[#f1dfb8] bg-[#fff8e8] px-3 py-2.5 text-sm text-[#8a641d]">No accessible developments were found for this workspace.</p> : null}
+          <div className="flex justify-end gap-2 border-t border-[#e5edf6] pt-4">
+            <Button type="button" variant="secondary" disabled={developmentLinkSaving} onClick={() => setDevelopmentLinkOpen(false)}>Cancel</Button>
+            <Button type="button" disabled={developmentLinkSaving || developmentLinkLoading} onClick={() => void saveDevelopmentLink()}>
+              {developmentLinkSaving ? 'Saving…' : selectedDevelopmentLinkId ? 'Save development link' : 'Remove link'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
       <StartDocumentModal
         open={mandateStartOpen && !listingHasKingstonsSellerProcess}
         onClose={() => setMandateStartOpen(false)}
@@ -10670,6 +10777,10 @@ function AgentListingDetail() {
                       Back to Marketing
                     </Button>
                   ) : null}
+                  <Button variant="secondary" onClick={() => setDevelopmentLinkOpen(true)}>
+                    <Building2 size={15} />
+                    {listingRecord.developmentId || listingRecord.development_id ? 'Linked to development' : 'Link to development'}
+                  </Button>
                   <Button variant="secondary" onClick={handleDeleteListing} disabled={deletingListing}>
                     {deletingListing ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
                     Delete Listing

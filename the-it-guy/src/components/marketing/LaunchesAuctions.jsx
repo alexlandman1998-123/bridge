@@ -1,62 +1,39 @@
-import { useState } from 'react'
-import {
-  BadgeCheck,
-  CalendarDays,
-  CheckCircle2,
-  ChevronDown,
-  ChevronRight,
-  Clock3,
-  Gavel,
-  MapPin,
-  MoreHorizontal,
-  Search,
-  TicketCheck,
-  UserCheck,
-  UsersRound,
-} from 'lucide-react'
-import { auctionStats, auctionTabs, auctions, launchStats, launchTabs, launches } from '../../data/launchesAuctions'
+import { useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { useOrganisation } from '../../context/OrganisationContext'
+import { BadgeCheck, CalendarDays, CheckCircle2, ChevronDown, ChevronRight, Clock3, Gavel, MapPin, MoreHorizontal, Search, TicketCheck, UserCheck, UsersRound, X } from 'lucide-react'
+import { auctionStats, auctionTabs, auctions, launchTabs, launches as seededLaunches } from '../../data/launchesAuctions'
+import { formatEventDate, useMarketingEvents } from '../../lib/marketingEventStore'
 
-const metricIcons = {
-  upcoming: CalendarDays,
-  invited: UsersRound,
-  registrations: TicketCheck,
-  leads: UserCheck,
-  active: Gavel,
-  bidders: UsersRound,
-  lots: CalendarDays,
-  clearance: CheckCircle2,
-}
+const metricIcons = { upcoming: CalendarDays, invited: UsersRound, registrations: TicketCheck, leads: UserCheck, active: Gavel, bidders: UsersRound, lots: CalendarDays, clearance: CheckCircle2 }
+const launchImage = 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=520&q=84'
 
-function OverviewStats({ stats, label }) {
-  return <section className="wa-stats" aria-label={label}>{stats.map((stat) => { const Icon = metricIcons[stat.id]; return <article className={`wa-stat la-stat la-stat-${stat.id}`} key={stat.id}><span className="wa-stat-icon"><Icon size={19} /></span><span className="wa-stat-copy"><strong>{stat.value}</strong><span>{stat.label}</span><small>{stat.detail}</small></span></article> })}</section>
-}
-
-function WorkspaceFilters({ placeholder }) {
-  return <section className="wa-filter-row"><label className="wa-search"><Search size={17} /><span className="sr-only">{placeholder}</span><input type="search" placeholder={placeholder} /></label><button className="wa-filter-control" type="button">All statuses <ChevronDown size={15} /></button><button className="wa-filter-control" type="button">Next 60 days <CalendarDays size={16} /></button></section>
-}
-
-function StatusBadge({ status }) {
-  return <span className={`wa-status la-status la-status-${status.toLowerCase().replaceAll(' ', '-')}`}>{status}</span>
-}
+function OverviewStats({ stats, label }) { return <section className="wa-stats" aria-label={label}>{stats.map((stat) => { const Icon = metricIcons[stat.id]; return <article className={`wa-stat la-stat la-stat-${stat.id}`} key={stat.id}><span className="wa-stat-icon"><Icon size={19} /></span><span className="wa-stat-copy"><strong>{stat.value}</strong><span>{stat.label}</span><small>{stat.detail}</small></span></article> })}</section> }
+function StatusBadge({ status }) { return <span className={`wa-status la-status la-status-${status.toLowerCase().replaceAll(' ', '-')}`}>{status}</span> }
 
 function LaunchCard({ launch }) {
-  return <article className="la-card"><img src={launch.image} alt="" /><div className="la-card-main"><div className="la-card-heading"><div><span className="la-card-kicker">{launch.development}</span><h3>{launch.title}</h3><p><MapPin size={12} /> {launch.location}</p></div><StatusBadge status={launch.status} /></div><div className="la-card-date"><span><CalendarDays size={13} /> {launch.date}</span><span><Clock3 size={13} /> {launch.time}</span><span><BadgeCheck size={13} /> {launch.readiness}</span></div><dl className="la-card-metrics"><div><dt>Invited</dt><dd>{launch.invited}</dd></div><div><dt>Registrations</dt><dd>{launch.registrations}</dd></div><div><dt>Attending</dt><dd>{launch.attending}</dd></div><div><dt>Qualified Leads</dt><dd>{launch.leads}</dd></div></dl></div><button className="wa-more" type="button" aria-label={`More options for ${launch.title}`}><MoreHorizontal size={18} /></button></article>
+  return <article className="la-card"><img src={launch.image || launchImage} alt="" /><div className="la-card-main"><div className="la-card-heading"><div><span className="la-card-kicker">{launch.development}</span><h3>{launch.title}</h3><p><MapPin size={12} /> {launch.location}</p></div><StatusBadge status={launch.status} /></div><div className="la-card-date"><span><CalendarDays size={13} /> {launch.date}</span><span><Clock3 size={13} /> {launch.time}</span><span><BadgeCheck size={13} /> {launch.readiness}</span></div><dl className="la-card-metrics"><div><dt>Invited</dt><dd>{launch.invited}</dd></div><div><dt>Registrations</dt><dd>{launch.registrations}</dd></div><div><dt>Attending</dt><dd>{launch.attending}</dd></div><div><dt>Qualified Leads</dt><dd>{launch.leads}</dd></div></dl>{launch.publicToken ? <Link className="marketing-rsvp-link" to={`/marketing/rsvp/${launch.publicToken}`}>Open RSVP page</Link> : null}</div><button className="wa-more" type="button" aria-label={`More options for ${launch.title}`}><MoreHorizontal size={18} /></button></article>
 }
 
-function AuctionCard({ auction }) {
-  return <article className="la-card auction-card"><img src={auction.image} alt="" /><div className="la-card-main"><div className="la-card-heading"><div><span className="la-card-kicker">Property auction</span><h3>{auction.title}</h3><p><MapPin size={12} /> {auction.address}</p></div><StatusBadge status={auction.status} /></div><div className="la-card-date"><span><CalendarDays size={13} /> {auction.date}</span><span><Clock3 size={13} /> {auction.time}</span><span><BadgeCheck size={13} /> Documents {auction.documents.toLowerCase()}</span></div><dl className="la-card-metrics"><div><dt>Guide Price</dt><dd>{auction.guidePrice}</dd></div><div><dt>Registered Bidders</dt><dd>{auction.bidders}</dd></div><div><dt>Property Views</dt><dd>{auction.viewings}</dd></div><div><dt>Documents</dt><dd>{auction.documents}</dd></div></dl></div><button className="wa-more" type="button" aria-label={`More options for ${auction.title}`}><MoreHorizontal size={18} /></button></article>
+function AuctionCard({ auction }) { return <article className="la-card auction-card"><img src={auction.image} alt="" /><div className="la-card-main"><div className="la-card-heading"><div><span className="la-card-kicker">Property auction</span><h3>{auction.title}</h3><p><MapPin size={12} /> {auction.address}</p></div><StatusBadge status={auction.status} /></div><div className="la-card-date"><span><CalendarDays size={13} /> {auction.date}</span><span><Clock3 size={13} /> {auction.time}</span><span><BadgeCheck size={13} /> Documents {auction.documents.toLowerCase()}</span></div><dl className="la-card-metrics"><div><dt>Guide Price</dt><dd>{auction.guidePrice}</dd></div><div><dt>Registered Bidders</dt><dd>{auction.bidders}</dd></div><div><dt>Property Views</dt><dd>{auction.viewings}</dd></div><div><dt>Documents</dt><dd>{auction.documents}</dd></div></dl></div><button className="wa-more" type="button" aria-label={`More options for ${auction.title}`}><MoreHorizontal size={18} /></button></article> }
+
+function LaunchForm({ onClose, onCreate }) {
+  const [values, setValues] = useState({ title: '', development: '', location: '', date: '', time: '10:00 – 13:00', status: 'Planning' })
+  const update = (field) => (event) => setValues((current) => ({ ...current, [field]: event.target.value }))
+  const submit = async (event) => { event.preventDefault(); if (!values.title.trim() || !values.date) return; await onCreate({ ...values, startDate: values.date, startTime: values.time.split('–')[0].trim(), title: values.title.trim(), date: formatEventDate(values.date), readiness: 'In progress', invited: '0', registrations: '0', attending: '0', leads: '0', image: launchImage }); onClose() }
+  return <section className="marketing-event-form" aria-label="Create launch"><div><div><span>New event</span><h2>Create launch</h2><p>Plan the development event, then track invitations, RSVPs and qualified leads here.</p></div><button className="wa-more" type="button" aria-label="Close launch form" onClick={onClose}><X size={18} /></button></div><form onSubmit={submit}><label>Launch name<input required value={values.title} onChange={update('title')} placeholder="e.g. Parkside Residences launch" /></label><label>Development<input required value={values.development} onChange={update('development')} placeholder="Development name" /></label><label>Location<input required value={values.location} onChange={update('location')} placeholder="City or venue" /></label><label>Date<input required type="date" value={values.date} onChange={update('date')} /></label><label>Time<input value={values.time} onChange={update('time')} /></label><label>Status<select value={values.status} onChange={update('status')}><option>Planning</option><option>Upcoming</option></select></label><footer><button type="button" className="wa-secondary-button" onClick={onClose}>Cancel</button><button className="wa-primary-button" type="submit">Save launch <ChevronRight size={16} /></button></footer></form></section>
 }
 
-function OverviewPanel({ tabs, activeTab, setActiveTab, action, placeholder, children, totalLabel }) {
-  return <section className="wa-campaigns-panel"><div className="wa-panel-toolbar"><div className="wa-tabs" role="tablist">{tabs.map((tab) => <button className={activeTab === tab ? 'wa-tab-active' : ''} type="button" role="tab" aria-selected={activeTab === tab} onClick={() => setActiveTab(tab)} key={tab}>{tab}</button>)}</div><button className="wa-primary-button" type="button">{action} <ChevronRight size={16} /></button></div><div className="wa-campaigns-content"><WorkspaceFilters placeholder={placeholder} /><div className="wa-campaign-list">{children}</div><footer className="wa-list-footer"><span>{totalLabel}</span><div aria-label="Pagination">{[1, 2, 3].map((page) => <button type="button" className={`wa-page-number ${page === 1 ? 'wa-page-number-active' : ''}`} key={page}>{page}</button>)}</div></footer></div></section>
-}
+function LaunchWorkspaceFilters({ query, onQuery, status, onStatus }) { return <section className="wa-filter-row"><label className="wa-search"><Search size={17} /><span className="sr-only">Search launches</span><input type="search" value={query} onChange={(event) => onQuery(event.target.value)} placeholder="Search launches..." /></label><label className="wa-filter-control"><span className="sr-only">Filter launches by status</span><select value={status} onChange={(event) => onStatus(event.target.value)}><option value="All">All statuses</option><option>Upcoming</option><option>Planning</option><option>Completed</option></select><ChevronDown size={15} /></label><span className="wa-filter-control"><CalendarDays size={16} /> Local event plan</span></section> }
 
 export function LaunchesOverview() {
-  const [activeTab, setActiveTab] = useState(launchTabs[0])
-  return <div className="wa-page launches-page"><OverviewStats stats={launchStats} label="Launch performance" /><OverviewPanel tabs={launchTabs} activeTab={activeTab} setActiveTab={setActiveTab} action="Create Launch" placeholder="Search launches..." totalLabel="Showing 1–3 of 6 launches">{launches.map((launch) => <LaunchCard launch={launch} key={launch.id} />)}</OverviewPanel></div>
+  const { organisation } = useOrganisation()
+  const organisationId = organisation?.organisationId || organisation?.id || ''
+  const { events, createEvent } = useMarketingEvents('launches', seededLaunches, { organisationId })
+  const [activeTab, setActiveTab] = useState(launchTabs[0]); const [query, setQuery] = useState(''); const [status, setStatus] = useState('All'); const [creating, setCreating] = useState(false)
+  const visible = useMemo(() => events.filter((event) => (activeTab === 'All Launches' || event.status === activeTab) && (status === 'All' || event.status === status) && `${event.title} ${event.development} ${event.location}`.toLowerCase().includes(query.toLowerCase())), [activeTab, events, query, status])
+  const stats = [{ id: 'upcoming', label: 'Upcoming Launches', value: String(events.filter((event) => event.status === 'Upcoming').length), detail: 'In your local plan' }, { id: 'invited', label: 'Invited', value: String(events.reduce((total, event) => total + Number(event.invited || 0), 0)), detail: 'Across active launches' }, { id: 'registrations', label: 'Registrations', value: String(events.reduce((total, event) => total + Number(event.registrations || 0), 0)), detail: 'Across active launches' }, { id: 'leads', label: 'Qualified Leads', value: String(events.reduce((total, event) => total + Number(event.leads || 0), 0)), detail: 'Tracked locally' }]
+  return <div className="wa-page launches-page"><OverviewStats stats={stats} label="Launch performance" /><section className="wa-campaigns-panel"><div className="wa-panel-toolbar"><div className="wa-tabs" role="tablist">{launchTabs.map((tab) => <button className={activeTab === tab ? 'wa-tab-active' : ''} type="button" role="tab" aria-selected={activeTab === tab} onClick={() => setActiveTab(tab)} key={tab}>{tab}</button>)}</div><button className="wa-primary-button" type="button" onClick={() => setCreating(true)}>Create Launch <ChevronRight size={16} /></button></div><div className="wa-campaigns-content"><LaunchWorkspaceFilters query={query} onQuery={setQuery} status={status} onStatus={setStatus} />{creating ? <LaunchForm onClose={() => setCreating(false)} onCreate={createEvent} /> : null}<div className="wa-campaign-list">{visible.length ? visible.map((launch) => <LaunchCard launch={launch} key={launch.id} />) : <p className="marketing-event-empty">No launches match these filters.</p>}</div><footer className="wa-list-footer"><span>Showing {visible.length} of {events.length} launches</span></footer></div></section></div>
 }
 
-export function AuctionsOverview() {
-  const [activeTab, setActiveTab] = useState(auctionTabs[0])
-  return <div className="wa-page auctions-page"><OverviewStats stats={auctionStats} label="Auction performance" /><OverviewPanel tabs={auctionTabs} activeTab={activeTab} setActiveTab={setActiveTab} action="Create Auction" placeholder="Search auctions..." totalLabel="Showing 1–3 of 9 auctions">{auctions.map((auction) => <AuctionCard auction={auction} key={auction.id} />)}</OverviewPanel></div>
-}
+export function AuctionsOverview() { const [activeTab, setActiveTab] = useState(auctionTabs[0]); return <div className="wa-page auctions-page"><OverviewStats stats={auctionStats} label="Auction performance" /><section className="wa-campaigns-panel"><div className="wa-panel-toolbar"><div className="wa-tabs" role="tablist">{auctionTabs.map((tab) => <button className={activeTab === tab ? 'wa-tab-active' : ''} type="button" role="tab" aria-selected={activeTab === tab} onClick={() => setActiveTab(tab)} key={tab}>{tab}</button>)}</div></div><div className="wa-campaigns-content"><div className="wa-campaign-list">{auctions.map((auction) => <AuctionCard auction={auction} key={auction.id} />)}</div></div></section></div> }

@@ -272,16 +272,16 @@ assertContract(clientPortalPage, /function SellerPortalPasswordGate/, 'Client po
 assertContract(clientPortalPage, /setSellerPortalPassword\(\{ token, password \}\)/, 'Client portal should support first-time seller portal password setup.')
 assertContract(clientPortalPage, /verifySellerPortalPassword\(\{ token, password \}\)/, 'Client portal should support seller portal password sign-in.')
 assertContract(clientPortalPage, /isSellerPortalAuthRequiredError/, 'Client portal should branch cleanly when portal access is required.')
-assertContract(clientPortalPage, /sellerPortalAccessToken: isSellerPortalToken \? sellerPortalAccessToken : ''/, 'Client portal data loads should pass seller portal session tokens only for seller links.')
+assertContract(clientPortalPage, /sellerPortalAccessToken: isSellerPortalToken \? effectiveSellerPortalAccessToken : ''/, 'Client portal data loads should pass seller portal session tokens only for seller links.')
 assertContract(clientPortalPage, /accessToken: sellerPortalAccessToken/, 'Seller portal uploads and signed URLs should use the active session token.')
 
 const agentListingDetail = await readAppFile('src/pages/AgentListingDetail.jsx')
 assertContract(agentListingDetail, /getSellerPortalAccessState/, 'Listing detail should load seller portal access state.')
-assertContract(agentListingDetail, /sellerPortalPasswordStatus/, 'Listing detail should expose seller portal password status.')
+assertContract(agentListingDetail, /getSellerPortalRecoveryStatusLabel/, 'Listing detail should expose seller portal recovery and password status.')
 assertContract(agentListingDetail, /resetSellerPortalPassword\(token\)/, 'Listing detail should reset seller portal password via the service helper.')
 assertContract(agentListingDetail, /handleResetSellerPortalPasswordAndResend/, 'Listing detail should pair password reset with resending the seller portal link.')
-assertContract(agentListingDetail, /Reset Portal Password/, 'Listing detail should expose a visible reset portal password action.')
-assertContract(agentListingDetail, /Portal Password/, 'Listing detail should expose a visible portal password status label.')
+assertContract(agentListingDetail, /Reset portal password/, 'Listing detail should expose a visible reset portal password action.')
+assertContract(agentListingDetail, /label="Recovery"/, 'Listing detail should expose a visible portal recovery status label.')
 
 const packageJson = await readAppFile('package.json')
 assertContract(

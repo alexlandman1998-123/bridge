@@ -2861,6 +2861,9 @@ function hasDevelopmentFinancialInputs(input = {}) {
 
 function normalizeDevelopmentUnitRow(row = {}) {
   const rawFloorplanId = row.floorplan_id || row.floorplanId || null
+  const rawStructureNodeId = row.structure_node_id || row.structureNodeId || null
+  const rawUnitTypeId = row.unit_type_id || row.unitTypeId || null
+  const rawCatalogueFloorplanId = row.catalogue_floorplan_id || row.catalogueFloorplanId || null
   const normalizedFloorplanId =
     typeof rawFloorplanId === 'string' &&
     /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(rawFloorplanId)
@@ -2885,6 +2888,9 @@ function normalizeDevelopmentUnitRow(row = {}) {
     status: normalizeTextValue(row.status) || 'Available',
     vatApplicable: normalizeNullableBoolean(row.vat_applicable ?? row.vatApplicable),
     floorplanId: normalizedFloorplanId,
+    structureNodeId: typeof rawStructureNodeId === 'string' ? rawStructureNodeId : null,
+    unitTypeId: typeof rawUnitTypeId === 'string' ? rawUnitTypeId : null,
+    catalogueFloorplanId: typeof rawCatalogueFloorplanId === 'string' ? rawCatalogueFloorplanId : null,
     notes: normalizeTextValue(row.notes),
   }
 }
@@ -17024,7 +17030,7 @@ async function fetchUnitsBase(client, developmentId = null) {
   let query = client
     .from('units')
     .select(
-      'id, development_id, unit_number, unit_label, phase, block, unit_type, bedrooms, bathrooms, parking_count, size_sqm, list_price, current_price, price, status, vat_applicable, floorplan_id, notes, development:developments(id, name)',
+      'id, development_id, unit_number, unit_label, phase, block, unit_type, unit_type_id, bedrooms, bathrooms, parking_count, size_sqm, list_price, current_price, price, status, vat_applicable, floorplan_id, catalogue_floorplan_id, structure_node_id, notes, development:developments(id, name)',
     )
 
   if (developmentId && developmentId !== 'all') {
@@ -17035,7 +17041,7 @@ async function fetchUnitsBase(client, developmentId = null) {
 
   if (
     result.error &&
-    (isMissingColumnError(result.error, 'unit_label') || isMissingColumnError(result.error, 'list_price'))
+    (isMissingColumnError(result.error, 'unit_label') || isMissingColumnError(result.error, 'list_price') || isMissingColumnError(result.error, 'unit_type_id') || isMissingColumnError(result.error, 'catalogue_floorplan_id') || isMissingColumnError(result.error, 'structure_node_id'))
   ) {
     result = await client
       .from('units')
@@ -17072,7 +17078,7 @@ async function fetchUnitsByIds(client, unitIds = [], developmentId = null) {
   let query = client
     .from('units')
     .select(
-      'id, development_id, unit_number, unit_label, phase, block, unit_type, bedrooms, bathrooms, parking_count, size_sqm, list_price, current_price, price, status, vat_applicable, floorplan_id, notes, development:developments(id, name)',
+      'id, development_id, unit_number, unit_label, phase, block, unit_type, unit_type_id, bedrooms, bathrooms, parking_count, size_sqm, list_price, current_price, price, status, vat_applicable, floorplan_id, catalogue_floorplan_id, structure_node_id, notes, development:developments(id, name)',
     )
     .in('id', uniqueUnitIds)
 
@@ -17084,7 +17090,7 @@ async function fetchUnitsByIds(client, unitIds = [], developmentId = null) {
 
   if (
     result.error &&
-    (isMissingColumnError(result.error, 'unit_label') || isMissingColumnError(result.error, 'list_price'))
+    (isMissingColumnError(result.error, 'unit_label') || isMissingColumnError(result.error, 'list_price') || isMissingColumnError(result.error, 'unit_type_id') || isMissingColumnError(result.error, 'catalogue_floorplan_id') || isMissingColumnError(result.error, 'structure_node_id'))
   ) {
     let fallback = client
       .from('units')
@@ -19539,6 +19545,8 @@ export async function fetchDevelopmentDetail(developmentId) {
   const profile = await fetchDevelopmentProfile(client, developmentId)
   const financials = await fetchDevelopmentFinancials(developmentId)
   const documents = await fetchDevelopmentDocuments(developmentId)
+  const productCatalogue = await fetchDevelopmentProductCatalogue(client, developmentId)
+  const structureNodes = await fetchDevelopmentStructureNodes(client, developmentId)
   const attorneyConfig = await fetchDevelopmentAttorneyConfig(developmentId)
   const bondConfig = await fetchDevelopmentBondConfig(developmentId)
   const linkedListings = await fetchDevelopmentLinkedListings(client, {
@@ -19646,6 +19654,8 @@ export async function fetchDevelopmentDetail(developmentId) {
     profile,
     financials,
     documents,
+    productCatalogue,
+    structureNodes,
     attorneyConfig,
     bondConfig,
     rows: rowsWithDocumentSummary.sort(byUnitNumber),
@@ -20398,6 +20408,9 @@ export async function saveDevelopmentUnit(input = {}) {
     status: input.status,
     vat_applicable: input.vatApplicable,
     floorplan_id: input.floorplanId,
+    structure_node_id: input.structureNodeId,
+    unit_type_id: input.unitTypeId,
+    catalogue_floorplan_id: input.catalogueFloorplanId,
     notes: input.notes,
   })
 
@@ -20419,6 +20432,9 @@ export async function saveDevelopmentUnit(input = {}) {
     status: normalized.status || 'Available',
     vat_applicable: normalized.vatApplicable,
     floorplan_id: normalized.floorplanId,
+    structure_node_id: normalized.structureNodeId,
+    unit_type_id: normalized.unitTypeId,
+    catalogue_floorplan_id: normalized.catalogueFloorplanId,
     notes: normalizeNullableText(normalized.notes),
   }
 
@@ -20426,12 +20442,12 @@ export async function saveDevelopmentUnit(input = {}) {
     .from('units')
     .upsert(payload, { onConflict: 'id' })
     .select(
-      'id, development_id, unit_number, unit_label, phase, block, unit_type, bedrooms, bathrooms, parking_count, size_sqm, list_price, current_price, price, status, vat_applicable, floorplan_id, notes',
+      'id, development_id, unit_number, unit_label, phase, block, unit_type, unit_type_id, bedrooms, bathrooms, parking_count, size_sqm, list_price, current_price, price, status, vat_applicable, floorplan_id, catalogue_floorplan_id, structure_node_id, notes',
     )
     .single()
 
   if (error) {
-    if (isMissingColumnError(error, 'unit_label') || isMissingColumnError(error, 'list_price')) {
+    if (isMissingColumnError(error, 'unit_label') || isMissingColumnError(error, 'list_price') || isMissingColumnError(error, 'structure_node_id') || isMissingColumnError(error, 'unit_type_id') || isMissingColumnError(error, 'catalogue_floorplan_id')) {
       const fallbackPayload = {
         id: normalized.id || undefined,
         development_id: input.developmentId,
@@ -20457,6 +20473,130 @@ export async function saveDevelopmentUnit(input = {}) {
   }
 
   return normalizeDevelopmentUnitRow(data)
+}
+
+async function fetchDevelopmentStructureNodes(client, developmentId) {
+  const { data, error } = await client
+    .from('development_structure_nodes')
+    .select('id, development_id, parent_id, node_type, label, code, sort_order')
+    .eq('development_id', developmentId)
+    .order('sort_order')
+    .order('label')
+
+  if (error) {
+    if (isMissingTableError(error, 'development_structure_nodes') || isMissingSchemaError(error) || isPermissionDeniedError(error)) return []
+    throw error
+  }
+  return (data || []).map((node) => ({
+    id: node.id,
+    developmentId: node.development_id,
+    parentId: node.parent_id || '',
+    nodeType: node.node_type,
+    label: node.label,
+    code: node.code || '',
+    sortOrder: node.sort_order || 0,
+  }))
+}
+
+export async function saveDevelopmentStructureNodes({ developmentId, nodes = [] } = {}) {
+  const client = requireClient()
+  const normalizedDevelopmentId = normalizeTextValue(developmentId)
+  if (!normalizedDevelopmentId) throw new Error('Development is required.')
+  if (!Array.isArray(nodes) || !nodes.length) return []
+
+  const payload = nodes.map((node) => ({
+    id: node.id,
+    development_id: normalizedDevelopmentId,
+    parent_id: node.parentId || null,
+    node_type: normalizeTextValue(node.nodeType),
+    label: normalizeTextValue(node.label),
+    sort_order: Number.isFinite(Number(node.sortOrder)) ? Number(node.sortOrder) : 0,
+  }))
+  if (payload.some((node) => !node.id || !node.node_type || !node.label)) {
+    throw new Error('Every structure node needs an ID, type, and label.')
+  }
+
+  const { data, error } = await client
+    .from('development_structure_nodes')
+    .upsert(payload, { onConflict: 'id' })
+    .select('id, development_id, parent_id, node_type, label, sort_order')
+
+  if (error) throw error
+  return data || []
+}
+
+async function fetchDevelopmentProductCatalogue(client, developmentId) {
+  const queries = await Promise.all([
+    client.from('development_unit_types').select('id, development_id, code, name, description, bedrooms, bathrooms, parking_count, internal_size_sqm, external_size_sqm, vat_applicable, no_transfer_duty, is_active, sort_order').eq('development_id', developmentId).order('sort_order').order('name'),
+    client.from('development_floorplans').select('id, development_id, unit_type_id, code, name, document_id, file_url, thumbnail_url, internal_size_sqm, external_size_sqm, is_active, sort_order').eq('development_id', developmentId).order('sort_order').order('name'),
+    client.from('development_price_books').select('id, development_id, name, currency_code, effective_from, effective_to, status, is_default').eq('development_id', developmentId).order('is_default', { ascending: false }).order('created_at', { ascending: false }),
+    client.from('development_unit_prices').select('id, development_id, price_book_id, unit_type_id, floorplan_id, unit_id, list_price, price_from, price_to, reservation_fee, is_active').eq('development_id', developmentId).eq('is_active', true),
+  ])
+
+  const error = queries.find((query) => query.error)?.error
+  if (error) {
+    if (
+      isMissingTableError(error, 'development_unit_types') ||
+      isMissingTableError(error, 'development_floorplans') ||
+      isMissingTableError(error, 'development_price_books') ||
+      isMissingTableError(error, 'development_unit_prices') ||
+      isMissingSchemaError(error) ||
+      isPermissionDeniedError(error)
+    ) return null
+    throw error
+  }
+
+  const [unitTypes, floorplans, priceBooks, prices] = queries.map((query) => query.data || [])
+  return {
+    unitTypes: unitTypes.map((row) => ({
+      id: row.id, code: row.code || '', name: row.name || '', description: row.description || '', bedrooms: row.bedrooms ?? '', bathrooms: row.bathrooms ?? '', parkingCount: row.parking_count ?? '', internalSizeSqm: row.internal_size_sqm ?? '', externalSizeSqm: row.external_size_sqm ?? '', vatApplicable: row.vat_applicable, noTransferDuty: Boolean(row.no_transfer_duty), isActive: row.is_active !== false, sortOrder: row.sort_order || 0,
+    })),
+    floorplans: floorplans.map((row) => ({ id: row.id, unitTypeId: row.unit_type_id || '', code: row.code || '', name: row.name || '', documentId: row.document_id || '', fileUrl: row.file_url || '', thumbnailUrl: row.thumbnail_url || '', internalSizeSqm: row.internal_size_sqm ?? '', externalSizeSqm: row.external_size_sqm ?? '', isActive: row.is_active !== false, sortOrder: row.sort_order || 0 })),
+    priceBooks: priceBooks.map((row) => ({ id: row.id, name: row.name || '', currencyCode: row.currency_code || 'ZAR', effectiveFrom: row.effective_from || '', effectiveTo: row.effective_to || '', status: row.status || 'draft', isDefault: Boolean(row.is_default) })),
+    prices: prices.map((row) => ({ id: row.id, priceBookId: row.price_book_id, unitTypeId: row.unit_type_id || '', floorplanId: row.floorplan_id || '', unitId: row.unit_id || '', listPrice: row.list_price ?? '', priceFrom: row.price_from ?? '', priceTo: row.price_to ?? '', reservationFee: row.reservation_fee ?? '' })),
+  }
+}
+
+export async function saveDevelopmentProductCatalogue({ developmentId, unitTypes = [], floorplans = [], prices = [], priceBook = {} } = {}) {
+  const client = requireClient()
+  const normalizedDevelopmentId = normalizeTextValue(developmentId)
+  if (!normalizedDevelopmentId) throw new Error('Development is required.')
+
+  const unitTypePayload = unitTypes.filter((item) => normalizeTextValue(item.name)).map((item, index) => ({
+    id: item.id || undefined, development_id: normalizedDevelopmentId, code: normalizeNullableText(item.code), name: normalizeTextValue(item.name), description: normalizeNullableText(item.description), bedrooms: normalizeOptionalNumber(item.bedrooms), bathrooms: normalizeOptionalNumber(item.bathrooms), parking_count: normalizeOptionalNumber(item.parkingCount), internal_size_sqm: normalizeOptionalNumber(item.internalSizeSqm), external_size_sqm: normalizeOptionalNumber(item.externalSizeSqm), vat_applicable: normalizeNullableBoolean(item.vatApplicable), no_transfer_duty: Boolean(item.noTransferDuty), is_active: item.isActive !== false, sort_order: index,
+  }))
+  let savedUnitTypes = []
+  if (unitTypePayload.length) {
+    const { data, error: unitTypesError } = await client.from('development_unit_types').upsert(unitTypePayload, { onConflict: 'id' }).select('id, code, name')
+    if (unitTypesError) throw unitTypesError
+    savedUnitTypes = data || []
+  }
+  const typeIdByKey = new Map((savedUnitTypes || []).flatMap((item) => [[String(item.id), item.id], [`code:${String(item.code || '').toLowerCase()}`, item.id], [`name:${String(item.name || '').toLowerCase()}`, item.id]]))
+
+  const resolveUnitTypeId = (item) => typeIdByKey.get(String(item.unitTypeId || '')) || typeIdByKey.get(`code:${String(item.unitTypeCode || '').toLowerCase()}`) || typeIdByKey.get(`name:${String(item.unitTypeName || item.name || '').toLowerCase()}`) || null
+  const floorplanPayload = floorplans.filter((item) => normalizeTextValue(item.name)).map((item, index) => ({
+    id: item.id || undefined, development_id: normalizedDevelopmentId, unit_type_id: resolveUnitTypeId(item), code: normalizeNullableText(item.code), name: normalizeTextValue(item.name), document_id: item.documentId || null, file_url: normalizeNullableText(item.fileUrl), thumbnail_url: normalizeNullableText(item.thumbnailUrl), internal_size_sqm: normalizeOptionalNumber(item.internalSizeSqm), external_size_sqm: normalizeOptionalNumber(item.externalSizeSqm), is_active: item.isActive !== false, sort_order: index,
+  }))
+  if (floorplanPayload.length) {
+    const { error: floorplansError } = await client.from('development_floorplans').upsert(floorplanPayload, { onConflict: 'id' }).select('id, code, name')
+    if (floorplansError) throw floorplansError
+  }
+
+  await client.from('development_price_books').update({ is_default: false }).eq('development_id', normalizedDevelopmentId).eq('is_default', true)
+  const { data: savedPriceBook, error: priceBookError } = await client.from('development_price_books').upsert({
+    id: priceBook.id || undefined, development_id: normalizedDevelopmentId, name: normalizeTextValue(priceBook.name) || 'Current sales price list', currency_code: normalizeTextValue(priceBook.currencyCode) || 'ZAR', effective_from: priceBook.effectiveFrom || null, effective_to: priceBook.effectiveTo || null, status: priceBook.status || 'active', is_default: true,
+  }, { onConflict: 'id' }).select('id').single()
+  if (priceBookError) throw priceBookError
+
+  const pricePayload = prices.filter((item) => item.unitTypeId || item.unitTypeCode || item.unitTypeName).map((item) => ({
+    id: item.id || undefined, development_id: normalizedDevelopmentId, price_book_id: savedPriceBook.id, unit_type_id: resolveUnitTypeId(item), floorplan_id: item.floorplanId || null, unit_id: item.unitId || null, list_price: normalizeOptionalNumber(item.listPrice), price_from: normalizeOptionalNumber(item.priceFrom), price_to: normalizeOptionalNumber(item.priceTo), reservation_fee: normalizeOptionalNumber(item.reservationFee), is_active: true,
+  })).filter((item) => item.unit_type_id || item.floorplan_id || item.unit_id)
+  if (pricePayload.length) {
+    const { error: pricesError } = await client.from('development_unit_prices').upsert(pricePayload, { onConflict: 'id' })
+    if (pricesError) throw pricesError
+  }
+
+  return fetchDevelopmentProductCatalogue(client, normalizedDevelopmentId)
 }
 
 export async function updateDevelopmentTransactionSalesPrice(transactionId, salesPrice) {

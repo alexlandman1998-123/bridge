@@ -1,3 +1,6 @@
+import { evaluateProperty24ListingCategoryContract } from '../property24/listingCategoryContract.js'
+import { evaluateProperty24ListingCategoryModel } from '../property24/listingCategoryModel.js'
+
 export const DEFAULT_PROPERTY24_AGENCY_ID = 31382
 export const DEFAULT_PROPERTY24_COUNTRY_ID = 1
 
@@ -10,6 +13,8 @@ export const DEFAULT_PROPERTY24_PROPERTY_TYPE_MAPPINGS = [
   { id: 11, description: 'Commercial Property', aliases: ['commercial', 'commercial_property', 'office', 'retail', 'shop'] },
   { id: 12, description: 'Industrial Property', aliases: ['industrial', 'industrial_property', 'warehouse', 'factory'] },
 ]
+
+const RESIDENTIAL_DWELLING_PROPERTY_TYPE_IDS = new Set([4, 5, 6])
 
 export function normalizeProperty24ListingText(value = '') {
   return String(value || '').trim()
@@ -296,6 +301,7 @@ export function createProperty24ListingPlan({
   const listingNumber = toProperty24Integer(existingSync.listingNumber || existingSync.listing_number || options.listingNumber)
   const isNew = !listingNumber
   const listingType = resolveProperty24ListingType(firstText(publication.listing_type, publication.listingType, listing.listing_type, listing.listingType))
+  const categoryContract = evaluateProperty24ListingCategoryContract({ listing, publication, listingType })
   const status = resolveProperty24Status(firstText(options.status, listing.listing_status, listing.listingStatus, publication.status), { isNew })
   const price = resolvePrice(listing, publication, options)
   const isPOA = resolvePoa(listing, publication, options)
@@ -321,11 +327,23 @@ export function createProperty24ListingPlan({
   const previewPhotos = buildPreviewPhotos(mediaRows, { includePhotos })
   const propertyFeatures = buildPropertyFeatures(listing, publication)
   const propertyInfo = buildPropertyInfo({ listing, publication, suburbId, propertyTypeId })
+  const categoryModel = evaluateProperty24ListingCategoryModel({
+    listing,
+    publication,
+    category: categoryContract.category,
+    listingType,
+    status,
+    propertyTypeId,
+    isPOA,
+  })
   const sandboxPayloadTestMode = normalizeBoolean(options.sandboxPayloadTestMode, false) &&
     normalizeProperty24ListingKey(options.environment) !== 'production'
 
   const dataBlockers = []
   const technicalBlockers = []
+
+  dataBlockers.push(...categoryContract.blockers)
+  dataBlockers.push(...categoryModel.blockers)
 
   if (!agencyId) dataBlockers.push('missing_property24_agency_id')
   if (!property24AgentId) {
@@ -342,6 +360,18 @@ export function createProperty24ListingPlan({
   if (!propertyTypeId) dataBlockers.push('missing_property24_property_type_id')
   if (!price && !isPOA) dataBlockers.push('missing_price_or_poa')
   if (!imageRows.length && isNew) dataBlockers.push('missing_listing_image')
+
+  // These are Arch9 quality gates for the Property24 residential experience.
+  // They intentionally apply only to verified dwelling types, never to land or
+  // categories whose Property24 schema is not yet approved.
+  if (categoryContract.category === 'residential') {
+    if (!descriptionHeader) dataBlockers.push('missing_marketing_title')
+    if (RESIDENTIAL_DWELLING_PROPERTY_TYPE_IDS.has(propertyTypeId)) {
+      if (!propertyInfo.floorArea?.size) dataBlockers.push('missing_floor_size')
+      if (!propertyFeatures.bedrooms) dataBlockers.push('missing_bedrooms')
+      if (!propertyFeatures.bathrooms?.bathrooms) dataBlockers.push('missing_bathrooms')
+    }
+  }
   if (!propertyFeatures.petsAllowed) dataBlockers.push('missing_pets_allowed_value')
   if (!propertyFeatures.furnishedStatus) dataBlockers.push('missing_furnished_status_value')
   if (propertyFeatures.garages === null || propertyFeatures.garages === undefined) dataBlockers.push('missing_garages_value')
@@ -393,6 +423,8 @@ export function createProperty24ListingPlan({
       agentMappingRequiredBeforeSubmit: Boolean(sandboxPayloadTestMode && !property24AgentId),
       listingNumber: listingNumber || null,
       listingType,
+      categoryContract,
+      categoryModel,
       status,
       price: price || 0,
       isPOA,

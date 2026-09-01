@@ -8,6 +8,7 @@ import {
   MessageCircle,
   Plus,
   Sparkles,
+  Globe2,
   UsersRound,
 } from 'lucide-react'
 import {
@@ -125,6 +126,7 @@ function QuickActions({ onNavigate }) {
     { label: 'WhatsApp campaign', detail: 'Start a message', icon: MessageCircle, section: 'whatsapp' },
     { label: 'Show day', detail: 'Plan an open home', icon: CalendarDays, section: 'show-days' },
     { label: 'Launch', detail: 'Create a launch', icon: Sparkles, section: 'launches' },
+    { label: 'Website', detail: 'Set up your site', icon: Globe2, section: 'website' },
   ]
   return <section className="md-quick-actions" aria-label="Quick actions"><div><span className="md-eyebrow">QUICK ACTIONS</span><h2>Create new marketing</h2></div>{actions.map((action) => { const ActionIcon = action.icon; return <button type="button" onClick={() => onNavigate(action.section)} key={action.label}><span><ActionIcon size={16} /></span><span><strong>{action.label}</strong><small>{action.detail}</small></span><Plus size={15} /></button> })}</section>
 }

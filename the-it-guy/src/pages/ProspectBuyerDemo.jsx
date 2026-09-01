@@ -797,7 +797,8 @@ export default function ProspectBuyerDemo() {
   const [config, setConfig] = useState(DEFAULT_BRAND)
   const [loading, setLoading] = useState(true)
   const [loadedConfigToken, setLoadedConfigToken] = useState('')
-  const [demoUploadComplete, setDemoUploadComplete] = useState(false)
+  const demoUploadComplete = false
+  const [demoUploadNotice, setDemoUploadNotice] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -881,6 +882,9 @@ export default function ProspectBuyerDemo() {
     },
   })
   const mainContact = transactionTeam.find((member) => member.isMainContact) || transactionTeam[0]
+  const handleDemoUploadRequest = () => {
+    setDemoUploadNotice(true)
+  }
 
   if (!token) return <Navigate to="/" replace />
   if (loading || loadedConfigToken !== token) return <ProspectBuyerDemoLoading />
@@ -917,7 +921,8 @@ export default function ProspectBuyerDemo() {
           demoUploadComplete={demoUploadComplete}
           financeModel={buyerFinanceModel}
           teamModel={buyerTeamModel}
-          onCompleteUpload={() => setDemoUploadComplete(true)}
+          demoUploadNotice={demoUploadNotice}
+          onCompleteUpload={handleDemoUploadRequest}
         />
       </section>
 
@@ -934,7 +939,8 @@ export default function ProspectBuyerDemo() {
             documentModel={buyerDocumentModel}
             financeModel={buyerFinanceModel}
             teamModel={buyerTeamModel}
-            onCompleteUpload={() => setDemoUploadComplete(true)}
+            demoUploadNotice={demoUploadNotice}
+            onCompleteUpload={handleDemoUploadRequest}
           />
         </div>
       </section>
@@ -942,14 +948,16 @@ export default function ProspectBuyerDemo() {
   )
 }
 
-function MobileBuyerPortal({ activeSection, brand, config, token, loading, demoUploadComplete, financeModel, teamModel, onCompleteUpload }) {
-  const mobileSection = activeSection === 'messages' ? 'team' : activeSection
+function MobileBuyerPortal({ activeSection, brand, config, token, loading, demoUploadComplete, financeModel, teamModel, demoUploadNotice, onCompleteUpload }) {
+  const [menuOpen, setMenuOpen] = useState(false)
+  const mobileSection = activeSection
   const pageTitles = {
     overview: '',
     progress: 'Transfer Journey',
     documents: 'Your documents',
     finance: 'Finance',
     'bond-application': 'Bond application',
+    messages: 'Messages & updates',
     team: 'Your team',
   }
 
@@ -962,7 +970,12 @@ function MobileBuyerPortal({ activeSection, brand, config, token, loading, demoU
           logoUrl={config.logoDarkUrl || config.logoLightUrl}
           brand={brand}
           title={pageTitles[mobileSection]}
+          menuOpen={menuOpen}
+          onToggleMenu={() => setMenuOpen((open) => !open)}
+          token={token}
         />
+
+        {demoUploadNotice ? <DemoModeNotice /> : null}
 
         {mobileSection === 'overview' ? (
           <MobileOverview
@@ -985,6 +998,7 @@ function MobileBuyerPortal({ activeSection, brand, config, token, loading, demoU
         ) : null}
         {mobileSection === 'finance' ? <MobileFinance brand={brand} model={financeModel} onCompleteUpload={onCompleteUpload} token={token} /> : null}
         {mobileSection === 'bond-application' ? <MobileBondApplication brand={brand} demoUploadComplete={demoUploadComplete} token={token} /> : null}
+        {mobileSection === 'messages' ? <MobileMessages brand={brand} token={token} /> : null}
         {mobileSection === 'team' ? <MobileTeam brand={brand} model={teamModel} /> : null}
       </div>
       <MobileBottomNav activeSection={mobileSection} brand={brand} token={token} />
@@ -992,7 +1006,7 @@ function MobileBuyerPortal({ activeSection, brand, config, token, loading, demoU
   )
 }
 
-function MobileHeader({ activeSection, agencyName, logoUrl, brand, title }) {
+function MobileHeader({ activeSection, agencyName, logoUrl, brand, title, menuOpen, onToggleMenu, token }) {
   const isOverview = activeSection === 'overview'
 
   return (
@@ -1013,10 +1027,43 @@ function MobileHeader({ activeSection, agencyName, logoUrl, brand, title }) {
           </div>
         )}
       </div>
-      <button type="button" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white text-[#142132] shadow-sm" aria-label="Open menu">
+      <button type="button" onClick={onToggleMenu} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white text-[#142132] shadow-sm" aria-label={menuOpen ? 'Close menu' : 'Open menu'} aria-expanded={menuOpen}>
         <span className="text-xl leading-none">≡</span>
       </button>
+      {menuOpen ? (
+        <nav aria-label="Buyer portal menu" className="absolute left-4 right-4 top-[68px] z-50 overflow-hidden rounded-[18px] border border-[#dbe5ef] bg-white p-2 shadow-[0_18px_42px_rgba(15,23,42,0.18)]">
+          {DEMO_NAV.map((item) => {
+            const Icon = item.icon
+            const active = item.key === activeSection
+            return (
+              <Link key={item.key} to={getDemoPath(token, item.key)} onClick={onToggleMenu} className="flex min-h-11 items-center gap-3 rounded-[12px] px-3 text-sm font-semibold" style={active ? { backgroundColor: hexToRgba(brand.primary, 0.1), color: brand.primary } : { color: '#344054' }}>
+                <Icon size={17} />{item.label}
+              </Link>
+            )
+          })}
+        </nav>
+      ) : null}
     </header>
+  )
+}
+
+function DemoModeNotice() {
+  return (
+    <div role="status" className="mb-3 rounded-[14px] border border-sky-200 bg-sky-50 px-3 py-2 text-sm leading-5 text-sky-900">
+      Demo mode: uploads are disabled. In a live portal, this request opens secure file selection and only updates after a file is received.
+    </div>
+  )
+}
+
+function MobileMessages({ brand, token }) {
+  return (
+    <div className="space-y-4">
+      <p className="-mt-2 text-sm leading-5 text-[#52657b]">Updates from your transaction team, with a clear route to the right person.</p>
+      <TransactionUpdatesSection brand={brand} standalone />
+      <Link to={getDemoPath(token, 'team')} className="flex min-h-11 items-center justify-center rounded-[12px] text-sm font-semibold text-white" style={{ backgroundColor: brand.primary }}>
+        Contact your team
+      </Link>
+    </div>
   )
 }
 
@@ -1463,27 +1510,17 @@ function MobileTeamRow({ member, brand }) {
   )
 }
 
-function DemoContent({ activeSection, brand, config, token, heroOverlayStyle, loading, demoUploadComplete, documentModel, financeModel, teamModel, onCompleteUpload }) {
+function DemoContent({ activeSection, brand, config, token, heroOverlayStyle, loading, demoUploadComplete, documentModel, financeModel, teamModel, demoUploadNotice, onCompleteUpload }) {
+  const demoNotice = demoUploadNotice ? <DemoModeNotice /> : null
   if (activeSection === 'documents') {
     return (
-      <DocumentsSection
-        brand={brand}
-        config={config}
-        demoUploadComplete={demoUploadComplete}
-        documentModel={documentModel}
-        onCompleteUpload={onCompleteUpload}
-      />
+      <>{demoNotice}<DocumentsSection brand={brand} config={config} demoUploadComplete={demoUploadComplete} documentModel={documentModel} onCompleteUpload={onCompleteUpload} /></>
     )
   }
 
   if (activeSection === 'finance') {
     return (
-      <FinanceSection
-        brand={brand}
-        model={financeModel}
-        token={token}
-        onCompleteUpload={onCompleteUpload}
-      />
+      <>{demoNotice}<FinanceSection brand={brand} model={financeModel} token={token} onCompleteUpload={onCompleteUpload} /></>
     )
   }
 
@@ -1501,19 +1538,28 @@ function DemoContent({ activeSection, brand, config, token, heroOverlayStyle, lo
   }
 
   if (activeSection === 'messages') {
-    return <BuyerTeamWorkspace model={{ ...teamModel, heading: 'Messages & support', description: 'Choose the right person for your question and contact them securely.' }} theme={brand} />
+    return (
+      <div className="space-y-6">
+        <section className="rounded-[24px] border border-[#dbe5ef] bg-white p-6 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+          <h1 className="text-2xl font-semibold tracking-[-0.04em] text-[#142132]">Messages & updates</h1>
+          <p className="mt-2 text-sm leading-6 text-[#52657b]">Read updates from your transaction team and contact the right person when you need help.</p>
+        </section>
+        <TransactionUpdatesSection brand={brand} standalone />
+        <Link to={getDemoPath(token, 'team')} className="inline-flex min-h-11 items-center justify-center rounded-[12px] px-5 text-sm font-semibold text-white" style={{ backgroundColor: brand.primary }}>Contact your team</Link>
+      </div>
+    )
   }
 
   if (activeSection === 'overview') {
     return (
-      <DemoBuyerOverview
+      <>{demoNotice}<DemoBuyerOverview
         brand={brand}
         config={config}
         token={token}
         demoUploadComplete={demoUploadComplete}
         documentModel={documentModel}
         onCompleteUpload={onCompleteUpload}
-      />
+      /></>
     )
   }
 

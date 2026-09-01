@@ -8,24 +8,6 @@ const ADMIN_LEVEL_LABELS = {
   [ADMIN_LEVELS.CUSTOMER_SUPPORT]: 'Customer Support Level',
 }
 
-const EXECUTIVE_ROLE_TOKENS = new Set([
-  'executive',
-  'executive_level',
-  'founder',
-  'super_admin',
-  'platform_admin',
-  'internal_admin',
-  'developer',
-  'hq_staff',
-  'admin',
-])
-
-const CUSTOMER_SUPPORT_ROLE_TOKENS = new Set([
-  'customer_support',
-  'customer_support_level',
-  'support_agent',
-])
-
 function normalizeToken(value = '') {
   return String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_')
 }
@@ -63,24 +45,18 @@ function collectTokens(source = {}) {
   return tokens
 }
 
-export function resolveAdminAccess({ user, profile } = {}) {
-  const metadata = user?.app_metadata || {}
-  const userMetadata = user?.user_metadata || {}
-  const tokens = [
-    ...collectTokens(metadata),
-    ...collectTokens(userMetadata),
-    ...collectTokens(profile),
-    normalizeToken(profile?.raw_user_meta_data?.role),
-  ].filter(Boolean)
-  const level = tokens.some((token) => EXECUTIVE_ROLE_TOKENS.has(token))
-    ? ADMIN_LEVELS.EXECUTIVE
-    : tokens.some((token) => CUSTOMER_SUPPORT_ROLE_TOKENS.has(token))
-      ? ADMIN_LEVELS.CUSTOMER_SUPPORT
-      : ''
+// The database is the authorization boundary. Do not infer access from the
+// browser session, user_metadata, or a writable profile row: each can be
+// controlled by the signed-in user. arch9_admin_access_level returns a level
+// derived from trusted auth.app_metadata only.
+export function resolveAdminAccess(access = {}) {
+  const level = normalizeToken(access?.level)
+  const tokens = collectTokens({ roles: access?.roles })
+  const allowedLevel = level === ADMIN_LEVELS.EXECUTIVE || level === ADMIN_LEVELS.CUSTOMER_SUPPORT
 
   return {
-    allowed: Boolean(level),
-    level,
+    allowed: allowedLevel,
+    level: allowedLevel ? level : '',
     roles: Array.from(new Set(tokens)),
   }
 }

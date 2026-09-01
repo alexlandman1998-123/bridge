@@ -31,6 +31,8 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import Button from "../ui/Button";
 import Field from "../ui/Field";
+import { buildDevelopmentStructurePathMap } from "../../core/developments/developmentStructureModel";
+import { buildCataloguePriceByUnitType } from "../../core/developments/developmentProductCatalogueModel";
 
 const currency = new Intl.NumberFormat("en-ZA", {
   style: "currency",
@@ -165,6 +167,8 @@ function MetricCard({ label, value, tone = "default" }) {
 
 export default function DevelopmentAvailabilityWorkspace({
   units = [],
+  structureNodes = [],
+  productCatalogue = null,
   role = "",
   canManageInventory = false,
   canCreateTransactions = false,
@@ -189,6 +193,7 @@ export default function DevelopmentAvailabilityWorkspace({
   const [statusFilter, setStatusFilter] = useState("all");
   const [blockFilter, setBlockFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
+  const [structureFilter, setStructureFilter] = useState("all");
   const [selectedUnitId, setSelectedUnitId] = useState("");
   const [placingUnit, setPlacingUnit] = useState(false);
   const [zoom, setZoom] = useState(1);
@@ -206,18 +211,36 @@ export default function DevelopmentAvailabilityWorkspace({
   const [priceDraft, setPriceDraft] = useState("");
   const [controlSaving, setControlSaving] = useState(false);
   const [presentationMode, setPresentationMode] = useState(false);
+  const structurePathById = useMemo(
+    () => buildDevelopmentStructurePathMap(structureNodes),
+    [structureNodes],
+  );
+  const cataloguePriceByUnitType = useMemo(
+    () => buildCataloguePriceByUnitType(productCatalogue || {}),
+    [productCatalogue],
+  );
   const inventory = useMemo(
     () =>
-      units.map((unit) => ({
+      units.map((unit) => {
+        const structure = structurePathById.get(unit.structureNodeId || unit.structure_node_id);
+        const unitPrice = getUnitPrice(unit);
+        return {
         ...unit,
         inventoryStatus: normaliseStatus(unit.status || unit.transactionStage),
         displayNumber: getUnitNumber(unit),
-        displayPrice: getUnitPrice(unit),
-        location: getUnitLocation(unit),
+        displayPrice:
+          unitPrice ||
+          Number(cataloguePriceByUnitType.get(unit.unitTypeId || unit.unit_type_id)?.listPrice || 0),
+        priceSource: unitPrice ? "unit" : "catalogue",
+        location: structure?.labelPath || getUnitLocation(unit),
+        structureNodeId: unit.structureNodeId || unit.structure_node_id || "",
+        structurePath: structure?.labelPath || "",
+        structurePathIds: structure?.path?.map((item) => item.id) || [],
         displayType:
           text(unit.unitType || unit.unit_type) || "Unit type pending",
-      })),
-    [units],
+      };
+      }),
+    [cataloguePriceByUnitType, structurePathById, units],
   );
   const blocks = useMemo(
     () =>
@@ -232,6 +255,13 @@ export default function DevelopmentAvailabilityWorkspace({
         ...new Set(inventory.map((unit) => unit.displayType).filter(Boolean)),
       ].sort(),
     [inventory],
+  );
+  const structureOptions = useMemo(
+    () =>
+      [...structurePathById.values()]
+        .filter((item) => item.labelPath)
+        .sort((left, right) => left.labelPath.localeCompare(right.labelPath)),
+    [structurePathById],
   );
   const metrics = useMemo(() => {
     const totals = inventory.reduce(
@@ -286,7 +316,8 @@ export default function DevelopmentAvailabilityWorkspace({
           (!term || haystack.includes(term)) &&
           (statusFilter === "all" || unit.inventoryStatus === statusFilter) &&
           (blockFilter === "all" || text(unit.block) === blockFilter) &&
-          (typeFilter === "all" || unit.displayType === typeFilter)
+          (typeFilter === "all" || unit.displayType === typeFilter) &&
+          (structureFilter === "all" || unit.structurePathIds.includes(structureFilter))
         );
       })
       .sort((left, right) =>
@@ -295,7 +326,7 @@ export default function DevelopmentAvailabilityWorkspace({
           sensitivity: "base",
         }),
       );
-  }, [blockFilter, inventory, query, statusFilter, typeFilter]);
+  }, [blockFilter, inventory, query, statusFilter, structureFilter, typeFilter]);
   const selectedUnit =
     visibleUnits.find((unit) => unit.id === selectedUnitId) ||
     visibleUnits[0] ||
@@ -808,7 +839,7 @@ export default function DevelopmentAvailabilityWorkspace({
         </div>
       </section>
       <section className="rounded-[22px] border border-[#dce5ee] bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.055)]">
-        <div className="grid gap-3 xl:grid-cols-[minmax(0,1.3fr)_repeat(3,minmax(150px,0.52fr))]">
+        <div className="grid gap-3 xl:grid-cols-[minmax(0,1.3fr)_repeat(4,minmax(145px,0.52fr))]">
           <label className="relative block">
             <span className="sr-only">Search availability</span>
             <Search
@@ -843,6 +874,18 @@ export default function DevelopmentAvailabilityWorkspace({
             {blocks.map((block) => (
               <option key={block} value={block}>
                 {block}
+              </option>
+            ))}
+          </Field>
+          <Field
+            as="select"
+            value={structureFilter}
+            onChange={(event) => setStructureFilter(event.target.value)}
+          >
+            <option value="all">All structure</option>
+            {structureOptions.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.labelPath}
               </option>
             ))}
           </Field>
@@ -949,6 +992,11 @@ export default function DevelopmentAvailabilityWorkspace({
                   ? currency.format(selectedUnit.displayPrice)
                   : "Price on request"}
               </strong>
+              {selectedUnit.displayPrice && selectedUnit.priceSource === "catalogue" ? (
+                <span className="mt-1 block text-xs font-medium text-[#6b7d93]">
+                  Current catalogue price
+                </span>
+              ) : null}
               <div className="mt-5 grid grid-cols-2 gap-2.5">
                 {[
                   [

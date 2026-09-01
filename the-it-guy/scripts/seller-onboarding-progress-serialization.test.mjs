@@ -65,6 +65,11 @@ assert.match(
   /const hydratedStatus = normalizeSellerOnboardingStatus\([\s\S]*?hasFormData: false,[\s\S]*?\)/,
   'seller onboarding completion polling must not treat seeded form data as submission evidence',
 )
+assert.match(
+  pipelineSource,
+  /const linkedListingId = normalizeText\([\s\S]*?selectedLeadLinkedListing\?\.id[\s\S]*?selectedLeadLinkedListing\?\.listing_id/,
+  'seller onboarding completion polling must reconcile a submitted onboarding through the linked private listing when the CRM lead projection has no listing id',
+)
 assert.doesNotMatch(
   pipelineSource,
   /const hydratedStatus = normalizeSellerOnboardingStatus\([\s\S]{0,700}hasFormData: Boolean\(/,

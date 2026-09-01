@@ -750,9 +750,9 @@ function assertJourneyStepStates(journey, currentKey, completedKeys = []) {
       },
     },
   })
-  assert.equal(documents.some((item) => item.label === 'Owner 1 ID Document / Passport'), true)
-  assert.equal(documents.some((item) => item.label === 'Owner 2 Proof Of Address'), true)
-  assert.equal(documents.some((item) => item.label === 'Owner 2 Marriage Certificate'), true)
+  assert.equal(documents.some((item) => item.key === 'owner_1_id_document' && item.label === 'Alex Owner ID Document / Passport'), true)
+  assert.equal(documents.some((item) => item.key === 'owner_2_proof_of_address' && item.label === 'Taylor Owner Proof Of Address'), true)
+  assert.equal(documents.some((item) => item.key === 'owner_2_marriage_certificate' && item.label === 'Taylor Owner Marriage Certificate'), true)
 }
 
 {

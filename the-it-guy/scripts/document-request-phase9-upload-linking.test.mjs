@@ -45,12 +45,12 @@ const clientPortalUploadSource = apiSource.slice(
 )
 assert.match(
   clientPortalUploadSource,
-  /previousReadiness = await computeTransactionReadinessSnapshot\(client, link\.transaction_id\)/,
-  'Buyer portal upload should capture a pre-upload readiness baseline.',
+  /const postUploadContextPromise = \(async \(\) => \{[\s\S]*?previousReadiness = readinessSnapshot/,
+  'Buyer portal upload should capture a pre-upload readiness baseline without holding up the file upload.',
 )
 assert.match(
   clientPortalUploadSource,
-  /const readiness = await runDocumentAutomationIfPossible\(client,/,
+  /readiness = await runDocumentAutomationIfPossible\(client,/,
   'Buyer portal upload should use the recalculated post-upload readiness.',
 )
 assert.match(

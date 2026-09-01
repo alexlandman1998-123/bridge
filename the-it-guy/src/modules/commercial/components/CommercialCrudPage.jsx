@@ -186,9 +186,9 @@ function CommercialCrudPage({
   const columns = useMemo(
     () => config.columns.map((column) => ({
       ...column,
-      render: column.render ? (row) => column.render(row, lookupOptions) : undefined,
+      render: column.render ? (row) => column.render(row, lookupOptions, lookups) : undefined,
     })),
-    [config.columns, lookupOptions],
+    [config.columns, lookupOptions, lookups],
   )
   const resolvedFilterConfigs = useMemo(
     () => (config.filters || []).map((filter) => ({

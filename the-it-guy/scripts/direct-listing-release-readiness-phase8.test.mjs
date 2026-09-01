@@ -95,6 +95,6 @@ test('Phase 8 static contract keeps Quick Add, Seller Portal, and audit wiring c
   assert.match(sellerOnboardingSource, /buildSellerPortalFormDataFromDirectListing/)
   assert.match(sellerOnboardingSource, /upload them here so the listing can move toward activation or publish/)
   assert.match(agentListingDetailSource, /buildDirectListingOperationalSummary/)
-  assert.match(agentListingDetailSource, /Listing creation is allowed/)
-  assert.match(agentListingDetailSource, /Post-create Checklist/)
+  assert.match(agentListingDetailSource, /directListingPostCreateActions/)
+  assert.match(agentListingDetailSource, /sales-listing-portal-checklist/)
 })

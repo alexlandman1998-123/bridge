@@ -1,4 +1,6 @@
 import { listOrganisationUsers } from '../../../lib/settingsApi'
+import { evaluateCommercialListingReadiness } from '../commercialListingReadiness'
+import { buildCommercialCanonicalAudit } from '../commercialCanonicalAudit.js'
 import {
   getCommercialAllDocumentRequests,
   getCommercialAllDocuments,
@@ -366,20 +368,27 @@ function mediaItems(listing = {}) {
   }
 }
 
-function countMetadataLeaves(value) {
-  if (value === null || value === undefined) return 0
-  if (typeof value === 'string') return normalizeText(value) ? 1 : 0
-  if (typeof value === 'number') return Number.isFinite(value) && value !== 0 ? 1 : 0
-  if (typeof value === 'boolean') return value ? 1 : 0
-  if (Array.isArray(value)) return value.filter(Boolean).length
-  if (typeof value === 'object') return Object.values(value).reduce((sum, entry) => sum + countMetadataLeaves(entry), 0)
-  return 0
+const COMMERCIAL_READINESS_LABELS = {
+  grossLettableArea: 'Gross lettable area',
+  zoning: 'Zoning',
+  parking: 'Parking ratio',
+  listingTerms: 'Commercial terms',
+  warehouseOrFactoryArea: 'Warehouse / factory area',
+  yardSize: 'Yard size',
+  powerSupply: 'Power supply',
+  loadingAccess: 'Loading access',
+  farmSize: 'Farm size',
+  waterSupplyOrRights: 'Water supply / rights',
+  agriculturalUse: 'Agricultural use',
+  erfSize: 'Erf size',
+  developmentRights: 'Development rights',
 }
 
 export function scoreListingQuality(listing = {}, context = {}) {
-  const property = context.propertiesById?.get(listing.property_id) || {}
+  const property = context.property || context.propertiesById?.get(listing.property_id) || {}
   const metadata = listing.metadata_json || {}
   const media = mediaItems(listing)
+  const categoryReadiness = evaluateCommercialListingReadiness({ listing, property })
   const missing = []
   let score = 0
 
@@ -402,11 +411,11 @@ export function scoreListingQuality(listing = {}, context = {}) {
   if (media.floorPlan) score += 6
   else missing.push('Floor Plan')
 
-  const categoryFieldCount = countMetadataLeaves(metadata)
-  if (categoryFieldCount >= 6) score += 20
+  const presentCategoryFacts = categoryReadiness.requiredFacts.length - categoryReadiness.missingFacts.length
+  if (categoryReadiness.complete) score += 20
   else {
-    score += Math.min(16, categoryFieldCount * 3)
-    missing.push(normalize(listing.listing_category) === 'industrial' ? 'Power Supply' : 'Category-specific fields')
+    score += Math.min(16, presentCategoryFacts * 4)
+    categoryReadiness.missingFacts.forEach((fact) => missing.push(COMMERCIAL_READINESS_LABELS[fact] || 'Category-specific fields'))
   }
 
   if (normalizeText(listing.broker_id)) score += 5
@@ -420,6 +429,7 @@ export function scoreListingQuality(listing = {}, context = {}) {
     score: Math.max(0, Math.min(100, Math.round(score))),
     missing: Array.from(new Set(missing)).slice(0, 6),
     status: listing.listing_status || listing.status || 'draft',
+    categoryReadiness,
   }
 }
 
@@ -1051,6 +1061,11 @@ export async function getVacancyRiskSummary(organisationId) {
 
 export async function getListingQualityScores(organisationId) {
   return buildListingQualityScores(await loadCommercialIntelligenceSource(organisationId))
+}
+
+export async function getCommercialCanonicalAudit(organisationId) {
+  const source = await loadCommercialIntelligenceSource(organisationId)
+  return buildCommercialCanonicalAudit(source)
 }
 
 export async function getNextBestActions(organisationId) {

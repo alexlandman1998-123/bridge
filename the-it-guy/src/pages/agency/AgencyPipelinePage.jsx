@@ -15425,8 +15425,24 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       formalValuationUploading
     ) return
     if (selectedLeadOnboardingCompleted) return
-    const onboardingToken = normalizeText(selectedLead?.sellerOnboardingToken || selectedLead?.sellerOnboarding?.token)
-    const linkedListingId = normalizeText(selectedLead?.listingId)
+    const onboardingToken = normalizeText(
+      selectedLead?.sellerOnboardingToken ||
+        selectedLead?.seller_onboarding_token ||
+        selectedLead?.sellerOnboarding?.token ||
+        selectedLead?.seller_onboarding?.token,
+    )
+    // Some seller leads receive their listing relationship through the loaded
+    // private-listing record rather than the CRM lead projection. Use either
+    // source so a submitted onboarding is always reconciled back to the lead.
+    const linkedListingId = normalizeText(
+      selectedLead?.listingId ||
+        selectedLead?.listing_id ||
+        selectedLead?.privateListingId ||
+        selectedLead?.private_listing_id ||
+        selectedLeadLinkedListing?.id ||
+        selectedLeadLinkedListing?.listingId ||
+        selectedLeadLinkedListing?.listing_id,
+    )
     if ((!onboardingToken && !linkedListingId) || !isSupabaseConfigured) return
 
     let cancelled = false
@@ -15598,6 +15614,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     organisationId,
     selectedLead,
     selectedLeadIsSeller,
+    selectedLeadLinkedListing,
     selectedLeadOnboardingCompleted,
     sellerLeadDocumentUploadingKey,
     sellerLeadMandateUploading,

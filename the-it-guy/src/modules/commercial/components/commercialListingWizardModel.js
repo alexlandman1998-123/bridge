@@ -180,6 +180,8 @@ export function createInitialValues(lookups = {}) {
     lease_term: '',
     tenant_installation_allowance: '',
     deposit_requirement: '',
+    deposit_amount: '',
+    utility_policy: '',
     occupation_date: '',
     lease_type: '',
     existing_tenant: '',
@@ -281,6 +283,18 @@ export function getCategoryFields(category = '') {
     ]
   }
 
+  if (category === 'development_land') {
+    return [
+      { name: 'zoning_land_use_rights', label: 'Zoning / land-use rights', type: 'textarea', span: 'full' },
+      { name: 'development_rights', label: 'Development rights', type: 'textarea', span: 'full' },
+      { name: 'subdivision_status', label: 'Subdivision status' },
+      { name: 'bulk', label: 'Bulk' },
+      { name: 'coverage', label: 'Coverage' },
+      { name: 'services_available', label: 'Services available' },
+      { name: 'environmental_status', label: 'Environmental status' },
+    ]
+  }
+
   return [
     { name: 'office_grade', label: 'Office grade' },
     { name: 'number_of_floors', label: 'Number of floors', type: 'number' },
@@ -336,9 +350,11 @@ export function getTermFields(intent = 'lease') {
     { name: 'rates_and_taxes', label: 'Rates and taxes', type: 'number' },
     { name: 'parking_bays', label: 'Parking bays', type: 'number' },
     { name: 'escalation_percentage', label: 'Escalation percentage', type: 'number' },
-    { name: 'lease_term', label: 'Lease term' },
+    { name: 'lease_term', label: 'Lease term', type: 'number', suffix: 'months' },
     { name: 'tenant_installation_allowance', label: 'Tenant installation allowance', type: 'number' },
     { name: 'deposit_requirement', label: 'Deposit requirement' },
+    { name: 'deposit_amount', label: 'Deposit amount', type: 'number' },
+    { name: 'utility_policy', label: 'Utilities policy' },
     { name: 'occupation_date', label: 'Occupation date', type: 'date' },
     { name: 'lease_type', label: 'Lease type' },
     { name: 'existing_tenant', label: 'Existing tenant' },
@@ -365,12 +381,9 @@ function leaseTermValues(values = {}) {
     availability_date: normalizeText(values.availability_date),
     gross_rental_per_m2: toNumber(values.gross_rental_per_m2),
     net_rental_per_m2: toNumber(values.net_rental_per_m2),
-    operating_costs: toNumber(values.operating_costs),
-    rates_and_taxes: toNumber(values.rates_and_taxes),
     parking_ratio: normalizeText(values.parking_ratio),
     parking_bays: toNumber(values.parking_bays),
     escalation_percentage: toNumber(values.escalation_percentage),
-    lease_term: normalizeText(values.lease_term),
     tenant_installation_allowance: toNumber(values.tenant_installation_allowance),
     deposit_requirement: normalizeText(values.deposit_requirement),
     occupation_date: normalizeText(values.occupation_date),
@@ -395,7 +408,6 @@ function saleTermValues(values = {}) {
     cap_rate: toNumber(values.cap_rate),
     zoning: normalizeText(values.zoning),
     title_deed_information: normalizeText(values.title_deed_information),
-    rates_and_taxes: toNumber(values.rates_and_taxes),
     municipal_valuation: toNumber(values.municipal_valuation),
     lease_encumbrances: normalizeText(values.lease_encumbrances),
     tenant_schedule: normalizeText(values.tenant_schedule),
@@ -487,6 +499,11 @@ export function buildListingPayload(values = {}, lookups = {}) {
       : normalizeText(values.lease_term || values.lease_type),
     featured: Boolean(values.featured),
     available_from: normalizeText(availableFrom) || null,
+    operating_costs: intent === 'lease' ? toNumber(values.operating_costs) : null,
+    rates_and_taxes: toNumber(values.rates_and_taxes),
+    lease_term_months: intent === 'lease' ? toNumber(values.lease_term) : null,
+    deposit_amount: intent === 'lease' ? toNumber(values.deposit_amount) : null,
+    utility_policy: intent === 'lease' ? normalizeText(values.utility_policy) || null : null,
     landlord_id: normalizeText(values.landlord_id) || null,
     property_id: propertyMode === 'existing' ? normalizeText(values.property_id) || null : null,
     vacancy_id: intent === 'lease' ? normalizeText(values.existing_vacancy_id) || null : null,

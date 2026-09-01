@@ -118,4 +118,33 @@ assert.equal(missingAvailability.status, 'BLOCKED')
 assert.ok(missingAvailability.dataBlockers.includes('missing_rental_occupation_date'))
 assert.equal(missingAvailability.previewPayload, null)
 
+const missingRentalApproval = createProperty24RentalListingPlan({
+  listing: {
+    ...RENTAL_LISTING_RELEASE_GATE_FIXTURE,
+    sellerCanonicalFacts: {
+      ...RENTAL_LISTING_RELEASE_GATE_FIXTURE.sellerCanonicalFacts,
+      rentalInfo: {
+        ...RENTAL_LISTING_RELEASE_GATE_FIXTURE.sellerCanonicalFacts.rentalInfo,
+        mandateStatus: 'draft',
+        marketingApprovalStatus: 'draft',
+      },
+    },
+  },
+  agentMapping: {
+    property24AgentId: 77959,
+    sourceReference: 'arch9-agent-1',
+  },
+  media: [{
+    mediaType: 'image',
+    bytes: 'base64-rental-image',
+    mimeContentType: 'image/jpeg',
+  }],
+  options: { includeSubmitPayload: true },
+})
+
+assert.equal(missingRentalApproval.canPreview, false)
+assert.equal(missingRentalApproval.canSubmit, false)
+assert.ok(missingRentalApproval.dataBlockers.includes('rental_mandate_not_signed'))
+assert.ok(missingRentalApproval.dataBlockers.includes('rental_marketing_not_approved'))
+
 console.log('Rental Property24 backend adapter contract passed')

@@ -55,6 +55,11 @@ function leaseDraftValues() {
     available_area: '1200',
     gross_lettable_area: '1500',
     gross_rental_per_m2: '85',
+    operating_costs: '14.5',
+    rates_and_taxes: '8.25',
+    lease_term: '36',
+    deposit_amount: '255000',
+    utility_policy: 'Metered separately',
     availability_date: '2026-08-01',
     unit_or_floor_suite: 'Unit 4B',
     new_vacancy_name: 'Unit 4B',
@@ -77,6 +82,13 @@ function leaseDraftValues() {
   assert.deepEqual(payload.media_json.photos, ['https://example.com/one.jpg', 'https://example.com/two.jpg'])
   assert.equal(payload.metadata_json.lease_terms.available_area, 1200)
   assert.equal(payload.metadata_json.commercial_attributes.roller_shutter_doors, 3)
+  assert.equal(payload.operating_costs, 14.5)
+  assert.equal(payload.rates_and_taxes, 8.25)
+  assert.equal(payload.lease_term_months, 36)
+  assert.equal(payload.deposit_amount, 255000)
+  assert.equal(payload.utility_policy, 'Metered separately')
+  assert.equal(payload.metadata_json.lease_terms.operating_costs, undefined)
+  assert.equal(payload.metadata_json.lease_terms.lease_term, undefined)
   assert.equal(payload.marketing_json.visibility, 'public')
 }
 
@@ -95,6 +107,7 @@ function leaseDraftValues() {
     building_size: '2800',
     sale_mandate_status: 'exclusive',
     cap_rate: '9.1',
+    rates_and_taxes: '2400',
     tenant_schedule: 'National grocer and pharmacy.',
   }, makeLookups())
 
@@ -104,6 +117,8 @@ function leaseDraftValues() {
   assert.equal(payload.new_vacancy_name, null)
   assert.equal(payload.metadata_json.sale_terms.building_size, 2800)
   assert.equal(payload.metadata_json.sale_terms.cap_rate, 9.1)
+  assert.equal(payload.rates_and_taxes, 2400)
+  assert.equal(payload.metadata_json.sale_terms.rates_and_taxes, undefined)
 }
 
 console.log('commercialListingWizardModel tests passed')

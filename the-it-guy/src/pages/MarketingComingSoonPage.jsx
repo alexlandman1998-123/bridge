@@ -2,6 +2,7 @@ import { useSearchParams } from 'react-router-dom'
 import { CreateEmailCampaign, EmailCampaignOverview } from '../components/marketing/EmailCampaigns'
 import { LaunchesOverview } from '../components/marketing/LaunchesAuctions'
 import MarketingDashboard from '../components/marketing/MarketingDashboard'
+import WebsiteWorkspace from '../components/marketing/WebsiteWorkspace'
 import { ShowDayDetail, ShowDaysOverview } from '../components/marketing/ShowDays'
 import { CreateWhatsAppCampaign, WhatsAppCampaignOverview } from '../components/marketing/WhatsAppCampaigns'
 import './MarketingComingSoonPage.css'
@@ -22,7 +23,7 @@ export default function MarketingComingSoonPage() {
     const openOverview = () => setSearchParams({ section: 'show-days' })
     const openShowDay = (showDayId) => setSearchParams({ section: 'show-days', view: 'detail', id: showDayId })
     return campaignView === 'detail'
-      ? <ShowDayDetail onBack={openOverview} />
+      ? <ShowDayDetail onBack={openOverview} showDayId={searchParams.get('id')} />
       : <ShowDaysOverview onOpenShowDay={openShowDay} />
   }
 
@@ -41,6 +42,8 @@ export default function MarketingComingSoonPage() {
       ? <CreateWhatsAppCampaign onBack={openOverview} />
       : <WhatsAppCampaignOverview onCreateCampaign={openCreateCampaign} />
   }
+
+  if (section === 'website') return <WebsiteWorkspace onBack={() => setSearchParams({})} />
 
   const openMarketingSection = (nextSection) => setSearchParams({ section: nextSection })
   return <MarketingDashboard onNavigate={openMarketingSection} />
