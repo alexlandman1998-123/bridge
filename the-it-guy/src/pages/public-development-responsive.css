@@ -49,7 +49,9 @@
   max-height: 42px;
   object-fit: contain;
   object-position: left center;
-  filter: none;
+  /* Organisation primary artwork can be coloured. On this dark hero it is
+     deliberately rendered as a white mark without replacing the real logo. */
+  filter: brightness(0) invert(1);
 }
 
 .public-development-mobile-logo {
@@ -61,6 +63,7 @@
   max-height: 44px;
   object-fit: contain;
   object-position: left center;
+  filter: brightness(0) invert(1);
 }
 
 .public-development-desktop #overview header > :last-child > a {
