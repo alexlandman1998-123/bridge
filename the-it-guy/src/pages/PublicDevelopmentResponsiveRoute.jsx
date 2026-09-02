@@ -42,6 +42,12 @@ export default function PublicDevelopmentResponsiveRoute() {
   const hero = media.heroImageUrl || ''
   const images = [...new Set([...list(media.galleryImageUrls), ...list(media.imageUrls), hero].filter(Boolean))]
   const enquiry = marketing.externalLinks?.whatsappEnquiryUrl || marketing.externalLinks?.bookingViewingUrl || '#enquire'
+  const branding = data.organisationBranding || {}
+  const logoUrl = text(branding.logoLightUrl || branding.logoUrl || branding.logoDarkUrl)
+  const brandStyle = {
+    '--development-primary': text(branding.primaryColour) || '#073e32',
+    '--development-accent': text(branding.accentColour) || '#d0ab55',
+  }
 
-  return <><div className="public-development-mobile md:hidden"><MobilePublicDevelopmentExperience data={data} marketing={marketing} media={media} inventory={inventory} available={available} fromPrice={fromPrice} agency={agency} hero={hero} images={images} enquiry={enquiry} /></div><div className="public-development-desktop hidden md:block"><img className="public-development-revo-logo" src="/brand/revo-property-white.svg" alt="Revo Property" /><PublicDevelopmentLandingPage /></div></>
+  return <><div className="public-development-mobile md:hidden" style={brandStyle}>{logoUrl ? <img className="public-development-mobile-logo" src={logoUrl} alt={`${agency} logo`} /> : null}<MobilePublicDevelopmentExperience data={data} marketing={marketing} media={media} inventory={inventory} available={available} fromPrice={fromPrice} agency={agency} hero={hero} images={images} enquiry={enquiry} /></div><div className="public-development-desktop hidden md:block" style={brandStyle}>{logoUrl ? <img className="public-development-revo-logo" src={logoUrl} alt={`${agency} logo`} /> : null}<PublicDevelopmentLandingPage /></div></>
 }

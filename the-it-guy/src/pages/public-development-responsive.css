@@ -36,6 +36,10 @@
   opacity: 0;
 }
 
+.public-development-mobile #overview header > :first-child {
+  opacity: 0;
+}
+
 .public-development-revo-logo {
   position: absolute;
   top: 1.45rem;
@@ -46,6 +50,17 @@
   object-fit: contain;
   object-position: left center;
   filter: none;
+}
+
+.public-development-mobile-logo {
+  position: absolute;
+  top: max(1.65rem, env(safe-area-inset-top));
+  left: 1.25rem;
+  z-index: 30;
+  width: 142px;
+  max-height: 44px;
+  object-fit: contain;
+  object-position: left center;
 }
 
 .public-development-desktop #overview header > :last-child > a {
@@ -89,7 +104,23 @@
 }
 
 .public-development-desktop #enquire a[class*="bg-[#d0ab55]"] {
+  background: var(--development-accent) !important;
   color: #14352c !important;
+}
+
+.public-development-mobile #enquire,
+.public-development-mobile a.bg-\[\#073e32\],
+.public-development-mobile button.bg-\[\#073e32\] {
+  background-color: var(--development-primary) !important;
+}
+
+.public-development-mobile a.bg-\[\#d0ab55\] {
+  background-color: var(--development-accent) !important;
+}
+
+.public-development-desktop #overview nav {
+  font-size: .9rem !important;
+  gap: 2rem !important;
 }
 
 @media (max-width: 767px) {
