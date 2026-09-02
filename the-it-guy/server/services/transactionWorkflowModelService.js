@@ -200,13 +200,13 @@ function deriveActiveWorkflowInstanceStatus(workflowKey = '', stepsByWorkflowKey
 async function upsertWorkflowInstanceStatus(client, instance = {}, status = '', nowIso) {
   const normalizedStatus = normalizeWorkflowInstanceStatus(status)
   const payload = {
-    id: instance.id,
     status: normalizedStatus,
     ...buildInstanceStatusTimestamps(normalizedStatus, nowIso),
   }
   const query = await client
     .from('transaction_workflow_instances')
-    .upsert(payload, { onConflict: 'id' })
+    .update(payload)
+    .eq('id', instance.id)
     .select(INSTANCE_SELECT)
 
   if (query.error) throw query.error

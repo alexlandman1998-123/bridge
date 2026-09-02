@@ -27,6 +27,12 @@ export function resolveProperty24EnvironmentCredentials({ env = {}, environment 
     ? env.PROPERTY24_PRODUCTION_USER_GROUP_ID
     : env.PROPERTY24_EXDEV_USER_GROUP_ID) || normalizeProperty24Text(env.PROPERTY24_USER_GROUP_ID)
   const resolvedEnvironment = baseUrl ? environmentFromBaseUrl(baseUrl) : targetEnvironment
+  const apiVersion = normalizeProperty24Text(production
+    ? env.PROPERTY24_PRODUCTION_API_VERSION
+    : env.PROPERTY24_EXDEV_API_VERSION) || normalizeProperty24Text(env.PROPERTY24_API_VERSION) || (production ? 'v55' : 'v53')
+  const sendUserGroupHeader = production
+    ? String(env.PROPERTY24_PRODUCTION_SEND_USER_GROUP_HEADER || env.PROPERTY24_SEND_USER_GROUP_HEADER || '').trim().toLowerCase() === 'true'
+    : String(env.PROPERTY24_EXDEV_SEND_USER_GROUP_HEADER || env.PROPERTY24_SEND_USER_GROUP_HEADER || '').trim().toLowerCase() !== 'false'
 
   return {
     environment: targetEnvironment,
@@ -34,6 +40,8 @@ export function resolveProperty24EnvironmentCredentials({ env = {}, environment 
     username,
     password,
     userGroupId,
+    apiVersion,
+    sendUserGroupHeader,
     configured: Boolean(baseUrl && username && password && resolvedEnvironment === targetEnvironment),
     environmentMatches: resolvedEnvironment === targetEnvironment,
     credentialSource: specificBaseUrl ? 'environment_specific' : 'legacy_generic',

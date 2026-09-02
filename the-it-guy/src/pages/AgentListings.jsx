@@ -3658,6 +3658,7 @@ function AgentListings({ initialTab = null } = {}) {
           ? getAgentPrivateListings(profile.id, {
               ...hydratedListingScope,
               assignedAgentEmail: profile?.email || '',
+              includeMedia: true,
             }).catch((listingError) => {
               console.warn('[LISTINGS] Detailed listing hydration failed; keeping summary rows.', listingError)
               return dbPrivateListings

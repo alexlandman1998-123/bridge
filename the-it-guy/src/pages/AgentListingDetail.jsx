@@ -3094,7 +3094,9 @@ function buildPropertyDraft(listingRecord) {
 
   return {
     listingCode: String(listingRecord?.listingCode || '').trim(),
-    headline: String(firstDraftValue(propertyDetails?.headline, listingRecord?.listingTitle, onboardingFormData.propertyAddress)).trim(),
+    // The listing title is canonical.  A browser draft must not win over a
+    // title that was subsequently saved or synchronised by another workflow.
+    headline: String(firstDraftValue(listingRecord?.title, listingRecord?.listingTitle, propertyDetails?.headline, onboardingFormData.propertyAddress)).trim(),
     propertyType: String(firstDraftValue(propertyDetails?.propertyType, listingRecord?.propertyType, onboardingFormData.propertyType, 'House')).trim(),
     listingType: String(firstDraftValue(propertyDetails?.listingType, onboardingFormData.listingType, onboardingFormData.saleType, 'Sale')).trim(),
     publicationStatus: String(firstDraftValue(propertyDetails?.publicationStatus, onboardingFormData.publicationStatus, listingRecord?.publicationData?.status, 'Draft')).trim(),
@@ -3212,6 +3214,12 @@ function hasMeaningfulMarketingDraft(draft = {}) {
       (Array.isArray(draft.selectedFeatures) && draft.selectedFeatures.length) ||
       (Array.isArray(draft.amenities) && draft.amenities.length),
   )
+}
+
+function isStoredMarketingDraftNewerThanListing(draft = {}, listing = {}) {
+  const savedAt = Date.parse(String(draft?.savedAt || ''))
+  const updatedAt = Date.parse(String(listing?.updatedAt || listing?.updated_at || ''))
+  return Number.isFinite(savedAt) && (!Number.isFinite(updatedAt) || savedAt > updatedAt)
 }
 
 function readStoredMarketingDraft(listingId) {
@@ -3882,7 +3890,9 @@ function AgentListingDetail() {
     }
     const nextDraft = buildPropertyDraft(listingRecord)
     const storedDraft = readStoredMarketingDraft(nextListingId)
-    const shouldRestoreStoredDraft = hydratedMarketingListingIdRef.current !== nextListingId && hasMeaningfulMarketingDraft(storedDraft)
+    const shouldRestoreStoredDraft = hydratedMarketingListingIdRef.current !== nextListingId &&
+      hasMeaningfulMarketingDraft(storedDraft) &&
+      isStoredMarketingDraftNewerThanListing(storedDraft, listingRecord)
     setMarketingDraft(shouldRestoreStoredDraft ? { ...nextDraft, ...storedDraft } : nextDraft)
     hydratedMarketingListingIdRef.current = nextListingId
     marketingDraftDirtyRef.current = shouldRestoreStoredDraft
@@ -9961,9 +9971,9 @@ function AgentListingDetail() {
             <Eye size={15} />
             Preview Listing
           </a>
-          <Button type="button" onClick={() => saveMarketingDraft(marketingDraft, { successMessage: 'Marketing changes saved and synced.' })}>
+          <Button type="button" onClick={() => saveMarketingDraft(marketingDraft, { successMessage: 'Marketing changes saved in Arch9.' })}>
             <Send size={15} />
-            Publish Changes
+            Save Changes
           </Button>
         </div>
         <section className="overflow-hidden rounded-[22px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.055)]">

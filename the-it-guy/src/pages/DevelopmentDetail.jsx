@@ -1741,6 +1741,23 @@ function isAvailableDevelopmentUnitStatus(status) {
   return resolveDevelopmentUnitStatusMainStage(status) === 'AVAIL'
 }
 
+// A sale-stage stock status is a view of a transaction, not a replacement for
+// one. Keep the one exceptional operational state (Blocked) available for
+// inventory-only use, but route every sales progression through the deal
+// workspace so purchaser, finance, documents and handover data have a home.
+function requiresDevelopmentTransaction(status) {
+  const value = getDevelopmentUnitStatusOption(status).value
+  return [
+    'Reserved',
+    'OTP Signed',
+    'Finance Pending',
+    'Proceed to Attorneys',
+    'Transfer in Progress',
+    'Sold',
+    'Registered',
+  ].includes(value)
+}
+
 function getDevelopmentTrackerProgressPercent(stageKey) {
   const stageIndex = TRANSACTION_MAIN_STAGE_ORDER.indexOf(stageKey)
   if (stageIndex <= 0) return 0
@@ -5043,7 +5060,7 @@ function DevelopmentDetail() {
     try {
       setUnitSaving(true)
       setFeedback('')
-      await saveDevelopmentUnit({
+      const savedUnit = await saveDevelopmentUnit({
         ...unitForm,
         developmentId: data.development.id,
         listPrice: unitForm.listPrice === '' ? 0 : unitForm.listPrice,
@@ -5057,11 +5074,19 @@ function DevelopmentDetail() {
         unitTypeId: unitForm.unitTypeId || null,
         catalogueFloorplanId: unitForm.catalogueFloorplanId || null,
       })
-      setFeedback(unitForm.id ? 'Unit updated.' : 'Unit added to development.')
+      const needsTransaction = requiresDevelopmentTransaction(unitForm.status) && !selectedUnitRow?.currentTransactionId
+      setFeedback(
+        needsTransaction
+          ? `Unit saved. Complete the transaction capture for Unit ${unitForm.unitNumber} to record purchaser, finance and documents.`
+          : unitForm.id ? 'Unit updated.' : 'Unit added to development.',
+      )
       setUnitForm(DEFAULT_UNIT_FORM)
       setUnitModalOpen(false)
       window.dispatchEvent(new Event('itg:developments-changed'))
       await loadData()
+      if (needsTransaction) {
+        openDevelopmentTransactionWizard({ unitId: savedUnit.id })
+      }
     } catch (saveError) {
       setError(saveError.message)
     } finally {
@@ -5391,6 +5416,13 @@ function DevelopmentDetail() {
   async function handleUnitStatusQuickChange(unit, nextStatus) {
     const statusOption = getDevelopmentUnitStatusOption(nextStatus)
     const nextStatusValue = statusOption.value || 'Available'
+
+    if (!unit.currentTransactionId && requiresDevelopmentTransaction(nextStatusValue)) {
+      setFeedback(`Complete the transaction capture for Unit ${unit.unitNumber} before marking it ${nextStatusValue}.`)
+      setError('')
+      openDevelopmentTransactionWizard({ unitId: unit.id })
+      return
+    }
 
     try {
       setUnitSaving(true)
@@ -9495,7 +9527,18 @@ function DevelopmentDetail() {
                                 {unit.buyerName || 'Open linked transaction'}
                               </button>
                             ) : (
-                              <span>No purchaser assigned</span>
+                              <div className="flex flex-col items-start gap-1.5">
+                                <span>No purchaser assigned</span>
+                                {requiresDevelopmentTransaction(unit.status) ? (
+                                  <button
+                                    type="button"
+                                    className="text-xs font-semibold text-[#1f7a43] hover:text-[#0f5f32]"
+                                    onClick={() => openDevelopmentTransactionWizard({ unitId: unit.id })}
+                                  >
+                                    Capture transaction
+                                  </button>
+                                ) : null}
+                              </div>
                             )}
                           </td>
                           <td className="px-5 py-4" onClick={(event) => event.stopPropagation()}>
@@ -9737,7 +9780,7 @@ function DevelopmentDetail() {
             <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
               <div>
                 <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Transactions In This Development</h3>
-                <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">Create and manage the deal pipeline for this development here. New transactions can only be opened against units still marked as available.</p>
+                <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">Create and manage the deal pipeline for this development here. Available units start new sales; units previously marked sold, finance, transfer or registered can be recovered into a transaction from the Units tab.</p>
               </div>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                 <Field type="search" className="min-w-[260px]" value={transactionSearch} onChange={(event) => setTransactionSearch(event.target.value)} placeholder="Search buyer, unit, or email" />
@@ -10192,6 +10235,35 @@ function DevelopmentDetail() {
                     <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Last Updated</span>
                     <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{formatDate(selectedUnitRow.lastUpdated)}</strong>
                   </article>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {selectedUnitRow.currentTransactionId ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => {
+                        setUnitModalOpen(false)
+                        openDevelopmentTransactionWorkspace(selectedUnitRow)
+                      }}
+                    >
+                      Open transaction workspace
+                      <ArrowUpRight size={14} />
+                    </Button>
+                  ) : requiresDevelopmentTransaction(selectedUnitRow.status) ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => {
+                        setUnitModalOpen(false)
+                        openDevelopmentTransactionWizard({ unitId: selectedUnitRow.id })
+                      }}
+                    >
+                      Capture transaction
+                      <ArrowUpRight size={14} />
+                    </Button>
+                  ) : null}
                 </div>
               </section>
             ) : null}

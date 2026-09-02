@@ -79,7 +79,16 @@ test('public onboarding page carries buyer target params through save and submit
   assert.match(clientOnboardingSource, /buyerParticipantId/)
   assert.match(clientOnboardingSource, /buyerTargetNonce/)
   assert.match(clientOnboardingSource, /const buyerLinkTarget = useMemo/)
-  assert.match(clientOnboardingSource, /\.\.\.buyerLinkTarget,\n\s*purchaser_type: initialPurchaserType/)
+  assert.match(
+    clientOnboardingSource,
+    /const initialFormData = \{[\s\S]*?\.\.\.buyerLinkTarget,[\s\S]*?\n\s*\}/,
+    'the initial form preserves the buyer-targeted link context before purchaser type normalization',
+  )
+  assert.match(
+    clientOnboardingSource,
+    /if \(initialPurchaserType\) \{\n\s*initialFormData\.purchaser_type = initialPurchaserType/,
+    'purchaser type is retained after the buyer-target context is merged',
+  )
   const saveAndSubmitSlices = clientOnboardingSource.match(/\.\.\.sanitizeClientFormData\(formData,[\s\S]{0,220}?\),\n\s*\.\.\.buyerLinkTarget,/g) || []
   assert.equal(saveAndSubmitSlices.length >= 2, true)
 })

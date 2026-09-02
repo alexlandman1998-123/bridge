@@ -3048,6 +3048,18 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
         : onboardingFormData.canonicalSellerFactReadiness && typeof onboardingFormData.canonicalSellerFactReadiness === 'object'
           ? onboardingFormData.canonicalSellerFactReadiness
           : {}
+  // Imported portal stock stores its presentation facts in the distribution
+  // record.  Seller onboarding is intentionally optional for imported stock,
+  // so it must never erase those facts in the workspace read model.
+  const importedPropertyFeatures = canonicalSellerFacts.property24Import?.propertyFeatures || {}
+  const bedrooms = normalizeNumber(onboardingFormData.bedrooms) ?? normalizeNumber(publicationDraft?.bedrooms) ?? normalizeNumber(row.bedrooms) ?? normalizeNumber(importedPropertyFeatures.bedrooms) ?? 0
+  const bathrooms = normalizeNumber(onboardingFormData.bathrooms) ?? normalizeNumber(publicationDraft?.bathrooms) ?? normalizeNumber(row.bathrooms) ?? normalizeNumber(importedPropertyFeatures.bathrooms) ?? 0
+  const garages = normalizeNumber(onboardingFormData.garages) ?? normalizeNumber(publicationDraft?.garages) ?? normalizeNumber(importedPropertyFeatures.garages) ?? 0
+  const parkingBays = normalizeNumber(onboardingFormData.parkingBays) ?? normalizeNumber(publicationDraft?.parkingBays) ?? normalizeNumber(importedPropertyFeatures.parkingSpaces) ?? 0
+  const floorSize = normalizeNumber(onboardingFormData.floorSize) ?? normalizeNumber(publicationDraft?.floorSize) ?? 0
+  const erfSize = normalizeNumber(onboardingFormData.erfSize) ?? normalizeNumber(publicationDraft?.erfSize) ?? 0
+  const ratesTaxes = normalizeNumber(onboardingFormData.ratesTaxes) ?? normalizeNumber(publicationDraft?.ratesTaxes) ?? 0
+  const levies = normalizeNumber(onboardingFormData.levies) ?? normalizeNumber(publicationDraft?.levies) ?? 0
   const portalBranding = onboardingFormData.portalBranding && typeof onboardingFormData.portalBranding === 'object'
     ? onboardingFormData.portalBranding
     : {}
@@ -3186,7 +3198,7 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     propertyStructureType: normalizePropertyStructureType(row.property_structure_type || row.ownership_structure || row.property_type, { fallback: 'other' }),
     propertyType: row.property_type || '',
     listingCategory: row.listing_category || 'private_sale',
-    title: row.title || '',
+    title: pickFirstText(row.title, publicationDraft?.title),
     description: listingDescription,
     askingPrice: Number(row.asking_price || 0) || 0,
     estimatedValue: Number(row.estimated_value || 0) || 0,
@@ -3273,7 +3285,7 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     listingPreviewDescription,
     internalListingNotes: row.internal_listing_notes || onboardingNotes,
     // Compatibility shape used by existing listing UI while migration is underway.
-    listingTitle: row.title || row.address_line_1 || 'Untitled listing',
+    listingTitle: pickFirstText(row.title, publicationDraft?.title, row.address_line_1, 'Untitled listing'),
     propertyAddress: [row.address_line_1, row.address_line_2].filter(Boolean).join(', '),
     status: listingStatus,
     listingStatusLegacy: listingStatus,
@@ -3282,13 +3294,14 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     lifecycleStatusDescription: getPrivateListingStatusDescription(listingStatus),
     lifecycleStatusGroup: getPrivateListingStatusGroup(listingStatus),
     lifecycleNextAction: getPrivateListingLifecycleNextAction({ ...row, listingStatus }),
-    bedrooms: normalizeNumber(onboardingFormData.bedrooms) ?? 0,
-    bathrooms: normalizeNumber(onboardingFormData.bathrooms) ?? 0,
-    garages: normalizeNumber(onboardingFormData.garages) ?? 0,
-    coveredParking: normalizeNumber(onboardingFormData.parkingCovered) ?? 0,
+    bedrooms,
+    bathrooms,
+    garages,
+    parkingBays,
+    coveredParking: normalizeNumber(onboardingFormData.parkingCovered) ?? parkingBays,
     openParking: normalizeNumber(onboardingFormData.parkingOpen) ?? 0,
-    erfSize: normalizeNumber(onboardingFormData.erfSize) ?? 0,
-    floorSize: normalizeNumber(onboardingFormData.floorSize) ?? 0,
+    erfSize,
+    floorSize,
     marketing: {
       mediaUrl: coverImage?.url || '',
       imageGallery,
@@ -3303,7 +3316,7 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
       listingExternalLinks: externalListingLinks,
     },
     propertyDetails: {
-      headline: row.title || '',
+      headline: pickFirstText(row.title, publicationDraft?.title),
       propertyType: row.property_type || '',
       listingStatus,
       addressLine1: row.address_line_1 || '',
@@ -3317,17 +3330,18 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
       suburb: row.suburb || '',
       city: row.city || '',
       province: row.province || '',
-      bedrooms: normalizeNumber(onboardingFormData.bedrooms) ?? 0,
-      bathrooms: normalizeNumber(onboardingFormData.bathrooms) ?? 0,
-      garages: normalizeNumber(onboardingFormData.garages) ?? 0,
-      coveredParking: normalizeNumber(onboardingFormData.parkingCovered) ?? 0,
+      bedrooms,
+      bathrooms,
+      garages,
+      parkingBays,
+      coveredParking: normalizeNumber(onboardingFormData.parkingCovered) ?? parkingBays,
       openParking: normalizeNumber(onboardingFormData.parkingOpen) ?? 0,
-      erfSize: normalizeNumber(onboardingFormData.erfSize) ?? 0,
-      floorSize: normalizeNumber(onboardingFormData.floorSize) ?? 0,
+      erfSize,
+      floorSize,
       price: normalizeNumber(onboardingFormData.askingPrice) ?? (Number(row.asking_price || 0) || 0),
-      levies: normalizeNumber(onboardingFormData.levies) ?? 0,
+      levies,
       leviesNotApplicable: Boolean(onboardingFormData.leviesNotApplicable),
-      ratesTaxes: normalizeNumber(onboardingFormData.ratesTaxes) ?? 0,
+      ratesTaxes,
       ratesTaxesNotApplicable: Boolean(onboardingFormData.ratesTaxesNotApplicable),
       saleType: onboardingFormData.saleType || 'For Sale',
       vatApplicable: onboardingFormData.vatApplicable || 'no',

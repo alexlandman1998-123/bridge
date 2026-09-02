@@ -467,7 +467,7 @@ async function main() {
 
 function runContractChecks() {
   const migration = fs.readFileSync(
-    path.resolve(process.cwd(), '../supabase/migrations/20260831132003_complete_agent_seller_handoff.sql'),
+    path.resolve(process.cwd(), '../supabase/migrations/20260831125411_complete_agent_seller_handoff.sql'),
     'utf8',
   )
   const api = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/api.js'), 'utf8')

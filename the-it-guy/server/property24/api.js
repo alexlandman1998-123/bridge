@@ -248,6 +248,8 @@ export function buildProperty24ApiConfig({ env = getRuntimeEnv(), requestUrl, pa
     property24Username: environmentCredentials.username,
     property24Password: environmentCredentials.password,
     property24UserGroupId: environmentCredentials.userGroupId,
+    property24ApiVersion: environmentCredentials.apiVersion,
+    property24SendUserGroupHeader: environmentCredentials.sendUserGroupHeader,
     apiInternalToken: normalizeProperty24Text(env.PROPERTY24_API_INTERNAL_TOKEN),
     allowUnsafeLocalApi: normalizeBoolean(env.PROPERTY24_API_ALLOW_UNAUTHENTICATED_LOCAL, false),
     syndicationEnabled: normalizeBoolean(env.PROPERTY24_SYNDICATION_ENABLED, false),
@@ -529,7 +531,8 @@ function createProperty24FromConfig(config = {}) {
     baseUrl: config.property24BaseUrl,
     username: config.property24Username,
     password: config.property24Password,
-    userGroupId: config.property24UserGroupId,
+    userGroupId: config.property24SendUserGroupHeader ? config.property24UserGroupId : '',
+    apiVersion: config.property24ApiVersion,
   })
 }
 
