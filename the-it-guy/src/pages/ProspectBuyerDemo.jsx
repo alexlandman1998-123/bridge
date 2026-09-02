@@ -32,7 +32,6 @@ import {
   BuyerMobileBottomNavigation,
   BuyerMobileActionSheet,
   BuyerMobileHeader,
-  BuyerMobilePageIntro,
   BuyerMobilePriorityAction,
   BuyerMobilePropertyHero,
 } from '../components/client-portal/BuyerMobileChrome'
@@ -983,7 +982,7 @@ function MobileBuyerPortal({ activeSection, brand, config, token, loading, demoU
         <MobileHeader
           activeSection={mobileSection}
           agencyName={config.agencyName}
-          logoUrl={config.logoLightUrl || config.logoDarkUrl}
+          logoUrl={config.logoDarkUrl || config.logoLightUrl}
           brand={brand}
           title={pageTitles[mobileSection]}
           menuOpen={menuOpen}
@@ -1126,6 +1125,8 @@ function MobileOverview({ brand, config, loading, demoUploadComplete, onComplete
         </div>
       </BuyerMobilePropertyHero>
 
+      <MobilePurchaseJourneyStrip brand={brand} token={token} />
+
       <MobilePriorityCard
         icon={FileSignature}
         label="Current stage"
@@ -1145,20 +1146,60 @@ function MobileOverview({ brand, config, loading, demoUploadComplete, onComplete
         onClick={demoUploadComplete ? undefined : onCompleteUpload}
       />
 
-      <section className="rounded-[18px] border border-[#dbe5ef] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
+      <section className="overflow-hidden rounded-[18px] border border-[#dbe5ef] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
         <div className="flex items-start justify-between gap-3">
-          <h2 className="text-sm font-semibold text-[#142132]">Latest update</h2>
+          <h2 className="text-sm font-semibold text-[#142132]">Latest updates</h2>
           <span className="flex items-center gap-1 text-[0.7rem] font-semibold text-emerald-700">
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-            Today, 09:15
+            Live
           </span>
         </div>
-        <p className="mt-3 text-sm leading-6 text-[#52657b]">Your transfer attorney requested rates clearance figures from the City of Cape Town.</p>
+        <div className="-mx-4 mt-3 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-1 [scrollbar-width:none]">
+          {[
+            ['Today, 09:15', 'Rates clearance requested', 'Your transfer attorney requested rates clearance figures from the City of Cape Town.'],
+            ['Yesterday, 15:42', 'Payslip reminder', 'Your bond originator is ready to submit as soon as your latest payslip is received.'],
+            ['28 Aug, 10:10', 'Offer accepted', 'Your signed Offer to Purchase has been shared with the finance and transfer teams.'],
+          ].map(([date, title, description]) => (
+            <article key={title} className="w-[260px] shrink-0 snap-start rounded-[16px] border border-[#e5ebf1] bg-[#fbfcfd] p-3">
+              <p className="text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#7b8491]">{date}</p>
+              <h3 className="mt-2 text-sm font-semibold text-[#142132]">{title}</h3>
+              <p className="mt-1 text-xs leading-5 text-[#52657b]">{description}</p>
+            </article>
+          ))}
+        </div>
         <Link to={getDemoPath(token, 'progress')} className="mt-3 inline-flex min-h-9 items-center text-sm font-semibold" style={{ color: brand.primary }}>
           View all updates
         </Link>
       </section>
     </div>
+  )
+}
+
+function MobilePurchaseJourneyStrip({ brand, token }) {
+  const stages = [
+    ['Offer', 'complete'],
+    ['Finance', 'current'],
+    ['Transfer', 'upcoming'],
+    ['Registration', 'upcoming'],
+  ]
+  return (
+    <section className="rounded-[18px] border border-[#dbe5ef] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-sm font-semibold text-[#142132]">Your journey</h2>
+        <Link to={getDemoPath(token, 'progress')} className="text-xs font-semibold" style={{ color: brand.primary }}>View journey</Link>
+      </div>
+      <div className="-mx-4 mt-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none]">
+        {stages.map(([label, status], index) => (
+          <div key={label} className="flex min-w-[86px] flex-col gap-2">
+            <span className={`flex h-9 w-9 items-center justify-center rounded-full border text-xs font-semibold ${status === 'complete' ? 'border-emerald-500 bg-emerald-500 text-white' : status === 'current' ? 'border-[#142132] bg-[#142132] text-white' : 'border-[#d9e1ea] bg-white text-[#98a2b3]'}`} style={status === 'current' ? { borderColor: brand.primary, backgroundColor: brand.primary } : undefined}>
+              {status === 'complete' ? <CheckCircle2 size={17} /> : index + 1}
+            </span>
+            <span className={`text-xs font-semibold ${status === 'current' ? 'text-[#142132]' : 'text-[#667085]'}`}>{label}</span>
+            {status === 'current' ? <span className="-mt-1 text-[0.62rem] font-semibold" style={{ color: brand.primary }}>You are here</span> : <span className="h-[15px]" />}
+          </div>
+        ))}
+      </div>
+    </section>
   )
 }
 
@@ -1204,8 +1245,7 @@ function MobileTransferJourney({ brand }) {
 
   return (
     <div className="space-y-3">
-      <BuyerMobilePageIntro eyebrow="Journey" title="Your purchase journey" description="See where your transfer is now, what the team is doing, and what comes next." />
-      <section className="relative space-y-3">
+      <section className="relative space-y-3 rounded-[20px] border border-[#dbe5ef] bg-white p-3 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
         <span className="absolute left-[31px] top-5 h-[calc(100%-40px)] w-px bg-[#dbe5ef]" />
         {mobileStages.map((stage) => (
           <MobileTimelineStage key={stage.title} brand={brand} stage={stage} />
@@ -1272,7 +1312,6 @@ function MobileDocuments({ brand, config, demoUploadComplete, onCompleteUpload }
 
   return (
     <div className="space-y-4">
-      <BuyerMobilePageIntro eyebrow="Documents" title="Your documents" description="Everything your purchase needs, with required items first." meta={<Lock size={16} className="mt-1 text-[#52657b]" />} />
       <DocumentStatusSummary readyCount={5} actionCount={actionDocument ? 1 : 0} preparingCount={2} unavailableCount={0} />
       {actionDocument ? (
         <BuyerMobilePriorityAction
@@ -1328,7 +1367,6 @@ function MobileDocumentRow({ brand, config, document, onCompleteUpload }) {
 function MobileFinance({ brand, model, onCompleteUpload, token }) {
   return (
     <div className="space-y-4">
-      <BuyerMobilePageIntro eyebrow="Finance" title="Your finance" description="Track your bond application, bank responses, and the next item needed from you." />
       <section className="rounded-[18px] border border-[#dbe5ef] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
         <div className="flex items-start gap-3">
           <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full border ${statusClasses('info')}`}>
@@ -1427,7 +1465,6 @@ function MobileTeam({ brand, model }) {
 
   return (
     <div className="space-y-4">
-      <p className="-mt-2 text-sm leading-5 text-[#52657b]">The people helping you.</p>
       <section className="rounded-[18px] border p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]" style={{ borderColor: hexToRgba(brand.primary, 0.14), backgroundColor: hexToRgba(brand.primary, 0.06) }}>
         <p className="text-xs font-medium text-[#52657b]">Currently handling your transaction</p>
         <div className="mt-3 flex items-center gap-3">

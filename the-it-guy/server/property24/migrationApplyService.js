@@ -143,9 +143,12 @@ export async function fetchProperty24MigrationLiveSnapshot({ property24, mapping
     const number = integer(plan.listingNumber)
     const reconciliation = reconciliationRows.find((row) => listingNumber(row) === number) || null
     const update = updateRows.find((row) => listingNumber(row) === number) || null
-    const status = text(update?.currentStatus ?? update?.CurrentStatus ?? reconciliation?.status ?? reconciliation?.Status)
+    const exportedStatus = text(plan.sourceStatus ?? plan.privateListing?.sellerCanonicalFacts?.property24Import?.sourceStatus)
     const isOnPortal = portalState(portalResponses[index]?.data)
-    if (!status) blockers.push({ code: 'property24_listing_status_missing', listingNumber: number, message: `Property24 did not return a current status for listing ${number}.` })
+    const liveStatus = text(update?.currentStatus ?? update?.CurrentStatus ?? reconciliation?.status ?? reconciliation?.Status)
+    const portalStateFallback = !liveStatus && isOnPortal === false && ACTIVE_STATUSES.has(key(exportedStatus))
+    const status = text(liveStatus || (portalStateFallback ? 'Withdrawn' : exportedStatus))
+    if (!status) blockers.push({ code: 'property24_listing_status_missing', listingNumber: number, message: `Property24 did not return a current or exported status for listing ${number}.` })
     if (isOnPortal === null) blockers.push({ code: 'property24_portal_state_missing', listingNumber: number, message: `Property24 did not return portal state for listing ${number}.` })
     if (ACTIVE_STATUSES.has(key(status)) && isOnPortal === false) blockers.push({ code: 'property24_active_listing_off_portal', listingNumber: number, message: `Listing ${number} is ${status} but reports off portal.` })
     if (CLOSED_STATUSES.has(key(status)) && isOnPortal === true) blockers.push({ code: 'property24_closed_listing_on_portal', listingNumber: number, message: `Listing ${number} is ${status} but still reports on portal.` })
@@ -156,7 +159,7 @@ export async function fetchProperty24MigrationLiveSnapshot({ property24, mapping
       isOnPortal,
       reasonType: text(update?.reasonType ?? update?.ReasonType) || null,
       comment: text(update?.comment ?? update?.Comment) || null,
-      source: update ? 'updates' : reconciliation ? 'reconciliation' : 'missing',
+      source: update ? 'updates' : reconciliation ? 'reconciliation' : portalStateFallback ? 'portal_state_fallback' : exportedStatus ? 'export' : 'missing',
       httpStatus: {
         reconciliation: reconciliationResponse.status,
         updates: updateResponse.status,

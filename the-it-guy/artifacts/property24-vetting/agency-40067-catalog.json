@@ -1,0 +1,21 @@
+{
+  "propertyTypes": [
+    {
+      "property24Id": 4,
+      "name": "House",
+      "arch9PropertyType": "house",
+      "propertyCategory": "residential"
+    }
+  ],
+  "suburbs": [
+    {
+      "property24Id": 1987,
+      "name": "Bartlett",
+      "cityName": "Boksburg",
+      "provinceName": "Gauteng",
+      "countryName": "South Africa",
+      "latitude": -26.174993,
+      "longitude": 28.275971
+    }
+  ]
+}

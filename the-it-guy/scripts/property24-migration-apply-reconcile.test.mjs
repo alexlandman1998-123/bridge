@@ -13,6 +13,7 @@ function listingPlan(number, listingType, agentId, sourceReference) {
   return {
     identityKey: `property24:exdev:31382:listing:${number}`,
     listingNumber: number,
+    sourceStatus: 'Active',
     sourceReference,
     mappingFingerprint: `fingerprint-${number}`,
     privateListing: {
@@ -118,6 +119,38 @@ assert.equal(liveSnapshot.listings[0].status, 'Rented')
 assert.equal(liveSnapshot.listings[0].source, 'updates')
 assert.equal(liveSnapshot.listings[1].status, 'Active')
 assert.equal(liveSnapshot.agents[0].status, 'Inactive')
+
+const exportStatusFallback = await fetchProperty24MigrationLiveSnapshot({
+  property24: {
+    async fetchAgencyAgents() { return { status: 200, data: property24.fetchAgencyAgents ? (await property24.fetchAgencyAgents()).data : [] } },
+    async fetchListingReconciliation() { return { status: 200, data: [] } },
+    async fetchListingUpdates() { return { status: 200, data: [] } },
+    async checkListingOnPortal() { return { status: 200, data: true } },
+  },
+  mappingPlan: {
+    ...mappingPlan,
+    listingPlans: [listingPlan(1003, 'Sale', 10, 'LISTING-1003')],
+  },
+})
+assert.equal(exportStatusFallback.blockers.length, 0)
+assert.equal(exportStatusFallback.listings[0].status, 'Active')
+assert.equal(exportStatusFallback.listings[0].source, 'export')
+
+const portalStateFallback = await fetchProperty24MigrationLiveSnapshot({
+  property24: {
+    async fetchAgencyAgents() { return { status: 200, data: (await property24.fetchAgencyAgents()).data } },
+    async fetchListingReconciliation() { return { status: 200, data: [] } },
+    async fetchListingUpdates() { return { status: 200, data: [] } },
+    async checkListingOnPortal() { return { status: 200, data: false } },
+  },
+  mappingPlan: {
+    ...mappingPlan,
+    listingPlans: [listingPlan(1004, 'Sale', 10, 'LISTING-1004')],
+  },
+})
+assert.equal(portalStateFallback.blockers.length, 0)
+assert.equal(portalStateFallback.listings[0].status, 'Withdrawn')
+assert.equal(portalStateFallback.listings[0].source, 'portal_state_fallback')
 
 const target = {
   organisation: { id: organisationId, name: 'Agency' },

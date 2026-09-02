@@ -77,15 +77,15 @@ function parseEnvFile(filePath) {
       .map((line) => {
         const separator = line.indexOf('=')
         if (separator < 0) return [line, '']
-        return [line.slice(0, separator), line.slice(separator + 1).replace(/^['"]|['"]$/g, '')]
+        return [line.slice(0, separator), line.slice(separator + 1).replace(/^['"]|['"]$/g, '').replace(/\\n$/, '')]
       }),
   )
 }
 
 function loadConfig(environment = 'exdev') {
-  const files = ['.env', '.env.local', environment === 'production'
-    ? '.env.property24.production.local'
-    : '.env.property24.local']
+  const files = environment === 'production'
+    ? ['.env', '.env.local', '.env.production.local', '.env.property24.production.local']
+    : ['.env', '.env.local', '.env.property24.local']
   const fromFiles = files.reduce((merged, file) => ({ ...merged, ...parseEnvFile(path.join(appRoot, file)) }), {})
   const env = { ...fromFiles, ...process.env }
   const config = {

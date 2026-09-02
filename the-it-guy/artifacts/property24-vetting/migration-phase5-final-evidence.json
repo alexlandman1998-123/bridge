@@ -2,24 +2,24 @@
   "version": "property24_migration_verification_v1",
   "phase": "property24-migration-import-phase5-final-verification",
   "status": "VERIFIED",
-  "generatedAt": "2026-08-31T10:42:26.607Z",
+  "generatedAt": "2026-09-02T09:35:25.496Z",
   "context": {
-    "organisationId": "ec19d0a6-bcba-4eef-aa72-9972de88204d",
-    "environment": "exdev",
-    "agencyId": 31382
+    "organisationId": "84b6e57a-9b12-4bfd-991c-0f5f820d28f4",
+    "environment": "production",
+    "agencyId": 40067
   },
   "inputs": {
     "mapping": {
       "path": "/Users/alexanderlandman/the-it-guy/the-it-guy/artifacts/property24-vetting/migration-phase2-data-mapping.json",
-      "sha256": "06cf10b7452bfc6188e62d4f44da047338f873910f78de7bd9992958da90b4ab"
+      "sha256": "976bc9c4bd6b917e3c8d99919cffa68deb68a83657f9c6c0f4633b32b5b1fa81"
     },
     "images": {
       "path": "/Users/alexanderlandman/the-it-guy/the-it-guy/artifacts/property24-vetting/migration-phase4-image-import-apply.json",
-      "sha256": "22500cdbff0e0d4732f80601b238a022ef4e03640c48fa46ae2a0f17b4c315b7"
+      "sha256": "2b40e85f7a2c810dfa848f17d78917ebfde4990ca00589765f9dfb3712ed554d"
     },
     "duplicateProtectionRerun": {
       "path": "/Users/alexanderlandman/the-it-guy/the-it-guy/artifacts/property24-vetting/migration-phase5-duplicate-protection-rerun.json",
-      "sha256": "5d295106a71ef15616cb3ee3c4e5deced37939545cafa1535265981b61b02401"
+      "sha256": "cb80b5311bfbcc11b0e2411bc72f474a706f8e89f435065c876a7d36cb3215f2"
     }
   },
   "safety": {
@@ -29,13 +29,13 @@
     "verificationReadOnly": true
   },
   "summary": {
-    "checkCount": 62,
-    "passedCheckCount": 62,
+    "checkCount": 44,
+    "passedCheckCount": 44,
     "failedCheckCount": 0,
-    "agentCount": 4,
-    "listingCount": 4,
-    "expectedImageCount": 14,
-    "verifiedImageCount": 14,
+    "agentCount": 1,
+    "listingCount": 3,
+    "expectedImageCount": 63,
+    "verifiedImageCount": 63,
     "duplicateAgentMappingCount": 0,
     "duplicateListingIdentityCount": 0,
     "duplicateSyncCount": 0,
@@ -47,88 +47,57 @@
     "createListingCount": 0,
     "staleMediaRowCount": 0,
     "uploadedImageCount": 0,
-    "reusedImageCount": 14
+    "reusedImageCount": 63
   },
   "agents": [
     {
-      "property24AgentId": 77959,
-      "sourceReference": "ARCH9-AGENT-001",
+      "property24AgentId": 547532,
+      "sourceReference": "9333600",
       "property24Status": "Active",
       "arch9MappingStatus": "active",
-      "arch9UserId": null
-    },
-    {
-      "property24AgentId": 77968,
-      "sourceReference": "ARCH9-P24-TEST-001",
-      "property24Status": "Active",
-      "arch9MappingStatus": "active",
-      "arch9UserId": null
-    },
-    {
-      "property24AgentId": 77969,
-      "sourceReference": "ARCH9-VET-JON-SNOW",
-      "property24Status": "Inactive",
-      "arch9MappingStatus": "inactive",
-      "arch9UserId": null
-    },
-    {
-      "property24AgentId": 77970,
-      "sourceReference": "ARCH9-VET-PAULY-SHORE",
-      "property24Status": "Inactive",
-      "arch9MappingStatus": "inactive",
-      "arch9UserId": null
+      "arch9UserId": "70a0969b-6d08-464d-ad6e-031c54d3521d"
     }
   ],
   "listings": [
     {
-      "listingNumber": 100314793,
-      "listingId": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+      "listingNumber": 116560913,
+      "listingId": "d3c7c8b6-cae0-5b6a-b44e-2acd7ceb6c81",
       "listingType": "Sale",
-      "property24Status": "Active",
-      "isOnPortal": true,
-      "arch9ListingStatus": "active",
-      "arch9Property24Status": "published",
-      "mediaCount": 4
-    },
-    {
-      "listingNumber": 100314816,
-      "listingId": "08080a97-b727-4522-9381-d26029902df1",
-      "listingType": "Sale",
-      "property24Status": "Active",
-      "isOnPortal": true,
-      "arch9ListingStatus": "active",
-      "arch9Property24Status": "published",
-      "mediaCount": 6
-    },
-    {
-      "listingNumber": 100314819,
-      "listingId": "3e8f6b1a-b0db-5075-b4b1-d1b32c18d8d3",
-      "listingType": "Rental",
-      "property24Status": "Rented",
+      "property24Status": "Expired",
       "isOnPortal": false,
       "arch9ListingStatus": "withdrawn",
       "arch9Property24Status": "removed",
-      "mediaCount": 2
+      "mediaCount": 1
     },
     {
-      "listingNumber": 100314820,
-      "listingId": "2b54543c-ecb1-580f-b665-1f5df86caf34",
+      "listingNumber": 116565928,
+      "listingId": "b8375f32-2963-541e-bb72-6dfb036e330d",
       "listingType": "Sale",
-      "property24Status": "Sold",
+      "property24Status": "Active",
+      "isOnPortal": true,
+      "arch9ListingStatus": "active",
+      "arch9Property24Status": "published",
+      "mediaCount": 31
+    },
+    {
+      "listingNumber": 116687298,
+      "listingId": "9956ba32-3b43-55ac-8437-8a4415a5d732",
+      "listingType": "Sale",
+      "property24Status": "Withdrawn",
       "isOnPortal": false,
-      "arch9ListingStatus": "sold",
+      "arch9ListingStatus": "withdrawn",
       "arch9Property24Status": "removed",
-      "mediaCount": 2
+      "mediaCount": 31
     }
   ],
   "checks": [
     {
       "id": "organisation_identity",
       "status": "PASS",
-      "detail": "Verified Arch9 organisation Kingstons Real Estate.",
+      "detail": "Verified Arch9 organisation Samlin Construction.",
       "evidence": {
-        "expected": "ec19d0a6-bcba-4eef-aa72-9972de88204d",
-        "actual": "ec19d0a6-bcba-4eef-aa72-9972de88204d"
+        "expected": "84b6e57a-9b12-4bfd-991c-0f5f820d28f4",
+        "actual": "84b6e57a-9b12-4bfd-991c-0f5f820d28f4"
       }
     },
     {
@@ -169,8 +138,8 @@
             "syncs": true,
             "media": true
           },
-          "importedMediaCount": 14,
-          "expectedMediaCount": 14,
+          "importedMediaCount": 63,
+          "expectedMediaCount": 63,
           "unexpectedImageCount": 0
         }
       }
@@ -183,19 +152,15 @@
         "createListingCount": 0,
         "actions": [
           {
-            "listingNumber": 100314793,
+            "listingNumber": 116560913,
             "action": "update"
           },
           {
-            "listingNumber": 100314816,
+            "listingNumber": 116565928,
             "action": "update"
           },
           {
-            "listingNumber": 100314819,
-            "action": "update"
-          },
-          {
-            "listingNumber": 100314820,
+            "listingNumber": 116687298,
             "action": "update"
           }
         ]
@@ -204,18 +169,18 @@
     {
       "id": "duplicate_protection_media_reuse",
       "status": "PASS",
-      "detail": "All 14 images were reused without another upload.",
+      "detail": "All 63 images were reused without another upload.",
       "evidence": {
         "imageSummary": {
-          "requestedImageCount": 14,
+          "requestedImageCount": 63,
           "uploadedImageCount": 0,
-          "reusedImageCount": 14,
+          "reusedImageCount": 63,
           "failedImageCount": 0,
           "pendingImageCount": 0,
-          "completedImageCount": 14,
-          "listingCount": 4,
-          "readyListingCount": 4,
-          "listingMediaRowCount": 14
+          "completedImageCount": 63,
+          "listingCount": 3,
+          "readyListingCount": 3,
+          "listingMediaRowCount": 63
         }
       }
     },
@@ -227,165 +192,242 @@
         "staleMediaRowCount": 0,
         "removed": [
           {
-            "listingNumber": 100314793,
+            "listingNumber": 116560913,
             "count": 0
           },
           {
-            "listingNumber": 100314816,
+            "listingNumber": 116565928,
             "count": 0
           },
           {
-            "listingNumber": 100314819,
-            "count": 0
-          },
-          {
-            "listingNumber": 100314820,
+            "listingNumber": 116687298,
             "count": 0
           }
         ]
       }
     },
     {
-      "id": "agent_77959_unique",
+      "id": "agent_547532_unique",
       "status": "PASS",
-      "detail": "Agent 77959 has exactly one Arch9 mapping row.",
+      "detail": "Agent 547532 has exactly one Arch9 mapping row.",
       "evidence": {
         "mappingRowIds": [
-          "04eda7fb-61bb-4121-bdbf-af14865c1d5f"
+          "39f0e12b-c0f4-4f52-8709-b5b7678d59cb"
         ]
       }
     },
     {
-      "id": "agent_77959_status",
+      "id": "agent_547532_status",
       "status": "PASS",
-      "detail": "Agent 77959 matches live Property24 status Active.",
+      "detail": "Agent 547532 matches live Property24 status Active.",
       "evidence": {
         "expected": {
-          "sourceReference": "ARCH9-AGENT-001",
+          "sourceReference": "9333600",
           "status": "active"
         },
         "actual": {
-          "sourceReference": "ARCH9-AGENT-001",
-          "status": "active"
-        }
-      }
-    },
-    {
-      "id": "agent_77968_unique",
-      "status": "PASS",
-      "detail": "Agent 77968 has exactly one Arch9 mapping row.",
-      "evidence": {
-        "mappingRowIds": [
-          "8729973f-37e5-40ae-af0b-e0e8f4e86e27"
-        ]
-      }
-    },
-    {
-      "id": "agent_77968_status",
-      "status": "PASS",
-      "detail": "Agent 77968 matches live Property24 status Active.",
-      "evidence": {
-        "expected": {
-          "sourceReference": "ARCH9-P24-TEST-001",
-          "status": "active"
-        },
-        "actual": {
-          "sourceReference": "ARCH9-P24-TEST-001",
+          "sourceReference": "9333600",
           "status": "active"
         }
       }
     },
     {
-      "id": "agent_77969_unique",
+      "id": "listing_116560913_unique",
       "status": "PASS",
-      "detail": "Agent 77969 has exactly one Arch9 mapping row.",
-      "evidence": {
-        "mappingRowIds": [
-          "60f71b09-4095-428e-afd4-552742b2e5ad"
-        ]
-      }
-    },
-    {
-      "id": "agent_77969_status",
-      "status": "PASS",
-      "detail": "Agent 77969 matches live Property24 status Inactive.",
-      "evidence": {
-        "expected": {
-          "sourceReference": "ARCH9-VET-JON-SNOW",
-          "status": "inactive"
-        },
-        "actual": {
-          "sourceReference": "ARCH9-VET-JON-SNOW",
-          "status": "inactive"
-        }
-      }
-    },
-    {
-      "id": "agent_77970_unique",
-      "status": "PASS",
-      "detail": "Agent 77970 has exactly one Arch9 mapping row.",
-      "evidence": {
-        "mappingRowIds": [
-          "44729cc8-30bc-4380-9632-9cfbed14e6f7"
-        ]
-      }
-    },
-    {
-      "id": "agent_77970_status",
-      "status": "PASS",
-      "detail": "Agent 77970 matches live Property24 status Inactive.",
-      "evidence": {
-        "expected": {
-          "sourceReference": "ARCH9-VET-PAULY-SHORE",
-          "status": "inactive"
-        },
-        "actual": {
-          "sourceReference": "ARCH9-VET-PAULY-SHORE",
-          "status": "inactive"
-        }
-      }
-    },
-    {
-      "id": "listing_100314793_unique",
-      "status": "PASS",
-      "detail": "Listing 100314793 resolves to exactly one Arch9 listing.",
+      "detail": "Listing 116560913 resolves to exactly one Arch9 listing.",
       "evidence": {
         "listingIds": [
-          "f35d8916-2ae9-4364-b364-fc279e260fa7"
+          "d3c7c8b6-cae0-5b6a-b44e-2acd7ceb6c81"
         ]
       }
     },
     {
-      "id": "listing_100314793_sync_unique",
+      "id": "listing_116560913_sync_unique",
       "status": "PASS",
-      "detail": "Listing 100314793 has exactly one Property24 sync row.",
+      "detail": "Listing 116560913 has exactly one Property24 sync row.",
       "evidence": {
         "syncRowIds": [
-          "3eba8d4a-ea95-4724-ab20-34e9e903617c"
+          "86d1ac9f-c83a-4e29-bce7-85348d8f3e1f"
         ]
       }
     },
     {
-      "id": "listing_100314793_publication_unique",
+      "id": "listing_116560913_publication_unique",
       "status": "PASS",
-      "detail": "Listing 100314793 has exactly one publication row.",
+      "detail": "Listing 116560913 has exactly one publication row.",
       "evidence": {
         "publicationRowIds": [
-          "4fb5c664-2591-442d-a66e-e56d7d070139"
+          "d5f88e8b-be0b-406e-ab52-189e2df405c6"
         ]
       }
     },
     {
-      "id": "listing_100314793_rerun_identity",
+      "id": "listing_116560913_rerun_identity",
       "status": "PASS",
-      "detail": "Listing 100314793 retained Arch9 ID f35d8916-2ae9-4364-b364-fc279e260fa7 during the rerun.",
+      "detail": "Listing 116560913 retained Arch9 ID d3c7c8b6-cae0-5b6a-b44e-2acd7ceb6c81 during the rerun.",
       "evidence": {
-        "expectedListingId": "f35d8916-2ae9-4364-b364-fc279e260fa7",
-        "actualListingId": "f35d8916-2ae9-4364-b364-fc279e260fa7"
+        "expectedListingId": "d3c7c8b6-cae0-5b6a-b44e-2acd7ceb6c81",
+        "actualListingId": "d3c7c8b6-cae0-5b6a-b44e-2acd7ceb6c81"
       }
     },
     {
-      "id": "listing_100314793_status",
+      "id": "listing_116560913_status",
+      "status": "PASS",
+      "detail": "Arch9 listing state matches Property24 Expired.",
+      "evidence": {
+        "expected": {
+          "listingStatus": "withdrawn",
+          "listingVisibility": "archived",
+          "isActive": false,
+          "property24Status": "removed"
+        },
+        "actual": {
+          "listingStatus": "withdrawn",
+          "listingVisibility": "archived",
+          "isActive": false,
+          "property24Status": "removed"
+        }
+      }
+    },
+    {
+      "id": "listing_116560913_publication",
+      "status": "PASS",
+      "detail": "Publication state is Archived.",
+      "evidence": {
+        "expected": "Archived",
+        "actual": "Archived"
+      }
+    },
+    {
+      "id": "listing_116560913_sync",
+      "status": "PASS",
+      "detail": "Property24 sync row records Expired and portal=false.",
+      "evidence": {
+        "expected": {
+          "externalStatus": "removed",
+          "isOnPortal": false,
+          "currentStatus": "Expired"
+        },
+        "actual": {
+          "externalStatus": "removed",
+          "isOnPortal": false,
+          "currentStatus": "Expired"
+        }
+      }
+    },
+    {
+      "id": "listing_116560913_canonical_status",
+      "status": "PASS",
+      "detail": "Canonical import metadata preserves the current Property24 semantic status.",
+      "evidence": {
+        "expected": {
+          "sourceStatus": "Expired",
+          "semanticStatus": "expired"
+        },
+        "actual": {
+          "sourceStatus": "Expired",
+          "semanticStatus": "expired"
+        }
+      }
+    },
+    {
+      "id": "listing_116560913_media_exact_set",
+      "status": "PASS",
+      "detail": "Exactly 1 canonical images are attached with no duplicates.",
+      "evidence": {
+        "expectedPaths": [
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116560913/0001-c911dfb355f299da7177.jpg"
+        ],
+        "actualPaths": [
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116560913/0001-c911dfb355f299da7177.jpg"
+        ]
+      }
+    },
+    {
+      "id": "listing_116560913_media_order",
+      "status": "PASS",
+      "detail": "Image sort order is contiguous from 0 to 0.",
+      "evidence": {
+        "expectedOrders": [
+          0
+        ],
+        "actualOrders": [
+          0
+        ]
+      }
+    },
+    {
+      "id": "listing_116560913_cover",
+      "status": "PASS",
+      "detail": "Exactly one cover image is set at sort order 0.",
+      "evidence": {
+        "coverCount": 1,
+        "coverOrders": [
+          0
+        ]
+      }
+    },
+    {
+      "id": "listing_116560913_media_integrity",
+      "status": "PASS",
+      "detail": "Every rehosted image is publicly reachable and matches its source SHA-256.",
+      "evidence": {
+        "objects": [
+          {
+            "listingNumber": 116560913,
+            "sortOrder": 0,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116560913/0001-c911dfb355f299da7177.jpg",
+            "expectedSha256": "c911dfb355f299da7177b1df2fb5afe16c5e276ce8e841e07a6e07e28caf8e2d",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 130927,
+            "actualSha256": "c911dfb355f299da7177b1df2fb5afe16c5e276ce8e841e07a6e07e28caf8e2d",
+            "sha256Matches": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "listing_116565928_unique",
+      "status": "PASS",
+      "detail": "Listing 116565928 resolves to exactly one Arch9 listing.",
+      "evidence": {
+        "listingIds": [
+          "b8375f32-2963-541e-bb72-6dfb036e330d"
+        ]
+      }
+    },
+    {
+      "id": "listing_116565928_sync_unique",
+      "status": "PASS",
+      "detail": "Listing 116565928 has exactly one Property24 sync row.",
+      "evidence": {
+        "syncRowIds": [
+          "2deb5c9d-d8de-4227-8378-04e2877d23f3"
+        ]
+      }
+    },
+    {
+      "id": "listing_116565928_publication_unique",
+      "status": "PASS",
+      "detail": "Listing 116565928 has exactly one publication row.",
+      "evidence": {
+        "publicationRowIds": [
+          "398ae2b9-90be-4146-ae72-03454db2a702"
+        ]
+      }
+    },
+    {
+      "id": "listing_116565928_rerun_identity",
+      "status": "PASS",
+      "detail": "Listing 116565928 retained Arch9 ID b8375f32-2963-541e-bb72-6dfb036e330d during the rerun.",
+      "evidence": {
+        "expectedListingId": "b8375f32-2963-541e-bb72-6dfb036e330d",
+        "actualListingId": "b8375f32-2963-541e-bb72-6dfb036e330d"
+      }
+    },
+    {
+      "id": "listing_116565928_status",
       "status": "PASS",
       "detail": "Arch9 listing state matches Property24 Active.",
       "evidence": {
@@ -404,7 +446,7 @@
       }
     },
     {
-      "id": "listing_100314793_publication",
+      "id": "listing_116565928_publication",
       "status": "PASS",
       "detail": "Publication state is Published.",
       "evidence": {
@@ -413,7 +455,7 @@
       }
     },
     {
-      "id": "listing_100314793_sync",
+      "id": "listing_116565928_sync",
       "status": "PASS",
       "detail": "Property24 sync row records Active and portal=true.",
       "evidence": {
@@ -430,7 +472,7 @@
       }
     },
     {
-      "id": "listing_100314793_canonical_status",
+      "id": "listing_116565928_canonical_status",
       "status": "PASS",
       "detail": "Canonical import metadata preserves the current Property24 semantic status.",
       "evidence": {
@@ -445,45 +487,153 @@
       }
     },
     {
-      "id": "listing_100314793_media_exact_set",
+      "id": "listing_116565928_media_exact_set",
       "status": "PASS",
-      "detail": "Exactly 4 canonical images are attached with no duplicates.",
+      "detail": "Exactly 31 canonical images are attached with no duplicates.",
       "evidence": {
         "expectedPaths": [
-          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314793/0001-9bd2673ce584bb5f27f0.jpg",
-          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314793/0002-67fe9f833f89e3e6054f.jpg",
-          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314793/0003-69f119ed30dd0905686f.jpg",
-          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314793/0004-9da36d02905af51e18f7.jpg"
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0001-5e545156182e02a8a738.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0002-c3f29f069fd0bd8e3a74.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0003-4be25ee0c696b4631e36.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0004-c911dfb355f299da7177.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0005-e6a6efaa0b4a345c98d2.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0006-d0daebbfe1514d27cf6c.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0007-fb00e708fb66d8a60668.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0008-23145d8a7e158039f104.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0009-3a2cbb38d21c6bc573de.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0010-c7f10d3b2c8659c660dc.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0011-4575c334948eb93d6858.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0012-8e17424518a9695ed18d.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0013-61b16706fd99a74b4711.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0014-dc29247c260b5cae7d34.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0015-7a3f93989f58e1cda779.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0016-25141694fb251c61cf74.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0017-369f00f7114f711fd3b1.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0018-e68ac1e061f5c20ba520.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0019-12f9fa84f65c13f1a649.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0020-13ffce8bc780877d5a44.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0021-4564bceb082a57988914.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0022-cee77df54b7b69320c9f.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0023-e87da0b65dc018598f99.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0024-352968f34f81eec437c2.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0025-308412f24e1bddd7c6ec.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0026-dcd20b3374750873044d.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0027-76fc1484dd44083deaa5.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0028-c7d696373024d6bd78cf.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0029-e2bebef99b8e91489549.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0030-bad89b9c7b28fdb17e4c.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0031-b7894c423c336361925d.jpg"
         ],
         "actualPaths": [
-          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314793/0001-9bd2673ce584bb5f27f0.jpg",
-          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314793/0002-67fe9f833f89e3e6054f.jpg",
-          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314793/0003-69f119ed30dd0905686f.jpg",
-          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314793/0004-9da36d02905af51e18f7.jpg"
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0001-5e545156182e02a8a738.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0002-c3f29f069fd0bd8e3a74.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0003-4be25ee0c696b4631e36.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0004-c911dfb355f299da7177.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0005-e6a6efaa0b4a345c98d2.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0006-d0daebbfe1514d27cf6c.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0007-fb00e708fb66d8a60668.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0008-23145d8a7e158039f104.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0009-3a2cbb38d21c6bc573de.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0010-c7f10d3b2c8659c660dc.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0011-4575c334948eb93d6858.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0012-8e17424518a9695ed18d.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0013-61b16706fd99a74b4711.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0014-dc29247c260b5cae7d34.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0015-7a3f93989f58e1cda779.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0016-25141694fb251c61cf74.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0017-369f00f7114f711fd3b1.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0018-e68ac1e061f5c20ba520.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0019-12f9fa84f65c13f1a649.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0020-13ffce8bc780877d5a44.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0021-4564bceb082a57988914.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0022-cee77df54b7b69320c9f.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0023-e87da0b65dc018598f99.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0024-352968f34f81eec437c2.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0025-308412f24e1bddd7c6ec.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0026-dcd20b3374750873044d.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0027-76fc1484dd44083deaa5.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0028-c7d696373024d6bd78cf.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0029-e2bebef99b8e91489549.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0030-bad89b9c7b28fdb17e4c.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0031-b7894c423c336361925d.jpg"
         ]
       }
     },
     {
-      "id": "listing_100314793_media_order",
+      "id": "listing_116565928_media_order",
       "status": "PASS",
-      "detail": "Image sort order is contiguous from 0 to 3.",
+      "detail": "Image sort order is contiguous from 0 to 30.",
       "evidence": {
         "expectedOrders": [
           0,
           1,
           2,
-          3
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30
         ],
         "actualOrders": [
           0,
           1,
           2,
-          3
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30
         ]
       }
     },
     {
-      "id": "listing_100314793_cover",
+      "id": "listing_116565928_cover",
       "status": "PASS",
       "detail": "Exactly one cover image is set at sort order 0.",
       "evidence": {
@@ -494,332 +644,398 @@
       }
     },
     {
-      "id": "listing_100314793_media_integrity",
+      "id": "listing_116565928_media_integrity",
       "status": "PASS",
       "detail": "Every rehosted image is publicly reachable and matches its source SHA-256.",
       "evidence": {
         "objects": [
           {
-            "listingNumber": 100314793,
+            "listingNumber": 116565928,
             "sortOrder": 0,
-            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314793/0001-9bd2673ce584bb5f27f0.jpg",
-            "expectedSha256": "9bd2673ce584bb5f27f052a057b980e3f6af3489d60d10b0e5e45c7779bd22c4",
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0001-5e545156182e02a8a738.jpg",
+            "expectedSha256": "5e545156182e02a8a738010fe6adb357f024eeec559cbfe53553af2de53f3c03",
             "ok": true,
             "httpStatus": 200,
-            "byteLength": 129436,
-            "actualSha256": "9bd2673ce584bb5f27f052a057b980e3f6af3489d60d10b0e5e45c7779bd22c4",
+            "byteLength": 138263,
+            "actualSha256": "5e545156182e02a8a738010fe6adb357f024eeec559cbfe53553af2de53f3c03",
             "sha256Matches": true
           },
           {
-            "listingNumber": 100314793,
+            "listingNumber": 116565928,
             "sortOrder": 1,
-            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314793/0002-67fe9f833f89e3e6054f.jpg",
-            "expectedSha256": "67fe9f833f89e3e6054f74bc4f7e8c5fa83c2e6001b46c056aed16fdaf9405d2",
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0002-c3f29f069fd0bd8e3a74.jpg",
+            "expectedSha256": "c3f29f069fd0bd8e3a74b0fc907c00042ef6de6855ef75c7eeb41d7cdeaa48cb",
             "ok": true,
             "httpStatus": 200,
-            "byteLength": 107807,
-            "actualSha256": "67fe9f833f89e3e6054f74bc4f7e8c5fa83c2e6001b46c056aed16fdaf9405d2",
+            "byteLength": 143589,
+            "actualSha256": "c3f29f069fd0bd8e3a74b0fc907c00042ef6de6855ef75c7eeb41d7cdeaa48cb",
             "sha256Matches": true
           },
           {
-            "listingNumber": 100314793,
+            "listingNumber": 116565928,
             "sortOrder": 2,
-            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314793/0003-69f119ed30dd0905686f.jpg",
-            "expectedSha256": "69f119ed30dd0905686f88afae94f795c3f12d6de7dc4a255bee43389967421e",
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0003-4be25ee0c696b4631e36.jpg",
+            "expectedSha256": "4be25ee0c696b4631e360148df966b01b8953597231688bac9b7662311e76285",
             "ok": true,
             "httpStatus": 200,
-            "byteLength": 120151,
-            "actualSha256": "69f119ed30dd0905686f88afae94f795c3f12d6de7dc4a255bee43389967421e",
+            "byteLength": 123211,
+            "actualSha256": "4be25ee0c696b4631e360148df966b01b8953597231688bac9b7662311e76285",
             "sha256Matches": true
           },
           {
-            "listingNumber": 100314793,
+            "listingNumber": 116565928,
             "sortOrder": 3,
-            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314793/0004-9da36d02905af51e18f7.jpg",
-            "expectedSha256": "9da36d02905af51e18f70d64073c3af0ad6f92bd3a5b233c2253575bb39f85e1",
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0004-c911dfb355f299da7177.jpg",
+            "expectedSha256": "c911dfb355f299da7177b1df2fb5afe16c5e276ce8e841e07a6e07e28caf8e2d",
             "ok": true,
             "httpStatus": 200,
-            "byteLength": 114965,
-            "actualSha256": "9da36d02905af51e18f70d64073c3af0ad6f92bd3a5b233c2253575bb39f85e1",
-            "sha256Matches": true
-          }
-        ]
-      }
-    },
-    {
-      "id": "listing_100314816_unique",
-      "status": "PASS",
-      "detail": "Listing 100314816 resolves to exactly one Arch9 listing.",
-      "evidence": {
-        "listingIds": [
-          "08080a97-b727-4522-9381-d26029902df1"
-        ]
-      }
-    },
-    {
-      "id": "listing_100314816_sync_unique",
-      "status": "PASS",
-      "detail": "Listing 100314816 has exactly one Property24 sync row.",
-      "evidence": {
-        "syncRowIds": [
-          "a07c885a-9dc4-492c-ac37-a2d47b4f73d0"
-        ]
-      }
-    },
-    {
-      "id": "listing_100314816_publication_unique",
-      "status": "PASS",
-      "detail": "Listing 100314816 has exactly one publication row.",
-      "evidence": {
-        "publicationRowIds": [
-          "5b864281-15d9-4c4b-9263-9b0b106bad45"
-        ]
-      }
-    },
-    {
-      "id": "listing_100314816_rerun_identity",
-      "status": "PASS",
-      "detail": "Listing 100314816 retained Arch9 ID 08080a97-b727-4522-9381-d26029902df1 during the rerun.",
-      "evidence": {
-        "expectedListingId": "08080a97-b727-4522-9381-d26029902df1",
-        "actualListingId": "08080a97-b727-4522-9381-d26029902df1"
-      }
-    },
-    {
-      "id": "listing_100314816_status",
-      "status": "PASS",
-      "detail": "Arch9 listing state matches Property24 Active.",
-      "evidence": {
-        "expected": {
-          "listingStatus": "active",
-          "listingVisibility": "active_market",
-          "isActive": true,
-          "property24Status": "published"
-        },
-        "actual": {
-          "listingStatus": "active",
-          "listingVisibility": "active_market",
-          "isActive": true,
-          "property24Status": "published"
-        }
-      }
-    },
-    {
-      "id": "listing_100314816_publication",
-      "status": "PASS",
-      "detail": "Publication state is Published.",
-      "evidence": {
-        "expected": "Published",
-        "actual": "Published"
-      }
-    },
-    {
-      "id": "listing_100314816_sync",
-      "status": "PASS",
-      "detail": "Property24 sync row records Active and portal=true.",
-      "evidence": {
-        "expected": {
-          "externalStatus": "on_portal",
-          "isOnPortal": true,
-          "currentStatus": "Active"
-        },
-        "actual": {
-          "externalStatus": "on_portal",
-          "isOnPortal": true,
-          "currentStatus": "Active"
-        }
-      }
-    },
-    {
-      "id": "listing_100314816_canonical_status",
-      "status": "PASS",
-      "detail": "Canonical import metadata preserves the current Property24 semantic status.",
-      "evidence": {
-        "expected": {
-          "sourceStatus": "Active",
-          "semanticStatus": "active"
-        },
-        "actual": {
-          "sourceStatus": "Active",
-          "semanticStatus": "active"
-        }
-      }
-    },
-    {
-      "id": "listing_100314816_media_exact_set",
-      "status": "PASS",
-      "detail": "Exactly 6 canonical images are attached with no duplicates.",
-      "evidence": {
-        "expectedPaths": [
-          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314816/0001-29c0ce599156d486b3df.jpg",
-          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314816/0002-7105ae3307c41c3a5bf9.jpg",
-          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314816/0003-353c92deaf35e1ac68f6.jpg",
-          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314816/0004-6e6cdc708f27d32f3b9d.jpg",
-          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314816/0005-fa77419855e4fd2a4bc6.jpg",
-          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314816/0006-b5b71e9e768aaeed8b4a.jpg"
-        ],
-        "actualPaths": [
-          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314816/0001-29c0ce599156d486b3df.jpg",
-          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314816/0002-7105ae3307c41c3a5bf9.jpg",
-          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314816/0003-353c92deaf35e1ac68f6.jpg",
-          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314816/0004-6e6cdc708f27d32f3b9d.jpg",
-          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314816/0005-fa77419855e4fd2a4bc6.jpg",
-          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314816/0006-b5b71e9e768aaeed8b4a.jpg"
-        ]
-      }
-    },
-    {
-      "id": "listing_100314816_media_order",
-      "status": "PASS",
-      "detail": "Image sort order is contiguous from 0 to 5.",
-      "evidence": {
-        "expectedOrders": [
-          0,
-          1,
-          2,
-          3,
-          4,
-          5
-        ],
-        "actualOrders": [
-          0,
-          1,
-          2,
-          3,
-          4,
-          5
-        ]
-      }
-    },
-    {
-      "id": "listing_100314816_cover",
-      "status": "PASS",
-      "detail": "Exactly one cover image is set at sort order 0.",
-      "evidence": {
-        "coverCount": 1,
-        "coverOrders": [
-          0
-        ]
-      }
-    },
-    {
-      "id": "listing_100314816_media_integrity",
-      "status": "PASS",
-      "detail": "Every rehosted image is publicly reachable and matches its source SHA-256.",
-      "evidence": {
-        "objects": [
-          {
-            "listingNumber": 100314816,
-            "sortOrder": 0,
-            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314816/0001-29c0ce599156d486b3df.jpg",
-            "expectedSha256": "29c0ce599156d486b3dfd198275e2a2a9c98bc74e2f715e9100169066bfda317",
-            "ok": true,
-            "httpStatus": 200,
-            "byteLength": 131440,
-            "actualSha256": "29c0ce599156d486b3dfd198275e2a2a9c98bc74e2f715e9100169066bfda317",
+            "byteLength": 130927,
+            "actualSha256": "c911dfb355f299da7177b1df2fb5afe16c5e276ce8e841e07a6e07e28caf8e2d",
             "sha256Matches": true
           },
           {
-            "listingNumber": 100314816,
-            "sortOrder": 1,
-            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314816/0002-7105ae3307c41c3a5bf9.jpg",
-            "expectedSha256": "7105ae3307c41c3a5bf9f0e07f37123c52cb9a8566ccc630cca3a11ab911cfea",
-            "ok": true,
-            "httpStatus": 200,
-            "byteLength": 109548,
-            "actualSha256": "7105ae3307c41c3a5bf9f0e07f37123c52cb9a8566ccc630cca3a11ab911cfea",
-            "sha256Matches": true
-          },
-          {
-            "listingNumber": 100314816,
-            "sortOrder": 2,
-            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314816/0003-353c92deaf35e1ac68f6.jpg",
-            "expectedSha256": "353c92deaf35e1ac68f63cbc07915ac41e0728eec1ce29f6b5a23c5006e5bfc5",
-            "ok": true,
-            "httpStatus": 200,
-            "byteLength": 121410,
-            "actualSha256": "353c92deaf35e1ac68f63cbc07915ac41e0728eec1ce29f6b5a23c5006e5bfc5",
-            "sha256Matches": true
-          },
-          {
-            "listingNumber": 100314816,
-            "sortOrder": 3,
-            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314816/0004-6e6cdc708f27d32f3b9d.jpg",
-            "expectedSha256": "6e6cdc708f27d32f3b9d93539b0a8643300195e358e3fba554844cfb9ce3d21c",
-            "ok": true,
-            "httpStatus": 200,
-            "byteLength": 116645,
-            "actualSha256": "6e6cdc708f27d32f3b9d93539b0a8643300195e358e3fba554844cfb9ce3d21c",
-            "sha256Matches": true
-          },
-          {
-            "listingNumber": 100314816,
+            "listingNumber": 116565928,
             "sortOrder": 4,
-            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314816/0005-fa77419855e4fd2a4bc6.jpg",
-            "expectedSha256": "fa77419855e4fd2a4bc66ba28a3d56cc43073c3b7ee489711d04064d566c0eec",
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0005-e6a6efaa0b4a345c98d2.jpg",
+            "expectedSha256": "e6a6efaa0b4a345c98d2360fa2a22cba7e2ee84133c4aa50ca7ce5d0ada2392a",
             "ok": true,
             "httpStatus": 200,
-            "byteLength": 125751,
-            "actualSha256": "fa77419855e4fd2a4bc66ba28a3d56cc43073c3b7ee489711d04064d566c0eec",
+            "byteLength": 149818,
+            "actualSha256": "e6a6efaa0b4a345c98d2360fa2a22cba7e2ee84133c4aa50ca7ce5d0ada2392a",
             "sha256Matches": true
           },
           {
-            "listingNumber": 100314816,
+            "listingNumber": 116565928,
             "sortOrder": 5,
-            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314816/0006-b5b71e9e768aaeed8b4a.jpg",
-            "expectedSha256": "b5b71e9e768aaeed8b4ae6ad10dc3a5c6b8239fff0c4b6bd5446b37d3e6a34ee",
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0006-d0daebbfe1514d27cf6c.jpg",
+            "expectedSha256": "d0daebbfe1514d27cf6cd4eac6df67634642cbef0221d52c81491396697ffc67",
             "ok": true,
             "httpStatus": 200,
-            "byteLength": 120896,
-            "actualSha256": "b5b71e9e768aaeed8b4ae6ad10dc3a5c6b8239fff0c4b6bd5446b37d3e6a34ee",
+            "byteLength": 134516,
+            "actualSha256": "d0daebbfe1514d27cf6cd4eac6df67634642cbef0221d52c81491396697ffc67",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 116565928,
+            "sortOrder": 6,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0007-fb00e708fb66d8a60668.jpg",
+            "expectedSha256": "fb00e708fb66d8a60668c71fd34fcd166bec0171b9173beaf1f2a337834c7d8d",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 91770,
+            "actualSha256": "fb00e708fb66d8a60668c71fd34fcd166bec0171b9173beaf1f2a337834c7d8d",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 116565928,
+            "sortOrder": 7,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0008-23145d8a7e158039f104.jpg",
+            "expectedSha256": "23145d8a7e158039f104d277ea128b7da553329df3f28bb1317e0c60e2ea0535",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 113302,
+            "actualSha256": "23145d8a7e158039f104d277ea128b7da553329df3f28bb1317e0c60e2ea0535",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 116565928,
+            "sortOrder": 8,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0009-3a2cbb38d21c6bc573de.jpg",
+            "expectedSha256": "3a2cbb38d21c6bc573dea98ff8701ecd605924020bd6c217dfb3e2ca8c1cb80a",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 185330,
+            "actualSha256": "3a2cbb38d21c6bc573dea98ff8701ecd605924020bd6c217dfb3e2ca8c1cb80a",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 116565928,
+            "sortOrder": 9,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0010-c7f10d3b2c8659c660dc.jpg",
+            "expectedSha256": "c7f10d3b2c8659c660dcf7278a540a34c5c4432dadc4996309fc2d26aa020f0c",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 125692,
+            "actualSha256": "c7f10d3b2c8659c660dcf7278a540a34c5c4432dadc4996309fc2d26aa020f0c",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 116565928,
+            "sortOrder": 10,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0011-4575c334948eb93d6858.jpg",
+            "expectedSha256": "4575c334948eb93d68584f947271c3a37b63ff0149c9af5eb23c3fcf847fc3cd",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 113682,
+            "actualSha256": "4575c334948eb93d68584f947271c3a37b63ff0149c9af5eb23c3fcf847fc3cd",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 116565928,
+            "sortOrder": 11,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0012-8e17424518a9695ed18d.jpg",
+            "expectedSha256": "8e17424518a9695ed18d50bf4dfad92b0e64e202b2109f452c45a5dc0bfbeffc",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 113161,
+            "actualSha256": "8e17424518a9695ed18d50bf4dfad92b0e64e202b2109f452c45a5dc0bfbeffc",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 116565928,
+            "sortOrder": 12,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0013-61b16706fd99a74b4711.jpg",
+            "expectedSha256": "61b16706fd99a74b47114e6f95bd4d78d3f0a045648e91659a4bc1dfaebae442",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 126204,
+            "actualSha256": "61b16706fd99a74b47114e6f95bd4d78d3f0a045648e91659a4bc1dfaebae442",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 116565928,
+            "sortOrder": 13,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0014-dc29247c260b5cae7d34.jpg",
+            "expectedSha256": "dc29247c260b5cae7d34c3e09ca8e29ecda323aeea66ea0c980791183559a74e",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 106141,
+            "actualSha256": "dc29247c260b5cae7d34c3e09ca8e29ecda323aeea66ea0c980791183559a74e",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 116565928,
+            "sortOrder": 14,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0015-7a3f93989f58e1cda779.jpg",
+            "expectedSha256": "7a3f93989f58e1cda779cef090408de972608e15b1c60fdf6b331ad15ad303b5",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 92349,
+            "actualSha256": "7a3f93989f58e1cda779cef090408de972608e15b1c60fdf6b331ad15ad303b5",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 116565928,
+            "sortOrder": 15,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0016-25141694fb251c61cf74.jpg",
+            "expectedSha256": "25141694fb251c61cf74137a0b8ba413533940d96b6a0564ea79998e9c63968d",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 125610,
+            "actualSha256": "25141694fb251c61cf74137a0b8ba413533940d96b6a0564ea79998e9c63968d",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 116565928,
+            "sortOrder": 16,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0017-369f00f7114f711fd3b1.jpg",
+            "expectedSha256": "369f00f7114f711fd3b10d8981df51a9ece43b4c9044bb0dc19a8d88f83fdd3e",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 137294,
+            "actualSha256": "369f00f7114f711fd3b10d8981df51a9ece43b4c9044bb0dc19a8d88f83fdd3e",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 116565928,
+            "sortOrder": 17,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0018-e68ac1e061f5c20ba520.jpg",
+            "expectedSha256": "e68ac1e061f5c20ba5206c21f882e2b434906a86eb73f79a26192480918ce81b",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 96457,
+            "actualSha256": "e68ac1e061f5c20ba5206c21f882e2b434906a86eb73f79a26192480918ce81b",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 116565928,
+            "sortOrder": 18,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0019-12f9fa84f65c13f1a649.jpg",
+            "expectedSha256": "12f9fa84f65c13f1a649f5bca9928352282f2afc959a5943ca155a09d79aad19",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 105682,
+            "actualSha256": "12f9fa84f65c13f1a649f5bca9928352282f2afc959a5943ca155a09d79aad19",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 116565928,
+            "sortOrder": 19,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0020-13ffce8bc780877d5a44.jpg",
+            "expectedSha256": "13ffce8bc780877d5a44253aeb25b7c21bd626890e5227f9dd8573a077bae477",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 139421,
+            "actualSha256": "13ffce8bc780877d5a44253aeb25b7c21bd626890e5227f9dd8573a077bae477",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 116565928,
+            "sortOrder": 20,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0021-4564bceb082a57988914.jpg",
+            "expectedSha256": "4564bceb082a579889145210b0deb1aa03bc7f355c17eda82eab8e89ccdf7aaa",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 98134,
+            "actualSha256": "4564bceb082a579889145210b0deb1aa03bc7f355c17eda82eab8e89ccdf7aaa",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 116565928,
+            "sortOrder": 21,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0022-cee77df54b7b69320c9f.jpg",
+            "expectedSha256": "cee77df54b7b69320c9fbed8fa5b0e5f1cdedb5493643d7761d3124eddf1800a",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 135461,
+            "actualSha256": "cee77df54b7b69320c9fbed8fa5b0e5f1cdedb5493643d7761d3124eddf1800a",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 116565928,
+            "sortOrder": 22,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0023-e87da0b65dc018598f99.jpg",
+            "expectedSha256": "e87da0b65dc018598f99fc36c7d2701237b91ff9a3f1d0f828a134eb4eb1780c",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 139379,
+            "actualSha256": "e87da0b65dc018598f99fc36c7d2701237b91ff9a3f1d0f828a134eb4eb1780c",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 116565928,
+            "sortOrder": 23,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0024-352968f34f81eec437c2.jpg",
+            "expectedSha256": "352968f34f81eec437c25f9be1a675c92104fc9aee2ef7770a9fa2db5ab9915e",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 108918,
+            "actualSha256": "352968f34f81eec437c25f9be1a675c92104fc9aee2ef7770a9fa2db5ab9915e",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 116565928,
+            "sortOrder": 24,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0025-308412f24e1bddd7c6ec.jpg",
+            "expectedSha256": "308412f24e1bddd7c6ec99195e628867119ff4c12a3fff56e0deeffb03993da6",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 135770,
+            "actualSha256": "308412f24e1bddd7c6ec99195e628867119ff4c12a3fff56e0deeffb03993da6",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 116565928,
+            "sortOrder": 25,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0026-dcd20b3374750873044d.jpg",
+            "expectedSha256": "dcd20b3374750873044d999e1a25f546be4d0264bed8ea01eb771cf115bf9e41",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 380082,
+            "actualSha256": "dcd20b3374750873044d999e1a25f546be4d0264bed8ea01eb771cf115bf9e41",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 116565928,
+            "sortOrder": 26,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0027-76fc1484dd44083deaa5.jpg",
+            "expectedSha256": "76fc1484dd44083deaa55d185c5d3bce81e120d2ea10751fcf7d2773728a424e",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 316713,
+            "actualSha256": "76fc1484dd44083deaa55d185c5d3bce81e120d2ea10751fcf7d2773728a424e",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 116565928,
+            "sortOrder": 27,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0028-c7d696373024d6bd78cf.jpg",
+            "expectedSha256": "c7d696373024d6bd78cf2489c414cfa27a5d9abb4201745c3d036a49245ae3c9",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 365424,
+            "actualSha256": "c7d696373024d6bd78cf2489c414cfa27a5d9abb4201745c3d036a49245ae3c9",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 116565928,
+            "sortOrder": 28,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0029-e2bebef99b8e91489549.jpg",
+            "expectedSha256": "e2bebef99b8e914895494ead063f7e748586a5b02248095bc5f9c6dd06058927",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 375664,
+            "actualSha256": "e2bebef99b8e914895494ead063f7e748586a5b02248095bc5f9c6dd06058927",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 116565928,
+            "sortOrder": 29,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0030-bad89b9c7b28fdb17e4c.jpg",
+            "expectedSha256": "bad89b9c7b28fdb17e4cba2a6a8fee265ddcbc88c6b658323da54eda4a84183e",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 297346,
+            "actualSha256": "bad89b9c7b28fdb17e4cba2a6a8fee265ddcbc88c6b658323da54eda4a84183e",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 116565928,
+            "sortOrder": 30,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0031-b7894c423c336361925d.jpg",
+            "expectedSha256": "b7894c423c336361925d07c188ae3f00ae88d1b2154574493b9caf05ecbe49b3",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 388452,
+            "actualSha256": "b7894c423c336361925d07c188ae3f00ae88d1b2154574493b9caf05ecbe49b3",
             "sha256Matches": true
           }
         ]
       }
     },
     {
-      "id": "listing_100314819_unique",
+      "id": "listing_116687298_unique",
       "status": "PASS",
-      "detail": "Listing 100314819 resolves to exactly one Arch9 listing.",
+      "detail": "Listing 116687298 resolves to exactly one Arch9 listing.",
       "evidence": {
         "listingIds": [
-          "3e8f6b1a-b0db-5075-b4b1-d1b32c18d8d3"
+          "9956ba32-3b43-55ac-8437-8a4415a5d732"
         ]
       }
     },
     {
-      "id": "listing_100314819_sync_unique",
+      "id": "listing_116687298_sync_unique",
       "status": "PASS",
-      "detail": "Listing 100314819 has exactly one Property24 sync row.",
+      "detail": "Listing 116687298 has exactly one Property24 sync row.",
       "evidence": {
         "syncRowIds": [
-          "54b2480d-d173-4635-bdc1-b684c7ae31de"
+          "9193609c-adef-4432-8e6f-ed69dee20852"
         ]
       }
     },
     {
-      "id": "listing_100314819_publication_unique",
+      "id": "listing_116687298_publication_unique",
       "status": "PASS",
-      "detail": "Listing 100314819 has exactly one publication row.",
+      "detail": "Listing 116687298 has exactly one publication row.",
       "evidence": {
         "publicationRowIds": [
-          "0034ad99-8f24-45ab-9d87-bcef29cd7ca4"
+          "8814f0fe-dd67-4591-964f-a0fc43a27db1"
         ]
       }
     },
     {
-      "id": "listing_100314819_rerun_identity",
+      "id": "listing_116687298_rerun_identity",
       "status": "PASS",
-      "detail": "Listing 100314819 retained Arch9 ID 3e8f6b1a-b0db-5075-b4b1-d1b32c18d8d3 during the rerun.",
+      "detail": "Listing 116687298 retained Arch9 ID 9956ba32-3b43-55ac-8437-8a4415a5d732 during the rerun.",
       "evidence": {
-        "expectedListingId": "3e8f6b1a-b0db-5075-b4b1-d1b32c18d8d3",
-        "actualListingId": "3e8f6b1a-b0db-5075-b4b1-d1b32c18d8d3"
+        "expectedListingId": "9956ba32-3b43-55ac-8437-8a4415a5d732",
+        "actualListingId": "9956ba32-3b43-55ac-8437-8a4415a5d732"
       }
     },
     {
-      "id": "listing_100314819_status",
+      "id": "listing_116687298_status",
       "status": "PASS",
-      "detail": "Arch9 listing state matches Property24 Rented.",
+      "detail": "Arch9 listing state matches Property24 Withdrawn.",
       "evidence": {
         "expected": {
           "listingStatus": "withdrawn",
@@ -836,7 +1052,7 @@
       }
     },
     {
-      "id": "listing_100314819_publication",
+      "id": "listing_116687298_publication",
       "status": "PASS",
       "detail": "Publication state is Archived.",
       "evidence": {
@@ -845,69 +1061,185 @@
       }
     },
     {
-      "id": "listing_100314819_sync",
+      "id": "listing_116687298_sync",
       "status": "PASS",
-      "detail": "Property24 sync row records Rented and portal=false.",
+      "detail": "Property24 sync row records Withdrawn and portal=false.",
       "evidence": {
         "expected": {
           "externalStatus": "removed",
           "isOnPortal": false,
-          "currentStatus": "Rented"
+          "currentStatus": "Withdrawn"
         },
         "actual": {
           "externalStatus": "removed",
           "isOnPortal": false,
-          "currentStatus": "Rented"
+          "currentStatus": "Withdrawn"
         }
       }
     },
     {
-      "id": "listing_100314819_canonical_status",
+      "id": "listing_116687298_canonical_status",
       "status": "PASS",
       "detail": "Canonical import metadata preserves the current Property24 semantic status.",
       "evidence": {
         "expected": {
-          "sourceStatus": "Rented",
-          "semanticStatus": "rented"
+          "sourceStatus": "Withdrawn",
+          "semanticStatus": "withdrawn"
         },
         "actual": {
-          "sourceStatus": "Rented",
-          "semanticStatus": "rented"
+          "sourceStatus": "Withdrawn",
+          "semanticStatus": "withdrawn"
         }
       }
     },
     {
-      "id": "listing_100314819_media_exact_set",
+      "id": "listing_116687298_media_exact_set",
       "status": "PASS",
-      "detail": "Exactly 2 canonical images are attached with no duplicates.",
+      "detail": "Exactly 31 canonical images are attached with no duplicates.",
       "evidence": {
         "expectedPaths": [
-          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314819/0001-ed60cfebbdcec2c26d81.jpg",
-          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314819/0002-17ba4d87398a849e1777.jpg"
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0001-c911dfb355f299da7177.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0002-5e545156182e02a8a738.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0003-e6a6efaa0b4a345c98d2.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0004-c3f29f069fd0bd8e3a74.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0005-d0daebbfe1514d27cf6c.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0006-fb00e708fb66d8a60668.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0007-4be25ee0c696b4631e36.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0008-23145d8a7e158039f104.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0009-4575c334948eb93d6858.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0010-dc29247c260b5cae7d34.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0011-61b16706fd99a74b4711.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0012-8e17424518a9695ed18d.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0013-7a3f93989f58e1cda779.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0014-e68ac1e061f5c20ba520.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0015-12f9fa84f65c13f1a649.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0016-13ffce8bc780877d5a44.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0017-4564bceb082a57988914.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0018-cee77df54b7b69320c9f.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0019-e87da0b65dc018598f99.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0020-308412f24e1bddd7c6ec.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0021-c7f10d3b2c8659c660dc.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0022-3a2cbb38d21c6bc573de.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0023-25141694fb251c61cf74.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0024-369f00f7114f711fd3b1.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0025-352968f34f81eec437c2.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0026-4eab6ef331be62a13ab1.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0027-b49d7ff78f07c46a3976.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0028-f03937e3efa2b9812431.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0029-59b0f59dbd2ac6c1d31e.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0030-bad89b9c7b28fdb17e4c.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0031-49c8ac2bb5f55bab0a66.jpg"
         ],
         "actualPaths": [
-          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314819/0001-ed60cfebbdcec2c26d81.jpg",
-          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314819/0002-17ba4d87398a849e1777.jpg"
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0001-c911dfb355f299da7177.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0002-5e545156182e02a8a738.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0003-e6a6efaa0b4a345c98d2.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0004-c3f29f069fd0bd8e3a74.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0005-d0daebbfe1514d27cf6c.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0006-fb00e708fb66d8a60668.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0007-4be25ee0c696b4631e36.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0008-23145d8a7e158039f104.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0009-4575c334948eb93d6858.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0010-dc29247c260b5cae7d34.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0011-61b16706fd99a74b4711.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0012-8e17424518a9695ed18d.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0013-7a3f93989f58e1cda779.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0014-e68ac1e061f5c20ba520.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0015-12f9fa84f65c13f1a649.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0016-13ffce8bc780877d5a44.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0017-4564bceb082a57988914.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0018-cee77df54b7b69320c9f.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0019-e87da0b65dc018598f99.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0020-308412f24e1bddd7c6ec.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0021-c7f10d3b2c8659c660dc.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0022-3a2cbb38d21c6bc573de.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0023-25141694fb251c61cf74.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0024-369f00f7114f711fd3b1.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0025-352968f34f81eec437c2.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0026-4eab6ef331be62a13ab1.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0027-b49d7ff78f07c46a3976.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0028-f03937e3efa2b9812431.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0029-59b0f59dbd2ac6c1d31e.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0030-bad89b9c7b28fdb17e4c.jpg",
+          "organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0031-49c8ac2bb5f55bab0a66.jpg"
         ]
       }
     },
     {
-      "id": "listing_100314819_media_order",
+      "id": "listing_116687298_media_order",
       "status": "PASS",
-      "detail": "Image sort order is contiguous from 0 to 1.",
+      "detail": "Image sort order is contiguous from 0 to 30.",
       "evidence": {
         "expectedOrders": [
           0,
-          1
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30
         ],
         "actualOrders": [
           0,
-          1
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30
         ]
       }
     },
     {
-      "id": "listing_100314819_cover",
+      "id": "listing_116687298_cover",
       "status": "PASS",
       "detail": "Exactly one cover image is set at sort order 0.",
       "evidence": {
@@ -918,202 +1250,350 @@
       }
     },
     {
-      "id": "listing_100314819_media_integrity",
+      "id": "listing_116687298_media_integrity",
       "status": "PASS",
       "detail": "Every rehosted image is publicly reachable and matches its source SHA-256.",
       "evidence": {
         "objects": [
           {
-            "listingNumber": 100314819,
+            "listingNumber": 116687298,
             "sortOrder": 0,
-            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314819/0001-ed60cfebbdcec2c26d81.jpg",
-            "expectedSha256": "ed60cfebbdcec2c26d81e746f7bba3860ff9d69bd25cf846e9e41e362c903b20",
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0001-c911dfb355f299da7177.jpg",
+            "expectedSha256": "c911dfb355f299da7177b1df2fb5afe16c5e276ce8e841e07a6e07e28caf8e2d",
             "ok": true,
             "httpStatus": 200,
-            "byteLength": 160233,
-            "actualSha256": "ed60cfebbdcec2c26d81e746f7bba3860ff9d69bd25cf846e9e41e362c903b20",
+            "byteLength": 130927,
+            "actualSha256": "c911dfb355f299da7177b1df2fb5afe16c5e276ce8e841e07a6e07e28caf8e2d",
             "sha256Matches": true
           },
           {
-            "listingNumber": 100314819,
+            "listingNumber": 116687298,
             "sortOrder": 1,
-            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314819/0002-17ba4d87398a849e1777.jpg",
-            "expectedSha256": "17ba4d87398a849e1777dd04fb37579fad2980d84e89b1ab0811d815e4c09636",
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0002-5e545156182e02a8a738.jpg",
+            "expectedSha256": "5e545156182e02a8a738010fe6adb357f024eeec559cbfe53553af2de53f3c03",
             "ok": true,
             "httpStatus": 200,
-            "byteLength": 165776,
-            "actualSha256": "17ba4d87398a849e1777dd04fb37579fad2980d84e89b1ab0811d815e4c09636",
-            "sha256Matches": true
-          }
-        ]
-      }
-    },
-    {
-      "id": "listing_100314820_unique",
-      "status": "PASS",
-      "detail": "Listing 100314820 resolves to exactly one Arch9 listing.",
-      "evidence": {
-        "listingIds": [
-          "2b54543c-ecb1-580f-b665-1f5df86caf34"
-        ]
-      }
-    },
-    {
-      "id": "listing_100314820_sync_unique",
-      "status": "PASS",
-      "detail": "Listing 100314820 has exactly one Property24 sync row.",
-      "evidence": {
-        "syncRowIds": [
-          "44935c7c-cab1-432d-993e-8e17b37a314c"
-        ]
-      }
-    },
-    {
-      "id": "listing_100314820_publication_unique",
-      "status": "PASS",
-      "detail": "Listing 100314820 has exactly one publication row.",
-      "evidence": {
-        "publicationRowIds": [
-          "a31890d5-cab8-44df-956f-160e89af3647"
-        ]
-      }
-    },
-    {
-      "id": "listing_100314820_rerun_identity",
-      "status": "PASS",
-      "detail": "Listing 100314820 retained Arch9 ID 2b54543c-ecb1-580f-b665-1f5df86caf34 during the rerun.",
-      "evidence": {
-        "expectedListingId": "2b54543c-ecb1-580f-b665-1f5df86caf34",
-        "actualListingId": "2b54543c-ecb1-580f-b665-1f5df86caf34"
-      }
-    },
-    {
-      "id": "listing_100314820_status",
-      "status": "PASS",
-      "detail": "Arch9 listing state matches Property24 Sold.",
-      "evidence": {
-        "expected": {
-          "listingStatus": "sold",
-          "listingVisibility": "archived",
-          "isActive": false,
-          "property24Status": "removed"
-        },
-        "actual": {
-          "listingStatus": "sold",
-          "listingVisibility": "archived",
-          "isActive": false,
-          "property24Status": "removed"
-        }
-      }
-    },
-    {
-      "id": "listing_100314820_publication",
-      "status": "PASS",
-      "detail": "Publication state is Archived.",
-      "evidence": {
-        "expected": "Archived",
-        "actual": "Archived"
-      }
-    },
-    {
-      "id": "listing_100314820_sync",
-      "status": "PASS",
-      "detail": "Property24 sync row records Sold and portal=false.",
-      "evidence": {
-        "expected": {
-          "externalStatus": "removed",
-          "isOnPortal": false,
-          "currentStatus": "Sold"
-        },
-        "actual": {
-          "externalStatus": "removed",
-          "isOnPortal": false,
-          "currentStatus": "Sold"
-        }
-      }
-    },
-    {
-      "id": "listing_100314820_canonical_status",
-      "status": "PASS",
-      "detail": "Canonical import metadata preserves the current Property24 semantic status.",
-      "evidence": {
-        "expected": {
-          "sourceStatus": "Sold",
-          "semanticStatus": "sold"
-        },
-        "actual": {
-          "sourceStatus": "Sold",
-          "semanticStatus": "sold"
-        }
-      }
-    },
-    {
-      "id": "listing_100314820_media_exact_set",
-      "status": "PASS",
-      "detail": "Exactly 2 canonical images are attached with no duplicates.",
-      "evidence": {
-        "expectedPaths": [
-          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314820/0001-51e28b786635ce3728d9.jpg",
-          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314820/0002-e4a046d8800662869042.jpg"
-        ],
-        "actualPaths": [
-          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314820/0001-51e28b786635ce3728d9.jpg",
-          "organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314820/0002-e4a046d8800662869042.jpg"
-        ]
-      }
-    },
-    {
-      "id": "listing_100314820_media_order",
-      "status": "PASS",
-      "detail": "Image sort order is contiguous from 0 to 1.",
-      "evidence": {
-        "expectedOrders": [
-          0,
-          1
-        ],
-        "actualOrders": [
-          0,
-          1
-        ]
-      }
-    },
-    {
-      "id": "listing_100314820_cover",
-      "status": "PASS",
-      "detail": "Exactly one cover image is set at sort order 0.",
-      "evidence": {
-        "coverCount": 1,
-        "coverOrders": [
-          0
-        ]
-      }
-    },
-    {
-      "id": "listing_100314820_media_integrity",
-      "status": "PASS",
-      "detail": "Every rehosted image is publicly reachable and matches its source SHA-256.",
-      "evidence": {
-        "objects": [
-          {
-            "listingNumber": 100314820,
-            "sortOrder": 0,
-            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314820/0001-51e28b786635ce3728d9.jpg",
-            "expectedSha256": "51e28b786635ce3728d9e139bbdb142ce23d73dab944e09d1c3a36a85f9a914f",
-            "ok": true,
-            "httpStatus": 200,
-            "byteLength": 376819,
-            "actualSha256": "51e28b786635ce3728d9e139bbdb142ce23d73dab944e09d1c3a36a85f9a914f",
+            "byteLength": 138263,
+            "actualSha256": "5e545156182e02a8a738010fe6adb357f024eeec559cbfe53553af2de53f3c03",
             "sha256Matches": true
           },
           {
-            "listingNumber": 100314820,
-            "sortOrder": 1,
-            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314820/0002-e4a046d8800662869042.jpg",
-            "expectedSha256": "e4a046d8800662869042aeec91b9e3614600dc6e556ce67e4d3c752bb40113be",
+            "listingNumber": 116687298,
+            "sortOrder": 2,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0003-e6a6efaa0b4a345c98d2.jpg",
+            "expectedSha256": "e6a6efaa0b4a345c98d2360fa2a22cba7e2ee84133c4aa50ca7ce5d0ada2392a",
             "ok": true,
             "httpStatus": 200,
-            "byteLength": 201452,
-            "actualSha256": "e4a046d8800662869042aeec91b9e3614600dc6e556ce67e4d3c752bb40113be",
+            "byteLength": 149818,
+            "actualSha256": "e6a6efaa0b4a345c98d2360fa2a22cba7e2ee84133c4aa50ca7ce5d0ada2392a",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 116687298,
+            "sortOrder": 3,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0004-c3f29f069fd0bd8e3a74.jpg",
+            "expectedSha256": "c3f29f069fd0bd8e3a74b0fc907c00042ef6de6855ef75c7eeb41d7cdeaa48cb",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 143589,
+            "actualSha256": "c3f29f069fd0bd8e3a74b0fc907c00042ef6de6855ef75c7eeb41d7cdeaa48cb",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 116687298,
+            "sortOrder": 4,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0005-d0daebbfe1514d27cf6c.jpg",
+            "expectedSha256": "d0daebbfe1514d27cf6cd4eac6df67634642cbef0221d52c81491396697ffc67",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 134516,
+            "actualSha256": "d0daebbfe1514d27cf6cd4eac6df67634642cbef0221d52c81491396697ffc67",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 116687298,
+            "sortOrder": 5,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0006-fb00e708fb66d8a60668.jpg",
+            "expectedSha256": "fb00e708fb66d8a60668c71fd34fcd166bec0171b9173beaf1f2a337834c7d8d",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 91770,
+            "actualSha256": "fb00e708fb66d8a60668c71fd34fcd166bec0171b9173beaf1f2a337834c7d8d",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 116687298,
+            "sortOrder": 6,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0007-4be25ee0c696b4631e36.jpg",
+            "expectedSha256": "4be25ee0c696b4631e360148df966b01b8953597231688bac9b7662311e76285",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 123211,
+            "actualSha256": "4be25ee0c696b4631e360148df966b01b8953597231688bac9b7662311e76285",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 116687298,
+            "sortOrder": 7,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0008-23145d8a7e158039f104.jpg",
+            "expectedSha256": "23145d8a7e158039f104d277ea128b7da553329df3f28bb1317e0c60e2ea0535",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 113302,
+            "actualSha256": "23145d8a7e158039f104d277ea128b7da553329df3f28bb1317e0c60e2ea0535",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 116687298,
+            "sortOrder": 8,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0009-4575c334948eb93d6858.jpg",
+            "expectedSha256": "4575c334948eb93d68584f947271c3a37b63ff0149c9af5eb23c3fcf847fc3cd",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 113682,
+            "actualSha256": "4575c334948eb93d68584f947271c3a37b63ff0149c9af5eb23c3fcf847fc3cd",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 116687298,
+            "sortOrder": 9,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0010-dc29247c260b5cae7d34.jpg",
+            "expectedSha256": "dc29247c260b5cae7d34c3e09ca8e29ecda323aeea66ea0c980791183559a74e",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 106141,
+            "actualSha256": "dc29247c260b5cae7d34c3e09ca8e29ecda323aeea66ea0c980791183559a74e",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 116687298,
+            "sortOrder": 10,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0011-61b16706fd99a74b4711.jpg",
+            "expectedSha256": "61b16706fd99a74b47114e6f95bd4d78d3f0a045648e91659a4bc1dfaebae442",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 126204,
+            "actualSha256": "61b16706fd99a74b47114e6f95bd4d78d3f0a045648e91659a4bc1dfaebae442",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 116687298,
+            "sortOrder": 11,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0012-8e17424518a9695ed18d.jpg",
+            "expectedSha256": "8e17424518a9695ed18d50bf4dfad92b0e64e202b2109f452c45a5dc0bfbeffc",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 113161,
+            "actualSha256": "8e17424518a9695ed18d50bf4dfad92b0e64e202b2109f452c45a5dc0bfbeffc",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 116687298,
+            "sortOrder": 12,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0013-7a3f93989f58e1cda779.jpg",
+            "expectedSha256": "7a3f93989f58e1cda779cef090408de972608e15b1c60fdf6b331ad15ad303b5",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 92349,
+            "actualSha256": "7a3f93989f58e1cda779cef090408de972608e15b1c60fdf6b331ad15ad303b5",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 116687298,
+            "sortOrder": 13,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0014-e68ac1e061f5c20ba520.jpg",
+            "expectedSha256": "e68ac1e061f5c20ba5206c21f882e2b434906a86eb73f79a26192480918ce81b",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 96457,
+            "actualSha256": "e68ac1e061f5c20ba5206c21f882e2b434906a86eb73f79a26192480918ce81b",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 116687298,
+            "sortOrder": 14,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0015-12f9fa84f65c13f1a649.jpg",
+            "expectedSha256": "12f9fa84f65c13f1a649f5bca9928352282f2afc959a5943ca155a09d79aad19",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 105682,
+            "actualSha256": "12f9fa84f65c13f1a649f5bca9928352282f2afc959a5943ca155a09d79aad19",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 116687298,
+            "sortOrder": 15,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0016-13ffce8bc780877d5a44.jpg",
+            "expectedSha256": "13ffce8bc780877d5a44253aeb25b7c21bd626890e5227f9dd8573a077bae477",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 139421,
+            "actualSha256": "13ffce8bc780877d5a44253aeb25b7c21bd626890e5227f9dd8573a077bae477",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 116687298,
+            "sortOrder": 16,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0017-4564bceb082a57988914.jpg",
+            "expectedSha256": "4564bceb082a579889145210b0deb1aa03bc7f355c17eda82eab8e89ccdf7aaa",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 98134,
+            "actualSha256": "4564bceb082a579889145210b0deb1aa03bc7f355c17eda82eab8e89ccdf7aaa",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 116687298,
+            "sortOrder": 17,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0018-cee77df54b7b69320c9f.jpg",
+            "expectedSha256": "cee77df54b7b69320c9fbed8fa5b0e5f1cdedb5493643d7761d3124eddf1800a",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 135461,
+            "actualSha256": "cee77df54b7b69320c9fbed8fa5b0e5f1cdedb5493643d7761d3124eddf1800a",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 116687298,
+            "sortOrder": 18,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0019-e87da0b65dc018598f99.jpg",
+            "expectedSha256": "e87da0b65dc018598f99fc36c7d2701237b91ff9a3f1d0f828a134eb4eb1780c",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 139379,
+            "actualSha256": "e87da0b65dc018598f99fc36c7d2701237b91ff9a3f1d0f828a134eb4eb1780c",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 116687298,
+            "sortOrder": 19,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0020-308412f24e1bddd7c6ec.jpg",
+            "expectedSha256": "308412f24e1bddd7c6ec99195e628867119ff4c12a3fff56e0deeffb03993da6",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 135770,
+            "actualSha256": "308412f24e1bddd7c6ec99195e628867119ff4c12a3fff56e0deeffb03993da6",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 116687298,
+            "sortOrder": 20,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0021-c7f10d3b2c8659c660dc.jpg",
+            "expectedSha256": "c7f10d3b2c8659c660dcf7278a540a34c5c4432dadc4996309fc2d26aa020f0c",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 125692,
+            "actualSha256": "c7f10d3b2c8659c660dcf7278a540a34c5c4432dadc4996309fc2d26aa020f0c",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 116687298,
+            "sortOrder": 21,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0022-3a2cbb38d21c6bc573de.jpg",
+            "expectedSha256": "3a2cbb38d21c6bc573dea98ff8701ecd605924020bd6c217dfb3e2ca8c1cb80a",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 185330,
+            "actualSha256": "3a2cbb38d21c6bc573dea98ff8701ecd605924020bd6c217dfb3e2ca8c1cb80a",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 116687298,
+            "sortOrder": 22,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0023-25141694fb251c61cf74.jpg",
+            "expectedSha256": "25141694fb251c61cf74137a0b8ba413533940d96b6a0564ea79998e9c63968d",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 125610,
+            "actualSha256": "25141694fb251c61cf74137a0b8ba413533940d96b6a0564ea79998e9c63968d",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 116687298,
+            "sortOrder": 23,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0024-369f00f7114f711fd3b1.jpg",
+            "expectedSha256": "369f00f7114f711fd3b10d8981df51a9ece43b4c9044bb0dc19a8d88f83fdd3e",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 137294,
+            "actualSha256": "369f00f7114f711fd3b10d8981df51a9ece43b4c9044bb0dc19a8d88f83fdd3e",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 116687298,
+            "sortOrder": 24,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0025-352968f34f81eec437c2.jpg",
+            "expectedSha256": "352968f34f81eec437c25f9be1a675c92104fc9aee2ef7770a9fa2db5ab9915e",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 108918,
+            "actualSha256": "352968f34f81eec437c25f9be1a675c92104fc9aee2ef7770a9fa2db5ab9915e",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 116687298,
+            "sortOrder": 25,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0026-4eab6ef331be62a13ab1.jpg",
+            "expectedSha256": "4eab6ef331be62a13ab11bef34cfb6f29e774212723ae8bc7567d82e039ed7ec",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 293280,
+            "actualSha256": "4eab6ef331be62a13ab11bef34cfb6f29e774212723ae8bc7567d82e039ed7ec",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 116687298,
+            "sortOrder": 26,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0027-b49d7ff78f07c46a3976.jpg",
+            "expectedSha256": "b49d7ff78f07c46a3976b9dc2fbe4fe747c6957a56b582215dfe4a8a65dfac21",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 351474,
+            "actualSha256": "b49d7ff78f07c46a3976b9dc2fbe4fe747c6957a56b582215dfe4a8a65dfac21",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 116687298,
+            "sortOrder": 27,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0028-f03937e3efa2b9812431.jpg",
+            "expectedSha256": "f03937e3efa2b981243119c0d3da8e57ff2e0b4c7ec96872aa51ffd8a27c1d69",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 392732,
+            "actualSha256": "f03937e3efa2b981243119c0d3da8e57ff2e0b4c7ec96872aa51ffd8a27c1d69",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 116687298,
+            "sortOrder": 28,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0029-59b0f59dbd2ac6c1d31e.jpg",
+            "expectedSha256": "59b0f59dbd2ac6c1d31e3bfaee6c25446479cd21528f8fa147bfef8e275bf7f7",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 253642,
+            "actualSha256": "59b0f59dbd2ac6c1d31e3bfaee6c25446479cd21528f8fa147bfef8e275bf7f7",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 116687298,
+            "sortOrder": 29,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0030-bad89b9c7b28fdb17e4c.jpg",
+            "expectedSha256": "bad89b9c7b28fdb17e4cba2a6a8fee265ddcbc88c6b658323da54eda4a84183e",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 297346,
+            "actualSha256": "bad89b9c7b28fdb17e4cba2a6a8fee265ddcbc88c6b658323da54eda4a84183e",
+            "sha256Matches": true
+          },
+          {
+            "listingNumber": 116687298,
+            "sortOrder": 30,
+            "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0031-49c8ac2bb5f55bab0a66.jpg",
+            "expectedSha256": "49c8ac2bb5f55bab0a66c7de524de32826c8bcc8c9cb9709ae61e47ab74a6411",
+            "ok": true,
+            "httpStatus": 200,
+            "byteLength": 387778,
+            "actualSha256": "49c8ac2bb5f55bab0a66c7de524de32826c8bcc8c9cb9709ae61e47ab74a6411",
             "sha256Matches": true
           }
         ]
@@ -1123,157 +1603,696 @@
   "failures": [],
   "storageResults": [
     {
-      "listingNumber": 100314793,
+      "listingNumber": 116560913,
       "sortOrder": 0,
-      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314793/0001-9bd2673ce584bb5f27f0.jpg",
-      "expectedSha256": "9bd2673ce584bb5f27f052a057b980e3f6af3489d60d10b0e5e45c7779bd22c4",
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116560913/0001-c911dfb355f299da7177.jpg",
+      "expectedSha256": "c911dfb355f299da7177b1df2fb5afe16c5e276ce8e841e07a6e07e28caf8e2d",
       "ok": true,
       "httpStatus": 200,
-      "byteLength": 129436,
-      "actualSha256": "9bd2673ce584bb5f27f052a057b980e3f6af3489d60d10b0e5e45c7779bd22c4",
+      "byteLength": 130927,
+      "actualSha256": "c911dfb355f299da7177b1df2fb5afe16c5e276ce8e841e07a6e07e28caf8e2d",
       "sha256Matches": true
     },
     {
-      "listingNumber": 100314793,
-      "sortOrder": 1,
-      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314793/0002-67fe9f833f89e3e6054f.jpg",
-      "expectedSha256": "67fe9f833f89e3e6054f74bc4f7e8c5fa83c2e6001b46c056aed16fdaf9405d2",
-      "ok": true,
-      "httpStatus": 200,
-      "byteLength": 107807,
-      "actualSha256": "67fe9f833f89e3e6054f74bc4f7e8c5fa83c2e6001b46c056aed16fdaf9405d2",
-      "sha256Matches": true
-    },
-    {
-      "listingNumber": 100314793,
-      "sortOrder": 2,
-      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314793/0003-69f119ed30dd0905686f.jpg",
-      "expectedSha256": "69f119ed30dd0905686f88afae94f795c3f12d6de7dc4a255bee43389967421e",
-      "ok": true,
-      "httpStatus": 200,
-      "byteLength": 120151,
-      "actualSha256": "69f119ed30dd0905686f88afae94f795c3f12d6de7dc4a255bee43389967421e",
-      "sha256Matches": true
-    },
-    {
-      "listingNumber": 100314793,
-      "sortOrder": 3,
-      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314793/0004-9da36d02905af51e18f7.jpg",
-      "expectedSha256": "9da36d02905af51e18f70d64073c3af0ad6f92bd3a5b233c2253575bb39f85e1",
-      "ok": true,
-      "httpStatus": 200,
-      "byteLength": 114965,
-      "actualSha256": "9da36d02905af51e18f70d64073c3af0ad6f92bd3a5b233c2253575bb39f85e1",
-      "sha256Matches": true
-    },
-    {
-      "listingNumber": 100314816,
+      "listingNumber": 116565928,
       "sortOrder": 0,
-      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314816/0001-29c0ce599156d486b3df.jpg",
-      "expectedSha256": "29c0ce599156d486b3dfd198275e2a2a9c98bc74e2f715e9100169066bfda317",
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0001-5e545156182e02a8a738.jpg",
+      "expectedSha256": "5e545156182e02a8a738010fe6adb357f024eeec559cbfe53553af2de53f3c03",
       "ok": true,
       "httpStatus": 200,
-      "byteLength": 131440,
-      "actualSha256": "29c0ce599156d486b3dfd198275e2a2a9c98bc74e2f715e9100169066bfda317",
+      "byteLength": 138263,
+      "actualSha256": "5e545156182e02a8a738010fe6adb357f024eeec559cbfe53553af2de53f3c03",
       "sha256Matches": true
     },
     {
-      "listingNumber": 100314816,
+      "listingNumber": 116565928,
       "sortOrder": 1,
-      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314816/0002-7105ae3307c41c3a5bf9.jpg",
-      "expectedSha256": "7105ae3307c41c3a5bf9f0e07f37123c52cb9a8566ccc630cca3a11ab911cfea",
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0002-c3f29f069fd0bd8e3a74.jpg",
+      "expectedSha256": "c3f29f069fd0bd8e3a74b0fc907c00042ef6de6855ef75c7eeb41d7cdeaa48cb",
       "ok": true,
       "httpStatus": 200,
-      "byteLength": 109548,
-      "actualSha256": "7105ae3307c41c3a5bf9f0e07f37123c52cb9a8566ccc630cca3a11ab911cfea",
+      "byteLength": 143589,
+      "actualSha256": "c3f29f069fd0bd8e3a74b0fc907c00042ef6de6855ef75c7eeb41d7cdeaa48cb",
       "sha256Matches": true
     },
     {
-      "listingNumber": 100314816,
+      "listingNumber": 116565928,
       "sortOrder": 2,
-      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314816/0003-353c92deaf35e1ac68f6.jpg",
-      "expectedSha256": "353c92deaf35e1ac68f63cbc07915ac41e0728eec1ce29f6b5a23c5006e5bfc5",
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0003-4be25ee0c696b4631e36.jpg",
+      "expectedSha256": "4be25ee0c696b4631e360148df966b01b8953597231688bac9b7662311e76285",
       "ok": true,
       "httpStatus": 200,
-      "byteLength": 121410,
-      "actualSha256": "353c92deaf35e1ac68f63cbc07915ac41e0728eec1ce29f6b5a23c5006e5bfc5",
+      "byteLength": 123211,
+      "actualSha256": "4be25ee0c696b4631e360148df966b01b8953597231688bac9b7662311e76285",
       "sha256Matches": true
     },
     {
-      "listingNumber": 100314816,
+      "listingNumber": 116565928,
       "sortOrder": 3,
-      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314816/0004-6e6cdc708f27d32f3b9d.jpg",
-      "expectedSha256": "6e6cdc708f27d32f3b9d93539b0a8643300195e358e3fba554844cfb9ce3d21c",
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0004-c911dfb355f299da7177.jpg",
+      "expectedSha256": "c911dfb355f299da7177b1df2fb5afe16c5e276ce8e841e07a6e07e28caf8e2d",
       "ok": true,
       "httpStatus": 200,
-      "byteLength": 116645,
-      "actualSha256": "6e6cdc708f27d32f3b9d93539b0a8643300195e358e3fba554844cfb9ce3d21c",
+      "byteLength": 130927,
+      "actualSha256": "c911dfb355f299da7177b1df2fb5afe16c5e276ce8e841e07a6e07e28caf8e2d",
       "sha256Matches": true
     },
     {
-      "listingNumber": 100314816,
+      "listingNumber": 116565928,
       "sortOrder": 4,
-      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314816/0005-fa77419855e4fd2a4bc6.jpg",
-      "expectedSha256": "fa77419855e4fd2a4bc66ba28a3d56cc43073c3b7ee489711d04064d566c0eec",
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0005-e6a6efaa0b4a345c98d2.jpg",
+      "expectedSha256": "e6a6efaa0b4a345c98d2360fa2a22cba7e2ee84133c4aa50ca7ce5d0ada2392a",
       "ok": true,
       "httpStatus": 200,
-      "byteLength": 125751,
-      "actualSha256": "fa77419855e4fd2a4bc66ba28a3d56cc43073c3b7ee489711d04064d566c0eec",
+      "byteLength": 149818,
+      "actualSha256": "e6a6efaa0b4a345c98d2360fa2a22cba7e2ee84133c4aa50ca7ce5d0ada2392a",
       "sha256Matches": true
     },
     {
-      "listingNumber": 100314816,
+      "listingNumber": 116565928,
       "sortOrder": 5,
-      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314816/0006-b5b71e9e768aaeed8b4a.jpg",
-      "expectedSha256": "b5b71e9e768aaeed8b4ae6ad10dc3a5c6b8239fff0c4b6bd5446b37d3e6a34ee",
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0006-d0daebbfe1514d27cf6c.jpg",
+      "expectedSha256": "d0daebbfe1514d27cf6cd4eac6df67634642cbef0221d52c81491396697ffc67",
       "ok": true,
       "httpStatus": 200,
-      "byteLength": 120896,
-      "actualSha256": "b5b71e9e768aaeed8b4ae6ad10dc3a5c6b8239fff0c4b6bd5446b37d3e6a34ee",
+      "byteLength": 134516,
+      "actualSha256": "d0daebbfe1514d27cf6cd4eac6df67634642cbef0221d52c81491396697ffc67",
       "sha256Matches": true
     },
     {
-      "listingNumber": 100314819,
+      "listingNumber": 116565928,
+      "sortOrder": 6,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0007-fb00e708fb66d8a60668.jpg",
+      "expectedSha256": "fb00e708fb66d8a60668c71fd34fcd166bec0171b9173beaf1f2a337834c7d8d",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 91770,
+      "actualSha256": "fb00e708fb66d8a60668c71fd34fcd166bec0171b9173beaf1f2a337834c7d8d",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 116565928,
+      "sortOrder": 7,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0008-23145d8a7e158039f104.jpg",
+      "expectedSha256": "23145d8a7e158039f104d277ea128b7da553329df3f28bb1317e0c60e2ea0535",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 113302,
+      "actualSha256": "23145d8a7e158039f104d277ea128b7da553329df3f28bb1317e0c60e2ea0535",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 116565928,
+      "sortOrder": 8,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0009-3a2cbb38d21c6bc573de.jpg",
+      "expectedSha256": "3a2cbb38d21c6bc573dea98ff8701ecd605924020bd6c217dfb3e2ca8c1cb80a",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 185330,
+      "actualSha256": "3a2cbb38d21c6bc573dea98ff8701ecd605924020bd6c217dfb3e2ca8c1cb80a",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 116565928,
+      "sortOrder": 9,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0010-c7f10d3b2c8659c660dc.jpg",
+      "expectedSha256": "c7f10d3b2c8659c660dcf7278a540a34c5c4432dadc4996309fc2d26aa020f0c",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 125692,
+      "actualSha256": "c7f10d3b2c8659c660dcf7278a540a34c5c4432dadc4996309fc2d26aa020f0c",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 116565928,
+      "sortOrder": 10,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0011-4575c334948eb93d6858.jpg",
+      "expectedSha256": "4575c334948eb93d68584f947271c3a37b63ff0149c9af5eb23c3fcf847fc3cd",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 113682,
+      "actualSha256": "4575c334948eb93d68584f947271c3a37b63ff0149c9af5eb23c3fcf847fc3cd",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 116565928,
+      "sortOrder": 11,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0012-8e17424518a9695ed18d.jpg",
+      "expectedSha256": "8e17424518a9695ed18d50bf4dfad92b0e64e202b2109f452c45a5dc0bfbeffc",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 113161,
+      "actualSha256": "8e17424518a9695ed18d50bf4dfad92b0e64e202b2109f452c45a5dc0bfbeffc",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 116565928,
+      "sortOrder": 12,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0013-61b16706fd99a74b4711.jpg",
+      "expectedSha256": "61b16706fd99a74b47114e6f95bd4d78d3f0a045648e91659a4bc1dfaebae442",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 126204,
+      "actualSha256": "61b16706fd99a74b47114e6f95bd4d78d3f0a045648e91659a4bc1dfaebae442",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 116565928,
+      "sortOrder": 13,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0014-dc29247c260b5cae7d34.jpg",
+      "expectedSha256": "dc29247c260b5cae7d34c3e09ca8e29ecda323aeea66ea0c980791183559a74e",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 106141,
+      "actualSha256": "dc29247c260b5cae7d34c3e09ca8e29ecda323aeea66ea0c980791183559a74e",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 116565928,
+      "sortOrder": 14,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0015-7a3f93989f58e1cda779.jpg",
+      "expectedSha256": "7a3f93989f58e1cda779cef090408de972608e15b1c60fdf6b331ad15ad303b5",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 92349,
+      "actualSha256": "7a3f93989f58e1cda779cef090408de972608e15b1c60fdf6b331ad15ad303b5",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 116565928,
+      "sortOrder": 15,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0016-25141694fb251c61cf74.jpg",
+      "expectedSha256": "25141694fb251c61cf74137a0b8ba413533940d96b6a0564ea79998e9c63968d",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 125610,
+      "actualSha256": "25141694fb251c61cf74137a0b8ba413533940d96b6a0564ea79998e9c63968d",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 116565928,
+      "sortOrder": 16,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0017-369f00f7114f711fd3b1.jpg",
+      "expectedSha256": "369f00f7114f711fd3b10d8981df51a9ece43b4c9044bb0dc19a8d88f83fdd3e",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 137294,
+      "actualSha256": "369f00f7114f711fd3b10d8981df51a9ece43b4c9044bb0dc19a8d88f83fdd3e",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 116565928,
+      "sortOrder": 17,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0018-e68ac1e061f5c20ba520.jpg",
+      "expectedSha256": "e68ac1e061f5c20ba5206c21f882e2b434906a86eb73f79a26192480918ce81b",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 96457,
+      "actualSha256": "e68ac1e061f5c20ba5206c21f882e2b434906a86eb73f79a26192480918ce81b",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 116565928,
+      "sortOrder": 18,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0019-12f9fa84f65c13f1a649.jpg",
+      "expectedSha256": "12f9fa84f65c13f1a649f5bca9928352282f2afc959a5943ca155a09d79aad19",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 105682,
+      "actualSha256": "12f9fa84f65c13f1a649f5bca9928352282f2afc959a5943ca155a09d79aad19",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 116565928,
+      "sortOrder": 19,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0020-13ffce8bc780877d5a44.jpg",
+      "expectedSha256": "13ffce8bc780877d5a44253aeb25b7c21bd626890e5227f9dd8573a077bae477",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 139421,
+      "actualSha256": "13ffce8bc780877d5a44253aeb25b7c21bd626890e5227f9dd8573a077bae477",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 116565928,
+      "sortOrder": 20,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0021-4564bceb082a57988914.jpg",
+      "expectedSha256": "4564bceb082a579889145210b0deb1aa03bc7f355c17eda82eab8e89ccdf7aaa",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 98134,
+      "actualSha256": "4564bceb082a579889145210b0deb1aa03bc7f355c17eda82eab8e89ccdf7aaa",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 116565928,
+      "sortOrder": 21,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0022-cee77df54b7b69320c9f.jpg",
+      "expectedSha256": "cee77df54b7b69320c9fbed8fa5b0e5f1cdedb5493643d7761d3124eddf1800a",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 135461,
+      "actualSha256": "cee77df54b7b69320c9fbed8fa5b0e5f1cdedb5493643d7761d3124eddf1800a",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 116565928,
+      "sortOrder": 22,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0023-e87da0b65dc018598f99.jpg",
+      "expectedSha256": "e87da0b65dc018598f99fc36c7d2701237b91ff9a3f1d0f828a134eb4eb1780c",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 139379,
+      "actualSha256": "e87da0b65dc018598f99fc36c7d2701237b91ff9a3f1d0f828a134eb4eb1780c",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 116565928,
+      "sortOrder": 23,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0024-352968f34f81eec437c2.jpg",
+      "expectedSha256": "352968f34f81eec437c25f9be1a675c92104fc9aee2ef7770a9fa2db5ab9915e",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 108918,
+      "actualSha256": "352968f34f81eec437c25f9be1a675c92104fc9aee2ef7770a9fa2db5ab9915e",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 116565928,
+      "sortOrder": 24,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0025-308412f24e1bddd7c6ec.jpg",
+      "expectedSha256": "308412f24e1bddd7c6ec99195e628867119ff4c12a3fff56e0deeffb03993da6",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 135770,
+      "actualSha256": "308412f24e1bddd7c6ec99195e628867119ff4c12a3fff56e0deeffb03993da6",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 116565928,
+      "sortOrder": 25,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0026-dcd20b3374750873044d.jpg",
+      "expectedSha256": "dcd20b3374750873044d999e1a25f546be4d0264bed8ea01eb771cf115bf9e41",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 380082,
+      "actualSha256": "dcd20b3374750873044d999e1a25f546be4d0264bed8ea01eb771cf115bf9e41",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 116565928,
+      "sortOrder": 26,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0027-76fc1484dd44083deaa5.jpg",
+      "expectedSha256": "76fc1484dd44083deaa55d185c5d3bce81e120d2ea10751fcf7d2773728a424e",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 316713,
+      "actualSha256": "76fc1484dd44083deaa55d185c5d3bce81e120d2ea10751fcf7d2773728a424e",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 116565928,
+      "sortOrder": 27,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0028-c7d696373024d6bd78cf.jpg",
+      "expectedSha256": "c7d696373024d6bd78cf2489c414cfa27a5d9abb4201745c3d036a49245ae3c9",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 365424,
+      "actualSha256": "c7d696373024d6bd78cf2489c414cfa27a5d9abb4201745c3d036a49245ae3c9",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 116565928,
+      "sortOrder": 28,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0029-e2bebef99b8e91489549.jpg",
+      "expectedSha256": "e2bebef99b8e914895494ead063f7e748586a5b02248095bc5f9c6dd06058927",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 375664,
+      "actualSha256": "e2bebef99b8e914895494ead063f7e748586a5b02248095bc5f9c6dd06058927",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 116565928,
+      "sortOrder": 29,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0030-bad89b9c7b28fdb17e4c.jpg",
+      "expectedSha256": "bad89b9c7b28fdb17e4cba2a6a8fee265ddcbc88c6b658323da54eda4a84183e",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 297346,
+      "actualSha256": "bad89b9c7b28fdb17e4cba2a6a8fee265ddcbc88c6b658323da54eda4a84183e",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 116565928,
+      "sortOrder": 30,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116565928/0031-b7894c423c336361925d.jpg",
+      "expectedSha256": "b7894c423c336361925d07c188ae3f00ae88d1b2154574493b9caf05ecbe49b3",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 388452,
+      "actualSha256": "b7894c423c336361925d07c188ae3f00ae88d1b2154574493b9caf05ecbe49b3",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 116687298,
       "sortOrder": 0,
-      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314819/0001-ed60cfebbdcec2c26d81.jpg",
-      "expectedSha256": "ed60cfebbdcec2c26d81e746f7bba3860ff9d69bd25cf846e9e41e362c903b20",
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0001-c911dfb355f299da7177.jpg",
+      "expectedSha256": "c911dfb355f299da7177b1df2fb5afe16c5e276ce8e841e07a6e07e28caf8e2d",
       "ok": true,
       "httpStatus": 200,
-      "byteLength": 160233,
-      "actualSha256": "ed60cfebbdcec2c26d81e746f7bba3860ff9d69bd25cf846e9e41e362c903b20",
+      "byteLength": 130927,
+      "actualSha256": "c911dfb355f299da7177b1df2fb5afe16c5e276ce8e841e07a6e07e28caf8e2d",
       "sha256Matches": true
     },
     {
-      "listingNumber": 100314819,
+      "listingNumber": 116687298,
       "sortOrder": 1,
-      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314819/0002-17ba4d87398a849e1777.jpg",
-      "expectedSha256": "17ba4d87398a849e1777dd04fb37579fad2980d84e89b1ab0811d815e4c09636",
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0002-5e545156182e02a8a738.jpg",
+      "expectedSha256": "5e545156182e02a8a738010fe6adb357f024eeec559cbfe53553af2de53f3c03",
       "ok": true,
       "httpStatus": 200,
-      "byteLength": 165776,
-      "actualSha256": "17ba4d87398a849e1777dd04fb37579fad2980d84e89b1ab0811d815e4c09636",
+      "byteLength": 138263,
+      "actualSha256": "5e545156182e02a8a738010fe6adb357f024eeec559cbfe53553af2de53f3c03",
       "sha256Matches": true
     },
     {
-      "listingNumber": 100314820,
-      "sortOrder": 0,
-      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314820/0001-51e28b786635ce3728d9.jpg",
-      "expectedSha256": "51e28b786635ce3728d9e139bbdb142ce23d73dab944e09d1c3a36a85f9a914f",
+      "listingNumber": 116687298,
+      "sortOrder": 2,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0003-e6a6efaa0b4a345c98d2.jpg",
+      "expectedSha256": "e6a6efaa0b4a345c98d2360fa2a22cba7e2ee84133c4aa50ca7ce5d0ada2392a",
       "ok": true,
       "httpStatus": 200,
-      "byteLength": 376819,
-      "actualSha256": "51e28b786635ce3728d9e139bbdb142ce23d73dab944e09d1c3a36a85f9a914f",
+      "byteLength": 149818,
+      "actualSha256": "e6a6efaa0b4a345c98d2360fa2a22cba7e2ee84133c4aa50ca7ce5d0ada2392a",
       "sha256Matches": true
     },
     {
-      "listingNumber": 100314820,
-      "sortOrder": 1,
-      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/ec19d0a6-bcba-4eef-aa72-9972de88204d/property24/exdev/31382/100314820/0002-e4a046d8800662869042.jpg",
-      "expectedSha256": "e4a046d8800662869042aeec91b9e3614600dc6e556ce67e4d3c752bb40113be",
+      "listingNumber": 116687298,
+      "sortOrder": 3,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0004-c3f29f069fd0bd8e3a74.jpg",
+      "expectedSha256": "c3f29f069fd0bd8e3a74b0fc907c00042ef6de6855ef75c7eeb41d7cdeaa48cb",
       "ok": true,
       "httpStatus": 200,
-      "byteLength": 201452,
-      "actualSha256": "e4a046d8800662869042aeec91b9e3614600dc6e556ce67e4d3c752bb40113be",
+      "byteLength": 143589,
+      "actualSha256": "c3f29f069fd0bd8e3a74b0fc907c00042ef6de6855ef75c7eeb41d7cdeaa48cb",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 116687298,
+      "sortOrder": 4,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0005-d0daebbfe1514d27cf6c.jpg",
+      "expectedSha256": "d0daebbfe1514d27cf6cd4eac6df67634642cbef0221d52c81491396697ffc67",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 134516,
+      "actualSha256": "d0daebbfe1514d27cf6cd4eac6df67634642cbef0221d52c81491396697ffc67",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 116687298,
+      "sortOrder": 5,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0006-fb00e708fb66d8a60668.jpg",
+      "expectedSha256": "fb00e708fb66d8a60668c71fd34fcd166bec0171b9173beaf1f2a337834c7d8d",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 91770,
+      "actualSha256": "fb00e708fb66d8a60668c71fd34fcd166bec0171b9173beaf1f2a337834c7d8d",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 116687298,
+      "sortOrder": 6,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0007-4be25ee0c696b4631e36.jpg",
+      "expectedSha256": "4be25ee0c696b4631e360148df966b01b8953597231688bac9b7662311e76285",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 123211,
+      "actualSha256": "4be25ee0c696b4631e360148df966b01b8953597231688bac9b7662311e76285",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 116687298,
+      "sortOrder": 7,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0008-23145d8a7e158039f104.jpg",
+      "expectedSha256": "23145d8a7e158039f104d277ea128b7da553329df3f28bb1317e0c60e2ea0535",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 113302,
+      "actualSha256": "23145d8a7e158039f104d277ea128b7da553329df3f28bb1317e0c60e2ea0535",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 116687298,
+      "sortOrder": 8,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0009-4575c334948eb93d6858.jpg",
+      "expectedSha256": "4575c334948eb93d68584f947271c3a37b63ff0149c9af5eb23c3fcf847fc3cd",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 113682,
+      "actualSha256": "4575c334948eb93d68584f947271c3a37b63ff0149c9af5eb23c3fcf847fc3cd",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 116687298,
+      "sortOrder": 9,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0010-dc29247c260b5cae7d34.jpg",
+      "expectedSha256": "dc29247c260b5cae7d34c3e09ca8e29ecda323aeea66ea0c980791183559a74e",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 106141,
+      "actualSha256": "dc29247c260b5cae7d34c3e09ca8e29ecda323aeea66ea0c980791183559a74e",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 116687298,
+      "sortOrder": 10,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0011-61b16706fd99a74b4711.jpg",
+      "expectedSha256": "61b16706fd99a74b47114e6f95bd4d78d3f0a045648e91659a4bc1dfaebae442",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 126204,
+      "actualSha256": "61b16706fd99a74b47114e6f95bd4d78d3f0a045648e91659a4bc1dfaebae442",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 116687298,
+      "sortOrder": 11,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0012-8e17424518a9695ed18d.jpg",
+      "expectedSha256": "8e17424518a9695ed18d50bf4dfad92b0e64e202b2109f452c45a5dc0bfbeffc",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 113161,
+      "actualSha256": "8e17424518a9695ed18d50bf4dfad92b0e64e202b2109f452c45a5dc0bfbeffc",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 116687298,
+      "sortOrder": 12,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0013-7a3f93989f58e1cda779.jpg",
+      "expectedSha256": "7a3f93989f58e1cda779cef090408de972608e15b1c60fdf6b331ad15ad303b5",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 92349,
+      "actualSha256": "7a3f93989f58e1cda779cef090408de972608e15b1c60fdf6b331ad15ad303b5",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 116687298,
+      "sortOrder": 13,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0014-e68ac1e061f5c20ba520.jpg",
+      "expectedSha256": "e68ac1e061f5c20ba5206c21f882e2b434906a86eb73f79a26192480918ce81b",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 96457,
+      "actualSha256": "e68ac1e061f5c20ba5206c21f882e2b434906a86eb73f79a26192480918ce81b",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 116687298,
+      "sortOrder": 14,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0015-12f9fa84f65c13f1a649.jpg",
+      "expectedSha256": "12f9fa84f65c13f1a649f5bca9928352282f2afc959a5943ca155a09d79aad19",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 105682,
+      "actualSha256": "12f9fa84f65c13f1a649f5bca9928352282f2afc959a5943ca155a09d79aad19",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 116687298,
+      "sortOrder": 15,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0016-13ffce8bc780877d5a44.jpg",
+      "expectedSha256": "13ffce8bc780877d5a44253aeb25b7c21bd626890e5227f9dd8573a077bae477",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 139421,
+      "actualSha256": "13ffce8bc780877d5a44253aeb25b7c21bd626890e5227f9dd8573a077bae477",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 116687298,
+      "sortOrder": 16,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0017-4564bceb082a57988914.jpg",
+      "expectedSha256": "4564bceb082a579889145210b0deb1aa03bc7f355c17eda82eab8e89ccdf7aaa",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 98134,
+      "actualSha256": "4564bceb082a579889145210b0deb1aa03bc7f355c17eda82eab8e89ccdf7aaa",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 116687298,
+      "sortOrder": 17,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0018-cee77df54b7b69320c9f.jpg",
+      "expectedSha256": "cee77df54b7b69320c9fbed8fa5b0e5f1cdedb5493643d7761d3124eddf1800a",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 135461,
+      "actualSha256": "cee77df54b7b69320c9fbed8fa5b0e5f1cdedb5493643d7761d3124eddf1800a",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 116687298,
+      "sortOrder": 18,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0019-e87da0b65dc018598f99.jpg",
+      "expectedSha256": "e87da0b65dc018598f99fc36c7d2701237b91ff9a3f1d0f828a134eb4eb1780c",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 139379,
+      "actualSha256": "e87da0b65dc018598f99fc36c7d2701237b91ff9a3f1d0f828a134eb4eb1780c",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 116687298,
+      "sortOrder": 19,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0020-308412f24e1bddd7c6ec.jpg",
+      "expectedSha256": "308412f24e1bddd7c6ec99195e628867119ff4c12a3fff56e0deeffb03993da6",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 135770,
+      "actualSha256": "308412f24e1bddd7c6ec99195e628867119ff4c12a3fff56e0deeffb03993da6",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 116687298,
+      "sortOrder": 20,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0021-c7f10d3b2c8659c660dc.jpg",
+      "expectedSha256": "c7f10d3b2c8659c660dcf7278a540a34c5c4432dadc4996309fc2d26aa020f0c",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 125692,
+      "actualSha256": "c7f10d3b2c8659c660dcf7278a540a34c5c4432dadc4996309fc2d26aa020f0c",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 116687298,
+      "sortOrder": 21,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0022-3a2cbb38d21c6bc573de.jpg",
+      "expectedSha256": "3a2cbb38d21c6bc573dea98ff8701ecd605924020bd6c217dfb3e2ca8c1cb80a",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 185330,
+      "actualSha256": "3a2cbb38d21c6bc573dea98ff8701ecd605924020bd6c217dfb3e2ca8c1cb80a",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 116687298,
+      "sortOrder": 22,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0023-25141694fb251c61cf74.jpg",
+      "expectedSha256": "25141694fb251c61cf74137a0b8ba413533940d96b6a0564ea79998e9c63968d",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 125610,
+      "actualSha256": "25141694fb251c61cf74137a0b8ba413533940d96b6a0564ea79998e9c63968d",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 116687298,
+      "sortOrder": 23,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0024-369f00f7114f711fd3b1.jpg",
+      "expectedSha256": "369f00f7114f711fd3b10d8981df51a9ece43b4c9044bb0dc19a8d88f83fdd3e",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 137294,
+      "actualSha256": "369f00f7114f711fd3b10d8981df51a9ece43b4c9044bb0dc19a8d88f83fdd3e",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 116687298,
+      "sortOrder": 24,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0025-352968f34f81eec437c2.jpg",
+      "expectedSha256": "352968f34f81eec437c25f9be1a675c92104fc9aee2ef7770a9fa2db5ab9915e",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 108918,
+      "actualSha256": "352968f34f81eec437c25f9be1a675c92104fc9aee2ef7770a9fa2db5ab9915e",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 116687298,
+      "sortOrder": 25,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0026-4eab6ef331be62a13ab1.jpg",
+      "expectedSha256": "4eab6ef331be62a13ab11bef34cfb6f29e774212723ae8bc7567d82e039ed7ec",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 293280,
+      "actualSha256": "4eab6ef331be62a13ab11bef34cfb6f29e774212723ae8bc7567d82e039ed7ec",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 116687298,
+      "sortOrder": 26,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0027-b49d7ff78f07c46a3976.jpg",
+      "expectedSha256": "b49d7ff78f07c46a3976b9dc2fbe4fe747c6957a56b582215dfe4a8a65dfac21",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 351474,
+      "actualSha256": "b49d7ff78f07c46a3976b9dc2fbe4fe747c6957a56b582215dfe4a8a65dfac21",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 116687298,
+      "sortOrder": 27,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0028-f03937e3efa2b9812431.jpg",
+      "expectedSha256": "f03937e3efa2b981243119c0d3da8e57ff2e0b4c7ec96872aa51ffd8a27c1d69",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 392732,
+      "actualSha256": "f03937e3efa2b981243119c0d3da8e57ff2e0b4c7ec96872aa51ffd8a27c1d69",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 116687298,
+      "sortOrder": 28,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0029-59b0f59dbd2ac6c1d31e.jpg",
+      "expectedSha256": "59b0f59dbd2ac6c1d31e3bfaee6c25446479cd21528f8fa147bfef8e275bf7f7",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 253642,
+      "actualSha256": "59b0f59dbd2ac6c1d31e3bfaee6c25446479cd21528f8fa147bfef8e275bf7f7",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 116687298,
+      "sortOrder": 29,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0030-bad89b9c7b28fdb17e4c.jpg",
+      "expectedSha256": "bad89b9c7b28fdb17e4cba2a6a8fee265ddcbc88c6b658323da54eda4a84183e",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 297346,
+      "actualSha256": "bad89b9c7b28fdb17e4cba2a6a8fee265ddcbc88c6b658323da54eda4a84183e",
+      "sha256Matches": true
+    },
+    {
+      "listingNumber": 116687298,
+      "sortOrder": 30,
+      "publicUrl": "https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/listing-media/organisations/84b6e57a-9b12-4bfd-991c-0f5f820d28f4/property24/production/40067/116687298/0031-49c8ac2bb5f55bab0a66.jpg",
+      "expectedSha256": "49c8ac2bb5f55bab0a66c7de524de32826c8bcc8c9cb9709ae61e47ab74a6411",
+      "ok": true,
+      "httpStatus": 200,
+      "byteLength": 387778,
+      "actualSha256": "49c8ac2bb5f55bab0a66c7de524de32826c8bcc8c9cb9709ae61e47ab74a6411",
       "sha256Matches": true
     }
   ]

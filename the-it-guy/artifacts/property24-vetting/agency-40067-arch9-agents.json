@@ -1,0 +1,10 @@
+{
+  "agents": [
+    {
+      "user_id": "70a0969b-6d08-464d-ad6e-031c54d3521d",
+      "organisation_id": "84b6e57a-9b12-4bfd-991c-0f5f820d28f4",
+      "email": "alex@samlin.co.za",
+      "status": "active"
+    }
+  ]
+}
