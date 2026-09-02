@@ -1,0 +1,53 @@
+.public-development-desktop,
+.public-development-mobile {
+  position: relative;
+}
+
+.public-development-desktop #overview > .absolute.inset-0 {
+  background: rgba(0, 0, 0, 0.64) !important;
+}
+
+.public-development-mobile #overview > .absolute.inset-0 {
+  background: rgba(0, 0, 0, 0.6) !important;
+}
+
+.public-development-desktop #overview,
+.public-development-desktop #overview h1,
+.public-development-desktop #overview h2,
+.public-development-desktop #overview p,
+.public-development-desktop #overview a:not([class*="bg-[#d0ab55]"]),
+.public-development-desktop #overview span,
+.public-development-desktop #overview strong,
+.public-development-mobile #overview,
+.public-development-mobile #overview h1,
+.public-development-mobile #overview p,
+.public-development-mobile #overview a:not([class*="bg-[#d0ab55]"]),
+.public-development-mobile #overview span,
+.public-development-mobile #overview b {
+  color: #fff !important;
+}
+
+.public-development-desktop #overview a[class*="bg-[#d0ab55]"],
+.public-development-mobile #overview a[class*="bg-[#d0ab55]"] {
+  color: #14352c !important;
+}
+
+.public-development-desktop #overview header > :first-child {
+  opacity: 0;
+}
+
+.public-development-revo-logo {
+  position: absolute;
+  top: 1.45rem;
+  left: 2.5rem;
+  z-index: 30;
+  width: 150px;
+  max-height: 42px;
+  object-fit: contain;
+  object-position: left center;
+  filter: brightness(0) invert(1);
+}
+
+@media (max-width: 767px) {
+  .public-development-revo-logo { display: none; }
+}
