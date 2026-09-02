@@ -94,4 +94,31 @@
 
 @media (max-width: 767px) {
   .public-development-revo-logo { display: none; }
+
+  .public-development-mobile #overview header {
+    top: max(1rem, env(safe-area-inset-top));
+    padding-top: .75rem;
+  }
+
+  .public-development-mobile #availability > div.mt-8 {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 3.5rem;
+    overflow: visible !important;
+    padding-right: 1.25rem;
+  }
+
+  .public-development-mobile #availability > div.mt-8 > label {
+    display: none;
+  }
+
+  .public-development-mobile #availability > div.mt-8 > button:first-of-type {
+    min-width: 0;
+    justify-content: space-between;
+    overflow: hidden;
+    padding-inline: 1rem;
+  }
+
+  .public-development-mobile #availability > div.mt-8 > button:last-of-type {
+    width: 3.5rem;
+  }
 }
