@@ -45,7 +45,51 @@
   max-height: 42px;
   object-fit: contain;
   object-position: left center;
-  filter: brightness(0) invert(1);
+  filter: none;
+}
+
+.public-development-desktop #overview header > :last-child > a {
+  display: none;
+}
+
+.public-development-desktop main > section > .mx-auto,
+.public-development-desktop #availability > .mx-auto {
+  max-width: 1520px !important;
+}
+
+.public-development-desktop #availability,
+.public-development-desktop #residences,
+.public-development-desktop #live-availability {
+  padding-top: 3.75rem !important;
+  padding-bottom: 3.75rem !important;
+}
+
+.public-development-desktop #gallery {
+  padding-top: 2.5rem !important;
+  padding-bottom: 2.5rem !important;
+}
+
+.public-development-desktop #live-availability > div:last-child {
+  max-height: 460px;
+  overflow-y: auto;
+  border-bottom: 1px solid #e1d9cd;
+}
+
+.public-development-desktop #enquire {
+  background: #050505 !important;
+}
+
+.public-development-desktop #enquire,
+.public-development-desktop #enquire h1,
+.public-development-desktop #enquire h2,
+.public-development-desktop #enquire p,
+.public-development-desktop #enquire span,
+.public-development-desktop #enquire a {
+  color: #fff !important;
+}
+
+.public-development-desktop #enquire a[class*="bg-[#d0ab55]"] {
+  color: #14352c !important;
 }
 
 @media (max-width: 767px) {

@@ -43,5 +43,5 @@ export default function PublicDevelopmentResponsiveRoute() {
   const images = [...new Set([...list(media.galleryImageUrls), ...list(media.imageUrls), hero].filter(Boolean))]
   const enquiry = marketing.externalLinks?.whatsappEnquiryUrl || marketing.externalLinks?.bookingViewingUrl || '#enquire'
 
-  return <><div className="public-development-mobile md:hidden"><MobilePublicDevelopmentExperience data={data} marketing={marketing} media={media} inventory={inventory} available={available} fromPrice={fromPrice} agency={agency} hero={hero} images={images} enquiry={enquiry} /></div><div className="public-development-desktop hidden md:block"><img className="public-development-revo-logo" src="https://www.revo-property.co.za/logo.png" alt="Revo Property" /><PublicDevelopmentLandingPage /></div></>
+  return <><div className="public-development-mobile md:hidden"><MobilePublicDevelopmentExperience data={data} marketing={marketing} media={media} inventory={inventory} available={available} fromPrice={fromPrice} agency={agency} hero={hero} images={images} enquiry={enquiry} /></div><div className="public-development-desktop hidden md:block"><img className="public-development-revo-logo" src="/brand/revo-property-white.svg" alt="Revo Property" /><PublicDevelopmentLandingPage /></div></>
 }

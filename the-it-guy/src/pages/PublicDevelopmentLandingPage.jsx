@@ -5,7 +5,8 @@ import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 
 const STATUS = { available: ['Available', 'bg-[#e7f4eb] text-[#286647]', 'bg-[#38a467]'], reserved: ['Reserved', 'bg-[#faf0df] text-[#99621b]', 'bg-[#e5a13d]'], sold: ['Sold', 'bg-[#edf0f3] text-[#607080]', 'bg-[#8391a0]'], unreleased: ['Not released', 'bg-[#edf0f3] text-[#607080]', 'bg-[#8391a0]'] }
 const text = (value) => String(value || '').trim()
-const list = (value) => Array.isArray(value) ? value.map(text).filter(Boolean) : text(value).split(/\r?\n|,/).map(text).filter(Boolean)
+const FALLBACK_REVO_GALLERY = ['/demo-listing-images/revo-sales-cover.png', '/demo-listing-images/revo-short-stay-cover.png', '/demo-listing-images/revo-rental-cover.png']
+const list = (value) => { const items = Array.isArray(value) ? value.map(text).filter(Boolean) : text(value).split(/\r?\n|,/).map(text).filter(Boolean); return items.length ? items : FALLBACK_REVO_GALLERY }
 const keyFor = (status) => { const value = text(status).toLowerCase(); if (value.includes('reserve') || value.includes('offer')) return 'reserved'; if (value.includes('sold') || value.includes('complete')) return 'sold'; if (value.includes('unreleased') || value.includes('draft')) return 'unreleased'; return 'available' }
 const money = (value, compact = false) => { const amount = Number(value); if (!amount) return 'Price on request'; return compact ? `R${(amount / 1000000).toFixed(amount % 1000000 ? 2 : 0)}m` : new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR', maximumFractionDigits: 0 }).format(amount) }
 const beds = (type) => { const value = text(type); const match = value.match(/(\d+)/); return match ? `${match[1]} Bedroom${match[1] === '1' ? '' : 's'}` : value || 'Residence' }
