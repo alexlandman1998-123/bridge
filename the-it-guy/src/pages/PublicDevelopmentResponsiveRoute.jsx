@@ -43,9 +43,9 @@ export default function PublicDevelopmentResponsiveRoute() {
   const images = [...new Set([...list(media.galleryImageUrls), ...list(media.imageUrls), hero].filter(Boolean))]
   const enquiry = marketing.externalLinks?.whatsappEnquiryUrl || marketing.externalLinks?.bookingViewingUrl || '#enquire'
   const branding = data.organisationBranding || {}
-  // `logo_light_url` is Revo's white artwork for dark surfaces. Its
-  // `logo_dark_url` is the green/dark-coloured artwork used on light pages.
-  const logoUrl = text(branding.logoLightUrl || branding.logoUrl || branding.logoDarkUrl)
+  // The high-contrast mark is explicitly intended for dark hero and mobile
+  // surfaces. The primary/light record can be a coloured logo.
+  const logoUrl = text(branding.logoHighContrastUrl || branding.logoUrl || branding.logoDarkUrl || branding.logoLightUrl)
   const brandStyle = {
     '--development-primary': text(branding.primaryColour) || '#073e32',
     '--development-accent': text(branding.accentColour) || '#d0ab55',
