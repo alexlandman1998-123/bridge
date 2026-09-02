@@ -3653,8 +3653,8 @@ function AppRoutes() {
                   }
                 />
                 <Route
-                path="syndication"
-                element={
+                  path="syndication"
+                  element={
                     <OrganisationSettingsManageRoute>
                       <RoleRoute allowedRoles={['agent']}>
                         <SettingsSyndicationPage />
