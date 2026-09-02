@@ -39,7 +39,7 @@ as $$
     'totalUnitsExpected', published.total_units_expected,
     'organisationBranding', jsonb_build_object(
       'organisationName', coalesce(org.display_name, org.name, published.developer_company),
-      'logoUrl', coalesce(branding.logo_light_url, branding.logo_dark_url, branding.logo_icon_url, org.logo_url),
+      'logoUrl', coalesce(branding.logo_dark_url, branding.logo_light_url, branding.logo_icon_url, org.logo_url),
       'logoLightUrl', coalesce(branding.logo_light_url, org.logo_url),
       'logoDarkUrl', branding.logo_dark_url,
       'logoIconUrl', branding.logo_icon_url,

@@ -43,7 +43,9 @@ export default function PublicDevelopmentResponsiveRoute() {
   const images = [...new Set([...list(media.galleryImageUrls), ...list(media.imageUrls), hero].filter(Boolean))]
   const enquiry = marketing.externalLinks?.whatsappEnquiryUrl || marketing.externalLinks?.bookingViewingUrl || '#enquire'
   const branding = data.organisationBranding || {}
-  const logoUrl = text(branding.logoLightUrl || branding.logoUrl || branding.logoDarkUrl)
+  // The organisation's dark variant is the approved asset for the hero and
+  // mobile drawer, both of which sit on dark surfaces.
+  const logoUrl = text(branding.logoDarkUrl || branding.logoUrl || branding.logoLightUrl)
   const brandStyle = {
     '--development-primary': text(branding.primaryColour) || '#073e32',
     '--development-accent': text(branding.accentColour) || '#d0ab55',
