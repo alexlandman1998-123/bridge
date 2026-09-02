@@ -1,6 +1,5 @@
 import {
   ArrowRight,
-  BarChart3,
   CalendarDays,
   Eye,
   Mail,
@@ -128,13 +127,22 @@ function QuickActions({ onNavigate }) {
     { label: 'Launch', detail: 'Create a launch', icon: Sparkles, section: 'launches' },
     { label: 'Website', detail: 'Set up your site', icon: Globe2, section: 'website' },
   ]
-  return <section className="md-quick-actions" aria-label="Quick actions"><div><span className="md-eyebrow">QUICK ACTIONS</span><h2>Create new marketing</h2></div>{actions.map((action) => { const ActionIcon = action.icon; return <button type="button" onClick={() => onNavigate(action.section)} key={action.label}><span><ActionIcon size={16} /></span><span><strong>{action.label}</strong><small>{action.detail}</small></span><Plus size={15} /></button> })}</section>
+  return (
+    <section className="md-quick-actions" aria-label="Quick actions">
+      <div className="md-quick-actions-heading"><span className="md-eyebrow">QUICK ACTIONS</span><h2>Create new marketing</h2></div>
+      <div className="md-quick-actions-grid">
+        {actions.map((action) => {
+          const ActionIcon = action.icon
+          return <button type="button" onClick={() => onNavigate(action.section)} key={action.label}><span><ActionIcon size={16} /></span><span><strong>{action.label}</strong><small>{action.detail}</small></span><Plus size={15} /></button>
+        })}
+      </div>
+    </section>
+  )
 }
 
 export default function MarketingDashboard({ onNavigate }) {
   return (
     <div className="wa-page marketing-dashboard">
-      <div className="md-topline"><div><span className="md-eyebrow">MARKETING OVERVIEW</span><h1>Good morning, Alex</h1><p>Here’s how your marketing is performing across every channel.</p></div><span className="md-demo-label"><BarChart3 size={14} /> This month</span></div>
       <MarketingStats />
       <QuickActions onNavigate={onNavigate} />
       <section className="md-primary-grid"><TrendChart /><ChannelPerformance /></section>

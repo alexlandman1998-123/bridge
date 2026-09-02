@@ -3930,42 +3930,34 @@ function PipelineCanvassingPage() {
   }
 
   const canvassingWorkspaceHeader = (
-    <header className="pt-1">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-[1.45rem] font-semibold tracking-[-0.02em] text-slate-900">Canvassing</h1>
-          <p className="mt-1 text-sm text-slate-600">Find properties and identify new opportunities.</p>
+    <header className="flex flex-wrap items-center justify-between gap-3">
+      <CanvassingWorkspaceTabs />
+      {activeCanvassingWorkspace === 'prospects' ? (
+        <div className="inline-flex rounded-2xl border border-slate-200 bg-slate-100 p-1 shadow-inner">
+          <button
+            type="button"
+            onClick={() => setProspectView('buyer')}
+            className={`rounded-xl px-3.5 py-2 text-sm font-semibold transition ${
+              prospectView === 'buyer'
+                ? 'bg-white text-slate-950 shadow-sm'
+                : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            Buyer Prospects
+          </button>
+          <button
+            type="button"
+            onClick={() => setProspectView('seller')}
+            className={`rounded-xl px-3.5 py-2 text-sm font-semibold transition ${
+              prospectView === 'seller'
+                ? 'bg-white text-slate-950 shadow-sm'
+                : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            Seller Prospects
+          </button>
         </div>
-      </div>
-      <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
-        <CanvassingWorkspaceTabs />
-        {activeCanvassingWorkspace === 'prospects' ? (
-          <div className="inline-flex rounded-2xl border border-slate-200 bg-slate-100 p-1 shadow-inner">
-            <button
-              type="button"
-              onClick={() => setProspectView('buyer')}
-              className={`rounded-xl px-3.5 py-2 text-sm font-semibold transition ${
-                prospectView === 'buyer'
-                  ? 'bg-white text-slate-950 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              Buyer Prospects
-            </button>
-            <button
-              type="button"
-              onClick={() => setProspectView('seller')}
-              className={`rounded-xl px-3.5 py-2 text-sm font-semibold transition ${
-                prospectView === 'seller'
-                  ? 'bg-white text-slate-950 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              Seller Prospects
-            </button>
-          </div>
-        ) : null}
-      </div>
+      ) : null}
     </header>
   )
 

@@ -5,7 +5,7 @@ import { createWebsiteCampaignPage, createWebsiteDraft, getWebsiteWorkspaceOverv
 import './WebsiteWorkspace.css'
 
 const readiness = [
-  { label: 'Create a preview site', detail: 'A secure PropData preview address is created before any client domain is touched.', status: 'foundation' },
+  { label: 'Create a preview site', detail: 'A secure preview address is created before any client domain is touched.', status: 'foundation' },
   { label: 'Create pages and campaigns', detail: 'Build structured landing pages from approved content blocks, then share the campaign URL.', status: 'available' },
   { label: 'Publish property stock', detail: 'Only listings explicitly marked published will appear on the public website.', status: 'next' },
   { label: 'Connect the client domain', detail: 'Website records only. Existing email DNS records remain untouched.', status: 'next' },
@@ -61,15 +61,18 @@ export default function WebsiteWorkspace({ onBack }) {
   return (
     <div className="wa-page website-workspace">
       <button className="ww-back" type="button" onClick={onBack}><ArrowLeft size={16} /> Marketing overview</button>
-      <header className="ww-hero">
-        <div><span className="md-eyebrow">WEBSITES</span><h1>Your agency website, powered by PropData.</h1><p>Manage public property pages, campaigns and leads from the same platform that manages your listings.</p></div>
-        <span className="ww-status"><CheckCircle2 size={16} /> {overview.mode === 'loading' ? 'Loading website' : hasPublishedSite ? 'Website published' : 'Campaign pages ready'}</span>
-      </header>
 
       <section className="ww-preview-card" aria-label="Website preview status">
-        <div className="ww-preview-icon"><MonitorSmartphone size={26} /></div>
-        <div><span className="md-eyebrow">NEUTRAL TEMPLATE</span><h2>Property Standard v1</h2><p>A mobile-first property experience is being prepared for your brand. It will always be reviewed on a PropData preview address before a live domain is connected.</p></div>
-        <span className="ww-preview-tag">Preview first <ArrowUpRight size={15} /></span>
+        <div className="ww-preview-copy">
+          <span className="md-eyebrow">WEBSITE STUDIO</span>
+          <h2>Build a digital home for your brand.</h2>
+          <p>Shape a polished property website, campaign pages and enquiry journeys before anything goes live.</p>
+          <div className="ww-preview-meta"><span><MonitorSmartphone size={16} /> Mobile-ready template</span><span><CheckCircle2 size={16} /> {overview.mode === 'loading' ? 'Preparing workspace' : hasPublishedSite ? 'Website published' : 'Preview ready'}</span></div>
+        </div>
+        <div className="ww-preview-window" aria-hidden="true">
+          <div className="ww-preview-window-bar"><i /><i /><i /><span>yourbrand.co.za</span></div>
+          <div className="ww-preview-window-body"><span>YOUR BRAND</span><strong>Find your next place.</strong><small>Beautiful homes. Clear stories. Simple enquiries.</small><b>Explore properties <ArrowUpRight size={14} /></b></div>
+        </div>
       </section>
 
       <section className="ww-operations" aria-label="Website operation status">
@@ -84,7 +87,7 @@ export default function WebsiteWorkspace({ onBack }) {
       <section className="ww-grid">
         <article className="ww-card"><LayoutTemplate size={21} /><span className="md-eyebrow">TEMPLATE</span><h2>One strong foundation</h2><p>Search, listings, enquiries and SEO are shared. Your colours, pages, campaigns and content remain your own.</p></article>
         <article className="ww-card"><Globe2 size={21} /><span className="md-eyebrow">DOMAINS</span><h2>Safe connection process</h2><p>We will provide only the website DNS records required. Nameservers and email records are never changed.</p></article>
-        <article className="ww-card"><LockKeyhole size={21} /><span className="md-eyebrow">CRM</span><h2>Every enquiry stays in iSite</h2><p>Property, campaign and general enquiries are stored in the CRM first, then routed to the right person.</p></article>
+        <article className="ww-card"><LockKeyhole size={21} /><span className="md-eyebrow">CRM</span><h2>Every enquiry stays in Arch9</h2><p>Property, campaign and general enquiries are stored in the CRM first, then routed to the right person.</p></article>
         <article className="ww-card"><Megaphone size={21} /><span className="md-eyebrow">CAMPAIGNS</span><h2>Focused landing pages</h2><p>Use approved sections for campaigns—hero, listings, benefits, FAQs and a CRM-connected enquiry form.</p></article>
       </section>
 

@@ -19329,7 +19329,9 @@ export async function fetchExecutiveSnapshotByToken(token) {
 }
 
 export async function fetchDevelopmentsData({ organisationId = null } = {}) {
-  const overview = await fetchDashboardOverview({ organisationId })
+  // The index only needs unit and transaction summaries. Avoid loading the
+  // attorney, handover and snag workspaces before the cards can render.
+  const overview = await fetchDashboardOverview({ organisationId, includeSecondaryData: false })
   const client = requireClient()
   const normalizedOrganisationId = String(organisationId || '').trim()
   const summaries = overview.developmentSummaries || []
@@ -19356,7 +19358,7 @@ export async function fetchDevelopmentsData({ organisationId = null } = {}) {
   let developmentsQuery = client
     .from('developments')
     .select(
-      'id, organisation_id, name, planned_units, total_units_expected, status, location, developer_company, updated_at, created_at',
+      'id, organisation_id, name, planned_units, total_units_expected, status, location, developer_company',
     )
 
   if (normalizedOrganisationId) {
@@ -19374,9 +19376,7 @@ export async function fetchDevelopmentsData({ organisationId = null } = {}) {
     (isMissingColumnError(developmentsResult.error, 'total_units_expected') ||
       isMissingColumnError(developmentsResult.error, 'location') ||
       isMissingColumnError(developmentsResult.error, 'developer_company') ||
-      isMissingColumnError(developmentsResult.error, 'status') ||
-      isMissingColumnError(developmentsResult.error, 'updated_at') ||
-      isMissingColumnError(developmentsResult.error, 'created_at'))
+      isMissingColumnError(developmentsResult.error, 'status'))
   ) {
     if (normalizedOrganisationId && isMissingColumnError(developmentsResult.error, 'organisation_id')) {
       developmentsResult = { data: [], error: null }

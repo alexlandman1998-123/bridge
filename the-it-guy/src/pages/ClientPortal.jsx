@@ -73,6 +73,12 @@ import {
   BuyerPortalOverviewHero as SharedBuyerPortalOverviewHero,
   BuyerPortalOverviewShell,
 } from '../components/client-portal/BuyerPortalOverview'
+import {
+  BuyerMobileBottomNavigation,
+  BuyerMobileHeader,
+  BuyerMobilePageIntro,
+  BuyerMobilePropertyHero,
+} from '../components/client-portal/BuyerMobileChrome'
 import BuyerPortalJourney from '../components/client-portal/BuyerPortalJourney'
 import {
   buyerPortalHexToRgba as portalHexToRgba,
@@ -3959,9 +3965,6 @@ function BuyerMobilePortal({
   const mobilePrimaryColour = normalizePortalBrandColour(brandPrimaryColour, '#10213a')
   const mobileSecondaryColour = normalizePortalBrandColour(brandSecondaryColour, mobilePrimaryColour)
   const mobileAccentColour = normalizePortalBrandColour(brandAccentColour, mobilePrimaryColour)
-  const mobileHeroOverlayStyle = {
-    background: `radial-gradient(circle at 86% 18%, rgba(255,255,255,0.2), transparent 26%), linear-gradient(180deg, ${portalHexToRgba(mobilePrimaryColour, 0.9)} 0%, ${portalHexToRgba(mobilePrimaryColour, 0.74)} 48%, ${portalHexToRgba(mobileSecondaryColour, 0.9)} 100%)`,
-  }
   const mobilePrimaryButtonStyle = {
     backgroundColor: mobilePrimaryColour,
     color: '#ffffff',
@@ -4227,45 +4230,36 @@ function BuyerMobilePortal({
   return (
     <main className="min-h-screen bg-[#f4f7f6] font-sans text-[#101823]">
       <div className="mx-auto min-h-screen w-full max-w-[430px] px-4 pb-44 pt-5">
-        <header className="flex min-h-[44px] items-center justify-between gap-3">
-          <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, 'overview')} className="inline-flex min-h-11 min-w-0 items-center" aria-label={`${brandName || 'Agency'} home`}>
-            {brandLogoUrl ? (
-              <img src={brandLogoUrl} alt={`${brandName || 'Agency'} logo`} className="max-h-10 max-w-[168px] object-contain object-left" />
-            ) : (
-              <span className="truncate text-base font-semibold tracking-[-0.03em] text-[#101823]">{brandName || 'Buyer Portal'}</span>
-            )}
-          </Link>
-          <div className="flex shrink-0 items-center gap-2">
-            <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, 'team')} aria-label="Contact team" className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#e1e5ea] bg-white/90 text-[#1f2937] shadow-[0_10px_24px_rgba(15,23,42,0.06)] backdrop-blur">
+        <BuyerMobileHeader
+          brand={{ primary: mobilePrimaryColour, secondary: mobileSecondaryColour }}
+          brandName={brandName || 'Buyer Portal'}
+          logoUrl={brandLogoUrl}
+          homePath={getPortalWorkspacePath(token, workspaceNavigationScope, 'overview')}
+          actions={(
+            <>
+            <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, 'team')} aria-label="Contact team" className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-white/12 text-white backdrop-blur">
               <MessageCircle size={18} />
             </Link>
             {buyerPrimaryContact?.phone ? (
-              <a href={`tel:${buyerPrimaryContact.phone}`} aria-label="Call team" className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#e1e5ea] bg-white/90 text-[#1f2937] shadow-[0_10px_24px_rgba(15,23,42,0.06)] backdrop-blur">
+              <a href={`tel:${buyerPrimaryContact.phone}`} aria-label="Call team" className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-white/12 text-white backdrop-blur">
                 <PhoneCall size={17} />
               </a>
             ) : (
-              <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, 'team')} aria-label="Open team contacts" className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#e1e5ea] bg-white/90 text-[#1f2937] shadow-[0_10px_24px_rgba(15,23,42,0.06)] backdrop-blur">
+              <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, 'team')} aria-label="Open team contacts" className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-white/12 text-white backdrop-blur">
                 <PhoneCall size={17} />
               </Link>
             )}
-            <span className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#e1e5ea] bg-white/90 text-sm font-semibold text-[#1f2937] shadow-[0_10px_24px_rgba(15,23,42,0.06)] backdrop-blur">
+            <span className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-white/12 text-sm font-semibold text-white backdrop-blur">
               {buyerInitial}
             </span>
-          </div>
-        </header>
+            </>
+          )}
+        />
 
         {isOverviewSection ? (
           <>
-            <section className="relative mt-5 min-h-[252px] overflow-hidden rounded-[20px] border border-white/70 bg-[#062b2b] bg-[linear-gradient(135deg,#062b2b_0%,#123a54_64%,#315c7d_100%)] p-5 text-white shadow-[0_18px_42px_rgba(15,23,42,0.15)]">
-              {propertyImageUrl ? (
-                <img
-                  src={propertyImageUrl}
-                  alt={propertyImageAlt || `${developmentName} ${unitLabel}`.trim() || 'Property'}
-                  className="absolute inset-0 h-full w-full object-cover"
-                />
-              ) : null}
-              <div className="absolute inset-0" style={mobileHeroOverlayStyle} aria-hidden="true" />
-              <div className="relative flex min-h-[212px] flex-col">
+            <BuyerMobilePropertyHero imageUrl={propertyImageUrl} imageAlt={propertyImageAlt || `${developmentName} ${unitLabel}`.trim() || 'Property'} theme={{ primary: mobilePrimaryColour, secondary: mobileSecondaryColour }} className="mt-5 min-h-[252px] border border-white/70">
+              <div className="flex min-h-[252px] flex-col p-5">
                 <p className="text-sm font-medium text-[#a5d8a7]">Your purchase</p>
                 <div className="mt-4 flex items-start justify-between gap-3">
                   <div className="min-w-0">
@@ -4297,7 +4291,7 @@ function BuyerMobilePortal({
                   </div>
                   </div>
                 </div>
-              </section>
+              </BuyerMobilePropertyHero>
 
               <section className="mt-3 overflow-hidden rounded-[20px] border border-[#1f6f52]/[0.4] bg-[#063f34] p-4 text-white shadow-[0_14px_30px_rgba(6,63,52,0.18)]" style={mobileAttentionPanelStyle}>
                 <div className="flex items-center justify-between gap-3">
@@ -4408,32 +4402,33 @@ function BuyerMobilePortal({
         ) : null}
 
         {mobileSection === 'progress' ? (
-          <SellerMobileListCard
-            eyebrow="Progress"
-            title={activeStep?.label || journeyCurrentStageLabel}
-            emptyText="Your purchase timeline will appear here."
-            items={clientJourneySteps.map((step) => ({
-              id: step.id,
-              title: step.label,
-              description: step.shortDescription || step.whatHappensNow || 'Your team is moving this step forward.',
-              to: 'progress',
-            }))}
-            token={token}
-            workspaceNavigationScope={workspaceNavigationScope}
-          />
+          <div className="mt-4">
+            <BuyerMobilePageIntro eyebrow="Journey" title="Your purchase journey" description="See the active milestone, what your team is handling, and what comes next." />
+            <SellerMobileListCard
+              eyebrow="Current milestone"
+              title={activeStep?.label || journeyCurrentStageLabel}
+              emptyText="Your purchase timeline will appear here."
+              items={clientJourneySteps.map((step) => ({
+                id: step.id,
+                title: step.label,
+                description: step.shortDescription || step.whatHappensNow || 'Your team is moving this step forward.',
+                to: 'progress',
+              }))}
+              token={token}
+              workspaceNavigationScope={workspaceNavigationScope}
+            />
+          </div>
         ) : null}
 
         {mobileSection === 'documents' ? (
           <section className="mt-4 rounded-[28px] border border-white/80 bg-white/95 p-5 shadow-[0_14px_36px_rgba(15,23,42,0.065)]">
-            <p className="text-[0.74rem] font-semibold uppercase tracking-[0.14em] text-[#7b8491]">Documents</p>
-            <h3 className="mt-2 text-[1.4rem] font-semibold tracking-[-0.04em] text-[#101823]">
-              {buyerDocumentCounts.action ? `${buyerDocumentCounts.action} pending` : 'Documents up to date'}
-            </h3>
-            <p className="mt-1 text-sm leading-6 text-[#667085]">
-              {buyerDocumentCounts.action
+            <BuyerMobilePageIntro
+              eyebrow="Documents"
+              title={buyerDocumentCounts.action ? `${buyerDocumentCounts.action} document${buyerDocumentCounts.action === 1 ? '' : 's'} pending` : 'Documents up to date'}
+              description={buyerDocumentCounts.action
                 ? `${buyerDocumentCounts.action} purchase document${buyerDocumentCounts.action === 1 ? '' : 's'} need action.`
                 : 'Review uploaded and approved purchase documents from your team.'}
-            </p>
+            />
             <div className="mt-4 rounded-[18px] bg-[#f2f4f7] p-1">
               <div className="grid grid-cols-4 gap-1">
                 {buyerDocumentFilters.map((filter) => {
@@ -4522,28 +4517,22 @@ function BuyerMobilePortal({
 
         {mobileSection === 'finance' ? (
           <section className="mt-4 rounded-[28px] border border-white/80 bg-white/95 p-5 shadow-[0_14px_36px_rgba(15,23,42,0.065)]">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-[0.74rem] font-semibold uppercase tracking-[0.14em] text-[#7b8491]">Finance</p>
-                <h3 className="mt-2 text-[1.45rem] font-semibold tracking-[-0.045em] text-[#101823]">
-                  {matterAccountsLoading ? 'Loading account' : buyerFinanceHasAccounts ? ZAR_CURRENCY.format(buyerFinanceBalanceDue) : financeTypeLabel}
-                </h3>
-                <p className="mt-1 text-sm leading-6 text-[#667085]">
-                  {buyerFinanceHasAccounts
-                    ? `${buyerFinanceOpenRequests} open request${buyerFinanceOpenRequests === 1 ? '' : 's'} from your legal team.`
-                    : matterAccountsUnavailable
-                      ? 'Matter account details are being prepared by your legal team.'
-                      : 'Finance and payment details will appear here once published.'}
-                </p>
-              </div>
-              <Link
+            <BuyerMobilePageIntro
+              eyebrow="Finance"
+              title={matterAccountsLoading ? 'Loading account' : buyerFinanceHasAccounts ? ZAR_CURRENCY.format(buyerFinanceBalanceDue) : financeTypeLabel}
+              description={buyerFinanceHasAccounts
+                ? `${buyerFinanceOpenRequests} open request${buyerFinanceOpenRequests === 1 ? '' : 's'} from your legal team.`
+                : matterAccountsUnavailable
+                  ? 'Matter account details are being prepared by your legal team.'
+                  : 'Finance and payment details will appear here once published.'}
+              meta={<Link
                 to={getPortalWorkspacePath(token, workspaceNavigationScope, financeSectionKey)}
                 className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#eef2f6] text-[#24364d]"
                 aria-label="Open finance"
               >
                 <ChevronRight size={18} />
-              </Link>
-            </div>
+              </Link>}
+            />
 
             {matterAccountsError ? (
               <p className="mt-4 rounded-[18px] border border-[#f1cbc7] bg-[#fff5f4] px-4 py-3 text-sm text-[#b42318]">{matterAccountsError}</p>
@@ -5394,26 +5383,15 @@ function BuyerMobilePortal({
         </div>
       ) : null}
 
-      <nav className="fixed inset-x-3 bottom-2 z-40 mx-auto max-w-[430px] rounded-[22px] border border-[#dfe7ee] bg-white/95 px-1.5 py-0.5 shadow-[0_18px_40px_rgba(15,23,42,0.16)] backdrop-blur lg:hidden" aria-label="Buyer portal mobile navigation">
-        <div className="grid grid-cols-5 gap-1">
-          {bottomNavItems.map((item) => {
-            const Icon = item.icon
-            const isActive = item.key === mobileSection || (item.key === 'more' && mobileSection === 'appointments')
-            return (
-              <Link
-                key={item.key}
-                to={getPortalWorkspacePath(token, workspaceNavigationScope, item.section)}
-                aria-current={isActive ? 'page' : undefined}
-                className={`flex min-h-[42px] flex-col items-center justify-center gap-0.5 rounded-[16px] text-[0.66rem] font-semibold transition ${isActive ? 'bg-[#e9f8ef] text-[#063f34]' : 'text-[#667085] hover:bg-[#f7f8fa] hover:text-[#344054]'}`}
-                style={isActive ? mobileBottomNavActiveStyle : undefined}
-              >
-                <Icon size={18} strokeWidth={isActive ? 2.4 : 2} />
-                <span>{item.label}</span>
-              </Link>
-            )
-          })}
-        </div>
-      </nav>
+      <BuyerMobileBottomNavigation
+        items={bottomNavItems.map((item) => ({
+          ...item,
+          isActive: (currentKey) => item.key === 'more' && currentKey === 'appointments',
+        }))}
+        activeKey={mobileSection}
+        getPath={(item) => getPortalWorkspacePath(token, workspaceNavigationScope, item.section)}
+        activeStyle={mobileBottomNavActiveStyle}
+      />
     </main>
   )
 }
@@ -12020,6 +11998,22 @@ function ClientPortal() {
     portal?.branding?.logoUrl,
     portal?.branding?.logo_url,
   )
+  // The mobile chrome is deliberately dark so a partner's light mark has a
+  // consistent, premium surface. Retain the existing dark/generic mark only
+  // as a compatibility fallback for older branding records.
+  const buyerPortalLogoLightUrl = pickFirstText(
+    portal?.listing?.agencyLogoLightUrl,
+    portal?.listing?.agency_logo_light_url,
+    portal?.listing?.organisationLogoLightUrl,
+    portal?.listing?.organisation_logo_light_url,
+    portal?.listing?.branding?.logoLightUrl,
+    portal?.listing?.branding?.logoLight,
+    portal?.listing?.branding?.logo_light_url,
+    portal?.branding?.logoLightUrl,
+    portal?.branding?.logoLight,
+    portal?.branding?.logo_light_url,
+    buyerPortalLogoDarkUrl,
+  )
   const buyerPortalPrimaryColour = normalizePortalBrandColour(
     pickFirstText(
       portal?.listing?.branding?.primaryColour,
@@ -13544,7 +13538,7 @@ function ClientPortal() {
             workspaceNavigationScope={workspaceNavigationScope}
             activeSection={activeSection}
             brandName={buyerPortalBrandName}
-            brandLogoUrl={buyerPortalLogoDarkUrl}
+            brandLogoUrl={buyerPortalLogoLightUrl}
             brandPrimaryColour={buyerPortalPrimaryColour}
             brandSecondaryColour={buyerPortalSecondaryColour}
             brandAccentColour={buyerPortalAccentColour}

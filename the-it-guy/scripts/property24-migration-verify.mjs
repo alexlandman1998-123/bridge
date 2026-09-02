@@ -105,7 +105,6 @@ function createClients(config) {
       baseUrl: config.property24BaseUrl,
       username: config.property24Username,
       password: config.property24Password,
-      userGroupId: config.property24UserGroupId,
       apiVersion: config.property24ApiVersion,
     }),
   }

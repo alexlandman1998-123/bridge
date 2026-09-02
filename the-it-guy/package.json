@@ -1464,6 +1464,7 @@
     "test:transaction-journey-phase1": "node scripts/transaction-journey-alignment-phase1.test.mjs",
     "test:transaction-journey-phase2": "node --test server/tests/transactionJourneySnapshot.test.js",
     "test:transaction-journey-phase3": "node --test src/core/transactions/__tests__/transactionJourneyPresentation.test.js scripts/transaction-journey-alignment-phase3.test.mjs scripts/buyer-portal-phase3-canonical-journey.test.mjs",
+    "test:buyer-portal-mobile-phase4": "node --test scripts/buyer-portal-mobile-phase4-release-gate.test.mjs",
     "test:transaction-journey-phase4": "node --test scripts/transaction-journey-alignment-phase4.test.mjs",
     "test:transaction-journey-phase5": "node --test scripts/transaction-journey-alignment-phase5.test.mjs",
     "test:transaction-journey-phase6": "node --test scripts/transaction-journey-alignment-phase6.test.mjs",

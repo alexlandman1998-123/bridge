@@ -28,6 +28,14 @@ import {
   Users,
 } from 'lucide-react'
 import BuyerPortalDesktopSidebar from '../components/client-portal/BuyerPortalDesktopSidebar'
+import {
+  BuyerMobileBottomNavigation,
+  BuyerMobileActionSheet,
+  BuyerMobileHeader,
+  BuyerMobilePageIntro,
+  BuyerMobilePriorityAction,
+  BuyerMobilePropertyHero,
+} from '../components/client-portal/BuyerMobileChrome'
 import BuyerPortalJourney from '../components/client-portal/BuyerPortalJourney'
 import BuyerDocumentWorkspace, { BuyerDocumentSummary } from '../components/client-portal/documents/BuyerDocumentWorkspace'
 import BuyerFinanceWorkspace from '../components/client-portal/finance/BuyerFinanceWorkspace'
@@ -68,7 +76,9 @@ const DEMO_NAV = [
   { key: 'team', label: 'Your Team', icon: Users },
 ]
 
-const MOBILE_DEMO_NAV = DEMO_NAV.filter((item) => item.key !== 'messages')
+// Mobile navigation stays focused on the five destinations buyers use most.
+// Bond application remains reachable from Finance and the overflow menu.
+const MOBILE_DEMO_NAV = DEMO_NAV.filter((item) => ['overview', 'progress', 'documents', 'finance', 'team'].includes(item.key))
 
 const DEMO_JOURNEY_STAGES = [
   {
@@ -950,7 +960,13 @@ export default function ProspectBuyerDemo() {
 
 function MobileBuyerPortal({ activeSection, brand, config, token, loading, demoUploadComplete, financeModel, teamModel, demoUploadNotice, onCompleteUpload }) {
   const [menuOpen, setMenuOpen] = useState(false)
+  const [demoUploadSheetOpen, setDemoUploadSheetOpen] = useState(false)
   const mobileSection = activeSection
+  const openDemoUploadSheet = () => setDemoUploadSheetOpen(true)
+  const confirmDemoUpload = () => {
+    setDemoUploadSheetOpen(false)
+    onCompleteUpload()
+  }
   const pageTitles = {
     overview: '',
     progress: 'Transfer Journey',
@@ -967,7 +983,7 @@ function MobileBuyerPortal({ activeSection, brand, config, token, loading, demoU
         <MobileHeader
           activeSection={mobileSection}
           agencyName={config.agencyName}
-          logoUrl={config.logoDarkUrl || config.logoLightUrl}
+          logoUrl={config.logoLightUrl || config.logoDarkUrl}
           brand={brand}
           title={pageTitles[mobileSection]}
           menuOpen={menuOpen}
@@ -983,7 +999,7 @@ function MobileBuyerPortal({ activeSection, brand, config, token, loading, demoU
             config={config}
             loading={loading}
             demoUploadComplete={demoUploadComplete}
-            onCompleteUpload={onCompleteUpload}
+            onCompleteUpload={openDemoUploadSheet}
             token={token}
           />
         ) : null}
@@ -993,15 +1009,39 @@ function MobileBuyerPortal({ activeSection, brand, config, token, loading, demoU
             brand={brand}
             config={config}
             demoUploadComplete={demoUploadComplete}
-            onCompleteUpload={onCompleteUpload}
+            onCompleteUpload={openDemoUploadSheet}
           />
         ) : null}
-        {mobileSection === 'finance' ? <MobileFinance brand={brand} model={financeModel} onCompleteUpload={onCompleteUpload} token={token} /> : null}
+        {mobileSection === 'finance' ? <MobileFinance brand={brand} model={financeModel} onCompleteUpload={openDemoUploadSheet} token={token} /> : null}
         {mobileSection === 'bond-application' ? <MobileBondApplication brand={brand} demoUploadComplete={demoUploadComplete} token={token} /> : null}
         {mobileSection === 'messages' ? <MobileMessages brand={brand} token={token} /> : null}
         {mobileSection === 'team' ? <MobileTeam brand={brand} model={teamModel} /> : null}
       </div>
       <MobileBottomNav activeSection={mobileSection} brand={brand} token={token} />
+      <BuyerMobileActionSheet
+        isOpen={demoUploadSheetOpen}
+        onClose={() => setDemoUploadSheetOpen(false)}
+        eyebrow="Secure document upload"
+        title="Upload latest payslip"
+        description="In the live buyer portal, you can take a photo or choose a saved PDF. This demo keeps your data private and does not accept files."
+        labelledBy="demo-buyer-upload-title"
+      >
+        <div className="grid gap-3">
+          <div className="grid grid-cols-2 gap-3">
+            <button type="button" disabled className="flex min-h-[96px] flex-col items-center justify-center gap-2 rounded-[18px] border border-[#dfe5ec] bg-[#fbfcfd] text-sm font-semibold text-[#98a2b3]">
+              <UploadCloud size={20} />
+              Take photo
+            </button>
+            <button type="button" disabled className="flex min-h-[96px] flex-col items-center justify-center gap-2 rounded-[18px] border border-[#dfe5ec] bg-[#fbfcfd] text-sm font-semibold text-[#98a2b3]">
+              <FileText size={20} />
+              Choose file
+            </button>
+          </div>
+          <button type="button" onClick={confirmDemoUpload} className="flex min-h-12 w-full items-center justify-center rounded-[14px] text-sm font-semibold text-white" style={{ backgroundColor: brand.primary }}>
+            Continue in demo
+          </button>
+        </div>
+      </BuyerMobileActionSheet>
     </div>
   )
 }
@@ -1010,28 +1050,19 @@ function MobileHeader({ activeSection, agencyName, logoUrl, brand, title, menuOp
   const isOverview = activeSection === 'overview'
 
   return (
-    <header className="mb-4 flex min-h-11 items-center justify-between gap-3">
-      <div className="min-w-0">
-        {isOverview ? (
-          logoUrl ? (
-            <span className="inline-flex min-h-12 items-center gap-2 rounded-[14px] px-3 py-2 shadow-sm" style={{ backgroundColor: brand.primary }}>
-              <img src={logoUrl} alt={`${agencyName} logo`} className="max-h-8 max-w-[105px] object-contain object-left" />
-              <span className="max-w-[118px] truncate text-sm font-semibold uppercase tracking-[0.04em] text-white">{agencyName}</span>
-            </span>
-          ) : (
-            <strong className="text-base font-semibold">{agencyName}</strong>
-          )
-        ) : (
-          <div>
-            <h1 className="text-[1.55rem] font-semibold leading-tight tracking-[-0.05em] text-[#142132]">{title}</h1>
-          </div>
-        )}
-      </div>
-      <button type="button" onClick={onToggleMenu} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white text-[#142132] shadow-sm" aria-label={menuOpen ? 'Close menu' : 'Open menu'} aria-expanded={menuOpen}>
-        <span className="text-xl leading-none">≡</span>
-      </button>
-      {menuOpen ? (
-        <nav aria-label="Buyer portal menu" className="absolute left-4 right-4 top-[68px] z-50 overflow-hidden rounded-[18px] border border-[#dbe5ef] bg-white p-2 shadow-[0_18px_42px_rgba(15,23,42,0.18)]">
+    <BuyerMobileHeader
+      brand={brand}
+      brandName={agencyName}
+      logoUrl={isOverview ? logoUrl : ''}
+      title={isOverview ? '' : title}
+      homePath={getDemoPath(token, 'overview')}
+      actions={(
+        <button type="button" onClick={onToggleMenu} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/20 bg-white/12 text-white backdrop-blur" aria-label={menuOpen ? 'Close menu' : 'Open menu'} aria-expanded={menuOpen}>
+          <span className="text-xl leading-none">≡</span>
+        </button>
+      )}
+      menu={menuOpen ? (
+        <nav aria-label="Buyer portal menu" className="absolute left-0 right-0 top-[60px] z-50 overflow-hidden rounded-[18px] border border-[#dbe5ef] bg-white p-2 text-[#142132] shadow-[0_18px_42px_rgba(15,23,42,0.18)]">
           {DEMO_NAV.map((item) => {
             const Icon = item.icon
             const active = item.key === activeSection
@@ -1043,13 +1074,13 @@ function MobileHeader({ activeSection, agencyName, logoUrl, brand, title, menuOp
           })}
         </nav>
       ) : null}
-    </header>
+    />
   )
 }
 
 function DemoModeNotice() {
   return (
-    <div role="status" className="mb-3 rounded-[14px] border border-sky-200 bg-sky-50 px-3 py-2 text-sm leading-5 text-sky-900">
+    <div role="status" aria-live="polite" className="mb-3 rounded-[14px] border border-sky-200 bg-sky-50 px-3 py-2 text-sm leading-5 text-sky-900">
       Demo mode: uploads are disabled. In a live portal, this request opens secure file selection and only updates after a file is received.
     </div>
   )
@@ -1068,28 +1099,12 @@ function MobileMessages({ brand, token }) {
 }
 
 function MobileBottomNav({ activeSection, brand, token }) {
-  return (
-    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-[#dfe7ee] bg-white/96 px-3 pb-[calc(8px+env(safe-area-inset-bottom))] pt-2 shadow-[0_-14px_32px_rgba(15,23,42,0.12)] backdrop-blur">
-      <div className="mx-auto grid max-w-[430px] gap-1" style={{ gridTemplateColumns: `repeat(${MOBILE_DEMO_NAV.length}, minmax(0, 1fr))` }}>
-        {MOBILE_DEMO_NAV.map((item) => {
-          const Icon = item.icon
-          const active = item.key === activeSection
-          const label = item.key === 'progress' ? 'Journey' : item.key === 'documents' ? 'Docs' : item.key === 'bond-application' ? 'Bond' : item.key === 'team' ? 'Team' : item.label
-          return (
-            <Link
-              key={item.key}
-              to={getDemoPath(token, item.key)}
-              className="flex min-h-[52px] flex-col items-center justify-center gap-1 rounded-[14px] text-[0.6rem] font-semibold transition"
-              style={active ? { color: brand.primary } : { color: '#667085' }}
-            >
-              <Icon size={18} strokeWidth={active ? 2.4 : 2} />
-              <span>{label}</span>
-            </Link>
-          )
-        })}
-      </div>
-    </nav>
-  )
+  const items = MOBILE_DEMO_NAV.map((item) => ({
+    ...item,
+    mobileLabel: item.key === 'progress' ? 'Journey' : item.key === 'documents' ? 'Docs' : item.key === 'team' ? 'Team' : item.label,
+    isActive: (currentKey) => item.key === 'finance' && currentKey === 'bond-application',
+  }))
+  return <BuyerMobileBottomNavigation items={items} activeKey={activeSection} getPath={(item) => getDemoPath(token, item.key)} activeStyle={{ backgroundColor: hexToRgba(brand.primary, 0.1), color: brand.primary }} />
 }
 
 function MobileOverview({ brand, config, loading, demoUploadComplete, onCompleteUpload, token }) {
@@ -1099,10 +1114,8 @@ function MobileOverview({ brand, config, loading, demoUploadComplete, onComplete
 
   return (
     <div className="space-y-3">
-      <section className="relative overflow-hidden rounded-[22px] bg-slate-950 text-white shadow-[0_18px_42px_rgba(15,23,42,0.18)]">
-        <img src={config.samplePropertyImageUrl} alt={config.samplePropertyAddress} className="absolute inset-0 h-full w-full object-cover" />
-        <div className="absolute inset-0 bg-gradient-to-b from-black/18 via-black/20 to-black/82" />
-        <div className="relative flex min-h-[270px] flex-col justify-end p-5">
+      <BuyerMobilePropertyHero imageUrl={config.samplePropertyImageUrl} imageAlt={config.samplePropertyAddress} theme={brand}>
+        <div className="flex min-h-[270px] flex-col justify-end p-5">
           <p className="mb-auto text-xs font-semibold uppercase tracking-[0.16em] text-white/75">{loading ? 'Loading demo' : 'Your purchase'}</p>
           <h1 className="text-[1.65rem] font-semibold leading-[1.02] tracking-[-0.055em] text-white">{primaryAddress}</h1>
           <p className="mt-1 text-base font-semibold text-white/90">{areaAddress}</p>
@@ -1111,7 +1124,7 @@ function MobileOverview({ brand, config, loading, demoUploadComplete, onComplete
             <span className="text-xs text-white/80">On track</span>
           </div>
         </div>
-      </section>
+      </BuyerMobilePropertyHero>
 
       <MobilePriorityCard
         icon={FileSignature}
@@ -1191,7 +1204,7 @@ function MobileTransferJourney({ brand }) {
 
   return (
     <div className="space-y-3">
-      <p className="-mt-2 text-sm leading-5 text-[#52657b]">Here's how your property transfer works.</p>
+      <BuyerMobilePageIntro eyebrow="Journey" title="Your purchase journey" description="See where your transfer is now, what the team is doing, and what comes next." />
       <section className="relative space-y-3">
         <span className="absolute left-[31px] top-5 h-[calc(100%-40px)] w-px bg-[#dbe5ef]" />
         {mobileStages.map((stage) => (
@@ -1259,21 +1272,19 @@ function MobileDocuments({ brand, config, demoUploadComplete, onCompleteUpload }
 
   return (
     <div className="space-y-4">
-      <p className="-mt-2 flex items-center justify-between text-sm leading-5 text-[#52657b]">
-        <span>All the documents for your purchase.</span>
-        <Lock size={15} className="text-[#142132]" />
-      </p>
+      <BuyerMobilePageIntro eyebrow="Documents" title="Your documents" description="Everything your purchase needs, with required items first." meta={<Lock size={16} className="mt-1 text-[#52657b]" />} />
       <DocumentStatusSummary readyCount={5} actionCount={actionDocument ? 1 : 0} preparingCount={2} unavailableCount={0} />
       {actionDocument ? (
-        <section className="rounded-[18px] border border-amber-200 bg-amber-50/80 p-4">
-          <p className="text-sm font-semibold text-amber-700">1 document needs your attention</p>
-          <h2 className="mt-2 text-base font-semibold text-[#142132]">{actionDocument.title}</h2>
-          <p className="mt-1 text-sm leading-5 text-[#52657b]">We need your updated payslip before we can submit your application.</p>
-          <button type="button" onClick={onCompleteUpload} className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-[12px] bg-[#05080c] text-sm font-semibold text-white">
+        <BuyerMobilePriorityAction
+          eyebrow="1 document needs your attention"
+          title={actionDocument.title}
+          description="We need your updated payslip before we can submit your application."
+          icon={UploadCloud}
+          action={<button type="button" onClick={onCompleteUpload} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-[12px] bg-[#05080c] text-sm font-semibold text-white">
             <UploadCloud size={16} />
             Upload payslip
-          </button>
-        </section>
+          </button>}
+        />
       ) : null}
       {Object.entries(groupedDocuments).map(([group, rows]) => (
         <section key={group}>
@@ -1317,7 +1328,7 @@ function MobileDocumentRow({ brand, config, document, onCompleteUpload }) {
 function MobileFinance({ brand, model, onCompleteUpload, token }) {
   return (
     <div className="space-y-4">
-      <p className="-mt-2 text-sm leading-5 text-[#52657b]">Track your bond application and bank responses.</p>
+      <BuyerMobilePageIntro eyebrow="Finance" title="Your finance" description="Track your bond application, bank responses, and the next item needed from you." />
       <section className="rounded-[18px] border border-[#dbe5ef] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
         <div className="flex items-start gap-3">
           <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full border ${statusClasses('info')}`}>
@@ -1333,12 +1344,12 @@ function MobileFinance({ brand, model, onCompleteUpload, token }) {
       </section>
       <BondJourneyTracker brand={brand} currentStageIndex={model.currentStageIndex} />
       {model.firstAction ? (
-        <section className="rounded-[18px] border border-amber-200 bg-amber-50/80 p-4">
-          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-amber-700">Next action</p>
-          <h2 className="mt-2 text-base font-semibold text-[#142132]">{model.firstAction.title}</h2>
-          <p className="mt-1 text-sm leading-5 text-[#52657b]">{model.firstAction.description}</p>
-          <button type="button" onClick={onCompleteUpload} className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-[12px] bg-[#05080c] text-sm font-semibold text-white"><UploadCloud size={16} />Upload payslip</button>
-        </section>
+        <BuyerMobilePriorityAction
+          title={model.firstAction.title}
+          description={model.firstAction.description}
+          icon={UploadCloud}
+          action={<button type="button" onClick={onCompleteUpload} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-[12px] bg-[#05080c] text-sm font-semibold text-white"><UploadCloud size={16} />Upload payslip</button>}
+        />
       ) : (
         <section className="rounded-[18px] border border-emerald-200 bg-emerald-50/80 p-4"><p className="text-sm font-semibold text-emerald-700">Finance documents received</p><p className="mt-1 text-sm leading-5 text-[#52657b]">Your application is ready for its next review.</p></section>
       )}

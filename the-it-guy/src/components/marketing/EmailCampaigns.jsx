@@ -189,7 +189,6 @@ export function CreateEmailCampaign({ onBack }) {
   return (
     <div className="wa-page wa-create-page email-page">
       <button className="wa-back-link" type="button" onClick={onBack}><ArrowLeft size={15} /> Email Campaigns</button>
-      <header className="wa-create-header"><div><span>New campaign</span><h1>Create email campaign</h1><p>Build a focused email campaign for your clients and leads.</p></div><span className="wa-demo-badge">Demo preview</span></header>
       <EmailCampaignStepHeader activeStep={activeStep} />
       <div className="wa-create-grid">{activeStep === 1 ? <EmailCampaignDetailsForm onNext={() => setActiveStep(2)} /> : <EmailPlaceholderStep activeStep={activeStep} onBack={() => setActiveStep((step) => Math.max(1, step - 1))} onNext={() => setActiveStep((step) => Math.min(4, step + 1))} />}<EmailCampaignInfoPanel /></div>
       <EmailCampaignNextSteps />
