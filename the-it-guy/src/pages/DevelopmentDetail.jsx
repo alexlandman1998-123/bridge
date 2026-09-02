@@ -2586,7 +2586,31 @@ function DevelopmentDetail() {
 
   const rows = useMemo(() => data?.rows || [], [data?.rows])
   const allDevelopmentTransactionRows = useMemo(
-    () => selectCurrentDevelopmentTransactionRows(data?.transactionRows || rows),
+    () => {
+      // An empty transaction query is meaningful: units can still carry a
+      // legacy/manual sale status. Include those progressed unit rows as a
+      // recovery queue, alongside genuine current transactions.
+      const listedCurrentRows = selectCurrentDevelopmentTransactionRows(data?.transactionRows || rows)
+      // Prefer the unit hydration when the specialist list query returned an
+      // empty array. It still applies the same terminal-record guard above.
+      const actualRows = data?.transactionRows?.length
+        ? listedCurrentRows
+        : selectCurrentDevelopmentTransactionRows(rows)
+      const seenTransactionIds = new Set()
+      const uniqueActualRows = actualRows.filter((row) => {
+        const transactionId = row?.transaction?.id
+        if (!transactionId || seenTransactionIds.has(transactionId)) return false
+        seenTransactionIds.add(transactionId)
+        return true
+      })
+      const manualProgressRows = rows.filter((row) => (
+        !row?.transaction?.id &&
+        !isAvailableDevelopmentUnitStatus(row?.unit?.status) &&
+        resolveDevelopmentUnitStatusMainStage(row?.unit?.status) !== 'BLOCKED'
+      ))
+
+      return [...uniqueActualRows, ...manualProgressRows]
+    },
     [data?.transactionRows, rows],
   )
   const documents = useMemo(() => data?.documents || [], [data?.documents])
@@ -2708,21 +2732,21 @@ function DevelopmentDetail() {
         icon: Home,
       },
       {
-        label: 'Active Transactions',
+        label: 'Units In Progress',
         value: formatNumber(inProgressUnitIds.size),
-        meta: 'in progress',
+        meta: 'requires transaction capture where unlinked',
         icon: Workflow,
       },
       {
-        label: 'Revenue Secured',
+        label: 'Registered Unit Value',
         value: currency.format(revenueSecuredValue),
-        meta: `from ${formatNumber(registeredUnitIds.size)} unit${registeredUnitIds.size === 1 ? '' : 's'}`,
+        meta: `from ${formatNumber(registeredUnitIds.size)} registered unit${registeredUnitIds.size === 1 ? '' : 's'}`,
         icon: CircleDollarSign,
       },
       {
-        label: 'Pipeline Value',
+        label: 'In-Progress Unit Value',
         value: currency.format(pipelineValue),
-        meta: 'potential revenue',
+        meta: 'unit-status estimate',
         icon: Receipt,
       },
       {
@@ -9824,13 +9848,16 @@ function DevelopmentDetail() {
                     <tbody className="divide-y divide-[#edf2f7] bg-white">
                       {transactionRows.map((row) => {
                         const canOpenTransaction = Boolean(getDevelopmentRecordTransactionId(row) || row.unit?.id)
+                        const needsTransactionCapture = !row?.transaction?.id && Boolean(row?.unit?.id)
 
                         return (
                           <tr
                             key={row.transaction?.id || row.unit?.id}
                             className={`h-[64px] align-middle ${canOpenTransaction ? 'cursor-pointer hover:bg-[#f8fbff]' : ''}`}
                             onClick={() => {
-                              if (canOpenTransaction) {
+                              if (needsTransactionCapture) {
+                                openDevelopmentTransactionWizard({ unitId: row.unit.id })
+                              } else if (canOpenTransaction) {
                                 openDevelopmentTransactionWorkspace(row)
                               }
                             }}
@@ -9855,13 +9882,27 @@ function DevelopmentDetail() {
                               </div>
                             </td>
                             <td className="px-4 py-3 align-middle">
-                              <strong className="block truncate whitespace-nowrap text-sm font-semibold leading-6 text-[#1f3145]" title={row.buyerDisplayName}>
-                                {row.buyerDisplayName}
-                              </strong>
+                              {needsTransactionCapture ? (
+                                <button
+                                  type="button"
+                                  className="block max-w-full truncate whitespace-nowrap text-left text-sm font-semibold leading-6 text-[#1f7a43] hover:text-[#0f5f32]"
+                                  title="Capture buyer and transaction details"
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    openDevelopmentTransactionWizard({ unitId: row.unit.id })
+                                  }}
+                                >
+                                  Capture transaction
+                                </button>
+                              ) : (
+                                <strong className="block truncate whitespace-nowrap text-sm font-semibold leading-6 text-[#1f3145]" title={row.buyerDisplayName}>
+                                  {row.buyerDisplayName}
+                                </strong>
+                              )}
                             </td>
                             <td className="px-4 py-3 align-middle">
                               <span className="block truncate whitespace-nowrap text-sm leading-6 text-[#556a80]" title={row.buyerEmail}>
-                                {row.buyerEmail}
+                                {needsTransactionCapture ? 'Buyer details pending' : row.buyerEmail}
                               </span>
                             </td>
                             <td className="px-4 py-3 align-middle">

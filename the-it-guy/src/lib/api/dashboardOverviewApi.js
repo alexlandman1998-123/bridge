@@ -1039,8 +1039,16 @@ export async function fetchDevelopmentIdsForOrganisation(client, organisationId 
   const normalizedOrganisationId = String(organisationId || '').trim()
   if (!normalizedOrganisationId) return []
 
-  const [directQuery, transactionQuery] = await Promise.all([
+  const [directQuery, relationshipQuery, transactionQuery] = await Promise.all([
     client.from('developments').select('id').eq('organisation_id', normalizedOrganisationId),
+    // Developments can be shared with a developer organisation without their
+    // owning `organisation_id` changing. The detail workspace already honours
+    // this relationship; the dashboard must use the same scope.
+    client
+      .from('development_organisation_relationships')
+      .select('development_id')
+      .eq('organisation_id', normalizedOrganisationId)
+      .eq('status', 'active'),
     client
       .from('transactions')
       .select('development_id')
@@ -1060,6 +1068,19 @@ export async function fetchDevelopmentIdsForOrganisation(client, organisationId 
     throw directQuery.error
   }
 
+  const relationshipIds = !relationshipQuery.error
+    ? (relationshipQuery.data || []).map((row) => String(row?.development_id || '').trim()).filter(Boolean)
+    : []
+
+  if (
+    relationshipQuery.error &&
+    !isMissingTableError(relationshipQuery.error, 'development_organisation_relationships') &&
+    !isMissingSchemaError(relationshipQuery.error) &&
+    !isPermissionDeniedError(relationshipQuery.error)
+  ) {
+    throw relationshipQuery.error
+  }
+
   if (transactionQuery.error) {
     if (
       isMissingColumnError(transactionQuery.error, 'organisation_id') ||
@@ -1067,7 +1088,7 @@ export async function fetchDevelopmentIdsForOrganisation(client, organisationId 
       isMissingTableError(transactionQuery.error, 'transactions') ||
       isPermissionDeniedError(transactionQuery.error)
     ) {
-      return [...new Set(directIds)]
+      return [...new Set([...directIds, ...relationshipIds])]
     }
     throw transactionQuery.error
   }
@@ -1075,6 +1096,7 @@ export async function fetchDevelopmentIdsForOrganisation(client, organisationId 
   return [
     ...new Set([
       ...directIds,
+      ...relationshipIds,
       ...(transactionQuery.data || []).map((row) => String(row?.development_id || '').trim()).filter(Boolean),
     ]),
   ]
