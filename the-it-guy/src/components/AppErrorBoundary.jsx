@@ -5,7 +5,7 @@ import { reportError } from '../services/observability/errorTracking'
 // A stale HTML shell can reference a JavaScript asset from a previous release.
 // Retry once automatically, then stop. Keeping this limit release-independent
 // prevents a changed shell from resetting the counter and reloading forever.
-const STALE_CHUNK_AUTO_RELOAD_LIMIT = 1
+const STALE_CHUNK_AUTO_RELOAD_LIMIT = 6
 const STALE_CHUNK_FORCE_RELOAD_AFTER_PROBE_ATTEMPT = 1
 const STALE_CHUNK_RELOAD_MARKER_TTL_MS = 10 * 60 * 1000
 const STALE_CHUNK_RETRY_DELAYS_MS = [250, 1500, 4000, 8000, 15000, 30000]

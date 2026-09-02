@@ -17,6 +17,8 @@ assert.match(viteConfig, /arch9-release-integrity/, 'Vite must emit the Arch9 re
 assert.match(viteConfig, /release-manifest\.json/, 'Vite must publish a release manifest.')
 assert.match(viteConfig, /supabaseOrigin/, 'Release manifest must expose its public Supabase origin for environment attestation.')
 assert.match(viteConfig, /AgentListingDetail/, 'The critical manifest set must include the listing-detail chunk.')
+assert.match(viteConfig, /const emittedFiles = new Set\(Object\.keys\(bundle\)\)/, 'The release manifest must only publish assets emitted by this build.')
+assert.match(viteConfig, /if \(!chunk && !emittedFiles\.has\(fileName\)\) return/, 'Obsolete Rollup import references must be excluded from the release manifest.')
 assert.match(viteConfig, /arch9-release/, 'The HTML must carry its release marker.')
 assert.match(viteConfig, /resolveLocalGitCommitSha/, 'Local guarded builds must derive their release ID from the checked-out commit.')
 assert.equal(resolveReleaseId({ viteReleaseId: 'a'.repeat(40), vercelCommitSha: 'a'.repeat(40) }), 'a'.repeat(40))

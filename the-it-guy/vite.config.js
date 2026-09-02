@@ -120,14 +120,20 @@ function releaseIntegrityPlugin() {
     generateBundle(_outputOptions, bundle) {
       const chunks = Object.values(bundle).filter((item) => item.type === 'chunk')
       const chunksByFileName = new Map(chunks.map((chunk) => [chunk.fileName, chunk]))
+      const emittedFiles = new Set(Object.keys(bundle))
       const seedFiles = chunks
         .filter((chunk) => chunk.isEntry || chunk.fileName.includes('AgentListingDetail'))
         .map((chunk) => chunk.fileName)
       const criticalFiles = new Set()
       const visit = (fileName) => {
         if (!fileName || criticalFiles.has(fileName)) return
-        criticalFiles.add(fileName)
         const chunk = chunksByFileName.get(fileName)
+        // Rollup can retain an obsolete dynamic-import reference while it
+        // finalises chunks. Never publish a name that this build did not emit:
+        // the browser's stale-chunk recovery uses this manifest to decide
+        // whether to wait for an asset or reload the app shell.
+        if (!chunk && !emittedFiles.has(fileName)) return
+        criticalFiles.add(fileName)
         if (!chunk) return
         for (const importedFile of [...(chunk.imports || []), ...(chunk.dynamicImports || [])]) visit(importedFile)
         for (const cssFile of chunk.viteMetadata?.importedCss || []) criticalFiles.add(cssFile)

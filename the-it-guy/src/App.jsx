@@ -188,6 +188,8 @@ function ReleaseFreshnessGuard() {
   useEffect(() => {
     if (typeof window === 'undefined') return undefined
 
+    window.__arch9MarkBootstrapReady?.()
+
     let cancelled = false
     let timerId = null
 

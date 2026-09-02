@@ -26,6 +26,83 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      ;(() => {
+        const retryKey = 'arch9:bootstrap-retry:v1'
+        const retryWindowMs = 2 * 60 * 1000
+        let appStarted = false
+
+        const isModuleLoadFailure = (value) => /(?:chunkloaderror|dynamically imported module|module script|failed to fetch|load failed for module|\/assets\/.*\.js)/i.test(
+          String(value?.message || value?.reason?.message || value || ''),
+        )
+
+        const getRetryCount = () => {
+          try {
+            const record = JSON.parse(window.sessionStorage.getItem(retryKey) || '{}')
+            if (!record.timestamp || Date.now() - record.timestamp > retryWindowMs) return 0
+            return Number(record.count) || 0
+          } catch {
+            return 0
+          }
+        }
+
+        const saveRetryCount = (count) => {
+          try {
+            window.sessionStorage.setItem(retryKey, JSON.stringify({ count, timestamp: Date.now() }))
+          } catch {
+            // Navigation below remains safe when browser storage is unavailable.
+          }
+        }
+
+        const reloadFreshShell = () => {
+          const url = new URL(window.location.href)
+          url.searchParams.set('arch9_bootstrap_reload', String(Date.now()))
+          window.location.replace(url.toString())
+        }
+
+        const showRecovery = () => {
+          const root = document.getElementById('root')
+          if (!root) return
+          root.innerHTML = `
+            <main style="min-height:100vh;display:grid;place-items:center;padding:24px;background:#f8fafc;color:#14213d;font-family:Inter,system-ui,sans-serif">
+              <section style="width:min(100%,520px);padding:36px;border:1px solid #dbe4ee;border-radius:20px;background:#fff;box-shadow:0 20px 60px rgba(15,23,42,.1);text-align:center">
+                <p style="margin:0 0 12px;color:#0f766e;font-size:12px;font-weight:800;letter-spacing:.12em">ARCH9 UPDATE</p>
+                <h1 style="margin:0;font-size:28px;line-height:1.2">Finishing the latest update</h1>
+                <p style="margin:16px 0 24px;color:#52647a;line-height:1.6">This browser still has an older app file open. Your data is safe—refresh to load the current version.</p>
+                <button type="button" id="arch9-bootstrap-retry" style="border:0;border-radius:10px;padding:12px 18px;background:#0f766e;color:#fff;font:inherit;font-weight:700;cursor:pointer">Refresh Arch9</button>
+              </section>
+            </main>`
+          document.getElementById('arch9-bootstrap-retry')?.addEventListener('click', () => {
+            try { window.sessionStorage.removeItem(retryKey) } catch {}
+            reloadFreshShell()
+          })
+        }
+
+        const recover = () => {
+          if (appStarted) return
+          const retryCount = getRetryCount()
+          if (retryCount < 1) {
+            saveRetryCount(retryCount + 1)
+            window.setTimeout(reloadFreshShell, 50)
+            return
+          }
+          showRecovery()
+        }
+
+        window.addEventListener('error', (event) => {
+          const target = event.target
+          const failedEntryScript = target?.tagName === 'SCRIPT' && /(?:\/assets\/|\/src\/main\.jsx)/.test(String(target?.src || ''))
+          if (failedEntryScript || isModuleLoadFailure(event.error || event.message)) recover()
+        }, true)
+        window.addEventListener('unhandledrejection', (event) => {
+          if (isModuleLoadFailure(event.reason)) recover()
+        })
+        window.__arch9MarkBootstrapReady = () => {
+          appStarted = true
+          try { window.sessionStorage.removeItem(retryKey) } catch {}
+        }
+      })()
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
