@@ -5,6 +5,7 @@ import path from 'node:path'
 import {
   createProperty24MigrationDryRun,
   parseProperty24ContactAgentIds,
+  resolveProperty24ListingSourceReference,
 } from '../server/property24/migrationImportService.js'
 import {
   parseProperty24MigrationDryRunArgs,
@@ -31,6 +32,8 @@ const imagesCsv = `ListingNumber,Caption,Ordinal,Prop24ImageUrl
 assert.deepEqual(parseProperty24ContactAgentIds('77969, 77970'), { valid: true, ids: [77969, 77970] })
 assert.deepEqual(parseProperty24ContactAgentIds('[77969;77970]'), { valid: true, ids: [77969, 77970] })
 assert.equal(parseProperty24ContactAgentIds('not-an-id').valid, false)
+assert.equal(resolveProperty24ListingSourceReference({ agencyId: 40067, listingNumber: 116560913, sourceReference: '' }), 'P24-40067-116560913')
+assert.equal(resolveProperty24ListingSourceReference({ agencyId: 40067, listingNumber: 116560913, sourceReference: 'ARCH9-EXISTING' }), 'ARCH9-EXISTING')
 assert.throws(() => parseProperty24MigrationDryRunArgs(['--apply']), /dry-run-only/)
 assert.throws(() => parseProperty24MigrationDryRunArgs([]), /--agents/)
 
@@ -57,6 +60,18 @@ assert.equal(ready.safety.property24WritesPerformed, false)
 assert.equal(ready.safety.databaseWritesPerformed, false)
 assert.equal(ready.safety.imageDownloadsPerformed, false)
 assert.equal(ready.issues.length, 0)
+
+const blankListingReferences = createProperty24MigrationDryRun({
+  agents: { text: agentsCsv },
+  listings: { text: listingsCsv.replace(/,ARCH9-VET-PHASE2-(?:RENT-NEWLANDS|SALE-SANDTON),/g, ',,') },
+  images: { text: imagesCsv },
+  expectedAgencyId: 31382,
+})
+assert.equal(blankListingReferences.status, 'READY')
+assert.deepEqual(
+  blankListingReferences.inventory.listings.map((record) => record.sourceReference),
+  ['P24-31382-100314819', 'P24-31382-100314820'],
+)
 
 const warning = createProperty24MigrationDryRun({
   agents: { text: agentsCsv },

@@ -8,6 +8,7 @@ import {
   createProperty24MigrationDryRun,
   parseProperty24ContactAgentIds,
   parseProperty24MigrationSourceRows,
+  resolveProperty24ListingSourceReference,
 } from './migrationImportService.js'
 import {
   normalizeArch9AgentCandidate,
@@ -531,7 +532,11 @@ function buildListingPlans(rows, {
     const listingNumber = toInteger(value(row, 'ListingNumber'))
     const listingType = value(row, 'ListingType')
     const sourceStatus = value(row, 'Status')
-    const sourceReference = value(row, 'SourceReference')
+    const sourceReference = resolveProperty24ListingSourceReference({
+      agencyId: value(row, 'AgencyId'),
+      listingNumber,
+      sourceReference: value(row, 'SourceReference'),
+    })
     const contacts = parseProperty24ContactAgentIds(value(row, 'ContactAgentIds')).ids
     const agentRelationships = contacts.map((property24AgentId) => {
       const agentPlan = agentsById.get(String(property24AgentId)) || null

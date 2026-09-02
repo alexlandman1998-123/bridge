@@ -30,6 +30,7 @@ export function parseProperty24MigrationVerifyArgs(argv = []) {
     markdownOutput: path.join(artifacts, 'migration-phase5-final-evidence.md'),
     fromDate: '',
     concurrency: 4,
+    environment: 'exdev',
   }
   for (const arg of argv) {
     if (arg.startsWith('--mapping=')) options.mapping = normalize(arg.slice('--mapping='.length))
@@ -39,10 +40,12 @@ export function parseProperty24MigrationVerifyArgs(argv = []) {
     else if (arg.startsWith('--markdown-output=')) options.markdownOutput = normalize(arg.slice('--markdown-output='.length))
     else if (arg.startsWith('--from-date=')) options.fromDate = normalize(arg.slice('--from-date='.length))
     else if (arg.startsWith('--concurrency=')) options.concurrency = positiveInteger(arg.slice('--concurrency='.length), '--concurrency')
+    else if (arg.startsWith('--environment=')) options.environment = normalize(arg.slice('--environment='.length)).toLowerCase()
     else throw new Error(`Unknown option: ${arg}`)
   }
   if (!options.mapping || !options.images || !options.rerun || !options.output || !options.markdownOutput) throw new Error('All verification input and output paths are required.')
   if (options.concurrency > 8) throw new Error('--concurrency must be 8 or less.')
+  if (!['exdev', 'production'].includes(options.environment)) throw new Error('--environment must be exdev or production.')
   return options
 }
 
@@ -73,8 +76,10 @@ function parseEnvFile(filePath) {
   )
 }
 
-function loadConfig() {
-  const files = ['.env', '.env.local', '.env.staging.local', '.env.property24.local']
+function loadConfig(environment = 'exdev') {
+  const files = ['.env', '.env.local', environment === 'production'
+    ? '.env.property24.production.local'
+    : '.env.property24.local']
   const fromFiles = files.reduce((merged, file) => ({ ...merged, ...parseEnvFile(path.join(appRoot, file)) }), {})
   const env = { ...fromFiles, ...process.env }
   const config = {
@@ -83,6 +88,8 @@ function loadConfig() {
     property24BaseUrl: normalize(env.PROPERTY24_BASE_URL),
     property24Username: normalize(env.PROPERTY24_BASIC_AUTH_USERNAME),
     property24Password: normalize(env.PROPERTY24_BASIC_AUTH_PASSWORD),
+    property24UserGroupId: normalize(env.PROPERTY24_USER_GROUP_ID),
+    property24ApiVersion: normalize(env.PROPERTY24_API_VERSION) || (environment === 'production' ? 'v55' : 'v53'),
   }
   const missing = Object.entries(config).filter(([, value]) => !value).map(([name]) => name)
   if (missing.length) throw new Error(`Missing verification configuration: ${missing.join(', ')}.`)
@@ -98,6 +105,8 @@ function createClients(config) {
       baseUrl: config.property24BaseUrl,
       username: config.property24Username,
       password: config.property24Password,
+      userGroupId: config.property24UserGroupId,
+      apiVersion: config.property24ApiVersion,
     }),
   }
 }
@@ -171,7 +180,7 @@ export async function runProperty24MigrationVerify(argv = process.argv.slice(2),
   const mapping = readJsonWithHash(options.mapping)
   const images = readJsonWithHash(options.images)
   const rerun = readJsonWithHash(options.rerun)
-  const config = dependencies.config || loadConfig()
+  const config = dependencies.config || loadConfig(options.environment)
   const clients = dependencies.clients || createClients(config)
   const generatedAt = dependencies.generatedAt || new Date().toISOString()
   const report = await verifyProperty24Migration({

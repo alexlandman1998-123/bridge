@@ -180,6 +180,20 @@ export function parseProperty24ContactAgentIds(value) {
   return { valid: true, ids: [...new Set(parts.map(Number))] }
 }
 
+// Property24's migration export may include the SourceReference column but
+// leave its values blank.  ListingNumber is agency-scoped and is the stable
+// external identity in that case, so make the internal reference deterministic
+// rather than rejecting an otherwise valid export.
+export function resolveProperty24ListingSourceReference({ agencyId, listingNumber, sourceReference } = {}) {
+  const provided = normalizeText(sourceReference)
+  if (provided) return provided
+  const normalizedAgencyId = Number(agencyId)
+  const normalizedListingNumber = Number(listingNumber)
+  if (!Number.isSafeInteger(normalizedAgencyId) || normalizedAgencyId <= 0) return ''
+  if (!Number.isSafeInteger(normalizedListingNumber) || normalizedListingNumber <= 0) return ''
+  return `P24-${normalizedAgencyId}-${normalizedListingNumber}`
+}
+
 function parseMigrationFile(role, source = {}) {
   const issues = []
   const text = String(source.text ?? '')
@@ -393,12 +407,18 @@ function validateListings(parsed) {
     requireRowValue(issues, 'listings', row, 'Description')
     requireRowValue(issues, 'listings', row, 'DescriptionHeader')
     const suburbIdValue = requireRowValue(issues, 'listings', row, 'SuburbId')
-    const sourceReference = requireRowValue(issues, 'listings', row, 'SourceReference')
+    const sourceReferenceValue = fileValue(row, 'SourceReference')
     const floorAreaValue = requireRowValue(issues, 'listings', row, 'FloorArea')
     requireRowValue(issues, 'listings', row, 'FloorAreaAreaUnit')
     const propertyTypeIdValue = requireRowValue(issues, 'listings', row, 'PropertyTypeId')
     const agencyId = validatePositiveInteger(issues, 'listings', row, 'AgencyId', agencyIdValue)
     const listingNumber = validatePositiveInteger(issues, 'listings', row, 'ListingNumber', listingNumberValue)
+    const sourceReference = resolveProperty24ListingSourceReference({
+      agencyId,
+      listingNumber,
+      sourceReference: sourceReferenceValue,
+    })
+    if (!sourceReference) requireRowValue(issues, 'listings', row, 'SourceReference')
     const suburbId = validatePositiveInteger(issues, 'listings', row, 'SuburbId', suburbIdValue)
     const propertyTypeId = validatePositiveInteger(issues, 'listings', row, 'PropertyTypeId', propertyTypeIdValue)
     const price = validateNonNegativeNumber(issues, 'listings', row, 'Price', priceValue, { required: true })
@@ -466,9 +486,9 @@ function validateImages(parsed) {
     const listingNumber = validatePositiveInteger(issues, 'images', row, 'ListingNumber', listingNumberValue)
     const ordinal = validatePositiveInteger(issues, 'images', row, 'Ordinal', ordinalValue)
 
-    if (!caption) {
-      issues.push(createIssue({ severity: 'warning', code: 'missing_image_caption', role: 'images', rowNumber: row.__rowNumber, field: 'Caption', message: 'Image caption is blank.' }))
-    }
+    // Captions are optional in Property24 exports. Keep a blank caption as
+    // null so the original media order and URL can import without inventing
+    // editorial copy or forcing an unnecessary migration exception.
     if (imageUrl && !isHttpUrl(imageUrl)) {
       issues.push(createIssue({ code: 'invalid_image_url', role: 'images', rowNumber: row.__rowNumber, field: 'Prop24ImageUrl', message: 'Prop24ImageUrl must be an HTTP(S) URL.' }))
     }

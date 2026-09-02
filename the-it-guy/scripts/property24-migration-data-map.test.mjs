@@ -148,6 +148,21 @@ assert.equal(sale.privateListing.suburb, 'Sandton')
 assert.equal(sale.privateListing.sellerCanonicalFacts.rentalInfo, undefined)
 assert.equal(sale.publicationData.listingType, 'Sale')
 
+const derivedListingReference = createProperty24MigrationMappingPlan({
+  agents: { text: agentsCsv },
+  listings: { text: listingsCsv.replace(/,ARCH9-VET-PHASE2-(?:RENT-NEWLANDS|SALE-SANDTON),/g, ',,') },
+  images: { text: imagesCsv },
+  expectedAgencyId: 31382,
+  organisationId,
+  environment: 'exdev',
+  arch9Agents,
+  catalog,
+})
+assert.equal(derivedListingReference.status, 'READY')
+assert.equal(derivedListingReference.listingPlans[0].sourceReference, 'P24-31382-100314819')
+assert.equal(derivedListingReference.listingPlans[0].privateListing.listingReference, 'P24-31382-100314819')
+assert.equal(derivedListingReference.listingPlans[0].property24Sync.privateListingKey, 'P24-31382-100314819')
+
 assert.equal(ready.fieldCoverage.agents.sourceFieldCount, 15)
 assert.equal(ready.fieldCoverage.images.preservedOnlyCount, 0)
 assert.equal(ready.relationships[0].imageCount, 2)

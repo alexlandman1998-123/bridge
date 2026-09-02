@@ -36,6 +36,7 @@ export function parseProperty24MigrationApplyArgs(argv = []) {
     fromDate: '',
     concurrency: 4,
     attempts: 3,
+    environment: 'exdev',
   }
   for (const arg of argv) {
     if (arg === '--apply') options.apply = true
@@ -45,11 +46,13 @@ export function parseProperty24MigrationApplyArgs(argv = []) {
     else if (arg.startsWith('--from-date=')) options.fromDate = normalize(arg.slice('--from-date='.length))
     else if (arg.startsWith('--concurrency=')) options.concurrency = parsePositiveInteger(arg.slice('--concurrency='.length), '--concurrency')
     else if (arg.startsWith('--attempts=')) options.attempts = parsePositiveInteger(arg.slice('--attempts='.length), '--attempts')
+    else if (arg.startsWith('--environment=')) options.environment = normalize(arg.slice('--environment='.length)).toLowerCase()
     else throw new Error(`Unknown option: ${arg}`)
   }
   if (!options.mapping || !options.imageOutput || !options.output) throw new Error('Mapping, image output and evidence output paths are required.')
   if (options.concurrency > 12) throw new Error('--concurrency must be 12 or less.')
   if (options.attempts > 5) throw new Error('--attempts must be 5 or less.')
+  if (!['exdev', 'production'].includes(options.environment)) throw new Error('--environment must be exdev or production.')
   return options
 }
 
@@ -79,8 +82,10 @@ function parseEnvFile(filePath) {
   )
 }
 
-function loadConfig() {
-  const files = ['.env', '.env.local', '.env.staging.local', '.env.property24.local']
+function loadConfig(environment = 'exdev') {
+  const files = ['.env', '.env.local', environment === 'production'
+    ? '.env.property24.production.local'
+    : '.env.property24.local']
   const fromFiles = files.reduce((merged, file) => ({ ...merged, ...parseEnvFile(path.join(appRoot, file)) }), {})
   const env = { ...fromFiles, ...process.env }
   const config = {
@@ -89,6 +94,8 @@ function loadConfig() {
     property24BaseUrl: normalize(env.PROPERTY24_BASE_URL),
     property24Username: normalize(env.PROPERTY24_BASIC_AUTH_USERNAME),
     property24Password: normalize(env.PROPERTY24_BASIC_AUTH_PASSWORD),
+    property24UserGroupId: normalize(env.PROPERTY24_USER_GROUP_ID),
+    property24ApiVersion: normalize(env.PROPERTY24_API_VERSION) || (environment === 'production' ? 'v55' : 'v53'),
   }
   const missing = Object.entries(config).filter(([, value]) => !value).map(([name]) => name)
   if (missing.length) throw new Error(`Missing apply/reconcile configuration: ${missing.join(', ')}.`)
@@ -117,6 +124,8 @@ function createClients(config) {
     baseUrl: config.property24BaseUrl,
     username: config.property24Username,
     password: config.property24Password,
+    userGroupId: config.property24UserGroupId,
+    apiVersion: config.property24ApiVersion,
   })
   return { supabase, property24 }
 }
@@ -124,7 +133,7 @@ function createClients(config) {
 export async function runProperty24MigrationApplyReconcile(argv = process.argv.slice(2), dependencies = {}) {
   const options = parseProperty24MigrationApplyArgs(argv)
   const mappingPlan = readJson(options.mapping)
-  const config = dependencies.config || loadConfig()
+  const config = dependencies.config || loadConfig(options.environment)
   const clients = dependencies.clients || createClients(config)
   const repository = dependencies.repository || createSupabaseProperty24MigrationRepository(clients.supabase)
   const generatedAt = dependencies.generatedAt || new Date().toISOString()

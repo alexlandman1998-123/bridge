@@ -22,6 +22,12 @@ export function normalizeProperty24BaseUrl(value = PROPERTY24_EXDEV_BASE_URL) {
   return baseUrl.replace(/\/+$/g, '')
 }
 
+export function normalizeProperty24ApiVersion(value = 'v53') {
+  const normalized = normalizeProperty24Text(value).toLowerCase().replace(/^\/?listing\//, '').replace(/^v?/, 'v')
+  if (!/^v\d+$/.test(normalized)) throw new Error('Property24 API version must use the form vNN, for example v55.')
+  return normalized
+}
+
 export function buildProperty24BasicAuthHeader(username, password) {
   const user = normalizeProperty24Text(username)
   const pass = normalizeProperty24Text(password)
@@ -101,11 +107,13 @@ export function createProperty24Client({
   username,
   password,
   userGroupId,
+  apiVersion = 'v53',
   timeoutMs = PROPERTY24_DEFAULT_TIMEOUT_MS,
   fetchImpl = globalThis.fetch,
 } = {}) {
   if (typeof fetchImpl !== 'function') throw new Error('A fetch implementation is required.')
   const normalizedBaseUrl = normalizeProperty24BaseUrl(baseUrl)
+  const normalizedApiVersion = normalizeProperty24ApiVersion(apiVersion)
   const authorization = buildProperty24BasicAuthHeader(username, password)
   const normalizedUserGroupId = normalizeProperty24Text(userGroupId)
 
@@ -165,78 +173,81 @@ export function createProperty24Client({
     }
   }
 
+  const listingPath = (suffix) => `/listing/${normalizedApiVersion}${suffix}`
+
   return {
     baseUrl: normalizedBaseUrl,
+    apiVersion: normalizedApiVersion,
     request,
     echo: (stringToEcho = 'Arch9 Property24 Phase 1 smoke test') =>
-      request('/listing/v53/echo', { params: { stringToEcho } }),
+      request(listingPath('/echo'), { params: { stringToEcho } }),
     echoAuthenticated: (stringToEcho = 'Arch9 Property24 authenticated smoke test') =>
-      request('/listing/v53/echo-authenticated', { params: { stringToEcho } }),
+      request(listingPath('/echo-authenticated'), { params: { stringToEcho } }),
     fetchAgencies: (franchiseId) =>
-      request('/listing/v53/agencies', { params: { franchiseId } }),
+      request(listingPath('/agencies'), { params: { franchiseId } }),
     fetchAgency: (agencyId) =>
-      request(`/listing/v53/agencies/${encodeURIComponent(String(agencyId))}`),
+      request(listingPath(`/agencies/${encodeURIComponent(String(agencyId))}`)),
     fetchAgencyAgents: (agencyId) =>
-      request(`/listing/v53/agencies/${encodeURIComponent(String(agencyId))}/agents`),
+      request(listingPath(`/agencies/${encodeURIComponent(String(agencyId))}/agents`)),
     createAgent: (agent) =>
-      request('/listing/v53/agents', { method: 'POST', body: agent }),
+      request(listingPath('/agents'), { method: 'POST', body: agent }),
     updateAgent: (agent) =>
-      request('/listing/v53/agents', { method: 'PUT', body: agent }),
+      request(listingPath('/agents'), { method: 'PUT', body: agent }),
     updateAgentProfilePicture: (agentId, profilePicture) =>
-      request(`/listing/v53/agents/${encodeURIComponent(String(agentId))}/profile-picture`, {
+      request(listingPath(`/agents/${encodeURIComponent(String(agentId))}/profile-picture`), {
         method: 'PUT',
         body: profilePicture,
       }),
     saveListing: (listing) =>
-      request('/listing/v53/listings', { method: 'POST', body: listing }),
+      request(listingPath('/listings'), { method: 'POST', body: listing }),
     fetchCountries: () =>
-      request('/listing/v53/countries'),
+      request(listingPath('/countries')),
     fetchProvinces: (countryId) =>
-      request('/listing/v53/provinces', { params: { countryId } }),
+      request(listingPath('/provinces'), { params: { countryId } }),
     fetchCities: (provinceId) =>
-      request('/listing/v53/cities', { params: { provinceId } }),
+      request(listingPath('/cities'), { params: { provinceId } }),
     fetchSuburbs: (cityId) =>
-      request('/listing/v53/suburbs', { params: { cityId } }),
+      request(listingPath('/suburbs'), { params: { cityId } }),
     findSuburb: ({ countryName, provinceName, cityName, suburbName } = {}) =>
-      request('/listing/v53/suburbs/find', { params: { countryName, provinceName, cityName, suburbName } }),
+      request(listingPath('/suburbs/find'), { params: { countryName, provinceName, cityName, suburbName } }),
     findSuburbFromPoint: ({ latitude, longitude } = {}) =>
-      request('/listing/v53/suburbs/find-from-point', { params: { latitude, longitude } }),
+      request(listingPath('/suburbs/find-from-point'), { params: { latitude, longitude } }),
     fetchPropertyTypes: (countryId) =>
-      request('/listing/v53/property-types', { params: { countryId } }),
+      request(listingPath('/property-types'), { params: { countryId } }),
     fetchListingTypes: (countryId) =>
-      request('/listing/v53/listing-types', { params: { countryId } }),
+      request(listingPath('/listing-types'), { params: { countryId } }),
     checkListingOnPortal: (listingNumber) =>
-      request(`/listing/v53/listings/${encodeURIComponent(String(listingNumber))}/is-on-portal`),
+      request(listingPath(`/listings/${encodeURIComponent(String(listingNumber))}/is-on-portal`)),
     updateListingStatus: (listingNumber, listingStatus) =>
-      request(`/listing/v53/listings/${encodeURIComponent(String(listingNumber))}/status`, {
+      request(listingPath(`/listings/${encodeURIComponent(String(listingNumber))}/status`), {
         method: 'PUT',
         params: { listingStatus },
       }),
     fetchListingReconciliation: ({ agencyId, agentId } = {}) =>
-      request('/listing/v53/listings/reconciliation', { params: { agencyId, agentId } }),
+      request(listingPath('/listings/reconciliation'), { params: { agencyId, agentId } }),
     fetchListingUpdates: (fromDate) =>
-      request('/listing/v53/listings/updates', { params: { fromDate } }),
+      request(listingPath('/listings/updates'), { params: { fromDate } }),
     fetchListingLeads: ({ after } = {}) =>
-      request('/listing/v53/listings/leads', { params: { after } }),
+      request(listingPath('/listings/leads'), { params: { after } }),
     fetchListingLeadsForListing: (listingNumber, { startDate, endDate } = {}) =>
-      request(`/listing/v53/listings/${encodeURIComponent(String(listingNumber))}/leads`, {
+      request(listingPath(`/listings/${encodeURIComponent(String(listingNumber))}/leads`), {
         params: { startDate, endDate },
       }),
     fetchAgencyListingStatistics: ({ agencyIds, listingType, startDate, endDate } = {}) =>
-      request('/listing/v53/listings/statistics', {
+      request(listingPath('/listings/statistics'), {
         params: { agencyIds, listingType, startDate, endDate },
       }),
     fetchListingStatistics: (listingNumber, { startDate, endDate } = {}) =>
-      request(`/listing/v53/listings/${encodeURIComponent(String(listingNumber))}/statistics`, {
+      request(listingPath(`/listings/${encodeURIComponent(String(listingNumber))}/statistics`), {
         params: { startDate, endDate },
       }),
     fetchLeadStatisticsPeriods: () =>
-      request('/listing/v53/listings/leads/statistics-periods'),
+      request(listingPath('/listings/leads/statistics-periods')),
     fetchLeadStatistics: ({ periodIds, listingType, agencyIds, suburbIds } = {}) =>
-      request('/listing/v53/listings/leads/statistics', {
+      request(listingPath('/listings/leads/statistics'), {
         params: { periodIds, listingType, agencyIds, suburbIds },
       }),
     fetchStatisticsLastUpdateDate: () =>
-      request('/listing/v53/statistics/last-update-date'),
+      request(listingPath('/statistics/last-update-date')),
   }
 }

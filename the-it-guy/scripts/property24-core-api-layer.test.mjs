@@ -56,6 +56,19 @@ assert.equal(calls[0].url, 'https://api.exdev.property24-test.com/listing/v53/li
 assert.equal(leadResult.summary.count, 1)
 assert.equal(leadResult.summary.nextAfter, '2026-08-20T10:00:00')
 
+const v55Client = createProperty24Client({
+  baseUrl: 'https://api.property24.com',
+  username: 'user@example.test',
+  password: 'secret',
+  userGroupId: '40067',
+  apiVersion: 'v55',
+  fetchImpl: fakeFetch,
+})
+await v55Client.fetchCountries()
+assert.equal(v55Client.apiVersion, 'v55')
+assert.equal(calls[1].url, 'https://api.property24.com/listing/v55/countries')
+assert.equal(calls[1].options.headers['P24-UserGroupId'], '40067')
+
 const redacted = createRedactedProperty24Payload({
   photos: [{ bytes: 'base64-image-data', mimeContentType: 'image/jpeg', caption: 'Front' }],
 })
