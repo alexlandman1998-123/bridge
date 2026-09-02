@@ -192,6 +192,7 @@ export default function DevelopmentAvailabilityWorkspace({
   const [typeFilter, setTypeFilter] = useState("all");
   const [structureFilter, setStructureFilter] = useState("all");
   const [selectedUnitId, setSelectedUnitId] = useState("");
+  const [mapSelectionActive, setMapSelectionActive] = useState(false);
   const [placingUnit, setPlacingUnit] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [comparisonUnitIds, setComparisonUnitIds] = useState([]);
@@ -328,6 +329,12 @@ export default function DevelopmentAvailabilityWorkspace({
     visibleUnits.find((unit) => unit.id === selectedUnitId) ||
     visibleUnits[0] ||
     null;
+  const mapUnits = useMemo(() => {
+    const mappedUnitIds = Object.keys(sitePlanMap || {});
+    return mappedUnitIds.length
+      ? visibleUnits.filter((unit) => mappedUnitIds.includes(unit.id))
+      : visibleUnits;
+  }, [sitePlanMap, visibleUnits]);
   const isAgency = role === "agent";
   const comparisonUnits = inventory.filter((unit) =>
     comparisonUnitIds.includes(unit.id),
@@ -631,24 +638,26 @@ export default function DevelopmentAvailabilityWorkspace({
           </div>
         </div>
         <div className="grid gap-4 xl:grid-cols-[195px_minmax(0,1fr)_minmax(340px,0.85fr)]">
-          <aside className="rounded-[18px] border border-[#e0e8e4] bg-[#fbfdfb] p-3.5">
-            <span className="text-[0.66rem] font-bold uppercase tracking-[0.12em] text-[#536c61]">Browse by</span>
-            <div className="mt-3 rounded-[10px] border border-[#dbeee3] bg-[#edf7f0] px-3 py-2.5 text-sm font-semibold text-[#1d6849]">
-              <span className="flex items-center gap-2"><MapPinned size={15} /> Site plan</span>
-              <small className="mt-1 block pl-6 text-[0.68rem] font-medium text-[#6b8377]">View all units on the masterplan</small>
-            </div>
+          <aside className="flex h-[470px] flex-col rounded-[18px] border border-[#e0e8e4] bg-[#fbfdfb] p-3.5 xl:h-[540px]">
+            <span className="text-[0.66rem] font-bold uppercase tracking-[0.12em] text-[#536c61]">
+              Browse by
+            </span>
             <div className="mt-3 grid gap-2.5">
-              <label className="relative block"><span className="sr-only">Search availability</span><Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#8497aa]" /><Field value={query} onChange={(event) => setQuery(event.target.value)} className="h-9 pl-8 text-xs" placeholder="Search unit, type, block, or buyer" /></label>
+              <label className="relative block">
+                <span className="sr-only">Search availability</span>
+                <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#8497aa]" />
+                <Field value={query} onChange={(event) => setQuery(event.target.value)} className="h-9 pl-8 text-xs" placeholder="Search unit, type, block, or buyer" />
+              </label>
               <Field as="select" value={blockFilter} onChange={(event) => setBlockFilter(event.target.value)} className="h-9 text-xs"><option value="all">All blocks</option>{blocks.map((block) => <option key={block} value={block}>{block}</option>)}</Field>
               <Field as="select" value={structureFilter} onChange={(event) => setStructureFilter(event.target.value)} className="h-9 text-xs"><option value="all">All floors / structures</option>{structureOptions.map((item) => <option key={item.id} value={item.id}>{item.labelPath}</option>)}</Field>
               <Field as="select" value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)} className="h-9 text-xs"><option value="all">All unit types</option>{unitTypes.map((type) => <option key={type} value={type}>{type}</option>)}</Field>
               <Field as="select" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="h-9 text-xs"><option value="all">All availability</option>{Object.entries(STATUS_META).map(([value, meta]) => <option key={value} value={value}>{meta.label}</option>)}</Field>
             </div>
-            <div className="mt-5 border-t border-[#e4ece6] pt-4">
+            <div className="mt-4 border-t border-[#e4ece6] pt-3">
               <span className="text-[0.66rem] font-bold uppercase tracking-[0.12em] text-[#536c61]">Legend</span>
-              <div className="mt-2.5 grid gap-2 text-xs font-medium text-[#63778b]">{Object.entries(STATUS_META).map(([status, meta]) => <span key={status} className="inline-flex items-center gap-1.5"><i className={`h-2.5 w-2.5 rounded-sm ${meta.dot}`} />{meta.label}</span>)}</div>
+              <div className="mt-2 grid grid-cols-2 gap-x-2 gap-y-2 text-xs font-medium text-[#63778b]">{Object.entries(STATUS_META).map(([status, meta]) => <span key={status} className="inline-flex items-center gap-1.5"><i className={`h-2.5 w-2.5 shrink-0 rounded-sm ${meta.dot}`} />{meta.label}</span>)}</div>
             </div>
-            {canManageInventory ? <details className="mt-5 border-t border-[#e4ece6] pt-3 text-xs text-[#60758d]"><summary className="cursor-pointer font-semibold text-[#40586e]">Plan tools</summary><div className="mt-3 grid gap-2">{onUploadSitePlan ? <label className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg border border-[#dbe6f2] bg-white px-2.5 font-semibold hover:bg-[#f8fbff]"><Upload size={12} /> Upload plan<input type="file" accept="image/*" className="hidden" onChange={onUploadSitePlan} /></label> : null}<Button type="button" size="sm" variant={placingUnit ? "primary" : "secondary"} disabled={!selectedUnit || sitePlanSaving} onClick={() => setPlacingUnit((value) => !value)}><Crosshair size={13} />{placingUnit ? "Click plan to place" : "Position selected unit"}</Button></div></details> : null}
+            {canManageInventory ? <details className="mt-auto border-t border-[#e4ece6] pt-3 text-xs text-[#60758d]"><summary className="cursor-pointer font-semibold text-[#40586e]">Plan tools</summary><div className="mt-3 grid gap-2">{onUploadSitePlan ? <label className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg border border-[#dbe6f2] bg-white px-2.5 font-semibold hover:bg-[#f8fbff]"><Upload size={12} /> Upload plan<input type="file" accept="image/*" className="hidden" onChange={onUploadSitePlan} /></label> : null}<Button type="button" size="sm" variant={placingUnit ? "primary" : "secondary"} disabled={!selectedUnit || sitePlanSaving} onClick={() => setPlacingUnit((value) => !value)}><Crosshair size={13} />{placingUnit ? "Click plan to place" : "Position selected unit"}</Button></div></details> : null}
           </aside>
           <div
           className="relative h-[470px] overflow-hidden rounded-[18px] border border-[#dce6ef] bg-[linear-gradient(135deg,#eaf0e7,#f7f4e9)] xl:h-[540px]"
@@ -677,10 +686,10 @@ export default function DevelopmentAvailabilityWorkspace({
                 aria-hidden="true"
               />
             ) : null}
-            {visibleUnits.map((unit, index) => {
+            {mapUnits.map((unit, index) => {
               const position =
                 sitePlanMap?.[unit.id] ||
-                defaultMapPosition(index, visibleUnits.length);
+                defaultMapPosition(index, mapUnits.length);
               const selected = unit.id === selectedUnit?.id;
               const meta =
                 STATUS_META[unit.inventoryStatus] || STATUS_META.available;
@@ -692,6 +701,7 @@ export default function DevelopmentAvailabilityWorkspace({
                   onClick={(event) => {
                     event.stopPropagation();
                     setSelectedUnitId(unit.id);
+                    setMapSelectionActive(true);
                   }}
                   className={`absolute z-10 -translate-x-1/2 -translate-y-1/2 rounded-[5px] border px-2 py-1 text-[0.68rem] font-bold shadow-[0_3px_8px_rgba(15,23,42,0.14)] transition hover:scale-105 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#173f38] ${selected ? "border-[#163f36] bg-[#163f36] text-white ring-2 ring-white/80" : `${meta.tone} border-white/90`}`}
                   style={{ left: `${position.x}%`, top: `${position.y}%` }}
@@ -735,6 +745,19 @@ export default function DevelopmentAvailabilityWorkspace({
             <span className="absolute bottom-4 left-4 rounded-[10px] bg-[#163f36] px-3 py-2 text-xs font-semibold text-white shadow-lg">
               Click the plan to position Unit {selectedUnit?.displayNumber}
             </span>
+          ) : null}
+          {selectedUnit && mapSelectionActive && !placingUnit ? (
+            <div className="absolute bottom-4 left-4 max-w-[220px] rounded-[14px] border border-white/90 bg-white/95 px-3.5 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.18)] backdrop-blur">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <span className="text-[0.63rem] font-bold uppercase tracking-[0.1em] text-[#6b7d93]">Selected unit</span>
+                  <strong className="mt-0.5 block text-sm text-[#173149]">{selectedUnit.displayNumber}</strong>
+                </div>
+                <button type="button" aria-label="Close unit details" className="-mr-1 -mt-1 rounded-md p-1 text-[#718398] hover:bg-[#eef3f4]" onClick={() => setMapSelectionActive(false)}><X size={14} /></button>
+              </div>
+              <span className="mt-2 block truncate text-xs text-[#60758d]">{selectedUnit.displayType}</span>
+              <div className="mt-1.5 flex items-center justify-between gap-2"><strong className="text-sm text-[#21394f]">{selectedUnit.displayPrice ? currency.format(selectedUnit.displayPrice) : "Price on request"}</strong><StatusPill status={selectedUnit.inventoryStatus} /></div>
+            </div>
           ) : null}
           </div>
           <article className="flex h-[470px] min-w-0 flex-col overflow-hidden rounded-[18px] border border-[#dce5ee] bg-white xl:h-[540px]">
