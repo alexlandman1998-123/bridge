@@ -39,7 +39,6 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import DevelopmentAvailabilityWorkspace from '../components/developments/DevelopmentAvailabilityWorkspace'
 import DevelopmentLaunchReadinessPanel from '../components/developments/DevelopmentLaunchReadinessPanel'
 import DevelopmentLaunchAssurancePanel from '../components/developments/DevelopmentLaunchAssurancePanel'
-import DevelopmentAgentLaunchBrief from '../components/developments/DevelopmentAgentLaunchBrief'
 import DevelopmentDemandIntelligencePanel from '../components/developments/DevelopmentDemandIntelligencePanel'
 import DevelopmentProductCatalogueModal from '../components/developments/DevelopmentProductCatalogueModal'
 import DevelopmentStructureSetupModal from '../components/developments/DevelopmentStructureSetupModal'
@@ -65,7 +64,6 @@ import { selectCurrentDevelopmentTransactionRows } from '../core/developments/de
 import { buildDevelopmentLaunchReadiness } from '../core/developments/developmentLaunchReadiness'
 import { buildDevelopmentLaunchPacket, formatDevelopmentLaunchPacket } from '../core/developments/developmentLaunchPacket'
 import { buildDevelopmentLaunchAssurance } from '../core/developments/developmentLaunchAssurance'
-import { buildDevelopmentAgentLaunchBrief, formatDevelopmentAgentLaunchBrief } from '../core/developments/developmentAgentLaunchBrief'
 import { buildDevelopmentDemandIntelligence } from '../core/developments/developmentDemandIntelligence'
 import {
   deleteDevelopment,
@@ -3445,13 +3443,6 @@ function DevelopmentDetail() {
     listings: linkedListingRows,
     publicVisibility: marketingForm.listingConfiguration.publicVisibility,
   }), [data?.productCatalogue, data?.structureNodes, linkedListingRows, marketingForm.listingConfiguration.publicVisibility, unitRows])
-  const agentLaunchBrief = useMemo(() => buildDevelopmentAgentLaunchBrief({
-    development: data?.development,
-    units: unitRows,
-    productCatalogue: data?.productCatalogue,
-    marketing: marketingForm,
-    readiness: launchReadiness,
-  }), [data?.development, data?.productCatalogue, launchReadiness, marketingForm, unitRows])
   const demandIntelligence = useMemo(() => buildDevelopmentDemandIntelligence({ units: unitRows, leads: developmentLeadRows }), [developmentLeadRows, unitRows])
   const generalSummaryLocation = [detailsForm.name || data?.development?.name, detailsForm.suburb || detailsForm.location, detailsForm.city].filter(Boolean).join(' · ')
   const generalSummaryMeta = [
@@ -3567,16 +3558,6 @@ function DevelopmentDetail() {
       setFeedback('Launch summary copied.')
     } catch {
       setError('Could not copy the launch summary.')
-    }
-  }
-
-  async function handleCopyAgentLaunchBrief() {
-    try {
-      await navigator.clipboard.writeText(formatDevelopmentAgentLaunchBrief(agentLaunchBrief))
-      setError('')
-      setFeedback('Agent launch brief copied.')
-    } catch {
-      setError('Could not copy the agent launch brief.')
     }
   }
 
@@ -6513,16 +6494,6 @@ function DevelopmentDetail() {
 
       {activeTab === 'overview' ? (
         <section className="mt-5 grid gap-5">
-          <DevelopmentLaunchReadinessPanel
-            readiness={launchReadiness}
-            onOpenArea={(tab) => setActiveTab(tab)}
-            onCopyPacket={handleCopyLaunchPacket}
-            onDownloadPacket={handleDownloadLaunchPacket}
-          />
-          <DevelopmentLaunchAssurancePanel
-            assurance={launchAssurance}
-            onOpenArea={(tab) => setActiveTab(tab)}
-          />
           <div className="grid gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1fr)_minmax(0,1.15fr)]">
             <article className="rounded-[18px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
               <div className="mb-5 flex items-center justify-between gap-3">
@@ -6687,6 +6658,19 @@ function DevelopmentDetail() {
                 <ArrowUpRight size={14} />
               </Button>
             </article>
+          </div>
+
+          <div className="grid gap-5 xl:grid-cols-2">
+            <DevelopmentLaunchReadinessPanel
+              readiness={launchReadiness}
+              onOpenArea={(tab) => setActiveTab(tab)}
+              onCopyPacket={handleCopyLaunchPacket}
+              onDownloadPacket={handleDownloadLaunchPacket}
+            />
+            <DevelopmentLaunchAssurancePanel
+              assurance={launchAssurance}
+              onOpenArea={(tab) => setActiveTab(tab)}
+            />
           </div>
         </section>
       ) : null}
@@ -9345,11 +9329,6 @@ function DevelopmentDetail() {
 
       {activeTab === 'availability' ? (
         <>
-        <DevelopmentAgentLaunchBrief
-          brief={agentLaunchBrief}
-          onCopy={handleCopyAgentLaunchBrief}
-          onOpenMarketing={() => setActiveTab('marketing')}
-        />
         <DevelopmentAvailabilityWorkspace
           units={unitRows}
           structureNodes={data?.structureNodes || []}

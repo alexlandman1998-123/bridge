@@ -1,11 +1,9 @@
 import {
   ArrowUpRight,
-  BarChart3,
   BedDouble,
   Building2,
   CalendarClock,
   CircleDollarSign,
-  ClipboardCheck,
   Copy,
   Crosshair,
   Filter,
@@ -19,7 +17,6 @@ import {
   Plus,
   RotateCcw,
   Search,
-  Send,
   SlidersHorizontal,
   Sparkles,
   Tag,
@@ -426,21 +423,6 @@ export default function DevelopmentAvailabilityWorkspace({
       /* The activity is still saved when clipboard access is unavailable. */
     }
   }
-  async function copyAvailabilitySummary() {
-    const summary = [
-      `${metrics.total} units`,
-      `${metrics.available} available`,
-      `${metrics.reserved} reserved`,
-      `${metrics.sold} sold`,
-      `${commercialPulse.sellThrough}% sell-through of released stock`,
-    ].join(" · ");
-    try {
-      await navigator.clipboard?.writeText(summary);
-      setSalesError("");
-    } catch {
-      setSalesError("Availability summary could not be copied.");
-    }
-  }
   async function savePrice() {
     if (!selectedUnit || !priceDraft.trim()) return;
     const price = Number(priceDraft);
@@ -588,6 +570,17 @@ export default function DevelopmentAvailabilityWorkspace({
 
   return (
     <section className="mt-4 grid gap-5">
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <MetricCard label="Total units" value={metrics.total} />
+        <MetricCard
+          label="Available"
+          value={metrics.available}
+          tone="available"
+        />
+        <MetricCard label="Reserved" value={metrics.reserved} tone="reserved" />
+        <MetricCard label="Sold" value={metrics.sold} tone="sold" />
+        <MetricCard label="Unreleased" value={metrics.unreleased} />
+      </section>
       <section className="overflow-hidden rounded-[24px] border border-[#183a3c] bg-[#0c2527] shadow-[0_20px_48px_rgba(15,23,42,0.14)]">
         <div className="relative px-5 py-6 sm:px-6 lg:px-7">
           <div
@@ -623,83 +616,6 @@ export default function DevelopmentAvailabilityWorkspace({
               </Button>
             </div>
           </div>
-        </div>
-      </section>
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <MetricCard label="Total units" value={metrics.total} />
-        <MetricCard
-          label="Available"
-          value={metrics.available}
-          tone="available"
-        />
-        <MetricCard label="Reserved" value={metrics.reserved} tone="reserved" />
-        <MetricCard label="Sold" value={metrics.sold} tone="sold" />
-        <MetricCard label="Unreleased" value={metrics.unreleased} />
-      </section>
-      <section className="grid gap-4 rounded-[22px] border border-[#dce5ee] bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.055)] lg:grid-cols-[minmax(0,1.05fr)_minmax(290px,0.95fr)]">
-        <div>
-          <div className="flex items-center gap-2 text-[#224b49]">
-            <BarChart3 size={17} />
-            <h3 className="text-[1.02rem] font-semibold tracking-[-0.025em]">
-              Commercial pulse
-            </h3>
-          </div>
-          <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
-            A concise, share-ready read on launch progress and stock readiness.
-          </p>
-          <div className="mt-4 grid grid-cols-3 gap-2.5">
-            {[
-              ["Released", `${commercialPulse.released}/${metrics.total}`],
-              ["Sell-through", `${commercialPulse.sellThrough}%`],
-              ["Reserved", `${commercialPulse.reservationRate}%`],
-            ].map(([label, value]) => (
-              <div
-                key={label}
-                className="rounded-[12px] border border-[#e0e8ef] bg-[#fbfcfe] px-3 py-2.5"
-              >
-                <span className="block text-[0.65rem] font-bold uppercase tracking-[0.08em] text-[#7a8da1]">
-                  {label}
-                </span>
-                <strong className="mt-1 block text-base font-semibold tracking-[-0.03em] text-[#20394f]">
-                  {value}
-                </strong>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div className="rounded-[16px] border border-[#d8eadf] bg-[#f5fbf7] p-3.5">
-          <div className="flex items-center justify-between gap-3">
-            <span className="inline-flex items-center gap-1.5 text-[0.68rem] font-bold uppercase tracking-[0.1em] text-[#397054]">
-              <ClipboardCheck size={13} />
-              Launch readiness
-            </span>
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              onClick={() => void copyAvailabilitySummary()}
-            >
-              <Send size={13} />
-              Copy summary
-            </Button>
-          </div>
-          {commercialPulse.actionItems.length ? (
-            <ul className="mt-3 grid gap-2 text-xs text-[#4f6d62]">
-              {commercialPulse.actionItems.map((item) => (
-                <li
-                  key={item}
-                  className="rounded-[9px] border border-[#dcebe1] bg-white px-2.5 py-2"
-                >
-                  {item}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="mt-3 rounded-[9px] border border-[#dcebe1] bg-white px-2.5 py-2 text-xs font-medium text-[#3b6e51]">
-              Pricing, release and reservation defaults are ready for the next
-              sales push.
-            </p>
-          )}
         </div>
       </section>
       <section className="overflow-hidden rounded-[22px] border border-[#dce5ee] bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.055)]">
@@ -903,11 +819,11 @@ export default function DevelopmentAvailabilityWorkspace({
           </Field>
         </div>
       </section>
-      <section className="grid gap-5 xl:grid-cols-[minmax(0,1.18fr)_minmax(320px,0.82fr)]">
+      <section className="grid gap-5 2xl:grid-cols-[minmax(0,1.18fr)_minmax(320px,0.82fr)]">
         <article className="overflow-hidden rounded-[22px] border border-[#dce5ee] bg-white shadow-[0_12px_30px_rgba(15,23,42,0.055)]">
           <div className="flex flex-col gap-3 border-b border-[#e8eef5] bg-[#fbfcfe] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h3 className="text-[1.02rem] font-semibold tracking-[-0.025em] text-[#142132]">
+              <h3 className="whitespace-nowrap text-[1.02rem] font-semibold tracking-[-0.025em] text-[#142132]">
                 Unit availability
               </h3>
               <p className="mt-1 text-xs text-[#6b7d93]">
@@ -919,23 +835,24 @@ export default function DevelopmentAvailabilityWorkspace({
             </span>
           </div>
           {visibleUnits.length ? (
-            <div className="max-h-[620px] overflow-y-auto">
-              <div className="grid grid-cols-[minmax(90px,0.55fr)_minmax(120px,1fr)_minmax(105px,0.75fr)_minmax(120px,0.8fr)_auto] gap-3 border-b border-[#e8eef5] bg-[#f7f9fc] px-5 py-3 text-[0.67rem] font-bold uppercase tracking-[0.11em] text-[#7c8da1]">
-                <span>Unit</span>
-                <span>Type / location</span>
-                <span>Status</span>
-                <span>Price</span>
-                <span className="sr-only">Select</span>
-              </div>
-              {visibleUnits.map((unit) => {
-                const selected = unit.id === selectedUnit?.id;
-                return (
-                  <button
-                    key={unit.id}
-                    type="button"
-                    onClick={() => setSelectedUnitId(unit.id)}
-                    className={`grid w-full grid-cols-[minmax(90px,0.55fr)_minmax(120px,1fr)_minmax(105px,0.75fr)_minmax(120px,0.8fr)_auto] items-center gap-3 border-b border-[#edf2f7] px-5 py-4 text-left transition hover:bg-[#f8fbff] ${selected ? "bg-[#eff7f2] shadow-[inset_3px_0_0_#2f8f5c]" : "bg-white"}`}
-                  >
+            <div className="max-h-[620px] overflow-auto">
+              <div className="min-w-[650px]">
+                <div className="grid grid-cols-[minmax(90px,0.55fr)_minmax(150px,1fr)_minmax(125px,0.75fr)_minmax(145px,0.8fr)_auto] gap-3 border-b border-[#e8eef5] bg-[#f7f9fc] px-5 py-3 text-[0.67rem] font-bold uppercase tracking-[0.11em] text-[#7c8da1]">
+                  <span>Unit</span>
+                  <span>Type / location</span>
+                  <span>Status</span>
+                  <span>Price</span>
+                  <span className="sr-only">Select</span>
+                </div>
+                {visibleUnits.map((unit) => {
+                  const selected = unit.id === selectedUnit?.id;
+                  return (
+                    <button
+                      key={unit.id}
+                      type="button"
+                      onClick={() => setSelectedUnitId(unit.id)}
+                      className={`grid w-full grid-cols-[minmax(90px,0.55fr)_minmax(150px,1fr)_minmax(125px,0.75fr)_minmax(145px,0.8fr)_auto] items-center gap-3 border-b border-[#edf2f7] px-5 py-4 text-left transition hover:bg-[#f8fbff] ${selected ? "bg-[#eff7f2] shadow-[inset_3px_0_0_#2f8f5c]" : "bg-white"}`}
+                    >
                     <strong className="text-sm font-semibold text-[#182b3d]">
                       {unit.displayNumber}
                     </strong>
@@ -954,9 +871,10 @@ export default function DevelopmentAvailabilityWorkspace({
                         : "Price pending"}
                     </strong>
                     <ArrowUpRight size={16} className="text-[#8aa0b3]" />
-                  </button>
-                );
-              })}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           ) : (
             <div className="px-6 py-14 text-center">
