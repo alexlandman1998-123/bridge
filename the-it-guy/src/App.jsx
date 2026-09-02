@@ -1608,10 +1608,10 @@ function HQRoute({ children }) {
   return children
 }
 
-function OrganisationSettingsManageRoute({ children }) {
+function OrganisationSettingsManageRoute({ children, permission = PERMISSIONS.manageWorkspaceSettings }) {
   const workspaceContext = useWorkspace()
   const { workspaceReady, profileLoading } = workspaceContext
-  const canManage = evaluateAccessRequirement({ permission: PERMISSIONS.manageWorkspaceSettings }, workspaceContext).ok
+  const canManage = evaluateAccessRequirement({ permission }, workspaceContext).ok
 
   if (!workspaceReady || profileLoading) {
     return (
@@ -3397,7 +3397,7 @@ function AppRoutes() {
               <Route
                 path="/agency/commission"
                 element={
-                  <OrganisationSettingsManageRoute>
+                  <OrganisationSettingsManageRoute permission={PERMISSIONS.viewCommissionStructures}>
                     <RoleRoute allowedRoles={['developer', 'agent']}>
                       <SettingsCommissionStructuresPage />
                     </RoleRoute>
@@ -3653,8 +3653,8 @@ function AppRoutes() {
                   }
                 />
                 <Route
-                  path="syndication"
-                  element={
+                path="syndication"
+                element={
                     <OrganisationSettingsManageRoute>
                       <RoleRoute allowedRoles={['agent']}>
                         <SettingsSyndicationPage />

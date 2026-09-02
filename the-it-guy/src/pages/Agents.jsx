@@ -116,7 +116,7 @@ const ORGANISATION_ROLE_OPTIONS = [
   { value: 'super_admin', label: 'Super Admin' },
   { value: 'principal', label: 'Principal / Owner' },
   { value: 'principal_claim', label: 'Principal Claim' },
-  { value: 'admin', label: 'Admin' },
+  { value: 'admin', label: 'Admin (no commission access)' },
   { value: 'branch_manager', label: 'Branch Manager' },
   { value: 'branch_admin', label: 'Branch Admin / Manager' },
   { value: 'team_lead', label: 'Team Lead' },

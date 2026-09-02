@@ -23,6 +23,9 @@ export const PERMISSIONS = Object.freeze({
   viewReports: 'view_reports',
   exportReports: 'export_reports',
   viewAuditLog: 'view_audit_log',
+  viewCommissionStructures: 'view_commission_structures',
+  manageCommissionStructures: 'manage_commission_structures',
+  manageCommissionProfiles: 'manage_commission_profiles',
 
   viewAgencyDashboard: 'view_agency_dashboard',
   viewLeads: 'view_leads',
@@ -307,6 +310,19 @@ const AGENCY_DEVELOPMENT_PERMISSIONS = [
   PERMISSIONS.manageDeveloperTransactions,
 ]
 
+const COMMISSION_PERMISSIONS = [
+  PERMISSIONS.viewCommissionStructures,
+  PERMISSIONS.manageCommissionStructures,
+  PERMISSIONS.manageCommissionProfiles,
+]
+
+// Organisation admins intentionally mirror principals except for confidential
+// sales-commission structures and individual commission-profile assignments.
+const AGENCY_ADMIN_PERMISSIONS = [
+  ...AGENCY_PERMISSIONS,
+  ...AGENCY_DEVELOPMENT_PERMISSIONS,
+]
+
 const ADMIN_COORDINATOR_PERMISSIONS = [
   PERMISSIONS.viewDashboard,
   PERMISSIONS.viewAgencyDashboard,
@@ -326,8 +342,9 @@ const ADMIN_COORDINATOR_PERMISSIONS = [
 
 export const permissionsByWorkspaceRole = Object.freeze({
   [WORKSPACE_TYPES.agency]: Object.freeze({
-    [ORG_ROLES.owner]: mergeGrants(allGeneral, grant(ACCESS_SCOPES.allWorkspace, [...AGENCY_PERMISSIONS, ...AGENCY_DEVELOPMENT_PERMISSIONS])),
-    [ORG_ROLES.principal]: mergeGrants(allGeneral, grant(ACCESS_SCOPES.allWorkspace, [...AGENCY_PERMISSIONS, ...AGENCY_DEVELOPMENT_PERMISSIONS])),
+    [ORG_ROLES.owner]: mergeGrants(allGeneral, grant(ACCESS_SCOPES.allWorkspace, [...AGENCY_PERMISSIONS, ...AGENCY_DEVELOPMENT_PERMISSIONS, ...COMMISSION_PERMISSIONS])),
+    [ORG_ROLES.principal]: mergeGrants(allGeneral, grant(ACCESS_SCOPES.allWorkspace, [...AGENCY_PERMISSIONS, ...AGENCY_DEVELOPMENT_PERMISSIONS, ...COMMISSION_PERMISSIONS])),
+    [ORG_ROLES.admin]: mergeGrants(allGeneral, grant(ACCESS_SCOPES.allWorkspace, AGENCY_ADMIN_PERMISSIONS)),
     [ORG_ROLES.branchManager]: mergeGrants(
       grant(ACCESS_SCOPES.branchOnly, [...GENERAL_READ, ...AGENCY_PERMISSIONS.filter((permission) => permission !== PERMISSIONS.manageBranches && permission !== PERMISSIONS.manageBilling), ...AGENCY_DEVELOPMENT_PERMISSIONS]),
       grant(ACCESS_SCOPES.branchOnly, [PERMISSIONS.inviteUsers, PERMISSIONS.manageUsers]),
@@ -527,6 +544,7 @@ export const routePermissionRules = Object.freeze([
   { prefix: '/attorney/matters', appRole: APP_ROLES.attorney, workspaceType: WORKSPACE_TYPES.attorneyFirm, permission: PERMISSIONS.viewMatters },
   { prefix: '/attorney/dashboard', appRole: APP_ROLES.attorney, workspaceType: WORKSPACE_TYPES.attorneyFirm, permission: PERMISSIONS.viewAttorneyDashboard },
   { prefix: '/agency/branches', appRole: APP_ROLES.agent, workspaceType: WORKSPACE_TYPES.agency, permission: PERMISSIONS.manageBranches },
+  { prefix: '/agency/commission', appRole: APP_ROLES.agent, workspaceType: WORKSPACE_TYPES.agency, permission: PERMISSIONS.viewCommissionStructures },
   { prefix: '/agency/agents', appRole: APP_ROLES.agent, workspaceType: WORKSPACE_TYPES.agency, permission: PERMISSIONS.manageUsers },
   { prefix: '/agency/partners', appRole: APP_ROLES.agent, workspaceType: WORKSPACE_TYPES.agency, permission: PERMISSIONS.partnersViewNetwork },
   { prefix: '/agency/analytics', appRole: APP_ROLES.agent, workspaceType: WORKSPACE_TYPES.agency, permission: PERMISSIONS.viewReports },

@@ -1,6 +1,7 @@
 export const ORG_ROLES = Object.freeze({
   owner: 'owner',
   principal: 'principal',
+  admin: 'admin',
   director: 'director',
   partner: 'partner',
   branchManager: 'branch_manager',
@@ -49,10 +50,11 @@ export function normalizeOrgRole(value, { appRole = '', workspaceType = '' } = {
   if (!normalized) return ORG_ROLES.viewer
   if (ORG_ROLE_VALUES.includes(normalized)) return normalized
 
-  if (normalized === 'super_admin' || normalized === 'superadmin' || normalized === 'administrator') {
+  if (normalized === 'super_admin' || normalized === 'superadmin') {
     return ORG_ROLES.owner
   }
-  if (normalized === 'admin' || normalized === 'branch_admin') return ORG_ROLES.adminStaff
+  if (normalized === 'admin' || normalized === 'administrator') return ORG_ROLES.admin
+  if (normalized === 'branch_admin') return ORG_ROLES.adminStaff
   if (normalized === 'principal / owner' || normalized === 'agency_owner') return ORG_ROLES.principal
   if (normalized === 'branch manager') return ORG_ROLES.branchManager
   if (normalized === 'hq manager') return ORG_ROLES.hqManager
@@ -93,6 +95,7 @@ export function isWorkspaceAuthorityRole(value) {
   return [
     ORG_ROLES.owner,
     ORG_ROLES.principal,
+    ORG_ROLES.admin,
     ORG_ROLES.director,
     ORG_ROLES.partner,
     ORG_ROLES.branchManager,

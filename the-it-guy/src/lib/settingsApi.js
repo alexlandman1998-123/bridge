@@ -590,9 +590,13 @@ function resolveInviteExpiryIso(days = 7) {
 
 function assertOrganisationAdminAccess(context, actionLabel = 'perform this action') {
   const action = normalizeText(actionLabel).toLowerCase()
-  const requiredPermission = action.includes('member') || action.includes('user')
-    ? PERMISSIONS.manageUsers
-    : PERMISSIONS.manageWorkspaceSettings
+  const requiredPermission = action.includes('commission profile')
+    ? PERMISSIONS.manageCommissionProfiles
+    : action.includes('commission structure')
+      ? PERMISSIONS.manageCommissionStructures
+      : action.includes('member') || action.includes('user')
+        ? PERMISSIONS.manageUsers
+        : PERMISSIONS.manageWorkspaceSettings
   assertPermission(requiredPermission, {
     profile: context?.profile,
     appRole: context?.profile?.role,

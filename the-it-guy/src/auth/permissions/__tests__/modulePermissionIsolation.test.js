@@ -67,6 +67,15 @@ try {
   assert.equal(can(PERMISSIONS.partnersViewNetwork, agencyContext), true)
   assert.equal(can(PERMISSIONS.viewSalesPipeline, agencyContext), false)
 
+  const agencyAdminContext = context({ appRole: 'agent', workspaceType: 'agency', workspaceRole: 'admin' })
+  const agencyAdminItems = filterNavigationItems(getRoleNavItems('agent', { membershipRole: 'admin' }), agencyAdminContext)
+  const agencyAdminKeys = visibleKeys(agencyAdminItems)
+  assert.equal(can(PERMISSIONS.manageUsers, agencyAdminContext), true, 'agency admin should manage the organisation like a principal')
+  assert.equal(can(PERMISSIONS.editTransactions, agencyAdminContext), true, 'agency admin should manage all agency transactions')
+  assert.equal(can(PERMISSIONS.viewCommissionStructures, agencyAdminContext), false, 'agency admin must not view commission structures')
+  assert.equal(can(PERMISSIONS.manageCommissionStructures, agencyAdminContext), false, 'agency admin must not manage commission structures')
+  assert.equal(agencyAdminKeys.includes('agency_commission'), false, 'commission navigation must be hidden for agency admin')
+
   const attorneyWorkspace = { id: 'attorney-workspace', type: 'attorney_firm' }
   const attorneyOrganisationMembership = {
     id: 'attorney-organisation-owner',
