@@ -2103,6 +2103,37 @@ export function validateOnboardingSubmission(formData = {}, options = {}) {
   const purchaserSnapshot = resolveStructuredPurchasers(formData, purchaserType)
   const finance = resolveStructuredFinance(formData, financeType)
 
+  // The agreed deal values are transaction-controlled. Buyer onboarding keeps
+  // those inputs read-only and intentionally omits them from the submitted
+  // form, so validation must hydrate them from the linked transaction rather
+  // than asking the buyer to re-enter commercial terms.
+  const transactionPurchasePrice = firstFilledValue([
+    options.transaction?.purchase_price,
+    options.transaction?.purchasePrice,
+    options.transaction?.sales_price,
+    options.transaction?.salesPrice,
+  ])
+  if (!isFilledValue(finance.purchase_price) && isFilledValue(transactionPurchasePrice)) {
+    finance.purchase_price = transactionPurchasePrice
+  }
+  if (!isFilledValue(finance.cash_amount)) {
+    const transactionCashAmount = firstFilledValue([
+      options.transaction?.cash_amount,
+      options.transaction?.cashAmount,
+    ])
+    finance.cash_amount = isFilledValue(transactionCashAmount)
+      ? transactionCashAmount
+      : financeType === 'cash'
+        ? transactionPurchasePrice
+        : finance.cash_amount
+  }
+  if (!isFilledValue(finance.bond_amount)) {
+    finance.bond_amount = firstFilledValue([
+      options.transaction?.bond_amount,
+      options.transaction?.bondAmount,
+    ])
+  }
+
   function requireField(value, label) {
     if (!isFilledValue(value)) {
       throw new Error(`${label} is required.`)
