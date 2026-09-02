@@ -327,7 +327,7 @@ const HomeSeekersDevelopments = lazy(() => import('./pages/HomeSeekersDevelopmen
 const HomeSeekersPeople = lazy(() => import('./pages/HomeSeekersPeople'))
 const HomeSeekersAbout = lazy(() => import('./pages/HomeSeekersAbout'))
 const HomeSeekersContact = lazy(() => import('./pages/HomeSeekersContact'))
-const PublicDevelopmentLandingPage = lazy(() => import('./pages/PublicDevelopmentLandingPage'))
+const PublicDevelopmentLandingPage = lazy(() => import('./pages/PublicDevelopmentResponsiveRoute'))
 const BondDashboardPage = lazy(() => import('./pages/bond/BondDashboardPage'))
 const BondDevelopmentsPage = lazy(() => import('./pages/bond/BondDevelopmentsPage'))
 const BondTransactionsPage = lazy(() => import('./pages/bond/BondTransactionsPage'))
