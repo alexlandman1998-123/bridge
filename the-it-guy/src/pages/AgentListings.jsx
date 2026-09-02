@@ -3593,20 +3593,19 @@ function AgentListings({ initialTab = null } = {}) {
           roleType: developmentRoleType,
         }).catch(() => [])
         const organisationUsersPromise = listOrganisationUsers().catch(() => [])
-        const [organisationContextForId, assignedIdsResult, organisationUsersResult] = await Promise.all([
-          selectedWorkspaceOrganisationId ? Promise.resolve(null) : organisationContextPromise,
-          assignedIdsPromise,
-          organisationUsersPromise,
-        ])
-        assignedIds = assignedIdsResult
-        userRows = Array.isArray(organisationUsersResult) ? organisationUsersResult : []
+        const organisationContextForId = selectedWorkspaceOrganisationId
+          ? null
+          : await organisationContextPromise
         resolvedOrganisationId = selectedWorkspaceOrganisationId || String(organisationContextForId?.organisation?.id || '').trim()
 
         const canUseDbFirstPrivateListings = !MOCK_DATA_ENABLED && Boolean(resolvedOrganisationId && profile?.id)
+        // Do not make listing cards wait for membership, participant and
+        // development lookups. The current identity is enough for the first
+        // scoped request; aliases are added during the deferred refresh.
         const listingScope = canUseDbFirstPrivateListings
           ? {
               organisationId: resolvedOrganisationId,
-              assignedAgentIds: resolveAgentAssignmentIds({ id: profile?.id, email: profile?.email }, userRows),
+              assignedAgentIds: [profile?.id].filter(Boolean),
               includeAllOrganisationListings: canAccessOrganisationListings({
                 agencyWorkflowMode,
                 currentMembership,
@@ -3628,6 +3627,25 @@ function AgentListings({ initialTab = null } = {}) {
         if (showLoading) setLoading(false)
         corePublished = true
 
+        const [assignedIdsResult, organisationUsersResult] = await Promise.all([
+          assignedIdsPromise,
+          organisationUsersPromise,
+        ])
+        assignedIds = assignedIdsResult
+        userRows = Array.isArray(organisationUsersResult) ? organisationUsersResult : []
+        const hydratedListingScope = canUseDbFirstPrivateListings
+          ? {
+              organisationId: resolvedOrganisationId,
+              assignedAgentIds: resolveAgentAssignmentIds({ id: profile?.id, email: profile?.email }, userRows),
+              includeAllOrganisationListings: canAccessOrganisationListings({
+                agencyWorkflowMode,
+                currentMembership,
+                workspaceRole,
+              }),
+              coreFieldsOnly: true,
+            }
+          : null
+
         const optionsPromise = isDeveloperWorkspace
           ? fetchDevelopmentOptions({
               developmentIds: assignedIds,
@@ -3636,9 +3654,9 @@ function AgentListings({ initialTab = null } = {}) {
           : assignedIds.length
             ? fetchDevelopmentOptions({ developmentIds: assignedIds }).catch(() => [])
             : fetchDevelopmentOptions().catch(() => [])
-        const fullListingsPromise = listingScope
+        const fullListingsPromise = hydratedListingScope
           ? getAgentPrivateListings(profile.id, {
-              ...listingScope,
+              ...hydratedListingScope,
               assignedAgentEmail: profile?.email || '',
             }).catch((listingError) => {
               console.warn('[LISTINGS] Detailed listing hydration failed; keeping summary rows.', listingError)
@@ -6479,6 +6497,7 @@ function AgentListings({ initialTab = null } = {}) {
     const grouped = new Map()
     const normalizedProfileEmail = String(profile?.email || '').trim().toLowerCase()
     const normalizedProfileName = String(profile?.fullName || profile?.name || '').trim().toLowerCase()
+    const currentOrganisationId = normalizeText(selectedWorkspaceOrganisationId || organisationId)
     const resolveDevelopmentLocation = (...sources) =>
       sources.flatMap((source = {}) => [
         source?.location,
@@ -6513,7 +6532,15 @@ function AgentListings({ initialTab = null } = {}) {
         })
 
       const assignedByParticipantAccess = assignedDevelopmentIds.includes(developmentId)
-      if (!isDeveloperWorkspace && !includesCurrentAgent && !assignedByParticipantAccess && normalizedProfileEmail) {
+      const belongsToCurrentOrganisation = Boolean(
+        currentOrganisationId &&
+        currentOrganisationId === normalizeText(option?.organisation_id || option?.organisationId),
+      )
+
+      // Organisation members must be able to see their own development stock
+      // even before individual stakeholder assignments have been configured.
+      // Assignment checks still limit externally shared developments.
+      if (!isDeveloperWorkspace && !belongsToCurrentOrganisation && !includesCurrentAgent && !assignedByParticipantAccess && normalizedProfileEmail) {
         continue
       }
 
@@ -6637,7 +6664,7 @@ function AgentListings({ initialTab = null } = {}) {
       }
       return left.name.localeCompare(right.name)
     })
-  }, [assignedDevelopmentIds, developmentOptions, developmentRows, isDeveloperWorkspace, profile?.email, profile?.fullName, profile?.name, workspace.id])
+  }, [assignedDevelopmentIds, developmentOptions, developmentRows, isDeveloperWorkspace, organisationId, profile?.email, profile?.fullName, profile?.name, selectedWorkspaceOrganisationId, workspace.id])
 
   const filteredDevelopmentCards = useMemo(() => {
     const query = String(filters.search || '').trim().toLowerCase()
