@@ -172,6 +172,8 @@ function resolveSuburbId(catalogMapping = {}, listing = {}, publication = {}, op
 }
 
 function resolveExpiryDate(listing = {}, publication = {}, options = {}) {
+  const canonicalFacts = listing.seller_canonical_facts_json || listing.sellerCanonicalFacts || {}
+  const property24Import = canonicalFacts.property24Import || canonicalFacts.property24_import || {}
   const raw = firstText(
     options.expiryDate,
     publication.expiryDate,
@@ -182,6 +184,8 @@ function resolveExpiryDate(listing = {}, publication = {}, options = {}) {
     listing.mandate_end_date,
     listing.propertyDetails?.expiryDate,
     listing.propertyDetails?.mandateEndDate,
+    property24Import.expiryDate,
+    property24Import.expiry_date,
   )
   if (!raw) return ''
   const date = new Date(raw)

@@ -250,4 +250,21 @@ assert.equal(updateWithoutPhotoChange.payload.listingNumber, 987654)
 assert.equal(updateWithoutPhotoChange.payload.status, 'Active')
 assert.equal(updateWithoutPhotoChange.payload.photos, null)
 
+const migratedUpdateWithoutExplicitExpiry = createProperty24ListingPlan({
+  listing: {
+    ...baseListing,
+    seller_canonical_facts_json: { property24Import: { expiryDate: '2026-12-31' } },
+  },
+  publication: basePublication,
+  media: imageUrlOnly,
+  agentMapping: baseAgentMapping,
+  catalogMapping: baseCatalogMapping,
+  existingSync: { listingNumber: 987654 },
+  options: { photosChanged: false },
+})
+
+assert.equal(migratedUpdateWithoutExplicitExpiry.canSubmit, true)
+assert.equal(migratedUpdateWithoutExplicitExpiry.payload.expiryDate, '2026-12-31T00:00:00.000Z')
+assert.equal(migratedUpdateWithoutExplicitExpiry.payload.photos, null)
+
 console.log('Property24 Phase 2 mapper contract passed')
