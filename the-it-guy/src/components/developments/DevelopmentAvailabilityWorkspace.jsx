@@ -629,35 +629,29 @@ export default function DevelopmentAvailabilityWorkspace({
               remain in sync.
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            {canManageInventory && onUploadSitePlan ? (
-              <label className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-[10px] border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#20364c] hover:bg-[#f8fbff]">
-                <Upload size={13} />
-                Upload plan
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={onUploadSitePlan}
-                />
-              </label>
-            ) : null}
-            {canManageInventory ? (
-              <Button
-                type="button"
-                size="sm"
-                variant={placingUnit ? "primary" : "secondary"}
-                disabled={!selectedUnit || sitePlanSaving}
-                onClick={() => setPlacingUnit((value) => !value)}
-              >
-                <Crosshair size={14} />
-                {placingUnit ? "Click plan to place" : "Position selected unit"}
-              </Button>
-            ) : null}
-          </div>
         </div>
-        <div
-          className="relative h-[360px] overflow-hidden rounded-[18px] border border-[#dce6ef] bg-[linear-gradient(135deg,#eaf0e7,#f7f4e9)]"
+        <div className="grid gap-4 xl:grid-cols-[195px_minmax(0,1fr)_minmax(340px,0.85fr)]">
+          <aside className="rounded-[18px] border border-[#e0e8e4] bg-[#fbfdfb] p-3.5">
+            <span className="text-[0.66rem] font-bold uppercase tracking-[0.12em] text-[#536c61]">Browse by</span>
+            <div className="mt-3 rounded-[10px] border border-[#dbeee3] bg-[#edf7f0] px-3 py-2.5 text-sm font-semibold text-[#1d6849]">
+              <span className="flex items-center gap-2"><MapPinned size={15} /> Site plan</span>
+              <small className="mt-1 block pl-6 text-[0.68rem] font-medium text-[#6b8377]">View all units on the masterplan</small>
+            </div>
+            <div className="mt-3 grid gap-2.5">
+              <label className="relative block"><span className="sr-only">Search availability</span><Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#8497aa]" /><Field value={query} onChange={(event) => setQuery(event.target.value)} className="h-9 pl-8 text-xs" placeholder="Search unit, type, block, or buyer" /></label>
+              <Field as="select" value={blockFilter} onChange={(event) => setBlockFilter(event.target.value)} className="h-9 text-xs"><option value="all">All blocks</option>{blocks.map((block) => <option key={block} value={block}>{block}</option>)}</Field>
+              <Field as="select" value={structureFilter} onChange={(event) => setStructureFilter(event.target.value)} className="h-9 text-xs"><option value="all">All floors / structures</option>{structureOptions.map((item) => <option key={item.id} value={item.id}>{item.labelPath}</option>)}</Field>
+              <Field as="select" value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)} className="h-9 text-xs"><option value="all">All unit types</option>{unitTypes.map((type) => <option key={type} value={type}>{type}</option>)}</Field>
+              <Field as="select" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="h-9 text-xs"><option value="all">All availability</option>{Object.entries(STATUS_META).map(([value, meta]) => <option key={value} value={value}>{meta.label}</option>)}</Field>
+            </div>
+            <div className="mt-5 border-t border-[#e4ece6] pt-4">
+              <span className="text-[0.66rem] font-bold uppercase tracking-[0.12em] text-[#536c61]">Legend</span>
+              <div className="mt-2.5 grid gap-2 text-xs font-medium text-[#63778b]">{Object.entries(STATUS_META).map(([status, meta]) => <span key={status} className="inline-flex items-center gap-1.5"><i className={`h-2.5 w-2.5 rounded-sm ${meta.dot}`} />{meta.label}</span>)}</div>
+            </div>
+            {canManageInventory ? <details className="mt-5 border-t border-[#e4ece6] pt-3 text-xs text-[#60758d]"><summary className="cursor-pointer font-semibold text-[#40586e]">Plan tools</summary><div className="mt-3 grid gap-2">{onUploadSitePlan ? <label className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg border border-[#dbe6f2] bg-white px-2.5 font-semibold hover:bg-[#f8fbff]"><Upload size={12} /> Upload plan<input type="file" accept="image/*" className="hidden" onChange={onUploadSitePlan} /></label> : null}<Button type="button" size="sm" variant={placingUnit ? "primary" : "secondary"} disabled={!selectedUnit || sitePlanSaving} onClick={() => setPlacingUnit((value) => !value)}><Crosshair size={13} />{placingUnit ? "Click plan to place" : "Position selected unit"}</Button></div></details> : null}
+          </aside>
+          <div
+          className="relative h-[470px] overflow-hidden rounded-[18px] border border-[#dce6ef] bg-[linear-gradient(135deg,#eaf0e7,#f7f4e9)] xl:h-[540px]"
           onClick={placeSelectedUnit}
           role={placingUnit ? "button" : undefined}
           tabIndex={placingUnit ? 0 : undefined}
@@ -699,7 +693,7 @@ export default function DevelopmentAvailabilityWorkspace({
                     event.stopPropagation();
                     setSelectedUnitId(unit.id);
                   }}
-                  className={`absolute z-10 -translate-x-1/2 -translate-y-1/2 rounded-[9px] border px-2 py-1.5 text-xs font-bold shadow-[0_6px_16px_rgba(15,23,42,0.16)] transition hover:scale-105 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#173f38] ${selected ? "border-[#163f36] bg-[#163f36] text-white ring-2 ring-white/80" : `${meta.tone} border-white/90`}`}
+                  className={`absolute z-10 -translate-x-1/2 -translate-y-1/2 rounded-[5px] border px-2 py-1 text-[0.68rem] font-bold shadow-[0_3px_8px_rgba(15,23,42,0.14)] transition hover:scale-105 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#173f38] ${selected ? "border-[#163f36] bg-[#163f36] text-white ring-2 ring-white/80" : `${meta.tone} border-white/90`}`}
                   style={{ left: `${position.x}%`, top: `${position.y}%` }}
                 >
                   {unit.displayNumber}
@@ -707,9 +701,7 @@ export default function DevelopmentAvailabilityWorkspace({
               );
             })}
           </div>
-          <span className="absolute left-4 top-4 rounded-full border border-white/80 bg-white/90 px-3 py-1 text-[0.68rem] font-bold uppercase tracking-[0.1em] text-[#436055] shadow-sm">
-            {sitePlanUrl ? "Uploaded site plan" : "Generated block plan"}
-          </span>
+          <span className="absolute left-4 top-4 rounded-full border border-white/80 bg-white/90 px-3 py-1 text-[0.68rem] font-bold uppercase tracking-[0.1em] text-[#436055] shadow-sm">Masterplan</span>
           <span className="absolute right-4 top-4 inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/80 bg-white/90 text-xs font-bold text-[#304b40] shadow-sm">
             N
           </span>
@@ -744,83 +736,15 @@ export default function DevelopmentAvailabilityWorkspace({
               Click the plan to position Unit {selectedUnit?.displayNumber}
             </span>
           ) : null}
-        </div>
-        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs font-medium text-[#63778b]">
-          {Object.entries(STATUS_META).map(([status, meta]) => (
-            <span key={status} className="inline-flex items-center gap-1.5">
-              <i className={`h-2.5 w-2.5 rounded-sm ${meta.dot}`} />
-              {meta.label}
-            </span>
-          ))}
+          </div>
+          <article className="flex h-[470px] min-w-0 flex-col overflow-hidden rounded-[18px] border border-[#dce5ee] bg-white xl:h-[540px]">
+            <div className="flex items-center justify-between border-b border-[#e8eef5] bg-[#fbfcfe] px-4 py-3"><div><h3 className="text-sm font-semibold tracking-[-0.02em] text-[#142132]">Unit availability</h3><p className="mt-0.5 text-xs text-[#6b7d93]">{visibleUnits.length} of {metrics.total} units shown</p></div><button type="button" className="text-xs font-semibold text-[#327553]" onClick={() => { setQuery(""); setStatusFilter("all"); setBlockFilter("all"); setStructureFilter("all"); setTypeFilter("all"); }}>Clear</button></div>
+            {visibleUnits.length ? <div className="min-h-0 flex-1 overflow-y-auto">{visibleUnits.map((unit) => { const selected = unit.id === selectedUnit?.id; const meta = STATUS_META[unit.inventoryStatus] || STATUS_META.available; return <button key={unit.id} type="button" onClick={() => setSelectedUnitId(unit.id)} className={`grid w-full grid-cols-[64px_minmax(0,1fr)_auto] items-center gap-2.5 border-b border-[#edf2f7] px-4 py-3 text-left transition hover:bg-[#f8fbff] ${selected ? "bg-[#eff7f2] shadow-[inset_3px_0_0_#2f8f5c]" : "bg-white"}`}><strong className="text-sm font-semibold text-[#182b3d]">{unit.displayNumber}</strong><span className="min-w-0"><strong className="block truncate text-xs font-semibold text-[#30485f]">{unit.displayType}</strong><small className="mt-0.5 block truncate text-[0.68rem] text-[#78899c]">{unit.location}</small></span><span className="text-right"><strong className="block whitespace-nowrap text-xs text-[#24394e]">{unit.displayPrice ? currency.format(unit.displayPrice) : "POR"}</strong><small className="mt-1 inline-flex items-center gap-1 text-[0.65rem] font-bold text-[#60758d]"><i className={`h-1.5 w-1.5 rounded-full ${meta.dot}`} />{meta.label}</small></span></button>; })}</div> : <div className="px-6 py-14 text-center"><Home className="mx-auto text-[#a2b0bf]" size={28} /><strong className="mt-4 block text-sm text-[#30485f]">No units match this view</strong><p className="mt-1 text-sm text-[#6b7d93]">Change the filters or add units in the stock master.</p></div>}
+          </article>
         </div>
       </section>
-      <section className="rounded-[22px] border border-[#dce5ee] bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.055)]">
-        <div className="grid gap-3 xl:grid-cols-[minmax(0,1.3fr)_repeat(4,minmax(145px,0.52fr))]">
-          <label className="relative block">
-            <span className="sr-only">Search availability</span>
-            <Search
-              size={16}
-              className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[#8497aa]"
-            />
-            <Field
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              className="pl-10"
-              placeholder="Search unit, type, block, or buyer"
-            />
-          </label>
-          <Field
-            as="select"
-            value={statusFilter}
-            onChange={(event) => setStatusFilter(event.target.value)}
-          >
-            <option value="all">All availability</option>
-            {Object.entries(STATUS_META).map(([value, meta]) => (
-              <option key={value} value={value}>
-                {meta.label}
-              </option>
-            ))}
-          </Field>
-          <Field
-            as="select"
-            value={blockFilter}
-            onChange={(event) => setBlockFilter(event.target.value)}
-          >
-            <option value="all">All blocks</option>
-            {blocks.map((block) => (
-              <option key={block} value={block}>
-                {block}
-              </option>
-            ))}
-          </Field>
-          <Field
-            as="select"
-            value={structureFilter}
-            onChange={(event) => setStructureFilter(event.target.value)}
-          >
-            <option value="all">All structure</option>
-            {structureOptions.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.labelPath}
-              </option>
-            ))}
-          </Field>
-          <Field
-            as="select"
-            value={typeFilter}
-            onChange={(event) => setTypeFilter(event.target.value)}
-          >
-            <option value="all">All unit types</option>
-            {unitTypes.map((type) => (
-              <option key={type} value={type}>
-                {type}
-              </option>
-            ))}
-          </Field>
-        </div>
-      </section>
-      <section className="grid gap-5 2xl:grid-cols-[minmax(0,1.18fr)_minmax(320px,0.82fr)]">
-        <article className="overflow-hidden rounded-[22px] border border-[#dce5ee] bg-white shadow-[0_12px_30px_rgba(15,23,42,0.055)]">
+      <section className="grid gap-5">
+        <article className="hidden" aria-hidden="true">
           <div className="flex flex-col gap-3 border-b border-[#e8eef5] bg-[#fbfcfe] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h3 className="whitespace-nowrap text-[1.02rem] font-semibold tracking-[-0.025em] text-[#142132]">
